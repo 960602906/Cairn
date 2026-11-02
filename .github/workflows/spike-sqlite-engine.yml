@@ -1,0 +1,83 @@
+name: Spike S4 SQLite engine
+
+# M0-08：在 Windows（首发平台）与 Linux 上比较 better-sqlite3 与 node:sqlite，
+# 覆盖纯 Node、Electron 开发运行与 electron-builder 打包后运行三种环境。
+on:
+  pull_request:
+    paths:
+      - 'spikes/sqlite-engine/**'
+      - '.github/workflows/spike-sqlite-engine.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-sqlite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: s4 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: spikes/sqlite-engine
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: spikes/sqlite-engine/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Node
+        run: node src/cli.mjs result-node.json
+
+      - name: Electron (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron --no-sandbox src/main.mjs --out=result-electron.json
+
+      - name: Electron (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath node_modules\electron\dist\electron.exe `
+            -ArgumentList 'src/main.mjs', '--out=result-electron.json' -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+      - name: Package
+        run: npx electron-builder --dir --publish never
+
+      - name: Packaged app (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a out/linux-unpacked/spike-sqlite-engine --no-sandbox --out=result-packaged.json
+
+      - name: Packaged app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath out\win-unpacked\SqliteEngineSpike.exe `
+            -ArgumentList '--out=result-packaged.json' -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+      - name: Summary
+        if: always()
+        run: node src/summarize.mjs result-node.json result-electron.json result-packaged.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s4-results-${{ matrix.os }}
+          path: spikes/sqlite-engine/result-*.json
+          retention-days: 30
