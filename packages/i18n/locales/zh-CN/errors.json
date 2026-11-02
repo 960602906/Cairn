@@ -23,5 +23,8 @@
   "rpc.method_not_found": "不支持的请求",
   "rpc.internal": "处理请求时发生内部错误",
   "rpc.protocol_mismatch": "进程间协议版本不兼容",
-  "rpc.closed": "连接已关闭"
+  "rpc.closed": "连接已关闭",
+  "host.start_failed": "Agent 进程启动失败",
+  "host.exited": "Agent 进程意外退出",
+  "host.unresponsive": "Agent 进程无响应，已被结束"
 }

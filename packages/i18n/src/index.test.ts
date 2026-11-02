@@ -109,6 +109,9 @@ describe('translateError', () => {
       'rpc.internal',
       'rpc.protocol_mismatch',
       'rpc.closed',
+      'host.start_failed',
+      'host.exited',
+      'host.unresponsive',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())
