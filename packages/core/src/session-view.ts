@@ -8,8 +8,10 @@
  *   返回原对象。因此"补发 + 实时"重叠时不会出现重复消息。
  * - **容错**：引用未知运行 / 轮次 / 步骤的事件、非法的状态转换都只推进 `lastSeq`，不改变内容，
  *   不抛出。
- * - **增量事件**（`*.delta`）在本模块中不处理，原样返回（增量合并见 M0-06c）；
- *   它们也不推进 `lastSeq`，`lastSeq` 只表示已归约的最后一条持久化事件，可直接作为 `afterSeq`。
+ * - **增量事件**（`*.delta`）只更新 `live` 中"进行中"的消息，不推进 `lastSeq`（`lastSeq` 只表示
+ *   已归约的最后一条持久化事件，可直接作为 `afterSeq`）。`message.assistant.completed` 以完整内容
+ *   写入 `messages` 并移除对应的进行中消息；轮次结束或宿主崩溃时丢弃该运行剩余的进行中消息。
+ *   因此只用持久化事件与"持久化 + 增量"归约，最终结果相同。
  * - 状态以不可变方式更新：只替换发生变化的部分，便于界面按引用比较。
  */
 import {
@@ -18,6 +20,7 @@ import {
   type ContentPart,
   type ErrorInfo,
   type EventEnvelope,
+  type LiveEvent,
   type ModelRef,
   type PersistedEvent,
   type ReasoningPart,
@@ -61,6 +64,18 @@ export interface AssistantMessageView extends MessageMeta {
 }
 
 export type MessageView = UserMessageView | AssistantMessageView
+
+/** 正在流式输出、尚未完成的助手消息（只来自增量事件，不落库）。 */
+export interface LiveMessageView {
+  readonly messageId: string
+  readonly runId: string
+  readonly turnId: string | undefined
+  readonly text: string
+  readonly reasoning: string
+  /** 已合并的最后一条增量的 seq，用于丢弃重复或迟到的增量。 */
+  readonly lastDeltaSeq: number
+  readonly startedAt: number
+}
 
 export type StepStatus = 'running' | 'completed'
 
@@ -120,6 +135,8 @@ export interface SessionView {
   readonly runOrder: readonly string[]
   /** 按 seq 顺序的消息；同一 `messageId` 只出现一次。 */
   readonly messages: readonly MessageView[]
+  /** 进行中的消息，按 messageId 索引；界面显示在 `messages` 之后。 */
+  readonly live: Readonly<Record<string, LiveMessageView>>
   /** 会话累计用量（只统计 `usage.reported`，不重复计入 `step.completed.usage`）。 */
   readonly usage: TokenUsage
 }
@@ -136,6 +153,7 @@ export function createSessionView(sessionId: string): SessionView {
     runs: {},
     runOrder: [],
     messages: [],
+    live: {},
     usage: ZERO_USAGE,
   }
 }
@@ -153,10 +171,63 @@ export function reduceSessionEvents(
 /** 归约一条事件；被忽略的事件返回原对象。 */
 export function reduceSession(view: SessionView, event: EventEnvelope): SessionView {
   if (event.sessionId !== view.sessionId) return view
-  if (!isPersistedEvent(event)) return view
   if (event.seq <= view.lastSeq) return view
+  if (!isPersistedEvent(event)) return applyLive(view, event) ?? view
   const advanced: SessionView = { ...view, lastSeq: event.seq }
-  return apply(advanced, event) ?? advanced
+  const next = apply(advanced, event) ?? advanced
+  return dropFinishedLive(next, event)
+}
+
+/** 合并一条增量事件；返回 `undefined` 表示忽略。 */
+function applyLive(view: SessionView, event: LiveEvent): SessionView | undefined {
+  if (event.type === 'tool.output.delta') return undefined // 工具输出由后续阶段的投影处理
+  const { messageId, text } = event.payload
+  if (view.messages.some((m) => m.messageId === messageId)) return undefined
+  const prev = view.live[messageId]
+  if (prev && event.seq <= prev.lastDeltaSeq) return undefined
+  const base: LiveMessageView = prev ?? {
+    messageId,
+    runId: event.runId,
+    turnId: event.turnId,
+    text: '',
+    reasoning: '',
+    lastDeltaSeq: 0,
+    startedAt: event.ts,
+  }
+  const live: LiveMessageView =
+    event.type === 'message.assistant.delta'
+      ? { ...base, text: base.text + text, lastDeltaSeq: event.seq }
+      : { ...base, reasoning: base.reasoning + text, lastDeltaSeq: event.seq }
+  return { ...view, live: { ...view.live, [messageId]: live } }
+}
+
+/**
+ * 持久化事件之后清理进行中的消息：完成事件移除对应消息；
+ * 轮次结束移除该运行的全部进行中消息；宿主崩溃移除全部。
+ */
+function dropFinishedLive(view: SessionView, event: PersistedEvent): SessionView {
+  const ids = Object.keys(view.live)
+  if (ids.length === 0) return view
+  let keep: (live: LiveMessageView) => boolean
+  switch (event.type) {
+    case 'message.assistant.completed':
+      keep = (live) => live.messageId !== event.payload.messageId
+      break
+    case 'turn.completed':
+    case 'turn.aborted':
+    case 'turn.failed':
+    case 'run.disposed':
+      keep = (live) => live.runId !== event.runId
+      break
+    case 'session.crashed':
+      keep = () => false
+      break
+    default:
+      return view
+  }
+  const kept = ids.filter((id) => keep(view.live[id]!))
+  if (kept.length === ids.length) return view
+  return { ...view, live: Object.fromEntries(kept.map((id) => [id, view.live[id]!])) }
 }
 
 /** 返回 `undefined` 表示事件内容被忽略（只推进 lastSeq）。 */
