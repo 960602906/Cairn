@@ -24,6 +24,6 @@
     { "path": "../packages/core" },
     { "path": "../packages/storage" },
     { "path": "../packages/i18n" },
-    { "path": "../apps/desktop" }
+    { "path": "../apps/desktop/tsconfig.node.json" }
   ]
 }

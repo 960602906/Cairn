@@ -1,25 +1,4 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "types": ["node"]
-  },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"],
-  "references": [
-    {
-      "path": "../../packages/protocol"
-    },
-    {
-      "path": "../../packages/core"
-    },
-    {
-      "path": "../../packages/storage"
-    },
-    {
-      "path": "../../packages/i18n"
-    }
-  ]
+  "files": [],
+  "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }]
 }

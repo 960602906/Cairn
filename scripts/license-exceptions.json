@@ -1,4 +1,6 @@
 {
   "$comment": "按 \"name@version\" 登记不在白名单内但经确认可用的依赖，值为理由。见 ADR-0014。",
-  "exceptions": {}
+  "exceptions": {
+    "caniuse-lite@1.0.30001820": "开发依赖（electron-vite → @babel/core → browserslist），浏览器兼容性数据，只在构建时使用，不随应用分发。CC-BY-4.0 为宽松的署名许可。"
+  }
 }

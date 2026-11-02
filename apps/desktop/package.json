@@ -3,10 +3,29 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "smoke": "node scripts/smoke.js"
+  },
   "dependencies": {
     "@nexus/core": "workspace:*",
     "@nexus/i18n": "workspace:*",
     "@nexus/protocol": "workspace:*",
-    "@nexus/storage": "workspace:*"
+    "@nexus/storage": "workspace:*",
+    "i18next": "26.7.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-i18next": "17.1.11"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "45.2.1",
+    "electron-vite": "6.0.0",
+    "vite": "8.3.5"
   }
 }
