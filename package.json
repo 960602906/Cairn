@@ -16,7 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "tsc -b --clean",
-    "check:licenses": "node scripts/check-licenses.js"
+    "check:licenses": "node scripts/check-licenses.js",
+    "check:i18n": "node scripts/check-i18n.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -56,7 +56,8 @@ jobs:
           path: coverage/
           retention-days: 14
 
-      # i18n key 一致性检查在 M0-11 加入。
+      - name: Check i18n keys (ADR-0013)
+        run: pnpm check:i18n
 
   licenses:
     name: licenses
