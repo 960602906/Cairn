@@ -18,7 +18,7 @@
 | [0008](0008-checkpoints-and-hunks.md) | 检查点与按块改动记录 | 已接受（性能待预研） |
 | [0009](0009-typed-versioned-ipc.md) | 类型化、带版本的进程间通信协议 | 已接受 |
 | [0010](0010-credential-provider.md) | 可扩展的凭据提供方与加密存储 | 已接受 |
-| [0011](0011-openai-compatible-first.md) | 模型接入以 OpenAI 兼容接口优先 | 已接受 |
+| [0011](0011-openai-compatible-first.md) | 模型接入以 OpenAI 兼容接口优先 | 部分被 0021 替代 |
 | [0012](0012-windows-command-execution.md) | Windows 命令执行方案 | 已接受 |
 | [0013](0013-bilingual-i18n.md) | 中英双语国际化 | 已接受 |
 | [0014](0014-permissive-dependency-licenses.md) | 只使用宽松许可证的依赖 | 已接受 |
@@ -28,3 +28,4 @@
 | [0018](0018-interactive-and-unattended-runs.md) | 交互运行与无人值守运行 | 已接受 |
 | [0019](0019-memory-scopes.md) | 记忆范围（预留） | 已接受（功能暂缓） |
 | [0020](0020-hub-and-spoke-delegation.md) | 多 Agent 采用以父运行为中心的委派模式 | 已接受 |
+| [0021](0021-three-api-formats.md) | 首批支持 OpenAI、Anthropic、Gemini 三种接口格式 | 已接受 |
