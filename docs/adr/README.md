@@ -29,3 +29,4 @@
 | [0019](0019-memory-scopes.md) | 记忆范围（预留） | 已接受（功能暂缓） |
 | [0020](0020-hub-and-spoke-delegation.md) | 多 Agent 采用以父运行为中心的委派模式 | 已接受 |
 | [0021](0021-three-api-formats.md) | 首批支持 OpenAI、Anthropic、Gemini 三种接口格式 | 已接受 |
+| [0022](0022-prompt-enhancement.md) | 输入优化：由用户触发、确认后发送 | 已接受 |
