@@ -13,5 +13,9 @@
   "status.archived": "已归档",
   "turn.aborted": "已停止",
   "turn.limit_reached": "已达到本轮最多 {{maxSteps}} 步，可以继续执行。",
-  "crashed.message": "Agent 进程意外退出，可以从最后保存的位置继续。"
+  "crashed.message": "Agent 进程意外退出，可以从最后保存的位置继续。",
+  "new.projectPath": "项目目录",
+  "new.projectPathHint": "填写项目所在文件夹的完整路径",
+  "new.title": "标题（可选）",
+  "new.create": "创建"
 }
