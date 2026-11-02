@@ -1,6 +1,6 @@
 # ADR-0016 Agent 定义与运行作为一等概念
 
-- 状态：提议
+- 状态：已接受
 - 日期：2026-11-02
 - 详细设计：[Agent Runtime 详细设计](../design/agent-runtime.md)
 

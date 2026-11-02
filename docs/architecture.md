@@ -1,6 +1,6 @@
 # NEXUS-OS 架构设计
 
-> 状态：设计阶段（v0.2），尚未开始开发。
+> 状态：设计阶段（v0.3），尚未开始开发。
 > 作者：960602906
 > 关键决策的背景、备选方案和取舍理由记录在 [`docs/adr/`](adr/README.md)，本文档描述整体架构，引用处标注为「ADR-xxxx」。
 
@@ -170,43 +170,13 @@ apps/desktop            Electron 应用（main / preload / renderer / agent-host
 
 ## 6. Agent 运行时抽象
 
-详见 ADR-0004。
+详见 ADR-0004、ADR-0016 和 [Agent Runtime 详细设计](design/agent-runtime.md)。
 
-```ts
-interface AgentRuntime {
-  readonly id: string                     // 'pi'
-  createSession(init: RuntimeSessionInit): Promise<RuntimeSession>
-}
-
-interface RuntimeSessionInit {
-  sessionId: string
-  model: ResolvedModel                     // 已解析出凭据的模型配置
-  systemPrompt: string
-  tools: ToolDefinition[]                  // 来自工具注册表，与 pi 无关
-  history: CanonicalMessage[]              // 从事件日志恢复
-  hooks: {
-    beforeToolCall(call: ToolCallRequest): Promise<ToolGateDecision>
-  }
-}
-
-interface RuntimeSession {
-  prompt(input: UserInput): Promise<void>
-  abort(reason?: string): Promise<void>
-  onEvent(listener: (e: RuntimeEvent) => void): Unsubscribe
-  dispose(): Promise<void>
-}
-```
-
-适配器职责：
-
-- 把我们的 `ToolDefinition`、`CanonicalMessage` 转换为 pi 的格式，反之亦然。
-- 把 pi 的事件转换为我们的 `RuntimeEvent`（见第 7 节），pi 的事件名、字段变化只影响适配器。
-- 把 `beforeToolCall` 接到 pi 的同名钩子上。
-
-约束：
-
-- 锁定 pi 的精确版本，升级必须经过适配器的契约测试。
-- 提供一个 `FakeRuntime`（脚本化返回固定事件），用于界面开发和测试，不需要真实模型。
+- **Agent 定义**（AgentDefinition）：可保存、可版本化的 Agent 模板（指令、模型、工具、权限、限额、上下文策略）。内置 Agent 与用户 Agent 结构相同。
+- **运行**（AgentRun）：某个 Agent 定义的某个版本在会话中的执行实例；会话可包含多个运行，运行之间可以有父子关系。
+- Agent 宿主内由 `RunSupervisor` 管理运行，每个运行由 `RunEngine` 编排：上下文组装、模型循环、工具流水线、钩子、事件输出。
+- 底层 `AgentRuntime` 接口由 pi 适配器实现，只负责模型循环与模型通信；工具执行由我们自己的工具流水线完成。
+- 完整接口见详细设计第 17 节。
 
 ---
 
@@ -220,9 +190,12 @@ interface RuntimeSession {
 interface EventEnvelope<T extends EventType = EventType> {
   v: 1                     // 事件 schema 版本
   sessionId: string
+  runId: string            // 所属运行
+  parentRunId?: string     // 父运行（多 Agent）
   seq: number              // 会话内单调递增，由主进程分配
   ts: number               // 毫秒时间戳
   turnId?: string          // 一次用户提问到 agent 结束为一轮
+  stepId?: string          // 一次模型调用及其工具调用为一步
   type: T
   payload: EventPayload[T]
 }
@@ -233,6 +206,8 @@ interface EventEnvelope<T extends EventType = EventType> {
 | 分类 | 事件 | 说明 |
 |---|---|---|
 | 会话 | `session.created` `session.renamed` `session.crashed` `session.archived` | 生命周期 |
+| 运行 | `run.created` `run.state.changed` `run.disposed` `run.delegated` `run.child.completed` | 运行生命周期与委派 |
+| 步骤 | `step.started` `step.completed` | 每次模型调用的边界 |
 | 轮次 | `turn.started` `turn.completed` `turn.aborted` `turn.failed` | 一次任务的边界 |
 | 消息 | `message.user` `message.assistant.delta` `message.assistant.completed` `message.reasoning.delta` | 文本流；delta 不落库，只落 completed |
 | 工具 | `tool.requested` `tool.started` `tool.output.delta` `tool.completed` `tool.failed` | 工具调用全过程 |
@@ -240,6 +215,7 @@ interface EventEnvelope<T extends EventType = EventType> {
 | 改动 | `file.changed` | 引用改动记录 id，不内嵌文件内容 |
 | 检查点 | `checkpoint.created` `checkpoint.restored` | |
 | 用量 | `usage.reported` | token 数、耗时 |
+| 其他 | `turn.limit_reached` `context.compacted` `model.fallback` `tool.cancelled` | 详见 Agent Runtime 设计第 12 节 |
 
 ### 7.3 规则
 
@@ -484,7 +460,10 @@ interface ModelProfile {
 | `schema_meta` | 当前 schema 版本 |
 | `projects` | 项目 id、名称、路径、创建时间 |
 | `sessions` | 会话 id、项目 id、工作区路径、标题、状态、模型、时间 |
-| `events` | `(session_id, seq)` 主键、类型、版本、时间、payload（JSON） |
+| `agent_definitions` | `(id, version)` 主键、来源、结构化定义（JSON）、时间 |
+| `agent_runs` | 运行 id、会话 id、Agent 定义 id 与版本、父运行 id、状态、限额 |
+| `run_snapshots` | 运行 id、轮次 id、规范化消息历史快照（用于加速恢复） |
+| `events` | `(session_id, seq)` 主键、`run_id`（带索引）、类型、版本、时间、payload（JSON） |
 | `file_changes` | 改动 id、会话、轮次、路径、变更类型、前后 blob 哈希 |
 | `hunks` | 改动 id、块序号、起止行、状态（pending / accepted / reverted） |
 | `checkpoints` | 检查点 id、会话、轮次、影子仓库提交 id、原因 |
