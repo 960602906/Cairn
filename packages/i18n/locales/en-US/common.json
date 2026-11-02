@@ -1,0 +1,12 @@
+{
+  "app.name": "NEXUS-OS",
+  "action.ok": "OK",
+  "action.cancel": "Cancel",
+  "action.retry": "Retry",
+  "action.stop": "Stop",
+  "action.continue": "Continue",
+  "action.copy": "Copy",
+  "action.close": "Close",
+  "language.zh-CN": "简体中文",
+  "language.en-US": "English"
+}

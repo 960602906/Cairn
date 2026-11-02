@@ -1,0 +1,17 @@
+{
+  "list.title": "会话",
+  "list.empty": "还没有会话",
+  "list.new": "新建会话",
+  "title.untitled": "未命名会话",
+  "input.placeholder": "输入消息，Enter 发送，Shift+Enter 换行",
+  "status.idle": "空闲",
+  "status.running": "运行中",
+  "status.waiting_approval": "等待审批",
+  "status.failed": "失败",
+  "status.interrupted": "已中断",
+  "status.crashed": "已崩溃",
+  "status.archived": "已归档",
+  "turn.aborted": "已停止",
+  "turn.limit_reached": "已达到本轮最多 {{maxSteps}} 步，可以继续执行。",
+  "crashed.message": "Agent 进程意外退出，可以从最后保存的位置继续。"
+}
