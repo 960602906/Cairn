@@ -22,6 +22,7 @@ import {
   isActiveRunState,
   rebuildHistory,
   reduceSessionEvents,
+  rootRun,
   sessionStatus,
   type RunView,
   type SessionView,
@@ -100,11 +101,6 @@ interface Slot {
 
 /** 可被标记为中断的运行状态。 */
 const interruptible = (run: RunView) => isActiveRunState(run.state) || run.state === 'aborting'
-
-const rootRun = (view: SessionView): RunView | undefined =>
-  view.runOrder
-    .map((id) => view.runs[id])
-    .findLast((run) => run !== undefined && run.parentRunId === undefined)
 
 export function createSessionManager(options: SessionManagerOptions): SessionManager {
   const { storage, events, supervisor } = options

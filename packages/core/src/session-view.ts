@@ -435,17 +435,21 @@ function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return sum
 }
 
+/** 最近创建的顶层运行（无 `parentRunId`）；会话的状态与输入都以它为准。 */
+export function rootRun(view: SessionView): RunView | undefined {
+  return view.runOrder
+    .map((id) => view.runs[id])
+    .findLast((run) => run !== undefined && run.parentRunId === undefined)
+}
+
 /**
  * 会话在列表中显示的状态（`SessionStatus`）。
- * 以最近创建的顶层运行（无 `parentRunId`）为准；归档与崩溃优先。
+ * 以最近创建的顶层运行（`rootRun`）为准；归档与崩溃优先。
  */
 export function sessionStatus(view: SessionView): SessionStatus {
   if (view.archived) return 'archived'
   if (view.crash) return 'crashed'
-  const root = view.runOrder
-    .map((id) => view.runs[id])
-    .findLast((run) => run !== undefined && run.parentRunId === undefined)
-  switch (root?.state) {
+  switch (rootRun(view)?.state) {
     case 'thinking':
     case 'tooling':
     case 'awaiting_children':

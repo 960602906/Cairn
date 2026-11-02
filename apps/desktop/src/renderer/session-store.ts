@@ -38,8 +38,8 @@ export interface SessionActions {
   createSession(projectPath: string, title?: string): Promise<string | undefined>
   /** 选中会话并订阅其事件；传 undefined 取消选中。 */
   selectSession(sessionId: string | undefined): Promise<void>
-  /** 向当前会话发送文本输入。 */
-  sendPrompt(text: string): Promise<void>
+  /** 向当前会话发送文本输入；没有发送（空输入、未选中会话或请求失败）时返回 false。 */
+  sendPrompt(text: string): Promise<boolean>
   /** 停止当前会话正在进行的一轮。 */
   abort(): Promise<void>
   clearError(): void
@@ -146,9 +146,10 @@ export function createSessionStore(api: MainApi): SessionStore {
       async sendPrompt(text) {
         const sessionId = get().activeSessionId
         const trimmed = text.trim()
-        if (sessionId === undefined || trimmed === '') return
+        if (sessionId === undefined || trimmed === '') return false
         const content: ContentPart[] = [{ type: 'text', text: trimmed }]
-        await run(() => api.request('session.prompt', { sessionId, content }))
+        const sent = await run(() => api.request('session.prompt', { sessionId, content }))
+        return sent !== undefined
       },
 
       async abort() {
