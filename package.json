@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "clean": "tsc -b --clean"
+    "clean": "tsc -b --clean",
+    "check:licenses": "node scripts/check-licenses.js"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

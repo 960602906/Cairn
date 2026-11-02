@@ -66,6 +66,8 @@ export default tseslint.config(
     plugins: { nexus: { rules: { 'no-cross-package-relative': noCrossPackageRelative } } },
     rules: {
       'nexus/no-cross-package-relative': 'error',
+      // 所有文件（含 JS，经 checkJs）都由 tsc 检查未定义变量，no-undef 会对 Node 全局变量误报。
+      'no-undef': 'off',
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-unused-vars': [
         'error',

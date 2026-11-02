@@ -8,6 +8,13 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["**/*.ts", "**/*.js", "../eslint.config.js", "../vitest.config.ts"],
+  "include": [
+    "**/*.ts",
+    "**/*.js",
+    "../scripts/**/*.ts",
+    "../scripts/**/*.js",
+    "../eslint.config.js",
+    "../vitest.config.ts"
+  ],
   "exclude": ["dist"]
 }

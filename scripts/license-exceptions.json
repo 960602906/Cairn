@@ -1,0 +1,4 @@
+{
+  "$comment": "按 \"name@version\" 登记不在白名单内但经确认可用的依赖，值为理由。见 ADR-0014。",
+  "exceptions": {}
+}
