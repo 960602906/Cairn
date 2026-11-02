@@ -29,6 +29,7 @@ pnpm test
 pnpm dev     # 启动桌面应用（开发模式，数据放在独立的 NEXUS-OS-dev 目录）
 pnpm build   # 构建桌面应用
 pnpm smoke   # 用构建产物做启动冒烟测试
+pnpm e2e     # 用构建产物跑端到端测试（Playwright；Linux 无显示器时用 xvfb-run -a pnpm e2e）
 ```
 
 ## 当前计划 / Plan

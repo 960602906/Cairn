@@ -11,6 +11,7 @@
     "dev": "pnpm --filter @nexus/desktop dev",
     "build": "pnpm --filter @nexus/desktop build",
     "smoke": "pnpm --filter @nexus/desktop smoke",
+    "e2e": "pnpm --filter @nexus/desktop e2e",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run",

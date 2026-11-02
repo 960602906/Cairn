@@ -66,6 +66,22 @@ jobs:
       - name: Smoke test desktop app
         run: pnpm smoke
 
+      # Playwright 启动构建产物（M0-16）。Linux 无头模式下窗口只有 1×1，用 Xvfb 提供显示器
+      - name: E2E test desktop app
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a pnpm e2e; else pnpm e2e; fi
+
+      - name: Upload E2E report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-${{ matrix.os }}
+          path: |
+            apps/desktop/playwright-report/
+            apps/desktop/test-results/
+          retention-days: 14
+
   licenses:
     name: licenses
     runs-on: ubuntu-latest
