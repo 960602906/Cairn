@@ -286,6 +286,25 @@ describe('实际接口定义', () => {
     )
   })
 
+  it('渲染 ↔ 主：settings.update 只接受支持的语言', async () => {
+    const [a, b] = channelPair()
+    const main = createEndpoint(a, { local: MainForRenderer, remote: RendererForMain })
+    const renderer = createEndpoint(b, { local: RendererForMain, remote: MainForRenderer })
+    const update = vi.fn((patch: { locale?: 'zh-CN' | 'en-US' | undefined }) => ({
+      locale: patch.locale ?? 'zh-CN',
+    }))
+    main.handle('settings.update', update)
+    main.handle('settings.get', () => ({ locale: 'zh-CN' }))
+    await expect(renderer.request('settings.get', {})).resolves.toEqual({ locale: 'zh-CN' })
+    await expect(renderer.request('settings.update', { locale: 'en-US' })).resolves.toEqual({
+      locale: 'en-US',
+    })
+    await expect(
+      renderer.request('settings.update', { locale: 'fr-FR' } as never),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+    expect(update).toHaveBeenCalledOnce()
+  })
+
   it('主 ↔ 宿主：host.init 携带历史，host.event 推送无 seq 事件', async () => {
     const [a, b] = channelPair()
     const main = createEndpoint(a, { local: MainForHost, remote: HostForMain })

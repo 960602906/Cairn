@@ -28,5 +28,6 @@
   "host.exited": "The agent process exited unexpectedly",
   "host.unresponsive": "The agent process stopped responding and was terminated",
   "host.not_initialized": "The agent process has not been initialized",
-  "host.already_initialized": "The agent process is already initialized"
+  "host.already_initialized": "The agent process is already initialized",
+  "settings.write_failed": "Failed to save settings"
 }

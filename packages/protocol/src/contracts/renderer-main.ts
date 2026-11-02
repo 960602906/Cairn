@@ -29,6 +29,14 @@ export const SessionSummary = z.object({
 })
 export type SessionSummary = z.infer<typeof SessionSummary>
 
+/** 界面语言（ADR-0013）；与 `@nexus/i18n` 的 `SUPPORTED_LOCALES` 一致。 */
+export const Locale = z.enum(['zh-CN', 'en-US'])
+export type Locale = z.infer<typeof Locale>
+
+/** 应用设置。之后的设置项只能以可选字段向后兼容地追加。 */
+export const Settings = z.object({ locale: Locale })
+export type Settings = z.infer<typeof Settings>
+
 /** seq 从 1 开始；afterSeq 为 0 表示从头读取。 */
 const Seq = z.number().int().nonnegative()
 
@@ -62,6 +70,16 @@ export const MainForRenderer = defineSide({
       params: z.object({ sessionId: Id }),
       result: z.object({}),
     },
+    /** 当前设置；没有保存过的项取默认值（语言按系统语言检测）。 */
+    'settings.get': {
+      params: z.object({}),
+      result: Settings,
+    },
+    /** 只更新给出的设置项，返回更新后的全部设置。 */
+    'settings.update': {
+      params: Settings.partial(),
+      result: Settings,
+    },
   },
   events: {
     /** 实时事件推送；增量事件在主进程合并后按帧率批量推送（架构 §22）。 */
@@ -84,8 +102,6 @@ export const RESERVED_RENDERER_MAIN_METHODS = [
   'changes.revert',
   'checkpoint.list',
   'checkpoint.restore',
-  'settings.get',
-  'settings.update',
   'credentials.set',
   'credentials.delete',
   'credentials.status',

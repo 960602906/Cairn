@@ -15,6 +15,7 @@ import {
   createRendererGateway,
   type RendererGateway,
   type SessionCommands,
+  type SettingsCommands,
 } from './renderer-gateway.js'
 
 /** 一对内存通道（异步投递，结构化克隆）；记录界面一侧收到的原始消息。 */
@@ -64,6 +65,7 @@ const completed = (sessionId: string, id: string, text: string): UnsequencedEven
 let service: SessionEventService
 let gateway: RendererGateway
 let commands: SessionCommands
+let settings: SettingsCommands
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
   const storage = createMemoryStorage({ now: () => 1 })
@@ -78,7 +80,15 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     prompt: vi.fn(() => ({ messageId: 'm1' })),
     abort: vi.fn(() => ({})),
   }
-  gateway = createRendererGateway({ events: { ...service, ...eventsOverride }, commands })
+  settings = {
+    get: vi.fn(() => ({ locale: 'zh-CN' as const })),
+    update: vi.fn((patch) => ({ locale: patch.locale ?? ('zh-CN' as const) })),
+  }
+  gateway = createRendererGateway({
+    events: { ...service, ...eventsOverride },
+    commands,
+    settings,
+  })
   return connectRenderer()
 }
 
@@ -279,6 +289,15 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(commands.abort).toHaveBeenCalledWith({ sessionId: 's1' })
   })
 
+  it('delegates settings requests to the settings service', async () => {
+    const { client } = setup()
+    await expect(client.request('settings.get', {})).resolves.toEqual({ locale: 'zh-CN' })
+    await expect(client.request('settings.update', { locale: 'en-US' })).resolves.toEqual({
+      locale: 'en-US',
+    })
+    expect(settings.update).toHaveBeenCalledWith({ locale: 'en-US' })
+  })
+
   it('rejects invalid requests before they reach the session manager', async () => {
     setup()
     const pair = channelPair()
@@ -336,7 +355,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
   it('passes protocol errors to the handler', async () => {
     setup()
     const onProtocolError = vi.fn()
-    const g = createRendererGateway({ events: service, commands, onProtocolError })
+    const g = createRendererGateway({ events: service, commands, settings, onProtocolError })
     const pair = channelPair()
     g.connect(pair.main)
     pair.renderer.post({ nonsense: true })

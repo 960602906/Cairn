@@ -114,6 +114,7 @@ describe('translateError', () => {
       'host.unresponsive',
       'host.not_initialized',
       'host.already_initialized',
+      'settings.write_failed',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())

@@ -1,6 +1,6 @@
 /**
  * 主进程入口（ADR-0002、ADR-0003，架构 §4、§17）。只做启动引导：确定数据目录、应用安全基线、
- * 组装主进程服务（存储、宿主管理、IPC 网关）、创建窗口。服务本身不依赖 Electron，见 `services/`。
+ * 组装主进程服务（存储、设置、宿主管理、IPC 网关）、创建窗口。服务本身不依赖 Electron，见 `services/`。
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -29,6 +29,7 @@ import { createHostSupervisor } from './services/host-supervisor.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
+import { createSettingsService } from './services/settings-service.js'
 import { isSmokeRun, RENDERER_PROBE_SCRIPT, runSmokeChecks, type RendererProbe } from './smoke.js'
 
 const paths = resolveAppPaths({
@@ -61,6 +62,14 @@ const SHUTDOWN_TIMEOUT_MS = 5_000
 const reportError = (error: unknown) => console.error('[nexus]', error)
 
 const storage = openSqliteStorage({ file: paths.database })
+const settings = createSettingsService({
+  file: paths.settings,
+  systemLocales: () => {
+    const preferred = app.getPreferredSystemLanguages()
+    return preferred.length > 0 ? preferred : [app.getLocale()]
+  },
+  onError: reportError,
+})
 const events = createSessionEventService({ storage, onListenerError: reportError })
 const supervisor = createHostSupervisor({
   spawn: createUtilityHostSpawner({
@@ -82,6 +91,7 @@ sessions.recoverInterrupted()
 const gateway = createRendererGateway({
   events,
   commands: sessions,
+  settings,
   onProtocolError: (error) => reportError(error),
 })
 
