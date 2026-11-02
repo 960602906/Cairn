@@ -1,19 +1,55 @@
-# 架构设计（草案）
+# NEXUS-OS 架构设计
 
-> 状态：讨论中，尚未开始开发。本文档用于在开发前确认方向，所有内容都可以调整。
+> 状态：设计阶段（v0.2），尚未开始开发。
 > 作者：960602906
+> 关键决策的背景、备选方案和取舍理由记录在 [`docs/adr/`](adr/README.md)，本文档描述整体架构，引用处标注为「ADR-xxxx」。
 
-## 1. 项目目标
+## 目录
 
-做一个类似 Codex 的**编程类桌面 agent 应用**：用户选择一个本地项目目录，用自然语言描述任务，agent 自主读代码、改代码、执行命令，并把每一步过程和文件改动可视化地展示出来，敏感操作需要用户审批。
+1. [项目概述](#1-项目概述)
+2. [设计原则](#2-设计原则)
+3. [总体架构](#3-总体架构)
+4. [进程模型](#4-进程模型)
+5. [模块划分](#5-模块划分)
+6. [Agent 运行时抽象](#6-agent-运行时抽象)
+7. [事件模型](#7-事件模型)
+8. [核心流程](#8-核心流程)
+9. [工具系统](#9-工具系统)
+10. [权限与审批](#10-权限与审批)
+11. [检查点与撤销](#11-检查点与撤销)
+12. [模型接入](#12-模型接入)
+13. [上下文管理](#13-上下文管理)
+14. [数据存储](#14-数据存储)
+15. [进程间通信协议](#15-进程间通信协议)
+16. [配置与凭据](#16-配置与凭据)
+17. [安全设计](#17-安全设计)
+18. [平台策略](#18-平台策略)
+19. [国际化](#19-国际化)
+20. [可观测性与诊断](#20-可观测性与诊断)
+21. [错误处理与恢复](#21-错误处理与恢复)
+22. [性能](#22-性能)
+23. [测试策略](#23-测试策略)
+24. [构建、发布与更新](#24-构建发布与更新)
+25. [仓库结构](#25-仓库结构)
+26. [里程碑](#26-里程碑)
+27. [风险与待验证事项](#27-风险与待验证事项)
 
-核心诉求：
+---
 
-- **多模型**：可以接入各种格式的 LLM（Anthropic、OpenAI、Google、OpenAI 兼容接口、本地 Ollama 等），用户可以填写自己的 key 和 baseUrl。
-- **可控**：agent 的每个操作都看得见，写文件、执行命令前可以拦截确认。
-- **可审阅**：所有文件改动以 diff 形式展示，可以接受或撤销。
+## 1. 项目概述
 
-### 已确认决策
+### 1.1 定位
+
+NEXUS-OS 是一个类似 Codex 的**编程类桌面 agent 应用**。用户选择本地项目目录，用自然语言描述任务，agent 自主读代码、改代码、执行命令；每一步过程和文件改动都可视化展示，敏感操作需要用户审批，所有改动都可以回退。
+
+### 1.2 核心诉求
+
+- **多模型**：可接入各种格式的 LLM，用户自带 key 和 baseUrl。
+- **可控**：agent 的每个操作都看得见，写文件和执行命令前可以拦截确认。
+- **可审阅**：所有文件改动以 diff 展示，可接受或撤销。
+- **可回退**：任意时刻可以把项目恢复到某一步之前的状态。
+
+### 1.3 已确认决策
 
 | 事项 | 结论 |
 |---|---|
@@ -21,258 +57,670 @@
 | 首发平台 | Windows；后续支持 macOS 和 Linux |
 | 首批模型 | DeepSeek（云端 API）、Ollama（本地模型） |
 | 命令执行 | 第一版即开放，默认每条命令需审批 |
-| 开源 | 暂时私有，后续开源；许可证待开源时再定 |
-| Windows 默认 Shell | PowerShell 5.1（系统自带）；检测到 PowerShell 7 时优先使用 |
+| Windows 默认 Shell | PowerShell 5.1；检测到 PowerShell 7 时优先使用 |
 | 界面语言 | 中英双语 |
+| API Key | 第一版仅支持用户自带 key，凭据层按可扩展接口设计 |
+| 会话存储 | SQLite，自定义数据结构，带版本迁移，不绑定 pi 的格式 |
+| diff | 数据按块（hunk）存储；第一版界面提供整文件接受/撤销 |
+| 开源 | 暂时私有，后续开源；依赖只用宽松许可证 |
 
-非目标（第一版不做）：
+### 1.4 非目标（第一版不做）
 
-- 云端运行、多人协作、账号体系。
-- 通用办公类任务（整理文件、写文档等），只聚焦编程。
-- 插件市场。
+- 云端运行、多人协作、账号体系、计费。
+- 通用办公类任务，只聚焦编程。
+- 插件市场（但保留 MCP 和工具注册的扩展点）。
+- 交互式命令（需要用户在终端里输入的命令）。
 
-## 2. 技术选型
+---
 
-| 层 | 选型 | 理由 |
-|---|---|---|
-| 桌面外壳 | Electron + electron-vite | 全栈 TypeScript，无需 Rust；生态成熟 |
-| 界面 | React + TypeScript | 已有前端经验 |
-| UI 组件 | Tailwind CSS + shadcn/ui | 快速搭建、易于主题化 |
-| 代码与 diff | Monaco Editor | 与 VS Code 同款，自带 DiffEditor |
-| 状态管理 | Zustand | 轻量，适合会话和消息流 |
-| 国际化 | i18next + react-i18next | 成熟、支持按命名空间拆分和运行时切换语言 |
-| Agent 核心 | pi-agent-core | 现成的 agent 循环、工具调用、事件流，带 `beforeToolCall` 钩子 |
-| 模型接入 | pi-ai | 统一的多厂商 LLM 接口，支持自定义 baseUrl |
-| 持久化 | JSONL / SQLite | 会话可按 pi 的格式存储，配置存本地文件 |
+## 2. 设计原则
 
-> 注意：pi 的 npm 包已从 `@mariozechner/*` 迁移到 `@earendil-works/*`，迭代较快，开发时需锁定版本并以官方文档为准。
+1. **难改的部分一开始就设计好，容易改的部分保持简单。**
+   难改：数据格式、进程模型、模块接口、权限模型、事件协议。容易改：界面样式、组件选型、交互细节。
+2. **依赖倒置，隔离第三方。** 业务代码只依赖自己定义的接口，pi、SQLite 引擎、Shell 等都是可替换的实现（ADR-0004）。
+3. **单一事实来源。** 会话状态以追加式事件日志为准，界面状态是日志的投影（ADR-0005）。
+4. **按多会话设计，先实现单会话。** 数据和进程模型从第一天起支持并行，功能上逐步开放。
+5. **默认安全。** 默认需要审批、默认不外泄密钥、默认可回退。
+6. **一切持久化格式都有版本号。** 数据库、配置、IPC 协议都可迁移、可协商。
+7. **跨平台从第一行代码开始。** 首发 Windows，但不写只能在 Windows 上跑的抽象。
 
-### 2.1 首批模型接入
-
-| 提供方 | 接入方式 | 说明 |
-|---|---|---|
-| DeepSeek | OpenAI 兼容接口，baseUrl 指向 DeepSeek 官方 API | 用户填写自己的 API Key；需验证其工具调用（function calling）在 pi-ai 下的表现 |
-| Ollama | OpenAI 兼容接口，默认 `http://localhost:11434/v1` | 无需 Key；工具调用能力取决于具体本地模型，需在设置页提示用户选择支持工具调用的模型 |
-
-两者都走 pi-ai 的 OpenAI 兼容通道，因此第一版只需实现一种"OpenAI 兼容提供方"配置，后续加入 Anthropic、OpenAI、Google 等时再扩展。具体 baseUrl、模型名以各自官方文档为准。
-
-模型相关的设计要点：
-
-- **能力探测**：设置页添加"测试连接"，发送一次带工具定义的请求，检查模型能否正确返回工具调用。
-- **上下文长度**：不同模型差异大（本地模型往往较小），工具输出截断阈值和上下文压缩策略按模型配置。
-- **Ollama 状态**：启动时检测本地服务是否在运行，未运行时在界面上给出提示。
-
-### 2.2 平台策略
-
-首发 Windows，后续支持 macOS 和 Linux。为了降低移植成本，从第一版开始遵守：
-
-- 路径处理统一使用 Node 的 `path` 模块，不手写分隔符；比较路径时在 Windows 上忽略大小写。
-- 命令执行抽象为"Shell 适配器"：Windows 默认 PowerShell 5.1（`powershell.exe`），检测到 PowerShell 7（`pwsh.exe`）时优先使用，也可在设置中改为 cmd；macOS/Linux 使用用户默认 shell。
-- ripgrep 等外部二进制按平台打包，不依赖用户本机安装。
-- 打包使用 electron-builder，Windows 产物为 NSIS 安装包；代码签名在发布阶段处理。
-
-### 2.3 国际化（中英双语）
-
-- **界面文案**：所有文案放入 `locales/zh-CN` 和 `locales/en-US` 资源文件，组件中只引用 key，禁止硬编码字符串。
-- **默认语言**：首次启动跟随系统语言，非中文系统默认英文；设置页可手动切换，切换后立即生效，无需重启。
-- **主进程文案**：系统对话框、菜单、通知、错误提示同样走 i18n 资源，主进程与渲染进程共用一套 key。
-- **agent 回复语言**：不强制，系统提示词要求模型使用用户提问所用的语言回复。
-- **格式化**：日期、数字使用 `Intl` API 按当前语言格式化。
-- **质量保障**：增加脚本检查两种语言的 key 是否一一对应，缺失时在开发环境报警。
+---
 
 ## 3. 总体架构
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ 渲染进程（React 界面）                                      │
-│  对话界面 │ 改动视图（Diff） │ 设置页 │ 状态存储（Zustand）  │
-└───────────────────────┬──────────────────────────────────┘
-                        │  指令向下 / 事件向上
-┌───────────────────────▼──────────────────────────────────┐
-│ 预加载脚本（contextBridge 白名单 API）                       │
-└───────────────────────┬──────────────────────────────────┘
-                        │  IPC
-┌───────────────────────▼──────────────────────────────────┐
-│ 主进程（Node.js）                                          │
-│  Agent 循环（pi-agent-core） │ 工具层 │ 审批钩子 │ 会话存储  │
-└──────┬─────────────────────┬──────────────────────┬───────┘
-       │                     │                      │
-  模型提供方（pi-ai）     项目目录（白名单）      Git 仓库（后续 worktree）
+┌───────────────────────────────────────────────────────────────┐
+│ 渲染进程（React）                                               │
+│  对话 │ 改动/Diff │ 终端输出 │ 设置 │ 视图状态（Zustand，事件投影）│
+└──────────────────────────────┬────────────────────────────────┘
+                               │ 预加载脚本（contextBridge，类型化 API）
+┌──────────────────────────────▼────────────────────────────────┐
+│ 主进程（Electron Main）—— 调度与网关，不跑 agent 逻辑            │
+│  窗口与菜单 │ IPC 网关 │ 会话管理器 │ 存储服务（SQLite，唯一写入方）│
+│  配置服务 │ 凭据服务（safeStorage）│ 日志 │ 更新                   │
+└───────┬─────────────────────────────────────────┬─────────────┘
+        │ MessagePort（类型化协议）                 │
+┌───────▼──────────────────┐        ┌─────────────▼────────────┐
+│ Agent 宿主进程（会话 A）    │  ...   │ Agent 宿主进程（会话 B）   │
+│  AgentRuntime（pi 适配器） │        │  （utilityProcess）        │
+│  工具执行 │ 权限引擎        │        │                          │
+│  检查点 │ 上下文管理        │        │                          │
+└───┬──────────┬─────────┬──┘        └──────────────────────────┘
+    │          │         │
+ 模型提供方   项目/工作区   Shell 子进程
+ （pi-ai）   （路径白名单） （PowerShell / cmd）
 ```
 
-### 3.1 渲染进程
+三条关键边界：
 
-只负责展示与交互，**不能直接访问文件系统、网络或 API Key**。
+- **界面 ↔ 主进程**：界面没有任何 Node 能力，只能调用预加载脚本暴露的类型化 API。
+- **主进程 ↔ Agent 宿主**：每个会话一个独立进程，崩溃或卡死不影响窗口和其他会话（ADR-0003）。
+- **业务代码 ↔ pi**：只有 `runtime-pi` 包允许引用 pi，其他代码通过 `AgentRuntime` 接口使用（ADR-0004）。
 
-- 对话界面：消息流、工具调用卡片、审批卡片、输入框。
-- 改动视图：改动文件列表 + Monaco DiffEditor。
-- 设置页：模型提供方、API Key、baseUrl、默认模型、权限模式。
-- 状态存储：会话列表、消息、运行状态、改动记录。
+---
 
-### 3.2 预加载脚本
+## 4. 进程模型
 
-通过 `contextBridge` 暴露最小化的 API，是渲染进程与主进程之间的唯一通道。开启 `contextIsolation`，关闭 `nodeIntegration`。
+详见 ADR-0003。
 
-### 3.3 主进程
-
-- **Agent 循环**：每个会话一个 `Agent` 实例，订阅其事件并转发给界面。
-- **工具层**：内置工具（见第 5 节），所有路径都经过项目目录白名单校验。
-- **审批钩子**：在 `beforeToolCall` 中根据权限模式决定放行、拦截或请求用户确认。
-- **会话存储**：保存会话历史，支持恢复和分支。
-- **配置管理**：API Key 等敏感信息只存在主进程，可考虑使用系统钥匙串（如 keytar 或 Electron safeStorage）加密保存。
-
-## 4. 核心流程
-
-### 4.1 一次任务的执行流程
-
-1. 用户在界面输入任务，渲染进程调用 `agent:run`。
-2. 主进程为会话创建或复用 `Agent`，调用 `agent.prompt()`。
-3. 模型返回文本或工具调用请求，事件流实时推送到界面。
-4. 工具调用前进入 `beforeToolCall`：
-   - 只读工具：直接放行。
-   - 写入或执行类工具：按权限模式处理，必要时发起审批。
-5. 工具执行结果回到 agent 循环，进入下一轮，直到模型给出最终回复。
-6. 主进程发送 `agent:done`，界面切回空闲状态。
-
-### 4.2 审批流程
-
-1. 主进程生成审批 id，通过 IPC 发送 `agent:approval-request`（含工具名、参数、diff 预览）。
-2. 界面插入审批卡片，等待用户点击允许或拒绝。
-3. 渲染进程调用 `agent:approve(id, allow)`。
-4. 主进程恢复钩子：允许则执行工具，拒绝则返回 `{ block: true, reason }` 让模型调整。
-
-### 4.3 文件改动记录
-
-写文件工具在执行前读取原内容保存为 `before`，执行后记录 `after`，用于生成 diff 和支持撤销。
-
-## 5. 工具清单（第一版）
-
-| 工具 | 类型 | 默认策略 |
-|---|---|---|
-| `read_file` | 只读 | 自动放行 |
-| `list_dir` | 只读 | 自动放行 |
-| `search`（基于 ripgrep） | 只读 | 自动放行 |
-| `write_file` | 写入 | 需审批，附 diff 预览 |
-| `edit_file`（局部替换） | 写入 | 需审批，附 diff 预览 |
-| `run_command` | 执行 | 需审批，显示完整命令 |
-
-后续可扩展：git 操作、网页抓取、MCP 工具接入。
-
-### 5.1 命令执行（第一版开放）
-
-- **Shell**：Windows 默认 PowerShell 5.1，检测到 PowerShell 7 时优先使用，工作目录固定为项目根目录。需注意 5.1 的输出编码，统一按 UTF-8 读取，避免中文乱码。
-- **审批**：默认每条命令都需确认，审批卡片显示完整命令和工作目录。
-- **超时与输出**：设置默认超时（如 120 秒），输出流式显示在终端面板，返回给模型时按长度截断。
-- **可中断**：用户可随时停止正在运行的命令，Windows 上需结束整个进程树。
-- **环境变量**：不把 API Key 等敏感变量传给子进程。
-- **危险命令识别**：即使在自动模式下，以下类型仍强制审批：
-  - 递归删除：`Remove-Item -Recurse`、`rm -rf`、`del /s`、`rd /s`
-  - 磁盘与系统：`format`、`diskpart`、修改注册表、修改系统设置
-  - 远端改写：`git push --force`、`git reset --hard` 等
-  - 访问项目目录之外的路径
-
-## 6. 权限模式
-
-| 模式 | 只读工具 | 写入工具 | 执行命令 |
+| 进程 | 数量 | 职责 | 不做什么 |
 |---|---|---|---|
-| 只读 | 放行 | 拒绝 | 拒绝 |
-| 询问（默认） | 放行 | 审批 | 审批 |
-| 自动 | 放行 | 放行 | 放行（危险命令仍审批） |
+| 主进程 | 1 | 窗口、菜单、IPC 网关、会话调度、存储写入、配置、凭据、日志、更新 | 不运行 agent 循环、不执行工具 |
+| 渲染进程 | 1（每窗口） | 界面展示与交互 | 不访问文件系统、网络、密钥 |
+| Agent 宿主 | 每个运行中会话 1 个 | agent 循环、工具执行、权限判断、检查点、上下文管理 | 不直接写数据库、不持有其他会话的数据 |
+| Shell 子进程 | 按需 | 执行命令 | 不继承敏感环境变量 |
 
-## 7. IPC 接口定义（草案）
+### 4.1 生命周期
 
-| 通道 | 方向 | 说明 |
-|---|---|---|
-| `agent:run` | 界面 → 主进程 | 启动任务（会话 id、提示词） |
-| `agent:abort` | 界面 → 主进程 | 停止当前任务 |
-| `agent:approve` | 界面 → 主进程 | 回复审批（id、是否允许） |
-| `agent:event` | 主进程 → 界面 | agent 事件流（文本增量、工具开始/结束等） |
-| `agent:approval-request` | 主进程 → 界面 | 请求审批 |
-| `agent:done` | 主进程 → 界面 | 本轮结束 |
-| `project:open` | 界面 → 主进程 | 选择项目目录（系统对话框） |
-| `settings:get` / `settings:set` | 双向 | 读写配置（不返回明文 Key） |
+- 会话开始运行时，会话管理器用 `utilityProcess.fork()` 创建 Agent 宿主，通过 MessagePort 建立通道，完成协议版本握手。
+- 会话空闲超过一段时间（可配置）后回收进程；再次运行时重新创建，并从事件日志恢复上下文。
+- 宿主崩溃时，主进程记录 `session.crashed` 事件，界面提示用户，可从最后一个完整事件处恢复。
+- 设置并发上限（默认 3 个运行中的会话），超出时排队。
 
-## 8. 数据模型（草案）
+### 4.2 为什么存储放在主进程
+
+数据库只有主进程一个写入方，避免多进程并发写入带来的锁竞争和一致性问题。Agent 宿主产生的事件发给主进程，由主进程按顺序落库后再转发给界面。主进程中的写入均为小批量追加，并开启 WAL 模式；耗时的查询（如全文搜索）后续放到专门的工作进程。
+
+---
+
+## 5. 模块划分
+
+采用 pnpm workspace 的 monorepo（ADR-0015），依赖方向自上而下，禁止反向引用：
+
+```
+apps/desktop            Electron 应用（main / preload / renderer / agent-host 入口）
+  │
+  ├─ packages/ui         界面组件、设计令牌
+  ├─ packages/i18n       文案资源与工具函数
+  │
+  ├─ packages/runtime-pi pi 适配器（唯一可引用 pi 的包）
+  ├─ packages/tools      内置工具实现
+  ├─ packages/shell      Shell 适配器（PowerShell / cmd / bash / zsh）
+  ├─ packages/checkpoint 检查点实现
+  ├─ packages/storage    存储接口与 SQLite 实现、迁移脚本
+  │
+  ├─ packages/core       领域类型、AgentRuntime 接口、权限引擎、路径校验
+  └─ packages/protocol   IPC 协议与事件定义（zod schema + TS 类型）
+```
+
+- `protocol` 和 `core` 不依赖任何 Electron、Node 特有 API 以外的第三方运行时，可以独立做单元测试。
+- 用 ESLint 的依赖边界规则在 CI 中强制约束，例如禁止 `packages/tools` 引用 `@earendil-works/*`。
+
+---
+
+## 6. Agent 运行时抽象
+
+详见 ADR-0004。
 
 ```ts
-type Project = { id: string; name: string; path: string }
-
-type Session = {
-  id: string
-  projectId: string
-  title: string
-  status: 'idle' | 'running' | 'waiting_approval' | 'error'
-  createdAt: number
+interface AgentRuntime {
+  readonly id: string                     // 'pi'
+  createSession(init: RuntimeSessionInit): Promise<RuntimeSession>
 }
 
-type Message =
-  | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string; streaming: boolean }
-  | { kind: 'tool'; id: string; name: string; input: unknown; output?: string;
-      status: 'running' | 'done' | 'error' | 'blocked' }
-  | { kind: 'approval'; id: string; toolName: string; input: unknown;
-      decision?: 'allow' | 'deny' }
+interface RuntimeSessionInit {
+  sessionId: string
+  model: ResolvedModel                     // 已解析出凭据的模型配置
+  systemPrompt: string
+  tools: ToolDefinition[]                  // 来自工具注册表，与 pi 无关
+  history: CanonicalMessage[]              // 从事件日志恢复
+  hooks: {
+    beforeToolCall(call: ToolCallRequest): Promise<ToolGateDecision>
+  }
+}
 
-type FileChange = { path: string; before: string | null; after: string }
-
-type ProviderConfig = {
-  id: string
-  provider: string        // anthropic / openai / google / openai-compatible ...
-  baseUrl?: string
-  models: string[]
-  // apiKey 只保存在主进程的加密存储中
+interface RuntimeSession {
+  prompt(input: UserInput): Promise<void>
+  abort(reason?: string): Promise<void>
+  onEvent(listener: (e: RuntimeEvent) => void): Unsubscribe
+  dispose(): Promise<void>
 }
 ```
 
-## 9. 安全设计
+适配器职责：
 
-- 渲染进程隔离：`contextIsolation: true`、`nodeIntegration: false`、启用 sandbox。
-- 路径白名单：所有文件工具只允许访问当前项目目录，拒绝 `..` 越界和符号链接逃逸。
-- 命令审批：默认每条命令都需要确认；后续可加命令白名单和危险命令识别（如 `rm -rf`、`git push --force`）。
-- 密钥保护：API Key 不进入渲染进程，不写入日志，不打包进前端代码。
-- 输出截断：工具输出按长度截断，防止上下文爆炸。
-- Windows 路径：校验时处理盘符、大小写、反斜杠、`\\?\` 长路径前缀和目录联接（junction）。
-- 后续：命令沙箱。Windows 可考虑受限令牌或 AppContainer，macOS 用 sandbox-exec，Linux 用 bubblewrap 或容器。由于第一版已开放命令执行而暂无沙箱，审批是主要的安全防线。
+- 把我们的 `ToolDefinition`、`CanonicalMessage` 转换为 pi 的格式，反之亦然。
+- 把 pi 的事件转换为我们的 `RuntimeEvent`（见第 7 节），pi 的事件名、字段变化只影响适配器。
+- 把 `beforeToolCall` 接到 pi 的同名钩子上。
 
-## 10. 目录结构（草案）
+约束：
+
+- 锁定 pi 的精确版本，升级必须经过适配器的契约测试。
+- 提供一个 `FakeRuntime`（脚本化返回固定事件），用于界面开发和测试，不需要真实模型。
+
+---
+
+## 7. 事件模型
+
+详见 ADR-0005。所有会话活动都表示为事件，追加写入事件日志。
+
+### 7.1 事件信封
+
+```ts
+interface EventEnvelope<T extends EventType = EventType> {
+  v: 1                     // 事件 schema 版本
+  sessionId: string
+  seq: number              // 会话内单调递增，由主进程分配
+  ts: number               // 毫秒时间戳
+  turnId?: string          // 一次用户提问到 agent 结束为一轮
+  type: T
+  payload: EventPayload[T]
+}
+```
+
+### 7.2 事件类型
+
+| 分类 | 事件 | 说明 |
+|---|---|---|
+| 会话 | `session.created` `session.renamed` `session.crashed` `session.archived` | 生命周期 |
+| 轮次 | `turn.started` `turn.completed` `turn.aborted` `turn.failed` | 一次任务的边界 |
+| 消息 | `message.user` `message.assistant.delta` `message.assistant.completed` `message.reasoning.delta` | 文本流；delta 不落库，只落 completed |
+| 工具 | `tool.requested` `tool.started` `tool.output.delta` `tool.completed` `tool.failed` | 工具调用全过程 |
+| 审批 | `approval.requested` `approval.resolved` | 含决策来源（用户或规则） |
+| 改动 | `file.changed` | 引用改动记录 id，不内嵌文件内容 |
+| 检查点 | `checkpoint.created` `checkpoint.restored` | |
+| 用量 | `usage.reported` | token 数、耗时 |
+
+### 7.3 规则
+
+- **落库粒度**：增量事件（`*.delta`）只用于实时显示，不写数据库；对应的完成事件写入完整内容，避免数据库膨胀。
+- **断线恢复**：界面重载后携带最后的 `seq` 订阅，主进程从数据库补发缺失事件，再继续推送实时事件。
+- **投影**：界面的消息列表、会话状态由事件归约（reduce）得出，归约函数放在 `core`，界面和测试共用。
+- **兼容**：新增事件类型或字段只能向后兼容地追加；不兼容变化需要提升 `v` 并提供迁移。
+
+---
+
+## 8. 核心流程
+
+### 8.1 执行一次任务
+
+```
+用户输入
+  → 渲染进程 session.prompt
+  → 主进程：落库 message.user，确保 Agent 宿主在运行
+  → 宿主：创建检查点（轮次起点），调用 RuntimeSession.prompt
+  → 模型流式返回 → 宿主发出事件 → 主进程分配 seq、落库、转发界面
+  → 模型请求工具 → beforeToolCall → 权限引擎判定（见第 10 节）
+      ├ allow → 执行工具
+      ├ deny  → 返回拒绝原因给模型
+      └ ask   → approval.requested → 界面 → 用户决定 → approval.resolved
+  → 工具结果回到 agent 循环，进入下一轮推理
+  → 模型给出最终回复 → turn.completed
+```
+
+### 8.2 停止
+
+用户点击停止 → 主进程发送 `abort` → 宿主中止模型请求、结束正在运行的命令进程树 → 发出 `turn.aborted`。未完成的工具调用标记为已取消。
+
+### 8.3 回退
+
+见第 11 节。
+
+### 8.4 恢复
+
+应用重启或宿主被回收后，再次运行会话时，宿主从事件日志重建 `CanonicalMessage` 历史，交给 `AgentRuntime` 继续对话。
+
+---
+
+## 9. 工具系统
+
+### 9.1 工具注册表
+
+工具以统一结构注册，与 pi 无关：
+
+```ts
+interface ToolDefinition<I = unknown, O = unknown> {
+  name: string
+  description: string                   // 给模型看的说明（英文，模型理解更稳定）
+  inputSchema: JsonSchema               // 参数定义
+  category: 'read' | 'write' | 'execute' | 'network'
+  execute(input: I, ctx: ToolContext): AsyncIterable<ToolProgress> | Promise<O>
+  describeForApproval?(input: I, ctx: ToolContext): Promise<ApprovalPreview>
+}
+```
+
+`ToolContext` 提供工作区根目录、路径校验函数、检查点接口、取消信号、日志等，工具不能绕过它直接访问外部资源。
+
+### 9.2 第一版工具
+
+| 工具 | 类别 | 说明 |
+|---|---|---|
+| `read_file` | read | 支持按行范围读取，大文件自动分段 |
+| `list_dir` | read | 尊重 `.gitignore`，限制深度和数量 |
+| `search` | read | 基于随应用打包的 ripgrep |
+| `write_file` | write | 新建或覆盖，审批时附 diff 预览 |
+| `edit_file` | write | 基于原文片段的精确替换，失败时返回明确原因 |
+| `run_command` | execute | 见 9.3 |
+
+预留但第一版不实现：后台进程管理（如启动开发服务器）、git 专用工具、网页抓取、MCP 工具。工具接口和类别已为它们留出位置。
+
+### 9.3 命令执行
+
+详见 ADR-0012。
+
+- 通过 `packages/shell` 的 Shell 适配器执行，工作目录固定为工作区根目录。
+- Windows 默认 PowerShell 5.1，检测到 PowerShell 7（`pwsh.exe`）时优先使用；可在设置中切换为 cmd。
+- PowerShell 以 `-NoProfile -NonInteractive` 启动，命令通过 `-EncodedCommand` 传入以避免转义问题，并在前置脚本中把输出编码设为 UTF-8，防止中文乱码。
+- 默认超时 120 秒（可配置），超时后结束整个进程树（Windows 使用 Job Object 或 `taskkill /T`）。
+- 输出流式推送到终端面板；返回给模型时保留开头和结尾，中间截断，并注明截断位置。
+- 子进程环境变量经过清洗，移除 API Key 和应用内部变量。
+- 不支持需要交互输入的命令；如检测到长时间无输出，提示用户可能在等待输入。
+
+### 9.4 工具输出预算
+
+每个工具的返回结果有长度上限，上限根据当前模型的上下文窗口动态计算（见第 13 节）。被截断的内容可以通过再次调用工具分段获取。
+
+---
+
+## 10. 权限与审批
+
+详见 ADR-0007。
+
+### 10.1 规则模型
+
+```ts
+interface PermissionRule {
+  id: string
+  scope: 'global' | 'project' | 'session'
+  effect: 'allow' | 'ask' | 'deny'
+  match: {
+    tool?: string | string[]           // 工具名
+    category?: ToolCategory[]          // 工具类别
+    path?: string[]                    // glob，相对工作区，如 "src/**"、"**/.env*"
+    command?: string[]                 // 命令匹配模式，如 "npm test"、"git status*"
+  }
+  source: 'preset' | 'user' | 'approval' // 来自预设、用户手动配置、或审批时勾选"始终允许"
+}
+```
+
+### 10.2 判定顺序
+
+1. **强制拦截**：危险命令、项目目录外的路径、敏感文件（如 `.env`、私钥），无论规则如何都至少为 `ask`，部分直接 `deny`。
+2. 收集所有匹配的规则，按 `deny > ask > allow` 取最严格的结果。
+3. 范围优先级 `session > project > global` 只用于同等效果时的展示与管理，不允许低范围的 `allow` 覆盖高范围的 `deny`。
+4. 无规则匹配时，按工具类别的默认值：read 放行，write、execute、network 询问。
+
+### 10.3 预设
+
+"只读""询问""自动"三种模式只是三组预设规则，切换模式即替换预设规则集，用户自定义规则保留。
+
+### 10.4 审批交互
+
+- 审批请求包含：工具名、参数、预览（diff 或完整命令）、匹配到的规则、判定理由。
+- 用户可选：允许一次、本会话始终允许、本项目始终允许、拒绝（可附说明反馈给模型）。
+- 等待审批时 agent 暂停，会话状态为 `waiting_approval`；应用重启后未决审批视为取消。
+
+### 10.5 局限说明
+
+危险命令识别基于模式匹配，可以被刻意绕过（例如通过脚本间接执行）。它是防误操作的安全网，不是安全边界；真正的隔离要靠后续的沙箱（第 17 节）。
+
+---
+
+## 11. 检查点与撤销
+
+详见 ADR-0008。
+
+### 11.1 两层机制
+
+| 层 | 粒度 | 实现 | 用途 |
+|---|---|---|---|
+| 改动记录 | 文件和块 | 写文件类工具执行前后计算 diff，按块存入数据库；文件内容存入内容寻址的 blob 存储 | diff 展示、整文件或按块撤销 |
+| 检查点 | 整个工作区 | 应用数据目录中的影子 Git 仓库（`--git-dir` 指向应用目录，`--work-tree` 指向项目），不触碰用户自己的 `.git` | 回退到任意轮次或命令之前，覆盖命令造成的任意改动 |
+
+### 11.2 何时创建检查点
+
+- 每轮任务开始时。
+- 每次执行 `run_command` 之前（命令可能修改任何文件）。
+- 写文件类工具不单独创建检查点，依靠改动记录即可精确撤销。
+
+### 11.3 回退
+
+- 用户选择某个检查点 → 预览将被恢复的文件列表 → 确认后恢复工作区，并写入 `checkpoint.restored` 事件。
+- 可选择是否同时截断对话到该位置（即从那一步重新开始）。
+- 恢复前自动再创建一个检查点，保证回退本身也可撤销。
+
+### 11.4 约束
+
+- 影子仓库遵循项目的 `.gitignore`，并额外排除 `node_modules` 等大目录；超大文件跳过并在界面提示。
+- 检查点按会话保留，提供清理策略（如保留最近 N 天或总大小上限）。
+- 大型仓库上的快照性能需要在 M0 预研中验证（第 27 节）。
+
+---
+
+## 12. 模型接入
+
+详见 ADR-0011。
+
+### 12.1 抽象
+
+```ts
+interface ProviderConfig {
+  id: string
+  kind: 'openai-compatible'      // 第一版只有这一种，后续加 anthropic、google 等
+  displayName: string
+  baseUrl: string
+  credentialRef?: string          // 指向凭据服务中的条目，不保存明文
+  models: ModelProfile[]
+}
+
+interface ModelProfile {
+  id: string                      // 提供方的模型名
+  contextWindow: number
+  maxOutputTokens: number
+  supportsTools: boolean
+  supportsParallelToolCalls: boolean
+  supportsReasoning: boolean
+  verifiedAt?: number             // 最近一次能力探测时间
+}
+```
+
+### 12.2 首批提供方
+
+| 提供方 | 接入方式 | 注意事项 |
+|---|---|---|
+| DeepSeek | OpenAI 兼容接口，用户填写 API Key | 需验证推理类模型的思考内容字段和工具调用在 pi-ai 下的兼容性 |
+| Ollama | OpenAI 兼容接口，默认 `http://localhost:11434/v1`，无需 Key | 工具调用能力取决于具体模型；上下文窗口通常较小 |
+
+具体 baseUrl 和模型名以各自官方文档为准。
+
+### 12.3 能力探测
+
+- 设置页提供"测试连接"：检查连通性、发送一次带工具定义的请求，验证模型能否返回合法的工具调用。
+- 探测结果写入 `ModelProfile`；不支持工具调用的模型在选择时给出明确提示，并只能用于纯对话。
+- Ollama：启动时检测本地服务，可列出已安装的模型供用户选择。
+
+---
+
+## 13. 上下文管理
+
+- **预算**：按 `ModelProfile.contextWindow` 为系统提示词、历史、工具结果和输出预留空间。
+- **系统提示词分层**：内置基础提示词 + 项目说明（读取项目根目录的 `AGENTS.md`，如存在）+ 用户在设置中的自定义说明。
+- **工具结果截断**：见 9.4。
+- **压缩**：历史接近上限时，把较早的轮次总结为摘要，原始事件仍保留在日志中，只是不再全部发送给模型。压缩本身记录为事件，便于追溯。
+- **回复语言**：提示词要求模型使用用户提问的语言回复。
+
+---
+
+## 14. 数据存储
+
+详见 ADR-0006。
+
+### 14.1 存放位置
+
+| 内容 | 位置（Windows） |
+|---|---|
+| 数据库 | `%APPDATA%\NEXUS-OS\data\nexus.db` |
+| blob（文件内容快照） | `%APPDATA%\NEXUS-OS\data\blobs\` |
+| 检查点影子仓库 | `%APPDATA%\NEXUS-OS\checkpoints\<项目 id>\` |
+| 配置 | `%APPDATA%\NEXUS-OS\settings.json` |
+| 日志 | `%APPDATA%\NEXUS-OS\logs\` |
+
+默认不在用户项目目录里写入任何文件。
+
+### 14.2 主要表
+
+| 表 | 内容 |
+|---|---|
+| `schema_meta` | 当前 schema 版本 |
+| `projects` | 项目 id、名称、路径、创建时间 |
+| `sessions` | 会话 id、项目 id、工作区路径、标题、状态、模型、时间 |
+| `events` | `(session_id, seq)` 主键、类型、版本、时间、payload（JSON） |
+| `file_changes` | 改动 id、会话、轮次、路径、变更类型、前后 blob 哈希 |
+| `hunks` | 改动 id、块序号、起止行、状态（pending / accepted / reverted） |
+| `checkpoints` | 检查点 id、会话、轮次、影子仓库提交 id、原因 |
+| `permission_rules` | 见 10.1 |
+| `provider_configs` | 见 12.1（不含明文密钥） |
+
+### 14.3 约定
+
+- 会话区分 `projectPath`（用户的项目）和 `workspacePath`（agent 实际工作的目录）。第一版两者相同；引入 git worktree 后，`workspacePath` 指向独立的工作树，数据结构无需改动。
+- 启动时检查 schema 版本，按顺序执行迁移脚本；迁移前自动备份数据库文件。
+- 存储通过 `SessionStore` 等接口访问，SQLite 引擎（better-sqlite3 或 Node 内置 `node:sqlite`）在 M0 预研后确定。
+
+---
+
+## 15. 进程间通信协议
+
+详见 ADR-0009。
+
+### 15.1 原则
+
+- 所有消息在 `packages/protocol` 中用 zod 定义，同时导出 TS 类型；收发两端都做运行时校验。
+- 两类通信：**请求/响应**（带 id，可超时）和**事件流**（单向推送）。
+- 建立连接时交换协议版本，不兼容时拒绝连接并给出明确错误。
+
+### 15.2 渲染进程 ↔ 主进程（主要接口）
+
+| 名称 | 类型 | 说明 |
+|---|---|---|
+| `project.open` / `project.list` | 请求 | 打开（系统对话框）和列出项目 |
+| `session.create` / `session.list` / `session.rename` / `session.archive` | 请求 | 会话管理 |
+| `session.prompt` | 请求 | 发送用户输入 |
+| `session.abort` | 请求 | 停止当前轮次 |
+| `session.subscribe` | 请求 | 携带 `afterSeq` 订阅事件，返回补发数据 |
+| `session.events` | 事件流 | 事件推送 |
+| `approval.resolve` | 请求 | 回复审批 |
+| `changes.list` / `changes.revert` | 请求 | 查看和撤销改动 |
+| `checkpoint.list` / `checkpoint.restore` | 请求 | 查看和恢复检查点 |
+| `settings.get` / `settings.update` | 请求 | 读写配置，不返回明文密钥 |
+| `credentials.set` / `credentials.delete` / `credentials.status` | 请求 | 只能写入和查询是否存在，不能读出 |
+| `provider.test` | 请求 | 能力探测 |
+
+### 15.3 主进程 ↔ Agent 宿主
+
+| 名称 | 方向 | 说明 |
+|---|---|---|
+| `host.init` | 主 → 宿主 | 会话配置、历史、规则、解析好的模型凭据 |
+| `host.prompt` / `host.abort` / `host.shutdown` | 主 → 宿主 | 控制 |
+| `host.event` | 宿主 → 主 | 运行时事件（无 seq，由主进程分配） |
+| `host.approval.request` | 宿主 → 主 | 需要用户审批 |
+| `host.approval.response` | 主 → 宿主 | 审批结果 |
+| `host.heartbeat` | 双向 | 检测卡死 |
+
+---
+
+## 16. 配置与凭据
+
+详见 ADR-0010。
+
+### 16.1 配置
+
+- `settings.json` 带 `version` 字段，启动时按版本执行迁移，迁移前备份。
+- 用 zod 校验，非法字段回退到默认值并记录警告，不让坏配置导致无法启动。
+
+### 16.2 凭据
+
+```ts
+interface CredentialProvider {
+  readonly kind: 'local-key'       // 后续可加 'relay'、'oauth'
+  resolve(ref: string): Promise<ResolvedCredential>
+}
+```
+
+- 第一版只实现 `local-key`：密钥用 Electron `safeStorage` 加密后保存（Windows 下基于 DPAPI）。
+- 在 Linux 上 `safeStorage` 可能因没有系统密钥环而退化为弱加密，届时需检测并提示用户（M6 处理）。
+- 密钥只在主进程解密，在 `host.init` 时通过 MessagePort 传给对应会话的宿主进程；不写入环境变量、不进入日志、不传给渲染进程。
+
+---
+
+## 17. 安全设计
+
+| 威胁 | 措施 |
+|---|---|
+| 渲染进程被注入脚本 | `contextIsolation`、`sandbox`、禁用 `nodeIntegration`、严格 CSP、只暴露白名单 API；Markdown 渲染时清洗 HTML |
+| agent 访问项目外的文件 | 路径规范化后校验必须位于工作区内；处理 `..`、符号链接、Windows 盘符、大小写、`\\?\` 前缀、目录联接 |
+| agent 读取敏感文件 | 内置敏感路径规则（`.env*`、私钥、云凭据目录）默认需审批 |
+| 危险命令 | 强制审批（见 10.2、10.5） |
+| 密钥泄露 | 只在主进程解密；清洗子进程环境变量；日志自动脱敏 |
+| 提示注入（项目文件、命令输出中夹带指令） | 工具结果标注为数据；高风险操作始终经过权限引擎，不因模型"声称已获授权"而放行 |
+| 数据篡改 | 数据库和配置只由主进程写入；渲染进程无法直接调用存储 |
+| 缺少隔离 | 后续引入命令沙箱：Windows 受限令牌或 AppContainer，macOS sandbox-exec，Linux bubblewrap；在此之前审批与检查点是主要防线 |
+
+---
+
+## 18. 平台策略
+
+首发 Windows，从第一版起遵守：
+
+- 路径一律用 Node `path` 处理；比较路径前统一规范化，Windows 下忽略大小写。
+- 命令执行通过 Shell 适配器，不在业务代码中出现特定 shell 语法。
+- ripgrep 等外部二进制按平台打包，不依赖用户本机安装。
+- 换行符：读取时识别 CRLF/LF，写入时保持文件原有换行风格。
+- 文件编码：默认 UTF-8，检测到 BOM 时保留；其他编码在读取时提示。
+- CI 在 Windows 上运行全部测试；跨平台阶段加入 macOS 和 Linux 运行器。
+
+---
+
+## 19. 国际化
+
+详见 ADR-0013。
+
+- 使用 i18next + react-i18next，资源放在 `packages/i18n/locales/{zh-CN,en-US}/`，按命名空间拆分。
+- 组件只引用 key，禁止硬编码文案（ESLint 规则检查）。
+- 首次启动跟随系统语言，非中文系统默认英文；设置中可切换，即时生效。
+- 主进程的菜单、对话框、通知、错误提示共用同一套资源。
+- 错误以错误码在进程间传递，由界面按当前语言翻译，避免把某种语言的字符串写进日志和协议。
+- 日期、数字用 `Intl` 格式化。
+- CI 检查两种语言的 key 完全一致。
+- 给模型的工具说明和系统提示词使用英文（模型理解更稳定），回复语言跟随用户。
+
+---
+
+## 20. 可观测性与诊断
+
+- 结构化日志（JSON 行），按进程区分，按大小轮转；统一脱敏函数处理密钥、令牌和用户主目录路径。
+- 每个会话可导出"诊断包"：脱敏后的日志、事件摘要、版本和环境信息，便于排查问题。
+- 默认不上传任何遥测数据；如后续需要，必须显式征得用户同意（opt-in）。
+- 开发模式下提供事件查看器，实时查看事件流，方便调试。
+
+---
+
+## 21. 错误处理与恢复
+
+| 场景 | 处理 |
+|---|---|
+| 模型请求失败（网络、限流、5xx） | 指数退避重试，次数可配置；最终失败记为 `turn.failed`，界面可一键重试 |
+| 模型返回非法工具调用 | 将校验错误作为工具结果返回给模型，让其修正；连续失败超过阈值则终止本轮 |
+| 工具执行异常 | 记为 `tool.failed`，错误信息返回模型 |
+| 宿主进程崩溃或心跳超时 | 记为 `session.crashed`，结束残留子进程，提示用户从最后完整事件恢复 |
+| 主进程退出 | 结束所有宿主和子进程；未完成轮次在下次启动时标记为中断 |
+| 数据库迁移失败 | 恢复迁移前备份，提示用户并提供诊断包导出 |
+
+agent 循环设置最大步数和单轮最长时间，防止无限循环。
+
+---
+
+## 22. 性能
+
+- 流式文本增量在主进程合并后按帧率（约 30 次/秒）推送界面，避免频繁渲染。
+- 消息列表虚拟滚动；长工具输出折叠显示。
+- 大文件 diff 采用懒加载，超大文件只显示摘要。
+- 宿主进程按需启动、空闲回收，控制内存占用。
+- 启动时只加载会话列表，会话内容在打开时再读取。
+
+---
+
+## 23. 测试策略
+
+| 层次 | 内容 | 工具 |
+|---|---|---|
+| 单元 | 权限引擎、路径校验、事件归约、协议 schema、迁移脚本 | Vitest |
+| 契约 | pi 适配器在固定输入下的事件输出；用于 pi 升级回归 | Vitest + 录制的模型响应 |
+| 集成 | Agent 宿主 + 工具 + 存储，使用 `FakeRuntime` 或录制回放的模型 | Vitest |
+| 端到端 | 启动真实 Electron 应用，完成典型任务流程 | Playwright（Electron 支持） |
+| 平台 | Windows 上的命令执行、编码、路径、进程树结束 | Windows CI 运行器 |
+
+真实模型的测试只在本地或手动触发的流水线中运行，避免在 CI 中消耗密钥。
+
+---
+
+## 24. 构建、发布与更新
+
+- 构建：electron-vite；打包：electron-builder，Windows 产物为 NSIS 安装包。
+- 原生模块（如 better-sqlite3）需要针对 Electron 版本重新编译，纳入构建流程。
+- 代码签名：发布阶段处理，未签名的安装包会触发 Windows SmartScreen 警告。
+- 自动更新：electron-updater。仓库私有期间无法直接使用公开的 GitHub Releases 作为更新源，需要另外的更新服务器或带令牌的私有源，待 M5 决定。
+- 依赖许可证：CI 中检查，只允许 MIT、Apache-2.0、BSD、ISC 等宽松许可证（ADR-0014）。
+
+---
+
+## 25. 仓库结构
 
 ```
 NEXUS-OS/
+├── apps/
+│   └── desktop/
+│       ├── src/
+│       │   ├── main/          # 主进程：窗口、IPC 网关、会话管理、存储服务、凭据
+│       │   ├── preload/       # contextBridge 类型化 API
+│       │   ├── agent-host/    # Agent 宿主进程入口
+│       │   └── renderer/      # React 界面
+│       └── electron-builder.yml
+├── packages/
+│   ├── protocol/              # IPC 协议与事件 schema
+│   ├── core/                  # 领域类型、AgentRuntime 接口、权限引擎、路径校验、事件归约
+│   ├── runtime-pi/            # pi 适配器
+│   ├── tools/                 # 内置工具
+│   ├── shell/                 # Shell 适配器
+│   ├── checkpoint/            # 检查点
+│   ├── storage/               # 存储接口、SQLite 实现、迁移
+│   ├── i18n/                  # 文案资源
+│   └── ui/                    # 界面组件与设计令牌
 ├── docs/
-│   └── architecture.md
-├── src/
-│   ├── main/            # 主进程
-│   │   ├── index.ts     # 窗口与 IPC 注册
-│   │   ├── agent/       # Agent 创建、事件转发
-│   │   ├── tools/       # 内置工具
-│   │   ├── approval/    # 审批与权限模式
-│   │   ├── storage/     # 会话与配置存储
-│   │   └── providers/   # 模型提供方配置
-│   ├── preload/         # contextBridge API
-│   └── renderer/        # React 界面
-│       ├── components/  # Chat、ToolCard、ApprovalCard、DiffView ...
-│       ├── stores/      # Zustand
-│       ├── locales/     # zh-CN、en-US 文案
-│       └── styles/      # 设计令牌
+│   ├── architecture.md
+│   └── adr/
+├── scripts/                   # 许可证检查、i18n 检查等
+├── pnpm-workspace.yaml
 └── package.json
 ```
 
-## 11. 开发阶段
+---
 
-| 阶段 | 内容 | 目标 |
+## 26. 里程碑
+
+| 阶段 | 内容 | 完成标准 |
 |---|---|---|
-| M1 | Electron 骨架（Windows）、对话界面、DeepSeek 接入、读写文件与执行命令工具、审批 | 跑通一个完整任务 |
-| M2 | Ollama 接入与设置页、工具调用卡片、diff 视图、终端输出面板 | 可切换模型、可审阅改动 |
-| M3 | 会话持久化、项目与会话管理、危险命令识别 | 日常可用 |
-| M4 | git worktree 隔离、多会话并行、MCP 支持、更多模型 | 进阶能力 |
-| M5 | 沙箱、自动更新、Windows 打包发布 | 可分发 |
-| M6 | macOS 与 Linux 适配和打包、开源准备 | 跨平台与开源 |
+| **M0 基础** | monorepo 与依赖边界、协议包、事件模型与归约、存储与迁移、进程模型（主进程 + 宿主）、`AgentRuntime` 接口与 `FakeRuntime`、日志、i18n 骨架、Windows CI；完成第 27 节的技术预研 | 用 `FakeRuntime` 跑通"输入 → 事件 → 落库 → 界面显示 → 重启后恢复" |
+| **M1 最小可用** | pi 适配器、DeepSeek 接入、6 个内置工具、权限引擎与审批、PowerShell 执行、基础检查点 | 用 DeepSeek 完成一个真实的改代码并运行测试的任务，可回退 |
+| **M2 可审阅** | Ollama 接入与能力探测、设置页、工具卡片、diff 视图（整文件接受/撤销）、终端输出面板、检查点回退界面 | 两个模型可切换，所有改动可审阅、可撤销 |
+| **M3 日常可用** | 项目与会话管理、规则管理界面、上下文压缩、`AGENTS.md` 支持、诊断包、按块撤销 | 可以长期在真实项目中使用 |
+| **M4 进阶** | git worktree 隔离、多会话并行、后台命令、MCP、更多模型提供方 | 多任务并行互不干扰 |
+| **M5 发布** | 命令沙箱、自动更新、签名与 Windows 安装包 | 可以分发给他人安装 |
+| **M6 跨平台与开源** | macOS、Linux 适配与打包，Linux 凭据存储处理，开源准备（许可证、贡献指南） | 三个平台可用，仓库可公开 |
 
-## 12. 待确认问题
+---
 
-已确认的事项见第 1 节"已确认决策"。剩余问题：
+## 27. 风险与待验证事项
 
-1. **API Key 方式**：只支持用户自带 key，还是也考虑中转服务？
-2. **会话存储**：沿用 pi 的 JSONL 格式，还是自建 SQLite？
-3. **diff 粒度**：第一版做整文件接受/撤销，还是直接支持按块操作？
-4. **开源准备**：私有期间是否需要注意依赖许可证兼容性，以便后续开源时选择 MIT 或 Apache-2.0？（建议是）
+以下在 M0 中通过小规模预研（spike）验证，结论写回对应 ADR：
+
+| 事项 | 风险 | 验证方式 |
+|---|---|---|
+| pi 在 `utilityProcess` 中运行 | 依赖或环境假设导致无法运行 | 最小示例：宿主进程内跑通一次带工具调用的对话 |
+| DeepSeek 工具调用 | 推理模型字段与 pi-ai 不兼容 | 用真实 key 测试多轮工具调用 |
+| Ollama 本地模型工具调用质量 | 小模型频繁输出非法工具调用 | 选 2～3 个常见模型测试成功率，确定推荐列表 |
+| SQLite 引擎选择 | better-sqlite3 需原生编译；`node:sqlite` 取决于 Electron 内置 Node 版本是否稳定 | 两者各做最小示例，比较打包复杂度 |
+| 影子 Git 检查点性能 | 大仓库快照耗时 | 在万级文件的仓库上测量创建和恢复耗时 |
+| 检查点使用的 Git 来源 | 用户未安装 Git；随应用打包涉及 GPL 分发合规 | 比较本机 Git、打包 Git、isomorphic-git 三种方式 |
+| PowerShell 5.1 编码与进程树结束 | 中文乱码、子进程残留 | 编写含中文输出、嵌套子进程的测试命令 |
+| pi 版本变动 | API 不兼容 | 锁定版本，契约测试覆盖 |

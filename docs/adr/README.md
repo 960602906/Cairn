@@ -1,0 +1,25 @@
+# 架构决策记录（ADR）
+
+每条记录描述一个难以事后更改的决策：背景、决定、考虑过的备选方案、取舍和后果。
+
+- **状态**：提议 → 已接受 → （可能）已替代。被替代的记录不删除，只标注被哪条替代。
+- **修改方式**：不直接改写已接受的结论，而是新增一条 ADR 说明变化和原因。
+- **待验证**：标注"待预研"的部分在 M0 验证后更新。
+
+| 编号 | 标题 | 状态 |
+|---|---|---|
+| [0001](0001-record-architecture-decisions.md) | 使用 ADR 记录架构决策 | 已接受 |
+| [0002](0002-electron-typescript.md) | 使用 Electron 与全栈 TypeScript | 已接受 |
+| [0003](0003-agent-in-utility-process.md) | Agent 运行在独立的 utilityProcess 中 | 已接受 |
+| [0004](0004-isolate-pi-behind-agentruntime.md) | 用 AgentRuntime 接口隔离 pi | 已接受 |
+| [0005](0005-event-log-as-source-of-truth.md) | 以追加式事件日志作为会话的事实来源 | 已接受 |
+| [0006](0006-sqlite-storage-with-migrations.md) | 使用 SQLite 存储并从第一天起支持迁移 | 已接受（引擎待预研） |
+| [0007](0007-rule-based-permissions.md) | 基于规则的权限引擎 | 已接受 |
+| [0008](0008-checkpoints-and-hunks.md) | 检查点与按块改动记录 | 已接受（性能待预研） |
+| [0009](0009-typed-versioned-ipc.md) | 类型化、带版本的进程间通信协议 | 已接受 |
+| [0010](0010-credential-provider.md) | 可扩展的凭据提供方与加密存储 | 已接受 |
+| [0011](0011-openai-compatible-first.md) | 模型接入以 OpenAI 兼容接口优先 | 已接受 |
+| [0012](0012-windows-command-execution.md) | Windows 命令执行方案 | 已接受 |
+| [0013](0013-bilingual-i18n.md) | 中英双语国际化 | 已接受 |
+| [0014](0014-permissive-dependency-licenses.md) | 只使用宽松许可证的依赖 | 已接受 |
+| [0015](0015-pnpm-monorepo.md) | 使用 pnpm monorepo 并强制依赖边界 | 已接受 |
