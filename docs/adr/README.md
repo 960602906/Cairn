@@ -27,4 +27,4 @@
 | [0017](0017-unified-capability-layer.md) | 统一能力层：Tools、Skills 与 MCP | 已接受 |
 | [0018](0018-interactive-and-unattended-runs.md) | 交互运行与无人值守运行 | 已接受 |
 | [0019](0019-memory-scopes.md) | 记忆范围（预留） | 已接受（功能暂缓） |
-| [0020](0020-hub-and-spoke-delegation.md) | 多 Agent 采用以父运行为中心的委派模式 | 提议 |
+| [0020](0020-hub-and-spoke-delegation.md) | 多 Agent 采用以父运行为中心的委派模式 | 已接受 |

@@ -4,7 +4,7 @@
 
 A Codex-like coding agent desktop app built with Electron, React and pi, with support for multiple LLM providers.
 
-> 当前处于设计阶段，尚未开始开发。 / Currently in the design phase.
+> 设计已定稿，下一步进入 M0 基础阶段。 / Design finalized; next up is the M0 foundation phase.
 
 ## 文档 / Docs
 
@@ -13,7 +13,7 @@ A Codex-like coding agent desktop app built with Electron, React and pi, with su
 - 详细设计 / Detailed design
   - [Agent Runtime](docs/design/agent-runtime.md)（已确认）
   - [Agent 管理界面](docs/design/agent-management-ui.md)（已确认）
-  - [多 Agent 协作](docs/design/multi-agent.md)（设计中）
+  - [多 Agent 协作](docs/design/multi-agent.md)（已确认）
 
 ## 当前计划 / Plan
 
