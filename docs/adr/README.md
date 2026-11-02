@@ -23,3 +23,4 @@
 | [0013](0013-bilingual-i18n.md) | 中英双语国际化 | 已接受 |
 | [0014](0014-permissive-dependency-licenses.md) | 只使用宽松许可证的依赖 | 已接受 |
 | [0015](0015-pnpm-monorepo.md) | 使用 pnpm monorepo 并强制依赖边界 | 已接受 |
+| [0016](0016-agent-definition-and-run.md) | Agent 定义与运行作为一等概念 | 提议 |
