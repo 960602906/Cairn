@@ -4,6 +4,6 @@
 
 > 当前处于设计阶段，尚未开始开发。
 
-- 架构设计：[docs/architecture.md](docs/architecture.md)
+- 架构设计 / Architecture: [docs/architecture.md](docs/architecture.md)
 
 作者：960602906

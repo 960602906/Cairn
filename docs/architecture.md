@@ -22,6 +22,8 @@
 | 首批模型 | DeepSeek（云端 API）、Ollama（本地模型） |
 | 命令执行 | 第一版即开放，默认每条命令需审批 |
 | 开源 | 暂时私有，后续开源；许可证待开源时再定 |
+| Windows 默认 Shell | PowerShell 5.1（系统自带）；检测到 PowerShell 7 时优先使用 |
+| 界面语言 | 中英双语 |
 
 非目标（第一版不做）：
 
@@ -38,6 +40,7 @@
 | UI 组件 | Tailwind CSS + shadcn/ui | 快速搭建、易于主题化 |
 | 代码与 diff | Monaco Editor | 与 VS Code 同款，自带 DiffEditor |
 | 状态管理 | Zustand | 轻量，适合会话和消息流 |
+| 国际化 | i18next + react-i18next | 成熟、支持按命名空间拆分和运行时切换语言 |
 | Agent 核心 | pi-agent-core | 现成的 agent 循环、工具调用、事件流，带 `beforeToolCall` 钩子 |
 | 模型接入 | pi-ai | 统一的多厂商 LLM 接口，支持自定义 baseUrl |
 | 持久化 | JSONL / SQLite | 会话可按 pi 的格式存储，配置存本地文件 |
@@ -64,9 +67,18 @@
 首发 Windows，后续支持 macOS 和 Linux。为了降低移植成本，从第一版开始遵守：
 
 - 路径处理统一使用 Node 的 `path` 模块，不手写分隔符；比较路径时在 Windows 上忽略大小写。
-- 命令执行抽象为"Shell 适配器"，Windows 默认 PowerShell（可选 cmd），macOS/Linux 使用用户默认 shell。
+- 命令执行抽象为"Shell 适配器"：Windows 默认 PowerShell 5.1（`powershell.exe`），检测到 PowerShell 7（`pwsh.exe`）时优先使用，也可在设置中改为 cmd；macOS/Linux 使用用户默认 shell。
 - ripgrep 等外部二进制按平台打包，不依赖用户本机安装。
 - 打包使用 electron-builder，Windows 产物为 NSIS 安装包；代码签名在发布阶段处理。
+
+### 2.3 国际化（中英双语）
+
+- **界面文案**：所有文案放入 `locales/zh-CN` 和 `locales/en-US` 资源文件，组件中只引用 key，禁止硬编码字符串。
+- **默认语言**：首次启动跟随系统语言，非中文系统默认英文；设置页可手动切换，切换后立即生效，无需重启。
+- **主进程文案**：系统对话框、菜单、通知、错误提示同样走 i18n 资源，主进程与渲染进程共用一套 key。
+- **agent 回复语言**：不强制，系统提示词要求模型使用用户提问所用的语言回复。
+- **格式化**：日期、数字使用 `Intl` API 按当前语言格式化。
+- **质量保障**：增加脚本检查两种语言的 key 是否一一对应，缺失时在开发环境报警。
 
 ## 3. 总体架构
 
@@ -148,7 +160,7 @@
 
 ### 5.1 命令执行（第一版开放）
 
-- **Shell**：Windows 默认 PowerShell，工作目录固定为项目根目录。
+- **Shell**：Windows 默认 PowerShell 5.1，检测到 PowerShell 7 时优先使用，工作目录固定为项目根目录。需注意 5.1 的输出编码，统一按 UTF-8 读取，避免中文乱码。
 - **审批**：默认每条命令都需确认，审批卡片显示完整命令和工作目录。
 - **超时与输出**：设置默认超时（如 120 秒），输出流式显示在终端面板，返回给模型时按长度截断。
 - **可中断**：用户可随时停止正在运行的命令，Windows 上需结束整个进程树。
@@ -240,6 +252,7 @@ NEXUS-OS/
 │   └── renderer/        # React 界面
 │       ├── components/  # Chat、ToolCard、ApprovalCard、DiffView ...
 │       ├── stores/      # Zustand
+│       ├── locales/     # zh-CN、en-US 文案
 │       └── styles/      # 设计令牌
 └── package.json
 ```
@@ -260,8 +273,6 @@ NEXUS-OS/
 已确认的事项见第 1 节"已确认决策"。剩余问题：
 
 1. **API Key 方式**：只支持用户自带 key，还是也考虑中转服务？
-2. **界面语言**：中文、英文还是双语？
-3. **会话存储**：沿用 pi 的 JSONL 格式，还是自建 SQLite？
-4. **diff 粒度**：第一版做整文件接受/撤销，还是直接支持按块操作？
-5. **Windows 默认 Shell**：PowerShell 5.1（系统自带）还是 PowerShell 7（需用户安装）？
-6. **开源准备**：私有期间是否需要注意依赖许可证兼容性，以便后续开源时选择 MIT 或 Apache-2.0？（建议是）
+2. **会话存储**：沿用 pi 的 JSONL 格式，还是自建 SQLite？
+3. **diff 粒度**：第一版做整文件接受/撤销，还是直接支持按块操作？
+4. **开源准备**：私有期间是否需要注意依赖许可证兼容性，以便后续开源时选择 MIT 或 Apache-2.0？（建议是）
