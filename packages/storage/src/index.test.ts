@@ -5,6 +5,8 @@ it('exports the public API', () => {
   expect(storage.createMemoryStorage).toBeTypeOf('function')
   expect(storage.StorageError).toBeTypeOf('function')
   expect(storage.migrateDatabase).toBeTypeOf('function')
+  expect(storage.openSqliteStorage).toBeTypeOf('function')
+  expect(storage.MIGRATIONS.map((m) => m.name)).toEqual(['init'])
   expect(storage.StorageErrorCode.SeqConflict).toBe('storage.seq_conflict')
   const error = new storage.StorageError(storage.StorageErrorCode.NotFound)
   expect(error.params).toEqual({})
