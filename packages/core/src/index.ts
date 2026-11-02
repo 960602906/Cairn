@@ -9,3 +9,4 @@ import { EVENT_SCHEMA_VERSION } from '@nexus/protocol'
 export const SUPPORTED_EVENT_SCHEMA_VERSION: typeof EVENT_SCHEMA_VERSION = EVENT_SCHEMA_VERSION
 
 export * from './run-state.js'
+export * from './session-view.js'
