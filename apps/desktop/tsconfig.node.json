@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist/node",
+    "tsBuildInfoFile": "dist/node.tsbuildinfo",
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": ["src/main", "src/preload", "src/agent-host", "electron.vite.config.ts", "scripts"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../../packages/protocol"
+    },
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/storage"
+    },
+    {
+      "path": "../../packages/i18n"
+    }
+  ]
+}

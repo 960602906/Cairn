@@ -59,6 +59,13 @@ jobs:
       - name: Check i18n keys (ADR-0013)
         run: pnpm check:i18n
 
+      - name: Build desktop app
+        run: pnpm build
+
+      # 用构建产物启动应用：窗口加载、界面渲染、agent 宿主启动、数据目录创建（M0-12a）
+      - name: Smoke test desktop app
+        run: pnpm smoke
+
   licenses:
     name: licenses
     runs-on: ubuntu-latest
