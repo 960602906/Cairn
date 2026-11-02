@@ -7,10 +7,19 @@
     "types": ["node"]
   },
   "include": ["src"],
+  "exclude": ["src/**/*.test.ts"],
   "references": [
-    { "path": "../../packages/protocol" },
-    { "path": "../../packages/core" },
-    { "path": "../../packages/storage" },
-    { "path": "../../packages/i18n" }
+    {
+      "path": "../../packages/protocol"
+    },
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/storage"
+    },
+    {
+      "path": "../../packages/i18n"
+    }
   ]
 }

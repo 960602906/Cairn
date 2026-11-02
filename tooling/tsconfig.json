@@ -14,7 +14,16 @@
     "../scripts/**/*.ts",
     "../scripts/**/*.js",
     "../eslint.config.js",
-    "../vitest.config.ts"
+    "../vitest.config.ts",
+    "../packages/*/src/**/*.test.ts",
+    "../apps/*/src/**/*.test.ts"
   ],
-  "exclude": ["dist"]
+  "exclude": ["dist"],
+  "references": [
+    { "path": "../packages/protocol" },
+    { "path": "../packages/core" },
+    { "path": "../packages/storage" },
+    { "path": "../packages/i18n" },
+    { "path": "../apps/desktop" }
+  ]
 }

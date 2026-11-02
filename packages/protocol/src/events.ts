@@ -221,7 +221,7 @@ const headerShape = {
 }
 
 /** 宿主发出、尚未由主进程分配 seq 的事件。 */
-interface UnsequencedHeader {
+export interface UnsequencedHeader {
   v: typeof EVENT_SCHEMA_VERSION
   sessionId: string
   runId: string
@@ -232,7 +232,7 @@ interface UnsequencedHeader {
 }
 
 /** 会话内单调递增，由主进程分配（架构 §7.1）。 */
-interface SequencedHeader extends UnsequencedHeader {
+export interface SequencedHeader extends UnsequencedHeader {
   seq: number
 }
 
@@ -267,6 +267,12 @@ function buildUnion(withSeq: boolean) {
 
 const eventEnvelopeSchema = buildUnion(true)
 const unsequencedEventSchema = buildUnion(false)
+
+/** 已分配 seq 的事件 schema，供 IPC 消息定义引用。 */
+export const EventEnvelopeSchema = eventEnvelopeSchema as unknown as z.ZodType<EventEnvelope>
+/** 宿主发出的事件 schema，供 IPC 消息定义引用。 */
+export const UnsequencedEventSchema =
+  unsequencedEventSchema as unknown as z.ZodType<UnsequencedEvent>
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: z.ZodError }
 

@@ -95,3 +95,34 @@ export const RunLimits = z.object({
   maxConsecutiveToolErrors: z.number().int().positive(),
 })
 export type RunLimits = z.infer<typeof RunLimits>
+
+/**
+ * 规范化消息：持久化的对话历史格式，与 pi 无关（Runtime §17）。
+ * 由事件推导，也用于 `host.init` 传递历史与 `run_snapshots` 快照。
+ */
+export const CanonicalMessage = z.discriminatedUnion('role', [
+  z.object({ role: z.literal('user'), content: z.array(ContentPart), ts: Timestamp }),
+  z.object({
+    role: z.literal('assistant'),
+    content: z.array(ContentPart),
+    reasoning: ReasoningPart.optional(),
+    toolCalls: z.array(ToolCall).optional(),
+    model: ModelRef,
+    ts: Timestamp,
+  }),
+  z.object({
+    role: z.literal('tool'),
+    toolCallId: Id,
+    content: z.array(ContentPart),
+    /** unknown：执行过程中被中断，结果未知（Runtime §13.2）。 */
+    status: z.enum(['ok', 'error', 'denied', 'cancelled', 'unknown']),
+    ts: Timestamp,
+  }),
+  z.object({
+    role: z.literal('summary'),
+    content: z.string(),
+    coversTurns: z.tuple([Id, Id]),
+    ts: Timestamp,
+  }),
+])
+export type CanonicalMessage = z.infer<typeof CanonicalMessage>
