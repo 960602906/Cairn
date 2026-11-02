@@ -7,6 +7,7 @@ import {
   isPersistedEvent,
   parseEvent,
   parseUnsequencedEvent,
+  payloadSchemaOf,
   type EventEnvelope,
   type EventPayload,
   type EventType,
@@ -196,5 +197,17 @@ describe('持久化事件与增量事件', () => {
     expectTypeOf(narrow).returns.toEqualTypeOf<
       EventPayload<'message.user'>['content'] | undefined
     >()
+  })
+})
+
+describe('其他导出', () => {
+  it('parseUnsequencedEvent 拒绝非法事件', () => {
+    const result = parseUnsequencedEvent({ v: 1, sessionId: 's', runId: 'r', ts: 1, type: 'nope' })
+    expect(result.ok).toBe(false)
+  })
+
+  it('payloadSchemaOf 返回对应的 payload schema', () => {
+    expect(payloadSchemaOf('turn.completed').safeParse({ durationMs: 1 }).success).toBe(true)
+    expect(payloadSchemaOf('turn.completed').safeParse({}).success).toBe(false)
   })
 })

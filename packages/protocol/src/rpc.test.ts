@@ -314,3 +314,185 @@ describe('实际接口定义', () => {
     await vi.waitFor(() => expect(received).toHaveBeenLastCalledWith({ event: unsequenced }))
   })
 })
+
+describe('边界情况', () => {
+  /** 已完成握手的客户端端点 + 原始对端。 */
+  async function clientWithRawPeer() {
+    const [a, b] = channelPair()
+    const onProtocolError = vi.fn()
+    const client = createEndpoint(a, { local: Client, remote: Server, onProtocolError })
+    const peer = rawPeer(b)
+    peer.send({ kind: 'hello', protocolVersion: PROTOCOL_VERSION, ack: true })
+    await client.ready
+    return { client, peer, onProtocolError }
+  }
+
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const requestsOf = (received: unknown[]) =>
+    received.filter((m) => (m as { kind: string }).kind === 'request') as {
+      id: string
+      method: string
+    }[]
+
+  it('RpcError.toInfo：无参数时不带 params 字段', () => {
+    expect(new RpcError('x').toInfo()).toEqual({ code: 'x' })
+    expect(new RpcError('x', { a: 1 }).toInfo()).toEqual({ code: 'x', params: { a: 1 } })
+  })
+
+  it('握手完成前收到的请求返回 protocol_mismatch，不调用处理函数', async () => {
+    const [a, b] = channelPair()
+    const server = createEndpoint(a, { local: Server, remote: Client })
+    const handler = vi.fn(() => ({ sum: 0 }))
+    server.handle('add', handler)
+    const peer = rawPeer(b)
+    peer.send({ kind: 'request', id: '1', method: 'add', params: { a: 1, b: 1 } })
+    await vi.waitFor(() =>
+      expect(peer.received).toContainEqual({
+        kind: 'response',
+        id: '1',
+        ok: false,
+        error: { code: RpcErrorCode.ProtocolMismatch },
+      }),
+    )
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('握手完成前收到的事件被忽略', async () => {
+    const [a, b] = channelPair()
+    const onProtocolError = vi.fn()
+    const client = createEndpoint(a, { local: Client, remote: Server, onProtocolError })
+    const listener = vi.fn()
+    client.on('tick', listener)
+    rawPeer(b).send({ kind: 'event', name: 'tick', data: { n: 1 } })
+    await tick()
+    expect(listener).not.toHaveBeenCalled()
+    expect(onProtocolError).not.toHaveBeenCalled()
+  })
+
+  it('重复的 hello 被忽略，不重复回复确认', async () => {
+    const { peer } = await clientWithRawPeer()
+    peer.send({ kind: 'hello', protocolVersion: PROTOCOL_VERSION + 1, ack: true })
+    await tick()
+    const hellos = peer.received.filter((m) => (m as { kind: string }).kind === 'hello')
+    expect(hellos).toEqual([{ kind: 'hello', protocolVersion: PROTOCOL_VERSION, ack: false }])
+  })
+
+  it('未知 id 的响应被忽略，后续请求不受影响', async () => {
+    const { client, peer } = await clientWithRawPeer()
+    peer.send({ kind: 'response', id: 'nope', ok: true, result: { sum: 1 } })
+    const pending = client.request('add', { a: 1, b: 1 })
+    await vi.waitFor(() => expect(requestsOf(peer.received)).toHaveLength(1))
+    peer.send({
+      kind: 'response',
+      id: requestsOf(peer.received)[0]!.id,
+      ok: true,
+      result: { sum: 2 },
+    })
+    await expect(pending).resolves.toEqual({ sum: 2 })
+  })
+
+  it('超时之后才到达的响应被忽略', async () => {
+    vi.useFakeTimers()
+    const { client, peer } = await clientWithRawPeer()
+    const pending = client.request('add', { a: 1, b: 1 }, { timeoutMs: 10 })
+    const assertion = expect(pending).rejects.toMatchObject({ code: RpcErrorCode.Timeout })
+    await vi.advanceTimersByTimeAsync(10)
+    await assertion
+    peer.send({
+      kind: 'response',
+      id: requestsOf(peer.received)[0]!.id,
+      ok: true,
+      result: { sum: 2 },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  it('timeoutMs 为 0 时不设置计时器，响应正常返回', async () => {
+    const { client, peer } = await clientWithRawPeer()
+    const pending = client.request('add', { a: 1, b: 1 }, { timeoutMs: 0 })
+    await vi.waitFor(() => expect(requestsOf(peer.received)).toHaveLength(1))
+    peer.send({
+      kind: 'response',
+      id: requestsOf(peer.received)[0]!.id,
+      ok: true,
+      result: { sum: 2 },
+    })
+    await expect(pending).resolves.toEqual({ sum: 2 })
+  })
+
+  it('对端返回错误响应时以对应错误码失败', async () => {
+    const { client, peer } = await clientWithRawPeer()
+    const pending = client.request('add', { a: 1, b: 1 })
+    await vi.waitFor(() => expect(requestsOf(peer.received)).toHaveLength(1))
+    peer.send({
+      kind: 'response',
+      id: requestsOf(peer.received)[0]!.id,
+      ok: false,
+      error: { code: 'session.not_found' },
+    })
+    await expect(pending).rejects.toMatchObject({ code: 'session.not_found' })
+  })
+
+  it('请求对端未定义的方法时在本地失败，不发送', async () => {
+    const { client, peer } = await clientWithRawPeer()
+    const untyped = client as unknown as { request(m: string, p: unknown): Promise<unknown> }
+    await expect(untyped.request('missing', {})).rejects.toMatchObject({
+      code: RpcErrorCode.MethodNotFound,
+      params: { method: 'missing' },
+    })
+    expect(requestsOf(peer.received)).toHaveLength(0)
+  })
+
+  it('发出本端未定义的事件时抛出 method_not_found', () => {
+    const { server } = connect()
+    const untyped = server as unknown as { emit(n: string, d: unknown): void }
+    expect(() => untyped.emit('missing', {})).toThrow(
+      expect.objectContaining({ code: RpcErrorCode.MethodNotFound }),
+    )
+  })
+
+  it('同一事件可有多个监听器；没有监听器时事件被静默丢弃', async () => {
+    const { server, client } = connect()
+    await Promise.all([server.ready, client.ready])
+    server.emit('tick', { n: 0 }) // 尚无监听器
+    await tick()
+    const first = vi.fn()
+    const second = vi.fn()
+    client.on('tick', first)
+    client.on('tick', second)
+    server.emit('tick', { n: 1 })
+    await vi.waitFor(() => expect(second).toHaveBeenCalledWith({ n: 1 }))
+    expect(first).toHaveBeenCalledTimes(1)
+  })
+
+  it('关闭时清除计时器；关闭后不再发送任何消息；重复关闭无副作用', async () => {
+    vi.useFakeTimers()
+    const { client, peer } = await clientWithRawPeer()
+    const pending = client.request('add', { a: 1, b: 1 }, { timeoutMs: 1000 })
+    const assertion = expect(pending).rejects.toMatchObject({ code: RpcErrorCode.Closed })
+    await vi.advanceTimersByTimeAsync(0)
+    client.close()
+    client.close()
+    await assertion
+    expect(vi.getTimerCount()).toBe(0)
+    const before = peer.received.length
+    peer.send({ kind: 'hello', protocolVersion: PROTOCOL_VERSION, ack: false })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(peer.received).toHaveLength(before)
+  })
+
+  it('处理函数执行期间端点被关闭时不再发送响应', async () => {
+    const [a, b] = channelPair()
+    const server = createEndpoint(a, { local: Server, remote: Client })
+    let release!: () => void
+    server.handle('slow', () => new Promise<Record<string, never>>((r) => (release = () => r({}))))
+    const peer = rawPeer(b)
+    peer.send({ kind: 'hello', protocolVersion: PROTOCOL_VERSION, ack: true })
+    peer.send({ kind: 'request', id: '1', method: 'slow', params: {} })
+    await vi.waitFor(() => expect(release).toBeDefined())
+    server.close()
+    release()
+    await tick()
+    expect(peer.received.some((m) => (m as { kind: string }).kind === 'response')).toBe(false)
+  })
+})

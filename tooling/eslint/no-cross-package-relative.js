@@ -14,8 +14,9 @@ const WORKSPACE_DIRS = ['packages', 'apps']
  */
 function packageRootOf(file) {
   const parts = path.resolve(file).split(path.sep)
-  for (let i = parts.length - 2; i >= 0; i--) {
-    if (WORKSPACE_DIRS.includes(parts[i] ?? '') && i + 1 < parts.length - 1) {
+  // 包目录（packages / apps）之后至少还要有包名和文件名两级，因此从倒数第三级开始找。
+  for (let i = parts.length - 3; i >= 0; i--) {
+    if (WORKSPACE_DIRS.includes(/** @type {string} */ (parts[i]))) {
       return parts.slice(0, i + 2).join(path.sep)
     }
   }

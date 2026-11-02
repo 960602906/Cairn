@@ -103,41 +103,56 @@ export function findViolations(report, allowed, exceptions, scope) {
 }
 
 /**
- * @param {'--prod' | '--dev'} flag
+ * 解析 `pnpm licenses list --json` 的输出。没有依赖时 pnpm 输出一行提示文字而不是 JSON。
+ * @param {string} output
  * @returns {LicenseReport}
  */
-function pnpmLicenses(flag) {
-  const out = execFileSync('pnpm', ['licenses', 'list', flag, '--json'], {
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-  })
-  // 没有依赖时 pnpm 输出一行提示文字而不是 JSON。
-  return out.trim().startsWith('{') ? JSON.parse(out) : {}
+export function parseLicenseOutput(output) {
+  return output.trim().startsWith('{') ? JSON.parse(output) : {}
 }
 
-function main() {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-  /** @type {Record<string, string>} */
-  const exceptions = JSON.parse(
-    readFileSync(path.join(root, 'scripts/license-exceptions.json'), 'utf8'),
-  ).exceptions
+/**
+ * @typedef {object} CheckDeps
+ * @property {(flag: '--prod' | '--dev') => string} listLicenses 返回 pnpm licenses 的原始输出
+ * @property {Record<string, string>} exceptions
+ * @property {(line: string) => void} log
+ * @property {(line: string) => void} error
+ */
+
+/**
+ * 执行检查，返回进程退出码。
+ * @param {CheckDeps} deps
+ * @returns {number}
+ */
+export function runLicenseCheck({ listLicenses, exceptions, log, error }) {
   const devAllowed = new Set([...PERMISSIVE, ...DEV_ONLY])
   const violations = [
-    ...findViolations(pnpmLicenses('--prod'), PERMISSIVE, exceptions, 'prod'),
-    ...findViolations(pnpmLicenses('--dev'), devAllowed, exceptions, 'dev'),
+    ...findViolations(parseLicenseOutput(listLicenses('--prod')), PERMISSIVE, exceptions, 'prod'),
+    ...findViolations(parseLicenseOutput(listLicenses('--dev')), devAllowed, exceptions, 'dev'),
   ]
   if (violations.length === 0) {
-    console.log('License check passed.')
-    return
+    log('License check passed.')
+    return 0
   }
-  console.error('License check failed (ADR-0014). Disallowed licenses:')
-  for (const v of violations) console.error(`  [${v.scope}] ${v.name}@${v.version}: ${v.license}`)
-  console.error(
-    'Replace the dependency, or register it in scripts/license-exceptions.json with a reason.',
-  )
-  process.exitCode = 1
+  error('License check failed (ADR-0014). Disallowed licenses:')
+  for (const v of violations) error(`  [${v.scope}] ${v.name}@${v.version}: ${v.license}`)
+  error('Replace the dependency, or register it in scripts/license-exceptions.json with a reason.')
+  return 1
 }
 
+/* v8 ignore start -- 命令行入口：调用真实的 pnpm，逻辑已由 runLicenseCheck 覆盖 */
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main()
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  process.exitCode = runLicenseCheck({
+    listLicenses: (flag) =>
+      execFileSync('pnpm', ['licenses', 'list', flag, '--json'], {
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+      }),
+    exceptions: JSON.parse(readFileSync(path.join(root, 'scripts/license-exceptions.json'), 'utf8'))
+      .exceptions,
+    log: (line) => console.log(line),
+    error: (line) => console.error(line),
+  })
 }
+/* v8 ignore stop */
