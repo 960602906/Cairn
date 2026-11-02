@@ -1,0 +1,29 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.js",
+    "../scripts/**/*.ts",
+    "../scripts/**/*.js",
+    "../eslint.config.js",
+    "../vitest.config.ts",
+    "../packages/*/src/**/*.test.ts",
+    "../apps/*/src/**/*.test.ts"
+  ],
+  "exclude": ["dist"],
+  "references": [
+    { "path": "../packages/protocol" },
+    { "path": "../packages/core" },
+    { "path": "../packages/storage" },
+    { "path": "../packages/i18n" },
+    { "path": "../apps/desktop" }
+  ]
+}
