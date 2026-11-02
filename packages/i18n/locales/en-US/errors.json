@@ -23,5 +23,8 @@
   "rpc.method_not_found": "Unsupported request",
   "rpc.internal": "An internal error occurred while handling the request",
   "rpc.protocol_mismatch": "The process protocol versions are incompatible",
-  "rpc.closed": "The connection is closed"
+  "rpc.closed": "The connection is closed",
+  "host.start_failed": "The agent process failed to start",
+  "host.exited": "The agent process exited unexpectedly",
+  "host.unresponsive": "The agent process stopped responding and was terminated"
 }
