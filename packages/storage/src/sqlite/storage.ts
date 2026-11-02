@@ -159,22 +159,23 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
   const maxSeq = (sessionId: string): number => q.maxSeq.get(sessionId)?.seq ?? 0
 
   const append = db.transaction((events: readonly PersistedEvent[]) => {
-    const expected = new Map<string, number>()
+    const lastSeq = new Map<string, number>()
     for (const event of events) {
       if (isLiveEventType(event.type)) {
         throw new StorageError(StorageErrorCode.InvalidEvent, { type: event.type, seq: event.seq })
       }
-      let next = expected.get(event.sessionId)
-      if (next === undefined) {
+      let last = lastSeq.get(event.sessionId)
+      if (last === undefined) {
         if (!q.sessionById.get(event.sessionId)) {
           throw new StorageError(StorageErrorCode.InvalidEvent, { sessionId: event.sessionId })
         }
-        next = maxSeq(event.sessionId) + 1
+        last = maxSeq(event.sessionId)
       }
-      if (event.seq !== next) {
+      // 严格递增，允许空缺（增量事件占用的 seq 不落库）
+      if (event.seq <= last) {
         throw new StorageError(StorageErrorCode.SeqConflict, {
           sessionId: event.sessionId,
-          expected: next,
+          after: last,
           actual: event.seq,
         })
       }
@@ -190,7 +191,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         ts: event.ts,
         payload: JSON.stringify(event.payload),
       })
-      expected.set(event.sessionId, next + 1)
+      lastSeq.set(event.sessionId, event.seq)
     }
   })
 
