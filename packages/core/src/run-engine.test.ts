@@ -430,6 +430,17 @@ describe('RunEngine：生命周期', () => {
     expect(events).toHaveLength(count)
   })
 
+  it('updateLimits 合并到当前限额', async () => {
+    const { engine } = await start(fake({ turns: [] }))
+    engine.updateLimits({ maxStepsPerTurn: 99 })
+    expect(engine.limits).toEqual({ ...limits, maxStepsPerTurn: 99 })
+  })
+
+  it('空闲时 steer 返回 false', async () => {
+    const { engine } = await start(fake({ turns: [] }))
+    expect(await engine.steer({ messageId: 'u', content: text('x') })).toBe(false)
+  })
+
   it('空闲时释放：run.disposed 无原因', async () => {
     const { engine, events } = await start(fake({ turns: [] }))
     await engine.dispose()
