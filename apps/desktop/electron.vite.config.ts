@@ -56,7 +56,8 @@ export default defineConfig({
   },
   preload: {
     build: {
-      externalizeDeps: { exclude: workspacePackages },
+      // 沙箱中的 preload 不能 require 第三方模块，所有依赖（含 zod）都必须打进产物
+      externalizeDeps: false,
       rollupOptions: {
         input: { index: resolve(root, 'src/preload/index.ts') },
         // 沙箱中的 preload 只支持 CommonJS
