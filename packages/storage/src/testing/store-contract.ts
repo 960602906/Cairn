@@ -238,11 +238,27 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.events.maxSeq('s1')).toBe(0)
       })
 
-      it('rejects gaps and duplicates without writing any of the batch', () => {
+      it('accepts gaps left by live events (shared seq counter)', () => {
+        seed()
+        storage.events.append([userEvent('s1', 1), userEvent('s1', 4)])
+        storage.events.append([userEvent('s1', 9)])
+        expect(storage.events.maxSeq('s1')).toBe(9)
+        expect(storage.events.readAfter('s1', 0).map((e) => e.seq)).toEqual([1, 4, 9])
+        expect(storage.events.readAfter('s1', 1).map((e) => e.seq)).toEqual([4, 9])
+        expect(storage.events.readAfter('s1', 2).map((e) => e.seq)).toEqual([4, 9])
+        expect(storage.events.readAfter('s1', 4, 1).map((e) => e.seq)).toEqual([9])
+        expect(storage.events.readAfter('s1', 9)).toEqual([])
+      })
+
+      it('rejects duplicate or decreasing seq without writing any of the batch', () => {
         seed()
         storage.events.append([userEvent('s1', 1)])
         expectStorageError(
-          () => storage.events.append([userEvent('s1', 2), userEvent('s1', 4)]),
+          () => storage.events.append([userEvent('s1', 2), userEvent('s1', 2)]),
+          StorageErrorCode.SeqConflict,
+        )
+        expectStorageError(
+          () => storage.events.append([userEvent('s1', 3), userEvent('s1', 0)]),
           StorageErrorCode.SeqConflict,
         )
         expectStorageError(

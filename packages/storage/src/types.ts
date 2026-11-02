@@ -11,7 +11,7 @@ export const StorageErrorCode = {
   NotFound: 'storage.not_found',
   /** 主键或唯一约束冲突（如重复的 id、项目路径）。 */
   Conflict: 'storage.conflict',
-  /** 追加的事件 seq 与会话当前最大 seq 不连续。 */
+  /** 追加的事件 seq 不大于会话当前最大 seq（重复或倒退）。 */
   SeqConflict: 'storage.seq_conflict',
   /** 事件不能落库（实时增量事件，或所属会话不存在）。 */
   InvalidEvent: 'storage.invalid_event',
@@ -106,7 +106,8 @@ export interface SessionStore {
 export interface EventStore {
   /**
    * 在一个事务中追加事件，全部成功或全部不写入。
-   * 每个会话的 seq 必须从当前 `maxSeq + 1` 起连续递增；实时增量事件不能落库。
+   * 每个会话的 seq 必须严格递增（大于当前 `maxSeq`），允许有空缺：实时增量事件与持久化事件
+   * 共用同一个 seq 计数器（M0-06c 约定），增量不落库，因此留下空缺。实时增量事件不能落库。
    */
   append(events: readonly PersistedEvent[]): void
   /** 返回 `afterSeq` 之后的事件，按 seq 升序；`limit` 限制条数。 */

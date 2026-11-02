@@ -147,11 +147,11 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
               throw new StorageError(StorageErrorCode.InvalidEvent, { sessionId: event.sessionId })
             }
             const list = s.events.get(event.sessionId) ?? []
-            const expected = (list.at(-1)?.seq ?? 0) + 1
-            if (event.seq !== expected) {
+            const last = list.at(-1)?.seq ?? 0
+            if (event.seq <= last) {
               throw new StorageError(StorageErrorCode.SeqConflict, {
                 sessionId: event.sessionId,
-                expected,
+                after: last,
                 actual: event.seq,
               })
             }
@@ -162,10 +162,9 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
       },
       readAfter(sessionId, afterSeq, limit) {
         const list = live().events.get(sessionId) ?? []
-        // seq 从 1 连续递增，第 afterSeq 个之后即是 afterSeq 之后的事件
-        const start = Math.max(0, afterSeq)
-        const end = limit === undefined ? undefined : start + Math.max(0, limit)
-        return list.slice(start, end).map(copy)
+        // seq 严格递增但可能有空缺
+        const after = list.filter((e) => e.seq > afterSeq)
+        return (limit === undefined ? after : after.slice(0, Math.max(0, limit))).map(copy)
       },
       maxSeq(sessionId) {
         return live().events.get(sessionId)?.at(-1)?.seq ?? 0
