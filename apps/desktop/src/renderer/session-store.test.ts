@@ -222,20 +222,29 @@ describe('subscription', () => {
 
 describe('commands', () => {
   it('sends trimmed prompts and aborts the active session', async () => {
+    let busy = false
     const { api, calls } = fakeApi({
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+      'session.prompt': () => {
+        if (busy) throw new RpcError('run.busy', { sessionId: 's1' })
+        return { messageId: 'm1' }
+      },
     })
     const store = createSessionStore(api)
-    await store.getState().sendPrompt('ignored without a session')
+    expect(await store.getState().sendPrompt('ignored without a session')).toBe(false)
     await store.getState().abort()
     await store.getState().selectSession('s1')
-    await store.getState().sendPrompt('   ')
-    await store.getState().sendPrompt('  hello  ')
+    expect(await store.getState().sendPrompt('   ')).toBe(false)
+    expect(await store.getState().sendPrompt('  hello  ')).toBe(true)
     await store.getState().abort()
     expect(calls.filter(([m]) => m === 'session.prompt' || m === 'session.abort')).toEqual([
       ['session.prompt', { sessionId: 's1', content: [{ type: 'text', text: 'hello' }] }],
       ['session.abort', { sessionId: 's1' }],
     ])
+
+    busy = true
+    expect(await store.getState().sendPrompt('again')).toBe(false)
+    expect(store.getState().error?.code).toBe('run.busy')
   })
 
   it('stops listening after dispose', async () => {

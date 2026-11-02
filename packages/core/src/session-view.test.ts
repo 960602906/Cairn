@@ -4,6 +4,7 @@ import {
   createSessionView,
   reduceSession,
   reduceSessionEvents,
+  rootRun,
   sessionStatus,
   type SessionView,
 } from './index.js'
@@ -318,6 +319,7 @@ describe('reduceSession：运行', () => {
     ])
     expect(next.runOrder).toEqual([RUN, 'child'])
     expect(next.runs.child?.parentRunId).toBe(RUN)
+    expect(rootRun(next)?.runId).toBe(RUN)
     expect(sessionStatus(next)).toBe('running')
   })
 
@@ -348,6 +350,7 @@ describe('reduceSession：运行', () => {
   })
 
   it('没有运行时 sessionStatus 为 idle', () => {
+    expect(rootRun(createSessionView(SID))).toBeUndefined()
     expect(sessionStatus(createSessionView(SID))).toBe('idle')
   })
 })
