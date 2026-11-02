@@ -13,9 +13,34 @@
 import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
+import type { Plugin } from 'vite'
+import { buildContentSecurityPolicy } from './src/main/security.js'
 
 const root = import.meta.dirname
 const workspacePackages = ['@nexus/protocol', '@nexus/core', '@nexus/storage', '@nexus/i18n']
+
+/** 把 CSP 以 `<meta>` 写入界面 HTML（`file:` 加载时没有响应头）。开发服务器使用放宽的版本。 */
+function contentSecurityPolicy(): Plugin {
+  let dev = false
+  return {
+    name: 'nexus-csp',
+    configResolved(config) {
+      dev = config.command === 'serve'
+    },
+    transformIndexHtml() {
+      return [
+        {
+          tag: 'meta',
+          attrs: {
+            'http-equiv': 'Content-Security-Policy',
+            content: buildContentSecurityPolicy({ dev }),
+          },
+          injectTo: 'head-prepend',
+        },
+      ]
+    },
+  }
+}
 
 export default defineConfig({
   main: {
@@ -41,7 +66,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(root, 'src/renderer'),
-    plugins: [react()],
+    plugins: [contentSecurityPolicy(), react()],
     build: {
       rollupOptions: {
         input: { index: resolve(root, 'src/renderer/index.html') },

@@ -8,7 +8,14 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["src/main", "src/preload", "src/agent-host", "electron.vite.config.ts", "scripts"],
+  "include": [
+    "src/main",
+    "src/preload",
+    "src/agent-host",
+    "src/shared",
+    "electron.vite.config.ts",
+    "scripts"
+  ],
   "exclude": ["src/**/*.test.ts"],
   "references": [
     {

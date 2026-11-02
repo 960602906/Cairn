@@ -1,12 +1,20 @@
 /**
- * 主进程入口（ADR-0002、ADR-0003，架构 §4）。只做启动引导：确定数据目录、创建窗口。
- * 服务（存储、日志、宿主管理、IPC）在 M0-13 接入；窗口安全基线与 CSP 在 M0-12b 完善。
+ * 主进程入口（ADR-0002、ADR-0003，架构 §4、§17）。只做启动引导：确定数据目录、应用安全基线、创建窗口。
+ * 服务（存储、日志、宿主管理、IPC）在 M0-13 接入。
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, BrowserWindow, utilityProcess } from 'electron'
+import { pathToFileURL } from 'node:url'
+import { app, BrowserWindow, session, shell, utilityProcess } from 'electron'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
-import { isSmokeRun, runSmokeChecks } from './smoke.js'
+import {
+  hardenWebContents,
+  restrictPermissions,
+  secureWebPreferences,
+  type NavigationPolicy,
+  type WebContentsLike,
+} from './security.js'
+import { isSmokeRun, RENDERER_PROBE_SCRIPT, runSmokeChecks, type RendererProbe } from './smoke.js'
 
 const paths = resolveAppPaths({
   appData: app.getPath('appData'),
@@ -17,26 +25,31 @@ app.setPath('userData', paths.root)
 app.setPath('sessionData', paths.session)
 for (const dir of requiredDirectories(paths)) mkdirSync(dir, { recursive: true })
 
+const rendererFile = join(import.meta.dirname, '../renderer/index.html')
+const devServerUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL']
+const navigationPolicy: NavigationPolicy = {
+  rendererUrl: pathToFileURL(rendererFile).href,
+  devServerUrl,
+}
+
+// 对所有 WebContents（含将来的子窗口、DevTools 之外的页面）拦截导航、新窗口与 <webview>
+app.on('web-contents-created', (_event, contents) => {
+  hardenWebContents(contents as unknown as WebContentsLike, {
+    policy: navigationPolicy,
+    openExternal: (url) => void shell.openExternal(url),
+  })
+})
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
-    webPreferences: {
-      preload: join(import.meta.dirname, '../preload/index.cjs'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-    },
+    webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs')),
   })
   window.once('ready-to-show', () => window.show())
-
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
-  if (!app.isPackaged && devServerUrl) {
-    void window.loadURL(devServerUrl)
-  } else {
-    void window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
-  }
+  if (devServerUrl) void window.loadURL(devServerUrl)
+  else void window.loadFile(rendererFile)
   return window
 }
 
@@ -52,10 +65,8 @@ function startSmoke(window: BrowserWindow): void {
       webContents.isLoading()
         ? new Promise((resolve) => webContents.once('did-finish-load', () => resolve()))
         : Promise.resolve(),
-    readRendererText: async () =>
-      (await webContents.executeJavaScript(
-        "document.getElementById('root')?.textContent ?? null",
-      )) as string | null,
+    probeRenderer: async () =>
+      (await webContents.executeJavaScript(RENDERER_PROBE_SCRIPT)) as RendererProbe,
     startHost: () =>
       new Promise((resolve, reject) => {
         const host = utilityProcess.fork(join(import.meta.dirname, 'agent-host.js'), [], {
@@ -75,6 +86,7 @@ function startSmoke(window: BrowserWindow): void {
 }
 
 void app.whenReady().then(() => {
+  restrictPermissions(session.defaultSession)
   const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {

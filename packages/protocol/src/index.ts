@@ -5,5 +5,6 @@
 export * from './common.js'
 export * from './events.js'
 export * from './rpc.js'
+export * from './bridge.js'
 export * from './contracts/renderer-main.js'
 export * from './contracts/host-main.js'

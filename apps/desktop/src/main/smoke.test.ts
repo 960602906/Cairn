@@ -1,12 +1,27 @@
 import { describe, expect, it, vi } from 'vitest'
-import { isSmokeRun, runSmokeChecks, SMOKE_RESULT_PREFIX, type SmokeDeps } from './smoke.js'
+import {
+  checkRendererProbe,
+  isSmokeRun,
+  runSmokeChecks,
+  SMOKE_RESULT_PREFIX,
+  type RendererProbe,
+  type SmokeDeps,
+} from './smoke.js'
+
+const goodProbe: RendererProbe = {
+  text: 'NEXUS-OS',
+  nodeGlobals: [],
+  api: { on: 'function', ready: 'function', request: 'function' },
+  csp: "default-src 'self'; script-src 'self'",
+  evalBlocked: true,
+}
 
 function deps(overrides: Partial<SmokeDeps> = {}) {
   const report = vi.fn<(line: string) => void>()
   const exit = vi.fn<(code: number) => void>()
   const all: SmokeDeps = {
     waitForLoad: () => Promise.resolve(),
-    readRendererText: () => Promise.resolve('NEXUS-OS'),
+    probeRenderer: () => Promise.resolve(goodProbe),
     startHost: () => Promise.resolve(),
     expectedText: 'NEXUS-OS',
     userData: '/data',
@@ -32,13 +47,41 @@ describe('isSmokeRun', () => {
   })
 })
 
+describe('checkRendererProbe', () => {
+  it('accepts an isolated renderer', () => {
+    expect(checkRendererProbe(goodProbe, 'NEXUS-OS')).toEqual([])
+  })
+
+  it('reports Node globals, unexpected API and missing CSP', () => {
+    const problems = checkRendererProbe(
+      {
+        text: 'NEXUS-OS',
+        nodeGlobals: ['require', 'process'],
+        api: { on: 'function', ready: 'function', request: 'function', send: 'function' },
+        csp: null,
+        evalBlocked: false,
+      },
+      'NEXUS-OS',
+    )
+    expect(problems).toEqual([
+      'renderer has Node globals: require, process',
+      'unexpected preload API: {"on":"function","ready":"function","request":"function","send":"function"}',
+      'renderer has no CSP',
+      'CSP does not block eval',
+    ])
+    expect(checkRendererProbe({ ...goodProbe, api: null }, 'NEXUS-OS')).toEqual([
+      'unexpected preload API: null',
+    ])
+  })
+})
+
 describe('runSmokeChecks', () => {
   it('reports success and exits 0', async () => {
     const { all, report, exit } = deps()
     const result = await runSmokeChecks(all)
     expect(result).toEqual({
       ok: true,
-      rendererText: 'NEXUS-OS',
+      renderer: goodProbe,
       hostStarted: true,
       userData: '/data',
     })
@@ -47,9 +90,10 @@ describe('runSmokeChecks', () => {
   })
 
   it('fails when the renderer does not show the app name', async () => {
-    const { all, exit } = deps({ readRendererText: () => Promise.resolve(null) })
+    const probe = { ...goodProbe, text: null }
+    const { all, exit } = deps({ probeRenderer: () => Promise.resolve(probe) })
     const result = await runSmokeChecks(all)
-    expect(result).toMatchObject({ ok: false, hostStarted: false, rendererText: null })
+    expect(result).toMatchObject({ ok: false, hostStarted: false, renderer: probe })
     expect(result.error).toContain('renderer did not show')
     expect(exit).toHaveBeenCalledWith(1)
   })
