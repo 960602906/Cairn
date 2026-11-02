@@ -8,5 +8,9 @@
   "action.copy": "复制",
   "action.close": "关闭",
   "language.zh-CN": "简体中文",
-  "language.en-US": "English"
+  "language.en-US": "English",
+  "language.label": "语言",
+  "dev.events.title": "事件查看器",
+  "dev.events.showDeltas": "显示增量事件",
+  "dev.events.count": "共 {{count}} 条"
 }

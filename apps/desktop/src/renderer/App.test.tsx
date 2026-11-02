@@ -4,10 +4,10 @@ import { createI18n } from '@nexus/i18n'
 import { App } from './App.js'
 
 describe('App', () => {
-  it('renders the app name through i18n', () => {
-    expect(renderToStaticMarkup(<App i18n={createI18n('zh-CN')} />)).toBe(
-      '<main><h1>NEXUS-OS</h1></main>',
-    )
+  it('renders the app name and the language switcher without preload', () => {
+    const html = renderToStaticMarkup(<App i18n={createI18n('zh-CN')} />)
+    expect(html).toMatch(/^<main><header><h1>NEXUS-OS<\/h1><label>语言<select>/)
+    expect(html).not.toContain('事件查看器')
   })
 
   it('uses the given i18n instance', () => {

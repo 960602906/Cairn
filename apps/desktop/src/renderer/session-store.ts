@@ -11,6 +11,9 @@
  * - **等待开始**：输入已发送、但这一轮还没开始（排队或宿主启动中）时，投影里还没有运行中的轮次；
  *   `awaitingTurn` 记下这段时间，界面与列表把会话当作运行中（可以停止、不能再发送）。收到
  *   `turn.started`（或该轮结束、会话崩溃）、发送失败或停止成功时清除。
+ * - **事件记录**（开发模式的事件查看器，M0-15d）：`eventLogLimit` 大于 0 时按会话保存收到的原始
+ *   事件（补发与实时推送，含增量），每个会话只保留最近的若干条。默认不保存。
+ * - **设置**：`updateSettings` 保存设置；失败时同样写入 `error`。
  *
  * 不依赖 React 与 DOM，便于在 Node 中测试；组件通过 `useStore(store, selector)` 读取。
  */
@@ -21,6 +24,7 @@ import {
   type ErrorInfo,
   type EventEnvelope,
   type SessionSummary,
+  type Settings,
 } from '@nexus/protocol'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { MainApi } from './api.js'
@@ -33,6 +37,8 @@ export interface SessionState {
   readonly activeSessionId: string | undefined
   /** 已发送输入、等待这一轮开始的会话。 */
   readonly awaitingTurn: Readonly<Record<string, true>>
+  /** 各会话收到的原始事件（按到达顺序）；只在开启事件记录时保存。 */
+  readonly eventLog: Readonly<Record<string, readonly EventEnvelope[]>>
   /** 最近一次失败的错误；界面显示后可以清除。 */
   readonly error: ErrorInfo | undefined
 }
@@ -47,12 +53,19 @@ export interface SessionActions {
   sendPrompt(text: string): Promise<boolean>
   /** 停止当前会话正在进行的一轮。 */
   abort(): Promise<void>
+  /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
+  updateSettings(patch: Partial<Settings>): Promise<Settings | undefined>
   clearError(): void
   /** 取消订阅并停止接收事件。 */
   dispose(): void
 }
 
 export type SessionStore = StoreApi<SessionState & SessionActions>
+
+export interface SessionStoreOptions {
+  /** 每个会话保存的原始事件条数上限；0（默认）表示不保存。 */
+  readonly eventLogLimit?: number
+}
 
 const toError = (error: unknown): ErrorInfo =>
   error instanceof RpcError ? error.toInfo() : { code: 'unknown' }
@@ -95,7 +108,24 @@ function reduceInto(
   }
 }
 
-export function createSessionStore(api: MainApi): SessionStore {
+/** 把事件追加到会话的记录中，只保留最近 `limit` 条。 */
+function appendLog(
+  log: SessionState['eventLog'],
+  sessionId: string,
+  events: readonly EventEnvelope[],
+  limit: number,
+): SessionState['eventLog'] {
+  if (limit <= 0 || events.length === 0) return log
+  const next = [...(log[sessionId] ?? []), ...events]
+  return { ...log, [sessionId]: next.length > limit ? next.slice(-limit) : next }
+}
+
+export function createSessionStore(api: MainApi, options: SessionStoreOptions = {}): SessionStore {
+  const eventLogLimit = options.eventLogLimit ?? 0
+  const receive = (state: SessionState, sessionId: string, events: readonly EventEnvelope[]) => ({
+    ...reduceInto(state, sessionId, events),
+    eventLog: appendLog(state.eventLog, sessionId, events, eventLogLimit),
+  })
   /** 正在等待订阅响应的会话 → 期间到达的实时事件。 */
   const pending = new Map<string, EventEnvelope[]>()
   /** 当前已订阅的会话（订阅响应已返回）。 */
@@ -137,6 +167,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       views: {},
       activeSessionId: undefined,
       awaitingTurn: {},
+      eventLog: {},
       error: undefined,
 
       async refreshSessions() {
@@ -184,7 +215,7 @@ export function createSessionStore(api: MainApi): SessionStore {
           return
         }
         subscribed = sessionId
-        set((state) => reduceInto(state, sessionId, [...result.events, ...(buffered ?? [])]))
+        set((state) => receive(state, sessionId, [...result.events, ...(buffered ?? [])]))
       },
 
       async sendPrompt(text) {
@@ -207,6 +238,8 @@ export function createSessionStore(api: MainApi): SessionStore {
         if (stopped !== undefined) setAwaiting(sessionId, false)
       },
 
+      updateSettings: (patch) => run(() => api.request('settings.update', patch)),
+
       clearError: () => set({ error: undefined }),
 
       dispose() {
@@ -223,7 +256,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       buffer.push(...events)
       return
     }
-    if (sessionId === subscribed) store.setState((state) => reduceInto(state, sessionId, events))
+    if (sessionId === subscribed) store.setState((state) => receive(state, sessionId, events))
   })
 
   return store
