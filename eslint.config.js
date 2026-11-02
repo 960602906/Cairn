@@ -3,6 +3,7 @@ import { builtinModules } from 'node:module'
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import noCrossPackageRelative from './tooling/eslint/no-cross-package-relative.js'
+import noLiteralUiText from './tooling/eslint/no-literal-ui-text.js'
 
 /**
  * 依赖边界（ADR-0015，架构 §5）：每个包允许引用的 @nexus/* 包。
@@ -63,7 +64,14 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    plugins: { nexus: { rules: { 'no-cross-package-relative': noCrossPackageRelative } } },
+    plugins: {
+      nexus: {
+        rules: {
+          'no-cross-package-relative': noCrossPackageRelative,
+          'no-literal-ui-text': noLiteralUiText,
+        },
+      },
+    },
     rules: {
       'nexus/no-cross-package-relative': 'error',
       // 所有文件（含 JS，经 checkJs）都由 tsc 检查未定义变量，no-undef 会对 Node 全局变量误报。
@@ -79,6 +87,12 @@ export default tseslint.config(
     files: [`${pkg}/**/*.{ts,tsx,js,mjs}`],
     rules: { 'no-restricted-imports': restrictedImports(pkg) },
   })),
+  {
+    // 界面文案一律走 i18n（ADR-0013）；测试文件除外
+    files: ['apps/desktop/src/renderer/**/*.{tsx,jsx}'],
+    ignores: ['**/*.test.{tsx,jsx}'],
+    rules: { 'nexus/no-literal-ui-text': 'error' },
+  },
   {
     files: ['apps/desktop/src/renderer/**/*.{ts,tsx,js}'],
     rules: {
