@@ -1,6 +1,6 @@
 # Agent Runtime 详细设计
 
-> 状态：已确认（v1.0）
+> 状态：已确认（v1.1，补充能力层、记忆、运行模式）
 > 作者：960602906
 > 上层文档：[架构设计](../architecture.md)。相关决策：ADR-0003、ADR-0004、ADR-0005、ADR-0007、ADR-0016。
 > 后续文档：Agent 管理界面、多 Agent 协作（均基于本文档）。
@@ -27,6 +27,10 @@
 18. [测试](#18-测试)
 19. [对总体架构的影响](#19-对总体架构的影响)
 20. [已确认事项](#20-已确认事项)
+21. [能力层：Tools、Skills 与 MCP](#21-能力层toolsskills-与-mcp)
+22. [记忆（预留）](#22-记忆预留)
+23. [交互运行与无人值守运行](#23-交互运行与无人值守运行)
+24. [脱离界面运行](#24-脱离界面运行)
 
 ---
 
@@ -96,15 +100,22 @@ interface AgentDefinition {
   // 行为
   instructions: string              // 角色指令（追加到基础系统提示词之后）
   model: ModelSelection
-  tools: ToolSelection
+  tools: ToolSelection              // 内置工具与 MCP 工具（见第 21 节）
+  skills: SkillSelection            // 可用的 Skills（见第 21 节）
   permissions: PermissionPreset     // 该 Agent 的默认权限规则集
   limits: RunLimits
   context: ContextPolicy
+  memory: MemoryPolicy              // 记忆范围（见第 22 节，第一版只预留）
+
+  // 输入输出约定（可选，主要供多 Agent 委派使用）
+  inputSchema?: JsonSchema
+  outputSchema?: JsonSchema
 
   // 多 Agent（第一版保留字段，不启用）
   delegation?: DelegationPolicy
 
   // 元数据
+  status: 'draft' | 'published'     // 草稿不能被会话选用，只能试运行
   tags?: string[]
   createdAt: number
   updatedAt: number
@@ -123,11 +134,24 @@ interface ModelSelection {
   }
   // 'inherit' 表示使用会话当前选择的模型，便于用户在界面上随时切换
   mode: 'fixed' | 'inherit'
+  // 辅助模型：用于上下文压缩、生成标题等杂项任务，可配置为更便宜或本地的模型；不填则使用主模型
+  auxiliary?: ModelRef
 }
 
 interface ToolSelection {
-  allow: string[]                   // 工具名或类别，如 ['read', 'write', 'run_command']
+  allow: string[]                   // 工具名、类别或 MCP 服务，如 ['read', 'run_command', 'mcp:github']
   deny?: string[]
+}
+
+interface SkillSelection {
+  allow: string[]                   // Skill id；['*'] 表示所有已启用的 Skill
+  deny?: string[]
+  pinned?: string[]                 // 始终完整加载的 Skill（谨慎使用，会占用上下文）
+}
+
+interface MemoryPolicy {
+  scopes: Array<'session' | 'project' | 'global'>   // 可读取的范围
+  write: 'never' | 'propose' | 'auto'               // 第一版固定为 'never'
 }
 
 interface RunLimits {
@@ -326,9 +350,11 @@ agent 有时会反复做同一件事。检测规则：
 3. **项目说明**：项目根目录的 `AGENTS.md`（若存在且 Agent 允许）。
 4. **用户自定义说明**：设置中的全局说明。
 5. **环境信息**：工作区路径、当前日期、git 分支（如有）等简短信息。
-6. **工具定义**：当前 Agent 可用的工具。
-7. **对话历史**：可能包含压缩后的摘要。
-8. **本轮输入**。
+6. **Skills 索引**：每个可用 Skill 只放名称和一句话描述；完整内容在需要时按需加载（见 21.2）。
+7. **记忆**：按 `MemoryPolicy` 读取的记忆条目（第一版不启用）。
+8. **工具定义**：当前 Agent 可用的工具。
+9. **对话历史**：可能包含压缩后的摘要。
+10. **本轮输入**。
 
 ### 8.2 预算分配
 
@@ -533,6 +559,7 @@ interface CreateRunInput {
   agent: AgentDefinitionRef               // { id, version }
   workspace: WorkspaceInfo
   parentRunId?: string
+  mode: 'interactive' | 'unattended'      // 见第 23 节
   limitsOverride?: Partial<RunLimits>
   restoreFrom?: RunRestoreData            // 恢复时提供
 }
@@ -635,3 +662,90 @@ type ContentPart =
 5. 崩溃后不自动重试被中断的工具调用，由模型先检查当前状态。
 
 后续在实际使用中根据反馈调整。
+
+---
+
+## 21. 能力层：Tools、Skills 与 MCP
+
+详见 ADR-0017。
+
+### 21.1 三类能力的边界
+
+| 概念 | 回答的问题 | 本质 | 是否可执行 |
+|---|---|---|---|
+| Tool | 如何执行一个具体操作 | 带参数 schema 的函数 | 是 |
+| Skill | 如何完成某一类任务 | 说明、流程、示例、参考资料，可附带脚本 | 否（附带的脚本通过工具执行） |
+| MCP | 如何以标准方式接入外部能力 | 连接协议；MCP 服务暴露的工具适配后进入工具注册表 | 通过适配后的工具执行 |
+
+原则：**模型只看到一种可执行的东西——工具**。MCP 工具和 Skill 附带的脚本最终都以工具的形式出现，统一经过工具流水线（第 7 节）的权限判定、审批和事件记录。
+
+### 21.2 Skills
+
+- **格式**：一个文件夹，包含 `SKILL.md`（YAML 头部写 `name`、`description`，正文写说明）以及可选的参考资料、模板和脚本。兼容社区通用的 `SKILL.md` 约定，以便复用现有 Skill。
+- **来源**：内置、用户安装（应用数据目录）、项目内（`.agents/skills/` 或 `.nexus/skills/`，与项目级 Agent 一样默认关闭，需手动开启）。
+- **按需加载**：上下文中只放 Skill 索引（名称 + 一句话描述）。模型判断需要时调用内置工具 `load_skill`，获得完整说明；参考资料再通过 `read_file` 按需读取。这样即使安装了很多 Skill，常驻上下文的开销也很小，对上下文较小的本地模型尤其重要。
+- **固定加载**：`SkillSelection.pinned` 中的 Skill 在每轮开始时完整注入，适合必须始终遵守的规范。
+- **版本**：Skill 元数据记录来源、版本或内容哈希；运行事件中记录本轮实际加载的 Skill 及其版本，便于追溯。
+- **安全**：Skill 是会进入上下文的文本，与项目文件同样视为不可信输入。Skill 附带的脚本只能通过 `run_command` 执行，照常审批。
+
+### 21.3 MCP
+
+- **连接管理**：MCP 服务的启动、连接、断线重连、超时、退出由主进程中的 MCP 管理器负责（stdio 类服务作为子进程启动），状态通过事件通知界面。
+- **工具适配**：MCP 服务的工具被适配为 `ToolDefinition`，名称加上服务前缀（如 `github.create_issue`），注册进工具注册表。
+- **工具元数据**：`ToolDefinition` 增加字段：
+
+```ts
+interface ToolDefinition {
+  // ……原有字段
+  source: { kind: 'builtin' } | { kind: 'mcp'; serverId: string } | { kind: 'skill'; skillId: string }
+  trust: 'builtin' | 'user-configured' | 'third-party'
+}
+```
+
+- **默认权限**：来自 MCP 的工具默认 `ask`，用户可以按服务或按工具放宽；MCP 工具的类别由用户配置或按名称推断，推断不出时按最严格的 `network` 处理。
+- **凭据**：MCP 服务需要的令牌同样经过凭据服务（ADR-0010）管理，不写入明文配置。
+
+---
+
+## 22. 记忆（预留）
+
+详见 ADR-0019。第一版不实现记忆功能，只预留数据模型，避免以后修改 Agent 定义和上下文组装。
+
+- **范围**：会话（只在当前会话内）、项目（同一项目的所有会话）、全局（所有项目）。不同范围严格隔离，Agent 只能读取 `MemoryPolicy.scopes` 中声明的范围。
+- **写入方式**：`never`（不写）、`propose`（Agent 提出，用户确认后写入）、`auto`（自动写入）。默认 `never`，以后开放时默认 `propose`。
+- **可控**：所有记忆条目对用户可见、可编辑、可删除，并标注来源（哪次运行、哪个 Agent 写入）。
+- **与 `AGENTS.md` 的关系**：`AGENTS.md` 是用户维护的项目说明，属于上下文的固定部分；记忆是运行中积累的内容，两者分开管理。
+
+---
+
+## 23. 交互运行与无人值守运行
+
+详见 ADR-0018。
+
+为以后的定时任务、事件触发等自动化场景，运行从一开始就区分两种模式：
+
+| | 交互运行 `interactive` | 无人值守运行 `unattended` |
+|---|---|---|
+| 触发方式 | 用户在界面中发起 | 定时、事件、其他程序触发（以后实现） |
+| `ask` 类权限 | 弹出审批 | 不能弹出审批，按策略处理（见下） |
+| 运行中插话 | 支持 | 不支持 |
+| 结果通知 | 界面实时显示 | 完成后系统通知 + 任务记录 |
+
+无人值守运行遇到 `ask` 时的策略（在任务配置中选择）：
+
+- `deny`（默认）：视为拒绝，告知模型并继续。
+- `pause`：暂停运行，保存状态，在用户下次打开应用时提示审批，批准后继续。
+
+此外，无人值守运行使用更严格的默认限额，并且强制拦截类规则（危险命令等）一律直接拒绝。第一版所有运行都是 `interactive`，但字段、状态和权限判定逻辑按两种模式实现。
+
+---
+
+## 24. 脱离界面运行
+
+`RunSupervisor`、`RunEngine` 及其依赖只依赖接口，可以在普通 Node 环境中运行（第 4 节）。因此以后可以在不改动 Runtime 的前提下提供：
+
+- 命令行版本（在终端中运行 Agent）；
+- 后台服务（供自动化任务使用）；
+- 作为库被其他程序嵌入。
+
+为保证这一点，Runtime 相关包禁止引用 Electron API，由 CI 中的依赖边界规则检查。

@@ -24,3 +24,6 @@
 | [0014](0014-permissive-dependency-licenses.md) | 只使用宽松许可证的依赖 | 已接受 |
 | [0015](0015-pnpm-monorepo.md) | 使用 pnpm monorepo 并强制依赖边界 | 已接受 |
 | [0016](0016-agent-definition-and-run.md) | Agent 定义与运行作为一等概念 | 已接受 |
+| [0017](0017-unified-capability-layer.md) | 统一能力层：Tools、Skills 与 MCP | 已接受 |
+| [0018](0018-interactive-and-unattended-runs.md) | 交互运行与无人值守运行 | 已接受 |
+| [0019](0019-memory-scopes.md) | 记忆范围（预留） | 已接受（功能暂缓） |

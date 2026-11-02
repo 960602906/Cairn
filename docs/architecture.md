@@ -1,6 +1,6 @@
 # NEXUS-OS 架构设计
 
-> 状态：设计阶段（v0.3），尚未开始开发。
+> 状态：设计阶段（v0.4），尚未开始开发。
 > 作者：960602906
 > 关键决策的背景、备选方案和取舍理由记录在 [`docs/adr/`](adr/README.md)，本文档描述整体架构，引用处标注为「ADR-xxxx」。
 
@@ -42,14 +42,18 @@
 
 NEXUS-OS 是一个类似 Codex 的**编程类桌面 agent 应用**。用户选择本地项目目录，用自然语言描述任务，agent 自主读代码、改代码、执行命令；每一步过程和文件改动都可视化展示，敏感操作需要用户审批，所有改动都可以回退。
 
-### 1.2 核心诉求
+### 1.2 产品定位策略
+
+**编程优先，架构可扩展。** 第一版只做编程场景，把它做深；但能力层（Tools、Skills、MCP）、运行模式（交互与无人值守）、记忆范围等底层设计不局限于编程，以后可以扩展为更通用的个人 AI 工作平台，而不需要重构。
+
+### 1.3 核心诉求
 
 - **多模型**：可接入各种格式的 LLM，用户自带 key 和 baseUrl。
 - **可控**：agent 的每个操作都看得见，写文件和执行命令前可以拦截确认。
 - **可审阅**：所有文件改动以 diff 展示，可接受或撤销。
 - **可回退**：任意时刻可以把项目恢复到某一步之前的状态。
 
-### 1.3 已确认决策
+### 1.4 已确认决策
 
 | 事项 | 结论 |
 |---|---|
@@ -63,12 +67,19 @@ NEXUS-OS 是一个类似 Codex 的**编程类桌面 agent 应用**。用户选�
 | 会话存储 | SQLite，自定义数据结构，带版本迁移，不绑定 pi 的格式 |
 | diff | 数据按块（hunk）存储；第一版界面提供整文件接受/撤销 |
 | 开源 | 暂时私有，后续开源；依赖只用宽松许可证 |
+| 产品定位 | 编程优先，架构可扩展为通用平台 |
+| 能力层 | Tools、Skills、MCP 统一进入工具注册表（ADR-0017） |
+| 运行模式 | 区分交互与无人值守，第一版只开放交互（ADR-0018） |
+| 记忆 | 预留会话、项目、全局三级范围，功能暂缓（ADR-0019） |
 
-### 1.4 非目标（第一版不做）
+### 1.5 非目标（第一版不做）
 
 - 云端运行、多人协作、账号体系、计费。
-- 通用办公类任务，只聚焦编程。
-- 插件市场（但保留 MCP 和工具注册的扩展点）。
+- 通用办公类任务，只聚焦编程（架构上不限制以后扩展）。
+- 插件市场（但保留 Skills、MCP 和工具注册的扩展点）。
+- 定时与事件触发的自动化任务（运行模式已预留）。
+- 记忆功能（数据模型已预留）。
+- 向量检索与重排（RAG）；代码搜索先使用 ripgrep。
 - 交互式命令（需要用户在终端里输入的命令）。
 
 ---
@@ -155,6 +166,8 @@ apps/desktop            Electron 应用（main / preload / renderer / agent-host
   │
   ├─ packages/runtime-pi pi 适配器（唯一可引用 pi 的包）
   ├─ packages/tools      内置工具实现
+  ├─ packages/skills     Skill 解析、索引与按需加载
+  ├─ packages/mcp        MCP 客户端、连接管理与工具适配
   ├─ packages/shell      Shell 适配器（PowerShell / cmd / bash / zsh）
   ├─ packages/checkpoint 检查点实现
   ├─ packages/storage    存储接口与 SQLite 实现、迁移脚本
@@ -165,6 +178,21 @@ apps/desktop            Electron 应用（main / preload / renderer / agent-host
 
 - `protocol` 和 `core` 不依赖任何 Electron、Node 特有 API 以外的第三方运行时，可以独立做单元测试。
 - 用 ESLint 的依赖边界规则在 CI 中强制约束，例如禁止 `packages/tools` 引用 `@earendil-works/*`。
+
+### 5.1 与逻辑分层的对应
+
+以下六层是逻辑视图，用于理解职责划分，不按层拆分包：
+
+| 逻辑层 | 职责 | 对应的包 / 模块 |
+|---|---|---|
+| 应用交互层 | 界面、可视化 | `apps/desktop/renderer`、`packages/ui`、`packages/i18n` |
+| 任务编排层 | 多 Agent 委派、以后的工作流与调度 | `packages/core`（RunSupervisor、委派原语） |
+| Agent 运行层 | Agent 循环、上下文、状态、工具流水线 | `packages/core`（RunEngine 等）、`packages/runtime-pi` |
+| 能力层 | Tools、Skills、MCP | `packages/tools`、`packages/skills`、`packages/mcp`、`packages/shell` |
+| 模型层 | 模型接入、能力描述、备用与辅助模型 | `packages/runtime-pi`（经 pi-ai）、`packages/core`（ModelProfile） |
+| 基础设施层 | 存储、检查点、日志、IPC | `packages/storage`、`packages/checkpoint`、`packages/protocol`、主进程服务 |
+
+权限、安全、可观测性、配置是横切关注点，分别由 `core` 的权限引擎、主进程的凭据与日志服务、`protocol` 中的事件与 trace 字段承担。
 
 ---
 
@@ -660,6 +688,8 @@ NEXUS-OS/
 │   ├── core/                  # 领域类型、AgentRuntime 接口、权限引擎、路径校验、事件归约
 │   ├── runtime-pi/            # pi 适配器
 │   ├── tools/                 # 内置工具
+│   ├── skills/                # Skill 解析与加载
+│   ├── mcp/                   # MCP 客户端与工具适配
 │   ├── shell/                 # Shell 适配器
 │   ├── checkpoint/            # 检查点
 │   ├── storage/               # 存储接口、SQLite 实现、迁移
@@ -682,8 +712,8 @@ NEXUS-OS/
 | **M0 基础** | monorepo 与依赖边界、协议包、事件模型与归约、存储与迁移、进程模型（主进程 + 宿主）、`AgentRuntime` 接口与 `FakeRuntime`、日志、i18n 骨架、Windows CI；完成第 27 节的技术预研 | 用 `FakeRuntime` 跑通"输入 → 事件 → 落库 → 界面显示 → 重启后恢复" |
 | **M1 最小可用** | pi 适配器、DeepSeek 接入、6 个内置工具、权限引擎与审批、PowerShell 执行、基础检查点 | 用 DeepSeek 完成一个真实的改代码并运行测试的任务，可回退 |
 | **M2 可审阅** | Ollama 接入与能力探测、设置页、工具卡片、diff 视图（整文件接受/撤销）、终端输出面板、检查点回退界面 | 两个模型可切换，所有改动可审阅、可撤销 |
-| **M3 日常可用** | 项目与会话管理、规则管理界面、上下文压缩、`AGENTS.md` 支持、诊断包、按块撤销 | 可以长期在真实项目中使用 |
-| **M4 进阶** | git worktree 隔离、多会话并行、后台命令、MCP、更多模型提供方 | 多任务并行互不干扰 |
+| **M3 日常可用** | 项目与会话管理、Agent 管理界面、规则管理界面、上下文压缩、`AGENTS.md` 支持、Skills、MCP、辅助模型、诊断包、按块撤销 | 可以长期在真实项目中使用，可自定义 Agent 并接入外部工具 |
+| **M4 进阶** | 多 Agent 委派、git worktree 隔离、多会话并行、后台命令、更多模型提供方 | 多任务并行互不干扰 |
 | **M5 发布** | 命令沙箱、自动更新、签名与 Windows 安装包 | 可以分发给他人安装 |
 | **M6 跨平台与开源** | macOS、Linux 适配与打包，Linux 凭据存储处理，开源准备（许可证、贡献指南） | 三个平台可用，仓库可公开 |
 
