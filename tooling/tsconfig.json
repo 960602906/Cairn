@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": ["**/*.ts", "**/*.js", "../eslint.config.js", "../vitest.config.ts"],
+  "exclude": ["dist"]
+}
