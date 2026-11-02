@@ -23,7 +23,7 @@ function deps(overrides: Partial<SmokeDeps> = {}) {
   const all: SmokeDeps = {
     waitForLoad: () => Promise.resolve(),
     probeRenderer: () => Promise.resolve(goodProbe),
-    startHost: () => Promise.resolve(),
+    runTurn: () => Promise.resolve(),
     expectedText: 'NEXUS-OS',
     userData: '/data',
     report,
@@ -85,7 +85,7 @@ describe('runSmokeChecks', () => {
     expect(result).toEqual({
       ok: true,
       renderer: goodProbe,
-      hostStarted: true,
+      turnCompleted: true,
       userData: '/data',
     })
     expect(reported(report)).toEqual(result)
@@ -96,16 +96,16 @@ describe('runSmokeChecks', () => {
     const probe = { ...goodProbe, text: null }
     const { all, exit } = deps({ probeRenderer: () => Promise.resolve(probe) })
     const result = await runSmokeChecks(all)
-    expect(result).toMatchObject({ ok: false, hostStarted: false, renderer: probe })
+    expect(result).toMatchObject({ ok: false, turnCompleted: false, renderer: probe })
     expect(result.error).toContain('renderer did not show')
     expect(exit).toHaveBeenCalledWith(1)
   })
 
   it('fails when the agent host does not start in time', async () => {
-    const { all, report, exit } = deps({ startHost: () => new Promise(() => {}) })
+    const { all, report, exit } = deps({ runTurn: () => new Promise(() => {}) })
     const result = await runSmokeChecks(all)
-    expect(result.error).toBe('agent host start timed out after 50 ms')
-    expect(reported(report)).toMatchObject({ ok: false, hostStarted: false })
+    expect(result.error).toBe('conversation turn timed out after 50 ms')
+    expect(reported(report)).toMatchObject({ ok: false, turnCompleted: false })
     expect(exit).toHaveBeenCalledWith(1)
   })
 
@@ -113,7 +113,7 @@ describe('runSmokeChecks', () => {
     const { all } = deps({ waitForLoad: () => Promise.reject(new Error('load failed')) })
     expect((await runSmokeChecks(all)).error).toBe('load failed')
 
-    const { all: other } = deps({ startHost: () => Promise.reject('exited with code 3') })
+    const { all: other } = deps({ runTurn: () => Promise.reject('exited with code 3') })
     expect((await runSmokeChecks(other)).error).toBe('exited with code 3')
 
     const { all: sync } = deps({

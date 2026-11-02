@@ -145,16 +145,22 @@ function startSmoke(window: BrowserWindow): void {
         : Promise.resolve(),
     probeRenderer: async () =>
       (await webContents.executeJavaScript(RENDERER_PROBE_SCRIPT)) as RendererProbe,
-    startHost: () =>
+    runTurn: () =>
       new Promise((resolve, reject) => {
-        const host = utilityProcess.fork(join(import.meta.dirname, 'agent-host.js'), [], {
-          serviceName: 'NEXUS-OS Agent Host',
+        const { sessionId } = sessions.create({ projectPath: app.getPath('userData') })
+        const off = events.subscribe((id, batch) => {
+          if (id !== sessionId) return
+          for (const event of batch) {
+            if (event.type === 'turn.completed') {
+              off()
+              resolve()
+            } else if (event.type === 'turn.failed' || event.type === 'session.crashed') {
+              off()
+              reject(new Error(`${event.type}: ${JSON.stringify(event.payload)}`))
+            }
+          }
         })
-        host.once('message', (message: { type?: string }) => {
-          if (message.type === 'host.started') resolve()
-          host.kill()
-        })
-        host.once('exit', (code) => reject(new Error(`agent host exited with code ${code}`)))
+        sessions.prompt({ sessionId, content: [{ type: 'text', text: 'smoke' }] })
       }),
     expectedText: 'NEXUS-OS',
     userData: app.getPath('userData'),

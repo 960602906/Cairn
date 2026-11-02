@@ -1,9 +1,23 @@
 /**
  * agent 宿主入口（ADR-0003，架构 §4）：由主进程通过 `utilityProcess.fork` 启动。
  *
- * M0-12a 只提供入口与构建；握手、运行时与工具执行在 M0-14 实现。
- * 当前启动后向主进程报告一次 `host.started`，供冒烟测试确认入口可以运行。
+ * 等待主进程经 `{ type: 'nexus.port' }` 消息转交的专用端口，在其上运行宿主协议（`host.ts`）。
  */
+import { randomUUID } from 'node:crypto'
 import type {} from 'electron'
+import { HOST_PORT_MESSAGE, portChannel } from '../shared/host-port.js'
+import { createFakeHostRuntime } from './fake-model.js'
+import { createAgentHost } from './host.js'
 
-process.parentPort.postMessage({ type: 'host.started', pid: process.pid })
+process.parentPort.on('message', (event) => {
+  const port = event.ports[0]
+  if ((event.data as { type?: unknown } | null)?.type !== HOST_PORT_MESSAGE || !port) return
+  port.start()
+  createAgentHost({
+    channel: portChannel(port),
+    createRuntime: (model) => createFakeHostRuntime(model),
+    exit: (code) => process.exit(code),
+    createId: randomUUID,
+    onError: (error) => console.error('[agent-host]', error),
+  })
+})

@@ -26,5 +26,7 @@
   "rpc.closed": "The connection is closed",
   "host.start_failed": "The agent process failed to start",
   "host.exited": "The agent process exited unexpectedly",
-  "host.unresponsive": "The agent process stopped responding and was terminated"
+  "host.unresponsive": "The agent process stopped responding and was terminated",
+  "host.not_initialized": "The agent process has not been initialized",
+  "host.already_initialized": "The agent process is already initialized"
 }
