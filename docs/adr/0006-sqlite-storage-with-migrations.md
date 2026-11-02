@@ -1,7 +1,7 @@
 # ADR-0006 使用 SQLite 存储并从第一天起支持迁移
 
-- 状态：已接受（SQLite 引擎待预研）
-- 日期：2026-11-02
+- 状态：已接受
+- 日期：2026-11-02（2026-11-02 补充引擎预研结论）
 
 ## 背景
 
@@ -22,12 +22,15 @@
 - **JSONL 文件**：简单易读，但查询和事务困难，迁移需要自己实现。
 - **IndexedDB 或其他嵌入式数据库**：在 Electron 主进程中使用不便，生态不如 SQLite。
 
-## 待预研
+## SQLite 引擎（S4 预研结论，M0-08）
 
-- **better-sqlite3**：成熟稳定、同步 API，但需要针对 Electron 版本重新编译原生模块。
-- **Node 内置 `node:sqlite`**：无需原生编译，但取决于 Electron 内置的 Node 版本及该 API 的稳定程度。
+使用 **better-sqlite3**（13.x）。预研在 Electron 45.2.1（内置 Node 24.22.1）中比较了 better-sqlite3 13.0.3 与 Node 内置的 `node:sqlite`，覆盖纯 Node、Electron 开发运行与打包后运行，见 `spikes/sqlite-engine/README.md`：
 
-在 M0 中两者各做最小示例，比较稳定性和打包复杂度后确定，并更新本 ADR。
+- 两者都能加载、开启 WAL、正确处理事务与 SAVEPOINT，吞吐处于同一量级且远超需要。
+- **better-sqlite3 13 改用 Node-API，自带各平台预编译文件，不再需要针对 Electron 版本重新编译**（打包时 `npmRebuild: false` 仍可加载）。原先认为它"需要重新编译原生模块"的缺点已不存在。
+- `node:sqlite` 无需原生模块，但在 Node 24 中仍是 "Stability: 1.2 - Release candidate"，不满足"API 已稳定"的前提。
+
+打包要求：`*.node` 放在 `asarUnpack` 中，只保留目标平台的预编译文件。引擎只出现在 `packages/storage` 的 SQLite 实现中；`node:sqlite` 进入稳定后可重新评估，替换由存储契约测试保证行为一致。
 
 ## 后果
 

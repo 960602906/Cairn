@@ -1,0 +1,45 @@
+{
+  "name": "spike-sqlite-engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "S4：比较 better-sqlite3 与 node:sqlite 在 Electron 中的表现（M0-08）",
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "bench:node": "node src/cli.mjs",
+    "bench:electron": "electron src/main.mjs",
+    "package": "electron-builder --dir --publish never",
+    "summarize": "node src/summarize.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "dev.nexus-os.spike.sqlite-engine",
+    "productName": "SqliteEngineSpike",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!node_modules/better-sqlite3/{src,deps,docs}/**"
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": "dir"
+    },
+    "linux": {
+      "target": "dir"
+    }
+  },
+  "author": "NEXUS-OS",
+  "license": "UNLICENSED"
+}
