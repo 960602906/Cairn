@@ -96,6 +96,7 @@ describe('createSessionView', () => {
       runs: {},
       runOrder: [],
       messages: [],
+      live: {},
       usage: { inputTokens: 0, outputTokens: 0 },
     })
   })
@@ -210,10 +211,10 @@ describe('reduceSession：幂等与乱序', () => {
     expect(reduceSession(createSessionView(SID), other)).toEqual(createSessionView(SID))
   })
 
-  it('增量事件不改变状态，也不推进 lastSeq', () => {
+  it('增量事件不推进 lastSeq', () => {
     const delta = events.find((e) => e.type === 'message.assistant.delta')!
     const before = reduceAll(events.slice(0, 6))
-    expect(reduceSession(before, delta)).toBe(before)
+    expect(reduceSession(before, delta).lastSeq).toBe(before.lastSeq)
   })
 
   it('不认识的运行：事件只推进 lastSeq', () => {
