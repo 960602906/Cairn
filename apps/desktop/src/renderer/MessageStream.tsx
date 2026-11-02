@@ -65,7 +65,9 @@ function LiveMessage({ live }: { readonly live: LiveMessageView }) {
 function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): string | undefined {
   if (view.crash) return t('crashed.message')
   const turn = rootRun(view)?.turn
-  if (turn?.status === 'aborted') return t('turn.aborted')
+  if (turn?.status === 'aborted') {
+    return t(turn.abortReason === 'shutdown' ? 'turn.interrupted' : 'turn.aborted')
+  }
   if (turn?.status !== 'failed') return undefined
   if (turn.limitReached?.limit === 'maxStepsPerTurn') {
     return t('turn.limit_reached', { maxSteps: turn.limitReached.value })

@@ -1,7 +1,7 @@
 /**
  * 当前会话（M0-15c）：标题、运行状态、消息流、输入框与停止按钮。
  * 内容都来自 store 中的事件投影，窗口刷新后经 `afterSeq` 补发恢复。订阅返回之前还没有投影，
- * 标题与状态先取会话列表中的值。
+ * 标题与状态先取会话列表中的值。已发送、等待这一轮开始时显示为运行中（可以停止）。
  */
 import { useTranslation } from 'react-i18next'
 import { rootRun, sessionStatus, type RunView } from '@nexus/core'
@@ -37,11 +37,14 @@ export function ChatPanel() {
     s.activeSessionId === undefined ? undefined : s.views[s.activeSessionId],
   )
   const summary = useSessionStore((s) => s.sessions.find((x) => x.sessionId === s.activeSessionId))
+  const awaiting = useSessionStore(
+    (s) => s.activeSessionId !== undefined && s.awaitingTurn[s.activeSessionId] === true,
+  )
 
   if (sessionId === undefined) return <p>{t('chat.empty')}</p>
 
   const title = view?.info?.title ?? summary?.title ?? ''
-  const status = view ? sessionStatus(view) : (summary?.status ?? 'idle')
+  const status = awaiting ? 'running' : view ? sessionStatus(view) : (summary?.status ?? 'idle')
   const run = view && rootRun(view)
   return (
     <section aria-labelledby="chat-title">

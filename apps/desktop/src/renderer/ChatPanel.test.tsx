@@ -208,8 +208,9 @@ describe('ChatPanel', () => {
     })
     expect(input().value).toBe('')
 
-    emit(userMessage(9, 'm3', '第一行\n第二行'))
+    emit(userMessage(9, 'm3', '第一行\n第二行'), ev(10, 'turn.started', {}, 't2'))
     expect(messages().at(-1)).toBe('你第一行\n第二行')
+    emit(ev(11, 'turn.completed', { durationMs: 10 }, 't2'))
 
     await userEvent.type(input(), '  再来  ')
     await userEvent.click(sendButton())
@@ -217,6 +218,81 @@ describe('ChatPanel', () => {
       sessionId: 's1',
       content: text('再来'),
     })
+  })
+
+  it('shows the turn as running between sending and turn.started', async () => {
+    const { request, store, open, emit } = setup({ history: HISTORY })
+    await open()
+    await userEvent.type(input(), '你好{Enter}')
+    // 排队或宿主启动中：还没有 turn.started
+    expect(runStatus()).toBe('运行中')
+    expect(stopButton()).toBeTruthy()
+    await userEvent.type(input(), '下一句')
+    expect(sendButton().disabled).toBe(true)
+    expect(store.getState().sessions[0]?.status).toBe('running')
+    // 刷新列表时同样保留
+    await act(() => store.getState().refreshSessions())
+    expect(store.getState().sessions[0]?.status).toBe('running')
+    // 中途的其他事件不清除等待
+    emit(userMessage(9, 'm3', '你好'))
+    expect(runStatus()).toBe('运行中')
+
+    emit(ev(10, 'turn.started', {}, 't2'), state(11, 'completed', 'thinking'))
+    expect(runStatus()).toBe('运行中 · 思考中')
+    expect(store.getState().awaitingTurn).toEqual({})
+    emit(ev(12, 'turn.completed', { durationMs: 10 }, 't2'), state(13, 'thinking', 'completed'))
+    expect(runStatus()).toBe('空闲')
+    expect(stopButton()).toBeNull()
+    expect(request.mock.calls.filter(([m]) => m === 'session.prompt')).toHaveLength(1)
+  })
+
+  it('cancels a queued prompt with the stop button', async () => {
+    const { request, store, open } = setup({ history: HISTORY })
+    await open()
+    await userEvent.type(input(), '你好{Enter}')
+    await userEvent.click(stopButton()!)
+    expect(request).toHaveBeenCalledWith('session.abort', { sessionId: 's1' })
+    // 取消排队中的输入不会产生事件，由停止成功清除等待
+    expect(runStatus()).toBe('空闲')
+    expect(stopButton()).toBeNull()
+    expect(store.getState().sessions[0]?.status).toBe('idle')
+  })
+
+  it('keeps waiting when stopping fails', async () => {
+    const { store, open } = setup({
+      history: HISTORY,
+      handlers: {
+        'session.abort': () => {
+          throw new RpcError('rpc.timeout', { timeoutMs: 1 })
+        },
+      },
+    })
+    await open()
+    await userEvent.type(input(), '你好{Enter}')
+    await userEvent.click(stopButton()!)
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(runStatus()).toBe('运行中')
+    expect(store.getState().awaitingTurn).toEqual({ s1: true })
+  })
+
+  it('ignores Enter while sending and keeps a newer draft when sending fails', async () => {
+    let fail!: () => void
+    const { request, open } = setup({
+      history: HISTORY,
+      handlers: {
+        'session.prompt': () =>
+          new Promise((_resolve, reject) => (fail = () => reject(new RpcError('run.busy')))),
+      },
+    })
+    await open()
+    await userEvent.type(input(), '你好{Enter}')
+    await userEvent.type(input(), '新的{Enter}')
+    expect(request.mock.calls.filter(([m]) => m === 'session.prompt')).toHaveLength(1)
+    await act(async () => fail())
+    expect(input().value).toBe('新的')
+    // 发送失败后不再等待
+    expect(runStatus()).toBe('空闲')
+    expect(sendButton().disabled).toBe(false)
   })
 
   it('restores the draft and shows the error when sending fails', async () => {
@@ -284,6 +360,15 @@ describe('ChatPanel', () => {
       '已崩溃',
       'Agent 进程意外退出，可以从最后保存的位置继续。',
     ],
+    [
+      '应用退出后中断',
+      [
+        ev(12, 'turn.aborted', { reason: 'shutdown' }, 't2'),
+        ev(13, 'run.state.changed', { from: 'thinking', to: 'interrupted', reason: 'app_restart' }),
+      ],
+      '已中断',
+      '本轮已中断，可以继续对话。',
+    ],
   ])('explains how the last turn ended: %s', async (_name, events, status, note) => {
     const { open, emit } = setup({ history: RUNNING })
     await open()
@@ -294,6 +379,18 @@ describe('ChatPanel', () => {
     expect(sendButton().disabled).toBe(true)
     await userEvent.type(input(), '继续')
     expect(sendButton().disabled).toBe(false)
+  })
+
+  it('falls back to defaults for a session missing from the list', async () => {
+    const { store } = setup({
+      handlers: {
+        'session.list': () => ({ sessions: [] }),
+        'session.subscribe': () => new Promise(() => {}),
+      },
+    })
+    await act(async () => void store.getState().selectSession('s1'))
+    expect(screen.getByRole('heading', { level: 2, name: '未命名会话' })).toBeTruthy()
+    expect(runStatus()).toBe('空闲')
   })
 
   it('uses the current language', async () => {

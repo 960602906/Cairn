@@ -247,6 +247,45 @@ describe('commands', () => {
     expect(store.getState().error?.code).toBe('run.busy')
   })
 
+  it('marks a session as awaiting its turn until the turn starts', async () => {
+    let emitStarted = () => {}
+    const { api, emit } = fakeApi({
+      'session.list': () => ({ sessions: [summary('s1'), summary('s2')] }),
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => {
+        if (sessionId === 's2') throw new RpcError('rpc.closed')
+        return { events: [created('s1')], lastSeq: 1 }
+      },
+      'session.prompt': () => {
+        // turn.started 早于请求响应到达
+        emitStarted()
+        return { messageId: 'm1' }
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshSessions()
+    await store.getState().selectSession('s1')
+
+    expect(await store.getState().sendPrompt('hi')).toBe(true)
+    expect(store.getState().awaitingTurn).toEqual({ s1: true })
+    expect(store.getState().sessions.map((s) => s.status)).toEqual(['running', 'idle'])
+    emit('s1', [ev('s1', 2, 'session.crashed', { error: { code: 'host.start_failed' } })])
+    expect(store.getState().awaitingTurn).toEqual({})
+    expect(store.getState().sessions[0]?.status).toBe('crashed')
+
+    emitStarted = () => emit('s1', [ev('s1', 3, 'turn.started', {}, { turnId: 't1' })])
+    expect(await store.getState().sendPrompt('again')).toBe(true)
+    expect(store.getState().awaitingTurn).toEqual({})
+
+    // 订阅失败、还没有投影的会话只记标记
+    await store.getState().selectSession('s2')
+    emitStarted = () => {}
+    await store.getState().sendPrompt('x')
+    expect(store.getState().awaitingTurn).toEqual({ s2: true })
+    expect(store.getState().views['s2']).toBeUndefined()
+    await store.getState().abort()
+    expect(store.getState().awaitingTurn).toEqual({})
+  })
+
   it('stops listening after dispose', async () => {
     const { api, listeners } = fakeApi()
     const store = createSessionStore(api)

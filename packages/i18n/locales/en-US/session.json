@@ -24,6 +24,7 @@
   "run.tooling": "Using tools",
   "run.aborting": "Stopping",
   "turn.aborted": "Stopped",
+  "turn.interrupted": "This turn was interrupted. You can continue.",
   "turn.failed": "This turn failed: {{reason}}",
   "turn.limit_reached": "Reached the limit of {{maxSteps}} steps for this turn. You can continue.",
   "crashed.message": "The agent process exited unexpectedly. You can continue from the last saved point.",
