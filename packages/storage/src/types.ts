@@ -15,6 +15,10 @@ export const StorageErrorCode = {
   SeqConflict: 'storage.seq_conflict',
   /** 事件不能落库（实时增量事件，或所属会话不存在）。 */
   InvalidEvent: 'storage.invalid_event',
+  /** 数据库 schema 版本高于应用支持的版本（用户降级了应用），拒绝打开。 */
+  SchemaTooNew: 'storage.schema_too_new',
+  /** 迁移失败；数据库已恢复到迁移前的状态。 */
+  MigrationFailed: 'storage.migration_failed',
 } as const
 export type StorageErrorCode = (typeof StorageErrorCode)[keyof typeof StorageErrorCode]
 
@@ -22,8 +26,12 @@ export class StorageError extends Error {
   readonly code: StorageErrorCode
   readonly params: Readonly<Record<string, string | number>>
 
-  constructor(code: StorageErrorCode, params: Record<string, string | number> = {}) {
-    super(`${code} ${JSON.stringify(params)}`)
+  constructor(
+    code: StorageErrorCode,
+    params: Record<string, string | number> = {},
+    cause?: unknown,
+  ) {
+    super(`${code} ${JSON.stringify(params)}`, cause === undefined ? undefined : { cause })
     this.name = 'StorageError'
     this.code = code
     this.params = params

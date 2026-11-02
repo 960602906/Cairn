@@ -8,6 +8,10 @@
   },
   "dependencies": {
     "@nexus/core": "workspace:*",
-    "@nexus/protocol": "workspace:*"
+    "@nexus/protocol": "workspace:*",
+    "better-sqlite3": "13.0.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0"
   }
 }
