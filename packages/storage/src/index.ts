@@ -6,3 +6,5 @@
 export * from './types.js'
 export * from './memory.js'
 export * from './sqlite/migrate.js'
+export * from './sqlite/storage.js'
+export { MIGRATIONS } from './sqlite/migrations/index.js'
