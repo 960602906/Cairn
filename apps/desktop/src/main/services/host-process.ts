@@ -8,9 +8,7 @@
  * Electron 对象以结构化接口注入，便于在 Node 中测试。
  */
 import type { RpcChannel } from '@nexus/protocol'
-
-/** 宿主收到端口的消息类型（宿主入口 M0-14 按此接收）。 */
-export const HOST_PORT_MESSAGE = 'nexus.port'
+import { HOST_PORT_MESSAGE, portChannel, type MessagePortMainLike } from '../../shared/host-port.js'
 
 /** 正在运行的宿主进程。 */
 export interface HostProcess {
@@ -24,14 +22,6 @@ export interface HostProcess {
 }
 
 export type SpawnHost = (sessionId: string) => HostProcess
-
-export interface MessagePortMainLike {
-  postMessage(message: unknown): void
-  on(event: 'message', listener: (event: { data: unknown }) => void): unknown
-  removeListener(event: 'message', listener: (event: { data: unknown }) => void): unknown
-  start(): void
-  close(): void
-}
 
 export interface UtilityProcessLike {
   readonly pid: number | undefined
@@ -49,17 +39,6 @@ export interface UtilityHostSpawnerOptions {
     options: { serviceName: string },
   ) => UtilityProcessLike
   readonly createMessageChannel: () => { port1: MessagePortMainLike; port2: MessagePortMainLike }
-}
-
-export function portChannel(port: MessagePortMainLike): RpcChannel {
-  return {
-    post: (message) => port.postMessage(message),
-    onMessage(listener) {
-      const handler = (event: { data: unknown }) => listener(event.data)
-      port.on('message', handler)
-      return () => port.removeListener('message', handler)
-    },
-  }
 }
 
 export function createUtilityHostSpawner(options: UtilityHostSpawnerOptions): SpawnHost {

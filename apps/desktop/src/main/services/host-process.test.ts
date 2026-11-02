@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import {
-  createUtilityHostSpawner,
-  HOST_PORT_MESSAGE,
-  portChannel,
-  type MessagePortMainLike,
-  type UtilityProcessLike,
-} from './host-process.js'
+import { HOST_PORT_MESSAGE, portChannel, type MessagePortMainLike } from '../../shared/host-port.js'
+import { createUtilityHostSpawner, type UtilityProcessLike } from './host-process.js'
 
 function fakePort() {
   const listeners = new Set<(event: { data: unknown }) => void>()

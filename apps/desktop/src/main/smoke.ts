@@ -5,7 +5,7 @@
  * - preload 只暴露了 `window.nexus` 的 `on`、`ready`、`request` 三个函数；
  * - 页面带有 CSP，且 CSP 生效（`new Function` 被拒绝）；
  * - 界面经 `window.nexus` 调用 `session.list` 成功（IPC 网关、会话管理器与数据库已接通）；
- * - agent 宿主入口能以 utilityProcess 启动并回报 `host.started`。
+ * - 新建会话并发送一条输入，agent 宿主（utilityProcess + 专用端口 + FakeRuntime）完成一轮对话。
  * 结果以 `NEXUS_SMOKE_RESULT <JSON>` 一行输出到标准输出，随后退出（成功 0，失败 1）。
  *
  * 这里只有与 Electron 无关的流程，Electron 相关的操作由入口注入，便于单元测试。
@@ -75,7 +75,7 @@ export function checkRendererProbe(probe: RendererProbe, expectedText: string): 
 export interface SmokeResult {
   readonly ok: boolean
   readonly renderer: RendererProbe | null
-  readonly hostStarted: boolean
+  readonly turnCompleted: boolean
   readonly userData: string
   readonly error?: string
 }
@@ -85,8 +85,8 @@ export interface SmokeDeps {
   readonly waitForLoad: () => Promise<void>
   /** 在界面中执行 `RENDERER_PROBE_SCRIPT`。 */
   readonly probeRenderer: () => Promise<RendererProbe>
-  /** 启动 agent 宿主，收到 `host.started` 后完成。 */
-  readonly startHost: () => Promise<void>
+  /** 新建会话、发送输入，宿主完成一轮（`turn.completed`）后 resolve。 */
+  readonly runTurn: () => Promise<void>
   /** 界面应显示的文本（应用名称）。 */
   readonly expectedText: string
   readonly userData: string
@@ -119,22 +119,22 @@ function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<
 export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
   const timeoutMs = deps.timeoutMs ?? DEFAULT_SMOKE_TIMEOUT_MS
   let renderer: RendererProbe | null = null
-  let hostStarted = false
+  let turnCompleted = false
   let error: string | undefined
   try {
     await withTimeout(deps.waitForLoad(), timeoutMs, 'window load')
     renderer = await withTimeout(deps.probeRenderer(), timeoutMs, 'renderer probe')
     const problems = checkRendererProbe(renderer, deps.expectedText)
     if (problems.length > 0) throw new Error(problems.join('; '))
-    await withTimeout(deps.startHost(), timeoutMs, 'agent host start')
-    hostStarted = true
+    await withTimeout(deps.runTurn(), timeoutMs, 'conversation turn')
+    turnCompleted = true
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   }
   const result: SmokeResult = {
     ok: error === undefined,
     renderer,
-    hostStarted,
+    turnCompleted,
     userData: deps.userData,
     ...(error === undefined ? {} : { error }),
   }

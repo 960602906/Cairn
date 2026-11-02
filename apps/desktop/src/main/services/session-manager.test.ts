@@ -199,6 +199,7 @@ describe('prompt', () => {
       ...defaults,
       history: [],
     })
+    expect(hosts[0]?.init.resume).toBeUndefined()
     expect(hosts[0]?.prompts).toEqual([messageId])
     expect(manager.activeSessions()).toEqual([sessionId])
 
@@ -249,6 +250,7 @@ describe('prompt', () => {
       runId: 'id3',
       model: custom.model,
       history: [{ role: 'user', content: text('hi') }],
+      resume: { state: 'completed' },
     })
   })
 

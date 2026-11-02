@@ -11,6 +11,7 @@ import {
   ModelRef,
   RunLimits,
   RunMode,
+  RunState,
   Timestamp,
 } from '../common.js'
 import { UnsequencedEventSchema } from '../events.js'
@@ -29,6 +30,11 @@ export const HostForMain = defineSide({
         mode: RunMode,
         limits: RunLimits,
         history: z.array(CanonicalMessage),
+        /**
+         * 恢复已有的运行（不再发出 run.created）：运行当前记录的状态。运行中状态按中断处理
+         * （Runtime §13.2）。省略表示新运行。
+         */
+        resume: z.object({ state: RunState }).optional(),
       }),
       result: z.object({}),
     },

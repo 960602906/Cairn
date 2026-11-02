@@ -82,6 +82,8 @@ interface PendingPrompt {
   readonly content: ContentPart[]
   readonly history: HostInit['history']
   readonly run: RunDefaults
+  /** 继续已有的运行时为其当前状态。 */
+  readonly resume: HostInit['resume']
   readonly workspacePath: string
 }
 
@@ -231,6 +233,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         workspacePath: pending.workspacePath,
         ...pending.run,
         history: pending.history,
+        ...(pending.resume ? { resume: pending.resume } : {}),
       })
       .then(
         (handle) => {
@@ -365,6 +368,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           run: resume
             ? { agent: root.agent, model: root.model, mode: root.mode, limits: root.limits }
             : options.runDefaults,
+          resume: resume ? { state: root.state } : undefined,
           workspacePath: record.workspacePath,
         })
         pump()

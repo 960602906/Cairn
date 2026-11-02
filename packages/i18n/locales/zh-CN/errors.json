@@ -26,5 +26,7 @@
   "rpc.closed": "连接已关闭",
   "host.start_failed": "Agent 进程启动失败",
   "host.exited": "Agent 进程意外退出",
-  "host.unresponsive": "Agent 进程无响应，已被结束"
+  "host.unresponsive": "Agent 进程无响应，已被结束",
+  "host.not_initialized": "Agent 进程尚未初始化",
+  "host.already_initialized": "Agent 进程已经初始化"
 }
