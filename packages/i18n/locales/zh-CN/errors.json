@@ -28,5 +28,6 @@
   "host.exited": "Agent 进程意外退出",
   "host.unresponsive": "Agent 进程无响应，已被结束",
   "host.not_initialized": "Agent 进程尚未初始化",
-  "host.already_initialized": "Agent 进程已经初始化"
+  "host.already_initialized": "Agent 进程已经初始化",
+  "settings.write_failed": "设置保存失败"
 }

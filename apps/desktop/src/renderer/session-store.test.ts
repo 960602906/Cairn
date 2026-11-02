@@ -294,3 +294,58 @@ describe('commands', () => {
     expect(listeners.size).toBe(0)
   })
 })
+
+describe('event log', () => {
+  const delta = (seq: number) =>
+    ev('s1', seq, 'message.assistant.delta', { messageId: 'a1', text: 'x' })
+
+  it('is not recorded by default', async () => {
+    const { api, emit } = fakeApi({
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    emit('s1', [user('s1', 2, 'hi')])
+    expect(store.getState().views.s1?.lastSeq).toBe(2)
+    expect(store.getState().eventLog).toEqual({})
+  })
+
+  it('keeps the latest received events per session, including deltas', async () => {
+    const { api, emit } = fakeApi({
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+    })
+    const store = createSessionStore(api, { eventLogLimit: 3 })
+    await store.getState().selectSession('s1')
+    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1])
+    emit('s1', [user('s1', 2, 'hi'), delta(3)])
+    emit('s1', [])
+    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1, 2, 3])
+    emit('s1', [delta(4)])
+    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([2, 3, 4])
+    // 其他会话（未订阅）的事件不记录
+    emit('s2', [user('s2', 1, 'other')])
+    expect(Object.keys(store.getState().eventLog)).toEqual(['s1'])
+  })
+})
+
+describe('settings', () => {
+  it('saves settings and records failures', async () => {
+    let fail = false
+    const { api, calls } = fakeApi({
+      'settings.update': (patch: { locale: string }) => {
+        if (fail) throw new RpcError('settings.write_failed')
+        return { locale: patch.locale }
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().updateSettings({ locale: 'en-US' })).resolves.toEqual({
+      locale: 'en-US',
+    })
+    expect(calls).toEqual([['settings.update', { locale: 'en-US' }]])
+    expect(store.getState().error).toBeUndefined()
+
+    fail = true
+    await expect(store.getState().updateSettings({ locale: 'zh-CN' })).resolves.toBeUndefined()
+    expect(store.getState().error).toEqual({ code: 'settings.write_failed' })
+  })
+})
