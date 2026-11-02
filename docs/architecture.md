@@ -413,14 +413,14 @@ interface PermissionRule {
 
 ## 12. 模型接入
 
-详见 ADR-0011。
+详见 ADR-0011、ADR-0021。
 
 ### 12.1 抽象
 
 ```ts
 interface ProviderConfig {
   id: string
-  kind: 'openai-compatible'      // 第一版只有这一种，后续加 anthropic、google 等
+  kind: 'openai' | 'anthropic' | 'gemini'  // 接口格式（ADR-0021），每种都可自定义 baseUrl
   displayName: string
   baseUrl: string
   credentialRef?: string          // 指向凭据服务中的条目，不保存明文
@@ -444,6 +444,11 @@ interface ModelProfile {
 |---|---|---|
 | DeepSeek | OpenAI 兼容接口，用户填写 API Key | 需验证推理类模型的思考内容字段和工具调用在 pi-ai 下的兼容性 |
 | Ollama | OpenAI 兼容接口，默认 `http://localhost:11434/v1`，无需 Key | 工具调用能力取决于具体模型；上下文窗口通常较小 |
+| Anthropic | `anthropic` 格式，用户填写 API Key | 推理内容与缓存用量按 Anthropic 格式转换 |
+| OpenAI | `openai` 格式，用户填写 API Key | |
+| Google Gemini | `gemini` 格式，用户填写 API Key | 推理内容按 Gemini 格式转换 |
+
+三种格式都可以修改 `baseUrl`，用于兼容服务或代理（ADR-0021）。
 
 具体 baseUrl 和模型名以各自官方文档为准。
 
