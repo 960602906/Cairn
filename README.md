@@ -14,6 +14,9 @@ A Codex-like coding agent desktop app built with Electron, React and pi, with su
   - [Agent Runtime](docs/design/agent-runtime.md)（已确认）
   - [Agent 管理界面](docs/design/agent-management-ui.md)（已确认）
   - [多 Agent 协作](docs/design/multi-agent.md)（已确认）
+- 开发计划 / Dev plan
+  - [M0 基础：任务分解](docs/plan/m0.md)
+  - [M1 最小可用：任务概要](docs/plan/m1.md)
 
 ## 当前计划 / Plan
 
