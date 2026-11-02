@@ -11,3 +11,4 @@ export const SUPPORTED_EVENT_SCHEMA_VERSION: typeof EVENT_SCHEMA_VERSION = EVENT
 export * from './run-state.js'
 export * from './session-view.js'
 export * from './history.js'
+export * from './runtime.js'
