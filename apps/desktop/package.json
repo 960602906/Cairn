@@ -1,0 +1,12 @@
+{
+  "name": "@nexus/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@nexus/core": "workspace:*",
+    "@nexus/i18n": "workspace:*",
+    "@nexus/protocol": "workspace:*",
+    "@nexus/storage": "workspace:*"
+  }
+}

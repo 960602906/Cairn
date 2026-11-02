@@ -18,6 +18,16 @@ A Codex-like coding agent desktop app built with Electron, React and pi, with su
   - [M0 基础：任务分解](docs/plan/m0.md)
   - [M1 最小可用：任务概要](docs/plan/m1.md)
 
+## 开发 / Development
+
+需要 Node 22.12+ 与 pnpm 10（可通过 `corepack enable` 启用）。
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm test
+```
+
 ## 当前计划 / Plan
 
 - 首发平台：Windows，后续支持 macOS 与 Linux
