@@ -14,6 +14,7 @@ const goodProbe: RendererProbe = {
   api: { on: 'function', ready: 'function', request: 'function' },
   csp: "default-src 'self'; script-src 'self'",
   evalBlocked: true,
+  ipcError: null,
 }
 
 function deps(overrides: Partial<SmokeDeps> = {}) {
@@ -60,6 +61,7 @@ describe('checkRendererProbe', () => {
         api: { on: 'function', ready: 'function', request: 'function', send: 'function' },
         csp: null,
         evalBlocked: false,
+        ipcError: 'rpc.timeout',
       },
       'NEXUS-OS',
     )
@@ -68,6 +70,7 @@ describe('checkRendererProbe', () => {
       'unexpected preload API: {"on":"function","ready":"function","request":"function","send":"function"}',
       'renderer has no CSP',
       'CSP does not block eval',
+      'session.list over IPC failed: rpc.timeout',
     ])
     expect(checkRendererProbe({ ...goodProbe, api: null }, 'NEXUS-OS')).toEqual([
       'unexpected preload API: null',

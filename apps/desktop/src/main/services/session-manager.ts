@@ -1,0 +1,418 @@
+/**
+ * 会话管理器：调度（M0-13d，ADR-0003，架构 §4、§8、§21）。实现 IPC 网关的 `SessionCommands`。
+ *
+ * - **创建与列表**：按项目路径找到或创建项目，创建会话并写入 `session.created`；列表状态由事件
+ *   归约得出（`sessionStatus`），排队或启动中的会话显示为 `running`。
+ * - **输入**：`session.prompt` 先把 `message.user` 落库，再交给会话的宿主；会话没有宿主时排队，
+ *   由调度启动。同一会话正在运行一轮（或已有排队的输入）时报 `run.busy`。
+ * - **并发上限与排队**：同时存在的宿主（启动中 + 运行中）不超过上限（默认 3），超出的按先后排队；
+ *   宿主退出后启动下一个。排队时如果有空闲的宿主，立即回收一个腾出名额。
+ * - **空闲回收**：宿主空闲（没有进行中的一轮）超过时限（默认 5 分钟）后正常停止。
+ * - **退出清理**：`shutdown()` 清空队列并停止所有宿主，等它们全部退出。
+ * - **标记中断**：`recoverInterrupted()` 在启动时把仍处于运行中的运行标记为 `interrupted`（进行中的
+ *   轮次记为 `turn.aborted`，原因 `shutdown`）；宿主崩溃后再次输入时同样处理。
+ *
+ * 会话级事件在还没有运行时以 `sessionId` 作为 `runId`。不依赖 Electron。
+ */
+import { randomUUID } from 'node:crypto'
+import { basename, isAbsolute } from 'node:path'
+import {
+  acceptsInput,
+  createSessionView,
+  isActiveRunState,
+  rebuildHistory,
+  reduceSessionEvents,
+  sessionStatus,
+  type RunView,
+  type SessionView,
+} from '@nexus/core'
+import { RpcError, type ContentPart, type UnsequencedEvent } from '@nexus/protocol'
+import type { Storage } from '@nexus/storage'
+import type { SessionEventService } from './event-service.js'
+import type { HostHandle, HostInit, HostSupervisor } from './host-supervisor.js'
+import type { SessionCommands } from './renderer-gateway.js'
+
+export const SessionErrorCode = {
+  NotFound: 'storage.not_found',
+  Busy: 'run.busy',
+  /** 管理器已关闭（应用正在退出）。 */
+  Closed: 'run.disposed',
+  InvalidParams: 'rpc.invalid_params',
+} as const
+
+/** 新运行使用的配置。 */
+export type RunDefaults = Pick<HostInit, 'agent' | 'model' | 'mode' | 'limits'>
+
+export interface SessionManagerOptions {
+  readonly storage: Pick<Storage, 'projects' | 'sessions'>
+  readonly events: Pick<SessionEventService, 'publish' | 'readAfter' | 'subscribe'>
+  readonly supervisor: HostSupervisor
+  readonly runDefaults: RunDefaults
+  /** 同时存在的宿主上限，默认 3。 */
+  readonly maxConcurrent?: number
+  /** 宿主空闲多久后回收，默认 5 分钟。 */
+  readonly idleTimeoutMs?: number
+  readonly createId?: () => string
+  readonly now?: () => number
+  readonly onError?: (error: unknown) => void
+}
+
+type Sync<F> = F extends (params: infer P) => infer R
+  ? (params: P) => Exclude<R, Promise<unknown>>
+  : never
+
+/** 创建、列表与输入是同步的（数据库接口同步，宿主在后台启动）。 */
+export interface SessionManager extends SessionCommands {
+  readonly create: Sync<SessionCommands['create']>
+  readonly list: Sync<SessionCommands['list']>
+  readonly prompt: Sync<SessionCommands['prompt']>
+  /** 启动时调用：把仍处于运行中的运行标记为中断，返回标记的运行数。 */
+  recoverInterrupted(): number
+  /** 有宿主（启动中或运行中）的会话。 */
+  activeSessions(): string[]
+  /** 排队等待宿主的会话，按先后顺序。 */
+  queuedSessions(): string[]
+  /** 应用退出时调用：清空队列、停止所有宿主并等待退出。之后的输入报 `run.disposed`。 */
+  shutdown(): Promise<void>
+}
+
+interface PendingPrompt {
+  readonly runId: string
+  readonly messageId: string
+  readonly content: ContentPart[]
+  readonly history: HostInit['history']
+  readonly run: RunDefaults
+  readonly workspacePath: string
+}
+
+interface Slot {
+  handle: HostHandle | undefined
+  /** 已发送输入、尚未收到 `turn.started`。 */
+  awaitingTurn: boolean
+  /** 启动期间用户停止了排队的输入。 */
+  cancelled: boolean
+  idleTimer: ReturnType<typeof setTimeout> | undefined
+  /** 宿主退出（或启动失败）后 resolve。 */
+  readonly gone: Promise<void>
+}
+
+/** 可被标记为中断的运行状态。 */
+const interruptible = (run: RunView) => isActiveRunState(run.state) || run.state === 'aborting'
+
+const rootRun = (view: SessionView): RunView | undefined =>
+  view.runOrder
+    .map((id) => view.runs[id])
+    .findLast((run) => run !== undefined && run.parentRunId === undefined)
+
+export function createSessionManager(options: SessionManagerOptions): SessionManager {
+  const { storage, events, supervisor } = options
+  const maxConcurrent = options.maxConcurrent ?? 3
+  const idleTimeoutMs = options.idleTimeoutMs ?? 5 * 60_000
+  const createId = options.createId ?? randomUUID
+  const now = options.now ?? Date.now
+  const onError = (error: unknown) => options.onError?.(error)
+
+  const views = new Map<string, SessionView>()
+  const slots = new Map<string, Slot>()
+  /** 等待宿主的输入；Map 保持插入顺序，即排队顺序。 */
+  const waiting = new Map<string, PendingPrompt>()
+  let closed = false
+
+  const unsubscribe = events.subscribe((sessionId, batch) => {
+    const view = views.get(sessionId)
+    if (view) views.set(sessionId, reduceSessionEvents(view, batch))
+    const slot = slots.get(sessionId)
+    if (!slot) return
+    if (batch.some((e) => e.type === 'turn.started')) slot.awaitingTurn = false
+    updateIdle(sessionId, slot)
+  })
+
+  function getView(sessionId: string): SessionView {
+    let view = views.get(sessionId)
+    if (!view) {
+      view = reduceSessionEvents(createSessionView(sessionId), events.readAfter(sessionId, 0))
+      views.set(sessionId, view)
+    }
+    return view
+  }
+
+  const header = (sessionId: string, runId: string) => ({
+    v: 1 as const,
+    sessionId,
+    runId,
+    ts: now(),
+  })
+
+  /** 把会话中仍处于运行中的运行标记为中断，返回标记的运行数。 */
+  function markInterrupted(sessionId: string, reason: string): number {
+    const out: UnsequencedEvent[] = []
+    for (const runId of getView(sessionId).runOrder) {
+      const run = getView(sessionId).runs[runId]
+      if (!run || !interruptible(run)) continue
+      const base = {
+        ...header(sessionId, runId),
+        ...(run.parentRunId ? { parentRunId: run.parentRunId } : {}),
+      }
+      if (run.turn?.status === 'running') {
+        out.push({
+          ...base,
+          turnId: run.turn.turnId,
+          type: 'turn.aborted',
+          payload: { reason: 'shutdown' },
+        })
+      }
+      out.push({
+        ...base,
+        type: 'run.state.changed',
+        payload: { from: run.state, to: 'interrupted', reason },
+      })
+    }
+    if (out.length > 0) events.publish(out)
+    return out.filter((e) => e.type === 'run.state.changed').length
+  }
+
+  /** 会话是否正在运行一轮（宿主在运行，且已发送输入或运行处于运行中状态）。 */
+  function isBusy(sessionId: string, slot: Slot): boolean {
+    if (slot.awaitingTurn) return true
+    const run = rootRun(getView(sessionId))
+    return run !== undefined && interruptible(run)
+  }
+
+  function updateIdle(sessionId: string, slot: Slot) {
+    if (!slot.handle || slot.handle.state() !== 'running') return
+    if (isBusy(sessionId, slot)) {
+      if (slot.idleTimer !== undefined) clearTimeout(slot.idleTimer)
+      slot.idleTimer = undefined
+      return
+    }
+    if (slot.idleTimer !== undefined) return
+    slot.idleTimer = setTimeout(() => void slot.handle?.stop(), idleTimeoutMs)
+    // 有会话在排队时，空闲的宿主立即让出名额
+    if (waiting.size > 0) pump()
+  }
+
+  function send(
+    sessionId: string,
+    slot: Slot,
+    handle: HostHandle,
+    pending: Pick<PendingPrompt, 'messageId' | 'content'>,
+  ) {
+    slot.awaitingTurn = true
+    updateIdle(sessionId, slot)
+    handle
+      .prompt({ messageId: pending.messageId, content: pending.content })
+      .catch((error: unknown) => {
+        onError(error)
+        slot.awaitingTurn = false
+        updateIdle(sessionId, slot)
+      })
+  }
+
+  function start(sessionId: string, pending: PendingPrompt) {
+    let resolveGone!: () => void
+    const slot: Slot = {
+      handle: undefined,
+      awaitingTurn: false,
+      cancelled: false,
+      idleTimer: undefined,
+      gone: new Promise<void>((resolve) => (resolveGone = resolve)),
+    }
+    slots.set(sessionId, slot)
+    const release = () => {
+      if (slot.idleTimer !== undefined) clearTimeout(slot.idleTimer)
+      if (slots.get(sessionId) === slot) slots.delete(sessionId)
+      resolveGone()
+      pump()
+    }
+    supervisor
+      .startHost({
+        sessionId,
+        runId: pending.runId,
+        workspacePath: pending.workspacePath,
+        ...pending.run,
+        history: pending.history,
+      })
+      .then(
+        (handle) => {
+          slot.handle = handle
+          void handle.exited.then(release)
+          if (closed) {
+            void handle.stop()
+            return
+          }
+          if (slot.cancelled) updateIdle(sessionId, slot)
+          else send(sessionId, slot, handle, pending)
+        },
+        (error: unknown) => {
+          // 启动失败已由监督器记录为 session.crashed
+          onError(error)
+          release()
+        },
+      )
+  }
+
+  /** 在名额内按顺序启动排队的会话；名额已满时回收一个空闲的宿主。 */
+  function pump() {
+    if (closed) return
+    for (const [sessionId, pending] of waiting) {
+      if (slots.size >= maxConcurrent) break
+      // 上一个宿主仍在退出，等它释放后再启动
+      if (slots.has(sessionId)) continue
+      waiting.delete(sessionId)
+      start(sessionId, pending)
+    }
+    if (waiting.size === 0) return
+    for (const slot of slots.values()) {
+      if (slot.idleTimer !== undefined && slot.handle?.state() === 'running') {
+        clearTimeout(slot.idleTimer)
+        slot.idleTimer = undefined
+        void slot.handle.stop()
+        return
+      }
+    }
+  }
+
+  function requireSession(sessionId: string) {
+    const record = storage.sessions.get(sessionId)
+    if (!record) throw new RpcError(SessionErrorCode.NotFound, { sessionId })
+    return record
+  }
+
+  return {
+    create({ projectPath, title }) {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      if (!isAbsolute(projectPath))
+        throw new RpcError(SessionErrorCode.InvalidParams, { projectPath })
+      const project =
+        storage.projects.getByPath(projectPath) ??
+        storage.projects.create({
+          projectId: createId(),
+          name: basename(projectPath),
+          path: projectPath,
+        })
+      const sessionId = createId()
+      const session = storage.sessions.create({
+        sessionId,
+        projectId: project.projectId,
+        workspacePath: project.path,
+        title: title ?? '',
+      })
+      events.publish([
+        {
+          ...header(sessionId, sessionId),
+          type: 'session.created',
+          payload: {
+            projectId: project.projectId,
+            projectPath: project.path,
+            workspacePath: session.workspacePath,
+            title: session.title,
+          },
+        },
+      ])
+      return { sessionId }
+    },
+
+    list({ includeArchived }) {
+      const sessions = storage.sessions
+        .list(includeArchived ? { includeArchived } : {})
+        .map((s) => ({
+          sessionId: s.sessionId,
+          title: s.title,
+          projectPath: s.projectPath,
+          status:
+            waiting.has(s.sessionId) || (slots.has(s.sessionId) && !slots.get(s.sessionId)?.handle)
+              ? ('running' as const)
+              : sessionStatus(getView(s.sessionId)),
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+        }))
+      return { sessions }
+    },
+
+    prompt({ sessionId, content }) {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      const record = requireSession(sessionId)
+      const slot = slots.get(sessionId)
+      const hostReady = slot?.handle?.state() === 'running'
+      if (
+        waiting.has(sessionId) ||
+        (slot && !slot.handle) ||
+        (slot && hostReady && isBusy(sessionId, slot))
+      ) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      // 没有宿主时仍处于运行中的运行，是上一个宿主崩溃留下的
+      if (!hostReady) markInterrupted(sessionId, 'host_lost')
+      const view = getView(sessionId)
+      const root = rootRun(view)
+      const resume = root !== undefined && root.state !== 'disposed' && acceptsInput(root.state)
+      const runId = resume ? root.runId : createId()
+      const history = hostReady ? [] : rebuildHistory(events.readAfter(sessionId, 0), { runId })
+
+      const messageId = createId()
+      events.publish([
+        { ...header(sessionId, runId), type: 'message.user', payload: { messageId, content } },
+      ])
+
+      if (slot?.handle && hostReady) {
+        send(sessionId, slot, slot.handle, { messageId, content })
+      } else {
+        waiting.set(sessionId, {
+          runId,
+          messageId,
+          content,
+          history,
+          run: resume
+            ? { agent: root.agent, model: root.model, mode: root.mode, limits: root.limits }
+            : options.runDefaults,
+          workspacePath: record.workspacePath,
+        })
+        pump()
+      }
+      return { messageId }
+    },
+
+    async abort({ sessionId }) {
+      requireSession(sessionId)
+      // 排队中的输入直接取消（用户消息保留在历史中）
+      if (waiting.delete(sessionId)) return {}
+      const slot = slots.get(sessionId)
+      if (!slot) return {}
+      if (!slot.handle) {
+        slot.cancelled = true
+        return {}
+      }
+      if (slot.handle.state() === 'running') await slot.handle.abort('user')
+      return {}
+    },
+
+    recoverInterrupted() {
+      let count = 0
+      for (const session of storage.sessions.list({ includeArchived: true })) {
+        if (slots.has(session.sessionId)) continue
+        try {
+          count += markInterrupted(session.sessionId, 'app_restart')
+        } catch (error) {
+          onError(error)
+        }
+      }
+      return count
+    },
+
+    activeSessions: () => [...slots.keys()],
+    queuedSessions: () => [...waiting.keys()],
+
+    async shutdown() {
+      closed = true
+      waiting.clear()
+      unsubscribe()
+      const all = [...slots.values()]
+      for (const slot of all) {
+        if (slot.idleTimer !== undefined) clearTimeout(slot.idleTimer)
+        slot.idleTimer = undefined
+        if (slot.handle) void slot.handle.stop()
+      }
+      await Promise.all(all.map((slot) => slot.gone))
+    },
+  }
+}

@@ -4,6 +4,7 @@
  * - 界面中没有 Node 能力（`require`、`process`、`module`、`Buffer` 等均不存在）；
  * - preload 只暴露了 `window.nexus` 的 `on`、`ready`、`request` 三个函数；
  * - 页面带有 CSP，且 CSP 生效（`new Function` 被拒绝）；
+ * - 界面经 `window.nexus` 调用 `session.list` 成功（IPC 网关、会话管理器与数据库已接通）；
  * - agent 宿主入口能以 utilityProcess 启动并回报 `host.started`。
  * 结果以 `NEXUS_SMOKE_RESULT <JSON>` 一行输出到标准输出，随后退出（成功 0，失败 1）。
  *
@@ -24,10 +25,12 @@ export interface RendererProbe {
   readonly csp: string | null
   /** CSP 生效时 `new Function` 被拒绝。 */
   readonly evalBlocked: boolean
+  /** 经 `window.nexus` 请求 `session.list` 的结果：成功为 null，失败为错误码或说明。 */
+  readonly ipcError: string | null
 }
 
 /** 在界面中执行的检查脚本（`webContents.executeJavaScript`），返回 `RendererProbe`。 */
-export const RENDERER_PROBE_SCRIPT = `(() => {
+export const RENDERER_PROBE_SCRIPT = `(async () => {
   const nodeGlobals = ['require', 'process', 'module', 'exports', 'Buffer', 'global', '__dirname']
     .filter((name) => typeof globalThis[name] !== 'undefined')
   const nexus = globalThis.nexus
@@ -35,12 +38,19 @@ export const RENDERER_PROBE_SCRIPT = `(() => {
   const meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]')
   let evalBlocked = false
   try { new Function('return 1')() } catch { evalBlocked = true }
+  let ipcError = 'window.nexus is missing'
+  if (nexus) {
+    const ready = await nexus.ready()
+    const listed = ready.ok ? await nexus.request('session.list', {}) : ready
+    ipcError = listed.ok ? null : listed.error.code
+  }
   return {
     text: document.getElementById('root')?.textContent ?? null,
     nodeGlobals,
     api,
     csp: meta ? meta.getAttribute('content') : null,
     evalBlocked,
+    ipcError,
   }
 })()`
 
@@ -58,6 +68,7 @@ export function checkRendererProbe(probe: RendererProbe, expectedText: string): 
   }
   if (!probe.csp?.includes("script-src 'self'")) problems.push('renderer has no CSP')
   if (!probe.evalBlocked) problems.push('CSP does not block eval')
+  if (probe.ipcError !== null) problems.push(`session.list over IPC failed: ${probe.ipcError}`)
   return problems
 }
 

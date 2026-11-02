@@ -1,11 +1,20 @@
 /**
- * 主进程入口（ADR-0002、ADR-0003，架构 §4、§17）。只做启动引导：确定数据目录、应用安全基线、创建窗口。
- * 服务（存储、日志、宿主管理、IPC）在 M0-13 接入。
+ * 主进程入口（ADR-0002、ADR-0003，架构 §4、§17）。只做启动引导：确定数据目录、应用安全基线、
+ * 组装主进程服务（存储、宿主管理、IPC 网关）、创建窗口。服务本身不依赖 Electron，见 `services/`。
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, session, shell, utilityProcess } from 'electron'
+import { openSqliteStorage } from '@nexus/storage'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  MessageChannelMain,
+  session,
+  shell,
+  utilityProcess,
+} from 'electron'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
 import {
   hardenWebContents,
@@ -14,6 +23,12 @@ import {
   type NavigationPolicy,
   type WebContentsLike,
 } from './security.js'
+import { createSessionEventService } from './services/event-service.js'
+import { createUtilityHostSpawner } from './services/host-process.js'
+import { createHostSupervisor } from './services/host-supervisor.js'
+import { createRendererGateway } from './services/renderer-gateway.js'
+import { createRendererChannel } from './services/renderer-transport.js'
+import { createSessionManager, type RunDefaults } from './services/session-manager.js'
 import { isSmokeRun, RENDERER_PROBE_SCRIPT, runSmokeChecks, type RendererProbe } from './smoke.js'
 
 const paths = resolveAppPaths({
@@ -32,6 +47,44 @@ const navigationPolicy: NavigationPolicy = {
   devServerUrl,
 }
 
+/** M0 使用 FakeRuntime；模型与 Agent 配置在 M1 接入设置。 */
+const RUN_DEFAULTS: RunDefaults = {
+  agent: { id: 'default', version: 1 },
+  model: { providerId: 'fake', modelId: 'fake' },
+  mode: 'interactive',
+  limits: { maxStepsPerTurn: 50, maxTurnDurationMs: 10 * 60_000, maxConsecutiveToolErrors: 5 },
+}
+/** 退出时等待宿主结束的上限。 */
+const SHUTDOWN_TIMEOUT_MS = 5_000
+
+// 日志服务接入前，异常先写到标准错误
+const reportError = (error: unknown) => console.error('[nexus]', error)
+
+const storage = openSqliteStorage({ file: paths.database })
+const events = createSessionEventService({ storage, onListenerError: reportError })
+const supervisor = createHostSupervisor({
+  spawn: createUtilityHostSpawner({
+    entry: join(import.meta.dirname, 'agent-host.js'),
+    fork: (modulePath, args, options) => utilityProcess.fork(modulePath, args, options),
+    createMessageChannel: () => new MessageChannelMain(),
+  }),
+  events,
+  onError: reportError,
+})
+const sessions = createSessionManager({
+  storage,
+  events,
+  supervisor,
+  runDefaults: RUN_DEFAULTS,
+  onError: reportError,
+})
+sessions.recoverInterrupted()
+const gateway = createRendererGateway({
+  events,
+  commands: sessions,
+  onProtocolError: (error) => reportError(error),
+})
+
 // 对所有 WebContents（含将来的子窗口、DevTools 之外的页面）拦截导航、新窗口与 <webview>
 app.on('web-contents-created', (_event, contents) => {
   hardenWebContents(contents as unknown as WebContentsLike, {
@@ -47,6 +100,15 @@ function createWindow(): BrowserWindow {
     show: false,
     webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs')),
   })
+  const connection = gateway.connect(
+    createRendererChannel({
+      ipcMain,
+      contents: window.webContents,
+      policy: navigationPolicy,
+      onRejected: (reason, url) => reportError(new Error(`IPC rejected (${reason}): ${url}`)),
+    }),
+  )
+  window.once('closed', () => connection.close())
   window.once('ready-to-show', () => window.show())
   if (devServerUrl) void window.loadURL(devServerUrl)
   else void window.loadFile(rendererFile)
@@ -55,6 +117,22 @@ function createWindow(): BrowserWindow {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// 退出前停止所有宿主（各自收到 host.shutdown），再关闭数据库
+let servicesClosed = false
+app.on('before-quit', (event) => {
+  if (servicesClosed) return
+  event.preventDefault()
+  servicesClosed = true
+  gateway.close()
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
+  void Promise.race([sessions.shutdown(), timeout])
+    .catch(reportError)
+    .finally(() => {
+      storage.close()
+      app.quit()
+    })
 })
 
 /** 冒烟检查（`NEXUS_SMOKE=1`）的 Electron 部分，流程见 `smoke.ts`。 */
