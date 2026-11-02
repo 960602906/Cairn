@@ -8,6 +8,9 @@
  *   归约，避免补发的事件因 seq 较小被丢弃。同一时间只订阅当前会话，切走时取消订阅；投影保留，
  *   切回时只补发之后的事件。
  * - **动作**：刷新列表、新建会话、发送输入、停止。失败时把错误码写入 `error`，由界面经 i18n 显示。
+ * - **等待开始**：输入已发送、但这一轮还没开始（排队或宿主启动中）时，投影里还没有运行中的轮次；
+ *   `awaitingTurn` 记下这段时间，界面与列表把会话当作运行中（可以停止、不能再发送）。收到
+ *   `turn.started`（或该轮结束、会话崩溃）、发送失败或停止成功时清除。
  *
  * 不依赖 React 与 DOM，便于在 Node 中测试；组件通过 `useStore(store, selector)` 读取。
  */
@@ -28,6 +31,8 @@ export interface SessionState {
   /** 各会话的事件投影。 */
   readonly views: Readonly<Record<string, SessionView>>
   readonly activeSessionId: string | undefined
+  /** 已发送输入、等待这一轮开始的会话。 */
+  readonly awaitingTurn: Readonly<Record<string, true>>
   /** 最近一次失败的错误；界面显示后可以清除。 */
   readonly error: ErrorInfo | undefined
 }
@@ -52,20 +57,41 @@ export type SessionStore = StoreApi<SessionState & SessionActions>
 const toError = (error: unknown): ErrorInfo =>
   error instanceof RpcError ? error.toInfo() : { code: 'unknown' }
 
-/** 把事件归约进会话投影，并同步列表中的状态。 */
+/** 这些事件说明等待的那一轮已经开始或不会再开始。 */
+const TURN_SETTLED = new Set(['turn.started', 'turn.failed', 'turn.aborted', 'session.crashed'])
+
+const withoutKey = <T>(record: Readonly<Record<string, T>>, key: string) => {
+  if (!(key in record)) return record
+  const { [key]: _removed, ...rest } = record
+  return rest
+}
+
+/** 界面显示的会话状态：等待开始时视为运行中。 */
+const displayStatus = (state: Pick<SessionState, 'awaitingTurn'>, view: SessionView) =>
+  state.awaitingTurn[view.sessionId] ? 'running' : sessionStatus(view)
+
+/** 只更新列表中一个会话的状态。 */
+const withStatus = (
+  sessions: readonly SessionSummary[],
+  sessionId: string,
+  status: SessionSummary['status'],
+) => sessions.map((s) => (s.sessionId === sessionId && s.status !== status ? { ...s, status } : s))
+
+/** 把事件归约进会话投影，并同步等待标记与列表中的状态。 */
 function reduceInto(
   state: SessionState,
   sessionId: string,
   events: readonly EventEnvelope[],
-): Pick<SessionState, 'views' | 'sessions'> {
+): Pick<SessionState, 'views' | 'sessions' | 'awaitingTurn'> {
   let view = state.views[sessionId] ?? createSessionView(sessionId)
   for (const event of events) view = reduceSession(view, event)
-  const status = sessionStatus(view)
+  const awaitingTurn = events.some((e) => TURN_SETTLED.has(e.type))
+    ? withoutKey(state.awaitingTurn, sessionId)
+    : state.awaitingTurn
   return {
     views: { ...state.views, [sessionId]: view },
-    sessions: state.sessions.map((s) =>
-      s.sessionId === sessionId && s.status !== status ? { ...s, status } : s,
-    ),
+    awaitingTurn,
+    sessions: withStatus(state.sessions, sessionId, displayStatus({ awaitingTurn }, view)),
   }
 }
 
@@ -85,6 +111,21 @@ export function createSessionStore(api: MainApi): SessionStore {
       }
     }
 
+    const setAwaiting = (sessionId: string, awaiting: boolean) =>
+      set((state) => {
+        const awaitingTurn = awaiting
+          ? { ...state.awaitingTurn, [sessionId]: true as const }
+          : withoutKey(state.awaitingTurn, sessionId)
+        if (awaitingTurn === state.awaitingTurn) return {}
+        const view = state.views[sessionId]
+        return {
+          awaitingTurn,
+          sessions: view
+            ? withStatus(state.sessions, sessionId, displayStatus({ awaitingTurn }, view))
+            : state.sessions,
+        }
+      })
+
     const unsubscribe = async (sessionId: string) => {
       pending.delete(sessionId)
       if (subscribed === sessionId) subscribed = undefined
@@ -95,17 +136,20 @@ export function createSessionStore(api: MainApi): SessionStore {
       sessions: [],
       views: {},
       activeSessionId: undefined,
+      awaitingTurn: {},
       error: undefined,
 
       async refreshSessions() {
         const result = await run(() => api.request('session.list', {}))
         if (!result) return
         // 已订阅的会话以本地投影的状态为准（比列表请求更新）
-        const { views } = get()
+        const state = get()
         set({
           sessions: result.sessions.map((s) => {
-            const view = views[s.sessionId]
-            return view && s.sessionId === subscribed ? { ...s, status: sessionStatus(view) } : s
+            const view = state.views[s.sessionId]
+            return view && s.sessionId === subscribed
+              ? { ...s, status: displayStatus(state, view) }
+              : s
           }),
         })
       },
@@ -148,14 +192,19 @@ export function createSessionStore(api: MainApi): SessionStore {
         const trimmed = text.trim()
         if (sessionId === undefined || trimmed === '') return false
         const content: ContentPart[] = [{ type: 'text', text: trimmed }]
+        // 先标记再请求：turn.started 可能早于请求响应到达
+        setAwaiting(sessionId, true)
         const sent = await run(() => api.request('session.prompt', { sessionId, content }))
+        if (sent === undefined) setAwaiting(sessionId, false)
         return sent !== undefined
       },
 
       async abort() {
         const sessionId = get().activeSessionId
         if (sessionId === undefined) return
-        await run(() => api.request('session.abort', { sessionId }))
+        const stopped = await run(() => api.request('session.abort', { sessionId }))
+        // 排队中的输入被取消时不会产生事件
+        if (stopped !== undefined) setAwaiting(sessionId, false)
       },
 
       clearError: () => set({ error: undefined }),
