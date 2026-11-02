@@ -267,7 +267,6 @@ export function createEndpoint<Local extends Side, Remote extends Side>(
   }
 
   const unsubscribe = channel.onMessage((raw) => {
-    if (closed) return
     const parsed = WireMessage.safeParse(raw)
     if (!parsed.success) return protocolError(RpcErrorCode.InvalidParams, raw)
     const msg = parsed.data

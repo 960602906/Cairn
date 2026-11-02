@@ -45,8 +45,16 @@ jobs:
       - name: Format
         run: pnpm format:check
 
-      - name: Test
-        run: pnpm test
+      - name: Test (coverage ≥ 90%)
+        run: pnpm test:coverage
+
+      - name: Upload coverage report
+        if: always() && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
 
       # i18n key 一致性检查在 M0-11 加入。
 
