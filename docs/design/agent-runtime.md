@@ -527,6 +527,8 @@ interface EventEnvelope {
 
 ## 16. 为多 Agent 预留的委派原语
 
+> 协作模式、任务书、隔离工作区、`DelegationPolicy` 结构等详见 [多 Agent 协作设计](multi-agent.md)。
+
 多 Agent 协作的具体模式在单独的文档中设计，但以下底层能力必须现在就纳入 Runtime，否则以后要改事件、存储和状态机：
 
 1. **父子运行**：运行有 `parentRunId`；事件带 `runId` 与 `parentRunId`（已在第 12 节加入）。

@@ -297,7 +297,7 @@ interface ToolDefinition<I = unknown, O = unknown> {
   name: string
   description: string                   // 给模型看的说明（英文，模型理解更稳定）
   inputSchema: JsonSchema               // 参数定义
-  category: 'read' | 'write' | 'execute' | 'network'
+  category: 'read' | 'write' | 'execute' | 'network' | 'delegate'
   execute(input: I, ctx: ToolContext): AsyncIterable<ToolProgress> | Promise<O>
   describeForApproval?(input: I, ctx: ToolContext): Promise<ApprovalPreview>
 }
