@@ -13,6 +13,7 @@
     "src/preload",
     "src/agent-host",
     "src/shared",
+    "e2e",
     "electron.vite.config.ts",
     "scripts"
   ],
