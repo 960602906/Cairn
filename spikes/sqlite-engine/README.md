@@ -48,7 +48,9 @@ CI：`.github/workflows/spike-sqlite-engine.yml` 在 Windows 与 Linux 上执行
 
 ## 结果
 
-Linux 容器（x64），2026-11-02。吞吐数字只用于判断量级，不同机器之间不可直接比较；Windows 结果见 PR 中的 CI 作业摘要。
+吞吐数字只用于判断量级，不同机器之间不可直接比较。
+
+**Linux 容器（x64），2026-11-02**
 
 | 环境 | 引擎 | 结果 | 加载 ms | 批量写入 行/秒 | 逐条提交 行/秒 | 读 2 万行 ms | 警告 |
 |---|---|---|---|---|---|---|---|
@@ -59,13 +61,24 @@ Linux 容器（x64），2026-11-02。吞吐数字只用于判断量级，不同�
 | 打包后 | better-sqlite3 | 通过 | 5.5 | 164880 | 23095 | 32.1 | - |
 | 打包后 | node:sqlite | 通过 | 0.3 | 207900 | 27322 | 38.0 | - |
 
+**Windows（GitHub Actions `windows-latest`，x64），2026-11-02**
+
+| 环境 | 引擎 | 结果 | 加载 ms | 批量写入 行/秒 | 逐条提交 行/秒 | 读 2 万行 ms | 警告 |
+|---|---|---|---|---|---|---|---|
+| Node 22.23.4 | better-sqlite3 | 通过 | 14.8 | 38052 | 2587 | 46.3 | - |
+| Node 22.23.4 | node:sqlite | 通过 | 0.4 | 62834 | 3867 | 42.4 | ExperimentalWarning |
+| Electron 45.2.1 | better-sqlite3 | 通过 | 10.2 | 38760 | 2073 | 30.5 | - |
+| Electron 45.2.1 | node:sqlite | 通过 | 0.4 | 59862 | 4327 | 36.4 | - |
+| 打包后 | better-sqlite3 | 通过 | 11.4 | 34507 | 2372 | 33.5 | - |
+| 打包后 | node:sqlite | 通过 | 0.6 | 50800 | 4277 | 39.1 | - |
+
 观察：
 
-1. 两个引擎在三种环境中都通过全部检查，使用的 SQLite 版本相同（3.53.4）。
+1. 两个引擎在 Windows 与 Linux 的三种环境中都通过全部检查，使用的 SQLite 版本相同（3.53.4）。
 2. **better-sqlite3 13 不再需要针对 Electron 重新编译。** 它改用 Node-API，预编译文件与 Node / Electron 的 ABI 无关；打包时设置 `npmRebuild: false` 仍能在 Electron 45 中加载。ADR-0006 原先认为它"需要针对 Electron 版本重新编译原生模块"，这一前提已不成立。
 3. 打包要求：`*.node` 必须放在 `asarUnpack` 中。包内带全部 8 个平台的预编译文件（约 17 MB；已用 `files` 排除源码与 `deps/`），正式打包（M0-12）时应只保留目标平台的文件。
 4. `node:sqlite` 在 Node 24.15 起标为 "Stability: 1.2 - Release candidate"（[Node 文档](https://nodejs.org/docs/v24.22.1/api/sqlite.md)），Electron 45 中加载时不再发出警告；但它尚未进入 Stability 2（稳定），最新版 Node 文档中仍是 1.2。
-5. 性能两者处于同一量级，都远高于本应用的需要（估计流式过程中主进程每秒只落库几十条持久化事件，delta 不落库）。
+5. 性能两者处于同一量级，都远高于本应用的需要（估计流式过程中主进程每秒只落库几十条持久化事件，delta 不落库）。Windows 上逐条自动提交每秒只有 2000～4000 行，比批量写入慢一个数量级，M0-09 的写入应尽量合并到事务中。
 
 ## 结论
 
