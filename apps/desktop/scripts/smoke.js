@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * 启动冒烟测试（M0-12a）：用构建产物启动应用（需先 `pnpm build`），确认窗口加载、界面渲染、
- * agent 宿主能启动，并且数据目录按约定创建。数据写入临时目录，不污染开发与正式数据。
+ * agent 宿主能启动、界面经 IPC 访问到会话列表，并且数据目录与数据库按约定创建。数据写入临时目录，不污染开发与正式数据。
  *
  * Linux 上使用 `--ozone-platform=headless` 与 `--disable-gpu`，无需显示器；CI 的 Linux 容器不支持 Chromium 沙箱，
  * 另加 `--no-sandbox`（只用于本测试，应用本身的沙箱设置不受影响）。
@@ -55,6 +55,8 @@ child.on('exit', (code, signal) => {
   for (const dir of ['data', 'data/blobs', 'checkpoints', 'logs']) {
     if (!existsSync(path.join(userData, dir))) problems.push(`missing directory ${dir}`)
   }
+  if (!existsSync(path.join(userData, 'data/nexus.db')))
+    problems.push('missing database data/nexus.db')
   rmSync(userData, { recursive: true, force: true })
 
   if (problems.length > 0) {

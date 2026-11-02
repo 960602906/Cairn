@@ -15,6 +15,7 @@
     "@nexus/i18n": "workspace:*",
     "@nexus/protocol": "workspace:*",
     "@nexus/storage": "workspace:*",
+    "better-sqlite3": "13.0.3",
     "i18next": "26.7.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
