@@ -126,10 +126,12 @@ export class RunEngine {
   #turn: TurnContext | undefined
   /** 当前轮次结束时 resolve。 */
   #turnDone: Promise<void> | undefined
+  #limits: RunLimits
 
   private constructor(options: RunEngineOptions) {
     this.#o = options
     this.runId = options.runId
+    this.#limits = options.limits
     this.#now = options.now ?? (() => Date.now())
     let counter = 0
     this.#createId = options.createId ?? (() => `${options.runId}-${++counter}`)
@@ -208,6 +210,26 @@ export class RunEngine {
     await this.#turnDone
   }
 
+  get limits(): RunLimits {
+    return this.#limits
+  }
+
+  /** 调整限额（Runtime §10.3"继续"），从下一次检查起生效。 */
+  updateLimits(limits: Partial<RunLimits>): void {
+    this.#limits = { ...this.#limits, ...limits } as RunLimits
+  }
+
+  /**
+   * 引导（Runtime §9）：运行中把消息交给运行时，在下一次调用模型前生效；
+   * 返回 false 表示当前没有进行中的轮次，调用方应改为 `prompt`。
+   */
+  async steer(input: { messageId: string; content: readonly ContentPart[] }): Promise<boolean> {
+    const turn = this.#turn
+    if (!turn || turn.ended) return false
+    await this.#session!.steer({ role: 'user', content: [...input.content], ts: this.#now() })
+    return true
+  }
+
   /** 中止当前轮次；空闲时无效果。 */
   async abort(reason: 'user' | 'shutdown' = 'user'): Promise<void> {
     const turn = this.#turn
@@ -236,7 +258,7 @@ export class RunEngine {
     switch (event.type) {
       case 'step.started': {
         if (turn.limitHit) return
-        if (turn.steps >= this.#o.limits.maxStepsPerTurn) {
+        if (turn.steps >= this.#limits.maxStepsPerTurn) {
           turn.limitHit = 'maxStepsPerTurn'
           void this.#session!.abort('limit')
           return
@@ -309,7 +331,7 @@ export class RunEngine {
     }
     if (turn.limitHit) {
       const limit = turn.limitHit
-      this.#emit('turn.limit_reached', { limit, value: this.#o.limits[limit] })
+      this.#emit('turn.limit_reached', { limit, value: this.#limits[limit] })
       this.#fail({ code: RunEngineErrorCode.LimitReached, params: { limit } }, true)
       return
     }
