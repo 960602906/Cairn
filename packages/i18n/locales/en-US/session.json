@@ -1,0 +1,17 @@
+{
+  "list.title": "Sessions",
+  "list.empty": "No sessions yet",
+  "list.new": "New session",
+  "title.untitled": "Untitled session",
+  "input.placeholder": "Type a message. Enter to send, Shift+Enter for a new line",
+  "status.idle": "Idle",
+  "status.running": "Running",
+  "status.waiting_approval": "Waiting for approval",
+  "status.failed": "Failed",
+  "status.interrupted": "Interrupted",
+  "status.crashed": "Crashed",
+  "status.archived": "Archived",
+  "turn.aborted": "Stopped",
+  "turn.limit_reached": "Reached the limit of {{maxSteps}} steps for this turn. You can continue.",
+  "crashed.message": "The agent process exited unexpectedly. You can continue from the last saved point."
+}
