@@ -5,13 +5,18 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createI18n, detectLocale } from '@nexus/i18n'
+import { getMainApi } from './api.js'
 import { App } from './App.js'
+import { createSessionStore } from './session-store.js'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root is missing from index.html')
 
+const api = getMainApi()
+const store = api && createSessionStore(api)
+
 createRoot(root).render(
   <StrictMode>
-    <App i18n={createI18n(detectLocale(navigator.languages))} />
+    <App i18n={createI18n(detectLocale(navigator.languages))} {...(store ? { store } : {})} />
   </StrictMode>,
 )
