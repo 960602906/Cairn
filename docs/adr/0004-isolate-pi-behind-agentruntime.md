@@ -20,6 +20,15 @@
 - **直接使用 pi 的类型**：开发初期更快，但耦合严重。
 - **完全自己实现 agent 循环**：完全可控，但需要自己处理多模型适配，失去选择 pi 的主要理由。
 
+## 适配器要点（S1 预研，2026-11-03）
+
+在 pi 1.5.0 上验证（`spikes/pi-utility-process/`，结论见 ADR-0003），`packages/runtime-pi` 实现时注意：
+
+- 模型经 `createProvider` + `openAICompletionsApi`（`@earendil-works/pi-ai/api/openai-completions.lazy`）配置，凭据用 `auth.apiKey.resolve` 注入，不经环境变量；
+- `Agent` 的 `subscribe` 事件（`message_update` 的 `text_delta` / `thinking_delta` / `toolcall_delta`、`tool_execution_start` / `end`、`turn_end` 等）映射为 `RuntimeEvent`；
+- 中止和模型错误不抛异常，`prompt()` 正常返回，以最后一条助手消息的 `stopReason`（`aborted` / `error`）与 `errorMessage` 表示；401 不重试；
+- pi 消息中的工具结果角色为 `toolResult`，与我们的 `CanonicalMessage` 之间需要转换。
+
 ## 后果
 
 - 需要维护一层转换代码，初期多一些工作量。
