@@ -1,0 +1,63 @@
+name: Spike S5/S6 shadow git
+
+# S5：约 1 万个文件的工作区上创建 / 恢复影子 Git 检查点的耗时与正确性；
+# S6：本机 Git、随应用打包的 Git（dugite）、isomorphic-git 三种来源的比较。
+on:
+  pull_request:
+    paths:
+      - 'spikes/shadow-git/**'
+      - '.github/workflows/spike-shadow-git.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-shadow-git-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: s5-s6 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: spikes/shadow-git
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: spikes/shadow-git/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Bench
+        run: node src/cli.mjs --out=result-${{ runner.os }}.json
+
+      # 写对象方式的配置变体，只用本机 Git
+      - name: Bench config variants
+        if: always()
+        run: >-
+          node src/cli.mjs --source=system:pack-nofsync,system:pack-durable
+          --out=result-${{ runner.os }}-variants.json
+
+      - name: Summary
+        if: always()
+        run: node src/summarize.mjs result-${{ runner.os }}.json result-${{ runner.os }}-variants.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s5-s6-results-${{ matrix.os }}
+          path: spikes/shadow-git/result-*.json
+          retention-days: 30

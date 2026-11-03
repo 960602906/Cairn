@@ -15,7 +15,7 @@
 | [0005](0005-event-log-as-source-of-truth.md) | 以追加式事件日志作为会话的事实来源 | 已接受 |
 | [0006](0006-sqlite-storage-with-migrations.md) | 使用 SQLite 存储并从第一天起支持迁移 | 已接受（引擎待预研） |
 | [0007](0007-rule-based-permissions.md) | 基于规则的权限引擎 | 已接受 |
-| [0008](0008-checkpoints-and-hunks.md) | 检查点与按块改动记录 | 已接受（性能待预研） |
+| [0008](0008-checkpoints-and-hunks.md) | 检查点与按块改动记录 | 已接受 |
 | [0009](0009-typed-versioned-ipc.md) | 类型化、带版本的进程间通信协议 | 已接受 |
 | [0010](0010-credential-provider.md) | 可扩展的凭据提供方与加密存储 | 已接受 |
 | [0011](0011-openai-compatible-first.md) | 模型接入以 OpenAI 兼容接口优先 | 部分被 0021 替代 |
