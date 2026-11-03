@@ -49,9 +49,10 @@ export const CONFIG_VARIANTS = {
     'core.fsync': 'none',
     'core.fsyncObjectFiles': 'false',
   },
+  // core.fsync 在平台默认值上增减（Git for Windows 的默认值包含 loose-object），需显式去掉。
   'pack-durable': {
     'core.bigFileThreshold': '1',
-    'core.fsync': 'pack,pack-metadata,reference',
+    'core.fsync': '-loose-object,pack,pack-metadata,reference',
     'core.fsyncObjectFiles': 'false',
   },
 }

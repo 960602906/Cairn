@@ -47,7 +47,7 @@ jobs:
       - name: Bench config variants
         if: always()
         run: >-
-          node src/cli.mjs --source=system:pack,system:pack-nofsync,system:pack-durable
+          node src/cli.mjs --source=system:pack-nofsync,system:pack-durable
           --out=result-${{ runner.os }}-variants.json
 
       - name: Summary
