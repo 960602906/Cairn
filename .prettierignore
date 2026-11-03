@@ -8,3 +8,6 @@ playwright-report/
 *.md
 # 预研项目自带 npm 锁文件
 spikes/**/package-lock.json
+# 录制文件与黄金文件由脚本生成，按原样比对
+spikes/pi-contract/cassettes/
+spikes/pi-contract/golden/

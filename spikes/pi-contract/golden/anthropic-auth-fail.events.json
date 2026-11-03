@@ -1,0 +1,121 @@
+[
+  {
+    "type": "agent_start"
+  },
+  {
+    "type": "turn_start"
+  },
+  {
+    "type": "message_start",
+    "role": "user"
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ]
+    }
+  },
+  {
+    "type": "message_start",
+    "role": "assistant"
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "assistant",
+      "content": [],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "auth-fail",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "error",
+      "errorMessage": "401 {\"error\":{\"message\":\"Invalid API key\",\"type\":\"invalid_request_error\"}}",
+      "thinkingLevel": "off"
+    }
+  },
+  {
+    "type": "turn_end",
+    "message": {
+      "role": "assistant",
+      "content": [],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "auth-fail",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "error",
+      "errorMessage": "401 {\"error\":{\"message\":\"Invalid API key\",\"type\":\"invalid_request_error\"}}",
+      "thinkingLevel": "off"
+    },
+    "toolResults": []
+  },
+  {
+    "type": "agent_end",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [],
+        "api": "anthropic-messages",
+        "provider": "contract",
+        "model": "auth-fail",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "error",
+        "errorMessage": "401 {\"error\":{\"message\":\"Invalid API key\",\"type\":\"invalid_request_error\"}}",
+        "thinkingLevel": "off"
+      }
+    ]
+  }
+]

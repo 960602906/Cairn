@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "name": "gemini-parallel",
+  "scenario": "gemini-parallel",
+  "model": "calc-parallel",
+  "source": "synthetic",
+  "pi": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@earendil-works/pi-telemetry": "1.5.0"
+  },
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/calc-parallel:streamGenerateContent",
+        "query": {
+          "alt": "sse"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "You are a calculator."
+              }
+            ],
+            "role": "user"
+          },
+          "tools": [
+            {
+              "functionDeclarations": [
+                {
+                  "name": "add",
+                  "description": "Add two numbers",
+                  "parametersJsonSchema": {
+                    "type": "object",
+                    "properties": {
+                      "a": {
+                        "type": "number"
+                      },
+                      "b": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "a",
+                      "b"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "maxOutputTokens": 1024
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"candidates\":",
+          "[{\"content\":{\"parts\":[{\"funct",
+          "ionCall",
+          "\":{\"name\":\"ad",
+          "d\",\"args\":{\"a\":2,\"b\":3}}},{\"f",
+          "unction",
+          "Call\":{\"name\"",
+          ":\"add\",\"args\":{\"a\":10,\"b\":20}",
+          "}}],\"ro",
+          "le\":\"model\"},",
+          "\"finishReason\":\"STOP\",\"index\"",
+          ":0}],\"u",
+          "sageMetadata\"",
+          ":{\"promptTokenCount\":60,\"cand",
+          "idatesT",
+          "okenCount\":40",
+          ",\"totalTokenCount\":100},\"mode",
+          "lVersio",
+          "n\":\"calc-para",
+          "llel\",\"responseId\":\"resp-mock",
+          "-1\"}\r\n\r",
+          "\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/calc-parallel:streamGenerateContent",
+        "query": {
+          "alt": "sse"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+                }
+              ],
+              "role": "user"
+            },
+            {
+              "parts": [
+                {
+                  "functionCall": {
+                    "args": {
+                      "a": 2,
+                      "b": 3
+                    },
+                    "name": "add"
+                  }
+                },
+                {
+                  "functionCall": {
+                    "args": {
+                      "a": 10,
+                      "b": 20
+                    },
+                    "name": "add"
+                  }
+                }
+              ],
+              "role": "model"
+            },
+            {
+              "parts": [
+                {
+                  "functionResponse": {
+                    "name": "add",
+                    "response": {
+                      "output": "5"
+                    }
+                  }
+                },
+                {
+                  "functionResponse": {
+                    "name": "add",
+                    "response": {
+                      "output": "30"
+                    }
+                  }
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "You are a calculator."
+              }
+            ],
+            "role": "user"
+          },
+          "tools": [
+            {
+              "functionDeclarations": [
+                {
+                  "name": "add",
+                  "description": "Add two numbers",
+                  "parametersJsonSchema": {
+                    "type": "object",
+                    "properties": {
+                      "a": {
+                        "type": "number"
+                      },
+                      "b": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "a",
+                      "b"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "maxOutputTokens": 1024
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"candidates\":",
+          "[{\"content\":{\"parts\":[{\"text\"",
+          ":\"The r",
+          "esults \"}],\"r",
+          "ole\":\"model\"},\"index\":0}],\"mo",
+          "delVers",
+          "ion\":\"calc-pa",
+          "rallel\",\"responseId\":\"resp-mo",
+          "ck-1\"}\r",
+          "\n\r\ndata: {\"ca",
+          "ndidates\":[{\"content\":{\"parts",
+          "\":[{\"te",
+          "xt\":\"are 5 an",
+          "d 30\"}],\"role\":\"model\"},\"inde",
+          "x\":0}],",
+          "\"modelVersion",
+          "\":\"calc-parallel\",\"responseId",
+          "\":\"resp",
+          "-mock-1\"}\r\n\r\n",
+          "data: {\"candidates\":[{\"conten",
+          "t\":{\"pa",
+          "rts\":[{\"text\"",
+          ":\".\"}],\"role\":\"model\"},\"index",
+          "\":0}],\"",
+          "modelVersion\"",
+          ":\"calc-parallel\",\"responseId\"",
+          ":\"resp-",
+          "mock-1\"}\r\n\r\nd",
+          "ata: {\"candidates\":[{\"content",
+          "\":{\"par",
+          "ts\":[],\"role\"",
+          ":\"model\"},\"finishReason\":\"STO",
+          "P\",\"ind",
+          "ex\":0}],\"usag",
+          "eMetadata\":{\"promptTokenCount",
+          "\":120,\"",
+          "candidatesTok",
+          "enCount\":9,\"totalTokenCount\":",
+          "129},\"m",
+          "odelVersion\":",
+          "\"calc-parallel\",\"responseId\":",
+          "\"resp-m",
+          "ock-1\"}\r\n\r\n"
+        ]
+      }
+    }
+  ]
+}

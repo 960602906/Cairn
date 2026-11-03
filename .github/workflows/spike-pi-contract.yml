@@ -1,0 +1,49 @@
+name: Spike S8 pi contract
+
+# S8：pi 的精确版本锁定与录制 / 回放契约测试。重新录制全部场景并确认录制文件可复现，
+# 再运行契约测试（黄金文件比对、不同分块方式下的稳定性）与版本锁定守卫测试。
+on:
+  pull_request:
+    paths:
+      - 'spikes/pi-contract/**'
+      - '.github/workflows/spike-pi-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-pi-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: s8 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: spikes/pi-contract
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: spikes/pi-contract/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Contract tests
+        run: npx vitest run
+
+      - name: Re-record and check reproducibility
+        run: |
+          node src/record.mjs
+          git diff --exit-code -- cassettes

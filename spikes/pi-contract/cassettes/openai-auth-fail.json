@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "name": "openai-auth-fail",
+  "scenario": "openai-auth-fail",
+  "model": "auth-fail",
+  "source": "synthetic",
+  "pi": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@earendil-works/pi-telemetry": "1.5.0"
+  },
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "auth-fail",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Hello"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "max_completion_tokens": 1024
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Invalid API key\",\"type\":\"invalid_request_error\"}}"
+        ]
+      }
+    }
+  ]
+}

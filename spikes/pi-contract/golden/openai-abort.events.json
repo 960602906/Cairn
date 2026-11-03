@@ -1,0 +1,272 @@
+[
+  {
+    "type": "agent_start"
+  },
+  {
+    "type": "turn_start"
+  },
+  {
+    "type": "message_start",
+    "role": "user"
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is 2 + 3? Use the add tool."
+        }
+      ]
+    }
+  },
+  {
+    "type": "message_start",
+    "role": "assistant"
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_start",
+      "contentIndex": 0
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "The us"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "er wan"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "ts 2 +"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " 3. I "
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "should"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " call "
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "the ad"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "d tool"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "."
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_start",
+      "contentIndex": 1
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "Let me"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " add t"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_end",
+      "contentIndex": 0,
+      "content": "The user wants 2 + 3. I should call the add tool."
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_end",
+      "contentIndex": 1,
+      "content": "Let me add t"
+    }
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "The user wants 2 + 3. I should call the add tool.",
+          "thinkingSignature": "reasoning_content"
+        },
+        {
+          "type": "text",
+          "text": "Let me add t"
+        }
+      ],
+      "api": "openai-completions",
+      "provider": "contract",
+      "model": "calc-tool",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "aborted",
+      "responseId": "chatcmpl-mock-1",
+      "errorMessage": "Request was aborted",
+      "thinkingLevel": "off"
+    }
+  },
+  {
+    "type": "turn_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "The user wants 2 + 3. I should call the add tool.",
+          "thinkingSignature": "reasoning_content"
+        },
+        {
+          "type": "text",
+          "text": "Let me add t"
+        }
+      ],
+      "api": "openai-completions",
+      "provider": "contract",
+      "model": "calc-tool",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "aborted",
+      "responseId": "chatcmpl-mock-1",
+      "errorMessage": "Request was aborted",
+      "thinkingLevel": "off"
+    },
+    "toolResults": []
+  },
+  {
+    "type": "agent_end",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is 2 + 3? Use the add tool."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants 2 + 3. I should call the add tool.",
+            "thinkingSignature": "reasoning_content"
+          },
+          {
+            "type": "text",
+            "text": "Let me add t"
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "contract",
+        "model": "calc-tool",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "aborted",
+        "responseId": "chatcmpl-mock-1",
+        "errorMessage": "Request was aborted",
+        "thinkingLevel": "off"
+      }
+    ]
+  }
+]

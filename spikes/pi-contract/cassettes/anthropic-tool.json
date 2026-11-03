@@ -1,0 +1,447 @@
+{
+  "version": 1,
+  "name": "anthropic-tool",
+  "scenario": "anthropic-tool",
+  "model": "calc-tool",
+  "source": "synthetic",
+  "pi": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@earendil-works/pi-telemetry": "1.5.0"
+  },
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": {
+          "model": "calc-tool",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is 2 + 3? Use the add tool.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 1024,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "add",
+              "description": "Add two numbers",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ]
+              },
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: message_start",
+          "\ndata: {\"type\":\"message_start",
+          "\",\"mess",
+          "age\":{\"id\":\"m",
+          "sg_mock_1\",\"type\":\"message\",\"",
+          "role\":\"",
+          "assistant\",\"m",
+          "odel\":\"calc-tool\",\"content\":[",
+          "],\"stop",
+          "_reason\":null",
+          ",\"stop_sequence\":null,\"usage\"",
+          ":{\"inpu",
+          "t_tokens\":52,",
+          "\"output_tokens\":1}}}\n\nevent: ",
+          "content",
+          "_block_start\n",
+          "data: {\"type\":\"content_block_",
+          "start\",",
+          "\"index\":0,\"co",
+          "ntent_block\":{\"type\":\"thinkin",
+          "g\",\"thi",
+          "nking\":\"\",\"si",
+          "gnature\":\"\"}}\n\nevent: content",
+          "_block_",
+          "delta\ndata: {",
+          "\"type\":\"content_block_delta\",",
+          "\"index\"",
+          ":0,\"delta\":{\"",
+          "type\":\"thinking_delta\",\"think",
+          "ing\":\"T",
+          "he us\"}}\n\neve",
+          "nt: content_block_delta\ndata:",
+          " {\"type",
+          "\":\"content_bl",
+          "ock_delta\",\"index\":0,\"delta\":",
+          "{\"type\"",
+          ":\"thinking_de",
+          "lta\",\"thinking\":\"er wan\"}}\n\ne",
+          "vent: c",
+          "ontent_block_",
+          "delta\ndata: {\"type\":\"content_",
+          "block_d",
+          "elta\",\"index\"",
+          ":0,\"delta\":{\"type\":\"thinking_",
+          "delta\",",
+          "\"thinking\":\"t",
+          "s 2 +\"}}\n\nevent: content_bloc",
+          "k_delta",
+          "\ndata: {\"type",
+          "\":\"content_block_delta\",\"inde",
+          "x\":0,\"d",
+          "elta\":{\"type\"",
+          ":\"thinking_delta\",\"thinking\":",
+          "\" 3. I ",
+          "\"}}\n\nevent: c",
+          "ontent_block_delta\ndata: {\"ty",
+          "pe\":\"co",
+          "ntent_block_d",
+          "elta\",\"index\":0,\"delta\":{\"typ",
+          "e\":\"thi",
+          "nking_delta\",",
+          "\"thinking\":\"should\"}}\n\nevent:",
+          " conten",
+          "t_block_delta",
+          "\ndata: {\"type\":\"content_block",
+          "_delta\"",
+          ",\"index\":0,\"d",
+          "elta\":{\"type\":\"thinking_delta",
+          "\",\"thin",
+          "king\":\" call ",
+          "\"}}\n\nevent: content_block_del",
+          "ta\ndata",
+          ": {\"type\":\"co",
+          "ntent_block_delta\",\"index\":0,",
+          "\"delta\"",
+          ":{\"type\":\"thi",
+          "nking_delta\",\"thinking\":\"the ",
+          "ad\"}}\n\n",
+          "event: conten",
+          "t_block_delta\ndata: {\"type\":\"",
+          "content",
+          "_block_delta\"",
+          ",\"index\":0,\"delta\":{\"type\":\"t",
+          "hinking",
+          "_delta\",\"thin",
+          "king\":\"d tool\"}}\n\nevent: cont",
+          "ent_blo",
+          "ck_delta\ndata",
+          ": {\"type\":\"content_block_delt",
+          "a\",\"ind",
+          "ex\":0,\"delta\"",
+          ":{\"type\":\"thinking_delta\",\"th",
+          "inking\"",
+          ":\".\"}}\n\nevent",
+          ": content_block_delta\ndata: {",
+          "\"type\":",
+          "\"content_bloc",
+          "k_delta\",\"index\":0,\"delta\":{\"",
+          "type\":\"",
+          "signature_del",
+          "ta\",\"signature\":\"c2lnbmF0dXJl",
+          "LW1vY2s",
+          "=\"}}\n\nevent: ",
+          "content_block_stop\ndata: {\"ty",
+          "pe\":\"co",
+          "ntent_block_s",
+          "top\",\"index\":0}\n\nevent: conte",
+          "nt_bloc",
+          "k_start\ndata:",
+          " {\"type\":\"content_block_start",
+          "\",\"inde",
+          "x\":1,\"content",
+          "_block\":{\"type\":\"text\",\"text\"",
+          ":\"\"}}\n\n",
+          "event: conten",
+          "t_block_delta\ndata: {\"type\":\"",
+          "content",
+          "_block_delta\"",
+          ",\"index\":1,\"delta\":{\"type\":\"t",
+          "ext_del",
+          "ta\",\"text\":\"L",
+          "et me\"}}\n\nevent: content_bloc",
+          "k_delta",
+          "\ndata: {\"type",
+          "\":\"content_block_delta\",\"inde",
+          "x\":1,\"d",
+          "elta\":{\"type\"",
+          ":\"text_delta\",\"text\":\" add t\"",
+          "}}\n\neve",
+          "nt: content_b",
+          "lock_delta\ndata: {\"type\":\"con",
+          "tent_bl",
+          "ock_delta\",\"i",
+          "ndex\":1,\"delta\":{\"type\":\"text",
+          "_delta\"",
+          ",\"text\":\"hose",
+          ".\"}}\n\nevent: content_block_st",
+          "op\ndata",
+          ": {\"type\":\"co",
+          "ntent_block_stop\",\"index\":1}\n",
+          "\nevent:",
+          " content_bloc",
+          "k_start\ndata: {\"type\":\"conten",
+          "t_block",
+          "_start\",\"inde",
+          "x\":2,\"content_block\":{\"type\":",
+          "\"tool_u",
+          "se\",\"id\":\"cal",
+          "l_add_1\",\"name\":\"add\",\"input\"",
+          ":{}}}\n\n",
+          "event: conten",
+          "t_block_delta\ndata: {\"type\":\"",
+          "content",
+          "_block_delta\"",
+          ",\"index\":2,\"delta\":{\"type\":\"i",
+          "nput_js",
+          "on_delta\",\"pa",
+          "rtial_json\":\"{\\\"a\\\":\"}}\n\neven",
+          "t: cont",
+          "ent_block_del",
+          "ta\ndata: {\"type\":\"content_blo",
+          "ck_delt",
+          "a\",\"index\":2,",
+          "\"delta\":{\"type\":\"input_json_d",
+          "elta\",\"",
+          "partial_json\"",
+          ":\"2,\\\"b\\\"\"}}\n\nevent: content_",
+          "block_d",
+          "elta\ndata: {\"",
+          "type\":\"content_block_delta\",\"",
+          "index\":",
+          "2,\"delta\":{\"t",
+          "ype\":\"input_json_delta\",\"part",
+          "ial_jso",
+          "n\":\":3}\"}}\n\ne",
+          "vent: content_block_stop\ndata",
+          ": {\"typ",
+          "e\":\"content_b",
+          "lock_stop\",\"index\":2}\n\nevent:",
+          " messag",
+          "e_delta\ndata:",
+          " {\"type\":\"message_delta\",\"del",
+          "ta\":{\"s",
+          "top_reason\":\"",
+          "tool_use\",\"stop_sequence\":nul",
+          "l},\"usa",
+          "ge\":{\"output_",
+          "tokens\":31}}\n\nevent: message_",
+          "stop\nda",
+          "ta: {\"type\":\"",
+          "message_stop\"}\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": {
+          "model": "calc-tool",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "thinking": "The user wants 2 + 3. I should call the add tool.",
+                  "signature": "c2lnbmF0dXJlLW1vY2s="
+                },
+                {
+                  "type": "text",
+                  "text": "Let me add those."
+                },
+                {
+                  "type": "tool_use",
+                  "id": "call_add_1",
+                  "name": "add",
+                  "input": {
+                    "a": 2,
+                    "b": 3
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "call_add_1",
+                  "content": "5",
+                  "is_error": false,
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 1024,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "add",
+              "description": "Add two numbers",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ]
+              },
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: message_start",
+          "\ndata: {\"type\":\"message_start",
+          "\",\"mess",
+          "age\":{\"id\":\"m",
+          "sg_mock_1\",\"type\":\"message\",\"",
+          "role\":\"",
+          "assistant\",\"m",
+          "odel\":\"calc-tool\",\"content\":[",
+          "],\"stop",
+          "_reason\":null",
+          ",\"stop_sequence\":null,\"usage\"",
+          ":{\"inpu",
+          "t_tokens\":96,",
+          "\"output_tokens\":1}}}\n\nevent: ",
+          "content",
+          "_block_start\n",
+          "data: {\"type\":\"content_block_",
+          "start\",",
+          "\"index\":0,\"co",
+          "ntent_block\":{\"type\":\"text\",\"",
+          "text\":\"",
+          "\"}}\n\nevent: c",
+          "ontent_block_delta\ndata: {\"ty",
+          "pe\":\"co",
+          "ntent_block_d",
+          "elta\",\"index\":0,\"delta\":{\"typ",
+          "e\":\"tex",
+          "t_delta\",\"tex",
+          "t\":\"2 + 3 \"}}\n\nevent: content",
+          "_block_",
+          "delta\ndata: {",
+          "\"type\":\"content_block_delta\",",
+          "\"index\"",
+          ":0,\"delta\":{\"",
+          "type\":\"text_delta\",\"text\":\"= ",
+          "5。结果\"}}",
+          "\n\nevent: cont",
+          "ent_block_delta\ndata: {\"type\"",
+          ":\"conte",
+          "nt_block_delt",
+          "a\",\"index\":0,\"delta\":{\"type\":",
+          "\"text_d",
+          "elta\",\"text\":",
+          "\"是五。\"}}\n\nevent: content_block",
+          "_stop\nd",
+          "ata: {\"type\":",
+          "\"content_block_stop\",\"index\":",
+          "0}\n\neve",
+          "nt: message_d",
+          "elta\ndata: {\"type\":\"message_d",
+          "elta\",\"",
+          "delta\":{\"stop",
+          "_reason\":\"end_turn\",\"stop_seq",
+          "uence\":",
+          "null},\"usage\"",
+          ":{\"output_tokens\":12}}\n\nevent",
+          ": messa",
+          "ge_stop\ndata:",
+          " {\"type\":\"message_stop\"}\n\n"
+        ]
+      }
+    }
+  ]
+}

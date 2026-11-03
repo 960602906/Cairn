@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "name": "anthropic-auth-fail",
+  "scenario": "anthropic-auth-fail",
+  "model": "auth-fail",
+  "source": "synthetic",
+  "pi": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@earendil-works/pi-telemetry": "1.5.0"
+  },
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": {
+          "model": "auth-fail",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Hello",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 1024,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Invalid API key\",\"type\":\"invalid_request_error\"}}"
+        ]
+      }
+    }
+  ]
+}
