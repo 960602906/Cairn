@@ -1,0 +1,15 @@
+{
+  "name": "spike-shadow-git",
+  "private": true,
+  "version": "0.0.0",
+  "description": "S5/S6：影子 Git 检查点性能与 Git 来源（预研，不进入正式构建）",
+  "type": "module",
+  "scripts": {
+    "bench": "node src/cli.mjs",
+    "summarize": "node src/summarize.mjs"
+  },
+  "dependencies": {
+    "dugite": "3.3.2",
+    "isomorphic-git": "1.44.10"
+  }
+}
