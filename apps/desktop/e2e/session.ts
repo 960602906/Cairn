@@ -21,6 +21,10 @@ export const runStatus = (window: Page) => window.getByRole('status')
 const messageItems = (window: Page) =>
   window.getByRole('list', { name: '消息' }).getByRole('listitem')
 
+/** 进行中（正在流式输出）的消息。 */
+export const liveMessage = (window: Page) =>
+  messageItems(window).and(window.locator('[aria-busy="true"]'))
+
 /** 新建会话，等待它成为当前会话。 */
 export async function createSession(window: Page, projectPath: string, title: string) {
   await window.getByRole('button', { name: '新建会话' }).click()
@@ -48,7 +52,7 @@ export async function expectMessages(window: Page, messages: readonly ExpectedMe
   const items = messageItems(window)
   await expect(items.locator('strong')).toHaveText(messages.map(([author]) => author))
   await expect(items.locator('p')).toHaveText(messages.map(([, text]) => text))
-  await expect(items.and(window.locator('[aria-busy="true"]'))).toHaveCount(0)
+  await expect(liveMessage(window)).toHaveCount(0)
 }
 
 /** 发送一条输入并等待这一轮完成（FakeRuntime 原样回复），之后消息流为 `before` 加上这一问一答。 */

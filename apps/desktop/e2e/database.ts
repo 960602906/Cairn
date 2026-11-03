@@ -47,6 +47,9 @@ export function readEvents(userData: string): StoredEvent[] {
   }
 }
 
+export const ofType = (events: readonly StoredEvent[], type: string) =>
+  events.filter((event) => event.type === type)
+
 /** 消息内容（`ContentPart[]`）中的文本。 */
 export function contentText(content: unknown): string {
   if (!Array.isArray(content)) return ''
