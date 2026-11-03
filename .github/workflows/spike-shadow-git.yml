@@ -43,9 +43,16 @@ jobs:
       - name: Bench
         run: node src/cli.mjs --out=result-${{ runner.os }}.json
 
+      # 写对象方式的配置变体，只用本机 Git
+      - name: Bench config variants
+        if: always()
+        run: >-
+          node src/cli.mjs --source=system:nofsync,system:batch,system:pack,system:pack-nofsync
+          --out=result-${{ runner.os }}-variants.json
+
       - name: Summary
         if: always()
-        run: node src/summarize.mjs result-${{ runner.os }}.json
+        run: node src/summarize.mjs result-${{ runner.os }}.json result-${{ runner.os }}-variants.json
 
       - name: Upload results
         if: always()

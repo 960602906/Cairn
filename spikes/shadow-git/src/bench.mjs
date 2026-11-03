@@ -51,19 +51,23 @@ async function describeSource(source, stateDir) {
   return info
 }
 
+/** spec 为 `<来源>` 或 `<来源>:<配置变体>`（见 shadow-cli.mjs 的 CONFIG_VARIANTS）。 */
 export async function runBench({
-  source,
+  spec,
   root,
   files = 10000,
   smallRounds = 5,
   restoreRounds = 3,
   log = () => {},
 }) {
-  const ws = path.join(root, `ws-${source}`)
-  const gitDir = path.join(root, `shadow-${source}`)
-  const stateDir = path.join(root, `state-${source}`)
+  const [source, variant = 'baseline'] = spec.split(':')
+  const id = spec.replace(':', '-')
+  const ws = path.join(root, `ws-${id}`)
+  const gitDir = path.join(root, `shadow-${id}`)
+  const stateDir = path.join(root, `state-${id}`)
   const result = {
     source,
+    variant,
     platform: process.platform,
     arch: process.arch,
     node: process.versions.node,
@@ -115,6 +119,7 @@ export async function runBench({
         : createCliShadow({
             ...opts,
             git: source === 'system' ? systemGit(stateDir) : await bundledGit(stateDir),
+            variant,
           })
 
     const tInit = performance.now()
@@ -312,10 +317,13 @@ export async function runBench({
   } catch (err) {
     result.error = String(err?.stack ?? err)
     log(result.error)
-  } finally {
-    fs.rmSync(ws, { recursive: true, force: true })
-    fs.rmSync(gitDir, { recursive: true, force: true })
-    fs.rmSync(stateDir, { recursive: true, force: true })
+  }
+  for (const dir of [ws, gitDir, stateDir]) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 })
+    } catch (err) {
+      log(`cleanup failed: ${err.message}`)
+    }
   }
   return result
 }

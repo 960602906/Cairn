@@ -3,6 +3,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 
 const ms = (v) => (v === undefined || Number.isNaN(v) ? '-' : Math.round(v).toLocaleString('en-US'))
+const label = (r) => (r.variant && r.variant !== 'baseline' ? `${r.source}:${r.variant}` : r.source)
 const mb = (b) => (b === undefined ? '-' : (b / 1024 / 1024).toFixed(1))
 
 const timing = [
@@ -23,7 +24,7 @@ for (const file of process.argv.slice(2)) {
     const failed = r.checks.filter((c) => !c.ok).map((c) => c.name)
     const result = r.error ? '出错' : r.ok ? '通过' : '有失败项'
     timing.push(
-      `| ${r.platform} | ${r.source} | ${result} | ${ms(s['checkpoint.initial']?.ms.total)} | ${ms(
+      `| ${r.platform} | ${label(r)} | ${result} | ${ms(s['checkpoint.initial']?.ms.total)} | ${ms(
         s['checkpoint.nochange']?.ms.total,
       )} | ${ms(s['checkpoint.small']?.ms.total)} | ${ms(s['checkpoint.touchAll']?.ms.total)} | ${ms(
         s['checkpoint.large']?.ms.total,
@@ -38,7 +39,7 @@ for (const file of process.argv.slice(2)) {
     const empty = r.info.emptyDirsAfterRestore
     const shadow = r.info.shadowAfterGc ?? r.info.shadowBefore
     behavior.push(
-      `| ${r.platform} | ${r.source} | ${si.version ?? '-'} | ${si.spawnMs?.toFixed(1) ?? '-'} | ${mb(
+      `| ${r.platform} | ${label(r)} | ${si.version ?? '-'} | ${si.spawnMs?.toFixed(1) ?? '-'} | ${mb(
         si.install?.bytes,
       )} | ${nested || '-'} | ${empty ? empty.length : '-'} | ${mb(shadow?.bytes)} | ${ms(
         r.info.gcMs,

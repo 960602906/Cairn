@@ -31,7 +31,33 @@ export function parseNameStatus(buf) {
   return out
 }
 
-export function createCliShadow({ git, gitDir, workTree, maxFileBytes, extraExcludes }) {
+/**
+ * 写入影子仓库的配置变体（比较写对象的方式对耗时的影响）：
+ * - nofsync：不对任何对象调用 fsync；
+ * - batch：fsync 按批进行（Git 2.37+）；
+ * - pack：大于 1 字节的文件由 `git add` 直接写入一个包文件，而不是逐个写松散对象；
+ * - pack-nofsync：pack 与 nofsync 同时使用。
+ */
+export const CONFIG_VARIANTS = {
+  baseline: {},
+  nofsync: { 'core.fsync': 'none', 'core.fsyncObjectFiles': 'false' },
+  batch: { 'core.fsync': 'loose-object,pack,index', 'core.fsyncMethod': 'batch' },
+  pack: { 'core.bigFileThreshold': '1' },
+  'pack-nofsync': {
+    'core.bigFileThreshold': '1',
+    'core.fsync': 'none',
+    'core.fsyncObjectFiles': 'false',
+  },
+}
+
+export function createCliShadow({
+  git,
+  gitDir,
+  workTree,
+  maxFileBytes,
+  extraExcludes,
+  variant = 'baseline',
+}) {
   const g = (args, opts) => git.run(['--git-dir', gitDir, '--work-tree', workTree, ...args], opts)
   const text = async (args, opts) => (await g(args, opts)).stdout.toString('utf8').trim()
   const excludeFile = path.join(gitDir, 'info', 'exclude')
@@ -80,6 +106,7 @@ export function createCliShadow({ git, gitDir, workTree, maxFileBytes, extraExcl
         'commit.gpgSign': 'false',
         'user.name': 'NEXUS-OS',
         'user.email': 'checkpoint@nexus.invalid',
+        ...CONFIG_VARIANTS[variant],
       }
       for (const [k, v] of Object.entries(config))
         await git.run(['--git-dir', gitDir, 'config', k, v])
