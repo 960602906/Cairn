@@ -1,0 +1,104 @@
+name: Spike S1 pi in utilityProcess
+
+# S1：在 Windows（首发平台）与 Linux 上验证 pi-agent-core / pi-ai 能否在 Electron utilityProcess 中
+# 完成带工具调用的对话，覆盖纯 Node、Electron 开发运行与 electron-builder 打包后运行，
+# 宿主分别用源码（依赖外置）与 Vite 打包产物两种方式加载。
+on:
+  pull_request:
+    paths:
+      - 'spikes/pi-utility-process/**'
+      - '.github/workflows/spike-pi-utility-process.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-pi-utility-process-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spike:
+    name: s1 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: spikes/pi-utility-process
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: spikes/pi-utility-process/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Node
+        run: node src/cli.mjs --out=result-node.json
+
+      - name: Bundle host
+        run: npx vite build
+
+      - name: Node (bundled)
+        run: node src/cli.mjs --host=bundled --out=result-node-bundled.json
+
+      - name: Electron (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a npx electron --no-sandbox . --out=result-electron.json
+          xvfb-run -a npx electron --no-sandbox . --host=bundled --out=result-electron-bundled.json
+
+      - name: Electron (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # require('electron') 返回可执行文件的绝对路径；缺失时先补下载
+          if (-not (Test-Path (node -p "require('electron')"))) { node node_modules/electron/install.js }
+          $exe = node -p "require('electron')"
+          Write-Host "electron: $exe"
+          foreach ($run in @(@('.', '--out=result-electron.json'), @('.', '--host=bundled', '--out=result-electron-bundled.json'))) {
+            $p = Start-Process -FilePath $exe -ArgumentList $run -Wait -PassThru -NoNewWindow
+            if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+          }
+
+      - name: Package
+        run: npx electron-builder --dir --publish never
+
+      - name: Packaged app (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a out/linux-unpacked/spike-pi-utility-process --no-sandbox --out=result-packaged.json
+          xvfb-run -a out/linux-unpacked/spike-pi-utility-process --no-sandbox --host=bundled --out=result-packaged-bundled.json
+
+      - name: Packaged app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem out\win-unpacked -Filter *.exe | ForEach-Object { Write-Host $_.FullName }
+          $exe = (Resolve-Path out\win-unpacked\PiUtilityProcessSpike.exe).Path
+          foreach ($run in @(@('--out=result-packaged.json'), @('--host=bundled', '--out=result-packaged-bundled.json'))) {
+            $p = Start-Process -FilePath $exe -ArgumentList $run -Wait -PassThru -NoNewWindow
+            if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+          }
+
+      - name: Summary
+        if: always()
+        run: >-
+          node src/summarize.mjs result-node.json result-node-bundled.json result-electron.json
+          result-electron-bundled.json result-packaged.json result-packaged-bundled.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s1-results-${{ matrix.os }}
+          path: spikes/pi-utility-process/result-*.json
+          retention-days: 30
