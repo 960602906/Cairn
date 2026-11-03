@@ -97,7 +97,15 @@ export function findShells() {
  */
 export function runPowerShell(shell, script, options = {}) {
   const wrapped = wrapScript(script, options.wrap ?? 'prelude', { epilogue: options.epilogue })
-  const args = ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodeCommand(wrapped)]
+  // -OutputFormat Text：否则 -EncodedCommand 在 stdout 被重定向时把错误流以 CLIXML 写入 stderr（raw 不加，作对照）
+  const format = options.wrap === 'raw' ? [] : ['-OutputFormat', 'Text']
+  const args = [
+    '-NoProfile',
+    '-NonInteractive',
+    ...format,
+    '-EncodedCommand',
+    encodeCommand(wrapped),
+  ]
   return runProcess(shell.exe, args, options)
 }
 

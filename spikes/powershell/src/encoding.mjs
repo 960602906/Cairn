@@ -10,7 +10,7 @@
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { findPython, psQuote, runPowerShell, runProcess, text } from './powershell.mjs'
+import { findPython, PRELUDE, psQuote, runPowerShell, runProcess, text } from './powershell.mjs'
 
 const NODE = process.execPath
 const node = (/** @type {string} */ code) => `& ${psQuote(NODE)} -e ${psQuote(code)}`
@@ -263,10 +263,20 @@ export async function runFileFallback(shell, work) {
   const n = 30_000
   const script = `${'# 注释填充\n'.repeat(2_000)}Write-Output '${long('中', n)}'\n`
   const file = path.join(work, 'long.ps1')
-  writeFileSync(file, `\uFEFF${script}`, 'utf8')
+  // 文件同样以前置脚本开头，否则输出仍按控制台代码页编码
+  writeFileSync(file, `\uFEFF${PRELUDE}\n${script}`, 'utf8')
   const r = await runProcess(
     shell.exe,
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', file],
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-OutputFormat',
+      'Text',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      file,
+    ],
     {
       cwd: work,
     },
