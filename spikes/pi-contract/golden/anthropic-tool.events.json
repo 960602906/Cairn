@@ -1,0 +1,580 @@
+[
+  {
+    "type": "agent_start"
+  },
+  {
+    "type": "turn_start"
+  },
+  {
+    "type": "message_start",
+    "role": "user"
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is 2 + 3? Use the add tool."
+        }
+      ]
+    }
+  },
+  {
+    "type": "message_start",
+    "role": "assistant"
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_start",
+      "contentIndex": 0
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "The us"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "er wan"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "ts 2 +"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " 3. I "
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "should"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": " call "
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "the ad"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "d tool"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_delta",
+      "contentIndex": 0,
+      "delta": "."
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "thinking_end",
+      "contentIndex": 0,
+      "content": "The user wants 2 + 3. I should call the add tool."
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_start",
+      "contentIndex": 1
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "Let me"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": " add t"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 1,
+      "delta": "hose."
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_end",
+      "contentIndex": 1,
+      "content": "Let me add those."
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_start",
+      "contentIndex": 2
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 2,
+      "delta": "{\"a\":"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 2,
+      "delta": "2,\"b\""
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 2,
+      "delta": ":3}"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_end",
+      "contentIndex": 2,
+      "toolCall": {
+        "type": "toolCall",
+        "id": "<toolcall-1>",
+        "name": "add",
+        "arguments": {
+          "a": 2,
+          "b": 3
+        }
+      }
+    }
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "The user wants 2 + 3. I should call the add tool.",
+          "thinkingSignature": "c2lnbmF0dXJlLW1vY2s="
+        },
+        {
+          "type": "text",
+          "text": "Let me add those."
+        },
+        {
+          "type": "toolCall",
+          "id": "<toolcall-1>",
+          "name": "add",
+          "arguments": {
+            "a": 2,
+            "b": 3
+          }
+        }
+      ],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "calc-tool",
+      "usage": {
+        "input": 52,
+        "output": 31,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 83,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0,
+          "totalFromProvider": false
+        },
+        "cacheWrite1h": 0
+      },
+      "stopReason": "toolUse",
+      "responseId": "msg_mock_1",
+      "rawStopReason": "tool_use",
+      "thinkingLevel": "off"
+    }
+  },
+  {
+    "type": "tool_execution_start",
+    "toolCallId": "<toolcall-1>",
+    "toolName": "add",
+    "args": {
+      "a": 2,
+      "b": 3
+    }
+  },
+  {
+    "type": "tool_execution_end",
+    "toolCallId": "<toolcall-1>",
+    "toolName": "add",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "details": {}
+    },
+    "isError": false
+  },
+  {
+    "type": "message_start",
+    "role": "toolResult"
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "toolResult",
+      "toolCallId": "<toolcall-1>",
+      "toolName": "add",
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "details": {},
+      "isError": false
+    }
+  },
+  {
+    "type": "turn_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "The user wants 2 + 3. I should call the add tool.",
+          "thinkingSignature": "c2lnbmF0dXJlLW1vY2s="
+        },
+        {
+          "type": "text",
+          "text": "Let me add those."
+        },
+        {
+          "type": "toolCall",
+          "id": "<toolcall-1>",
+          "name": "add",
+          "arguments": {
+            "a": 2,
+            "b": 3
+          }
+        }
+      ],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "calc-tool",
+      "usage": {
+        "input": 52,
+        "output": 31,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 83,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0,
+          "totalFromProvider": false
+        },
+        "cacheWrite1h": 0
+      },
+      "stopReason": "toolUse",
+      "responseId": "msg_mock_1",
+      "rawStopReason": "tool_use",
+      "thinkingLevel": "off"
+    },
+    "toolResults": [
+      {
+        "role": "toolResult",
+        "toolCallId": "<toolcall-1>",
+        "toolName": "add",
+        "content": [
+          {
+            "type": "text",
+            "text": "5"
+          }
+        ],
+        "details": {},
+        "isError": false
+      }
+    ]
+  },
+  {
+    "type": "turn_start"
+  },
+  {
+    "type": "message_start",
+    "role": "assistant"
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_start",
+      "contentIndex": 0
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "2 + 3 "
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "= 5。结果"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "是五。"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_end",
+      "contentIndex": 0,
+      "content": "2 + 3 = 5。结果是五。"
+    }
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "2 + 3 = 5。结果是五。"
+        }
+      ],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "calc-tool",
+      "usage": {
+        "input": 96,
+        "output": 12,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 108,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0,
+          "totalFromProvider": false
+        },
+        "cacheWrite1h": 0
+      },
+      "stopReason": "stop",
+      "responseId": "msg_mock_1",
+      "rawStopReason": "end_turn",
+      "thinkingLevel": "off"
+    }
+  },
+  {
+    "type": "turn_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "2 + 3 = 5。结果是五。"
+        }
+      ],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "calc-tool",
+      "usage": {
+        "input": 96,
+        "output": 12,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 108,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0,
+          "totalFromProvider": false
+        },
+        "cacheWrite1h": 0
+      },
+      "stopReason": "stop",
+      "responseId": "msg_mock_1",
+      "rawStopReason": "end_turn",
+      "thinkingLevel": "off"
+    },
+    "toolResults": []
+  },
+  {
+    "type": "agent_end",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is 2 + 3? Use the add tool."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "The user wants 2 + 3. I should call the add tool.",
+            "thinkingSignature": "c2lnbmF0dXJlLW1vY2s="
+          },
+          {
+            "type": "text",
+            "text": "Let me add those."
+          },
+          {
+            "type": "toolCall",
+            "id": "<toolcall-1>",
+            "name": "add",
+            "arguments": {
+              "a": 2,
+              "b": 3
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "contract",
+        "model": "calc-tool",
+        "usage": {
+          "input": 52,
+          "output": 31,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 83,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0,
+            "totalFromProvider": false
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "responseId": "msg_mock_1",
+        "rawStopReason": "tool_use",
+        "thinkingLevel": "off"
+      },
+      {
+        "role": "toolResult",
+        "toolCallId": "<toolcall-1>",
+        "toolName": "add",
+        "content": [
+          {
+            "type": "text",
+            "text": "5"
+          }
+        ],
+        "details": {},
+        "isError": false
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "2 + 3 = 5。结果是五。"
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "contract",
+        "model": "calc-tool",
+        "usage": {
+          "input": 96,
+          "output": 12,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 108,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0,
+            "totalFromProvider": false
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "responseId": "msg_mock_1",
+        "rawStopReason": "end_turn",
+        "thinkingLevel": "off"
+      }
+    ]
+  }
+]

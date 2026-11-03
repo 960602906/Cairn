@@ -1,0 +1,314 @@
+{
+  "version": 1,
+  "name": "gemini-3-tool",
+  "scenario": "gemini-3-tool",
+  "model": "gemini-3-calc-tool",
+  "source": "synthetic",
+  "pi": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@earendil-works/pi-telemetry": "1.5.0"
+  },
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/gemini-3-calc-tool:streamGenerateContent",
+        "query": {
+          "alt": "sse"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "You are a calculator."
+              }
+            ],
+            "role": "user"
+          },
+          "tools": [
+            {
+              "functionDeclarations": [
+                {
+                  "name": "add",
+                  "description": "Add two numbers",
+                  "parametersJsonSchema": {
+                    "type": "object",
+                    "properties": {
+                      "a": {
+                        "type": "number"
+                      },
+                      "b": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "a",
+                      "b"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "maxOutputTokens": 1024
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"candidates\":",
+          "[{\"content\":{\"parts\":[{\"text\"",
+          ":\"The u",
+          "ser wan\",\"tho",
+          "ught\":true}],\"role\":\"model\"},",
+          "\"index\"",
+          ":0}],\"modelVe",
+          "rsion\":\"gemini-3-calc-tool\",\"",
+          "respons",
+          "eId\":\"resp-mo",
+          "ck-1\"}\r\n\r\ndata: {\"candidates\"",
+          ":[{\"con",
+          "tent\":{\"parts",
+          "\":[{\"text\":\"ts 2 + 3. I \",\"th",
+          "ought\":",
+          "true}],\"role\"",
+          ":\"model\"},\"index\":0}],\"modelV",
+          "ersion\"",
+          ":\"gemini-3-ca",
+          "lc-tool\",\"responseId\":\"resp-m",
+          "ock-1\"}",
+          "\r\n\r\ndata: {\"c",
+          "andidates\":[{\"content\":{\"part",
+          "s\":[{\"t",
+          "ext\":\"should ",
+          "call \",\"thought\":true}],\"role",
+          "\":\"mode",
+          "l\"},\"index\":0",
+          "}],\"modelVersion\":\"gemini-3-c",
+          "alc-too",
+          "l\",\"responseI",
+          "d\":\"resp-mock-1\"}\r\n\r\ndata: {\"",
+          "candida",
+          "tes\":[{\"conte",
+          "nt\":{\"parts\":[{\"text\":\"the ad",
+          "d tool\"",
+          ",\"thought\":tr",
+          "ue}],\"role\":\"model\"},\"index\":",
+          "0}],\"mo",
+          "delVersion\":\"",
+          "gemini-3-calc-tool\",\"response",
+          "Id\":\"re",
+          "sp-mock-1\"}\r\n",
+          "\r\ndata: {\"candidates\":[{\"cont",
+          "ent\":{\"",
+          "parts\":[{\"tex",
+          "t\":\".\",\"thought\":true}],\"role",
+          "\":\"mode",
+          "l\"},\"index\":0",
+          "}],\"modelVersion\":\"gemini-3-c",
+          "alc-too",
+          "l\",\"responseI",
+          "d\":\"resp-mock-1\"}\r\n\r\ndata: {\"",
+          "candida",
+          "tes\":[{\"conte",
+          "nt\":{\"parts\":[{\"text\":\"Let me",
+          " add t\"",
+          "}],\"role\":\"mo",
+          "del\"},\"index\":0}],\"modelVersi",
+          "on\":\"ge",
+          "mini-3-calc-t",
+          "ool\",\"responseId\":\"resp-mock-",
+          "1\"}\r\n\r\n",
+          "data: {\"candi",
+          "dates\":[{\"content\":{\"parts\":[",
+          "{\"text\"",
+          ":\"hose.\"}],\"r",
+          "ole\":\"model\"},\"index\":0}],\"mo",
+          "delVers",
+          "ion\":\"gemini-",
+          "3-calc-tool\",\"responseId\":\"re",
+          "sp-mock",
+          "-1\"}\r\n\r\ndata:",
+          " {\"candidates\":[{\"content\":{\"",
+          "parts\":",
+          "[{\"functionCa",
+          "ll\":{\"name\":\"add\",\"args\":{\"a\"",
+          ":2,\"b\":",
+          "3}}}],\"role\":",
+          "\"model\"},\"finishReason\":\"STOP",
+          "\",\"inde",
+          "x\":0}],\"usage",
+          "Metadata\":{\"promptTokenCount\"",
+          ":52,\"ca",
+          "ndidatesToken",
+          "Count\":31,\"totalTokenCount\":8",
+          "3},\"mod",
+          "elVersion\":\"g",
+          "emini-3-calc-tool\",\"responseI",
+          "d\":\"res",
+          "p-mock-1\"}\r\n\r",
+          "\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/gemini-3-calc-tool:streamGenerateContent",
+        "query": {
+          "alt": "sse"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ],
+              "role": "user"
+            },
+            {
+              "parts": [
+                {
+                  "text": "The user wants 2 + 3. I should call the add tool.",
+                  "thought": true
+                },
+                {
+                  "text": "Let me add those."
+                },
+                {
+                  "functionCall": {
+                    "args": {
+                      "a": 2,
+                      "b": 3
+                    },
+                    "id": "add_<generated>",
+                    "name": "add"
+                  }
+                }
+              ],
+              "role": "model"
+            },
+            {
+              "parts": [
+                {
+                  "functionResponse": {
+                    "name": "add",
+                    "response": {
+                      "output": "5"
+                    },
+                    "id": "add_<generated>"
+                  }
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "You are a calculator."
+              }
+            ],
+            "role": "user"
+          },
+          "tools": [
+            {
+              "functionDeclarations": [
+                {
+                  "name": "add",
+                  "description": "Add two numbers",
+                  "parametersJsonSchema": {
+                    "type": "object",
+                    "properties": {
+                      "a": {
+                        "type": "number"
+                      },
+                      "b": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "a",
+                      "b"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "maxOutputTokens": 1024
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"candidates\":",
+          "[{\"content\":{\"parts\":[{\"text\"",
+          ":\"2 + 3",
+          " = 5。结果\"}],\"r",
+          "ole\":\"model\"},\"index\":0}],\"mo",
+          "delVers",
+          "ion\":\"gemini-",
+          "3-calc-tool\",\"responseId\":\"re",
+          "sp-mock",
+          "-1\"}\r\n\r\ndata:",
+          " {\"candidates\":[{\"content\":{\"",
+          "parts\":",
+          "[{\"text\":\"是五。",
+          "\"}],\"role\":\"model\"},\"index\":0",
+          "}],\"mod",
+          "elVersion\":\"g",
+          "emini-3-calc-tool\",\"responseI",
+          "d\":\"res",
+          "p-mock-1\"}\r\n\r",
+          "\ndata: {\"candidates\":[{\"conte",
+          "nt\":{\"p",
+          "arts\":[],\"rol",
+          "e\":\"model\"},\"finishReason\":\"S",
+          "TOP\",\"i",
+          "ndex\":0}],\"us",
+          "ageMetadata\":{\"promptTokenCou",
+          "nt\":96,",
+          "\"candidatesTo",
+          "kenCount\":12,\"totalTokenCount",
+          "\":108},",
+          "\"modelVersion",
+          "\":\"gemini-3-calc-tool\",\"respo",
+          "nseId\":",
+          "\"resp-mock-1\"",
+          "}\r\n\r\n"
+        ]
+      }
+    }
+  ]
+}

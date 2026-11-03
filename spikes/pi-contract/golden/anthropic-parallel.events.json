@@ -1,0 +1,587 @@
+[
+  {
+    "type": "agent_start"
+  },
+  {
+    "type": "turn_start"
+  },
+  {
+    "type": "message_start",
+    "role": "user"
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+        }
+      ]
+    }
+  },
+  {
+    "type": "message_start",
+    "role": "assistant"
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_start",
+      "contentIndex": 0
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 0,
+      "delta": "{\"a\":"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 0,
+      "delta": "2,\"b\""
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 0,
+      "delta": ":3}"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_end",
+      "contentIndex": 0,
+      "toolCall": {
+        "type": "toolCall",
+        "id": "<toolcall-1>",
+        "name": "add",
+        "arguments": {
+          "a": 2,
+          "b": 3
+        }
+      }
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_start",
+      "contentIndex": 1
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 1,
+      "delta": "{\"a\":"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 1,
+      "delta": "10,\"b"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_delta",
+      "contentIndex": 1,
+      "delta": "\":20}"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "toolcall_end",
+      "contentIndex": 1,
+      "toolCall": {
+        "type": "toolCall",
+        "id": "<toolcall-2>",
+        "name": "add",
+        "arguments": {
+          "a": 10,
+          "b": 20
+        }
+      }
+    }
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "toolCall",
+          "id": "<toolcall-1>",
+          "name": "add",
+          "arguments": {
+            "a": 2,
+            "b": 3
+          }
+        },
+        {
+          "type": "toolCall",
+          "id": "<toolcall-2>",
+          "name": "add",
+          "arguments": {
+            "a": 10,
+            "b": 20
+          }
+        }
+      ],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "calc-parallel",
+      "usage": {
+        "input": 60,
+        "output": 40,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 100,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0,
+          "totalFromProvider": false
+        },
+        "cacheWrite1h": 0
+      },
+      "stopReason": "toolUse",
+      "responseId": "msg_mock_1",
+      "rawStopReason": "tool_use",
+      "thinkingLevel": "off"
+    }
+  },
+  {
+    "type": "tool_execution_start",
+    "toolCallId": "<toolcall-1>",
+    "toolName": "add",
+    "args": {
+      "a": 2,
+      "b": 3
+    }
+  },
+  {
+    "type": "tool_execution_start",
+    "toolCallId": "<toolcall-2>",
+    "toolName": "add",
+    "args": {
+      "a": 10,
+      "b": 20
+    }
+  },
+  {
+    "type": "tool_execution_end",
+    "toolCallId": "<toolcall-1>",
+    "toolName": "add",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "details": {}
+    },
+    "isError": false
+  },
+  {
+    "type": "tool_execution_end",
+    "toolCallId": "<toolcall-2>",
+    "toolName": "add",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "30"
+        }
+      ],
+      "details": {}
+    },
+    "isError": false
+  },
+  {
+    "type": "message_start",
+    "role": "toolResult"
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "toolResult",
+      "toolCallId": "<toolcall-1>",
+      "toolName": "add",
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "details": {},
+      "isError": false
+    }
+  },
+  {
+    "type": "message_start",
+    "role": "toolResult"
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "toolResult",
+      "toolCallId": "<toolcall-2>",
+      "toolName": "add",
+      "content": [
+        {
+          "type": "text",
+          "text": "30"
+        }
+      ],
+      "details": {},
+      "isError": false
+    }
+  },
+  {
+    "type": "turn_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "toolCall",
+          "id": "<toolcall-1>",
+          "name": "add",
+          "arguments": {
+            "a": 2,
+            "b": 3
+          }
+        },
+        {
+          "type": "toolCall",
+          "id": "<toolcall-2>",
+          "name": "add",
+          "arguments": {
+            "a": 10,
+            "b": 20
+          }
+        }
+      ],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "calc-parallel",
+      "usage": {
+        "input": 60,
+        "output": 40,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 100,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0,
+          "totalFromProvider": false
+        },
+        "cacheWrite1h": 0
+      },
+      "stopReason": "toolUse",
+      "responseId": "msg_mock_1",
+      "rawStopReason": "tool_use",
+      "thinkingLevel": "off"
+    },
+    "toolResults": [
+      {
+        "role": "toolResult",
+        "toolCallId": "<toolcall-1>",
+        "toolName": "add",
+        "content": [
+          {
+            "type": "text",
+            "text": "5"
+          }
+        ],
+        "details": {},
+        "isError": false
+      },
+      {
+        "role": "toolResult",
+        "toolCallId": "<toolcall-2>",
+        "toolName": "add",
+        "content": [
+          {
+            "type": "text",
+            "text": "30"
+          }
+        ],
+        "details": {},
+        "isError": false
+      }
+    ]
+  },
+  {
+    "type": "turn_start"
+  },
+  {
+    "type": "message_start",
+    "role": "assistant"
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_start",
+      "contentIndex": 0
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "The re"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "sults "
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "are 5 "
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "and 30"
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_delta",
+      "contentIndex": 0,
+      "delta": "."
+    }
+  },
+  {
+    "type": "message_update",
+    "assistantMessageEvent": {
+      "type": "text_end",
+      "contentIndex": 0,
+      "content": "The results are 5 and 30."
+    }
+  },
+  {
+    "type": "message_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "The results are 5 and 30."
+        }
+      ],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "calc-parallel",
+      "usage": {
+        "input": 120,
+        "output": 9,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 129,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0,
+          "totalFromProvider": false
+        },
+        "cacheWrite1h": 0
+      },
+      "stopReason": "stop",
+      "responseId": "msg_mock_1",
+      "rawStopReason": "end_turn",
+      "thinkingLevel": "off"
+    }
+  },
+  {
+    "type": "turn_end",
+    "message": {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "The results are 5 and 30."
+        }
+      ],
+      "api": "anthropic-messages",
+      "provider": "contract",
+      "model": "calc-parallel",
+      "usage": {
+        "input": 120,
+        "output": 9,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 129,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0,
+          "totalFromProvider": false
+        },
+        "cacheWrite1h": 0
+      },
+      "stopReason": "stop",
+      "responseId": "msg_mock_1",
+      "rawStopReason": "end_turn",
+      "thinkingLevel": "off"
+    },
+    "toolResults": []
+  },
+  {
+    "type": "agent_end",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "<toolcall-1>",
+            "name": "add",
+            "arguments": {
+              "a": 2,
+              "b": 3
+            }
+          },
+          {
+            "type": "toolCall",
+            "id": "<toolcall-2>",
+            "name": "add",
+            "arguments": {
+              "a": 10,
+              "b": 20
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "contract",
+        "model": "calc-parallel",
+        "usage": {
+          "input": 60,
+          "output": 40,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 100,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0,
+            "totalFromProvider": false
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "toolUse",
+        "responseId": "msg_mock_1",
+        "rawStopReason": "tool_use",
+        "thinkingLevel": "off"
+      },
+      {
+        "role": "toolResult",
+        "toolCallId": "<toolcall-1>",
+        "toolName": "add",
+        "content": [
+          {
+            "type": "text",
+            "text": "5"
+          }
+        ],
+        "details": {},
+        "isError": false
+      },
+      {
+        "role": "toolResult",
+        "toolCallId": "<toolcall-2>",
+        "toolName": "add",
+        "content": [
+          {
+            "type": "text",
+            "text": "30"
+          }
+        ],
+        "details": {},
+        "isError": false
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "The results are 5 and 30."
+          }
+        ],
+        "api": "anthropic-messages",
+        "provider": "contract",
+        "model": "calc-parallel",
+        "usage": {
+          "input": 120,
+          "output": 9,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 129,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0,
+            "totalFromProvider": false
+          },
+          "cacheWrite1h": 0
+        },
+        "stopReason": "stop",
+        "responseId": "msg_mock_1",
+        "rawStopReason": "end_turn",
+        "thinkingLevel": "off"
+      }
+    ]
+  }
+]

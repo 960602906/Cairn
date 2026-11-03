@@ -1,0 +1,461 @@
+{
+  "version": 1,
+  "name": "openai-tool",
+  "scenario": "openai-tool",
+  "model": "calc-tool",
+  "source": "synthetic",
+  "pi": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@earendil-works/pi-telemetry": "1.5.0"
+  },
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "calc-tool",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "max_completion_tokens": 1024,
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "add",
+                "description": "Add two numbers",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "a": {
+                      "type": "number"
+                    },
+                    "b": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "b"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmp",
+          "l-mock-1\",\"object\":\"chat.comp",
+          "letion.",
+          "chunk\",\"creat",
+          "ed\":1767225600,\"model\":\"calc-",
+          "tool\",\"",
+          "choices\":[{\"i",
+          "ndex\":0,\"delta\":{\"role\":\"assi",
+          "stant\",",
+          "\"content\":\"\"}",
+          ",\"finish_reason\":null}]}\n\ndat",
+          "a: {\"id",
+          "\":\"chatcmpl-m",
+          "ock-1\",\"object\":\"chat.complet",
+          "ion.chu",
+          "nk\",\"created\"",
+          ":1767225600,\"model\":\"calc-too",
+          "l\",\"cho",
+          "ices\":[{\"inde",
+          "x\":0,\"delta\":{\"reasoning_cont",
+          "ent\":\"T",
+          "he us\"},\"fini",
+          "sh_reason\":null}]}\n\ndata: {\"i",
+          "d\":\"cha",
+          "tcmpl-mock-1\"",
+          ",\"object\":\"chat.completion.ch",
+          "unk\",\"c",
+          "reated\":17672",
+          "25600,\"model\":\"calc-tool\",\"ch",
+          "oices\":",
+          "[{\"index\":0,\"",
+          "delta\":{\"reasoning_content\":\"",
+          "er wan\"",
+          "},\"finish_rea",
+          "son\":null}]}\n\ndata: {\"id\":\"ch",
+          "atcmpl-",
+          "mock-1\",\"obje",
+          "ct\":\"chat.completion.chunk\",\"",
+          "created",
+          "\":1767225600,",
+          "\"model\":\"calc-tool\",\"choices\"",
+          ":[{\"ind",
+          "ex\":0,\"delta\"",
+          ":{\"reasoning_content\":\"ts 2 +",
+          "\"},\"fin",
+          "ish_reason\":n",
+          "ull}]}\n\ndata: {\"id\":\"chatcmpl",
+          "-mock-1",
+          "\",\"object\":\"c",
+          "hat.completion.chunk\",\"create",
+          "d\":1767",
+          "225600,\"model",
+          "\":\"calc-tool\",\"choices\":[{\"in",
+          "dex\":0,",
+          "\"delta\":{\"rea",
+          "soning_content\":\" 3. I \"},\"fi",
+          "nish_re",
+          "ason\":null}]}",
+          "\n\ndata: {\"id\":\"chatcmpl-mock-",
+          "1\",\"obj",
+          "ect\":\"chat.co",
+          "mpletion.chunk\",\"created\":176",
+          "7225600",
+          ",\"model\":\"cal",
+          "c-tool\",\"choices\":[{\"index\":0",
+          ",\"delta",
+          "\":{\"reasoning",
+          "_content\":\"should\"},\"finish_r",
+          "eason\":",
+          "null}]}\n\ndata",
+          ": {\"id\":\"chatcmpl-mock-1\",\"ob",
+          "ject\":\"",
+          "chat.completi",
+          "on.chunk\",\"created\":176722560",
+          "0,\"mode",
+          "l\":\"calc-tool",
+          "\",\"choices\":[{\"index\":0,\"delt",
+          "a\":{\"re",
+          "asoning_conte",
+          "nt\":\" call \"},\"finish_reason\"",
+          ":null}]",
+          "}\n\ndata: {\"id",
+          "\":\"chatcmpl-mock-1\",\"object\":",
+          "\"chat.c",
+          "ompletion.chu",
+          "nk\",\"created\":1767225600,\"mod",
+          "el\":\"ca",
+          "lc-tool\",\"cho",
+          "ices\":[{\"index\":0,\"delta\":{\"r",
+          "easonin",
+          "g_content\":\"t",
+          "he ad\"},\"finish_reason\":null}",
+          "]}\n\ndat",
+          "a: {\"id\":\"cha",
+          "tcmpl-mock-1\",\"object\":\"chat.",
+          "complet",
+          "ion.chunk\",\"c",
+          "reated\":1767225600,\"model\":\"c",
+          "alc-too",
+          "l\",\"choices\":",
+          "[{\"index\":0,\"delta\":{\"reasoni",
+          "ng_cont",
+          "ent\":\"d tool\"",
+          "},\"finish_reason\":null}]}\n\nda",
+          "ta: {\"i",
+          "d\":\"chatcmpl-",
+          "mock-1\",\"object\":\"chat.comple",
+          "tion.ch",
+          "unk\",\"created",
+          "\":1767225600,\"model\":\"calc-to",
+          "ol\",\"ch",
+          "oices\":[{\"ind",
+          "ex\":0,\"delta\":{\"reasoning_con",
+          "tent\":\"",
+          ".\"},\"finish_r",
+          "eason\":null}]}\n\ndata: {\"id\":\"",
+          "chatcmp",
+          "l-mock-1\",\"ob",
+          "ject\":\"chat.completion.chunk\"",
+          ",\"creat",
+          "ed\":176722560",
+          "0,\"model\":\"calc-tool\",\"choice",
+          "s\":[{\"i",
+          "ndex\":0,\"delt",
+          "a\":{\"content\":\"Let me\"},\"fini",
+          "sh_reas",
+          "on\":null}]}\n\n",
+          "data: {\"id\":\"chatcmpl-mock-1\"",
+          ",\"objec",
+          "t\":\"chat.comp",
+          "letion.chunk\",\"created\":17672",
+          "25600,\"",
+          "model\":\"calc-",
+          "tool\",\"choices\":[{\"index\":0,\"",
+          "delta\":",
+          "{\"content\":\" ",
+          "add t\"},\"finish_reason\":null}",
+          "]}\n\ndat",
+          "a: {\"id\":\"cha",
+          "tcmpl-mock-1\",\"object\":\"chat.",
+          "complet",
+          "ion.chunk\",\"c",
+          "reated\":1767225600,\"model\":\"c",
+          "alc-too",
+          "l\",\"choices\":",
+          "[{\"index\":0,\"delta\":{\"content",
+          "\":\"hose",
+          ".\"},\"finish_r",
+          "eason\":null}]}\n\ndata: {\"id\":\"",
+          "chatcmp",
+          "l-mock-1\",\"ob",
+          "ject\":\"chat.completion.chunk\"",
+          ",\"creat",
+          "ed\":176722560",
+          "0,\"model\":\"calc-tool\",\"choice",
+          "s\":[{\"i",
+          "ndex\":0,\"delt",
+          "a\":{\"tool_calls\":[{\"index\":0,",
+          "\"id\":\"c",
+          "all_add_1\",\"t",
+          "ype\":\"function\",\"function\":{\"",
+          "name\":\"",
+          "add\",\"argumen",
+          "ts\":\"\"}}]},\"finish_reason\":nu",
+          "ll}]}\n\n",
+          "data: {\"id\":\"",
+          "chatcmpl-mock-1\",\"object\":\"ch",
+          "at.comp",
+          "letion.chunk\"",
+          ",\"created\":1767225600,\"model\"",
+          ":\"calc-",
+          "tool\",\"choice",
+          "s\":[{\"index\":0,\"delta\":{\"tool",
+          "_calls\"",
+          ":[{\"index\":0,",
+          "\"function\":{\"arguments\":\"{\\\"a",
+          "\\\":\"}}]",
+          "},\"finish_rea",
+          "son\":null}]}\n\ndata: {\"id\":\"ch",
+          "atcmpl-",
+          "mock-1\",\"obje",
+          "ct\":\"chat.completion.chunk\",\"",
+          "created",
+          "\":1767225600,",
+          "\"model\":\"calc-tool\",\"choices\"",
+          ":[{\"ind",
+          "ex\":0,\"delta\"",
+          ":{\"tool_calls\":[{\"index\":0,\"f",
+          "unction",
+          "\":{\"arguments",
+          "\":\"2,\\\"b\\\"\"}}]},\"finish_reaso",
+          "n\":null",
+          "}]}\n\ndata: {\"",
+          "id\":\"chatcmpl-mock-1\",\"object",
+          "\":\"chat",
+          ".completion.c",
+          "hunk\",\"created\":1767225600,\"m",
+          "odel\":\"",
+          "calc-tool\",\"c",
+          "hoices\":[{\"index\":0,\"delta\":{",
+          "\"tool_c",
+          "alls\":[{\"inde",
+          "x\":0,\"function\":{\"arguments\":",
+          "\":3}\"}}",
+          "]},\"finish_re",
+          "ason\":null}]}\n\ndata: {\"id\":\"c",
+          "hatcmpl",
+          "-mock-1\",\"obj",
+          "ect\":\"chat.completion.chunk\",",
+          "\"create",
+          "d\":1767225600",
+          ",\"model\":\"calc-tool\",\"choices",
+          "\":[{\"in",
+          "dex\":0,\"delta",
+          "\":{},\"finish_reason\":\"tool_ca",
+          "lls\"}]}",
+          "\n\ndata: {\"id\"",
+          ":\"chatcmpl-mock-1\",\"object\":\"",
+          "chat.co",
+          "mpletion.chun",
+          "k\",\"created\":1767225600,\"mode",
+          "l\":\"cal",
+          "c-tool\",\"choi",
+          "ces\":[],\"usage\":{\"prompt_toke",
+          "ns\":52,",
+          "\"completion_t",
+          "okens\":31,\"total_tokens\":83}}",
+          "\n\ndata:",
+          " [DONE]\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "calc-tool",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": "Let me add those.",
+              "reasoning_content": "The user wants 2 + 3. I should call the add tool.",
+              "tool_calls": [
+                {
+                  "id": "call_add_1",
+                  "type": "function",
+                  "function": {
+                    "name": "add",
+                    "arguments": "{\"a\":2,\"b\":3}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "5",
+              "tool_call_id": "call_add_1"
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "max_completion_tokens": 1024,
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "add",
+                "description": "Add two numbers",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "a": {
+                      "type": "number"
+                    },
+                    "b": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "b"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmp",
+          "l-mock-1\",\"object\":\"chat.comp",
+          "letion.",
+          "chunk\",\"creat",
+          "ed\":1767225600,\"model\":\"calc-",
+          "tool\",\"",
+          "choices\":[{\"i",
+          "ndex\":0,\"delta\":{\"role\":\"assi",
+          "stant\",",
+          "\"content\":\"\"}",
+          ",\"finish_reason\":null}]}\n\ndat",
+          "a: {\"id",
+          "\":\"chatcmpl-m",
+          "ock-1\",\"object\":\"chat.complet",
+          "ion.chu",
+          "nk\",\"created\"",
+          ":1767225600,\"model\":\"calc-too",
+          "l\",\"cho",
+          "ices\":[{\"inde",
+          "x\":0,\"delta\":{\"content\":\"2 + ",
+          "3 \"},\"f",
+          "inish_reason\"",
+          ":null}]}\n\ndata: {\"id\":\"chatcm",
+          "pl-mock",
+          "-1\",\"object\":",
+          "\"chat.completion.chunk\",\"crea",
+          "ted\":17",
+          "67225600,\"mod",
+          "el\":\"calc-tool\",\"choices\":[{\"",
+          "index\":",
+          "0,\"delta\":{\"c",
+          "ontent\":\"= 5。结果\"},\"finish_rea",
+          "son\":nu",
+          "ll}]}\n\ndata: ",
+          "{\"id\":\"chatcmpl-mock-1\",\"obje",
+          "ct\":\"ch",
+          "at.completion",
+          ".chunk\",\"created\":1767225600,",
+          "\"model\"",
+          ":\"calc-tool\",",
+          "\"choices\":[{\"index\":0,\"delta\"",
+          ":{\"cont",
+          "ent\":\"是五。\"},\"",
+          "finish_reason\":null}]}\n\ndata:",
+          " {\"id\":",
+          "\"chatcmpl-moc",
+          "k-1\",\"object\":\"chat.completio",
+          "n.chunk",
+          "\",\"created\":1",
+          "767225600,\"model\":\"calc-tool\"",
+          ",\"choic",
+          "es\":[{\"index\"",
+          ":0,\"delta\":{},\"finish_reason\"",
+          ":\"stop\"",
+          "}]}\n\ndata: {\"",
+          "id\":\"chatcmpl-mock-1\",\"object",
+          "\":\"chat",
+          ".completion.c",
+          "hunk\",\"created\":1767225600,\"m",
+          "odel\":\"",
+          "calc-tool\",\"c",
+          "hoices\":[],\"usage\":{\"prompt_t",
+          "okens\":",
+          "96,\"completio",
+          "n_tokens\":12,\"total_tokens\":1",
+          "08}}\n\nd",
+          "ata: [DONE]\n\n"
+        ]
+      }
+    }
+  ]
+}
