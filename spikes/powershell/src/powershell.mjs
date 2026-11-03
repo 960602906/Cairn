@@ -86,6 +86,7 @@ export function findShells() {
  * @property {number} ms
  * @property {boolean} timedOut
  * @property {string | undefined} spawnError
+ * @property {number} cmdChars 命令行总长（UTF-16 字符）
  */
 
 /**
@@ -116,16 +117,35 @@ export function runProcess(exe, args, options = {}) {
     let timedOut = false
     /** @type {string | undefined} */
     let spawnError
-    const child = spawn(exe, args, {
-      cwd: options.cwd,
-      env: options.env ?? process.env,
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
+    // 命令行总长（UTF-16 字符），Windows 上限 32767
+    const cmdChars = [exe, ...args].reduce((n, a) => n + a.length + 1, 0)
+    /** @type {import('node:child_process').ChildProcess} */
+    let child
+    try {
+      child = spawn(exe, args, {
+        cwd: options.cwd,
+        env: options.env ?? process.env,
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+    } catch (e) {
+      // 命令行过长时 spawn 同步抛出 ENAMETOOLONG
+      const empty = Buffer.alloc(0)
+      resolve({
+        code: null,
+        stdout: empty,
+        stderr: empty,
+        ms: 0,
+        timedOut: false,
+        spawnError: String(/** @type {Error} */ (e).message),
+        cmdChars,
+      })
+      return
+    }
     // 不支持交互：标准输入立即关闭
-    child.stdin.end()
-    child.stdout.on('data', (b) => out.push(b))
-    child.stderr.on('data', (b) => err.push(b))
+    child.stdin?.end()
+    child.stdout?.on('data', (b) => out.push(b))
+    child.stderr?.on('data', (b) => err.push(b))
     options.onSpawn?.(child)
     const timer =
       options.timeoutMs === undefined
@@ -146,6 +166,7 @@ export function runProcess(exe, args, options = {}) {
         ms: Math.round(performance.now() - started),
         timedOut,
         spawnError,
+        cmdChars,
       })
     })
   })

@@ -231,10 +231,7 @@ export const CASES = [
           const got = text(r.stdout)
           return {
             ok: got.length === n,
-            detail:
-              got.length === n
-                ? ''
-                : `len=${got.length} ${r.spawnError ?? text(r.stderr).slice(0, 80)}`,
+            detail: `命令行 ${r.cmdChars} 字符${got.length === n ? '' : `；len=${got.length} ${r.spawnError ?? text(r.stderr).slice(0, 80)}`}`,
           }
         },
       }),
@@ -250,10 +247,7 @@ export const CASES = [
           const got = text(r.stdout)
           return {
             ok: got === long('中', n),
-            detail:
-              got.length === n
-                ? ''
-                : `len=${got.length} ${r.spawnError ?? text(r.stderr).slice(0, 80)}`,
+            detail: `命令行 ${r.cmdChars} 字符${got.length === n ? '' : `；len=${got.length} ${r.spawnError ?? text(r.stderr).slice(0, 80)}`}`,
           }
         },
       }),
