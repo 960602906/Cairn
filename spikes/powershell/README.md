@@ -103,8 +103,59 @@ node src\summarize.mjs result-zh.json > result-zh.md
 
 ## 结果
 
-待 CI 运行后补充。
+2026-11-03，GitHub Actions `windows-latest`（Windows Server 2025，10.0.26100，英文系统：ANSI 代码页 1252、控制台 437），Node 24.22.2，Windows PowerShell 5.1.26100、PowerShell 7.6.9。默认与 `chcp 936` 两组结果相同：`chcp 936` 只作用于 cmd 自己，PowerShell 中读到的控制台代码页仍为 437，这一组不能代替中文系统复测。
+
+### 编码、转义与退出码
+
+两个 PowerShell 版本下，`recommended` 通过全部必须项。`raw` 与 `prelude` 的问题（✅ 通过，❌ 失败，5.1 / 7 不同时分开写）：
+
+| 检查 | raw | prelude | recommended |
+|---|---|---|---|
+| Write-Output、Write-Host、中文目录名、特殊字符、`Get-Content` 读无 BOM 的 UTF-8 | ❌ 输出按控制台代码页 437 编码，中文变 `?` | ✅ | ✅ |
+| `cmd /c echo`（按控制台代码页输出） | ❌ | ✅ | ✅ |
+| node 输出 UTF-8、向原生程序传中文参数 | ✅ | ✅ | ✅ |
+| 原生程序 stderr 中文 | ✅ | ✅ | ✅ |
+| Python 默认编码 | ❌ 无输出（按 cp1252 编码中文出错） | ❌ | ❌ |
+| Python + `PYTHONUTF8=1` | ✅ | ✅ | ✅ |
+| `Write-Error`、`throw` 写入 stderr | ❌ CLIXML | 5.1 ❌ CLIXML；7 ✅ | ✅ |
+| 进度条 | ❌ stderr 出现 CLIXML | ✅ | ✅ |
+| `>` 写文件 | 5.1 ❌ UTF-16LE；7 ✅ 无 BOM 的 UTF-8 | 5.1 带 BOM 的 UTF-8；7 无 BOM | 同 prelude |
+| 语法错误中的中文 | ❌ 中文乱码、CLIXML | ❌ 语法错误在前置脚本运行前就报告，前置脚本不生效 | ✅ 退出码 1 |
+| `exit 7`、原生命令失败后又成功（退出码 0） | ✅ | ✅ | ✅ |
+| 最后一条原生命令以 3 退出 | ❌ 退出码 1 | ❌ 1 | ✅ 3 |
+| `Read-Host` | ✅ 标准输入已关闭，立即返回 | ✅ | ✅ |
+
+其他发现：
+
+- **CLIXML**：`-EncodedCommand` 且输出被重定向时，PowerShell 把错误流序列化为 CLIXML 写入 stderr。PowerShell 7 加 `-OutputFormat Text` 即可；**5.1 加了仍然是 CLIXML**。候选做法把用户脚本放进 `try { . $sb 2>&1 | ForEach-Object { ... } } catch { ... }`，错误记录由脚本自己写到 `[Console]::Error`，两个版本都得到纯文本，stdout 内容与顺序不受影响。
+- **命令行长度**：Windows 命令行上限 32767 个字符。候选做法把用户脚本先按 UTF-8 Base64、整体再按 UTF-16LE Base64，每个 ASCII 字符约占 3.6 个字符、每个汉字约占 10.7 个（前置脚本固定约 3000）。实测 6000 个 ASCII 字符（24480）、2000 个汉字（24480）可以，1 万个 ASCII 字符（38708）、4000 个汉字（45812）超过上限，`spawn` 直接报 `ENAMETOOLONG`。超过上限时改用带 BOM 的 UTF-8 `.ps1` + `-File`，3 万个汉字的脚本正常输出（文件开头同样是前置脚本）。
+- **启动耗时**（`exit 0`，5 次中位数）：5.1 约 330 ms，7 约 420～480 ms。
+
+### 进程树结束
+
+两个版本、两组结果相同：
+
+| 场景 | `kill`（只结束 PowerShell） | `taskkill /T /F` | Job Object：`TerminateJobObject` | Job Object：关闭句柄 |
+|---|---|---|---|---|
+| nested | ❌ 残留 root、mid、leaf | ✅ 约 90 ms | ✅ 约 1 ms | ✅ 约 1 ms |
+| orphan（中间进程已退出） | ❌ 残留 mid、leaf | ❌ 残留 mid、leaf | ✅ | ✅ |
+| `Start-Process -NoNewWindow` | ❌ 残留 root、mid、leaf | ✅ 约 80 ms | ✅ | ✅ |
+
+- 在 PowerShell 启动后（`spawn` 返回、子进程尚未创建）立即放进作业，之后创建的所有子孙进程都在作业内（`IsProcessInJob` 全部为是），包括父进程已经退出的孤儿进程。
+- `taskkill /T` 按父子关系查找，父进程退出后的子进程找不到。
+- 关闭作业句柄（`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`）同样结束全部进程，应用退出或崩溃时句柄由系统关闭，不留下进程。
+- GitHub Actions 的运行器本身也把进程放在作业中，嵌套作业（Windows 8 起）正常工作。
+- koffi 在 npm 11 默认不运行安装脚本的情况下可用（预编译二进制来自可选依赖）。
 
 ## 结论
 
-待补充。
+- **中文输出**：候选做法在 CI 的英文系统上，两个版本全部必须项通过；中文系统的结论待本地复测（见上文命令）。
+- **候选做法**写回 ADR-0012：
+  - 启动参数：`-NoProfile -NonInteractive -OutputFormat Text -EncodedCommand`；
+  - 前置脚本：UTF-8 输出、文件默认 UTF-8、关闭进度条、PowerShell 7 关闭颜色；
+  - 用户脚本：UTF-8 Base64 嵌入，前置脚本之后解码为脚本块点执行，错误流由脚本写到 stderr；
+  - 结尾：最后一条原生命令失败时以它的退出码退出；
+  - 命令行超过约 30000 个字符时改用临时 `.ps1`（带 BOM 的 UTF-8）+ `-File`；
+  - 子进程环境设 `PYTHONUTF8=1`（Python 默认按系统代码页输出）。
+- **进程树**：只用 Job Object。`taskkill /T` 不能结束父进程已退出的子孙进程，不满足“无残留”，只在作业对象不可用时作为回退。`spawn` 后立即放进作业；超时或停止时 `TerminateJobObject`；同时设 `KILL_ON_JOB_CLOSE`，应用退出时不留下进程。
+- **已知限制**：`spawn` 与放进作业之间有极短的间隔，这期间 PowerShell 还在初始化（实测启动约 300 ms），尚未创建子进程。如需完全消除，可在 M1 改为以挂起方式创建进程（需原生模块），目前不需要。
