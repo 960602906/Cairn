@@ -10,6 +10,7 @@
   "message.reasoning": "思考过程",
   "message.image": "[图片]",
   "message.toolCall": "调用工具：{{name}}",
+  "message.incomplete": "（回复未完成）",
   "input.label": "输入消息",
   "input.placeholder": "输入消息，Enter 发送，Shift+Enter 换行",
   "input.send": "发送",

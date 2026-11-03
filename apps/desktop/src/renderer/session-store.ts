@@ -12,13 +12,14 @@
  *   `awaitingTurn` 记下这段时间，界面与列表把会话当作运行中（可以停止、不能再发送）。收到
  *   `turn.started`（或该轮结束、会话崩溃）、发送失败或停止成功时清除。
  * - **事件记录**（开发模式的事件查看器，M0-15d）：`eventLogLimit` 大于 0 时按会话保存收到的原始
- *   事件（补发与实时推送，含增量），每个会话只保留最近的若干条。默认不保存。
+ *   事件（补发与实时推送，含增量），每个会话只保留最近的若干条，超出时先丢弃增量事件。默认不保存。
  * - **设置**：`updateSettings` 保存设置；失败时同样写入 `error`。
  *
  * 不依赖 React 与 DOM，便于在 Node 中测试；组件通过 `useStore(store, selector)` 读取。
  */
 import { createSessionView, reduceSession, sessionStatus, type SessionView } from '@nexus/core'
 import {
+  isPersistedEvent,
   RpcError,
   type ContentPart,
   type ErrorInfo,
@@ -108,7 +109,10 @@ function reduceInto(
   }
 }
 
-/** 把事件追加到会话的记录中，只保留最近 `limit` 条。 */
+/**
+ * 把事件追加到会话的记录中，最多保留 `limit` 条。超出时先丢弃最早的增量事件（一次长回复就有上千条），
+ * 只剩持久化事件时再丢弃最早的。
+ */
 function appendLog(
   log: SessionState['eventLog'],
   sessionId: string,
@@ -116,8 +120,13 @@ function appendLog(
   limit: number,
 ): SessionState['eventLog'] {
   if (limit <= 0 || events.length === 0) return log
-  const next = [...(log[sessionId] ?? []), ...events]
-  return { ...log, [sessionId]: next.length > limit ? next.slice(-limit) : next }
+  let next = [...(log[sessionId] ?? []), ...events]
+  let excess = next.length - limit
+  if (excess > 0) {
+    next = next.filter((event) => isPersistedEvent(event) || excess-- <= 0)
+    if (next.length > limit) next = next.slice(-limit)
+  }
+  return { ...log, [sessionId]: next }
 }
 
 export function createSessionStore(api: MainApi, options: SessionStoreOptions = {}): SessionStore {

@@ -310,7 +310,7 @@ describe('event log', () => {
     expect(store.getState().eventLog).toEqual({})
   })
 
-  it('keeps the latest received events per session, including deltas', async () => {
+  it('keeps the latest received events per session, dropping deltas first', async () => {
     const { api, emit } = fakeApi({
       'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
     })
@@ -320,8 +320,14 @@ describe('event log', () => {
     emit('s1', [user('s1', 2, 'hi'), delta(3)])
     emit('s1', [])
     expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1, 2, 3])
+    // 超出时先丢弃最早的增量事件，持久化事件保留
     emit('s1', [delta(4)])
-    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([2, 3, 4])
+    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1, 2, 4])
+    emit('s1', [delta(5), delta(6)])
+    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1, 2, 6])
+    // 只剩持久化事件时丢弃最早的
+    emit('s1', [user('s1', 7, 'a'), user('s1', 8, 'b')])
+    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([2, 7, 8])
     // 其他会话（未订阅）的事件不记录
     emit('s2', [user('s2', 1, 'other')])
     expect(Object.keys(store.getState().eventLog)).toEqual(['s1'])

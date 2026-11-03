@@ -328,10 +328,21 @@ describe('ChatPanel', () => {
     expect(runStatus()).toBe('运行中 · 正在停止')
     expect(stopButton()!.disabled).toBe(true)
 
-    emit(ev(13, 'turn.aborted', { reason: 'user' }, 't2'), state(14, 'aborting', 'idle'))
+    emit(
+      ev(
+        13,
+        'message.assistant.completed',
+        { messageId: 'm4', content: text('说到'), model, incomplete: true },
+        't2',
+      ),
+      ev(14, 'turn.aborted', { reason: 'user' }, 't2'),
+      state(15, 'aborting', 'idle'),
+    )
     expect(runStatus()).toBe('空闲')
     expect(stopButton()).toBeNull()
     expect(screen.getByText('已停止')).toBeTruthy()
+    // 已输出的部分保留，并注明未完成
+    expect(messages().at(-1)).toBe('助手说到（回复未完成）')
   })
 
   it.each([

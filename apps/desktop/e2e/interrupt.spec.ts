@@ -14,6 +14,7 @@ import {
   createSession,
   expectMessages,
   liveMessage,
+  messageTexts,
   projectDir,
   runStatus,
   sendPrompt,
@@ -33,11 +34,19 @@ test('运行中停止：本轮以 turn.aborted 结束，之后可以继续对话
   await expect(liveMessage(window)).toContainText(LONG_PROMPT.slice(0, 5))
   await window.getByRole('button', { name: '停止' }).click()
 
-  // 停止后未完成的回复被丢弃，只留下用户消息与停止说明
+  // 停止后已输出的部分回复保留，注明未完成（Runtime §10.2）
   await expect(window.getByText('已停止', { exact: true })).toBeVisible()
   await expect(runStatus(window)).toHaveText('空闲')
   await expect(window.getByRole('button', { name: '停止' })).toHaveCount(0)
-  const stopped: ExpectedMessage[] = [['你', LONG_PROMPT]]
+  await expect(window.getByText('（回复未完成）')).toHaveCount(1)
+  const partial = (await messageTexts(window)).at(-1)!
+  expect(partial.length).toBeGreaterThan(0)
+  expect(LONG_PROMPT.startsWith(partial)).toBe(true)
+  expect(partial.length).toBeLessThan(LONG_PROMPT.length)
+  const stopped: ExpectedMessage[] = [
+    ['你', LONG_PROMPT],
+    ['助手', partial],
+  ]
   await expectMessages(window, stopped)
 
   await converse(window, '继续', stopped)
@@ -48,7 +57,8 @@ test('运行中停止：本轮以 turn.aborted 结束，之后可以继续对话
   const aborted = ofType(events, 'turn.aborted')
   expect(aborted.map((event) => event.payload['reason'])).toEqual(['user'])
   const replies = ofType(events, 'message.assistant.completed')
-  expect(replies.map((event) => contentText(event.payload['content']))).toEqual(['继续'])
+  expect(replies.map((event) => contentText(event.payload['content']))).toEqual([partial, '继续'])
+  expect(replies.map((event) => event.payload['incomplete'])).toEqual([true, undefined])
   const completed = ofType(events, 'turn.completed')
   expect(completed).toHaveLength(1)
   expect(completed[0]!.turnId).not.toBe(aborted[0]!.turnId)

@@ -10,6 +10,7 @@
   "message.reasoning": "Reasoning",
   "message.image": "[Image]",
   "message.toolCall": "Tool call: {{name}}",
+  "message.incomplete": "(Reply incomplete)",
   "input.label": "Message",
   "input.placeholder": "Type a message. Enter to send, Shift+Enter for a new line",
   "input.send": "Send",

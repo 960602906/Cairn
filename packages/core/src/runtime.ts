@@ -114,6 +114,7 @@ export type StepFinishReason = EventPayload<'step.completed'>['finishReason']
  * ```
  *
  * 工具的执行经由 `hooks`，不产生运行时事件；`RunEngine` 在钩子中自行发出工具事件。
+ * 被中止或出错的一步不发出 `message.completed`；`RunEngine` 用已收到的增量保存部分回复。
  */
 export type RuntimeEvent =
   | { readonly type: 'step.started'; readonly model: ModelRef }

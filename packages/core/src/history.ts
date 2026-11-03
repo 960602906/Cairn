@@ -77,6 +77,8 @@ export function rebuildHistory(
         history.push({ role: 'user', content: event.payload.content, ts: event.ts })
         break
       case 'message.assistant.completed': {
+        // 被打断的部分回复只用于显示（运行时自己的历史中也没有它）
+        if (event.payload.incomplete) break
         flush(event.ts)
         const { content, reasoning, toolCalls, model } = event.payload
         history.push({

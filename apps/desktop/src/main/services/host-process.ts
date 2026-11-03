@@ -39,14 +39,19 @@ export interface UtilityHostSpawnerOptions {
   readonly fork: (
     modulePath: string,
     args: string[],
-    options: { serviceName: string },
+    options: { serviceName: string; env?: Record<string, string> },
   ) => UtilityProcessLike
   readonly createMessageChannel: () => { port1: MessagePortMainLike; port2: MessagePortMainLike }
+  /** 宿主进程的环境变量；不给出时继承主进程的环境变量。 */
+  readonly env?: Record<string, string>
 }
 
 export function createUtilityHostSpawner(options: UtilityHostSpawnerOptions): SpawnHost {
   return () => {
-    const child = options.fork(options.entry, [], { serviceName: HOST_SERVICE_NAME })
+    const child = options.fork(options.entry, [], {
+      serviceName: HOST_SERVICE_NAME,
+      ...(options.env ? { env: options.env } : {}),
+    })
     const { port1, port2 } = options.createMessageChannel()
     child.postMessage({ type: HOST_PORT_MESSAGE }, [port2])
     port1.start()

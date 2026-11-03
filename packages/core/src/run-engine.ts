@@ -18,6 +18,10 @@
  *   限额  turn.limit_reached → run.state.changed(→failed) → turn.failed（retryable）
  * ```
  *
+ * 一步在没有 `message.completed` 的情况下结束（被停止、出错，或运行时直接结束循环）时，若已收到
+ * 文本或推理增量，先以 `message.assistant.completed { incomplete: true }` 保存这部分回复
+ * （Runtime §10.2），再发出 `step.completed` 或轮次结束事件。
+ *
  * `message.user` 由主进程落库（`host.prompt` 携带其 messageId），RunEngine 不重复发出。
  * 工具的权限与审批在 M1 接入；M0 中所有工具调用直接放行，交给注入的 `executeTool`。
  */
@@ -101,12 +105,22 @@ export interface RunEngineOptions {
   readonly createId?: () => string
 }
 
+interface StepContext {
+  readonly stepId: string
+  readonly startedAt: number
+  readonly model: ModelRef
+  /** 已收到的增量，本步没有完整消息时作为部分回复保存。 */
+  text: string
+  reasoning: string
+  /** 本步已发出 `message.assistant.completed`。 */
+  completed: boolean
+}
+
 interface TurnContext {
   readonly turnId: string
   readonly startedAt: number
   steps: number
-  step:
-    { readonly stepId: string; readonly startedAt: number; readonly model: ModelRef } | undefined
+  step: StepContext | undefined
   /** 当前步骤的助手消息 id（增量与完成事件共用）。 */
   messageId: string | undefined
   abortReason: 'user' | 'shutdown' | undefined
@@ -264,7 +278,14 @@ export class RunEngine {
           return
         }
         turn.steps += 1
-        turn.step = { stepId: this.#createId(), startedAt: this.#now(), model: event.model }
+        turn.step = {
+          stepId: this.#createId(),
+          startedAt: this.#now(),
+          model: event.model,
+          text: '',
+          reasoning: '',
+          completed: false,
+        }
         turn.messageId = undefined
         if (this.#state === 'tooling') this.#transition('thinking')
         this.#emit('step.started', { model: event.model })
@@ -274,6 +295,8 @@ export class RunEngine {
       case 'reasoning.delta': {
         if (!turn.step) return
         turn.messageId ??= this.#createId()
+        if (event.type === 'text.delta') turn.step.text += event.text
+        else turn.step.reasoning += event.text
         const type =
           event.type === 'text.delta' ? 'message.assistant.delta' : 'message.reasoning.delta'
         this.#emit(type, { messageId: turn.messageId, text: event.text })
@@ -282,6 +305,7 @@ export class RunEngine {
       case 'message.completed': {
         if (!turn.step) return
         const { content, reasoning, toolCalls, model } = event.message
+        turn.step.completed = true
         turn.messageId ??= this.#createId()
         this.#emit('message.assistant.completed', {
           messageId: turn.messageId,
@@ -295,6 +319,7 @@ export class RunEngine {
       case 'step.completed': {
         const step = turn.step
         if (!step) return
+        this.#savePartial(turn)
         this.#emit('step.completed', {
           model: step.model,
           finishReason: event.finishReason,
@@ -319,6 +344,7 @@ export class RunEngine {
   ): void {
     if (turn.ended) return
     turn.ended = true
+    this.#savePartial(turn)
     turn.step = undefined
     const durationMs = Math.max(0, this.#now() - turn.startedAt)
     // 用户停止优先于同时发生的限额与错误
@@ -343,6 +369,22 @@ export class RunEngine {
     if (this.#state === 'tooling') this.#transition('thinking')
     this.#transition('completed')
     this.#emit('turn.completed', { durationMs })
+  }
+
+  /** 当前步骤没有完整消息但已收到增量时，保存为不完整的助手消息。 */
+  #savePartial(turn: TurnContext): void {
+    const step = turn.step
+    if (!step || step.completed || turn.messageId === undefined) return
+    step.completed = true
+    this.#emit('message.assistant.completed', {
+      messageId: turn.messageId,
+      content: step.text === '' ? [] : [{ type: 'text', text: step.text }],
+      ...(step.reasoning === ''
+        ? {}
+        : { reasoning: { text: step.reasoning, providerId: step.model.providerId } }),
+      model: step.model,
+      incomplete: true,
+    })
   }
 
   #fail(error: ErrorInfo, retryable: boolean): void {
