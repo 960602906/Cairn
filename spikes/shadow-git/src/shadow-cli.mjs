@@ -36,7 +36,8 @@ export function parseNameStatus(buf) {
  * - nofsync：不对任何对象调用 fsync；
  * - batch：fsync 按批进行（Git 2.37+）；
  * - pack：大于 1 字节的文件由 `git add` 直接写入一个包文件，而不是逐个写松散对象；
- * - pack-nofsync：pack 与 nofsync 同时使用。
+ * - pack-nofsync：pack 与 nofsync 同时使用；
+ * - pack-durable：pack，包文件与引用照常 fsync，只有松散对象（此时只剩树与提交）不 fsync。
  */
 export const CONFIG_VARIANTS = {
   baseline: {},
@@ -46,6 +47,11 @@ export const CONFIG_VARIANTS = {
   'pack-nofsync': {
     'core.bigFileThreshold': '1',
     'core.fsync': 'none',
+    'core.fsyncObjectFiles': 'false',
+  },
+  'pack-durable': {
+    'core.bigFileThreshold': '1',
+    'core.fsync': 'pack,pack-metadata,reference',
     'core.fsyncObjectFiles': 'false',
   },
 }
