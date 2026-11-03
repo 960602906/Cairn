@@ -6,12 +6,9 @@
  *
  * M0 的宿主使用 FakeRuntime：原样回复输入，逐字输出（每字 15 ms）。
  */
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import type { CanonicalMessage } from '@nexus/protocol'
-import { HOST_TRACE_ENV, type HostTraceRecord } from '../src/agent-host/history-trace.js'
 import { expect, test } from './app.js'
-import { contentText, readEvents, type StoredEvent } from './database.js'
+import { contentText, ofType, readEvents } from './database.js'
+import { hostTrace, readHostHistories } from './host.js'
 import {
   converse,
   createSession,
@@ -26,9 +23,6 @@ import {
 const TITLE = '端到端测试'
 /** 回复约 40 个字符，流式输出约 0.6 秒，足以观察到多次中间状态。 */
 const PROMPT = '请原样回复这句话：端到端测试检查流式回复逐字出现，完成后整条消息只显示一次。'
-
-const ofType = (events: readonly StoredEvent[], type: string) =>
-  events.filter((event) => event.type === type)
 
 test('新建会话并输入：回复流式出现，完成后只显示一次', async ({ launch, userData }) => {
   const { window } = await launch()
@@ -94,8 +88,7 @@ test('落库：一轮对话的持久化事件完整，增量事件不落库', as
 })
 
 test('重启应用：历史完整恢复，继续对话时宿主收到完整历史', async ({ launch, userData }) => {
-  const trace = path.join(userData, 'host-trace.jsonl')
-  const env = { [HOST_TRACE_ENV]: trace }
+  const { env, file } = hostTrace(userData)
 
   const first = await launch({ env })
   await createSession(first.window, projectDir(userData), TITLE)
@@ -110,13 +103,7 @@ test('重启应用：历史完整恢复，继续对话时宿主收到完整历�
   await converse(second.window, '第三条', messages)
 
   // 每个宿主进程创建一次运行时会话：首次为新运行（无历史），重启后带着之前的两问两答
-  const records = readFileSync(trace, 'utf8')
-    .trim()
-    .split('\n')
-    .map((line) => JSON.parse(line) as HostTraceRecord)
-  const summarize = (history: readonly CanonicalMessage[]) =>
-    history.map((m) => [m.role, contentText(m.content)])
-  expect(records.map((record) => summarize(record.history))).toEqual([
+  expect(readHostHistories(file)).toEqual([
     [],
     [
       ['user', '第一条'],

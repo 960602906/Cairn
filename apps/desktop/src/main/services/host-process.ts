@@ -23,6 +23,9 @@ export interface HostProcess {
 
 export type SpawnHost = (sessionId: string) => HostProcess
 
+/** 宿主进程的服务名，也是 `app.getAppMetrics()` 中该进程的名称。 */
+export const HOST_SERVICE_NAME = 'NEXUS-OS Agent Host'
+
 export interface UtilityProcessLike {
   readonly pid: number | undefined
   postMessage(message: unknown, transfer?: MessagePortMainLike[]): void
@@ -43,7 +46,7 @@ export interface UtilityHostSpawnerOptions {
 
 export function createUtilityHostSpawner(options: UtilityHostSpawnerOptions): SpawnHost {
   return () => {
-    const child = options.fork(options.entry, [], { serviceName: 'NEXUS-OS Agent Host' })
+    const child = options.fork(options.entry, [], { serviceName: HOST_SERVICE_NAME })
     const { port1, port2 } = options.createMessageChannel()
     child.postMessage({ type: HOST_PORT_MESSAGE }, [port2])
     port1.start()
