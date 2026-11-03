@@ -128,6 +128,22 @@ describe('rebuildHistory', () => {
     expect(history[6]).toMatchObject({ content: text('Tool call failed: fs.denied') })
   })
 
+  it('被打断的部分回复不进入历史', () => {
+    const ev = stream()
+    const history = rebuild([
+      ev('turn.started', {}),
+      ev('message.user', { messageId: 'u1', content: text('写一段') }),
+      ev('message.assistant.completed', {
+        messageId: 'a1',
+        content: text('写到一半'),
+        model,
+        incomplete: true,
+      }),
+      ev('turn.aborted', { reason: 'user' }),
+    ])
+    expect(history).toEqual([{ role: 'user', content: text('写一段'), ts: 20 }])
+  })
+
   it('空的 toolCalls 不写入助手消息', () => {
     const ev = stream()
     const [msg] = rebuild([

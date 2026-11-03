@@ -47,6 +47,11 @@ export async function sendPrompt(window: Page, text: string) {
   await input.press('Enter')
 }
 
+/** 消息流中各条消息的正文（每条消息的段落）。 */
+export async function messageTexts(window: Page): Promise<string[]> {
+  return messageItems(window).locator('p').allTextContents()
+}
+
 /** 消息流恰好是这些消息，且没有进行中的消息。 */
 export async function expectMessages(window: Page, messages: readonly ExpectedMessage[]) {
   const items = messageItems(window)

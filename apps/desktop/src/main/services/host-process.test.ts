@@ -45,6 +45,20 @@ describe('portChannel', () => {
 })
 
 describe('createUtilityHostSpawner', () => {
+  it('passes the given environment to the host', () => {
+    const fork = vi.fn(() => fakeChild().child)
+    createUtilityHostSpawner({
+      entry: '/app/out/main/agent-host.js',
+      fork,
+      createMessageChannel: () => ({ port1: fakePort().port, port2: fakePort().port }),
+      env: { PATH: '/bin' },
+    })('s1')
+    expect(fork).toHaveBeenCalledWith('/app/out/main/agent-host.js', [], {
+      serviceName: 'NEXUS-OS Agent Host',
+      env: { PATH: '/bin' },
+    })
+  })
+
   it('forks the host and hands it a dedicated port', () => {
     const { child, exit } = fakeChild()
     const p1 = fakePort()

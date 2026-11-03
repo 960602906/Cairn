@@ -1,6 +1,6 @@
 /**
  * 消息流（M0-15c）：已完成的消息（`messages`）之后是进行中的消息（`live`，由增量事件合并），
- * 最后是上一轮的结果（停止、失败、达到限额、宿主崩溃）。消息完成时投影移除对应的进行中消息，
+ * 最后是上一轮的结果（停止、失败、达到限额、宿主崩溃）。被停止或出错打断的部分回复保留并注明未完成。消息完成时投影移除对应的进行中消息，
  * 因此同一条消息不会出现两次。
  */
 import { useTranslation } from 'react-i18next'
@@ -46,6 +46,7 @@ function Message({ message }: { readonly message: MessageView }) {
       {assistant?.toolCalls.map((call) => (
         <p key={call.id}>{t('message.toolCall', { name: call.name })}</p>
       ))}
+      {assistant?.incomplete && <em>{t('message.incomplete')}</em>}
     </li>
   )
 }

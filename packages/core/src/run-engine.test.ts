@@ -293,12 +293,104 @@ describe('RunEngine：中止', () => {
     await done
     expect(states(events)).toEqual(['thinking', 'aborting', 'idle'])
     expect(events.at(-1)).toMatchObject({ type: 'turn.aborted', payload: { reason: 'user' } })
-    expect(types(events)).not.toContain('message.assistant.completed')
     expect(engine.state).toBe('idle')
+
+    // 已收到的部分回复保存为不完整的消息，在 step.completed 之前（Runtime §10.2）
+    const deltas = events.flatMap((e) => (e.type === 'message.assistant.delta' ? [e] : []))
+    expect(deltas.length).toBeGreaterThan(0)
+    const partial = events.find((e) => e.type === 'message.assistant.completed')
+    expect(partial?.payload).toEqual({
+      messageId: deltas[0]!.payload.messageId,
+      content: text(deltas.map((d) => d.payload.text).join('')),
+      model: model.ref,
+      incomplete: true,
+    })
+    const order = types(events)
+    expect(order.indexOf('message.assistant.completed')).toBe(order.indexOf('step.completed') - 1)
 
     const view = reduceSessionEvents(createSessionView('s1'), sequenced('?', events))
     expect(view.live).toEqual({})
     expect(view.runs.r1?.turn?.status).toBe('aborted')
+    expect(view.messages.at(-1)).toMatchObject({ role: 'assistant', incomplete: true })
+  })
+
+  it('还没有增量时停止：不保存空消息', async () => {
+    vi.useFakeTimers()
+    const { engine, events } = await start(fake(slow))
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.advanceTimersByTimeAsync(10)
+    await engine.abort()
+    await done
+    expect(types(events)).not.toContain('message.assistant.completed')
+  })
+
+  it('只有推理增量时停止：保存推理内容，正文为空', async () => {
+    vi.useFakeTimers()
+    const { engine, events } = await start(
+      fake({ delayMs: 50, turns: [{ steps: [{ kind: 'reply', text: 'abc', reasoning: 'xyz' }] }] }),
+    )
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.advanceTimersByTimeAsync(70)
+    await engine.abort()
+    await done
+    const partial = events.find((e) => e.type === 'message.assistant.completed')
+    expect(partial?.payload).toMatchObject({
+      content: [],
+      reasoning: { text: 'x', providerId: model.ref.providerId },
+      incomplete: true,
+    })
+  })
+
+  it('运行时出错或直接结束循环时，同样保存部分回复', async () => {
+    let listener: ((event: RuntimeEvent) => void) | undefined
+    const scripted = (steps: readonly RuntimeEvent[][]): AgentRuntime => {
+      let turn = 0
+      return {
+        id: 'scripted',
+        createSession: async () => ({
+          prompt: async () => {
+            for (const event of steps[turn++] ?? []) listener?.(event)
+          },
+          steer: async () => {},
+          abort: async () => {},
+          onEvent: (l) => {
+            listener = l
+            return () => (listener = undefined)
+          },
+          exportHistory: () => [],
+          dispose: async () => {},
+        }),
+      }
+    }
+    const failed = { code: 'model.unknown_error' }
+    const { engine, events } = await start(
+      scripted([
+        [
+          { type: 'step.started', model: model.ref },
+          { type: 'text.delta', text: '半' },
+          { type: 'step.completed', finishReason: 'error' },
+          { type: 'loop.ended', outcome: 'failed', error: failed },
+        ],
+        [
+          { type: 'step.started', model: model.ref },
+          { type: 'text.delta', text: '截' },
+          { type: 'loop.ended', outcome: 'aborted' },
+        ],
+      ]),
+    )
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    await engine.prompt({ messageId: 'u2', content: text('?') })
+    const partials = events.flatMap((e) =>
+      e.type === 'message.assistant.completed' ? [e.payload] : [],
+    )
+    expect(partials.map((p) => [p.content, p.incomplete])).toEqual([
+      [text('半'), true],
+      [text('截'), true],
+    ])
+    expect(types(events).filter((t) => t.startsWith('turn.') && t !== 'turn.started')).toEqual([
+      'turn.failed',
+      'turn.aborted',
+    ])
   })
 
   it('会话级信号中止：原因为 shutdown', async () => {

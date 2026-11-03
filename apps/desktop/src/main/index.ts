@@ -30,6 +30,7 @@ import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
 import { createSettingsService } from './services/settings-service.js'
+import { hostEnvironment } from '../shared/host-trace.js'
 import { isSmokeRun, RENDERER_PROBE_SCRIPT, runSmokeChecks, type RendererProbe } from './smoke.js'
 
 const paths = resolveAppPaths({
@@ -76,6 +77,7 @@ const supervisor = createHostSupervisor({
     entry: join(import.meta.dirname, 'agent-host.js'),
     fork: (modulePath, args, options) => utilityProcess.fork(modulePath, args, options),
     createMessageChannel: () => new MessageChannelMain(),
+    env: hostEnvironment(process.env, app.isPackaged),
   }),
   events,
   onError: reportError,

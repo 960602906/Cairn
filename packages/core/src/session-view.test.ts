@@ -140,6 +140,7 @@ describe('reduceSession：一轮完整对话', () => {
         reasoning: undefined,
         toolCalls: [],
         model,
+        incomplete: false,
       },
     ])
   })

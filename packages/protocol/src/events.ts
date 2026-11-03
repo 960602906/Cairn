@@ -112,6 +112,11 @@ const payloadSchemas = {
     reasoning: ReasoningPart.optional(),
     toolCalls: z.array(ToolCall).optional(),
     model: ModelRef,
+    /**
+     * 本步被停止或出错打断，内容是已收到的部分回复（Runtime §10.2）。只用于显示，不进入发给模型的
+     * 历史，也不带工具调用。
+     */
+    incomplete: z.literal(true).optional(),
   }),
 
   // ---------- 工具 ----------

@@ -61,6 +61,8 @@ export interface AssistantMessageView extends MessageMeta {
   readonly reasoning: ReasoningPart | undefined
   readonly toolCalls: readonly ToolCall[]
   readonly model: ModelRef
+  /** 被停止或出错打断的部分回复。 */
+  readonly incomplete: boolean
 }
 
 export type MessageView = UserMessageView | AssistantMessageView
@@ -334,7 +336,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         content: event.payload.content,
       })
     case 'message.assistant.completed': {
-      const { messageId, content, reasoning, toolCalls, model } = event.payload
+      const { messageId, content, reasoning, toolCalls, model, incomplete } = event.payload
       return upsertMessage(view, {
         role: 'assistant',
         ...meta(event, messageId),
@@ -342,6 +344,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         reasoning,
         toolCalls: toolCalls ?? [],
         model,
+        incomplete: incomplete ?? false,
       })
     }
 
