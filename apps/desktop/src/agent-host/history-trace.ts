@@ -1,0 +1,27 @@
+/**
+ * 宿主收到的历史记录（端到端测试用，M0-16b）。启动应用时设置 `NEXUS_HOST_TRACE_FILE`，宿主每次创建
+ * 运行时会话都把 `host.init` 带来的历史追加为一行 JSON，测试据此确认重启后宿主拿到了完整历史。
+ *
+ * 记录的是对话原文，只在测试中开启；未设置时宿主不做任何记录。
+ */
+import type { AgentRuntime } from '@nexus/core'
+import type { CanonicalMessage } from '@nexus/protocol'
+
+export const HOST_TRACE_ENV = 'NEXUS_HOST_TRACE_FILE'
+
+/** 记录文件中的一行。 */
+export interface HostTraceRecord {
+  readonly history: readonly CanonicalMessage[]
+}
+
+/** 包装运行时：创建会话之前写出收到的历史。 */
+export function traceHistory(runtime: AgentRuntime, write: (line: string) => void): AgentRuntime {
+  return {
+    id: runtime.id,
+    createSession(init) {
+      const record: HostTraceRecord = { history: init.history }
+      write(JSON.stringify(record))
+      return runtime.createSession(init)
+    },
+  }
+}
