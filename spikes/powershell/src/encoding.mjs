@@ -109,6 +109,45 @@ export const CASES = [
     },
   },
   {
+    id: 'native-stderr',
+    title: '原生程序的 stderr 中文，无 CLIXML',
+    required: true,
+    script: () => node("process.stderr.write('原生错误：中文\\n')"),
+    check: (r) => {
+      const err = text(r.stderr)
+      const ok = err === '原生错误：中文' && text(r.stdout) === ''
+      return { ok, detail: ok ? '' : `stderr=${JSON.stringify(err.slice(0, 160))}` }
+    },
+  },
+  {
+    id: 'throw',
+    title: 'throw 中文：写入 stderr，退出码 1，无 CLIXML',
+    required: true,
+    script: () => "Write-Output '之前'\nthrow '抛出：中文'\nWrite-Output '之后'",
+    check: (r) => {
+      const err = text(r.stderr)
+      const ok =
+        err.includes('抛出：中文') &&
+        !err.includes('CLIXML') &&
+        r.code === 1 &&
+        text(r.stdout) === '之前'
+      return {
+        ok,
+        detail: `code=${r.code}${ok ? '' : ` stdout=${JSON.stringify(text(r.stdout))} stderr=${JSON.stringify(err.slice(0, 160))}`}`,
+      }
+    },
+  },
+  {
+    id: 'order',
+    title: '输出与错误交替时 stdout 内容完整',
+    required: true,
+    script: () => "Write-Output '一'\nWrite-Error '二'\nWrite-Output '三'",
+    check: (r) => {
+      const ok = text(r.stdout) === '一\n三' && text(r.stderr).includes('二')
+      return { ok, detail: ok ? '' : `stdout=${JSON.stringify(text(r.stdout))}` }
+    },
+  },
+  {
     id: 'progress',
     title: '进度条不写入 stderr（CLIXML）',
     required: true,
@@ -181,7 +220,7 @@ export const CASES = [
     script: () => "Write-Output '开始'\nif ( { '语法错误：中文'",
     check: (r) => {
       const err = text(r.stderr)
-      const ok = err.includes('语法错误：中文') && r.code !== 0
+      const ok = err.includes('语法错误：中文') && !err.includes('CLIXML') && r.code !== 0
       return {
         ok,
         detail: `code=${r.code}${ok ? '' : ` stderr=${JSON.stringify(err.slice(0, 120))}`}`,

@@ -23,6 +23,13 @@ export const PRELUDE = [
   '$OutputEncoding = $__utf8',
   "$PSDefaultParameterValues['*:Encoding'] = 'utf8'",
   "if ($PSVersionTable.PSVersion.Major -ge 7) { $PSStyle.OutputRendering = 'PlainText' }",
+  // 原生程序的 stderr 只取原文；PowerShell 错误附上位置信息（行号、出错的代码）
+  'function Format-NexusError($e) {',
+  "  if ($e.FullyQualifiedErrorId -like 'NativeCommandError*') { return $e.ToString() }",
+  '  $m = $e.Exception.GetBaseException().Message',
+  '  if ($e.InvocationInfo -and $e.InvocationInfo.PositionMessage) { $m += [Environment]::NewLine + $e.InvocationInfo.PositionMessage }',
+  '  return $m',
+  '}',
 ].join('\n')
 
 /** 结尾：最后一条原生命令失败时，以它的退出码退出（否则 PowerShell 只返回 0 / 1）。 */
@@ -46,7 +53,15 @@ export function wrapScript(script, wrap, options = {}) {
     [
       PRELUDE,
       `$__script = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encoded}'))`,
-      '. ([ScriptBlock]::Create($__script))',
+      // 错误流自行写入 stderr：Windows PowerShell 5.1 即使加了 -OutputFormat Text，仍以 CLIXML 输出错误流
+      'try {',
+      '  . ([ScriptBlock]::Create($__script)) 2>&1 | ForEach-Object {',
+      '    if ($_ -is [System.Management.Automation.ErrorRecord]) { [Console]::Error.WriteLine((Format-NexusError $_)) } else { $_ }',
+      '  }',
+      '} catch {',
+      '  [Console]::Error.WriteLine((Format-NexusError $_))',
+      '  exit 1',
+      '}',
     ].join('\n') + tail
   )
 }
