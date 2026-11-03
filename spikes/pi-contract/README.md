@@ -120,7 +120,7 @@ CI：`.github/workflows/spike-pi-contract.yml` 在 Windows 与 Linux 上运行�
 
 三个 401 场景与中止场景没有差异：它们的用量没有从响应计算，1.5.0 也不带这个字段。三个版本发出的请求完全相同。
 
-**Windows（GitHub Actions `windows-latest`）**：见 CI。
+**GitHub Actions（`windows-latest` 与 `ubuntu-latest`），2026-11-03**：31 项全部通过，整套约 6 秒（Windows）/ 4 秒（Linux）；重新录制后录制文件与仓库中的逐字节相同。
 
 ## 观察
 
