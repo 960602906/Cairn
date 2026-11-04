@@ -2,7 +2,7 @@
  * 主进程入口（ADR-0002、ADR-0003，架构 §4、§17）。只做启动引导：确定数据目录、应用安全基线、
  * 组装主进程服务（存储、设置、宿主管理、IPC 网关）、创建窗口。服务本身不依赖 Electron，见 `services/`。
  */
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openSqliteStorage } from '@nexus/storage'
@@ -11,6 +11,7 @@ import {
   BrowserWindow,
   ipcMain,
   MessageChannelMain,
+  safeStorage,
   session,
   shell,
   utilityProcess,
@@ -23,15 +24,23 @@ import {
   type NavigationPolicy,
   type WebContentsLike,
 } from './security.js'
+import { createLocalKeyStore } from './services/credential-store.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
+import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
 import { hostEnvironment } from '../shared/host-trace.js'
-import { isSmokeRun, RENDERER_PROBE_SCRIPT, runSmokeChecks, type RendererProbe } from './smoke.js'
+import {
+  isSmokeRun,
+  RENDERER_PROBE_SCRIPT,
+  runSmokeChecks,
+  type CredentialCheck,
+  type RendererProbe,
+} from './smoke.js'
 
 const paths = resolveAppPaths({
   appData: app.getPath('appData'),
@@ -63,6 +72,12 @@ const SHUTDOWN_TIMEOUT_MS = 5_000
 const reportError = (error: unknown) => console.error('[nexus]', error)
 
 const storage = openSqliteStorage({ file: paths.database })
+/** 凭据（ADR-0010）：IPC 与传给宿主在 M1-03b 接入。 */
+const credentials = createLocalKeyStore({
+  file: paths.credentials,
+  cipher: createSafeStorageCipher(safeStorage),
+  onError: reportError,
+})
 const settings = createSettingsService({
   file: paths.settings,
   systemLocales: () => {
@@ -174,11 +189,27 @@ function startSmoke(window: BrowserWindow): void {
         })
         sessions.prompt({ sessionId, content: [{ type: 'text', text: 'smoke' }] })
       }),
+    checkCredentials: smokeCredentials,
+    credentialsRequired: process.platform !== 'linux',
     expectedText: 'NEXUS-OS',
     userData: app.getPath('userData'),
     report: (line) => process.stdout.write(`${line}\n`),
     exit: (code) => app.exit(code),
   })
+}
+
+/** 用真实的系统加密保存、解析并删除一个测试 Key（冒烟检查，数据目录是临时目录）。 */
+async function smokeCredentials(): Promise<CredentialCheck> {
+  if (!createSafeStorageCipher(safeStorage).isAvailable()) return 'unavailable'
+  const ref = 'smoke-test'
+  const secret = `smoke-secret-${process.pid}`
+  credentials.set(ref, secret)
+  const resolved = await credentials.resolve(ref)
+  const onDisk = readFileSync(paths.credentials, 'utf8')
+  credentials.delete(ref)
+  if (resolved?.apiKey !== secret) throw new Error('credential store returned a different key')
+  if (onDisk.includes(secret)) throw new Error('credential store wrote the key in plain text')
+  return 'stored'
 }
 
 void app.whenReady().then(() => {

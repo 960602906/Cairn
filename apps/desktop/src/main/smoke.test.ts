@@ -24,6 +24,8 @@ function deps(overrides: Partial<SmokeDeps> = {}) {
     waitForLoad: () => Promise.resolve(),
     probeRenderer: () => Promise.resolve(goodProbe),
     runTurn: () => Promise.resolve(),
+    checkCredentials: () => Promise.resolve('stored'),
+    credentialsRequired: true,
     expectedText: 'NEXUS-OS',
     userData: '/data',
     report,
@@ -86,6 +88,7 @@ describe('runSmokeChecks', () => {
       ok: true,
       renderer: goodProbe,
       turnCompleted: true,
+      credentials: 'stored',
       userData: '/data',
     })
     expect(reported(report)).toEqual(result)
@@ -122,6 +125,27 @@ describe('runSmokeChecks', () => {
       },
     })
     expect((await runSmokeChecks(sync)).error).toBe('not ready')
+  })
+
+  it('requires system encryption only where it must be available', async () => {
+    const unavailable = () => Promise.resolve('unavailable' as const)
+    const { all } = deps({ checkCredentials: unavailable })
+    expect(await runSmokeChecks(all)).toMatchObject({
+      ok: false,
+      credentials: 'unavailable',
+      error: 'system encryption (safeStorage) is unavailable',
+    })
+    const { all: linux } = deps({ checkCredentials: unavailable, credentialsRequired: false })
+    expect(await runSmokeChecks(linux)).toMatchObject({ ok: true, credentials: 'unavailable' })
+
+    const { all: broken } = deps({
+      checkCredentials: () => Promise.reject(new Error('resolved a different key')),
+    })
+    expect(await runSmokeChecks(broken)).toMatchObject({
+      ok: false,
+      credentials: null,
+      error: 'resolved a different key',
+    })
   })
 
   it('uses the default timeout when none is given', async () => {

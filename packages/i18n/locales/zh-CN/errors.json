@@ -35,5 +35,10 @@
   "host.unresponsive": "Agent 进程无响应，已被结束",
   "host.not_initialized": "Agent 进程尚未初始化",
   "host.already_initialized": "Agent 进程已经初始化",
-  "settings.write_failed": "设置保存失败"
+  "settings.write_failed": "设置保存失败",
+  "credentials.unavailable": "系统加密不可用，无法保存 Key",
+  "credentials.invalid_ref": "凭据名称无效",
+  "credentials.invalid_value": "Key 不能为空，且不能超过 4096 个字符",
+  "credentials.write_failed": "Key 保存失败",
+  "credentials.decrypt_failed": "无法读取已保存的 Key，请重新填写"
 }

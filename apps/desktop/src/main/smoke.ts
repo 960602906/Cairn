@@ -5,7 +5,9 @@
  * - preload 只暴露了 `window.nexus` 的 `on`、`ready`、`request` 三个函数；
  * - 页面带有 CSP，且 CSP 生效（`new Function` 被拒绝）；
  * - 界面经 `window.nexus` 调用 `session.list` 成功（IPC 网关、会话管理器与数据库已接通）；
- * - 新建会话并发送一条输入，agent 宿主（utilityProcess + 专用端口 + FakeRuntime）完成一轮对话。
+ * - 新建会话并发送一条输入，agent 宿主（utilityProcess + 专用端口 + FakeRuntime）完成一轮对话；
+ * - 凭据存储用真实的系统加密（`safeStorage`）保存、解析并删除一个测试 Key（M1-03a）。系统加密不可用时
+ *   （Linux 无密钥环，如 CI 容器）记为 `unavailable`；Windows 与 macOS 上要求可用。
  * 结果以 `NEXUS_SMOKE_RESULT <JSON>` 一行输出到标准输出，随后退出（成功 0，失败 1）。
  *
  * 这里只有与 Electron 无关的流程，Electron 相关的操作由入口注入，便于单元测试。
@@ -76,9 +78,14 @@ export interface SmokeResult {
   readonly ok: boolean
   readonly renderer: RendererProbe | null
   readonly turnCompleted: boolean
+  /** 凭据存储检查的结果；没有执行到时为 null。 */
+  readonly credentials: CredentialCheck | null
   readonly userData: string
   readonly error?: string
 }
+
+/** `stored`：用系统加密保存并解析成功；`unavailable`：系统加密不可用。 */
+export type CredentialCheck = 'stored' | 'unavailable'
 
 export interface SmokeDeps {
   /** 窗口内容加载完成。 */
@@ -87,6 +94,10 @@ export interface SmokeDeps {
   readonly probeRenderer: () => Promise<RendererProbe>
   /** 新建会话、发送输入，宿主完成一轮（`turn.completed`）后 resolve。 */
   readonly runTurn: () => Promise<void>
+  /** 保存、解析并删除一个测试 Key；结果不一致时抛出。 */
+  readonly checkCredentials: () => Promise<CredentialCheck>
+  /** 系统加密必须可用（Windows、macOS）。 */
+  readonly credentialsRequired: boolean
   /** 界面应显示的文本（应用名称）。 */
   readonly expectedText: string
   readonly userData: string
@@ -120,6 +131,7 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
   const timeoutMs = deps.timeoutMs ?? DEFAULT_SMOKE_TIMEOUT_MS
   let renderer: RendererProbe | null = null
   let turnCompleted = false
+  let credentials: CredentialCheck | null = null
   let error: string | undefined
   try {
     await withTimeout(deps.waitForLoad(), timeoutMs, 'window load')
@@ -128,6 +140,10 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
     if (problems.length > 0) throw new Error(problems.join('; '))
     await withTimeout(deps.runTurn(), timeoutMs, 'conversation turn')
     turnCompleted = true
+    credentials = await withTimeout(deps.checkCredentials(), timeoutMs, 'credential store')
+    if (credentials === 'unavailable' && deps.credentialsRequired) {
+      throw new Error('system encryption (safeStorage) is unavailable')
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   }
@@ -135,6 +151,7 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
     ok: error === undefined,
     renderer,
     turnCompleted,
+    credentials,
     userData: deps.userData,
     ...(error === undefined ? {} : { error }),
   }
