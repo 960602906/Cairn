@@ -10,7 +10,7 @@ import { recordRequest } from './cassette.mjs'
 const HOP_HEADERS = new Set(['host', 'connection', 'content-length', 'accept-encoding'])
 
 /**
- * @param {{ upstream: string }} options 上游根地址，如 `https://api.deepseek.com`
+ * @param {{ upstream: string }} options 上游地址，如 `https://api.deepseek.com`；可带路径前缀，如 `https://api.deepseek.com/anthropic`
  */
 export async function startRecordingProxy({ upstream }) {
   /** @type {import('./cassette.mjs').Interaction[]} */
@@ -30,7 +30,10 @@ export async function startRecordingProxy({ upstream }) {
       const response = { status: 0, headers: {}, chunks: [] }
       interactions.push({ request, response })
       try {
-        const upstreamRes = await fetch(new URL(req.url ?? '/', upstream), {
+        // 保留上游地址自带的路径前缀（如 https://api.deepseek.com/anthropic）：
+        // new URL('/v1/messages', upstream) 会丢掉它
+        const target = upstream.replace(/\/+$/, '') + (req.url ?? '/')
+        const upstreamRes = await fetch(target, {
           method: req.method,
           headers,
           body: raw || undefined,

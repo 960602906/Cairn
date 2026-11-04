@@ -138,3 +138,96 @@ CI：`.github/workflows/spike-pi-contract.yml` 在 Windows 与 Linux 上运行�
 - **M1-02**：把 `record-proxy`、`replay-server`、规范化与录制文件格式移到 `packages/runtime-pi` 的测试工具中，改为 TypeScript。黄金文件比对**适配器输出的 `RuntimeEvent`**（我们的契约），而不是 pi 的原始事件；pi 新增字段若不被适配器使用，不会造成黄金文件变化。请求比对保留，用来发现请求格式变化。
 - 录制来源：合成上游保证三种格式都有覆盖且可在 CI 中重新录制；S2（DeepSeek）用真实服务录制的文件直接放入 `cassettes/`，按同样方式回放。
 - **升级流程**：pi-agent-core 与 pi-ai 一起升级 → 运行契约测试 → 审阅请求不一致与黄金文件差异 → `vitest -u` 更新黄金文件，在 PR 中说明差异。
+
+## 用本地网关做真实测试（magpie）
+
+网关地址、Key 与模型见 [`docs/dev/local-testing.md`](../../docs/dev/local-testing.md)（`127.0.0.1:3425`，四种格式共用，模型 `group/smart-split`，Key 任意，统一用 `magpie`）。`group/smart-split` 的后端是 **deepseek-v4.1-flash**，经反向代理的 WorkBuddy 提供（`/v1/models` 显示 `magpie-deepseek`），不是 DeepSeek 官方 API，结果可能带有反代引入的差异。只能在那台机器上运行。
+
+### 步骤（PowerShell）
+
+```powershell
+cd spikes\pi-contract
+npm ci
+
+# 1. 确认网关在运行（应返回 200 和模型列表）
+Invoke-WebRequest http://127.0.0.1:3425/v1/models -Headers @{Authorization='Bearer magpie'} | Select-Object StatusCode
+
+# 2. 录制：--upstream 不带路径，record.mjs 会按格式补 /v1、/v1beta。Key 只经环境变量传入，不写入录制文件
+$env:MAGPIE_KEY = 'magpie'
+foreach ($s in 'openai-tool','openai-parallel','openai-abort','anthropic-tool','anthropic-parallel','gemini-tool','gemini-parallel') {
+  node src/record.mjs --only=$s --upstream=http://127.0.0.1:3425 --model=group/smart-split --api-key-env=MAGPIE_KEY --name=magpie-$s
+}
+# 每行应输出 OK（录制后回放一次，事件轨迹与直连时一致）
+
+# 3. 把录制挪出 cassettes/：这些录制没有黄金文件，留在 cassettes/ 会让 vitest 失败
+$out = "$env:TEMP\nexus-magpie"
+New-Item -ItemType Directory -Force $out | Out-Null
+Move-Item cassettes\magpie-*.json $out -Force
+
+# 4. 查看每轮回复：stopReason、用量、文本、工具调用
+node src/inspect.mjs $out magpie-
+
+# 5. Responses 格式不在 pi-ai 场景中，单独验证
+Invoke-WebRequest -Method Post http://127.0.0.1:3425/v1/responses -Headers @{Authorization='Bearer magpie'} `
+  -ContentType 'application/json' -Body '{"model":"group/smart-split","input":"Reply with exactly: pong"}' |
+  Select-Object -ExpandProperty Content
+```
+
+认证失败路径（`*-auth-fail`）无法用这个网关测试：网关信任回环请求，任何 Key 都会通过，这三个场景继续用合成上游（`node src/record.mjs --only=openai-auth-fail` 等，不带 `--upstream`）。注意 `gemini-3-tool` 依赖模型 id 以 `gemini-3` 开头，`--model` 覆盖后就失去意义，不必录制。
+
+### 结果（2026-11-04，pi 1.5.0）
+
+| 场景 | 结果 |
+|---|---|
+| `*-tool`（三种格式） | 通过：调用 `add{"a":2,"b":3}`，最终回复 `2 + 3 = 5`，stop 依次为 `toolUse` → `stop` |
+| `*-parallel`（三种格式） | 通过：一条回复中两个调用 `add{2,3}`、`add{10,20}`，最终回复正确 |
+| `openai-abort` | 通过：第 2 个文本增量时中止，`stopReason: 'aborted'` |
+| Responses（手工请求） | 通过：200，`output_text` 为 `pong`，`status: completed` |
+| `*-auth-fail`（错误 Key） | 返回 200 并正常回答，没有 401。这是网关的设计：信任本机回环请求，不校验 Key |
+
+另外的观察：
+
+1. **上游输出乱码 token**：不带工具、提示词为 `Hello` 时，三种格式的回复都混入了垃圾内容，例如 Gemini 的 `Hello! Iu003c｜end▁of▁sentence｜u003e`、OpenAI 的 `What would you# you like…`。原始 SSE 分块中就是这样，像是 DeepSeek 的结束符泄漏，并非 pi 解析错误。带工具的场景中没有出现。网关是反代的 WorkBuddy，不能确定问题出在模型还是反代，不应据此判断 DeepSeek 官方 API 的行为。
+2. `/v1/models` 标记 `reasoning: true`，但所有回复都没有思考内容。pi 默认没有请求推理，这是预期行为。
+3. Gemini 格式返回的工具调用不带 id，由 pi 生成，回放正常。
+
+## 用 DeepSeek 官方 API 做真实测试
+
+官方 API 的 `/models` 列出 `deepseek-flash`（DeepSeek-V4.1-Flash，与本地网关反代的是同一个模型）和 `deepseek-v4-pro`。支持 OpenAI 格式（`https://api.deepseek.com`）与 Anthropic 格式（`https://api.deepseek.com/anthropic`），不支持 Gemini 格式。Key 只从环境变量读取，不要写进仓库；录制文件不含 Key（已检查）。
+
+```powershell
+cd spikes\pi-contract
+$env:DEEPSEEK_API_KEY = '<官方 Key>'
+foreach ($s in 'openai-tool','openai-parallel','openai-abort') {
+  node src/record.mjs --only=$s --upstream=https://api.deepseek.com --model=deepseek-flash --api-key-env=DEEPSEEK_API_KEY --name=ds-$s
+}
+foreach ($s in 'anthropic-tool','anthropic-parallel') {
+  node src/record.mjs --only=$s --upstream=https://api.deepseek.com/anthropic --model=deepseek-flash --api-key-env=DEEPSEEK_API_KEY --name=ds-$s
+}
+# 认证失败：换成错误的 Key 录制 openai-auth-fail / anthropic-auth-fail
+# 不带工具的 "Hello"：用正确的 Key 录制 *-auth-fail 场景，--name 起名为 ds-*-hello
+$out = "$env:TEMP\nexus-ds"; New-Item -ItemType Directory -Force $out | Out-Null
+Move-Item cassettes\ds-*.json $out -Force
+node src/inspect.mjs $out ds-
+```
+
+`record-proxy.mjs` 原来用 `new URL(req.url, upstream)` 拼接地址，会丢掉上游地址的路径前缀：`https://api.deepseek.com/anthropic` 被请求成 `https://api.deepseek.com/v1/messages`，返回 404。现已改为保留前缀。
+
+### 结果（2026-11-04，pi 1.5.0，`deepseek-flash`）
+
+| 场景 | OpenAI 格式 | Anthropic 格式 |
+|---|---|---|
+| `*-tool` | 通过：`add{2,3}` → `2 + 3 = **5**` | 通过：思考内容 + `add{2,3}` → `2 + 3 = 5.` |
+| `*-parallel` | 通过：思考内容 + 两个调用 → `5`、`30` | 通过：思考内容 + 两个调用 → `5`、`30` |
+| `openai-abort` | 通过：第一轮带思考内容并调用工具，第二轮在第 2 个文本增量时中止，`aborted` | — |
+| 不带工具的 `Hello` | 通过：回复正常，**没有乱码** | 通过：回复正常，没有乱码 |
+| 错误 Key | `401`，`authentication_error`，错误信息中 Key 被打码为 `****0000` | `401`，`authentication_error` |
+
+与本地网关（反代 WorkBuddy）的对比：
+
+1. 官方 API 返回**思考内容**（OpenAI 格式的 `reasoning_content`、Anthropic 格式的 thinking 块），网关的回复都没有。
+2. 官方 API 在 `Hello` 场景中**没有乱码**，说明网关回复里的 `<｜end▁of▁sentence｜>` 等垃圾内容来自反代，而不是模型。
+3. 官方 API 能测认证失败路径（真实的 401），网关不能。
+4. 两种格式的 401 错误信息格式不同（OpenAI 为 `401: {...}`，Anthropic 为 `401 {...}`），与合成上游一致（见观察 5）。
+
+另：在这台 Windows 机器上用合成上游重新录制（`node src/record.mjs`），有 8 个录制文件的首个分块切分与仓库中的不同（`"data: {\"id\"…` 被切成 `"data: {"` 与 `"\"id\"…"`），改动前的 `record-proxy.mjs` 也一样；`vitest run` 31 项仍全部通过。可能与本机的网络分块时机有关，CI 的"重新录制后逐字节相同"检查在这台机器上不一定成立。

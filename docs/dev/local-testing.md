@@ -16,7 +16,7 @@
 
 ## 本地模型网关
 
-本机 `127.0.0.1:3425` 上有一个模型网关，同时提供四种接口格式，后面是同一个模型：
+本机 `127.0.0.1:3425` 上有一个模型网关，同时提供四种接口格式。后面是同一个模型：deepseek-v4.1-flash，经 WorkBuddy 反代。
 
 | 格式 | `kind`（ADR-0021） | baseUrl | API Key | 模型 |
 |---|---|---|---|---|
@@ -32,3 +32,17 @@
   - ADR-0021 要求的三种格式各完成一次真实对话（M1）；
   - 补录真实的契约测试录制（S8 的录制目前都是合成的）。
 - OpenAI Responses 接口不在 ADR-0021 首批的三种格式之内，可用来评估是否值得增加。
+- 与 DeepSeek 官方接口的差异（S2、S8）：
+  - 不遵守关闭思考的参数；
+  - 普通回复会夹带 `<｜end▁of▁sentence｜>` 等乱码；
+  - 不校验 Key，测不了认证失败；
+  - 比官方慢约 50%～100%。
+
+  测协议细节时以官方接口为准。
+
+## DeepSeek 官方接口
+
+- Key 放在环境变量 `DEEPSEEK_API_KEY` 中，不写进仓库、录制文件或文档。
+- openai 格式：`https://api.deepseek.com`；anthropic 格式：`https://api.deepseek.com/anthropic`；没有 gemini 格式。
+- 模型：`deepseek-flash`（V4.1 Flash）、`deepseek-v4-pro`。
+- 云端容器可以直接访问。
