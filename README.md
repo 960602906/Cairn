@@ -1,8 +1,11 @@
 # NEXUS-OS
 
-一个类似 Codex 的编程类桌面 agent 应用，基于 Electron、React 和 pi（pi-agent-core / pi-ai）构建，支持接入多种 LLM。
+自研 Agent 平台 + 可插拔 Agent 引擎（首选 pi）。首个产品形态是一个类似 Codex 的编程类桌面 agent 应用，基于 Electron 和 React 构建，支持接入多种 LLM。
 
-A Codex-like coding agent desktop app built with Electron, React and pi, with support for multiple LLM providers.
+Our own agent platform with a pluggable agent engine (pi preferred). The first product is a Codex-like coding agent desktop app built with Electron and React, with support for multiple LLM providers.
+
+- **平台层 / Platform**：Run 生命周期、工具管线与权限、事件日志与存储、凭据、界面、多 Agent 协作。
+- **引擎层 / Engine**：只负责 agent 循环与模型通信，经 `AgentRuntime` 接口接入（[ADR-0004](docs/adr/0004-isolate-pi-behind-agentruntime.md)）；当前实现为 pi（`packages/runtime-pi`）。
 
 > 设计已定稿，下一步进入 M0 基础阶段。 / Design finalized; next up is the M0 foundation phase.
 

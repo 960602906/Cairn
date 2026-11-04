@@ -44,3 +44,11 @@
 - 需要维护一层转换代码，初期多一些工作量。
 - pi 的变化被限制在一个包内；必要时可以增加其他实现（如 Claude Agent SDK、OpenAI Agents SDK 或自研循环）。
 - 我们自己的消息格式成为持久化格式，不受 pi 影响（见 ADR-0005、ADR-0006）。
+
+## 定位补充（2026-11-04）
+
+产品定位为"自研 Agent 平台 + 可插拔 Agent 引擎（首选 pi）"：
+
+- **平台层**（core、protocol、storage、tools 与桌面端）负责 Run 生命周期、工具管线与权限、事件日志与存储、凭据、界面与多 Agent 协作；工具的放行与执行始终经 `RuntimeHooks` 留在平台层。
+- **引擎层**只负责 agent 循环与模型通信，经 `AgentRuntime` 接入。当前实现为 `PiRuntime`（首选）与 `FakeRuntime`（测试）。
+- M0–M6 均不需要第二个引擎，因此暂不做引擎注册表；`runtime-select.ts` 直接创建 `PiRuntime`。**接入第二个引擎时**再增加按 id 选择引擎的注册表，并把与引擎无关的契约测试（`RuntimeEvent` 顺序与语义）抽为通用测试，让每个实现都要通过。
