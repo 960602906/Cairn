@@ -173,6 +173,47 @@ describe('create and list', () => {
     expect(manager.list({ includeArchived: true }).sessions).toHaveLength(2)
   })
 
+  it('records the selected or default model and uses it for new runs', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const chat = { providerId: 'deepseek', modelId: 'deepseek-chat' }
+    const reasoner = { providerId: 'deepseek', modelId: 'deepseek-reasoner' }
+    const configured = [chat, reasoner]
+    let defaultModel: typeof chat | undefined = chat
+    const { manager } = setup(supervisor, {
+      models: {
+        defaultModel: () => defaultModel,
+        has: (m) => configured.some((c) => c.modelId === m.modelId),
+      },
+    })
+    const a = manager.create({ projectPath: '/work/a' })
+    const b = manager.create({ projectPath: '/work/b', model: reasoner })
+    defaultModel = undefined
+    const c = manager.create({ projectPath: '/work/c' })
+
+    expect(storage.sessions.get(a.sessionId)?.model).toEqual(chat)
+    expect(storage.sessions.get(b.sessionId)?.model).toEqual(reasoner)
+    expect(storage.sessions.get(c.sessionId)).not.toHaveProperty('model')
+    expect(published.find((e) => e.sessionId === b.sessionId)?.payload).toMatchObject({
+      model: reasoner,
+    })
+    const listed = manager.list({}).sessions
+    expect(listed.find((s) => s.sessionId === a.sessionId)?.model).toEqual(chat)
+    expect(listed.find((s) => s.sessionId === c.sessionId)).not.toHaveProperty('model')
+
+    manager.prompt({ sessionId: b.sessionId, content: text('hi') })
+    manager.prompt({ sessionId: c.sessionId, content: text('hi') })
+    await flush()
+    expect(hosts.find((h) => h.sessionId === b.sessionId)?.init.model).toEqual(reasoner)
+    expect(hosts.find((h) => h.sessionId === c.sessionId)?.init.model).toEqual(defaults.model)
+
+    expect(() =>
+      manager.create({
+        projectPath: '/work/d',
+        model: { providerId: 'deepseek', modelId: 'missing' },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'session.unknown_model' }))
+  })
+
   it('rejects relative project paths', () => {
     const { manager } = setup(fakeSupervisor().supervisor)
     expect(() => manager.create({ projectPath: 'demo' })).toThrow(

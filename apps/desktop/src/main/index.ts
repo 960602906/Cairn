@@ -77,7 +77,7 @@ const reportError = (error: unknown) =>
   console.error('[nexus]', redact(error, { homeDirs: [homedir()], secrets: knownSecrets() }))
 
 const storage = openSqliteStorage({ file: paths.database })
-/** 凭据（ADR-0010）：界面经 IPC 写入，启动宿主时按提供方 id 解析后经 `host.init` 传入。 */
+/** 凭据（ADR-0010）：界面经 IPC 写入，启动宿主时按提供方配置的凭据引用解析后经 `host.init` 传入。 */
 const credentials = createLocalKeyStore({
   file: paths.credentials,
   cipher: createSafeStorageCipher(safeStorage),
@@ -86,6 +86,7 @@ const credentials = createLocalKeyStore({
 knownSecrets = () => credentials.knownSecrets()
 const settings = createSettingsService({
   file: paths.settings,
+  storage,
   systemLocales: () => {
     const preferred = app.getPreferredSystemLanguages()
     return preferred.length > 0 ? preferred : [app.getLocale()]
@@ -101,8 +102,11 @@ const supervisor = createHostSupervisor({
     env: hostEnvironment(process.env, app.isPackaged),
   }),
   events,
-  // M1-04 之前凭据引用就是提供方 id；之后由提供方配置的 credentialRef 给出
-  resolveCredential: (model) => credentials.resolve(model.providerId),
+  // 凭据引用由提供方配置给出；没有配置或没有引用时不传凭据
+  resolveCredential: async (model) => {
+    const ref = settings.provider(model.providerId)?.credentialRef
+    return ref === undefined ? undefined : credentials.resolve(ref)
+  },
   onError: reportError,
 })
 const sessions = createSessionManager({
@@ -110,6 +114,7 @@ const sessions = createSessionManager({
   events,
   supervisor,
   runDefaults: RUN_DEFAULTS,
+  models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
   onError: reportError,
 })
 sessions.recoverInterrupted()

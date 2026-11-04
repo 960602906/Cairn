@@ -1,7 +1,7 @@
 /**
  * 内存存储实现，用于测试与开发。与 SQLite 实现通过同一套契约测试（`testing/store-contract.ts`）。
  */
-import { isLiveEventType, type PersistedEvent } from '@nexus/protocol'
+import { isLiveEventType, type PersistedEvent, type ProviderConfig } from '@nexus/protocol'
 import {
   StorageError,
   StorageErrorCode,
@@ -17,6 +17,7 @@ import {
 interface State {
   projects: Map<string, ProjectRecord>
   sessions: Map<string, SessionRecord>
+  providers: ProviderConfig[]
   events: Map<string, PersistedEvent[]>
 }
 
@@ -24,6 +25,7 @@ function cloneState(state: State): State {
   return {
     projects: new Map(state.projects),
     sessions: new Map(state.sessions),
+    providers: state.providers,
     events: new Map([...state.events].map(([id, list]) => [id, [...list]])),
   }
 }
@@ -35,7 +37,12 @@ function copy<T>(value: T): T {
 
 export function createMemoryStorage(options: StorageOptions = {}): Storage {
   const now = options.now ?? Date.now
-  let state: State = { projects: new Map(), sessions: new Map(), events: new Map() }
+  let state: State = {
+    projects: new Map(),
+    sessions: new Map(),
+    providers: [],
+    events: new Map(),
+  }
   let closed = false
 
   const live = (): State => {
@@ -52,7 +59,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
   const updateSession = (sessionId: string, patch: Partial<SessionRecord>): SessionRecord => {
     const next = { ...requireSession(sessionId), ...patch, updatedAt: now() }
     live().sessions.set(sessionId, next)
-    return { ...next }
+    return copy(next)
   }
 
   const transaction = <T>(fn: () => T): T => {
@@ -104,19 +111,21 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           throw new StorageError(StorageErrorCode.Conflict, { sessionId: input.sessionId })
         }
         const at = now()
+        const { model, ...rest } = input
         const record: SessionRecord = {
-          ...input,
+          ...rest,
+          ...(model ? { model: { ...model } } : {}),
           projectPath: project.path,
           archived: false,
           createdAt: at,
           updatedAt: at,
         }
         s.sessions.set(record.sessionId, record)
-        return { ...record }
+        return copy(record)
       },
       get(sessionId) {
         const record = live().sessions.get(sessionId)
-        return record && { ...record }
+        return record && copy(record)
       },
       list(listOptions: ListSessionsOptions = {}) {
         return [...live().sessions.values()]
@@ -125,11 +134,30 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
             (r) => listOptions.projectId === undefined || r.projectId === listOptions.projectId,
           )
           .sort((a, b) => b.updatedAt - a.updatedAt || a.sessionId.localeCompare(b.sessionId))
-          .map((r) => ({ ...r }))
+          .map(copy)
       },
       rename: (sessionId, title) => updateSession(sessionId, { title }),
       archive: (sessionId) => updateSession(sessionId, { archived: true }),
       touch: (sessionId) => updateSession(sessionId, {}),
+    },
+
+    providers: {
+      list: () => copy(live().providers),
+      get(providerId) {
+        const config = live().providers.find((p) => p.id === providerId)
+        return config && copy(config)
+      },
+      replaceAll(configs) {
+        const s = live()
+        const seen = new Set<string>()
+        for (const config of configs) {
+          if (seen.has(config.id)) {
+            throw new StorageError(StorageErrorCode.Conflict, { providerId: config.id })
+          }
+          seen.add(config.id)
+        }
+        s.providers = copy([...configs])
+      },
     },
 
     events: {

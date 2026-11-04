@@ -29,7 +29,11 @@ describe('openSqliteStorage', () => {
 
   it('migrates a new database to the latest version and enables WAL', () => {
     const storage = openSqliteStorage({ file, now: () => 5 })
-    expect(storage.migration).toEqual({ from: 0, to: MIGRATIONS.length, applied: ['0001_init'] })
+    expect(storage.migration).toEqual({
+      from: 0,
+      to: MIGRATIONS.length,
+      applied: ['0001_init', '0002_providers'],
+    })
     storage.close()
 
     const db = new Database(file, { readonly: true })
@@ -38,7 +42,14 @@ describe('openSqliteStorage', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((r) => (r as { name: string }).name)
-    expect(tables).toEqual(['agent_runs', 'events', 'projects', 'schema_meta', 'sessions'])
+    expect(tables).toEqual([
+      'agent_runs',
+      'events',
+      'projects',
+      'provider_configs',
+      'schema_meta',
+      'sessions',
+    ])
     db.close()
   })
 
@@ -58,7 +69,11 @@ describe('openSqliteStorage', () => {
     first.close()
 
     const second = openSqliteStorage({ file })
-    expect(second.migration).toEqual({ from: 1, to: 1, applied: [] })
+    expect(second.migration).toEqual({
+      from: MIGRATIONS.length,
+      to: MIGRATIONS.length,
+      applied: [],
+    })
     expect(second.sessions.list().map((s) => s.title)).toEqual(['会话'])
     expect(second.events.readAfter('s1', 0)).toEqual([
       { ...userEvent('s1', 1), parentRunId: 'run-0', turnId: 't1', stepId: 'st1' },

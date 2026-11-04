@@ -121,6 +121,8 @@ describe('translateError', () => {
       'host.not_initialized',
       'host.already_initialized',
       'settings.write_failed',
+      'settings.invalid_default_model',
+      'session.unknown_model',
       'credentials.unavailable',
       'credentials.invalid_ref',
       'credentials.invalid_value',

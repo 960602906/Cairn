@@ -4,6 +4,7 @@
  */
 export * from './common.js'
 export * from './events.js'
+export * from './providers.js'
 export * from './rpc.js'
 export * from './bridge.js'
 export * from './contracts/renderer-main.js'
