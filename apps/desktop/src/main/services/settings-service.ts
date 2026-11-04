@@ -15,10 +15,12 @@
  * 不依赖 Electron：系统语言由调用方传入。
  */
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { hostModelConfig } from '@nexus/core'
 import { resolveLocale } from '@nexus/i18n'
 import {
   ModelRef,
   RpcError,
+  type HostModelConfig,
   type ProviderConfig,
   type Settings,
   type SettingsPatch as ProtocolSettingsPatch,
@@ -29,6 +31,8 @@ export const SettingsErrorCode = {
   WriteFailed: 'settings.write_failed',
   /** 默认模型不在已配置的提供方与模型中。 */
   InvalidDefaultModel: 'settings.invalid_default_model',
+  /** 会话的模型不在提供方配置中（提供方还在，模型被删除了）。 */
+  UnknownModel: 'session.unknown_model',
 } as const
 
 export interface SettingsServiceOptions {
@@ -53,6 +57,13 @@ export interface SettingsService {
   provider(providerId: string): ProviderConfig | undefined
   /** 模型是否已配置。 */
   hasModel(model: ModelRef): boolean
+  /**
+   * 启动宿主时用的模型配置（M1-04b）。提供方没有配置时为 undefined（如 FakeRuntime 的模型）；
+   * 提供方存在而模型不在其中时报 `session.unknown_model`。
+   */
+  hostModelConfig(model: ModelRef): HostModelConfig | undefined
+  /** 模型所属提供方的凭据引用；提供方没有配置或不需要 Key 时为 undefined。 */
+  credentialRef(model: ModelRef): string | undefined
 }
 
 type Stored = Readonly<Record<string, unknown>>
@@ -148,5 +159,13 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       const provider = storage.providers.get(model.providerId)
       return provider !== undefined && provider.models.some((m) => m.id === model.modelId)
     },
+    hostModelConfig(model) {
+      const provider = storage.providers.get(model.providerId)
+      if (!provider) return undefined
+      const config = hostModelConfig(provider, model.modelId)
+      if (!config) throw new RpcError(SettingsErrorCode.UnknownModel, { ...model })
+      return config
+    },
+    credentialRef: (model) => storage.providers.get(model.providerId)?.credentialRef,
   }
 }

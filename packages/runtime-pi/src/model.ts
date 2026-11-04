@@ -3,8 +3,10 @@
  *
  * - 接口格式：openai → `openai-completions`，anthropic → `anthropic-messages`，gemini → `google-generative-ai`。
  * - DeepSeek：openai 格式且模型 id 在 pi 内置目录中时，用目录中的定义（兼容参数、思考等级映射，S2），
- *   地址仍用配置的地址，因此经代理接入时兼容参数同样生效。其他模型按 `ModelProfile` 构造；
- *   M1-04 的配置模板会给出兼容参数。
+ *   地址仍用配置的地址，因此经代理接入时兼容参数同样生效。其他模型按 `ModelProfile` 构造。
+ * - 兼容参数（M1-04b）：openai 格式时，`ResolvedModel.compat` 逐项覆盖目录中的值；pi 再用它逐项覆盖
+ *   按地址自动判断的值。模型 id 不在目录中（如代理上的 `group/smart-split`）时，DeepSeek 的参数靠
+ *   模板给出。其他格式忽略。
  * - 每个会话一个 pi `Models` 注册表，只含这一个提供方和模型，Key 只在请求时由闭包提供，不进入环境变量。
  * - pi（SDK）自身的重试关闭（`maxRetries: 0`），失败如实上报，由 M1-14 的重试策略处理。
  */
@@ -14,6 +16,7 @@ import {
   createProvider,
   type Api,
   type Model,
+  type OpenAICompletionsCompat,
   type ProviderStreams,
 } from '@earendil-works/pi-ai'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
@@ -60,13 +63,18 @@ export function toPiModel(resolved: ResolvedModel): Model<Api> {
     contextWindow: profile.contextWindow,
     maxTokens: profile.maxOutputTokens,
   }
+  const compat =
+    resolved.providerKind === 'openai' && resolved.compat
+      ? { ...(base.compat as OpenAICompletionsCompat | undefined), ...resolved.compat }
+      : base.compat
   return {
     ...base,
     provider: ref.providerId,
     baseUrl,
     contextWindow: profile.contextWindow,
     maxTokens: profile.maxOutputTokens,
-  }
+    ...(compat ? { compat } : {}),
+  } as Model<Api>
 }
 
 export interface PiModelBinding {

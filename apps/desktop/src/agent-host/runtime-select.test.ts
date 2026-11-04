@@ -84,4 +84,40 @@ describe('selectHostRuntime', () => {
     expect(host.runtime.id).toBe('pi')
     expect(host.model).toMatchObject({ providerKind: 'openai', apiKey: 'k' })
   })
+
+  it('host.init 带有模型配置时用 PiRuntime 与配置构造的模型，不看环境变量', () => {
+    const config = {
+      kind: 'openai' as const,
+      baseUrl: 'http://127.0.0.1:3425/v1',
+      profile: {
+        id: 'group/smart-split',
+        contextWindow: 1_000,
+        maxOutputTokens: 100,
+        supportsTools: true,
+        supportsParallelToolCalls: false,
+        supportsReasoning: true,
+      },
+      compat: { thinkingFormat: 'deepseek' as const },
+    }
+    const proxyRef = { providerId: 'gateway', modelId: 'group/smart-split' }
+    for (const env of [{}, piEnv]) {
+      const host = selectHostRuntime(env)(proxyRef, { apiKey: 'from-init' }, config)
+      expect(host.runtime).toBeInstanceOf(PiRuntime)
+      expect(host.model).toEqual({
+        ref: proxyRef,
+        providerKind: 'openai',
+        baseUrl: 'http://127.0.0.1:3425/v1',
+        apiKey: 'from-init',
+        profile: {
+          contextWindow: 1_000,
+          maxOutputTokens: 100,
+          supportsTools: true,
+          supportsParallelToolCalls: false,
+          supportsReasoning: true,
+        },
+        compat: { thinkingFormat: 'deepseek' },
+      })
+    }
+    expect(selectHostRuntime({})(proxyRef, undefined, config).model).not.toHaveProperty('apiKey')
+  })
 })

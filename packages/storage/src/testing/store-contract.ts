@@ -319,9 +319,12 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         displayName: 'DeepSeek',
         baseUrl: 'https://api.deepseek.com',
         credentialRef: 'deepseek',
+        template: 'deepseek',
+        compat: { thinkingFormat: 'deepseek' as const, maxTokensField: 'max_tokens' as const },
         models: [
           {
             id: 'deepseek-chat',
+            compat: { supportsStrictMode: true },
             contextWindow: 128_000,
             maxOutputTokens: 8_192,
             supportsTools: true,
@@ -349,6 +352,8 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.providers.list()).toEqual([ollama, deepseek])
         expect(storage.providers.get('deepseek')).toEqual(deepseek)
         expect(storage.providers.get('ollama')).not.toHaveProperty('credentialRef')
+        expect(storage.providers.get('ollama')).not.toHaveProperty('compat')
+        expect(storage.providers.get('ollama')).not.toHaveProperty('template')
 
         storage.providers.replaceAll([deepseek])
         expect(storage.providers.list()).toEqual([deepseek])

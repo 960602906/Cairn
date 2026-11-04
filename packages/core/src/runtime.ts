@@ -13,6 +13,7 @@ import type {
   ContentPart,
   ErrorInfo,
   EventPayload,
+  ModelCompat,
   ModelRef,
   TokenUsage,
   ToolCall,
@@ -51,6 +52,8 @@ export interface ResolvedModel {
   /** 由凭据服务在 `host.init` 时提供（ADR-0010）；本地模型可以没有。 */
   readonly apiKey?: string
   readonly profile: ModelProfile
+  /** 兼容参数（M1-04b）：只对 openai 格式生效；省略的项由运行时按地址自动判断。 */
+  readonly compat?: ModelCompat
 }
 
 /** 提供给模型的工具说明。 */

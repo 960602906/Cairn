@@ -189,6 +189,41 @@ describe('startHost', () => {
     expect(onError).toHaveBeenCalled()
   })
 
+  it('passes the model config from resolveModelConfig in host.init', async () => {
+    const host = fakeHost()
+    const modelConfig = {
+      kind: 'gemini' as const,
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      profile: {
+        id: 'gemini-flash-latest',
+        contextWindow: 1_048_576,
+        maxOutputTokens: 65_536,
+        supportsTools: true,
+        supportsParallelToolCalls: true,
+        supportsReasoning: true,
+      },
+    }
+    const resolveModelConfig = vi.fn(() => modelConfig)
+    const { supervisor } = setup(host, { resolveModelConfig })
+    await supervisor.startHost(init)
+    expect(resolveModelConfig).toHaveBeenCalledWith(init.model)
+    expect(host.inits).toEqual([{ ...init, modelConfig }])
+  })
+
+  it('records host.start_failed when the model is no longer configured', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host, {
+      resolveModelConfig: () => {
+        throw new RpcError('session.unknown_model')
+      },
+    })
+    await expect(supervisor.startHost(init)).rejects.toMatchObject({ code: 'host.start_failed' })
+    expect(crashes()).toEqual([
+      { error: { code: 'host.start_failed', params: { cause: 'session.unknown_model' } } },
+    ])
+    expect(host.inits).toEqual([])
+  })
+
   it('records host.start_failed when the process cannot be created', async () => {
     const host = fakeHost()
     const { supervisor } = setup(host, {

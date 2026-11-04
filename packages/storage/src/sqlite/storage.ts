@@ -56,6 +56,8 @@ interface ProviderRow {
   display_name: string
   base_url: string
   credential_ref: string | null
+  template: string | null
+  compat: string | null
   models: string
   updated_at: number
 }
@@ -100,6 +102,8 @@ const toProvider = (row: ProviderRow): ProviderConfig => ({
   displayName: row.display_name,
   baseUrl: row.base_url,
   ...(row.credential_ref === null ? {} : { credentialRef: row.credential_ref }),
+  ...(row.template === null ? {} : { template: row.template }),
+  ...(row.compat === null ? {} : { compat: JSON.parse(row.compat) as ProviderConfig['compat'] }),
   models: JSON.parse(row.models) as ProviderConfig['models'],
 })
 
@@ -168,8 +172,10 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     deleteProviders: db.prepare('DELETE FROM provider_configs'),
     insertProvider: db.prepare(
       `INSERT INTO provider_configs
-         (provider_id, position, kind, display_name, base_url, credential_ref, models, updated_at)
-       VALUES (@id, @position, @kind, @displayName, @baseUrl, @credentialRef, @models, @at)`,
+         (provider_id, position, kind, display_name, base_url, credential_ref, template, compat,
+          models, updated_at)
+       VALUES (@id, @position, @kind, @displayName, @baseUrl, @credentialRef, @template, @compat,
+          @models, @at)`,
     ),
     maxSeq: db.prepare<[string], { seq: number | null }>(
       'SELECT max(seq) AS seq FROM events WHERE session_id = ?',
@@ -209,6 +215,8 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         displayName: config.displayName,
         baseUrl: config.baseUrl,
         credentialRef: config.credentialRef ?? null,
+        template: config.template ?? null,
+        compat: config.compat ? JSON.stringify(config.compat) : null,
         models: JSON.stringify(config.models),
         at,
       })

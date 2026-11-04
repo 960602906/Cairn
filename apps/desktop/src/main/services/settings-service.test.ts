@@ -260,4 +260,44 @@ describe('model settings', () => {
     expect(storage.providers.list()).toEqual([ollama])
     expect(onError).toHaveBeenCalledOnce()
   })
+
+  it('gives the host model config with merged compat and the credential ref', () => {
+    const { settings } = setup()
+    const proxy = {
+      ...deepseek,
+      id: 'gateway',
+      baseUrl: 'http://127.0.0.1:3425/v1',
+      compat: { thinkingFormat: 'deepseek' as const, maxTokensField: 'max_tokens' as const },
+      models: [
+        {
+          ...model,
+          id: 'group/smart-split',
+          compat: { maxTokensField: 'max_completion_tokens' as const },
+        },
+      ],
+    }
+    settings.update({ providers: [proxy, ollama] })
+    expect(
+      settings.hostModelConfig({ providerId: 'gateway', modelId: 'group/smart-split' }),
+    ).toEqual({
+      kind: 'openai',
+      baseUrl: 'http://127.0.0.1:3425/v1',
+      profile: {
+        id: 'group/smart-split',
+        contextWindow: 128_000,
+        maxOutputTokens: 8_192,
+        supportsTools: true,
+        supportsParallelToolCalls: true,
+        supportsReasoning: false,
+      },
+      compat: { thinkingFormat: 'deepseek', maxTokensField: 'max_completion_tokens' },
+    })
+    expect(settings.hostModelConfig({ providerId: 'fake', modelId: 'fake' })).toBeUndefined()
+    expect(() => settings.hostModelConfig({ providerId: 'gateway', modelId: 'gone' })).toThrow(
+      expect.objectContaining({ code: 'session.unknown_model' }),
+    )
+    expect(settings.credentialRef({ providerId: 'gateway', modelId: 'x' })).toBe('deepseek')
+    expect(settings.credentialRef({ providerId: 'ollama', modelId: 'qwen3' })).toBeUndefined()
+    expect(settings.credentialRef({ providerId: 'fake', modelId: 'x' })).toBeUndefined()
+  })
 })
