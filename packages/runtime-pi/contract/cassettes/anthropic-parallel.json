@@ -1,0 +1,389 @@
+{
+  "version": 1,
+  "name": "anthropic-parallel",
+  "scenario": "anthropic-parallel",
+  "model": "calc-parallel",
+  "reasoning": true,
+  "source": "synthetic",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "interleaved-thinking-2025-05-14"
+        },
+        "body": {
+          "model": "calc-parallel",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 4096,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "add",
+              "description": "Add two numbers",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ]
+              },
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "enabled",
+            "budget_tokens": 3072,
+            "display": "summarized"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: message_start",
+          "\ndata: {\"type\":\"message_start",
+          "\",\"mess",
+          "age\":{\"id\":\"m",
+          "sg_mock_1\",\"type\":\"message\",\"",
+          "role\":\"",
+          "assistant\",\"m",
+          "odel\":\"calc-parallel\",\"conten",
+          "t\":[],\"",
+          "stop_reason\":",
+          "null,\"stop_sequence\":null,\"us",
+          "age\":{\"",
+          "input_tokens\"",
+          ":60,\"output_tokens\":1}}}\n\neve",
+          "nt: con",
+          "tent_block_st",
+          "art\ndata: {\"type\":\"content_bl",
+          "ock_sta",
+          "rt\",\"index\":0",
+          ",\"content_block\":{\"type\":\"too",
+          "l_use\",",
+          "\"id\":\"call_ad",
+          "d_1\",\"name\":\"add\",\"input\":{}}",
+          "}\n\neven",
+          "t: content_bl",
+          "ock_delta\ndata: {\"type\":\"cont",
+          "ent_blo",
+          "ck_delta\",\"in",
+          "dex\":0,\"delta\":{\"type\":\"input",
+          "_json_d",
+          "elta\",\"partia",
+          "l_json\":\"{\\\"a\\\":\"}}\n\nevent: c",
+          "ontent_",
+          "block_delta\nd",
+          "ata: {\"type\":\"content_block_d",
+          "elta\",\"",
+          "index\":0,\"del",
+          "ta\":{\"type\":\"input_json_delta",
+          "\",\"part",
+          "ial_json\":\"2,",
+          "\\\"b\\\"\"}}\n\nevent: content_bloc",
+          "k_delta",
+          "\ndata: {\"type",
+          "\":\"content_block_delta\",\"inde",
+          "x\":0,\"d",
+          "elta\":{\"type\"",
+          ":\"input_json_delta\",\"partial_",
+          "json\":\"",
+          ":3}\"}}\n\nevent",
+          ": content_block_stop\ndata: {\"",
+          "type\":\"",
+          "content_block",
+          "_stop\",\"index\":0}\n\nevent: con",
+          "tent_bl",
+          "ock_start\ndat",
+          "a: {\"type\":\"content_block_sta",
+          "rt\",\"in",
+          "dex\":1,\"conte",
+          "nt_block\":{\"type\":\"tool_use\",",
+          "\"id\":\"c",
+          "all_add_2\",\"n",
+          "ame\":\"add\",\"input\":{}}}\n\neven",
+          "t: cont",
+          "ent_block_del",
+          "ta\ndata: {\"type\":\"content_blo",
+          "ck_delt",
+          "a\",\"index\":1,",
+          "\"delta\":{\"type\":\"input_json_d",
+          "elta\",\"",
+          "partial_json\"",
+          ":\"{\\\"a\\\":\"}}\n\nevent: content_",
+          "block_d",
+          "elta\ndata: {\"",
+          "type\":\"content_block_delta\",\"",
+          "index\":",
+          "1,\"delta\":{\"t",
+          "ype\":\"input_json_delta\",\"part",
+          "ial_jso",
+          "n\":\"10,\\\"b\"}}",
+          "\n\nevent: content_block_delta\n",
+          "data: {",
+          "\"type\":\"conte",
+          "nt_block_delta\",\"index\":1,\"de",
+          "lta\":{\"",
+          "type\":\"input_",
+          "json_delta\",\"partial_json\":\"\\",
+          "\":20}\"}",
+          "}\n\nevent: con",
+          "tent_block_stop\ndata: {\"type\"",
+          ":\"conte",
+          "nt_block_stop",
+          "\",\"index\":1}\n\nevent: message_",
+          "delta\nd",
+          "ata: {\"type\":",
+          "\"message_delta\",\"delta\":{\"sto",
+          "p_reaso",
+          "n\":\"tool_use\"",
+          ",\"stop_sequence\":null},\"usage",
+          "\":{\"out",
+          "put_tokens\":4",
+          "0}}\n\nevent: message_stop\ndata",
+          ": {\"typ",
+          "e\":\"message_s",
+          "top\"}\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "interleaved-thinking-2025-05-14"
+        },
+        "body": {
+          "model": "calc-parallel",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "call_add_1",
+                  "name": "add",
+                  "input": {
+                    "a": 2,
+                    "b": 3
+                  }
+                },
+                {
+                  "type": "tool_use",
+                  "id": "call_add_2",
+                  "name": "add",
+                  "input": {
+                    "a": 10,
+                    "b": 20
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "call_add_1",
+                  "content": "5",
+                  "is_error": false
+                },
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "call_add_2",
+                  "content": "30",
+                  "is_error": false,
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 4096,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "add",
+              "description": "Add two numbers",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ]
+              },
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "enabled",
+            "budget_tokens": 3072,
+            "display": "summarized"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "event: message_start",
+          "\ndata: {\"type\":\"message_start",
+          "\",\"mess",
+          "age\":{\"id\":\"m",
+          "sg_mock_1\",\"type\":\"message\",\"",
+          "role\":\"",
+          "assistant\",\"m",
+          "odel\":\"calc-parallel\",\"conten",
+          "t\":[],\"",
+          "stop_reason\":",
+          "null,\"stop_sequence\":null,\"us",
+          "age\":{\"",
+          "input_tokens\"",
+          ":120,\"output_tokens\":1}}}\n\nev",
+          "ent: co",
+          "ntent_block_s",
+          "tart\ndata: {\"type\":\"content_b",
+          "lock_st",
+          "art\",\"index\":",
+          "0,\"content_block\":{\"type\":\"te",
+          "xt\",\"te",
+          "xt\":\"\"}}\n\neve",
+          "nt: content_block_delta\ndata:",
+          " {\"type",
+          "\":\"content_bl",
+          "ock_delta\",\"index\":0,\"delta\":",
+          "{\"type\"",
+          ":\"text_delta\"",
+          ",\"text\":\"The re\"}}\n\nevent: co",
+          "ntent_b",
+          "lock_delta\nda",
+          "ta: {\"type\":\"content_block_de",
+          "lta\",\"i",
+          "ndex\":0,\"delt",
+          "a\":{\"type\":\"text_delta\",\"text",
+          "\":\"sult",
+          "s \"}}\n\nevent:",
+          " content_block_delta\ndata: {\"",
+          "type\":\"",
+          "content_block",
+          "_delta\",\"index\":0,\"delta\":{\"t",
+          "ype\":\"t",
+          "ext_delta\",\"t",
+          "ext\":\"are 5 \"}}\n\nevent: conte",
+          "nt_bloc",
+          "k_delta\ndata:",
+          " {\"type\":\"content_block_delta",
+          "\",\"inde",
+          "x\":0,\"delta\":",
+          "{\"type\":\"text_delta\",\"text\":\"",
+          "and 30\"",
+          "}}\n\nevent: co",
+          "ntent_block_delta\ndata: {\"typ",
+          "e\":\"con",
+          "tent_block_de",
+          "lta\",\"index\":0,\"delta\":{\"type",
+          "\":\"text",
+          "_delta\",\"text",
+          "\":\".\"}}\n\nevent: content_block",
+          "_stop\nd",
+          "ata: {\"type\":",
+          "\"content_block_stop\",\"index\":",
+          "0}\n\neve",
+          "nt: message_d",
+          "elta\ndata: {\"type\":\"message_d",
+          "elta\",\"",
+          "delta\":{\"stop",
+          "_reason\":\"end_turn\",\"stop_seq",
+          "uence\":",
+          "null},\"usage\"",
+          ":{\"output_tokens\":9}}\n\nevent:",
+          " messag",
+          "e_stop\ndata: ",
+          "{\"type\":\"message_stop\"}\n\n"
+        ]
+      }
+    }
+  ]
+}

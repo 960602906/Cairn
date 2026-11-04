@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "name": "gemini-auth-fail",
+  "scenario": "gemini-auth-fail",
+  "model": "auth-fail",
+  "reasoning": true,
+  "source": "synthetic",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/auth-fail:streamGenerateContent",
+        "query": {
+          "alt": "sse"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "Hello"
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "You are a calculator."
+              }
+            ],
+            "role": "user"
+          },
+          "generationConfig": {
+            "maxOutputTokens": 4096,
+            "thinkingConfig": {
+              "includeThoughts": true,
+              "thinkingBudget": -1
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"error\":{\"code\":400,\"message\":\"API key not valid. Please pass a valid API key.\",\"status\":\"INVALID_ARGUMENT\",\"details\":[{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"API_KEY_INVALID\",\"domain\":\"googleapis.com\"}]}}"
+        ]
+      }
+    }
+  ]
+}

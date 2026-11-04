@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "name": "anthropic-auth-fail",
+  "scenario": "anthropic-auth-fail",
+  "model": "auth-fail",
+  "reasoning": true,
+  "source": "synthetic",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "interleaved-thinking-2025-05-14"
+        },
+        "body": {
+          "model": "auth-fail",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Hello",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 4096,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "enabled",
+            "budget_tokens": 3072,
+            "display": "summarized"
+          }
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}"
+        ]
+      }
+    }
+  ]
+}

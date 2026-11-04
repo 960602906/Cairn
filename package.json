@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
+    "contract:record": "vitest run packages/runtime-pi/src/contract-record.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "tsc -b --clean",
