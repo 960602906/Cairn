@@ -66,5 +66,19 @@
   "tool.search.not_found": "要搜索的路径不存在",
   "tool.search.invalid_pattern": "搜索的正则表达式或文件筛选无效",
   "tool.search.unavailable": "搜索不可用：无法启动随应用打包的 ripgrep",
-  "tool.search.failed": "搜索失败"
+  "tool.search.failed": "搜索失败",
+  "tool.write_file.is_directory": "目标是一个目录",
+  "tool.write_file.too_large": "内容太大，无法写入",
+  "tool.write_file.changed_since_preview": "预览后文件已被修改，未写入",
+  "tool.write_file.failed": "无法写入文件",
+  "tool.edit_file.not_found": "文件不存在",
+  "tool.edit_file.is_directory": "目标是一个目录",
+  "tool.edit_file.too_large": "文件太大，无法编辑",
+  "tool.edit_file.binary": "不能编辑二进制文件",
+  "tool.edit_file.unsupported_encoding": "不支持编辑这种编码的文件",
+  "tool.edit_file.no_match": "找不到要替换的原文",
+  "tool.edit_file.ambiguous": "要替换的原文出现了不止一处",
+  "tool.edit_file.no_change": "替换后的内容与原文相同",
+  "tool.edit_file.changed_since_preview": "预览后文件已被修改，未编辑",
+  "tool.edit_file.failed": "无法编辑文件"
 }

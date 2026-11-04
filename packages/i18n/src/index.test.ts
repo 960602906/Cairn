@@ -152,6 +152,20 @@ describe('translateError', () => {
       'tool.search.invalid_pattern',
       'tool.search.unavailable',
       'tool.search.failed',
+      'tool.write_file.is_directory',
+      'tool.write_file.too_large',
+      'tool.write_file.changed_since_preview',
+      'tool.write_file.failed',
+      'tool.edit_file.not_found',
+      'tool.edit_file.is_directory',
+      'tool.edit_file.too_large',
+      'tool.edit_file.binary',
+      'tool.edit_file.unsupported_encoding',
+      'tool.edit_file.no_match',
+      'tool.edit_file.ambiguous',
+      'tool.edit_file.no_change',
+      'tool.edit_file.changed_since_preview',
+      'tool.edit_file.failed',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())
