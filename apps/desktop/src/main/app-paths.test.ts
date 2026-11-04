@@ -14,6 +14,7 @@ describe('resolveAppPaths', () => {
       blobs: join(root, 'data', 'blobs'),
       checkpoints: join(root, 'checkpoints'),
       settings: join(root, 'settings.json'),
+      credentials: join(root, 'credentials.json'),
       logs: join(root, 'logs'),
       session: join(root, 'session'),
     })

@@ -19,6 +19,8 @@ export interface AppPaths {
   readonly blobs: string
   readonly checkpoints: string
   readonly settings: string
+  /** 加密保存的凭据（M1-03，ADR-0010）。 */
+  readonly credentials: string
   readonly logs: string
   /** Chromium 的缓存、Cookie 等（Electron 的 `sessionData`），与应用数据分开。 */
   readonly session: string
@@ -43,6 +45,7 @@ export function resolveAppPaths({ appData, dev, env = {} }: ResolveAppPathsOptio
     blobs: join(data, 'blobs'),
     checkpoints: join(root, 'checkpoints'),
     settings: join(root, 'settings.json'),
+    credentials: join(root, 'credentials.json'),
     logs: join(root, 'logs'),
     session: join(root, 'session'),
   }
