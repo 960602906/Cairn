@@ -528,3 +528,186 @@ describe('RunEngine 接入流水线', () => {
     })
   })
 })
+
+describe('ToolPipeline：并发上限', () => {
+  function gated() {
+    const releases: (() => void)[] = []
+    const running: string[] = []
+    const definition = tool({
+      name: 'read_file',
+      category: 'read',
+      execute: ({ path }) =>
+        new Promise((resolve) => {
+          running.push(path)
+          releases.push(() => resolve({ content: text(path) }))
+        }),
+    })
+    return { definition, releases, running }
+  }
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('同时执行的调用不超过 maxParallel，完成一个再开始下一个', async () => {
+    const g = gated()
+    const h = setup([g.definition], { maxParallel: 2 })
+    const pipeline = createToolPipeline(h.options)
+    const runs = ['a', 'b', 'c'].map((path, i) =>
+      pipeline.run({ id: `c${i}`, name: 'read_file', input: { path } }, signal(), h.observer),
+    )
+    await tick()
+    expect(g.running).toEqual(['a', 'b'])
+    g.releases[0]!()
+    await tick()
+    expect(g.running).toEqual(['a', 'b', 'c'])
+    g.releases[1]!()
+    g.releases[2]!()
+    expect((await Promise.all(runs)).map((o) => o.status)).toEqual(['ok', 'ok', 'ok'])
+  })
+
+  it('等待名额时取消：返回 cancelled，不占用名额', async () => {
+    const g = gated()
+    const h = setup([g.definition], { maxParallel: 1 })
+    const pipeline = createToolPipeline(h.options)
+    const first = pipeline.run(
+      { id: 'c1', name: 'read_file', input: { path: 'a' } },
+      signal(),
+      h.observer,
+    )
+    const controller = new AbortController()
+    const second = pipeline.run(
+      { id: 'c2', name: 'read_file', input: { path: 'b' } },
+      controller.signal,
+      h.observer,
+    )
+    await tick()
+    controller.abort()
+    expect(await second).toMatchObject({ status: 'cancelled' })
+    g.releases[0]!()
+    expect(await first).toMatchObject({ status: 'ok' })
+    const third = pipeline.run(
+      { id: 'c3', name: 'read_file', input: { path: 'c' } },
+      signal(),
+      h.observer,
+    )
+    await tick()
+    expect(g.running).toEqual(['a', 'c'])
+    g.releases[1]!()
+    expect(await third).toMatchObject({ status: 'ok' })
+  })
+})
+
+describe('RunEngine：一步多个工具调用（Runtime §6.2）', () => {
+  const model: ResolvedModel = {
+    ref: { providerId: 'fake', modelId: 'fake' },
+    providerKind: 'openai',
+    baseUrl: 'http://x',
+    profile: {
+      contextWindow: 1000,
+      maxOutputTokens: 100,
+      supportsTools: true,
+      supportsParallelToolCalls: true,
+      supportsReasoning: false,
+    },
+  }
+  const readFile = tool({
+    name: 'read_file',
+    category: 'read',
+    execute: async ({ path }) => {
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      return { content: text(path) }
+    },
+  })
+
+  async function run(
+    paths: string[],
+    decide: PermissionGate['decide'],
+    approvals?: ApprovalGate['request'],
+  ) {
+    const h = setup([readFile, tool()])
+    const registry = h.options.registry
+    const events: { type: string; payload: Record<string, unknown> }[] = []
+    const engine = await RunEngine.create({
+      sessionId: 's1',
+      runId: 'r1',
+      agent: { id: 'default', version: 1 },
+      mode: 'interactive',
+      limits: { maxStepsPerTurn: 10, maxTurnDurationMs: 60_000, maxConsecutiveToolErrors: 3 },
+      runtime: new FakeRuntime({
+        turns: [
+          {
+            steps: [
+              {
+                kind: 'tools',
+                calls: paths.map((path) => ({ name: 'read_file', input: { path } })),
+              },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      }),
+      model,
+      tools: registry.specs(),
+      toolPipeline: createToolPipeline({
+        ...h.options,
+        permissions: { decide },
+        ...(approvals ? { approvals: { request: approvals } } : {}),
+      }),
+      signal: new AbortController().signal,
+      emit: (e: { type: string; payload: unknown }) =>
+        events.push({ type: e.type, payload: e.payload as Record<string, unknown> }),
+      now: () => 1,
+    })
+    await engine.prompt({ messageId: 'm1', content: text('go') })
+    return events
+  }
+
+  it('只读调用并行执行；部分被拒绝时其余照常完成', async () => {
+    const events = await run(['a', 'b', 'c'], async ({ input }) =>
+      (input as Input).path === 'b'
+        ? { decision: 'deny', reasonCode: 'rule.deny' }
+        : { decision: 'allow' },
+    )
+    const tools = events.filter((e) => e.type.startsWith('tool.'))
+    // 三个调用先全部请求，再陆续开始，说明是并行执行
+    expect(tools.slice(0, 3).map((e) => e.type)).toEqual([
+      'tool.requested',
+      'tool.requested',
+      'tool.requested',
+    ])
+    const ends = tools.filter((e) => e.type === 'tool.completed' || e.type === 'tool.failed')
+    expect(ends.map((e) => [e.type, e.payload['toolCallId']])).toEqual(
+      expect.arrayContaining([
+        ['tool.completed', 'fake-call-1'],
+        ['tool.failed', 'fake-call-2'],
+        ['tool.completed', 'fake-call-3'],
+      ]),
+    )
+    expect(events.at(-1)).toMatchObject({ type: 'turn.completed' })
+  })
+
+  it('多个调用同时等待审批：只进入一次 awaiting_approval，全部决定后回到 tooling', async () => {
+    const pending: ((decision: 'allow_once' | 'deny') => void)[] = []
+    const events = await run(
+      ['a', 'b'],
+      async () => ({ decision: 'ask', reasonCode: 'rule.ask' }),
+      (request) =>
+        new Promise((resolve) => {
+          pending.push((decision) => resolve({ decision }))
+          if (pending.length === 2) {
+            pending[0]!('allow_once')
+            setTimeout(() => pending[1]!('deny'), 1)
+          }
+          void request
+        }),
+    )
+    const states = events.filter((e) => e.type === 'run.state.changed').map((e) => e.payload['to'])
+    expect(states).toEqual([
+      'thinking',
+      'tooling',
+      'awaiting_approval',
+      'tooling',
+      'thinking',
+      'completed',
+    ])
+    expect(events.filter((e) => e.type === 'approval.requested')).toHaveLength(2)
+  })
+})

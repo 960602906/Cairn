@@ -10,7 +10,7 @@
  * | 5. 权限 | `PermissionGate` 返回 allow / ask / deny | deny → `tool.denied` |
  * | 6. 审批 | ask 时先生成预览，再请求审批（运行进入 `awaiting_approval`） | 拒绝 → `tool.denied`，附用户说明 |
  * | 7. 前置检查点 | 写入与执行类工具在执行前创建检查点 | 失败时请用户确认是否继续，不继续 → `tool.denied` |
- * | 8. 执行 | 带取消信号执行，流式输出 | 工具错误 → 对应错误码；其他异常 → `tool.execution_failed` |
+ * | 8. 执行 | 带取消信号执行，流式输出；同时执行的调用数受 `maxParallel` 限制 | 工具错误 → 对应错误码；其他异常 → `tool.execution_failed` |
  * | 9. 后处理 | 输出预算：超过上限时保留开头和结尾，中间截断并注明 | — |
  * | 10. 返回 | 结果交回 agent 循环 | — |
  *
@@ -31,6 +31,7 @@ import {
   type ToolCheckpoints,
   type ToolContext,
   type ToolDefinition,
+  type ToolOutput,
   type ToolRegistry,
   type ToolTargets,
 } from './tools.js'
@@ -128,6 +129,8 @@ export interface ToolPipelineOptions {
   readonly log: Logger
   /** 交给模型的输出上限（字符数），默认 30 000；按模型上下文动态计算在 M1-13。 */
   readonly maxOutputChars?: number
+  /** 同时执行的调用上限，默认 4（Runtime §6.2）；只限制执行阶段，等待审批不占名额。 */
+  readonly maxParallel?: number
   readonly createId: () => string
 }
 
@@ -143,6 +146,27 @@ export interface ToolPipeline {
 const CHECKPOINT_CATEGORIES: ReadonlySet<ToolCategory> = new Set(['write', 'execute'])
 
 const DEFAULT_MAX_OUTPUT_CHARS = 30_000
+const DEFAULT_MAX_PARALLEL = 4
+
+/** 简单的计数信号量：`acquire` 在有空位时 resolve，返回释放函数。 */
+function createLimiter(max: number) {
+  let active = 0
+  const waiting: (() => void)[] = []
+  const release = () => {
+    const next = waiting.shift()
+    if (next) next()
+    else active--
+  }
+  return {
+    acquire(): Promise<() => void> {
+      if (active < max) {
+        active++
+        return Promise.resolve(release)
+      }
+      return new Promise((resolve) => waiting.push(() => resolve(release)))
+    },
+  }
+}
 
 const text = (value: string): ContentPart[] => [{ type: 'text', text: value }]
 
@@ -197,6 +221,18 @@ class CancelledError extends Error {
 
 export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   const maxOutputChars = options.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS
+  const limiter = createLimiter(Math.max(1, options.maxParallel ?? DEFAULT_MAX_PARALLEL))
+
+  /** 等待执行名额；取消时放弃等待（拿到的名额立即归还）。 */
+  async function acquireSlot(signal: AbortSignalLike): Promise<() => void> {
+    const pending = limiter.acquire()
+    try {
+      return await guard(signal, () => pending)
+    } catch (error) {
+      void pending.then((release) => release())
+      throw error
+    }
+  }
 
   /** 在取消信号与 `work` 之间竞争；取消时抛出 CancelledError。 */
   async function guard<T>(signal: AbortSignalLike, work: () => Promise<T>): Promise<T> {
@@ -353,9 +389,15 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           }
         }
       }
-      // 8. 执行
-      observer.started()
-      const output = await guard(signal, () => definition.execute(input, ctx))
+      // 8. 执行（并行调用受 maxParallel 限制）
+      const release = await acquireSlot(signal)
+      let output: ToolOutput
+      try {
+        observer.started()
+        output = await guard(signal, () => definition.execute(input, ctx))
+      } finally {
+        release()
+      }
       // 9. 后处理
       const { content, truncated } = truncateOutput(output.content, maxOutputChars)
       // 10. 返回

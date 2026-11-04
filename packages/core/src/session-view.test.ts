@@ -2,6 +2,7 @@ import type { EventEnvelope, EventPayload, EventType, TokenUsage } from '@nexus/
 import { describe, expect, it } from 'vitest'
 import {
   createSessionView,
+  MAX_LIVE_TOOL_OUTPUT_CHARS,
   reduceSession,
   reduceSessionEvents,
   rootRun,
@@ -98,6 +99,8 @@ describe('createSessionView', () => {
       runOrder: [],
       messages: [],
       live: {},
+      tools: {},
+      liveToolOutput: {},
       usage: { inputTokens: 0, outputTokens: 0 },
     })
   })
@@ -238,7 +241,14 @@ describe('reduceSession：幂等与乱序', () => {
 
   it('未处理的事件类型只推进 lastSeq', () => {
     const { view: v, ev } = midTurn()
-    const next = reduceSession(v, ev('tool.started', { toolCallId: 'c1' }, { turnId: 't1' }))
+    const next = reduceSession(
+      v,
+      ev(
+        'approval.requested',
+        { approvalId: 'a1', toolCallId: 'c1', matchedRuleIds: [], reasonCode: 'rule.ask' },
+        { turnId: 't1' },
+      ),
+    )
     expect(next).toEqual({ ...v, lastSeq: v.lastSeq + 1 })
   })
 })
@@ -530,5 +540,140 @@ describe('用量累加', () => {
         { inputTokens: 1, outputTokens: 1, cacheReadTokens: 1 },
       ),
     ).toEqual({ inputTokens: 3, outputTokens: 3, cacheReadTokens: 6, reasoningTokens: 7 })
+  })
+})
+
+describe('reduceSession：工具调用（M1-05c）', () => {
+  const t = { turnId: 't1' }
+  const out = (
+    ev: ReturnType<typeof stream>,
+    toolCallId: string,
+    txt: string,
+    channel: 'stdout' | 'stderr' = 'stdout',
+  ) => ev('tool.output.delta', { toolCallId, stream: channel, text: txt }, t)
+
+  it('请求 → 开始 → 输出 → 完成：实时输出合并同一输出流，完成后丢弃', () => {
+    const { view: v0, ev } = midTurn()
+    let v = reduceSessionEvents(v0, [
+      ev('tool.requested', { toolCallId: 'c1', name: 'run_command', input: { cmd: 'ls' } }, t),
+      ev('tool.started', { toolCallId: 'c1' }, t),
+      out(ev, 'c1', 'a'),
+      out(ev, 'c1', 'b'),
+      out(ev, 'c1', 'oops', 'stderr'),
+    ])
+    expect(v.tools['c1']).toMatchObject({ status: 'running', name: 'run_command', turnId: 't1' })
+    expect(v.liveToolOutput['c1']).toMatchObject({
+      runId: RUN,
+      chunks: [
+        { stream: 'stdout', text: 'ab' },
+        { stream: 'stderr', text: 'oops' },
+      ],
+      omittedChars: 0,
+    })
+    const completed = ev(
+      'tool.completed',
+      { toolCallId: 'c1', output: text('ab'), truncated: true, durationMs: 3 },
+      t,
+    )
+    v = reduceSession(v, completed)
+    expect(v.tools['c1']).toMatchObject({
+      status: 'completed',
+      output: text('ab'),
+      truncated: true,
+      durationMs: 3,
+    })
+    expect(v.liveToolOutput).toEqual({})
+    expect(v.lastSeq).toBe(completed.seq)
+  })
+
+  it('只用持久化事件与加上增量归约，结果相同', () => {
+    const { view: v0, ev } = midTurn()
+    const events = [
+      ev('tool.requested', { toolCallId: 'c1', name: 'x', input: {} }, t),
+      ev('tool.started', { toolCallId: 'c1' }, t),
+      out(ev, 'c1', 'a'),
+      ev('tool.completed', { toolCallId: 'c1', output: [], durationMs: 1 }, t),
+    ]
+    const withLive = reduceSessionEvents(v0, events)
+    const persisted = reduceSessionEvents(
+      v0,
+      events.filter((e) => e.type !== 'tool.output.delta'),
+    )
+    expect(withLive).toEqual(persisted)
+  })
+
+  it('失败与取消；结束后的事件与增量被忽略', () => {
+    const { view: v0, ev } = midTurn()
+    const v = reduceSessionEvents(v0, [
+      ev('tool.requested', { toolCallId: 'c1', name: 'x', input: {} }, t),
+      ev('tool.requested', { toolCallId: 'c2', name: 'x', input: {} }, t),
+      ev('tool.failed', { toolCallId: 'c1', error: { code: 'tool.denied' } }, t),
+      ev('tool.cancelled', { toolCallId: 'c2', reason: 'user' }, t),
+    ])
+    expect(v.tools['c1']).toMatchObject({ status: 'failed', error: { code: 'tool.denied' } })
+    expect(v.tools['c2']).toMatchObject({ status: 'cancelled', cancelReason: 'user' })
+    const after = [
+      ev('tool.started', { toolCallId: 'c1' }, t),
+      ev('tool.completed', { toolCallId: 'c2', output: [], durationMs: 1 }, t),
+      ev('tool.requested', { toolCallId: 'c1', name: 'y', input: {} }, t),
+    ]
+    const next = reduceSessionEvents(v, after)
+    expect(next.tools).toBe(v.tools)
+    expect(reduceSession(next, out(ev, 'c1', 'late'))).toBe(next)
+  })
+
+  it('开始事件重复时不变；未知调用的增量、重复与空增量被忽略', () => {
+    const { view: v0, ev } = midTurn()
+    const v = reduceSessionEvents(v0, [
+      ev('tool.requested', { toolCallId: 'c1', name: 'x', input: {} }, t),
+      ev('tool.started', { toolCallId: 'c1' }, t),
+    ])
+    const again = reduceSession(v, ev('tool.started', { toolCallId: 'c1' }, t))
+    expect(again.tools).toBe(v.tools)
+    expect(reduceSession(again, out(ev, 'nope', 'x'))).toBe(again)
+    expect(reduceSession(again, out(ev, 'c1', ''))).toBe(again)
+    const delta = out(ev, 'c1', 'x')
+    const once = reduceSession(again, delta)
+    expect(reduceSession(once, { ...delta, seq: delta.seq } as EventEnvelope)).toBe(once)
+  })
+
+  it('实时输出超过上限时从开头丢弃', () => {
+    const { view: v0, ev } = midTurn()
+    const half = MAX_LIVE_TOOL_OUTPUT_CHARS / 2
+    const v = reduceSessionEvents(v0, [
+      ev('tool.requested', { toolCallId: 'c1', name: 'x', input: {} }, t),
+      out(ev, 'c1', 'a'.repeat(half)),
+      out(ev, 'c1', 'b'.repeat(half), 'stderr'),
+      out(ev, 'c1', 'c'.repeat(half + 10)),
+    ])
+    const live = v.liveToolOutput['c1']!
+    expect(live.omittedChars).toBe(half + 10)
+    expect(live.chunks.map((c) => [c.stream, c.text.length])).toEqual([
+      ['stderr', half - 10],
+      ['stdout', half + 10],
+    ])
+  })
+
+  it('轮次结束、运行释放与宿主崩溃时丢弃实时输出', () => {
+    const { view: v0, ev } = midTurn()
+    const v = reduceSessionEvents(v0, [
+      ev('tool.requested', { toolCallId: 'c1', name: 'x', input: {} }, t),
+      out(ev, 'c1', 'x'),
+    ])
+    const two = reduceSessionEvents(v, [
+      ev('tool.requested', { toolCallId: 'c2', name: 'x', input: {} }, t),
+      out(ev, 'c2', 'y'),
+      ev('tool.cancelled', { toolCallId: 'c1', reason: 'user' }, t),
+    ])
+    expect(Object.keys(two.liveToolOutput)).toEqual(['c2'])
+    const unrelated = reduceSession(v, ev('session.renamed', { title: 'x' }))
+    expect(unrelated.liveToolOutput).toBe(v.liveToolOutput)
+    const otherRun = reduceSession(v, ev('run.disposed', {}, { runId: 'r2' }))
+    expect(otherRun.liveToolOutput).toBe(v.liveToolOutput)
+    expect(reduceSession(v, ev('turn.aborted', { reason: 'user' }, t)).liveToolOutput).toEqual({})
+    expect(reduceSession(v, ev('run.disposed', {})).liveToolOutput).toEqual({})
+    expect(
+      reduceSession(v, ev('session.crashed', { error: { code: 'host.crashed' } })).liveToolOutput,
+    ).toEqual({})
   })
 })

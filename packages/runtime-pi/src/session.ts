@@ -9,8 +9,9 @@
  *
  * 工具：每个 `RuntimeToolSpec` 包装为 pi 工具，`execute` 中先调用 `hooks.beforeToolCall`，放行后调用
  * `hooks.executeTool`，并把中止信号传下去。结果状态（ok、denied 等）写入 pi 工具结果的 `details`，
- * 历史中可以原样恢复。工具按顺序执行（`sequential`），审批也按顺序进行；并行执行由 M1-05 的
- * 工具流水线决定是否开放。
+ * 历史中可以原样恢复。并行（M1-05c；Runtime §6.2）：标为 `parallel` 的工具设为 pi 的 `parallel` 执行模式，
+ * 其余为 `sequential`；pi 在一批调用中只要有一个 `sequential` 就整批按顺序执行，否则并行执行，结果
+ * 按模型给出的顺序回填。并发上限由工具流水线控制。
  *
  * 历史：会话自己维护 `CanonicalMessage[]`，在 pi 的 `message_end` 时追加（用户消息用调用方传入的原对象），
  * `exportHistory` 直接返回。出错或被中止的助手消息不进入历史（与 pi 自己回传时的规则一致）。
@@ -109,7 +110,7 @@ class PiSession implements RuntimeSession {
       },
       streamFn: this.#binding.streamFn,
       sessionId: `nexus-${++sessionCounter}`,
-      toolExecution: 'sequential',
+      toolExecution: 'parallel',
       identity: { attribution: null },
     })
     this.#unsubscribe = this.#agent.subscribe((event) => this.#handle(event))
@@ -198,6 +199,7 @@ class PiSession implements RuntimeSession {
       label: spec.name,
       description: spec.description,
       parameters: spec.inputSchema,
+      executionMode: spec.parallel ? 'parallel' : 'sequential',
       execute: async (toolCallId, params, signal): Promise<AgentToolResult> => {
         const call = { id: toolCallId, name: spec.name, input: params }
         const gate = await hooks.beforeToolCall(call)

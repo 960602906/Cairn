@@ -12,6 +12,9 @@
  *   已归约的最后一条持久化事件，可直接作为 `afterSeq`）。`message.assistant.completed` 以完整内容
  *   写入 `messages` 并移除对应的进行中消息；轮次结束或宿主崩溃时丢弃该运行剩余的进行中消息。
  *   因此只用持久化事件与"持久化 + 增量"归约，最终结果相同。
+ * - **工具调用**（M1-05c）：`tool.*` 持久化事件归约为 `tools`；`tool.output.delta` 只进入
+ *   `liveToolOutput`（保留最后 `MAX_LIVE_TOOL_OUTPUT_CHARS` 个字符），工具结束、轮次结束或宿主崩溃时丢弃，
+ *   规则与进行中的消息相同。
  * - 状态以不可变方式更新：只替换发生变化的部分，便于界面按引用比较。
  */
 import {
@@ -20,6 +23,7 @@ import {
   type ContentPart,
   type ErrorInfo,
   type EventEnvelope,
+  type EventPayload,
   type LiveEvent,
   type ModelRef,
   type PersistedEvent,
@@ -78,6 +82,44 @@ export interface LiveMessageView {
   readonly lastDeltaSeq: number
   readonly startedAt: number
 }
+
+export type ToolCallStatus = 'requested' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+/** 一次工具调用（来自 `tool.*` 持久化事件）。 */
+export interface ToolCallView {
+  readonly toolCallId: string
+  readonly runId: string
+  readonly turnId: string | undefined
+  readonly name: string
+  readonly input: unknown
+  readonly status: ToolCallStatus
+  readonly requestedAt: number
+  /** 交给模型的输出（`tool.completed`）。 */
+  readonly output: readonly ContentPart[] | undefined
+  readonly truncated: boolean
+  readonly error: ErrorInfo | undefined
+  readonly cancelReason: EventPayload<'tool.cancelled'>['reason'] | undefined
+  readonly durationMs: number | undefined
+}
+
+export interface ToolOutputChunk {
+  readonly stream: 'stdout' | 'stderr'
+  readonly text: string
+}
+
+/** 执行中的工具的实时输出（只来自 `tool.output.delta`，不落库）。 */
+export interface LiveToolOutputView {
+  readonly toolCallId: string
+  readonly runId: string
+  /** 相邻的同一输出流合并为一段。 */
+  readonly chunks: readonly ToolOutputChunk[]
+  /** 超过上限后从开头丢弃的字符数。 */
+  readonly omittedChars: number
+  readonly lastDeltaSeq: number
+}
+
+/** 每个工具调用保留的实时输出上限（字符数）；完整结果以 `tool.completed` 为准。 */
+export const MAX_LIVE_TOOL_OUTPUT_CHARS = 64 * 1024
 
 export type StepStatus = 'running' | 'completed'
 
@@ -139,6 +181,10 @@ export interface SessionView {
   readonly messages: readonly MessageView[]
   /** 进行中的消息，按 messageId 索引；界面显示在 `messages` 之后。 */
   readonly live: Readonly<Record<string, LiveMessageView>>
+  /** 工具调用，按 toolCallId 索引。 */
+  readonly tools: Readonly<Record<string, ToolCallView>>
+  /** 执行中的工具的实时输出，按 toolCallId 索引。 */
+  readonly liveToolOutput: Readonly<Record<string, LiveToolOutputView>>
   /** 会话累计用量（只统计 `usage.reported`，不重复计入 `step.completed.usage`）。 */
   readonly usage: TokenUsage
 }
@@ -156,6 +202,8 @@ export function createSessionView(sessionId: string): SessionView {
     runOrder: [],
     messages: [],
     live: {},
+    tools: {},
+    liveToolOutput: {},
     usage: ZERO_USAGE,
   }
 }
@@ -177,12 +225,12 @@ export function reduceSession(view: SessionView, event: EventEnvelope): SessionV
   if (!isPersistedEvent(event)) return applyLive(view, event) ?? view
   const advanced: SessionView = { ...view, lastSeq: event.seq }
   const next = apply(advanced, event) ?? advanced
-  return dropFinishedLive(next, event)
+  return dropFinishedToolOutput(dropFinishedLive(next, event), event)
 }
 
 /** 合并一条增量事件；返回 `undefined` 表示忽略。 */
 function applyLive(view: SessionView, event: LiveEvent): SessionView | undefined {
-  if (event.type === 'tool.output.delta') return undefined // 工具输出由后续阶段的投影处理
+  if (event.type === 'tool.output.delta') return applyToolOutput(view, event)
   const { messageId, text } = event.payload
   if (view.messages.some((m) => m.messageId === messageId)) return undefined
   const prev = view.live[messageId]
@@ -230,6 +278,89 @@ function dropFinishedLive(view: SessionView, event: PersistedEvent): SessionView
   const kept = ids.filter((id) => keep(view.live[id]!))
   if (kept.length === ids.length) return view
   return { ...view, live: Object.fromEntries(kept.map((id) => [id, view.live[id]!])) }
+}
+
+/** 合并一条工具输出增量：只接受尚未结束的已知调用。 */
+function applyToolOutput(
+  view: SessionView,
+  event: Extract<LiveEvent, { type: 'tool.output.delta' }>,
+): SessionView | undefined {
+  const { toolCallId, stream, text } = event.payload
+  const tool = view.tools[toolCallId]
+  if (!tool || (tool.status !== 'requested' && tool.status !== 'running')) return undefined
+  const prev = view.liveToolOutput[toolCallId]
+  if (prev && event.seq <= prev.lastDeltaSeq) return undefined
+  if (text === '') return undefined
+  const chunks = [...(prev?.chunks ?? [])]
+  const last = chunks.at(-1)
+  if (last?.stream === stream) chunks[chunks.length - 1] = { stream, text: last.text + text }
+  else chunks.push({ stream, text })
+  let omitted = prev?.omittedChars ?? 0
+  let total = chunks.reduce((n, c) => n + c.text.length, 0)
+  while (total > MAX_LIVE_TOOL_OUTPUT_CHARS) {
+    const first = chunks[0]!
+    const excess = total - MAX_LIVE_TOOL_OUTPUT_CHARS
+    if (first.text.length <= excess) {
+      chunks.shift()
+      omitted += first.text.length
+      total -= first.text.length
+    } else {
+      chunks[0] = { stream: first.stream, text: first.text.slice(excess) }
+      omitted += excess
+      total -= excess
+    }
+  }
+  const live: LiveToolOutputView = {
+    toolCallId,
+    runId: tool.runId,
+    chunks,
+    omittedChars: omitted,
+    lastDeltaSeq: event.seq,
+  }
+  return { ...view, liveToolOutput: { ...view.liveToolOutput, [toolCallId]: live } }
+}
+
+/** 工具结束、轮次结束或宿主崩溃时丢弃实时输出（与进行中的消息相同）。 */
+function dropFinishedToolOutput(view: SessionView, event: PersistedEvent): SessionView {
+  const ids = Object.keys(view.liveToolOutput)
+  if (ids.length === 0) return view
+  let keep: (live: LiveToolOutputView) => boolean
+  switch (event.type) {
+    case 'tool.completed':
+    case 'tool.failed':
+    case 'tool.cancelled':
+      keep = (live) => live.toolCallId !== event.payload.toolCallId
+      break
+    case 'turn.completed':
+    case 'turn.aborted':
+    case 'turn.failed':
+    case 'run.disposed':
+      keep = (live) => live.runId !== event.runId
+      break
+    case 'session.crashed':
+      keep = () => false
+      break
+    default:
+      return view
+  }
+  const kept = ids.filter((id) => keep(view.liveToolOutput[id]!))
+  if (kept.length === ids.length) return view
+  return {
+    ...view,
+    liveToolOutput: Object.fromEntries(kept.map((id) => [id, view.liveToolOutput[id]!])),
+  }
+}
+
+/** 更新一个尚未结束的工具调用。 */
+function updateTool(
+  view: SessionView,
+  toolCallId: string,
+  fn: (tool: ToolCallView) => ToolCallView,
+): SessionView | undefined {
+  const tool = view.tools[toolCallId]
+  if (!tool || (tool.status !== 'requested' && tool.status !== 'running')) return undefined
+  const next = fn(tool)
+  return next === tool ? undefined : { ...view, tools: { ...view.tools, [toolCallId]: next } }
 }
 
 /** 返回 `undefined` 表示事件内容被忽略（只推进 lastSeq）。 */
@@ -357,8 +488,54 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return { ...(withRun ?? view), usage: addUsage(view.usage, usage) }
     }
 
+    case 'tool.requested': {
+      const { toolCallId, name, input } = event.payload
+      if (view.tools[toolCallId]) return undefined
+      const tool: ToolCallView = {
+        toolCallId,
+        runId: event.runId,
+        turnId: event.turnId,
+        name,
+        input,
+        status: 'requested',
+        requestedAt: event.ts,
+        output: undefined,
+        truncated: false,
+        error: undefined,
+        cancelReason: undefined,
+        durationMs: undefined,
+      }
+      return { ...view, tools: { ...view.tools, [toolCallId]: tool } }
+    }
+    case 'tool.started':
+      return updateTool(view, event.payload.toolCallId, (tool) =>
+        tool.status === 'running' ? tool : { ...tool, status: 'running' },
+      )
+    case 'tool.completed': {
+      const { toolCallId, output, truncated, durationMs } = event.payload
+      return updateTool(view, toolCallId, (tool) => ({
+        ...tool,
+        status: 'completed',
+        output,
+        truncated: truncated ?? false,
+        durationMs,
+      }))
+    }
+    case 'tool.failed':
+      return updateTool(view, event.payload.toolCallId, (tool) => ({
+        ...tool,
+        status: 'failed',
+        error: event.payload.error,
+      }))
+    case 'tool.cancelled':
+      return updateTool(view, event.payload.toolCallId, (tool) => ({
+        ...tool,
+        status: 'cancelled',
+        cancelReason: event.payload.reason,
+      }))
+
     default:
-      // 工具、审批、检查点等事件由后续阶段的投影处理。
+      // 审批、检查点等事件由后续阶段的投影处理。
       return undefined
   }
 }

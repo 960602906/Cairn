@@ -39,7 +39,12 @@ describe('ToolRegistry', () => {
     registry.register(readFile)
     registry.register(tool({ name: 'run_command', category: 'execute' }))
     expect(registry.specs()).toEqual([
-      { name: 'read_file', description: readFile.description, inputSchema: readFile.inputSchema },
+      {
+        name: 'read_file',
+        description: readFile.description,
+        inputSchema: readFile.inputSchema,
+        parallel: true,
+      },
       { name: 'run_command', description: readFile.description, inputSchema: readFile.inputSchema },
     ])
     expect(registry.specs((d) => d.category === 'read').map((s) => s.name)).toEqual(['read_file'])

@@ -62,6 +62,11 @@ export interface RuntimeToolSpec {
   readonly description: string
   /** 参数的 JSON Schema。 */
   readonly inputSchema: Readonly<Record<string, unknown>>
+  /**
+   * 可与同一批中的其他调用并行（只读类工具，Runtime §6.2）。一批调用中只要有一个不可并行，整批按模型
+   * 给出的顺序串行执行。省略表示不可并行。
+   */
+  readonly parallel?: boolean
 }
 
 /** 模型发出的一次工具调用。 */
