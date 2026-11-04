@@ -66,5 +66,19 @@
   "tool.search.not_found": "The path to search does not exist",
   "tool.search.invalid_pattern": "The search pattern or file filter is invalid",
   "tool.search.unavailable": "Search is unavailable: the bundled ripgrep could not be started",
-  "tool.search.failed": "The search failed"
+  "tool.search.failed": "The search failed",
+  "tool.write_file.is_directory": "The target is a directory",
+  "tool.write_file.too_large": "The content is too large to write",
+  "tool.write_file.changed_since_preview": "The file was changed after the preview, so it was not written",
+  "tool.write_file.failed": "The file cannot be written",
+  "tool.edit_file.not_found": "The file does not exist",
+  "tool.edit_file.is_directory": "The target is a directory",
+  "tool.edit_file.too_large": "The file is too large to edit",
+  "tool.edit_file.binary": "Binary files cannot be edited",
+  "tool.edit_file.unsupported_encoding": "The file encoding is not supported for editing",
+  "tool.edit_file.no_match": "The text to replace was not found",
+  "tool.edit_file.ambiguous": "The text to replace occurs more than once",
+  "tool.edit_file.no_change": "The replacement is the same as the original",
+  "tool.edit_file.changed_since_preview": "The file was changed after the preview, so it was not edited",
+  "tool.edit_file.failed": "The file cannot be edited"
 }
