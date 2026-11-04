@@ -16,6 +16,7 @@ const ALLOWED_NEXUS_DEPS = {
   'packages/storage': ['protocol', 'core'],
   'packages/i18n': [],
   'packages/runtime-pi': ['protocol', 'core'],
+  'packages/tools': ['protocol', 'core'],
   'apps/desktop': ['protocol', 'core', 'storage', 'i18n', 'runtime-pi'],
 }
 

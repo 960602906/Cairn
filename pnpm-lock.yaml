@@ -161,6 +161,18 @@ importers:
         specifier: 9.6.0
         version: 9.6.0
 
+  packages/tools:
+    dependencies:
+      '@nexus/core':
+        specifier: workspace:*
+        version: link:../core
+      '@nexus/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      ignore:
+        specifier: 7.0.14
+        version: 7.0.14
+
 packages:
 
   '@anthropic-ai/sdk@0.129.0':
