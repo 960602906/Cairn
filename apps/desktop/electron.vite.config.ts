@@ -9,6 +9,8 @@
  * - `renderer`：React 界面，`src/renderer/index.html`。
  *
  * 工作区包（`@nexus/*`）以 TypeScript 源码导出，必须打进产物，不能作为外部依赖。
+ * pi（`@earendil-works/*`）只是 runtime-pi 的依赖，不在本包的 dependencies 中，因此同样打进宿主产物（S1：
+ * 依赖外置时 app.asar 几乎全是 node_modules，打包后宿主加载更快）。各接口格式的实现是按需加载的独立分块。
  */
 import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
@@ -17,7 +19,13 @@ import type { Plugin } from 'vite'
 import { buildContentSecurityPolicy } from './src/main/security.js'
 
 const root = import.meta.dirname
-const workspacePackages = ['@nexus/protocol', '@nexus/core', '@nexus/storage', '@nexus/i18n']
+const workspacePackages = [
+  '@nexus/protocol',
+  '@nexus/core',
+  '@nexus/storage',
+  '@nexus/i18n',
+  '@nexus/runtime-pi',
+]
 
 /** 把 CSP 以 `<meta>` 写入界面 HTML（`file:` 加载时没有响应头）。开发服务器使用放宽的版本。 */
 function contentSecurityPolicy(): Plugin {

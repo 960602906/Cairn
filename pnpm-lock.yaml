@@ -44,6 +44,9 @@ importers:
       '@nexus/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@nexus/runtime-pi':
+        specifier: workspace:*
+        version: link:../../packages/runtime-pi
       '@nexus/storage':
         specifier: workspace:*
         version: link:../../packages/storage
