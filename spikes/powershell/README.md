@@ -154,7 +154,7 @@ Windows 11（10.0.26100），系统区域设置为中文：5.1 为 `ACP=936 OEM=
 - **编码**：两个版本的结果与 CI 一致，候选做法全部通过。不做设置时同样乱码（输出按 936 编码）。Python 默认按 GBK 输出，按 UTF-8 解码后乱码，设 `PYTHONUTF8=1` 后正常。
 - **进程树，5.1**：与 CI 一致，作业对象全部通过，`taskkill /T` 约 220 ms。
 - **进程树，商店版 PowerShell 7**：
-  - `AssignProcessToJobObject` 返回成功，但 PowerShell 创建的子孙进程**都不在作业里**，`TerminateJobObject` 和关闭句柄后全部残留。
+  - `AssignProcessToJobObject` 返回成功，pwsh 本身也在作业里（`IsProcessInJob` 为是），但它创建的子孙进程**都不在作业里**，`TerminateJobObject` 和关闭句柄后全部残留。
   - `taskkill /T` 的结果与 5.1 相同：嵌套场景可以结束，孤儿进程残留。
   - CI 上的 PowerShell 7 装在 `C:\Program Files\PowerShell\7`（MSI 版），没有这个问题。原因应是商店版作为打包应用运行，子进程脱离了调用方的作业。
 
