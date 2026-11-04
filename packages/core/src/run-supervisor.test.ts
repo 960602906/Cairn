@@ -4,6 +4,7 @@ import {
   FakeRuntime,
   RunEngineErrorCode,
   RunSupervisorErrorCode,
+  TOOL_RESULT_NOTICE,
   createRunSupervisor,
   type AgentRuntime,
   type CreateRunInput,
@@ -344,7 +345,7 @@ describe('RunSupervisor：限额、中止与释放', () => {
     const run = await supervisor.createRun(init)
     expect(run.runId).toBe('id1')
     await run.send(input('u1'))
-    expect(seen).toEqual({ systemPrompt: '你是助手', tools: [tool] })
+    expect(seen).toEqual({ systemPrompt: `你是助手\n\n${TOOL_RESULT_NOTICE}`, tools: [tool] })
     expect(executeTool).toHaveBeenCalledOnce()
     expect(types(events)).toContain('tool.completed')
   })

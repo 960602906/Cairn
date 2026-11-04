@@ -77,6 +77,18 @@ export interface ApprovalPreview {
   readonly command?: string
 }
 
+/** 权限判定用的目标：规范化后的路径（相对工作区，`/` 分隔）与命令。 */
+export interface ToolTargets {
+  readonly paths?: readonly string[]
+  readonly command?: string
+}
+
+/** `normalize` 的结果：规范化后的参数与权限判定用的目标。 */
+export interface NormalizedToolInput<I> {
+  readonly input: I
+  readonly targets: ToolTargets
+}
+
 export interface ToolDefinition<I = unknown> {
   /** 给模型的名称：字母开头，字母、数字、`_`、`-`，最长 64 个字符（各接口格式的公共子集）。 */
   readonly name: string
@@ -87,6 +99,11 @@ export interface ToolDefinition<I = unknown> {
   readonly category: ToolCategory
   readonly source: ToolSource
   readonly trust: ToolTrust
+  /**
+   * 路径与命令规范化（Runtime §7 第 4 阶段）：把路径解析为工作区内的路径、解析命令，给出权限判定用的
+   * 目标。越界等问题抛出 `ToolError`。省略时参数原样使用，没有目标。
+   */
+  normalize?(input: I, ctx: ToolContext): Promise<NormalizedToolInput<I>>
   /** 执行工具；失败时抛出 `ToolError`（或其他错误，按内部错误处理）。 */
   execute(input: I, ctx: ToolContext): Promise<ToolOutput>
   /** 审批前生成预览，例如写文件前读取原文并计算 diff（Runtime §7）。 */
@@ -126,7 +143,7 @@ export type ToolInputValidation =
 
 export interface ToolRegistry {
   /** 名称重复、名称或 schema 不合法时抛出（程序错误）。 */
-  register(definition: ToolDefinition<never>): void
+  register<I>(definition: ToolDefinition<I>): void
   get(name: string): ToolDefinition | undefined
   /** 按注册顺序。 */
   list(): ToolDefinition[]

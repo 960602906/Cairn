@@ -20,6 +20,7 @@ import type {
   UnsequencedEvent,
 } from '@nexus/protocol'
 import { RunEngine, RunEngineError, type ToolExecutor } from './run-engine.js'
+import type { ToolPipeline } from './tool-pipeline.js'
 import type {
   AbortSignalLike,
   AgentRuntime,
@@ -103,6 +104,8 @@ export interface RunSupervisorOptions {
   readonly systemPrompt?: string
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
+  /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
+  readonly toolPipeline?: ToolPipeline
   /** 宿主级中止信号。 */
   readonly signal: AbortSignalLike
   readonly now?: () => number
@@ -194,6 +197,7 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
         ...(options.systemPrompt === undefined ? {} : { systemPrompt: options.systemPrompt }),
         ...(options.tools ? { tools: options.tools } : {}),
         ...(options.executeTool ? { executeTool: options.executeTool } : {}),
+        ...(options.toolPipeline ? { toolPipeline: options.toolPipeline } : {}),
         ...(init.restoreFrom
           ? { restore: { history: init.restoreFrom.history, state: init.restoreFrom.state } }
           : {}),

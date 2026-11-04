@@ -1,0 +1,530 @@
+import type { EventPayload } from '@nexus/protocol'
+import { describe, expect, it, vi } from 'vitest'
+import { FakeRuntime } from './fake-runtime.js'
+import type { Logger } from './logger.js'
+import { RunEngine } from './run-engine.js'
+import {
+  createToolPipeline,
+  truncateOutput,
+  type ApprovalGate,
+  type PermissionDecision,
+  type PermissionGate,
+  type ToolCallObserver,
+  type ToolPipelineOptions,
+} from './tool-pipeline.js'
+import { createToolRegistry, ToolError, type ToolContext, type ToolDefinition } from './tools.js'
+import type { ResolvedModel } from './runtime.js'
+
+type Input = { path: string }
+
+const noopLogger: Logger = {
+  level: 'error',
+  setLevel: () => {},
+  isEnabled: () => false,
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => noopLogger,
+}
+
+const text = (t: string) => [{ type: 'text' as const, text: t }]
+
+function tool(over: Partial<ToolDefinition<Input>> = {}): ToolDefinition<Input> {
+  return {
+    name: 'write_file',
+    description: 'Write a file.',
+    inputSchema: {
+      type: 'object',
+      properties: { path: { type: 'string' } },
+      required: ['path'],
+      additionalProperties: false,
+    },
+    category: 'write',
+    source: { kind: 'builtin' },
+    trust: 'builtin',
+    execute: async ({ path }, ctx) => {
+      ctx.progress('writing\n')
+      ctx.progress('warn\n', 'stderr')
+      return { content: text(`wrote ${path}`) }
+    },
+    ...over,
+  }
+}
+
+interface Harness {
+  options: ToolPipelineOptions
+  observer: ToolCallObserver
+  log: string[]
+  decide: ReturnType<typeof vi.fn<PermissionGate['decide']>>
+  request: ReturnType<typeof vi.fn<ApprovalGate['request']>>
+  checkpoint: ReturnType<typeof vi.fn<(reason: string) => Promise<string>>>
+}
+
+function setup(
+  definitions: ToolDefinition<Input>[] = [tool()],
+  over: Partial<ToolPipelineOptions> = {},
+  decision: PermissionDecision = { decision: 'allow' },
+): Harness {
+  const registry = createToolRegistry()
+  for (const d of definitions) registry.register(d)
+  const log: string[] = []
+  const decide = vi.fn<PermissionGate['decide']>(async () => decision)
+  const request = vi.fn<ApprovalGate['request']>(async () => ({ decision: 'allow_once' }))
+  const checkpoint = vi.fn(async () => 'cp1')
+  let id = 0
+  const options: ToolPipelineOptions = {
+    registry,
+    permissions: { decide },
+    approvals: { request },
+    checkpoints: { create: checkpoint },
+    workspaceRoot: '/work',
+    resolvePath: async (input) => ({
+      ok: true,
+      path: { absolute: `/work/${input}`, relative: input },
+    }),
+    log: noopLogger,
+    createId: () => `a${++id}`,
+    ...over,
+  }
+  const observer: ToolCallObserver = {
+    started: () => log.push('started'),
+    output: (t, stream) => log.push(`${stream}:${t}`),
+    awaitingApproval: (waiting) => log.push(waiting ? 'wait' : 'resume'),
+    emit: (type, payload) => log.push(`${type}:${JSON.stringify(payload)}`),
+  }
+  return { options, observer, log, decide, request, checkpoint }
+}
+
+const call = (input: unknown, name = 'write_file') => ({ id: 'c1', name, input })
+const signal = () => new AbortController().signal
+
+describe('ToolPipeline：成功路径', () => {
+  it('依次经过各阶段，流式输出，返回结果', async () => {
+    const h = setup()
+    const outcome = await createToolPipeline(h.options).run(
+      call({ path: 'a.ts' }),
+      signal(),
+      h.observer,
+    )
+    expect(outcome).toEqual({ status: 'ok', content: text('wrote a.ts'), truncated: false })
+    expect(h.decide).toHaveBeenCalledWith(
+      expect.objectContaining({ toolCallId: 'c1', input: { path: 'a.ts' }, targets: {} }),
+    )
+    expect(h.checkpoint).toHaveBeenCalledWith('before write_file')
+    expect(h.log).toEqual(['started', 'stdout:writing\n', 'stderr:warn\n'])
+  })
+
+  it('只读工具不创建检查点；normalize 的结果用于权限判定与执行', async () => {
+    const execute = vi.fn(async ({ path }: Input, _ctx: ToolContext) => ({ content: text(path) }))
+    const h = setup([
+      tool({
+        name: 'read_file',
+        category: 'read',
+        normalize: async (input, ctx) => {
+          const resolved = await ctx.resolvePath(input.path)
+          if (!resolved.ok) throw new ToolError(resolved.code, 'bad path')
+          return {
+            input: { path: resolved.path.absolute },
+            targets: { paths: [resolved.path.relative] },
+          }
+        },
+        execute,
+      }),
+    ])
+    const outcome = await createToolPipeline(h.options).run(
+      call({ path: 'src/a.ts' }, 'read_file'),
+      signal(),
+      h.observer,
+    )
+    expect(outcome).toMatchObject({ status: 'ok', content: text('/work/src/a.ts') })
+    expect(h.decide.mock.calls[0]![0].targets).toEqual({ paths: ['src/a.ts'] })
+    expect(h.checkpoint).not.toHaveBeenCalled()
+    expect(execute.mock.calls[0]![1]).toMatchObject({ workspaceRoot: '/work', toolCallId: 'c1' })
+  })
+
+  it('输出超过上限时保留开头和结尾', async () => {
+    const h = setup(
+      [tool({ execute: async () => ({ content: text('a'.repeat(50) + 'b'.repeat(50)) }) })],
+      {
+        maxOutputChars: 20,
+      },
+    )
+    const outcome = await createToolPipeline(h.options).run(
+      call({ path: 'x' }),
+      signal(),
+      h.observer,
+    )
+    expect(outcome).toEqual({
+      status: 'ok',
+      content: text(`${'a'.repeat(10)}\n\n[... 80 characters truncated ...]\n\n${'b'.repeat(10)}`),
+      truncated: true,
+    })
+  })
+})
+
+describe('ToolPipeline：各阶段的失败', () => {
+  it('1. 工具不存在', async () => {
+    const h = setup()
+    expect(await createToolPipeline(h.options).run(call({}, 'nope'), signal(), h.observer)).toEqual(
+      {
+        status: 'error',
+        content: text('Unknown tool: nope'),
+        error: { code: 'tool.not_found', params: { name: 'nope' } },
+      },
+    )
+  })
+
+  it('2. 参数非法，附问题说明', async () => {
+    const h = setup()
+    const outcome = await createToolPipeline(h.options).run(call({ path: 1 }), signal(), h.observer)
+    expect(outcome).toMatchObject({
+      status: 'error',
+      error: { code: 'tool.invalid_input', params: { name: 'write_file' } },
+    })
+    expect(outcome.content[0]).toMatchObject({ text: expect.stringContaining('- path:') })
+    expect(h.decide).not.toHaveBeenCalled()
+  })
+
+  it('3. 不在 Agent 的允许列表内', async () => {
+    const h = setup([tool()], { isAvailable: (d) => d.category === 'read' })
+    expect(
+      await createToolPipeline(h.options).run(call({ path: 'a' }), signal(), h.observer),
+    ).toMatchObject({
+      status: 'error',
+      error: { code: 'tool.not_available' },
+    })
+  })
+
+  it('4. 规范化失败（如路径越界）', async () => {
+    const h = setup([
+      tool({
+        normalize: async () => {
+          throw new ToolError('path.outside_workspace', 'Path is outside the workspace: ../x', {
+            path: '../x',
+          })
+        },
+      }),
+    ])
+    expect(
+      await createToolPipeline(h.options).run(call({ path: '../x' }), signal(), h.observer),
+    ).toEqual({
+      status: 'error',
+      content: text('Path is outside the workspace: ../x'),
+      error: { code: 'path.outside_workspace', params: { path: '../x' } },
+    })
+  })
+
+  it('5. 权限拒绝，理由交给模型', async () => {
+    const h = setup(
+      [tool()],
+      {},
+      {
+        decision: 'deny',
+        reasonCode: 'rule.deny',
+        reason: 'Writing to .env is not allowed.',
+      },
+    )
+    expect(
+      await createToolPipeline(h.options).run(call({ path: '.env' }), signal(), h.observer),
+    ).toEqual({
+      status: 'denied',
+      content: text('Writing to .env is not allowed.'),
+      error: { code: 'tool.denied', params: { reason: 'Writing to .env is not allowed.' } },
+    })
+    const fallback = setup([tool()], {}, { decision: 'deny', reasonCode: 'rule.deny' })
+    const outcome = await createToolPipeline(fallback.options).run(
+      call({ path: 'a' }),
+      signal(),
+      fallback.observer,
+    )
+    expect(outcome.content).toEqual(text('Tool call denied (rule.deny).'))
+  })
+
+  it('6. 审批：先生成预览，等待中发出审批事件；拒绝时附用户说明', async () => {
+    const h = setup(
+      [
+        tool({
+          describeForApproval: async ({ path }) => ({ summary: `write ${path}`, diff: '+x' }),
+        }),
+      ],
+      {},
+      { decision: 'ask', reasonCode: 'rule.ask', matchedRuleIds: ['r1'] },
+    )
+    h.request.mockResolvedValueOnce({ decision: 'deny', feedback: 'use b.ts instead' })
+    const outcome = await createToolPipeline(h.options).run(
+      call({ path: 'a.ts' }),
+      signal(),
+      h.observer,
+    )
+    expect(outcome).toEqual({
+      status: 'denied',
+      content: text('The user denied this tool call. User feedback: use b.ts instead'),
+      error: { code: 'tool.denied', params: { reason: 'The user denied this tool call.' } },
+    })
+    expect(h.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        approvalId: 'a1',
+        kind: 'tool',
+        preview: { summary: 'write a.ts', diff: '+x' },
+        reasonCode: 'rule.ask',
+      }),
+    )
+    expect(h.log).toEqual([
+      'wait',
+      'approval.requested:{"approvalId":"a1","toolCallId":"c1","matchedRuleIds":["r1"],"reasonCode":"rule.ask"}',
+      'approval.resolved:{"approvalId":"a1","decision":"deny","decidedBy":"user","feedback":"use b.ts instead"}',
+      'resume',
+    ])
+  })
+
+  it('6. 审批通过后执行（没有预览函数时不带预览）', async () => {
+    const h = setup([tool()], {}, { decision: 'ask', reasonCode: 'rule.ask' })
+    const outcome = await createToolPipeline(h.options).run(
+      call({ path: 'a.ts' }),
+      signal(),
+      h.observer,
+    )
+    expect(outcome.status).toBe('ok')
+    expect(h.request.mock.calls[0]![0]).not.toHaveProperty('preview')
+    expect(h.log.slice(0, 4)).toEqual([
+      'wait',
+      'approval.requested:{"approvalId":"a1","toolCallId":"c1","matchedRuleIds":[],"reasonCode":"rule.ask"}',
+      'approval.resolved:{"approvalId":"a1","decision":"allow_once","decidedBy":"user"}',
+      'resume',
+    ])
+  })
+
+  it('7. 检查点失败时请用户确认；不继续则拒绝，继续则执行', async () => {
+    const h = setup()
+    h.checkpoint.mockRejectedValue(new Error('disk full'))
+    h.request.mockResolvedValueOnce({ decision: 'deny' })
+    const pipeline = createToolPipeline(h.options)
+    expect(await pipeline.run(call({ path: 'a' }), signal(), h.observer)).toMatchObject({
+      status: 'denied',
+      error: { code: 'tool.denied' },
+    })
+    expect(h.request.mock.calls[0]![0]).toMatchObject({
+      kind: 'no_checkpoint',
+      reasonCode: 'checkpoint.failed',
+    })
+    expect(await pipeline.run(call({ path: 'a' }), signal(), h.observer)).toMatchObject({
+      status: 'ok',
+    })
+  })
+
+  it('8. 工具报告的错误与意外异常', async () => {
+    const h = setup([
+      tool({
+        execute: async () => {
+          throw new ToolError('file.not_found', 'File not found: a.ts')
+        },
+      }),
+      tool({
+        name: 'broken',
+        execute: async () => {
+          throw new Error('boom')
+        },
+      }),
+    ])
+    const pipeline = createToolPipeline(h.options)
+    expect(await pipeline.run(call({ path: 'a.ts' }), signal(), h.observer)).toEqual({
+      status: 'error',
+      content: text('File not found: a.ts'),
+      error: { code: 'file.not_found' },
+    })
+    expect(await pipeline.run(call({ path: 'a' }, 'broken'), signal(), h.observer)).toEqual({
+      status: 'error',
+      content: text('Tool broken failed unexpectedly.'),
+      error: { code: 'tool.execution_failed', params: { name: 'broken' } },
+    })
+  })
+})
+
+describe('ToolPipeline：取消', () => {
+  it('开始前已取消', async () => {
+    const h = setup()
+    const controller = new AbortController()
+    controller.abort()
+    expect(
+      await createToolPipeline(h.options).run(call({ path: 'a' }), controller.signal, h.observer),
+    ).toEqual({
+      status: 'cancelled',
+      content: text('Tool call was cancelled.'),
+    })
+    expect(h.decide).not.toHaveBeenCalled()
+  })
+
+  it('执行中取消：不等工具结束', async () => {
+    const controller = new AbortController()
+    const h = setup([tool({ execute: () => new Promise(() => undefined) })])
+    const pending = createToolPipeline(h.options).run(
+      call({ path: 'a' }),
+      controller.signal,
+      h.observer,
+    )
+    await vi.waitFor(() => expect(h.log).toContain('started'))
+    controller.abort()
+    expect((await pending).status).toBe('cancelled')
+  })
+
+  it('等待审批时取消：审批记为 cancelled', async () => {
+    const controller = new AbortController()
+    const h = setup([tool()], {}, { decision: 'ask', reasonCode: 'rule.ask' })
+    h.request.mockReturnValue(new Promise(() => undefined))
+    const pending = createToolPipeline(h.options).run(
+      call({ path: 'a' }),
+      controller.signal,
+      h.observer,
+    )
+    await vi.waitFor(() => expect(h.log).toContain('wait'))
+    controller.abort()
+    expect((await pending).status).toBe('cancelled')
+    expect(h.log).toEqual([
+      'wait',
+      expect.stringContaining('approval.requested'),
+      'approval.resolved:{"approvalId":"a1","decision":"cancelled","decidedBy":"system"}',
+      'resume',
+    ])
+  })
+
+  it('工具在取消后抛错也按取消处理', async () => {
+    const controller = new AbortController()
+    const h = setup([
+      tool({
+        execute: async () => {
+          controller.abort()
+          throw new Error('aborted by signal')
+        },
+      }),
+    ])
+    expect(
+      (await createToolPipeline(h.options).run(call({ path: 'a' }), controller.signal, h.observer))
+        .status,
+    ).toBe('cancelled')
+  })
+
+  it('检查点阶段取消不再询问', async () => {
+    const controller = new AbortController()
+    const h = setup()
+    h.checkpoint.mockImplementation(async () => {
+      controller.abort()
+      throw new Error('interrupted')
+    })
+    expect(
+      (await createToolPipeline(h.options).run(call({ path: 'a' }), controller.signal, h.observer))
+        .status,
+    ).toBe('cancelled')
+    expect(h.request).not.toHaveBeenCalled()
+  })
+})
+
+describe('truncateOutput', () => {
+  it('不超过上限时原样返回（非文本部分不计）', () => {
+    const content = [
+      ...text('abc'),
+      { type: 'image' as const, blobRef: 'b', mimeType: 'image/png' },
+    ]
+    expect(truncateOutput(content, 3)).toEqual({ content, truncated: false })
+  })
+})
+
+describe('RunEngine 接入流水线', () => {
+  const model: ResolvedModel = {
+    ref: { providerId: 'fake', modelId: 'fake' },
+    providerKind: 'openai',
+    baseUrl: 'http://x',
+    profile: {
+      contextWindow: 1000,
+      maxOutputTokens: 100,
+      supportsTools: true,
+      supportsParallelToolCalls: false,
+      supportsReasoning: false,
+    },
+  }
+
+  async function runWith(decision: PermissionDecision, over: Partial<ToolPipelineOptions> = {}) {
+    const h = setup([tool()], over, decision)
+    const events: { type: string; payload: unknown }[] = []
+    const engine = await RunEngine.create({
+      sessionId: 's1',
+      runId: 'r1',
+      agent: { id: 'default', version: 1 },
+      mode: 'interactive',
+      limits: { maxStepsPerTurn: 10, maxTurnDurationMs: 60_000, maxConsecutiveToolErrors: 3 },
+      runtime: new FakeRuntime({
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'write_file', input: { path: 'a.ts' } },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      }),
+      model,
+      tools: [{ name: 'write_file', description: 'Write a file.', inputSchema: {} }],
+      toolPipeline: createToolPipeline(h.options),
+      signal: new AbortController().signal,
+      emit: (e: { type: string; payload: unknown }) =>
+        events.push({ type: e.type, payload: e.payload }),
+      now: () => 1,
+    })
+    await engine.prompt({ messageId: 'm1', content: text('go') })
+    return { events, h }
+  }
+
+  const toolEvents = (events: { type: string; payload: unknown }[]) =>
+    events
+      .filter(
+        (e) =>
+          e.type.startsWith('tool.') ||
+          e.type.startsWith('approval.') ||
+          e.type === 'run.state.changed',
+      )
+      .map((e) =>
+        e.type === 'run.state.changed'
+          ? `state:${(e.payload as EventPayload<'run.state.changed'>).to}`
+          : e.type,
+      )
+
+  it('审批时进入 awaiting_approval，事件依次为 requested → 审批 → started → 输出 → completed', async () => {
+    const { events } = await runWith({ decision: 'ask', reasonCode: 'rule.ask' })
+    expect(toolEvents(events)).toEqual([
+      'state:thinking',
+      'state:tooling',
+      'tool.requested',
+      'state:awaiting_approval',
+      'approval.requested',
+      'approval.resolved',
+      'state:tooling',
+      'tool.started',
+      'tool.output.delta',
+      'tool.output.delta',
+      'tool.completed',
+      'state:thinking',
+      'state:completed',
+    ])
+    expect(events.find((e) => e.type === 'tool.output.delta')?.payload).toEqual({
+      toolCallId: expect.any(String),
+      stream: 'stdout',
+      text: 'writing\n',
+    })
+  })
+
+  it('被拒绝时没有 tool.started，发出 tool.failed', async () => {
+    const { events } = await runWith({ decision: 'deny', reasonCode: 'rule.deny', reason: 'no' })
+    expect(toolEvents(events)).toContain('tool.failed')
+    expect(toolEvents(events)).not.toContain('tool.started')
+    expect(events.find((e) => e.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.denied', params: { reason: 'no' } },
+    })
+  })
+
+  it('输出被截断时 tool.completed 带 truncated', async () => {
+    const { events } = await runWith({ decision: 'allow' }, { maxOutputChars: 4 })
+    expect(events.find((e) => e.type === 'tool.completed')?.payload).toMatchObject({
+      truncated: true,
+    })
+  })
+})
