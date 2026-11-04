@@ -74,8 +74,8 @@ describe('translateError', () => {
   })
 
   it('falls back to a generic message that names the code', () => {
-    expect(translateError(createI18n('zh-CN'), { code: 'model.rate_limited' })).toBe(
-      '发生未知错误（model.rate_limited）',
+    expect(translateError(createI18n('zh-CN'), { code: 'model.not_a_real_code' })).toBe(
+      '发生未知错误（model.not_a_real_code）',
     )
     expect(translateError(createI18n('en-US'), { code: 'x.y', params: undefined })).toBe(
       'An unknown error occurred (x.y)',
@@ -96,6 +96,12 @@ describe('translateError', () => {
       'tool.failed',
       'tool.denied',
       'model.unknown_error',
+      'model.auth_failed',
+      'model.rate_limited',
+      'model.server_error',
+      'model.context_overflow',
+      'model.bad_request',
+      'model.network_error',
       'storage.not_found',
       'storage.conflict',
       'storage.seq_conflict',
