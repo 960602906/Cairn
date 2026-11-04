@@ -3,20 +3,24 @@ import { describe, expect, it } from 'vitest'
 import { buildNotices, findLicenseText } from './third-party-notices.js'
 
 describe('findLicenseText', () => {
-  const files: Record<string, string> = {
-    [path.join('/a', 'LICENSE.md')]: '  MIT License text  \n',
-    [path.join('/b', 'licence')]: 'ISC text',
-    [path.join('/c', 'COPYING-BSD')]: 'BSD text',
+  const dirs: Record<string, Record<string, string>> = {
+    '/a': { 'LICENSE.md': '  MIT License text  \n' },
+    '/b': { licence: 'ISC text' },
+    '/c': { 'COPYING-BSD': 'BSD text' },
   }
   const fs = {
     list: (dir: string) => {
-      const names = Object.keys(files)
-        .filter((f) => path.dirname(f) === dir)
-        .map((f) => path.basename(f))
       if (dir === '/missing') throw new Error('ENOENT')
-      return [...names, 'README.md', 'package.json']
+      return [...Object.keys(dirs[dir] ?? {}), 'README.md', 'package.json']
     },
-    read: (file: string) => files[file] ?? '',
+    read: (file: string) => {
+      for (const [dir, names] of Object.entries(dirs)) {
+        for (const [name, text] of Object.entries(names)) {
+          if (path.join(dir, name) === file) return text
+        }
+      }
+      return ''
+    },
   }
 
   it('识别常见的许可证文件名，去掉首尾空白', () => {
