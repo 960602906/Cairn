@@ -35,6 +35,11 @@ export const AgentHostErrorCode = {
   AlreadyInitialized: 'host.already_initialized',
 } as const
 
+/** `host.init` 带来的凭据（M1-03b）。 */
+export interface HostCredential {
+  readonly apiKey: string
+}
+
 /** 一次初始化所用的运行时与模型。 */
 export interface HostRuntime {
   readonly runtime: AgentRuntime
@@ -43,8 +48,11 @@ export interface HostRuntime {
 
 export interface AgentHostOptions {
   readonly channel: RpcChannel
-  /** 按 `host.init` 的模型创建运行时（M0 为 FakeRuntime）。 */
-  readonly createRuntime: (model: ModelRef) => HostRuntime | Promise<HostRuntime>
+  /** 按 `host.init` 的模型与凭据创建运行时（`runtime-select.ts`）。凭据只在内存中使用。 */
+  readonly createRuntime: (
+    model: ModelRef,
+    credential: HostCredential | undefined,
+  ) => HostRuntime | Promise<HostRuntime>
   /** 退出进程（`host.shutdown` 回复之后调用）。 */
   readonly exit: (code: number) => void
   /** 轮次、步骤、消息的 id；必须全局唯一（同一运行跨宿主重启也不能重复）。 */
@@ -75,7 +83,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   endpoint.handle('host.init', async (init) => {
     if (initializing || run) throw new RpcError(AgentHostErrorCode.AlreadyInitialized)
     initializing = true
-    const { runtime, model } = await options.createRuntime(init.model)
+    const { runtime, model } = await options.createRuntime(init.model, init.credential)
     supervisor = createRunSupervisor({
       runtime,
       model,

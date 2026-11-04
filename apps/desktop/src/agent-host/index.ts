@@ -7,6 +7,8 @@
  */
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { redact } from '@nexus/core'
 import type {} from 'electron'
 import { HOST_PORT_MESSAGE, portChannel } from '../shared/host-port.js'
 import { HOST_TRACE_ENV, traceHistory } from './history-trace.js'
@@ -15,6 +17,10 @@ import { selectHostRuntime } from './runtime-select.js'
 
 const traceFile = process.env[HOST_TRACE_ENV]
 const createHostRuntime = selectHostRuntime(process.env)
+/** `host.init` 带来的 Key：错误输出前按原文脱敏。 */
+const secrets: string[] = []
+const reportError = (error: unknown) =>
+  console.error('[agent-host]', redact(error, { homeDirs: [homedir()], secrets }))
 
 process.parentPort.on('message', (event) => {
   const port = event.ports[0]
@@ -22,14 +28,15 @@ process.parentPort.on('message', (event) => {
   port.start()
   createAgentHost({
     channel: portChannel(port),
-    createRuntime: (model) => {
-      const host = createHostRuntime(model)
+    createRuntime: (model, credential) => {
+      if (credential) secrets.push(credential.apiKey)
+      const host = createHostRuntime(model, credential)
       if (!traceFile) return host
       const write = (line: string) => appendFileSync(traceFile, `${line}\n`)
       return { ...host, runtime: traceHistory(host.runtime, write) }
     },
     exit: (code) => process.exit(code),
     createId: randomUUID,
-    onError: (error) => console.error('[agent-host]', error),
+    onError: reportError,
   })
 })

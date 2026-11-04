@@ -37,6 +37,10 @@ export type Locale = z.infer<typeof Locale>
 export const Settings = z.object({ locale: Locale })
 export type Settings = z.infer<typeof Settings>
 
+/** 凭据引用（ADR-0010）：字母、数字、`.`、`_`、`-`，1～128 个字符（例如提供方 id）。 */
+export const CREDENTIAL_REF_PATTERN = /^[A-Za-z0-9._-]{1,128}$/
+export const CredentialRef = z.string().regex(CREDENTIAL_REF_PATTERN)
+
 /** seq 从 1 开始；afterSeq 为 0 表示从头读取。 */
 const Seq = z.number().int().nonnegative()
 
@@ -80,6 +84,23 @@ export const MainForRenderer = defineSide({
       params: Settings.partial(),
       result: Settings,
     },
+    /**
+     * 凭据（ADR-0010，M1-03）：界面只能写入、删除与查询是否已配置，没有读出明文的接口。
+     * Key 由主进程加密保存（首尾空白会被去掉，最长 4096 个字符）。
+     */
+    'credentials.set': {
+      params: z.object({ ref: CredentialRef, secret: z.string().min(1).max(8192) }),
+      result: z.object({}),
+    },
+    'credentials.delete': {
+      params: z.object({ ref: CredentialRef }),
+      result: z.object({ deleted: z.boolean() }),
+    },
+    /** `available`：系统加密是否可用；不可用时无法保存（Linux 无密钥环）。 */
+    'credentials.status': {
+      params: z.object({ ref: CredentialRef }),
+      result: z.object({ configured: z.boolean(), available: z.boolean() }),
+    },
   },
   events: {
     /** 实时事件推送；增量事件在主进程合并后按帧率批量推送（架构 §22）。 */
@@ -102,8 +123,5 @@ export const RESERVED_RENDERER_MAIN_METHODS = [
   'changes.revert',
   'checkpoint.list',
   'checkpoint.restore',
-  'credentials.set',
-  'credentials.delete',
-  'credentials.status',
   'provider.test',
 ] as const

@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CredentialErrorCode,
   MAX_SECRET_LENGTH,
+  createCredentialCommands,
   createLocalKeyStore,
   type SecretCipher,
 } from './credential-store.js'
@@ -282,5 +283,38 @@ describe('createLocalKeyStore', () => {
     expect(await codeOf(() => store.set('a', KEY))).toBe(CredentialErrorCode.WriteFailed)
     expect(onError).toHaveBeenCalledTimes(1)
     expect(store.has('a')).toBe(false)
+  })
+})
+
+describe('knownSecrets 与可用性', () => {
+  it('记录本进程中保存与解析过的 Key（去掉首尾空白），报告系统加密是否可用', async () => {
+    await createLocalKeyStore({ file, cipher: fakeCipher() }).set('a', 'stored-key-0001')
+    const store = createLocalKeyStore({ file, cipher: fakeCipher() })
+    expect(store.knownSecrets()).toEqual([])
+    await store.set('b', '  typed-key-0002 ')
+    await store.resolve('a')
+    expect([...store.knownSecrets()].sort()).toEqual(['stored-key-0001', 'typed-key-0002'])
+    expect(await store.available()).toBe(true)
+    const off = createLocalKeyStore({
+      file,
+      cipher: fakeCipher({ isAvailable: async () => false }),
+    })
+    expect(await off.available()).toBe(false)
+  })
+})
+
+describe('createCredentialCommands', () => {
+  it('写入、查询与删除，不返回明文', async () => {
+    const store = createLocalKeyStore({ file, cipher: fakeCipher() })
+    const commands = createCredentialCommands(store)
+    expect(await commands.status({ ref: 'a' })).toEqual({ configured: false, available: true })
+    expect(await commands.set({ ref: 'a', secret: KEY })).toEqual({})
+    expect(await commands.status({ ref: 'a' })).toEqual({ configured: true, available: true })
+    expect(JSON.stringify(await commands.status({ ref: 'a' }))).not.toContain(KEY)
+    expect(await commands.delete({ ref: 'a' })).toEqual({ deleted: true })
+    expect(await commands.delete({ ref: 'a' })).toEqual({ deleted: false })
+    expect(await codeOf(() => commands.set({ ref: 'a', secret: ' ' }))).toBe(
+      CredentialErrorCode.InvalidValue,
+    )
   })
 })

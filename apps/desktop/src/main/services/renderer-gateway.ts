@@ -2,7 +2,8 @@
  * IPC 网关（M0-13b，ADR-0009，架构 §7.3、§15.2、§22）：主进程面向界面的 `MainForRenderer` 端点。
  *
  * - **请求校验**：参数与结果都由 `createEndpoint` 按协议校验；会话命令交给注入的 `SessionCommands`
- *   （会话管理器，M0-13c/d），设置交给 `SettingsCommands`（设置服务，M0-15d）。IPC 发送方的校验见 `renderer-transport.ts`。
+ *   （会话管理器，M0-13c/d），设置交给 `SettingsCommands`（设置服务，M0-15d），凭据交给
+ *   `CredentialCommands`（凭据存储，M1-03b；没有读出明文的接口）。IPC 发送方的校验见 `renderer-transport.ts`。
  * - **补发与实时衔接**：`session.subscribe(afterSeq)` 同步读取数据库中 `afterSeq` 之后的持久化事件并
  *   记下游标；之后到达的事件只转发 seq 大于游标的部分。读取与登记之间没有异步间隙，因此无重复、
  *   无遗漏。订阅响应发出之前到达的实时事件先缓存，响应发出后再推送，保证界面先拿到补发的事件。
@@ -21,6 +22,7 @@ import {
   type RpcError,
 } from '@nexus/protocol'
 import type { z } from 'zod'
+import type { CredentialCommands } from './credential-store.js'
 import type { SessionEventService } from './event-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
@@ -50,6 +52,8 @@ export interface RendererGatewayOptions {
   readonly events: Pick<SessionEventService, 'readAfter' | 'subscribe'>
   readonly commands: SessionCommands
   readonly settings: SettingsCommands
+  /** 凭据命令（M1-03b）：界面只能写入、删除与查询是否已配置。 */
+  readonly credentials: CredentialCommands
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
   readonly frameMs?: number
   readonly onProtocolError?: (error: RpcError, message: unknown) => void
@@ -116,7 +120,7 @@ interface Subscription {
 type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
-  const { events, commands, settings } = options
+  const { events, commands, settings, credentials } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -172,6 +176,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.abort', (params) => commands.abort(params))
       endpoint.handle('settings.get', () => settings.get())
       endpoint.handle('settings.update', (patch) => settings.update(patch))
+      endpoint.handle('credentials.set', (params) => credentials.set(params))
+      endpoint.handle('credentials.delete', (params) => credentials.delete(params))
+      endpoint.handle('credentials.status', (params) => credentials.status(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布

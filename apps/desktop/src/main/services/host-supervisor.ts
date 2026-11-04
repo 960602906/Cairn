@@ -6,6 +6,9 @@
  * - 定期请求 `host.heartbeat`，超时视为卡死；
  * - 宿主意外退出或卡死时结束进程，写入 `session.crashed`（错误码 `host.exited` / `host.unresponsive`）。
  *
+ * `host.init` 前按模型解析凭据（M1-03b，ADR-0010），只经 `host.init` 传给宿主；无法解析（系统加密不可用、
+ * 无法解密）按启动失败处理，原因的错误码记入 `cause`。
+ *
  * 启动失败（进程无法创建、握手或初始化超时、协议不兼容）同样写入 `session.crashed`
  * （`host.start_failed`），并以 `RpcError` 拒绝。`stop()` 请求宿主正常退出，超时后强制结束，
  * 不写崩溃事件。
@@ -21,6 +24,7 @@ import {
   type RequestOptions,
   type RpcEndpoint,
 } from '@nexus/protocol'
+import type { ResolvedCredential } from '@nexus/core'
 import type { z } from 'zod'
 import type { SessionEventService } from './event-service.js'
 import type { HostProcess, SpawnHost } from './host-process.js'
@@ -34,7 +38,11 @@ export const HostErrorCode = {
   Unresponsive: 'host.unresponsive',
 } as const
 
-export type HostInit = z.input<(typeof HostForMain)['requests']['host.init']['params']>
+/** 会话管理器给出的初始化参数；凭据由监督器解析后加入。 */
+export type HostInit = Omit<
+  z.input<(typeof HostForMain)['requests']['host.init']['params']>,
+  'credential'
+>
 
 export type HostState = 'starting' | 'running' | 'stopping' | 'stopped' | 'crashed'
 
@@ -60,6 +68,8 @@ export interface HostHandle {
 export interface HostSupervisorOptions {
   readonly spawn: SpawnHost
   readonly events: Pick<SessionEventService, 'publish'>
+  /** 按模型解析凭据（M1-03b）；没有保存凭据时返回 undefined。省略表示不传凭据。 */
+  readonly resolveCredential?: (model: HostInit['model']) => Promise<ResolvedCredential | undefined>
   /** 握手与 `host.init` 的总时限，默认 10 秒。 */
   readonly startTimeoutMs?: number
   /** 心跳间隔，默认 5 秒。 */
@@ -173,7 +183,12 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
       // 握手与初始化在总时限内完成
       const started = (async () => {
         await endpoint.ready
-        await endpoint.request('host.init', init, { timeoutMs: startTimeoutMs })
+        const credential = await options.resolveCredential?.(init.model)
+        await endpoint.request(
+          'host.init',
+          credential ? { ...init, credential: { apiKey: credential.apiKey } } : init,
+          { timeoutMs: startTimeoutMs },
+        )
       })()
       let startTimer: Timer | undefined
       const timedOut = new Promise<never>((_, reject) => {
