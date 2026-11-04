@@ -43,11 +43,26 @@ export const ContentPart = z.discriminatedUnion('type', [
 export type ContentPart = z.infer<typeof ContentPart>
 
 /**
+ * 推理内容的一段原始块。签名等字段对应用不透明，只用于把推理原样带回给产生它的模型：
+ * Anthropic 的 thinking 签名与 redacted_thinking 数据、Gemini 的 thought signature、
+ * DeepSeek（openai 格式）回传推理时使用的字段名等（M1-01b）。
+ */
+export const ReasoningBlock = z.object({
+  text: z.string(),
+  signature: z.string().optional(),
+  /** 被提供方的安全过滤隐去，内容只在 `signature` 中（加密）。 */
+  redacted: z.boolean().optional(),
+})
+export type ReasoningBlock = z.infer<typeof ReasoningBlock>
+
+/**
  * 推理内容（思考过程）。记录提供方，切换到其他提供方时不再发送给模型（Runtime §14）。
+ * `text` 用于显示；`blocks` 只在需要原样回传时出现（有签名、被隐去或不止一块），此时以它为准。
  */
 export const ReasoningPart = z.object({
   text: z.string(),
   providerId: Id,
+  blocks: z.array(ReasoningBlock).optional(),
 })
 export type ReasoningPart = z.infer<typeof ReasoningPart>
 
@@ -56,9 +71,15 @@ export const ToolCall = z.object({
   id: Id,
   name: Id,
   input: z.unknown(),
+  /** 提供方附在调用上的不透明签名（如 Gemini 的 thought signature），原样带回给同一模型。 */
+  signature: z.string().optional(),
 })
 export type ToolCall = z.infer<typeof ToolCall>
 
+/**
+ * 一次模型调用的用量。`inputTokens` 含命中缓存的部分（`cacheReadTokens` 是其中的一部分），
+ * `outputTokens` 含推理部分（`reasoningTokens` 是其中的一部分）。
+ */
 export const TokenUsage = z.object({
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),

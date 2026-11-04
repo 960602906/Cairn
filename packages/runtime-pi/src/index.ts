@@ -1,7 +1,7 @@
 /**
  * @nexus/runtime-pi —— 基于 pi（pi-agent-core、pi-ai）实现 `AgentRuntime`（ADR-0004、ADR-0021）。
  * 这是唯一可以引用 `@earendil-works/*` 的包（ESLint 依赖边界规则）。
- * 包骨架与版本守卫见 M1-01a；消息转换、会话与事件映射、接入宿主在 M1-01b～d 实现。
+ * 包骨架与版本守卫见 M1-01a，消息转换见 M1-01b（messages.ts）；会话与事件映射、接入宿主在 M1-01c～d 实现。
  */
 
 /**
@@ -10,3 +10,5 @@
  * 升级 pi 时同时修改这里、package.json 与契约测试的录制。
  */
 export const PI_VERSION = '1.5.0'
+
+export * from './messages.js'
