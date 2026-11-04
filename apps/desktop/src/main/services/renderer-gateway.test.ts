@@ -9,6 +9,7 @@ import {
   type UnsequencedEvent,
 } from '@nexus/protocol'
 import { createMemoryStorage } from '@nexus/storage'
+import type { CredentialCommands } from './credential-store.js'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import {
   coalesceDeltas,
@@ -66,6 +67,7 @@ let service: SessionEventService
 let gateway: RendererGateway
 let commands: SessionCommands
 let settings: SettingsCommands
+let credentials: CredentialCommands
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
   const storage = createMemoryStorage({ now: () => 1 })
@@ -84,10 +86,16 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     get: vi.fn(() => ({ locale: 'zh-CN' as const })),
     update: vi.fn((patch) => ({ locale: patch.locale ?? ('zh-CN' as const) })),
   }
+  credentials = {
+    set: vi.fn(async () => ({})),
+    delete: vi.fn(async () => ({ deleted: true })),
+    status: vi.fn(async () => ({ configured: true, available: true })),
+  }
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
     commands,
     settings,
+    credentials,
   })
   return connectRenderer()
 }
@@ -289,6 +297,24 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(commands.abort).toHaveBeenCalledWith({ sessionId: 's1' })
   })
 
+  it('delegates credential requests; no request returns the key', async () => {
+    const { client } = setup()
+    await expect(
+      client.request('credentials.set', { ref: 'deepseek', secret: 'secret-key-value' }),
+    ).resolves.toEqual({})
+    await expect(client.request('credentials.status', { ref: 'deepseek' })).resolves.toEqual({
+      configured: true,
+      available: true,
+    })
+    await expect(client.request('credentials.delete', { ref: 'deepseek' })).resolves.toEqual({
+      deleted: true,
+    })
+    expect(credentials.set).toHaveBeenCalledWith({ ref: 'deepseek', secret: 'secret-key-value' })
+    await expect(
+      client.request('credentials.set', { ref: 'bad ref', secret: 'x' }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+  })
+
   it('delegates settings requests to the settings service', async () => {
     const { client } = setup()
     await expect(client.request('settings.get', {})).resolves.toEqual({ locale: 'zh-CN' })
@@ -355,7 +381,13 @@ describe('createRendererGateway: commands and lifecycle', () => {
   it('passes protocol errors to the handler', async () => {
     setup()
     const onProtocolError = vi.fn()
-    const g = createRendererGateway({ events: service, commands, settings, onProtocolError })
+    const g = createRendererGateway({
+      events: service,
+      commands,
+      settings,
+      credentials,
+      onProtocolError,
+    })
     const pair = channelPair()
     g.connect(pair.main)
     pair.renderer.post({ nonsense: true })

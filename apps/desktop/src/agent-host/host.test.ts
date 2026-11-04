@@ -40,10 +40,14 @@ function setup(script: FakeScript = { turns: [] }) {
   const [mainSide, hostSide] = channelPair()
   const exit = vi.fn()
   const onError = vi.fn()
+  const credentials: unknown[] = []
   let id = 0
   createAgentHost({
     channel: hostSide,
-    createRuntime: (model) => ({ runtime: new FakeRuntime(script), model: fakeModel(model) }),
+    createRuntime: (model, credential) => {
+      credentials.push(credential)
+      return { runtime: new FakeRuntime(script), model: fakeModel(model) }
+    },
     exit,
     createId: () => `id${++id}`,
     now: () => 7,
@@ -55,12 +59,23 @@ function setup(script: FakeScript = { turns: [] }) {
   const waitFor = async (type: string) => {
     await vi.waitFor(() => expect(events.map((e) => e.type)).toContain(type))
   }
-  return { main, events, exit, onError, waitFor }
+  return { main, events, exit, onError, waitFor, credentials }
 }
 
 const text = (t: string) => [{ type: 'text' as const, text: t }]
 
 describe('agent host', () => {
+  it('passes the credential from host.init to the runtime factory', async () => {
+    const withKey = setup()
+    await withKey.main.request('host.init', { ...init, credential: { apiKey: 'secret-key-value' } })
+    expect(withKey.credentials).toEqual([{ apiKey: 'secret-key-value' }])
+    expect(JSON.stringify(withKey.events)).not.toContain('secret-key-value')
+
+    const without = setup()
+    await without.main.request('host.init', init)
+    expect(without.credentials).toEqual([undefined])
+  })
+
   it('creates a run and answers prompts with events', async () => {
     const { main, events, waitFor } = setup()
     await main.request('host.init', init)

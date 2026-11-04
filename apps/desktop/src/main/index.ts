@@ -3,8 +3,10 @@
  * 组装主进程服务（存储、设置、宿主管理、IPC 网关）、创建窗口。服务本身不依赖 Electron，见 `services/`。
  */
 import { mkdirSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { redact } from '@nexus/core'
 import { openSqliteStorage } from '@nexus/storage'
 import {
   app,
@@ -24,7 +26,7 @@ import {
   type NavigationPolicy,
   type WebContentsLike,
 } from './security.js'
-import { createLocalKeyStore } from './services/credential-store.js'
+import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
@@ -68,16 +70,20 @@ const RUN_DEFAULTS: RunDefaults = {
 /** 退出时等待宿主结束的上限。 */
 const SHUTDOWN_TIMEOUT_MS = 5_000
 
-// 日志服务接入前，异常先写到标准错误
-const reportError = (error: unknown) => console.error('[nexus]', error)
+/** 已保存或解析过的 Key（凭据存储创建后接上），错误输出前按原文脱敏。 */
+let knownSecrets: () => readonly string[] = () => []
+// 日志服务接入前，异常先写到标准错误（经过脱敏）
+const reportError = (error: unknown) =>
+  console.error('[nexus]', redact(error, { homeDirs: [homedir()], secrets: knownSecrets() }))
 
 const storage = openSqliteStorage({ file: paths.database })
-/** 凭据（ADR-0010）：IPC 与传给宿主在 M1-03b 接入。 */
+/** 凭据（ADR-0010）：界面经 IPC 写入，启动宿主时按提供方 id 解析后经 `host.init` 传入。 */
 const credentials = createLocalKeyStore({
   file: paths.credentials,
   cipher: createSafeStorageCipher(safeStorage),
   onError: reportError,
 })
+knownSecrets = () => credentials.knownSecrets()
 const settings = createSettingsService({
   file: paths.settings,
   systemLocales: () => {
@@ -95,6 +101,8 @@ const supervisor = createHostSupervisor({
     env: hostEnvironment(process.env, app.isPackaged),
   }),
   events,
+  // M1-04 之前凭据引用就是提供方 id；之后由提供方配置的 credentialRef 给出
+  resolveCredential: (model) => credentials.resolve(model.providerId),
   onError: reportError,
 })
 const sessions = createSessionManager({
@@ -109,6 +117,7 @@ const gateway = createRendererGateway({
   events,
   commands: sessions,
   settings,
+  credentials: createCredentialCommands(credentials),
   onProtocolError: (error) => reportError(error),
 })
 

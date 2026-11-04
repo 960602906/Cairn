@@ -6,6 +6,8 @@
  * 只需新增实现，调用方不变。
  */
 
+import { CREDENTIAL_REF_PATTERN } from '@nexus/protocol'
+
 export type CredentialKind = 'local-key'
 
 export interface ResolvedCredential {
@@ -18,9 +20,7 @@ export interface CredentialProvider {
   resolve(ref: string): Promise<ResolvedCredential | undefined>
 }
 
-/** 凭据引用：字母、数字、`.`、`_`、`-`，1～128 个字符（例如提供方 id）。 */
-export const CREDENTIAL_REF = /^[A-Za-z0-9._-]{1,128}$/
-
+/** 凭据引用的格式见 `@nexus/protocol` 的 `CREDENTIAL_REF_PATTERN`。 */
 export function isCredentialRef(value: string): boolean {
-  return CREDENTIAL_REF.test(value)
+  return CREDENTIAL_REF_PATTERN.test(value)
 }

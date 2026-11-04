@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  RpcError,
   createEndpoint,
   HostForMain,
   MainForHost,
@@ -59,11 +60,13 @@ function fakeHost(behavior: FakeHostBehavior = {}) {
     onExit: (l) => exitListeners.push(l),
   }
   const calls: string[] = []
+  const inits: unknown[] = []
   const host = behavior.silent
     ? undefined
     : createEndpoint(hostSide, { local: HostForMain, remote: MainForHost })
-  host?.handle('host.init', () => {
+  host?.handle('host.init', (params) => {
     calls.push('init')
+    inits.push(params)
     if (behavior.initFails) throw new Error('bad init')
     return {}
   })
@@ -85,7 +88,7 @@ function fakeHost(behavior: FakeHostBehavior = {}) {
     return {}
   })
   const emit = (event: UnsequencedEvent) => host?.emit('host.event', { event })
-  return { proc, calls, exit, emit, isAlive: () => alive }
+  return { proc, calls, inits, exit, emit, isAlive: () => alive }
 }
 
 const init: HostInit = {
@@ -157,6 +160,33 @@ describe('startHost', () => {
     await handle.prompt({ messageId: 'm1', content: [{ type: 'text', text: 'hi' }] })
     await handle.abort('user')
     expect(host.calls).toEqual(['init', 'prompt:m1', 'abort:user'])
+  })
+
+  it('resolves the credential for the model and passes it only in host.init', async () => {
+    const host = fakeHost()
+    const resolveCredential = vi.fn(async () => ({ apiKey: 'secret-key-value' }))
+    const { supervisor } = setup(host, { resolveCredential })
+    await supervisor.startHost(init)
+    expect(resolveCredential).toHaveBeenCalledWith(init.model)
+    expect(host.inits).toEqual([{ ...init, credential: { apiKey: 'secret-key-value' } }])
+
+    const other = fakeHost()
+    const { supervisor: none } = setup(other, { resolveCredential: async () => undefined })
+    await none.startHost(init)
+    expect(other.inits).toEqual([init])
+  })
+
+  it('records host.start_failed with the cause when the credential cannot be resolved', async () => {
+    const host = fakeHost()
+    const { supervisor, onError } = setup(host, {
+      resolveCredential: () => Promise.reject(new RpcError('credentials.decrypt_failed')),
+    })
+    await expect(supervisor.startHost(init)).rejects.toMatchObject({ code: 'host.start_failed' })
+    expect(crashes()).toEqual([
+      { error: { code: 'host.start_failed', params: { cause: 'credentials.decrypt_failed' } } },
+    ])
+    expect(host.inits).toEqual([])
+    expect(onError).toHaveBeenCalled()
   })
 
   it('records host.start_failed when the process cannot be created', async () => {

@@ -20,7 +20,8 @@
  */
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { isCredentialRef, type CredentialProvider, type ResolvedCredential } from '@nexus/core'
-import { RpcError } from '@nexus/protocol'
+import { RpcError, type MainForRenderer } from '@nexus/protocol'
+import type { z } from 'zod'
 
 export const CredentialErrorCode = {
   /** 系统加密不可用。 */
@@ -60,6 +61,10 @@ export interface LocalKeyStore extends CredentialProvider {
   delete(ref: string): Promise<boolean>
   /** 是否保存过（不解密）。 */
   has(ref: string): boolean
+  /** 系统加密是否可用。 */
+  available(): Promise<boolean>
+  /** 本进程中保存或解析过的 Key，供日志脱敏按原文替换（`@nexus/core` 的 `redact`）。 */
+  knownSecrets(): readonly string[]
 }
 
 interface StoredEntry {
@@ -116,6 +121,7 @@ export function createLocalKeyStore(options: LocalKeyStoreOptions): LocalKeyStor
   const loaded = load(file, onError)
   let entries = loaded.entries
   let unreadable = loaded.unreadable
+  const seen = new Set<string>()
 
   const checkRef = (ref: string) => {
     if (!isCredentialRef(ref)) throw new RpcError(CredentialErrorCode.InvalidRef)
@@ -157,6 +163,7 @@ export function createLocalKeyStore(options: LocalKeyStoreOptions): LocalKeyStor
       if (value === '' || value.length > MAX_SECRET_LENGTH) {
         throw new RpcError(CredentialErrorCode.InvalidValue)
       }
+      seen.add(value)
       await checkAvailable()
       const entry = await encrypt(value)
       write({ ...entries, [ref]: entry })
@@ -173,6 +180,10 @@ export function createLocalKeyStore(options: LocalKeyStoreOptions): LocalKeyStor
     has(ref) {
       return isCredentialRef(ref) && Object.hasOwn(entries, ref)
     },
+
+    available: () => cipher.isAvailable(),
+
+    knownSecrets: () => [...seen],
 
     async resolve(ref): Promise<ResolvedCredential | undefined> {
       checkRef(ref)
@@ -195,7 +206,31 @@ export function createLocalKeyStore(options: LocalKeyStoreOptions): LocalKeyStor
           // 已由 encrypt / write 报告；旧密文仍可用
         }
       }
+      seen.add(decrypted.plain)
       return { apiKey: decrypted.plain }
     },
+  }
+}
+
+type RendererRequests = (typeof MainForRenderer)['requests']
+type Command<M extends keyof RendererRequests> = (
+  params: z.output<RendererRequests[M]['params']>,
+) => Promise<z.input<RendererRequests[M]['result']>>
+
+/** 界面的凭据命令（M1-03b）：只能写入、删除与查询是否已配置，不返回明文。 */
+export interface CredentialCommands {
+  readonly set: Command<'credentials.set'>
+  readonly delete: Command<'credentials.delete'>
+  readonly status: Command<'credentials.status'>
+}
+
+export function createCredentialCommands(store: LocalKeyStore): CredentialCommands {
+  return {
+    set: async ({ ref, secret }) => {
+      await store.set(ref, secret)
+      return {}
+    },
+    delete: async ({ ref }) => ({ deleted: await store.delete(ref) }),
+    status: async ({ ref }) => ({ configured: store.has(ref), available: await store.available() }),
   }
 }

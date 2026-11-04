@@ -35,6 +35,11 @@ export const HostForMain = defineSide({
          * （Runtime §13.2）。省略表示新运行。
          */
         resume: z.object({ state: RunState }).optional(),
+        /**
+         * 模型的凭据（ADR-0010，M1-03b）：主进程解密后只经这里传给宿主，不写入环境变量与日志。
+         * 没有保存凭据时省略（如本地模型、FakeRuntime）。
+         */
+        credential: z.object({ apiKey: z.string().min(1) }).optional(),
       }),
       result: z.object({}),
     },

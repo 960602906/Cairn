@@ -71,6 +71,13 @@ describe('selectHostRuntime', () => {
     expect(host.model.ref).toEqual(ref)
   })
 
+  it('优先使用 host.init 带来的凭据', () => {
+    expect(selectHostRuntime(piEnv)(ref, { apiKey: 'from-init' }).model.apiKey).toBe('from-init')
+    expect(modelFromEnv(ref, piEnv, { apiKey: 'from-init' }).apiKey).toBe('from-init')
+    const fake = selectHostRuntime({})(ref, { apiKey: 'from-init' })
+    expect(fake.runtime).toBeInstanceOf(FakeRuntime)
+  })
+
   it('NEXUS_RUNTIME=pi 时返回 PiRuntime 与环境变量中的模型', () => {
     const host = selectHostRuntime(piEnv)(ref)
     expect(host.runtime).toBeInstanceOf(PiRuntime)
