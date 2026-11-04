@@ -30,3 +30,4 @@
 | [0020](0020-hub-and-spoke-delegation.md) | 多 Agent 采用以父运行为中心的委派模式 | 已接受 |
 | [0021](0021-three-api-formats.md) | 首批支持 OpenAI、Anthropic、Gemini 三种接口格式 | 已接受 |
 | [0022](0022-prompt-enhancement.md) | 输入优化：由用户触发、确认后发送 | 已接受 |
+| [0023](0023-platform-and-pluggable-engine.md) | 自研平台 + 可插拔 Agent 引擎（首选 pi） | 已接受 |
