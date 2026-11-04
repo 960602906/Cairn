@@ -1,0 +1,20 @@
+{
+  "name": "spike-deepseek-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "S2：DeepSeek 推理内容、多轮与并行工具调用在 pi 下是否正常",
+  "type": "module",
+  "scripts": {
+    "run": "node src/cli.mjs",
+    "summarize": "node src/summarize.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0"
+  },
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "author": "NEXUS-OS",
+  "license": "UNLICENSED"
+}
