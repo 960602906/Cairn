@@ -5,6 +5,8 @@
  * 每次 `prompt` 取脚本中的下一轮；一轮由若干步骤组成，每步对应一次"模型调用"：
  *
  * - `tool`：流式输出可选的推理与文本，请求一次工具调用，经 `hooks` 放行与执行后进入下一步；
+ * - `tools`：同上，一次请求多个工具调用。与 pi 相同（Runtime §6.2）：全部是可并行的工具（`parallel`）时
+ *   并行执行，否则按顺序执行；结果按调用顺序进入历史；
  * - `reply`：流式输出推理与文本，作为最终回复结束本轮；
  * - `fail`：模拟模型请求失败，以 `loop.ended { outcome: 'failed' }` 结束本轮。
  *
@@ -39,7 +41,19 @@ export type FakeStep =
       readonly reasoning?: string
       readonly usage?: TokenUsage
     }
+  | {
+      readonly kind: 'tools'
+      readonly calls: readonly FakeToolCall[]
+      readonly text?: string
+      readonly reasoning?: string
+      readonly usage?: TokenUsage
+    }
   | { readonly kind: 'fail'; readonly error: ErrorInfo; readonly retryable: boolean }
+
+export interface FakeToolCall {
+  readonly name: string
+  readonly input: unknown
+}
 
 export interface FakeTurn {
   readonly steps: readonly FakeStep[]
@@ -74,7 +88,7 @@ function checkOptionalString(v: unknown, at: string, errors: string[]): void {
 
 /**
  * 校验脚本（例如端到端测试从 JSON 读入的脚本）。
- * 规则：每轮至少一步；`reply` 与 `fail` 只能是最后一步，`tool` 不能是最后一步。
+ * 规则：每轮至少一步；`reply` 与 `fail` 只能是最后一步，`tool`、`tools` 不能是最后一步。
  */
 export function parseFakeScript(input: unknown): FakeScriptResult {
   const errors: string[] = []
@@ -119,6 +133,26 @@ export function parseFakeScript(input: unknown): FakeScriptResult {
             checkUsage(step.usage, sat, errors)
             if (last) errors.push(`${sat}: tool 不能是最后一步`)
             break
+          case 'tools':
+            if (!Array.isArray(step.calls) || step.calls.length === 0) {
+              errors.push(`${sat}.calls: 必须是非空数组`)
+            } else {
+              step.calls.forEach((c: unknown, i) => {
+                if (
+                  !isRecord(c) ||
+                  typeof c.name !== 'string' ||
+                  c.name === '' ||
+                  !('input' in c)
+                ) {
+                  errors.push(`${sat}.calls[${i}]: 需要非空 name 与 input`)
+                }
+              })
+            }
+            checkOptionalString(step.text, `${sat}.text`, errors)
+            checkOptionalString(step.reasoning, `${sat}.reasoning`, errors)
+            checkUsage(step.usage, sat, errors)
+            if (last) errors.push(`${sat}: tools 不能是最后一步`)
+            break
           case 'fail':
             if (
               !isRecord(step.error) ||
@@ -131,7 +165,7 @@ export function parseFakeScript(input: unknown): FakeScriptResult {
             if (!last) errors.push(`${sat}: fail 只能是最后一步`)
             break
           default:
-            errors.push(`${sat}.kind: 必须是 reply、tool 或 fail`)
+            errors.push(`${sat}.kind: 必须是 reply、tool、tools 或 fail`)
         }
       })
     })
@@ -311,15 +345,18 @@ class FakeSession implements RuntimeSession {
       this.#emit({ type: 'text.delta', text: piece })
     }
 
-    const call: RuntimeToolCall | undefined =
-      step.kind === 'tool'
-        ? { id: `fake-call-${++this.#callCounter}`, name: step.name, input: step.input }
-        : undefined
+    const requested: readonly FakeToolCall[] =
+      step.kind === 'tool' ? [step] : step.kind === 'tools' ? step.calls : []
+    const calls: RuntimeToolCall[] = requested.map((c) => ({
+      id: `fake-call-${++this.#callCounter}`,
+      name: c.name,
+      input: c.input,
+    }))
     const message: AssistantMessage = {
       role: 'assistant',
       content: text === '' ? [] : [{ type: 'text', text }],
       ...(reasoning === '' ? {} : { reasoning: { text: reasoning, providerId: model.providerId } }),
-      ...(call ? { toolCalls: [call] } : {}),
+      ...(calls.length > 0 ? { toolCalls: calls } : {}),
       model,
       ts: this.#now(),
     }
@@ -328,22 +365,33 @@ class FakeSession implements RuntimeSession {
     this.#emit({ type: 'message.completed', message })
     this.#emit({
       type: 'step.completed',
-      finishReason: call ? 'tool_calls' : 'stop',
+      finishReason: calls.length > 0 ? 'tool_calls' : 'stop',
       ...(step.usage ? { usage: step.usage } : {}),
     })
 
-    if (!call) {
+    if (calls.length === 0) {
       this.#emit({ type: 'loop.ended', outcome: 'completed' })
       return true
     }
 
-    const result = await this.#runTool(call, signal)
-    this.#history.push({
-      role: 'tool',
-      toolCallId: call.id,
-      content: [...result.content],
-      status: result.status,
-      ts: this.#now(),
+    const parallel = calls.every(
+      (c) => this.#init.tools.find((t) => t.name === c.name)?.parallel === true,
+    )
+    const results: RuntimeToolResult[] = []
+    if (parallel) {
+      results.push(...(await Promise.all(calls.map((c) => this.#runTool(c, signal)))))
+    } else {
+      for (const call of calls) results.push(await this.#runTool(call, signal))
+    }
+    calls.forEach((call, i) => {
+      const result = results[i]!
+      this.#history.push({
+        role: 'tool',
+        toolCallId: call.id,
+        content: [...result.content],
+        status: result.status,
+        ts: this.#now(),
+      })
     })
     return false
   }

@@ -147,7 +147,7 @@ export interface ToolRegistry {
   get(name: string): ToolDefinition | undefined
   /** 按注册顺序。 */
   list(): ToolDefinition[]
-  /** 给模型的工具说明；`include` 用于按 Agent 的 `tools.allow` 过滤。 */
+  /** 给模型的工具说明；`include` 用于按 Agent 的 `tools.allow` 过滤。`read` 类工具标为可并行。 */
   specs(include?: (definition: ToolDefinition) => boolean): RuntimeToolSpec[]
   /** 按工具的 `inputSchema` 校验参数；工具不存在时同样返回失败，说明中写明。 */
   validate(name: string, input: unknown): ToolInputValidation
@@ -202,7 +202,12 @@ export function createToolRegistry(): ToolRegistry {
       return [...entries.values()]
         .map((e) => e.definition)
         .filter((d) => include?.(d) ?? true)
-        .map((d) => ({ name: d.name, description: d.description, inputSchema: d.inputSchema }))
+        .map((d) => ({
+          name: d.name,
+          description: d.description,
+          inputSchema: d.inputSchema,
+          ...(d.category === 'read' ? { parallel: true } : {}),
+        }))
     },
 
     validate(name, input) {

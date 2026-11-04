@@ -6,6 +6,7 @@ import type {
   RuntimeSession,
   RuntimeToolCall,
   RuntimeToolResult,
+  RuntimeToolSpec,
   UserMessage,
 } from '@nexus/core'
 import type { CanonicalMessage } from '@nexus/protocol'
@@ -68,6 +69,7 @@ async function setup(
     hooks?: Partial<RuntimeHooks>
     history?: CanonicalMessage[]
     profile?: Partial<ResolvedModel['profile']>
+    tools?: readonly RuntimeToolSpec[]
   } = {},
 ): Promise<Harness> {
   mock = await startMockOpenAI(responses)
@@ -87,7 +89,7 @@ async function setup(
   const session = await new PiRuntime().createSession({
     model: model(mock.baseUrl, options.profile),
     systemPrompt: '你是客服助手。',
-    tools: TOOLS,
+    tools: options.tools ?? TOOLS,
     history: options.history ?? [],
     signal: controller.signal,
     hooks,
@@ -233,6 +235,54 @@ describe('PiRuntime：带工具调用的对话（openai 格式 mock 端点）', 
     await h.session.prompt(user('hi'))
     expect(JSON.stringify(mock!.requests[0]!.body)).not.toContain('"enabled"')
     expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'completed' })
+  })
+})
+
+describe('PiRuntime：并行工具调用（Runtime §6.2）', () => {
+  const READ = { ...TOOLS[0]!, parallel: true }
+  const REFUND = { ...TOOLS[0]!, name: 'refund' }
+  const batch = (...calls: [string, string][]): MockResponse => ({
+    kind: 'stream',
+    chunks: [
+      ...calls.map(([id, name], i) => sse.toolCall(i, id, name, `{"order_id":"${id}"}`)),
+      sse.finish('tool_calls', { prompt: 50, completion: 12 }),
+    ],
+  })
+
+  /** 记录执行区间：每个调用先登记开始，等一轮事件循环后结束。 */
+  function tracking() {
+    const log: string[] = []
+    const executeTool: RuntimeHooks['executeTool'] = async (call) => {
+      log.push(`start ${call.id}`)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      log.push(`end ${call.id}`)
+      return { status: 'ok', content: [{ type: 'text', text: call.id }] }
+    }
+    return { log, executeTool }
+  }
+
+  it('一批全是可并行的工具：同时执行，结果按模型给出的顺序回填', async () => {
+    const t = tracking()
+    const h = await setup([batch(['c1', 'get_order'], ['c2', 'get_order']), ANSWER_TURN], {
+      tools: [READ],
+      hooks: { executeTool: t.executeTool },
+    })
+    await h.session.prompt(user('查两个订单'))
+    expect(t.log.slice(0, 2)).toEqual(['start c1', 'start c2'])
+    const history = h.session.exportHistory()
+    expect(history.filter((m) => m.role === 'tool').map((m) => m.toolCallId)).toEqual(['c1', 'c2'])
+  })
+
+  it('一批中有不可并行的工具：整批按顺序执行', async () => {
+    const t = tracking()
+    const h = await setup([batch(['c1', 'get_order'], ['c2', 'refund']), ANSWER_TURN], {
+      tools: [READ, REFUND],
+      hooks: { executeTool: t.executeTool },
+    })
+    await h.session.prompt(user('查订单并退款'))
+    expect(t.log).toEqual(['start c1', 'end c1', 'start c2', 'end c2'])
+    const body = mock!.requests[0]!.body['tools'] as unknown[]
+    expect(body).toHaveLength(2)
   })
 })
 

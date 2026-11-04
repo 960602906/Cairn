@@ -9,6 +9,7 @@ import {
   type RuntimeHooks,
   type RuntimeSession,
   type RuntimeToolResult,
+  type RuntimeToolSpec,
   type UserMessage,
 } from './index.js'
 
@@ -35,6 +36,7 @@ const ok: RuntimeToolResult = { status: 'ok', content: [{ type: 'text', text: '�
 interface Setup {
   hooks?: Partial<RuntimeHooks>
   signal?: AbortSignal
+  tools?: RuntimeToolSpec[]
 }
 
 async function open(script: FakeScript, setup: Setup = {}) {
@@ -42,7 +44,7 @@ async function open(script: FakeScript, setup: Setup = {}) {
   const session = await runtime.createSession({
     model,
     systemPrompt: '',
-    tools: [],
+    tools: setup.tools ?? [],
     history: [],
     signal: setup.signal ?? new AbortController().signal,
     hooks: {
@@ -148,6 +150,70 @@ describe('FakeRuntime：脚本输出', () => {
       content: ok.content,
       status: 'ok',
       ts: 100,
+    })
+  })
+
+  describe('一步多个工具调用', () => {
+    const spec = (name: string, parallel?: boolean): RuntimeToolSpec => ({
+      name,
+      description: name,
+      inputSchema: { type: 'object' },
+      ...(parallel === undefined ? {} : { parallel }),
+    })
+    const script = (names: string[]): FakeScript => ({
+      turns: [
+        {
+          steps: [
+            { kind: 'tools', calls: names.map((name) => ({ name, input: {} })) },
+            { kind: 'reply', text: '好了' },
+          ],
+        },
+      ],
+    })
+    function tracking() {
+      const log: string[] = []
+      const executeTool: RuntimeHooks['executeTool'] = async (call) => {
+        log.push(`start ${call.id}`)
+        await Promise.resolve()
+        log.push(`end ${call.id}`)
+        return { status: 'ok', content: [{ type: 'text', text: call.id }] }
+      }
+      return { log, executeTool }
+    }
+
+    it('全部可并行：同时执行，结果按调用顺序进入历史', async () => {
+      const t = tracking()
+      const { session } = await open(script(['read', 'read']), {
+        tools: [spec('read', true)],
+        hooks: { executeTool: t.executeTool },
+      })
+      await session.prompt(user('x'))
+      expect(t.log.slice(0, 2)).toEqual(['start fake-call-1', 'start fake-call-2'])
+      const history = session.exportHistory()
+      expect(history[1]).toMatchObject({
+        toolCalls: [{ id: 'fake-call-1' }, { id: 'fake-call-2' }],
+      })
+      expect(history.slice(2, 4).map((m) => (m.role === 'tool' ? m.toolCallId : ''))).toEqual([
+        'fake-call-1',
+        'fake-call-2',
+      ])
+    })
+
+    it('有不可并行或未知的工具：按顺序执行', async () => {
+      for (const tools of [[spec('read', true), spec('write', false)], [spec('read', true)]]) {
+        const t = tracking()
+        const { session } = await open(script(['read', 'write']), {
+          tools,
+          hooks: { executeTool: t.executeTool },
+        })
+        await session.prompt(user('x'))
+        expect(t.log).toEqual([
+          'start fake-call-1',
+          'end fake-call-1',
+          'start fake-call-2',
+          'end fake-call-2',
+        ])
+      }
     })
   })
 
@@ -417,6 +483,12 @@ describe('parseFakeScript', () => {
           ],
         },
         { steps: [{ kind: 'fail', error: { code: 'x' }, retryable: false }] },
+        {
+          steps: [
+            { kind: 'tools', calls: [{ name: 'a', input: 1 }], text: 't', reasoning: 'r' },
+            { kind: 'reply', text: 'x' },
+          ],
+        },
       ],
     }
     expect(parseFakeScript(script)).toEqual({ ok: true, script })
@@ -434,7 +506,19 @@ describe('parseFakeScript', () => {
     [{ turns: [{ steps: ['x'] }] }, 'turns[0].steps[0]: 必须是对象'],
     [
       { turns: [{ steps: [{ kind: 'dance' }] }] },
-      'turns[0].steps[0].kind: 必须是 reply、tool 或 fail',
+      'turns[0].steps[0].kind: 必须是 reply、tool、tools 或 fail',
+    ],
+    [
+      { turns: [{ steps: [{ kind: 'tools', calls: [] }] }] },
+      'turns[0].steps[0].calls: 必须是非空数组',
+    ],
+    [
+      { turns: [{ steps: [{ kind: 'tools', calls: [{ name: '' }, 'x'] }] }] },
+      'turns[0].steps[0].calls[1]: 需要非空 name 与 input',
+    ],
+    [
+      { turns: [{ steps: [{ kind: 'tools', calls: [{ name: 'a', input: 1 }] }] }] },
+      'turns[0].steps[0]: tools 不能是最后一步',
     ],
     [{ turns: [{ steps: [{ kind: 'reply' }] }] }, 'turns[0].steps[0].text: 必须是字符串'],
     [
