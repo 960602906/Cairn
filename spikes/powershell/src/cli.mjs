@@ -24,11 +24,19 @@ const only = args['only']
 const wanted = args['shells']?.split(',')
 const work = path.resolve('work')
 
-/** 必须通过的进程树检查：作业对象两种方式全部场景；taskkill 只要求有父子关系的场景。 */
-const treeRequired = (/** @type {string} */ scenario, /** @type {string} */ strategy) =>
-  strategy === 'job' ||
-  strategy === 'job-close' ||
-  (strategy === 'taskkill' && scenario !== 'orphan')
+/**
+ * 必须通过的进程树检查：作业对象两种方式全部场景；taskkill 只要求有父子关系的场景。
+ * 商店版 pwsh 应用中不选用，只记录结果。
+ */
+const treeRequired = (
+  /** @type {{ packaged: boolean }} */ shell,
+  /** @type {string} */ scenario,
+  /** @type {string} */ strategy,
+) =>
+  !shell.packaged &&
+  (strategy === 'job' ||
+    strategy === 'job-close' ||
+    (strategy === 'taskkill' && scenario !== 'orphan'))
 
 const shells = findShells().filter((s) => !wanted || wanted.includes(s.id))
 if (shells.length === 0) {
@@ -56,8 +64,15 @@ for (const shell of shells) {
     { wrap: 'raw' },
   )
   /** @type {Record<string, unknown>} */
-  const entry = { id: shell.id, version: shell.version, locale: text(info.stdout) }
-  console.log(`== ${shell.id} ${shell.version} (${entry.locale})`)
+  const entry = {
+    id: shell.id,
+    version: shell.version,
+    packaged: shell.packaged,
+    locale: text(info.stdout),
+  }
+  console.log(
+    `== ${shell.id} ${shell.version} (${entry.locale})${shell.packaged ? ' [商店版，进程树检查只记录]' : ''}`,
+  )
 
   if (!only || only === 'encoding') {
     entry.startupMs = await startupMs(shell)
@@ -84,7 +99,7 @@ for (const shell of shells) {
     for (const scenario of SCENARIOS) {
       for (const strategy of STRATEGIES) {
         const r = await runTreeCase(shell, scenario, strategy, work)
-        const required = treeRequired(scenario, strategy)
+        const required = treeRequired(shell, scenario, strategy)
         tree.push({ scenario, strategy, required, ...r })
         console.log(
           `  tree ${scenario.padEnd(14)} ${strategy.padEnd(10)} ${r.ok ? 'ok' : 'FAIL'} ${r.detail}`,

@@ -147,9 +147,20 @@ node src\summarize.mjs result-zh.json > result-zh.md
 - GitHub Actions 的运行器本身也把进程放在作业中，嵌套作业（Windows 8 起）正常工作。
 - koffi 在 npm 11 默认不运行安装脚本的情况下可用（预编译二进制来自可选依赖）。
 
+### 中文系统本地复测（lan，2026-11-04）
+
+Windows 11（10.0.26100），系统区域设置为中文：5.1 为 `ACP=936 OEM=936 culture=zh-CN`；PowerShell 7.6.9 为 `ACP=65001 OEM=936`。PowerShell 7.6.9 是商店版：经 `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`（应用执行别名）启动，安装在 `C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.9.0_x64__8wekyb3d8bbwe`。
+
+- **编码**：两个版本的结果与 CI 一致，候选做法全部通过。不做设置时同样乱码（输出按 936 编码）。Python 默认按 GBK 输出，按 UTF-8 解码后乱码，设 `PYTHONUTF8=1` 后正常。
+- **进程树，5.1**：与 CI 一致，作业对象全部通过，`taskkill /T` 约 220 ms。
+- **进程树，商店版 PowerShell 7**：
+  - `AssignProcessToJobObject` 返回成功，但 PowerShell 创建的子孙进程**都不在作业里**，`TerminateJobObject` 和关闭句柄后全部残留。
+  - `taskkill /T` 的结果与 5.1 相同：嵌套场景可以结束，孤儿进程残留。
+  - CI 上的 PowerShell 7 装在 `C:\Program Files\PowerShell\7`（MSI 版），没有这个问题。原因应是商店版作为打包应用运行，子进程脱离了调用方的作业。
+
 ## 结论
 
-- **中文输出**：候选做法在 CI 的英文系统上，两个版本全部必须项通过；中文系统的结论待本地复测（见上文命令）。
+- **中文输出**：候选做法在 CI 的英文系统和本地中文系统上全部通过。
 - **候选做法**写回 ADR-0012：
   - 启动参数：`-NoProfile -NonInteractive -OutputFormat Text -EncodedCommand`；
   - 前置脚本：UTF-8 输出、文件默认 UTF-8、关闭进度条、PowerShell 7 关闭颜色；
@@ -158,4 +169,5 @@ node src\summarize.mjs result-zh.json > result-zh.md
   - 命令行超过约 30000 个字符时改用临时 `.ps1`（带 BOM 的 UTF-8）+ `-File`；
   - 子进程环境设 `PYTHONUTF8=1`（Python 默认按系统代码页输出）。
 - **进程树**：只用 Job Object。`taskkill /T` 不能结束父进程已退出的子孙进程，不满足“无残留”，只在作业对象不可用时作为回退。`spawn` 后立即放进作业；超时或停止时 `TerminateJobObject`；同时设 `KILL_ON_JOB_CLOSE`，应用退出时不留下进程。
+- **选择哪个 PowerShell**：优先用非商店版的 PowerShell 7，判断方法是实际路径不在 `WindowsApps` 下；否则用 Windows PowerShell 5.1（系统自带，全部检查通过）。商店版 pwsh 不选用：它的子进程脱离作业对象，超时后会残留。
 - **已知限制**：`spawn` 与放进作业之间有极短的间隔，这期间 PowerShell 还在初始化（实测启动约 300 ms），尚未创建子进程。如需完全消除，可在 M1 改为以挂起方式创建进程（需原生模块），目前不需要。

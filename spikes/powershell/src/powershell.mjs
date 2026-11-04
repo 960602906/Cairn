@@ -68,10 +68,13 @@ export function wrapScript(script, wrap, options = {}) {
 
 /**
  * 可用的 PowerShell：Windows PowerShell 5.1 与 PowerShell 7（如已安装）。
- * @returns {{ id: 'powershell' | 'pwsh', exe: string, version: string }[]}
+ *
+ * `packaged`：商店版（MSIX，安装在 WindowsApps 下）。它的子进程会脱离调用方的作业对象（lan 本地实测），
+ * 应用中不选用。
+ * @returns {{ id: 'powershell' | 'pwsh', exe: string, version: string, packaged: boolean }[]}
  */
 export function findShells() {
-  /** @type {{ id: 'powershell' | 'pwsh', exe: string, version: string }[]} */
+  /** @type {{ id: 'powershell' | 'pwsh', exe: string, version: string, packaged: boolean }[]} */
   const shells = []
   for (const id of /** @type {const} */ (['powershell', 'pwsh'])) {
     const exe = process.platform === 'win32' ? `${id}.exe` : id
@@ -86,7 +89,10 @@ export function findShells() {
       ],
       { encoding: 'utf8', windowsHide: true },
     )
-    if (probe.status === 0) shells.push({ id, exe, version: probe.stdout.trim() })
+    if (probe.status === 0) {
+      const version = probe.stdout.trim()
+      shells.push({ id, exe, version, packaged: /\\WindowsApps\\/i.test(version) })
+    }
   }
   return shells
 }
