@@ -1,8 +1,11 @@
 /**
  * 工作区路径校验：纯路径规则（M1-06a；架构 §17、§18）。
  *
- * `resolveWorkspacePathLexical(root, input, style)` 不访问文件系统，只按路径文本规范化并判断是否位于工作区内。
- * 符号链接、目录联接、真实路径与不存在的文件在 M1-06b 处理（在本函数的结果上再校验真实路径）。
+ * - `resolveWorkspacePathLexical(root, input, style)`（M1-06a）不访问文件系统，只按路径文本规范化并判断是否
+ *   位于工作区内。
+ * - `resolveWorkspacePath(root, input, options)`（M1-06b）在此基础上按真实路径再校验：解析符号链接、目录联接
+ *   与 Windows 8.3 短文件名（由注入的 `realpath` 完成，Node 中为 `fs.realpath.native`）；文件不存在时按已
+ *   存在的最近父目录判定；悬空链接拒绝。返回真实路径，权限规则据此判定，链接不能绕过规则。
  *
  * core 不依赖 Node（界面也使用 core），因此不用 `node:path`，按两种风格自行解析；测试中与 Node 的
  * `path.posix` / `path.win32` 对照。
@@ -40,6 +43,10 @@ export const PathErrorCode = {
   OutsideWorkspace: 'path.outside_workspace',
   /** 工作区根目录不是绝对路径（调用方错误）。 */
   RootNotAbsolute: 'path.root_not_absolute',
+  /** 工作区根目录不存在。 */
+  RootNotFound: 'path.root_not_found',
+  /** 路径经过悬空的符号链接（链接存在，目标不存在）：写入时会在链接目标处创建文件，无法事先判定位置。 */
+  BrokenLink: 'path.broken_link',
 } as const
 
 export type PathErrorCode = (typeof PathErrorCode)[keyof typeof PathErrorCode]
@@ -202,4 +209,61 @@ export function resolveWorkspacePathLexical(
       relative: relative.length === 0 ? '.' : relative.join('/'),
     },
   }
+}
+
+/** `resolveWorkspacePath` 用到的文件系统操作（core 不依赖 Node，由调用方注入）。 */
+export interface PathFileSystem {
+  /** 解析为真实路径（跟随符号链接与目录联接）；路径不存在时返回 `undefined`，其他错误抛出。 */
+  realpath(path: string): Promise<string | undefined>
+  /** 路径本身是否存在（不跟随链接，即 `lstat`）。 */
+  exists(path: string): Promise<boolean>
+}
+
+export interface ResolveWorkspacePathOptions {
+  readonly style: PathStyle
+  readonly fs: PathFileSystem
+}
+
+/**
+ * 把 `input` 解析为工作区内的真实路径。先按路径文本校验（`resolveWorkspacePathLexical`），再解析真实路径：
+ * 从目标开始向上找到已存在的最近一级，取其真实路径，拼上尚不存在的部分，判断是否仍在工作区根目录的真实路径
+ * 之内。返回的 `absolute` 与 `relative` 都基于真实路径。
+ *
+ * 校验与使用之间文件系统仍可能变化（TOCTOU），工具应直接使用返回的真实路径。
+ */
+export async function resolveWorkspacePath(
+  root: string,
+  input: string,
+  options: ResolveWorkspacePathOptions,
+): Promise<PathResolution> {
+  const { style, fs } = options
+  const lexical = resolveWorkspacePathLexical(root, input, style)
+  if (!lexical.ok) return lexical
+  const rootPath = resolveWorkspacePathLexical(root, '.', style)
+  /* v8 ignore next -- 上一步已校验过 root */
+  if (!rootPath.ok) return rootPath
+  const realRoot = await fs.realpath(rootPath.path.absolute)
+  if (realRoot === undefined) return fail(PathErrorCode.RootNotFound)
+
+  const sep = style === 'posix' ? '/' : '\\'
+  const parts = lexical.path.relative === '.' ? [] : lexical.path.relative.split('/')
+  const append = (base: string, rest: readonly string[]) =>
+    rest.length === 0 ? base : `${base.endsWith(sep) ? base : base + sep}${rest.join(sep)}`
+  // 从目标向上找到已存在的最近一级（根目录本身已存在）。
+  let real = realRoot
+  let existing = 0
+  for (let n = parts.length; n > 0; n--) {
+    const candidate = append(rootPath.path.absolute, parts.slice(0, n))
+    const resolved = await fs.realpath(candidate)
+    if (resolved !== undefined) {
+      real = resolved
+      existing = n
+      break
+    }
+    // 链接本身存在而目标不存在：拒绝（写入会在链接目标处创建文件）。
+    if (await fs.exists(candidate)) return fail(PathErrorCode.BrokenLink)
+  }
+  const full = append(real, parts.slice(existing))
+  const checked = resolveWorkspacePathLexical(realRoot, full, style)
+  return checked.ok ? checked : fail(PathErrorCode.OutsideWorkspace)
 }

@@ -1,6 +1,12 @@
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PathErrorCode, resolveWorkspacePathLexical, type PathStyle } from './workspace-path.js'
+import {
+  PathErrorCode,
+  resolveWorkspacePath,
+  resolveWorkspacePathLexical,
+  type PathFileSystem,
+  type PathStyle,
+} from './workspace-path.js'
 
 const ok = (absolute: string, relative: string) => ({ ok: true, path: { absolute, relative } })
 const err = (code: string) => ({ ok: false, code })
@@ -208,4 +214,58 @@ describe('与 Node path 对照', () => {
       }
     })
   }
+})
+
+describe('resolveWorkspacePath：注入的文件系统', () => {
+  /** 由真实路径表构造的文件系统：表中没有的路径不存在；`links` 中的路径是悬空链接。 */
+  function fakeFs(real: Record<string, string>, links: string[] = []): PathFileSystem {
+    return {
+      realpath: async (p) => real[p],
+      exists: async (p) => p in real || links.includes(p),
+    }
+  }
+
+  it('根目录为文件系统根时不重复分隔符', async () => {
+    const fs = fakeFs({ '/': '/', '/etc': '/etc' })
+    expect(await resolveWorkspacePath('/', 'etc/new', { style: 'posix', fs })).toEqual(
+      ok('/etc/new', 'etc/new'),
+    )
+    const win = fakeFs({ 'C:\\': 'C:\\', 'C:\\w': 'C:\\w' })
+    expect(await resolveWorkspacePath('C:\\', 'w\\x', { style: 'win32', fs: win })).toEqual(
+      ok('C:\\w\\x', 'w/x'),
+    )
+  })
+
+  it('Windows：真实路径带 \\\\?\\ 前缀、短文件名展开为长文件名', async () => {
+    const fs = fakeFs({
+      'C:\\PROGRA~1\\proj': '\\\\?\\C:\\Program Files\\proj',
+      'C:\\PROGRA~1\\proj\\SRC~1': '\\\\?\\C:\\Program Files\\proj\\source',
+    })
+    expect(
+      await resolveWorkspacePath('C:\\PROGRA~1\\proj', 'SRC~1\\new.ts', { style: 'win32', fs }),
+    ).toEqual(ok('C:\\Program Files\\proj\\source\\new.ts', 'source/new.ts'))
+  })
+
+  it('真实路径越界、悬空链接、根目录不存在', async () => {
+    const fs = fakeFs({ '/w': '/w', '/w/l': '/etc' }, ['/w/d'])
+    const opts = { style: 'posix' as const, fs }
+    expect(await resolveWorkspacePath('/w', 'l/x', opts)).toEqual(
+      err(PathErrorCode.OutsideWorkspace),
+    )
+    expect(await resolveWorkspacePath('/w', 'd/x', opts)).toEqual(err(PathErrorCode.BrokenLink))
+    expect(await resolveWorkspacePath('/nope', 'x', opts)).toEqual(err(PathErrorCode.RootNotFound))
+    expect(await resolveWorkspacePath('/w', '../x', opts)).toEqual(
+      err(PathErrorCode.OutsideWorkspace),
+    )
+  })
+
+  it('文件系统的其他错误原样抛出', async () => {
+    const fs: PathFileSystem = {
+      realpath: async () => {
+        throw new Error('EACCES')
+      },
+      exists: async () => true,
+    }
+    await expect(resolveWorkspacePath('/w', 'x', { style: 'posix', fs })).rejects.toThrow('EACCES')
+  })
 })
