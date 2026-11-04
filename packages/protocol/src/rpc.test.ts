@@ -286,23 +286,48 @@ describe('实际接口定义', () => {
     )
   })
 
-  it('渲染 ↔ 主：settings.update 只接受支持的语言', async () => {
+  it('渲染 ↔ 主：settings.update 只接受支持的语言与合法的提供方配置', async () => {
     const [a, b] = channelPair()
     const main = createEndpoint(a, { local: MainForRenderer, remote: RendererForMain })
     const renderer = createEndpoint(b, { local: RendererForMain, remote: MainForRenderer })
     const update = vi.fn((patch: { locale?: 'zh-CN' | 'en-US' | undefined }) => ({
       locale: patch.locale ?? 'zh-CN',
+      providers: [],
     }))
     main.handle('settings.update', update)
-    main.handle('settings.get', () => ({ locale: 'zh-CN' }))
-    await expect(renderer.request('settings.get', {})).resolves.toEqual({ locale: 'zh-CN' })
+    main.handle('settings.get', () => ({ locale: 'zh-CN', providers: [] }))
+    await expect(renderer.request('settings.get', {})).resolves.toEqual({
+      locale: 'zh-CN',
+      providers: [],
+    })
     await expect(renderer.request('settings.update', { locale: 'en-US' })).resolves.toEqual({
       locale: 'en-US',
+      providers: [],
     })
     await expect(
       renderer.request('settings.update', { locale: 'fr-FR' } as never),
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
-    expect(update).toHaveBeenCalledOnce()
+    const provider = {
+      id: 'ollama',
+      kind: 'openai' as const,
+      displayName: 'Ollama',
+      baseUrl: 'http://localhost:11434/v1',
+      models: [],
+    }
+    for (const providers of [
+      [provider, provider],
+      [{ ...provider, baseUrl: 'file:///etc/passwd' }],
+      [{ ...provider, id: 'has space' }],
+      [{ ...provider, kind: 'ollama' }],
+    ]) {
+      await expect(
+        renderer.request('settings.update', { providers } as never),
+      ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+    }
+    await expect(
+      renderer.request('settings.update', { providers: [provider], defaultModel: null }),
+    ).resolves.toMatchObject({ locale: 'zh-CN' })
+    expect(update).toHaveBeenCalledTimes(2)
   })
 
   it('主 ↔ 宿主：host.init 携带历史，host.event 推送无 seq 事件', async () => {

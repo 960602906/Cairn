@@ -3,8 +3,9 @@
  * 渲染进程只调用主进程的请求、接收主进程的事件；渲染进程自身不提供接口。
  */
 import { z } from 'zod'
-import { ContentPart, Id, Timestamp } from '../common.js'
+import { ContentPart, Id, ModelRef, Timestamp } from '../common.js'
 import { EventEnvelopeSchema } from '../events.js'
+import { CONFIG_ID_PATTERN, ProviderConfigList } from '../providers.js'
 import { defineSide } from '../rpc.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
@@ -26,6 +27,8 @@ export const SessionSummary = z.object({
   status: SessionStatus,
   createdAt: Timestamp,
   updatedAt: Timestamp,
+  /** 会话使用的模型（M1-04a）；之前创建的会话没有，使用默认模型。 */
+  model: ModelRef.optional(),
 })
 export type SessionSummary = z.infer<typeof SessionSummary>
 
@@ -33,12 +36,31 @@ export type SessionSummary = z.infer<typeof SessionSummary>
 export const Locale = z.enum(['zh-CN', 'en-US'])
 export type Locale = z.infer<typeof Locale>
 
-/** 应用设置。之后的设置项只能以可选字段向后兼容地追加。 */
-export const Settings = z.object({ locale: Locale })
+/**
+ * 应用设置。之后的设置项只能以可选字段向后兼容地追加。
+ * - `providers`：模型提供方配置（M1-04a），不含 Key；
+ * - `defaultModel`：新会话默认使用的模型，指向 `providers` 中的某个模型；没有设置时不出现。
+ */
+export const Settings = z.object({
+  locale: Locale,
+  providers: ProviderConfigList,
+  defaultModel: ModelRef.optional(),
+})
 export type Settings = z.infer<typeof Settings>
 
+/**
+ * 设置的更新：只改给出的项。`providers` 整体替换；`defaultModel` 为 null 时清除。
+ * 默认模型必须是（更新后的）提供方列表中的模型；删除默认模型所在的提供方或模型时，默认模型一并清除。
+ */
+export const SettingsPatch = z.object({
+  locale: Locale.optional(),
+  providers: ProviderConfigList.optional(),
+  defaultModel: ModelRef.nullable().optional(),
+})
+export type SettingsPatch = z.infer<typeof SettingsPatch>
+
 /** 凭据引用（ADR-0010）：字母、数字、`.`、`_`、`-`，1～128 个字符（例如提供方 id）。 */
-export const CREDENTIAL_REF_PATTERN = /^[A-Za-z0-9._-]{1,128}$/
+export const CREDENTIAL_REF_PATTERN = CONFIG_ID_PATTERN
 export const CredentialRef = z.string().regex(CREDENTIAL_REF_PATTERN)
 
 /** seq 从 1 开始；afterSeq 为 0 表示从头读取。 */
@@ -47,7 +69,12 @@ const Seq = z.number().int().nonnegative()
 export const MainForRenderer = defineSide({
   requests: {
     'session.create': {
-      params: z.object({ projectPath: z.string().min(1), title: z.string().optional() }),
+      /** `model` 省略时使用设置中的默认模型；给出时必须是已配置的模型。 */
+      params: z.object({
+        projectPath: z.string().min(1),
+        title: z.string().optional(),
+        model: ModelRef.optional(),
+      }),
       result: z.object({ sessionId: Id }),
     },
     'session.list': {
@@ -81,7 +108,7 @@ export const MainForRenderer = defineSide({
     },
     /** 只更新给出的设置项，返回更新后的全部设置。 */
     'settings.update': {
-      params: Settings.partial(),
+      params: SettingsPatch,
       result: Settings,
     },
     /**

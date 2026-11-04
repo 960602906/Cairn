@@ -117,6 +117,23 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.sessions.get('missing')).toBeUndefined()
       })
 
+      it('records the session model', () => {
+        seed()
+        const model = { providerId: 'deepseek', modelId: 'deepseek-chat' }
+        const created = storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p1',
+          workspacePath: '/work/demo',
+          title: '',
+          model,
+        })
+        expect(created.model).toEqual(model)
+        expect(storage.sessions.get('s2')?.model).toEqual(model)
+        expect(storage.sessions.rename('s2', 'x').model).toEqual(model)
+        expect(storage.sessions.list().find((s) => s.sessionId === 's2')?.model).toEqual(model)
+        expect(storage.sessions.get('s1')).not.toHaveProperty('model')
+      })
+
       it('rejects unknown projects and duplicate ids', () => {
         seed()
         expectStorageError(
@@ -292,6 +309,78 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(read?.payload).toMatchObject({ messageId: 'msg-1' })
         ;(read?.payload as { messageId: string }).messageId = 'changed'
         expect(storage.events.readAfter('s1', 0)[0]?.payload).toMatchObject({ messageId: 'msg-1' })
+      })
+    })
+
+    describe('providers', () => {
+      const deepseek = {
+        id: 'deepseek',
+        kind: 'openai' as const,
+        displayName: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com',
+        credentialRef: 'deepseek',
+        models: [
+          {
+            id: 'deepseek-chat',
+            contextWindow: 128_000,
+            maxOutputTokens: 8_192,
+            supportsTools: true,
+            supportsParallelToolCalls: true,
+            supportsReasoning: false,
+            verifiedAt: 5,
+          },
+        ],
+      }
+      const ollama = {
+        id: 'ollama',
+        kind: 'openai' as const,
+        displayName: 'Ollama',
+        baseUrl: 'http://localhost:11434/v1',
+        models: [],
+      }
+
+      it('starts empty', () => {
+        expect(storage.providers.list()).toEqual([])
+        expect(storage.providers.get('deepseek')).toBeUndefined()
+      })
+
+      it('replaces the whole list, keeping its order', () => {
+        storage.providers.replaceAll([ollama, deepseek])
+        expect(storage.providers.list()).toEqual([ollama, deepseek])
+        expect(storage.providers.get('deepseek')).toEqual(deepseek)
+        expect(storage.providers.get('ollama')).not.toHaveProperty('credentialRef')
+
+        storage.providers.replaceAll([deepseek])
+        expect(storage.providers.list()).toEqual([deepseek])
+        storage.providers.replaceAll([])
+        expect(storage.providers.list()).toEqual([])
+      })
+
+      it('returns copies', () => {
+        storage.providers.replaceAll([deepseek])
+        const listed = storage.providers.list()
+        listed[0]!.models.pop()
+        expect(storage.providers.get('deepseek')?.models).toHaveLength(1)
+      })
+
+      it('rejects duplicate ids and keeps the previous list', () => {
+        storage.providers.replaceAll([ollama])
+        expectStorageError(
+          () => storage.providers.replaceAll([deepseek, deepseek]),
+          StorageErrorCode.Conflict,
+        )
+        expect(storage.providers.list()).toEqual([ollama])
+      })
+
+      it('rolls back with the surrounding transaction', () => {
+        storage.providers.replaceAll([ollama])
+        expect(() =>
+          storage.transaction(() => {
+            storage.providers.replaceAll([deepseek])
+            throw new Error('boom')
+          }),
+        ).toThrow('boom')
+        expect(storage.providers.list()).toEqual([ollama])
       })
     })
 

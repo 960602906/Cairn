@@ -4,7 +4,7 @@
  * 接口是同步的：只有主进程写入数据库，所选引擎 better-sqlite3 是同步 API（S4，M0-08），
  * 同步接口让 `transaction` 与 `EventStore.append` 的原子性简单可靠。
  */
-import type { PersistedEvent } from '@nexus/protocol'
+import type { ModelRef, PersistedEvent, ProviderConfig } from '@nexus/protocol'
 
 export const StorageErrorCode = {
   /** 记录不存在。 */
@@ -73,6 +73,8 @@ export interface SessionRecord {
   readonly workspacePath: string
   readonly title: string
   readonly archived: boolean
+  /** 会话使用的模型（M1-04a）；之前创建的会话没有。 */
+  readonly model?: ModelRef
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -82,6 +84,7 @@ export interface CreateSessionInput {
   readonly projectId: string
   readonly workspacePath: string
   readonly title: string
+  readonly model?: ModelRef
 }
 
 export interface ListSessionsOptions {
@@ -99,6 +102,17 @@ export interface SessionStore {
   archive(sessionId: string): SessionRecord
   /** 更新 `updatedAt`（有新事件时由主进程调用）。 */
   touch(sessionId: string): SessionRecord
+}
+
+// ---------- 模型提供方 ----------
+
+/** 模型提供方配置（M1-04a）。格式由调用方用 `ProviderConfig` schema 校验，存储不再校验。 */
+export interface ProviderStore {
+  /** 按保存时的顺序。 */
+  list(): ProviderConfig[]
+  get(providerId: string): ProviderConfig | undefined
+  /** 用给出的列表整体替换（顺序即列表顺序）。 */
+  replaceAll(configs: readonly ProviderConfig[]): void
 }
 
 // ---------- 事件 ----------
@@ -121,6 +135,7 @@ export interface EventStore {
 export interface Storage {
   readonly projects: ProjectStore
   readonly sessions: SessionStore
+  readonly providers: ProviderStore
   readonly events: EventStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T

@@ -3,7 +3,7 @@
  *
  * 打开时先执行迁移（`migrateDatabase`），再以 WAL 模式打开连接。只有主进程使用。
  */
-import { isLiveEventType, type PersistedEvent } from '@nexus/protocol'
+import { isLiveEventType, type PersistedEvent, type ProviderConfig } from '@nexus/protocol'
 import Database from 'better-sqlite3'
 import {
   StorageError,
@@ -43,7 +43,20 @@ interface SessionRow {
   workspace_path: string
   title: string
   archived: number
+  model_provider_id: string | null
+  model_id: string | null
   created_at: number
+  updated_at: number
+}
+
+interface ProviderRow {
+  provider_id: string
+  position: number
+  kind: ProviderConfig['kind']
+  display_name: string
+  base_url: string
+  credential_ref: string | null
+  models: string
   updated_at: number
 }
 
@@ -74,8 +87,20 @@ const toSession = (row: SessionRow): SessionRecord => ({
   workspacePath: row.workspace_path,
   title: row.title,
   archived: row.archived === 1,
+  ...(row.model_provider_id === null || row.model_id === null
+    ? {}
+    : { model: { providerId: row.model_provider_id, modelId: row.model_id } }),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+})
+
+const toProvider = (row: ProviderRow): ProviderConfig => ({
+  id: row.provider_id,
+  kind: row.kind,
+  displayName: row.display_name,
+  baseUrl: row.base_url,
+  ...(row.credential_ref === null ? {} : { credentialRef: row.credential_ref }),
+  models: JSON.parse(row.models) as ProviderConfig['models'],
 })
 
 const toEvent = (row: EventRow): PersistedEvent =>
@@ -124,8 +149,10 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     ),
     insertSession: db.prepare(
       `INSERT INTO sessions
-         (session_id, project_id, project_path, workspace_path, title, archived, created_at, updated_at)
-       VALUES (@sessionId, @projectId, @projectPath, @workspacePath, @title, 0, @at, @at)`,
+         (session_id, project_id, project_path, workspace_path, title, archived,
+          model_provider_id, model_id, created_at, updated_at)
+       VALUES (@sessionId, @projectId, @projectPath, @workspacePath, @title, 0,
+          @modelProviderId, @modelId, @at, @at)`,
     ),
     updateSession: db.prepare(
       `UPDATE sessions SET
@@ -133,6 +160,16 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
          archived = max(archived, @archived),
          updated_at = @at
        WHERE session_id = @sessionId`,
+    ),
+    providers: db.prepare<[], ProviderRow>('SELECT * FROM provider_configs ORDER BY position'),
+    providerById: db.prepare<[string], ProviderRow>(
+      'SELECT * FROM provider_configs WHERE provider_id = ?',
+    ),
+    deleteProviders: db.prepare('DELETE FROM provider_configs'),
+    insertProvider: db.prepare(
+      `INSERT INTO provider_configs
+         (provider_id, position, kind, display_name, base_url, credential_ref, models, updated_at)
+       VALUES (@id, @position, @kind, @displayName, @baseUrl, @credentialRef, @models, @at)`,
     ),
     maxSeq: db.prepare<[string], { seq: number | null }>(
       'SELECT max(seq) AS seq FROM events WHERE session_id = ?',
@@ -157,6 +194,26 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
   }
 
   const maxSeq = (sessionId: string): number => q.maxSeq.get(sessionId)?.seq ?? 0
+
+  const replaceProviders = db.transaction((configs: readonly ProviderConfig[]) => {
+    q.deleteProviders.run()
+    const at = now()
+    configs.forEach((config, position) => {
+      if (q.providerById.get(config.id)) {
+        throw new StorageError(StorageErrorCode.Conflict, { providerId: config.id })
+      }
+      q.insertProvider.run({
+        id: config.id,
+        position,
+        kind: config.kind,
+        displayName: config.displayName,
+        baseUrl: config.baseUrl,
+        credentialRef: config.credentialRef ?? null,
+        models: JSON.stringify(config.models),
+        at,
+      })
+    })
+  })
 
   const append = db.transaction((events: readonly PersistedEvent[]) => {
     const lastSeq = new Map<string, number>()
@@ -229,7 +286,14 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         if (q.sessionById.get(input.sessionId)) {
           throw new StorageError(StorageErrorCode.Conflict, { sessionId: input.sessionId })
         }
-        q.insertSession.run({ ...input, projectPath: project.path, at: now() })
+        const { model, ...rest } = input
+        q.insertSession.run({
+          ...rest,
+          projectPath: project.path,
+          modelProviderId: model?.providerId ?? null,
+          modelId: model?.modelId ?? null,
+          at: now(),
+        })
         return toSession(q.sessionById.get(input.sessionId)!)
       },
       get(sessionId) {
@@ -247,6 +311,15 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       rename: (sessionId, title) => updateSession(sessionId, title, 0),
       archive: (sessionId) => updateSession(sessionId, null, 1),
       touch: (sessionId) => updateSession(sessionId, null, 0),
+    },
+
+    providers: {
+      list: () => q.providers.all().map(toProvider),
+      get(providerId) {
+        const row = q.providerById.get(providerId)
+        return row && toProvider(row)
+      },
+      replaceAll: (configs) => replaceProviders(configs),
     },
 
     events: {

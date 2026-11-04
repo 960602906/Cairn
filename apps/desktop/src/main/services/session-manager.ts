@@ -27,7 +27,7 @@ import {
   type RunView,
   type SessionView,
 } from '@nexus/core'
-import { RpcError, type ContentPart, type UnsequencedEvent } from '@nexus/protocol'
+import { RpcError, type ContentPart, type ModelRef, type UnsequencedEvent } from '@nexus/protocol'
 import type { Storage } from '@nexus/storage'
 import type { SessionEventService } from './event-service.js'
 import type { HostHandle, HostInit, HostSupervisor } from './host-supervisor.js'
@@ -39,6 +39,8 @@ export const SessionErrorCode = {
   /** 管理器已关闭（应用正在退出）。 */
   Closed: 'run.disposed',
   InvalidParams: 'rpc.invalid_params',
+  /** 创建会话时指定的模型没有配置。 */
+  UnknownModel: 'session.unknown_model',
 } as const
 
 /** 新运行使用的配置。 */
@@ -48,7 +50,13 @@ export interface SessionManagerOptions {
   readonly storage: Pick<Storage, 'projects' | 'sessions'>
   readonly events: Pick<SessionEventService, 'publish' | 'readAfter' | 'subscribe'>
   readonly supervisor: HostSupervisor
+  /** 新运行的配置；会话记录了模型时，用会话的模型。 */
   readonly runDefaults: RunDefaults
+  /** 已配置的模型（M1-04a）：新会话默认使用 `defaultModel()`，指定的模型须已配置。省略表示不检查。 */
+  readonly models?: {
+    defaultModel(): ModelRef | undefined
+    has(model: ModelRef): boolean
+  }
   /** 同时存在的宿主上限，默认 3。 */
   readonly maxConcurrent?: number
   /** 宿主空闲多久后回收，默认 5 分钟。 */
@@ -278,10 +286,14 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
   }
 
   return {
-    create({ projectPath, title }) {
+    create({ projectPath, title, model: requested }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       if (!isAbsolute(projectPath))
         throw new RpcError(SessionErrorCode.InvalidParams, { projectPath })
+      if (requested && options.models && !options.models.has(requested)) {
+        throw new RpcError(SessionErrorCode.UnknownModel, { ...requested })
+      }
+      const model = requested ?? options.models?.defaultModel()
       const project =
         storage.projects.getByPath(projectPath) ??
         storage.projects.create({
@@ -295,6 +307,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         projectId: project.projectId,
         workspacePath: project.path,
         title: title ?? '',
+        ...(model ? { model } : {}),
       })
       events.publish([
         {
@@ -305,6 +318,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
             projectPath: project.path,
             workspacePath: session.workspacePath,
             title: session.title,
+            ...(model ? { model } : {}),
           },
         },
       ])
@@ -324,6 +338,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
               : sessionStatus(getView(s.sessionId)),
           createdAt: s.createdAt,
           updatedAt: s.updatedAt,
+          ...(s.model ? { model: s.model } : {}),
         }))
       return { sessions }
     },
@@ -363,7 +378,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           history,
           run: resume
             ? { agent: root.agent, model: root.model, mode: root.mode, limits: root.limits }
-            : options.runDefaults,
+            : { ...options.runDefaults, model: record.model ?? options.runDefaults.model },
           resume: resume ? { state: root.state } : undefined,
           workspacePath: record.workspacePath,
         })

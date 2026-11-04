@@ -43,6 +43,8 @@ const payloadSchemas = {
     /** agent 实际工作的目录；第一版与 projectPath 相同（架构 §14.3）。 */
     workspacePath: z.string().min(1),
     title: z.string(),
+    /** 会话使用的模型（M1-04a）。 */
+    model: ModelRef.optional(),
   }),
   'session.renamed': z.object({ title: z.string() }),
   'session.crashed': z.object({ error: ErrorInfo }),

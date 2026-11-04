@@ -83,8 +83,8 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     abort: vi.fn(() => ({})),
   }
   settings = {
-    get: vi.fn(() => ({ locale: 'zh-CN' as const })),
-    update: vi.fn((patch) => ({ locale: patch.locale ?? ('zh-CN' as const) })),
+    get: vi.fn(() => ({ locale: 'zh-CN' as const, providers: [] })),
+    update: vi.fn((patch) => ({ locale: patch.locale ?? ('zh-CN' as const), providers: [] })),
   }
   credentials = {
     set: vi.fn(async () => ({})),
@@ -317,9 +317,13 @@ describe('createRendererGateway: commands and lifecycle', () => {
 
   it('delegates settings requests to the settings service', async () => {
     const { client } = setup()
-    await expect(client.request('settings.get', {})).resolves.toEqual({ locale: 'zh-CN' })
+    await expect(client.request('settings.get', {})).resolves.toEqual({
+      locale: 'zh-CN',
+      providers: [],
+    })
     await expect(client.request('settings.update', { locale: 'en-US' })).resolves.toEqual({
       locale: 'en-US',
+      providers: [],
     })
     expect(settings.update).toHaveBeenCalledWith({ locale: 'en-US' })
   })
