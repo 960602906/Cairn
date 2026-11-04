@@ -1,6 +1,6 @@
 /**
  * @nexus/core —— 领域类型、AgentRuntime 接口、事件归约等（架构 §5、§6）。
- * 只允许依赖 @nexus/protocol。
+ * 只允许依赖 @nexus/protocol（以及 zod，用于工具参数的 JSON Schema 校验）。
  * 运行状态机见 run-state.ts（M0-06a）；事件归约在 M0-06b～d 实现，AgentRuntime 与 FakeRuntime 在 M0-07 实现。
  */
 import { EVENT_SCHEMA_VERSION } from '@nexus/protocol'
@@ -19,3 +19,4 @@ export * from './redact.js'
 export * from './logger.js'
 export * from './credentials.js'
 export * from './provider-templates.js'
+export * from './tools.js'
