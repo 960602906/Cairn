@@ -1,0 +1,64 @@
+name: Spike S7 PowerShell
+
+# S7：Windows PowerShell 5.1 与 PowerShell 7 的中文输出、-EncodedCommand 的可靠性、
+# 超时后能否结束整个进程树（Job Object 与 taskkill /T 对比）。
+on:
+  pull_request:
+    paths:
+      - 'spikes/powershell/**'
+      - '.github/workflows/spike-powershell.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-powershell-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  s7:
+    name: s7 (${{ matrix.variant }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # default：运行环境默认的控制台代码页（英文系统为 437）；
+        # cp936：先 chcp 936，模拟中文系统的控制台代码页（系统 ANSI 代码页仍为 1252，真实中文系统需本地复测）
+        variant: [default, cp936]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: spikes/powershell
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: spikes/powershell/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Run
+        if: matrix.variant == 'default'
+        run: node src/cli.mjs --out=result-${{ matrix.variant }}.json
+
+      - name: Run (chcp 936)
+        if: matrix.variant == 'cp936'
+        shell: cmd
+        run: chcp 936 & node src/cli.mjs --out=result-${{ matrix.variant }}.json
+
+      - name: Summary
+        if: always()
+        run: node src/summarize.mjs result-${{ matrix.variant }}.json
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s7-results-${{ matrix.variant }}
+          path: spikes/powershell/result-*.json
+          retention-days: 30

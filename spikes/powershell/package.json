@@ -1,0 +1,14 @@
+{
+  "name": "spike-powershell",
+  "private": true,
+  "version": "0.0.0",
+  "description": "S7：PowerShell 5.1 / 7 的中文编码、-EncodedCommand 与进程树结束（预研，不进入正式构建）",
+  "type": "module",
+  "scripts": {
+    "run": "node src/cli.mjs",
+    "summarize": "node src/summarize.mjs"
+  },
+  "dependencies": {
+    "koffi": "3.3.6"
+  }
+}
