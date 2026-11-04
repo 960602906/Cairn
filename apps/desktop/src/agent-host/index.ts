@@ -2,17 +2,19 @@
  * agent 宿主入口（ADR-0003，架构 §4）：由主进程通过 `utilityProcess.fork` 启动。
  *
  * 等待主进程经 `{ type: 'nexus.port' }` 消息转交的专用端口，在其上运行宿主协议（`host.ts`）。
+ * 运行时由环境变量选择（`runtime-select.ts`：默认 FakeRuntime，`NEXUS_RUNTIME=pi` 时为 pi 适配器）。
  * 设置 `NEXUS_HOST_TRACE_FILE` 时记录收到的历史（端到端测试用，见 `history-trace.ts`）。
  */
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 import type {} from 'electron'
 import { HOST_PORT_MESSAGE, portChannel } from '../shared/host-port.js'
-import { createFakeHostRuntime } from './fake-model.js'
 import { HOST_TRACE_ENV, traceHistory } from './history-trace.js'
 import { createAgentHost } from './host.js'
+import { selectHostRuntime } from './runtime-select.js'
 
 const traceFile = process.env[HOST_TRACE_ENV]
+const createHostRuntime = selectHostRuntime(process.env)
 
 process.parentPort.on('message', (event) => {
   const port = event.ports[0]
@@ -21,7 +23,7 @@ process.parentPort.on('message', (event) => {
   createAgentHost({
     channel: portChannel(port),
     createRuntime: (model) => {
-      const host = createFakeHostRuntime(model)
+      const host = createHostRuntime(model)
       if (!traceFile) return host
       const write = (line: string) => appendFileSync(traceFile, `${line}\n`)
       return { ...host, runtime: traceHistory(host.runtime, write) }

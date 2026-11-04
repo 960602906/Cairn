@@ -6,7 +6,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-vite build && node ../../scripts/third-party-notices.js out/THIRD_PARTY_NOTICES.txt",
     "start": "electron-vite preview",
     "smoke": "node scripts/smoke.js",
     "e2e": "playwright test -c e2e/playwright.config.ts"
@@ -15,6 +15,7 @@
     "@nexus/core": "workspace:*",
     "@nexus/i18n": "workspace:*",
     "@nexus/protocol": "workspace:*",
+    "@nexus/runtime-pi": "workspace:*",
     "@nexus/storage": "workspace:*",
     "better-sqlite3": "13.0.3",
     "i18next": "26.7.1",

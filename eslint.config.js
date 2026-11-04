@@ -16,7 +16,7 @@ const ALLOWED_NEXUS_DEPS = {
   'packages/storage': ['protocol', 'core'],
   'packages/i18n': [],
   'packages/runtime-pi': ['protocol', 'core'],
-  'apps/desktop': ['protocol', 'core', 'storage', 'i18n'],
+  'apps/desktop': ['protocol', 'core', 'storage', 'i18n', 'runtime-pi'],
 }
 
 /** 只有 runtime-pi 可以引用 pi（ADR-0004）。包含旧的包作用域。 */
@@ -103,6 +103,10 @@ export default tseslint.config(
             regex: `^(node:.*|${NODE_BUILTINS.map((m) => m.replace(/[/]/g, '\\/')).join('|')})$`,
             message:
               'The renderer has no Node access. Use the typed API exposed by the preload script.',
+          },
+          {
+            regex: '^@nexus/runtime-pi$',
+            message: 'The renderer must not import the model runtime. It runs in the agent host.',
           },
           {
             regex: '^electron(\\/.*)?$',
