@@ -111,7 +111,9 @@ export async function runTreeCase(shell, scenario, strategy, workRoot) {
   await sleep(300)
   const pids = readPids(pidFile)
   const inJob = job
-    ? pids.filter((p) => alive(p.pid)).map((p) => `${p.role}:${job?.contains(p.pid) ? 'y' : 'n'}`)
+    ? [{ role: 'shell', pid: /** @type {number} */ (child?.pid) }, ...pids]
+        .filter((p) => alive(p.pid))
+        .map((p) => `${p.role}:${job?.contains(p.pid) ? 'y' : 'n'}`)
     : []
 
   const started = performance.now()

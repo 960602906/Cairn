@@ -77,7 +77,13 @@ export function findShells() {
     const exe = process.platform === 'win32' ? `${id}.exe` : id
     const probe = spawnSync(
       exe,
-      ['-NoProfile', '-NonInteractive', '-Command', '$PSVersionTable.PSVersion.ToString()'],
+      // 版本与实际运行的可执行文件路径（商店版 pwsh 位于 WindowsApps，经应用执行别名启动）
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "$PSVersionTable.PSVersion.ToString() + ' ' + (Get-Process -Id $PID).Path",
+      ],
       { encoding: 'utf8', windowsHide: true },
     )
     if (probe.status === 0) shells.push({ id, exe, version: probe.stdout.trim() })
