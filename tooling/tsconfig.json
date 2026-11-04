@@ -30,6 +30,9 @@
       "path": "../packages/storage"
     },
     {
+      "path": "../packages/runtime-pi"
+    },
+    {
       "path": "../packages/i18n"
     },
     {
