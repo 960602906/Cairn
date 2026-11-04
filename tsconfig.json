@@ -5,6 +5,7 @@
     { "path": "packages/core" },
     { "path": "packages/storage" },
     { "path": "packages/runtime-pi" },
+    { "path": "packages/tools" },
     { "path": "packages/i18n" },
     { "path": "apps/desktop" },
     { "path": "tooling" }

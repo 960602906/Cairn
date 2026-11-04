@@ -1,0 +1,14 @@
+{
+  "name": "@nexus/tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@nexus/core": "workspace:*",
+    "@nexus/protocol": "workspace:*",
+    "ignore": "7.0.14"
+  }
+}
