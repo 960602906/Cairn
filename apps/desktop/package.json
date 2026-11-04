@@ -17,6 +17,8 @@
     "@nexus/protocol": "workspace:*",
     "@nexus/runtime-pi": "workspace:*",
     "@nexus/storage": "workspace:*",
+    "@nexus/tools": "workspace:*",
+    "@vscode/ripgrep": "1.18.0",
     "better-sqlite3": "13.0.3",
     "i18next": "26.7.1",
     "react": "19.3.1",

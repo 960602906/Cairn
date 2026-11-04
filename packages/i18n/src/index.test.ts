@@ -148,6 +148,10 @@ describe('translateError', () => {
       'tool.list_dir.not_found',
       'tool.list_dir.not_directory',
       'tool.list_dir.unreadable',
+      'tool.search.not_found',
+      'tool.search.invalid_pattern',
+      'tool.search.unavailable',
+      'tool.search.failed',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())

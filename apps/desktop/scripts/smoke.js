@@ -3,7 +3,8 @@
  * 启动冒烟测试（M0-12a、M1-01d）：用构建产物启动应用（需先 `pnpm build`），确认窗口加载、界面渲染、
  * 界面经 IPC 访问到会话列表、agent 宿主能完成一轮对话，并且数据目录与数据库按约定创建。数据写入临时目录，不污染开发与正式数据。
  *
- * 先确认构建产物带有第三方许可声明（`out/THIRD_PARTY_NOTICES.txt`，其中列有 pi），再依次用两种运行时各启动一次：
+ * 先确认构建产物带有第三方许可声明（`out/THIRD_PARTY_NOTICES.txt`，其中列有 pi 与 ripgrep），再依次用两种运行时各启动一次
+ *（每次都会用 `out/bin/` 中打包的 ripgrep 执行一次 `search`，见 `src/main/smoke.ts`）：
  * - `fake`：FakeRuntime（默认）；
  * - `pi`：pi 适配器（`NEXUS_RUNTIME=pi`），指向本脚本启动的本地 mock 端点（`mock-model.js`），
  *   确认打包进宿主的 pi 能加载、能发出请求并完成一轮对话。
@@ -32,8 +33,11 @@ if (!existsSync(path.join(appDir, 'out/main/index.js'))) {
 }
 
 const notices = path.join(appDir, 'out/THIRD_PARTY_NOTICES.txt')
-if (!existsSync(notices) || !readFileSync(notices, 'utf8').includes('@earendil-works/pi-ai@')) {
-  console.error('smoke: out/THIRD_PARTY_NOTICES.txt is missing or does not list pi (ADR-0014).')
+const noticeText = existsSync(notices) ? readFileSync(notices, 'utf8') : ''
+if (!noticeText.includes('@earendil-works/pi-ai@') || !noticeText.includes('\nripgrep@')) {
+  console.error(
+    'smoke: out/THIRD_PARTY_NOTICES.txt is missing or does not list pi and ripgrep (ADR-0014).',
+  )
   process.exit(1)
 }
 

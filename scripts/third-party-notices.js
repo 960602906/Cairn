@@ -3,7 +3,8 @@
  * 生成第三方许可声明（ADR-0014，M1-01d）：列出桌面应用的全部生产依赖（随应用分发，含打进产物的 pi
  * 及其依赖），每项给出名称、版本、许可证、作者、主页，并附上包中的许可证全文。
  *
- * 依赖清单来自 `pnpm licenses list --prod --json`（在 apps/desktop 中执行）。许可证是否允许由
+ * 依赖清单来自 `pnpm licenses list --prod --json`（在 apps/desktop 中执行），另加随应用分发的外部二进制
+ *（scripts/bundled-binaries.json，如 ripgrep，许可证全文在 scripts/licenses/ 中）。许可证是否允许由
  * `check-licenses.js` 检查，这里只负责汇总。
  *
  * 用法：node scripts/third-party-notices.js <输出文件>
@@ -13,7 +14,7 @@ import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseLicenseOutput } from './check-licenses.js'
+import { binariesReport, loadBundledBinaries, parseLicenseOutput } from './check-licenses.js'
 
 /**
  * @typedef {{ name: string, versions: string[], paths?: string[], license: string, author?: string, homepage?: string }} ReportedPackage
@@ -82,7 +83,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     encoding: 'utf8',
     shell: process.platform === 'win32',
   })
-  const report = /** @type {NoticeReport} */ (parseLicenseOutput(output))
+  const report = /** @type {NoticeReport} */ ({
+    ...parseLicenseOutput(output),
+    ...binariesReport(loadBundledBinaries(root), root),
+  })
   const notices = buildNotices(report, (dir) =>
     findLicenseText(dir, {
       list: (d) => readdirSync(d),

@@ -12,7 +12,9 @@
  * pi（`@earendil-works/*`）只是 runtime-pi 的依赖，不在本包的 dependencies 中，因此同样打进宿主产物（S1：
  * 依赖外置时 app.asar 几乎全是 node_modules，打包后宿主加载更快）。各接口格式的实现是按需加载的独立分块。
  */
-import { resolve } from 'node:path'
+import { chmodSync, copyFileSync, mkdirSync } from 'node:fs'
+import { basename, resolve } from 'node:path'
+import { rgPath } from '@vscode/ripgrep'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
 import type { Plugin } from 'vite'
@@ -25,6 +27,7 @@ const workspacePackages = [
   '@nexus/storage',
   '@nexus/i18n',
   '@nexus/runtime-pi',
+  '@nexus/tools',
 ]
 
 /** 把 CSP 以 `<meta>` 写入界面 HTML（`file:` 加载时没有响应头）。开发服务器使用放宽的版本。 */
@@ -50,8 +53,27 @@ function contentSecurityPolicy(): Plugin {
   }
 }
 
+/**
+ * 把当前平台的 ripgrep（`@vscode/ripgrep` 的平台包）复制到 `out/bin/`，供 `search` 工具使用（M1-07b）。
+ * 安装包打包时（M5）需把 `out/bin/` 列入 asarUnpack；许可证见 THIRD_PARTY_NOTICES。
+ */
+function bundleRipgrep(): Plugin {
+  return {
+    name: 'nexus-ripgrep',
+    apply: 'build',
+    closeBundle() {
+      const dir = resolve(root, 'out/bin')
+      const target = resolve(dir, basename(rgPath))
+      mkdirSync(dir, { recursive: true })
+      copyFileSync(rgPath, target)
+      chmodSync(target, 0o755)
+    },
+  }
+}
+
 export default defineConfig({
   main: {
+    plugins: [bundleRipgrep()],
     build: {
       externalizeDeps: { exclude: workspacePackages },
       rollupOptions: {

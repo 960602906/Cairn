@@ -17,7 +17,7 @@ const ALLOWED_NEXUS_DEPS = {
   'packages/i18n': [],
   'packages/runtime-pi': ['protocol', 'core'],
   'packages/tools': ['protocol', 'core'],
-  'apps/desktop': ['protocol', 'core', 'storage', 'i18n', 'runtime-pi'],
+  'apps/desktop': ['protocol', 'core', 'storage', 'i18n', 'runtime-pi', 'tools'],
 }
 
 /** 只有 runtime-pi 可以引用 pi（ADR-0004）。包含旧的包作用域。 */
@@ -108,6 +108,10 @@ export default tseslint.config(
           {
             regex: '^@nexus/runtime-pi$',
             message: 'The renderer must not import the model runtime. It runs in the agent host.',
+          },
+          {
+            regex: '^@nexus/tools$',
+            message: 'The renderer must not import tools. They run in the agent host.',
           },
           {
             regex: '^electron(\\/.*)?$',

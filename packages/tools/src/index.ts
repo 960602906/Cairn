@@ -5,13 +5,17 @@
 import type { ToolRegistry } from '@nexus/core'
 import { listDirTool } from './list-dir.js'
 import { readFileTool } from './read-file.js'
+import { createSearchTool, type SearchToolOptions } from './search.js'
 
 export * from './paths.js'
 export * from './read-file.js'
 export * from './list-dir.js'
+export * from './ripgrep.js'
+export * from './search.js'
 
-/** 注册读类内置工具（M1-07a）。 */
-export function registerReadTools(registry: ToolRegistry): void {
+/** 注册读类内置工具（M1-07）：`read_file`、`list_dir`、`search`。 */
+export function registerReadTools(registry: ToolRegistry, options: SearchToolOptions): void {
   registry.register(readFileTool)
   registry.register(listDirTool)
+  registry.register(createSearchTool(options))
 }

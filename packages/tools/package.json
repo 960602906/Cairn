@@ -10,5 +10,8 @@
     "@nexus/core": "workspace:*",
     "@nexus/protocol": "workspace:*",
     "ignore": "7.0.14"
+  },
+  "devDependencies": {
+    "@vscode/ripgrep": "1.18.0"
   }
 }

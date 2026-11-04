@@ -62,5 +62,9 @@
   "tool.read_file.unreadable": "无法读取文件",
   "tool.list_dir.not_found": "目录不存在",
   "tool.list_dir.not_directory": "这不是一个目录",
-  "tool.list_dir.unreadable": "无法读取目录"
+  "tool.list_dir.unreadable": "无法读取目录",
+  "tool.search.not_found": "要搜索的路径不存在",
+  "tool.search.invalid_pattern": "搜索的正则表达式或文件筛选无效",
+  "tool.search.unavailable": "搜索不可用：无法启动随应用打包的 ripgrep",
+  "tool.search.failed": "搜索失败"
 }

@@ -4,6 +4,7 @@
  *
  * - 生产依赖（随应用分发）：只允许 PERMISSIVE 中的许可证。
  * - 开发依赖（不分发）：额外允许 DEV_ONLY 中的弱著佐权许可证。
+ * - 随应用分发的外部二进制（scripts/bundled-binaries.json，如 ripgrep）：与生产依赖相同。
  * - 其余许可证（含 GPL、AGPL、LGPL 与未知许可证）一律失败，
  *   除非在 scripts/license-exceptions.json 中按 "name@version" 登记并写明理由。
  *
@@ -112,8 +113,42 @@ export function parseLicenseOutput(output) {
 }
 
 /**
+ * 随应用分发的外部二进制（scripts/bundled-binaries.json）。
+ * @typedef {{ name: string, version: string, license: string, author?: string, homepage?: string, licenseDir: string }} BundledBinary
+ */
+
+/**
+ * 读取 scripts/bundled-binaries.json。
+ * @param {string} root 仓库根目录
+ * @returns {BundledBinary[]}
+ */
+export function loadBundledBinaries(root) {
+  return JSON.parse(readFileSync(path.join(root, 'scripts/bundled-binaries.json'), 'utf8')).binaries
+}
+
+/**
+ * 把外部二进制转为与 `pnpm licenses list` 相同的格式（许可证目录为绝对路径）。
+ * @param {readonly BundledBinary[]} binaries
+ * @param {string} root
+ * @returns {Record<string, (LicensedPackage & { paths: string[], author?: string, homepage?: string })[]>}
+ */
+export function binariesReport(binaries, root) {
+  return {
+    'bundled binaries': binaries.map((b) => ({
+      name: b.name,
+      versions: [b.version],
+      paths: [path.join(root, b.licenseDir)],
+      license: b.license,
+      ...(b.author ? { author: b.author } : {}),
+      ...(b.homepage ? { homepage: b.homepage } : {}),
+    })),
+  }
+}
+
+/**
  * @typedef {object} CheckDeps
  * @property {(flag: '--prod' | '--dev') => string} listLicenses 返回 pnpm licenses 的原始输出
+ * @property {LicenseReport} [binaries] 随应用分发的外部二进制（见 binariesReport）
  * @property {Record<string, string>} exceptions
  * @property {(line: string) => void} log
  * @property {(line: string) => void} error
@@ -124,10 +159,11 @@ export function parseLicenseOutput(output) {
  * @param {CheckDeps} deps
  * @returns {number}
  */
-export function runLicenseCheck({ listLicenses, exceptions, log, error }) {
+export function runLicenseCheck({ listLicenses, binaries = {}, exceptions, log, error }) {
   const devAllowed = new Set([...PERMISSIVE, ...DEV_ONLY])
   const violations = [
     ...findViolations(parseLicenseOutput(listLicenses('--prod')), PERMISSIVE, exceptions, 'prod'),
+    ...findViolations(binaries, PERMISSIVE, exceptions, 'prod'),
     ...findViolations(parseLicenseOutput(listLicenses('--dev')), devAllowed, exceptions, 'dev'),
   ]
   if (violations.length === 0) {
@@ -149,6 +185,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         encoding: 'utf8',
         shell: process.platform === 'win32',
       }),
+    binaries: binariesReport(loadBundledBinaries(root), root),
     exceptions: JSON.parse(readFileSync(path.join(root, 'scripts/license-exceptions.json'), 'utf8'))
       .exceptions,
     log: (line) => console.log(line),

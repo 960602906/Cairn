@@ -35,12 +35,13 @@ const failure = async (promise: Promise<unknown>) => {
 }
 
 describe('注册与参数校验', () => {
-  it('两个工具都是 read 类，参数 schema 可以编译并校验', () => {
+  it('三个工具都是 read 类，参数 schema 可以编译并校验', () => {
     const registry = createToolRegistry()
-    registerReadTools(registry)
+    registerReadTools(registry, { ripgrepPath: 'rg' })
     expect(registry.specs()).toMatchObject([
       { name: 'read_file', parallel: true },
       { name: 'list_dir', parallel: true },
+      { name: 'search', parallel: true },
     ])
     expect(registry.validate('read_file', { path: 'a', offset: 1, limit: 10 })).toMatchObject({
       ok: true,
@@ -50,6 +51,11 @@ describe('注册与参数校验', () => {
     expect(registry.validate('read_file', { path: 'a', extra: 1 })).toMatchObject({ ok: false })
     expect(registry.validate('list_dir', {})).toMatchObject({ ok: true })
     expect(registry.validate('list_dir', { depth: 11 })).toMatchObject({ ok: false })
+    expect(registry.validate('search', { pattern: 'a', context: 2, limit: 5 })).toMatchObject({
+      ok: true,
+    })
+    expect(registry.validate('search', { pattern: '' })).toMatchObject({ ok: false })
+    expect(registry.validate('search', { pattern: 'a', context: 11 })).toMatchObject({ ok: false })
   })
 
   it('normalize 给出真实的相对路径作为权限目标', async () => {
