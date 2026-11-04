@@ -1,0 +1,194 @@
+{
+  "events": [
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "gemini-3-calc-tool"
+      }
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "The user wan"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "ts 2 + 3. I "
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "should call "
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "the add tool"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "."
+    },
+    {
+      "type": "text.delta",
+      "text": "Let me add t"
+    },
+    {
+      "type": "text.delta",
+      "text": "hose."
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Let me add those."
+          }
+        ],
+        "reasoning": {
+          "text": "The user wants 2 + 3. I should call the add tool.",
+          "providerId": "contract"
+        },
+        "toolCalls": [
+          {
+            "id": "<toolcall-1>",
+            "name": "add",
+            "input": {
+              "a": 2,
+              "b": 3
+            }
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "gemini-3-calc-tool"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "tool_calls",
+      "usage": {
+        "inputTokens": 52,
+        "outputTokens": 31,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "gemini-3-calc-tool"
+      }
+    },
+    {
+      "type": "text.delta",
+      "text": "2 + 3 = 5。结果"
+    },
+    {
+      "type": "text.delta",
+      "text": "是五。"
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "2 + 3 = 5。结果是五。"
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "gemini-3-calc-tool"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 96,
+        "outputTokens": 12,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "type": "loop.ended",
+      "outcome": "completed"
+    }
+  ],
+  "toolCalls": [
+    {
+      "id": "<toolcall-1>",
+      "name": "add",
+      "input": {
+        "a": 2,
+        "b": 3
+      }
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is 2 + 3? Use the add tool."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Let me add those."
+        }
+      ],
+      "reasoning": {
+        "text": "The user wants 2 + 3. I should call the add tool.",
+        "providerId": "contract"
+      },
+      "toolCalls": [
+        {
+          "id": "<toolcall-1>",
+          "name": "add",
+          "input": {
+            "a": 2,
+            "b": 3
+          }
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "gemini-3-calc-tool"
+      }
+    },
+    {
+      "role": "tool",
+      "toolCallId": "<toolcall-1>",
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "2 + 3 = 5。结果是五。"
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "gemini-3-calc-tool"
+      }
+    }
+  ]
+}

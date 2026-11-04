@@ -1,0 +1,38 @@
+{
+  "events": [
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "auth-fail"
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "error"
+    },
+    {
+      "type": "loop.ended",
+      "outcome": "failed",
+      "error": {
+        "code": "model.auth_failed",
+        "params": {
+          "status": 401
+        }
+      },
+      "retryable": false
+    }
+  ],
+  "toolCalls": [],
+  "history": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ]
+    }
+  ]
+}

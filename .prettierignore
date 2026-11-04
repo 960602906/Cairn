@@ -11,3 +11,5 @@ spikes/**/package-lock.json
 # 录制文件与黄金文件由脚本生成，按原样比对
 spikes/pi-contract/cassettes/
 spikes/pi-contract/golden/
+# 契约测试的录制文件与黄金文件由测试生成，按原样比对
+packages/runtime-pi/contract/

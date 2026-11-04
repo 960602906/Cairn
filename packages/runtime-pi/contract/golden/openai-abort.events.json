@@ -1,0 +1,75 @@
+{
+  "events": [
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "calc-tool"
+      }
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "The us"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "er wan"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "ts 2 +"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " 3. I "
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "should"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " call "
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "the ad"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "d tool"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "."
+    },
+    {
+      "type": "text.delta",
+      "text": "Let me"
+    },
+    {
+      "type": "text.delta",
+      "text": " add t"
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "aborted"
+    },
+    {
+      "type": "loop.ended",
+      "outcome": "aborted"
+    }
+  ],
+  "toolCalls": [],
+  "history": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is 2 + 3? Use the add tool."
+        }
+      ]
+    }
+  ]
+}

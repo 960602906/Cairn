@@ -1,0 +1,193 @@
+{
+  "events": [
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "calc-parallel"
+      }
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [],
+        "toolCalls": [
+          {
+            "id": "<toolcall-1>",
+            "name": "add",
+            "input": {
+              "a": 2,
+              "b": 3
+            }
+          },
+          {
+            "id": "<toolcall-2>",
+            "name": "add",
+            "input": {
+              "a": 10,
+              "b": 20
+            }
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "calc-parallel"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "tool_calls",
+      "usage": {
+        "inputTokens": 60,
+        "outputTokens": 40
+      }
+    },
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "calc-parallel"
+      }
+    },
+    {
+      "type": "text.delta",
+      "text": "The re"
+    },
+    {
+      "type": "text.delta",
+      "text": "sults "
+    },
+    {
+      "type": "text.delta",
+      "text": "are 5 "
+    },
+    {
+      "type": "text.delta",
+      "text": "and 30"
+    },
+    {
+      "type": "text.delta",
+      "text": "."
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "The results are 5 and 30."
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "calc-parallel"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 120,
+        "outputTokens": 9
+      }
+    },
+    {
+      "type": "loop.ended",
+      "outcome": "completed"
+    }
+  ],
+  "toolCalls": [
+    {
+      "id": "<toolcall-1>",
+      "name": "add",
+      "input": {
+        "a": 2,
+        "b": 3
+      }
+    },
+    {
+      "id": "<toolcall-2>",
+      "name": "add",
+      "input": {
+        "a": 10,
+        "b": 20
+      }
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [],
+      "toolCalls": [
+        {
+          "id": "<toolcall-1>",
+          "name": "add",
+          "input": {
+            "a": 2,
+            "b": 3
+          }
+        },
+        {
+          "id": "<toolcall-2>",
+          "name": "add",
+          "input": {
+            "a": 10,
+            "b": 20
+          }
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "calc-parallel"
+      }
+    },
+    {
+      "role": "tool",
+      "toolCallId": "<toolcall-1>",
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "role": "tool",
+      "toolCallId": "<toolcall-2>",
+      "content": [
+        {
+          "type": "text",
+          "text": "30"
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "The results are 5 and 30."
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "calc-parallel"
+      }
+    }
+  ]
+}

@@ -30,7 +30,7 @@
 - 用途：
   - 真实模型的工具调用、推理内容、流式字段的验证（S2）；
   - ADR-0021 要求的三种格式各完成一次真实对话（M1）；
-  - 补录真实的契约测试录制（S8 的录制目前都是合成的）。
+  - 补录真实的契约测试录制（见下文“录制契约测试”）。
 - OpenAI Responses 接口不在 ADR-0021 首批的三种格式之内，可用来评估是否值得增加。
 - 与 DeepSeek 官方接口的差异（S2、S8）：
   - 不遵守关闭思考的参数；
@@ -46,3 +46,32 @@
 - openai 格式：`https://api.deepseek.com`；anthropic 格式：`https://api.deepseek.com/anthropic`；没有 gemini 格式。
 - 模型：`deepseek-flash`（V4.1 Flash）、`deepseek-v4-pro`。
 - 云端容器可以直接访问。
+
+## 录制契约测试（M1-02）
+
+录制工具在 `packages/runtime-pi/src/testing/contract/`，录制文件与黄金文件在 `packages/runtime-pi/contract/`。用法见 `packages/runtime-pi/src/contract-record.test.ts` 的说明。
+
+- 每次录制一个场景（`openai-tool`、`openai-parallel`、`openai-abort`、`openai-auth-fail`，anthropic 与 gemini 同理，另有 `gemini-3-tool`）。录完会回放一次，确认结果相同，并打印每一步的结束原因、用量、文本与工具调用，用来检查模型的行为是否合理，例如是否真的调用了工具。
+- 录制文件不含 Key。测试会检查录制中没有凭据请求头，也没有疑似 Key 的字符串。
+- 录完后生成黄金文件，审阅后与录制文件一起提交。
+
+```powershell
+# DeepSeek 官方，openai 格式（Key 只从环境变量读取）
+$env:DEEPSEEK_API_KEY = '<官方 Key>'
+$env:NEXUS_CONTRACT_UPSTREAM = 'https://api.deepseek.com'
+$env:NEXUS_CONTRACT_MODEL = 'deepseek-flash'
+$env:NEXUS_CONTRACT_KEY_ENV = 'DEEPSEEK_API_KEY'
+foreach ($s in 'openai-tool','openai-parallel','openai-abort') {
+  $env:NEXUS_CONTRACT_ONLY = $s
+  $env:NEXUS_CONTRACT_NAME = "ds-$s"
+  pnpm contract:record
+}
+# anthropic 格式：NEXUS_CONTRACT_UPSTREAM 改为 https://api.deepseek.com/anthropic
+# gemini 格式：用本地网关，NEXUS_CONTRACT_UPSTREAM=http://127.0.0.1:3425，模型 group/smart-split，Key 用 magpie
+# 认证失败：把 Key 换成错误的值，录制 *-auth-fail
+
+pnpm vitest run -u packages/runtime-pi/src/contract.test.ts   # 为新录制生成黄金文件
+Remove-Item Env:NEXUS_CONTRACT_*                              # 恢复为用合成上游录制
+```
+
+不设这些环境变量时，`pnpm contract:record` 用合成上游重新录制全部场景。

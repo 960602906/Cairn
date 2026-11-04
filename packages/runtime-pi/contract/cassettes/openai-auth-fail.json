@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "name": "openai-auth-fail",
+  "scenario": "openai-auth-fail",
+  "model": "auth-fail",
+  "reasoning": true,
+  "source": "synthetic",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "auth-fail",
+          "messages": [
+            {
+              "role": "developer",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Hello"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "store": false,
+          "max_completion_tokens": 4096,
+          "reasoning_effort": "high"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Incorrect API key provided.\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}"
+        ]
+      }
+    }
+  ]
+}

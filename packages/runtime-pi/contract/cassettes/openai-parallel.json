@@ -1,0 +1,420 @@
+{
+  "version": 1,
+  "name": "openai-parallel",
+  "scenario": "openai-parallel",
+  "model": "calc-parallel",
+  "reasoning": true,
+  "source": "synthetic",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "calc-parallel",
+          "messages": [
+            {
+              "role": "developer",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "store": false,
+          "max_completion_tokens": 4096,
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "add",
+                "description": "Add two numbers",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "a": {
+                      "type": "number"
+                    },
+                    "b": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "b"
+                  ]
+                }
+              }
+            }
+          ],
+          "reasoning_effort": "high"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmp",
+          "l-mock-1\",\"object\":\"chat.comp",
+          "letion.",
+          "chunk\",\"creat",
+          "ed\":1767225600,\"model\":\"calc-",
+          "paralle",
+          "l\",\"choices\":",
+          "[{\"index\":0,\"delta\":{\"role\":\"",
+          "assista",
+          "nt\",\"content\"",
+          ":\"\"},\"finish_reason\":null}]}\n",
+          "\ndata: ",
+          "{\"id\":\"chatcm",
+          "pl-mock-1\",\"object\":\"chat.com",
+          "pletion",
+          ".chunk\",\"crea",
+          "ted\":1767225600,\"model\":\"calc",
+          "-parall",
+          "el\",\"choices\"",
+          ":[{\"index\":0,\"delta\":{\"tool_c",
+          "alls\":[",
+          "{\"index\":0,\"i",
+          "d\":\"call_add_1\",\"type\":\"funct",
+          "ion\",\"f",
+          "unction\":{\"na",
+          "me\":\"add\",\"arguments\":\"\"}}]},",
+          "\"finish",
+          "_reason\":null",
+          "}]}\n\ndata: {\"id\":\"chatcmpl-mo",
+          "ck-1\",\"",
+          "object\":\"chat",
+          ".completion.chunk\",\"created\":",
+          "1767225",
+          "600,\"model\":\"",
+          "calc-parallel\",\"choices\":[{\"i",
+          "ndex\":0",
+          ",\"delta\":{\"to",
+          "ol_calls\":[{\"index\":0,\"functi",
+          "on\":{\"a",
+          "rguments\":\"{\\",
+          "\"a\\\":\"}}]},\"finish_reason\":nu",
+          "ll}]}\n\n",
+          "data: {\"id\":\"",
+          "chatcmpl-mock-1\",\"object\":\"ch",
+          "at.comp",
+          "letion.chunk\"",
+          ",\"created\":1767225600,\"model\"",
+          ":\"calc-",
+          "parallel\",\"ch",
+          "oices\":[{\"index\":0,\"delta\":{\"",
+          "tool_ca",
+          "lls\":[{\"index",
+          "\":0,\"function\":{\"arguments\":\"",
+          "2,\\\"b\\\"",
+          "\"}}]},\"finish",
+          "_reason\":null}]}\n\ndata: {\"id\"",
+          ":\"chatc",
+          "mpl-mock-1\",\"",
+          "object\":\"chat.completion.chun",
+          "k\",\"cre",
+          "ated\":1767225",
+          "600,\"model\":\"calc-parallel\",\"",
+          "choices",
+          "\":[{\"index\":0",
+          ",\"delta\":{\"tool_calls\":[{\"ind",
+          "ex\":0,\"",
+          "function\":{\"a",
+          "rguments\":\":3}\"}}]},\"finish_r",
+          "eason\":",
+          "null}]}\n\ndata",
+          ": {\"id\":\"chatcmpl-mock-1\",\"ob",
+          "ject\":\"",
+          "chat.completi",
+          "on.chunk\",\"created\":176722560",
+          "0,\"mode",
+          "l\":\"calc-para",
+          "llel\",\"choices\":[{\"index\":0,\"",
+          "delta\":",
+          "{\"tool_calls\"",
+          ":[{\"index\":1,\"id\":\"call_add_2",
+          "\",\"type",
+          "\":\"function\",",
+          "\"function\":{\"name\":\"add\",\"arg",
+          "uments\"",
+          ":\"\"}}]},\"fini",
+          "sh_reason\":null}]}\n\ndata: {\"i",
+          "d\":\"cha",
+          "tcmpl-mock-1\"",
+          ",\"object\":\"chat.completion.ch",
+          "unk\",\"c",
+          "reated\":17672",
+          "25600,\"model\":\"calc-parallel\"",
+          ",\"choic",
+          "es\":[{\"index\"",
+          ":0,\"delta\":{\"tool_calls\":[{\"i",
+          "ndex\":1",
+          ",\"function\":{",
+          "\"arguments\":\"{\\\"a\\\":\"}}]},\"fi",
+          "nish_re",
+          "ason\":null}]}",
+          "\n\ndata: {\"id\":\"chatcmpl-mock-",
+          "1\",\"obj",
+          "ect\":\"chat.co",
+          "mpletion.chunk\",\"created\":176",
+          "7225600",
+          ",\"model\":\"cal",
+          "c-parallel\",\"choices\":[{\"inde",
+          "x\":0,\"d",
+          "elta\":{\"tool_",
+          "calls\":[{\"index\":1,\"function\"",
+          ":{\"argu",
+          "ments\":\"10,\\\"",
+          "b\"}}]},\"finish_reason\":null}]",
+          "}\n\ndata",
+          ": {\"id\":\"chat",
+          "cmpl-mock-1\",\"object\":\"chat.c",
+          "ompleti",
+          "on.chunk\",\"cr",
+          "eated\":1767225600,\"model\":\"ca",
+          "lc-para",
+          "llel\",\"choice",
+          "s\":[{\"index\":0,\"delta\":{\"tool",
+          "_calls\"",
+          ":[{\"index\":1,",
+          "\"function\":{\"arguments\":\"\\\":2",
+          "0}\"}}]}",
+          ",\"finish_reas",
+          "on\":null}]}\n\ndata: {\"id\":\"cha",
+          "tcmpl-m",
+          "ock-1\",\"objec",
+          "t\":\"chat.completion.chunk\",\"c",
+          "reated\"",
+          ":1767225600,\"",
+          "model\":\"calc-parallel\",\"choic",
+          "es\":[{\"",
+          "index\":0,\"del",
+          "ta\":{},\"finish_reason\":\"tool_",
+          "calls\"}",
+          "]}\n\ndata: {\"i",
+          "d\":\"chatcmpl-mock-1\",\"object\"",
+          ":\"chat.",
+          "completion.ch",
+          "unk\",\"created\":1767225600,\"mo",
+          "del\":\"c",
+          "alc-parallel\"",
+          ",\"choices\":[],\"usage\":{\"promp",
+          "t_token",
+          "s\":60,\"comple",
+          "tion_tokens\":40,\"total_tokens",
+          "\":100}}",
+          "\n\ndata: [DONE",
+          "]\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "calc-parallel",
+          "messages": [
+            {
+              "role": "developer",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "call_add_1",
+                  "type": "function",
+                  "function": {
+                    "name": "add",
+                    "arguments": "{\"a\":2,\"b\":3}"
+                  }
+                },
+                {
+                  "id": "call_add_2",
+                  "type": "function",
+                  "function": {
+                    "name": "add",
+                    "arguments": "{\"a\":10,\"b\":20}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "5",
+              "tool_call_id": "call_add_1"
+            },
+            {
+              "role": "tool",
+              "content": "30",
+              "tool_call_id": "call_add_2"
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "store": false,
+          "max_completion_tokens": 4096,
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "add",
+                "description": "Add two numbers",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "a": {
+                      "type": "number"
+                    },
+                    "b": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "b"
+                  ]
+                }
+              }
+            }
+          ],
+          "reasoning_effort": "high"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          "data: {\"id\":\"chatcmp",
+          "l-mock-1\",\"object\":\"chat.comp",
+          "letion.",
+          "chunk\",\"creat",
+          "ed\":1767225600,\"model\":\"calc-",
+          "paralle",
+          "l\",\"choices\":",
+          "[{\"index\":0,\"delta\":{\"role\":\"",
+          "assista",
+          "nt\",\"content\"",
+          ":\"\"},\"finish_reason\":null}]}\n",
+          "\ndata: ",
+          "{\"id\":\"chatcm",
+          "pl-mock-1\",\"object\":\"chat.com",
+          "pletion",
+          ".chunk\",\"crea",
+          "ted\":1767225600,\"model\":\"calc",
+          "-parall",
+          "el\",\"choices\"",
+          ":[{\"index\":0,\"delta\":{\"conten",
+          "t\":\"The",
+          " re\"},\"finish",
+          "_reason\":null}]}\n\ndata: {\"id\"",
+          ":\"chatc",
+          "mpl-mock-1\",\"",
+          "object\":\"chat.completion.chun",
+          "k\",\"cre",
+          "ated\":1767225",
+          "600,\"model\":\"calc-parallel\",\"",
+          "choices",
+          "\":[{\"index\":0",
+          ",\"delta\":{\"content\":\"sults \"}",
+          ",\"finis",
+          "h_reason\":nul",
+          "l}]}\n\ndata: {\"id\":\"chatcmpl-m",
+          "ock-1\",",
+          "\"object\":\"cha",
+          "t.completion.chunk\",\"created\"",
+          ":176722",
+          "5600,\"model\":",
+          "\"calc-parallel\",\"choices\":[{\"",
+          "index\":",
+          "0,\"delta\":{\"c",
+          "ontent\":\"are 5 \"},\"finish_rea",
+          "son\":nu",
+          "ll}]}\n\ndata: ",
+          "{\"id\":\"chatcmpl-mock-1\",\"obje",
+          "ct\":\"ch",
+          "at.completion",
+          ".chunk\",\"created\":1767225600,",
+          "\"model\"",
+          ":\"calc-parall",
+          "el\",\"choices\":[{\"index\":0,\"de",
+          "lta\":{\"",
+          "content\":\"and",
+          " 30\"},\"finish_reason\":null}]}",
+          "\n\ndata:",
+          " {\"id\":\"chatc",
+          "mpl-mock-1\",\"object\":\"chat.co",
+          "mpletio",
+          "n.chunk\",\"cre",
+          "ated\":1767225600,\"model\":\"cal",
+          "c-paral",
+          "lel\",\"choices",
+          "\":[{\"index\":0,\"delta\":{\"conte",
+          "nt\":\".\"",
+          "},\"finish_rea",
+          "son\":null}]}\n\ndata: {\"id\":\"ch",
+          "atcmpl-",
+          "mock-1\",\"obje",
+          "ct\":\"chat.completion.chunk\",\"",
+          "created",
+          "\":1767225600,",
+          "\"model\":\"calc-parallel\",\"choi",
+          "ces\":[{",
+          "\"index\":0,\"de",
+          "lta\":{},\"finish_reason\":\"stop",
+          "\"}]}\n\nd",
+          "ata: {\"id\":\"c",
+          "hatcmpl-mock-1\",\"object\":\"cha",
+          "t.compl",
+          "etion.chunk\",",
+          "\"created\":1767225600,\"model\":",
+          "\"calc-p",
+          "arallel\",\"cho",
+          "ices\":[],\"usage\":{\"prompt_tok",
+          "ens\":12",
+          "0,\"completion",
+          "_tokens\":9,\"total_tokens\":129",
+          "}}\n\ndat",
+          "a: [DONE]\n\n"
+        ]
+      }
+    }
+  ]
+}

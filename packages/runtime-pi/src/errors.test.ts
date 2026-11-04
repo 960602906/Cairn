@@ -28,6 +28,15 @@ describe('httpStatusOf', () => {
     expect(httpStatusOf('429: {"error":"slow down"}')).toBe(429)
   })
 
+  it('Gemini：取响应体中的 error.code', () => {
+    expect(
+      httpStatusOf('{"error":{"code":429,"message":"quota","status":"RESOURCE_EXHAUSTED"}}'),
+    ).toBe(429)
+    expect(httpStatusOf('{"error":{"code":"x"}}')).toBeUndefined()
+    expect(httpStatusOf('{"error":{"code":200}}')).toBeUndefined()
+    expect(httpStatusOf('null')).toBeUndefined()
+  })
+
   it('不把更长的数字或小数当作状态码', () => {
     expect(httpStatusOf('took 4001 ms')).toBeUndefined()
     expect(httpStatusOf('version 1.404')).toBeUndefined()
@@ -47,6 +56,21 @@ describe('toFailure', () => {
     })
     expect(toFailure(failed('404 model not found'))).toMatchObject({
       error: { code: PiErrorCode.BadRequest, params: { status: 404 } },
+    })
+  })
+
+  it('Gemini 的无效 Key（400 + API_KEY_INVALID）归为认证失败', () => {
+    const body = JSON.stringify({
+      error: {
+        code: 400,
+        message: 'API key not valid. Please pass a valid API key.',
+        status: 'INVALID_ARGUMENT',
+        details: [{ reason: 'API_KEY_INVALID' }],
+      },
+    })
+    expect(toFailure(failed(body))).toEqual({
+      error: { code: PiErrorCode.AuthFailed, params: { status: 400 } },
+      retryable: false,
     })
   })
 
