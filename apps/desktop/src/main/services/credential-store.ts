@@ -13,7 +13,8 @@
  *   弱加密或明文（M6 再处理）；
  * - 文件无法解析或版本不支持时视为没有凭据；下次写入前把原文件改名备份（`credentials.json.bak-<时间>`），
  *   不会覆盖掉新版本应用写入的数据；
- * - 先写临时文件再改名替换；POSIX 上文件权限为 0600。
+ * - 先写临时文件再改名替换；POSIX 上文件权限为 0600；
+ * - 解密时系统提示密钥已轮换（`shouldReEncrypt`），用新密钥重新加密保存（失败只报告，不影响本次解析）。
  *
  * 不依赖 Electron：加密实现由调用方传入（`safe-storage-cipher.ts`），单元测试用假的实现。
  */
@@ -38,9 +39,10 @@ export const MAX_SECRET_LENGTH = 4096
 
 /** 系统加密。 */
 export interface SecretCipher {
-  isAvailable(): boolean
-  encrypt(plain: string): Buffer
-  decrypt(data: Buffer): string
+  isAvailable(): Promise<boolean>
+  encrypt(plain: string): Promise<Buffer>
+  /** `shouldReEncrypt`：系统密钥已轮换，应重新加密保存。 */
+  decrypt(data: Buffer): Promise<{ readonly plain: string; readonly shouldReEncrypt: boolean }>
 }
 
 export interface LocalKeyStoreOptions {
@@ -53,9 +55,9 @@ export interface LocalKeyStoreOptions {
 
 export interface LocalKeyStore extends CredentialProvider {
   /** 加密保存（覆盖已有的）。Key 去掉首尾空白。 */
-  set(ref: string, secret: string): void
+  set(ref: string, secret: string): Promise<void>
   /** 删除；返回是否存在过。 */
-  delete(ref: string): boolean
+  delete(ref: string): Promise<boolean>
   /** 是否保存过（不解密）。 */
   has(ref: string): boolean
 }
@@ -118,8 +120,17 @@ export function createLocalKeyStore(options: LocalKeyStoreOptions): LocalKeyStor
   const checkRef = (ref: string) => {
     if (!isCredentialRef(ref)) throw new RpcError(CredentialErrorCode.InvalidRef)
   }
-  const checkAvailable = () => {
-    if (!cipher.isAvailable()) throw new RpcError(CredentialErrorCode.Unavailable)
+  const checkAvailable = async () => {
+    if (!(await cipher.isAvailable())) throw new RpcError(CredentialErrorCode.Unavailable)
+  }
+  const encrypt = async (value: string): Promise<StoredEntry> => {
+    try {
+      const data = await cipher.encrypt(value)
+      return { kind: 'local-key', ciphertext: data.toString('base64'), updatedAt: now() }
+    } catch (error) {
+      onError?.(error)
+      throw new RpcError(CredentialErrorCode.Unavailable)
+    }
   }
 
   const write = (next: Entries) => {
@@ -140,24 +151,18 @@ export function createLocalKeyStore(options: LocalKeyStoreOptions): LocalKeyStor
   return {
     kind: 'local-key',
 
-    set(ref, secret) {
+    async set(ref, secret) {
       checkRef(ref)
       const value = secret.trim()
       if (value === '' || value.length > MAX_SECRET_LENGTH) {
         throw new RpcError(CredentialErrorCode.InvalidValue)
       }
-      checkAvailable()
-      let ciphertext: string
-      try {
-        ciphertext = cipher.encrypt(value).toString('base64')
-      } catch (error) {
-        onError?.(error)
-        throw new RpcError(CredentialErrorCode.Unavailable)
-      }
-      write({ ...entries, [ref]: { kind: 'local-key', ciphertext, updatedAt: now() } })
+      await checkAvailable()
+      const entry = await encrypt(value)
+      write({ ...entries, [ref]: entry })
     },
 
-    delete(ref) {
+    async delete(ref) {
       checkRef(ref)
       if (!Object.hasOwn(entries, ref)) return false
       const { [ref]: _removed, ...rest } = entries
@@ -173,13 +178,24 @@ export function createLocalKeyStore(options: LocalKeyStoreOptions): LocalKeyStor
       checkRef(ref)
       const entry = Object.hasOwn(entries, ref) ? entries[ref] : undefined
       if (!entry) return undefined
-      checkAvailable()
+      await checkAvailable()
+      let decrypted: Awaited<ReturnType<SecretCipher['decrypt']>>
       try {
-        return { apiKey: cipher.decrypt(Buffer.from(entry.ciphertext, 'base64')) }
+        decrypted = await cipher.decrypt(Buffer.from(entry.ciphertext, 'base64'))
       } catch (error) {
         onError?.(error)
         throw new RpcError(CredentialErrorCode.DecryptFailed)
       }
+      if (decrypted.shouldReEncrypt) {
+        try {
+          const fresh = await encrypt(decrypted.plain)
+          // 期间被删除或覆盖时不写回
+          if (entries[ref] === entry) write({ ...entries, [ref]: fresh })
+        } catch {
+          // 已由 encrypt / write 报告；旧密文仍可用
+        }
+      }
+      return { apiKey: decrypted.plain }
     },
   }
 }

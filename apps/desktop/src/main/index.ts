@@ -200,13 +200,13 @@ function startSmoke(window: BrowserWindow): void {
 
 /** 用真实的系统加密保存、解析并删除一个测试 Key（冒烟检查，数据目录是临时目录）。 */
 async function smokeCredentials(): Promise<CredentialCheck> {
-  if (!createSafeStorageCipher(safeStorage).isAvailable()) return 'unavailable'
+  if (!(await createSafeStorageCipher(safeStorage).isAvailable())) return 'unavailable'
   const ref = 'smoke-test'
   const secret = `smoke-secret-${process.pid}`
-  credentials.set(ref, secret)
+  await credentials.set(ref, secret)
   const resolved = await credentials.resolve(ref)
   const onDisk = readFileSync(paths.credentials, 'utf8')
-  credentials.delete(ref)
+  await credentials.delete(ref)
   if (resolved?.apiKey !== secret) throw new Error('credential store returned a different key')
   if (onDisk.includes(secret)) throw new Error('credential store wrote the key in plain text')
   return 'stored'
