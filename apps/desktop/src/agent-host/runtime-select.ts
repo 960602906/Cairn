@@ -1,18 +1,18 @@
 /**
- * 宿主选择运行时（M1-01d）。
+ * 宿主选择运行时（M1-01d、M1-04b）。按顺序：
  *
- * - `NEXUS_RUNTIME=pi`：pi 适配器（`@nexus/runtime-pi`）。模型由环境变量给出：
- *   `NEXUS_MODEL_KIND`（openai / anthropic / gemini）、`NEXUS_MODEL_BASE_URL`、可选的
- *   `NEXUS_MODEL_ID`（默认用 `host.init` 中的模型 id）、`NEXUS_MODEL_REASONING=1`。
- *   Key 优先用 `host.init` 带来的凭据（主进程按提供方 id 解析已保存的 Key，M1-03b）；没有时才用
- *   `NEXUS_MODEL_API_KEY`（只供开发与冒烟测试，M1-04 后去掉）。
- * - 其他（默认）：FakeRuntime，单元测试、界面开发与端到端测试使用。
+ * 1. `host.init` 带有模型配置（主进程按提供方配置给出，M1-04b）：pi 适配器（`@nexus/runtime-pi`），
+ *    模型由配置与 `host.init` 的凭据构造。
+ * 2. `NEXUS_RUNTIME=pi`：pi 适配器，模型由环境变量给出（开发与冒烟测试用，打包后的应用不传入）：
+ *    `NEXUS_MODEL_KIND`（openai / anthropic / gemini）、`NEXUS_MODEL_BASE_URL`、可选的
+ *    `NEXUS_MODEL_ID`（默认用 `host.init` 中的模型 id）、`NEXUS_MODEL_REASONING=1`。
+ *    Key 优先用 `host.init` 带来的凭据；没有时才用 `NEXUS_MODEL_API_KEY`。
+ * 3. 其他：FakeRuntime，单元测试、界面开发与端到端测试使用（没有配置模型的会话）。
  *
- * 模型的环境变量只是 M1-04（提供方配置）完成之前的开发入口：之后模型配置由主进程经 `host.init`
- * 传入，这里改为按配置构造 `ResolvedModel`。Key 不写入任何文件或日志。
+ * Key 不写入任何文件或日志。
  */
-import type { ProviderKind, ResolvedModel } from '@nexus/core'
-import type { ModelRef } from '@nexus/protocol'
+import { resolveModel, type ProviderKind, type ResolvedModel } from '@nexus/core'
+import type { HostModelConfig, ModelRef } from '@nexus/protocol'
 import { PiRuntime } from '@nexus/runtime-pi'
 import { createFakeHostRuntime } from './fake-model.js'
 import type { HostCredential, HostRuntime } from './host.js'
@@ -60,10 +60,12 @@ export function modelFromEnv(ref: ModelRef, env: Env, credential?: HostCredentia
 
 export function selectHostRuntime(
   env: Env,
-): (ref: ModelRef, credential?: HostCredential) => HostRuntime {
-  if (runtimeKind(env) === 'fake') return (ref) => createFakeHostRuntime(ref)
-  return (ref, credential) => ({
-    runtime: new PiRuntime(),
-    model: modelFromEnv(ref, env, credential),
-  })
+): (ref: ModelRef, credential?: HostCredential, modelConfig?: HostModelConfig) => HostRuntime {
+  return (ref, credential, modelConfig) => {
+    if (modelConfig) {
+      return { runtime: new PiRuntime(), model: resolveModel(ref, modelConfig, credential?.apiKey) }
+    }
+    if (runtimeKind(env) === 'fake') return createFakeHostRuntime(ref)
+    return { runtime: new PiRuntime(), model: modelFromEnv(ref, env, credential) }
+  }
 }

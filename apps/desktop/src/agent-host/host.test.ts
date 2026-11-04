@@ -41,11 +41,13 @@ function setup(script: FakeScript = { turns: [] }) {
   const exit = vi.fn()
   const onError = vi.fn()
   const credentials: unknown[] = []
+  const modelConfigs: unknown[] = []
   let id = 0
   createAgentHost({
     channel: hostSide,
-    createRuntime: (model, credential) => {
+    createRuntime: (model, credential, modelConfig) => {
       credentials.push(credential)
+      modelConfigs.push(modelConfig)
       return { runtime: new FakeRuntime(script), model: fakeModel(model) }
     },
     exit,
@@ -59,7 +61,7 @@ function setup(script: FakeScript = { turns: [] }) {
   const waitFor = async (type: string) => {
     await vi.waitFor(() => expect(events.map((e) => e.type)).toContain(type))
   }
-  return { main, events, exit, onError, waitFor, credentials }
+  return { main, events, exit, onError, waitFor, credentials, modelConfigs }
 }
 
 const text = (t: string) => [{ type: 'text' as const, text: t }]
@@ -74,6 +76,25 @@ describe('agent host', () => {
     const without = setup()
     await without.main.request('host.init', init)
     expect(without.credentials).toEqual([undefined])
+    expect(without.modelConfigs).toEqual([undefined])
+  })
+
+  it('passes the model config from host.init to the runtime factory', async () => {
+    const modelConfig = {
+      kind: 'anthropic' as const,
+      baseUrl: 'https://api.anthropic.com',
+      profile: {
+        id: 'claude-sonnet-5-5',
+        contextWindow: 1_000_000,
+        maxOutputTokens: 128_000,
+        supportsTools: true,
+        supportsParallelToolCalls: true,
+        supportsReasoning: true,
+      },
+    }
+    const host = setup()
+    await host.main.request('host.init', { ...init, modelConfig })
+    expect(host.modelConfigs).toEqual([modelConfig])
   })
 
   it('creates a run and answers prompts with events', async () => {

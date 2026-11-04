@@ -16,6 +16,30 @@ export type ProviderKind = z.infer<typeof ProviderKind>
 
 const PositiveInt = z.number().int().positive()
 
+/** 推理内容的请求格式（openai 格式的兼容服务各不相同）。 */
+export const ThinkingFormat = z.enum(['openai', 'deepseek', 'qwen', 'openrouter', 'zai'])
+export type ThinkingFormat = z.infer<typeof ThinkingFormat>
+
+/**
+ * 兼容参数（M1-04b，S2）：OpenAI 兼容服务之间的差异。只对 `openai` 格式生效，其他格式忽略。
+ * 没有给出的项由运行时按地址自动判断（例如 `deepseek.com`）；经代理接入时需要显式给出。
+ * 与具体运行时无关，由 `runtime-pi` 转换为 pi 的参数。
+ */
+export const ModelCompat = z
+  .object({
+    thinkingFormat: ThinkingFormat.optional(),
+    /** 回传历史时，助手消息必须带推理内容字段（DeepSeek 思考模式下的多轮工具调用）。 */
+    requiresReasoningContentOnAssistantMessages: z.boolean().optional(),
+    maxTokensField: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
+    supportsDeveloperRole: z.boolean().optional(),
+    supportsStore: z.boolean().optional(),
+    supportsReasoningEffort: z.boolean().optional(),
+    supportsUsageInStreaming: z.boolean().optional(),
+    supportsStrictMode: z.boolean().optional(),
+  })
+  .strict()
+export type ModelCompat = z.infer<typeof ModelCompat>
+
 /** 一个模型的能力（架构 §12.1 的 `ModelProfile`）；`verifiedAt` 为最近一次能力探测的时间。 */
 export const ModelProfile = z.object({
   /** 提供方的模型名。 */
@@ -27,6 +51,8 @@ export const ModelProfile = z.object({
   supportsParallelToolCalls: z.boolean(),
   supportsReasoning: z.boolean(),
   verifiedAt: Timestamp.optional(),
+  /** 只对这个模型生效的兼容参数，逐项覆盖提供方的 `compat`。 */
+  compat: ModelCompat.optional(),
 })
 export type ModelProfile = z.infer<typeof ModelProfile>
 
@@ -45,6 +71,10 @@ export const ProviderConfig = z
     baseUrl: BaseUrl,
     /** 凭据服务中的条目；本地服务（如 Ollama）可以没有。 */
     credentialRef: z.string().regex(CONFIG_ID_PATTERN).optional(),
+    /** 创建时所用的配置模板（M1-04b），用于界面显示与恢复模板的默认值。 */
+    template: z.string().regex(CONFIG_ID_PATTERN).optional(),
+    /** 提供方所有模型的兼容参数；创建时取自模板，可在高级设置中修改。 */
+    compat: ModelCompat.optional(),
     models: z.array(ModelProfile).max(256),
   })
   .refine((config) => new Set(config.models.map((m) => m.id)).size === config.models.length, {

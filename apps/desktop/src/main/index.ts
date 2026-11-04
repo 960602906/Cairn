@@ -104,9 +104,10 @@ const supervisor = createHostSupervisor({
   events,
   // 凭据引用由提供方配置给出；没有配置或没有引用时不传凭据
   resolveCredential: async (model) => {
-    const ref = settings.provider(model.providerId)?.credentialRef
+    const ref = settings.credentialRef(model)
     return ref === undefined ? undefined : credentials.resolve(ref)
   },
+  resolveModelConfig: (model) => settings.hostModelConfig(model),
   onError: reportError,
 })
 const sessions = createSessionManager({

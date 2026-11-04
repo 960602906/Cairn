@@ -32,7 +32,7 @@ describe('openSqliteStorage', () => {
     expect(storage.migration).toEqual({
       from: 0,
       to: MIGRATIONS.length,
-      applied: ['0001_init', '0002_providers'],
+      applied: ['0001_init', '0002_providers', '0003_provider_compat'],
     })
     storage.close()
 

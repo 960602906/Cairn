@@ -15,7 +15,20 @@ import {
   Timestamp,
 } from '../common.js'
 import { UnsequencedEventSchema } from '../events.js'
+import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
+
+/**
+ * 宿主构造模型所需的配置（M1-04b）：由主进程按提供方配置给出，不含 Key。
+ * `compat` 已合并提供方与模型两级的兼容参数。
+ */
+export const HostModelConfig = z.object({
+  kind: ProviderKind,
+  baseUrl: BaseUrl,
+  profile: ModelProfile.omit({ compat: true, displayName: true, verifiedAt: true }),
+  compat: ModelCompat.optional(),
+})
+export type HostModelConfig = z.infer<typeof HostModelConfig>
 
 export const HostForMain = defineSide({
   requests: {
@@ -40,6 +53,8 @@ export const HostForMain = defineSide({
          * 没有保存凭据时省略（如本地模型、FakeRuntime）。
          */
         credential: z.object({ apiKey: z.string().min(1) }).optional(),
+        /** 模型配置（M1-04b）。省略时宿主用 FakeRuntime，或开发用的环境变量。 */
+        modelConfig: HostModelConfig.optional(),
       }),
       result: z.object({}),
     },

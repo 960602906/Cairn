@@ -28,9 +28,9 @@ process.parentPort.on('message', (event) => {
   port.start()
   createAgentHost({
     channel: portChannel(port),
-    createRuntime: (model, credential) => {
+    createRuntime: (model, credential, modelConfig) => {
       if (credential) secrets.push(credential.apiKey)
-      const host = createHostRuntime(model, credential)
+      const host = createHostRuntime(model, credential, modelConfig)
       if (!traceFile) return host
       const write = (line: string) => appendFileSync(traceFile, `${line}\n`)
       return { ...host, runtime: traceHistory(host.runtime, write) }
