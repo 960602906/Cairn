@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { redact } from '@nexus/core'
+import { bundledRipgrepPath } from '@nexus/tools'
 import { openSqliteStorage } from '@nexus/storage'
 import {
   app,
@@ -36,6 +37,7 @@ import { createSessionManager, type RunDefaults } from './services/session-manag
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
 import { hostEnvironment } from '../shared/host-trace.js'
+import { checkBundledSearch } from './smoke-search.js'
 import {
   isSmokeRun,
   RENDERER_PROBE_SCRIPT,
@@ -54,6 +56,8 @@ app.setPath('sessionData', paths.session)
 for (const dir of requiredDirectories(paths)) mkdirSync(dir, { recursive: true })
 
 const rendererFile = join(import.meta.dirname, '../renderer/index.html')
+/** 随应用打包的 ripgrep：构建时复制到 `out/bin/`（electron.vite.config.ts）。 */
+const ripgrepPath = bundledRipgrepPath(join(import.meta.dirname, '../bin'))
 const devServerUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL']
 const navigationPolicy: NavigationPolicy = {
   rendererUrl: pathToFileURL(rendererFile).href,
@@ -206,6 +210,8 @@ function startSmoke(window: BrowserWindow): void {
       }),
     checkCredentials: smokeCredentials,
     credentialsRequired: process.platform !== 'linux',
+    checkSearch: () =>
+      checkBundledSearch(ripgrepPath, join(app.getPath('userData'), 'smoke-workspace')),
     expectedText: 'NEXUS-OS',
     userData: app.getPath('userData'),
     report: (line) => process.stdout.write(`${line}\n`),

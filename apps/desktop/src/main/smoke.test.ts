@@ -26,6 +26,7 @@ function deps(overrides: Partial<SmokeDeps> = {}) {
     runTurn: () => Promise.resolve(),
     checkCredentials: () => Promise.resolve('stored'),
     credentialsRequired: true,
+    checkSearch: () => Promise.resolve('ripgrep 15.0.0'),
     expectedText: 'NEXUS-OS',
     userData: '/data',
     report,
@@ -89,6 +90,7 @@ describe('runSmokeChecks', () => {
       renderer: goodProbe,
       turnCompleted: true,
       credentials: 'stored',
+      search: 'ripgrep 15.0.0',
       userData: '/data',
     })
     expect(reported(report)).toEqual(result)
@@ -145,6 +147,16 @@ describe('runSmokeChecks', () => {
       ok: false,
       credentials: null,
       error: 'resolved a different key',
+    })
+  })
+
+  it('fails when the bundled ripgrep cannot run', async () => {
+    const { all } = deps({ checkSearch: () => Promise.reject(new Error('spawn rg ENOENT')) })
+    expect(await runSmokeChecks(all)).toMatchObject({
+      ok: false,
+      credentials: 'stored',
+      search: null,
+      error: 'spawn rg ENOENT',
     })
   })
 

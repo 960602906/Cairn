@@ -62,5 +62,9 @@
   "tool.read_file.unreadable": "The file cannot be read",
   "tool.list_dir.not_found": "The directory does not exist",
   "tool.list_dir.not_directory": "This is not a directory",
-  "tool.list_dir.unreadable": "The directory cannot be read"
+  "tool.list_dir.unreadable": "The directory cannot be read",
+  "tool.search.not_found": "The path to search does not exist",
+  "tool.search.invalid_pattern": "The search pattern or file filter is invalid",
+  "tool.search.unavailable": "Search is unavailable: the bundled ripgrep could not be started",
+  "tool.search.failed": "The search failed"
 }

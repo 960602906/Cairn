@@ -1,0 +1,14 @@
+{
+  "$comment": "随应用分发、但不是从 npm 包许可证信息中得到的外部二进制（ADR-0014）。check-licenses 检查许可证，third-party-notices 写入声明；licenseDir 中存放许可证全文。升级来源包时同步更新版本（packages/tools 的测试会核对）。",
+  "binaries": [
+    {
+      "name": "ripgrep",
+      "version": "15.0.0",
+      "license": "MIT OR Unlicense",
+      "author": "Andrew Gallant",
+      "homepage": "https://github.com/BurntSushi/ripgrep",
+      "source": "@vscode/ripgrep (prebuilt binaries from microsoft/ripgrep-prebuilt)",
+      "licenseDir": "scripts/licenses/ripgrep"
+    }
+  ]
+}

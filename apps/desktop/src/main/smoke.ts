@@ -8,6 +8,7 @@
  * - 新建会话并发送一条输入，agent 宿主（utilityProcess + 专用端口 + FakeRuntime）完成一轮对话；
  * - 凭据存储用真实的系统加密（`safeStorage`）保存、解析并删除一个测试 Key（M1-03a）。系统加密不可用时
  *   （Linux 无密钥环，如 CI 容器）记为 `unavailable`；Windows 与 macOS 上要求可用。
+ * - 随应用打包的 ripgrep 能找到并运行，`search` 工具能在临时工作区中找到内容（M1-07b）。
  * 结果以 `NEXUS_SMOKE_RESULT <JSON>` 一行输出到标准输出，随后退出（成功 0，失败 1）。
  *
  * 这里只有与 Electron 无关的流程，Electron 相关的操作由入口注入，便于单元测试。
@@ -80,6 +81,8 @@ export interface SmokeResult {
   readonly turnCompleted: boolean
   /** 凭据存储检查的结果；没有执行到时为 null。 */
   readonly credentials: CredentialCheck | null
+  /** `search` 检查通过时为 ripgrep 的版本（`rg --version` 的第一行）；没有执行到时为 null。 */
+  readonly search: string | null
   readonly userData: string
   readonly error?: string
 }
@@ -98,6 +101,8 @@ export interface SmokeDeps {
   readonly checkCredentials: () => Promise<CredentialCheck>
   /** 系统加密必须可用（Windows、macOS）。 */
   readonly credentialsRequired: boolean
+  /** 用打包的 ripgrep 执行一次 `search`，返回 ripgrep 版本；找不到、无法运行或结果不对时抛出。 */
+  readonly checkSearch: () => Promise<string>
   /** 界面应显示的文本（应用名称）。 */
   readonly expectedText: string
   readonly userData: string
@@ -132,6 +137,7 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
   let renderer: RendererProbe | null = null
   let turnCompleted = false
   let credentials: CredentialCheck | null = null
+  let search: string | null = null
   let error: string | undefined
   try {
     await withTimeout(deps.waitForLoad(), timeoutMs, 'window load')
@@ -144,6 +150,7 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
     if (credentials === 'unavailable' && deps.credentialsRequired) {
       throw new Error('system encryption (safeStorage) is unavailable')
     }
+    search = await withTimeout(deps.checkSearch(), timeoutMs, 'search with bundled ripgrep')
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   }
@@ -152,6 +159,7 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
     renderer,
     turnCompleted,
     credentials,
+    search,
     userData: deps.userData,
     ...(error === undefined ? {} : { error }),
   }
