@@ -136,3 +136,18 @@ export async function selectShell(options: SelectShellOptions = {}): Promise<She
   }
   return (await first('bash', ['/bin/bash', '/usr/bin/bash'])) ?? { kind: 'sh', exe: '/bin/sh' }
 }
+
+/** 给模型与界面看的 shell 名称，如 `Windows PowerShell 5.1.26100.1`、`PowerShell 7.5.4`、`cmd.exe`、`bash`。 */
+export function describeShell(shell: ShellInfo): string {
+  const version = shell.version ? ` ${shell.version}` : ''
+  switch (shell.kind) {
+    case 'pwsh':
+      return `PowerShell${version}`
+    case 'powershell':
+      return `Windows PowerShell${version}`
+    case 'cmd':
+      return 'cmd.exe'
+    default:
+      return shell.kind
+  }
+}

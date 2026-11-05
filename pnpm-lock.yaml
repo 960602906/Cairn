@@ -47,6 +47,9 @@ importers:
       '@nexus/runtime-pi':
         specifier: workspace:*
         version: link:../../packages/runtime-pi
+      '@nexus/shell':
+        specifier: workspace:*
+        version: link:../../packages/shell
       '@nexus/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -62,6 +65,9 @@ importers:
       i18next:
         specifier: 26.7.1
         version: 26.7.1(typescript@6.0.3)
+      koffi:
+        specifier: 3.3.6
+        version: 3.3.6
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -181,6 +187,9 @@ importers:
       '@nexus/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@nexus/shell':
+        specifier: workspace:*
+        version: link:../shell
       diff:
         specifier: 9.0.0
         version: 9.0.0

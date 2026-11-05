@@ -39,17 +39,26 @@ export class ShellError extends Error {
   }
 }
 
+/** 取消信号（结构与 `AbortSignal` 相同的部分，便于传入 core 的 `AbortSignalLike`）。 */
+export interface ShellAbortSignal {
+  readonly aborted: boolean
+  addEventListener(type: 'abort', listener: () => void, options?: { once?: boolean }): void
+  removeEventListener(type: 'abort', listener: () => void): void
+}
+
 export interface RunCommandOptions {
   /** 工作目录（工作区根目录）。 */
   readonly cwd: string
   /** 子进程的环境变量，默认当前进程的；都会经过 `sanitizeEnv` 清洗。 */
   readonly env?: NodeJS.ProcessEnv
   /** 取消：结束进程树，结果的 `aborted` 为 true。 */
-  readonly signal?: AbortSignal
+  readonly signal?: ShellAbortSignal
   /** 超时（毫秒），默认 `DEFAULT_COMMAND_TIMEOUT_MS`；0 表示不限时。超时时结束进程树，结果的 `timedOut` 为 true。 */
   readonly timeoutMs?: number
   readonly onStdout?: (text: string) => void
   readonly onStderr?: (text: string) => void
+  /** 为 false 时不在结果中汇总输出（`stdout` / `stderr` 为空），由调用方经 `onStdout` / `onStderr` 自行保存。默认 true。 */
+  readonly collectOutput?: boolean
   /** 临时脚本所在目录，默认系统临时目录。 */
   readonly tempDir?: string
   readonly maxCommandLineChars?: InvocationOptions['maxCommandLineChars']
@@ -152,24 +161,20 @@ function spawnAndCollect(
     let settled = false
     const out: string[] = []
     const err: string[] = []
+    const keep = options.collectOutput ?? true
     const collect = (
       stream: NodeJS.ReadableStream | null,
       parts: string[],
       listener?: (text: string) => void,
     ) => {
       const decoder = new StringDecoder('utf8')
-      stream?.on('data', (chunk: Buffer) => {
-        const text = decoder.write(chunk)
+      const push = (text: string) => {
         if (text === '') return
-        parts.push(text)
+        if (keep) parts.push(text)
         listener?.(text)
-      })
-      stream?.on('end', () => {
-        const rest = decoder.end()
-        if (rest === '') return
-        parts.push(rest)
-        listener?.(rest)
-      })
+      }
+      stream?.on('data', (chunk: Buffer) => push(decoder.write(chunk)))
+      stream?.on('end', () => push(decoder.end()))
     }
     collect(child.stdout, out, options.onStdout)
     collect(child.stderr, err, options.onStderr)
