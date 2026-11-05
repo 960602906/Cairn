@@ -9,6 +9,7 @@ import type {
   FileChangeStatus,
   FileHunk,
   ModelRef,
+  PermissionRule,
   PersistedEvent,
   ProviderConfig,
 } from '@nexus/protocol'
@@ -26,6 +27,8 @@ export const StorageErrorCode = {
   SchemaTooNew: 'storage.schema_too_new',
   /** 迁移失败；数据库已恢复到迁移前的状态。 */
   MigrationFailed: 'storage.migration_failed',
+  /** 记录的内容不一致，不能保存（如权限规则的范围与归属不符）。 */
+  InvalidRecord: 'storage.invalid_record',
 } as const
 export type StorageErrorCode = (typeof StorageErrorCode)[keyof typeof StorageErrorCode]
 
@@ -122,6 +125,47 @@ export interface ProviderStore {
   replaceAll(configs: readonly ProviderConfig[]): void
 }
 
+// ---------- 权限规则 ----------
+
+/**
+ * 保存的权限规则（M1-10c，架构 §10.1）。项目范围的规则属于一个项目，会话范围的规则属于一个会话，
+ * 全局规则没有归属。预设规则不保存，由权限模式生成。规则格式由调用方用 `PermissionRule` schema 校验。
+ */
+export interface PermissionRuleRecord {
+  readonly rule: PermissionRule
+  readonly projectId?: string
+  readonly sessionId?: string
+  readonly createdAt: number
+}
+
+export interface AddPermissionRuleInput {
+  readonly rule: PermissionRule
+  /** 项目范围的规则必须给出，其他范围不能给出。 */
+  readonly projectId?: string
+  /** 会话范围的规则必须给出，其他范围不能给出。 */
+  readonly sessionId?: string
+}
+
+export interface ListPermissionRulesOptions {
+  /** 同时列出这个项目的规则。 */
+  readonly projectId?: string
+  /** 同时列出这个会话的规则。 */
+  readonly sessionId?: string
+}
+
+export interface PermissionRuleStore {
+  /**
+   * 范围与归属不符、或来源为预设时报 `storage.invalid_record`；项目或会话不存在时报
+   * `storage.not_found`；id 重复时报 `storage.conflict`。
+   */
+  add(input: AddPermissionRuleInput): PermissionRuleRecord
+  get(ruleId: string): PermissionRuleRecord | undefined
+  /** 全局规则，加上给出的项目、会话的规则；按全局、项目、会话排列，同一范围内按添加顺序。 */
+  list(options?: ListPermissionRulesOptions): PermissionRuleRecord[]
+  /** 不存在时报 `storage.not_found`。 */
+  delete(ruleId: string): void
+}
+
 // ---------- 事件 ----------
 
 export interface EventStore {
@@ -202,6 +246,7 @@ export interface Storage {
   readonly providers: ProviderStore
   readonly events: EventStore
   readonly changes: FileChangeStore
+  readonly permissionRules: PermissionRuleStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   close(): void

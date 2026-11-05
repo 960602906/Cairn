@@ -7,7 +7,7 @@
  *
  * 工厂每个用例调用一次，必须返回空的存储，并使用传入的时间来源。
  */
-import type { PersistedEvent } from '@nexus/protocol'
+import type { PermissionRule, PersistedEvent } from '@nexus/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { StorageError, StorageErrorCode, type Storage } from '../types.js'
 
@@ -492,6 +492,124 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.changes.list('s1').map((c) => [c.changeId, c.status])).toEqual([
           ['c1', 'pending'],
         ])
+      })
+    })
+
+    describe('permissionRules', () => {
+      const rule = (
+        id: string,
+        scope: PermissionRule['scope'],
+        extra: Partial<PermissionRule> = {},
+      ): PermissionRule => ({
+        id,
+        scope,
+        effect: 'allow',
+        match: { tool: 'run_command', command: ['npm test'] },
+        source: 'approval',
+        ...extra,
+      })
+
+      it('adds rules and lists the ones that apply, global first', () => {
+        seed()
+        storage.projects.create({ projectId: 'p2', name: 'Other', path: '/work/other' })
+        storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p2',
+          workspacePath: '/work/other',
+          title: 'other',
+        })
+        const session = storage.permissionRules.add({
+          rule: rule('r1', 'session'),
+          sessionId: 's1',
+        })
+        expect(session).toEqual({ rule: rule('r1', 'session'), sessionId: 's1', createdAt: 100 })
+        clock = 200
+        storage.permissionRules.add({ rule: rule('r2', 'project'), projectId: 'p1' })
+        storage.permissionRules.add({
+          rule: rule('r3', 'global', {
+            effect: 'deny',
+            match: { path: ['**/.env'] },
+            source: 'user',
+          }),
+        })
+        storage.permissionRules.add({ rule: rule('r4', 'project'), projectId: 'p2' })
+        storage.permissionRules.add({ rule: rule('r5', 'session'), sessionId: 's2' })
+        storage.permissionRules.add({ rule: rule('r0', 'global', { match: {} }) })
+
+        const ids = (options?: { projectId?: string; sessionId?: string }) =>
+          storage.permissionRules.list(options).map((r) => r.rule.id)
+        expect(ids()).toEqual(['r3', 'r0'])
+        expect(ids({ projectId: 'p1', sessionId: 's1' })).toEqual(['r3', 'r0', 'r2', 'r1'])
+        expect(ids({ projectId: 'p2', sessionId: 's2' })).toEqual(['r3', 'r0', 'r4', 'r5'])
+        expect(ids({ sessionId: 's1' })).toEqual(['r3', 'r0', 'r1'])
+        expect(storage.permissionRules.get('r2')).toEqual({
+          rule: rule('r2', 'project'),
+          projectId: 'p1',
+          createdAt: 200,
+        })
+        expect(storage.permissionRules.get('r3')).toEqual({
+          rule: rule('r3', 'global', {
+            effect: 'deny',
+            match: { path: ['**/.env'] },
+            source: 'user',
+          }),
+          createdAt: 200,
+        })
+        expect(storage.permissionRules.get('nope')).toBeUndefined()
+      })
+
+      it('rejects inconsistent owners, presets, unknown owners and duplicate ids', () => {
+        seed()
+        const invalid = [
+          { rule: rule('a', 'global'), projectId: 'p1' },
+          { rule: rule('a', 'global'), sessionId: 's1' },
+          { rule: rule('a', 'project') },
+          { rule: rule('a', 'project'), projectId: 'p1', sessionId: 's1' },
+          { rule: rule('a', 'session') },
+          { rule: rule('a', 'session'), projectId: 'p1' },
+          { rule: rule('a', 'global', { source: 'preset' }) },
+        ]
+        for (const input of invalid) {
+          expectStorageError(
+            () => storage.permissionRules.add(input),
+            StorageErrorCode.InvalidRecord,
+          )
+        }
+        expectStorageError(
+          () => storage.permissionRules.add({ rule: rule('a', 'project'), projectId: 'nope' }),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.permissionRules.add({ rule: rule('a', 'session'), sessionId: 'nope' }),
+          StorageErrorCode.NotFound,
+        )
+        storage.permissionRules.add({ rule: rule('a', 'global') })
+        expectStorageError(
+          () => storage.permissionRules.add({ rule: rule('a', 'session'), sessionId: 's1' }),
+          StorageErrorCode.Conflict,
+        )
+        expect(storage.permissionRules.list({ sessionId: 's1' })).toHaveLength(1)
+      })
+
+      it('deletes rules, returns copies and rolls back with transactions', () => {
+        seed()
+        storage.permissionRules.add({ rule: rule('a', 'global') })
+        const record = storage.permissionRules.get('a')!
+        ;(record.rule.match.command as string[]).push('rm -rf /')
+        expect(storage.permissionRules.get('a')!.rule.match.command).toEqual(['npm test'])
+        expect(() =>
+          storage.transaction(() => {
+            storage.permissionRules.delete('a')
+            storage.permissionRules.add({ rule: rule('b', 'session'), sessionId: 's1' })
+            throw new Error('boom')
+          }),
+        ).toThrow('boom')
+        expect(storage.permissionRules.list({ sessionId: 's1' }).map((r) => r.rule.id)).toEqual([
+          'a',
+        ])
+        storage.permissionRules.delete('a')
+        expect(storage.permissionRules.get('a')).toBeUndefined()
+        expectStorageError(() => storage.permissionRules.delete('a'), StorageErrorCode.NotFound)
       })
     })
 

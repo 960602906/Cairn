@@ -2,6 +2,7 @@
  * 内存存储实现，用于测试与开发。与 SQLite 实现通过同一套契约测试（`testing/store-contract.ts`）。
  */
 import { isLiveEventType, type PersistedEvent, type ProviderConfig } from '@nexus/protocol'
+import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
 import {
   StorageError,
   StorageErrorCode,
@@ -9,6 +10,7 @@ import {
   type CreateSessionInput,
   type FileChangeRecord,
   type ListSessionsOptions,
+  type PermissionRuleRecord,
   type ProjectRecord,
   type SessionRecord,
   type Storage,
@@ -22,6 +24,8 @@ interface State {
   events: Map<string, PersistedEvent[]>
   /** 按记录顺序（Map 保持插入顺序）。 */
   changes: Map<string, FileChangeRecord>
+  /** 按添加顺序。 */
+  rules: Map<string, PermissionRuleRecord>
 }
 
 function cloneState(state: State): State {
@@ -31,6 +35,7 @@ function cloneState(state: State): State {
     providers: state.providers,
     events: new Map([...state.events].map(([id, list]) => [id, [...list]])),
     changes: new Map(state.changes),
+    rules: new Map(state.rules),
   }
 }
 
@@ -47,6 +52,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     providers: [],
     events: new Map(),
     changes: new Map(),
+    rules: new Map(),
   }
   let closed = false
 
@@ -239,6 +245,43 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         const next = { ...record, status, hunks: record.hunks.map((h) => ({ ...h, status })) }
         s.changes.set(changeId, next)
         return copy(next)
+      },
+    },
+
+    permissionRules: {
+      add(input) {
+        checkPermissionRuleOwner(input)
+        const s = live()
+        if (input.projectId !== undefined && !s.projects.has(input.projectId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { projectId: input.projectId })
+        }
+        if (input.sessionId !== undefined) requireSession(input.sessionId)
+        if (s.rules.has(input.rule.id)) {
+          throw new StorageError(StorageErrorCode.Conflict, { ruleId: input.rule.id })
+        }
+        const record: PermissionRuleRecord = { ...copy(input), createdAt: now() }
+        s.rules.set(input.rule.id, record)
+        return copy(record)
+      },
+      get(ruleId) {
+        const record = live().rules.get(ruleId)
+        return record && copy(record)
+      },
+      list(listOptions = {}) {
+        return [...live().rules.values()]
+          .filter(
+            (r) =>
+              r.rule.scope === 'global' ||
+              (r.rule.scope === 'project' && r.projectId === listOptions.projectId) ||
+              (r.rule.scope === 'session' && r.sessionId === listOptions.sessionId),
+          )
+          .sort((a, b) => SCOPE_ORDER[a.rule.scope] - SCOPE_ORDER[b.rule.scope])
+          .map(copy)
+      },
+      delete(ruleId) {
+        if (!live().rules.delete(ruleId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { ruleId })
+        }
       },
     },
 

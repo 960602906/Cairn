@@ -255,6 +255,38 @@ describe('startHost', () => {
     expect(host.inits).toEqual([])
   })
 
+  it('passes the session permission rules in host.init', async () => {
+    const host = fakeHost()
+    const permissionRules = [
+      {
+        id: 'r1',
+        scope: 'session' as const,
+        effect: 'allow' as const,
+        match: { tool: 'run_command', command: ['npm test'] },
+        source: 'approval' as const,
+      },
+    ]
+    const resolvePermissionRules = vi.fn(() => permissionRules)
+    const { supervisor } = setup(host, { resolvePermissionRules })
+    await supervisor.startHost(init)
+    expect(resolvePermissionRules).toHaveBeenCalledWith(init.sessionId)
+    expect(host.inits).toEqual([{ ...init, permissionRules }])
+  })
+
+  it('records host.start_failed when the permission rules cannot be loaded', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host, {
+      resolvePermissionRules: () => {
+        throw new RpcError('storage.not_found')
+      },
+    })
+    await expect(supervisor.startHost(init)).rejects.toMatchObject({ code: 'host.start_failed' })
+    expect(crashes()).toEqual([
+      { error: { code: 'host.start_failed', params: { cause: 'storage.not_found' } } },
+    ])
+    expect(host.inits).toEqual([])
+  })
+
   it('records host.start_failed when the process cannot be created', async () => {
     const host = fakeHost()
     const { supervisor } = setup(host, {

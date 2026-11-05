@@ -10,12 +10,19 @@
  * - `host.heartbeat`：回复当前时间。
  * 运行发出的事件以 `host.event` 原样转发，seq 由主进程分配。
  *
+ * 权限（M1-10c）：`permissions` 按 `host.init` 下发的规则（省略时为“询问”模式的预设）与强制拦截判定；
+ * 工具流水线接入宿主时使用（M1-11）。
+ *
  * 运行时与模型解析由入口注入，M1 换成 pi 适配器时这里不改。不依赖 Electron。
  */
 import {
+  createPermissionEngine,
   createRunSupervisor,
+  DEFAULT_PERMISSION_GUARDS,
+  presetRules,
   type AgentRunHandle,
   type AgentRuntime,
+  type PermissionGate,
   type ResolvedModel,
   type RunSupervisor,
 } from '@nexus/core'
@@ -26,6 +33,7 @@ import {
   RpcError,
   type HostModelConfig,
   type ModelRef,
+  type PermissionRule,
   type RpcChannel,
   type RpcEndpoint,
 } from '@nexus/protocol'
@@ -62,12 +70,16 @@ export interface AgentHostOptions {
   /** 轮次、步骤、消息的 id；必须全局唯一（同一运行跨宿主重启也不能重复）。 */
   readonly createId: () => string
   readonly now?: () => number
+  /** 权限规则中的路径与命令是否不区分大小写（Windows）。默认 false。 */
+  readonly caseInsensitive?: boolean
   /** 记录异常（如排队的输入执行失败）。 */
   readonly onError?: (error: unknown) => void
 }
 
 export interface AgentHost {
   readonly endpoint: RpcEndpoint<typeof HostForMain, typeof MainForHost>
+  /** 工具调用的权限判定（M1-10c），使用 `host.init` 下发的规则。 */
+  readonly permissions: PermissionGate
 }
 
 export function createAgentHost(options: AgentHostOptions): AgentHost {
@@ -78,6 +90,12 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let supervisor: RunSupervisor | undefined
   let run: AgentRunHandle | undefined
   let initializing = false
+  let permissionRules: readonly PermissionRule[] = presetRules('ask')
+  const permissions = createPermissionEngine({
+    rules: () => permissionRules,
+    guards: DEFAULT_PERMISSION_GUARDS,
+    ...(options.caseInsensitive !== undefined ? { caseInsensitive: options.caseInsensitive } : {}),
+  })
 
   const requireRun = () => {
     if (!run) throw new RpcError(AgentHostErrorCode.NotInitialized)
@@ -87,6 +105,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   endpoint.handle('host.init', async (init) => {
     if (initializing || run) throw new RpcError(AgentHostErrorCode.AlreadyInitialized)
     initializing = true
+    if (init.permissionRules) permissionRules = init.permissionRules
     const { runtime, model } = await options.createRuntime(
       init.model,
       init.credential,
@@ -138,5 +157,5 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
 
   endpoint.handle('host.heartbeat', () => ({ ts: now() }))
 
-  return { endpoint }
+  return { endpoint, permissions }
 }

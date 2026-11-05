@@ -23,6 +23,7 @@
   "storage.invalid_event": "事件无法保存",
   "storage.schema_too_new": "数据库版本（{{version}}）比当前应用支持的版本（{{supported}}）新，请升级应用",
   "storage.migration_failed": "数据库升级失败，已恢复到升级前的状态",
+  "storage.invalid_record": "记录内容不一致，无法保存",
   "rpc.timeout": "请求超时",
   "rpc.invalid_params": "请求参数无效",
   "rpc.invalid_result": "响应内容无效",

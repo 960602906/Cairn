@@ -40,6 +40,32 @@ describe('createSettingsService', () => {
     expect(existsSync(file)).toBe(false)
   })
 
+  it('saves the permission mode; defaults to ask when missing or invalid', () => {
+    writeFileSync(file, JSON.stringify({ permissionMode: 'yolo' }))
+    const settings = createSettingsService({
+      storage: createMemoryStorage(),
+      file,
+      systemLocales: () => ['zh-CN'],
+    })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.permissionMode()).toBe('ask')
+    expect(settings.update({ permissionMode: 'read-only' })).toEqual({
+      locale: 'zh-CN',
+      providers: [],
+      permissionMode: 'read-only',
+    })
+    expect(settings.permissionMode()).toBe('read-only')
+    expect(read()).toEqual({ permissionMode: 'read-only' })
+    settings.update({ locale: 'en-US' })
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).permissionMode(),
+    ).toBe('read-only')
+  })
+
   it('saves updates and reads them back on the next start', () => {
     const settings = createSettingsService({
       storage: createMemoryStorage(),

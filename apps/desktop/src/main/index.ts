@@ -35,6 +35,7 @@ import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
+import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
@@ -107,6 +108,8 @@ const changes = createChangeService({
   events,
   isBusy: (sessionId) => sessions.isBusy(sessionId),
 })
+/** 权限规则（M1-10c）：权限模式的预设与保存的规则，启动宿主时经 `host.init` 下发。 */
+const permissions = createPermissionService({ storage, mode: () => settings.permissionMode() })
 const supervisor = createHostSupervisor({
   spawn: createUtilityHostSpawner({
     entry: join(import.meta.dirname, 'agent-host.js'),
@@ -121,6 +124,7 @@ const supervisor = createHostSupervisor({
     return ref === undefined ? undefined : credentials.resolve(ref)
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
+  resolvePermissionRules: (sessionId) => permissions.rulesForSession(sessionId),
   recordChange: (sessionId, runId, input) => changes.record(sessionId, runId, input),
   onError: reportError,
 })
