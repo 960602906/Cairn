@@ -1,6 +1,6 @@
 /**
- * 真实执行（M1-09a）。Windows 上把 S7 的检查项移植为测试，对 Windows PowerShell 5.1 与 PowerShell 7（如已安装、
- * 非商店版）分别运行，cmd 另有基本检查；其他平台覆盖 bash。
+ * 真实执行（M1-09a、M1-09b）。Windows 上把 S7 的检查项移植为测试，对 Windows PowerShell 5.1 与 PowerShell 7（如已安装、
+ * 非商店版）分别运行，包括 Job Object 结束进程树；cmd 另有基本检查；其他平台覆盖 bash 与进程组。
  */
 import {
   mkdtempSync,
@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
+  createProcessTree,
   defaultShellProbe,
   isPackagedPath,
   runCommand,
@@ -36,6 +37,23 @@ afterAll(() => rmSync(work, { recursive: true, force: true }))
 /** 每次运行用独立的子目录。 */
 const freshDir = () => realpathSync.native(mkdtempSync(path.join(work, 'case-')))
 const readdir = () => readdirSync(work)
+
+const isAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/** 等待进程结束（最多约 3 秒），返回是否已结束。 */
+async function exited(pid: number) {
+  for (let i = 0; i < 30 && isAlive(pid); i++) await new Promise((r) => setTimeout(r, 100))
+  return !isAlive(pid)
+}
+
+const pids = (out: string) => out.split('\n').map((line) => Number(line.trim()))
 
 async function run(shell: ShellInfo, command: string, options: Partial<RunCommandOptions> = {}) {
   const cwd = options.cwd ?? freshDir()
@@ -168,6 +186,62 @@ for (const shell of powershells) {
       const result = await run(shell, '(Get-Location).Path')
       expect(result.out.toLowerCase()).toBe(result.cwd.toLowerCase())
     })
+
+    it('环境变量清洗：密钥与内部变量不传入，PYTHONUTF8=1', async () => {
+      const result = await run(
+        shell,
+        'Write-Output "[$env:PYTHONUTF8][$env:MY_API_KEY][$env:NEXUS_RUNTIME][$env:KEEP_ME]"',
+        { env: { ...process.env, MY_API_KEY: 'k', NEXUS_RUNTIME: 'pi', KEEP_ME: '值' } },
+      )
+      expect(result.out).toBe('[1][][][值]')
+    })
+
+    const startHidden = (file: string, args: string) =>
+      `(Start-Process -FilePath ${file} -ArgumentList ${args} -PassThru -WindowStyle Hidden).Id`
+    const backgroundPing = startHidden('ping.exe', "'-n','60','127.0.0.1'")
+    const backgroundCmd = startHidden('cmd.exe', "'/c','ping -n 60 127.0.0.1 >nul'")
+
+    it('超时：Job Object 结束整个进程树（含 Start-Process 启动的进程）', async () => {
+      const result = await run(
+        shell,
+        `${backgroundPing}\n${backgroundCmd}\nStart-Sleep -Seconds 60`,
+        {
+          timeoutMs: 8_000,
+        },
+      )
+      expect(result).toMatchObject({
+        timedOut: true,
+        aborted: false,
+        exitCode: 1,
+        processTree: 'job-object',
+      })
+      expect(result.durationMs).toBeLessThan(20_000)
+      for (const pid of pids(result.out)) expect(await exited(pid)).toBe(true)
+    }, 30_000)
+
+    it('命令结束时残留的后台进程随之结束；取消', async () => {
+      const result = await run(shell, backgroundPing)
+      expect(result).toMatchObject({ exitCode: 0, timedOut: false, processTree: 'job-object' })
+      expect(await exited(pids(result.out)[0]!)).toBe(true)
+
+      const controller = new AbortController()
+      const pending = run(shell, `${backgroundPing}\nStart-Sleep -Seconds 60`, {
+        signal: controller.signal,
+        onStdout: () => controller.abort(),
+      })
+      const aborted = await pending
+      expect(aborted).toMatchObject({ aborted: true, timedOut: false, exitCode: 1 })
+      expect(await exited(pids(aborted.out)[0]!)).toBe(true)
+    }, 30_000)
+
+    it('作业对象不可用时回退到 taskkill /T /F', async () => {
+      const result = await run(shell, `${backgroundPing}\nStart-Sleep -Seconds 60`, {
+        timeoutMs: 8_000,
+        processTree: () => createProcessTree({ kernel32: undefined }),
+      })
+      expect(result).toMatchObject({ timedOut: true, processTree: 'taskkill' })
+      expect(await exited(pids(result.out)[0]!)).toBe(true)
+    }, 30_000)
   })
 }
 
@@ -201,9 +275,17 @@ describe.runIf(!isWindows)('bash', () => {
     const special = '单引号 \' 双引号 " $HOME `反引号` & | ; % ^ < > \t 😀'
     expect((await run(bash, `cat <<'EOF'\n${special}\nEOF`)).out).toBe(special)
     expect((await run(bash, 'read x; echo "got:$x"')).out).toBe('got:')
-    expect((await run(bash, 'echo "$NEXUS_TEST_VAR"', { env: { NEXUS_TEST_VAR: '值' } })).out).toBe(
+    expect((await run(bash, 'echo "$SHELL_TEST_VAR"', { env: { SHELL_TEST_VAR: '值' } })).out).toBe(
       '值',
     )
+  })
+
+  it('环境变量清洗：密钥与内部变量不传入，PYTHONUTF8=1', async () => {
+    const env = { ...process.env, MY_API_KEY: 'k', NEXUS_RUNTIME: 'pi', KEEP_ME: '值' }
+    const result = await run(bash, 'echo "[$PYTHONUTF8][$MY_API_KEY][$NEXUS_RUNTIME][$KEEP_ME]"', {
+      env,
+    })
+    expect(result.out).toBe('[1][][][值]')
   })
 
   it('流式输出：多字节字符跨块时不被拆开', async () => {
@@ -229,12 +311,48 @@ describe.runIf(!isWindows)('bash', () => {
     const controller = new AbortController()
     setTimeout(() => controller.abort(), 50)
     const result = await run(bash, 'sleep 10', { signal: controller.signal })
-    expect(result).toMatchObject({ aborted: true, exitCode: null, signal: 'SIGTERM' })
+    expect(result).toMatchObject({
+      aborted: true,
+      timedOut: false,
+      exitCode: null,
+      signal: 'SIGKILL',
+      processTree: 'process-group',
+    })
     expect(result.durationMs).toBeLessThan(5_000)
     expect(await run(bash, 'echo no', { signal: AbortSignal.abort() })).toMatchObject({
       aborted: true,
       out: '',
       durationMs: 0,
+    })
+  })
+
+  it('超时：结束整个进程组（含后台进程与子孙进程）', async () => {
+    const result = await run(
+      bash,
+      'sleep 30 & echo $!; (sleep 30; echo late) & echo $!; sleep 30',
+      { timeoutMs: 300 },
+    )
+    expect(result).toMatchObject({
+      timedOut: true,
+      aborted: false,
+      exitCode: null,
+      signal: 'SIGKILL',
+    })
+    expect(result.durationMs).toBeLessThan(5_000)
+    for (const pid of pids(result.out)) expect(await exited(pid)).toBe(true)
+  })
+
+  it('命令结束时残留的后台进程随之结束，不等待它们持有的输出管道', async () => {
+    const result = await run(bash, 'sleep 30 & echo $!')
+    expect(result).toMatchObject({ exitCode: 0, timedOut: false })
+    expect(result.durationMs).toBeLessThan(5_000)
+    expect(await exited(pids(result.out)[0]!)).toBe(true)
+  })
+
+  it('timeoutMs 为 0 时不限时', async () => {
+    expect(await run(bash, 'sleep 0.2; echo done', { timeoutMs: 0 })).toMatchObject({
+      out: 'done',
+      timedOut: false,
     })
   })
 
