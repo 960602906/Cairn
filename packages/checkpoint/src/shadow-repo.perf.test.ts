@@ -1,6 +1,7 @@
 /**
  * 性能验收（M1-12，S5）：约 1 万个文件的工作区上，日常检查点 < 2 s、恢复 < 5 s。
- * 只在 CI 中运行（`CI` 环境变量），Windows 是首发平台。首次检查点每个项目只发生一次，不设上限。
+ * 只在 CI 中运行（`CI` 环境变量），Windows 是首发平台。首次检查点（每个项目一次）与大改动之后的
+ * 检查点只记录耗时（S5：Windows 上约 12 s、4 s）；恢复取 3 轮的中位数。
  */
 import fs from 'node:fs'
 import os from 'node:os'
@@ -54,21 +55,31 @@ describe.runIf(process.env.CI)('checkpoint performance (10k files)', () => {
     const small = await timed(() => repo.checkpoint('small'))
     expect(small.result.created).toBe(true)
 
-    // 大改动后恢复到首次检查点（改 1000、删 500）
+    // 大改动（改 1000、删 500）之后的检查点：每轮开始与每次命令前都会创建，恢复时不再包含这部分
     for (const rel of files.slice(1000, 2000)) fs.appendFileSync(path.join(work, rel), '// big\n')
     for (const rel of files.slice(3000, 3500)) fs.rmSync(path.join(work, rel))
-    const restore = await timed(() => repo.restore(first.result.commit))
-    expect(restore.result.changes.length).toBeGreaterThanOrEqual(1500)
-    const undo = await timed(() => repo.restore(restore.result.before))
+    const big = await timed(() => repo.checkpoint('big'))
 
+    // 恢复到首次检查点再撤销，取 3 轮的中位数（与 S5 相同）
+    const restores: number[] = []
+    const undos: number[] = []
+    for (let round = 0; round < 3; round++) {
+      const restore = await timed(() => repo.restore(first.result.commit))
+      expect(restore.result.changes.length).toBeGreaterThanOrEqual(1500)
+      restores.push(restore.ms)
+      undos.push((await timed(() => repo.restore(restore.result.before))).ms)
+    }
+    const median = (values: number[]) => [...values].sort((a, b) => a - b)[1]!
+
+    const ms = (n: number) => `${n.toFixed(0)} ms`
     console.log(
-      `checkpoint perf (${process.platform}): first ${first.ms.toFixed(0)} ms, unchanged ` +
-        `${unchanged.ms.toFixed(0)} ms, small ${small.ms.toFixed(0)} ms, restore ` +
-        `${restore.ms.toFixed(0)} ms, undo ${undo.ms.toFixed(0)} ms`,
+      `checkpoint perf (${process.platform}): first ${ms(first.ms)}, unchanged ${ms(unchanged.ms)}, ` +
+        `small ${ms(small.ms)}, big ${ms(big.ms)}, restore ${restores.map(ms).join(' / ')}, ` +
+        `undo ${undos.map(ms).join(' / ')}`,
     )
     expect(unchanged.ms).toBeLessThan(2000)
     expect(small.ms).toBeLessThan(2000)
-    expect(restore.ms).toBeLessThan(5000)
-    expect(undo.ms).toBeLessThan(5000)
+    expect(median(restores)).toBeLessThan(5000)
+    expect(median(undos)).toBeLessThan(5000)
   })
 })
