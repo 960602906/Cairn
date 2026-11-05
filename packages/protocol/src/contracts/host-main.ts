@@ -16,6 +16,7 @@ import {
 } from '../common.js'
 import { FileChangeInput } from '../changes.js'
 import { UnsequencedEventSchema } from '../events.js'
+import { PermissionRule } from '../permissions.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
 
@@ -56,6 +57,11 @@ export const HostForMain = defineSide({
         credential: z.object({ apiKey: z.string().min(1) }).optional(),
         /** 模型配置（M1-04b）。省略时宿主用 FakeRuntime，或开发用的环境变量。 */
         modelConfig: HostModelConfig.optional(),
+        /**
+         * 适用于这个会话的权限规则（M1-10c）：权限模式的预设、全局规则、会话所属项目的规则、会话的规则。
+         * 省略时按“询问”模式的预设判定。
+         */
+        permissionRules: z.array(PermissionRule).optional(),
       }),
       result: z.object({}),
     },

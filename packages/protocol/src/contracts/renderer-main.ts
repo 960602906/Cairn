@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { FileChangeSummary } from '../changes.js'
 import { ContentPart, Id, ModelRef, Timestamp } from '../common.js'
 import { EventEnvelopeSchema } from '../events.js'
+import { PermissionMode } from '../permissions.js'
 import { CONFIG_ID_PATTERN, ProviderConfigList } from '../providers.js'
 import { defineSide } from '../rpc.js'
 
@@ -41,11 +42,13 @@ export type Locale = z.infer<typeof Locale>
  * 应用设置。之后的设置项只能以可选字段向后兼容地追加。
  * - `providers`：模型提供方配置（M1-04a），不含 Key；
  * - `defaultModel`：新会话默认使用的模型，指向 `providers` 中的某个模型；没有设置时不出现。
+ * - `permissionMode`：权限模式（M1-10c，架构 §10.3），即使用哪组预设规则；没有设置时不出现，按“询问”。
  */
 export const Settings = z.object({
   locale: Locale,
   providers: ProviderConfigList,
   defaultModel: ModelRef.optional(),
+  permissionMode: PermissionMode.optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -57,6 +60,7 @@ export const SettingsPatch = z.object({
   locale: Locale.optional(),
   providers: ProviderConfigList.optional(),
   defaultModel: ModelRef.nullable().optional(),
+  permissionMode: PermissionMode.optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 

@@ -7,6 +7,7 @@ import {
   isLiveEventType,
   type FileChangeKind,
   type FileChangeStatus,
+  type PermissionRule,
   type PersistedEvent,
   type ProviderConfig,
 } from '@nexus/protocol'
@@ -14,15 +15,18 @@ import Database from 'better-sqlite3'
 import {
   StorageError,
   StorageErrorCode,
+  type AddPermissionRuleInput,
   type CreateFileChangeInput,
   type FileChangeRecord,
   type HunkRecord,
   type ListSessionsOptions,
+  type PermissionRuleRecord,
   type ProjectRecord,
   type SessionRecord,
   type Storage,
   type StorageOptions,
 } from '../types.js'
+import { checkPermissionRuleOwner } from '../permission-rules.js'
 import { migrateDatabase, type MigrateResult, type Migration } from './migrate.js'
 import { MIGRATIONS } from './migrations/index.js'
 
@@ -110,6 +114,30 @@ interface HunkRow {
   new_lines: number
   status: FileChangeStatus
 }
+
+interface PermissionRuleRow {
+  rule_id: string
+  scope: PermissionRule['scope']
+  project_id: string | null
+  session_id: string | null
+  effect: PermissionRule['effect']
+  match: string
+  source: PermissionRule['source']
+  created_at: number
+}
+
+const toPermissionRule = (row: PermissionRuleRow): PermissionRuleRecord => ({
+  rule: {
+    id: row.rule_id,
+    scope: row.scope,
+    effect: row.effect,
+    match: JSON.parse(row.match) as PermissionRule['match'],
+    source: row.source,
+  },
+  ...(row.project_id === null ? {} : { projectId: row.project_id }),
+  ...(row.session_id === null ? {} : { sessionId: row.session_id }),
+  createdAt: row.created_at,
+})
 
 const toHunk = (row: HunkRow): HunkRecord => ({
   oldStart: row.old_start,
@@ -274,6 +302,22 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
        VALUES (@changeId, @position, @oldStart, @oldLines, @newStart, @newLines, 'pending')`,
     ),
     setChangeStatus: db.prepare('UPDATE file_changes SET status = ? WHERE change_id = ?'),
+    ruleById: db.prepare<[string], PermissionRuleRow>(
+      'SELECT * FROM permission_rules WHERE rule_id = ?',
+    ),
+    rules: db.prepare<{ projectId: string | null; sessionId: string | null }, PermissionRuleRow>(
+      `SELECT * FROM permission_rules
+       WHERE scope = 'global'
+          OR (scope = 'project' AND project_id = @projectId)
+          OR (scope = 'session' AND session_id = @sessionId)
+       ORDER BY CASE scope WHEN 'global' THEN 0 WHEN 'project' THEN 1 ELSE 2 END, rowid`,
+    ),
+    insertRule: db.prepare(
+      `INSERT INTO permission_rules
+         (rule_id, scope, project_id, session_id, effect, match, source, created_at)
+       VALUES (@ruleId, @scope, @projectId, @sessionId, @effect, @match, @source, @at)`,
+    ),
+    deleteRule: db.prepare('DELETE FROM permission_rules WHERE rule_id = ?'),
     setHunkStatus: db.prepare('UPDATE hunks SET status = ? WHERE change_id = ?'),
   }
 
@@ -400,6 +444,31 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     },
   )
 
+  const addRule = db.transaction((input: AddPermissionRuleInput): PermissionRuleRecord => {
+    checkPermissionRuleOwner(input)
+    const { rule } = input
+    if (input.projectId !== undefined && !q.projectById.get(input.projectId)) {
+      throw new StorageError(StorageErrorCode.NotFound, { projectId: input.projectId })
+    }
+    if (input.sessionId !== undefined && !q.sessionById.get(input.sessionId)) {
+      throw new StorageError(StorageErrorCode.NotFound, { sessionId: input.sessionId })
+    }
+    if (q.ruleById.get(rule.id)) {
+      throw new StorageError(StorageErrorCode.Conflict, { ruleId: rule.id })
+    }
+    q.insertRule.run({
+      ruleId: rule.id,
+      scope: rule.scope,
+      projectId: input.projectId ?? null,
+      sessionId: input.sessionId ?? null,
+      effect: rule.effect,
+      match: JSON.stringify(rule.match),
+      source: rule.source,
+      at: now(),
+    })
+    return toPermissionRule(q.ruleById.get(rule.id)!)
+  })
+
   return {
     migration,
 
@@ -494,6 +563,25 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
           .map((row) => toFileChange(row, hunks.get(row.change_id) ?? []))
       },
       setStatus: (changeId, status) => setChangeStatus(changeId, status),
+    },
+
+    permissionRules: {
+      add: (input) => addRule(input),
+      get(ruleId) {
+        const row = q.ruleById.get(ruleId)
+        return row && toPermissionRule(row)
+      },
+      list: (listOptions = {}) =>
+        q.rules
+          .all({
+            projectId: listOptions.projectId ?? null,
+            sessionId: listOptions.sessionId ?? null,
+          })
+          .map(toPermissionRule),
+      delete(ruleId) {
+        const { changes } = q.deleteRule.run(ruleId)
+        if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { ruleId })
+      },
     },
 
     transaction: <T>(fn: () => T): T => db.transaction(fn)(),

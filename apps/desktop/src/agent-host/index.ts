@@ -37,6 +37,7 @@ process.parentPort.on('message', (event) => {
     },
     exit: (code) => process.exit(code),
     createId: randomUUID,
+    caseInsensitive: process.platform === 'win32',
     onError: reportError,
   })
 })

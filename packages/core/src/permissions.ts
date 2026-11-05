@@ -186,7 +186,12 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
   }
 }
 
-/** 三种模式的预设规则（架构 §10.3）：范围为 global，来源为 preset。 */
+/**
+ * 三种模式的预设规则（架构 §10.3）：范围为 global，来源为 preset。
+ *
+ * “询问”模式没有预设规则，即按类别默认值（write、execute、network 询问）：如果写成 `ask` 规则，按
+ * deny > ask > allow 它会压过审批时生成的 `allow` 规则，“始终允许”就不起作用了（M1-10c 修正）。
+ */
 export function presetRules(mode: PermissionMode): PermissionRule[] {
   const rule = (category: ToolCategory, effect: PermissionEffect): PermissionRule => ({
     id: `preset.${mode}.${category}`,
@@ -200,7 +205,7 @@ export function presetRules(mode: PermissionMode): PermissionRule[] {
     case 'read-only':
       return changing.map((c) => rule(c, 'deny'))
     case 'ask':
-      return changing.map((c) => rule(c, 'ask'))
+      return []
     case 'auto':
       return changing.map((c) => rule(c, 'allow'))
   }

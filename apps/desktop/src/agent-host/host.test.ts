@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { FakeRuntime, type FakeScript } from '@nexus/core'
+import { FakeRuntime, presetRules, type FakeScript } from '@nexus/core'
 import {
   createEndpoint,
   HostForMain,
@@ -43,7 +43,7 @@ function setup(script: FakeScript = { turns: [] }) {
   const credentials: unknown[] = []
   const modelConfigs: unknown[] = []
   let id = 0
-  createAgentHost({
+  const host = createAgentHost({
     channel: hostSide,
     createRuntime: (model, credential, modelConfig) => {
       credentials.push(credential)
@@ -61,7 +61,7 @@ function setup(script: FakeScript = { turns: [] }) {
   const waitFor = async (type: string) => {
     await vi.waitFor(() => expect(events.map((e) => e.type)).toContain(type))
   }
-  return { main, events, exit, onError, waitFor, credentials, modelConfigs }
+  return { main, events, exit, onError, waitFor, credentials, modelConfigs, host }
 }
 
 const text = (t: string) => [{ type: 'text' as const, text: t }]
@@ -95,6 +95,49 @@ describe('agent host', () => {
     const host = setup()
     await host.main.request('host.init', { ...init, modelConfig })
     expect(host.modelConfigs).toEqual([modelConfig])
+  })
+
+  it('decides tool calls with the permission rules from host.init', async () => {
+    const definition = {
+      name: 'run_command',
+      description: 'Run a command',
+      category: 'execute' as const,
+      inputSchema: { type: 'object' },
+      execute: () => Promise.resolve({ content: [] }),
+    }
+    const request = (command: string) => ({
+      definition,
+      input: { command },
+      targets: { command },
+      toolCallId: 'call1',
+    })
+    const decide = (h: ReturnType<typeof setup>, command: string) =>
+      h.host.permissions.decide(request(command) as never)
+
+    // 没有下发规则：按“询问”模式的预设
+    const defaults = setup()
+    expect(await decide(defaults, 'npm test')).toMatchObject({ decision: 'ask' })
+    await defaults.main.request('host.init', init)
+    expect(await decide(defaults, 'npm test')).toMatchObject({ decision: 'ask' })
+
+    const ruled = setup()
+    await ruled.main.request('host.init', {
+      ...init,
+      permissionRules: [
+        ...presetRules('ask'),
+        {
+          id: 'r1',
+          scope: 'session',
+          effect: 'allow',
+          match: { tool: 'run_command', command: ['npm test'] },
+          source: 'approval',
+        },
+      ],
+    })
+    expect(await decide(ruled, 'npm test')).toEqual({ decision: 'allow' })
+    expect(await decide(ruled, 'npm run build')).toMatchObject({ decision: 'ask' })
+    // 强制拦截不能被规则覆盖
+    expect(await decide(ruled, 'rm -rf /')).toMatchObject({ decision: 'deny' })
   })
 
   it('creates a run and answers prompts with events', async () => {

@@ -280,6 +280,24 @@ describe('预设', () => {
     expect(decidePermission(req(tools.read), rules).decision).toBe(read)
   })
 
+  it('询问模式没有预设规则，审批生成的 allow 规则可以生效', () => {
+    expect(presetRules('ask')).toEqual([])
+    const allow = approvalRule({
+      id: 'a1',
+      scope: 'session',
+      definition: tools.run,
+      targets: { command: 'npm test' },
+    })
+    const rules = [...presetRules('ask'), allow]
+    expect(decidePermission(req(tools.run, { command: 'npm test' }), rules).decision).toBe('allow')
+    expect(decidePermission(req(tools.run, { command: 'npm run x' }), rules).decision).toBe('ask')
+    // 只读模式下 allow 规则不能放行
+    const readOnly = [...presetRules('read-only'), allow]
+    expect(decidePermission(req(tools.run, { command: 'npm test' }), readOnly).decision).toBe(
+      'deny',
+    )
+  })
+
   it('切换模式替换预设、保留其他规则', () => {
     const user = rule('deny', { path: ['secret/**'] })
     const next = applyPreset([...presetRules('read-only'), user], 'auto')

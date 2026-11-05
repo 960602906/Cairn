@@ -108,6 +108,7 @@ describe('translateError', () => {
       'storage.invalid_event',
       'storage.schema_too_new',
       'storage.migration_failed',
+      'storage.invalid_record',
       'rpc.timeout',
       'rpc.invalid_params',
       'rpc.invalid_result',
