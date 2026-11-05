@@ -6,7 +6,7 @@
  * - `run_command` 的 shell 在第一次注册时选出（ADR-0012：Windows 优先非商店版 pwsh 7，其次 Windows
  *   PowerShell 5.1），同一个宿主进程只选一次。shell 偏好设置（`auto` / `cmd`）随设置界面加入。
  */
-import { selectShell, type ShellInfo } from '@nexus/shell'
+import { describeShell, selectShell, type ShellInfo } from '@nexus/shell'
 import {
   bundledRipgrepPath,
   registerExecuteTools,
@@ -24,7 +24,7 @@ export interface BuiltinToolsOptions {
 
 export function createBuiltinTools(
   options: BuiltinToolsOptions,
-): (registry: ToolRegistry) => Promise<void> {
+): (registry: ToolRegistry) => Promise<{ shell: string }> {
   let shell: Promise<ShellInfo> | undefined
   return async (registry) => {
     shell ??= (options.selectShell ?? (() => selectShell()))().catch((error: unknown) => {
@@ -35,5 +35,7 @@ export function createBuiltinTools(
     registerReadTools(registry, { ripgrepPath: bundledRipgrepPath(options.binDir) })
     registerWriteTools(registry)
     registerExecuteTools(registry, { shell: selected })
+    // 写入系统提示词（M1-13b）
+    return { shell: describeShell(selected) }
   }
 }

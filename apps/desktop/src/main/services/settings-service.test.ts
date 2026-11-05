@@ -66,6 +66,36 @@ describe('createSettingsService', () => {
     ).toBe('read-only')
   })
 
+  it('saves the custom instructions; blank or null clears them (M1-13b)', () => {
+    writeFileSync(file, JSON.stringify({ instructions: 42 }))
+    const settings = createSettingsService({
+      storage: createMemoryStorage(),
+      file,
+      systemLocales: () => ['zh-CN'],
+    })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.instructions()).toBeUndefined()
+    expect(settings.update({ instructions: 'Use pnpm.' })).toEqual({
+      locale: 'zh-CN',
+      providers: [],
+      instructions: 'Use pnpm.',
+    })
+    expect(settings.instructions()).toBe('Use pnpm.')
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).instructions(),
+    ).toBe('Use pnpm.')
+    settings.update({ instructions: '  \n' })
+    expect(settings.instructions()).toBeUndefined()
+    expect(read()).toEqual({})
+    settings.update({ instructions: 'again' })
+    settings.update({ instructions: null })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+  })
+
   it('saves updates and reads them back on the next start', () => {
     const settings = createSettingsService({
       storage: createMemoryStorage(),

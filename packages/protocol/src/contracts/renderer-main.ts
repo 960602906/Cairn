@@ -36,6 +36,9 @@ export const SessionSummary = z.object({
 })
 export type SessionSummary = z.infer<typeof SessionSummary>
 
+/** 自定义说明的长度上限（字符）。 */
+export const INSTRUCTIONS_MAX_LENGTH = 10_000
+
 /** 界面语言（ADR-0013）；与 `@nexus/i18n` 的 `SUPPORTED_LOCALES` 一致。 */
 export const Locale = z.enum(['zh-CN', 'en-US'])
 export type Locale = z.infer<typeof Locale>
@@ -45,12 +48,14 @@ export type Locale = z.infer<typeof Locale>
  * - `providers`：模型提供方配置（M1-04a），不含 Key；
  * - `defaultModel`：新会话默认使用的模型，指向 `providers` 中的某个模型；没有设置时不出现。
  * - `permissionMode`：权限模式（M1-10c，架构 §10.3），即使用哪组预设规则；没有设置时不出现，按“询问”。
+ * - `instructions`：用户的自定义说明（M1-13b，架构 §13），加入每个会话的系统提示词；没有设置时不出现。
  */
 export const Settings = z.object({
   locale: Locale,
   providers: ProviderConfigList,
   defaultModel: ModelRef.optional(),
   permissionMode: PermissionMode.optional(),
+  instructions: z.string().min(1).max(INSTRUCTIONS_MAX_LENGTH).optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -63,6 +68,8 @@ export const SettingsPatch = z.object({
   providers: ProviderConfigList.optional(),
   defaultModel: ModelRef.nullable().optional(),
   permissionMode: PermissionMode.optional(),
+  /** 空字符串或 null 清除自定义说明。 */
+  instructions: z.string().max(INSTRUCTIONS_MAX_LENGTH).nullable().optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 

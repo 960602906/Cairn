@@ -8,7 +8,8 @@
  *
  * `host.init` 前按模型解析凭据（M1-03b，ADR-0010）与模型配置（M1-04b），只经 `host.init` 传给宿主；
  * 无法解析（系统加密不可用、无法解密、模型已从配置中删除）按启动失败处理，原因的错误码记入 `cause`。
- * 适用于会话的权限规则（M1-10c）同样在 `host.init` 前汇总并下发；检查点位置（M1-12b）也是。
+ * 适用于会话的权限规则（M1-10c）同样在 `host.init` 前汇总并下发；检查点位置（M1-12b）与用户的自定义说明
+ * （M1-13b）也是。
  *
  * 宿主的 `host.approval.request` 与 `host.approval.cancelled`（M1-11a）交给审批服务（M1-11b），会话与运行
  * 同样按这个宿主填入。宿主退出或崩溃时仍未决的审批一并取消；崩溃时补写 `approval.resolved`
@@ -53,7 +54,7 @@ export const HostErrorCode = {
 /** 会话管理器给出的初始化参数；凭据、模型配置、权限规则与检查点由监督器解析后加入。 */
 export type HostInit = Omit<
   z.input<(typeof HostForMain)['requests']['host.init']['params']>,
-  'credential' | 'modelConfig' | 'permissionRules' | 'checkpoints'
+  'credential' | 'modelConfig' | 'permissionRules' | 'checkpoints' | 'instructions'
 >
 
 /** 会话的检查点位置（M1-12b）：项目的影子仓库目录与会话的引用。 */
@@ -100,6 +101,8 @@ export interface HostSupervisorOptions {
    * 的预设判定。
    */
   readonly resolvePermissionRules?: (sessionId: string) => PermissionRule[]
+  /** 用户的自定义说明（M1-13b，设置服务）；省略或返回 undefined 时不传。 */
+  readonly resolveInstructions?: () => string | undefined
   /** 会话的检查点位置（M1-12b）；省略或返回 undefined 时宿主不创建检查点。 */
   readonly resolveCheckpoints?: (sessionId: string) => HostCheckpointLocation | undefined
   /**
@@ -292,6 +295,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         const modelConfig = options.resolveModelConfig?.(init.model)
         const permissionRules = options.resolvePermissionRules?.(sessionId)
         const checkpoints = options.resolveCheckpoints?.(sessionId)
+        const instructions = options.resolveInstructions?.()
         const credential = await options.resolveCredential?.(init.model)
         await endpoint.request(
           'host.init',
@@ -301,6 +305,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
             ...(modelConfig ? { modelConfig } : {}),
             ...(permissionRules ? { permissionRules } : {}),
             ...(checkpoints ? { checkpoints } : {}),
+            ...(instructions ? { instructions } : {}),
           },
           { timeoutMs: startTimeoutMs },
         )

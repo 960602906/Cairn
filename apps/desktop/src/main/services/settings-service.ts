@@ -8,6 +8,8 @@
  * - 文件不存在、不是 JSON 或字段无效时按默认值处理，不阻止应用启动；文件中的未知字段原样保留，
  *   旧版本应用不会丢掉新版本写入的设置。
  * - 权限模式（M1-10c）保存在 `settings.json`；没有设置或无效时按“询问”，`settings.get` 中不出现。
+ * - 自定义说明（M1-13b）保存在 `settings.json`；空字符串、只有空白或 null 清除。启动宿主时经 `host.init`
+ *   下发，已在运行的宿主不受影响。
  * - 默认模型必须是已配置的模型，否则报 `settings.invalid_default_model`；更新提供方后默认模型
  *   不再存在时一并清除。文件中的默认模型无效时视为没有设置。
  * - 先写临时文件再改名替换，写入中途退出不会留下半个文件。写入失败报 `settings.write_failed`，
@@ -22,9 +24,9 @@ import {
   ModelRef,
   PermissionMode,
   RpcError,
+  Settings,
   type HostModelConfig,
   type ProviderConfig,
-  type Settings,
   type SettingsPatch as ProtocolSettingsPatch,
 } from '@nexus/protocol'
 import type { ProviderStore, Storage } from '@nexus/storage'
@@ -68,6 +70,8 @@ export interface SettingsService {
   credentialRef(model: ModelRef): string | undefined
   /** 当前的权限模式（M1-10c）；没有设置时为“询问”。 */
   permissionMode(): PermissionMode
+  /** 用户的自定义说明（M1-13b）；没有设置时为 undefined。 */
+  instructions(): string | undefined
 }
 
 /** 没有设置权限模式时使用的模式。 */
@@ -114,15 +118,22 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
     return parsed.success ? parsed.data : undefined
   }
 
+  const storedInstructions = (): string | undefined => {
+    const parsed = Settings.shape.instructions.safeParse(stored['instructions'])
+    return parsed.success ? parsed.data : undefined
+  }
+
   const current = (): Settings => {
     const providers = storage.providers.list()
     const defaultModel = storedDefault(providers)
     const permissionMode = storedMode()
+    const instructions = storedInstructions()
     return {
       locale: resolveLocale(stored['locale'], systemLocales()),
       providers,
       ...(defaultModel ? { defaultModel } : {}),
       ...(permissionMode ? { permissionMode } : {}),
+      ...(instructions ? { instructions } : {}),
     }
   }
 
@@ -148,6 +159,10 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       if (patch.locale !== undefined) next['locale'] = patch.locale
       if (patch.defaultModel !== undefined) next['defaultModel'] = patch.defaultModel ?? undefined
       if (patch.permissionMode !== undefined) next['permissionMode'] = patch.permissionMode
+      if (patch.instructions !== undefined) {
+        // 只有空白时视为清除
+        next['instructions'] = patch.instructions?.trim() ? patch.instructions : undefined
+      }
       // 默认模型所在的提供方或模型被删除时一并清除
       const keptDefault = ModelRef.safeParse(next['defaultModel'])
       if (keptDefault.success && !modelIn(providers, keptDefault.data)) {
@@ -183,5 +198,6 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
     },
     credentialRef: (model) => storage.providers.get(model.providerId)?.credentialRef,
     permissionMode: () => storedMode() ?? DEFAULT_PERMISSION_MODE,
+    instructions: storedInstructions,
   }
 }
