@@ -85,6 +85,11 @@ export interface SessionManager extends SessionCommands {
   activeSessions(): string[]
   /** 排队等待宿主的会话，按先后顺序。 */
   queuedSessions(): string[]
+  /**
+   * 让运行中的宿主重新读取权限规则（M1-11b）：审批时新增了规则、切换了权限模式之后调用。
+   * 给出 `sessionIds` 时只通知这些会话。失败交给 `onError`。
+   */
+  refreshPermissions(sessionIds?: readonly string[]): void
   /** 应用退出时调用：清空队列、停止所有宿主并等待退出。之后的输入报 `run.disposed`。 */
   shutdown(): Promise<void>
 }
@@ -427,6 +432,13 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
     activeSessions: () => [...slots.keys()],
     queuedSessions: () => [...waiting.keys()],
+
+    refreshPermissions(sessionIds) {
+      for (const [sessionId, slot] of slots) {
+        if (sessionIds && !sessionIds.includes(sessionId)) continue
+        slot.handle?.refreshPermissions().catch(onError)
+      }
+    },
 
     async shutdown() {
       closed = true

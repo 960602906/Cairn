@@ -35,6 +35,7 @@ import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
+import { createApprovalService } from './services/approval-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
@@ -110,6 +111,11 @@ const changes = createChangeService({
 })
 /** 权限规则（M1-10c）：权限模式的预设与保存的规则，启动宿主时经 `host.init` 下发。 */
 const permissions = createPermissionService({ storage, mode: () => settings.permissionMode() })
+/** 审批（M1-11b）：宿主的审批请求等待界面决定；“始终允许”生成的规则通知所有运行中的宿主。 */
+const approvals = createApprovalService({
+  permissions,
+  onRuleAdded: () => sessions.refreshPermissions(),
+})
 const supervisor = createHostSupervisor({
   spawn: createUtilityHostSpawner({
     entry: join(import.meta.dirname, 'agent-host.js'),
@@ -125,6 +131,8 @@ const supervisor = createHostSupervisor({
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
   resolvePermissionRules: (sessionId) => permissions.rulesForSession(sessionId),
+  requestApproval: (sessionId, runId, request) => approvals.request(sessionId, runId, request),
+  cancelApproval: (sessionId, approvalId) => approvals.cancel(sessionId, approvalId),
   recordChange: (sessionId, runId, input) => changes.record(sessionId, runId, input),
   onError: reportError,
 })
@@ -141,9 +149,18 @@ sessions.recoverInterrupted()
 const gateway = createRendererGateway({
   events,
   commands: sessions,
-  settings,
+  settings: {
+    get: () => settings.get(),
+    // 切换权限模式后，运行中的宿主改用新的预设
+    update: (patch) => {
+      const next = settings.update(patch)
+      if (patch.permissionMode !== undefined) sessions.refreshPermissions()
+      return next
+    },
+  },
   credentials: createCredentialCommands(credentials),
   changes,
+  approvals,
   onProtocolError: (error) => reportError(error),
 })
 

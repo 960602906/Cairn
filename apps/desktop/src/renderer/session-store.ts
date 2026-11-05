@@ -14,6 +14,8 @@
  * - **事件记录**（开发模式的事件查看器，M0-15d）：`eventLogLimit` 大于 0 时按会话保存收到的原始
  *   事件（补发与实时推送，含增量），每个会话只保留最近的若干条，超出时先丢弃增量事件。默认不保存。
  * - **设置**：`updateSettings` 保存设置；失败时同样写入 `error`。
+ * - **审批**（M1-11b）：当前会话的未决审批经 `approval.pending` 读取，订阅时与收到 `approval.changed`
+ *   通知后重新读取；`resolveApproval` 作出决定（失败时写入 `error`，审批仍保留）。
  *
  * 不依赖 React 与 DOM，便于在 Node 中测试；组件通过 `useStore(store, selector)` 读取。
  */
@@ -22,8 +24,10 @@ import {
   isPersistedEvent,
   RpcError,
   type ContentPart,
+  type ApprovalDecision,
   type ErrorInfo,
   type EventEnvelope,
+  type PendingApproval,
   type SessionSummary,
   type Settings,
 } from '@nexus/protocol'
@@ -40,6 +44,8 @@ export interface SessionState {
   readonly awaitingTurn: Readonly<Record<string, true>>
   /** 各会话收到的原始事件（按到达顺序）；只在开启事件记录时保存。 */
   readonly eventLog: Readonly<Record<string, readonly EventEnvelope[]>>
+  /** 各会话的未决审批（按请求顺序）；只读取当前会话的。 */
+  readonly approvals: Readonly<Record<string, readonly PendingApproval[]>>
   /** 最近一次失败的错误；界面显示后可以清除。 */
   readonly error: ErrorInfo | undefined
 }
@@ -54,6 +60,12 @@ export interface SessionActions {
   sendPrompt(text: string): Promise<boolean>
   /** 停止当前会话正在进行的一轮。 */
   abort(): Promise<void>
+  /** 决定当前会话的一个审批；成功时返回 true。 */
+  resolveApproval(
+    approvalId: string,
+    decision: ApprovalDecision,
+    feedback?: string,
+  ): Promise<boolean>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: Partial<Settings>): Promise<Settings | undefined>
   clearError(): void
@@ -73,6 +85,8 @@ const toError = (error: unknown): ErrorInfo =>
 
 /** 这些事件说明等待的那一轮已经开始或不会再开始。 */
 const TURN_SETTLED = new Set(['turn.started', 'turn.failed', 'turn.aborted', 'session.crashed'])
+
+/** 这些事件之后重新读取未决审批。 */
 
 const withoutKey = <T>(record: Readonly<Record<string, T>>, key: string) => {
   if (!(key in record)) return record
@@ -140,6 +154,7 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
   /** 当前已订阅的会话（订阅响应已返回）。 */
   let subscribed: string | undefined
 
+  let loadApprovalsFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
   const store = createStore<SessionState & SessionActions>()((set, get) => {
     const run = async <T>(action: () => Promise<T>): Promise<T | undefined> => {
       try {
@@ -165,6 +180,15 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         }
       })
 
+    /** 重新读取会话的未决审批；失败时保留之前的结果。 */
+    const loadApprovals = async (sessionId: string) => {
+      const result = await run(() => api.request('approval.pending', { sessionId }))
+      if (result)
+        set((state) => ({ approvals: { ...state.approvals, [sessionId]: result.approvals } }))
+    }
+
+    loadApprovalsFor = loadApprovals
+
     const unsubscribe = async (sessionId: string) => {
       pending.delete(sessionId)
       if (subscribed === sessionId) subscribed = undefined
@@ -177,6 +201,7 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       activeSessionId: undefined,
       awaitingTurn: {},
       eventLog: {},
+      approvals: {},
       error: undefined,
 
       async refreshSessions() {
@@ -225,6 +250,7 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         }
         subscribed = sessionId
         set((state) => receive(state, sessionId, [...result.events, ...(buffered ?? [])]))
+        await loadApprovals(sessionId)
       },
 
       async sendPrompt(text) {
@@ -247,12 +273,29 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         if (stopped !== undefined) setAwaiting(sessionId, false)
       },
 
+      async resolveApproval(approvalId, decision, feedback) {
+        const sessionId = get().activeSessionId
+        if (sessionId === undefined) return false
+        const trimmed = feedback?.trim()
+        const resolved = await run(() =>
+          api.request('approval.resolve', {
+            sessionId,
+            approvalId,
+            decision,
+            ...(decision === 'deny' && trimmed ? { feedback: trimmed } : {}),
+          }),
+        )
+        await loadApprovals(sessionId)
+        return resolved !== undefined
+      },
+
       updateSettings: (patch) => run(() => api.request('settings.update', patch)),
 
       clearError: () => set({ error: undefined }),
 
       dispose() {
         offEvents()
+        offApprovals()
         pending.clear()
         subscribed = undefined
       },
@@ -265,7 +308,11 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       buffer.push(...events)
       return
     }
-    if (sessionId === subscribed) store.setState((state) => receive(state, sessionId, events))
+    if (sessionId !== subscribed) return
+    store.setState((state) => receive(state, sessionId, events))
+  })
+  const offApprovals = api.on('approval.changed', ({ sessionId }) => {
+    if (sessionId === subscribed) void loadApprovalsFor(sessionId)
   })
 
   return store

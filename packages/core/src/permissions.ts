@@ -226,7 +226,8 @@ export function applyPreset(
 export function approvalRule(options: {
   readonly id: string
   readonly scope: 'session' | 'project'
-  readonly definition: ToolDefinition
+  /** 只用到工具名（主进程按审批请求中的工具名生成）。 */
+  readonly definition: Pick<ToolDefinition, 'name'>
   readonly targets: ToolTargets
 }): PermissionRule {
   const { targets } = options

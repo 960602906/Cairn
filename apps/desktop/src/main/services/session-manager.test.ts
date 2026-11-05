@@ -49,6 +49,7 @@ function fakeHandle(init: HostInit, stopsCleanly = true): FakeHost {
       prompts.push(messageId)
     }),
     abort: vi.fn(async () => undefined),
+    refreshPermissions: vi.fn(async () => undefined),
     stop: vi.fn(() => {
       if (state === 'running') state = 'stopping'
       if (stopsCleanly) queueMicrotask(() => end({ reason: 'stopped' }))
@@ -371,6 +372,22 @@ describe('scheduling', () => {
     expect(manager.activeSessions()).toEqual([ids[1], ids[2]])
     expect(manager.queuedSessions()).toEqual([])
     expect(hosts[2]?.prompts).toHaveLength(1)
+  })
+
+  it('asks running hosts to refresh their permission rules (M1-11b)', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const onError = vi.fn()
+    const { manager } = setup(supervisor, { onError })
+    const ids = ['/a', '/b'].map((p) => manager.create({ projectPath: p }).sessionId)
+    for (const sessionId of ids) manager.prompt({ sessionId, content: text('go') })
+    await flush()
+    manager.refreshPermissions()
+    expect(hosts.map((h) => vi.mocked(h.refreshPermissions).mock.calls.length)).toEqual([1, 1])
+    vi.mocked(hosts[1]!.refreshPermissions).mockRejectedValueOnce(new Error('gone'))
+    manager.refreshPermissions([ids[1]!])
+    await flush()
+    expect(hosts.map((h) => vi.mocked(h.refreshPermissions).mock.calls.length)).toEqual([1, 2])
+    expect(onError).toHaveBeenCalled()
   })
 
   it('reclaims an idle host when sessions are waiting', async () => {

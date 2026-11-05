@@ -173,6 +173,40 @@ describe('changes.record（M1-08b）', () => {
   })
 })
 
+describe('refreshPermissions（M1-11b）', () => {
+  it('重新汇总规则并交给运行中的宿主', async () => {
+    const host = fakeHost()
+    const updates: unknown[] = []
+    host.endpoint!.handle('host.permissions.update', (params) => {
+      updates.push(params)
+      return {}
+    })
+    let mode = 'ask'
+    const rule = (id: string) => ({
+      id,
+      scope: 'global' as const,
+      effect: 'deny' as const,
+      match: {},
+      source: 'user' as const,
+    })
+    const { supervisor } = setup(host, { resolvePermissionRules: () => [rule(mode)] })
+    const handle = await supervisor.startHost(init)
+    mode = 'auto'
+    await handle.refreshPermissions()
+    expect(updates).toEqual([{ rules: [rule('auto')] }])
+    await handle.stop()
+    await handle.refreshPermissions()
+    expect(updates).toHaveLength(1)
+  })
+
+  it('没有规则来源时什么也不做', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host)
+    const handle = await supervisor.startHost(init)
+    await expect(handle.refreshPermissions()).resolves.toBeUndefined()
+  })
+})
+
 describe('host.approval.request（M1-11a）', () => {
   const request = {
     approvalId: 'a1',
@@ -185,7 +219,7 @@ describe('host.approval.request（M1-11a）', () => {
     matchedRuleIds: [],
   }
 
-  it('交给审批服务，会话与运行由宿主确定；取消同样转交', async () => {
+  it('交给审批服务，会话与运行由宿主确定', async () => {
     const host = fakeHost()
     const requestApproval = vi.fn(async () => ({ decision: 'allow_once' as const }))
     const cancelApproval = vi.fn()
@@ -195,9 +229,67 @@ describe('host.approval.request（M1-11a）', () => {
       host.endpoint!.request('host.approval.request', request, { timeoutMs: 0 }),
     ).resolves.toEqual({ decision: 'allow_once' })
     expect(requestApproval).toHaveBeenCalledWith('s1', 'r1', request)
+    // 已结束的审批：之后的取消不再转交
     host.endpoint!.emit('host.approval.cancelled', { approvalId: 'a1' })
     await vi.advanceTimersByTimeAsync(0)
+    expect(cancelApproval).not.toHaveBeenCalled()
+  })
+
+  it('宿主崩溃时取消未决审批，补写 approval.resolved 再写 session.crashed', async () => {
+    const host = fakeHost()
+    const requestApproval = vi.fn(() => new Promise<never>(() => {}))
+    const cancelApproval = vi.fn()
+    const { supervisor } = setup(host, { requestApproval, cancelApproval })
+    await supervisor.startHost(init)
+    void host.endpoint!.request('host.approval.request', request, { timeoutMs: 0 }).catch(() => {})
+    void host
+      .endpoint!.request(
+        'host.approval.request',
+        { ...request, approvalId: 'a2' },
+        { timeoutMs: 0 },
+      )
+      .catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    host.endpoint!.emit('host.approval.cancelled', { approvalId: 'a2' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cancelApproval.mock.calls).toEqual([['s1', 'a2']])
+    // 先于请求到达的取消：请求随即以 approval.cancelled 结束，不交给审批服务
+    host.endpoint!.emit('host.approval.cancelled', { approvalId: 'a3' })
+    await expect(
+      host.endpoint!.request(
+        'host.approval.request',
+        { ...request, approvalId: 'a3' },
+        { timeoutMs: 0 },
+      ),
+    ).rejects.toMatchObject({ code: 'approval.cancelled' })
+    expect(requestApproval).toHaveBeenCalledTimes(2)
+    host.exit(1)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cancelApproval.mock.calls).toEqual([
+      ['s1', 'a2'],
+      ['s1', 'a1'],
+    ])
+    expect(published.map((e) => e.type)).toEqual(['approval.resolved', 'session.crashed'])
+    expect(published[0]!.payload).toEqual({
+      approvalId: 'a1',
+      decision: 'cancelled',
+      decidedBy: 'system',
+    })
+  })
+
+  it('停止的宿主只取消审批，不写事件', async () => {
+    const host = fakeHost()
+    const cancelApproval = vi.fn()
+    const { supervisor } = setup(host, {
+      requestApproval: () => new Promise<never>(() => {}),
+      cancelApproval,
+    })
+    const handle = await supervisor.startHost(init)
+    void host.endpoint!.request('host.approval.request', request, { timeoutMs: 0 }).catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    await handle.stop()
     expect(cancelApproval).toHaveBeenCalledWith('s1', 'a1')
+    expect(published).toEqual([])
   })
 
   it('没有审批服务时报 run.unsupported', async () => {

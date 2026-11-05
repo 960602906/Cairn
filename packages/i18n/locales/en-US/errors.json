@@ -24,6 +24,8 @@
   "storage.schema_too_new": "The database version ({{version}}) is newer than this app supports ({{supported}}). Please update the app",
   "storage.migration_failed": "The database upgrade failed and was rolled back",
   "storage.invalid_record": "The record is inconsistent and cannot be saved",
+  "approval.not_found": "This approval has already ended",
+  "approval.cancelled": "The approval was cancelled",
   "rpc.timeout": "The request timed out",
   "rpc.invalid_params": "Invalid request parameters",
   "rpc.invalid_result": "Invalid response",
