@@ -175,6 +175,9 @@ describe('translateError', () => {
       'changes.blob_missing',
       'changes.failed',
       'shell.spawn_failed',
+      'checkpoint.git_unavailable',
+      'checkpoint.not_found',
+      'checkpoint.failed',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())

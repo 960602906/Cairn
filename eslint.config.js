@@ -18,6 +18,7 @@ const ALLOWED_NEXUS_DEPS = {
   'packages/runtime-pi': ['protocol', 'core'],
   'packages/tools': ['protocol', 'core', 'shell'],
   'packages/shell': [],
+  'packages/checkpoint': [],
   'apps/desktop': ['protocol', 'core', 'storage', 'i18n', 'runtime-pi', 'tools', 'shell'],
 }
 

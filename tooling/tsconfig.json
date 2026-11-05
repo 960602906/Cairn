@@ -39,6 +39,9 @@
       "path": "../packages/shell"
     },
     {
+      "path": "../packages/checkpoint"
+    },
+    {
       "path": "../packages/i18n"
     },
     {
