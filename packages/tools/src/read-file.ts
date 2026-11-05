@@ -2,7 +2,7 @@
  * `read_file`（M1-07a；架构 §9.2、§18）：按行范围读取文本文件，大文件分段；识别 BOM 与编码；二进制文件只给出提示。
  */
 import fs from 'node:fs/promises'
-import { ToolError, type ToolDefinition } from '@nexus/core'
+import { estimateTokens, ToolError, type ToolDefinition } from '@nexus/core'
 import { resolveOrThrow } from './paths.js'
 
 export interface ReadFileInput {
@@ -28,6 +28,14 @@ export const READ_FILE_MAX_LINE_CHARS = 2000
 /** 一次返回的字符数上限（在流水线的输出预算之内，避免中间被截断）。 */
 export const READ_FILE_MAX_OUTPUT_CHARS = 25_000
 /** 可读取的文件大小上限。 */
+/** 给标题与说明留出的 token。 */
+const NOTE_TOKENS = 100
+
+/** 结果中正文可用的 token：上限减去标题与说明，至少留一半。 */
+export function bodyTokens(maxOutputTokens: number): number {
+  return Math.max(Math.floor(maxOutputTokens / 2), maxOutputTokens - NOTE_TOKENS)
+}
+
 export const READ_FILE_MAX_BYTES = 10 * 1024 * 1024
 /** 检测二进制时检查的字节数。 */
 const BINARY_SNIFF_BYTES = 8000
@@ -197,6 +205,8 @@ export const readFileTool: ToolDefinition<ReadFileInput> = {
     const width = String(Math.min(lines.length, offset + limit - 1)).length
     const body: string[] = []
     let chars = 0
+    let tokens = 0
+    const maxTokens = bodyTokens(ctx.maxOutputTokens)
     let last = offset - 1
     for (let n = offset; n <= lines.length && n < offset + limit; n++) {
       let line = lines[n - 1]!
@@ -207,9 +217,15 @@ export const readFileTool: ToolDefinition<ReadFileInput> = {
       const entry =
         line === '' ? String(n).padStart(width) : `${String(n).padStart(width)}\t${line}`
       // 至少返回一行
-      if (body.length > 0 && chars + entry.length + 1 > READ_FILE_MAX_OUTPUT_CHARS) break
+      const cost = estimateTokens(entry) + 1
+      if (
+        body.length > 0 &&
+        (chars + entry.length + 1 > READ_FILE_MAX_OUTPUT_CHARS || tokens + cost > maxTokens)
+      )
+        break
       body.push(entry)
       chars += entry.length + 1
+      tokens += cost
       last = n
     }
 

@@ -8,7 +8,7 @@
  *
  * 危险命令识别与审批在 M1-10、M1-11。
  */
-import { ToolError, type ToolDefinition } from '@nexus/core'
+import { estimateTokens, ToolError, type ToolDefinition } from '@nexus/core'
 import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   describeShell,
@@ -229,13 +229,16 @@ export function createRunCommandTool(
           throw new ToolError(error.code, error.message, { ...error.params })
         throw error
       }
-      const idleMs = performance.now() - lastOutput
-      const text = formatResult(
-        { result, stdout, stderr, idleMs },
-        timeoutSeconds,
-        budget,
-        idleHintMs,
-      )
+      const collected = { result, stdout, stderr, idleMs: performance.now() - lastOutput }
+      let chars = budget
+      let text = formatResult(collected, timeoutSeconds, chars, idleHintMs)
+      // 字符上限按英文估算；输出中中文等较多、超过 token 上限时按比例缩小后重排
+      for (let i = 0; i < 4; i++) {
+        const tokens = estimateTokens(text)
+        if (tokens <= ctx.maxOutputTokens) break
+        chars = Math.floor((chars * ctx.maxOutputTokens * 0.9) / tokens)
+        text = formatResult(collected, timeoutSeconds, chars, idleHintMs)
+      }
       return { content: [{ type: 'text', text }] }
     },
   }

@@ -4,7 +4,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Logger } from '@nexus/core'
+import { TOOL_OUTPUT_MAX_TOKENS, type Logger } from '@nexus/core'
 import { createPathResolver, createSearchTool, ripgrepVersion } from '@nexus/tools'
 
 const silentLogger: Logger = {
@@ -32,6 +32,7 @@ export async function checkBundledSearch(ripgrepPath: string, workspace: string)
       signal: new AbortController().signal,
       resolvePath: createPathResolver(workspace),
       checkpoints: { create: () => Promise.reject(new Error('not used')) },
+      maxOutputTokens: TOOL_OUTPUT_MAX_TOKENS,
       log: silentLogger,
       progress: () => {},
       recordChange: () => Promise.reject(new Error('not used')),

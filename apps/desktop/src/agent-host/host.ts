@@ -27,6 +27,7 @@ import {
   createToolRegistry,
   DEFAULT_PERMISSION_GUARDS,
   presetRules,
+  toolOutputBudget,
   type AgentRunHandle,
   type AgentRuntime,
   type Logger,
@@ -150,6 +151,11 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             onError,
           })
         : NO_CHECKPOINTS
+    const { runtime, model } = await options.createRuntime(
+      init.model,
+      init.credential,
+      init.modelConfig,
+    )
     const registry = createToolRegistry()
     await options.registerTools?.(registry, init.workspacePath)
     const hasTools = registry.list().length > 0
@@ -166,14 +172,11 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           workspaceRoot: init.workspacePath,
           resolvePath: createPathResolver(init.workspacePath),
           log: options.log ?? silentLogger,
+          // 单个工具结果的上限按模型的上下文窗口计算（M1-13a）
+          maxOutputTokens: toolOutputBudget(model.profile),
           createId: options.createId,
         })
       : undefined
-    const { runtime, model } = await options.createRuntime(
-      init.model,
-      init.credential,
-      init.modelConfig,
-    )
     supervisor = createRunSupervisor({
       runtime,
       model,

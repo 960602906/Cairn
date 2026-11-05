@@ -1,6 +1,7 @@
 import type { EventPayload } from '@nexus/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { FakeRuntime } from './fake-runtime.js'
+import { TOOL_OUTPUT_MAX_TOKENS } from './context-budget.js'
 import type { Logger } from './logger.js'
 import { RunEngine } from './run-engine.js'
 import {
@@ -164,26 +165,30 @@ describe('ToolPipeline：成功路径', () => {
     expect(outcome).toMatchObject({ status: 'ok', content: text('/work/src/a.ts') })
     expect(h.decide.mock.calls[0]![0].targets).toEqual({ paths: ['src/a.ts'] })
     expect(h.checkpoint).not.toHaveBeenCalled()
-    expect(execute.mock.calls[0]![1]).toMatchObject({ workspaceRoot: '/work', toolCallId: 'c1' })
+    expect(execute.mock.calls[0]![1]).toMatchObject({
+      workspaceRoot: '/work',
+      toolCallId: 'c1',
+      maxOutputTokens: TOOL_OUTPUT_MAX_TOKENS,
+    })
   })
 
   it('输出超过上限时保留开头和结尾', async () => {
     const h = setup(
       [tool({ execute: async () => ({ content: text('a'.repeat(50) + 'b'.repeat(50)) }) })],
-      {
-        maxOutputChars: 20,
-      },
+      { maxOutputTokens: 5 },
     )
     const outcome = await createToolPipeline(h.options).run(
       call({ path: 'x' }),
       signal(),
       h.observer,
     )
-    expect(outcome).toEqual({
-      status: 'ok',
-      content: text(`${'a'.repeat(10)}\n\n[... 80 characters truncated ...]\n\n${'b'.repeat(10)}`),
-      truncated: true,
-    })
+    expect(outcome).toMatchObject({ status: 'ok', truncated: true })
+    const result = (outcome as unknown as { content: { text: string }[] }).content[0]!.text
+    // 按估算的 token：开头 3 个（12 个英文字符）、结尾 2 个（8 个）
+    expect(result.startsWith(`${'a'.repeat(12)}\n\n[... 80 characters truncated:`)).toBe(true)
+    expect(result).toContain('about 5 tokens')
+    expect(result).toContain('read_file with offset and limit')
+    expect(result.endsWith(`]\n\n${'b'.repeat(8)}`)).toBe(true)
   })
 })
 
@@ -584,7 +589,7 @@ describe('RunEngine 接入流水线', () => {
   })
 
   it('输出被截断时 tool.completed 带 truncated', async () => {
-    const { events } = await runWith({ decision: 'allow' }, { maxOutputChars: 4 })
+    const { events } = await runWith({ decision: 'allow' }, { maxOutputTokens: 1 })
     expect(events.find((e) => e.type === 'tool.completed')?.payload).toMatchObject({
       truncated: true,
     })

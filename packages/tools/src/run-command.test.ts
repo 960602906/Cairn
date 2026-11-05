@@ -1,7 +1,7 @@
 /**
  * `run_command`（M1-09c）：输出格式、截断、超时与等待输入的提示、流式推送、启动失败；真实执行在当前平台的 shell 上验证。
  */
-import { createToolRegistry, ToolError, type ToolContext } from '@nexus/core'
+import { createToolRegistry, estimateTokens, ToolError, type ToolContext } from '@nexus/core'
 import type { runCommand } from '@nexus/shell'
 import {
   selectShell,
@@ -224,6 +224,18 @@ describe('run_command', () => {
     )
     expect(both).toContain('[... 925 characters omitted ...]')
     expect(both).toContain('[... 975 characters omitted ...]')
+  })
+
+  it('超过上下文给出的 token 上限时按比例缩小（中文输出，M1-13a）', async () => {
+    const text = await exec(
+      { run: fakeRun({ stdout: ['中文输出'.repeat(5000)] }) },
+      { command: 'x' },
+      { ...toolContext(fx.root), maxOutputTokens: 400 },
+    )
+    expect(estimateTokens(text)).toBeLessThanOrEqual(400)
+    expect(estimateTokens(text)).toBeGreaterThan(200)
+    expect(text).toMatch(/\[\.\.\. \d+ characters omitted \.\.\.\]/)
+    expect(text).toContain('Exit code: 0')
   })
 
   it('启动失败转为工具错误；其他错误原样抛出', async () => {

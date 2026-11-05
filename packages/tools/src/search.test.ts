@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { rgPath } from '@vscode/ripgrep'
-import { ToolError } from '@nexus/core'
+import { estimateTokens, ToolError } from '@nexus/core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   bundledRipgrepPath,
@@ -195,6 +195,16 @@ describe('search', () => {
     expect(wide).toMatch(/\[Stopped at \d+ matching lines \(output size limit\)/)
     const long = await search({ pattern: 'y', path: 'long.txt' })
     expect(long).toContain(`  1: ${'y'.repeat(SEARCH_MAX_LINE_CHARS)}… [2000 more characters]`)
+  })
+
+  it('按上下文给出的 token 上限停止（M1-13a）', async () => {
+    const text = await runTool(
+      tool,
+      { pattern: 'x', path: 'wide.txt', limit: 1000 },
+      { ...toolContext(fx.root), maxOutputTokens: 500 },
+    )
+    expect(estimateTokens(text)).toBeLessThanOrEqual(500)
+    expect(text).toMatch(/\[Stopped at \d+ matching lines \(output size limit\)/)
   })
 
   it('normalize 给出真实的相对路径作为权限目标', async () => {

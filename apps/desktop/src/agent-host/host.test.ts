@@ -207,6 +207,46 @@ describe('agent host', () => {
       })
     })
 
+    it('limits tool results by the model context window (M1-13a)', async () => {
+      const budget: ToolDefinition<object> = {
+        name: 'budget',
+        description: 'Report the output limit',
+        category: 'read',
+        source: { kind: 'builtin' },
+        trust: 'builtin',
+        inputSchema: { type: 'object', properties: {} },
+        execute: (_input, ctx) => Promise.resolve({ content: text(String(ctx.maxOutputTokens)) }),
+      }
+      const script = {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool' as const, name: 'budget', input: {} },
+              { kind: 'reply' as const, text: 'ok' },
+            ],
+          },
+        ],
+      }
+      const h = setup(script, {
+        registerTools: (registry) => registry.register(budget),
+        createRuntime: (model) => {
+          const resolved = fakeModel(model)
+          return {
+            runtime: new FakeRuntime(script),
+            model: {
+              ...resolved,
+              profile: { ...resolved.profile, contextWindow: 8_192, maxOutputTokens: 2_048 },
+            },
+          }
+        },
+      })
+      await h.main.request('host.init', init)
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await h.waitFor('turn.completed')
+      const completed = h.events.find((e) => e.type === 'tool.completed')
+      expect(completed?.payload).toMatchObject({ output: text('1536') })
+    })
+
     it('returns the denial with feedback to the model', async () => {
       const h = setup(
         { turns: [{ steps: [call, { kind: 'reply', text: 'ok' }] }] },

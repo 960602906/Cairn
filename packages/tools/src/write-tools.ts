@@ -9,11 +9,18 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import nodePath from 'node:path'
-import { ToolError, type ApprovalPreview, type ToolContext, type ToolDefinition } from '@nexus/core'
+import {
+  prefixWithinTokens,
+  ToolError,
+  type ApprovalPreview,
+  type ToolContext,
+  type ToolDefinition,
+} from '@nexus/core'
 import type { FileHunk } from '@nexus/protocol'
 import { createTwoFilesPatch } from 'diff'
 import { resolveOrThrow } from './paths.js'
 import {
+  bodyTokens,
   decodeFile,
   READ_FILE_MAX_BYTES,
   READ_FILE_MAX_OUTPUT_CHARS,
@@ -581,8 +588,12 @@ export function createEditFileTool(): ToolDefinition<EditFileInput> {
       if (!(await commit(plan, ctx, EditFileErrorCode))) return cancelledOutput(plan)
       let diff = planDiff(plan)
       const note = await recordChange(plan, diff, ctx)
-      if (diff.length > READ_FILE_MAX_OUTPUT_CHARS) {
-        diff = `${diff.slice(0, READ_FILE_MAX_OUTPUT_CHARS)}\n[Diff truncated. Use read_file to check the result.]`
+      const keep = Math.min(
+        READ_FILE_MAX_OUTPUT_CHARS,
+        prefixWithinTokens(diff, bodyTokens(ctx.maxOutputTokens)),
+      )
+      if (diff.length > keep) {
+        diff = `${diff.slice(0, keep)}\n[Diff truncated. Use read_file to check the result.]`
       }
       return { content: [{ type: 'text', text: `${plan.message}\n${diff}${note}` }] }
     },
