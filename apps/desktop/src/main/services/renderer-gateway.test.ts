@@ -16,6 +16,7 @@ import {
   createRendererGateway,
   type ApprovalCommands,
   type ChangeCommands,
+  type CheckpointCommands,
   type RendererGateway,
   type SessionCommands,
   type SettingsCommands,
@@ -65,12 +66,16 @@ const completed = (sessionId: string, id: string, text: string): UnsequencedEven
   },
 })
 
+const CP = 'a'.repeat(40)
+const CP_BEFORE = 'b'.repeat(40)
+
 let service: SessionEventService
 let gateway: RendererGateway
 let commands: SessionCommands
 let settings: SettingsCommands
 let credentials: CredentialCommands
 let changes: ChangeCommands
+let checkpoints: CheckpointCommands
 let approvals: ApprovalCommands
 const approvalListeners = new Set<(sessionId: string) => void>()
 
@@ -100,6 +105,14 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     list: vi.fn(() => ({ changes: [] })),
     revert: vi.fn(async () => ({ changes: [] })),
   }
+  checkpoints = {
+    list: vi.fn(() => ({ checkpoints: [] })),
+    preview: vi.fn(async () => ({ before: CP_BEFORE, files: [] })),
+    restore: vi.fn(async () => ({
+      before: CP_BEFORE,
+      files: [{ path: 'a.txt', status: 'modified' as const }],
+    })),
+  }
   approvalListeners.clear()
   approvals = {
     pending: vi.fn(() => ({ approvals: [] })),
@@ -115,6 +128,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     settings,
     credentials,
     changes,
+    checkpoints,
     approvals,
   })
   return connectRenderer()
@@ -349,6 +363,24 @@ describe('createRendererGateway: commands and lifecycle', () => {
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
   })
 
+  it('delegates checkpoint requests to the checkpoint service', async () => {
+    const { client } = setup()
+    await expect(client.request('checkpoint.list', { sessionId: 's1' })).resolves.toEqual({
+      checkpoints: [],
+    })
+    await expect(
+      client.request('checkpoint.preview', { sessionId: 's1', checkpointId: CP }),
+    ).resolves.toEqual({ before: CP_BEFORE, files: [] })
+    await expect(
+      client.request('checkpoint.restore', { sessionId: 's1', checkpointId: CP }),
+    ).resolves.toEqual({ before: CP_BEFORE, files: [{ path: 'a.txt', status: 'modified' }] })
+    expect(checkpoints.restore).toHaveBeenCalledWith({ sessionId: 's1', checkpointId: CP })
+    // 检查点 id 只接受完整的提交 id
+    await expect(
+      client.request('checkpoint.restore', { sessionId: 's1', checkpointId: 'HEAD' }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+  })
+
   it('delegates approval requests to the approval service', async () => {
     const { client } = setup()
     await expect(client.request('approval.pending', { sessionId: 's1' })).resolves.toEqual({
@@ -455,6 +487,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       settings,
       credentials,
       changes,
+      checkpoints,
       approvals,
       onProtocolError,
     })

@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { openShadowRepo } from '@nexus/checkpoint'
 import { redact } from '@nexus/core'
 import { bundledRipgrepPath } from '@nexus/tools'
 import { openSqliteStorage } from '@nexus/storage'
@@ -29,6 +30,7 @@ import {
 } from './security.js'
 import { createBlobStore } from './services/blob-store.js'
 import { createChangeService } from './services/change-service.js'
+import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
 import { createSessionEventService } from './services/event-service.js'
@@ -108,7 +110,15 @@ const changes = createChangeService({
   storage,
   blobs: createBlobStore(paths.blobs),
   events,
-  isBusy: (sessionId) => sessions.isBusy(sessionId),
+  isBusy: (sessionId) => sessions.isBusy(sessionId) || checkpoints.isRestoring(sessionId),
+})
+/** 检查点（M1-12c）：列表来自事件，预览与恢复在主进程中打开项目的影子仓库。 */
+const checkpoints = createCheckpointService({
+  storage,
+  events,
+  location: (sessionId) => checkpointLocation(paths.checkpoints, storage, sessionId),
+  open: openShadowRepo,
+  isBusy: (sessionId) => sessions.isBusy(sessionId) || changes.isReverting(sessionId),
 })
 /** 权限规则（M1-10c）：权限模式的预设与保存的规则，启动宿主时经 `host.init` 下发。 */
 const permissions = createPermissionService({ storage, mode: () => settings.permissionMode() })
@@ -145,7 +155,7 @@ const sessions = createSessionManager({
   supervisor,
   runDefaults: RUN_DEFAULTS,
   models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
-  isLocked: (sessionId) => changes.isReverting(sessionId),
+  isLocked: (sessionId) => changes.isReverting(sessionId) || checkpoints.isRestoring(sessionId),
   onError: reportError,
 })
 sessions.recoverInterrupted()
@@ -163,6 +173,7 @@ const gateway = createRendererGateway({
   },
   credentials: createCredentialCommands(credentials),
   changes,
+  checkpoints,
   approvals,
   onProtocolError: (error) => reportError(error),
 })

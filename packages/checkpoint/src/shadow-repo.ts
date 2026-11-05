@@ -296,7 +296,22 @@ export async function openShadowRepo(options: ShadowRepoOptions): Promise<Shadow
   }
   const isRepo = (rel: string) => fs.existsSync(path.join(workTree, ...rel.split('/'), '.git'))
 
+  /**
+   * 引用可能已被其他进程更新（同一会话的检查点也可能由主进程在恢复时创建，M1-12c），每次创建检查点前
+   * 重新读取，避免在过期的提交上继续。
+   */
+  const refreshHead = async () => {
+    const resolved = await run(['rev-parse', '-q', '--verify', ref], { allowFail: true })
+    const commit = resolved.code === 0 ? resolved.stdout.toString('utf8').trim() : undefined
+    if (commit === current?.commit) return
+    current =
+      commit === undefined
+        ? undefined
+        : { commit, tree: await text(['rev-parse', '--verify', `${commit}^{tree}`]) }
+  }
+
   const checkpoint = async (message: string): Promise<CheckpointResult> => {
+    await refreshHead()
     const before = JSON.stringify(state)
     const large = new Set(state.large.filter(isLarge))
     const nested = new Set(state.nested.filter(isRepo))

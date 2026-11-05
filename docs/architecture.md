@@ -541,7 +541,7 @@ interface ModelProfile {
 | `session.events` | 事件流 | 事件推送 |
 | `approval.resolve` | 请求 | 回复审批 |
 | `changes.list` / `changes.revert` | 请求 | 查看和撤销改动 |
-| `checkpoint.list` / `checkpoint.restore` | 请求 | 查看和恢复检查点 |
+| `checkpoint.list` / `checkpoint.preview` / `checkpoint.restore` | 请求 | 查看、预览和恢复检查点 |
 | `settings.get` / `settings.update` | 请求 | 读写配置，不返回明文密钥 |
 | `credentials.set` / `credentials.delete` / `credentials.status` | 请求 | 只能写入和查询是否存在，不能读出 |
 | `provider.test` | 请求 | 能力探测 |

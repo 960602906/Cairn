@@ -45,6 +45,13 @@ export interface ChangeCommands {
   readonly revert: Handler<'changes.revert'>
 }
 
+/** 由检查点服务实现的检查点命令（M1-12c）。 */
+export interface CheckpointCommands {
+  readonly list: Handler<'checkpoint.list'>
+  readonly preview: Handler<'checkpoint.preview'>
+  readonly restore: Handler<'checkpoint.restore'>
+}
+
 /** 由审批服务实现的审批命令（M1-11b）。 */
 export interface ApprovalCommands {
   readonly pending: Handler<'approval.pending'>
@@ -71,6 +78,8 @@ export interface RendererGatewayOptions {
   readonly credentials: CredentialCommands
   /** 改动记录（M1-08b）：列出与整文件撤销。 */
   readonly changes: ChangeCommands
+  /** 检查点（M1-12c）：列出、预览与恢复。 */
+  readonly checkpoints: CheckpointCommands
   /** 审批（M1-11b）：读取未决审批与作出决定。 */
   readonly approvals: ApprovalCommands
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
@@ -139,7 +148,7 @@ interface Subscription {
 type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
-  const { events, commands, settings, credentials, changes, approvals } = options
+  const { events, commands, settings, credentials, changes, checkpoints, approvals } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -204,6 +213,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('credentials.status', (params) => credentials.status(params))
       endpoint.handle('changes.list', (params) => changes.list(params))
       endpoint.handle('changes.revert', (params) => changes.revert(params))
+      endpoint.handle('checkpoint.list', (params) => checkpoints.list(params))
+      endpoint.handle('checkpoint.preview', (params) => checkpoints.preview(params))
+      endpoint.handle('checkpoint.restore', (params) => checkpoints.restore(params))
       endpoint.handle('approval.pending', (params) => approvals.pending(params))
       endpoint.handle('approval.resolve', (params) => approvals.resolve(params))
 

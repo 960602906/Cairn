@@ -406,6 +406,27 @@ describe('openShadowRepo: sessions sharing a project', () => {
     await expect(reopened.has(third.commit)).resolves.toBe(true)
   })
 
+  it('continues the chain when another process moved the same ref', async () => {
+    write('a.txt', 'a')
+    const host = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s1' }))
+    const first = await host.checkpoint('turn')
+    // 另一个进程（主进程恢复时）在同一个引用上创建检查点
+    const main = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s1' }))
+    write('a.txt', 'b')
+    const { before } = await main.restore(first.commit)
+    expect(read('a.txt')).toBe('a')
+    write('a.txt', 'c')
+    const next = await host.checkpoint('turn again')
+    expect(next.created).toBe(true)
+    const parent = execFileSync('git', ['--git-dir', gitDir, 'rev-parse', `${next.commit}^`])
+    expect(parent.toString().trim()).toBe(before)
+    // 引用没有变化时复用上一个检查点
+    await expect(host.checkpoint('same')).resolves.toMatchObject({
+      commit: next.commit,
+      created: false,
+    })
+  })
+
   it('waits for a Git lock held by another process', async () => {
     write('a.txt', 'a')
     const repo = await openShadowRepo(options({ lockTimeoutMs: 5000 }))
