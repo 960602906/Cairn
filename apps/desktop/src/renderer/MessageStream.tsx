@@ -62,12 +62,21 @@ function LiveMessage({ live }: { readonly live: LiveMessageView }) {
   )
 }
 
-/** 上一轮没有正常完成时的说明；正常完成或仍在进行时为 undefined。 */
+/** 上一轮没有正常完成、或正在等待重试时的说明；正常完成或仍在进行时为 undefined。 */
 function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): string | undefined {
   if (view.crash) return t('crashed.message')
   const turn = rootRun(view)?.turn
   if (turn?.status === 'aborted') {
     return t(turn.abortReason === 'shutdown' ? 'turn.interrupted' : 'turn.aborted')
+  }
+  if (turn?.status === 'running' && turn.retry) {
+    const { retry } = turn
+    return t('turn.retrying', {
+      reason: translateError(i18n, retry.error),
+      seconds: Math.ceil(retry.delayMs / 1000),
+      attempt: retry.attempt,
+      maxRetries: retry.maxRetries,
+    })
   }
   if (turn?.status !== 'failed') return undefined
   if (turn.limitReached?.limit === 'maxStepsPerTurn') {

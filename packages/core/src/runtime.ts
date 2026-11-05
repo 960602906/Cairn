@@ -148,6 +148,12 @@ export type RuntimeEventType = RuntimeEvent['type']
 export interface RuntimeSession {
   /** 发送用户消息并运行 agent 循环，循环结束（发出 `loop.ended`）后 resolve；不因模型错误而 reject。 */
   prompt(input: UserMessage): Promise<void>
+  /**
+   * 上一次循环以可重试的失败结束后，从失败处重新请求模型（M1-14a）：丢弃失败的助手消息，用已有的历史
+   * （含已执行的工具结果）继续，不重复执行工具。事件与 `prompt` 相同，循环结束后 resolve。
+   * 不支持时省略，`RunEngine` 不重试。
+   */
+  retry?(): Promise<void>
   /** 在运行中插入引导消息，在下一次调用模型前生效。 */
   steer(input: UserMessage): Promise<void>
   /** 中止当前循环；循环以 `loop.ended { outcome: 'aborted' }` 结束。 */

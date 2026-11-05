@@ -249,7 +249,7 @@ interface EventEnvelope<T extends EventType = EventType> {
 | 改动 | `file.changed` | 引用改动记录 id，不内嵌文件内容 |
 | 检查点 | `checkpoint.created` `checkpoint.restored` | |
 | 用量 | `usage.reported` | token 数、耗时 |
-| 其他 | `turn.limit_reached` `context.compacted` `model.fallback` `tool.cancelled` | 详见 Agent Runtime 设计第 12 节 |
+| 其他 | `turn.limit_reached` `context.compacted` `model.fallback` `model.retry` `tool.cancelled` | 详见 Agent Runtime 设计第 12 节 |
 
 ### 7.3 规则
 

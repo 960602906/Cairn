@@ -186,6 +186,16 @@ const payloadSchemas = {
     coversTurns: z.tuple([Id, Id]),
   }),
   'model.fallback': z.object({ from: ModelRef, to: ModelRef, error: ErrorInfo }),
+  /**
+   * 模型请求失败且可以重试（网络、限流、5xx），等待 `delayMs` 后重新请求（M1-14a，架构 §21）。
+   * `attempt` 从 1 起，不超过 `maxRetries`；重试耗尽后本轮以 `turn.failed` 结束。
+   */
+  'model.retry': z.object({
+    attempt: z.number().int().positive(),
+    maxRetries: z.number().int().positive(),
+    delayMs: DurationMs,
+    error: ErrorInfo,
+  }),
 
   // ---------- 计划模式（Runtime §25.1，M3） ----------
   'plan.proposed': z.object({ planId: Id, content: z.string() }),

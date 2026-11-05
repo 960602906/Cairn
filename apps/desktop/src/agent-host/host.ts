@@ -37,6 +37,7 @@ import {
   type AgentRuntime,
   type Logger,
   type PermissionGate,
+  type RetryPolicy,
   type ResolvedModel,
   type RunSupervisor,
   type ToolCheckpoints,
@@ -106,6 +107,8 @@ export interface AgentHostOptions {
   readonly openCheckpoints?: OpenShadowRepo
   /** 工具流水线的日志，默认不记录。 */
   readonly log?: Logger
+  /** 模型请求的重试策略（M1-14a），默认 `DEFAULT_RETRY_POLICY`。 */
+  readonly retry?: RetryPolicy
   /** 记录异常（如排队的输入执行失败）。 */
   readonly onError?: (error: unknown) => void
 }
@@ -225,6 +228,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       ...(toolPipeline ? { tools: registry.specs(), toolPipeline } : {}),
       checkpoints,
       onCheckpointError: onError,
+      ...(options.retry ? { retry: options.retry } : {}),
     })
     supervisor.onEvent((event) => endpoint.emit('host.event', { event }))
     run = await supervisor.createRun({

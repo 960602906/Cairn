@@ -392,6 +392,23 @@ describe('ChatPanel', () => {
     expect(sendButton().disabled).toBe(false)
   })
 
+  it('shows that a failed model request is being retried', async () => {
+    const { open, emit } = setup({ history: RUNNING })
+    await open()
+    const retry = {
+      attempt: 1,
+      maxRetries: 3,
+      delayMs: 1500,
+      error: { code: 'model.rate_limited' },
+    }
+    emit(ev(12, 'model.retry', retry, 't2'))
+    const note = '模型请求失败（请求过于频繁，已被模型服务限流），2 秒后重试（第 1/3 次）'
+    expect(screen.getByText(note)).toBeTruthy()
+    expect(stopButton()).toBeTruthy()
+    emit({ ...ev(13, 'step.started', { model }, 't2'), stepId: 'st2' } as EventEnvelope)
+    expect(screen.queryByText(note)).toBeNull()
+  })
+
   it('falls back to defaults for a session missing from the list', async () => {
     const { store } = setup({
       handlers: {

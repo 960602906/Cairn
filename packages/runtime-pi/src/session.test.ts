@@ -337,6 +337,69 @@ describe('PiRuntime：失败', () => {
   })
 })
 
+describe('PiRuntime：重试', () => {
+  const FAIL_500: MockResponse = {
+    kind: 'error',
+    status: 500,
+    body: { error: { message: 'mock failure', type: 'x' } },
+  }
+
+  it('失败后 retry() 从用户消息继续，失败的助手消息不回传', async () => {
+    const h = await setup([FAIL_500, ANSWER_TURN])
+    await h.session.prompt(user('hi'))
+    expect(h.events.at(-1)).toMatchObject({ outcome: 'failed', retryable: true })
+    h.events.length = 0
+    await h.session.retry!()
+    expect(types(h.events)).toEqual([
+      'step.started',
+      'text.delta',
+      'text.delta',
+      'message.completed',
+      'step.completed',
+      'loop.ended',
+    ])
+    expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'completed' })
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
+    expect(h.session.exportHistory().map((m) => m.role)).toEqual(['user', 'assistant'])
+  })
+
+  it('工具执行后失败：retry() 带着工具结果继续，不重复执行工具', async () => {
+    const h = await setup([TOOL_TURN, FAIL_500, ANSWER_TURN])
+    await h.session.prompt(user('订单 A-1024 的客户是谁？'))
+    expect(h.calls).toHaveLength(1)
+    expect(h.events.at(-1)).toMatchObject({ outcome: 'failed', retryable: true })
+    await h.session.retry!()
+    expect(h.calls).toHaveLength(1)
+    expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'completed' })
+    expect(sentMessages(2).map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool'])
+    expect(h.session.exportHistory().map((m) => m.role)).toEqual([
+      'user',
+      'assistant',
+      'tool',
+      'assistant',
+    ])
+  })
+
+  it('等待重试时的引导消息随重试一起发出', async () => {
+    const h = await setup([FAIL_500, ANSWER_TURN])
+    await h.session.prompt(user('hi'))
+    await h.session.steer(user('用中文', 2))
+    await h.session.retry!()
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user', 'user'])
+    expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'completed' })
+  })
+
+  it('会话已中止时 retry() 直接以 aborted 结束', async () => {
+    const h = await setup([FAIL_500])
+    await h.session.prompt(user('hi'))
+    h.controller.abort()
+    h.events.length = 0
+    await h.session.retry!()
+    expect(h.events).toEqual([{ type: 'loop.ended', outcome: 'aborted' }])
+    expect(mock!.requests).toHaveLength(1)
+  })
+})
+
 describe('PiRuntime：异常', () => {
   it('事件监听器抛出：本步以 error 结束，恰好一个 loop.ended（failed）', async () => {
     const h = await setup([ANSWER_TURN])

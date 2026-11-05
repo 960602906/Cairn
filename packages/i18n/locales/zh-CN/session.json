@@ -28,6 +28,7 @@
   "turn.interrupted": "本轮已中断，可以继续对话。",
   "turn.failed": "本轮失败：{{reason}}",
   "turn.limit_reached": "已达到本轮最多 {{maxSteps}} 步，可以继续执行。",
+  "turn.retrying": "模型请求失败（{{reason}}），{{seconds}} 秒后重试（第 {{attempt}}/{{maxRetries}} 次）",
   "crashed.message": "Agent 进程意外退出，可以从最后保存的位置继续。",
   "new.projectPath": "项目目录",
   "new.projectPathHint": "填写项目所在文件夹的完整路径",
