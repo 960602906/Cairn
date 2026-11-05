@@ -1,7 +1,11 @@
 /**
  * 审批卡片（M1-11b，架构 §10.4）：模型（本地 mock 端点）请求执行 `run_command`，按“询问”模式需要审批，
  * 界面显示审批卡片；允许后命令执行、结果交回模型，拒绝时附加的说明交回模型。
+ * 检查点（M1-12b）：本轮开始与执行命令前在应用数据目录的影子仓库中创建，不触碰项目目录。
  */
+import { execFileSync } from 'node:child_process'
+import { existsSync, readdirSync } from 'node:fs'
+import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
@@ -83,6 +87,21 @@ for (const decision of ['allow', 'deny'] as const) {
       const result = toolResult(mock.requests)
       if (decision === 'allow') {
         expect(result).toContain('approved-by-e2e')
+        // 项目的影子仓库中有这个会话的检查点（每轮开始、命令前），项目目录中没有 .git
+        const repos = readdirSync(path.join(userData, 'checkpoints'))
+        expect(repos).toHaveLength(1)
+        const refs = execFileSync('git', [
+          '--git-dir',
+          path.join(userData, 'checkpoints', repos[0]!),
+          'for-each-ref',
+          '--format=%(refname)',
+          'refs/nexus/sessions/',
+        ])
+          .toString()
+          .trim()
+          .split('\n')
+        expect(refs).toHaveLength(1)
+        expect(existsSync(path.join(projectDir(userData), '.git'))).toBe(false)
       } else {
         expect(result).toContain('The user denied this tool call.')
         expect(result).toContain('不要运行命令')

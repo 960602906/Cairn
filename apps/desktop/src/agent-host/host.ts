@@ -15,7 +15,8 @@
  *   `host.permissions.update` 替换规则，审批时“始终允许”生成的规则立即加入；
  * - 审批：经 `host.approval.request` 请主进程转给界面（`approval-gate.ts`）；
  * - 改动记录：经 `changes.record` 交给主进程（`change-recorder.ts`）；
- * - 检查点在 M1-12 实现，此前不创建。
+ * - 检查点（M1-12b）：`host.init` 带 `checkpoints` 且注入了 `openCheckpoints` 时，每轮开始与执行命令前
+ *   在项目的影子仓库中创建（`checkpoints.ts`）；否则不创建。
  *
  * 运行时与模型解析由入口注入，M1 换成 pi 适配器时这里不改。不依赖 Electron。
  */
@@ -48,6 +49,7 @@ import {
 } from '@nexus/protocol'
 import { createPathResolver } from '@nexus/tools'
 import { createHostApprovalGate } from './approval-gate.js'
+import { createHostCheckpoints, type OpenShadowRepo } from './checkpoints.js'
 import { createHostChangeRecorder } from './change-recorder.js'
 
 export const AgentHostErrorCode = {
@@ -86,6 +88,8 @@ export interface AgentHostOptions {
   readonly caseInsensitive?: boolean
   /** 注册工作区可用的工具（M1-11a）；省略或没有注册工具时运行不带工具。 */
   readonly registerTools?: (registry: ToolRegistry, workspacePath: string) => void | Promise<void>
+  /** 打开项目的影子仓库（M1-12b，`@nexus/checkpoint` 的 `openShadowRepo`）；省略时不创建检查点。 */
+  readonly openCheckpoints?: OpenShadowRepo
   /** 工具流水线的日志，默认不记录。 */
   readonly log?: Logger
   /** 记录异常（如排队的输入执行失败）。 */
@@ -109,8 +113,8 @@ const silentLogger: Logger = {
   child: () => silentLogger,
 }
 
-/** 检查点在 M1-12 实现；此前不创建，返回空 id（流水线不会因此请用户确认）。 */
-const NO_CHECKPOINTS: ToolCheckpoints = { create: () => Promise.resolve('') }
+/** 没有配置检查点：不创建，流水线与运行照常进行。 */
+const NO_CHECKPOINTS: ToolCheckpoints = { create: () => Promise.resolve(undefined) }
 
 export function createAgentHost(options: AgentHostOptions): AgentHost {
   const now = options.now ?? Date.now
@@ -136,6 +140,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     if (initializing || run) throw new RpcError(AgentHostErrorCode.AlreadyInitialized)
     initializing = true
     if (init.permissionRules) permissionRules = init.permissionRules
+    const checkpoints =
+      init.checkpoints && options.openCheckpoints
+        ? createHostCheckpoints({
+            gitDir: init.checkpoints.gitDir,
+            ref: init.checkpoints.ref,
+            workTree: init.workspacePath,
+            open: options.openCheckpoints,
+            onError,
+          })
+        : NO_CHECKPOINTS
     const registry = createToolRegistry()
     await options.registerTools?.(registry, init.workspacePath)
     const hasTools = registry.list().length > 0
@@ -147,7 +161,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             endpoint,
             onRule: (rule) => (permissionRules = [...permissionRules, rule]),
           }),
-          checkpoints: NO_CHECKPOINTS,
+          checkpoints,
           changes: createHostChangeRecorder(endpoint),
           workspaceRoot: init.workspacePath,
           resolvePath: createPathResolver(init.workspacePath),
@@ -168,6 +182,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       createId: options.createId,
       now,
       ...(toolPipeline ? { tools: registry.specs(), toolPipeline } : {}),
+      checkpoints,
+      onCheckpointError: onError,
     })
     supervisor.onEvent((event) => endpoint.emit('host.event', { event }))
     run = await supervisor.createRun({

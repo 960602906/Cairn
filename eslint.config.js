@@ -19,7 +19,16 @@ const ALLOWED_NEXUS_DEPS = {
   'packages/tools': ['protocol', 'core', 'shell'],
   'packages/shell': [],
   'packages/checkpoint': [],
-  'apps/desktop': ['protocol', 'core', 'storage', 'i18n', 'runtime-pi', 'tools', 'shell'],
+  'apps/desktop': [
+    'protocol',
+    'core',
+    'storage',
+    'i18n',
+    'runtime-pi',
+    'tools',
+    'shell',
+    'checkpoint',
+  ],
 }
 
 /** 只有 runtime-pi 可以引用 pi（ADR-0004）。包含旧的包作用域。 */

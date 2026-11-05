@@ -8,7 +8,7 @@
  *
  * `host.init` 前按模型解析凭据（M1-03b，ADR-0010）与模型配置（M1-04b），只经 `host.init` 传给宿主；
  * 无法解析（系统加密不可用、无法解密、模型已从配置中删除）按启动失败处理，原因的错误码记入 `cause`。
- * 适用于会话的权限规则（M1-10c）同样在 `host.init` 前汇总并下发。
+ * 适用于会话的权限规则（M1-10c）同样在 `host.init` 前汇总并下发；检查点位置（M1-12b）也是。
  *
  * 宿主的 `host.approval.request` 与 `host.approval.cancelled`（M1-11a）交给审批服务（M1-11b），会话与运行
  * 同样按这个宿主填入。宿主退出或崩溃时仍未决的审批一并取消；崩溃时补写 `approval.resolved`
@@ -50,11 +50,17 @@ export const HostErrorCode = {
   Unresponsive: 'host.unresponsive',
 } as const
 
-/** 会话管理器给出的初始化参数；凭据、模型配置与权限规则由监督器解析后加入。 */
+/** 会话管理器给出的初始化参数；凭据、模型配置、权限规则与检查点由监督器解析后加入。 */
 export type HostInit = Omit<
   z.input<(typeof HostForMain)['requests']['host.init']['params']>,
-  'credential' | 'modelConfig' | 'permissionRules'
+  'credential' | 'modelConfig' | 'permissionRules' | 'checkpoints'
 >
+
+/** 会话的检查点位置（M1-12b）：项目的影子仓库目录与会话的引用。 */
+export interface HostCheckpointLocation {
+  readonly gitDir: string
+  readonly ref: string
+}
 
 export type HostState = 'starting' | 'running' | 'stopping' | 'stopped' | 'crashed'
 
@@ -94,6 +100,8 @@ export interface HostSupervisorOptions {
    * 的预设判定。
    */
   readonly resolvePermissionRules?: (sessionId: string) => PermissionRule[]
+  /** 会话的检查点位置（M1-12b）；省略或返回 undefined 时宿主不创建检查点。 */
+  readonly resolveCheckpoints?: (sessionId: string) => HostCheckpointLocation | undefined
   /**
    * 记录宿主报告的文件改动（M1-08b，改动服务）。会话与运行由这个宿主确定。
    * 省略时宿主的 `changes.record` 报 `run.unsupported`。
@@ -283,6 +291,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         await endpoint.ready
         const modelConfig = options.resolveModelConfig?.(init.model)
         const permissionRules = options.resolvePermissionRules?.(sessionId)
+        const checkpoints = options.resolveCheckpoints?.(sessionId)
         const credential = await options.resolveCredential?.(init.model)
         await endpoint.request(
           'host.init',
@@ -291,6 +300,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
             ...(credential ? { credential: { apiKey: credential.apiKey } } : {}),
             ...(modelConfig ? { modelConfig } : {}),
             ...(permissionRules ? { permissionRules } : {}),
+            ...(checkpoints ? { checkpoints } : {}),
           },
           { timeoutMs: startTimeoutMs },
         )

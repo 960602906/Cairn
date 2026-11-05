@@ -29,6 +29,7 @@ import {
 } from './security.js'
 import { createBlobStore } from './services/blob-store.js'
 import { createChangeService } from './services/change-service.js'
+import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
@@ -131,6 +132,8 @@ const supervisor = createHostSupervisor({
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
   resolvePermissionRules: (sessionId) => permissions.rulesForSession(sessionId),
+  // 检查点（M1-12b）：每个项目一个影子仓库，会话各用自己的引用
+  resolveCheckpoints: (sessionId) => checkpointLocation(paths.checkpoints, storage, sessionId),
   requestApproval: (sessionId, runId, request) => approvals.request(sessionId, runId, request),
   cancelApproval: (sessionId, approvalId) => approvals.cancel(sessionId, approvalId),
   recordChange: (sessionId, runId, input) => changes.record(sessionId, runId, input),

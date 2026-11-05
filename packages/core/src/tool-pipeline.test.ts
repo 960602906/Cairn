@@ -12,7 +12,13 @@ import {
   type ToolCallObserver,
   type ToolPipelineOptions,
 } from './tool-pipeline.js'
-import { createToolRegistry, ToolError, type ToolContext, type ToolDefinition } from './tools.js'
+import {
+  createToolRegistry,
+  ToolError,
+  type ToolCheckpoints,
+  type ToolContext,
+  type ToolDefinition,
+} from './tools.js'
 import type { ResolvedModel } from './runtime.js'
 
 type Input = { path: string }
@@ -58,7 +64,7 @@ interface Harness {
   log: string[]
   decide: ReturnType<typeof vi.fn<PermissionGate['decide']>>
   request: ReturnType<typeof vi.fn<ApprovalGate['request']>>
-  checkpoint: ReturnType<typeof vi.fn<(reason: string) => Promise<string>>>
+  checkpoint: ReturnType<typeof vi.fn<ToolCheckpoints['create']>>
 }
 
 function setup(
@@ -71,7 +77,7 @@ function setup(
   const log: string[] = []
   const decide = vi.fn<PermissionGate['decide']>(async () => decision)
   const request = vi.fn<ApprovalGate['request']>(async () => ({ decision: 'allow_once' }))
-  const checkpoint = vi.fn(async () => 'cp1')
+  const checkpoint = vi.fn<ToolCheckpoints['create']>(async () => 'cp1')
   let id = 0
   const options: ToolPipelineOptions = {
     registry,
@@ -111,8 +117,26 @@ describe('ToolPipeline：成功路径', () => {
     expect(h.decide).toHaveBeenCalledWith(
       expect.objectContaining({ toolCallId: 'c1', input: { path: 'a.ts' }, targets: {} }),
     )
-    expect(h.checkpoint).toHaveBeenCalledWith('before write_file')
+    // 写文件类工具依靠改动记录撤销，不单独创建检查点
+    expect(h.checkpoint).not.toHaveBeenCalled()
     expect(h.log).toEqual(['started', 'stdout:writing\n', 'stderr:warn\n'])
+  })
+
+  it('7. 执行命令前创建检查点并发出 checkpoint.created；不可用时直接执行', async () => {
+    const h = setup([tool({ name: 'run_command', category: 'execute' })])
+    const pipeline = createToolPipeline(h.options)
+    expect(
+      await pipeline.run(call({ path: 'a' }, 'run_command'), signal(), h.observer),
+    ).toMatchObject({ status: 'ok' })
+    expect(h.checkpoint).toHaveBeenCalledWith('before_command')
+    expect(h.log[0]).toBe('checkpoint.created:{"checkpointId":"cp1","reason":"before_command"}')
+    h.checkpoint.mockResolvedValueOnce(undefined)
+    h.log.length = 0
+    expect(
+      await pipeline.run(call({ path: 'a' }, 'run_command'), signal(), h.observer),
+    ).toMatchObject({ status: 'ok' })
+    expect(h.log.some((entry) => entry.startsWith('checkpoint.created'))).toBe(false)
+    expect(h.request).not.toHaveBeenCalled()
   })
 
   it('只读工具不创建检查点；normalize 的结果用于权限判定与执行', async () => {
@@ -297,7 +321,7 @@ describe('ToolPipeline：各阶段的失败', () => {
   })
 
   it('7. 检查点失败时请用户确认；不继续则拒绝，继续则执行', async () => {
-    const h = setup()
+    const h = setup([tool({ category: 'execute' })])
     h.checkpoint.mockRejectedValue(new Error('disk full'))
     h.request.mockResolvedValueOnce({ decision: 'deny' })
     const pipeline = createToolPipeline(h.options)
@@ -407,7 +431,7 @@ describe('ToolPipeline：取消', () => {
 
   it('检查点阶段取消不再询问', async () => {
     const controller = new AbortController()
-    const h = setup()
+    const h = setup([tool({ category: 'execute' })])
     h.checkpoint.mockImplementation(async () => {
       controller.abort()
       throw new Error('interrupted')

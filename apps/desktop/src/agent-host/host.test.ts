@@ -259,6 +259,51 @@ describe('agent host', () => {
       })
     })
 
+    it('creates checkpoints at turn start and before commands (M1-12b)', async () => {
+      const h = setup(
+        { turns: [{ steps: [call, { kind: 'reply', text: 'done' }] }] },
+        {
+          registerTools,
+          openCheckpoints: async (options) => {
+            opened.push(options)
+            let n = 0
+            return { head: () => 'cp0', checkpoint: async () => ({ commit: `cp${++n}` }) as never }
+          },
+        },
+      )
+      const opened: unknown[] = []
+      h.main.handle('host.approval.request', () => ({ decision: 'allow_once' }))
+      await h.main.request('host.init', {
+        ...init,
+        checkpoints: { gitDir: '/data/p1.git', ref: 'refs/nexus/sessions/s1' },
+      })
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await h.waitFor('turn.completed')
+      expect(opened).toEqual([
+        { gitDir: '/data/p1.git', workTree: '/work', ref: 'refs/nexus/sessions/s1' },
+      ])
+      expect(h.events.filter((e) => e.type === 'checkpoint.created').map((e) => e.payload)).toEqual(
+        [
+          { checkpointId: 'cp1', reason: 'turn_start' },
+          { checkpointId: 'cp2', reason: 'before_command' },
+        ],
+      )
+    })
+
+    it('runs without checkpoints when none are configured', async () => {
+      const openCheckpoints = vi.fn()
+      const h = setup(
+        { turns: [{ steps: [call, { kind: 'reply', text: 'done' }] }] },
+        { registerTools, openCheckpoints },
+      )
+      h.main.handle('host.approval.request', () => ({ decision: 'allow_once' }))
+      await h.main.request('host.init', init)
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await h.waitFor('turn.completed')
+      expect(openCheckpoints).not.toHaveBeenCalled()
+      expect(h.events.map((e) => e.type)).not.toContain('checkpoint.created')
+    })
+
     const echoRequest = (command: string) => ({
       toolCallId: 'x',
       definition: echo as ToolDefinition,
