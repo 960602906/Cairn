@@ -80,6 +80,8 @@ export interface ApprovalRequest {
   readonly kind: 'tool' | 'no_checkpoint'
   readonly preview?: ApprovalPreview
   readonly reasonCode: string
+  /** 与判定结果相同的规则 id（M1-11a，审批界面显示）。 */
+  readonly matchedRuleIds: readonly string[]
   readonly signal: AbortSignalLike
 }
 
@@ -259,7 +261,6 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
 
   async function approve(
     request: Omit<ApprovalRequest, 'approvalId'>,
-    matchedRuleIds: readonly string[],
     observer: ToolCallObserver,
   ): Promise<ApprovalResponse> {
     const approvalId = options.createId()
@@ -267,7 +268,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     observer.emit('approval.requested', {
       approvalId,
       toolCallId: request.toolCallId,
-      matchedRuleIds: [...matchedRuleIds],
+      matchedRuleIds: [...request.matchedRuleIds],
       reasonCode: request.reasonCode,
     })
     try {
@@ -376,9 +377,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
             kind: 'tool',
             ...(preview ? { preview } : {}),
             reasonCode: permission.reasonCode,
+            matchedRuleIds: permission.matchedRuleIds ?? [],
             signal,
           },
-          permission.matchedRuleIds ?? [],
           observer,
         )
         if (response.decision === 'deny') {
@@ -400,9 +401,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               targets,
               kind: 'no_checkpoint',
               reasonCode: 'checkpoint.failed',
+              matchedRuleIds: [],
               signal,
             },
-            [],
             observer,
           )
           if (response.decision === 'deny') {

@@ -268,6 +268,7 @@ describe('ToolPipeline：各阶段的失败', () => {
         kind: 'tool',
         preview: { summary: 'write a.ts', diff: '+x' },
         reasonCode: 'rule.ask',
+        matchedRuleIds: ['r1'],
       }),
     )
     expect(h.log).toEqual([

@@ -47,6 +47,9 @@ importers:
       '@nexus/runtime-pi':
         specifier: workspace:*
         version: link:../../packages/runtime-pi
+      '@nexus/shell':
+        specifier: workspace:*
+        version: link:../../packages/shell
       '@nexus/storage':
         specifier: workspace:*
         version: link:../../packages/storage

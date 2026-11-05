@@ -10,21 +10,30 @@
  * - `host.heartbeat`：回复当前时间。
  * 运行发出的事件以 `host.event` 原样转发，seq 由主进程分配。
  *
- * 权限（M1-10c）：`permissions` 按 `host.init` 下发的规则（省略时为“询问”模式的预设）与强制拦截判定；
- * 工具流水线接入宿主时使用（M1-11）。
+ * 工具（M1-11a）：`host.init` 时由 `registerTools` 注册内置工具，交给工具流水线执行（Runtime §7）：
+ * - 权限：`permissions` 按 `host.init` 下发的规则（省略时为“询问”模式的预设）与强制拦截判定；
+ *   `host.permissions.update` 替换规则，审批时“始终允许”生成的规则立即加入；
+ * - 审批：经 `host.approval.request` 请主进程转给界面（`approval-gate.ts`）；
+ * - 改动记录：经 `changes.record` 交给主进程（`change-recorder.ts`）；
+ * - 检查点在 M1-12 实现，此前不创建。
  *
  * 运行时与模型解析由入口注入，M1 换成 pi 适配器时这里不改。不依赖 Electron。
  */
 import {
   createPermissionEngine,
   createRunSupervisor,
+  createToolPipeline,
+  createToolRegistry,
   DEFAULT_PERMISSION_GUARDS,
   presetRules,
   type AgentRunHandle,
   type AgentRuntime,
+  type Logger,
   type PermissionGate,
   type ResolvedModel,
   type RunSupervisor,
+  type ToolCheckpoints,
+  type ToolRegistry,
 } from '@nexus/core'
 import {
   createEndpoint,
@@ -37,6 +46,9 @@ import {
   type RpcChannel,
   type RpcEndpoint,
 } from '@nexus/protocol'
+import { createPathResolver } from '@nexus/tools'
+import { createHostApprovalGate } from './approval-gate.js'
+import { createHostChangeRecorder } from './change-recorder.js'
 
 export const AgentHostErrorCode = {
   /** 尚未收到 `host.init`，或重复初始化。 */
@@ -72,6 +84,10 @@ export interface AgentHostOptions {
   readonly now?: () => number
   /** 权限规则中的路径与命令是否不区分大小写（Windows）。默认 false。 */
   readonly caseInsensitive?: boolean
+  /** 注册工作区可用的工具（M1-11a）；省略或没有注册工具时运行不带工具。 */
+  readonly registerTools?: (registry: ToolRegistry, workspacePath: string) => void | Promise<void>
+  /** 工具流水线的日志，默认不记录。 */
+  readonly log?: Logger
   /** 记录异常（如排队的输入执行失败）。 */
   readonly onError?: (error: unknown) => void
 }
@@ -81,6 +97,20 @@ export interface AgentHost {
   /** 工具调用的权限判定（M1-10c），使用 `host.init` 下发的规则。 */
   readonly permissions: PermissionGate
 }
+
+const silentLogger: Logger = {
+  level: 'error',
+  setLevel: () => undefined,
+  isEnabled: () => false,
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+  child: () => silentLogger,
+}
+
+/** 检查点在 M1-12 实现；此前不创建，返回空 id（流水线不会因此请用户确认）。 */
+const NO_CHECKPOINTS: ToolCheckpoints = { create: () => Promise.resolve('') }
 
 export function createAgentHost(options: AgentHostOptions): AgentHost {
   const now = options.now ?? Date.now
@@ -106,6 +136,25 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     if (initializing || run) throw new RpcError(AgentHostErrorCode.AlreadyInitialized)
     initializing = true
     if (init.permissionRules) permissionRules = init.permissionRules
+    const registry = createToolRegistry()
+    await options.registerTools?.(registry, init.workspacePath)
+    const hasTools = registry.list().length > 0
+    const toolPipeline = hasTools
+      ? createToolPipeline({
+          registry,
+          permissions,
+          approvals: createHostApprovalGate({
+            endpoint,
+            onRule: (rule) => (permissionRules = [...permissionRules, rule]),
+          }),
+          checkpoints: NO_CHECKPOINTS,
+          changes: createHostChangeRecorder(endpoint),
+          workspaceRoot: init.workspacePath,
+          resolvePath: createPathResolver(init.workspacePath),
+          log: options.log ?? silentLogger,
+          createId: options.createId,
+        })
+      : undefined
     const { runtime, model } = await options.createRuntime(
       init.model,
       init.credential,
@@ -118,6 +167,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       signal: shutdown.signal,
       createId: options.createId,
       now,
+      ...(toolPipeline ? { tools: registry.specs(), toolPipeline } : {}),
     })
     supervisor.onEvent((event) => endpoint.emit('host.event', { event }))
     run = await supervisor.createRun({
@@ -152,6 +202,11 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       endpoint.close()
       options.exit(0)
     }, 0)
+    return {}
+  })
+
+  endpoint.handle('host.permissions.update', ({ rules }) => {
+    permissionRules = rules
     return {}
   })
 

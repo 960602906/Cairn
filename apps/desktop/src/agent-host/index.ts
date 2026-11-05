@@ -3,20 +3,24 @@
  *
  * 等待主进程经 `{ type: 'nexus.port' }` 消息转交的专用端口，在其上运行宿主协议（`host.ts`）。
  * 运行时由环境变量选择（`runtime-select.ts`：默认 FakeRuntime，`NEXUS_RUNTIME=pi` 时为 pi 适配器）。
- * 设置 `NEXUS_HOST_TRACE_FILE` 时记录收到的历史（端到端测试用，见 `history-trace.ts`）。
+ * 内置工具见 `builtin-tools.ts`。设置 `NEXUS_HOST_TRACE_FILE` 时记录收到的历史（端到端测试用，见 `history-trace.ts`）。
  */
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { redact } from '@nexus/core'
 import type {} from 'electron'
 import { HOST_PORT_MESSAGE, portChannel } from '../shared/host-port.js'
+import { createBuiltinTools } from './builtin-tools.js'
 import { HOST_TRACE_ENV, traceHistory } from './history-trace.js'
 import { createAgentHost } from './host.js'
 import { selectHostRuntime } from './runtime-select.js'
 
 const traceFile = process.env[HOST_TRACE_ENV]
 const createHostRuntime = selectHostRuntime(process.env)
+/** 与主进程入口在同一目录（`out/main`），打包的外部程序在 `out/bin`。 */
+const registerTools = createBuiltinTools({ binDir: join(import.meta.dirname, '../bin') })
 /** `host.init` 带来的 Key：错误输出前按原文脱敏。 */
 const secrets: string[] = []
 const reportError = (error: unknown) =>
@@ -38,6 +42,7 @@ process.parentPort.on('message', (event) => {
     exit: (code) => process.exit(code),
     createId: randomUUID,
     caseInsensitive: process.platform === 'win32',
+    registerTools,
     onError: reportError,
   })
 })

@@ -29,7 +29,9 @@ import { FileChangeKind } from './changes.js'
 /** 事件信封的 schema 版本（架构 §7.1 `EventEnvelope.v`）。 */
 export const EVENT_SCHEMA_VERSION = 1 as const
 
-const ApprovalDecision = z.enum(['allow_once', 'allow_session', 'allow_project', 'deny'])
+/** 审批的决定（架构 §10.4）：允许一次、本会话始终允许、本项目始终允许、拒绝。 */
+export const ApprovalDecision = z.enum(['allow_once', 'allow_session', 'allow_project', 'deny'])
+export type ApprovalDecision = z.infer<typeof ApprovalDecision>
 
 /**
  * 每种事件的 payload schema。

@@ -15,8 +15,8 @@ import {
   Timestamp,
 } from '../common.js'
 import { FileChangeInput } from '../changes.js'
-import { UnsequencedEventSchema } from '../events.js'
-import { PermissionRule } from '../permissions.js'
+import { ApprovalDecision, UnsequencedEventSchema } from '../events.js'
+import { PermissionRule, ToolCategory } from '../permissions.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
 
@@ -31,6 +31,46 @@ export const HostModelConfig = z.object({
   compat: ModelCompat.optional(),
 })
 export type HostModelConfig = z.infer<typeof HostModelConfig>
+
+/**
+ * 宿主发起的审批请求（M1-11a，架构 §10.4）：界面显示工具、参数、预览与判定理由。
+ * `kind`：`tool` 为权限判定需要审批；`no_checkpoint` 为检查点创建失败，确认是否不带检查点继续。
+ */
+export const HostApprovalRequest = z.object({
+  approvalId: Id,
+  toolCallId: Id,
+  tool: z.object({ name: z.string().min(1), category: ToolCategory }),
+  /** 规范化后的参数（JSON）。 */
+  input: z.unknown(),
+  /** 权限判定用的目标：相对工作区的路径与命令。 */
+  targets: z.object({
+    paths: z.array(z.string()).optional(),
+    command: z.string().optional(),
+  }),
+  kind: z.enum(['tool', 'no_checkpoint']),
+  preview: z
+    .object({
+      summary: z.string(),
+      diff: z.string().optional(),
+      command: z.string().optional(),
+    })
+    .optional(),
+  reasonCode: z.string().min(1),
+  matchedRuleIds: z.array(Id),
+})
+export type HostApprovalRequest = z.infer<typeof HostApprovalRequest>
+
+/**
+ * 审批的结果。选择“本会话 / 本项目始终允许”时，主进程保存生成的规则并在 `rule` 中给出，宿主立即用它判定
+ * 之后的调用。
+ */
+export const HostApprovalResponse = z.object({
+  decision: ApprovalDecision,
+  /** 用户附加的说明，拒绝时交给模型。 */
+  feedback: z.string().optional(),
+  rule: PermissionRule.optional(),
+})
+export type HostApprovalResponse = z.infer<typeof HostApprovalResponse>
 
 export const HostForMain = defineSide({
   requests: {
@@ -78,6 +118,14 @@ export const HostForMain = defineSide({
       params: z.object({}),
       result: z.object({}),
     },
+    /**
+     * 替换宿主的权限规则（M1-11a）：切换权限模式、修改规则后，运行中的宿主用新的规则判定之后的调用。
+     * 内容与 `host.init.permissionRules` 相同。
+     */
+    'host.permissions.update': {
+      params: z.object({ rules: z.array(PermissionRule) }),
+      result: z.object({}),
+    },
     /** 心跳：主进程定期请求，超时视为宿主卡死（架构 §21）。 */
     'host.heartbeat': {
       params: z.object({}),
@@ -86,12 +134,24 @@ export const HostForMain = defineSide({
   },
   events: {
     'host.event': z.object({ event: UnsequencedEventSchema }),
+    /**
+     * 未决审批被宿主取消（M1-11a）：用户停止、轮次中止或宿主退出前。主进程收起审批卡片，并以错误结束
+     * 对应的 `host.approval.request`（宿主已不再等待它的结果）。
+     */
+    'host.approval.cancelled': z.object({ approvalId: Id }),
   },
 })
 
-/** 审批请求（host.approval.request / response）在 M1-11 加入。 */
 export const MainForHost = defineSide({
   requests: {
+    /**
+     * 请求用户审批一次工具调用（M1-11a）：等到用户决定或宿主取消（`host.approval.cancelled`）才返回，
+     * 没有超时。会话与运行由连接确定。
+     */
+    'host.approval.request': {
+      params: HostApprovalRequest,
+      result: HostApprovalResponse,
+    },
     /**
      * 记录一次文件改动（M1-08b）：主进程把前后内容写入 blob 存储、写入改动记录，返回记录 id。
      * 会话与运行由连接确定。宿主随后发出 `file.changed`。
@@ -103,5 +163,3 @@ export const MainForHost = defineSide({
   },
   events: {},
 })
-
-export const RESERVED_HOST_MAIN_METHODS = ['host.approval.request'] as const
