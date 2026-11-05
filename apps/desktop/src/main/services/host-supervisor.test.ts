@@ -88,7 +88,7 @@ function fakeHost(behavior: FakeHostBehavior = {}) {
     return {}
   })
   const emit = (event: UnsequencedEvent) => host?.emit('host.event', { event })
-  return { proc, calls, inits, exit, emit, isAlive: () => alive }
+  return { proc, calls, inits, exit, emit, endpoint: host, isAlive: () => alive }
 }
 
 const init: HostInit = {
@@ -140,6 +140,37 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
+})
+
+describe('changes.record（M1-08b）', () => {
+  const change = {
+    path: 'a.txt',
+    kind: 'create' as const,
+    after: '',
+    hunks: [],
+    added: 0,
+    removed: 0,
+  }
+
+  it('交给改动服务，会话与运行由宿主确定', async () => {
+    const host = fakeHost()
+    const recordChange = vi.fn(async () => ({ changeId: 'ch1' }))
+    const { supervisor } = setup(host, { recordChange })
+    await supervisor.startHost(init)
+    await expect(host.endpoint!.request('changes.record', change)).resolves.toEqual({
+      changeId: 'ch1',
+    })
+    expect(recordChange).toHaveBeenCalledWith('s1', 'r1', change)
+  })
+
+  it('没有改动服务时报 run.unsupported', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host)
+    await supervisor.startHost(init)
+    await expect(host.endpoint!.request('changes.record', change)).rejects.toMatchObject({
+      code: 'run.unsupported',
+    })
+  })
 })
 
 describe('startHost', () => {

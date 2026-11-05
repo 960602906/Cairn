@@ -77,6 +77,7 @@ const noopLogger: Logger = {
 export function toolContext(
   root: string,
   signal: AbortSignal = new AbortController().signal,
+  recordChange: ToolContext['recordChange'] = async () => {},
 ): ToolContext {
   return {
     workspaceRoot: root,
@@ -86,6 +87,7 @@ export function toolContext(
     checkpoints: { create: async () => 'cp' },
     log: noopLogger,
     progress: () => {},
+    recordChange,
   }
 }
 

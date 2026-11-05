@@ -14,6 +14,7 @@ import {
   RunState,
   Timestamp,
 } from '../common.js'
+import { FileChangeInput } from '../changes.js'
 import { UnsequencedEventSchema } from '../events.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
@@ -82,7 +83,19 @@ export const HostForMain = defineSide({
   },
 })
 
-/** 审批请求（host.approval.request / response）在 M1 加入。 */
-export const MainForHost = defineSide({ requests: {}, events: {} })
+/** 审批请求（host.approval.request / response）在 M1-11 加入。 */
+export const MainForHost = defineSide({
+  requests: {
+    /**
+     * 记录一次文件改动（M1-08b）：主进程把前后内容写入 blob 存储、写入改动记录，返回记录 id。
+     * 会话与运行由连接确定。宿主随后发出 `file.changed`。
+     */
+    'changes.record': {
+      params: FileChangeInput,
+      result: z.object({ changeId: Id }),
+    },
+  },
+  events: {},
+})
 
 export const RESERVED_HOST_MAIN_METHODS = ['host.approval.request'] as const

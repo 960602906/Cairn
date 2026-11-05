@@ -3,11 +3,20 @@
  *
  * 打开时先执行迁移（`migrateDatabase`），再以 WAL 模式打开连接。只有主进程使用。
  */
-import { isLiveEventType, type PersistedEvent, type ProviderConfig } from '@nexus/protocol'
+import {
+  isLiveEventType,
+  type FileChangeKind,
+  type FileChangeStatus,
+  type PersistedEvent,
+  type ProviderConfig,
+} from '@nexus/protocol'
 import Database from 'better-sqlite3'
 import {
   StorageError,
   StorageErrorCode,
+  type CreateFileChangeInput,
+  type FileChangeRecord,
+  type HunkRecord,
   type ListSessionsOptions,
   type ProjectRecord,
   type SessionRecord,
@@ -74,6 +83,59 @@ interface EventRow {
   ts: number
   payload: string
 }
+
+interface FileChangeRow {
+  change_id: string
+  session_id: string
+  run_id: string | null
+  turn_id: string | null
+  tool_call_id: string | null
+  path: string
+  kind: FileChangeKind
+  before_hash: string | null
+  after_hash: string | null
+  revert_of: string | null
+  status: FileChangeStatus
+  added: number
+  removed: number
+  created_at: number
+}
+
+interface HunkRow {
+  change_id: string
+  position: number
+  old_start: number
+  old_lines: number
+  new_start: number
+  new_lines: number
+  status: FileChangeStatus
+}
+
+const toHunk = (row: HunkRow): HunkRecord => ({
+  oldStart: row.old_start,
+  oldLines: row.old_lines,
+  newStart: row.new_start,
+  newLines: row.new_lines,
+  status: row.status,
+})
+
+const toFileChange = (row: FileChangeRow, hunks: readonly HunkRow[]): FileChangeRecord => ({
+  changeId: row.change_id,
+  sessionId: row.session_id,
+  ...(row.run_id === null ? {} : { runId: row.run_id }),
+  ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
+  ...(row.tool_call_id === null ? {} : { toolCallId: row.tool_call_id }),
+  path: row.path,
+  kind: row.kind,
+  ...(row.before_hash === null ? {} : { beforeHash: row.before_hash }),
+  ...(row.after_hash === null ? {} : { afterHash: row.after_hash }),
+  ...(row.revert_of === null ? {} : { revertOf: row.revert_of }),
+  status: row.status,
+  added: row.added,
+  removed: row.removed,
+  hunks: hunks.map(toHunk),
+  createdAt: row.created_at,
+})
 
 const toProject = (row: ProjectRow): ProjectRecord => ({
   projectId: row.project_id,
@@ -187,6 +249,32 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     readAfter: db.prepare<[string, number, number], EventRow>(
       'SELECT * FROM events WHERE session_id = ? AND seq > ? ORDER BY seq LIMIT ?',
     ),
+    changeById: db.prepare<[string], FileChangeRow>(
+      'SELECT * FROM file_changes WHERE change_id = ?',
+    ),
+    changesBySession: db.prepare<[string], FileChangeRow>(
+      'SELECT * FROM file_changes WHERE session_id = ? ORDER BY rowid',
+    ),
+    hunksByChange: db.prepare<[string], HunkRow>(
+      'SELECT * FROM hunks WHERE change_id = ? ORDER BY position',
+    ),
+    hunksBySession: db.prepare<[string], HunkRow>(
+      `SELECT h.* FROM hunks h JOIN file_changes c ON c.change_id = h.change_id
+       WHERE c.session_id = ? ORDER BY h.change_id, h.position`,
+    ),
+    insertChange: db.prepare(
+      `INSERT INTO file_changes
+         (change_id, session_id, run_id, turn_id, tool_call_id, path, kind, before_hash,
+          after_hash, revert_of, status, added, removed, created_at)
+       VALUES (@changeId, @sessionId, @runId, @turnId, @toolCallId, @path, @kind, @beforeHash,
+          @afterHash, @revertOf, 'pending', @added, @removed, @at)`,
+    ),
+    insertHunk: db.prepare(
+      `INSERT INTO hunks (change_id, position, old_start, old_lines, new_start, new_lines, status)
+       VALUES (@changeId, @position, @oldStart, @oldLines, @newStart, @newLines, 'pending')`,
+    ),
+    setChangeStatus: db.prepare('UPDATE file_changes SET status = ? WHERE change_id = ?'),
+    setHunkStatus: db.prepare('UPDATE hunks SET status = ? WHERE change_id = ?'),
   }
 
   const updateSession = (
@@ -259,6 +347,58 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       lastSeq.set(event.sessionId, event.seq)
     }
   })
+
+  const getChange = (changeId: string): FileChangeRecord | undefined => {
+    const row = q.changeById.get(changeId)
+    return row && toFileChange(row, q.hunksByChange.all(changeId))
+  }
+
+  const createChange = db.transaction((input: CreateFileChangeInput): FileChangeRecord => {
+    if (!q.sessionById.get(input.sessionId)) {
+      throw new StorageError(StorageErrorCode.NotFound, { sessionId: input.sessionId })
+    }
+    if (q.changeById.get(input.changeId)) {
+      throw new StorageError(StorageErrorCode.Conflict, { changeId: input.changeId })
+    }
+    if (input.revertOf !== undefined && !q.changeById.get(input.revertOf)) {
+      throw new StorageError(StorageErrorCode.NotFound, { changeId: input.revertOf })
+    }
+    q.insertChange.run({
+      changeId: input.changeId,
+      sessionId: input.sessionId,
+      runId: input.runId ?? null,
+      turnId: input.turnId ?? null,
+      toolCallId: input.toolCallId ?? null,
+      path: input.path,
+      kind: input.kind,
+      beforeHash: input.beforeHash ?? null,
+      afterHash: input.afterHash ?? null,
+      revertOf: input.revertOf ?? null,
+      added: input.added,
+      removed: input.removed,
+      at: now(),
+    })
+    input.hunks.forEach((hunk, position) =>
+      q.insertHunk.run({
+        changeId: input.changeId,
+        position,
+        oldStart: hunk.oldStart,
+        oldLines: hunk.oldLines,
+        newStart: hunk.newStart,
+        newLines: hunk.newLines,
+      }),
+    )
+    return getChange(input.changeId)!
+  })
+
+  const setChangeStatus = db.transaction(
+    (changeId: string, status: FileChangeStatus): FileChangeRecord => {
+      const { changes } = q.setChangeStatus.run(status, changeId)
+      if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { changeId })
+      q.setHunkStatus.run(status, changeId)
+      return getChange(changeId)!
+    },
+  )
 
   return {
     migration,
@@ -337,6 +477,23 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         return q.readAfter.all(sessionId, afterSeq, max).map(toEvent)
       },
       maxSeq,
+    },
+
+    changes: {
+      create: (input) => createChange(input),
+      get: getChange,
+      list(sessionId) {
+        const hunks = new Map<string, HunkRow[]>()
+        for (const row of q.hunksBySession.all(sessionId)) {
+          const list = hunks.get(row.change_id) ?? []
+          list.push(row)
+          hunks.set(row.change_id, list)
+        }
+        return q.changesBySession
+          .all(sessionId)
+          .map((row) => toFileChange(row, hunks.get(row.change_id) ?? []))
+      },
+      setStatus: (changeId, status) => setChangeStatus(changeId, status),
     },
 
     transaction: <T>(fn: () => T): T => db.transaction(fn)(),

@@ -57,6 +57,8 @@ export interface SessionManagerOptions {
     defaultModel(): ModelRef | undefined
     has(model: ModelRef): boolean
   }
+  /** 会话是否暂时不接受输入（如正在撤销改动，M1-08b），此时输入报 `run.busy`。 */
+  readonly isLocked?: (sessionId: string) => boolean
   /** 同时存在的宿主上限，默认 3。 */
   readonly maxConcurrent?: number
   /** 宿主空闲多久后回收，默认 5 分钟。 */
@@ -75,6 +77,8 @@ export interface SessionManager extends SessionCommands {
   readonly create: Sync<SessionCommands['create']>
   readonly list: Sync<SessionCommands['list']>
   readonly prompt: Sync<SessionCommands['prompt']>
+  /** 会话是否正在运行：排队、宿主启动中，或运行处于活动状态（撤销改动前检查，M1-08b）。 */
+  isBusy(sessionId: string): boolean
   /** 启动时调用：把仍处于运行中的运行标记为中断，返回标记的运行数。 */
   recoverInterrupted(): number
   /** 有宿主（启动中或运行中）的会话。 */
@@ -182,6 +186,15 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     if (slot.awaitingTurn) return true
     const run = rootRun(getView(sessionId))
     return run !== undefined && interruptible(run)
+  }
+
+  /** 排队中、宿主启动中，或宿主正在执行。 */
+  function sessionBusy(sessionId: string): boolean {
+    const slot = slots.get(sessionId)
+    if (waiting.has(sessionId)) return true
+    if (!slot) return false
+    if (!slot.handle) return true
+    return slot.handle.state() === 'running' && isBusy(sessionId, slot)
   }
 
   function updateIdle(sessionId: string, slot: Slot) {
@@ -348,11 +361,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       const record = requireSession(sessionId)
       const slot = slots.get(sessionId)
       const hostReady = slot?.handle?.state() === 'running'
-      if (
-        waiting.has(sessionId) ||
-        (slot && !slot.handle) ||
-        (slot && hostReady && isBusy(sessionId, slot))
-      ) {
+      if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
         throw new RpcError(SessionErrorCode.Busy, { sessionId })
       }
       // 没有宿主时仍处于运行中的运行，是上一个宿主崩溃留下的
@@ -400,6 +409,8 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       if (slot.handle.state() === 'running') await slot.handle.abort('user')
       return {}
     },
+
+    isBusy: sessionBusy,
 
     recoverInterrupted() {
       let count = 0

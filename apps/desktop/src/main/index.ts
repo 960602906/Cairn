@@ -27,6 +27,8 @@ import {
   type NavigationPolicy,
   type WebContentsLike,
 } from './security.js'
+import { createBlobStore } from './services/blob-store.js'
+import { createChangeService } from './services/change-service.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
@@ -98,6 +100,13 @@ const settings = createSettingsService({
   onError: reportError,
 })
 const events = createSessionEventService({ storage, onListenerError: reportError })
+/** 改动记录（M1-08b）：宿主报告的改动写入 blob 存储与数据库；界面列出与撤销。 */
+const changes = createChangeService({
+  storage,
+  blobs: createBlobStore(paths.blobs),
+  events,
+  isBusy: (sessionId) => sessions.isBusy(sessionId),
+})
 const supervisor = createHostSupervisor({
   spawn: createUtilityHostSpawner({
     entry: join(import.meta.dirname, 'agent-host.js'),
@@ -112,6 +121,7 @@ const supervisor = createHostSupervisor({
     return ref === undefined ? undefined : credentials.resolve(ref)
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
+  recordChange: (sessionId, runId, input) => changes.record(sessionId, runId, input),
   onError: reportError,
 })
 const sessions = createSessionManager({
@@ -120,6 +130,7 @@ const sessions = createSessionManager({
   supervisor,
   runDefaults: RUN_DEFAULTS,
   models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
+  isLocked: (sessionId) => changes.isReverting(sessionId),
   onError: reportError,
 })
 sessions.recoverInterrupted()
@@ -128,6 +139,7 @@ const gateway = createRendererGateway({
   commands: sessions,
   settings,
   credentials: createCredentialCommands(credentials),
+  changes,
   onProtocolError: (error) => reportError(error),
 })
 

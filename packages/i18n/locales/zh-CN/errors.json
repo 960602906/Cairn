@@ -80,5 +80,10 @@
   "tool.edit_file.ambiguous": "要替换的原文出现了不止一处",
   "tool.edit_file.no_change": "替换后的内容与原文相同",
   "tool.edit_file.changed_since_preview": "预览后文件已被修改，未编辑",
-  "tool.edit_file.failed": "无法编辑文件"
+  "tool.edit_file.failed": "无法编辑文件",
+  "changes.not_found": "找不到这条改动记录",
+  "changes.already_reverted": "这处改动已经撤销过了",
+  "changes.conflict": "{{path}} 在改动之后又被修改过（或较新的改动没有一起撤销），无法撤销",
+  "changes.blob_missing": "找不到 {{path}} 改动前的内容，无法撤销",
+  "changes.failed": "无法恢复 {{path}}"
 }

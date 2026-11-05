@@ -7,6 +7,7 @@ import {
   StorageErrorCode,
   type CreateProjectInput,
   type CreateSessionInput,
+  type FileChangeRecord,
   type ListSessionsOptions,
   type ProjectRecord,
   type SessionRecord,
@@ -19,6 +20,8 @@ interface State {
   sessions: Map<string, SessionRecord>
   providers: ProviderConfig[]
   events: Map<string, PersistedEvent[]>
+  /** 按记录顺序（Map 保持插入顺序）。 */
+  changes: Map<string, FileChangeRecord>
 }
 
 function cloneState(state: State): State {
@@ -27,6 +30,7 @@ function cloneState(state: State): State {
     sessions: new Map(state.sessions),
     providers: state.providers,
     events: new Map([...state.events].map(([id, list]) => [id, [...list]])),
+    changes: new Map(state.changes),
   }
 }
 
@@ -42,6 +46,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     sessions: new Map(),
     providers: [],
     events: new Map(),
+    changes: new Map(),
   }
   let closed = false
 
@@ -196,6 +201,44 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
       },
       maxSeq(sessionId) {
         return live().events.get(sessionId)?.at(-1)?.seq ?? 0
+      },
+    },
+
+    changes: {
+      create(input) {
+        const s = live()
+        if (!s.sessions.has(input.sessionId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { sessionId: input.sessionId })
+        }
+        if (s.changes.has(input.changeId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { changeId: input.changeId })
+        }
+        if (input.revertOf !== undefined && !s.changes.has(input.revertOf)) {
+          throw new StorageError(StorageErrorCode.NotFound, { changeId: input.revertOf })
+        }
+        const record: FileChangeRecord = {
+          ...copy(input),
+          status: 'pending',
+          hunks: input.hunks.map((h) => ({ ...h, status: 'pending' as const })),
+          createdAt: now(),
+        }
+        s.changes.set(record.changeId, record)
+        return copy(record)
+      },
+      get(changeId) {
+        const record = live().changes.get(changeId)
+        return record && copy(record)
+      },
+      list(sessionId) {
+        return [...live().changes.values()].filter((c) => c.sessionId === sessionId).map(copy)
+      },
+      setStatus(changeId, status) {
+        const s = live()
+        const record = s.changes.get(changeId)
+        if (!record) throw new StorageError(StorageErrorCode.NotFound, { changeId })
+        const next = { ...record, status, hunks: record.hunks.map((h) => ({ ...h, status })) }
+        s.changes.set(changeId, next)
+        return copy(next)
       },
     },
 

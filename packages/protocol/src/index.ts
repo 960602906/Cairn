@@ -3,6 +3,7 @@
  * 最底层的包：不得依赖任何其他 @nexus/* 包。
  */
 export * from './common.js'
+export * from './changes.js'
 export * from './events.js'
 export * from './providers.js'
 export * from './rpc.js'

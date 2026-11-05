@@ -4,11 +4,12 @@
 import { readFileSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { createToolRegistry, ToolError } from '@nexus/core'
+import { createToolRegistry, ToolError, type ToolFileChange } from '@nexus/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   createEditFileTool,
   createWriteFileTool,
+  diffHunks,
   encodeText,
   registerWriteTools,
   unifiedDiff,
@@ -370,5 +371,86 @@ describe('edit_file', () => {
     await fs.writeFile(path.join(fx.root, 'long.ts'), `${long}\n`)
     const result = await edit({ path: 'long.ts', oldText: 'z', newText: 'Z', replaceAll: true })
     expect(result).toMatch(/\[Diff truncated\. Use read_file to check the result\.\]$/)
+  })
+})
+
+describe('改动记录（M1-08b）', () => {
+  const recording = () => {
+    const changes: ToolFileChange[] = []
+    const ctx = toolContext(fx.root, undefined, async (change) => {
+      changes.push(change)
+    })
+    return { changes, ctx }
+  }
+
+  it('新建与覆盖：记录原始字节、块与行数', async () => {
+    const { changes, ctx } = recording()
+    await runTool(createWriteFileTool(), { path: 'new/a.txt', content: 'x\ny\n' }, ctx)
+    await fs.writeFile(path.join(fx.root, 'crlf.txt'), 'a\r\nb\r\n')
+    await runTool(createWriteFileTool(), { path: 'crlf.txt', content: 'a\nc\n' }, ctx)
+    expect(changes).toEqual([
+      {
+        path: 'new/a.txt',
+        kind: 'create',
+        after: Buffer.from('x\ny\n'),
+        hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 2 }],
+        added: 2,
+        removed: 0,
+      },
+      {
+        path: 'crlf.txt',
+        kind: 'modify',
+        before: Buffer.from('a\r\nb\r\n'),
+        after: Buffer.from('a\r\nc\r\n'),
+        hunks: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 2 }],
+        added: 1,
+        removed: 1,
+      },
+    ])
+  })
+
+  it('edit_file 记录改动；取消时既不写入也不记录', async () => {
+    const { changes, ctx } = recording()
+    await runTool(
+      createEditFileTool(),
+      { path: 'src/index.ts', oldText: "console.log('hi')", newText: 'run()' },
+      ctx,
+    )
+    expect(changes).toMatchObject([{ path: 'src/index.ts', kind: 'modify', added: 1, removed: 1 }])
+    const controller = new AbortController()
+    controller.abort()
+    const cancelled = toolContext(fx.root, controller.signal, async (c) => {
+      changes.push(c)
+    })
+    expect(
+      await runTool(createWriteFileTool(), { path: 'c.txt', content: 'x' }, cancelled),
+    ).toContain('not written (cancelled)')
+    expect(
+      await runTool(
+        createEditFileTool(),
+        { path: 'src/index.ts', oldText: 'run()', newText: 'x' },
+        cancelled,
+      ),
+    ).toContain('not written (cancelled)')
+    expect(changes).toHaveLength(1)
+  })
+
+  it('记录失败时文件已写入，结果中说明', async () => {
+    const ctx = toolContext(fx.root, undefined, () => Promise.reject(new Error('disk full')))
+    expect(await runTool(createWriteFileTool(), { path: 'f.txt', content: 'x' }, ctx)).toContain(
+      'could not be recorded',
+    )
+    expect(text('f.txt')).toBe('x')
+    expect(
+      await runTool(createEditFileTool(), { path: 'f.txt', oldText: 'x', newText: 'y' }, ctx),
+    ).toMatch(/could not be recorded/)
+    expect(text('f.txt')).toBe('y')
+  })
+
+  it('diffHunks：省略行数时为 1', () => {
+    expect(diffHunks('--- a\n+++ b\n@@ -3 +3,2 @@\n-x\n+y\n+z\n@@ -10,0 +12 @@\n+w')).toEqual([
+      { oldStart: 3, oldLines: 1, newStart: 3, newLines: 2 },
+      { oldStart: 10, oldLines: 0, newStart: 12, newLines: 1 },
+    ])
   })
 })

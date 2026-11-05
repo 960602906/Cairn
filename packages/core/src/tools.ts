@@ -8,7 +8,7 @@
  * - 工具只能通过 `ToolContext` 访问工作区、检查点等外部资源（架构 §9.1）。路径校验（M1-06）、
  *   检查点（M1-12）在这里只定义接口。
  */
-import type { ContentPart } from '@nexus/protocol'
+import type { ContentPart, FileChangeKind, FileHunk } from '@nexus/protocol'
 import { z } from 'zod'
 import type { Logger } from './logger.js'
 import type { AbortSignalLike, RuntimeToolSpec } from './runtime.js'
@@ -47,6 +47,21 @@ export interface ToolCheckpoints {
   create(reason: string): Promise<string>
 }
 
+/**
+ * 写类工具完成的一次文件改动（M1-08b）：交给 `ToolContext.recordChange` 记录。
+ * 内容是改动前后的原始字节；`create` 没有 `before`，`delete` 没有 `after`。
+ */
+export interface ToolFileChange {
+  /** 相对工作区根目录的路径，`/` 分隔。 */
+  readonly path: string
+  readonly kind: FileChangeKind
+  readonly before?: Uint8Array
+  readonly after?: Uint8Array
+  readonly hunks: readonly FileHunk[]
+  readonly added: number
+  readonly removed: number
+}
+
 /** 工具执行时可用的一切；工具不能绕过它直接访问外部资源。 */
 export interface ToolContext {
   /** 工作区根目录（绝对路径）。 */
@@ -60,6 +75,11 @@ export interface ToolContext {
   readonly log: Logger
   /** 流式输出（如命令的标准输出），产生 `tool.output.delta`。 */
   progress(chunk: string, stream?: 'stdout' | 'stderr'): void
+  /**
+   * 记录已完成的文件改动（M1-08b），产生 `file.changed`。没有配置改动记录时什么也不做。
+   * 记录失败时抛出，文件本身已经改动，工具应在结果中说明而不是报告失败。
+   */
+  recordChange(change: ToolFileChange): Promise<void>
 }
 
 /** 工具执行的结果，交回模型。 */

@@ -3,6 +3,7 @@
  * 渲染进程只调用主进程的请求、接收主进程的事件；渲染进程自身不提供接口。
  */
 import { z } from 'zod'
+import { FileChangeSummary } from '../changes.js'
 import { ContentPart, Id, ModelRef, Timestamp } from '../common.js'
 import { EventEnvelopeSchema } from '../events.js'
 import { CONFIG_ID_PATTERN, ProviderConfigList } from '../providers.js'
@@ -128,6 +129,20 @@ export const MainForRenderer = defineSide({
       params: z.object({ ref: CredentialRef }),
       result: z.object({ configured: z.boolean(), available: z.boolean() }),
     },
+    /** 会话的文件改动记录（M1-08b），按发生顺序。 */
+    'changes.list': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ changes: z.array(FileChangeSummary) }),
+    },
+    /**
+     * 整文件撤销（M1-08b；按块撤销在 M3）：按与发生相反的顺序把文件恢复为改动前的内容。
+     * 会话正在运行时拒绝；文件在改动之后又被修改过（与记录的内容不一致）时整体拒绝，不做部分撤销。
+     * 返回撤销产生的改动记录（`revertOf` 指向被撤销的改动）。
+     */
+    'changes.revert': {
+      params: z.object({ sessionId: Id, changeIds: z.array(Id).min(1).max(1000) }),
+      result: z.object({ changes: z.array(FileChangeSummary) }),
+    },
   },
   events: {
     /** 实时事件推送；增量事件在主进程合并后按帧率批量推送（架构 §22）。 */
@@ -146,8 +161,6 @@ export const RESERVED_RENDERER_MAIN_METHODS = [
   'session.rename',
   'session.archive',
   'approval.resolve',
-  'changes.list',
-  'changes.revert',
   'checkpoint.list',
   'checkpoint.restore',
   'provider.test',

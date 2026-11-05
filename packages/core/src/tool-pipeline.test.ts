@@ -443,9 +443,13 @@ describe('RunEngine 接入流水线', () => {
     },
   }
 
-  async function runWith(decision: PermissionDecision, over: Partial<ToolPipelineOptions> = {}) {
-    const h = setup([tool()], over, decision)
-    const events: { type: string; payload: unknown }[] = []
+  async function runWith(
+    decision: PermissionDecision,
+    over: Partial<ToolPipelineOptions> = {},
+    definitions = [tool()],
+  ) {
+    const h = setup(definitions, over, decision)
+    const events: { type: string; payload: unknown; turnId?: string }[] = []
     const engine = await RunEngine.create({
       sessionId: 's1',
       runId: 'r1',
@@ -466,13 +470,46 @@ describe('RunEngine 接入流水线', () => {
       tools: [{ name: 'write_file', description: 'Write a file.', inputSchema: {} }],
       toolPipeline: createToolPipeline(h.options),
       signal: new AbortController().signal,
-      emit: (e: { type: string; payload: unknown }) =>
-        events.push({ type: e.type, payload: e.payload }),
+      emit: (e: { type: string; payload: unknown; turnId?: string | undefined }) =>
+        events.push({
+          type: e.type,
+          payload: e.payload,
+          ...(e.turnId ? { turnId: e.turnId } : {}),
+        }),
       now: () => 1,
     })
     await engine.prompt({ messageId: 'm1', content: text('go') })
     return { events, h }
   }
+
+  it('改动记录带上当前轮次；file.changed 在 tool.started 与 tool.completed 之间', async () => {
+    const record = vi.fn(async () => ({ changeId: 'ch1' }))
+    const writer = tool({
+      execute: async ({ path }, ctx) => {
+        await ctx.recordChange({
+          path,
+          kind: 'create',
+          after: new Uint8Array(),
+          hunks: [],
+          added: 0,
+          removed: 0,
+        })
+        return { content: text('ok') }
+      },
+    })
+    const { events } = await runWith({ decision: 'allow' }, { changes: { record } }, [writer])
+    const turnId = events.find((e) => e.type === 'turn.started')!.turnId
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ turnId, toolCallId: expect.any(String) }),
+    )
+    const types = events.map((e) => e.type)
+    expect(types.indexOf('file.changed')).toBeGreaterThan(types.indexOf('tool.started'))
+    expect(types.indexOf('file.changed')).toBeLessThan(types.indexOf('tool.completed'))
+    expect(events.find((e) => e.type === 'file.changed')).toMatchObject({
+      payload: { changeId: 'ch1', path: 'a.ts', kind: 'create' },
+      turnId,
+    })
+  })
 
   const toolEvents = (events: { type: string; payload: unknown }[]) =>
     events
@@ -709,5 +746,53 @@ describe('RunEngine：一步多个工具调用（Runtime §6.2）', () => {
       'completed',
     ])
     expect(events.filter((e) => e.type === 'approval.requested')).toHaveLength(2)
+  })
+})
+
+describe('ToolPipeline：改动记录（M1-08b）', () => {
+  const change = {
+    path: 'a.ts',
+    kind: 'modify' as const,
+    before: new Uint8Array([97]),
+    after: new Uint8Array([98]),
+    hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+    added: 1,
+    removed: 1,
+  }
+  const writer = (results: unknown[]) =>
+    tool({
+      execute: async (_input, ctx) => {
+        results.push(await ctx.recordChange(change).catch((e: Error) => e.message))
+        return { content: text('ok') }
+      },
+    })
+
+  it('记录改动（带工具调用与轮次），随后发出 file.changed', async () => {
+    const results: unknown[] = []
+    const record = vi.fn(async () => ({ changeId: 'ch1' }))
+    const h = setup([writer(results)], { changes: { record } })
+    const observer = { ...h.observer, turnId: 't1' }
+    await createToolPipeline(h.options).run(call({ path: 'a.ts' }), signal(), observer)
+    expect(record).toHaveBeenCalledWith({ ...change, toolCallId: 'c1', turnId: 't1' })
+    expect(results).toEqual([undefined])
+    expect(h.log).toContain('file.changed:{"changeId":"ch1","path":"a.ts","kind":"modify"}')
+  })
+
+  it('没有配置改动记录时什么也不做；记录失败时交给工具处理，不发出事件', async () => {
+    const results: unknown[] = []
+    const h = setup([writer(results)])
+    await createToolPipeline(h.options).run(call({ path: 'a.ts' }), signal(), h.observer)
+    const record = vi.fn(async () => {
+      throw new Error('disk full')
+    })
+    const failing = setup([writer(results)], { changes: { record } })
+    await createToolPipeline(failing.options).run(
+      call({ path: 'a.ts' }),
+      signal(),
+      failing.observer,
+    )
+    expect(record).toHaveBeenCalledWith({ ...change, toolCallId: 'c1' })
+    expect(results).toEqual([undefined, 'disk full'])
+    expect([...h.log, ...failing.log].some((l) => l.startsWith('file.changed'))).toBe(false)
   })
 })

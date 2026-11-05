@@ -389,6 +389,112 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     })
 
+    describe('changes', () => {
+      const hunk = { oldStart: 1, oldLines: 1, newStart: 1, newLines: 2 }
+      const change = (changeId: string, extra: object = {}) => ({
+        changeId,
+        sessionId: 's1',
+        path: 'src/a.ts',
+        kind: 'modify' as const,
+        beforeHash: 'b'.repeat(64),
+        afterHash: 'a'.repeat(64),
+        added: 2,
+        removed: 1,
+        hunks: [hunk],
+        ...extra,
+      })
+
+      it('creates pending records with hunks and lists them in order', () => {
+        seed()
+        const first = storage.changes.create(
+          change('c2', { runId: 'r1', turnId: 't1', toolCallId: 'call1' }),
+        )
+        expect(first).toEqual({
+          ...change('c2', { runId: 'r1', turnId: 't1', toolCallId: 'call1' }),
+          status: 'pending',
+          hunks: [{ ...hunk, status: 'pending' }],
+          createdAt: 100,
+        })
+        clock = 200
+        storage.changes.create({
+          changeId: 'c1',
+          sessionId: 's1',
+          path: 'new.txt',
+          kind: 'create',
+          afterHash: 'c'.repeat(64),
+          added: 0,
+          removed: 0,
+          hunks: [],
+        })
+        const { afterHash: _, ...deletion } = change('c3', { kind: 'delete' })
+        storage.changes.create(deletion)
+        const list = storage.changes.list('s1')
+        expect(list.map((c) => c.changeId)).toEqual(['c2', 'c1', 'c3'])
+        expect(list[1]).toEqual({
+          changeId: 'c1',
+          sessionId: 's1',
+          path: 'new.txt',
+          kind: 'create',
+          afterHash: 'c'.repeat(64),
+          status: 'pending',
+          added: 0,
+          removed: 0,
+          hunks: [],
+          createdAt: 200,
+        })
+        expect(list[2]).not.toHaveProperty('afterHash')
+        expect(storage.changes.get('c2')).toEqual(first)
+        expect(storage.changes.get('nope')).toBeUndefined()
+        expect(storage.changes.list('other')).toEqual([])
+      })
+
+      it('sets the status of a change and its hunks; records reverts', () => {
+        seed()
+        storage.changes.create(
+          change('c1', { hunks: [hunk, { ...hunk, oldStart: 9, newStart: 10 }] }),
+        )
+        const reverted = storage.changes.setStatus('c1', 'reverted')
+        expect(reverted.status).toBe('reverted')
+        expect(reverted.hunks.map((h) => h.status)).toEqual(['reverted', 'reverted'])
+        expect(storage.changes.get('c1')).toEqual(reverted)
+        const inverse = storage.changes.create(change('c2', { revertOf: 'c1' }))
+        expect(inverse.revertOf).toBe('c1')
+        expectStorageError(
+          () => storage.changes.setStatus('nope', 'accepted'),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('rejects unknown sessions, unknown revert targets and duplicate ids', () => {
+        expectStorageError(() => storage.changes.create(change('c1')), StorageErrorCode.NotFound)
+        seed()
+        storage.changes.create(change('c1'))
+        expectStorageError(() => storage.changes.create(change('c1')), StorageErrorCode.Conflict)
+        expectStorageError(
+          () => storage.changes.create(change('c2', { revertOf: 'nope' })),
+          StorageErrorCode.NotFound,
+        )
+        expect(storage.changes.list('s1')).toHaveLength(1)
+      })
+
+      it('returns copies and rolls back with transactions', () => {
+        seed()
+        const record = storage.changes.create(change('c1'))
+        ;(record.hunks as unknown as { oldStart: number }[])[0]!.oldStart = 99
+        expect(storage.changes.get('c1')!.hunks[0]!.oldStart).toBe(1)
+        expect(() =>
+          storage.transaction(() => {
+            storage.changes.create(change('c2'))
+            storage.changes.setStatus('c1', 'reverted')
+            throw new Error('boom')
+          }),
+        ).toThrow('boom')
+        expect(storage.changes.list('s1').map((c) => [c.changeId, c.status])).toEqual([
+          ['c1', 'pending'],
+        ])
+      })
+    })
+
     describe('transaction', () => {
       it('commits all writes and returns the result', () => {
         const result = storage.transaction(() => {
