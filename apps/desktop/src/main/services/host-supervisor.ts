@@ -10,6 +10,9 @@
  * 无法解析（系统加密不可用、无法解密、模型已从配置中删除）按启动失败处理，原因的错误码记入 `cause`。
  * 适用于会话的权限规则（M1-10c）同样在 `host.init` 前汇总并下发。
  *
+ * 宿主的 `host.approval.request` 与 `host.approval.cancelled`（M1-11a）交给审批服务（M1-11b），会话与运行
+ * 同样按这个宿主填入。
+ *
  * 宿主的 `changes.record`（M1-08b）交给改动服务，会话与运行按这个宿主填入，宿主不能写入其他会话的记录。
  *
  * 启动失败（进程无法创建、握手或初始化超时、协议不兼容）同样写入 `session.crashed`
@@ -22,6 +25,8 @@ import {
   createEndpoint,
   HostForMain,
   type FileChangeInput,
+  type HostApprovalRequest,
+  type HostApprovalResponse,
   MainForHost,
   RpcError,
   type ErrorInfo,
@@ -95,6 +100,17 @@ export interface HostSupervisorOptions {
     runId: string,
     input: FileChangeInput,
   ) => Promise<{ changeId: string }>
+  /**
+   * 转交宿主的审批请求（M1-11a，审批服务），等用户决定后返回。省略时报 `run.unsupported`，
+   * 宿主按工具执行失败处理。
+   */
+  readonly requestApproval?: (
+    sessionId: string,
+    runId: string,
+    request: HostApprovalRequest,
+  ) => Promise<HostApprovalResponse>
+  /** 宿主取消了未决审批（M1-11a）。 */
+  readonly cancelApproval?: (sessionId: string, approvalId: string) => void
   /** 握手与 `host.init` 的总时限，默认 10 秒。 */
   readonly startTimeoutMs?: number
   /** 心跳间隔，默认 5 秒。 */
@@ -180,6 +196,14 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         if (!options.recordChange) throw new RpcError('run.unsupported')
         return options.recordChange(sessionId, runId, input)
       })
+
+      endpoint.handle('host.approval.request', (request) => {
+        if (!options.requestApproval) throw new RpcError('run.unsupported')
+        return options.requestApproval(sessionId, runId, request)
+      })
+      endpoint.on('host.approval.cancelled', ({ approvalId }) =>
+        options.cancelApproval?.(sessionId, approvalId),
+      )
 
       endpoint.on('host.event', ({ event }) => {
         if (state !== 'running' && state !== 'starting') return

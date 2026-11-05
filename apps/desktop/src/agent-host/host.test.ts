@@ -1,14 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
-import { FakeRuntime, presetRules, type FakeScript } from '@nexus/core'
+import {
+  FakeRuntime,
+  presetRules,
+  type FakeScript,
+  type ToolDefinition,
+  type ToolRegistry,
+} from '@nexus/core'
 import {
   createEndpoint,
   HostForMain,
   MainForHost,
+  type PermissionRule,
   type RpcChannel,
   type UnsequencedEvent,
 } from '@nexus/protocol'
 import { createFakeHostRuntime, DEFAULT_FAKE_SCRIPT, fakeModel } from './fake-model.js'
-import { createAgentHost } from './host.js'
+import { createAgentHost, type AgentHostOptions } from './host.js'
 
 function channelPair(): [RpcChannel, RpcChannel] {
   const listeners: [Set<(m: unknown) => void>, Set<(m: unknown) => void>] = [new Set(), new Set()]
@@ -36,7 +43,7 @@ const init = {
   history: [],
 }
 
-function setup(script: FakeScript = { turns: [] }) {
+function setup(script: FakeScript = { turns: [] }, extra: Partial<AgentHostOptions> = {}) {
   const [mainSide, hostSide] = channelPair()
   const exit = vi.fn()
   const onError = vi.fn()
@@ -54,6 +61,7 @@ function setup(script: FakeScript = { turns: [] }) {
     createId: () => `id${++id}`,
     now: () => 7,
     onError,
+    ...extra,
   })
   const main = createEndpoint(mainSide, { local: MainForHost, remote: HostForMain })
   const events: UnsequencedEvent[] = []
@@ -138,6 +146,125 @@ describe('agent host', () => {
     expect(await decide(ruled, 'npm run build')).toMatchObject({ decision: 'ask' })
     // 强制拦截不能被规则覆盖
     expect(await decide(ruled, 'rm -rf /')).toMatchObject({ decision: 'deny' })
+  })
+
+  describe('tools and approvals (M1-11a)', () => {
+    const echo: ToolDefinition<{ command: string }> = {
+      name: 'echo_cmd',
+      description: 'Echo a command',
+      category: 'execute',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: {
+        type: 'object',
+        properties: { command: { type: 'string' } },
+        required: ['command'],
+      },
+      normalize: (input) => Promise.resolve({ input, targets: { command: input.command } }),
+      execute: (input) => Promise.resolve({ content: text(`ran ${input.command}`) }),
+    }
+    const registerTools = (registry: ToolRegistry) => registry.register(echo)
+    const call = { kind: 'tool' as const, name: 'echo_cmd', input: { command: 'npm test' } }
+    const sessionRule: PermissionRule = {
+      id: 'rule1',
+      scope: 'session',
+      effect: 'allow',
+      match: { tool: 'echo_cmd', command: ['npm test'] },
+      source: 'approval',
+    }
+
+    it('asks main for approval and applies the rule from "allow for this session"', async () => {
+      const h = setup(
+        { turns: [{ steps: [call, call, { kind: 'reply', text: 'done' }] }] },
+        { registerTools },
+      )
+      const requests: unknown[] = []
+      h.main.handle('host.approval.request', (request) => {
+        requests.push(request)
+        return { decision: 'allow_session', rule: sessionRule }
+      })
+      await h.main.request('host.init', init)
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await h.waitFor('turn.completed')
+      expect(requests).toEqual([
+        {
+          approvalId: expect.any(String),
+          toolCallId: expect.any(String),
+          tool: { name: 'echo_cmd', category: 'execute' },
+          input: { command: 'npm test' },
+          targets: { command: 'npm test' },
+          kind: 'tool',
+          reasonCode: 'permission.category_default',
+          matchedRuleIds: [],
+        },
+      ])
+      const completed = h.events.filter((e) => e.type === 'tool.completed')
+      expect(completed).toHaveLength(2)
+      expect(completed[1]!.payload).toMatchObject({ output: text('ran npm test') })
+      expect(h.events.filter((e) => e.type === 'approval.resolved')).toHaveLength(1)
+      expect(await h.host.permissions.decide(echoRequest('npm test'))).toEqual({
+        decision: 'allow',
+      })
+    })
+
+    it('returns the denial with feedback to the model', async () => {
+      const h = setup(
+        { turns: [{ steps: [call, { kind: 'reply', text: 'ok' }] }] },
+        { registerTools },
+      )
+      h.main.handle('host.approval.request', () => ({ decision: 'deny', feedback: 'not now' }))
+      await h.main.request('host.init', init)
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await h.waitFor('turn.completed')
+      const failed = h.events.find((e) => e.type === 'tool.failed')
+      expect(failed?.payload).toMatchObject({ error: { code: 'tool.denied' } })
+    })
+
+    it('tells main when a pending approval is cancelled', async () => {
+      const h = setup(
+        { turns: [{ steps: [call, { kind: 'reply', text: 'ok' }] }] },
+        { registerTools },
+      )
+      const cancelled: string[] = []
+      let requested: string | undefined
+      h.main.handle('host.approval.request', ({ approvalId }) => {
+        requested = approvalId
+        return new Promise<never>(() => {})
+      })
+      h.main.on('host.approval.cancelled', ({ approvalId }) => cancelled.push(approvalId))
+      await h.main.request('host.init', init)
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await vi.waitFor(() => expect(requested).toBeDefined())
+      await h.main.request('host.abort', { reason: 'user' })
+      await vi.waitFor(() => expect(cancelled).toEqual([requested]))
+      await h.waitFor('turn.aborted')
+      expect(h.events.find((e) => e.type === 'approval.resolved')?.payload).toMatchObject({
+        decision: 'cancelled',
+      })
+    })
+
+    it('replaces the permission rules on host.permissions.update', async () => {
+      const h = setup()
+      await h.main.request('host.init', init)
+      expect(await h.host.permissions.decide(echoRequest('npm test'))).toMatchObject({
+        decision: 'ask',
+      })
+      await h.main.request('host.permissions.update', { rules: [sessionRule] })
+      expect(await h.host.permissions.decide(echoRequest('npm test'))).toEqual({
+        decision: 'allow',
+      })
+      await h.main.request('host.permissions.update', { rules: presetRules('read-only') })
+      expect(await h.host.permissions.decide(echoRequest('npm test'))).toMatchObject({
+        decision: 'deny',
+      })
+    })
+
+    const echoRequest = (command: string) => ({
+      toolCallId: 'x',
+      definition: echo as ToolDefinition,
+      input: { command },
+      targets: { command },
+    })
   })
 
   it('creates a run and answers prompts with events', async () => {

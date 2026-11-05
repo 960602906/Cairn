@@ -16,6 +16,7 @@
     "@nexus/i18n": "workspace:*",
     "@nexus/protocol": "workspace:*",
     "@nexus/runtime-pi": "workspace:*",
+    "@nexus/shell": "workspace:*",
     "@nexus/storage": "workspace:*",
     "@nexus/tools": "workspace:*",
     "@vscode/ripgrep": "1.18.0",

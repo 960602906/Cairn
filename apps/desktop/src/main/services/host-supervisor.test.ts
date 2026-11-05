@@ -173,6 +173,45 @@ describe('changes.record（M1-08b）', () => {
   })
 })
 
+describe('host.approval.request（M1-11a）', () => {
+  const request = {
+    approvalId: 'a1',
+    toolCallId: 'c1',
+    tool: { name: 'run_command', category: 'execute' as const },
+    input: { command: 'npm test' },
+    targets: { command: 'npm test' },
+    kind: 'tool' as const,
+    reasonCode: 'permission.category_default',
+    matchedRuleIds: [],
+  }
+
+  it('交给审批服务，会话与运行由宿主确定；取消同样转交', async () => {
+    const host = fakeHost()
+    const requestApproval = vi.fn(async () => ({ decision: 'allow_once' as const }))
+    const cancelApproval = vi.fn()
+    const { supervisor } = setup(host, { requestApproval, cancelApproval })
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.approval.request', request, { timeoutMs: 0 }),
+    ).resolves.toEqual({ decision: 'allow_once' })
+    expect(requestApproval).toHaveBeenCalledWith('s1', 'r1', request)
+    host.endpoint!.emit('host.approval.cancelled', { approvalId: 'a1' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cancelApproval).toHaveBeenCalledWith('s1', 'a1')
+  })
+
+  it('没有审批服务时报 run.unsupported', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host)
+    await supervisor.startHost(init)
+    await expect(host.endpoint!.request('host.approval.request', request)).rejects.toMatchObject({
+      code: 'run.unsupported',
+    })
+    host.endpoint!.emit('host.approval.cancelled', { approvalId: 'a1' })
+    await vi.advanceTimersByTimeAsync(0)
+  })
+})
+
 describe('startHost', () => {
   it('handshakes, initializes and forwards host events to the event service', async () => {
     const host = fakeHost()
