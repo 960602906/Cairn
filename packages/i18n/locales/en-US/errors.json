@@ -89,5 +89,8 @@
   "changes.conflict": "{{path}} was modified after the change (or a newer change was not reverted with it), so it cannot be reverted",
   "changes.blob_missing": "The original content of {{path}} is missing, so it cannot be reverted",
   "changes.failed": "{{path}} cannot be restored",
-  "shell.spawn_failed": "Cannot start the shell ({{shell}})"
+  "shell.spawn_failed": "Cannot start the shell ({{shell}})",
+  "checkpoint.git_unavailable": "Checkpoints are unavailable: Git 2.32 or later is required",
+  "checkpoint.not_found": "The checkpoint no longer exists",
+  "checkpoint.failed": "The checkpoint operation failed"
 }

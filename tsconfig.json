@@ -7,6 +7,7 @@
     { "path": "packages/runtime-pi" },
     { "path": "packages/tools" },
     { "path": "packages/shell" },
+    { "path": "packages/checkpoint" },
     { "path": "packages/i18n" },
     { "path": "apps/desktop" },
     { "path": "tooling" }
