@@ -33,6 +33,11 @@ export interface GuardResult {
   readonly reasonCode: string
   /** deny 时交给模型的说明（英文）。 */
   readonly reason?: string
+  /**
+   * 询问可由用户明确的放行规则取消（如 `git push`）：来源为用户或审批、写明了命令模式（不是单独的 `*`）、
+   * 且命令的每一段都匹配的 `allow` 规则。预设（“自动”模式）不算明确放行。
+   */
+  readonly overridable?: boolean
 }
 
 /** 强制拦截（M1-10b）：不受规则影响；不拦截时返回 undefined。 */
@@ -107,9 +112,12 @@ export function decidePermission(
 
   // 1. 强制拦截
   let guard: GuardResult | undefined
+  let overridable = true
   for (const check of options.guards ?? []) {
     const result = check(request)
-    if (result && (!guard || SEVERITY[result.effect] > SEVERITY[guard.effect])) guard = result
+    if (!result) continue
+    if (!result.overridable) overridable = false
+    if (!guard || SEVERITY[result.effect] > SEVERITY[guard.effect]) guard = result
   }
 
   // 2. 规则
@@ -120,6 +128,19 @@ export function decidePermission(
   // 3. 类别默认值
   const thirdParty = request.definition.trust === 'third-party'
   const effect = ruleEffect ?? (thirdParty ? 'ask' : CATEGORY_DEFAULTS[request.definition.category])
+
+  // 可取消的询问：用户明确放行了这条命令（没有更严格的规则匹配）
+  const explicitlyAllowed =
+    guard?.effect === 'ask' &&
+    overridable &&
+    ruleEffect === 'allow' &&
+    matched.some(
+      (r) =>
+        r.source !== 'preset' &&
+        r.match.command !== undefined &&
+        r.match.command.every((p) => p.trim() !== '*'),
+    )
+  if (explicitlyAllowed) return { decision: 'allow' }
 
   const final = guard ? stricter(effect, guard.effect) : effect
   if (final === 'allow') return { decision: 'allow' }
