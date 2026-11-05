@@ -5,9 +5,10 @@
 import type { Dirent } from 'node:fs'
 import fs from 'node:fs/promises'
 import nodePath from 'node:path'
-import { ToolError, type ToolDefinition } from '@nexus/core'
+import { estimateTokens, ToolError, type ToolDefinition } from '@nexus/core'
 import ignore, { type Ignore } from 'ignore'
 import { resolveOrThrow } from './paths.js'
+import { bodyTokens } from './read-file.js'
 
 export interface ListDirInput {
   /** 目录路径，相对工作区根目录；默认根目录。 */
@@ -138,6 +139,8 @@ export const listDirTool: ToolDefinition<ListDirInput> = {
     const lines: string[] = []
     let hidden = 0
     let truncated = false
+    let tokens = 0
+    const maxTokens = bodyTokens(ctx.maxOutputTokens)
 
     const walk = async (dir: string, relative: string, level: number, inherited: Matcher[]) => {
       let entries: Dirent[]
@@ -159,12 +162,15 @@ export const listDirTool: ToolDefinition<ListDirInput> = {
           hidden++
           continue
         }
-        if (lines.length >= limit) {
+        const mark = isDir ? '/' : entry.isSymbolicLink() ? '@' : ''
+        const line = `${'  '.repeat(level)}${entry.name}${mark}`
+        const cost = estimateTokens(line) + 1
+        if (lines.length >= limit || (lines.length > 0 && tokens + cost > maxTokens)) {
           truncated = true
           return
         }
-        const mark = isDir ? '/' : entry.isSymbolicLink() ? '@' : ''
-        lines.push(`${'  '.repeat(level)}${entry.name}${mark}`)
+        tokens += cost
+        lines.push(line)
         if (isDir && level + 1 < depth) {
           await walk(nodePath.join(dir, entry.name), childRel, level + 1, active)
         }
@@ -185,7 +191,7 @@ export const listDirTool: ToolDefinition<ListDirInput> = {
     if (lines.length === 0) notes.push('(empty directory)')
     if (truncated) {
       notes.push(
-        `[Listing stopped at ${limit} entries. List a subdirectory or reduce depth to see more.]`,
+        `[Listing stopped at ${lines.length} entries. List a subdirectory or reduce depth to see more.]`,
       )
     }
     if (hidden > 0)

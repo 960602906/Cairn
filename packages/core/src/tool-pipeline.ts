@@ -19,6 +19,7 @@
  * 经 `emit` 发出。
  */
 import type { ContentPart, ErrorInfo, EventPayload } from '@nexus/protocol'
+import { TOOL_OUTPUT_MAX_TOKENS, truncateMiddle } from './context-budget.js'
 import type { Logger } from './logger.js'
 import type { ApprovalDecision } from './run-supervisor.js'
 import type { AbortSignalLike, RuntimeToolCall } from './runtime.js'
@@ -143,8 +144,11 @@ export interface ToolPipelineOptions {
   readonly workspaceRoot: string
   readonly resolvePath: (input: string) => Promise<PathResolution>
   readonly log: Logger
-  /** 交给模型的输出上限（字符数），默认 30 000；按模型上下文动态计算在 M1-13。 */
-  readonly maxOutputChars?: number
+  /**
+   * 单个工具结果的上限（估算的 token 数，M1-13a），默认 `TOOL_OUTPUT_MAX_TOKENS`；宿主按模型的上下文窗口
+   * 用 `toolOutputBudget` 计算。也经 `ToolContext.maxOutputTokens` 交给工具，由工具在合适的位置截断。
+   */
+  readonly maxOutputTokens?: number
   /** 同时执行的调用上限，默认 4（Runtime §6.2）；只限制执行阶段，等待审批不占名额。 */
   readonly maxParallel?: number
   readonly createId: () => string
@@ -164,7 +168,6 @@ export interface ToolPipeline {
  */
 const CHECKPOINT_CATEGORIES: ReadonlySet<ToolCategory> = new Set(['execute'])
 
-const DEFAULT_MAX_OUTPUT_CHARS = 30_000
 const DEFAULT_MAX_PARALLEL = 4
 
 /** 简单的计数信号量：`acquire` 在有空位时 resolve，返回释放函数。 */
@@ -202,23 +205,24 @@ const errorOutcome = (
 
 const cancelled: ToolOutcome = { status: 'cancelled', content: text('Tool call was cancelled.') }
 
-/** 超过上限时保留开头和结尾，中间注明截断的字符数（架构 §9.4）。 */
+/**
+ * 工具自己没有截断到上限以内时的兜底（架构 §9.4）：保留开头和结尾，中间注明截断的字符数与分段获取的办法。
+ */
 export function truncateOutput(
   content: readonly ContentPart[],
-  maxChars: number,
+  maxTokens: number,
 ): { content: ContentPart[]; truncated: boolean } {
-  const total = content.reduce((n, p) => n + (p.type === 'text' ? p.text.length : 0), 0)
-  if (total <= maxChars) return { content: [...content], truncated: false }
   const joined = content.map((p) => (p.type === 'text' ? p.text : '')).join('')
-  const head = Math.ceil(maxChars / 2)
-  const tail = maxChars - head
-  const omitted = joined.length - head - tail
-  return {
-    content: text(
-      `${joined.slice(0, head)}\n\n[... ${omitted} characters truncated ...]\n\n${joined.slice(joined.length - tail)}`,
-    ),
-    truncated: true,
-  }
+  const result = truncateMiddle(
+    joined,
+    maxTokens,
+    (omitted) =>
+      `\n\n[... ${omitted} characters truncated: the result exceeded the limit for one tool call ` +
+      `(about ${maxTokens} tokens). Request a smaller part, e.g. read_file with offset and limit, ` +
+      `a more specific search, or a command that filters its output.]\n\n`,
+  )
+  if (result.omitted === 0) return { content: [...content], truncated: false }
+  return { content: text(result.text), truncated: true }
 }
 
 /** 中止时 reject，用来与可能不响应信号的等待竞争。 */
@@ -239,7 +243,7 @@ class CancelledError extends Error {
 }
 
 export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
-  const maxOutputChars = options.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS
+  const maxOutputTokens = options.maxOutputTokens ?? TOOL_OUTPUT_MAX_TOKENS
   const limiter = createLimiter(Math.max(1, options.maxParallel ?? DEFAULT_MAX_PARALLEL))
 
   /** 等待执行名额；取消时放弃等待（拿到的名额立即归还）。 */
@@ -339,6 +343,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       signal,
       resolvePath: options.resolvePath,
       checkpoints: options.checkpoints,
+      maxOutputTokens,
       log: options.log.child({ toolCallId: call.id, tool: call.name }),
       progress: (chunk, stream = 'stdout') => observer.output(chunk, stream),
       recordChange: async (change) => {
@@ -431,7 +436,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         release()
       }
       // 9. 后处理
-      const { content, truncated } = truncateOutput(output.content, maxOutputChars)
+      const { content, truncated } = truncateOutput(output.content, maxOutputTokens)
       // 10. 返回
       return { status: 'ok', content, truncated }
     } catch (error) {

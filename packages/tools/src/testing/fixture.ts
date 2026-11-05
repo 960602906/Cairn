@@ -5,7 +5,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { Logger, ToolContext, ToolDefinition } from '@nexus/core'
+import {
+  TOOL_OUTPUT_MAX_TOKENS,
+  type Logger,
+  type ToolContext,
+  type ToolDefinition,
+} from '@nexus/core'
 import { createPathResolver } from '../paths.js'
 
 const utf16le = (text: string) => Buffer.from(text, 'utf16le')
@@ -85,6 +90,7 @@ export function toolContext(
     signal,
     resolvePath: createPathResolver(root),
     checkpoints: { create: async () => 'cp' },
+    maxOutputTokens: TOOL_OUTPUT_MAX_TOKENS,
     log: noopLogger,
     progress: () => {},
     recordChange,

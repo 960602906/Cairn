@@ -78,6 +78,11 @@ export interface ToolContext {
   /** 把模型给出的路径解析为工作区内的路径（M1-06）。 */
   resolvePath(input: string): Promise<PathResolution>
   readonly checkpoints: ToolCheckpoints
+  /**
+   * 结果的上限（估算的 token 数，`estimateTokens`，M1-13a）：按模型的上下文窗口计算。工具应在合适的位置
+   * 截断并说明如何获取其余部分；超出时流水线从中间截断。
+   */
+  readonly maxOutputTokens: number
   readonly log: Logger
   /** 流式输出（如命令的标准输出），产生 `tool.output.delta`。 */
   progress(chunk: string, stream?: 'stdout' | 'stderr'): void

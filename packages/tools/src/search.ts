@@ -5,9 +5,9 @@
  */
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
-import { ToolError, type ToolContext, type ToolDefinition } from '@nexus/core'
+import { estimateTokens, ToolError, type ToolContext, type ToolDefinition } from '@nexus/core'
 import { resolveOrThrow } from './paths.js'
-import { READ_FILE_MAX_BYTES, READ_FILE_MAX_OUTPUT_CHARS } from './read-file.js'
+import { bodyTokens, READ_FILE_MAX_BYTES, READ_FILE_MAX_OUTPUT_CHARS } from './read-file.js'
 
 export interface SearchInput {
   /** 正则表达式（ripgrep 语法）；`literal` 为 true 时按字面匹配。 */
@@ -195,6 +195,8 @@ function runRipgrep(
   const files = new Map<string, RgLine[]>()
   let matches = 0
   let chars = 0
+  let tokens = 0
+  const maxTokens = bodyTokens(ctx.maxOutputTokens)
   let stopped: RgRun['stopped']
   let stderr = ''
   let pending = ''
@@ -231,11 +233,16 @@ function runRipgrep(
       const lines = files.get(path)
       // 文件名、行号与缩进约占 20 个字符
       const cost = text.length + 20 + (lines ? 0 : path.length + 1)
+      const tokenCost = estimateTokens(text) + 5 + (lines ? 0 : estimateTokens(path) + 1)
       // 至少返回一处匹配
-      if (matches > 0 && chars + cost > READ_FILE_MAX_OUTPUT_CHARS) {
+      if (
+        matches > 0 &&
+        (chars + cost > READ_FILE_MAX_OUTPUT_CHARS || tokens + tokenCost > maxTokens)
+      ) {
         return stop('budget')
       }
       chars += cost
+      tokens += tokenCost
       const entry: RgLine = { kind: message.type, number: message.data.line_number ?? 0, text }
       if (lines) lines.push(entry)
       else files.set(path, [entry])

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { createToolRegistry, ToolError } from '@nexus/core'
+import { createToolRegistry, estimateTokens, ToolError } from '@nexus/core'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   listDirTool,
@@ -108,6 +108,24 @@ describe('read_file', () => {
     expect(text).toMatch(
       /\[Showing lines 1-\d+ of 1000\. Call read_file with offset=\d+ to continue\.\]$/,
     )
+  })
+
+  it('按上下文给出的 token 上限分段（M1-13a），中文按每字 1 token', async () => {
+    const ctx = { ...toolContext(fx.root), maxOutputTokens: 600 }
+    const wide = await runTool(readFileTool, { path: 'wide.txt' }, ctx)
+    expect(estimateTokens(wide)).toBeLessThanOrEqual(600)
+    expect(wide).toMatch(/Call read_file with offset=\d+ to continue\.\]$/)
+
+    await fs.writeFile(
+      path.join(fx.root, 'cjk.txt'),
+      Array(200).fill('中文内容'.repeat(10)).join('\n'),
+    )
+    const cjk = await runTool(readFileTool, { path: 'cjk.txt' }, ctx)
+    expect(estimateTokens(cjk)).toBeLessThanOrEqual(600)
+    const shown = Number(/lines 1-(\d+) of 200/.exec(cjk)![1])
+    expect(shown).toBeGreaterThan(5)
+    expect(shown).toBeLessThan(20)
+    await fs.rm(path.join(fx.root, 'cjk.txt'))
   })
 
   it('换行风格、BOM 与 UTF-16', async () => {
@@ -249,6 +267,16 @@ describe('list_dir', () => {
       'empty-dir/',
       '[Listing stopped at 3 entries. List a subdirectory or reduce depth to see more.]',
       '[2 entries hidden by .gitignore]',
+    ])
+  })
+
+  it('超过 token 上限时停止并提示（至少列出一项）', async () => {
+    const text = await runTool(listDirTool, {}, { ...toolContext(fx.root), maxOutputTokens: 3 })
+    expect(text.split('\n')).toEqual([
+      'Directory: . | depth 2',
+      '.gitignore',
+      '[Listing stopped at 1 entries. List a subdirectory or reduce depth to see more.]',
+      '[1 entry hidden by .gitignore]',
     ])
   })
 

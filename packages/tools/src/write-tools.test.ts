@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { createToolRegistry, ToolError, type ToolFileChange } from '@nexus/core'
+import { createToolRegistry, estimateTokens, ToolError, type ToolFileChange } from '@nexus/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   createEditFileTool,
@@ -364,6 +364,18 @@ describe('edit_file', () => {
     expect(await failure(runTool(tool, input, ctx))).toMatchObject({
       code: 'tool.edit_file.changed_since_preview',
     })
+  })
+
+  it('diff 按上下文给出的 token 上限截断（M1-13a）', async () => {
+    const long = Array.from({ length: 300 }, (_, i) => `line ${i} ${'q'.repeat(20)}`).join('\n')
+    await fs.writeFile(path.join(fx.root, 'budget.ts'), `${long}\n`)
+    const result = await runTool(
+      createEditFileTool(),
+      { path: 'budget.ts', oldText: 'q', newText: 'Q', replaceAll: true },
+      { ...toolContext(fx.root), maxOutputTokens: 400 },
+    )
+    expect(result).toContain('[Diff truncated. Use read_file to check the result.]')
+    expect(estimateTokens(result)).toBeLessThanOrEqual(400)
   })
 
   it('很长的 diff 截断', async () => {
