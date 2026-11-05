@@ -118,6 +118,7 @@ describe('危险命令：至少询问', () => {
     expect(assessCommand('git push')).toEqual({
       effect: 'ask',
       reasonCode: GuardReasonCode.DangerousCommand,
+      overridable: true,
     })
   })
 })
@@ -177,9 +178,16 @@ describe('命令中的敏感文件', () => {
     expect(effect('.env')).toBe('none')
   })
 
-  it('同时危险与敏感时取更严格的（拒绝优先）', () => {
+  it('同时危险与敏感时取更严格的（拒绝优先，询问时不可取消的优先）', () => {
     expect(effect('cat .env; rm -rf /')).toBe('deny')
-    expect(assessCommand('cat .env && git push')?.effect).toBe('ask')
+    expect(assessCommand('cat .env && git push')).toEqual({
+      effect: 'ask',
+      reasonCode: GuardReasonCode.SensitivePath,
+    })
+    expect(assessCommand('git push && cat .env')).toEqual({
+      effect: 'ask',
+      reasonCode: GuardReasonCode.SensitivePath,
+    })
   })
 })
 
@@ -254,6 +262,51 @@ describe('与权限引擎一起使用', () => {
       expect(decide(run, { command: 'npm test' }, rules).decision).toBe('allow')
       expect(decide(read, { paths: ['src/a.ts', '.git/HEAD'] }, rules).decision).toBe('allow')
     }
+  })
+
+  it('危险命令的询问可由用户明确放行（写明命令的用户规则或审批生成的规则）', () => {
+    const explicit = (
+      command: string[],
+      source: PermissionRule['source'] = 'user',
+    ): PermissionRule => ({
+      id: 'e',
+      scope: 'project',
+      effect: 'allow',
+      match: { command },
+      source,
+    })
+    expect(decide(run, { command: 'git push' }, [explicit(['git push*'])]).decision).toBe('allow')
+    expect(
+      decide(run, { command: 'git push origin main' }, [
+        explicit(['git push origin main'], 'approval'),
+      ]).decision,
+    ).toBe('allow')
+    // 规则没有覆盖到的命令、单独的 *、预设、没有写明命令的规则都不算
+    expect(decide(run, { command: 'git push -f' }, [explicit(['git push origin*'])]).decision).toBe(
+      'ask',
+    )
+    expect(decide(run, { command: 'git push' }, [explicit(['*'])]).decision).toBe('ask')
+    expect(decide(run, { command: 'git push' }, [explicit(['git push*'], 'preset')]).decision).toBe(
+      'ask',
+    )
+    expect(decide(run, { command: 'git push' }, allowAll).decision).toBe('ask')
+    // 另有 ask 规则匹配时仍询问
+    const askRule: PermissionRule = {
+      id: 'q',
+      scope: 'global',
+      effect: 'ask',
+      match: { tool: 'run_command' },
+      source: 'user',
+    }
+    expect(decide(run, { command: 'git push' }, [explicit(['git push*']), askRule]).decision).toBe(
+      'ask',
+    )
+    // 拒绝与敏感文件不能被取消
+    expect(decide(run, { command: 'rm -rf /' }, [explicit(['rm -rf /'])]).decision).toBe('deny')
+    expect(decide(run, { command: 'cat .env' }, [explicit(['cat .env'])]).decision).toBe('ask')
+    expect(
+      decide(run, { command: 'git push; cat .env' }, [explicit(['git push', 'cat .env'])]).decision,
+    ).toBe('ask')
   })
 
   it('没有规则时：读取普通文件放行，敏感文件询问', () => {

@@ -1,10 +1,11 @@
 /**
- * 强制拦截（M1-10b；架构 §10.2）：危险命令与敏感文件。结果不受权限规则影响（`allow` 规则、“自动”模式都不能
- * 放行），只能更严格。
+ * 强制拦截（M1-10b；架构 §10.2）：危险命令与敏感文件。`allow` 规则与“自动”模式都不能放行，只有危险命令的
+ * 询问可以由用户明确放行取消（见下）。
  *
  * - **直接拒绝**（`permission.blocked_command`）：会破坏工作区之外数据或系统的命令，例如递归删除根目录、
  *   家目录、盘符根目录与系统目录，格式化或覆写磁盘，fork 炸弹；
- * - **至少询问**（`permission.dangerous_command`）：其他递归删除、强制推送与 `git push`、`git reset --hard`、
+ * - **至少询问**（`permission.dangerous_command`）：用户明确放行（写明命令的用户规则，或审批时选择“始终允许”）
+ *   后不再询问，“自动”模式不算明确放行。包括其他递归删除、强制推送与 `git push`、`git reset --hard`、
  *   `git clean -f`、提权（sudo、runas）、关机重启、修改注册表与执行策略、结束进程、发布包、下载后直接执行、
  *   `Invoke-Expression`、经 `-EncodedCommand` 传入的命令；
  * - **敏感文件**（`permission.sensitive_path`，询问）：`.env`、私钥与证书、SSH 目录、凭据文件；写入 `.git`
@@ -34,13 +35,19 @@ const blocked: GuardResult = {
   reasonCode: GuardReasonCode.BlockedCommand,
   reason: BLOCKED_REASON,
 }
-const dangerous: GuardResult = { effect: 'ask', reasonCode: GuardReasonCode.DangerousCommand }
+const dangerous: GuardResult = {
+  effect: 'ask',
+  reasonCode: GuardReasonCode.DangerousCommand,
+  overridable: true,
+}
 const sensitive: GuardResult = { effect: 'ask', reasonCode: GuardReasonCode.SensitivePath }
 
+/** 取更严格的结果；同为询问时不可取消的优先。 */
 const stricter = (a: GuardResult | undefined, b: GuardResult | undefined) => {
   if (!a) return b
   if (!b) return a
-  return b.effect === 'deny' && a.effect !== 'deny' ? b : a
+  if (a.effect !== b.effect) return b.effect === 'deny' ? b : a
+  return a.overridable && !b.overridable ? b : a
 }
 
 // ---------- 敏感文件 ----------
