@@ -4,6 +4,7 @@
  */
 import { z } from 'zod'
 import { FileChangeSummary } from '../changes.js'
+import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
 import { ContentPart, Id, ModelRef, Timestamp } from '../common.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
 import { PermissionMode } from '../permissions.js'
@@ -173,6 +174,28 @@ export const MainForRenderer = defineSide({
       params: z.object({ sessionId: Id, changeIds: z.array(Id).min(1).max(1000) }),
       result: z.object({ changes: z.array(FileChangeSummary) }),
     },
+    /** 会话的检查点（M1-12c），按创建顺序；会话所属项目没有影子仓库时为空。 */
+    'checkpoint.list': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ checkpoints: z.array(CheckpointSummary) }),
+    },
+    /**
+     * 预览恢复到会话的某个检查点（M1-12c）：先建检查点，返回恢复将改动的文件，不改动工作区。
+     * 检查点不属于这个会话时报 `checkpoint.not_found`；同一项目有会话正在运行时报 `run.busy`。
+     */
+    'checkpoint.preview': {
+      params: z.object({ sessionId: Id, checkpointId: CheckpointId }),
+      result: CheckpointRestorePlan,
+    },
+    /**
+     * 把工作区恢复到会话的某个检查点（M1-12c，架构 §11.3）：先建检查点（`checkpoint.created`，原因
+     * `before_restore`），再改写工作区并写入 `checkpoint.restored`。对话不截断（M1 不提供）。
+     * 错误与 `checkpoint.preview` 相同；恢复期间会话不接受输入。
+     */
+    'checkpoint.restore': {
+      params: z.object({ sessionId: Id, checkpointId: CheckpointId }),
+      result: CheckpointRestorePlan,
+    },
   },
   events: {
     /** 实时事件推送；增量事件在主进程合并后按帧率批量推送（架构 §22）。 */
@@ -195,7 +218,5 @@ export const RESERVED_RENDERER_MAIN_METHODS = [
   'project.list',
   'session.rename',
   'session.archive',
-  'checkpoint.list',
-  'checkpoint.restore',
   'provider.test',
 ] as const

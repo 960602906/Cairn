@@ -4,6 +4,7 @@
  */
 export * from './common.js'
 export * from './changes.js'
+export * from './checkpoints.js'
 export * from './events.js'
 export * from './providers.js'
 export * from './permissions.js'

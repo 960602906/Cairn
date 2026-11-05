@@ -25,6 +25,7 @@ import {
   ToolCall,
 } from './common.js'
 import { FileChangeKind } from './changes.js'
+import { CheckpointReason } from './checkpoints.js'
 
 /** 事件信封的 schema 版本（架构 §7.1 `EventEnvelope.v`）。 */
 export const EVENT_SCHEMA_VERSION = 1 as const
@@ -171,7 +172,7 @@ const payloadSchemas = {
   }),
   'checkpoint.created': z.object({
     checkpointId: Id,
-    reason: z.enum(['turn_start', 'before_command', 'before_restore']),
+    reason: CheckpointReason,
   }),
   'checkpoint.restored': z.object({
     checkpointId: Id,
