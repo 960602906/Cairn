@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  describeShell,
   defaultShellProbe,
   isPackagedPath,
   selectShell,
@@ -145,5 +146,19 @@ describe('defaultShellProbe', () => {
 
   it.runIf(process.platform !== 'win32')('当前系统选中 bash', async () => {
     expect(await selectShell({ env: {} })).toMatchObject({ kind: 'bash' })
+  })
+})
+
+describe('describeShell', () => {
+  it('名称与版本', () => {
+    expect(describeShell({ kind: 'pwsh', exe: 'pwsh.exe', version: '7.5.4' })).toBe(
+      'PowerShell 7.5.4',
+    )
+    expect(describeShell({ kind: 'powershell', exe: 'powershell.exe', version: '5.1' })).toBe(
+      'Windows PowerShell 5.1',
+    )
+    expect(describeShell({ kind: 'powershell', exe: 'powershell.exe' })).toBe('Windows PowerShell')
+    expect(describeShell({ kind: 'cmd', exe: 'cmd.exe' })).toBe('cmd.exe')
+    expect(describeShell({ kind: 'zsh', exe: '/bin/zsh' })).toBe('zsh')
   })
 })

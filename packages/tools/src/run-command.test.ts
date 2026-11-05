@@ -1,0 +1,274 @@
+/**
+ * `run_command`（M1-09c）：输出格式、截断、超时与等待输入的提示、流式推送、启动失败；真实执行在当前平台的 shell 上验证。
+ */
+import { createToolRegistry, ToolError, type ToolContext } from '@nexus/core'
+import type { runCommand } from '@nexus/shell'
+import {
+  selectShell,
+  ShellError,
+  type RunCommandOptions,
+  type RunCommandResult,
+  type ShellInfo,
+} from '@nexus/shell'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  createRunCommandTool,
+  HeadTailBuffer,
+  registerExecuteTools,
+  RUN_COMMAND_MAX_OUTPUT_CHARS,
+  splitOutputBudget,
+  type RunCommandToolOptions,
+} from './index.js'
+import { createFixture, runTool, toolContext, type Fixture } from './testing/fixture.js'
+
+let fx: Fixture
+beforeEach(async () => {
+  fx = await createFixture()
+})
+afterEach(() => fx.dispose())
+
+const bash: ShellInfo = { kind: 'bash', exe: '/bin/bash' }
+
+const result = (overrides: Partial<RunCommandResult> = {}): RunCommandResult => ({
+  exitCode: 0,
+  signal: null,
+  stdout: '',
+  stderr: '',
+  aborted: false,
+  timedOut: false,
+  durationMs: 1234,
+  ...overrides,
+})
+
+/** 假的执行：按给出的输出调用回调，返回给定结果。 */
+function fakeRun(
+  output: { stdout?: string[]; stderr?: string[] },
+  outcome: Partial<RunCommandResult> = {},
+  seen: { options?: RunCommandOptions; command?: string } = {},
+): typeof runCommand {
+  return async (_shell, command, options) => {
+    seen.options = options
+    seen.command = command
+    for (const chunk of output.stdout ?? []) options.onStdout?.(chunk)
+    for (const chunk of output.stderr ?? []) options.onStderr?.(chunk)
+    return result(outcome)
+  }
+}
+
+const tool = (options: Partial<RunCommandToolOptions> = {}) =>
+  createRunCommandTool({ shell: bash, ...options })
+
+const exec = (
+  options: Partial<RunCommandToolOptions>,
+  input: { command: string; timeoutSeconds?: number },
+  ctx: ToolContext = toolContext(fx.root),
+) => runTool(tool(options), input, ctx)
+
+describe('HeadTailBuffer', () => {
+  it('未超出时原样输出；超出时保留开头与结尾并注明省略的字符数', () => {
+    const small = new HeadTailBuffer(10)
+    small.push('abc')
+    small.push('def')
+    expect(small.render()).toBe('abcdef')
+    expect(small.length).toBe(6)
+
+    const big = new HeadTailBuffer(10)
+    for (const c of 'abcdefghijklmnopqrstuvwxyz') big.push(c)
+    expect(big.render()).toBe('abcde\n[... 16 characters omitted ...]\nvwxyz')
+    expect(big.render(4)).toBe('ab\n[... 22 characters omitted ...]\nyz')
+
+    const once = new HeadTailBuffer(10)
+    once.push('abcdefghijklmnopqrstuvwxyz')
+    expect(once.render()).toBe('abcde\n[... 16 characters omitted ...]\nvwxyz')
+  })
+
+  it('不在代理对中间切开；开头满了以后的输出不再进入开头', () => {
+    const buffer = new HeadTailBuffer(6)
+    buffer.push('ab😀😀😀😀')
+    expect(buffer.render()).toBe('ab\n[... 6 characters omitted ...]\n😀')
+    expect(buffer.render()).not.toContain('�')
+    const later = new HeadTailBuffer(6)
+    later.push('ab😀')
+    later.push('c')
+    expect(later.render()).toBe('ab😀c')
+  })
+})
+
+describe('splitOutputBudget', () => {
+  it('未超出时各自全部；都超出时 stderr 至少占四分之一；一方不足时余量给另一方', () => {
+    expect(splitOutputBudget(10, 10, 100)).toEqual({ stdout: 10, stderr: 10 })
+    expect(splitOutputBudget(1000, 1000, 100)).toEqual({ stdout: 75, stderr: 25 })
+    expect(splitOutputBudget(1000, 10, 100)).toEqual({ stdout: 90, stderr: 10 })
+    expect(splitOutputBudget(10, 1000, 100)).toEqual({ stdout: 10, stderr: 90 })
+  })
+})
+
+describe('run_command', () => {
+  it('定义：说明中写明 shell；参数校验；注册', () => {
+    const registry = createToolRegistry()
+    registerExecuteTools(registry, {
+      shell: { kind: 'powershell', exe: 'powershell.exe', version: '5.1.26100.1' },
+    })
+    const definition = registry.get('run_command')!
+    expect(definition).toMatchObject({ category: 'execute', trust: 'builtin' })
+    expect(definition.description).toContain('Windows PowerShell 5.1.26100.1')
+    expect(registry.validate('run_command', { command: 'ls' }).ok).toBe(true)
+    expect(registry.validate('run_command', { command: '  ' }).ok).toBe(false)
+    expect(registry.validate('run_command', { command: 'ls', timeoutSeconds: 0 }).ok).toBe(false)
+    expect(registry.validate('run_command', { command: 'ls', timeoutSeconds: 601 }).ok).toBe(false)
+    expect(registry.validate('run_command', { command: 'ls', cwd: '/' }).ok).toBe(false)
+  })
+
+  it('规范化给出命令；审批预览', async () => {
+    const definition = tool()
+    const ctx = toolContext(fx.root)
+    expect(await definition.normalize!({ command: 'npm test' }, ctx)).toEqual({
+      input: { command: 'npm test' },
+      targets: { command: 'npm test' },
+    })
+    expect(await definition.describeForApproval!({ command: 'npm test' }, ctx)).toEqual({
+      summary: 'Run a bash command in the workspace',
+      command: 'npm test',
+    })
+  })
+
+  it('执行选项：工作区根目录、超时、取消信号、不在结果中汇总输出', async () => {
+    const seen: { options?: RunCommandOptions; command?: string } = {}
+    const signal = new AbortController().signal
+    await exec(
+      { run: fakeRun({}, {}, seen), env: { A: '1' }, tempDir: '/tmp/x' },
+      { command: 'echo hi', timeoutSeconds: 5 },
+      toolContext(fx.root, signal),
+    )
+    expect(seen.command).toBe('echo hi')
+    expect(seen.options).toMatchObject({
+      cwd: fx.root,
+      timeoutMs: 5000,
+      signal,
+      collectOutput: false,
+      env: { A: '1' },
+      tempDir: '/tmp/x',
+    })
+    await exec({ run: fakeRun({}, {}, seen) }, { command: 'echo hi' })
+    expect(seen.options?.timeoutMs).toBe(120_000)
+    expect(seen.options).not.toHaveProperty('env')
+    expect(seen.options).not.toHaveProperty('tempDir')
+  })
+
+  it('输出：退出码、耗时、stdout 与 stderr 分开；流式推送', async () => {
+    const progress: [string, string | undefined][] = []
+    const ctx = {
+      ...toolContext(fx.root),
+      progress: (t: string, s?: 'stdout' | 'stderr') => progress.push([t, s]),
+    }
+    const text = await exec(
+      { run: fakeRun({ stdout: ['a\n', 'b\n'], stderr: ['warn\n'] }, { exitCode: 2 }) },
+      { command: 'x' },
+      ctx,
+    )
+    expect(text).toBe('Exit code: 2\nDuration: 1.2 s\n\nstdout:\na\nb\n\nstderr:\nwarn')
+    expect(progress).toEqual([
+      ['a\n', 'stdout'],
+      ['b\n', 'stdout'],
+      ['warn\n', 'stderr'],
+    ])
+    expect(await exec({ run: fakeRun({}) }, { command: 'x' })).toBe(
+      'Exit code: 0\nDuration: 1.2 s\n\n(no output)',
+    )
+    expect(await exec({ run: fakeRun({ stderr: ['e'] }) }, { command: 'x' })).toBe(
+      'Exit code: 0\nDuration: 1.2 s\n\nstderr:\ne',
+    )
+  })
+
+  it('取消、信号结束', async () => {
+    expect(
+      await exec({ run: fakeRun({}, { aborted: true, exitCode: null }) }, { command: 'x' }),
+    ).toContain('Cancelled; the command and its child processes were terminated.')
+    expect(
+      await exec({ run: fakeRun({}, { exitCode: null, signal: 'SIGSEGV' }) }, { command: 'x' }),
+    ).toContain('Terminated by signal SIGSEGV.')
+    expect(await exec({ run: fakeRun({}, { exitCode: null }) }, { command: 'x' })).toContain(
+      'Terminated by signal unknown.',
+    )
+  })
+
+  it('超时：长时间没有输出时提示可能在等待输入', async () => {
+    const quiet = await exec(
+      { run: fakeRun({}, { timedOut: true, exitCode: null }), idleHintMs: 0 },
+      { command: 'x', timeoutSeconds: 3 },
+    )
+    expect(quiet).toContain(
+      'Timed out after 3 s; the command and its child processes were terminated.',
+    )
+    expect(quiet).toContain('may have been waiting for input')
+    const busy = await exec(
+      { run: fakeRun({ stdout: ['x'] }, { timedOut: true, exitCode: null }) },
+      { command: 'x' },
+    )
+    expect(busy).toContain('Timed out after 120 s')
+    expect(busy).not.toContain('waiting for input')
+  })
+
+  it('长输出：按预算截断，两段共享上限', async () => {
+    const long = 'x'.repeat(RUN_COMMAND_MAX_OUTPUT_CHARS * 3)
+    const text = await exec({ run: fakeRun({ stdout: [long] }) }, { command: 'x' })
+    expect(text).toContain(`[... ${RUN_COMMAND_MAX_OUTPUT_CHARS * 2} characters omitted ...]`)
+    expect(text.length).toBeLessThan(RUN_COMMAND_MAX_OUTPUT_CHARS + 200)
+
+    const both = await exec(
+      {
+        run: fakeRun({ stdout: ['o'.repeat(1000)], stderr: ['e'.repeat(1000)] }),
+        maxOutputChars: 100,
+      },
+      { command: 'x' },
+    )
+    expect(both).toContain('[... 925 characters omitted ...]')
+    expect(both).toContain('[... 975 characters omitted ...]')
+  })
+
+  it('启动失败转为工具错误；其他错误原样抛出', async () => {
+    const spawnFailed: typeof runCommand = () =>
+      Promise.reject(
+        new ShellError('shell.spawn_failed', 'Cannot start x (ENOENT).', { shell: 'x' }),
+      )
+    const error = await exec({ run: spawnFailed }, { command: 'x' }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ToolError)
+    expect(error).toMatchObject({ code: 'shell.spawn_failed', params: { shell: 'x' } })
+    const boom = new Error('boom')
+    await expect(exec({ run: () => Promise.reject(boom) }, { command: 'x' })).rejects.toBe(boom)
+  })
+})
+
+describe('真实执行（当前平台选出的 shell）', async () => {
+  const shell = await selectShell()
+  const real = (command: string, options: Partial<RunCommandToolOptions> = {}) =>
+    runTool(createRunCommandTool({ shell, ...options }), { command }, toolContext(fx.root))
+
+  it('在工作区根目录执行，输出与退出码交回模型', async () => {
+    const text = await real(
+      shell.kind === 'cmd'
+        ? 'cd'
+        : shell.kind.includes('powershell') || shell.kind === 'pwsh'
+          ? '(Get-Location).Path'
+          : 'pwd',
+    )
+    expect(text).toMatch(/^Exit code: 0\n/)
+    expect(text.toLowerCase()).toContain(fx.root.toLowerCase())
+    expect(await real('exit 3')).toMatch(/^Exit code: 3\n/)
+  })
+
+  it('取消信号结束命令', async () => {
+    const controller = new AbortController()
+    const progress = vi.fn(() => controller.abort())
+    const ctx = { ...toolContext(fx.root, controller.signal), progress }
+    const sleep =
+      shell.kind === 'cmd'
+        ? 'echo start & ping -n 30 127.0.0.1 >nul'
+        : shell.kind === 'pwsh' || shell.kind === 'powershell'
+          ? 'Write-Output start; Start-Sleep -Seconds 30'
+          : 'echo start; sleep 30'
+    const text = await runTool(createRunCommandTool({ shell }), { command: sleep }, ctx)
+    expect(text).toContain('Cancelled')
+    expect(progress).toHaveBeenCalled()
+  }, 30_000)
+})

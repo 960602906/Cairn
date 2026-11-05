@@ -11,6 +11,8 @@
  * 工作区包（`@nexus/*`）以 TypeScript 源码导出，必须打进产物，不能作为外部依赖。
  * pi（`@earendil-works/*`）只是 runtime-pi 的依赖，不在本包的 dependencies 中，因此同样打进宿主产物（S1：
  * 依赖外置时 app.asar 几乎全是 node_modules，打包后宿主加载更快）。各接口格式的实现是按需加载的独立分块。
+ * koffi（@nexus/shell 的 Job Object，M1-09b）相反，列在本包的 dependencies 中、不打进产物：它按自身所在位置
+ * 查找各平台的预编译二进制（`@koromix/koffi-<平台>`），打包时（M5）需列入 asarUnpack。
  */
 import { chmodSync, copyFileSync, mkdirSync } from 'node:fs'
 import { basename, resolve } from 'node:path'

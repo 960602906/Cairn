@@ -349,6 +349,17 @@ describe.runIf(!isWindows)('bash', () => {
     expect(await exited(pids(result.out)[0]!)).toBe(true)
   })
 
+  it('collectOutput 为 false 时结果中不汇总输出，回调照常', async () => {
+    const chunks: string[] = []
+    const result = await run(bash, 'echo out; echo err >&2', {
+      collectOutput: false,
+      onStdout: (t) => chunks.push(t),
+      onStderr: (t) => chunks.push(t),
+    })
+    expect(result).toMatchObject({ out: '', err: '', exitCode: 0 })
+    expect(chunks.sort()).toEqual(['err\n', 'out\n'])
+  })
+
   it('timeoutMs 为 0 时不限时', async () => {
     expect(await run(bash, 'sleep 0.2; echo done', { timeoutMs: 0 })).toMatchObject({
       out: 'done',
