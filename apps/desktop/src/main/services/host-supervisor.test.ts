@@ -404,6 +404,16 @@ describe('startHost', () => {
     expect(host.inits).toEqual([{ ...init, permissionRules }])
   })
 
+  it('passes the checkpoint location in host.init (M1-12b)', async () => {
+    const host = fakeHost()
+    const checkpoints = { gitDir: '/data/checkpoints/p1.git', ref: 'refs/nexus/sessions/s1' }
+    const resolveCheckpoints = vi.fn(() => checkpoints)
+    const { supervisor } = setup(host, { resolveCheckpoints })
+    await supervisor.startHost(init)
+    expect(resolveCheckpoints).toHaveBeenCalledWith(init.sessionId)
+    expect(host.inits).toEqual([{ ...init, checkpoints }])
+  })
+
   it('records host.start_failed when the permission rules cannot be loaded', async () => {
     const host = fakeHost()
     const { supervisor } = setup(host, {

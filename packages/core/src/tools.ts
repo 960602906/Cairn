@@ -42,9 +42,15 @@ export type PathResolution =
   | { readonly ok: false; readonly code: string }
 
 /** 检查点接口（M1-12 实现）。 */
+/** 创建检查点的时机（架构 §11.2）：每轮开始、每次执行命令前。 */
+export type CheckpointReason = 'turn_start' | 'before_command'
+
 export interface ToolCheckpoints {
-  /** 在执行改动前创建检查点，返回检查点 id。 */
-  create(reason: string): Promise<string>
+  /**
+   * 创建检查点，返回检查点 id（工作区没有变化时可以是上一个）。检查点不可用（如没有安装 Git，
+   * ADR-0008）时返回 undefined，调用方照常继续；创建失败时抛出。
+   */
+  create(reason: CheckpointReason): Promise<string | undefined>
 }
 
 /**

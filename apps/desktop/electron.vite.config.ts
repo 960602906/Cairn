@@ -31,6 +31,7 @@ const workspacePackages = [
   '@nexus/runtime-pi',
   '@nexus/tools',
   '@nexus/shell',
+  '@nexus/checkpoint',
 ]
 
 /** 把 CSP 以 `<meta>` 写入界面 HTML（`file:` 加载时没有响应头）。开发服务器使用放宽的版本。 */

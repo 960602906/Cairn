@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { openShadowRepo } from '@nexus/checkpoint'
 import { redact } from '@nexus/core'
 import type {} from 'electron'
 import { HOST_PORT_MESSAGE, portChannel } from '../shared/host-port.js'
@@ -43,6 +44,7 @@ process.parentPort.on('message', (event) => {
     createId: randomUUID,
     caseInsensitive: process.platform === 'win32',
     registerTools,
+    openCheckpoints: openShadowRepo,
     onError: reportError,
   })
 })

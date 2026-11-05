@@ -106,7 +106,9 @@ export interface ToolCallObserver {
   awaitingApproval(waiting: boolean): void
   /** 当前轮次，写入改动记录。 */
   readonly turnId?: string
-  emit<T extends 'approval.requested' | 'approval.resolved' | 'file.changed'>(
+  emit<
+    T extends 'approval.requested' | 'approval.resolved' | 'file.changed' | 'checkpoint.created',
+  >(
     type: T,
     payload: EventPayload<T>,
   ): void
@@ -156,8 +158,11 @@ export interface ToolPipeline {
   ): Promise<ToolOutcome>
 }
 
-/** 执行前需要检查点的类别（Runtime §7 第 7 阶段）。 */
-const CHECKPOINT_CATEGORIES: ReadonlySet<ToolCategory> = new Set(['write', 'execute'])
+/**
+ * 执行前需要检查点的类别（Runtime §7 第 7 阶段）：命令可能改动任何文件。写文件类工具不单独创建，
+ * 依靠改动记录精确撤销（架构 §11.2）。
+ */
+const CHECKPOINT_CATEGORIES: ReadonlySet<ToolCategory> = new Set(['execute'])
 
 const DEFAULT_MAX_OUTPUT_CHARS = 30_000
 const DEFAULT_MAX_PARALLEL = 4
@@ -389,7 +394,12 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       // 7. 前置检查点
       if (CHECKPOINT_CATEGORIES.has(definition.category)) {
         try {
-          await guard(signal, () => options.checkpoints.create(`before ${call.name}`))
+          const checkpointId = await guard(signal, () =>
+            options.checkpoints.create('before_command'),
+          )
+          if (checkpointId !== undefined) {
+            observer.emit('checkpoint.created', { checkpointId, reason: 'before_command' })
+          }
         } catch (error) {
           if (error instanceof CancelledError) throw error
           ctx.log.warn('checkpoint failed', { error: String(error) })

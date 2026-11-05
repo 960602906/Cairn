@@ -15,7 +15,8 @@
  * - 恢复：先建检查点，`diff-tree` 得到将改动的文件（预览），`read-tree -u --reset` 改写工作区。
  *   被排除的文件不受影响；撤销恢复就是恢复到恢复前的检查点。
  * - 打开时发现影子仓库损坏（检查点的对象缺失）时删除并重建，旧检查点随之失效。
- * - 同一个对象上的操作依次执行；多个进程同时操作同一影子仓库由调用方避免。
+ * - 同一个对象上的操作依次执行。同一项目的多个会话（多个宿主进程）共用影子仓库、各用自己的引用；
+ *   Git 的锁文件已存在时短暂等待重试。
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -25,6 +26,7 @@ import {
   createGitRunner,
   detectGit,
   isolatedGitEnv,
+  type GitResult,
   type GitRunner,
 } from './git.js'
 import {
@@ -37,6 +39,12 @@ import {
 } from './patterns.js'
 
 export const CHECKPOINT_REF = 'refs/nexus/checkpoints'
+/** 检查点引用只能在 `refs/nexus/` 之下。 */
+const REF_PATTERN = /^refs\/nexus\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/
+/** Git 因锁文件已存在而失败（另一个进程正在写索引或引用）。 */
+const LOCKED = /\.lock'?: File exists/
+const LOCK_RETRY_MS = 50
+const DEFAULT_LOCK_TIMEOUT_MS = 10_000
 /** 默认的单个文件大小上限：10 MiB。 */
 export const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024
 /** 默认的额外排除规则（gitignore 语法）。 */
@@ -57,6 +65,16 @@ export interface ShadowRepoOptions {
   readonly env?: Readonly<Record<string, string | undefined>>
   readonly maxFileBytes?: number
   readonly extraExcludes?: readonly string[]
+  /**
+   * 检查点所在的引用，默认 `refs/nexus/checkpoints`。同一项目的多个会话共用一个影子仓库（对象与索引），
+   * 各用自己的引用（如 `refs/nexus/sessions/<sessionId>`），提交链互不影响。
+   */
+  readonly ref?: string
+  /**
+   * 其他进程正在操作同一影子仓库（Git 的 `*.lock` 已存在）时重试的总时长，默认 10 秒。
+   * 超时后以 `checkpoint.failed` 失败。
+   */
+  readonly lockTimeoutMs?: number
   /** 测试用：替换 Git 调用。 */
   readonly git?: GitRunner
 }
@@ -110,6 +128,11 @@ interface State {
 /** 打开（必要时创建或重建）影子仓库；没有可用的 Git 时以 `checkpoint.git_unavailable` 失败。 */
 export async function openShadowRepo(options: ShadowRepoOptions): Promise<ShadowRepo> {
   const { gitDir, workTree } = options
+  const ref = options.ref ?? CHECKPOINT_REF
+  if (!REF_PATTERN.test(ref) || ref.includes('..') || ref.endsWith('.lock')) {
+    throw new CheckpointError(CheckpointErrorCode.Failed, `invalid checkpoint ref ${ref}`)
+  }
+  const lockTimeoutMs = options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES
   const extraExcludes = options.extraExcludes ?? DEFAULT_EXTRA_EXCLUDES
   const git =
@@ -128,8 +151,32 @@ export async function openShadowRepo(options: ShadowRepoOptions): Promise<Shadow
     })
   }
 
-  const run = (args: readonly string[], opts: { stdin?: string; allowFail?: boolean } = {}) =>
-    git.run(['--git-dir', gitDir, '--work-tree', workTree, ...args], { cwd: workTree, ...opts })
+  const run = async (
+    args: readonly string[],
+    opts: { stdin?: string; allowFail?: boolean } = {},
+  ): Promise<GitResult> => {
+    const fullArgs = ['--git-dir', gitDir, '--work-tree', workTree, ...args]
+    const deadline = Date.now() + lockTimeoutMs
+    for (;;) {
+      const result = await git.run(fullArgs, {
+        cwd: workTree,
+        ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
+        allowFail: true,
+      })
+      const locked = result.code !== 0 && LOCKED.test(result.stderr) && Date.now() < deadline
+      if (!locked) {
+        if (result.code !== 0 && !opts.allowFail) {
+          throw new CheckpointError(
+            CheckpointErrorCode.Failed,
+            `git ${args.join(' ')} exited with ${result.code}: ${result.stderr}`,
+            { exitCode: String(result.code) },
+          )
+        }
+        return result
+      }
+      await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS))
+    }
+  }
   const text = async (args: readonly string[]) => (await run(args)).stdout.toString('utf8').trim()
   const infoDir = path.join(gitDir, 'info')
   const excludeFile = path.join(infoDir, 'exclude')
@@ -190,10 +237,18 @@ export async function openShadowRepo(options: ShadowRepoOptions): Promise<Shadow
     }
   }
 
+  // 影子仓库位于工作区之内时（如把用户主目录作为项目）不快照它自己
+  const self = path.relative(workTree, gitDir)
+  const selfExclude =
+    self !== '' && !self.startsWith('..') && !path.isAbsolute(self)
+      ? [exactPattern(self.split(path.sep).join('/')) + '/']
+      : []
+
   const writeExcludes = (state: State) => {
     const lines = [
       '# 额外排除规则',
       ...extraExcludes,
+      ...selfExclude,
       '# 嵌套仓库',
       ...state.nested.map((rel) => exactPattern(rel) + '/'),
       '# 超过大小上限的文件',
@@ -206,9 +261,9 @@ export async function openShadowRepo(options: ShadowRepoOptions): Promise<Shadow
   /** 已有检查点的提交与树；还没有时为 undefined，对象缺失（损坏）时抛出。 */
   const readHead = async (): Promise<{ commit: string; tree: string } | undefined> => {
     // 只解析引用，不要求对象存在
-    const ref = await run(['rev-parse', '-q', '--verify', CHECKPOINT_REF], { allowFail: true })
-    if (ref.code !== 0) return undefined
-    const commit = ref.stdout.toString('utf8').trim()
+    const resolved = await run(['rev-parse', '-q', '--verify', ref], { allowFail: true })
+    if (resolved.code !== 0) return undefined
+    const commit = resolved.stdout.toString('utf8').trim()
     const tree = await run(['rev-parse', '-q', '--verify', `${commit}^{tree}`], { allowFail: true })
     if (tree.code !== 0) throw new Error('corrupt')
     return { commit, tree: tree.stdout.toString('utf8').trim() }
@@ -287,7 +342,7 @@ export async function openShadowRepo(options: ShadowRepoOptions): Promise<Shadow
         message,
         ...(current ? ['-p', current.commit] : []),
       ])
-      await run(['update-ref', CHECKPOINT_REF, commit, ...(current ? [current.commit] : [])])
+      await run(['update-ref', ref, commit, ...(current ? [current.commit] : [])])
       current = { commit, tree }
       created = true
     }

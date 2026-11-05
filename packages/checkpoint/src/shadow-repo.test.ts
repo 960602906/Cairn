@@ -373,7 +373,71 @@ describe('openShadowRepo: errors', () => {
     await expect(repo.checkpoint('1')).resolves.toMatchObject({
       warnings: expect.stringContaining('Permission denied'),
     })
-    addResult = { code: 128, stderr: 'fatal: Unable to create index.lock: File exists' }
+    addResult = { code: 128, stderr: 'fatal: bad index file' }
     await expect(repo.checkpoint('2')).rejects.toMatchObject({ code: CheckpointErrorCode.Failed })
+  })
+
+  it('rejects refs outside refs/nexus/', async () => {
+    for (const ref of ['refs/heads/main', 'refs/nexus/../heads/x', 'refs/nexus/a.lock', 'HEAD']) {
+      await expect(openShadowRepo(options({ ref }))).rejects.toMatchObject({
+        code: CheckpointErrorCode.Failed,
+      })
+    }
+  })
+})
+
+describe('openShadowRepo: sessions sharing a project', () => {
+  it('keeps separate checkpoint chains on one shadow repository', async () => {
+    write('a.txt', 'a')
+    const s1 = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s1' }))
+    const s2 = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s2' }))
+    const first = await s1.checkpoint('s1 turn')
+    write('a.txt', 'b')
+    const second = await s2.checkpoint('s2 turn')
+    write('a.txt', 'c')
+    const [third] = await Promise.all([s1.checkpoint('s1 again'), s2.checkpoint('s2 again')])
+    // 两个会话的检查点互相可见（共用对象），各自的提交链独立
+    await s2.restore(first.commit)
+    expect(read('a.txt')).toBe('a')
+    await s1.restore(second.commit)
+    expect(read('a.txt')).toBe('b')
+    const reopened = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s1' }))
+    expect(reopened.head()).not.toBe(second.commit)
+    await expect(reopened.has(third.commit)).resolves.toBe(true)
+  })
+
+  it('waits for a Git lock held by another process', async () => {
+    write('a.txt', 'a')
+    const repo = await openShadowRepo(options({ lockTimeoutMs: 5000 }))
+    const lock = path.join(gitDir, 'index.lock')
+    fs.writeFileSync(lock, '')
+    setTimeout(() => fs.rmSync(lock), 200)
+    await expect(repo.checkpoint('1')).resolves.toMatchObject({ created: true })
+
+    const short = await openShadowRepo(options({ lockTimeoutMs: 100 }))
+    fs.writeFileSync(lock, '')
+    write('a.txt', 'b')
+    await expect(short.checkpoint('2')).rejects.toMatchObject({ code: CheckpointErrorCode.Failed })
+    fs.rmSync(lock)
+    await expect(short.checkpoint('3')).resolves.toMatchObject({ created: true })
+  })
+
+  it('does not snapshot a shadow repository inside the workspace', async () => {
+    write('a.txt', 'a')
+    const inside = path.join(work, 'app-data', 'checkpoints', 'p1.git')
+    const repo = await openShadowRepo(options({ gitDir: inside }))
+    const { commit } = await repo.checkpoint('1')
+    const listed = execFileSync('git', [
+      '--git-dir',
+      inside,
+      'ls-tree',
+      '-r',
+      '--name-only',
+      commit,
+    ])
+      .toString()
+      .trim()
+      .split('\n')
+    expect(listed).toEqual(['a.txt'])
   })
 })

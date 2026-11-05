@@ -42,6 +42,7 @@ import type {
 } from '@nexus/protocol'
 import { acceptsInput, canTransition, isActiveRunState } from './run-state.js'
 import type { ToolCallObserver, ToolOutcome, ToolPipeline } from './tool-pipeline.js'
+import type { ToolCheckpoints } from './tools.js'
 import type {
   AbortSignalLike,
   AgentRuntime,
@@ -118,6 +119,12 @@ export interface RunEngineOptions {
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
   readonly toolPipeline?: ToolPipeline
+  /**
+   * 检查点（M1-12b，架构 §11.2）：每轮开始、调用模型之前创建，发出 `checkpoint.created`。
+   * 不可用或失败时本轮照常进行（失败交给 `onCheckpointError`）。
+   */
+  readonly checkpoints?: ToolCheckpoints
+  readonly onCheckpointError?: (error: unknown) => void
   /** 恢复时的历史与运行状态；新运行省略，并发出 `run.created`。 */
   readonly restore?: { readonly history: readonly CanonicalMessage[]; readonly state: RunState }
   /** 会话级中止信号（宿主关闭）。 */
@@ -238,7 +245,13 @@ export class RunEngine {
     this.#transition('thinking')
     const run = async () => {
       try {
-        await session.prompt({ role: 'user', content: [...input.content], ts: this.#now() })
+        await this.#turnCheckpoint()
+        if (turn.abortReason) {
+          // 创建检查点期间被停止：不再调用模型
+          this.#endTurn(turn, { type: 'loop.ended', outcome: 'aborted' })
+        } else {
+          await session.prompt({ role: 'user', content: [...input.content], ts: this.#now() })
+        }
       } catch {
         // 运行时或工具钩子抛出异常：在下面按内部错误结束本轮
       }
@@ -248,6 +261,19 @@ export class RunEngine {
     }
     this.#turnDone = run()
     await this.#turnDone
+  }
+
+  async #turnCheckpoint(): Promise<void> {
+    const checkpoints = this.#o.checkpoints
+    if (!checkpoints) return
+    try {
+      const checkpointId = await checkpoints.create('turn_start')
+      if (checkpointId !== undefined) {
+        this.#emit('checkpoint.created', { checkpointId, reason: 'turn_start' })
+      }
+    } catch (error) {
+      this.#o.onCheckpointError?.(error)
+    }
   }
 
   get limits(): RunLimits {

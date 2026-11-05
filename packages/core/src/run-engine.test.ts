@@ -746,3 +746,70 @@ describe('RunEngine：运行时的异常与边界', () => {
     expect(events.at(-1)).toMatchObject({ type: 'turn.aborted', payload: { reason: 'user' } })
   })
 })
+
+describe('RunEngine：每轮开始的检查点（M1-12b）', () => {
+  const reply = () => fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+
+  it('调用模型前创建检查点，事件属于本轮', async () => {
+    const create = vi.fn(async () => 'cp1')
+    const { engine, events } = await start(reply(), { checkpoints: { create } })
+    await engine.prompt({ messageId: 'u1', content: text('hi') })
+    expect(create).toHaveBeenCalledWith('turn_start')
+    expect(types(events).slice(0, 4)).toEqual([
+      'run.created',
+      'turn.started',
+      'run.state.changed',
+      'checkpoint.created',
+    ])
+    const created = events.find((e) => e.type === 'checkpoint.created')!
+    const started = events.find((e) => e.type === 'turn.started')!
+    expect(created).toMatchObject({
+      turnId: started.turnId,
+      payload: { checkpointId: 'cp1', reason: 'turn_start' },
+    })
+    expect(events.at(-1)?.type).toBe('turn.completed')
+  })
+
+  it('不可用时不发事件；失败时报告错误，本轮照常进行', async () => {
+    const unavailable = await start(reply(), { checkpoints: { create: async () => undefined } })
+    await unavailable.engine.prompt({ messageId: 'u1', content: text('hi') })
+    expect(types(unavailable.events)).not.toContain('checkpoint.created')
+    expect(unavailable.events.at(-1)?.type).toBe('turn.completed')
+
+    const onCheckpointError = vi.fn()
+    const failing = await start(reply(), {
+      checkpoints: { create: () => Promise.reject(new Error('git broke')) },
+      onCheckpointError,
+    })
+    await failing.engine.prompt({ messageId: 'u1', content: text('hi') })
+    expect(onCheckpointError).toHaveBeenCalledWith(new Error('git broke'))
+    expect(failing.events.at(-1)?.type).toBe('turn.completed')
+
+    // 没有 onCheckpointError 时同样继续
+    const silent = await start(reply(), {
+      checkpoints: { create: () => Promise.reject(new Error('git broke')) },
+    })
+    await silent.engine.prompt({ messageId: 'u1', content: text('hi') })
+    expect(silent.events.at(-1)?.type).toBe('turn.completed')
+  })
+
+  it('创建检查点期间停止：不再调用模型，本轮中止', async () => {
+    let release!: (id: string) => void
+    const runtime = reply()
+    const createSession = vi.spyOn(runtime, 'createSession')
+    const { engine, events } = await start(runtime, {
+      checkpoints: { create: () => new Promise((resolve) => (release = resolve)) },
+    })
+    const session = await createSession.mock.results[0]!.value
+    const prompt = vi.spyOn(session, 'prompt')
+    const done = engine.prompt({ messageId: 'u1', content: text('hi') })
+    await Promise.resolve()
+    await engine.abort()
+    release('cp1')
+    await done
+    expect(prompt).not.toHaveBeenCalled()
+    expect(states(events)).toEqual(['thinking', 'aborting', 'idle'])
+    expect(events.at(-1)).toMatchObject({ type: 'turn.aborted', payload: { reason: 'user' } })
+    expect(engine.state).toBe('idle')
+  })
+})

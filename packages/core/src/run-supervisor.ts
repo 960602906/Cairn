@@ -21,6 +21,7 @@ import type {
 } from '@nexus/protocol'
 import { RunEngine, RunEngineError, type ToolExecutor } from './run-engine.js'
 import type { ToolPipeline } from './tool-pipeline.js'
+import type { ToolCheckpoints } from './tools.js'
 import type {
   AbortSignalLike,
   AgentRuntime,
@@ -106,6 +107,9 @@ export interface RunSupervisorOptions {
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
   readonly toolPipeline?: ToolPipeline
+  /** 每轮开始时的检查点（M1-12b）。 */
+  readonly checkpoints?: ToolCheckpoints
+  readonly onCheckpointError?: (error: unknown) => void
   /** 宿主级中止信号。 */
   readonly signal: AbortSignalLike
   readonly now?: () => number
@@ -198,6 +202,8 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
         ...(options.tools ? { tools: options.tools } : {}),
         ...(options.executeTool ? { executeTool: options.executeTool } : {}),
         ...(options.toolPipeline ? { toolPipeline: options.toolPipeline } : {}),
+        ...(options.checkpoints ? { checkpoints: options.checkpoints } : {}),
+        ...(options.onCheckpointError ? { onCheckpointError: options.onCheckpointError } : {}),
         ...(init.restoreFrom
           ? { restore: { history: init.restoreFrom.history, state: init.restoreFrom.state } }
           : {}),
