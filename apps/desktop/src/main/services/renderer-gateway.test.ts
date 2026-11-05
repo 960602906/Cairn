@@ -14,6 +14,7 @@ import { createSessionEventService, type SessionEventService } from './event-ser
 import {
   coalesceDeltas,
   createRendererGateway,
+  type ApprovalCommands,
   type ChangeCommands,
   type RendererGateway,
   type SessionCommands,
@@ -70,6 +71,8 @@ let commands: SessionCommands
 let settings: SettingsCommands
 let credentials: CredentialCommands
 let changes: ChangeCommands
+let approvals: ApprovalCommands
+const approvalListeners = new Set<(sessionId: string) => void>()
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
   const storage = createMemoryStorage({ now: () => 1 })
@@ -97,12 +100,22 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     list: vi.fn(() => ({ changes: [] })),
     revert: vi.fn(async () => ({ changes: [] })),
   }
+  approvalListeners.clear()
+  approvals = {
+    pending: vi.fn(() => ({ approvals: [] })),
+    resolve: vi.fn(() => ({})),
+    subscribe: vi.fn((listener: (sessionId: string) => void) => {
+      approvalListeners.add(listener)
+      return () => approvalListeners.delete(listener)
+    }),
+  }
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
     commands,
     settings,
     credentials,
     changes,
+    approvals,
   })
   return connectRenderer()
 }
@@ -336,6 +349,36 @@ describe('createRendererGateway: commands and lifecycle', () => {
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
   })
 
+  it('delegates approval requests to the approval service', async () => {
+    const { client } = setup()
+    await expect(client.request('approval.pending', { sessionId: 's1' })).resolves.toEqual({
+      approvals: [],
+    })
+    const params = { sessionId: 's1', approvalId: 'a1', decision: 'deny' as const, feedback: 'no' }
+    await expect(client.request('approval.resolve', params)).resolves.toEqual({})
+    expect(approvals.resolve).toHaveBeenCalledWith(params)
+    await expect(
+      client.request('approval.resolve', { ...params, feedback: 'x'.repeat(2001) }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+  })
+
+  it('notifies subscribed windows when pending approvals change, after queued events', async () => {
+    const { client, pushed } = setup()
+    const order: string[] = []
+    client.on('session.events', () => order.push('events'))
+    client.on('approval.changed', ({ sessionId }) => order.push(`changed:${sessionId}`))
+    await client.request('session.subscribe', { sessionId: 's1', afterSeq: 0 })
+    await vi.advanceTimersByTimeAsync(0)
+    service.publish([delta('s1', 'a1', 'x')])
+    approvalListeners.forEach((l) => l('s2'))
+    approvalListeners.forEach((l) => l('s1'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(order).toEqual(['events', 'changed:s1'])
+    expect(pushed).toHaveLength(1)
+    gateway.close()
+    expect(approvalListeners.size).toBe(0)
+  })
+
   it('delegates settings requests to the settings service', async () => {
     const { client } = setup()
     await expect(client.request('settings.get', {})).resolves.toEqual({
@@ -412,6 +455,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       settings,
       credentials,
       changes,
+      approvals,
       onProtocolError,
     })
     const pair = channelPair()

@@ -5,10 +5,11 @@
 import { z } from 'zod'
 import { FileChangeSummary } from '../changes.js'
 import { ContentPart, Id, ModelRef, Timestamp } from '../common.js'
-import { EventEnvelopeSchema } from '../events.js'
+import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
 import { PermissionMode } from '../permissions.js'
 import { CONFIG_ID_PATTERN, ProviderConfigList } from '../providers.js'
 import { defineSide } from '../rpc.js'
+import { HostApprovalRequest } from './host-main.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
 export const SessionStatus = z.enum([
@@ -63,6 +64,13 @@ export const SettingsPatch = z.object({
   permissionMode: PermissionMode.optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
+
+/** 等待用户决定的审批（M1-11b）：内容与宿主的 `host.approval.request` 相同。 */
+export const PendingApproval = HostApprovalRequest
+export type PendingApproval = HostApprovalRequest
+
+/** 拒绝时附加的说明的长度上限（交给模型）。 */
+export const APPROVAL_FEEDBACK_MAX_LENGTH = 2000
 
 /** 凭据引用（ADR-0010）：字母、数字、`.`、`_`、`-`，1～128 个字符（例如提供方 id）。 */
 export const CREDENTIAL_REF_PATTERN = CONFIG_ID_PATTERN
@@ -133,6 +141,24 @@ export const MainForRenderer = defineSide({
       params: z.object({ ref: CredentialRef }),
       result: z.object({ configured: z.boolean(), available: z.boolean() }),
     },
+    /** 会话中等待用户决定的审批（M1-11b），按请求顺序。界面收到 `approval.*` 事件后重新读取。 */
+    'approval.pending': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ approvals: z.array(PendingApproval) }),
+    },
+    /**
+     * 决定一个审批（M1-11b，架构 §10.4）：允许一次、本会话 / 本项目始终允许（保存生成的规则）、拒绝
+     * （`feedback` 交给模型）。审批已结束或不存在时报 `approval.not_found`。
+     */
+    'approval.resolve': {
+      params: z.object({
+        sessionId: Id,
+        approvalId: Id,
+        decision: ApprovalDecision,
+        feedback: z.string().max(APPROVAL_FEEDBACK_MAX_LENGTH).optional(),
+      }),
+      result: z.object({}),
+    },
     /** 会话的文件改动记录（M1-08b），按发生顺序。 */
     'changes.list': {
       params: z.object({ sessionId: Id }),
@@ -151,6 +177,11 @@ export const MainForRenderer = defineSide({
   events: {
     /** 实时事件推送；增量事件在主进程合并后按帧率批量推送（架构 §22）。 */
     'session.events': z.object({ sessionId: Id, events: z.array(EventEnvelopeSchema) }),
+    /**
+     * 会话的未决审批有变化（新请求、已决定或被取消，M1-11b）；界面重新读取 `approval.pending`。
+     * 只推送给订阅了该会话的窗口。审批请求在 `approval.requested` 事件之后才登记，因此不能只靠事件。
+     */
+    'approval.changed': z.object({ sessionId: Id }),
   },
 })
 
@@ -164,7 +195,6 @@ export const RESERVED_RENDERER_MAIN_METHODS = [
   'project.list',
   'session.rename',
   'session.archive',
-  'approval.resolve',
   'checkpoint.list',
   'checkpoint.restore',
   'provider.test',

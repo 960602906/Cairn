@@ -4,7 +4,7 @@
  * - **请求校验**：参数与结果都由 `createEndpoint` 按协议校验；会话命令交给注入的 `SessionCommands`
  *   （会话管理器，M0-13c/d），设置交给 `SettingsCommands`（设置服务，M0-15d），凭据交给
  *   `CredentialCommands`（凭据存储，M1-03b；没有读出明文的接口），改动记录交给 `ChangeCommands`
- *   （改动服务，M1-08b）。IPC 发送方的校验见 `renderer-transport.ts`。
+ *   （改动服务，M1-08b），审批交给 `ApprovalCommands`（审批服务，M1-11b）。IPC 发送方的校验见 `renderer-transport.ts`。
  * - **补发与实时衔接**：`session.subscribe(afterSeq)` 同步读取数据库中 `afterSeq` 之后的持久化事件并
  *   记下游标；之后到达的事件只转发 seq 大于游标的部分。读取与登记之间没有异步间隙，因此无重复、
  *   无遗漏。订阅响应发出之前到达的实时事件先缓存，响应发出后再推送，保证界面先拿到补发的事件。
@@ -45,6 +45,14 @@ export interface ChangeCommands {
   readonly revert: Handler<'changes.revert'>
 }
 
+/** 由审批服务实现的审批命令（M1-11b）。 */
+export interface ApprovalCommands {
+  readonly pending: Handler<'approval.pending'>
+  readonly resolve: Handler<'approval.resolve'>
+  /** 未决审批有变化时调用（推送 `approval.changed`）；返回取消函数。 */
+  readonly subscribe: (listener: (sessionId: string) => void) => () => void
+}
+
 /** 由设置服务实现的设置命令。 */
 export interface SettingsCommands {
   readonly get: () => z.input<Requests['settings.get']['result']>
@@ -63,6 +71,8 @@ export interface RendererGatewayOptions {
   readonly credentials: CredentialCommands
   /** 改动记录（M1-08b）：列出与整文件撤销。 */
   readonly changes: ChangeCommands
+  /** 审批（M1-11b）：读取未决审批与作出决定。 */
+  readonly approvals: ApprovalCommands
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
   readonly frameMs?: number
   readonly onProtocolError?: (error: RpcError, message: unknown) => void
@@ -129,15 +139,19 @@ interface Subscription {
 type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
-  const { events, commands, settings, credentials, changes } = options
+  const { events, commands, settings, credentials, changes, approvals } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
+    approvalsChanged: (sessionId: string) => void
     close: () => void
   }>()
 
   const unsubscribeEvents = events.subscribe((sessionId, batch) => {
     for (const connection of connections) connection.deliver(sessionId, batch)
+  })
+  const unsubscribeApprovals = approvals.subscribe((sessionId) => {
+    for (const connection of connections) connection.approvalsChanged(sessionId)
   })
 
   return {
@@ -190,6 +204,8 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('credentials.status', (params) => credentials.status(params))
       endpoint.handle('changes.list', (params) => changes.list(params))
       endpoint.handle('changes.revert', (params) => changes.revert(params))
+      endpoint.handle('approval.pending', (params) => approvals.pending(params))
+      endpoint.handle('approval.resolve', (params) => approvals.resolve(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布
@@ -226,6 +242,12 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           if (persisted) flush()
           else scheduleFrame()
         },
+        approvalsChanged(sessionId: string) {
+          // 先推送已排队的事件，界面看到的状态与审批一致
+          if (!subs.has(sessionId)) return
+          flush()
+          endpoint.emit('approval.changed', { sessionId })
+        },
         close() {
           if (closed) return
           closed = true
@@ -247,6 +269,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
 
     close() {
       unsubscribeEvents()
+      unsubscribeApprovals()
       for (const connection of [...connections]) connection.close()
     },
   }

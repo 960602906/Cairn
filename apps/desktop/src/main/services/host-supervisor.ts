@@ -11,7 +11,8 @@
  * 适用于会话的权限规则（M1-10c）同样在 `host.init` 前汇总并下发。
  *
  * 宿主的 `host.approval.request` 与 `host.approval.cancelled`（M1-11a）交给审批服务（M1-11b），会话与运行
- * 同样按这个宿主填入。
+ * 同样按这个宿主填入。宿主退出或崩溃时仍未决的审批一并取消；崩溃时补写 `approval.resolved`
+ * （`cancelled`，由系统决定），之后再写 `session.crashed`。
  *
  * 宿主的 `changes.record`（M1-08b）交给改动服务，会话与运行按这个宿主填入，宿主不能写入其他会话的记录。
  *
@@ -70,6 +71,8 @@ export interface HostHandle {
   /** 转发用户输入（`message.user` 已由主进程落库）。 */
   prompt(params: z.input<(typeof HostForMain)['requests']['host.prompt']['params']>): Promise<void>
   abort(reason: 'user' | 'shutdown'): Promise<void>
+  /** 重新汇总权限规则并交给宿主（`host.permissions.update`，M1-11b）：新增规则或切换模式之后调用。 */
+  refreshPermissions(): Promise<void>
   /** 请求宿主正常退出；超时后强制结束。重复调用返回同一个 Promise。 */
   stop(): Promise<HostExit>
   /** 宿主结束（正常停止或崩溃）时 resolve。 */
@@ -172,12 +175,41 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         { local: MainForHost, remote: HostForMain },
       )
 
+      /** 宿主请求、尚未结束的审批。 */
+      const approvals = new Set<string>()
+      /**
+       * 先于请求到达的取消：宿主的事件立即发出，请求要等握手完成后才发出，请求刚发出就取消时
+       * 取消可能先到。
+       */
+      const cancelledEarly = new Set<string>()
+
       const finish = (exit: HostExit) => {
         if (state === 'stopped' || state === 'crashed') return
         state = exit.reason
         if (heartbeat !== undefined) clearTimeout(heartbeat)
         endpoint.close()
         proc.kill()
+        for (const approvalId of approvals) {
+          options.cancelApproval?.(sessionId, approvalId)
+          if (exit.error) {
+            try {
+              options.events.publish([
+                {
+                  v: 1,
+                  sessionId,
+                  runId,
+                  ts: now(),
+                  type: 'approval.resolved',
+                  payload: { approvalId, decision: 'cancelled', decidedBy: 'system' },
+                },
+              ])
+            } catch (e) {
+              options.onError?.(e)
+            }
+          }
+        }
+        approvals.clear()
+        cancelledEarly.clear()
         if (exit.error) recordCrash(exit.error)
         resolveExited(exit)
       }
@@ -197,13 +229,25 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         return options.recordChange(sessionId, runId, input)
       })
 
-      endpoint.handle('host.approval.request', (request) => {
+      endpoint.handle('host.approval.request', async (request) => {
         if (!options.requestApproval) throw new RpcError('run.unsupported')
-        return options.requestApproval(sessionId, runId, request)
+        if (cancelledEarly.delete(request.approvalId)) {
+          throw new RpcError('approval.cancelled', { approvalId: request.approvalId })
+        }
+        approvals.add(request.approvalId)
+        try {
+          return await options.requestApproval(sessionId, runId, request)
+        } finally {
+          approvals.delete(request.approvalId)
+        }
       })
-      endpoint.on('host.approval.cancelled', ({ approvalId }) =>
-        options.cancelApproval?.(sessionId, approvalId),
-      )
+      endpoint.on('host.approval.cancelled', ({ approvalId }) => {
+        if (!approvals.delete(approvalId)) {
+          cancelledEarly.add(approvalId)
+          return
+        }
+        options.cancelApproval?.(sessionId, approvalId)
+      })
 
       endpoint.on('host.event', ({ event }) => {
         if (state !== 'running' && state !== 'starting') return
@@ -294,6 +338,12 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         state: () => state,
         prompt: (params) => call('host.prompt', params),
         abort: (reason) => call('host.abort', { reason }),
+        async refreshPermissions() {
+          if (state !== 'running' || !options.resolvePermissionRules) return
+          await endpoint.request('host.permissions.update', {
+            rules: options.resolvePermissionRules(sessionId),
+          })
+        },
         exited,
         stop() {
           if (stopping) return stopping

@@ -1,11 +1,12 @@
 /**
- * 当前会话（M0-15c）：标题、运行状态、消息流、输入框与停止按钮。
+ * 当前会话（M0-15c）：标题、运行状态、消息流、未决审批（M1-11b）、输入框与停止按钮。
  * 内容都来自 store 中的事件投影，窗口刷新后经 `afterSeq` 补发恢复。订阅返回之前还没有投影，
  * 标题与状态先取会话列表中的值。已发送、等待这一轮开始时显示为运行中（可以停止）。
  */
 import { useTranslation } from 'react-i18next'
 import { rootRun, sessionStatus, type RunView } from '@nexus/core'
 import type { RunState, SessionStatus } from '@nexus/protocol'
+import { ApprovalList } from './ApprovalCard.js'
 import { MessageStream } from './MessageStream.js'
 import { PromptInput } from './PromptInput.js'
 import { useSessionStore } from './store-context.js'
@@ -51,6 +52,7 @@ export function ChatPanel() {
       <h2 id="chat-title">{title === '' ? t('title.untitled') : title}</h2>
       <RunStatus status={status} run={run} />
       <MessageStream view={view} />
+      <ApprovalList />
       <PromptInput
         key={sessionId}
         active={status === 'running' || status === 'waiting_approval'}

@@ -16,9 +16,10 @@ function fakeApi(handlers: Record<string, Handler> = {}) {
       return handler ? handler(params as never) : {}
     }),
     on: (
-      _name: string,
+      name: string,
       listener: (data: { sessionId: string; events: EventEnvelope[] }) => void,
     ) => {
+      if (name !== 'session.events') return () => {}
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
