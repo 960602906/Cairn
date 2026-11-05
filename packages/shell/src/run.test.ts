@@ -28,12 +28,13 @@ const clean = (s: string) => s.replace(/\r\n/g, '\n').trim()
 
 let work: string
 beforeAll(() => {
-  work = realpathSync(mkdtempSync(path.join(tmpdir(), 'nexus-shell-')))
+  // native：展开 Windows 的 8.3 短路径（如 RUNNER~1），与 shell 报告的路径一致
+  work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nexus-shell-')))
 })
 afterAll(() => rmSync(work, { recursive: true, force: true }))
 
 /** 每次运行用独立的子目录。 */
-const freshDir = () => realpathSync(mkdtempSync(path.join(work, 'case-')))
+const freshDir = () => realpathSync.native(mkdtempSync(path.join(work, 'case-')))
 const readdir = () => readdirSync(work)
 
 async function run(shell: ShellInfo, command: string, options: Partial<RunCommandOptions> = {}) {
@@ -175,6 +176,14 @@ describe.runIf(isWindows)('cmd', () => {
   it('中文输出、引号、退出码', async () => {
     expect((await run(cmd, 'echo cmd 输出：中文')).out).toBe('cmd 输出：中文')
     expect((await run(cmd, 'echo "a b" & echo c')).out).toBe('"a b" \nc')
+    expect(
+      (
+        await run(cmd, 'echo "x & y" ^& !z! %CMD_TEST%', {
+          env: { ...process.env, CMD_TEST: '值' },
+        })
+      ).out,
+    ).toBe('"x & y" & !z! 值')
+    expect((await run(cmd, 'echo 中文目录> 中.txt & type 中.txt')).out).toBe('中文目录')
     expect((await run(cmd, 'exit /b 3')).exitCode).toBe(3)
   })
 })

@@ -67,8 +67,10 @@ export async function runCommand(
   const temp = invocation.tempScript
   if (temp) await fs.writeFile(temp.path, temp.content)
   try {
+    const env = options.env ?? process.env
     return await spawnAndCollect(invocation.file, invocation.args, {
       ...options,
+      env: invocation.env ? { ...env, ...invocation.env } : env,
       windowsVerbatimArguments: invocation.windowsVerbatimArguments ?? false,
     })
   } finally {

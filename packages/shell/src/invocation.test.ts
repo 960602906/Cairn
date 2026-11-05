@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildInvocation,
+  CMD_COMMAND_VAR,
   POWERSHELL_EPILOGUE,
   POWERSHELL_PRELUDE,
   wrapPowerShellScript,
@@ -64,14 +65,20 @@ describe('PowerShell', () => {
   })
 })
 
-it('cmd：/d /s /c，先切换到 UTF-8 代码页，命令原样传入', () => {
-  const inv = buildInvocation({ kind: 'cmd', exe: 'C:\\cmd.exe' }, 'echo "a b" & dir', {
-    tempScriptPath,
-  })
+it('cmd：先切换到 UTF-8 代码页，命令经环境变量交给新的 cmd 原样执行', () => {
+  const command = 'echo "a & b" & dir | find "x" ^& !y!'
+  const inv = buildInvocation({ kind: 'cmd', exe: 'C:\\cmd.exe' }, command, { tempScriptPath })
   expect(inv).toEqual({
     file: 'C:\\cmd.exe',
-    args: ['/d', '/s', '/c', '"chcp 65001 >nul & echo "a b" & dir"'],
+    args: [
+      '/d',
+      '/v:on',
+      '/s',
+      '/c',
+      '"chcp 65001 >nul & "C:\\cmd.exe" /d /v:off /s /c "!NEXUS_SHELL_COMMAND!""',
+    ],
     windowsVerbatimArguments: true,
+    env: { [CMD_COMMAND_VAR]: command },
   })
 })
 

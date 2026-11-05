@@ -14,11 +14,16 @@ import type { ShellInfo } from './select.js'
  */
 export const MAX_COMMAND_LINE_CHARS = 30_000
 
+/** cmd 模式下传递命令的环境变量。 */
+export const CMD_COMMAND_VAR = 'NEXUS_SHELL_COMMAND'
+
 export interface ShellInvocation {
   readonly file: string
   readonly args: readonly string[]
   /** 参数原样传给进程，不再由 Node 加引号（cmd 的 `/s /c "..."`）。 */
   readonly windowsVerbatimArguments?: boolean
+  /** 需要额外设置的环境变量（cmd 经环境变量传入命令）。 */
+  readonly env?: Readonly<Record<string, string>>
   /** 需要先写入的临时脚本（PowerShell 命令过长时）；执行结束后删除。 */
   readonly tempScript?: { readonly path: string; readonly content: Buffer }
 }
@@ -54,11 +59,20 @@ export function buildInvocation(
       }
     }
     case 'cmd':
-      // /d 不运行 AutoRun；/s 只去掉最外层引号，命令原样执行；先把代码页切到 UTF-8
+      // cmd 启动时读取控制台代码页，之后的 chcp 对自身的输出不生效：先切到 UTF-8，再启动新的 cmd 执行命令。
+      // 命令经环境变量传给外层，用延迟扩展取出：外层不解析其中的 & | 引号等，只有内层按原样解析一次。
+      // /d 不运行 AutoRun；/s 去掉最外层的引号；内层关闭延迟扩展，`!` 原样保留。退出码随内层返回。
       return {
         file: shell.exe,
-        args: ['/d', '/s', '/c', `"chcp 65001 >nul & ${command}"`],
+        args: [
+          '/d',
+          '/v:on',
+          '/s',
+          '/c',
+          `"chcp 65001 >nul & "${shell.exe}" /d /v:off /s /c "!${CMD_COMMAND_VAR}!""`,
+        ],
         windowsVerbatimArguments: true,
+        env: { [CMD_COMMAND_VAR]: command },
       }
     case 'bash':
       return { file: shell.exe, args: ['--noprofile', '--norc', '-c', command] }
