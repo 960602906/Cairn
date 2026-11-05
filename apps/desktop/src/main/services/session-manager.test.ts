@@ -245,6 +245,7 @@ describe('prompt', () => {
     expect(manager.activeSessions()).toEqual([sessionId])
 
     // 一轮进行中不接受新输入
+    expect(manager.isBusy(sessionId)).toBe(true)
     expect(() => manager.prompt({ sessionId, content: text('again') })).toThrow(
       expect.objectContaining({ code: 'run.busy' }),
     )
@@ -254,6 +255,7 @@ describe('prompt', () => {
     )
     expect(manager.list({}).sessions[0]?.status).toBe('running')
     finishTurn(sessionId, 'id3', 't1')
+    expect(manager.isBusy(sessionId)).toBe(false)
 
     // 同一个宿主、同一个运行继续
     const second = manager.prompt({ sessionId, content: text('next') })
@@ -264,6 +266,22 @@ describe('prompt', () => {
       'id3',
       'id3',
     ])
+  })
+
+  it('isBusy covers queued and starting sessions; isLocked rejects prompts (M1-08b)', async () => {
+    const { supervisor } = fakeSupervisor()
+    let locked = true
+    const { manager } = setup(supervisor, { isLocked: () => locked })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    expect(manager.isBusy(sessionId)).toBe(false)
+    expect(() => manager.prompt({ sessionId, content: text('hi') })).toThrow(
+      expect.objectContaining({ code: 'run.busy' }),
+    )
+    locked = false
+    manager.prompt({ sessionId, content: text('hi') })
+    // 宿主启动中
+    expect(manager.isBusy(sessionId)).toBe(true)
+    expect(manager.isBusy('unknown')).toBe(false)
   })
 
   it('restarts a stopped host with the conversation history and the run configuration', async () => {

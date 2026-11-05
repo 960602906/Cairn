@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import nodePath from 'node:path'
 import { ToolError, type ApprovalPreview, type ToolContext, type ToolDefinition } from '@nexus/core'
+import type { FileHunk } from '@nexus/protocol'
 import { createTwoFilesPatch } from 'diff'
 import { resolveOrThrow } from './paths.js'
 import {
@@ -426,8 +427,51 @@ async function assertUnchanged(
   }
 }
 
-async function commit(plan: WritePlan, ctx: ToolContext, codes: { Failed: string }): Promise<void> {
-  if (ctx.signal.aborted) return
+/** 统一 diff 中各块的行号范围（`@@ -a,b +c,d @@`，省略行数时为 1）。 */
+export function diffHunks(diff: string): FileHunk[] {
+  const hunks: FileHunk[] = []
+  for (const line of diff.split('\n')) {
+    const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line)
+    if (!m) continue
+    hunks.push({
+      oldStart: Number(m[1]),
+      oldLines: m[2] === undefined ? 1 : Number(m[2]),
+      newStart: Number(m[3]),
+      newLines: m[4] === undefined ? 1 : Number(m[4]),
+    })
+  }
+  return hunks
+}
+
+/** 写入成功后附在结果后面的说明：改动记录保存失败时文件已经改动，只是不能从改动列表撤销。 */
+const RECORD_FAILED_NOTE =
+  '\n[The file was written, but the change could not be recorded, so it cannot be reverted from the change list.]'
+
+/** 记录已写入的改动（M1-08b）；失败时返回给模型的说明，不让工具失败。 */
+async function recordChange(plan: WritePlan, diff: string, ctx: ToolContext): Promise<string> {
+  try {
+    await ctx.recordChange({
+      path: plan.path,
+      kind: plan.before === undefined ? 'create' : 'modify',
+      ...(plan.before === undefined ? {} : { before: plan.before }),
+      after: plan.after,
+      hunks: diffHunks(diff),
+      ...diffStat(diff),
+    })
+    return ''
+  } catch (error) {
+    ctx.log.warn('recording the change failed', { path: plan.path, error: String(error) })
+    return RECORD_FAILED_NOTE
+  }
+}
+
+/** 写入文件；已取消时不写入，返回 false。 */
+async function commit(
+  plan: WritePlan,
+  ctx: ToolContext,
+  codes: { Failed: string },
+): Promise<boolean> {
+  if (ctx.signal.aborted) return false
   try {
     if (plan.before === undefined) {
       await fs.mkdir(nodePath.dirname(plan.absolute), { recursive: true })
@@ -440,7 +484,13 @@ async function commit(plan: WritePlan, ctx: ToolContext, codes: { Failed: string
       { path: plan.path },
     )
   }
+  return true
 }
+
+/** 已取消，没有写入（流水线会把结果换成取消说明）。 */
+const cancelledOutput = (plan: WritePlan) => ({
+  content: [{ type: 'text' as const, text: `${plan.path} was not written (cancelled).` }],
+})
 
 const normalizePath = async <I extends { path: string }>(input: I, ctx: ToolContext) => {
   const path = await resolveOrThrow(ctx, input.path)
@@ -479,8 +529,9 @@ export function createWriteFileTool(): ToolDefinition<WriteFileInput> {
     async execute(input, ctx) {
       await assertUnchanged(input, fingerprints.take(ctx.toolCallId), ctx, WriteFileErrorCode)
       const plan = await planWrite(input, ctx)
-      await commit(plan, ctx, WriteFileErrorCode)
-      return { content: [{ type: 'text', text: plan.message }] }
+      if (!(await commit(plan, ctx, WriteFileErrorCode))) return cancelledOutput(plan)
+      const note = await recordChange(plan, planDiff(plan), ctx)
+      return { content: [{ type: 'text', text: plan.message + note }] }
     },
   }
 }
@@ -527,12 +578,13 @@ export function createEditFileTool(): ToolDefinition<EditFileInput> {
     async execute(input, ctx) {
       await assertUnchanged(input, fingerprints.take(ctx.toolCallId), ctx, EditFileErrorCode)
       const plan = await planEdit(input, ctx)
-      await commit(plan, ctx, EditFileErrorCode)
+      if (!(await commit(plan, ctx, EditFileErrorCode))) return cancelledOutput(plan)
       let diff = planDiff(plan)
+      const note = await recordChange(plan, diff, ctx)
       if (diff.length > READ_FILE_MAX_OUTPUT_CHARS) {
         diff = `${diff.slice(0, READ_FILE_MAX_OUTPUT_CHARS)}\n[Diff truncated. Use read_file to check the result.]`
       }
-      return { content: [{ type: 'text', text: `${plan.message}\n${diff}` }] }
+      return { content: [{ type: 'text', text: `${plan.message}\n${diff}${note}` }] }
     },
   }
 }

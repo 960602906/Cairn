@@ -442,6 +442,7 @@ export class RunEngine {
         output: (text, stream) =>
           this.#emit('tool.output.delta', { toolCallId: call.id, stream, text }),
         awaitingApproval: (waiting) => this.#awaitingApproval(waiting),
+        ...(this.#turn ? { turnId: this.#turn.turnId } : {}),
         emit: (type, payload) => this.#emit(type, payload),
       }
       outcome = await pipeline.run(call, signal, observer)

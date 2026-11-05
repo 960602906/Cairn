@@ -34,6 +34,7 @@ export async function checkBundledSearch(ripgrepPath: string, workspace: string)
       checkpoints: { create: () => Promise.reject(new Error('not used')) },
       log: silentLogger,
       progress: () => {},
+      recordChange: () => Promise.reject(new Error('not used')),
     },
   )
   const text = output.content.map((p) => (p.type === 'text' ? p.text : '')).join('')

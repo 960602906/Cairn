@@ -31,6 +31,7 @@ import {
   type ToolCheckpoints,
   type ToolContext,
   type ToolDefinition,
+  type ToolFileChange,
   type ToolOutput,
   type ToolRegistry,
   type ToolTargets,
@@ -101,7 +102,9 @@ export interface ToolCallObserver {
   output(text: string, stream: 'stdout' | 'stderr'): void
   /** 开始与结束等待审批（运行状态在 `tooling` 与 `awaiting_approval` 之间切换）。 */
   awaitingApproval(waiting: boolean): void
-  emit<T extends 'approval.requested' | 'approval.resolved'>(
+  /** 当前轮次，写入改动记录。 */
+  readonly turnId?: string
+  emit<T extends 'approval.requested' | 'approval.resolved' | 'file.changed'>(
     type: T,
     payload: EventPayload<T>,
   ): void
@@ -117,6 +120,13 @@ export type ToolOutcome =
     }
   | { readonly status: 'cancelled'; readonly content: readonly ContentPart[] }
 
+/** 改动记录（M1-08b）：宿主经主进程写入 blob 存储与 `file_changes`。 */
+export interface ToolChangeRecorder {
+  record(
+    change: ToolFileChange & { readonly toolCallId: string; readonly turnId?: string },
+  ): Promise<{ changeId: string }>
+}
+
 export interface ToolPipelineOptions {
   readonly registry: ToolRegistry
   /** 当前 Agent 是否可以使用该工具（`tools.allow`），默认都可以。 */
@@ -124,6 +134,8 @@ export interface ToolPipelineOptions {
   readonly permissions: PermissionGate
   readonly approvals: ApprovalGate
   readonly checkpoints: ToolCheckpoints
+  /** 改动记录；省略时写类工具的改动不留记录。 */
+  readonly changes?: ToolChangeRecorder
   readonly workspaceRoot: string
   readonly resolvePath: (input: string) => Promise<PathResolution>
   readonly log: Logger
@@ -323,6 +335,15 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       checkpoints: options.checkpoints,
       log: options.log.child({ toolCallId: call.id, tool: call.name }),
       progress: (chunk, stream = 'stdout') => observer.output(chunk, stream),
+      recordChange: async (change) => {
+        if (!options.changes) return
+        const { changeId } = await options.changes.record({
+          ...change,
+          toolCallId: call.id,
+          ...(observer.turnId === undefined ? {} : { turnId: observer.turnId }),
+        })
+        observer.emit('file.changed', { changeId, path: change.path, kind: change.kind })
+      },
     }
 
     try {

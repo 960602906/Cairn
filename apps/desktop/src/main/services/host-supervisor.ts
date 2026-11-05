@@ -9,6 +9,8 @@
  * `host.init` 前按模型解析凭据（M1-03b，ADR-0010）与模型配置（M1-04b），只经 `host.init` 传给宿主；
  * 无法解析（系统加密不可用、无法解密、模型已从配置中删除）按启动失败处理，原因的错误码记入 `cause`。
  *
+ * 宿主的 `changes.record`（M1-08b）交给改动服务，会话与运行按这个宿主填入，宿主不能写入其他会话的记录。
+ *
  * 启动失败（进程无法创建、握手或初始化超时、协议不兼容）同样写入 `session.crashed`
  * （`host.start_failed`），并以 `RpcError` 拒绝。`stop()` 请求宿主正常退出，超时后强制结束，
  * 不写崩溃事件。
@@ -18,6 +20,7 @@
 import {
   createEndpoint,
   HostForMain,
+  type FileChangeInput,
   MainForHost,
   RpcError,
   type ErrorInfo,
@@ -76,6 +79,15 @@ export interface HostSupervisorOptions {
    * 环境变量）。抛出时按启动失败处理。省略表示不传。
    */
   readonly resolveModelConfig?: (model: HostInit['model']) => HostModelConfig | undefined
+  /**
+   * 记录宿主报告的文件改动（M1-08b，改动服务）。会话与运行由这个宿主确定。
+   * 省略时宿主的 `changes.record` 报 `run.unsupported`。
+   */
+  readonly recordChange?: (
+    sessionId: string,
+    runId: string,
+    input: FileChangeInput,
+  ) => Promise<{ changeId: string }>
   /** 握手与 `host.init` 的总时限，默认 10 秒。 */
   readonly startTimeoutMs?: number
   /** 心跳间隔，默认 5 秒。 */
@@ -155,6 +167,11 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
           crash(state === 'starting' ? HostErrorCode.StartFailed : HostErrorCode.Exited, {
             exitCode,
           })
+      })
+
+      endpoint.handle('changes.record', (input) => {
+        if (!options.recordChange) throw new RpcError('run.unsupported')
+        return options.recordChange(sessionId, runId, input)
       })
 
       endpoint.on('host.event', ({ event }) => {

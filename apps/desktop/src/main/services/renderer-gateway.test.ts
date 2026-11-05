@@ -14,6 +14,7 @@ import { createSessionEventService, type SessionEventService } from './event-ser
 import {
   coalesceDeltas,
   createRendererGateway,
+  type ChangeCommands,
   type RendererGateway,
   type SessionCommands,
   type SettingsCommands,
@@ -68,6 +69,7 @@ let gateway: RendererGateway
 let commands: SessionCommands
 let settings: SettingsCommands
 let credentials: CredentialCommands
+let changes: ChangeCommands
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
   const storage = createMemoryStorage({ now: () => 1 })
@@ -91,11 +93,16 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     delete: vi.fn(async () => ({ deleted: true })),
     status: vi.fn(async () => ({ configured: true, available: true })),
   }
+  changes = {
+    list: vi.fn(() => ({ changes: [] })),
+    revert: vi.fn(async () => ({ changes: [] })),
+  }
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
     commands,
     settings,
     credentials,
+    changes,
   })
   return connectRenderer()
 }
@@ -315,6 +322,20 @@ describe('createRendererGateway: commands and lifecycle', () => {
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
   })
 
+  it('delegates change requests to the change service', async () => {
+    const { client } = setup()
+    await expect(client.request('changes.list', { sessionId: 's1' })).resolves.toEqual({
+      changes: [],
+    })
+    await expect(
+      client.request('changes.revert', { sessionId: 's1', changeIds: ['c1'] }),
+    ).resolves.toEqual({ changes: [] })
+    expect(changes.revert).toHaveBeenCalledWith({ sessionId: 's1', changeIds: ['c1'] })
+    await expect(
+      client.request('changes.revert', { sessionId: 's1', changeIds: [] }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+  })
+
   it('delegates settings requests to the settings service', async () => {
     const { client } = setup()
     await expect(client.request('settings.get', {})).resolves.toEqual({
@@ -390,6 +411,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       commands,
       settings,
       credentials,
+      changes,
       onProtocolError,
     })
     const pair = channelPair()

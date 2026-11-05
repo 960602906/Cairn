@@ -80,5 +80,10 @@
   "tool.edit_file.ambiguous": "The text to replace occurs more than once",
   "tool.edit_file.no_change": "The replacement is the same as the original",
   "tool.edit_file.changed_since_preview": "The file was changed after the preview, so it was not edited",
-  "tool.edit_file.failed": "The file cannot be edited"
+  "tool.edit_file.failed": "The file cannot be edited",
+  "changes.not_found": "The change record was not found",
+  "changes.already_reverted": "This change has already been reverted",
+  "changes.conflict": "{{path}} was modified after the change (or a newer change was not reverted with it), so it cannot be reverted",
+  "changes.blob_missing": "The original content of {{path}} is missing, so it cannot be reverted",
+  "changes.failed": "{{path}} cannot be restored"
 }

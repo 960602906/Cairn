@@ -4,7 +4,14 @@
  * 接口是同步的：只有主进程写入数据库，所选引擎 better-sqlite3 是同步 API（S4，M0-08），
  * 同步接口让 `transaction` 与 `EventStore.append` 的原子性简单可靠。
  */
-import type { ModelRef, PersistedEvent, ProviderConfig } from '@nexus/protocol'
+import type {
+  FileChangeKind,
+  FileChangeStatus,
+  FileHunk,
+  ModelRef,
+  PersistedEvent,
+  ProviderConfig,
+} from '@nexus/protocol'
 
 export const StorageErrorCode = {
   /** 记录不存在。 */
@@ -130,6 +137,63 @@ export interface EventStore {
   maxSeq(sessionId: string): number
 }
 
+// ---------- 文件改动 ----------
+
+/** 改动中的一个 diff 块（架构 §14.2 `hunks`）；状态在 M1 与所属改动一致，按块处理在 M3。 */
+export interface HunkRecord extends FileHunk {
+  readonly status: FileChangeStatus
+}
+
+/**
+ * 文件改动记录（M1-08b，架构 §14.2 `file_changes`）。前后内容在 blob 存储中，这里只保存哈希：
+ * `create` 没有 `beforeHash`，`delete` 没有 `afterHash`。
+ */
+export interface FileChangeRecord {
+  readonly changeId: string
+  readonly sessionId: string
+  readonly runId?: string
+  readonly turnId?: string
+  readonly toolCallId?: string
+  /** 相对工作区根目录的路径，`/` 分隔。 */
+  readonly path: string
+  readonly kind: FileChangeKind
+  readonly beforeHash?: string
+  readonly afterHash?: string
+  /** 撤销产生的改动：被撤销的改动 id。 */
+  readonly revertOf?: string
+  readonly status: FileChangeStatus
+  readonly added: number
+  readonly removed: number
+  readonly hunks: readonly HunkRecord[]
+  readonly createdAt: number
+}
+
+export interface CreateFileChangeInput {
+  readonly changeId: string
+  readonly sessionId: string
+  readonly runId?: string
+  readonly turnId?: string
+  readonly toolCallId?: string
+  readonly path: string
+  readonly kind: FileChangeKind
+  readonly beforeHash?: string
+  readonly afterHash?: string
+  readonly revertOf?: string
+  readonly added: number
+  readonly removed: number
+  readonly hunks: readonly FileHunk[]
+}
+
+export interface FileChangeStore {
+  /** 状态为 `pending`。会话不存在时报 `storage.not_found`，id 重复时报 `storage.conflict`。 */
+  create(input: CreateFileChangeInput): FileChangeRecord
+  get(changeId: string): FileChangeRecord | undefined
+  /** 会话的全部改动，按记录的先后顺序。 */
+  list(sessionId: string): FileChangeRecord[]
+  /** 改动及其全部块的状态。不存在时报 `storage.not_found`。 */
+  setStatus(changeId: string, status: FileChangeStatus): FileChangeRecord
+}
+
 // ---------- 汇总 ----------
 
 export interface Storage {
@@ -137,6 +201,7 @@ export interface Storage {
   readonly sessions: SessionStore
   readonly providers: ProviderStore
   readonly events: EventStore
+  readonly changes: FileChangeStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   close(): void

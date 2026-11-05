@@ -32,7 +32,7 @@ describe('openSqliteStorage', () => {
     expect(storage.migration).toEqual({
       from: 0,
       to: MIGRATIONS.length,
-      applied: ['0001_init', '0002_providers', '0003_provider_compat'],
+      applied: ['0001_init', '0002_providers', '0003_provider_compat', '0004_file_changes'],
     })
     storage.close()
 
@@ -45,6 +45,8 @@ describe('openSqliteStorage', () => {
     expect(tables).toEqual([
       'agent_runs',
       'events',
+      'file_changes',
+      'hunks',
       'projects',
       'provider_configs',
       'schema_meta',

@@ -24,6 +24,7 @@ import {
   TokenUsage,
   ToolCall,
 } from './common.js'
+import { FileChangeKind } from './changes.js'
 
 /** 事件信封的 schema 版本（架构 §7.1 `EventEnvelope.v`）。 */
 export const EVENT_SCHEMA_VERSION = 1 as const
@@ -158,11 +159,13 @@ const payloadSchemas = {
   }),
 
   // ---------- 改动与检查点 ----------
-  /** 只引用改动记录 id，不内嵌文件内容。 */
+  /** 只引用改动记录 id，不内嵌文件内容（M1-08b）。 */
   'file.changed': z.object({
     changeId: Id,
     path: z.string().min(1),
-    kind: z.enum(['create', 'modify', 'delete']),
+    kind: FileChangeKind,
+    /** 撤销产生的改动：被撤销的改动 id。 */
+    revertOf: Id.optional(),
   }),
   'checkpoint.created': z.object({
     checkpointId: Id,

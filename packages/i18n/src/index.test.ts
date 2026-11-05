@@ -166,6 +166,11 @@ describe('translateError', () => {
       'tool.edit_file.no_change',
       'tool.edit_file.changed_since_preview',
       'tool.edit_file.failed',
+      'changes.not_found',
+      'changes.already_reverted',
+      'changes.conflict',
+      'changes.blob_missing',
+      'changes.failed',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())
