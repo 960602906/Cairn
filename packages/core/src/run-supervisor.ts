@@ -19,7 +19,7 @@ import type {
   RunState,
   UnsequencedEvent,
 } from '@nexus/protocol'
-import { RunEngine, RunEngineError, type ToolExecutor } from './run-engine.js'
+import { RunEngine, RunEngineError, type RetryPolicy, type ToolExecutor } from './run-engine.js'
 import type { ToolPipeline } from './tool-pipeline.js'
 import type { ToolCheckpoints } from './tools.js'
 import type {
@@ -110,6 +110,8 @@ export interface RunSupervisorOptions {
   /** 每轮开始时的检查点（M1-12b）。 */
   readonly checkpoints?: ToolCheckpoints
   readonly onCheckpointError?: (error: unknown) => void
+  /** 模型请求的重试策略（M1-14a），默认 `DEFAULT_RETRY_POLICY`。 */
+  readonly retry?: RetryPolicy
   /** 宿主级中止信号。 */
   readonly signal: AbortSignalLike
   readonly now?: () => number
@@ -204,6 +206,7 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
         ...(options.toolPipeline ? { toolPipeline: options.toolPipeline } : {}),
         ...(options.checkpoints ? { checkpoints: options.checkpoints } : {}),
         ...(options.onCheckpointError ? { onCheckpointError: options.onCheckpointError } : {}),
+        ...(options.retry ? { retry: options.retry } : {}),
         ...(init.restoreFrom
           ? { restore: { history: init.restoreFrom.history, state: init.restoreFrom.state } }
           : {}),

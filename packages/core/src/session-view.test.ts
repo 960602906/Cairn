@@ -179,6 +179,7 @@ describe('reduceSession：一轮完整对话', () => {
       error: undefined,
       retryable: undefined,
       limitReached: undefined,
+      retry: undefined,
     })
   })
 
@@ -407,6 +408,32 @@ describe('reduceSession：轮次', () => {
       retryable: false,
       limitReached: { limit: 'maxStepsPerTurn', value: 50 },
     })
+  })
+
+  it('等待重试：下一步开始或轮次结束时清除', () => {
+    const { view, ev } = midTurn()
+    const err = { code: 'model.rate_limited' }
+    const waiting = reduceSession(
+      view,
+      ev('model.retry', { attempt: 1, maxRetries: 3, delayMs: 1000, error: err }, { turnId: 't1' }),
+    )
+    expect(waiting.runs[RUN]?.turn?.retry).toEqual({
+      attempt: 1,
+      maxRetries: 3,
+      delayMs: 1000,
+      error: err,
+      at: expect.any(Number),
+    })
+    const resumed = reduceSession(
+      waiting,
+      ev('step.started', { model }, { turnId: 't1', stepId: 'st9' }),
+    )
+    expect(resumed.runs[RUN]?.turn?.retry).toBeUndefined()
+    const failed = reduceSessionEvents(waiting, [
+      ev('turn.failed', { error: err, retryable: true }, { turnId: 't1' }),
+      ev('model.retry', { attempt: 2, maxRetries: 3, delayMs: 2000, error: err }, { turnId: 't1' }),
+    ])
+    expect(failed.runs[RUN]?.turn).toMatchObject({ status: 'failed', retry: undefined })
   })
 
   it('已结束的轮次不再接受结束、限额与步骤事件', () => {

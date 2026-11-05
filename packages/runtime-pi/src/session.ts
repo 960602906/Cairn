@@ -7,6 +7,9 @@
  *   不发出 `message.completed`，部分回复由 `RunEngine` 用增量保存；
  * - `agent_end` → `loop.ended`，结果按最后一条助手消息与是否被中止判断。
  *
+ * 重试（M1-14a）：pi 的 SDK 重试关闭（`maxRetries: 0`），由 `RunEngine` 决定是否重试。`retry()` 从 pi 的
+ * 消息中去掉失败的助手消息，再用 `Agent.continue()` 从最后的用户消息或工具结果继续，不重复执行工具。
+ *
  * 工具：每个 `RuntimeToolSpec` 包装为 pi 工具，`execute` 中先调用 `hooks.beforeToolCall`，放行后调用
  * `hooks.executeTool`，并把中止信号传下去。结果状态（ok、denied 等）写入 pi 工具结果的 `details`，
  * 历史中可以原样恢复。并行（M1-05c；Runtime §6.2）：标为 `parallel` 的工具设为 pi 的 `parallel` 执行模式，
@@ -129,14 +132,35 @@ class PiSession implements RuntimeSession {
   }
 
   async prompt(input: UserMessage): Promise<void> {
+    this.#checkIdle()
+    this.#pendingUsers.push(input)
+    await this.#run(() => this.#agent.prompt(toPiUser(input.content, input.ts)))
+  }
+
+  async retry(): Promise<void> {
+    this.#checkIdle()
+    const messages = this.#agent.state.messages
+    const index = messages.findLastIndex((m) => m.role === 'assistant')
+    const failed = messages[index] as PiAssistantMessage | undefined
+    if (failed?.stopReason === 'error') {
+      // 出错的助手消息不回传给模型；去掉后最后一条是用户消息或工具结果（空闲时的引导消息在它之后）
+      this.#agent.state.messages = messages.filter((_, i) => i !== index)
+    }
+    await this.#run(() => this.#agent.continue())
+  }
+
+  #checkIdle(): void {
     if (this.#disposed) throw new Error('pi 会话已释放')
     if (this.#running) throw new Error('pi 会话正在运行')
+  }
+
+  /** 运行一次 agent 循环，保证恰好一个 `loop.ended`。 */
+  async #run(start: () => Promise<void>): Promise<void> {
     this.#running = true
     this.#abortRequested = this.#init.signal.aborted
     this.#loopEnded = false
     this.#inStep = false
     this.#lastAssistant = undefined
-    this.#pendingUsers.push(input)
     try {
       if (this.#abortRequested) {
         // 会话已被中止：不发请求，直接以 aborted 结束
@@ -144,7 +168,7 @@ class PiSession implements RuntimeSession {
         this.#endLoop()
         return
       }
-      await this.#agent.prompt(toPiUser(input.content, input.ts))
+      await start()
     } catch {
       // pi 的 prompt 不应抛出；万一抛出，按失败结束本轮，保证恰好一个 loop.ended
     } finally {

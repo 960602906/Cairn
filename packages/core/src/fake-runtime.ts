@@ -8,7 +8,8 @@
  * - `tools`：同上，一次请求多个工具调用。与 pi 相同（Runtime §6.2）：全部是可并行的工具（`parallel`）时
  *   并行执行，否则按顺序执行；结果按调用顺序进入历史；
  * - `reply`：流式输出推理与文本，作为最终回复结束本轮；
- * - `fail`：模拟模型请求失败，以 `loop.ended { outcome: 'failed' }` 结束本轮。
+ * - `fail`：模拟模型请求失败，以 `loop.ended { outcome: 'failed' }` 结束循环。之后 `retry()` 从下一步继续；
+ *   `fail` 是最后一步时，`retry()` 再次以同样的失败结束（持续失败）。
  *
  * 脚本用尽后，回声回复用户输入。文本按 `chunkSize` 切分为增量，每个增量之前等待 `delayMs`；
  * 期间收到中止（`abort()` 或 `init.signal`）时，以 `aborted` 结束本步与本轮，未完成的消息不进入历史。
@@ -88,7 +89,8 @@ function checkOptionalString(v: unknown, at: string, errors: string[]): void {
 
 /**
  * 校验脚本（例如端到端测试从 JSON 读入的脚本）。
- * 规则：每轮至少一步；`reply` 与 `fail` 只能是最后一步，`tool`、`tools` 不能是最后一步。
+ * 规则：每轮至少一步；`reply` 只能是最后一步，`tool`、`tools` 不能是最后一步；`fail` 之后的步骤在
+ * `retry()` 时执行。
  */
 export function parseFakeScript(input: unknown): FakeScriptResult {
   const errors: string[] = []
@@ -162,7 +164,6 @@ export function parseFakeScript(input: unknown): FakeScriptResult {
               errors.push(`${sat}.error.code: 必须是非空字符串`)
             }
             if (typeof step.retryable !== 'boolean') errors.push(`${sat}.retryable: 必须是布尔值`)
-            if (!last) errors.push(`${sat}: fail 只能是最后一步`)
             break
           default:
             errors.push(`${sat}.kind: 必须是 reply、tool、tools 或 fail`)
@@ -245,6 +246,8 @@ class FakeSession implements RuntimeSession {
   readonly #listeners = new Set<(event: RuntimeEvent) => void>()
   readonly #history: CanonicalMessage[]
   #turnIndex = 0
+  /** 上一次循环以 `fail` 结束时，`retry()` 从这里继续。 */
+  #resume: { readonly turn: FakeTurn; readonly next: number } | undefined
   #callCounter = 0
   /** 当前轮次的中止信号；空闲时为 undefined。 */
   #running: TurnSignal | undefined
@@ -285,24 +288,44 @@ class FakeSession implements RuntimeSession {
   }
 
   async prompt(input: UserMessage): Promise<void> {
-    if (this.#disposed) throw new Error('FakeRuntime 会话已释放')
-    if (this.#running) throw new Error('FakeRuntime 会话正在运行')
-    const turnSignal = new TurnSignal()
-    this.#running = turnSignal
-    const sessionSignal = this.#init.signal
-    const onSignal = () => turnSignal.abort()
-    sessionSignal.addEventListener('abort', onSignal, { once: true })
-    if (sessionSignal.aborted) turnSignal.abort()
-
+    this.#checkIdle()
     this.#history.push(input)
     const turn: FakeTurn = this.#script.turns[this.#turnIndex] ?? {
       steps: [{ kind: 'reply', text: textOf(input.content) }],
     }
     this.#turnIndex += 1
+    await this.#runTurn(turn, 0)
+  }
+
+  async retry(): Promise<void> {
+    this.#checkIdle()
+    const resume = this.#resume
+    if (!resume) throw new Error('FakeRuntime 会话没有可重试的失败')
+    await this.#runTurn(resume.turn, resume.next)
+  }
+
+  #checkIdle(): void {
+    if (this.#disposed) throw new Error('FakeRuntime 会话已释放')
+    if (this.#running) throw new Error('FakeRuntime 会话正在运行')
+  }
+
+  /** 从第 `from` 步运行本轮（`fail` 是最后一步时从它重新开始）。 */
+  async #runTurn(turn: FakeTurn, from: number): Promise<void> {
+    const turnSignal = new TurnSignal()
+    this.#running = turnSignal
+    this.#resume = undefined
+    const sessionSignal = this.#init.signal
+    const onSignal = () => turnSignal.abort()
+    sessionSignal.addEventListener('abort', onSignal, { once: true })
+    if (sessionSignal.aborted) turnSignal.abort()
     try {
-      for (const step of turn.steps) {
+      for (let i = Math.min(from, turn.steps.length - 1); i < turn.steps.length; i++) {
+        const step = turn.steps[i]!
         const done = await this.#runStep(step, turnSignal)
-        if (done) return
+        if (done) {
+          if (step.kind === 'fail') this.#resume = { turn, next: i + 1 }
+          return
+        }
       }
     } catch (e) {
       if (!(e instanceof Aborted)) throw e

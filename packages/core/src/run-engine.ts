@@ -18,6 +18,10 @@
  *   限额  turn.limit_reached → run.state.changed(→failed) → turn.failed（retryable）
  * ```
  *
+ * 模型请求重试（M1-14a，Runtime §10.4）：运行时以可重试的失败结束循环（网络、429、5xx）时，本轮不结束，
+ * 发出 `model.retry`，按指数退避等待后调用 `RuntimeSession.retry()` 从失败处继续，运行保持 `thinking`。
+ * 等待期间可以停止。重试耗尽、运行时不支持重试、被停止或达到限额时照常结束本轮。
+ *
  * 一步在没有 `message.completed` 的情况下结束（被停止、出错，或运行时直接结束循环）时，若已收到
  * 文本或推理增量，先以 `message.assistant.completed { incomplete: true }` 保存这部分回复
  * （Runtime §10.2），再发出 `step.completed` 或轮次结束事件。
@@ -77,6 +81,33 @@ export class RunEngineError extends Error {
   }
 }
 
+/** 模型请求的重试策略（M1-14a）。 */
+export interface RetryPolicy {
+  /** 一轮中最多重试的次数（每次失败的请求各算一次）；0 表示不重试。 */
+  readonly maxRetries: number
+  /** 第一次重试前的等待毫秒数，之后每次翻倍。 */
+  readonly baseDelayMs: number
+  readonly maxDelayMs: number
+}
+
+export const DEFAULT_RETRY_POLICY: RetryPolicy = {
+  maxRetries: 3,
+  baseDelayMs: 1_000,
+  maxDelayMs: 30_000,
+}
+
+/** 第 `attempt` 次（从 1 起）重试前的等待：`min(base × 2^(attempt-1), max)`。 */
+export function retryDelay(policy: RetryPolicy, attempt: number): number {
+  return Math.min(policy.baseDelayMs * 2 ** (attempt - 1), policy.maxDelayMs)
+}
+
+type TimerHandle = { readonly __timer: unique symbol }
+/** core 不引入 DOM / Node 类型；计时器每次从 globalThis 读取，测试中的假计时器也能生效。 */
+const timers = globalThis as unknown as {
+  setTimeout(callback: () => void, ms: number): TimerHandle
+  clearTimeout(handle: TimerHandle): void
+}
+
 export type ToolExecutor = (
   call: RuntimeToolCall,
   signal: AbortSignalLike,
@@ -122,6 +153,8 @@ export interface RunEngineOptions {
    */
   readonly checkpoints?: ToolCheckpoints
   readonly onCheckpointError?: (error: unknown) => void
+  /** 模型请求的重试策略，默认 `DEFAULT_RETRY_POLICY`。 */
+  readonly retry?: RetryPolicy
   /** 恢复时的历史与运行状态；新运行省略，并发出 `run.created`。 */
   readonly restore?: { readonly history: readonly CanonicalMessage[]; readonly state: RunState }
   /** 会话级中止信号（宿主关闭）。 */
@@ -155,6 +188,12 @@ interface TurnContext {
   limitHit: 'maxStepsPerTurn' | undefined
   /** 已发出轮次结束事件。 */
   ended: boolean
+  /** 本轮已重试的次数。 */
+  retries: number
+  /** 运行时以可重试的失败结束了循环，等待重试。 */
+  retryPending: Extract<RuntimeEvent, { type: 'loop.ended' }> | undefined
+  /** 正在退避等待时，提前结束等待（停止）。 */
+  wake: (() => void) | undefined
 }
 
 export class RunEngine {
@@ -237,6 +276,9 @@ export class RunEngine {
       abortReason: undefined,
       limitHit: undefined,
       ended: false,
+      retries: 0,
+      retryPending: undefined,
+      wake: undefined,
     }
     this.#turn = turn
     this.#emit('turn.started', {})
@@ -249,6 +291,7 @@ export class RunEngine {
           this.#endTurn(turn, { type: 'loop.ended', outcome: 'aborted' })
         } else {
           await session.prompt({ role: 'user', content: [...input.content], ts: this.#now() })
+          await this.#retryLoop(turn)
         }
       } catch {
         // 运行时或工具钩子抛出异常：在下面按内部错误结束本轮
@@ -259,6 +302,62 @@ export class RunEngine {
     }
     this.#turnDone = run()
     await this.#turnDone
+  }
+
+  /** 运行时以可重试的失败结束循环后：退避等待，再从失败处继续，直到不再需要重试。 */
+  async #retryLoop(turn: TurnContext): Promise<void> {
+    const session = this.#session!
+    const policy = this.#o.retry ?? DEFAULT_RETRY_POLICY
+    while (turn.retryPending && !turn.ended) {
+      const failure = turn.retryPending
+      turn.retryPending = undefined
+      if (turn.abortReason) break
+      turn.retries += 1
+      const delayMs = retryDelay(policy, turn.retries)
+      this.#emit('model.retry', {
+        attempt: turn.retries,
+        maxRetries: policy.maxRetries,
+        delayMs,
+        error: failure.error ?? { code: RunEngineErrorCode.ModelUnknown },
+      })
+      await this.#backoff(turn, delayMs)
+      if (turn.abortReason || this.#o.signal.aborted) break
+      await session.retry!()
+    }
+    // 循环结束前被停止（等待中或刚失败时）：本轮以中止结束
+    if (!turn.ended && (turn.abortReason || this.#o.signal.aborted)) {
+      this.#endTurn(turn, { type: 'loop.ended', outcome: 'aborted' })
+    }
+  }
+
+  /** 等待 `ms` 毫秒；停止或会话级中止时提前结束。 */
+  #backoff(turn: TurnContext, ms: number): Promise<void> {
+    const signal = this.#o.signal
+    if (signal.aborted) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      const wake = () => {
+        timers.clearTimeout(handle)
+        signal.removeEventListener('abort', wake)
+        turn.wake = undefined
+        resolve()
+      }
+      const handle = timers.setTimeout(wake, ms)
+      signal.addEventListener('abort', wake)
+      turn.wake = wake
+    })
+  }
+
+  /** 这次失败是否重试：可重试、运行时支持、未停止、未达到限额、次数未用完。 */
+  #shouldRetry(turn: TurnContext, event: Extract<RuntimeEvent, { type: 'loop.ended' }>): boolean {
+    const policy = this.#o.retry ?? DEFAULT_RETRY_POLICY
+    return (
+      event.outcome === 'failed' &&
+      event.retryable === true &&
+      this.#session?.retry !== undefined &&
+      !turn.abortReason &&
+      !turn.limitHit &&
+      turn.retries < policy.maxRetries
+    )
   }
 
   async #turnCheckpoint(): Promise<void> {
@@ -300,6 +399,8 @@ export class RunEngine {
     if (!turn || !isActiveRunState(this.#state)) return
     turn.abortReason = reason
     this.#transition('aborting')
+    // 正在退避等待重试：结束等待，本轮以中止结束
+    turn.wake?.()
     await this.#session!.abort(reason)
   }
 
@@ -382,6 +483,13 @@ export class RunEngine {
         return
       }
       case 'loop.ended':
+        if (this.#shouldRetry(turn, event)) {
+          // 本轮不结束；`prompt` 返回后由 `#retryLoop` 重试
+          this.#savePartial(turn)
+          turn.step = undefined
+          turn.retryPending = event
+          return
+        }
         this.#endTurn(turn, event)
         return
     }

@@ -428,6 +428,14 @@ pi 提供了追加消息的机制，具体对接方式在适配器中实现；�
 - 结束本轮，发出 `turn.limit_reached`，说明是哪项限额；
 - 界面提供"继续"按钮，用户确认后以更高限额继续，而不是直接失败。
 
+### 10.4 模型请求重试
+
+- 运行时只报告失败与是否值得重试（`loop.ended { outcome: 'failed', retryable }`），重试由 `RunEngine` 统一决定，SDK 自带的重试关闭。
+- 可重试：网络错误、429、5xx；不重试：401、403、其他 4xx、上下文超限。
+- 指数退避：第 n 次重试前等待 `min(baseDelayMs × 2^(n-1), maxDelayMs)`，默认 1 秒起、最长 30 秒、最多 3 次。等待前发出 `model.retry`，等待期间可以停止。
+- 重试从失败处继续（`RuntimeSession.retry`）：丢弃失败的那条助手消息，用已有的历史（含已执行的工具结果）重新请求，不重复执行工具。
+- 重试耗尽后本轮以 `turn.failed { retryable: true }` 结束，界面可以重试。
+
 ---
 
 ## 11. 生命周期钩子
@@ -483,6 +491,7 @@ interface EventEnvelope {
 | `turn.limit_reached` | 超出限额 |
 | `context.compacted` | 上下文已压缩，含摘要和被压缩的轮次范围 |
 | `model.fallback` | 切换到备用模型 |
+| `model.retry` | 模型请求失败，等待后重试（第几次、上限、等待时长、错误） |
 | `run.delegated` / `run.child.completed` | 委派子运行（多 Agent，预留） |
 
 ---

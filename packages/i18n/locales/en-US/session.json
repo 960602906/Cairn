@@ -28,6 +28,7 @@
   "turn.interrupted": "This turn was interrupted. You can continue.",
   "turn.failed": "This turn failed: {{reason}}",
   "turn.limit_reached": "Reached the limit of {{maxSteps}} steps for this turn. You can continue.",
+  "turn.retrying": "Model request failed ({{reason}}). Retrying in {{seconds}}s (attempt {{attempt}} of {{maxRetries}}).",
   "crashed.message": "The agent process exited unexpectedly. You can continue from the last saved point.",
   "new.projectPath": "Project folder",
   "new.projectPathHint": "Enter the full path of the project folder",

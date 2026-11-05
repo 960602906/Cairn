@@ -279,6 +279,17 @@ describe('RunSupervisor：限额、中止与释放', () => {
     expect(run.state).toBe('completed')
   })
 
+  it('重试策略传给运行', async () => {
+    const fail = { kind: 'fail', error: { code: 'model.server_error' }, retryable: true } as const
+    const { supervisor, events } = setup(fake({ turns: [{ steps: [fail, fail] }] }), {
+      retry: { maxRetries: 1, baseDelayMs: 0, maxDelayMs: 0 },
+    })
+    const run = await supervisor.createRun(init)
+    await run.send(input('u1'))
+    expect(types(events).filter((t) => t === 'model.retry')).toHaveLength(1)
+    expect(turnEnds(events)).toEqual(['turn.failed'])
+  })
+
   it('abortAll 中止所有运行中的轮次', async () => {
     vi.useFakeTimers()
     const { supervisor, events } = setup(

@@ -8,8 +8,10 @@ import {
 } from '@nexus/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  DEFAULT_RETRY_POLICY,
   FakeRuntime,
   RunEngine,
+  retryDelay,
   RunEngineErrorCode,
   createSessionView,
   rebuildHistory,
@@ -449,6 +451,7 @@ describe('RunEngine：失败与限额', () => {
           { steps: [{ kind: 'fail', error: { code: 'model.rate_limited' }, retryable: true }] },
         ],
       }),
+      { retry: { ...DEFAULT_RETRY_POLICY, maxRetries: 0 } },
     )
     await engine.prompt({ messageId: 'u1', content: text('?') })
     expect(states(events)).toEqual(['thinking', 'failed'])
@@ -494,6 +497,262 @@ describe('RunEngine：失败与限额', () => {
     expect(states(events)).toEqual(['thinking', 'tooling', 'thinking', 'tooling', 'failed'])
     const view = reduceSessionEvents(createSessionView('s1'), sequenced('?', events))
     expect(view.runs.r1?.turn?.limitReached).toEqual({ limit: 'maxStepsPerTurn', value: 2 })
+  })
+})
+
+describe('RunEngine：模型请求重试', () => {
+  const rateLimited = {
+    kind: 'fail',
+    error: { code: 'model.rate_limited' },
+    retryable: true,
+  } as const
+  const policy = { maxRetries: 3, baseDelayMs: 10, maxDelayMs: 25 }
+  const retries = (events: readonly UnsequencedEvent[]) =>
+    events.flatMap((e) => (e.type === 'model.retry' ? [e.payload] : []))
+  /** 假计时器下等到发出 model.retry（`vi.waitFor` 会推进假计时器，不能用）。 */
+  let untilRetry: () => Promise<void>
+  const watch = (events: readonly UnsequencedEvent[]) => {
+    untilRetry = async () => {
+      for (let i = 0; i < 100 && retries(events).length === 0; i++) await Promise.resolve()
+      expect(retries(events)).toHaveLength(1)
+    }
+  }
+
+  it('退避等待：base × 2^(n-1)，不超过上限', () => {
+    expect([1, 2, 3, 4].map((n) => retryDelay(policy, n))).toEqual([10, 20, 25, 25])
+    expect([1, 2, 3].map((n) => retryDelay(DEFAULT_RETRY_POLICY, n))).toEqual([1000, 2000, 4000])
+  })
+
+  it('可重试的失败：model.retry 后从失败处继续，本轮正常完成', async () => {
+    const { engine, events } = await start(
+      fake({
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'a', input: {} },
+              rateLimited,
+              rateLimited,
+              { kind: 'reply', text: '好' },
+            ],
+          },
+        ],
+      }),
+      { retry: policy, executeTool: async () => ({ status: 'ok', content: text('ok') }) },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(retries(events)).toEqual([
+      { attempt: 1, maxRetries: 3, delayMs: 10, error: { code: 'model.rate_limited' } },
+      { attempt: 2, maxRetries: 3, delayMs: 20, error: { code: 'model.rate_limited' } },
+    ])
+    expect(types(events).filter((t) => t === 'tool.started')).toHaveLength(1)
+    expect(types(events).filter((t) => t === 'step.started')).toHaveLength(4)
+    const first = types(events).indexOf('model.retry')
+    expect(types(events).slice(first - 1, first + 2)).toEqual([
+      'step.completed',
+      'model.retry',
+      'step.started',
+    ])
+    expect(states(events)).toEqual(['thinking', 'tooling', 'thinking', 'completed'])
+    expect(events.at(-1)?.type).toBe('turn.completed')
+    // model.retry 属于本轮，持久化
+    const retry = events.find((e) => e.type === 'model.retry')!
+    expect(retry.turnId).toBe(events.find((e) => e.type === 'turn.started')!.turnId)
+    expect(isPersistedEvent({ ...retry, seq: 1 } as EventEnvelope)).toBe(true)
+    const view = reduceSessionEvents(createSessionView('s1'), sequenced('?', events))
+    expect(view.runs.r1?.turn).toMatchObject({ status: 'completed', retry: undefined })
+  })
+
+  it('一直失败：重试耗尽后 turn.failed(retryable)', async () => {
+    const { engine, events } = await start(fake({ turns: [{ steps: [rateLimited] }] }), {
+      retry: { ...policy, maxRetries: 2 },
+    })
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(retries(events).map((r) => [r.attempt, r.delayMs])).toEqual([
+      [1, 10],
+      [2, 20],
+    ])
+    expect(types(events).filter((t) => t === 'step.started')).toHaveLength(3)
+    expect(states(events)).toEqual(['thinking', 'failed'])
+    expect(events.at(-1)).toMatchObject({
+      type: 'turn.failed',
+      payload: { error: { code: 'model.rate_limited' }, retryable: true },
+    })
+    // 下一轮重新计数
+    events.length = 0
+    await engine.prompt({ messageId: 'u2', content: text('再来') })
+    expect(engine.state).toBe('completed')
+  })
+
+  it('默认最多重试 3 次', async () => {
+    vi.useFakeTimers()
+    const { engine, events } = await start(fake({ turns: [{ steps: [rateLimited] }] }))
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.runAllTimersAsync()
+    await done
+    expect(retries(events).map((r) => [r.attempt, r.maxRetries, r.delayMs])).toEqual([
+      [1, 3, 1000],
+      [2, 3, 2000],
+      [3, 3, 4000],
+    ])
+    expect(events.at(-1)?.type).toBe('turn.failed')
+  })
+
+  it('不可重试的失败不重试', async () => {
+    const auth = await start(
+      fake({
+        turns: [
+          { steps: [{ kind: 'fail', error: { code: 'model.auth_failed' }, retryable: false }] },
+        ],
+      }),
+      { retry: policy },
+    )
+    await auth.engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(retries(auth.events)).toEqual([])
+    expect(auth.events.at(-1)).toMatchObject({ type: 'turn.failed', payload: { retryable: false } })
+  })
+
+  it('运行时没有 retry() 时不重试', async () => {
+    const inner = fake({ turns: [{ steps: [rateLimited, { kind: 'reply', text: '好' }] }] })
+    const runtime: AgentRuntime = {
+      id: 'no-retry',
+      async createSession(init) {
+        const session = await inner.createSession(init)
+        return {
+          prompt: (m) => session.prompt(m),
+          steer: (m) => session.steer(m),
+          abort: () => session.abort(),
+          onEvent: (l) => session.onEvent(l),
+          exportHistory: () => session.exportHistory(),
+          dispose: () => session.dispose(),
+        }
+      },
+    }
+    const { engine, events } = await start(runtime, { retry: policy })
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(retries(events)).toEqual([])
+    expect(events.at(-1)).toMatchObject({ type: 'turn.failed', payload: { retryable: true } })
+  })
+
+  it('等待重试时停止：turn.aborted，不再请求', async () => {
+    vi.useFakeTimers()
+    const runtime = fake({ turns: [{ steps: [rateLimited, { kind: 'reply', text: '好' }] }] })
+    const { engine, events } = await start(runtime, { retry: { ...policy, baseDelayMs: 60_000 } })
+    watch(events)
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await untilRetry()
+    expect(engine.state).toBe('thinking')
+    await engine.abort()
+    await done
+    expect(types(events).filter((t) => t === 'step.started')).toHaveLength(1)
+    expect(states(events)).toEqual(['thinking', 'aborting', 'idle'])
+    expect(events.at(-1)).toMatchObject({ type: 'turn.aborted', payload: { reason: 'user' } })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('等待重试时宿主关闭：turn.aborted(shutdown)', async () => {
+    vi.useFakeTimers()
+    const runtime = fake({ turns: [{ steps: [rateLimited, { kind: 'reply', text: '好' }] }] })
+    const { engine, events, controller } = await start(runtime, {
+      retry: { ...policy, baseDelayMs: 60_000 },
+    })
+    watch(events)
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await untilRetry()
+    controller.abort()
+    await done
+    expect(events.at(-1)).toMatchObject({ type: 'turn.aborted', payload: { reason: 'shutdown' } })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('失败的同时被停止或宿主关闭：不等待，本轮以中止结束', async () => {
+    let onFail: () => Promise<void> = async () => {}
+    const runtime: AgentRuntime = {
+      id: 'fail-then-stop',
+      async createSession() {
+        const listeners = new Set<(e: RuntimeEvent) => void>()
+        return {
+          prompt: async () => {
+            for (const l of listeners) {
+              l({ type: 'loop.ended', outcome: 'failed', error: { code: 'x' }, retryable: true })
+            }
+            await onFail()
+          },
+          retry: vi.fn(async () => {}),
+          steer: async () => {},
+          abort: async () => {},
+          onEvent: (l) => {
+            listeners.add(l)
+            return () => listeners.delete(l)
+          },
+          exportHistory: () => [],
+          dispose: async () => {},
+        } satisfies RuntimeSession
+      },
+    }
+    const slow = { ...policy, baseDelayMs: 60_000 }
+    const stopped = await start(runtime, { retry: slow })
+    onFail = () => stopped.engine.abort()
+    await stopped.engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(retries(stopped.events)).toEqual([])
+    expect(stopped.events.at(-1)).toMatchObject({
+      type: 'turn.aborted',
+      payload: { reason: 'user' },
+    })
+
+    const closed = await start(runtime, { retry: slow })
+    onFail = async () => closed.controller.abort()
+    await closed.engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(retries(closed.events)).toHaveLength(1)
+    expect(closed.events.at(-1)).toMatchObject({
+      type: 'turn.aborted',
+      payload: { reason: 'shutdown' },
+    })
+  })
+
+  it('失败的一步已收到的文本保存为不完整的回复，重试是新的一条消息', async () => {
+    const runtime: AgentRuntime = {
+      id: 'partial',
+      async createSession() {
+        const listeners = new Set<(e: RuntimeEvent) => void>()
+        const emit = (e: RuntimeEvent) => listeners.forEach((l) => l(e))
+        let attempt = 0
+        const run = async () => {
+          attempt += 1
+          emit({ type: 'step.started', model: ref })
+          if (attempt === 1) {
+            emit({ type: 'text.delta', text: '写到' })
+            emit({ type: 'loop.ended', outcome: 'failed', retryable: true })
+            return
+          }
+          emit({ type: 'text.delta', text: '完整' })
+          emit({ type: 'step.completed', finishReason: 'stop' })
+          emit({ type: 'loop.ended', outcome: 'completed' })
+        }
+        return {
+          prompt: run,
+          retry: run,
+          steer: async () => {},
+          abort: async () => {},
+          onEvent: (l) => {
+            listeners.add(l)
+            return () => listeners.delete(l)
+          },
+          exportHistory: () => [],
+          dispose: async () => {},
+        } satisfies RuntimeSession
+      },
+    }
+    const { engine, events } = await start(runtime, { retry: policy })
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    const completed = events.filter((e) => e.type === 'message.assistant.completed')
+    expect(completed.map((e) => e.payload)).toMatchObject([
+      { content: text('写到'), incomplete: true },
+      { content: text('完整'), incomplete: true },
+    ])
+    expect(new Set(completed.map((e) => e.payload.messageId)).size).toBe(2)
+    // 运行时没有给出错误时记为未知错误
+    expect(retries(events)[0]?.error).toEqual({ code: RunEngineErrorCode.ModelUnknown })
+    expect(events.at(-1)?.type).toBe('turn.completed')
   })
 })
 

@@ -268,6 +268,45 @@ describe('FakeRuntime：脚本输出', () => {
     expect(session.exportHistory().map((m) => m.role)).toEqual(['user', 'assistant', 'tool'])
   })
 
+  it('retry() 从失败之后的步骤继续；最后一步失败时再次失败', async () => {
+    const { session, events } = await open({
+      turns: [
+        {
+          steps: [
+            { kind: 'fail', error: { code: 'model.server_error' }, retryable: true },
+            { kind: 'fail', error: { code: 'model.rate_limited' }, retryable: true },
+            { kind: 'reply', text: '好' },
+          ],
+        },
+        { steps: [{ kind: 'fail', error: { code: 'model.network_error' }, retryable: true }] },
+      ],
+    })
+    await expect(session.retry!()).rejects.toThrow('没有可重试的失败')
+    await session.prompt(user('?'))
+    events.length = 0
+    await session.retry!()
+    expect(events.at(-1)).toMatchObject({ error: { code: 'model.rate_limited' } })
+    events.length = 0
+    await session.retry!()
+    expect(events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'completed' })
+    expect(session.exportHistory().map((m) => m.role)).toEqual(['user', 'assistant'])
+    await expect(session.retry!()).rejects.toThrow('没有可重试的失败')
+
+    await session.prompt(user('第二轮'))
+    events.length = 0
+    await session.retry!()
+    expect(events).toEqual([
+      { type: 'step.started', model: expect.anything() },
+      { type: 'step.completed', finishReason: 'error' },
+      {
+        type: 'loop.ended',
+        outcome: 'failed',
+        error: { code: 'model.network_error' },
+        retryable: true,
+      },
+    ])
+  })
+
   it('按轮次消费脚本，用尽后回声回复', async () => {
     const { session } = await open({ turns: [{ steps: [{ kind: 'reply', text: '第一轮' }] }] })
     await session.prompt(user('一'))
@@ -617,19 +656,6 @@ describe('parseFakeScript', () => {
     [
       { turns: [{ steps: [{ kind: 'fail', error: { code: 'x' } }] }] },
       'turns[0].steps[0].retryable: 必须是布尔值',
-    ],
-    [
-      {
-        turns: [
-          {
-            steps: [
-              { kind: 'fail', error: { code: 'x' }, retryable: true },
-              { kind: 'reply', text: '' },
-            ],
-          },
-        ],
-      },
-      'turns[0].steps[0]: fail 只能是最后一步',
     ],
   ])('非法：%j', (input, message) => {
     const result = parseFakeScript(input)

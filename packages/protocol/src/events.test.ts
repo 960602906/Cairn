@@ -82,6 +82,7 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   'usage.reported': { model, usage: { inputTokens: 1, outputTokens: 1 } },
   'context.compacted': { summary: '摘要', coversTurns: ['t1', 't3'] },
   'model.fallback': { from: model, to: { providerId: 'ollama', modelId: 'qwen' }, error: err },
+  'model.retry': { attempt: 1, maxRetries: 3, delayMs: 1000, error: err },
   'plan.proposed': { planId: 'pl1', content: '1. 读代码' },
   'plan.approved': { planId: 'pl1' },
   'plan.rejected': { planId: 'pl1', feedback: '太复杂' },

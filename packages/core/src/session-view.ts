@@ -149,6 +149,19 @@ export interface TurnView {
   readonly retryable: boolean | undefined
   /** 本轮触发的限额（`turn.limit_reached`）；轮次随后仍以失败或完成结束。 */
   readonly limitReached: { readonly limit: keyof RunLimits; readonly value: number } | undefined
+  /**
+   * 模型请求失败、正在等待重试（`model.retry`，M1-14a）；下一步开始或本轮结束时清除。
+   * `at` 为事件时间，界面据此与 `delayMs` 显示剩余等待。
+   */
+  readonly retry: RetryView | undefined
+}
+
+export interface RetryView {
+  readonly attempt: number
+  readonly maxRetries: number
+  readonly delayMs: number
+  readonly error: ErrorInfo
+  readonly at: number
 }
 
 export interface RunView {
@@ -431,6 +444,12 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return updateTurn(view, event, (turn) =>
         turn.status === 'running' ? { ...turn, limitReached: { ...event.payload } } : undefined,
       )
+    case 'model.retry':
+      return updateTurn(view, event, (turn) =>
+        turn.status === 'running'
+          ? { ...turn, retry: { ...event.payload, at: event.ts } }
+          : undefined,
+      )
 
     case 'step.started': {
       const { stepId } = event
@@ -440,6 +459,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
           ? undefined
           : {
               ...turn,
+              retry: undefined,
               stepCount: turn.stepCount + 1,
               step: {
                 stepId,
@@ -553,6 +573,7 @@ function newTurn(turnId: string, ts: number): TurnView {
     error: undefined,
     retryable: undefined,
     limitReached: undefined,
+    retry: undefined,
   }
 }
 
@@ -586,7 +607,9 @@ function endTurn(
   patch: Partial<TurnView> & { status: Exclude<TurnStatus, 'running'> },
 ): SessionView | undefined {
   return updateTurn(view, event, (turn) =>
-    turn.status === 'running' ? { ...turn, ...patch, endedAt: event.ts } : undefined,
+    turn.status === 'running'
+      ? { ...turn, ...patch, retry: undefined, endedAt: event.ts }
+      : undefined,
   )
 }
 
