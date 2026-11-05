@@ -18,6 +18,9 @@
  * - 检查点（M1-12b）：`host.init` 带 `checkpoints` 且注入了 `openCheckpoints` 时，每轮开始与执行命令前
  *   在项目的影子仓库中创建（`checkpoints.ts`）；否则不创建。
  *
+ * 系统提示词（M1-13b）：`buildSystemPrompt` 组装基础提示词、`host.init` 的自定义说明与环境信息（操作系统、
+ * `registerTools` 给出的 shell、工作区、当前日期）。
+ *
  * 运行时与模型解析由入口注入，M1 换成 pi 适配器时这里不改。不依赖 Electron。
  */
 import {
@@ -27,6 +30,8 @@ import {
   createToolRegistry,
   DEFAULT_PERMISSION_GUARDS,
   presetRules,
+  buildSystemPrompt,
+  operatingSystemName,
   toolOutputBudget,
   type AgentRunHandle,
   type AgentRuntime,
@@ -87,14 +92,35 @@ export interface AgentHostOptions {
   readonly now?: () => number
   /** 权限规则中的路径与命令是否不区分大小写（Windows）。默认 false。 */
   readonly caseInsensitive?: boolean
-  /** 注册工作区可用的工具（M1-11a）；省略或没有注册工具时运行不带工具。 */
-  readonly registerTools?: (registry: ToolRegistry, workspacePath: string) => void | Promise<void>
+  /**
+   * 注册工作区可用的工具（M1-11a）；省略或没有注册工具时运行不带工具。可以返回工具的环境信息
+   * （`run_command` 使用的 shell），写入系统提示词（M1-13b）。
+   */
+  readonly registerTools?: (
+    registry: ToolRegistry,
+    workspacePath: string,
+  ) => void | ToolEnvironment | Promise<void | ToolEnvironment>
+  /** 操作系统（`process.platform` 的值），写入系统提示词；默认当前进程的。 */
+  readonly platform?: string
   /** 打开项目的影子仓库（M1-12b，`@nexus/checkpoint` 的 `openShadowRepo`）；省略时不创建检查点。 */
   readonly openCheckpoints?: OpenShadowRepo
   /** 工具流水线的日志，默认不记录。 */
   readonly log?: Logger
   /** 记录异常（如排队的输入执行失败）。 */
   readonly onError?: (error: unknown) => void
+}
+
+/** 工具的环境信息（M1-13b）。 */
+export interface ToolEnvironment {
+  /** `run_command` 使用的 shell（`describeShell`）。 */
+  readonly shell?: string
+}
+
+/** 本地日期 `YYYY-MM-DD`。 */
+function localDate(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 export interface AgentHost {
@@ -157,8 +183,19 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       init.modelConfig,
     )
     const registry = createToolRegistry()
-    await options.registerTools?.(registry, init.workspacePath)
+    const toolEnvironment = (await options.registerTools?.(registry, init.workspacePath)) ?? {}
     const hasTools = registry.list().length > 0
+    // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息
+    const systemPrompt = buildSystemPrompt({
+      tools: hasTools,
+      environment: {
+        os: operatingSystemName(options.platform ?? process.platform),
+        ...(hasTools && toolEnvironment.shell ? { shell: toolEnvironment.shell } : {}),
+        workspacePath: init.workspacePath,
+        date: localDate(now()),
+      },
+      ...(init.instructions ? { userInstructions: init.instructions } : {}),
+    })
     const toolPipeline = hasTools
       ? createToolPipeline({
           registry,
@@ -181,6 +218,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       runtime,
       model,
       limits: init.limits,
+      systemPrompt,
       signal: shutdown.signal,
       createId: options.createId,
       now,

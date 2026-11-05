@@ -142,6 +142,8 @@ const supervisor = createHostSupervisor({
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
   resolvePermissionRules: (sessionId) => permissions.rulesForSession(sessionId),
+  // 自定义说明（M1-13b）：加入系统提示词；修改后在下次启动宿主时生效
+  resolveInstructions: () => settings.instructions(),
   // 检查点（M1-12b）：每个项目一个影子仓库，会话各用自己的引用
   resolveCheckpoints: (sessionId) => checkpointLocation(paths.checkpoints, storage, sessionId),
   requestApproval: (sessionId, runId, request) => approvals.request(sessionId, runId, request),

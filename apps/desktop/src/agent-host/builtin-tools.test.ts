@@ -9,7 +9,8 @@ describe('createBuiltinTools', () => {
     const selectShell = vi.fn(async () => shell)
     const register = createBuiltinTools({ binDir: '/app/out/bin', selectShell })
     const first = createToolRegistry()
-    await register(first)
+    // 返回 shell 的名称，写入系统提示词（M1-13b）
+    await expect(register(first)).resolves.toEqual({ shell: 'bash' })
     expect(first.list().map((t) => [t.name, t.category])).toEqual([
       ['read_file', 'read'],
       ['list_dir', 'read'],

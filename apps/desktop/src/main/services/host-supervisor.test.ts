@@ -414,6 +414,17 @@ describe('startHost', () => {
     expect(host.inits).toEqual([{ ...init, checkpoints }])
   })
 
+  it('passes the custom instructions in host.init (M1-13b)', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host, { resolveInstructions: () => 'Use pnpm.' })
+    await supervisor.startHost(init)
+    expect(host.inits).toEqual([{ ...init, instructions: 'Use pnpm.' }])
+
+    const none = fakeHost()
+    await setup(none, { resolveInstructions: () => undefined }).supervisor.startHost(init)
+    expect(none.inits).toEqual([init])
+  })
+
   it('records host.start_failed when the permission rules cannot be loaded', async () => {
     const host = fakeHost()
     const { supervisor } = setup(host, {

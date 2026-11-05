@@ -102,6 +102,8 @@ export const HostForMain = defineSide({
          * 省略时按“询问”模式的预设判定。
          */
         permissionRules: z.array(PermissionRule).optional(),
+        /** 用户的自定义说明（M1-13b，设置中的 `instructions`），加入系统提示词。省略表示没有。 */
+        instructions: z.string().min(1).optional(),
         /**
          * 检查点（M1-12b，ADR-0008）：项目的影子仓库目录（应用数据目录中）与这个会话的检查点引用。
          * 省略时不创建检查点。
