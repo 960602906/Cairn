@@ -85,5 +85,6 @@
   "changes.already_reverted": "这处改动已经撤销过了",
   "changes.conflict": "{{path}} 在改动之后又被修改过（或较新的改动没有一起撤销），无法撤销",
   "changes.blob_missing": "找不到 {{path}} 改动前的内容，无法撤销",
-  "changes.failed": "无法恢复 {{path}}"
+  "changes.failed": "无法恢复 {{path}}",
+  "shell.spawn_failed": "无法启动命令行（{{shell}}）"
 }
