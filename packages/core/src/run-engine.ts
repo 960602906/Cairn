@@ -18,6 +18,12 @@
  *   限额  turn.limit_reached → run.state.changed(→failed) → turn.failed（retryable）
  * ```
  *
+ * 限额（M1-14b，Runtime §10.3）：每次调用模型（`step.started`）前检查最大步数、连续工具失败次数、单轮时长
+ * （不含等待审批的时间）、token 与费用（模型有单价时）。超出时中止运行时，本轮以 `turn.limit_reached` 与
+ * `turn.failed { retryable: true }` 结束；用户“继续”即开始新的一轮，计数重新开始。
+ * 运行时自己拒绝的工具调用（工具不存在、参数非法，`hooks.toolCallRejected`）发出 `tool.requested` 与
+ * `tool.failed`，与执行失败一样计入连续失败。
+ *
  * 模型请求重试（M1-14a，Runtime §10.4）：运行时以可重试的失败结束循环（网络、429、5xx）时，本轮不结束，
  * 发出 `model.retry`，按指数退避等待后调用 `RuntimeSession.retry()` 从失败处继续，运行保持 `thinking`。
  * 等待期间可以停止。重试耗尽、运行时不支持重试、被停止或达到限额时照常结束本轮。
@@ -48,6 +54,7 @@ import { acceptsInput, canTransition, isActiveRunState } from './run-state.js'
 import { TOOL_RESULT_NOTICE } from './system-prompt.js'
 import type { ToolCallObserver, ToolOutcome, ToolPipeline } from './tool-pipeline.js'
 import type { ToolCheckpoints } from './tools.js'
+import { billedTokens, estimateCost } from './usage.js'
 import type {
   AbortSignalLike,
   AgentRuntime,
@@ -184,8 +191,16 @@ interface TurnContext {
   /** 当前步骤的助手消息 id（增量与完成事件共用）。 */
   messageId: string | undefined
   abortReason: 'user' | 'shutdown' | undefined
-  /** M0 只检查最大步数；时长、token、成本限额在 M1-14 加入。 */
-  limitHit: 'maxStepsPerTurn' | undefined
+  /** 触发的限额。 */
+  limitHit: keyof RunLimits | undefined
+  /** 连续失败的工具调用数；成功的调用清零，被拒绝或取消的不计。 */
+  toolErrors: number
+  /** 本轮已用的 token（输入加输出）与估算费用。 */
+  tokens: number
+  cost: number
+  /** 等待审批的累计毫秒数与正在等待的起点（不计入单轮时长）。 */
+  approvalMs: number
+  approvalSince: number | undefined
   /** 已发出轮次结束事件。 */
   ended: boolean
   /** 本轮已重试的次数。 */
@@ -246,6 +261,7 @@ export class RunEngine {
       hooks: {
         beforeToolCall: (call) => this.#beforeToolCall(call),
         executeTool: (call, signal) => this.#executeTool(call, signal),
+        toolCallRejected: (call, error) => this.#toolCallRejected(call, error),
       },
     })
     this.#session.onEvent((event) => this.#onRuntimeEvent(event))
@@ -275,6 +291,11 @@ export class RunEngine {
       messageId: undefined,
       abortReason: undefined,
       limitHit: undefined,
+      toolErrors: 0,
+      tokens: 0,
+      cost: 0,
+      approvalMs: 0,
+      approvalSince: undefined,
       ended: false,
       retries: 0,
       retryPending: undefined,
@@ -423,8 +444,9 @@ export class RunEngine {
     switch (event.type) {
       case 'step.started': {
         if (turn.limitHit) return
-        if (turn.steps >= this.#limits.maxStepsPerTurn) {
-          turn.limitHit = 'maxStepsPerTurn'
+        const limit = this.#exceededLimit(turn)
+        if (limit) {
+          turn.limitHit = limit
           void this.#session!.abort('limit')
           return
         }
@@ -477,7 +499,12 @@ export class RunEngine {
           durationMs: Math.max(0, this.#now() - step.startedAt),
           ...(event.usage ? { usage: event.usage } : {}),
         })
-        if (event.usage) this.#emit('usage.reported', { model: step.model, usage: event.usage })
+        if (event.usage) {
+          this.#emit('usage.reported', { model: step.model, usage: event.usage })
+          turn.tokens += billedTokens(event.usage)
+          const pricing = this.#o.model.profile.pricing
+          if (pricing) turn.cost += estimateCost(event.usage, pricing)
+        }
         turn.step = undefined
         turn.messageId = undefined
         return
@@ -493,6 +520,40 @@ export class RunEngine {
         this.#endTurn(turn, event)
         return
     }
+  }
+
+  /** 调用模型前检查限额，返回第一个超出的限额。 */
+  #exceededLimit(turn: TurnContext): keyof RunLimits | undefined {
+    const limits = this.#limits
+    if (turn.steps >= limits.maxStepsPerTurn) return 'maxStepsPerTurn'
+    if (turn.toolErrors >= limits.maxConsecutiveToolErrors) return 'maxConsecutiveToolErrors'
+    if (this.#activeMs(turn) >= limits.maxTurnDurationMs) return 'maxTurnDurationMs'
+    if (limits.maxTokensPerTurn !== undefined && turn.tokens >= limits.maxTokensPerTurn) {
+      return 'maxTokensPerTurn'
+    }
+    if (
+      limits.maxCostPerTurn !== undefined &&
+      this.#o.model.profile.pricing &&
+      turn.cost >= limits.maxCostPerTurn
+    ) {
+      return 'maxCostPerTurn'
+    }
+    return undefined
+  }
+
+  /** 本轮已进行的时间，不含等待审批。 */
+  #activeMs(turn: TurnContext): number {
+    const now = this.#now()
+    const waiting = turn.approvalSince === undefined ? 0 : now - turn.approvalSince
+    return Math.max(0, now - turn.startedAt - turn.approvalMs - waiting)
+  }
+
+  /** 工具调用的结果计入连续失败。 */
+  #countToolResult(status: RuntimeToolResult['status']): void {
+    const turn = this.#turn
+    if (!turn) return
+    if (status === 'ok') turn.toolErrors = 0
+    else if (status === 'error') turn.toolErrors += 1
   }
 
   #endTurn(
@@ -515,7 +576,7 @@ export class RunEngine {
     }
     if (turn.limitHit) {
       const limit = turn.limitHit
-      this.#emit('turn.limit_reached', { limit, value: this.#limits[limit] })
+      this.#emit('turn.limit_reached', { limit, value: this.#limits[limit] ?? 0 })
       this.#fail({ code: RunEngineErrorCode.LimitReached, params: { limit } }, true)
       return
     }
@@ -604,7 +665,17 @@ export class RunEngine {
       default:
         this.#emit('tool.failed', { toolCallId, error: outcome.error })
     }
+    this.#countToolResult(outcome.status)
     return { status: outcome.status, content: outcome.content }
+  }
+
+  #toolCallRejected(call: RuntimeToolCall, error: ErrorInfo): void {
+    const turn = this.#turn
+    if (!turn || turn.ended) return
+    if (this.#state === 'thinking') this.#transition('tooling')
+    this.#emit('tool.requested', { toolCallId: call.id, name: call.name, input: call.input })
+    this.#emit('tool.failed', { toolCallId: call.id, error })
+    this.#countToolResult('error')
   }
 
   /** 并行的多个调用可能同时等待审批：第一个开始时进入、最后一个结束时离开 `awaiting_approval`。 */
@@ -612,6 +683,12 @@ export class RunEngine {
 
   #awaitingApproval(waiting: boolean): void {
     this.#approvalsPending += waiting ? 1 : -1
+    const turn = this.#turn
+    if (turn && waiting && this.#approvalsPending === 1) turn.approvalSince = this.#now()
+    if (turn && !waiting && this.#approvalsPending === 0 && turn.approvalSince !== undefined) {
+      turn.approvalMs += this.#now() - turn.approvalSince
+      turn.approvalSince = undefined
+    }
     if (waiting && this.#approvalsPending === 1 && this.#state === 'tooling') {
       this.#transition('awaiting_approval')
     } else if (!waiting && this.#approvalsPending === 0 && this.#state === 'awaiting_approval') {

@@ -150,6 +150,24 @@ describe('兼容参数进入 pi 的模型定义', () => {
     expect(hostModelConfig(provider, 'missing')).toBeUndefined()
   })
 
+  it('模型的单价传给宿主与运行时', () => {
+    const provider = proxy()
+    const pricing = { inputPerMillion: 0.5, outputPerMillion: 2 }
+    const config = hostModelConfig(
+      { ...provider, models: provider.models.map((m) => ({ ...m, pricing })) },
+      'deepseek-flash',
+    )!
+    expect(config.profile.pricing).toEqual(pricing)
+    const model = resolveModel({ providerId: 'gateway', modelId: 'deepseek-flash' }, config)
+    expect(model.profile.pricing).toEqual(pricing)
+    expect(
+      resolveModel(
+        { providerId: 'gateway', modelId: 'deepseek-flash' },
+        hostModelConfig(provider, 'deepseek-flash')!,
+      ).profile.pricing,
+    ).toBeUndefined()
+  })
+
   it('openai 以外的格式忽略兼容参数', () => {
     const config = hostModelConfig(
       { ...providerFromTemplate(template('anthropic')), compat: { thinkingFormat: 'deepseek' } },

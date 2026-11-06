@@ -337,6 +337,48 @@ describe('PiRuntime：失败', () => {
   })
 })
 
+describe('PiRuntime：非法工具调用', () => {
+  const callTurn = (name: string, args: string): MockResponse => ({
+    kind: 'stream',
+    chunks: [sse.toolCall(0, 'call_1', name, args), sse.finish('tool_calls')],
+  })
+  const cases: [string, string, string, string, unknown][] = [
+    ['工具不存在', 'drop_table', '{"order_id":"A"}', 'tool.not_found', { order_id: 'A' }],
+    ['参数不是合法 JSON', 'get_order', '{"order_id":', 'tool.invalid_input', {}],
+    ['参数不符合 schema', 'get_order', '{"id":"A"}', 'tool.invalid_input', { id: 'A' }],
+  ]
+  for (const [title, name, args, code, input] of cases) {
+    it(`${title}：不执行工具，报告给上层，错误作为工具结果回给模型`, async () => {
+      const rejected: unknown[] = []
+      const executeTool = vi.fn()
+      const h = await setup([callTurn(name, args), ANSWER_TURN], {
+        hooks: { executeTool, toolCallRejected: (call, error) => rejected.push({ call, error }) },
+      })
+      await h.session.prompt(user('hi'))
+      expect(executeTool).not.toHaveBeenCalled()
+      expect(h.calls).toEqual([])
+      expect(rejected).toEqual([
+        { call: { id: 'call_1', name, input }, error: { code, params: { name } } },
+      ])
+      const sent = sentMessages(1)
+      expect(sent.at(-1)?.role).toBe('tool')
+      expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'completed' })
+      expect(h.session.exportHistory().map((m) => m.role)).toEqual([
+        'user',
+        'assistant',
+        'tool',
+        'assistant',
+      ])
+    })
+  }
+
+  it('没有 toolCallRejected 钩子时照常继续', async () => {
+    const h = await setup([callTurn('drop_table', '{}'), ANSWER_TURN])
+    await h.session.prompt(user('hi'))
+    expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'completed' })
+  })
+})
+
 describe('PiRuntime：重试', () => {
   const FAIL_500: MockResponse = {
     kind: 'error',

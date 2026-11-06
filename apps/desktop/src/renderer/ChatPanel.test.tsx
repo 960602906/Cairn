@@ -357,6 +357,26 @@ describe('ChatPanel', () => {
       '已达到本轮最多 50 步，可以继续执行。',
     ],
     [
+      '工具连续失败',
+      [
+        ev(12, 'turn.limit_reached', { limit: 'maxConsecutiveToolErrors', value: 5 }, 't2'),
+        ev(13, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }, 't2'),
+        state(14, 'thinking', 'failed'),
+      ],
+      '失败',
+      '工具调用连续失败 5 次，本轮已停止，可以继续执行。',
+    ],
+    [
+      '单轮时长',
+      [
+        ev(12, 'turn.limit_reached', { limit: 'maxTurnDurationMs', value: 600_000 }, 't2'),
+        ev(13, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }, 't2'),
+        state(14, 'thinking', 'failed'),
+      ],
+      '失败',
+      '本轮已运行超过 10 分钟，可以继续执行。',
+    ],
+    [
       '模型失败',
       [
         ev(12, 'turn.failed', { error: { code: 'model.unknown_error' }, retryable: false }, 't2'),

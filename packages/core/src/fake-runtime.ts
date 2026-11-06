@@ -7,6 +7,8 @@
  * - `tool`：流式输出可选的推理与文本，请求一次工具调用，经 `hooks` 放行与执行后进入下一步；
  * - `tools`：同上，一次请求多个工具调用。与 pi 相同（Runtime §6.2）：全部是可并行的工具（`parallel`）时
  *   并行执行，否则按顺序执行；结果按调用顺序进入历史；
+ *   调用带 `rejectedWith`（错误码）时模拟运行时自己拒绝的调用（工具不存在、参数非法）：不经 `hooks` 执行，
+ *   经 `hooks.toolCallRejected` 报告，错误作为工具结果进入历史；
  * - `reply`：流式输出推理与文本，作为最终回复结束本轮；
  * - `fail`：模拟模型请求失败，以 `loop.ended { outcome: 'failed' }` 结束循环。之后 `retry()` 从下一步继续；
  *   `fail` 是最后一步时，`retry()` 再次以同样的失败结束（持续失败）。
@@ -38,6 +40,7 @@ export type FakeStep =
       readonly kind: 'tool'
       readonly name: string
       readonly input: unknown
+      readonly rejectedWith?: string
       readonly text?: string
       readonly reasoning?: string
       readonly usage?: TokenUsage
@@ -54,6 +57,8 @@ export type FakeStep =
 export interface FakeToolCall {
   readonly name: string
   readonly input: unknown
+  /** 运行时拒绝这次调用时的错误码，如 `tool.not_found`、`tool.invalid_input`。 */
+  readonly rejectedWith?: string
 }
 
 export interface FakeTurn {
@@ -130,6 +135,7 @@ export function parseFakeScript(input: unknown): FakeScriptResult {
               errors.push(`${sat}.name: 必须是非空字符串`)
             }
             if (!('input' in step)) errors.push(`${sat}.input: 缺失`)
+            checkOptionalString(step.rejectedWith, `${sat}.rejectedWith`, errors)
             checkOptionalString(step.text, `${sat}.text`, errors)
             checkOptionalString(step.reasoning, `${sat}.reasoning`, errors)
             checkUsage(step.usage, sat, errors)
@@ -147,6 +153,8 @@ export function parseFakeScript(input: unknown): FakeScriptResult {
                   !('input' in c)
                 ) {
                   errors.push(`${sat}.calls[${i}]: 需要非空 name 与 input`)
+                } else {
+                  checkOptionalString(c.rejectedWith, `${sat}.calls[${i}].rejectedWith`, errors)
                 }
               })
             }
@@ -344,6 +352,8 @@ class FakeSession implements RuntimeSession {
     this.#checkAborted()
     this.#emit({ type: 'step.started', model })
     this.#inStep = true
+    // 监听者可能在 step.started 时就中止（例如达到限额）
+    this.#checkAborted()
 
     if (step.kind === 'fail') {
       this.#inStep = false
@@ -402,9 +412,13 @@ class FakeSession implements RuntimeSession {
     )
     const results: RuntimeToolResult[] = []
     if (parallel) {
-      results.push(...(await Promise.all(calls.map((c) => this.#runTool(c, signal)))))
+      results.push(
+        ...(await Promise.all(calls.map((c, i) => this.#runTool(c, requested[i]!, signal)))),
+      )
     } else {
-      for (const call of calls) results.push(await this.#runTool(call, signal))
+      for (const [i, call] of calls.entries()) {
+        results.push(await this.#runTool(call, requested[i]!, signal))
+      }
     }
     calls.forEach((call, i) => {
       const result = results[i]!
@@ -419,7 +433,16 @@ class FakeSession implements RuntimeSession {
     return false
   }
 
-  async #runTool(call: RuntimeToolCall, signal: AbortSignalLike): Promise<RuntimeToolResult> {
+  async #runTool(
+    call: RuntimeToolCall,
+    script: FakeToolCall,
+    signal: AbortSignalLike,
+  ): Promise<RuntimeToolResult> {
+    if (script.rejectedWith !== undefined) {
+      const code = script.rejectedWith
+      this.#init.hooks.toolCallRejected?.(call, { code, params: { name: call.name } })
+      return { status: 'error', content: [{ type: 'text', text: `Tool call rejected: ${code}` }] }
+    }
     const gate = await this.#init.hooks.beforeToolCall(call)
     if (gate.action === 'deny') {
       return { status: 'denied', content: [{ type: 'text', text: gate.reason }] }
