@@ -109,14 +109,16 @@ describe('ToolStep：read_file', () => {
 
   it('展开后用代码卡片显示，行号从读取位置开始，附带说明', async () => {
     const user = userEvent.setup()
-    step({ name: 'read_file', tool: tool({ name: 'read_file', input: { path: 'src/a.ts' }, output }) })
+    step({
+      name: 'read_file',
+      tool: tool({ name: 'read_file', input: { path: 'src/a.ts' }, output }),
+    })
     expect(screen.queryByRole('figure')).toBeNull()
     await user.click(toggle())
     const card = screen.getByRole('figure', { name: '代码：src/a.ts' })
-    expect([...card.querySelectorAll('[data-line]')].map((r) => r.getAttribute('data-line'))).toEqual([
-      '3',
-      '4',
-    ])
+    expect(
+      [...card.querySelectorAll('[data-line]')].map((r) => r.getAttribute('data-line')),
+    ).toEqual(['3', '4'])
     expect(screen.getByText('[Showing lines 3-4 of 9.]')).toBeTruthy()
   })
 
@@ -124,7 +126,11 @@ describe('ToolStep：read_file', () => {
     const user = userEvent.setup()
     step({
       name: 'read_file',
-      tool: tool({ name: 'read_file', input: { path: 'a.png' }, output: text('File: a.png | binary') }),
+      tool: tool({
+        name: 'read_file',
+        input: { path: 'a.png' },
+        output: text('File: a.png | binary'),
+      }),
     })
     await user.click(toggle())
     expect(screen.queryByRole('figure')).toBeNull()
@@ -149,7 +155,9 @@ describe('terminalData', () => {
       omittedChars: 0,
       running: true,
     })
-    expect(terminalData(null, tool({ display: display({ omittedAt: 4 }) }), undefined)).toMatchObject({
+    expect(
+      terminalData(null, tool({ display: display({ omittedAt: 4 }) }), undefined),
+    ).toMatchObject({
       omittedAt: 4,
       shell: 'bash',
     })

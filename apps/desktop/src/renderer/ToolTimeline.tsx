@@ -83,7 +83,6 @@ const ACTIONS: ReadonlySet<string> = new Set([
   'run_command',
 ])
 
-
 function formatInput(input: unknown): string {
   try {
     return JSON.stringify(input, null, 2) ?? String(input)

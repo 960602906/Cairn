@@ -69,10 +69,13 @@ const colorOf = (color: AnsiColor) => (typeof color === 'number' ? `var(--term-c
 
 function segmentStyle(segment: AnsiSegment): CSSProperties {
   const { style } = segment
-  let fg = style.fg !== undefined ? colorOf(style.fg) : segment.stderr ? 'var(--term-err)' : undefined
+  let fg =
+    style.fg !== undefined ? colorOf(style.fg) : segment.stderr ? 'var(--term-err)' : undefined
   let bg = style.bg !== undefined ? colorOf(style.bg) : undefined
   if (style.inverse) [fg, bg] = [bg ?? 'var(--term-bg)', fg ?? 'var(--term-fg)']
-  const decoration = [style.underline && 'underline', style.strike && 'line-through'].filter(Boolean)
+  const decoration = [style.underline && 'underline', style.strike && 'line-through'].filter(
+    Boolean,
+  )
   return {
     ...(fg ? { color: fg } : {}),
     ...(bg ? { background: bg } : {}),
@@ -137,7 +140,9 @@ function Badge({
   return (
     <span
       className={cn(base, 'tabular font-mono', ok ? 'text-term-ok' : 'text-term-c1')}
-      style={{ background: `color-mix(in srgb, var(${ok ? '--term-ok' : '--term-c1'}) 14%, transparent)` }}
+      style={{
+        background: `color-mix(in srgb, var(${ok ? '--term-ok' : '--term-c1'}) 14%, transparent)`,
+      }}
     >
       {ok ? (
         <Check aria-hidden className="size-3" strokeWidth={3} />
@@ -166,7 +171,10 @@ export function TerminalCard({
   className,
 }: TerminalCardProps) {
   const { t } = useTranslation('session')
-  const rows = useMemo(() => buildRows(chunks, omittedChars, omittedAt), [chunks, omittedChars, omittedAt])
+  const rows = useMemo(
+    () => buildRows(chunks, omittedChars, omittedAt),
+    [chunks, omittedChars, omittedAt],
+  )
   const plain = useMemo(() => stripAnsi(chunks.map((c) => c.text).join('')), [chunks])
   const tests = useMemo(() => (running ? undefined : summarizeTests(plain)), [plain, running])
   const scroller = useRef<HTMLDivElement>(null)
@@ -199,7 +207,10 @@ export function TerminalCard({
   return (
     <figure
       aria-label={t('terminal.label', { command })}
-      className={cn('my-1 overflow-hidden rounded-card bg-term-bg text-term-fg shadow-hair2', className)}
+      className={cn(
+        'my-1 overflow-hidden rounded-card bg-term-bg text-term-fg shadow-hair2',
+        className,
+      )}
     >
       <figcaption className="flex h-[38px] items-center gap-2 border-b-[0.5px] border-term-line pr-1.5 pl-3.5 font-mono text-[12.5px]">
         <span aria-hidden className="shrink-0 text-term-acc select-none">
@@ -252,11 +263,17 @@ export function TerminalCard({
         <div className="flex h-8 items-center gap-3 border-t-[0.5px] border-term-line px-3.5 text-note text-term-dim">
           {tests && (
             <span className="tabular flex shrink-0 items-center gap-2">
-              <span className="text-term-ok">{t('terminal.tests.passed', { count: tests.passed })}</span>
+              <span className="text-term-ok">
+                {t('terminal.tests.passed', { count: tests.passed })}
+              </span>
               {tests.failed > 0 && (
-                <span className="text-term-c1">{t('terminal.tests.failed', { count: tests.failed })}</span>
+                <span className="text-term-c1">
+                  {t('terminal.tests.failed', { count: tests.failed })}
+                </span>
               )}
-              {tests.skipped > 0 && <span>{t('terminal.tests.skipped', { count: tests.skipped })}</span>}
+              {tests.skipped > 0 && (
+                <span>{t('terminal.tests.skipped', { count: tests.skipped })}</span>
+              )}
             </span>
           )}
           {footer && (

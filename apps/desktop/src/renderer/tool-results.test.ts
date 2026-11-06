@@ -64,15 +64,17 @@ describe('parseRunCommandOutput', () => {
       ),
     ).toMatchObject({ exitCode: null, timedOut: true, durationMs: 3000 })
     expect(
-      parseRunCommandOutput('Cancelled; the command and its child processes were terminated.\nDuration: 0.1 s'),
+      parseRunCommandOutput(
+        'Cancelled; the command and its child processes were terminated.\nDuration: 0.1 s',
+      ),
     ).toMatchObject({ aborted: true })
     expect(parseRunCommandOutput('Terminated by signal SIGKILL.\nDuration: 1 s')).toMatchObject({
       signal: 'SIGKILL',
       exitCode: null,
     })
-    expect(parseRunCommandOutput('Terminated by signal unknown.\nDuration: 1 s')).not.toHaveProperty(
-      'signal',
-    )
+    expect(
+      parseRunCommandOutput('Terminated by signal unknown.\nDuration: 1 s'),
+    ).not.toHaveProperty('signal')
   })
 
   it('格式对不上时返回 undefined', () => {

@@ -13,7 +13,9 @@ type Element = NonNullable<ExtraProps['node']>
 type ElementContent = Element['children'][number]
 
 const textOf = (nodes: readonly ElementContent[]): string =>
-  nodes.map((n) => (n.type === 'text' ? n.value : n.type === 'element' ? textOf(n.children) : '')).join('')
+  nodes
+    .map((n) => (n.type === 'text' ? n.value : n.type === 'element' ? textOf(n.children) : ''))
+    .join('')
 
 /** 代码块的语言、重点行与正文；结构不是 `<pre><code>` 时返回 undefined。 */
 export function codeBlockOf(pre: Element | undefined) {

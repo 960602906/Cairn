@@ -28,7 +28,10 @@ export const cairnTheme: ThemeRegistration = {
   fg: tk('v'),
   bg: 'var(--code-bg)',
   tokenColors: [
-    { scope: ['comment', 'punctuation.definition.comment'], settings: { foreground: tk('c'), fontStyle: 'italic' } },
+    {
+      scope: ['comment', 'punctuation.definition.comment'],
+      settings: { foreground: tk('c'), fontStyle: 'italic' },
+    },
     {
       scope: ['punctuation', 'meta.brace', 'keyword.operator', 'meta.separator'],
       settings: { foreground: tk('p') },
@@ -153,7 +156,10 @@ const toToken = (token: ThemedToken): HighlightToken => {
 }
 
 /** 已经高亮过的结果（同步读取缓存）。 */
-export function cachedHighlight(code: string, language: LanguageInfo): HighlightedLines | undefined {
+export function cachedHighlight(
+  code: string,
+  language: LanguageInfo,
+): HighlightedLines | undefined {
   return cache.get(`${language.id}\0${code}`)
 }
 

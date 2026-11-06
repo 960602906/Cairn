@@ -286,7 +286,8 @@ export class AnsiParser {
     }
     const stderr = stream === 'stderr'
     scan(input, {
-      text: (t) => this.line.add({ text: t, style: { ...this.style }, ...(stderr ? { stderr } : {}) }),
+      text: (t) =>
+        this.line.add({ text: t, style: { ...this.style }, ...(stderr ? { stderr } : {}) }),
       sgr: (params) => {
         const next = { ...this.style }
         applySgr(next, params)

@@ -138,7 +138,9 @@ describe('Markdown 代码块（M2-06）', () => {
     expect(lineNumbers(card)).toEqual(['1', '2'])
     expect(card.querySelector('[data-line="2"]')!.getAttribute('data-highlighted')).toBe('true')
     expect(screen.getByText('x').tagName).toBe('CODE')
-    await waitFor(() => expect(within(card).getAllByText('const')[0]!.getAttribute('style')).toBeTruthy())
+    await waitFor(() =>
+      expect(within(card).getAllByText('const')[0]!.getAttribute('style')).toBeTruthy(),
+    )
   })
 
   it('没有语言的代码块', () => {
@@ -167,7 +169,12 @@ describe('Markdown 代码块（M2-06）', () => {
             tagName: 'code',
             properties: { className: ['x'] },
             children: [
-              { type: 'element', tagName: 'b', properties: {}, children: [{ type: 'text', value: 'a' }] },
+              {
+                type: 'element',
+                tagName: 'b',
+                properties: {},
+                children: [{ type: 'text', value: 'a' }],
+              },
               { type: 'comment', value: 'c' },
             ],
           },

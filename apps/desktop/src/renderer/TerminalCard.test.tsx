@@ -154,7 +154,10 @@ describe('TerminalCard：底部汇总', () => {
   })
 
   it('全部通过时只显示通过数；只有 Shell 时没有分隔符；什么都没有时不显示', () => {
-    const c = card({ chunks: [out('test result: ok. 3 passed; 0 failed; 0 ignored\n')], shell: 'cmd.exe' })
+    const c = card({
+      chunks: [out('test result: ok. 3 passed; 0 failed; 0 ignored\n')],
+      shell: 'cmd.exe',
+    })
     expect(within(c).getByText('3 通过')).toBeTruthy()
     expect(within(c).queryByText(/失败/)).toBeNull()
     expect(within(c).getByText('cmd.exe').textContent).toBe('cmd.exe')
