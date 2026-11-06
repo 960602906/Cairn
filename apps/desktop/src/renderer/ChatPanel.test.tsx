@@ -114,9 +114,36 @@ describe('ChatPanel', () => {
     await open()
     expect(request).toHaveBeenCalledWith('session.subscribe', { sessionId: 's1', afterSeq: 0 })
     expect(screen.getByRole('heading', { level: 2, name: '修复登录' })).toBeTruthy()
-    expect(messages()).toEqual(['你你好', '助手你好！'])
+    expect(messages()).toEqual(['你你好', '助手你好！fake-1'])
     expect(runStatus()).toBe('空闲')
     expect(stopButton()).toBeNull()
+  })
+
+  it('shows turn actions with the configured model name, token count and copy (M2-03)', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const provider = {
+      id: 'fake',
+      kind: 'openai',
+      displayName: '测试供应商',
+      baseUrl: 'https://example.com',
+      models: [{ id: 'fake-1', displayName: '快' }],
+    }
+    const history = [
+      ...HISTORY.slice(0, 6),
+      ev(7, 'usage.reported', { model, usage: { inputTokens: 1200, outputTokens: 34 } }),
+      ev(8, 'turn.completed', { durationMs: 10 }),
+    ]
+    const { open } = setup({
+      history,
+      handlers: { 'settings.get': () => ({ providers: [provider] }) },
+    })
+    await open()
+    expect(await screen.findByText('测试供应商 · 快')).toBeTruthy()
+    expect(screen.getByText(/1,234 tokens/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '复制本轮回复' }))
+    expect(writeText).toHaveBeenCalledWith('你好！')
+    expect(await screen.findByRole('button', { name: '已复制' })).toBeTruthy()
   })
 
   it('uses the list entry until the subscription returns', async () => {
@@ -182,9 +209,9 @@ describe('ChatPanel', () => {
     emit(done)
     expect(messages()).toEqual([
       '你你好',
-      '助手你好！',
+      '助手你好！fake-1',
       '你再说一次',
-      '助手思考过程想想好的，\n你好！[图片]read_file {} 等待执行',
+      '助手思考过程想想好的，\n你好！[图片]read_file {} 等待执行fake-1',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
     expect(runStatus()).toBe('空闲')
@@ -342,7 +369,7 @@ describe('ChatPanel', () => {
     expect(stopButton()).toBeNull()
     expect(screen.getByText('已停止')).toBeTruthy()
     // 已输出的部分保留，并注明未完成
-    expect(messages().at(-1)).toBe('助手说到（回复未完成）')
+    expect(messages().at(-1)).toBe('助手说到（回复未完成）fake-1')
   })
 
   it.each([

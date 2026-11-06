@@ -102,6 +102,7 @@ describe('createSessionView', () => {
       tools: {},
       liveToolOutput: {},
       usage: { inputTokens: 0, outputTokens: 0 },
+      usageByTurn: {},
     })
   })
 })
@@ -188,6 +189,12 @@ describe('reduceSession：一轮完整对话', () => {
     expect(view.runs[RUN]?.usage).toEqual({ inputTokens: 10, outputTokens: 3 })
   })
 
+  it('按轮次累计用量（M2-03）', () => {
+    const turns = Object.keys(view.usageByTurn)
+    expect(turns).toHaveLength(1)
+    expect(view.usageByTurn[turns[0]!]).toEqual({ inputTokens: 10, outputTokens: 3 })
+  })
+
   it('sessionStatus 为 idle', () => {
     expect(sessionStatus(view)).toBe('idle')
   })
@@ -236,8 +243,9 @@ describe('reduceSession：幂等与乱序', () => {
     const view2 = reduceSessionEvents(start, events2)
     expect(view2.runs).toEqual({})
     expect(view2.lastSeq).toBe(5)
-    // 会话级用量仍然统计。
+    // 会话级用量仍然统计；没有 turnId 的用量不计入任何一轮。
     expect(view2.usage).toEqual({ inputTokens: 1, outputTokens: 1 })
+    expect(view2.usageByTurn).toEqual({})
   })
 
   it('未处理的事件类型只推进 lastSeq', () => {

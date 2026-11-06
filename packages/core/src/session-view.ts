@@ -200,6 +200,8 @@ export interface SessionView {
   readonly liveToolOutput: Readonly<Record<string, LiveToolOutputView>>
   /** 会话累计用量（只统计 `usage.reported`，不重复计入 `step.completed.usage`）。 */
   readonly usage: TokenUsage
+  /** 各轮的用量（M2-03，界面在轮次操作中显示 token 数），按 turnId 索引；没有 turnId 的用量不计入。 */
+  readonly usageByTurn: Readonly<Record<string, TokenUsage>>
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -218,6 +220,7 @@ export function createSessionView(sessionId: string): SessionView {
     tools: {},
     liveToolOutput: {},
     usage: ZERO_USAGE,
+    usageByTurn: {},
   }
 }
 
@@ -505,7 +508,19 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         ...run,
         usage: addUsage(run.usage, usage),
       }))
-      return { ...(withRun ?? view), usage: addUsage(view.usage, usage) }
+      const turnId = event.turnId
+      return {
+        ...(withRun ?? view),
+        usage: addUsage(view.usage, usage),
+        ...(turnId === undefined
+          ? {}
+          : {
+              usageByTurn: {
+                ...view.usageByTurn,
+                [turnId]: addUsage(view.usageByTurn[turnId] ?? ZERO_USAGE, usage),
+              },
+            }),
+      }
     }
 
     case 'tool.requested': {

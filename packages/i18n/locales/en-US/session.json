@@ -94,5 +94,8 @@
   "providers.title": "Model providers",
   "providers.empty": "No models yet. Click to add one",
   "providers.default": "Default: {{model}}",
-  "providers.noDefault": "No default model selected"
+  "providers.noDefault": "No default model selected",
+  "message.copy": "Copy this turn's reply",
+  "message.copied": "Copied",
+  "message.tokens": "{{formatted}} tokens"
 }
