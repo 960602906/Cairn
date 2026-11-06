@@ -95,10 +95,12 @@ for (const decision of ['allow', 'deny'] as const) {
       await expect(card.getByText('原因: 这类操作默认需要审批')).toBeVisible()
 
       if (decision === 'allow') {
-        await card.getByRole('button', { name: '允许一次' }).click()
+        await card.getByRole('button', { name: '运行一次' }).click()
       } else {
-        await card.getByLabel(/拒绝说明/).fill('不要运行命令')
-        await card.getByRole('button', { name: '拒绝' }).click()
+        await card.getByRole('button', { name: /不运行，告诉 Agent/ }).click()
+        const feedback = card.getByLabel('告诉 Agent 怎么做（可选）')
+        await feedback.fill('不要运行命令')
+        await feedback.press('Enter')
       }
       await expect(card).toHaveCount(0)
       await expect(window.getByText(REPLY.trim())).toBeVisible()

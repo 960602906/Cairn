@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { INPUT_SUMMARY_CHARS, previewLines, summarizeInput } from './ToolCallCard.js'
+import {
+  formatDuration,
+  INPUT_SUMMARY_CHARS,
+  previewLines,
+  summarizeInput,
+} from './ToolTimeline.js'
 
 describe('summarizeInput', () => {
   it('prefers the command, path or search fields', () => {
     expect(summarizeInput({ path: 'src/a.ts', content: 'x' })).toBe('src/a.ts')
-    expect(summarizeInput({ pattern: 'TODO', path: 'src' })).toBe('src')
+    expect(summarizeInput({ pattern: 'TODO', path: 'src' })).toBe('TODO')
     expect(summarizeInput({ command: 'npm\n  test', path: '.' })).toBe('npm test')
   })
 
@@ -30,5 +35,13 @@ describe('previewLines', () => {
     const text = 'a\nb\nc\nd'
     expect(previewLines(text, 'start', 2)).toEqual({ lines: 'a\nb', omitted: 2 })
     expect(previewLines(text, 'end', 2)).toEqual({ lines: 'c\nd', omitted: 2 })
+  })
+})
+
+describe('formatDuration', () => {
+  it('uses milliseconds below one second, otherwise seconds', () => {
+    expect(formatDuration(5)).toBe('5ms')
+    expect(formatDuration(999.4)).toBe('999ms')
+    expect(formatDuration(1234)).toBe('1.2s')
   })
 })

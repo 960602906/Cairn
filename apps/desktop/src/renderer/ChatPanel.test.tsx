@@ -94,10 +94,9 @@ function setup({
   return { request, store, emit, open }
 }
 
+/** 消息流中的消息（列表的直接子项；工具时间线等嵌套列表不算）。 */
 const messages = () =>
-  within(screen.getByRole('list', { name: '消息' }))
-    .queryAllByRole('listitem')
-    .map((li) => li.textContent)
+  [...screen.getByRole('list', { name: '消息' }).children].map((li) => li.textContent)
 const runStatus = () => screen.getByRole('status').textContent
 const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
 /** 运行中发送按钮换成停止按钮，此时为 null。 */
@@ -213,7 +212,7 @@ describe('ChatPanel', () => {
       '你你好',
       '助手你好！fake-1',
       '你再说一次',
-      '助手思考过程想想好的，\n你好！[图片]read_file {} 等待执行fake-1',
+      '助手思考过程想想好的，\n你好！[图片]读取{}等待执行fake-1',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
     expect(runStatus()).toBe('空闲')
@@ -509,10 +508,19 @@ describe('tool calls and undo turn', () => {
       ),
     })
     await open()
-    expect(card().textContent).toContain('run_command npm test 完成')
-    expect(within(card()).getByText(/line 1/).textContent).toBe(lines(5))
-    expect(within(card()).getByText('……还有 3 行')).toBeTruthy()
+    expect(card().textContent).toBe('运行npm test完成 5ms')
+    expect(card().dataset.status).toBe('completed')
+    const row = within(card()).getByRole('button')
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+    expect(within(card()).queryByText(/line 1/)).toBeNull()
+    // 展开后显示参数与完整输出
+    await userEvent.click(row)
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+    expect(within(card()).getByText(/line 1/).textContent).toBe(lines(8))
+    expect(within(card()).getByText(/"command": "npm test"/)).toBeTruthy()
     expect(within(card()).getByText('（输出过长，交给模型时已截断）')).toBeTruthy()
+    await userEvent.click(row)
+    expect(within(card()).queryByText(/line 1/)).toBeNull()
   })
 
   it('shows the last live output lines while running and the error when failed', async () => {
