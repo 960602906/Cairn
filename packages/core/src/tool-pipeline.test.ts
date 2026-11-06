@@ -123,6 +123,27 @@ describe('ToolPipeline：成功路径', () => {
     expect(h.log).toEqual(['started', 'stdout:writing\n', 'stderr:warn\n'])
   })
 
+  it('工具给出的 display 原样带出（M2-06）', async () => {
+    const display = {
+      kind: 'terminal' as const,
+      exitCode: 0,
+      timedOut: false,
+      aborted: false,
+      durationMs: 1,
+      shell: 'bash',
+      cwd: '/work',
+      chunks: [],
+      omittedChars: 0,
+    }
+    const h = setup([tool({ execute: async () => ({ content: text('ok'), display }) })])
+    const outcome = await createToolPipeline(h.options).run(
+      call({ path: 'a.ts' }),
+      signal(),
+      h.observer,
+    )
+    expect(outcome).toEqual({ status: 'ok', content: text('ok'), truncated: false, display })
+  })
+
   it('7. 执行命令前创建检查点并发出 checkpoint.created；不可用时直接执行', async () => {
     const h = setup([tool({ name: 'run_command', category: 'execute' })])
     const pipeline = createToolPipeline(h.options)
@@ -183,6 +204,7 @@ describe('ToolPipeline：成功路径', () => {
       h.observer,
     )
     expect(outcome).toMatchObject({ status: 'ok', truncated: true })
+    expect(outcome).not.toHaveProperty('display')
     const result = (outcome as unknown as { content: { text: string }[] }).content[0]!.text
     // 按估算的 token：开头 3 个（12 个英文字符）、结尾 2 个（8 个）
     expect(result.startsWith(`${'a'.repeat(12)}\n\n[... 80 characters truncated:`)).toBe(true)

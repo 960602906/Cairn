@@ -30,6 +30,35 @@ import { CheckpointReason } from './checkpoints.js'
 /** 事件信封的 schema 版本（架构 §7.1 `EventEnvelope.v`）。 */
 export const EVENT_SCHEMA_VERSION = 1 as const
 
+/** 工具输出的一段（标准输出或标准错误）。 */
+export const ToolOutputChunk = z.object({
+  stream: z.enum(['stdout', 'stderr']),
+  text: z.string(),
+})
+export type ToolOutputChunk = z.infer<typeof ToolOutputChunk>
+
+/**
+ * 只给界面显示的工具结果（M2-06），不进入发给模型的历史。`terminal`：`run_command` 的原始输出
+ * （保留 ANSI 控制符，用于着色）与执行信息；输出过长时保留开头和结尾，`omittedAt` 是省略处之后
+ * 第一段的下标。
+ */
+export const ToolDisplay = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('terminal'),
+    exitCode: z.number().int().nullable(),
+    signal: z.string().optional(),
+    timedOut: z.boolean(),
+    aborted: z.boolean(),
+    durationMs: DurationMs,
+    shell: z.string(),
+    cwd: z.string(),
+    chunks: z.array(ToolOutputChunk),
+    omittedChars: z.number().int().nonnegative(),
+    omittedAt: z.number().int().nonnegative().optional(),
+  }),
+])
+export type ToolDisplay = z.infer<typeof ToolDisplay>
+
 /** 审批的决定（架构 §10.4）：允许一次、本会话始终允许、本项目始终允许、拒绝。 */
 export const ApprovalDecision = z.enum(['allow_once', 'allow_session', 'allow_project', 'deny'])
 export type ApprovalDecision = z.infer<typeof ApprovalDecision>
@@ -141,6 +170,8 @@ const payloadSchemas = {
     output: z.array(ContentPart),
     truncated: z.boolean().optional(),
     durationMs: DurationMs,
+    /** 只给界面显示（M2-06）。 */
+    display: ToolDisplay.optional(),
   }),
   'tool.failed': z.object({ toolCallId: Id, error: ErrorInfo }),
   'tool.cancelled': z.object({

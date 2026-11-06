@@ -1,7 +1,11 @@
 /**
  * 子进程环境变量清洗（ADR-0012）：去掉密钥与应用内部变量，设 `PYTHONUTF8=1`（Python 默认按系统代码页输出，
- * 中文系统上是 GBK）。Windows 的环境变量名不区分大小写，判断一律忽略大小写。
+ * 中文系统上是 GBK）与 `NO_COLOR=1`（少输出 ANSI 颜色，M2-06；仍有颜色时由 `run_command` 在交给模型前去掉）。
+ * Windows 的环境变量名不区分大小写，判断一律忽略大小写。
  */
+
+/** 总是设置的变量（替换任何大小写的已有值）。 */
+const FIXED: Readonly<Record<string, string>> = { PYTHONUTF8: '1', NO_COLOR: '1' }
 
 /** 名称像密钥的变量：以 `KEY`、`TOKEN`、`PASSWORD` 等结尾，或含 `SECRET`。 */
 const SENSITIVE_NAME =
@@ -27,9 +31,8 @@ export function sanitizeEnv(
   for (const [name, value] of Object.entries(env)) {
     if (value === undefined || isSensitiveEnvName(name)) continue
     const upper = name.toUpperCase()
-    if (remove.has(upper) || upper === 'PYTHONUTF8') continue
+    if (remove.has(upper) || upper in FIXED) continue
     result[name] = value
   }
-  result['PYTHONUTF8'] = '1'
-  return result
+  return { ...result, ...FIXED }
 }

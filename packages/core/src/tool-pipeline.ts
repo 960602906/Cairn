@@ -18,7 +18,7 @@
  * （M1-06）通过接口注入。流水线只给出结果，`tool.*` 事件由 RunEngine 按结果发出；审批事件由流水线
  * 经 `emit` 发出。
  */
-import type { ContentPart, ErrorInfo, EventPayload } from '@cairn/protocol'
+import type { ContentPart, ErrorInfo, EventPayload, ToolDisplay } from '@cairn/protocol'
 import { TOOL_OUTPUT_MAX_TOKENS, truncateMiddle } from './context-budget.js'
 import type { Logger } from './logger.js'
 import type { ApprovalDecision } from './run-supervisor.js'
@@ -117,7 +117,12 @@ export interface ToolCallObserver {
 
 /** 流水线给出的结果：交给模型的内容，以及事件所需的信息。 */
 export type ToolOutcome =
-  | { readonly status: 'ok'; readonly content: readonly ContentPart[]; readonly truncated: boolean }
+  | {
+      readonly status: 'ok'
+      readonly content: readonly ContentPart[]
+      readonly truncated: boolean
+      readonly display?: ToolDisplay
+    }
   | {
       readonly status: 'error' | 'denied'
       readonly content: readonly ContentPart[]
@@ -438,7 +443,12 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       // 9. 后处理
       const { content, truncated } = truncateOutput(output.content, maxOutputTokens)
       // 10. 返回
-      return { status: 'ok', content, truncated }
+      return {
+        status: 'ok',
+        content,
+        truncated,
+        ...(output.display ? { display: output.display } : {}),
+      }
     } catch (error) {
       if (error instanceof CancelledError || signal.aborted) return cancelled
       if (error instanceof ToolError) {

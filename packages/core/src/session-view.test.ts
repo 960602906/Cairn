@@ -625,11 +625,32 @@ describe('reduceSession：工具调用（M1-05c）', () => {
     expect(v.tools['c1']).toMatchObject({
       status: 'completed',
       output: text('ab'),
+      display: undefined,
       truncated: true,
       durationMs: 3,
     })
     expect(v.liveToolOutput).toEqual({})
     expect(v.lastSeq).toBe(completed.seq)
+  })
+
+  it('tool.completed 的 display 进入工具视图（M2-06）', () => {
+    const { view: v0, ev } = midTurn()
+    const display = {
+      kind: 'terminal' as const,
+      exitCode: 1,
+      timedOut: false,
+      aborted: false,
+      durationMs: 3,
+      shell: 'bash',
+      cwd: '/w',
+      chunks: [{ stream: 'stderr' as const, text: '\x1b[31mfail\x1b[0m' }],
+      omittedChars: 0,
+    }
+    const v = reduceSessionEvents(v0, [
+      ev('tool.requested', { toolCallId: 'c1', name: 'run_command', input: {} }, t),
+      ev('tool.completed', { toolCallId: 'c1', output: text('x'), durationMs: 3, display }, t),
+    ])
+    expect(v.tools['c1']?.display).toEqual(display)
   })
 
   it('只用持久化事件与加上增量归约，结果相同', () => {

@@ -636,6 +636,30 @@ describe('RunEngine：限额与非法工具调用', () => {
     expect(count(events, 'step.started')).toBe(3)
   })
 
+  it('流水线给出的 display 写进 tool.completed，不进入重建的历史（M2-06）', async () => {
+    const display = {
+      kind: 'terminal' as const,
+      exitCode: 0,
+      timedOut: false,
+      aborted: false,
+      durationMs: 1,
+      shell: 'bash',
+      cwd: '/w',
+      chunks: [{ stream: 'stdout' as const, text: '\x1b[32mok\x1b[0m' }],
+      omittedChars: 0,
+    }
+    const pipeline: ToolPipeline = {
+      run: async () => ({ status: 'ok', content: text('ok'), truncated: false, display }),
+    }
+    const { engine, events } = await start(fake({ turns: [{ steps: [tool(), reply] }] }), {
+      toolPipeline: pipeline,
+    })
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(events.find((e) => e.type === 'tool.completed')).toMatchObject({ payload: { display } })
+    const history = rebuildHistory(sequenced('?', events), { runId: 'r1' })
+    expect(JSON.stringify(history)).not.toContain('\\u001b')
+  })
+
   it('token 上限', async () => {
     const usage = { inputTokens: 40, outputTokens: 20 }
     const { engine, events } = await start(
