@@ -65,6 +65,24 @@
   --term-ok: #5ad19a;
   --term-acc: #8aa6ff;
   --term-line: rgba(255, 255, 255, 0.07);
+  /* 终端 ANSI 调色板与标准错误（终端两套主题都是深色，深色主题不再覆盖） */
+  --term-err: #eda7a3;
+  --term-c0: #45474f;
+  --term-c1: #f2716b;
+  --term-c2: #5ad19a;
+  --term-c3: #eeac52;
+  --term-c4: #8aa6ff;
+  --term-c5: #e58fda;
+  --term-c6: #6fd2df;
+  --term-c7: #d8d9de;
+  --term-c8: #6d6f78;
+  --term-c9: #ff8f89;
+  --term-c10: #7fe0b2;
+  --term-c11: #f4c77f;
+  --term-c12: #a9bdff;
+  --term-c13: #f0aee8;
+  --term-c14: #96e2eb;
+  --term-c15: #f4f4f6;
 
   /* 阴影 */
   --sh-1: 0 0 0 0.5px rgba(20, 22, 30, 0.08), 0 1px 2px rgba(20, 22, 30, 0.05);

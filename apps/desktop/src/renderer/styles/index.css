@@ -64,6 +64,7 @@
   --color-term-ok: var(--term-ok);
   --color-term-acc: var(--term-acc);
   --color-term-line: var(--term-line);
+  --color-term-err: var(--term-err);
 
   /* 阴影（§3）与 0.5px 发丝描边（§5：用 box-shadow 实现，不用 1px 实线框） */
   --shadow-1: var(--sh-1);
