@@ -349,6 +349,66 @@ describe('prompt', () => {
     })
   })
 
+  it('switches the model from the next turn, restarting an idle host (M2-04)', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const chat = { providerId: 'deepseek', modelId: 'deepseek-chat' }
+    const reasoner = { providerId: 'deepseek', modelId: 'deepseek-reasoner' }
+    const { manager } = setup(supervisor, {
+      models: { defaultModel: () => chat, has: (m) => m.modelId !== 'missing' },
+    })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: text('hi') })
+    await flush()
+    expect(hosts[0]?.init.model).toEqual(chat)
+    hostEmits(
+      sessionId,
+      'id3',
+      ['run.created', { ...defaults, model: chat }],
+      ['turn.started', {}, { turnId: 't1' }],
+      ['run.state.changed', { from: 'idle', to: 'thinking' }],
+    )
+    finishTurn(sessionId, 'id3', 't1')
+
+    manager.setModel({ sessionId, model: reasoner })
+    expect(storage.sessions.get(sessionId)?.model).toEqual(reasoner)
+    expect(published.at(-1)).toMatchObject({
+      type: 'session.model.changed',
+      runId: sessionId,
+      payload: { model: reasoner },
+    })
+    expect(() =>
+      manager.setModel({ sessionId, model: { providerId: 'deepseek', modelId: 'missing' } }),
+    ).toThrow(expect.objectContaining({ code: 'session.unknown_model' }))
+    expect(() => manager.setModel({ sessionId: 'missing', model: chat })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+
+    manager.prompt({ sessionId, content: text('again') })
+    expect(hosts[0]?.stop).toHaveBeenCalled()
+    expect(manager.isBusy(sessionId)).toBe(true)
+    await flush()
+    expect(hosts[1]?.init).toMatchObject({
+      runId: 'id3',
+      model: reasoner,
+      history: [{ role: 'user', content: text('hi') }],
+      resume: { state: 'completed' },
+    })
+    expect(hosts[1]?.prompts).toHaveLength(1)
+
+    // 模型没变时继续用原来的宿主
+    hostEmits(
+      sessionId,
+      'id3',
+      ['turn.started', {}, { turnId: 't2' }],
+      ['run.state.changed', { from: 'completed', to: 'thinking' }],
+    )
+    finishTurn(sessionId, 'id3', 't2')
+    manager.prompt({ sessionId, content: text('third') })
+    await flush()
+    expect(hosts).toHaveLength(2)
+    expect(hosts[1]?.prompts).toHaveLength(2)
+  })
+
   it('rejects unknown sessions and prompts while queued or starting', async () => {
     const { supervisor, pending } = fakeSupervisor(false)
     const { manager } = setup(supervisor, { maxConcurrent: 1 })

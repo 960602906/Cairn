@@ -51,6 +51,8 @@ const payloadSchemas = {
     model: ModelRef.optional(),
   }),
   'session.renamed': z.object({ title: z.string() }),
+  /** 会话换了模型（M2-04），从下一轮起使用。 */
+  'session.model.changed': z.object({ model: ModelRef }),
   'session.crashed': z.object({ error: ErrorInfo }),
   'session.archived': z.object({}),
   /** 会话要点（Runtime §25.2）。 */

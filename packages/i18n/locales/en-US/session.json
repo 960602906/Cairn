@@ -97,5 +97,21 @@
   "providers.noDefault": "No default model selected",
   "message.copy": "Copy this turn's reply",
   "message.copied": "Copied",
-  "message.tokens": "{{formatted}} tokens"
+  "message.tokens": "{{formatted}} tokens",
+  "composer.escToStop.before": "Press",
+  "composer.escToStop.after": "to stop",
+  "composer.permission.label": "Permission mode: {{mode}}",
+  "composer.permission.title": "Permission mode",
+  "composer.permission.read-only": "Read only",
+  "composer.permission.read-only.hint": "Read and search only; no file edits or commands",
+  "composer.permission.ask": "Ask",
+  "composer.permission.ask.hint": "Ask before editing files or running commands",
+  "composer.permission.auto": "Auto",
+  "composer.permission.auto.hint": "Routine project actions run directly; risky ones still ask",
+  "composer.model.label": "Model: {{model}}",
+  "composer.model.title": "Model for the next turn",
+  "composer.model.none": "No model configured",
+  "composer.context": "Context used {{percent}}% ({{used}} / {{total}} tokens)",
+  "composer.checkpointHint": "A checkpoint is saved automatically before files are changed",
+  "composer.escKey": "Esc"
 }

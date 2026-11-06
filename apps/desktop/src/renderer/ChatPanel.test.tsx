@@ -6,6 +6,7 @@ import { createI18n, type Locale } from '@cairn/i18n'
 import { RpcError, type EventEnvelope, type SessionSummary } from '@cairn/protocol'
 import type { MainApi } from './api.js'
 import { App } from './App.js'
+import { formatElapsed } from './Composer.js'
 import { createSessionStore } from './session-store.js'
 
 afterEach(cleanup)
@@ -99,7 +100,8 @@ const messages = () =>
     .map((li) => li.textContent)
 const runStatus = () => screen.getByRole('status').textContent
 const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
-const sendButton = () => screen.getByRole('button', { name: '发送' }) as HTMLButtonElement
+/** 运行中发送按钮换成停止按钮，此时为 null。 */
+const sendButton = () => screen.queryByRole('button', { name: '发送' }) as HTMLButtonElement
 const stopButton = () => screen.queryByRole('button', { name: '停止' }) as HTMLButtonElement | null
 
 describe('ChatPanel', () => {
@@ -169,7 +171,7 @@ describe('ChatPanel', () => {
     const { open, emit } = setup({ history: RUNNING })
     await open()
     expect(runStatus()).toBe('运行中 · 思考中')
-    expect(sendButton().disabled).toBe(true)
+    expect(sendButton()).toBeNull()
     expect(stopButton()).toBeTruthy()
 
     emit(
@@ -221,7 +223,7 @@ describe('ChatPanel', () => {
   it('sends with Enter, keeps Shift+Enter and composition for editing', async () => {
     const { request, open, emit } = setup({ history: HISTORY })
     await open()
-    expect(sendButton().disabled).toBe(true)
+    expect(sendButton()!.disabled).toBe(true)
 
     await userEvent.type(input(), '第一行{Shift>}{Enter}{/Shift}第二行')
     expect(input().value).toBe('第一行\n第二行')
@@ -240,7 +242,7 @@ describe('ChatPanel', () => {
     emit(ev(11, 'turn.completed', { durationMs: 10 }, 't2'))
 
     await userEvent.type(input(), '  再来  ')
-    await userEvent.click(sendButton())
+    await userEvent.click(sendButton()!)
     expect(request).toHaveBeenLastCalledWith('session.prompt', {
       sessionId: 's1',
       content: text('再来'),
@@ -255,7 +257,7 @@ describe('ChatPanel', () => {
     expect(runStatus()).toBe('运行中')
     expect(stopButton()).toBeTruthy()
     await userEvent.type(input(), '下一句')
-    expect(sendButton().disabled).toBe(true)
+    expect(sendButton()).toBeNull()
     expect(store.getState().sessions[0]?.status).toBe('running')
     // 刷新列表时同样保留
     await act(() => store.getState().refreshSessions())
@@ -319,7 +321,7 @@ describe('ChatPanel', () => {
     expect(input().value).toBe('新的')
     // 发送失败后不再等待
     expect(runStatus()).toBe('空闲')
-    expect(sendButton().disabled).toBe(false)
+    expect(sendButton()!.disabled).toBe(false)
   })
 
   it('restores the draft and shows the error when sending fails', async () => {
@@ -434,9 +436,9 @@ describe('ChatPanel', () => {
     expect(runStatus()).toBe(status)
     expect(screen.getByText(note)).toBeTruthy()
     expect(stopButton()).toBeNull()
-    expect(sendButton().disabled).toBe(true)
+    expect(sendButton()!.disabled).toBe(true)
     await userEvent.type(input(), '继续')
-    expect(sendButton().disabled).toBe(false)
+    expect(sendButton()!.disabled).toBe(false)
   })
 
   it('shows that a failed model request is being retried', async () => {
@@ -629,5 +631,104 @@ describe('tool calls and undo turn', () => {
     const { open } = setup({ history: RUNNING })
     await open()
     expect(screen.queryByRole('button', { name: '撤销本轮' })).toBeNull()
+  })
+})
+
+describe('Composer (M2-04)', () => {
+  const capabilities = {
+    contextWindow: 100_000,
+    maxOutputTokens: 8_000,
+    supportsTools: true,
+    supportsParallelToolCalls: true,
+    supportsReasoning: false,
+  }
+  const providers = [
+    {
+      id: 'fake',
+      kind: 'openai',
+      displayName: '测试供应商',
+      baseUrl: 'https://example.com',
+      models: [
+        { id: 'fake-1', displayName: '快', ...capabilities },
+        { id: 'fake-2', displayName: '强', ...capabilities },
+      ],
+    },
+  ]
+  const withModel = [
+    ev(1, 'session.created', {
+      projectId: 'p1',
+      projectPath: '/work',
+      workspacePath: '/work',
+      title: '修复登录',
+      model,
+    }),
+    ...HISTORY.slice(1, 6),
+    ev(7, 'usage.reported', { model, usage: { inputTokens: 20_000, outputTokens: 5_000 } }),
+    ev(8, 'turn.completed', { durationMs: 10 }),
+    state(9, 'thinking', 'completed'),
+  ]
+
+  it('switches the session model for the next turn', async () => {
+    let settings: object = { providers, permissionMode: 'ask' }
+    const { request, open, emit } = setup({
+      history: withModel,
+      handlers: {
+        'settings.get': () => settings,
+        'settings.update': (patch: object) => (settings = { ...settings, ...patch }),
+      },
+    })
+    await open()
+    const trigger = await screen.findByRole('button', { name: '模型：测试供应商 · 快' })
+    await userEvent.click(trigger)
+    await userEvent.click(await screen.findByRole('menuitem', { name: /强/ }))
+    expect(request).toHaveBeenCalledWith('session.setModel', {
+      sessionId: 's1',
+      model: { providerId: 'fake', modelId: 'fake-2' },
+    })
+    emit(ev(10, 'session.model.changed', { model: { providerId: 'fake', modelId: 'fake-2' } }))
+    expect(await screen.findByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
+  })
+
+  it('changes the permission mode and shows the context usage', async () => {
+    let settings: object = { providers }
+    const { request, open } = setup({
+      history: withModel,
+      handlers: {
+        'settings.get': () => settings,
+        'settings.update': (patch: object) => (settings = { ...settings, ...patch }),
+      },
+    })
+    await open()
+    expect(
+      await screen.findByRole('img', { name: '上下文已用 25%（25,000 / 100,000 tokens）' }),
+    ).toBeTruthy()
+    expect(screen.getByText('修改文件前会自动保存检查点')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '权限模式：询问' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /自动/ }))
+    expect(request).toHaveBeenCalledWith('settings.update', { permissionMode: 'auto' })
+    expect(await screen.findByRole('button', { name: '权限模式：自动' })).toBeTruthy()
+  })
+
+  it('shows the elapsed time while running and stops with Esc', async () => {
+    const { request, open } = setup({ history: RUNNING })
+    await open()
+    expect(runStatus()).toBe('运行中 · 思考中')
+    expect(screen.getByText(/^· [\d:]+$/)).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(request).toHaveBeenCalledWith('session.abort', { sessionId: 's1' }))
+  })
+
+  it('does not stop on Esc when idle', async () => {
+    const { request, open } = setup({ history: HISTORY })
+    await open()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(request).not.toHaveBeenCalledWith('session.abort', expect.anything())
+  })
+
+  it('formats the elapsed time', () => {
+    expect(formatElapsed(0)).toBe('0:00')
+    expect(formatElapsed(65_400)).toBe('1:05')
+    expect(formatElapsed(3_725_000)).toBe('1:02:05')
+    expect(formatElapsed(-5)).toBe('0:00')
   })
 })

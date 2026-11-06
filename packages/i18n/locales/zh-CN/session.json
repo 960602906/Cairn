@@ -97,5 +97,21 @@
   "providers.noDefault": "还没有选择默认模型",
   "message.copy": "复制本轮回复",
   "message.copied": "已复制",
-  "message.tokens": "{{formatted}} tokens"
+  "message.tokens": "{{formatted}} tokens",
+  "composer.escToStop.before": "按",
+  "composer.escToStop.after": "停止",
+  "composer.permission.label": "权限模式：{{mode}}",
+  "composer.permission.title": "权限模式",
+  "composer.permission.read-only": "只读",
+  "composer.permission.read-only.hint": "只能读取和搜索，不改文件、不运行命令",
+  "composer.permission.ask": "询问",
+  "composer.permission.ask.hint": "改文件、运行命令前先问你",
+  "composer.permission.auto": "自动",
+  "composer.permission.auto.hint": "项目内的常规操作直接执行，危险操作仍会询问",
+  "composer.model.label": "模型：{{model}}",
+  "composer.model.title": "下一轮使用的模型",
+  "composer.model.none": "未配置模型",
+  "composer.context": "上下文已用 {{percent}}%（{{used}} / {{total}} tokens）",
+  "composer.checkpointHint": "修改文件前会自动保存检查点",
+  "composer.escKey": "Esc"
 }

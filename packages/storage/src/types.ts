@@ -110,6 +110,8 @@ export interface SessionStore {
   list(options?: ListSessionsOptions): SessionRecord[]
   rename(sessionId: string, title: string): SessionRecord
   archive(sessionId: string): SessionRecord
+  /** 更换会话使用的模型（M2-04），下一轮生效。 */
+  setModel(sessionId: string, model: ModelRef): SessionRecord
   /** 更新 `updatedAt`（有新事件时由主进程调用）。 */
   touch(sessionId: string): SessionRecord
 }
