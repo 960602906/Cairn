@@ -66,6 +66,29 @@ describe('createSettingsService', () => {
     ).toBe('read-only')
   })
 
+  it('saves the theme; omitted when missing or invalid (M2-01)', () => {
+    writeFileSync(file, JSON.stringify({ theme: 'sepia' }))
+    const settings = createSettingsService({
+      storage: createMemoryStorage(),
+      file,
+      systemLocales: () => ['zh-CN'],
+    })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.update({ theme: 'dark' })).toEqual({
+      locale: 'zh-CN',
+      providers: [],
+      theme: 'dark',
+    })
+    expect(read()).toEqual({ theme: 'dark' })
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).get().theme,
+    ).toBe('dark')
+  })
+
   it('saves the custom instructions; blank or null clears them (M1-13b)', () => {
     writeFileSync(file, JSON.stringify({ instructions: 42 }))
     const settings = createSettingsService({
@@ -116,7 +139,7 @@ describe('createSettingsService', () => {
   })
 
   it('keeps unknown fields written by other versions', () => {
-    writeFileSync(file, JSON.stringify({ locale: 'zh-CN', theme: 'dark' }))
+    writeFileSync(file, JSON.stringify({ locale: 'zh-CN', fontSize: 14 }))
     const settings = createSettingsService({
       storage: createMemoryStorage(),
       file,
@@ -124,7 +147,7 @@ describe('createSettingsService', () => {
     })
     expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
     settings.update({ locale: 'en-US' })
-    expect(read()).toEqual({ locale: 'en-US', theme: 'dark' })
+    expect(read()).toEqual({ locale: 'en-US', fontSize: 14 })
   })
 
   it('leaves settings that are missing or undefined in the patch unchanged', () => {

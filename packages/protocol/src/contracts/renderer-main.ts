@@ -53,12 +53,17 @@ export const INSTRUCTIONS_MAX_LENGTH = 10_000
 export const Locale = z.enum(['zh-CN', 'en-US'])
 export type Locale = z.infer<typeof Locale>
 
+/** 界面主题（M2-01，视觉规范 §3）：跟随系统、浅色或深色。 */
+export const Theme = z.enum(['system', 'light', 'dark'])
+export type Theme = z.infer<typeof Theme>
+
 /**
  * 应用设置。之后的设置项只能以可选字段向后兼容地追加。
  * - `providers`：模型提供方配置（M1-04a），不含 Key；
  * - `defaultModel`：新会话默认使用的模型，指向 `providers` 中的某个模型；没有设置时不出现。
  * - `permissionMode`：权限模式（M1-10c，架构 §10.3），即使用哪组预设规则；没有设置时不出现，按“询问”。
  * - `instructions`：用户的自定义说明（M1-13b，架构 §13），加入每个会话的系统提示词；没有设置时不出现。
+ * - `theme`：界面主题（M2-01）；没有设置时不出现，按“跟随系统”。
  */
 export const Settings = z.object({
   locale: Locale,
@@ -66,6 +71,7 @@ export const Settings = z.object({
   defaultModel: ModelRef.optional(),
   permissionMode: PermissionMode.optional(),
   instructions: z.string().min(1).max(INSTRUCTIONS_MAX_LENGTH).optional(),
+  theme: Theme.optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -80,6 +86,7 @@ export const SettingsPatch = z.object({
   permissionMode: PermissionMode.optional(),
   /** 空字符串或 null 清除自定义说明。 */
   instructions: z.string().max(INSTRUCTIONS_MAX_LENGTH).nullable().optional(),
+  theme: Theme.optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 

@@ -101,9 +101,9 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': restrictedImports(pkg) },
   })),
   {
-    // 界面文案一律走 i18n（ADR-0013）；测试文件除外
+    // 界面文案一律走 i18n（ADR-0013）；测试文件与只在开发模式出现的组件预览页（dev/）除外
     files: ['apps/desktop/src/renderer/**/*.{tsx,jsx}'],
-    ignores: ['**/*.test.{tsx,jsx}'],
+    ignores: ['**/*.test.{tsx,jsx}', 'apps/desktop/src/renderer/dev/**'],
     rules: { 'cairn/no-literal-ui-text': 'error' },
   },
   {

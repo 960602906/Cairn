@@ -1,0 +1,174 @@
+/*
+ * 界面样式入口（M2-01）：Tailwind 4 + 设计令牌（视觉规范 §3～§5）。
+ * 令牌在 tokens.css；这里把它们映射成 Tailwind 主题，例如 bg-paper、text-muted、shadow-2、rounded-card。
+ */
+@import 'tailwindcss';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-600.css';
+@import './tokens.css';
+
+/* 深色变体跟随 <html data-theme="dark">，不直接跟随系统（“跟随系统”由 theme.ts 解析） */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme inline {
+  /* 只用令牌里的颜色：去掉 Tailwind 自带调色板 */
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #fff;
+
+  --color-chrome: var(--chrome);
+  --color-paper: var(--paper);
+  --color-raise: var(--raise);
+  --color-sunk: var(--sunk);
+  --color-sunk2: var(--sunk2);
+  --color-hover: var(--hover);
+  --color-press: var(--press);
+  --color-hair: var(--hair);
+  --color-hair2: var(--hair2);
+
+  --color-fg: var(--fg);
+  --color-fg2: var(--fg2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-ink: var(--ink);
+  --color-ink-fg: var(--ink-fg);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+
+  --color-code-bg: var(--code-bg);
+  --color-code-head: var(--code-head);
+  --color-gutter: var(--gutter);
+  --color-gutter-bg: var(--gutter-bg);
+  --color-line-hl: var(--line-hl);
+  --color-add-bg: var(--add-bg);
+  --color-add-gut: var(--add-gut);
+  --color-add-word: var(--add-word);
+  --color-add-fg: var(--add-fg);
+  --color-del-bg: var(--del-bg);
+  --color-del-gut: var(--del-gut);
+  --color-del-word: var(--del-word);
+  --color-del-fg: var(--del-fg);
+  --color-hunk-bg: var(--hunk-bg);
+  --color-hunk-fg: var(--hunk-fg);
+  --color-term-bg: var(--term-bg);
+  --color-term-fg: var(--term-fg);
+  --color-term-dim: var(--term-dim);
+  --color-term-ok: var(--term-ok);
+  --color-term-acc: var(--term-acc);
+  --color-term-line: var(--term-line);
+
+  /* 阴影（§3）与 0.5px 发丝描边（§5：用 box-shadow 实现，不用 1px 实线框） */
+  --shadow-1: var(--sh-1);
+  --shadow-2: var(--sh-2);
+  --shadow-3: var(--sh-3);
+  --shadow-hair: 0 0 0 0.5px var(--hair);
+  --shadow-hair2: 0 0 0 0.5px var(--hair2);
+
+  /* 圆角（§5） */
+  --radius-item: 8px;
+  --radius-card: 12px;
+  --radius-approval: 14px;
+  --radius-dialog: 18px;
+  --radius-input: 20px;
+  --radius-paper: 10px;
+
+  /* 字体（§4） */
+  --font-sans:
+    -apple-system, 'PingFang SC', 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI',
+    system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, Menlo, monospace;
+
+  /* 字号（§4）：text-body 对话正文、text-ui 侧栏与按钮、text-code 代码、text-term 终端、text-note 说明 */
+  --text-page: 22px;
+  --text-page--font-weight: 600;
+  --text-dialog: 17px;
+  --text-dialog--font-weight: 600;
+  --text-heading: 16px;
+  --text-heading--font-weight: 600;
+  --text-body: 15px;
+  --text-body--line-height: 1.78;
+  --text-ui: 13.5px;
+  --text-code: 13px;
+  --text-code--line-height: 22px;
+  --text-term: 12.5px;
+  --text-term--line-height: 21px;
+  --text-note: 12px;
+
+  /* 动效（§5） */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --animate-spin: spin 0.8s linear infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--chrome);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 代码、路径、命令一律关闭连字：=> 不能显示成箭头（§4） */
+  code,
+  kbd,
+  pre,
+  samp,
+  .font-mono {
+    font-variant-ligatures: none;
+    font-feature-settings:
+      'liga' 0,
+      'calt' 0;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+  }
+
+  /* 尊重“减少动态效果”：关闭所有循环动画与过渡（§5） */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0s !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0s !important;
+    }
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
