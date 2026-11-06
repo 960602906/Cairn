@@ -94,5 +94,8 @@
   "providers.title": "模型供应商",
   "providers.empty": "还没有配置模型，点这里添加",
   "providers.default": "默认模型：{{model}}",
-  "providers.noDefault": "还没有选择默认模型"
+  "providers.noDefault": "还没有选择默认模型",
+  "message.copy": "复制本轮回复",
+  "message.copied": "已复制",
+  "message.tokens": "{{formatted}} tokens"
 }

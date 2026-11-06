@@ -1,51 +1,178 @@
 /**
  * 消息流（M0-15c）：已完成的消息（`messages`）之后是进行中的消息（`live`，由增量事件合并），
  * 助手消息中的工具调用显示为工具卡片（M1-16b，`ToolCallCard`）。
- * 最后是上一轮的结果（停止、失败、达到限额、宿主崩溃）。被停止或出错打断的部分回复保留并注明未完成。消息完成时投影移除对应的进行中消息，
- * 因此同一条消息不会出现两次。
+ * 最后是上一轮的结果（停止、失败、达到限额、宿主崩溃）。被停止或出错打断的部分回复保留并注明未完成。
+ * 消息完成时投影移除对应的进行中消息，因此同一条消息不会出现两次。
+ *
+ * M2-03：用户消息是右对齐的气泡；助手正文按 Markdown 渲染；思考过程可展开；每轮结束后最后一条助手消息下面
+ * 是轮次操作（复制，模型名与 token 数）。作者名只给读屏（sr-only）。
  */
+import { Check, ChevronRight, Copy } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rootRun, type LiveMessageView, type MessageView, type SessionView } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
-import type { ContentPart } from '@cairn/protocol'
+import type { ContentPart, ModelRef } from '@cairn/protocol'
+import { Markdown } from './Markdown.js'
+import { useSessionStore } from './store-context.js'
 import { ToolCallCard } from './ToolCallCard.js'
+import { IconButton, Shimmer } from './ui/index.js'
 
-const PRESERVE_LINES = { whiteSpace: 'pre-wrap' } as const
+/** 本轮结束后，最后一条助手消息下面的操作：复制本轮回复；右侧灰字是模型名与本轮 token 数（不显示金额）。 */
+function TurnActions({
+  text,
+  model,
+  tokens,
+}: {
+  readonly text: string
+  readonly model: string
+  readonly tokens: number | undefined
+}) {
+  const { t, i18n } = useTranslation('session')
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), COPIED_MS)
+    return () => clearTimeout(timer)
+  }, [copied])
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+    } catch {
+      // 剪贴板不可用时不提示
+    }
+  }
+  return (
+    <div className="mt-2 flex items-center gap-1 text-note text-muted">
+      <IconButton
+        label={copied ? t('message.copied') : t('message.copy')}
+        size="icon-sm"
+        disabled={text === ''}
+        onClick={() => void copy()}
+      >
+        {copied ? <Check className="text-ok" /> : <Copy />}
+      </IconButton>
+      <span className="ml-auto truncate">{model}</span>
+      {tokens !== undefined && (
+        <span className="tabular shrink-0">
+          ·{' '}
+          {t('message.tokens', { count: tokens, formatted: tokens.toLocaleString(i18n.language) })}
+        </span>
+      )}
+    </div>
+  )
+}
 
-function Reasoning({ text }: { readonly text: string }) {
+const COPIED_MS = 1600
+
+function Reasoning({ text, live = false }: { readonly text: string; readonly live?: boolean }) {
   const { t } = useTranslation('session')
   return (
-    <details>
-      <summary>{t('message.reasoning')}</summary>
-      <p style={PRESERVE_LINES}>{text}</p>
+    <details className="group/reasoning mb-2">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-ui text-muted select-none hover:text-fg2 [&::-webkit-details-marker]:hidden">
+        {live ? <Shimmer>{t('message.reasoning')}</Shimmer> : t('message.reasoning')}
+        <ChevronRight className="size-3.5 transition-transform group-open/reasoning:rotate-90" />
+      </summary>
+      <p className="mt-2 border-l-2 border-hair2 pl-3.5 text-[14px] leading-relaxed whitespace-pre-wrap text-muted">
+        {text}
+      </p>
     </details>
   )
 }
 
-function Content({ parts }: { readonly parts: readonly ContentPart[] }) {
+/** 助手正文：文本按 Markdown 渲染。 */
+function AssistantContent({ parts }: { readonly parts: readonly ContentPart[] }) {
   const { t } = useTranslation('session')
   return parts.map((part, index) =>
     part.type === 'text' ? (
-      <p key={index} style={PRESERVE_LINES}>
-        {part.text}
-      </p>
+      <Markdown key={index} text={part.text} />
     ) : (
       <p key={index}>{t('message.image')}</p>
     ),
   )
 }
 
-function Message({ message, view }: { readonly message: MessageView; readonly view: SessionView }) {
+/** 用户消息：原样显示（不按 Markdown 解释），保留换行。 */
+function UserContent({ parts }: { readonly parts: readonly ContentPart[] }) {
   const { t } = useTranslation('session')
-  const assistant = message.role === 'assistant' ? message : undefined
+  return parts.map((part, index) => (
+    <p key={index} className="whitespace-pre-wrap">
+      {part.type === 'text' ? part.text : t('message.image')}
+    </p>
+  ))
+}
+
+const textOf = (parts: readonly ContentPart[]) =>
+  parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n\n')
+
+export interface TurnFooter {
+  readonly text: string
+  readonly model: ModelRef
+  readonly tokens: number | undefined
+}
+
+/**
+ * 每轮最后一条助手消息的轮次操作：本轮已结束（不是进行中的那一轮）时才有。
+ * 返回 messageId → 本轮所有助手回复的文本、最后的模型与本轮 token 数（输入 + 输出）。
+ */
+export function turnFooters(view: SessionView): ReadonlyMap<string, TurnFooter> {
+  const running = rootRun(view)?.turn
+  const runningTurn = running?.status === 'running' ? running.turnId : undefined
+  const footers = new Map<string, TurnFooter>()
+  const texts: string[] = []
+  view.messages.forEach((message, index) => {
+    if (message.role === 'user') {
+      texts.length = 0
+      return
+    }
+    const text = textOf(message.content)
+    if (text !== '') texts.push(text)
+    const next = view.messages[index + 1]
+    const lastOfTurn = next === undefined || next.role === 'user' || next.turnId !== message.turnId
+    if (!lastOfTurn || (message.turnId !== undefined && message.turnId === runningTurn)) return
+    if (next === undefined && Object.keys(view.live).length > 0) return
+    const usage = message.turnId === undefined ? undefined : view.usageByTurn[message.turnId]
+    footers.set(message.messageId, {
+      text: texts.join('\n\n'),
+      model: message.model,
+      tokens: usage && usage.inputTokens + usage.outputTokens,
+    })
+    texts.length = 0
+  })
+  return footers
+}
+
+function Message({
+  message,
+  view,
+  footer,
+  modelName,
+}: {
+  readonly message: MessageView
+  readonly view: SessionView
+  readonly footer: TurnFooter | undefined
+  readonly modelName: (model: ModelRef) => string
+}) {
+  const { t } = useTranslation('session')
+  if (message.role === 'user') {
+    return (
+      <li className="flex flex-col items-end">
+        <strong className="sr-only">{t('message.user')}</strong>
+        <div className="max-w-[78%] rounded-input bg-sunk2 px-4 py-2.5 text-fg">
+          <UserContent parts={message.content} />
+        </div>
+      </li>
+    )
+  }
   return (
-    <li>
-      <strong>{t(`message.${message.role}`)}</strong>
-      {assistant?.reasoning && assistant.reasoning.text !== '' && (
-        <Reasoning text={assistant.reasoning.text} />
+    <li className="text-fg">
+      <strong className="sr-only">{t('message.assistant')}</strong>
+      {message.reasoning && message.reasoning.text !== '' && (
+        <Reasoning text={message.reasoning.text} />
       )}
-      <Content parts={message.content} />
-      {assistant?.toolCalls.map((call) => (
+      <AssistantContent parts={message.content} />
+      {message.toolCalls.map((call) => (
         <ToolCallCard
           key={call.id}
           name={call.name}
@@ -54,7 +181,12 @@ function Message({ message, view }: { readonly message: MessageView; readonly vi
           live={view.liveToolOutput[call.id]}
         />
       ))}
-      {assistant?.incomplete && <em>{t('message.incomplete')}</em>}
+      {message.incomplete && (
+        <em className="mt-1.5 block text-note text-muted not-italic">{t('message.incomplete')}</em>
+      )}
+      {footer && (
+        <TurnActions text={footer.text} model={modelName(footer.model)} tokens={footer.tokens} />
+      )}
     </li>
   )
 }
@@ -62,10 +194,10 @@ function Message({ message, view }: { readonly message: MessageView; readonly vi
 function LiveMessage({ live }: { readonly live: LiveMessageView }) {
   const { t } = useTranslation('session')
   return (
-    <li aria-busy="true">
-      <strong>{t('message.assistant')}</strong>
-      {live.reasoning !== '' && <Reasoning text={live.reasoning} />}
-      {live.text !== '' && <p style={PRESERVE_LINES}>{live.text}</p>}
+    <li aria-busy="true" className="text-fg">
+      <strong className="sr-only">{t('message.assistant')}</strong>
+      {live.reasoning !== '' && <Reasoning text={live.reasoning} live={live.text === ''} />}
+      {live.text !== '' && <Markdown text={live.text} />}
     </li>
   )
 }
@@ -98,19 +230,35 @@ function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): strin
 
 export function MessageStream({ view }: { readonly view: SessionView | undefined }) {
   const { t, i18n } = useTranslation('session')
+  const providers = useSessionStore((s) => s.settings?.providers)
   const live = Object.values(view?.live ?? {}).sort((a, b) => a.startedAt - b.startedAt)
   const outcome = view && turnOutcome(view, t, i18n)
+  const footers = view ? turnFooters(view) : new Map<string, TurnFooter>()
+  /** 模型显示名：已配置的“供应商 · 模型”，否则为模型 id。 */
+  const modelName = (model: ModelRef) => {
+    const provider = providers?.find((p) => p.id === model.providerId)
+    const configured = provider?.models.find((m) => m.id === model.modelId)
+    return provider && configured
+      ? `${provider.displayName} · ${configured.displayName ?? configured.id}`
+      : model.modelId
+  }
   return (
     <>
-      <ol aria-label={t('chat.messages')}>
+      <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
         {view?.messages.map((message) => (
-          <Message key={message.messageId} message={message} view={view} />
+          <Message
+            key={message.messageId}
+            message={message}
+            view={view}
+            footer={footers.get(message.messageId)}
+            modelName={modelName}
+          />
         ))}
         {live.map((message) => (
           <LiveMessage key={message.messageId} live={message} />
         ))}
       </ol>
-      {outcome && <p>{outcome}</p>}
+      {outcome && <p className="rounded-card bg-sunk px-3.5 py-2.5 text-ui text-fg2">{outcome}</p>}
     </>
   )
 }
