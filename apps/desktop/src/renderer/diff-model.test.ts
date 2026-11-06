@@ -1,3 +1,4 @@
+import type * as Diff from 'diff'
 import { describe, expect, it, vi } from 'vitest'
 import {
   diffRows,
@@ -46,7 +47,7 @@ describe('diffRows', () => {
   it('超时时退回整段删除再整段新增', async () => {
     vi.resetModules()
     vi.doMock('diff', async (importOriginal) => ({
-      ...(await importOriginal<typeof import('diff')>()),
+      ...(await importOriginal<typeof Diff>()),
       diffArrays: () => undefined,
     }))
     const { diffRows: rowsWithTimeout } = await import('./diff-model.js')

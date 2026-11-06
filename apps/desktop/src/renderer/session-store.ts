@@ -118,7 +118,7 @@ export interface SessionActions {
   changeContent(
     sessionId: string,
     changeId: string,
-  ): Promise<{ before?: FileContent; after?: FileContent } | undefined>
+  ): Promise<{ before?: FileContent | undefined; after?: FileContent | undefined } | undefined>
   /** 整文件撤销这些改动，成功后重新读取改动记录；返回是否成功。 */
   revertChanges(sessionId: string, changeIds: readonly string[]): Promise<boolean>
   clearError(): void
