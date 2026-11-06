@@ -13,6 +13,12 @@
 
 - PowerShell：自带 Windows PowerShell 5.1；PowerShell 7.6.9 是**商店版**，路径为 `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`，实际安装在 `C:\Program Files\WindowsApps\...`。商店版 pwsh 的子进程会脱离作业对象，见 ADR-0012 与 `spikes/powershell/README.md`。
 - npm 11 默认不运行依赖的安装脚本，koffi 会提示 `install-scripts`，不影响使用（用的是预编译二进制）。
+- Electron 本体在第一次启动时才下载（`require('electron')` 发现缺失时运行 `install.js`）。本机从 GitHub 下载会报 `fetch failed`，改用镜像：
+
+  ```powershell
+  $env:ELECTRON_MIRROR = 'https://npmmirror.com/mirrors/electron/'
+  node node_modules/electron/install.js   # 在 apps/desktop 下运行
+  ```
 
 ## 本地模型网关
 
