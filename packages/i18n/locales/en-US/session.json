@@ -168,6 +168,7 @@
   "diff.expand": "Expand unchanged lines below: {{count}}",
   "diff.showMore": "Show remaining lines: {{count}}",
   "diff.empty": "No content changes",
+  "diff.emptyFile": "Empty file",
   "diff.loading": "Loading changes…",
   "diff.binary": "Binary file; no diff shown",
   "diff.too_large": "File too large to show a diff",

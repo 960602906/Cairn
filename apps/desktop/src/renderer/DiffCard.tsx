@@ -221,7 +221,7 @@ function SplitHalf({ row, hl }: { readonly row: DiffRow | undefined; readonly hl
       <span aria-hidden className={cn('w-5 shrink-0 text-center select-none', style.marker)}>
         {MARKER[row.type]}
       </span>
-      <span className="min-w-0 flex-1 pr-3 break-all whitespace-pre-wrap text-tk-v">
+      <span className="min-w-0 flex-1 pr-3 break-words whitespace-pre-wrap text-tk-v">
         <LineContent tokens={rowTokens(row, hl)} words={row.words} wordClass={style.word} />
       </span>
     </div>
@@ -360,12 +360,13 @@ export function DiffCard({
   const counts = diff ? { added: diff.added, removed: diff.removed } : { added, removed }
   const { dir, name } = splitPath(path)
 
-  const message =
-    content.state === 'ready'
-      ? diff!.segments.length === 0
-        ? t('diff.empty')
-        : undefined
-      : t(`diff.${content.state}`)
+  const message = !diff
+    ? t(`diff.${content.state}`)
+    : diff.added + diff.removed > 0
+      ? undefined
+      : kind === 'create' && after === ''
+        ? t('diff.emptyFile')
+        : t('diff.empty')
 
   return (
     <figure
@@ -380,10 +381,14 @@ export function DiffCard({
           <span className="font-semibold text-fg">{name}</span>
         </span>
         <KindBadge kind={kind} />
-        <ChangeCounts {...counts} />
-        <RatioBlocks {...counts} />
+        {content.state !== 'binary' && content.state !== 'too_large' && (
+          <>
+            <ChangeCounts {...counts} />
+            <RatioBlocks {...counts} />
+          </>
+        )}
         <span className="ml-auto flex shrink-0 items-center gap-1 text-muted">
-          {canSplit && diff && diff.segments.length > 0 && (
+          {canSplit && !message && (
             <span
               role="group"
               aria-label={t('diff.view')}

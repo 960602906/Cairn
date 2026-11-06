@@ -120,7 +120,18 @@ export function wordRanges(
   }
   const total = Math.max(oldText.length, newText.length)
   if (total > 0 && same / total < WORD_DIFF_MIN_SAME) return undefined
-  return { old, new: next }
+  return { old: mergeAcrossSpaces(old, oldText), new: mergeAcrossSpaces(next, newText) }
+}
+
+/** 只隔着空白的相邻范围合成一段，避免一个改动被空格切成好几块。 */
+function mergeAcrossSpaces(ranges: Range[], text: string): Range[] {
+  const out: [number, number][] = []
+  for (const [from, to] of ranges) {
+    const last = out.at(-1)
+    if (last && /^\s*$/.test(text.slice(last[1], from))) last[1] = to
+    else out.push([from, to])
+  }
+  return out
 }
 
 /** 同一处改动中的删除行与新增行按顺序配对，标出行内改动的部分。 */

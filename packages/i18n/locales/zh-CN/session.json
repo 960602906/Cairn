@@ -168,6 +168,7 @@
   "diff.expand": "展开下方 {{count}} 行未改动的代码",
   "diff.showMore": "显示其余 {{count}} 行",
   "diff.empty": "内容没有变化",
+  "diff.emptyFile": "空文件",
   "diff.loading": "正在读取改动…",
   "diff.binary": "二进制文件，不显示内容差异",
   "diff.too_large": "文件太大，不显示差异",

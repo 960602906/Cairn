@@ -81,6 +81,13 @@ describe('wordRanges', () => {
     expect(wordRanges('a'.repeat(600), 'b'.repeat(600))).toBeUndefined()
     expect(wordRanges('', '')).toEqual({ old: [], new: [] })
   })
+
+  it('只隔着空白的改动合成一段', () => {
+    expect(wordRanges('for (v of xs) total += v', 'for (v of xs) {')).toEqual({
+      old: [[14, 24]],
+      new: [[14, 15]],
+    })
+  })
 })
 
 describe('segment', () => {

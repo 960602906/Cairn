@@ -741,3 +741,40 @@ describe('Composer (M2-04)', () => {
     expect(formatElapsed(-5)).toBe('0:00')
   })
 })
+
+describe('file changes (M2-07)', () => {
+  const change = {
+    changeId: 'c1',
+    path: 'src/app.ts',
+    kind: 'modify',
+    status: 'pending',
+    turnId: 't1',
+    hunks: [],
+    added: 3,
+    removed: 1,
+    createdAt: 1,
+  }
+
+  it('shows the session summary in the top bar and the turn changes under the last reply', async () => {
+    const { open } = setup({
+      history: HISTORY,
+      handlers: { 'changes.list': () => ({ changes: [change] }) },
+    })
+    await open()
+    expect(
+      await screen.findByRole('button', {
+        name: '本会话改动了 1 个文件，新增 3 行，删除 1 行',
+      }),
+    ).toBeTruthy()
+    const list = screen.getByRole('list', { name: '消息' })
+    const turn = within(list).getByRole('region', { name: '本轮变更' })
+    expect(within(turn).getByRole('button', { name: /src\/app\.ts/ })).toBeTruthy()
+  })
+
+  it('hides both while the session has no changes', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    expect(screen.queryByRole('region', { name: '本轮变更' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /本会话改动了/ })).toBeNull()
+  })
+})
