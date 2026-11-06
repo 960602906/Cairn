@@ -523,18 +523,19 @@ describe('tool calls and undo turn', () => {
     expect(within(card()).queryByText(/line 1/)).toBeNull()
   })
 
-  it('shows the last live output lines while running and the error when failed', async () => {
+  it('shows live output in a terminal card while running and the error when failed', async () => {
     const { open, emit } = setup({ history: toolTurn() })
     await open()
     expect(card().textContent).toContain('执行中')
+    expect(within(card()).getByRole('figure', { name: '终端：npm test' })).toBeTruthy()
     emit({
       ...ev(9, 'tool.output.delta', { toolCallId: 'c1', stream: 'stdout', text: lines(7) }),
     })
-    expect(within(card()).getByText(/line 7/).textContent).toBe(
-      ['line 3', 'line 4', 'line 5', 'line 6', 'line 7'].join('\n'),
-    )
-    expect(within(card()).getByText('……前面还有 2 行')).toBeTruthy()
+    const log = within(card()).getByRole('log', { name: '命令输出' })
+    expect(log.textContent).toContain('line 1')
+    expect(log.textContent).toContain('line 7')
     emit(ev(9, 'tool.failed', { toolCallId: 'c1', error: { code: 'tool.denied' } }))
+    expect(within(card()).queryByRole('figure')).toBeNull()
     expect(card().textContent).toContain('失败')
     expect(within(card()).getByRole('note').textContent).not.toBe('')
   })

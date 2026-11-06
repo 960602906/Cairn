@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createRunCommandTool,
   HeadTailBuffer,
+  OutputChunkBuffer,
   registerExecuteTools,
   RUN_COMMAND_MAX_OUTPUT_CHARS,
   splitOutputBudget,
@@ -91,6 +92,50 @@ describe('HeadTailBuffer', () => {
     later.push('ab😀')
     later.push('c')
     expect(later.render()).toBe('ab😀c')
+  })
+})
+
+describe('OutputChunkBuffer', () => {
+  it('未超出时按顺序合并相邻的同一输出流', () => {
+    const buffer = new OutputChunkBuffer(100)
+    buffer.push('stdout', 'a')
+    buffer.push('stdout', 'b')
+    buffer.push('stderr', 'c')
+    buffer.push('stdout', '')
+    buffer.push('stdout', 'd')
+    expect(buffer.display()).toEqual({
+      chunks: [
+        { stream: 'stdout', text: 'ab' },
+        { stream: 'stderr', text: 'c' },
+        { stream: 'stdout', text: 'd' },
+      ],
+      omittedChars: 0,
+    })
+  })
+
+  it('超出时保留开头与结尾，结尾从换行之后开始', () => {
+    const buffer = new OutputChunkBuffer(20)
+    buffer.push('stdout', 'head-line\n')
+    buffer.push('stderr', 'x'.repeat(50))
+    buffer.push('stdout', 'abc\nlast-one\n')
+    const display = buffer.display()
+    expect(display.chunks).toEqual([
+      { stream: 'stdout', text: 'head-line\n' },
+      { stream: 'stdout', text: 'last-one\n' },
+    ])
+    expect(display.omittedAt).toBe(1)
+    expect(display.omittedChars).toBe(10 + 50 + 13 - 10 - 9)
+  })
+
+  it('结尾裁剪跨多段；结尾整段是半行时去掉', () => {
+    const buffer = new OutputChunkBuffer(10)
+    buffer.push('stdout', '12345')
+    for (let i = 0; i < 10; i++) buffer.push(i % 2 ? 'stderr' : 'stdout', 'abcd')
+    buffer.push('stdout', 'xy\n')
+    const display = buffer.display()
+    expect(display.chunks[0]).toEqual({ stream: 'stdout', text: '12345' })
+    expect(display.chunks).toHaveLength(1)
+    expect(display.omittedAt).toBe(1)
   })
 })
 
@@ -236,6 +281,41 @@ describe('run_command', () => {
     expect(estimateTokens(text)).toBeGreaterThan(200)
     expect(text).toMatch(/\[\.\.\. \d+ characters omitted \.\.\.\]/)
     expect(text).toContain('Exit code: 0')
+  })
+
+  it('交给模型的输出去掉 ANSI；display 保留原始输出与执行信息（M2-06）', async () => {
+    const progress: string[] = []
+    const ctx = { ...toolContext(fx.root), progress: (t: string) => progress.push(t) }
+    const definition = tool({
+      run: fakeRun(
+        { stdout: ['\x1b[32m✓\x1b[0m ok\n', '50%\r100%\n\x1b[3'], stderr: ['1mwarn\x1b[0m'] },
+        { exitCode: 1, durationMs: 1234.6 },
+      ),
+    })
+    const output = await definition.execute({ command: 'x' }, ctx)
+    const text = output.content.map((p) => (p.type === 'text' ? p.text : '')).join('')
+    expect(text).not.toContain('\x1b')
+    expect(text).toContain('stdout:\n✓ ok\n100%')
+    expect(text).toContain('stderr:\n1mwarn')
+    expect(progress[0]).toBe('\x1b[32m✓\x1b[0m ok\n')
+    expect(output.display).toEqual({
+      kind: 'terminal',
+      exitCode: 1,
+      timedOut: false,
+      aborted: false,
+      durationMs: 1235,
+      shell: 'bash',
+      cwd: fx.root,
+      chunks: [
+        { stream: 'stdout', text: '\x1b[32m✓\x1b[0m ok\n50%\r100%\n\x1b[3' },
+        { stream: 'stderr', text: '1mwarn\x1b[0m' },
+      ],
+      omittedChars: 0,
+    })
+    const signalled = await tool({
+      run: fakeRun({}, { exitCode: null, signal: 'SIGKILL', timedOut: true }),
+    }).execute({ command: 'x' }, toolContext(fx.root))
+    expect(signalled.display).toMatchObject({ exitCode: null, signal: 'SIGKILL', timedOut: true })
   })
 
   it('启动失败转为工具错误；其他错误原样抛出', async () => {

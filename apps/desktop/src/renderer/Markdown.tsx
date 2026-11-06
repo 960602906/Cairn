@@ -1,10 +1,38 @@
 /**
  * 助手正文的 Markdown 渲染（M2-03，视觉规范 §6）：标题、列表、表格、引用、行内代码与代码块（GFM）。
  * 不渲染原始 HTML（react-markdown 默认转义），链接地址经默认的 urlTransform 过滤（去掉 javascript: 等），
- * 点击后由主进程交给系统浏览器打开（security.ts）。代码块先用简易样式，M2-06 换成代码卡片。
+ * 点击后由主进程交给系统浏览器打开（security.ts）。代码块用代码卡片（M2-06）：语言取自 info string，
+ * 重点行写在其后的花括号里（` ```ts {2,4-6} `）。
  */
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { CodeCard, parseLineRanges } from './CodeCard.js'
+import { languageByName } from './languages.js'
+
+type Element = NonNullable<ExtraProps['node']>
+type ElementContent = Element['children'][number]
+
+const textOf = (nodes: readonly ElementContent[]): string =>
+  nodes
+    .map((n) => (n.type === 'text' ? n.value : n.type === 'element' ? textOf(n.children) : ''))
+    .join('')
+
+/** 代码块的语言、重点行与正文；结构不是 `<pre><code>` 时返回 undefined。 */
+export function codeBlockOf(pre: Element | undefined) {
+  const code = pre?.children.find((c): c is Element => c.type === 'element')
+  if (!code || code.tagName !== 'code') return undefined
+  const classes = code.properties['className']
+  const lang = (Array.isArray(classes) ? classes : [])
+    .map(String)
+    .find((c) => c.startsWith('language-'))
+    ?.slice('language-'.length)
+  const meta = (code.data as { meta?: unknown } | undefined)?.meta
+  return {
+    lang,
+    highlightLines: parseLineRanges(typeof meta === 'string' ? meta : undefined),
+    text: textOf(code.children).replace(/\n$/, ''),
+  }
+}
 
 const components: Components = {
   h1: (props) => <h3 className="mt-5 mb-2 text-heading text-fg first:mt-0" {...strip(props)} />,
@@ -47,12 +75,25 @@ const components: Components = {
   td: (props) => (
     <td className="border-b-[0.5px] border-hair px-3 py-2 align-top" {...strip(props)} />
   ),
-  pre: (props) => (
-    <pre
-      className="my-3 overflow-x-auto rounded-card bg-code-bg px-4 py-3 font-mono text-code shadow-hair2 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
-      {...strip(props)}
-    />
-  ),
+  pre: (props) => {
+    const block = codeBlockOf(props.node)
+    if (!block) {
+      return (
+        <pre
+          className="my-3 overflow-x-auto rounded-card bg-code-bg px-4 py-3 font-mono text-code shadow-hair2 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
+          {...strip(props)}
+        />
+      )
+    }
+    return (
+      <CodeCard
+        code={block.text}
+        language={languageByName(block.lang)}
+        languageName={block.lang}
+        highlightLines={block.highlightLines}
+      />
+    )
+  },
   code: (props) => (
     <code
       className="rounded-[5px] bg-sunk px-[5px] py-[1px] font-mono text-[0.87em] text-fg"

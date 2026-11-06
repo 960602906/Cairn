@@ -4,7 +4,8 @@
  * - 每一步一行：左侧节点（完成 ✓、进行中转圈、失败 ✕、等待中空心圆、取消 –），节点之间有竖线；
  *   文字是“动作 + 对象”（如“读取 `src/a.ts`”），进行中的步骤文字流光；右侧是耗时或状态。
  * - 点击一行展开详情：参数与完整输出（可滚动）、截断说明。失败的错误不用展开就显示。
- * - 执行中显示实时输出的最后几行（M2-06 换成终端卡片）。
+ * - `run_command` 用终端卡片（M2-06）：执行中直接显示实时输出，完成后展开显示；退出码不是 0 时默认展开。
+ *   `read_file` 展开后用代码卡片显示读到的内容。其他工具执行中显示实时输出的最后几行。
  * - 状态文字总在（完成时只给读屏），供读屏与测试使用。
  *
  * 不使用 `<p>`：消息流的测试按段落读取消息正文。
@@ -15,10 +16,19 @@ import { useTranslation } from 'react-i18next'
 import type { LiveToolOutputView, ToolCallView } from '@cairn/core'
 import { translateError } from '@cairn/i18n'
 import type { ContentPart } from '@cairn/protocol'
+import { CodeCard } from './CodeCard.js'
+import { formatDuration } from './format.js'
+import { languageForPath } from './languages.js'
+import { TerminalCard, type TerminalCardProps } from './TerminalCard.js'
+import { parseReadFileOutput, parseRunCommandOutput } from './tool-results.js'
 import { cn, Shimmer, Spinner } from './ui/index.js'
+
+export { formatDuration }
 
 /** 输出最多显示的行数。 */
 export const OUTPUT_PREVIEW_LINES = 5
+/** 展开的代码卡片的最大高度。 */
+const CODE_MAX_HEIGHT = 420
 /** 参数摘要的最大字符数。 */
 export const INPUT_SUMMARY_CHARS = 120
 
@@ -73,16 +83,46 @@ const ACTIONS: ReadonlySet<string> = new Set([
   'run_command',
 ])
 
-/** 耗时：1 秒以内用毫秒，否则保留一位小数的秒。 */
-export function formatDuration(ms: number): string {
-  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`
-}
-
 function formatInput(input: unknown): string {
   try {
     return JSON.stringify(input, null, 2) ?? String(input)
   } catch {
     return String(input)
+  }
+}
+
+/** 终端卡片的数据：执行中来自实时输出，完成后来自 `display`（旧事件从交给模型的文本解析）。 */
+export function terminalData(
+  args: unknown,
+  tool: ToolCallView | undefined,
+  live: LiveToolOutputView | undefined,
+): TerminalCardProps | undefined {
+  const record = typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {}
+  const command = typeof record['command'] === 'string' ? record['command'] : summarizeInput(args)
+  if (tool?.status === 'running') {
+    return {
+      command,
+      chunks: live?.chunks ?? [],
+      omittedChars: live?.omittedChars ?? 0,
+      omittedAt: 0,
+      running: true,
+    }
+  }
+  if (tool?.status !== 'completed') return undefined
+  const display = tool.display ?? parseRunCommandOutput(outputText(tool.output ?? []))
+  if (!display) return undefined
+  return {
+    command,
+    chunks: display.chunks,
+    omittedChars: display.omittedChars,
+    omittedAt: display.omittedAt ?? 0,
+    exitCode: display.exitCode,
+    signal: display.signal,
+    timedOut: display.timedOut,
+    aborted: display.aborted,
+    durationMs: display.durationMs,
+    shell: display.shell,
+    cwd: display.cwd,
   }
 }
 
@@ -136,12 +176,16 @@ export interface ToolStepProps {
 /** 时间线中的一步。 */
 export function ToolStep({ name, input, tool, live, awaitingApproval = false }: ToolStepProps) {
   const { t, i18n } = useTranslation('session')
-  const [open, setOpen] = useState(false)
+  const [openState, setOpen] = useState<boolean>()
   const status = tool?.status ?? 'requested'
   const args = tool?.input ?? input
   const running = status === 'running'
-  const liveText = running && live ? live.chunks.map((c) => c.text).join('') : ''
   const output = tool?.output ? outputText(tool.output) : ''
+  const terminal = name === 'run_command' ? terminalData(args, tool, live) : undefined
+  const file =
+    name === 'read_file' && status === 'completed' ? parseReadFileOutput(output) : undefined
+  const open = openState ?? (terminal !== undefined && !terminal.running && terminal.exitCode !== 0)
+  const liveText = running && live && !terminal ? live.chunks.map((c) => c.text).join('') : ''
   const tail = liveText.trim() === '' ? undefined : previewLines(liveText, 'end')
   const object = summarizeInput(args)
   const action = ACTIONS.has(name) ? t(`tool.action.${name}`) : name
@@ -164,7 +208,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
         <button
           type="button"
           aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen(!open)}
           className="group/step flex w-full items-center gap-2.5 rounded-item py-1 text-left text-ui text-fg2 outline-none hover:text-fg"
         >
           <Node status={status} />
@@ -211,7 +255,30 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
             <pre className="whitespace-pre-wrap break-all">{tail.lines}</pre>
           </div>
         )}
-        {open && (
+        {terminal && (terminal.running || open) && (
+          <div className="mt-1 mb-2 ml-[26px] flex flex-col gap-1 text-note">
+            <TerminalCard {...terminal} />
+            {tool?.truncated && <div className="text-muted">{t('tool.truncated')}</div>}
+          </div>
+        )}
+        {open && file && (
+          <div className="mt-1 mb-2 ml-[26px] flex flex-col gap-1 text-note">
+            <CodeCard
+              className="my-0"
+              code={file.code}
+              path={file.path}
+              language={languageForPath(file.path)}
+              startLine={file.startLine}
+              maxHeight={CODE_MAX_HEIGHT}
+            />
+            {file.notes.map((note, i) => (
+              <div key={i} className="font-mono text-[11.5px] text-muted">
+                {note}
+              </div>
+            ))}
+          </div>
+        )}
+        {open && !terminal && !file && (
           <div className="mt-1 mb-2 ml-[26px] flex flex-col gap-2 text-note">
             <div>
               <div className="mb-1 text-muted">{t('tool.input')}</div>

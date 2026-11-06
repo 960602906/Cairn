@@ -34,6 +34,8 @@ import {
   type SessionStatus,
   type TokenUsage,
   type ToolCall,
+  type ToolDisplay,
+  type ToolOutputChunk as ProtocolToolOutputChunk,
 } from '@cairn/protocol'
 import { canTransition } from './run-state.js'
 
@@ -98,16 +100,15 @@ export interface ToolCallView {
   readonly requestedAt: number
   /** 交给模型的输出（`tool.completed`）。 */
   readonly output: readonly ContentPart[] | undefined
+  /** 只给界面显示的结果（`tool.completed.display`，M2-06）。 */
+  readonly display: ToolDisplay | undefined
   readonly truncated: boolean
   readonly error: ErrorInfo | undefined
   readonly cancelReason: EventPayload<'tool.cancelled'>['reason'] | undefined
   readonly durationMs: number | undefined
 }
 
-export interface ToolOutputChunk {
-  readonly stream: 'stdout' | 'stderr'
-  readonly text: string
-}
+export type ToolOutputChunk = Readonly<ProtocolToolOutputChunk>
 
 /** 执行中的工具的实时输出（只来自 `tool.output.delta`，不落库）。 */
 export interface LiveToolOutputView {
@@ -546,6 +547,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         status: 'requested',
         requestedAt: event.ts,
         output: undefined,
+        display: undefined,
         truncated: false,
         error: undefined,
         cancelReason: undefined,
@@ -558,11 +560,12 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         tool.status === 'running' ? tool : { ...tool, status: 'running' },
       )
     case 'tool.completed': {
-      const { toolCallId, output, truncated, durationMs } = event.payload
+      const { toolCallId, output, truncated, durationMs, display } = event.payload
       return updateTool(view, toolCallId, (tool) => ({
         ...tool,
         status: 'completed',
         output,
+        display,
         truncated: truncated ?? false,
         durationMs,
       }))

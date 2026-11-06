@@ -8,7 +8,7 @@
  * - 工具只能通过 `ToolContext` 访问工作区、检查点等外部资源（架构 §9.1）。路径校验（M1-06）、
  *   检查点（M1-12）在这里只定义接口。
  */
-import type { ContentPart, FileChangeKind, FileHunk } from '@cairn/protocol'
+import type { ContentPart, FileChangeKind, FileHunk, ToolDisplay } from '@cairn/protocol'
 import { z } from 'zod'
 import type { Logger } from './logger.js'
 import type { AbortSignalLike, RuntimeToolSpec } from './runtime.js'
@@ -96,6 +96,8 @@ export interface ToolContext {
 /** 工具执行的结果，交回模型。 */
 export interface ToolOutput {
   readonly content: readonly ContentPart[]
+  /** 只给界面显示（写入 `tool.completed.display`），不交给模型。 */
+  readonly display?: ToolDisplay
 }
 
 /** 审批时展示给用户的预览（M1-11 细化）。 */

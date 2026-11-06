@@ -654,6 +654,7 @@ export class RunEngine {
           output: [...outcome.content],
           ...(outcome.truncated ? { truncated: true } : {}),
           durationMs: Math.max(0, this.#now() - startedAt),
+          ...(outcome.display ? { display: outcome.display } : {}),
         })
         break
       case 'cancelled':

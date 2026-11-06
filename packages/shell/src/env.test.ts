@@ -37,13 +37,14 @@ describe('sanitizeEnv', () => {
       TOKENIZERS_PARALLELISM: 'false',
       KEYBOARD: 'us',
       PYTHONUTF8: '1',
+      NO_COLOR: '1',
     })
   })
 
-  it('PYTHONUTF8 总是 1（替换任何大小写的已有值）；可另外去掉指定变量', () => {
-    expect(sanitizeEnv({ pythonutf8: '0', A: '1', b: '2' }, { remove: ['a', 'B'] })).toEqual({
-      PYTHONUTF8: '1',
-    })
+  it('PYTHONUTF8 与 NO_COLOR 总是 1（替换任何大小写的已有值）；可另外去掉指定变量', () => {
+    expect(
+      sanitizeEnv({ pythonutf8: '0', no_color: '', A: '1', b: '2' }, { remove: ['a', 'B'] }),
+    ).toEqual({ PYTHONUTF8: '1', NO_COLOR: '1' })
   })
 
   it('isSensitiveEnvName', () => {

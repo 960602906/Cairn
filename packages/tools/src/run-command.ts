@@ -5,10 +5,19 @@
  * - 输出经 `ctx.progress` 流式推送（`tool.output.delta`）；
  * - 交回模型的输出保留开头和结尾、中间截断并注明省略了多少；内存中也只保留开头与结尾；
  * - 超时前长时间没有输出时，说明命令可能在等待输入（不支持交互）。
+ * - 交回模型的输出去掉 ANSI 控制符（M2-06）；原始输出的开头与结尾连同退出码、shell、工作目录放进
+ *   `display`，供界面的终端卡片着色显示。
  *
  * 危险命令识别与审批在 M1-10、M1-11。
  */
-import { estimateTokens, ToolError, type ToolDefinition } from '@cairn/core'
+import type { ToolDisplay, ToolOutputChunk } from '@cairn/protocol'
+import {
+  AnsiStripper,
+  estimateTokens,
+  MAX_LIVE_TOOL_OUTPUT_CHARS,
+  ToolError,
+  type ToolDefinition,
+} from '@cairn/core'
 import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   describeShell,
@@ -43,6 +52,8 @@ export interface RunCommandToolOptions {
 }
 
 export const RUN_COMMAND_MAX_OUTPUT_CHARS = READ_FILE_MAX_OUTPUT_CHARS
+/** 给界面的原始输出上限（字符），与执行中的实时输出一致。 */
+export const RUN_COMMAND_DISPLAY_MAX_CHARS = MAX_LIVE_TOOL_OUTPUT_CHARS
 export const RUN_COMMAND_MAX_TIMEOUT_SECONDS = 600
 export const RUN_COMMAND_IDLE_HINT_MS = 30_000
 const DEFAULT_TIMEOUT_SECONDS = DEFAULT_COMMAND_TIMEOUT_MS / 1000
@@ -97,6 +108,99 @@ export class HeadTailBuffer {
     const omitted = this.total - head.length - tail.length
     return `${head}\n[... ${omitted} characters omitted ...]\n${tail}`
   }
+}
+
+/** 结尾裁剪后，在这么多字符之内有换行时从换行之后开始（不留半行和半个控制序列）。 */
+const TAIL_ALIGN_CHARS = 512
+
+/**
+ * 按到达顺序保留 stdout / stderr 原始片段的开头与结尾（各 `limit / 2` 个字符），给界面的终端卡片用。
+ * 相邻的同一输出流合并为一段。
+ */
+export class OutputChunkBuffer {
+  private readonly head: ToolOutputChunk[] = []
+  private tail: ToolOutputChunk[] = []
+  private headChars = 0
+  private tailChars = 0
+  private total = 0
+  private headDone = false
+
+  constructor(private readonly limit: number) {}
+
+  push(stream: ToolOutputChunk['stream'], text: string): void {
+    this.total += text.length
+    let rest = text
+    if (!this.headDone) {
+      const take = safeEnd(rest, Math.ceil(this.limit / 2) - this.headChars)
+      append(this.head, stream, rest.slice(0, take))
+      this.headChars += take
+      rest = rest.slice(take)
+      if (rest === '') return
+      this.headDone = true
+    }
+    append(this.tail, stream, rest)
+    this.tailChars += rest.length
+    // 摊销：超过上限时才裁剪到一半
+    if (this.tailChars > this.limit) this.trimTail(Math.floor(this.limit / 2))
+  }
+
+  private trimTail(max: number): void {
+    let excess = this.tailChars - max
+    while (excess > 0) {
+      const first = this.tail[0]!
+      if (first.text.length <= excess) {
+        this.tail.shift()
+        excess -= first.text.length
+        this.tailChars -= first.text.length
+      } else {
+        const start = safeStart(first.text, excess)
+        this.tail[0] = { stream: first.stream, text: first.text.slice(start) }
+        this.tailChars -= start
+        excess = 0
+      }
+    }
+  }
+
+  /** 结尾从开头附近的第一个换行之后开始。 */
+  private alignTail(): void {
+    let offset = 0
+    for (let i = 0; i < this.tail.length && offset < TAIL_ALIGN_CHARS; i++) {
+      const chunk = this.tail[i]!
+      const newline = chunk.text.indexOf('\n')
+      if (newline >= 0 && offset + newline < TAIL_ALIGN_CHARS) {
+        const rest = chunk.text.slice(newline + 1)
+        this.tailChars -= offset + newline + 1
+        this.tail = [
+          ...(rest === '' ? [] : [{ stream: chunk.stream, text: rest }]),
+          ...this.tail.slice(i + 1),
+        ]
+        return
+      }
+      offset += chunk.text.length
+    }
+  }
+
+  display(): Pick<ToolDisplay, 'chunks' | 'omittedChars' | 'omittedAt'> {
+    if (this.total <= this.limit) {
+      const chunks: ToolOutputChunk[] = []
+      for (const c of [...this.head, ...this.tail]) append(chunks, c.stream, c.text)
+      return { chunks, omittedChars: 0 }
+    }
+    this.trimTail(Math.floor(this.limit / 2))
+    this.alignTail()
+    return {
+      chunks: [...this.head, ...this.tail],
+      omittedChars: this.total - this.headChars - this.tailChars,
+      omittedAt: this.head.length,
+    }
+  }
+}
+
+function append(chunks: ToolOutputChunk[], stream: ToolOutputChunk['stream'], text: string) {
+  if (text === '') return
+  const last = chunks.at(-1)
+  if (last?.stream === stream) chunks[chunks.length - 1] = { stream, text: last.text + text }
+  else chunks.push({ stream, text })
 }
 
 /** 两段输出共享上限：都超出时 stderr 至少占 `STDERR_MIN_SHARE`，一方用不完的份额给另一方。 */
@@ -205,10 +309,13 @@ export function createRunCommandTool(
       const timeoutSeconds = input.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
       const stdout = new HeadTailBuffer(budget)
       const stderr = new HeadTailBuffer(budget)
+      const strippers = { stdout: new AnsiStripper(), stderr: new AnsiStripper() }
+      const raw = new OutputChunkBuffer(RUN_COMMAND_DISPLAY_MAX_CHARS)
       let lastOutput = performance.now()
       const onOutput = (buffer: HeadTailBuffer, stream: 'stdout' | 'stderr') => (text: string) => {
         lastOutput = performance.now()
-        buffer.push(text)
+        buffer.push(strippers[stream].push(text))
+        raw.push(stream, text)
         ctx.progress(text, stream)
       }
       const runOptions: RunCommandOptions = {
@@ -229,6 +336,8 @@ export function createRunCommandTool(
           throw new ToolError(error.code, error.message, { ...error.params })
         throw error
       }
+      stdout.push(strippers.stdout.end())
+      stderr.push(strippers.stderr.end())
       const collected = { result, stdout, stderr, idleMs: performance.now() - lastOutput }
       let chars = budget
       let text = formatResult(collected, timeoutSeconds, chars, idleHintMs)
@@ -239,7 +348,18 @@ export function createRunCommandTool(
         chars = Math.floor((chars * ctx.maxOutputTokens * 0.9) / tokens)
         text = formatResult(collected, timeoutSeconds, chars, idleHintMs)
       }
-      return { content: [{ type: 'text', text }] }
+      const display: ToolDisplay = {
+        kind: 'terminal',
+        exitCode: result.exitCode,
+        ...(result.signal ? { signal: result.signal } : {}),
+        timedOut: result.timedOut,
+        aborted: result.aborted,
+        durationMs: Math.max(0, Math.round(result.durationMs)),
+        shell: shellName,
+        cwd: root.absolute,
+        ...raw.display(),
+      }
+      return { content: [{ type: 'text', text }], display }
     },
   }
 }
