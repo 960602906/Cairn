@@ -36,10 +36,10 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     if (process.platform === 'linux') {
       await expect(panel.getByText('系统加密不可用，无法保存 Key。')).toBeVisible()
     }
-    await window.getByRole('button', { name: '模型设置' }).click()
+    await panel.getByRole('button', { name: '关闭' }).click()
     await expect(panel).toHaveCount(0)
 
-    await window.getByRole('button', { name: '新建会话' }).click()
+    await window.getByRole('button', { name: '新对话' }).click()
     await window.getByRole('button', { name: '选择文件夹…' }).click()
     await expect(window.getByLabel('项目目录')).toHaveValue(dir)
     await expect(window.getByLabel('最近的项目').locator('option:checked')).toHaveText(

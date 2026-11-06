@@ -1,7 +1,7 @@
 {
   "list.title": "Sessions",
   "list.empty": "No sessions yet",
-  "list.new": "New session",
+  "list.new": "New chat",
   "title.untitled": "Untitled session",
   "chat.empty": "Select or create a session to start chatting",
   "chat.messages": "Messages",
@@ -78,5 +78,21 @@
   "undo.file.modified": "Revert",
   "undo.file.deleted": "Delete",
   "undo.confirm": "Undo",
-  "undo.done": "Turn undone. Files restored: {{count}}"
+  "undo.done": "Turn undone. Files restored: {{count}}",
+  "list.group": "Project {{name}}",
+  "sidebar.collapse": "Collapse sidebar",
+  "sidebar.expand": "Expand sidebar",
+  "item.actions": "Session actions",
+  "item.rename": "Rename",
+  "item.renameLabel": "Session title",
+  "item.delete": "Delete",
+  "delete.title": "Delete “{{title}}”?",
+  "delete.description": "The session is removed from the list. Files in the project are not touched.",
+  "delete.confirm": "Delete session",
+  "new.heading": "New chat",
+  "new.description": "Choose a project folder. The agent only reads and writes files inside it.",
+  "providers.title": "Model providers",
+  "providers.empty": "No models yet. Click to add one",
+  "providers.default": "Default: {{model}}",
+  "providers.noDefault": "No default model selected"
 }

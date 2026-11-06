@@ -86,7 +86,7 @@ describe('small pieces', () => {
       </>,
     )
     expect(screen.getByText('Esc').tagName).toBe('KBD')
-    expect(screen.getByRole('status', { name: 'Running' })).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'Running' })).toBeTruthy()
     expect(screen.getByText('Reading').className).toContain('animate-shimmer')
   })
 

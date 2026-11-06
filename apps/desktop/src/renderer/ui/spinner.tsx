@@ -10,9 +10,9 @@ export function Spinner({
   readonly label?: string
 }) {
   return (
+    // 不用 role="status"：页面上的运行状态区域只有一个（ChatPanel），转圈只是装饰或带名字的图形
     <span
-      role="status"
-      aria-label={label}
+      {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}
       className={cn(
         'inline-block size-3.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-r-transparent text-accent',
         className,

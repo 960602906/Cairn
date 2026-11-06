@@ -215,6 +215,41 @@ describe('create and list', () => {
     ).toThrow(expect.objectContaining({ code: 'session.unknown_model' }))
   })
 
+  it('renames and archives sessions (M2-02)', () => {
+    const { supervisor } = fakeSupervisor()
+    let locked = false
+    const { manager } = setup(supervisor, { isLocked: () => locked })
+    const { sessionId } = manager.create({ projectPath: '/work', title: 'Old' })
+    manager.rename({ sessionId, title: '  New  ' })
+    expect(manager.list({}).sessions[0]?.title).toBe('New')
+    expect(published.at(-1)).toMatchObject({
+      type: 'session.renamed',
+      runId: sessionId,
+      payload: { title: 'New' },
+    })
+    expect(() => manager.rename({ sessionId: 'missing', title: 'x' })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+
+    locked = true
+    expect(() => manager.archive({ sessionId })).toThrow(
+      expect.objectContaining({ code: 'run.busy' }),
+    )
+    locked = false
+    manager.prompt({ sessionId, content: text('hi') })
+    expect(() => manager.archive({ sessionId })).toThrow(
+      expect.objectContaining({ code: 'run.busy' }),
+    )
+
+    const other = manager.create({ projectPath: '/work' })
+    manager.archive({ sessionId: other.sessionId })
+    expect(published.at(-1)).toMatchObject({ type: 'session.archived', payload: {} })
+    expect(manager.list({}).sessions.map((s) => s.sessionId)).toEqual([sessionId])
+    expect(() => manager.archive({ sessionId: 'missing' })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+  })
+
   it('rejects relative project paths', () => {
     const { manager } = setup(fakeSupervisor().supervisor)
     expect(() => manager.create({ projectPath: 'demo' })).toThrow(

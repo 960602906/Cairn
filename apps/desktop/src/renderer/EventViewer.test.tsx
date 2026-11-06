@@ -64,7 +64,7 @@ function setup({ devTools = true, eventLogLimit = 100 } = {}) {
     act(() => listeners.forEach((l) => l({ sessionId: 's1', events })))
   const open = async () => {
     const [item] = await screen.findAllByRole('listitem')
-    await userEvent.click(within(item!).getByRole('button'))
+    await userEvent.click(within(item!).getAllByRole('button')[0]!)
     await waitFor(() => expect(store.getState().views.s1).toBeDefined())
   }
   return { emit, open }

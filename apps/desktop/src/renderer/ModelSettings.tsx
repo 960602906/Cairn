@@ -10,9 +10,17 @@
  */
 import { PROVIDER_TEMPLATES, findTemplate, providerFromTemplate } from '@cairn/core'
 import type { ModelRef, ProviderConfig } from '@cairn/protocol'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from './store-context.js'
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from './ui/index.js'
 
 type KeyStatus = { readonly configured: boolean; readonly available: boolean }
 
@@ -224,8 +232,7 @@ function ModelSettingsPanel() {
   const currentKey = current ? refKey(current) : ''
 
   return (
-    <section role="dialog" aria-labelledby="model-settings-title">
-      <h3 id="model-settings-title">{t('models.title')}</h3>
+    <section>
       {!keysAvailable && <p>{t('models.key.unavailable')}</p>}
       {providers.length === 0 ? (
         <p>{t('models.empty')}</p>
@@ -264,15 +271,40 @@ function ModelSettingsPanel() {
   )
 }
 
-export function ModelSettings() {
+/**
+ * “模型设置”按钮与对话框（M2-02 起放在侧栏底部的模型供应商卡片中）。完整的设置页在 M2-10，届时删除。
+ * `children` 为按钮内容，省略时显示“模型设置”。
+ */
+export function ModelSettings({
+  className,
+  children,
+}: {
+  readonly className?: string
+  readonly children?: ReactNode
+}) {
   const { t } = useTranslation('settings')
-  const [open, setOpen] = useState(false)
+  const { t: tc } = useTranslation()
   return (
-    <div>
-      <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        {t('models.open')}
-      </button>
-      {open && <ModelSettingsPanel />}
-    </div>
+    <Dialog>
+      <DialogTrigger asChild>
+        <button type="button" className={className} aria-label={t('models.open')}>
+          {children ?? t('models.open')}
+        </button>
+      </DialogTrigger>
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[85vh] w-[min(600px,calc(100vw-32px))] overflow-y-auto"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <DialogTitle>{t('models.title')}</DialogTitle>
+          <DialogClose asChild>
+            <Button variant="ghost" size="sm">
+              {tc('action.close')}
+            </Button>
+          </DialogClose>
+        </div>
+        <ModelSettingsPanel />
+      </DialogContent>
+    </Dialog>
   )
 }

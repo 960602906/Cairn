@@ -94,6 +94,8 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     list: vi.fn(() => ({ sessions: [] })),
     prompt: vi.fn(() => ({ messageId: 'm1' })),
     abort: vi.fn(() => ({})),
+    rename: vi.fn(() => ({})),
+    archive: vi.fn(() => ({})),
   }
   projects = {
     list: vi.fn(() => ({ projects: [PROJECT] })),
@@ -337,6 +339,12 @@ describe('createRendererGateway: commands and lifecycle', () => {
     await expect(client.request('session.abort', { sessionId: 's1' })).resolves.toEqual({})
     expect(commands.create).toHaveBeenCalledWith({ projectPath: '/work' })
     expect(commands.abort).toHaveBeenCalledWith({ sessionId: 's1' })
+    await expect(
+      client.request('session.rename', { sessionId: 's1', title: 'New name' }),
+    ).resolves.toEqual({})
+    await expect(client.request('session.archive', { sessionId: 's2' })).resolves.toEqual({})
+    expect(commands.rename).toHaveBeenCalledWith({ sessionId: 's1', title: 'New name' })
+    expect(commands.archive).toHaveBeenCalledWith({ sessionId: 's2' })
   })
 
   it('delegates credential requests; no request returns the key', async () => {

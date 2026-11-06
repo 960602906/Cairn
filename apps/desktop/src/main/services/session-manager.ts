@@ -3,6 +3,7 @@
  *
  * - **创建与列表**：按项目路径找到或创建项目，创建会话并写入 `session.created`；列表状态由事件
  *   归约得出（`sessionStatus`），排队或启动中的会话显示为 `running`。
+ * - **重命名与归档**（M2-02）：写入 `session.renamed` / `session.archived`；运行中的会话不能归档。
  * - **输入**：`session.prompt` 先把 `message.user` 落库，再交给会话的宿主；会话没有宿主时排队，
  *   由调度启动。同一会话正在运行一轮（或已有排队的输入）时报 `run.busy`。
  * - **并发上限与排队**：同时存在的宿主（启动中 + 运行中）不超过上限（默认 3），超出的按先后排队；
@@ -77,6 +78,8 @@ export interface SessionManager extends SessionCommands {
   readonly create: Sync<SessionCommands['create']>
   readonly list: Sync<SessionCommands['list']>
   readonly prompt: Sync<SessionCommands['prompt']>
+  readonly rename: Sync<SessionCommands['rename']>
+  readonly archive: Sync<SessionCommands['archive']>
   /** 会话是否正在运行：排队、宿主启动中，或运行处于活动状态（撤销改动前检查，M1-08b）。 */
   isBusy(sessionId: string): boolean
   /** 启动时调用：把仍处于运行中的运行标记为中断，返回标记的运行数。 */
@@ -359,6 +362,26 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           ...(s.model ? { model: s.model } : {}),
         }))
       return { sessions }
+    },
+
+    rename({ sessionId, title }) {
+      requireSession(sessionId)
+      const next = title.trim()
+      storage.sessions.rename(sessionId, next)
+      events.publish([
+        { ...header(sessionId, sessionId), type: 'session.renamed', payload: { title: next } },
+      ])
+      return {}
+    },
+
+    archive({ sessionId }) {
+      requireSession(sessionId)
+      if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      storage.sessions.archive(sessionId)
+      events.publish([{ ...header(sessionId, sessionId), type: 'session.archived', payload: {} }])
+      return {}
     },
 
     prompt({ sessionId, content }) {
