@@ -15,7 +15,7 @@ tester.run('no-cross-package-relative', rule, {
   valid: [
     { code: "import x from './a.js'", filename: core('index.ts') },
     { code: "import x from '../index.js'", filename: core('sub/b.ts') },
-    { code: "import x from '@nexus/protocol'", filename: core('index.ts') },
+    { code: "import x from '@cairn/protocol'", filename: core('index.ts') },
     { code: "import fs from 'node:fs'", filename: core('index.ts') },
     { code: 'export const x = 1', filename: core('index.ts') },
     { code: 'const m = "x"; await import(m)', filename: core('index.ts') },

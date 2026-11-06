@@ -7,7 +7,7 @@ import { createBlobStore, sha256 } from './blob-store.js'
 
 let dir: string
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'nexus-blobs-'))
+  dir = mkdtempSync(join(tmpdir(), 'cairn-blobs-'))
 })
 afterEach(() => {
   vi.restoreAllMocks()

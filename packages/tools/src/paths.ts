@@ -10,7 +10,7 @@ import {
   type PathStyle,
   type ToolContext,
   type WorkspacePath,
-} from '@nexus/core'
+} from '@cairn/core'
 
 export const PATH_STYLE: PathStyle = process.platform === 'win32' ? 'win32' : 'posix'
 

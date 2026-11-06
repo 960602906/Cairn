@@ -5,10 +5,10 @@
 ## Windows 机器
 
 - Windows 11（10.0.26100），系统区域设置为中文：ANSI 与 OEM 代码页都是 936，`culture=zh-CN`。
-- 仓库在 `C:\Users\mrqin\Desktop\NEXUS-OS`。目录所有者是 `BUILTIN\Administrators`，git 会报 “dubious ownership”。可以给每条命令加 `-c safe.directory=C:/Users/mrqin/Desktop/NEXUS-OS`，或执行一次：
+- 仓库在 `C:\Users\mrqin\Desktop\Cairn`。目录所有者是 `BUILTIN\Administrators`，git 会报 “dubious ownership”。可以给每条命令加 `-c safe.directory=C:/Users/mrqin/Desktop/Cairn`，或执行一次：
 
   ```powershell
-  git config --global --add safe.directory C:/Users/mrqin/Desktop/NEXUS-OS
+  git config --global --add safe.directory C:/Users/mrqin/Desktop/Cairn
   ```
 
 - PowerShell：自带 Windows PowerShell 5.1；PowerShell 7.6.9 是**商店版**，路径为 `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`，实际安装在 `C:\Program Files\WindowsApps\...`。商店版 pwsh 的子进程会脱离作业对象，见 ADR-0012 与 `spikes/powershell/README.md`。
@@ -64,20 +64,20 @@
 ```powershell
 # DeepSeek 官方，openai 格式（Key 只从环境变量读取）
 $env:DEEPSEEK_API_KEY = '<官方 Key>'
-$env:NEXUS_CONTRACT_UPSTREAM = 'https://api.deepseek.com'
-$env:NEXUS_CONTRACT_MODEL = 'deepseek-flash'
-$env:NEXUS_CONTRACT_KEY_ENV = 'DEEPSEEK_API_KEY'
+$env:CAIRN_CONTRACT_UPSTREAM = 'https://api.deepseek.com'
+$env:CAIRN_CONTRACT_MODEL = 'deepseek-flash'
+$env:CAIRN_CONTRACT_KEY_ENV = 'DEEPSEEK_API_KEY'
 foreach ($s in 'openai-tool','openai-parallel','openai-abort') {
-  $env:NEXUS_CONTRACT_ONLY = $s
-  $env:NEXUS_CONTRACT_NAME = "ds-$s"
+  $env:CAIRN_CONTRACT_ONLY = $s
+  $env:CAIRN_CONTRACT_NAME = "ds-$s"
   pnpm contract:record
 }
-# anthropic 格式：NEXUS_CONTRACT_UPSTREAM 改为 https://api.deepseek.com/anthropic
-# gemini 格式：用本地网关，NEXUS_CONTRACT_UPSTREAM=http://127.0.0.1:3425，模型 group/smart-split，Key 用 magpie
+# anthropic 格式：CAIRN_CONTRACT_UPSTREAM 改为 https://api.deepseek.com/anthropic
+# gemini 格式：用本地网关，CAIRN_CONTRACT_UPSTREAM=http://127.0.0.1:3425，模型 group/smart-split，Key 用 magpie
 # 认证失败：把 Key 换成错误的值，录制 *-auth-fail
 
 pnpm vitest run -u packages/runtime-pi/src/contract.test.ts   # 为新录制生成黄金文件
-Remove-Item Env:NEXUS_CONTRACT_*                              # 恢复为用合成上游录制
+Remove-Item Env:CAIRN_CONTRACT_*                              # 恢复为用合成上游录制
 ```
 
 不设这些环境变量时，`pnpm contract:record` 用合成上游重新录制全部场景。

@@ -10,7 +10,7 @@
  *
  * 最终结果取强制拦截与第 2、3 步中最严格的一个，因此强制拦截不能被 allow 规则覆盖。
  */
-import type { PermissionEffect, PermissionMode, PermissionRule } from '@nexus/protocol'
+import type { PermissionEffect, PermissionMode, PermissionRule } from '@cairn/protocol'
 import { matchCommand, parseCommand, type ParsedCommand } from './command-match.js'
 import { matchGlob } from './glob.js'
 import type { PermissionDecision, PermissionGate, PermissionRequest } from './tool-pipeline.js'

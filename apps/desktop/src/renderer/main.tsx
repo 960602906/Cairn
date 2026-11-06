@@ -4,7 +4,7 @@
  */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createI18n } from '@nexus/i18n'
+import { createI18n } from '@cairn/i18n'
 import { getMainApi } from './api.js'
 import { App } from './App.js'
 import { loadLocale, syncDocumentLang } from './locale.js'

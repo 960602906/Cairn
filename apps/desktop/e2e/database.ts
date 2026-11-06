@@ -23,7 +23,7 @@ interface EventRow {
   readonly payload: string
 }
 
-export const databaseFile = (userData: string) => path.join(userData, 'data/nexus.db')
+export const databaseFile = (userData: string) => path.join(userData, 'data/cairn.db')
 
 /** 按会话、seq 顺序读出全部事件。 */
 export function readEvents(userData: string): StoredEvent[] {

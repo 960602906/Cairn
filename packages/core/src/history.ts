@@ -20,7 +20,7 @@ import {
   type ErrorInfo,
   type EventEnvelope,
   type ToolCall,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 
 type ToolStatus = Extract<CanonicalMessage, { role: 'tool' }>['status']
 

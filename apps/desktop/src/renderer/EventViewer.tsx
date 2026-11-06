@@ -4,7 +4,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { isPersistedEvent, type EventEnvelope } from '@nexus/protocol'
+import { isPersistedEvent, type EventEnvelope } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
 
 const NO_EVENTS: readonly EventEnvelope[] = []

@@ -5,7 +5,7 @@ import {
   type FakeScript,
   type ToolDefinition,
   type ToolRegistry,
-} from '@nexus/core'
+} from '@cairn/core'
 import {
   createEndpoint,
   HostForMain,
@@ -13,7 +13,7 @@ import {
   type PermissionRule,
   type RpcChannel,
   type UnsequencedEvent,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { createFakeHostRuntime, DEFAULT_FAKE_SCRIPT, fakeModel } from './fake-model.js'
 import { createAgentHost, type AgentHostOptions } from './host.js'
 
@@ -391,12 +391,12 @@ describe('agent host', () => {
       h.main.handle('host.approval.request', () => ({ decision: 'allow_once' }))
       await h.main.request('host.init', {
         ...init,
-        checkpoints: { gitDir: '/data/p1.git', ref: 'refs/nexus/sessions/s1' },
+        checkpoints: { gitDir: '/data/p1.git', ref: 'refs/cairn/sessions/s1' },
       })
       await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
       await h.waitFor('turn.completed')
       expect(opened).toEqual([
-        { gitDir: '/data/p1.git', workTree: '/work', ref: 'refs/nexus/sessions/s1' },
+        { gitDir: '/data/p1.git', workTree: '/work', ref: 'refs/cairn/sessions/s1' },
       ])
       expect(h.events.filter((e) => e.type === 'checkpoint.created').map((e) => e.payload)).toEqual(
         [

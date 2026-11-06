@@ -26,13 +26,13 @@ function snapshot(dir: string): [string, string][] {
 
 async function configureProvider(window: Page, baseUrl: string) {
   await window.evaluate(async (url) => {
-    const nexus = (
+    const cairn = (
       globalThis as unknown as {
-        nexus: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
+        cairn: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
       }
-    ).nexus
-    await nexus.ready()
-    await nexus.request('settings.update', {
+    ).cairn
+    await cairn.ready()
+    await cairn.request('settings.update', {
       providers: [
         {
           id: 'local',

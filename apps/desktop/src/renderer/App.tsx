@@ -5,7 +5,7 @@
  * 打开）时只显示应用名称与语言切换。
  */
 import { I18nextProvider, useTranslation } from 'react-i18next'
-import type { I18nInstance } from '@nexus/i18n'
+import type { I18nInstance } from '@cairn/i18n'
 import { ChatPanel } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
 import { EventViewer } from './EventViewer.js'

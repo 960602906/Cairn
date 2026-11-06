@@ -13,14 +13,14 @@
  * 在主进程中执行，不启动宿主：启动宿主需要模型凭据，恢复与模型无关。宿主中的影子仓库每次创建检查点前
  * 重新读取引用，主进程在同一引用上创建的检查点不会让它失效。
  */
-import { CheckpointError, type ShadowRepo, type ShadowRepoOptions } from '@nexus/checkpoint'
+import { CheckpointError, type ShadowRepo, type ShadowRepoOptions } from '@cairn/checkpoint'
 import {
   RpcError,
   type CheckpointRestorePlan,
   type CheckpointSummary,
   type ErrorInfo,
-} from '@nexus/protocol'
-import type { Storage } from '@nexus/storage'
+} from '@cairn/protocol'
+import type { Storage } from '@cairn/storage'
 import type { SessionEventService } from './event-service.js'
 import type { HostCheckpointLocation } from './host-supervisor.js'
 
@@ -40,7 +40,7 @@ export interface CheckpointServiceOptions {
   readonly events: Pick<SessionEventService, 'publish' | 'readAfter'>
   /** 会话的检查点位置（与宿主相同，`checkpoint-location.ts`）；没有时会话没有检查点。 */
   readonly location: (sessionId: string) => HostCheckpointLocation | undefined
-  /** 打开影子仓库（`@nexus/checkpoint` 的 `openShadowRepo`）。 */
+  /** 打开影子仓库（`@cairn/checkpoint` 的 `openShadowRepo`）。 */
   readonly open: OpenCheckpointRepo
   /** 会话是否正在运行或撤销改动（会话管理器与改动服务提供）。 */
   readonly isBusy: (sessionId: string) => boolean
@@ -55,7 +55,7 @@ export interface CheckpointService {
   isRestoring(sessionId: string): boolean
 }
 
-/** `@nexus/checkpoint` 的错误交给界面时保留错误码与参数。 */
+/** `@cairn/checkpoint` 的错误交给界面时保留错误码与参数。 */
 function toRpcError(error: unknown): unknown {
   if (!(error instanceof CheckpointError)) return error
   const params: ErrorInfo['params'] = { ...error.params }

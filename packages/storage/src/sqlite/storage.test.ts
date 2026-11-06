@@ -9,9 +9,9 @@ import { openSqliteStorage } from './storage.js'
 
 const dirs: string[] = []
 function tempFile(): string {
-  const dir = mkdtempSync(path.join(tmpdir(), 'nexus-sqlite-'))
+  const dir = mkdtempSync(path.join(tmpdir(), 'cairn-sqlite-'))
   dirs.push(dir)
-  return path.join(dir, 'nexus.db')
+  return path.join(dir, 'cairn.db')
 }
 
 afterAll(() => {

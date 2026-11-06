@@ -1,4 +1,4 @@
-import { EVENT_SCHEMA_VERSION } from '@nexus/protocol'
+import { EVENT_SCHEMA_VERSION } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import { SUPPORTED_EVENT_SCHEMA_VERSION } from './index.js'
 

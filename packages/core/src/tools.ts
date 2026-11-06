@@ -8,7 +8,7 @@
  * - 工具只能通过 `ToolContext` 访问工作区、检查点等外部资源（架构 §9.1）。路径校验（M1-06）、
  *   检查点（M1-12）在这里只定义接口。
  */
-import type { ContentPart, FileChangeKind, FileHunk } from '@nexus/protocol'
+import type { ContentPart, FileChangeKind, FileHunk } from '@cairn/protocol'
 import { z } from 'zod'
 import type { Logger } from './logger.js'
 import type { AbortSignalLike, RuntimeToolSpec } from './runtime.js'

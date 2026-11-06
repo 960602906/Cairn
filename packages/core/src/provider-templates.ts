@@ -16,7 +16,7 @@ import type {
   ModelRef,
   ProviderConfig,
   ProviderKind,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import type { ResolvedModel } from './runtime.js'
 
 /** 模型的能力部分（不含 id 与显示名）。 */

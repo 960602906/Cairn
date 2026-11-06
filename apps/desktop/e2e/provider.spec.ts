@@ -1,6 +1,6 @@
 /**
  * 提供方配置驱动的对话（M1-04a、M1-04b）：经 `settings.update` 配置一个指向本地 mock 端点的提供方并设为
- * 默认模型，新建会话后宿主按配置使用 pi 适配器（不依赖 `NEXUS_RUNTIME` 等开发用环境变量）。
+ * 默认模型，新建会话后宿主按配置使用 pi 适配器（不依赖 `CAIRN_RUNTIME` 等开发用环境变量）。
  * 提供方不需要 Key（自定义的本地兼容服务），Linux CI 没有系统加密也能运行。
  */
 import { startMockModel } from '../scripts/mock-model.js'
@@ -12,15 +12,15 @@ const REPLY = 'reply from configured provider'
 test('按提供方配置新建会话：回复来自配置的模型端点', async ({ launch, userData }) => {
   const mock = await startMockModel({ reply: REPLY })
   try {
-    const { window } = await launch({ env: { NEXUS_RUNTIME: 'fake' } })
+    const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     const settings = await window.evaluate(async (baseUrl) => {
-      const nexus = (
+      const cairn = (
         globalThis as unknown as {
-          nexus: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
+          cairn: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
         }
-      ).nexus
-      await nexus.ready()
-      return nexus.request('settings.update', {
+      ).cairn
+      await cairn.ready()
+      return cairn.request('settings.update', {
         providers: [
           {
             id: 'local',

@@ -8,8 +8,8 @@ import {
   type EventEnvelope,
   type RpcChannel,
   type UnsequencedEvent,
-} from '@nexus/protocol'
-import { createMemoryStorage } from '@nexus/storage'
+} from '@cairn/protocol'
+import { createMemoryStorage } from '@cairn/storage'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import type { HostProcess } from './host-process.js'
 import {
@@ -406,7 +406,7 @@ describe('startHost', () => {
 
   it('passes the checkpoint location in host.init (M1-12b)', async () => {
     const host = fakeHost()
-    const checkpoints = { gitDir: '/data/checkpoints/p1.git', ref: 'refs/nexus/sessions/s1' }
+    const checkpoints = { gitDir: '/data/checkpoints/p1.git', ref: 'refs/cairn/sessions/s1' }
     const resolveCheckpoints = vi.fn(() => checkpoints)
     const { supervisor } = setup(host, { resolveCheckpoints })
     await supervisor.startHost(init)

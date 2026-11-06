@@ -1,4 +1,4 @@
-import { createToolRegistry } from '@nexus/core'
+import { createToolRegistry } from '@cairn/core'
 import { describe, expect, it, vi } from 'vitest'
 import { createBuiltinTools } from './builtin-tools.js'
 

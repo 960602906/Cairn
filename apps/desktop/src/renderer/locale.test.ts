@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { createI18n } from '@nexus/i18n'
+import { createI18n } from '@cairn/i18n'
 import { loadLocale, syncDocumentLang } from './locale.js'
 
 describe('loadLocale', () => {

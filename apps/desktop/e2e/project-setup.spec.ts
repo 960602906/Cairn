@@ -12,7 +12,7 @@ const REPLY = 'reply via template provider'
 test('用模板配置模型、用对话框选择项目后对话', async ({ launch, userData }) => {
   const mock = await startMockModel({ reply: REPLY })
   try {
-    const { app, window } = await launch({ env: { NEXUS_RUNTIME: 'fake' } })
+    const { app, window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     const dir = projectDir(userData)
     await app.evaluate(({ dialog }, folder) => {
       dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folder] })) as never

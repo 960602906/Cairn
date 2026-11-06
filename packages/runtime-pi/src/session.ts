@@ -37,9 +37,9 @@ import type {
   RuntimeToolSpec,
   StepFinishReason,
   UserMessage,
-} from '@nexus/core'
-import type { CanonicalMessage, ErrorInfo } from '@nexus/protocol'
-import { ToolErrorCode } from '@nexus/core'
+} from '@cairn/core'
+import type { CanonicalMessage, ErrorInfo } from '@cairn/protocol'
+import { ToolErrorCode } from '@cairn/core'
 import {
   Agent,
   type AgentEvent,
@@ -122,7 +122,7 @@ class PiSession implements RuntimeSession {
         messages: toPiMessages(init.history, this.#binding.identity),
       },
       streamFn: this.#binding.streamFn,
-      sessionId: `nexus-${++sessionCounter}`,
+      sessionId: `cairn-${++sessionCounter}`,
       toolExecution: 'parallel',
       identity: { attribution: null },
     })

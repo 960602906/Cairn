@@ -111,7 +111,7 @@ export const HostForMain = defineSide({
         checkpoints: z
           .object({
             gitDir: z.string().min(1),
-            ref: z.string().regex(/^refs\/nexus\/[A-Za-z0-9._/-]+$/),
+            ref: z.string().regex(/^refs\/cairn\/[A-Za-z0-9._/-]+$/),
           })
           .optional(),
       }),

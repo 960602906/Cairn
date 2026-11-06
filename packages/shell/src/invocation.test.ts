@@ -9,7 +9,7 @@ import {
 } from './index.js'
 
 const ps: ShellInfo = { kind: 'powershell', exe: 'C:\\ps\\powershell.exe', version: '5.1' }
-const tempScriptPath = () => 'C:\\tmp\\nexus-command-1.ps1'
+const tempScriptPath = () => 'C:\\tmp\\cairn-command-1.ps1'
 
 /** 从 -EncodedCommand 取回最终脚本与其中嵌入的用户脚本。 */
 function decode(args: readonly string[]) {
@@ -34,7 +34,7 @@ describe('PowerShell', () => {
     expect(user).toBe(command)
     expect(wrapped.startsWith(POWERSHELL_PRELUDE)).toBe(true)
     expect(wrapped.endsWith(POWERSHELL_EPILOGUE)).toBe(true)
-    expect(wrapped).toContain('[ScriptBlock]::Create($__nexusScript)')
+    expect(wrapped).toContain('[ScriptBlock]::Create($__cairnScript)')
     expect(inv.tempScript).toBeUndefined()
   })
 
@@ -75,7 +75,7 @@ it('cmd：先切换到 UTF-8 代码页，命令经环境变量交给新的 cmd �
       '/v:on',
       '/s',
       '/c',
-      '"chcp 65001 >nul & "C:\\cmd.exe" /d /v:off /s /c "!NEXUS_SHELL_COMMAND!""',
+      '"chcp 65001 >nul & "C:\\cmd.exe" /d /v:off /s /c "!CAIRN_SHELL_COMMAND!""',
     ],
     windowsVerbatimArguments: true,
     env: { [CMD_COMMAND_VAR]: command },

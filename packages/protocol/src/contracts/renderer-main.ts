@@ -49,7 +49,7 @@ export type ProjectSummary = z.infer<typeof ProjectSummary>
 /** 自定义说明的长度上限（字符）。 */
 export const INSTRUCTIONS_MAX_LENGTH = 10_000
 
-/** 界面语言（ADR-0013）；与 `@nexus/i18n` 的 `SUPPORTED_LOCALES` 一致。 */
+/** 界面语言（ADR-0013）；与 `@cairn/i18n` 的 `SUPPORTED_LOCALES` 一致。 */
 export const Locale = z.enum(['zh-CN', 'en-US'])
 export type Locale = z.infer<typeof Locale>
 

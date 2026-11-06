@@ -1,4 +1,4 @@
-import type { HostApprovalRequest, PermissionRule } from '@nexus/protocol'
+import type { HostApprovalRequest, PermissionRule } from '@cairn/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { createApprovalService } from './approval-service.js'
 

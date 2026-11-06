@@ -21,7 +21,7 @@ import {
   type EventEnvelope,
   type RpcChannel,
   type RpcError,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import type { z } from 'zod'
 import type { CredentialCommands } from './credential-store.js'
 import type { SessionEventService } from './event-service.js'

@@ -230,7 +230,7 @@ describe('helpers', () => {
   })
 
   it('builds log file paths', () => {
-    expect(logFilePath('/var/log/nexus//', 'host')).toBe('/var/log/nexus/host.log')
+    expect(logFilePath('/var/log/cairn//', 'host')).toBe('/var/log/cairn/host.log')
     expect(logFilePath('C:\\data\\logs\\', 'main')).toBe('C:\\data\\logs/main.log')
   })
 })

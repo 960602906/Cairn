@@ -7,8 +7,8 @@
 const SENSITIVE_NAME =
   /(?:^|_)(?:API_?KEY|KEY|TOKEN|PASSWORD|PASSWD|PASSPHRASE|CREDENTIALS?)$|SECRET/i
 
-/** 应用内部变量：`NEXUS_*`（宿主配置、模型密钥、调试开关等），以及让 Electron 以 Node 方式运行的开关。 */
-const INTERNAL_NAME = /^(?:NEXUS_|ELECTRON_RUN_AS_NODE$)/i
+/** 应用内部变量：`CAIRN_*`（宿主配置、模型密钥、调试开关等），以及让 Electron 以 Node 方式运行的开关。 */
+const INTERNAL_NAME = /^(?:CAIRN_|ELECTRON_RUN_AS_NODE$)/i
 
 export const isSensitiveEnvName = (name: string): boolean =>
   SENSITIVE_NAME.test(name) || INTERNAL_NAME.test(name)

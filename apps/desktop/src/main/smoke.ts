@@ -1,21 +1,21 @@
 /**
- * 启动冒烟检查（M0-12）。设置 `NEXUS_SMOKE=1` 启动应用时，主进程在窗口加载后检查：
+ * 启动冒烟检查（M0-12）。设置 `CAIRN_SMOKE=1` 启动应用时，主进程在窗口加载后检查：
  * - 界面已渲染（根节点文本包含应用名称）；
  * - 界面中没有 Node 能力（`require`、`process`、`module`、`Buffer` 等均不存在）；
- * - preload 只暴露了 `window.nexus` 的 `on`、`ready`、`request` 三个函数；
+ * - preload 只暴露了 `window.cairn` 的 `on`、`ready`、`request` 三个函数；
  * - 页面带有 CSP，且 CSP 生效（`new Function` 被拒绝）；
- * - 界面经 `window.nexus` 调用 `session.list` 成功（IPC 网关、会话管理器与数据库已接通）；
+ * - 界面经 `window.cairn` 调用 `session.list` 成功（IPC 网关、会话管理器与数据库已接通）；
  * - 新建会话并发送一条输入，agent 宿主（utilityProcess + 专用端口 + FakeRuntime）完成一轮对话；
  * - 凭据存储用真实的系统加密（`safeStorage`）保存、解析并删除一个测试 Key（M1-03a）。系统加密不可用时
  *   （Linux 无密钥环，如 CI 容器）记为 `unavailable`；Windows 与 macOS 上要求可用。
  * - 随应用打包的 ripgrep 能找到并运行，`search` 工具能在临时工作区中找到内容（M1-07b）。
- * 结果以 `NEXUS_SMOKE_RESULT <JSON>` 一行输出到标准输出，随后退出（成功 0，失败 1）。
+ * 结果以 `CAIRN_SMOKE_RESULT <JSON>` 一行输出到标准输出，随后退出（成功 0，失败 1）。
  *
  * 这里只有与 Electron 无关的流程，Electron 相关的操作由入口注入，便于单元测试。
  */
 
-export const SMOKE_ENV = 'NEXUS_SMOKE'
-export const SMOKE_RESULT_PREFIX = 'NEXUS_SMOKE_RESULT '
+export const SMOKE_ENV = 'CAIRN_SMOKE'
+export const SMOKE_RESULT_PREFIX = 'CAIRN_SMOKE_RESULT '
 export const DEFAULT_SMOKE_TIMEOUT_MS = 30_000
 
 /** 在界面中执行 `RENDERER_PROBE_SCRIPT` 得到的结果。 */
@@ -23,12 +23,12 @@ export interface RendererProbe {
   readonly text: string | null
   /** 界面中存在的 Node 全局变量，应为空。 */
   readonly nodeGlobals: readonly string[]
-  /** `window.nexus` 的属性名与类型。 */
+  /** `window.cairn` 的属性名与类型。 */
   readonly api: Readonly<Record<string, string>> | null
   readonly csp: string | null
   /** CSP 生效时 `new Function` 被拒绝。 */
   readonly evalBlocked: boolean
-  /** 经 `window.nexus` 请求 `session.list` 的结果：成功为 null，失败为错误码或说明。 */
+  /** 经 `window.cairn` 请求 `session.list` 的结果：成功为 null，失败为错误码或说明。 */
   readonly ipcError: string | null
 }
 
@@ -36,15 +36,15 @@ export interface RendererProbe {
 export const RENDERER_PROBE_SCRIPT = `(async () => {
   const nodeGlobals = ['require', 'process', 'module', 'exports', 'Buffer', 'global', '__dirname']
     .filter((name) => typeof globalThis[name] !== 'undefined')
-  const nexus = globalThis.nexus
-  const api = nexus ? Object.fromEntries(Object.keys(nexus).sort().map((k) => [k, typeof nexus[k]])) : null
+  const cairn = globalThis.cairn
+  const api = cairn ? Object.fromEntries(Object.keys(cairn).sort().map((k) => [k, typeof cairn[k]])) : null
   const meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]')
   let evalBlocked = false
   try { new Function('return 1')() } catch { evalBlocked = true }
-  let ipcError = 'window.nexus is missing'
-  if (nexus) {
-    const ready = await nexus.ready()
-    const listed = ready.ok ? await nexus.request('session.list', {}) : ready
+  let ipcError = 'window.cairn is missing'
+  if (cairn) {
+    const ready = await cairn.ready()
+    const listed = ready.ok ? await cairn.request('session.list', {}) : ready
     ipcError = listed.ok ? null : listed.error.code
   }
   return {

@@ -1,5 +1,5 @@
 {
-  "name": "@nexus/core",
+  "name": "@cairn/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@nexus/protocol": "workspace:*",
+    "@cairn/protocol": "workspace:*",
     "zod": "4.6.6"
   }
 }

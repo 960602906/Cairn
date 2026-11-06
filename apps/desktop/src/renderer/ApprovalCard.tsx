@@ -9,7 +9,7 @@ import {
   APPROVAL_FEEDBACK_MAX_LENGTH,
   type ApprovalDecision,
   type PendingApproval,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
 
 const NONE: readonly PendingApproval[] = []

@@ -1,4 +1,4 @@
-import type { EventPayload } from '@nexus/protocol'
+import type { EventPayload } from '@cairn/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { FakeRuntime } from './fake-runtime.js'
 import { TOOL_OUTPUT_MAX_TOKENS } from './context-budget.js'

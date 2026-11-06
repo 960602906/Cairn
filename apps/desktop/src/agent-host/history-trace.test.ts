@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { FakeRuntime, type RuntimeSessionInit } from '@nexus/core'
-import type { CanonicalMessage } from '@nexus/protocol'
+import { FakeRuntime, type RuntimeSessionInit } from '@cairn/core'
+import type { CanonicalMessage } from '@cairn/protocol'
 import { fakeModel } from './fake-model.js'
 import { traceHistory, type HostTraceRecord } from './history-trace.js'
 

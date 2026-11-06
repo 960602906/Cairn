@@ -1,7 +1,7 @@
 /**
  * 权限引擎（M1-10a）：判定顺序的每一步、规则匹配、预设与审批生成的规则。
  */
-import { PermissionRule as PermissionRuleSchema, type PermissionRule } from '@nexus/protocol'
+import { PermissionRule as PermissionRuleSchema, type PermissionRule } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   applyPreset,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { reduceSessionEvents, createSessionView } from '@nexus/core'
-import type { EventEnvelope, UnsequencedEvent } from '@nexus/protocol'
-import { createMemoryStorage, StorageError, type Storage } from '@nexus/storage'
+import { reduceSessionEvents, createSessionView } from '@cairn/core'
+import type { EventEnvelope, UnsequencedEvent } from '@cairn/protocol'
+import { createMemoryStorage, StorageError, type Storage } from '@cairn/storage'
 import { createSessionEventService, type SessionEventsListener } from './event-service.js'
 
 function setup(sessions = ['s1']) {

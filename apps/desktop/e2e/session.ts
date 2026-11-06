@@ -80,7 +80,7 @@ export async function converse(
 export async function recordLiveText(window: Page): Promise<() => Promise<string[]>> {
   await window.evaluate(`(() => {
     const seen = []
-    globalThis.__nexusLiveText = seen
+    globalThis.__cairnLiveText = seen
     new MutationObserver(() => {
       for (const item of document.querySelectorAll('li[aria-busy="true"]')) {
         const text = item.querySelector('p')?.textContent ?? ''
@@ -88,5 +88,5 @@ export async function recordLiveText(window: Page): Promise<() => Promise<string
       }
     }).observe(document.body, { subtree: true, childList: true, characterData: true })
   })()`)
-  return async () => (await window.evaluate('globalThis.__nexusLiveText')) as string[]
+  return async () => (await window.evaluate('globalThis.__cairnLiveText')) as string[]
 }

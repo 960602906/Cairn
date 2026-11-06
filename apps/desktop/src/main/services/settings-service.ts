@@ -18,8 +18,8 @@
  * 不依赖 Electron：系统语言由调用方传入。
  */
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { hostModelConfig } from '@nexus/core'
-import { resolveLocale } from '@nexus/i18n'
+import { hostModelConfig } from '@cairn/core'
+import { resolveLocale } from '@cairn/i18n'
 import {
   ModelRef,
   PermissionMode,
@@ -28,8 +28,8 @@ import {
   type HostModelConfig,
   type ProviderConfig,
   type SettingsPatch as ProtocolSettingsPatch,
-} from '@nexus/protocol'
-import type { ProviderStore, Storage } from '@nexus/storage'
+} from '@cairn/protocol'
+import type { ProviderStore, Storage } from '@cairn/storage'
 
 export const SettingsErrorCode = {
   WriteFailed: 'settings.write_failed',

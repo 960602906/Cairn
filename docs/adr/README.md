@@ -31,3 +31,5 @@
 | [0021](0021-three-api-formats.md) | 首批支持 OpenAI、Anthropic、Gemini 三种接口格式 | 已接受 |
 | [0022](0022-prompt-enhancement.md) | 输入优化：由用户触发、确认后发送 | 已废弃 |
 | [0023](0023-platform-and-pluggable-engine.md) | 自研平台 + 可插拔 Agent 引擎（首选 pi） | 已接受 |
+| [0024](0024-conversation-first-visual-style.md) | 界面采用“对话风”视觉风格 | 已接受 |
+| [0025](0025-product-name-cairn.md) | 产品命名为 Cairn（石标） | 已接受 |

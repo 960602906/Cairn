@@ -5,7 +5,7 @@
  */
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
-import { estimateTokens, ToolError, type ToolContext, type ToolDefinition } from '@nexus/core'
+import { estimateTokens, ToolError, type ToolContext, type ToolDefinition } from '@cairn/core'
 import { resolveOrThrow } from './paths.js'
 import { bodyTokens, READ_FILE_MAX_BYTES, READ_FILE_MAX_OUTPUT_CHARS } from './read-file.js'
 

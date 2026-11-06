@@ -198,14 +198,14 @@ describe('录制格式', () => {
         url: '/v1beta/models/m:streamGenerateContent?alt=sse&key=secret',
         headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
       },
-      JSON.stringify({ id: 'add_1767225600000_3', session: 'nexus-12', n: [1, null] }),
+      JSON.stringify({ id: 'add_1767225600000_3', session: 'cairn-12', n: [1, null] }),
     )
     expect(request).toEqual({
       method: 'POST',
       path: '/v1beta/models/m:streamGenerateContent',
       query: { alt: 'sse', key: '<redacted>' },
       headers: { 'content-type': 'application/json' },
-      body: { id: 'add_<generated>', session: 'nexus-<session>', n: [1, null] },
+      body: { id: 'add_<generated>', session: 'cairn-<session>', n: [1, null] },
     })
     expect(recordRequest({ headers: {} }, 'not json')).toMatchObject({
       method: 'GET',
@@ -216,7 +216,7 @@ describe('录制格式', () => {
   })
 
   it('保存后能读回，拒绝不支持的版本', () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'nexus-contract-'))
+    const dir = mkdtempSync(path.join(tmpdir(), 'cairn-contract-'))
     try {
       const cassette = loadCassette(cassetteFile('openai-tool'))
       const file = path.join(dir, 'c.json')

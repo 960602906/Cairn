@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PROTOCOL_VERSION, type RpcBridge } from '@nexus/protocol'
+import { PROTOCOL_VERSION, type RpcBridge } from '@cairn/protocol'
 import { API_KEY, RPC_CHANNEL } from '../shared/ipc.js'
 import { createIpcChannel, exposeRendererApi, type IpcRendererLike } from './expose.js'
 
@@ -32,7 +32,7 @@ function expose() {
 }
 
 describe('exposeRendererApi', () => {
-  it('exposes only the bridge functions under window.nexus', () => {
+  it('exposes only the bridge functions under window.cairn', () => {
     const { api, exposed } = expose()
     expect([...exposed.keys()]).toEqual([API_KEY])
     expect(exposed.get(API_KEY)).toBe(api)

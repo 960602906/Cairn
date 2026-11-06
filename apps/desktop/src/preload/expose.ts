@@ -12,7 +12,7 @@ import {
   exposeEndpoint,
   type RpcBridge,
   type RpcChannel,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { API_KEY, RPC_CHANNEL } from '../shared/ipc.js'
 
 /** 用到的 `ipcRenderer` 接口。 */

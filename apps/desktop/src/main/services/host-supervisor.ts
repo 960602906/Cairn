@@ -36,8 +36,8 @@ import {
   type PermissionRule,
   type RequestOptions,
   type RpcEndpoint,
-} from '@nexus/protocol'
-import type { ResolvedCredential } from '@nexus/core'
+} from '@cairn/protocol'
+import type { ResolvedCredential } from '@cairn/core'
 import type { z } from 'zod'
 import type { SessionEventService } from './event-service.js'
 import type { HostProcess, SpawnHost } from './host-process.js'

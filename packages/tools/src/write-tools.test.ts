@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { createToolRegistry, estimateTokens, ToolError, type ToolFileChange } from '@nexus/core'
+import { createToolRegistry, estimateTokens, ToolError, type ToolFileChange } from '@cairn/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   createEditFileTool,

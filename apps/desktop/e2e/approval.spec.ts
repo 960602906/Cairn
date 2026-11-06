@@ -17,13 +17,13 @@ const COMMAND = 'echo approved-by-e2e'
 
 async function configureProvider(window: Page, baseUrl: string) {
   await window.evaluate(async (url) => {
-    const nexus = (
+    const cairn = (
       globalThis as unknown as {
-        nexus: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
+        cairn: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
       }
-    ).nexus
-    await nexus.ready()
-    await nexus.request('settings.update', {
+    ).cairn
+    await cairn.ready()
+    await cairn.request('settings.update', {
       providers: [
         {
           id: 'local',
@@ -51,10 +51,10 @@ async function configureProvider(window: Page, baseUrl: string) {
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(
     async ([m, p]) => {
-      const nexus = (
-        globalThis as unknown as { nexus: { request(m: string, p: object): Promise<unknown> } }
-      ).nexus
-      return nexus.request(m as string, p as object)
+      const cairn = (
+        globalThis as unknown as { cairn: { request(m: string, p: object): Promise<unknown> } }
+      ).cairn
+      return cairn.request(m as string, p as object)
     },
     [method, params] as const,
   )) as { ok: boolean; result?: unknown; error?: unknown }
@@ -116,7 +116,7 @@ for (const decision of ['allow', 'deny'] as const) {
           path.join(userData, 'checkpoints', repos[0]!),
           'for-each-ref',
           '--format=%(refname)',
-          'refs/nexus/sessions/',
+          'refs/cairn/sessions/',
         ])
           .toString()
           .trim()

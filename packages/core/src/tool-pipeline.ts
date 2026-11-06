@@ -18,7 +18,7 @@
  * （M1-06）通过接口注入。流水线只给出结果，`tool.*` 事件由 RunEngine 按结果发出；审批事件由流水线
  * 经 `emit` 发出。
  */
-import type { ContentPart, ErrorInfo, EventPayload } from '@nexus/protocol'
+import type { ContentPart, ErrorInfo, EventPayload } from '@cairn/protocol'
 import { TOOL_OUTPUT_MAX_TOKENS, truncateMiddle } from './context-budget.js'
 import type { Logger } from './logger.js'
 import type { ApprovalDecision } from './run-supervisor.js'

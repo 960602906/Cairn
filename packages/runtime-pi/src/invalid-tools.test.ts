@@ -2,8 +2,8 @@
  * M1-14b 验收：`RunEngine` + pi 适配器 + mock 端点：非法工具调用作为工具结果回给模型并记录事件，
  * 连续失败达到上限时结束本轮。
  */
-import { RunEngine, rebuildHistory } from '@nexus/core'
-import type { EventEnvelope, UnsequencedEvent } from '@nexus/protocol'
+import { RunEngine, rebuildHistory } from '@cairn/core'
+import type { EventEnvelope, UnsequencedEvent } from '@cairn/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PiRuntime } from './session.js'
 import { sse, startMockOpenAI, type MockOpenAI, type MockResponse } from './testing/mock-openai.js'

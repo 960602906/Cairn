@@ -26,9 +26,9 @@ import {
   sessionStatus,
   type RunView,
   type SessionView,
-} from '@nexus/core'
-import { RpcError, type ContentPart, type ModelRef, type UnsequencedEvent } from '@nexus/protocol'
-import type { Storage } from '@nexus/storage'
+} from '@cairn/core'
+import { RpcError, type ContentPart, type ModelRef, type UnsequencedEvent } from '@cairn/protocol'
+import type { Storage } from '@cairn/storage'
 import type { SessionEventService } from './event-service.js'
 import type { HostHandle, HostInit, HostSupervisor } from './host-supervisor.js'
 import type { SessionCommands } from './renderer-gateway.js'

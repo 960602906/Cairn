@@ -4,8 +4,8 @@
  * 标题与状态先取会话列表中的值。已发送、等待这一轮开始时显示为运行中（可以停止）。
  */
 import { useTranslation } from 'react-i18next'
-import { rootRun, sessionStatus, type RunView } from '@nexus/core'
-import type { RunState, SessionStatus } from '@nexus/protocol'
+import { rootRun, sessionStatus, type RunView } from '@cairn/core'
+import type { RunState, SessionStatus } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
 import { MessageStream } from './MessageStream.js'
 import { PromptInput } from './PromptInput.js'

@@ -6,7 +6,7 @@
  * 只需新增实现，调用方不变。
  */
 
-import { CREDENTIAL_REF_PATTERN } from '@nexus/protocol'
+import { CREDENTIAL_REF_PATTERN } from '@cairn/protocol'
 
 export type CredentialKind = 'local-key'
 
@@ -20,7 +20,7 @@ export interface CredentialProvider {
   resolve(ref: string): Promise<ResolvedCredential | undefined>
 }
 
-/** 凭据引用的格式见 `@nexus/protocol` 的 `CREDENTIAL_REF_PATTERN`。 */
+/** 凭据引用的格式见 `@cairn/protocol` 的 `CREDENTIAL_REF_PATTERN`。 */
 export function isCredentialRef(value: string): boolean {
   return CREDENTIAL_REF_PATTERN.test(value)
 }

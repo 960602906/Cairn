@@ -1,5 +1,5 @@
 /**
- * @nexus/runtime-pi —— 基于 pi（pi-agent-core、pi-ai）实现 `AgentRuntime`（ADR-0004、ADR-0021）。
+ * @cairn/runtime-pi —— 基于 pi（pi-agent-core、pi-ai）实现 `AgentRuntime`（ADR-0004、ADR-0021）。
  * 这是唯一可以引用 `@earendil-works/*` 的包（ESLint 依赖边界规则）。
  * 包骨架与版本守卫见 M1-01a，消息转换见 M1-01b（messages.ts），会话与事件映射见 M1-01c（session.ts、model.ts、errors.ts），
  * 接入宿主见 M1-01d；契约测试（录制回放）见 M1-02（contract.test.ts、testing/contract/）。

@@ -1,5 +1,5 @@
 /**
- * 渲染进程 IPC 传输（M0-13b，架构 §17）：把 `ipcMain` 上的 `nexus:rpc` 通道变成某个窗口专属的
+ * 渲染进程 IPC 传输（M0-13b，架构 §17）：把 `ipcMain` 上的 `cairn:rpc` 通道变成某个窗口专属的
  * `RpcChannel`，交给 IPC 网关。
  *
  * 发送方校验：只接受来自该窗口主框架、且页面是应用自己页面的消息（`isAppUrl`）。子框架、
@@ -7,7 +7,7 @@
  *
  * Electron 对象以结构化接口注入，便于在 Node 中测试。
  */
-import type { RpcChannel } from '@nexus/protocol'
+import type { RpcChannel } from '@cairn/protocol'
 import { RPC_CHANNEL } from '../../shared/ipc.js'
 import { isAppUrl, type NavigationPolicy } from '../security.js'
 

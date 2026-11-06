@@ -1,4 +1,4 @@
-import { createMemoryStorage } from '@nexus/storage'
+import { createMemoryStorage } from '@cairn/storage'
 import { describe, expect, it } from 'vitest'
 import { createProjectService } from './project-service.js'
 

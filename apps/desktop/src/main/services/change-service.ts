@@ -19,9 +19,9 @@ import {
   type FileChangeKind,
   type FileChangeSummary,
   type UnsequencedEvent,
-} from '@nexus/protocol'
-import type { FileChangeRecord, Storage } from '@nexus/storage'
-import { createPathResolver } from '@nexus/tools'
+} from '@cairn/protocol'
+import type { FileChangeRecord, Storage } from '@cairn/storage'
+import { createPathResolver } from '@cairn/tools'
 import { sha256, type BlobStore } from './blob-store.js'
 import type { SessionEventService } from './event-service.js'
 

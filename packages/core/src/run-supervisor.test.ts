@@ -1,4 +1,4 @@
-import type { RunLimits } from '@nexus/protocol'
+import type { RunLimits } from '@cairn/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   FakeRuntime,

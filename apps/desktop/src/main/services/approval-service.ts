@@ -12,14 +12,14 @@
  * 不依赖 Electron。
  */
 import { randomUUID } from 'node:crypto'
-import { approvalRule } from '@nexus/core'
+import { approvalRule } from '@cairn/core'
 import {
   RpcError,
   type ApprovalDecision,
   type HostApprovalRequest,
   type HostApprovalResponse,
   type PermissionRule,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import type { PermissionService } from './permission-service.js'
 
 export const ApprovalErrorCode = {

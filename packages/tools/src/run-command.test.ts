@@ -1,15 +1,15 @@
 /**
  * `run_command`（M1-09c）：输出格式、截断、超时与等待输入的提示、流式推送、启动失败；真实执行在当前平台的 shell 上验证。
  */
-import { createToolRegistry, estimateTokens, ToolError, type ToolContext } from '@nexus/core'
-import type { runCommand } from '@nexus/shell'
+import { createToolRegistry, estimateTokens, ToolError, type ToolContext } from '@cairn/core'
+import type { runCommand } from '@cairn/shell'
 import {
   selectShell,
   ShellError,
   type RunCommandOptions,
   type RunCommandResult,
   type ShellInfo,
-} from '@nexus/shell'
+} from '@cairn/shell'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createRunCommandTool,

@@ -10,8 +10,8 @@ import {
 import fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { FileChangeInput, UnsequencedEvent } from '@nexus/protocol'
-import { createMemoryStorage } from '@nexus/storage'
+import type { FileChangeInput, UnsequencedEvent } from '@cairn/protocol'
+import { createMemoryStorage } from '@cairn/storage'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBlobStore } from './blob-store.js'
 import { createChangeService, type ChangeServiceOptions } from './change-service.js'
@@ -19,7 +19,7 @@ import { createChangeService, type ChangeServiceOptions } from './change-service
 let dir: string
 let workspace: string
 beforeEach(() => {
-  dir = realpathSync(mkdtempSync(join(tmpdir(), 'nexus-changes-')))
+  dir = realpathSync(mkdtempSync(join(tmpdir(), 'cairn-changes-')))
   workspace = join(dir, 'work')
   mkdirSync(workspace)
 })

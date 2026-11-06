@@ -1,5 +1,5 @@
 {
-  "name": "@nexus/storage",
+  "name": "@cairn/storage",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,8 +7,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@nexus/core": "workspace:*",
-    "@nexus/protocol": "workspace:*",
+    "@cairn/core": "workspace:*",
+    "@cairn/protocol": "workspace:*",
     "better-sqlite3": "13.0.3"
   },
   "devDependencies": {

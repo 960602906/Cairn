@@ -9,7 +9,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { RpcError } from '@nexus/protocol'
+import { RpcError } from '@cairn/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CredentialErrorCode,
@@ -43,7 +43,7 @@ const ciphertextOf = (plain: string, version = 1) =>
 let dir: string
 let file: string
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'nexus-credentials-'))
+  dir = mkdtempSync(join(tmpdir(), 'cairn-credentials-'))
   file = join(dir, 'credentials.json')
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))

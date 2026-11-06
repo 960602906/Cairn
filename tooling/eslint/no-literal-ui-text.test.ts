@@ -53,7 +53,7 @@ describe('配置：只在 renderer 的 JSX 文件中启用', () => {
 
   it('reports hard-coded text in renderer components', async () => {
     expect(await ruleIds('apps/desktop/src/renderer/App.tsx', code)).toContain(
-      'nexus/no-literal-ui-text',
+      'cairn/no-literal-ui-text',
     )
   })
 
@@ -62,6 +62,6 @@ describe('配置：只在 renderer 的 JSX 文件中启用', () => {
     'apps/desktop/src/main/menu.tsx',
     'packages/ui/src/x.tsx',
   ])('does not apply to %s', async (file) => {
-    expect(await ruleIds(file, code)).not.toContain('nexus/no-literal-ui-text')
+    expect(await ruleIds(file, code)).not.toContain('cairn/no-literal-ui-text')
   })
 })

@@ -1,5 +1,5 @@
-import { FakeRuntime } from '@nexus/core'
-import { PiRuntime } from '@nexus/runtime-pi'
+import { FakeRuntime } from '@cairn/core'
+import { PiRuntime } from '@cairn/runtime-pi'
 import { describe, expect, it } from 'vitest'
 import {
   MODEL_ENV,
@@ -19,7 +19,7 @@ const piEnv = {
 }
 
 describe('runtimeKind', () => {
-  it('只有 NEXUS_RUNTIME=pi 时用 pi，其他情况用 FakeRuntime', () => {
+  it('只有 CAIRN_RUNTIME=pi 时用 pi，其他情况用 FakeRuntime', () => {
     expect(runtimeKind({})).toBe('fake')
     expect(runtimeKind({ [RUNTIME_ENV]: 'fake' })).toBe('fake')
     expect(runtimeKind({ [RUNTIME_ENV]: 'PI' })).toBe('fake')
@@ -78,7 +78,7 @@ describe('selectHostRuntime', () => {
     expect(fake.runtime).toBeInstanceOf(FakeRuntime)
   })
 
-  it('NEXUS_RUNTIME=pi 时返回 PiRuntime 与环境变量中的模型', () => {
+  it('CAIRN_RUNTIME=pi 时返回 PiRuntime 与环境变量中的模型', () => {
     const host = selectHostRuntime(piEnv)(ref)
     expect(host.runtime).toBeInstanceOf(PiRuntime)
     expect(host.runtime.id).toBe('pi')

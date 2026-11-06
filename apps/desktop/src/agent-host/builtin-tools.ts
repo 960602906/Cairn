@@ -6,14 +6,14 @@
  * - `run_command` 的 shell 在第一次注册时选出（ADR-0012：Windows 优先非商店版 pwsh 7，其次 Windows
  *   PowerShell 5.1），同一个宿主进程只选一次。shell 偏好设置（`auto` / `cmd`）随设置界面加入。
  */
-import { describeShell, selectShell, type ShellInfo } from '@nexus/shell'
+import { describeShell, selectShell, type ShellInfo } from '@cairn/shell'
 import {
   bundledRipgrepPath,
   registerExecuteTools,
   registerReadTools,
   registerWriteTools,
-} from '@nexus/tools'
-import type { ToolRegistry } from '@nexus/core'
+} from '@cairn/tools'
+import type { ToolRegistry } from '@cairn/core'
 
 export interface BuiltinToolsOptions {
   /** 打包的外部程序所在目录（ripgrep）。 */

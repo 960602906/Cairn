@@ -1,6 +1,6 @@
-import { presetRules } from '@nexus/core'
-import type { PermissionRule } from '@nexus/protocol'
-import { createMemoryStorage } from '@nexus/storage'
+import { presetRules } from '@cairn/core'
+import type { PermissionRule } from '@cairn/protocol'
+import { createMemoryStorage } from '@cairn/storage'
 import { describe, expect, it } from 'vitest'
 import { createPermissionService } from './permission-service.js'
 

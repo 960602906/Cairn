@@ -9,8 +9,8 @@
  */
 import { randomUUID } from 'node:crypto'
 import { basename, isAbsolute } from 'node:path'
-import { RpcError, type ProjectSummary } from '@nexus/protocol'
-import type { ProjectRecord, Storage } from '@nexus/storage'
+import { RpcError, type ProjectSummary } from '@cairn/protocol'
+import type { ProjectRecord, Storage } from '@cairn/storage'
 
 export const ProjectServiceErrorCode = {
   /** 对话框返回的不是绝对路径。 */

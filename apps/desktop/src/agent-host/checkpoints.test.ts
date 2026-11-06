@@ -1,8 +1,8 @@
-import { CheckpointError, CheckpointErrorCode } from '@nexus/checkpoint'
+import { CheckpointError, CheckpointErrorCode } from '@cairn/checkpoint'
 import { describe, expect, it, vi } from 'vitest'
 import { createHostCheckpoints, type OpenShadowRepo } from './checkpoints.js'
 
-const location = { gitDir: '/data/p1.git', ref: 'refs/nexus/sessions/s1', workTree: '/work' }
+const location = { gitDir: '/data/p1.git', ref: 'refs/cairn/sessions/s1', workTree: '/work' }
 
 function repo(head: string | undefined) {
   let n = 0

@@ -37,13 +37,13 @@ test('Key 只发给模型端点，不出现在渲染进程、进程输出与数�
     const request = (method: string, params: object) =>
       window.evaluate(
         async ([m, p]) => {
-          const nexus = (
+          const cairn = (
             globalThis as unknown as {
-              nexus: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
+              cairn: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
             }
-          ).nexus
-          await nexus.ready()
-          return nexus.request(m, p)
+          ).cairn
+          await cairn.ready()
+          return cairn.request(m, p)
         },
         [method, params] as const,
       )

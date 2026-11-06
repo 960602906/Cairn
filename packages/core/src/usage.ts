@@ -1,7 +1,7 @@
 /**
  * 用量与费用（M1-14b，Runtime §15）。不依赖 DOM 与 Node 类型。
  */
-import type { ModelPricing, TokenUsage } from '@nexus/protocol'
+import type { ModelPricing, TokenUsage } from '@cairn/protocol'
 
 /** 一次调用计费的 token：输入（含缓存命中）加输出。 */
 export function billedTokens(usage: TokenUsage): number {

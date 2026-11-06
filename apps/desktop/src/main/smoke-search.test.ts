@@ -13,12 +13,12 @@ afterEach(() => {
 
 describe('checkBundledSearch', () => {
   it('searches a temporary workspace and returns the ripgrep version', async () => {
-    dir = mkdtempSync(join(tmpdir(), 'nexus-smoke-search-'))
+    dir = mkdtempSync(join(tmpdir(), 'cairn-smoke-search-'))
     expect(await checkBundledSearch(rgPath, join(dir, 'ws'))).toMatch(/^ripgrep \d+/)
   })
 
   it('fails when ripgrep is missing', async () => {
-    dir = mkdtempSync(join(tmpdir(), 'nexus-smoke-search-'))
+    dir = mkdtempSync(join(tmpdir(), 'cairn-smoke-search-'))
     await expect(checkBundledSearch(join(dir, 'rg'), join(dir, 'ws'))).rejects.toThrow()
   })
 })

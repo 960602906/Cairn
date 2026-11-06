@@ -5,9 +5,9 @@
  * 不使用 `<p>`：消息流的测试按段落读取消息正文。
  */
 import { useTranslation } from 'react-i18next'
-import type { LiveToolOutputView, ToolCallView } from '@nexus/core'
-import { translateError } from '@nexus/i18n'
-import type { ContentPart } from '@nexus/protocol'
+import type { LiveToolOutputView, ToolCallView } from '@cairn/core'
+import { translateError } from '@cairn/i18n'
+import type { ContentPart } from '@cairn/protocol'
 
 /** 输出最多显示的行数。 */
 export const OUTPUT_PREVIEW_LINES = 5

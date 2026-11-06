@@ -1,13 +1,13 @@
 /**
  * 主进程与 agent 宿主之间的专用 MessagePort（ADR-0003，架构 §15.3）。主进程与宿主共用。
  *
- * 主进程用 `MessageChannelMain` 建立端口，把其中一端随 `{ type: 'nexus.port' }` 消息交给宿主，
+ * 主进程用 `MessageChannelMain` 建立端口，把其中一端随 `{ type: 'cairn.port' }` 消息交给宿主，
  * 之后双方的 RPC 只走这个端口。Electron 对象以结构化接口表示，便于在 Node 中测试。
  */
-import type { RpcChannel } from '@nexus/protocol'
+import type { RpcChannel } from '@cairn/protocol'
 
 /** 宿主收到端口的消息类型。 */
-export const HOST_PORT_MESSAGE = 'nexus.port'
+export const HOST_PORT_MESSAGE = 'cairn.port'
 
 /** `MessagePortMain` 中用到的部分。 */
 export interface MessagePortMainLike {

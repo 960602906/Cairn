@@ -1,4 +1,4 @@
-import type { EventEnvelope, EventPayload, EventType, TokenUsage } from '@nexus/protocol'
+import type { EventEnvelope, EventPayload, EventType, TokenUsage } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   createSessionView,

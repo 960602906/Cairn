@@ -6,8 +6,8 @@
  *   审批卡片；流水线随即按取消处理，不再等待请求的结果。
  * - 用户选择“本会话 / 本项目始终允许”时，主进程保存生成的规则并在结果中给出，交给 `onRule` 立即生效。
  */
-import type { ApprovalGate, ApprovalResponse } from '@nexus/core'
-import type { HostForMain, MainForHost, PermissionRule, RpcEndpoint } from '@nexus/protocol'
+import type { ApprovalGate, ApprovalResponse } from '@cairn/core'
+import type { HostForMain, MainForHost, PermissionRule, RpcEndpoint } from '@cairn/protocol'
 
 export interface HostApprovalGateOptions {
   readonly endpoint: Pick<RpcEndpoint<typeof HostForMain, typeof MainForHost>, 'request' | 'emit'>

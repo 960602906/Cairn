@@ -1,4 +1,4 @@
-import type { ModelRef } from '@nexus/protocol'
+import type { ModelRef } from '@cairn/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   FakeRuntime,

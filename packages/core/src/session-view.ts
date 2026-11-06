@@ -34,7 +34,7 @@ import {
   type SessionStatus,
   type TokenUsage,
   type ToolCall,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { canTransition } from './run-state.js'
 
 /** 会话基本信息（来自 `session.created` / `session.renamed`）。 */

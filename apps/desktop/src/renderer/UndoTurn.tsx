@@ -9,7 +9,7 @@
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { CheckpointFileChange } from '@nexus/protocol'
+import type { CheckpointFileChange } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
 
 type Stage =

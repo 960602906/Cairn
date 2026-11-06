@@ -172,7 +172,7 @@ interface DelegateResult {
 ### 7.2 隔离工作区的实现
 
 - 以委派时刻的工作区状态为基础：先在检查点影子仓库（ADR-0008）中创建一个快照，这样即使项目不是 Git 仓库、或有未提交的改动，基础状态也是准确的。
-- 从该快照检出一个独立工作区到应用数据目录（`%APPDATA%\NEXUS-OS\worktrees\<run id>\`），子 Agent 的 `workspacePath` 指向这里。
+- 从该快照检出一个独立工作区到应用数据目录（`%APPDATA%\Cairn\worktrees\<run id>\`），子 Agent 的 `workspacePath` 指向这里。
 - 被检查点排除的目录（如 `node_modules`）不会复制；需要时通过链接共享只读的依赖目录，或让子 Agent 自行安装。具体方式在 M0 预研中与检查点一起验证。
 - 子运行结束后，计算其工作区相对于基础快照的改动，生成**改动集**（ChangeSet）。
 

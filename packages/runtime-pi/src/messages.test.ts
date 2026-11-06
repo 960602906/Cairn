@@ -5,7 +5,7 @@ import type {
   Usage,
 } from '@earendil-works/pi-ai'
 import { transformMessages } from '@earendil-works/pi-ai/api/transform-messages'
-import { CanonicalMessage, type ModelRef } from '@nexus/protocol'
+import { CanonicalMessage, type ModelRef } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   FOREIGN_API,
@@ -63,7 +63,7 @@ const FORMATS: {
     name: 'anthropic（thinking 签名与被隐去的块）',
     target: {
       ref: { providerId: 'claude', modelId: 'claude-x' },
-      provider: 'nexus-claude',
+      provider: 'cairn-claude',
       api: 'anthropic-messages',
       id: 'claude-x',
     },
@@ -75,7 +75,7 @@ const FORMATS: {
         { type: 'toolCall', id: 'toolu_01', name: 'read_file', arguments: { path: 'a.ts' } },
       ],
       api: 'anthropic-messages',
-      provider: 'nexus-claude',
+      provider: 'cairn-claude',
       model: 'claude-x',
       usage: usage(),
       stopReason: 'toolUse',
@@ -364,7 +364,7 @@ describe('转换细节', () => {
         toolCallId: 'b',
         toolName: 'f',
         content: [],
-        details: { nexusStatus: 'bogus' },
+        details: { cairnStatus: 'bogus' },
         isError: false,
         timestamp: 3,
       },

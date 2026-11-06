@@ -54,9 +54,9 @@ describe('buildNotices', () => {
       },
       (dir) => (dir === '/a' ? 'alpha license' : dir === '/z2' ? 'zeta 2 license' : undefined),
     )
-    expect(
-      text.startsWith('NEXUS-OS includes the following third-party software.\n4 packages.'),
-    ).toBe(true)
+    expect(text.startsWith('Cairn includes the following third-party software.\n4 packages.')).toBe(
+      true,
+    )
     const order = ['@scope/alpha@0.1.0', 'beta@3.0.0', 'zeta@1.0.0', 'zeta@2.0.0'].map((k) =>
       text.indexOf(`\n${k}\n`),
     )

@@ -7,9 +7,9 @@
  *
  * 新增规则（审批时选择“始终允许”、用户手动配置）在 M1-11b 使用；运行中的宿主如何得到新规则随 M1-11 决定。
  */
-import { presetRules } from '@nexus/core'
-import { PermissionRule, RpcError, type PermissionMode } from '@nexus/protocol'
-import type { Storage } from '@nexus/storage'
+import { presetRules } from '@cairn/core'
+import { PermissionRule, RpcError, type PermissionMode } from '@cairn/protocol'
+import type { Storage } from '@cairn/storage'
 
 export const PermissionServiceErrorCode = {
   /** 会话不存在。 */
