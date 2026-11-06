@@ -63,7 +63,7 @@ export function buildNotices(report, licenseText) {
   }
   entries.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
   const header = [
-    'NEXUS-OS includes the following third-party software.',
+    'Cairn includes the following third-party software.',
     `${entries.length} packages.`,
   ].join('\n')
   const rule = `\n\n${'-'.repeat(80)}\n\n`

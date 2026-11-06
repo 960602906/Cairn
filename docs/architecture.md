@@ -1,4 +1,4 @@
-# NEXUS-OS 架构设计
+# Cairn 架构设计
 
 > 状态：设计定稿（v1.0），下一步进入 M0 基础阶段。实际使用中根据反馈持续调整。
 > 作者：960602906
@@ -40,9 +40,9 @@
 
 ### 1.1 定位
 
-NEXUS-OS 是一个类似 Codex 的**编程类桌面 agent 应用**。用户选择本地项目目录，用自然语言描述任务，agent 自主读代码、改代码、执行命令；每一步过程和文件改动都可视化展示，敏感操作需要用户审批，所有改动都可以回退。
+Cairn 是一个类似 Codex 的**编程类桌面 agent 应用**。用户选择本地项目目录，用自然语言描述任务，agent 自主读代码、改代码、执行命令；每一步过程和文件改动都可视化展示，敏感操作需要用户审批，所有改动都可以回退。
 
-技术上，NEXUS-OS = **自研 Agent 平台** + **可插拔的 Agent 引擎**（首选 pi，ADR-0023）：
+技术上，Cairn = **自研 Agent 平台** + **可插拔的 Agent 引擎**（首选 pi，ADR-0023）：
 
 - **平台层**（自研）：运行编排与上下文、工具注册表与工具流水线、权限与审批、检查点与改动记录、事件日志与存储、凭据、界面、多 Agent 协作。
 - **引擎层**（可替换）：只负责 agent 循环（调用模型 → 解析工具调用 → 回填结果）与模型通信，经 `AgentRuntime` 接口接入；工具执行经钩子交回平台。更换引擎不影响权限、审计与存储。
@@ -62,7 +62,7 @@ NEXUS-OS 是一个类似 Codex 的**编程类桌面 agent 应用**。用户选�
 
 | 事项 | 结论 |
 |---|---|
-| 项目名称 | NEXUS-OS |
+| 项目名称 | Cairn |
 | 首发平台 | Windows；后续支持 macOS 和 Linux |
 | 首批模型 | Anthropic、OpenAI、Gemini 三种协议格式；DeepSeek 等兼容服务走 OpenAI 格式（ADR-0021） |
 | 命令执行 | 第一版即开放，默认每条命令需审批 |
@@ -483,11 +483,11 @@ interface ModelProfile {
 
 | 内容 | 位置（Windows） |
 |---|---|
-| 数据库 | `%APPDATA%\NEXUS-OS\data\nexus.db` |
-| blob（文件内容快照） | `%APPDATA%\NEXUS-OS\data\blobs\` |
-| 检查点影子仓库 | `%APPDATA%\NEXUS-OS\checkpoints\<项目 id>\` |
-| 配置 | `%APPDATA%\NEXUS-OS\settings.json` |
-| 日志 | `%APPDATA%\NEXUS-OS\logs\` |
+| 数据库 | `%APPDATA%\Cairn\data\cairn.db` |
+| blob（文件内容快照） | `%APPDATA%\Cairn\data\blobs\` |
+| 检查点影子仓库 | `%APPDATA%\Cairn\checkpoints\<项目 id>\` |
+| 配置 | `%APPDATA%\Cairn\settings.json` |
+| 日志 | `%APPDATA%\Cairn\logs\` |
 
 默认不在用户项目目录里写入任何文件。
 
@@ -684,7 +684,7 @@ agent 循环设置最大步数和单轮最长时间，防止无限循环。
 ## 25. 仓库结构
 
 ```
-NEXUS-OS/
+Cairn/
 ├── apps/
 │   └── desktop/
 │       ├── src/

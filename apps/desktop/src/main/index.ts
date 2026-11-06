@@ -6,10 +6,10 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { openShadowRepo } from '@nexus/checkpoint'
-import { redact } from '@nexus/core'
-import { bundledRipgrepPath } from '@nexus/tools'
-import { openSqliteStorage } from '@nexus/storage'
+import { openShadowRepo } from '@cairn/checkpoint'
+import { redact } from '@cairn/core'
+import { bundledRipgrepPath } from '@cairn/tools'
+import { openSqliteStorage } from '@cairn/storage'
 import {
   app,
   BrowserWindow,
@@ -87,7 +87,7 @@ const SHUTDOWN_TIMEOUT_MS = 5_000
 let knownSecrets: () => readonly string[] = () => []
 // 日志服务接入前，异常先写到标准错误（经过脱敏）
 const reportError = (error: unknown) =>
-  console.error('[nexus]', redact(error, { homeDirs: [homedir()], secrets: knownSecrets() }))
+  console.error('[cairn]', redact(error, { homeDirs: [homedir()], secrets: knownSecrets() }))
 
 const storage = openSqliteStorage({ file: paths.database })
 /** 凭据（ADR-0010）：界面经 IPC 写入，启动宿主时按提供方配置的凭据引用解析后经 `host.init` 传入。 */
@@ -245,7 +245,7 @@ app.on('before-quit', (event) => {
     })
 })
 
-/** 冒烟检查（`NEXUS_SMOKE=1`）的 Electron 部分，流程见 `smoke.ts`。 */
+/** 冒烟检查（`CAIRN_SMOKE=1`）的 Electron 部分，流程见 `smoke.ts`。 */
 function startSmoke(window: BrowserWindow): void {
   const { webContents } = window
   void runSmokeChecks({
@@ -276,7 +276,7 @@ function startSmoke(window: BrowserWindow): void {
     credentialsRequired: process.platform !== 'linux',
     checkSearch: () =>
       checkBundledSearch(ripgrepPath, join(app.getPath('userData'), 'smoke-workspace')),
-    expectedText: 'NEXUS-OS',
+    expectedText: 'Cairn',
     userData: app.getPath('userData'),
     report: (line) => process.stdout.write(`${line}\n`),
     exit: (code) => app.exit(code),

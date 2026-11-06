@@ -1,5 +1,5 @@
 {
-  "name": "nexus-os",
+  "name": "cairn",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.28.0",
@@ -8,10 +8,10 @@
     "pnpm": ">=10"
   },
   "scripts": {
-    "dev": "pnpm --filter @nexus/desktop dev",
-    "build": "pnpm --filter @nexus/desktop build",
-    "smoke": "pnpm --filter @nexus/desktop smoke",
-    "e2e": "pnpm --filter @nexus/desktop e2e",
+    "dev": "pnpm --filter @cairn/desktop dev",
+    "build": "pnpm --filter @cairn/desktop build",
+    "smoke": "pnpm --filter @cairn/desktop smoke",
+    "e2e": "pnpm --filter @cairn/desktop e2e",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run",

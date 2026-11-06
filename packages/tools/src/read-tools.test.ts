@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { createToolRegistry, estimateTokens, ToolError } from '@nexus/core'
+import { createToolRegistry, estimateTokens, ToolError } from '@cairn/core'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   listDirTool,

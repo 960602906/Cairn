@@ -54,9 +54,9 @@ export default {
     docs: { description: 'Disallow hard-coded UI text in JSX; use i18n keys (ADR-0013)' },
     schema: [],
     messages: {
-      text: 'Hard-coded UI text "{{text}}". Use a translation key from @nexus/i18n (ADR-0013).',
+      text: 'Hard-coded UI text "{{text}}". Use a translation key from @cairn/i18n (ADR-0013).',
       attribute:
-        'Hard-coded text in "{{name}}" attribute. Use a translation key from @nexus/i18n (ADR-0013).',
+        'Hard-coded text in "{{name}}" attribute. Use a translation key from @cairn/i18n (ADR-0013).',
     },
   },
   create(context) {

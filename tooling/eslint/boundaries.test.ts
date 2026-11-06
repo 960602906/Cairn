@@ -12,31 +12,31 @@ async function ruleIds(file: string, code: string): Promise<string[]> {
 }
 
 const BOUNDARY = 'no-restricted-imports'
-const RELATIVE = 'nexus/no-cross-package-relative'
+const RELATIVE = 'cairn/no-cross-package-relative'
 
 describe('依赖边界（ADR-0015）', () => {
   it.each([
-    ['packages/protocol/src/x.ts', "import '@nexus/core'"],
-    ['packages/protocol/src/x.ts', "import '@nexus/storage'"],
-    ['packages/core/src/x.ts', "import '@nexus/storage'"],
-    ['packages/core/src/x.ts', "import '@nexus/desktop'"],
-    ['packages/storage/src/x.ts', "import '@nexus/desktop'"],
-    ['packages/i18n/src/x.ts', "import '@nexus/core'"],
+    ['packages/protocol/src/x.ts', "import '@cairn/core'"],
+    ['packages/protocol/src/x.ts', "import '@cairn/storage'"],
+    ['packages/core/src/x.ts', "import '@cairn/storage'"],
+    ['packages/core/src/x.ts', "import '@cairn/desktop'"],
+    ['packages/storage/src/x.ts', "import '@cairn/desktop'"],
+    ['packages/i18n/src/x.ts', "import '@cairn/core'"],
   ])('%s 禁止 %s', async (file, code) => {
     expect(await ruleIds(file, code)).toContain(BOUNDARY)
   })
 
   it.each([
-    ['packages/core/src/x.ts', "import '@nexus/protocol'"],
-    ['packages/storage/src/x.ts', "import '@nexus/core'"],
-    ['apps/desktop/src/main/x.ts', "import '@nexus/storage'"],
+    ['packages/core/src/x.ts', "import '@cairn/protocol'"],
+    ['packages/storage/src/x.ts', "import '@cairn/core'"],
+    ['apps/desktop/src/main/x.ts', "import '@cairn/storage'"],
     ['apps/desktop/src/main/x.ts', "import 'electron'"],
   ])('%s 允许 %s', async (file, code) => {
     expect(await ruleIds(file, code)).toEqual([])
   })
 
-  it('不允许前缀相同的包名绕过（@nexus/protocol-x 不等于 @nexus/protocol）', async () => {
-    expect(await ruleIds('packages/core/src/x.ts', "import '@nexus/protocol-x'")).toContain(
+  it('不允许前缀相同的包名绕过（@cairn/protocol-x 不等于 @cairn/protocol）', async () => {
+    expect(await ruleIds('packages/core/src/x.ts', "import '@cairn/protocol-x'")).toContain(
       BOUNDARY,
     )
   })
@@ -70,9 +70,9 @@ describe('渲染进程没有 Node 能力（架构 §17）', () => {
     },
   )
 
-  it('仍然遵守 desktop 的 @nexus 依赖范围', async () => {
-    expect(await ruleIds('apps/desktop/src/renderer/x.tsx', "import '@nexus/core'")).toEqual([])
-    expect(await ruleIds('apps/desktop/src/renderer/x.tsx', "import '@nexus/foo'")).toContain(
+  it('仍然遵守 desktop 的 @cairn 依赖范围', async () => {
+    expect(await ruleIds('apps/desktop/src/renderer/x.tsx', "import '@cairn/core'")).toEqual([])
+    expect(await ruleIds('apps/desktop/src/renderer/x.tsx', "import '@cairn/foo'")).toContain(
       BOUNDARY,
     )
   })

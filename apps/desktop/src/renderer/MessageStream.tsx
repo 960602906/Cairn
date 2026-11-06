@@ -5,9 +5,9 @@
  * 因此同一条消息不会出现两次。
  */
 import { useTranslation } from 'react-i18next'
-import { rootRun, type LiveMessageView, type MessageView, type SessionView } from '@nexus/core'
-import { translateError, type I18nInstance, type TFunction } from '@nexus/i18n'
-import type { ContentPart } from '@nexus/protocol'
+import { rootRun, type LiveMessageView, type MessageView, type SessionView } from '@cairn/core'
+import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
+import type { ContentPart } from '@cairn/protocol'
 import { ToolCallCard } from './ToolCallCard.js'
 
 const PRESERVE_LINES = { whiteSpace: 'pre-wrap' } as const

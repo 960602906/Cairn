@@ -8,8 +8,8 @@ import type {
   RuntimeToolResult,
   RuntimeToolSpec,
   UserMessage,
-} from '@nexus/core'
-import type { CanonicalMessage } from '@nexus/protocol'
+} from '@cairn/core'
+import type { CanonicalMessage } from '@cairn/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PiErrorCode } from './errors.js'
 import { PiRuntime } from './session.js'

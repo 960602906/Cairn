@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CheckpointError, openShadowRepo, type ShadowRepo } from '@nexus/checkpoint'
-import { createMemoryStorage } from '@nexus/storage'
+import { CheckpointError, openShadowRepo, type ShadowRepo } from '@cairn/checkpoint'
+import { createMemoryStorage } from '@cairn/storage'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { checkpointLocation } from './checkpoint-location.js'
 import {
@@ -15,7 +15,7 @@ import { createSessionEventService } from './event-service.js'
 let dir: string
 let workspace: string
 beforeEach(() => {
-  dir = realpathSync(mkdtempSync(join(tmpdir(), 'nexus-checkpoints-')))
+  dir = realpathSync(mkdtempSync(join(tmpdir(), 'cairn-checkpoints-')))
   workspace = join(dir, 'work')
   mkdirSync(workspace)
 })

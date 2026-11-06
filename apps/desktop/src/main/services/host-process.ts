@@ -2,12 +2,12 @@
  * 启动 agent 宿主进程（M0-13c，ADR-0003，架构 §4、§15.3）。
  *
  * 用 `utilityProcess.fork` 启动 `agent-host.js`，再用 `MessageChannelMain` 建立专用的 MessagePort：
- * 主进程保留 `port1`，把 `port2` 随 `{ type: 'nexus.port' }` 消息转交给宿主。之后主进程与宿主
+ * 主进程保留 `port1`，把 `port2` 随 `{ type: 'cairn.port' }` 消息转交给宿主。之后主进程与宿主
  * 之间的 RPC 只走这个端口（凭据在 M1 也只经它传递，ADR-0010）。
  *
  * Electron 对象以结构化接口注入，便于在 Node 中测试。
  */
-import type { RpcChannel } from '@nexus/protocol'
+import type { RpcChannel } from '@cairn/protocol'
 import { HOST_PORT_MESSAGE, portChannel, type MessagePortMainLike } from '../../shared/host-port.js'
 
 /** 正在运行的宿主进程。 */
@@ -24,7 +24,7 @@ export interface HostProcess {
 export type SpawnHost = (sessionId: string) => HostProcess
 
 /** 宿主进程的服务名，也是 `app.getAppMetrics()` 中该进程的名称。 */
-export const HOST_SERVICE_NAME = 'NEXUS-OS Agent Host'
+export const HOST_SERVICE_NAME = 'Cairn Agent Host'
 
 export interface UtilityProcessLike {
   readonly pid: number | undefined

@@ -1,6 +1,6 @@
 /** 显示 store 中最近的错误（经 i18n 翻译），可关闭。 */
 import { useTranslation } from 'react-i18next'
-import { translateError } from '@nexus/i18n'
+import { translateError } from '@cairn/i18n'
 import { useSessionStore } from './store-context.js'
 
 export function ErrorBanner() {

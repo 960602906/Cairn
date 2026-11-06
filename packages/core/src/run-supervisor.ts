@@ -18,7 +18,7 @@ import type {
   RunMode,
   RunState,
   UnsequencedEvent,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { RunEngine, RunEngineError, type RetryPolicy, type ToolExecutor } from './run-engine.js'
 import type { ToolPipeline } from './tool-pipeline.js'
 import type { ToolCheckpoints } from './tools.js'

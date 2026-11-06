@@ -14,8 +14,8 @@ import {
   type EventEnvelope,
   type PersistedEvent,
   type UnsequencedEvent,
-} from '@nexus/protocol'
-import { StorageError, StorageErrorCode, type Storage } from '@nexus/storage'
+} from '@cairn/protocol'
+import { StorageError, StorageErrorCode, type Storage } from '@cairn/storage'
 
 /** 收到某个会话新分配 seq 的事件（按 seq 升序）。 */
 export type SessionEventsListener = (sessionId: string, events: readonly EventEnvelope[]) => void

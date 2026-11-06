@@ -16,7 +16,7 @@
  * 脚本用尽后，回声回复用户输入。文本按 `chunkSize` 切分为增量，每个增量之前等待 `delayMs`；
  * 期间收到中止（`abort()` 或 `init.signal`）时，以 `aborted` 结束本步与本轮，未完成的消息不进入历史。
  */
-import type { CanonicalMessage, ContentPart, ErrorInfo, TokenUsage } from '@nexus/protocol'
+import type { CanonicalMessage, ContentPart, ErrorInfo, TokenUsage } from '@cairn/protocol'
 import type {
   AbortSignalLike,
   AgentRuntime,

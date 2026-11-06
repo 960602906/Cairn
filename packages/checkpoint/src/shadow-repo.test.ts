@@ -140,7 +140,7 @@ const options = (extra: Partial<ShadowRepoOptions> = {}): ShadowRepoOptions => (
 })
 
 beforeEach(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-checkpoint-'))
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-checkpoint-'))
   work = path.join(tmp, 'work')
   gitDir = path.join(tmp, 'shadow', 'p1.git')
   fs.mkdirSync(work)
@@ -377,8 +377,8 @@ describe('openShadowRepo: errors', () => {
     await expect(repo.checkpoint('2')).rejects.toMatchObject({ code: CheckpointErrorCode.Failed })
   })
 
-  it('rejects refs outside refs/nexus/', async () => {
-    for (const ref of ['refs/heads/main', 'refs/nexus/../heads/x', 'refs/nexus/a.lock', 'HEAD']) {
+  it('rejects refs outside refs/cairn/', async () => {
+    for (const ref of ['refs/heads/main', 'refs/cairn/../heads/x', 'refs/cairn/a.lock', 'HEAD']) {
       await expect(openShadowRepo(options({ ref }))).rejects.toMatchObject({
         code: CheckpointErrorCode.Failed,
       })
@@ -389,8 +389,8 @@ describe('openShadowRepo: errors', () => {
 describe('openShadowRepo: sessions sharing a project', () => {
   it('keeps separate checkpoint chains on one shadow repository', async () => {
     write('a.txt', 'a')
-    const s1 = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s1' }))
-    const s2 = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s2' }))
+    const s1 = await openShadowRepo(options({ ref: 'refs/cairn/sessions/s1' }))
+    const s2 = await openShadowRepo(options({ ref: 'refs/cairn/sessions/s2' }))
     const first = await s1.checkpoint('s1 turn')
     write('a.txt', 'b')
     const second = await s2.checkpoint('s2 turn')
@@ -401,17 +401,17 @@ describe('openShadowRepo: sessions sharing a project', () => {
     expect(read('a.txt')).toBe('a')
     await s1.restore(second.commit)
     expect(read('a.txt')).toBe('b')
-    const reopened = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s1' }))
+    const reopened = await openShadowRepo(options({ ref: 'refs/cairn/sessions/s1' }))
     expect(reopened.head()).not.toBe(second.commit)
     await expect(reopened.has(third.commit)).resolves.toBe(true)
   })
 
   it('continues the chain when another process moved the same ref', async () => {
     write('a.txt', 'a')
-    const host = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s1' }))
+    const host = await openShadowRepo(options({ ref: 'refs/cairn/sessions/s1' }))
     const first = await host.checkpoint('turn')
     // 另一个进程（主进程恢复时）在同一个引用上创建检查点
-    const main = await openShadowRepo(options({ ref: 'refs/nexus/sessions/s1' }))
+    const main = await openShadowRepo(options({ ref: 'refs/cairn/sessions/s1' }))
     write('a.txt', 'b')
     const { before } = await main.restore(first.commit)
     expect(read('a.txt')).toBe('a')

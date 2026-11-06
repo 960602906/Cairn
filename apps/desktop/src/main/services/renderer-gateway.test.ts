@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSessionView, reduceSessionEvents } from '@nexus/core'
+import { createSessionView, reduceSessionEvents } from '@cairn/core'
 import {
   createEndpoint,
   MainForRenderer,
@@ -7,8 +7,8 @@ import {
   type EventEnvelope,
   type RpcChannel,
   type UnsequencedEvent,
-} from '@nexus/protocol'
-import { createMemoryStorage } from '@nexus/storage'
+} from '@cairn/protocol'
+import { createMemoryStorage } from '@cairn/storage'
 import type { CredentialCommands } from './credential-store.js'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'

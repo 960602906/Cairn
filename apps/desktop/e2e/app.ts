@@ -1,7 +1,7 @@
 /**
  * 端到端测试的应用启动与夹具（M0-16a）。
  *
- * - 每个用例一个临时数据目录（`NEXUS_USER_DATA_DIR`），用例结束后关闭所有应用实例并删除，不污染开发
+ * - 每个用例一个临时数据目录（`CAIRN_USER_DATA_DIR`），用例结束后关闭所有应用实例并删除，不污染开发
  *   与正式数据。同一用例中多次 `launch()` 共用这个目录，用于验证重启后恢复。
  * - 启动前写入 `settings.json` 固定界面语言（默认 `zh-CN`），断言的文案不受系统语言影响；已有设置文件
  *   （重启时）不覆盖。
@@ -49,14 +49,14 @@ export async function launchApp(
   }
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && key !== 'NEXUS_SMOKE' && key !== 'ELECTRON_RUN_AS_NODE') {
+    if (value !== undefined && key !== 'CAIRN_SMOKE' && key !== 'ELECTRON_RUN_AS_NODE') {
       env[key] = value
     }
   }
   const app = await _electron.launch({
     executablePath: electronPath,
     args: [APP_DIR, ...PLATFORM_ARGS],
-    env: { ...env, ...options.env, NEXUS_USER_DATA_DIR: userData },
+    env: { ...env, ...options.env, CAIRN_USER_DATA_DIR: userData },
   })
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
@@ -78,7 +78,7 @@ export interface AppFixtures {
 export const test = base.extend<AppFixtures>({
   // eslint-disable-next-line no-empty-pattern -- Playwright 要求夹具的第一个参数使用解构
   userData: async ({}, use) => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'nexus-e2e-'))
+    const dir = mkdtempSync(path.join(tmpdir(), 'cairn-e2e-'))
     await use(dir)
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   },

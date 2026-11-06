@@ -1,4 +1,4 @@
-# NEXUS-OS
+# Cairn
 
 一个类似 Codex 的编程类桌面 agent 应用：**自研 Agent 平台 + 可插拔的 Agent 引擎**（首选 pi）。平台负责运行编排、工具与权限、审批、检查点、存储和界面；引擎只负责模型循环与模型通信，经 `AgentRuntime` 接口接入（ADR-0004、ADR-0023）。基于 Electron 与 React，支持接入多种 LLM。
 
@@ -26,7 +26,7 @@ A Codex-like coding agent desktop app: **our own agent platform + a pluggable ag
 pnpm install
 pnpm typecheck
 pnpm test
-pnpm dev     # 启动桌面应用（开发模式，数据放在独立的 NEXUS-OS-dev 目录）
+pnpm dev     # 启动桌面应用（开发模式，数据放在独立的 Cairn-dev 目录）
 pnpm build   # 构建桌面应用
 pnpm smoke   # 用构建产物做启动冒烟测试
 pnpm e2e     # 用构建产物跑端到端测试（Playwright；Linux 无显示器时用 xvfb-run -a pnpm e2e）

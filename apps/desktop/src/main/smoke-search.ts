@@ -4,8 +4,8 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { TOOL_OUTPUT_MAX_TOKENS, type Logger } from '@nexus/core'
-import { createPathResolver, createSearchTool, ripgrepVersion } from '@nexus/tools'
+import { TOOL_OUTPUT_MAX_TOKENS, type Logger } from '@cairn/core'
+import { createPathResolver, createSearchTool, ripgrepVersion } from '@cairn/tools'
 
 const silentLogger: Logger = {
   level: 'error',

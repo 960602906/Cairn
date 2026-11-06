@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { expect, test } from './app.js'
 
-const SECRET = 'nexus-e2e-secret-value-0123456789'
+const SECRET = 'cairn-e2e-secret-value-0123456789'
 
 type Reply = { ok: true; result: unknown } | { ok: false; error: { code: string } }
 
@@ -15,13 +15,13 @@ test('渲染进程可以保存与查询凭据，但读不到明文', async ({ la
   const call = (method: string, params: object) =>
     window.evaluate(
       async ([m, p]) => {
-        const nexus = (
+        const cairn = (
           globalThis as unknown as {
-            nexus: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
+            cairn: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
           }
-        ).nexus
-        await nexus.ready()
-        return nexus.request(m, p)
+        ).cairn
+        await cairn.ready()
+        return cairn.request(m, p)
       },
       [method, params] as const,
     ) as Promise<Reply>

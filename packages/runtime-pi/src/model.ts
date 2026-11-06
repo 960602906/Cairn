@@ -10,7 +10,7 @@
  * - 每个会话一个 pi `Models` 注册表，只含这一个提供方和模型，Key 只在请求时由闭包提供，不进入环境变量。
  * - pi（SDK）自身的重试关闭（`maxRetries: 0`），失败如实上报，由 M1-14 的重试策略处理。
  */
-import type { ProviderKind, ResolvedModel } from '@nexus/core'
+import type { ProviderKind, ResolvedModel } from '@cairn/core'
 import {
   createModels,
   createProvider,
@@ -92,7 +92,7 @@ export function bindModel(resolved: ResolvedModel): PiModelBinding {
       id: definition.provider,
       baseUrl: definition.baseUrl,
       auth: {
-        apiKey: { name: 'NEXUS credential', resolve: async () => ({ auth: { apiKey } }) },
+        apiKey: { name: 'Cairn credential', resolve: async () => ({ auth: { apiKey } }) },
       },
       models: [definition],
       api: STREAMS_BY_KIND[resolved.providerKind](),

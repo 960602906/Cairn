@@ -10,8 +10,8 @@ import {
   resolveModel,
   type ProviderTemplate,
   type RuntimeEvent,
-} from '@nexus/core'
-import type { ProviderConfig } from '@nexus/protocol'
+} from '@cairn/core'
+import type { ProviderConfig } from '@cairn/protocol'
 import { ANTHROPIC_MODELS } from '@earendil-works/pi-ai/providers/anthropic.models'
 import { DEEPSEEK_MODELS } from '@earendil-works/pi-ai/providers/deepseek.models'
 import { GOOGLE_MODELS } from '@earendil-works/pi-ai/providers/google.models'

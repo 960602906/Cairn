@@ -2,15 +2,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RpcError } from '@nexus/protocol'
-import { createMemoryStorage } from '@nexus/storage'
+import { RpcError } from '@cairn/protocol'
+import { createMemoryStorage } from '@cairn/storage'
 import { createSettingsService } from './settings-service.js'
 
 let dir: string
 let file: string
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'nexus-settings-'))
+  dir = mkdtempSync(join(tmpdir(), 'cairn-settings-'))
   file = join(dir, 'settings.json')
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))

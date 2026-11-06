@@ -7,7 +7,7 @@ import {
   type EventEnvelope,
   type EventPayload,
   type EventType,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import { createSessionView, reduceSession, reduceSessionEvents, type SessionView } from './index.js'
 

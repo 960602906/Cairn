@@ -78,7 +78,7 @@ describe('runI18nCheck', () => {
 
 describe('loadLocales', () => {
   it('reads locale directories and ignores other files', () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'nexus-i18n-'))
+    const dir = mkdtempSync(path.join(tmpdir(), 'cairn-i18n-'))
     try {
       mkdirSync(path.join(dir, 'zh-CN'))
       writeFileSync(path.join(dir, 'zh-CN', 'common.json'), '{"a":"一"}')

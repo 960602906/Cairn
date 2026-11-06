@@ -1,14 +1,14 @@
 /**
  * `run_command`（M1-09c；ADR-0012；架构 §9.2、§9.3）：在工作区根目录用所选 shell 执行一条命令。
  *
- * - 执行交给 `@nexus/shell`：编码、错误流与退出码、超时与进程树、环境变量清洗都在那里处理；
+ * - 执行交给 `@cairn/shell`：编码、错误流与退出码、超时与进程树、环境变量清洗都在那里处理；
  * - 输出经 `ctx.progress` 流式推送（`tool.output.delta`）；
  * - 交回模型的输出保留开头和结尾、中间截断并注明省略了多少；内存中也只保留开头与结尾；
  * - 超时前长时间没有输出时，说明命令可能在等待输入（不支持交互）。
  *
  * 危险命令识别与审批在 M1-10、M1-11。
  */
-import { estimateTokens, ToolError, type ToolDefinition } from '@nexus/core'
+import { estimateTokens, ToolError, type ToolDefinition } from '@cairn/core'
 import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   describeShell,
@@ -17,7 +17,7 @@ import {
   type RunCommandOptions,
   type RunCommandResult,
   type ShellInfo,
-} from '@nexus/shell'
+} from '@cairn/shell'
 import { resolveOrThrow } from './paths.js'
 import { READ_FILE_MAX_OUTPUT_CHARS } from './read-file.js'
 

@@ -8,8 +8,8 @@
  * Key 只经 `credentials.set` 写入，界面读不到明文；系统加密不可用时（Linux 没有密钥环）提示无法保存。
  * 添加的提供方 id 用模板 id，已存在时加序号。
  */
-import { PROVIDER_TEMPLATES, findTemplate, providerFromTemplate } from '@nexus/core'
-import type { ModelRef, ProviderConfig } from '@nexus/protocol'
+import { PROVIDER_TEMPLATES, findTemplate, providerFromTemplate } from '@cairn/core'
+import type { ModelRef, ProviderConfig } from '@cairn/protocol'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from './store-context.js'

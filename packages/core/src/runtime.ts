@@ -18,7 +18,7 @@ import type {
   ModelRef,
   TokenUsage,
   ToolCall,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 
 export type Unsubscribe = () => void
 

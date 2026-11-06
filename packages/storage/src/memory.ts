@@ -1,7 +1,7 @@
 /**
  * 内存存储实现，用于测试与开发。与 SQLite 实现通过同一套契约测试（`testing/store-contract.ts`）。
  */
-import { isLiveEventType, type PersistedEvent, type ProviderConfig } from '@nexus/protocol'
+import { isLiveEventType, type PersistedEvent, type ProviderConfig } from '@cairn/protocol'
 import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
 import {
   StorageError,

@@ -49,7 +49,7 @@ import type {
   AgentDefinitionRef,
   CanonicalMessage,
   UnsequencedEvent,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { acceptsInput, canTransition, isActiveRunState } from './run-state.js'
 import { TOOL_RESULT_NOTICE } from './system-prompt.js'
 import type { ToolCallObserver, ToolOutcome, ToolPipeline } from './tool-pipeline.js'

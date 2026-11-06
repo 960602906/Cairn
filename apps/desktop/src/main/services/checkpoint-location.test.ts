@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { createMemoryStorage } from '@nexus/storage'
+import { createMemoryStorage } from '@cairn/storage'
 import { describe, expect, it } from 'vitest'
 import { checkpointLocation } from './checkpoint-location.js'
 
@@ -16,7 +16,7 @@ describe('checkpointLocation', () => {
     })
     expect(checkpointLocation('/data/checkpoints', storage, 's1')).toEqual({
       gitDir: join('/data/checkpoints', 'p1.git'),
-      ref: 'refs/nexus/sessions/s1',
+      ref: 'refs/cairn/sessions/s1',
     })
     expect(checkpointLocation('/data/checkpoints', storage, 'missing')).toBeUndefined()
     expect(checkpointLocation('/data/checkpoints', storage, 'a/b')).toBeUndefined()

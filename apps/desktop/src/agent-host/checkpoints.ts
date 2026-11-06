@@ -1,6 +1,6 @@
 /**
  * 宿主中的检查点（M1-12b，ADR-0008，架构 §11.2）：按 `host.init` 给出的影子仓库目录与会话的引用
- * 打开影子仓库（`@nexus/checkpoint`），交给运行（每轮开始）与工具流水线（执行命令前）使用。
+ * 打开影子仓库（`@cairn/checkpoint`），交给运行（每轮开始）与工具流水线（执行命令前）使用。
  *
  * - 宿主启动时就在后台打开；这个会话还没有检查点时立即在后台创建首个检查点（项目第一次打开时
  *   约需十几秒），之后的检查点排在它后面。
@@ -14,8 +14,8 @@ import {
   CheckpointErrorCode,
   type ShadowRepo,
   type ShadowRepoOptions,
-} from '@nexus/checkpoint'
-import type { CheckpointReason, ToolCheckpoints } from '@nexus/core'
+} from '@cairn/checkpoint'
+import type { CheckpointReason, ToolCheckpoints } from '@cairn/core'
 
 type Repo = Pick<ShadowRepo, 'head' | 'checkpoint'>
 

@@ -15,8 +15,8 @@ import {
   type ApprovalPreview,
   type ToolContext,
   type ToolDefinition,
-} from '@nexus/core'
-import type { FileHunk } from '@nexus/protocol'
+} from '@cairn/core'
+import type { FileHunk } from '@cairn/protocol'
 import { createTwoFilesPatch } from 'diff'
 import { resolveOrThrow } from './paths.js'
 import {

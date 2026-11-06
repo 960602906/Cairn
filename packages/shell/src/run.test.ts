@@ -30,7 +30,7 @@ const clean = (s: string) => s.replace(/\r\n/g, '\n').trim()
 let work: string
 beforeAll(() => {
   // native：展开 Windows 的 8.3 短路径（如 RUNNER~1），与 shell 报告的路径一致
-  work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nexus-shell-')))
+  work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'cairn-shell-')))
 })
 afterAll(() => rmSync(work, { recursive: true, force: true }))
 
@@ -190,8 +190,8 @@ for (const shell of powershells) {
     it('环境变量清洗：密钥与内部变量不传入，PYTHONUTF8=1', async () => {
       const result = await run(
         shell,
-        'Write-Output "[$env:PYTHONUTF8][$env:MY_API_KEY][$env:NEXUS_RUNTIME][$env:KEEP_ME]"',
-        { env: { ...process.env, MY_API_KEY: 'k', NEXUS_RUNTIME: 'pi', KEEP_ME: '值' } },
+        'Write-Output "[$env:PYTHONUTF8][$env:MY_API_KEY][$env:CAIRN_RUNTIME][$env:KEEP_ME]"',
+        { env: { ...process.env, MY_API_KEY: 'k', CAIRN_RUNTIME: 'pi', KEEP_ME: '值' } },
       )
       expect(result.out).toBe('[1][][][值]')
     })
@@ -281,8 +281,8 @@ describe.runIf(!isWindows)('bash', () => {
   })
 
   it('环境变量清洗：密钥与内部变量不传入，PYTHONUTF8=1', async () => {
-    const env = { ...process.env, MY_API_KEY: 'k', NEXUS_RUNTIME: 'pi', KEEP_ME: '值' }
-    const result = await run(bash, 'echo "[$PYTHONUTF8][$MY_API_KEY][$NEXUS_RUNTIME][$KEEP_ME]"', {
+    const env = { ...process.env, MY_API_KEY: 'k', CAIRN_RUNTIME: 'pi', KEEP_ME: '值' }
+    const result = await run(bash, 'echo "[$PYTHONUTF8][$MY_API_KEY][$CAIRN_RUNTIME][$KEEP_ME]"', {
       env,
     })
     expect(result.out).toBe('[1][][][值]')

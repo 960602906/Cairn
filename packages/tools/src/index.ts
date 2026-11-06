@@ -1,8 +1,8 @@
 /**
- * @nexus/tools —— 内置工具实现（架构 §9.2）。只能经 `ToolContext` 访问工作区。
- * 依赖 @nexus/core、@nexus/protocol 与 @nexus/shell；不可引用 pi（ADR-0004）。
+ * @cairn/tools —— 内置工具实现（架构 §9.2）。只能经 `ToolContext` 访问工作区。
+ * 依赖 @cairn/core、@cairn/protocol 与 @cairn/shell；不可引用 pi（ADR-0004）。
  */
-import type { ToolRegistry } from '@nexus/core'
+import type { ToolRegistry } from '@cairn/core'
 import { listDirTool } from './list-dir.js'
 import { readFileTool } from './read-file.js'
 import { createRunCommandTool, type RunCommandToolOptions } from './run-command.js'

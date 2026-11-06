@@ -3,9 +3,9 @@
  * 宿主进程以内存通道模拟，不启动 Electron。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { rebuildHistory, type FakeScript } from '@nexus/core'
-import type { PersistedEvent, RpcChannel } from '@nexus/protocol'
-import { createMemoryStorage, type Storage } from '@nexus/storage'
+import { rebuildHistory, type FakeScript } from '@cairn/core'
+import type { PersistedEvent, RpcChannel } from '@cairn/protocol'
+import { createMemoryStorage, type Storage } from '@cairn/storage'
 import { createAgentHost } from '../../agent-host/host.js'
 import { createFakeHostRuntime } from '../../agent-host/fake-model.js'
 import { createSessionEventService, type SessionEventService } from './event-service.js'

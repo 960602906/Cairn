@@ -9,7 +9,7 @@ import {
 } from './smoke.js'
 
 const goodProbe: RendererProbe = {
-  text: 'NEXUS-OS',
+  text: 'Cairn',
   nodeGlobals: [],
   api: { on: 'function', ready: 'function', request: 'function' },
   csp: "default-src 'self'; script-src 'self'",
@@ -27,7 +27,7 @@ function deps(overrides: Partial<SmokeDeps> = {}) {
     checkCredentials: () => Promise.resolve('stored'),
     credentialsRequired: true,
     checkSearch: () => Promise.resolve('ripgrep 15.0.0'),
-    expectedText: 'NEXUS-OS',
+    expectedText: 'Cairn',
     userData: '/data',
     report,
     exit,
@@ -44,29 +44,29 @@ function reported(report: ReturnType<typeof vi.fn>): unknown {
 }
 
 describe('isSmokeRun', () => {
-  it('is enabled only by NEXUS_SMOKE=1', () => {
-    expect(isSmokeRun({ NEXUS_SMOKE: '1' })).toBe(true)
-    expect(isSmokeRun({ NEXUS_SMOKE: '0' })).toBe(false)
+  it('is enabled only by CAIRN_SMOKE=1', () => {
+    expect(isSmokeRun({ CAIRN_SMOKE: '1' })).toBe(true)
+    expect(isSmokeRun({ CAIRN_SMOKE: '0' })).toBe(false)
     expect(isSmokeRun({})).toBe(false)
   })
 })
 
 describe('checkRendererProbe', () => {
   it('accepts an isolated renderer', () => {
-    expect(checkRendererProbe(goodProbe, 'NEXUS-OS')).toEqual([])
+    expect(checkRendererProbe(goodProbe, 'Cairn')).toEqual([])
   })
 
   it('reports Node globals, unexpected API and missing CSP', () => {
     const problems = checkRendererProbe(
       {
-        text: 'NEXUS-OS',
+        text: 'Cairn',
         nodeGlobals: ['require', 'process'],
         api: { on: 'function', ready: 'function', request: 'function', send: 'function' },
         csp: null,
         evalBlocked: false,
         ipcError: 'rpc.timeout',
       },
-      'NEXUS-OS',
+      'Cairn',
     )
     expect(problems).toEqual([
       'renderer has Node globals: require, process',
@@ -75,7 +75,7 @@ describe('checkRendererProbe', () => {
       'CSP does not block eval',
       'session.list over IPC failed: rpc.timeout',
     ])
-    expect(checkRendererProbe({ ...goodProbe, api: null }, 'NEXUS-OS')).toEqual([
+    expect(checkRendererProbe({ ...goodProbe, api: null }, 'Cairn')).toEqual([
       'unexpected preload API: null',
     ])
   })

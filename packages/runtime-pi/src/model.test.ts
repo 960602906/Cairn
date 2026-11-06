@@ -1,4 +1,4 @@
-import type { ResolvedModel } from '@nexus/core'
+import type { ResolvedModel } from '@cairn/core'
 import { describe, expect, it } from 'vitest'
 import { API_BY_KIND, bindModel, toPiModel } from './model.js'
 

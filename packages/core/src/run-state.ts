@@ -5,7 +5,7 @@
  * 每次成功转换后发出 `run.state.changed` 事件。非法转换返回错误而不抛出，
  * 调用方记录日志并忽略，运行不会进入未定义状态（Runtime §5.2）。
  */
-import { RunState, type ErrorInfo } from '@nexus/protocol'
+import { RunState, type ErrorInfo } from '@cairn/protocol'
 
 /** 全部运行状态，顺序与 protocol 中的定义一致。 */
 export const RUN_STATES: readonly RunState[] = RunState.options

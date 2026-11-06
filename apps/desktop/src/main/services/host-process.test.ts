@@ -54,7 +54,7 @@ describe('createUtilityHostSpawner', () => {
       env: { PATH: '/bin' },
     })('s1')
     expect(fork).toHaveBeenCalledWith('/app/out/main/agent-host.js', [], {
-      serviceName: 'NEXUS-OS Agent Host',
+      serviceName: 'Cairn Agent Host',
       env: { PATH: '/bin' },
     })
   })
@@ -72,7 +72,7 @@ describe('createUtilityHostSpawner', () => {
     const proc = spawn('s1')
 
     expect(fork).toHaveBeenCalledWith('/app/out/main/agent-host.js', [], {
-      serviceName: 'NEXUS-OS Agent Host',
+      serviceName: 'Cairn Agent Host',
     })
     expect(child.postMessage).toHaveBeenCalledWith({ type: HOST_PORT_MESSAGE }, [p2.port])
     expect(p1.port.start).toHaveBeenCalled()

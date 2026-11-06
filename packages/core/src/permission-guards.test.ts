@@ -1,7 +1,7 @@
 /**
  * 强制拦截（M1-10b）：危险命令样例集（bash、PowerShell、cmd 写法）与敏感文件；不能被 allow 规则覆盖。
  */
-import type { PermissionRule } from '@nexus/protocol'
+import type { PermissionRule } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   assessCommand,

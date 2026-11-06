@@ -1,5 +1,5 @@
 {
-  "name": "@nexus/runtime-pi",
+  "name": "@cairn/runtime-pi",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.5.0",
     "@earendil-works/pi-ai": "1.5.0",
-    "@nexus/core": "workspace:*",
-    "@nexus/protocol": "workspace:*"
+    "@cairn/core": "workspace:*",
+    "@cairn/protocol": "workspace:*"
   }
 }

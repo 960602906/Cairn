@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { EventEnvelope, UnsequencedEvent } from '@nexus/protocol'
-import { createMemoryStorage, type Storage } from '@nexus/storage'
+import type { EventEnvelope, UnsequencedEvent } from '@cairn/protocol'
+import { createMemoryStorage, type Storage } from '@cairn/storage'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import type {
   HostExit,

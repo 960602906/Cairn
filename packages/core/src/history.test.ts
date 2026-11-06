@@ -3,7 +3,7 @@ import {
   type EventEnvelope,
   type EventPayload,
   type EventType,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import { INTERRUPTED_TOOL_RESULT_TEXT, rebuildHistory } from './index.js'
 

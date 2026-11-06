@@ -1,8 +1,8 @@
 /**
  * M1-14a 验收：`RunEngine` + pi 适配器 + mock 端点，构造各类失败，验证重试次数、退避、事件与最终状态。
  */
-import { RunEngine, type RetryPolicy } from '@nexus/core'
-import type { UnsequencedEvent } from '@nexus/protocol'
+import { RunEngine, type RetryPolicy } from '@cairn/core'
+import type { UnsequencedEvent } from '@cairn/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PiErrorCode } from './errors.js'
 import { PiRuntime } from './session.js'

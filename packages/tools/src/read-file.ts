@@ -2,7 +2,7 @@
  * `read_file`（M1-07a；架构 §9.2、§18）：按行范围读取文本文件，大文件分段；识别 BOM 与编码；二进制文件只给出提示。
  */
 import fs from 'node:fs/promises'
-import { estimateTokens, ToolError, type ToolDefinition } from '@nexus/core'
+import { estimateTokens, ToolError, type ToolDefinition } from '@cairn/core'
 import { resolveOrThrow } from './paths.js'
 
 export interface ReadFileInput {

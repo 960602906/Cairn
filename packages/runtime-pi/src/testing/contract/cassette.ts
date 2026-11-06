@@ -101,11 +101,11 @@ export function recordRequest(
  * 每次运行都会变的字符串：
  * - pi-ai 在 Gemini 响应不带工具调用 id 时生成的 id：`<工具名>_<Date.now()>_<计数>`。对 Gemini 3 起的模型，
  *   这个 id 会出现在下一次请求的 `functionCall` / `functionResponse` 中；
- * - 会话 id `nexus-<n>`（进程内计数）：pi 对部分服务（如 api.openai.com）作为 `prompt_cache_key` 发送。
+ * - 会话 id `cairn-<n>`（进程内计数）：pi 对部分服务（如 api.openai.com）作为 `prompt_cache_key` 发送。
  */
 const VOLATILE_STRINGS: readonly [RegExp, string][] = [
   [/^(.+)_\d{13}_\d+$/, '$1_<generated>'],
-  [/^nexus-\d+$/, 'nexus-<session>'],
+  [/^cairn-\d+$/, 'cairn-<session>'],
 ]
 
 /** 请求体的规范化（录制与回放比对都经过这里）：只替换每次运行都会变的字符串，其余原样保留。 */

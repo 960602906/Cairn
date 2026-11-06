@@ -2,14 +2,14 @@
  * 影子仓库检查点（M1-12a，ADR-0008，架构 §11，按 S5 的做法：`spikes/shadow-git/README.md`）。
  *
  * - 每个项目一个影子仓库，放在应用数据目录：`--git-dir` 指向影子仓库，`--work-tree` 指向工作区，
- *   不触碰用户自己的 `.git`。检查点是 `refs/nexus/checkpoints` 上的一条提交链，提交 id 即检查点 id。
- * - 与用户环境隔离（`git.ts`）；仓库自己的设置写在 `nexus.gitconfig`（经 `include.path` 引入，每次
+ *   不触碰用户自己的 `.git`。检查点是 `refs/cairn/checkpoints` 上的一条提交链，提交 id 即检查点 id。
+ * - 与用户环境隔离（`git.ts`）；仓库自己的设置写在 `cairn.gitconfig`（经 `include.path` 引入，每次
  *   打开时重写）：不换行转换、不运行钩子、不签名、不自动 gc；`core.bigFileThreshold=1` 让 `git add`
  *   直接写包文件，`core.fsync=-loose-object,…` 只对包文件与引用 fsync（Windows 上的性能前提）。
  * - `info/attributes` 写入 `* -text -eol -filter -ident -working-tree-encoding`：按原样保存字节，
  *   不调用 LFS 等过滤器。
  * - 排除：项目各级 `.gitignore` 自动生效；额外规则（默认 `node_modules/` 等）、超过大小上限的文件、
- *   嵌套仓库按精确路径写入 `info/exclude`，名单保存在 `nexus-state.json`，每次检查点重新检查。
+ *   嵌套仓库按精确路径写入 `info/exclude`，名单保存在 `cairn-state.json`，每次检查点重新检查。
  * - 创建：`status` → 更新排除名单 → `add -A` → `write-tree` → 树与上一个检查点相同则复用 →
  *   `commit-tree` → `update-ref`。
  * - 恢复：先建检查点，`diff-tree` 得到将改动的文件（预览），`read-tree -u --reset` 改写工作区。
@@ -38,9 +38,9 @@ import {
   type FileChange,
 } from './patterns.js'
 
-export const CHECKPOINT_REF = 'refs/nexus/checkpoints'
-/** 检查点引用只能在 `refs/nexus/` 之下。 */
-const REF_PATTERN = /^refs\/nexus\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/
+export const CHECKPOINT_REF = 'refs/cairn/checkpoints'
+/** 检查点引用只能在 `refs/cairn/` 之下。 */
+const REF_PATTERN = /^refs\/cairn\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/
 /** Git 因锁文件已存在而失败（另一个进程正在写索引或引用）。 */
 const LOCKED = /\.lock'?: File exists/
 const LOCK_RETRY_MS = 50
@@ -51,8 +51,8 @@ export const DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024
 export const DEFAULT_EXTRA_EXCLUDES: readonly string[] = ['node_modules/', '.venv/', '__pycache__/']
 
 const ATTRIBUTES = '* -text -eol -filter -ident -working-tree-encoding\n'
-const CONFIG_FILE = 'nexus.gitconfig'
-const STATE_FILE = 'nexus-state.json'
+const CONFIG_FILE = 'cairn.gitconfig'
+const STATE_FILE = 'cairn-state.json'
 
 export interface ShadowRepoOptions {
   /** 影子仓库目录（应用数据目录中，每个项目一个）。 */
@@ -66,8 +66,8 @@ export interface ShadowRepoOptions {
   readonly maxFileBytes?: number
   readonly extraExcludes?: readonly string[]
   /**
-   * 检查点所在的引用，默认 `refs/nexus/checkpoints`。同一项目的多个会话共用一个影子仓库（对象与索引），
-   * 各用自己的引用（如 `refs/nexus/sessions/<sessionId>`），提交链互不影响。
+   * 检查点所在的引用，默认 `refs/cairn/checkpoints`。同一项目的多个会话共用一个影子仓库（对象与索引），
+   * 各用自己的引用（如 `refs/cairn/sessions/<sessionId>`），提交链互不影响。
    */
   readonly ref?: string
   /**
@@ -214,7 +214,7 @@ export async function openShadowRepo(options: ShadowRepoOptions): Promise<Shadow
       ['gc', { auto: '0' }],
       ['maintenance', { auto: 'false' }],
       ['commit', { gpgSign: 'false' }],
-      ['user', { name: 'NEXUS-OS', email: 'checkpoint@nexus.invalid' }],
+      ['user', { name: 'Cairn', email: 'checkpoint@cairn.invalid' }],
     ]
     const body = settings
       .map(([section, values]) =>

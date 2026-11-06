@@ -42,7 +42,7 @@ import {
   type RunSupervisor,
   type ToolCheckpoints,
   type ToolRegistry,
-} from '@nexus/core'
+} from '@cairn/core'
 import {
   createEndpoint,
   HostForMain,
@@ -53,8 +53,8 @@ import {
   type PermissionRule,
   type RpcChannel,
   type RpcEndpoint,
-} from '@nexus/protocol'
-import { createPathResolver } from '@nexus/tools'
+} from '@cairn/protocol'
+import { createPathResolver } from '@cairn/tools'
 import { createHostApprovalGate } from './approval-gate.js'
 import { createHostCheckpoints, type OpenShadowRepo } from './checkpoints.js'
 import { createHostChangeRecorder } from './change-recorder.js'
@@ -103,7 +103,7 @@ export interface AgentHostOptions {
   ) => void | ToolEnvironment | Promise<void | ToolEnvironment>
   /** 操作系统（`process.platform` 的值），写入系统提示词；默认当前进程的。 */
   readonly platform?: string
-  /** 打开项目的影子仓库（M1-12b，`@nexus/checkpoint` 的 `openShadowRepo`）；省略时不创建检查点。 */
+  /** 打开项目的影子仓库（M1-12b，`@cairn/checkpoint` 的 `openShadowRepo`）；省略时不创建检查点。 */
   readonly openCheckpoints?: OpenShadowRepo
   /** 工具流水线的日志，默认不记录。 */
   readonly log?: Logger

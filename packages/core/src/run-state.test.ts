@@ -1,4 +1,4 @@
-import { RunState } from '@nexus/protocol'
+import { RunState } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   ACTIVE_RUN_STATES,

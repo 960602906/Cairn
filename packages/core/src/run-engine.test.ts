@@ -5,7 +5,7 @@ import {
   type RunLimits,
   type RunState,
   type UnsequencedEvent,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_RETRY_POLICY,

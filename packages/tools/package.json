@@ -1,5 +1,5 @@
 {
-  "name": "@nexus/tools",
+  "name": "@cairn/tools",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,9 +7,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@nexus/core": "workspace:*",
-    "@nexus/protocol": "workspace:*",
-    "@nexus/shell": "workspace:*",
+    "@cairn/core": "workspace:*",
+    "@cairn/protocol": "workspace:*",
+    "@cairn/shell": "workspace:*",
     "diff": "9.0.0",
     "ignore": "7.0.14"
   },

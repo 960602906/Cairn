@@ -10,7 +10,7 @@ import {
   type PermissionRule,
   type PersistedEvent,
   type ProviderConfig,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import Database from 'better-sqlite3'
 import {
   StorageError,

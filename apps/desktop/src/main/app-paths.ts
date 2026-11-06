@@ -1,15 +1,15 @@
 /**
  * 应用数据目录（架构 §14.1）。
  *
- * 正式版放在 `<appData>/NEXUS-OS`（Windows 即 `%APPDATA%\NEXUS-OS`），开发模式放在
- * `<appData>/NEXUS-OS-dev`，避免开发数据污染正式数据。设置 `NEXUS_USER_DATA_DIR` 时直接使用该目录
+ * 正式版放在 `<appData>/Cairn`（Windows 即 `%APPDATA%\Cairn`），开发模式放在
+ * `<appData>/Cairn-dev`，避免开发数据污染正式数据。设置 `CAIRN_USER_DATA_DIR` 时直接使用该目录
  * （冒烟测试与自动化测试用）。默认不在用户项目目录里写任何文件。
  */
 import { join, resolve } from 'node:path'
 
-export const APP_DIR_NAME = 'NEXUS-OS'
-export const DEV_APP_DIR_NAME = 'NEXUS-OS-dev'
-export const USER_DATA_DIR_ENV = 'NEXUS_USER_DATA_DIR'
+export const APP_DIR_NAME = 'Cairn'
+export const DEV_APP_DIR_NAME = 'Cairn-dev'
+export const USER_DATA_DIR_ENV = 'CAIRN_USER_DATA_DIR'
 
 export interface AppPaths {
   /** 应用数据根目录，同时作为 Electron 的 `userData`。 */
@@ -41,7 +41,7 @@ export function resolveAppPaths({ appData, dev, env = {} }: ResolveAppPathsOptio
   return {
     root,
     data,
-    database: join(data, 'nexus.db'),
+    database: join(data, 'cairn.db'),
     blobs: join(data, 'blobs'),
     checkpoints: join(root, 'checkpoints'),
     settings: join(root, 'settings.json'),

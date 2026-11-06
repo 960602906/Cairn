@@ -43,7 +43,7 @@ let realRoot: string
 let outside: string
 
 beforeAll(async () => {
-  base = mkdtempSync(path.join(os.tmpdir(), 'nexus-path-'))
+  base = mkdtempSync(path.join(os.tmpdir(), 'cairn-path-'))
   root = path.join(base, 'workspace')
   outside = path.join(base, 'outside')
   await fs.mkdir(path.join(root, 'src'), { recursive: true })
@@ -121,7 +121,7 @@ describe('resolveWorkspacePath：真实文件系统', () => {
 
 /** 文件符号链接与悬空链接：Windows 上需要开发者模式或管理员权限，不支持时这两项不运行。 */
 const canSymlinkFiles = await (async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'nexus-link-'))
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'cairn-link-'))
   try {
     await fs.symlink(path.join(dir, 'x'), path.join(dir, 'y'), 'file')
     return true

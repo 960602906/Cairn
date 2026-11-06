@@ -1,4 +1,4 @@
-import type { ApprovalRequest, ToolDefinition } from '@nexus/core'
+import type { ApprovalRequest, ToolDefinition } from '@cairn/core'
 import { describe, expect, it, vi } from 'vitest'
 import { createHostApprovalGate } from './approval-gate.js'
 

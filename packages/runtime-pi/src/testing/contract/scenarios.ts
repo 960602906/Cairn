@@ -12,8 +12,8 @@ import type {
   RuntimeEvent,
   RuntimeToolCall,
   RuntimeToolResult,
-} from '@nexus/core'
-import type { CanonicalMessage } from '@nexus/protocol'
+} from '@cairn/core'
+import type { CanonicalMessage } from '@cairn/protocol'
 import { PiRuntime } from '../../session.js'
 
 export type Format = ProviderKind

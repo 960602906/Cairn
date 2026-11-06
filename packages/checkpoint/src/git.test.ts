@@ -9,7 +9,7 @@ import {
   type GitRunner,
 } from './git.js'
 
-const env = isolatedGitEnv(process.env, '/nonexistent/nexus-global-config')
+const env = isolatedGitEnv(process.env, '/nonexistent/cairn-global-config')
 
 describe('isolatedGitEnv', () => {
   it('drops inherited GIT_* variables and isolates config', () => {

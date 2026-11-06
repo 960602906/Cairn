@@ -23,7 +23,7 @@
  *
  * 不依赖 React 与 DOM，便于在 Node 中测试；组件通过 `useStore(store, selector)` 读取。
  */
-import { createSessionView, reduceSession, sessionStatus, type SessionView } from '@nexus/core'
+import { createSessionView, reduceSession, sessionStatus, type SessionView } from '@cairn/core'
 import {
   isPersistedEvent,
   RpcError,
@@ -37,7 +37,7 @@ import {
   type SessionSummary,
   type Settings,
   type SettingsPatch,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { MainApi } from './api.js'
 

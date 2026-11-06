@@ -10,7 +10,7 @@
  *
  * 不依赖 DOM 与 Node 类型。
  */
-import type { ModelProfile } from '@nexus/protocol'
+import type { ModelProfile } from '@cairn/protocol'
 
 /** 单个工具结果的绝对上限（约 3 万个英文字符）。 */
 export const TOOL_OUTPUT_MAX_TOKENS = 8_000

@@ -22,9 +22,9 @@ describe('sanitizeEnv', () => {
       GPG_PASSPHRASE: 'x',
       GOOGLE_APPLICATION_CREDENTIALS: 'x',
       CLIENT_SECRET_ID: 'x',
-      NEXUS_MODEL_API_KEY: 'x',
-      NEXUS_RUNTIME: 'pi',
-      Nexus_Host_Trace_File: 'x',
+      CAIRN_MODEL_API_KEY: 'x',
+      CAIRN_RUNTIME: 'pi',
+      Cairn_Host_Trace_File: 'x',
       ELECTRON_RUN_AS_NODE: '1',
       UNDEFINED: undefined,
     })
@@ -48,7 +48,7 @@ describe('sanitizeEnv', () => {
 
   it('isSensitiveEnvName', () => {
     expect(isSensitiveEnvName('DEEPSEEK_API_KEY')).toBe(true)
-    expect(isSensitiveEnvName('NEXUS_SHELL_COMMAND')).toBe(true)
+    expect(isSensitiveEnvName('CAIRN_SHELL_COMMAND')).toBe(true)
     expect(isSensitiveEnvName('ELECTRON_RUN_AS_NODE_X')).toBe(false)
     expect(isSensitiveEnvName('MONKEY')).toBe(false)
     expect(isSensitiveEnvName('PATH')).toBe(false)

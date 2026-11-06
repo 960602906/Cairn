@@ -5,7 +5,7 @@
 import type { Dirent } from 'node:fs'
 import fs from 'node:fs/promises'
 import nodePath from 'node:path'
-import { estimateTokens, ToolError, type ToolDefinition } from '@nexus/core'
+import { estimateTokens, ToolError, type ToolDefinition } from '@cairn/core'
 import ignore, { type Ignore } from 'ignore'
 import { resolveOrThrow } from './paths.js'
 import { bodyTokens } from './read-file.js'

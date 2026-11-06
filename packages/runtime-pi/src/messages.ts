@@ -25,7 +25,7 @@ import type {
   ReasoningPart,
   TokenUsage,
   ToolCall as CanonicalToolCall,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 import type {
   Api,
   AssistantMessage as PiAssistantMessage,
@@ -43,7 +43,7 @@ import type {
 type ToolStatus = Extract<CanonicalMessage, { role: 'tool' }>['status']
 type CanonicalAssistant = Extract<CanonicalMessage, { role: 'assistant' }>
 
-/** 当前会话所用模型在 NEXUS 与 pi 两边的标识。 */
+/** 当前会话所用模型在 Cairn 与 pi 两边的标识。 */
 export interface PiModelIdentity {
   readonly ref: ModelRef
   /** pi 模型定义中的 `provider`。 */
@@ -54,7 +54,7 @@ export interface PiModelIdentity {
 }
 
 /** 不属于当前模型的助手消息使用的 api 标识。pi 只把与当前模型 provider、api、id 都相同的消息视为同一模型。 */
-export const FOREIGN_API = 'nexus-foreign'
+export const FOREIGN_API = 'cairn-foreign'
 
 /** 图片暂不转换时的占位文字（发给模型，因此用英文）。 */
 export const IMAGE_PLACEHOLDER = '[image omitted]'
@@ -62,7 +62,7 @@ export const IMAGE_PLACEHOLDER = '[image omitted]'
 /** `summary` 转为用户消息时的前缀（发给模型，因此用英文）。 */
 export const SUMMARY_PREFIX = 'Summary of the earlier conversation:\n\n'
 
-const DETAILS_STATUS_KEY = 'nexusStatus'
+const DETAILS_STATUS_KEY = 'cairnStatus'
 
 const TOOL_STATUSES: readonly ToolStatus[] = ['ok', 'error', 'denied', 'cancelled', 'unknown']
 

@@ -7,12 +7,12 @@
  *
  * 参数（环境变量）：
  * - 不带参数：用合成上游重新录制全部场景；
- * - `NEXUS_CONTRACT_ONLY`：只录制这个场景（如 `openai-tool`）；
- * - `NEXUS_CONTRACT_UPSTREAM`：真实服务的根地址（可带路径前缀，如 `https://api.deepseek.com/anthropic`），
- *   此时必须同时给出 `NEXUS_CONTRACT_ONLY`、`NEXUS_CONTRACT_MODEL`、`NEXUS_CONTRACT_KEY_ENV`；
- * - `NEXUS_CONTRACT_KEY_ENV`：保存 Key 的环境变量名。Key 只从环境变量读取，不写入录制文件；
- * - `NEXUS_CONTRACT_NAME`：录制文件名（默认为场景名）；
- * - `NEXUS_CONTRACT_REASONING=0`：按不支持推理配置模型（默认支持）。
+ * - `CAIRN_CONTRACT_ONLY`：只录制这个场景（如 `openai-tool`）；
+ * - `CAIRN_CONTRACT_UPSTREAM`：真实服务的根地址（可带路径前缀，如 `https://api.deepseek.com/anthropic`），
+ *   此时必须同时给出 `CAIRN_CONTRACT_ONLY`、`CAIRN_CONTRACT_MODEL`、`CAIRN_CONTRACT_KEY_ENV`；
+ * - `CAIRN_CONTRACT_KEY_ENV`：保存 Key 的环境变量名。Key 只从环境变量读取，不写入录制文件；
+ * - `CAIRN_CONTRACT_NAME`：录制文件名（默认为场景名）；
+ * - `CAIRN_CONTRACT_REASONING=0`：按不支持推理配置模型（默认支持）。
  */
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -47,18 +47,18 @@ function summarize(run: ScenarioRun): string[] {
 
 describe.skipIf(!enabled)('录制', () => {
   it('录制并回放确认', async () => {
-    const upstreamUrl = env['NEXUS_CONTRACT_UPSTREAM']
-    const only = env['NEXUS_CONTRACT_ONLY']
-    const model = env['NEXUS_CONTRACT_MODEL']
-    const keyEnv = env['NEXUS_CONTRACT_KEY_ENV']
+    const upstreamUrl = env['CAIRN_CONTRACT_UPSTREAM']
+    const only = env['CAIRN_CONTRACT_ONLY']
+    const model = env['CAIRN_CONTRACT_MODEL']
+    const keyEnv = env['CAIRN_CONTRACT_KEY_ENV']
     if (upstreamUrl && !(only && model && keyEnv)) {
-      throw new Error('NEXUS_CONTRACT_UPSTREAM requires NEXUS_CONTRACT_ONLY, _MODEL and _KEY_ENV')
+      throw new Error('CAIRN_CONTRACT_UPSTREAM requires CAIRN_CONTRACT_ONLY, _MODEL and _KEY_ENV')
     }
     const apiKey = upstreamUrl ? env[keyEnv!] : PLACEHOLDER_KEY
     if (!apiKey) throw new Error(`environment variable ${keyEnv} is empty`)
     const selected = SCENARIOS.filter((s) => !only || s.name === only)
     if (selected.length === 0) throw new Error(`unknown scenario ${only}`)
-    const reasoning = env['NEXUS_CONTRACT_REASONING'] !== '0'
+    const reasoning = env['CAIRN_CONTRACT_REASONING'] !== '0'
 
     const mock = upstreamUrl ? undefined : await startUpstreamMock()
     const dir = path.resolve(import.meta.dirname, '../contract/cassettes')
@@ -69,7 +69,7 @@ describe.skipIf(!enabled)('录制', () => {
           apiKey,
           reasoning,
           source: upstreamUrl ?? 'synthetic',
-          ...(env['NEXUS_CONTRACT_NAME'] ? { name: env['NEXUS_CONTRACT_NAME'] } : {}),
+          ...(env['CAIRN_CONTRACT_NAME'] ? { name: env['CAIRN_CONTRACT_NAME'] } : {}),
           ...(model ? { model } : {}),
         })
         saveCassette(path.join(dir, `${cassette.name}.json`), cassette)

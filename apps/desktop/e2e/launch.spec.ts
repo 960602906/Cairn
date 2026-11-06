@@ -8,13 +8,13 @@ import { expect, test } from './app.js'
 
 test('启动应用：界面加载，数据写入独立的数据目录', async ({ launch, userData }) => {
   const { window } = await launch()
-  await expect(window.getByRole('heading', { level: 1, name: 'NEXUS-OS' })).toBeVisible()
+  await expect(window.getByRole('heading', { level: 1, name: 'Cairn' })).toBeVisible()
   await expect(window.getByText('还没有会话')).toBeVisible()
   await expect(window.locator('html')).toHaveAttribute('lang', 'zh-CN')
   for (const dir of ['data', 'data/blobs', 'checkpoints', 'logs']) {
     expect(existsSync(path.join(userData, dir)), dir).toBe(true)
   }
-  expect(existsSync(path.join(userData, 'data/nexus.db'))).toBe(true)
+  expect(existsSync(path.join(userData, 'data/cairn.db'))).toBe(true)
 })
 
 test('重启应用：沿用同一数据目录与设置', async ({ launch }) => {

@@ -6,13 +6,13 @@
  * 先确认构建产物带有第三方许可声明（`out/THIRD_PARTY_NOTICES.txt`，其中列有 pi 与 ripgrep），再依次用两种运行时各启动一次
  *（每次都会用 `out/bin/` 中打包的 ripgrep 执行一次 `search`，见 `src/main/smoke.ts`）：
  * - `fake`：FakeRuntime（默认）；
- * - `pi`：pi 适配器（`NEXUS_RUNTIME=pi`），指向本脚本启动的本地 mock 端点（`mock-model.js`），
+ * - `pi`：pi 适配器（`CAIRN_RUNTIME=pi`），指向本脚本启动的本地 mock 端点（`mock-model.js`），
  *   确认打包进宿主的 pi 能加载、能发出请求并完成一轮对话。
  *
  * Linux 上使用 `--ozone-platform=headless` 与 `--disable-gpu`，无需显示器；CI 的 Linux 容器不支持 Chromium 沙箱，
  * 另加 `--no-sandbox`（只用于本测试，应用本身的沙箱设置不受影响）。
  *
- * 用法：pnpm --filter @nexus/desktop smoke [-- --runtime=fake|pi]
+ * 用法：pnpm --filter @cairn/desktop smoke [-- --runtime=fake|pi]
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { startMockModel } from './mock-model.js'
 
-const PREFIX = 'NEXUS_SMOKE_RESULT '
+const PREFIX = 'CAIRN_SMOKE_RESULT '
 const TIMEOUT_MS = 90_000
 /** mock 端点要求的 Key（不是真实的 Key）。 */
 const SMOKE_KEY = 'smoke-test-key'
@@ -50,13 +50,13 @@ const electron = /** @type {string} */ (createRequire(import.meta.url)('electron
  * @returns {Promise<string[]>}
  */
 function runApp(name, extraEnv) {
-  const userData = mkdtempSync(path.join(tmpdir(), 'nexus-smoke-'))
+  const userData = mkdtempSync(path.join(tmpdir(), 'cairn-smoke-'))
   const args = [appDir]
   if (process.platform === 'linux')
     args.push('--ozone-platform=headless', '--disable-gpu', '--no-sandbox')
 
   const child = spawn(electron, args, {
-    env: { ...process.env, ...extraEnv, NEXUS_SMOKE: '1', NEXUS_USER_DATA_DIR: userData },
+    env: { ...process.env, ...extraEnv, CAIRN_SMOKE: '1', CAIRN_USER_DATA_DIR: userData },
     stdio: ['ignore', 'pipe', 'inherit'],
   })
 
@@ -82,8 +82,8 @@ function runApp(name, extraEnv) {
       for (const dir of ['data', 'data/blobs', 'checkpoints', 'logs']) {
         if (!existsSync(path.join(userData, dir))) problems.push(`missing directory ${dir}`)
       }
-      if (!existsSync(path.join(userData, 'data/nexus.db')))
-        problems.push('missing database data/nexus.db')
+      if (!existsSync(path.join(userData, 'data/cairn.db')))
+        problems.push('missing database data/cairn.db')
       rmSync(userData, { recursive: true, force: true })
       resolve(problems)
     })
@@ -91,18 +91,18 @@ function runApp(name, extraEnv) {
 }
 
 async function smokeFake() {
-  return runApp('fake', { NEXUS_RUNTIME: 'fake' })
+  return runApp('fake', { CAIRN_RUNTIME: 'fake' })
 }
 
 async function smokePi() {
   const mock = await startMockModel({ apiKey: SMOKE_KEY, reply: 'smoke reply from pi' })
   try {
     const problems = await runApp('pi', {
-      NEXUS_RUNTIME: 'pi',
-      NEXUS_MODEL_KIND: 'openai',
-      NEXUS_MODEL_BASE_URL: mock.baseUrl,
-      NEXUS_MODEL_ID: 'smoke-model',
-      NEXUS_MODEL_API_KEY: SMOKE_KEY,
+      CAIRN_RUNTIME: 'pi',
+      CAIRN_MODEL_KIND: 'openai',
+      CAIRN_MODEL_BASE_URL: mock.baseUrl,
+      CAIRN_MODEL_ID: 'smoke-model',
+      CAIRN_MODEL_API_KEY: SMOKE_KEY,
     })
     if (mock.requests.length === 0) problems.push('pi sent no request to the mock endpoint')
     for (const r of mock.requests) {

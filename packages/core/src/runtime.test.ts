@@ -1,4 +1,4 @@
-import type { CanonicalMessage, ModelRef } from '@nexus/protocol'
+import type { CanonicalMessage, ModelRef } from '@cairn/protocol'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   AbortSignalLike,

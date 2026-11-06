@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RpcError, type EventEnvelope, type SessionSummary } from '@nexus/protocol'
+import { RpcError, type EventEnvelope, type SessionSummary } from '@cairn/protocol'
 import type { MainApi } from './api.js'
 import { createSessionStore } from './session-store.js'
 

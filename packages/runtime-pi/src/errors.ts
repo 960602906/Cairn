@@ -7,7 +7,7 @@
  * 这里按状态码与 pi 自己的分类函数归类；是否可重试以 pi 的判断为准，并把 429、5xx 视为可重试。
  * 原始文本不放进 `ErrorInfo`（可能含提供方返回的内容），需要时由 M1-14 写入日志。
  */
-import type { ErrorInfo } from '@nexus/protocol'
+import type { ErrorInfo } from '@cairn/protocol'
 import {
   isContextOverflow,
   isRetryableAssistantError,

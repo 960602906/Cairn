@@ -35,8 +35,8 @@ let dir: string
 let file: string
 
 beforeEach(() => {
-  dir = mkdtempSync(path.join(tmpdir(), 'nexus-migrate-'))
-  file = path.join(dir, 'nexus.db')
+  dir = mkdtempSync(path.join(tmpdir(), 'cairn-migrate-'))
+  file = path.join(dir, 'cairn.db')
 })
 
 afterEach(() => {

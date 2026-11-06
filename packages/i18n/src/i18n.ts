@@ -13,7 +13,7 @@ import {
 
 export type { I18nInstance, TFunction }
 
-/** 进程间传递的错误（与 `@nexus/protocol` 的 `ErrorInfo` 结构相同；i18n 不依赖其他包）。 */
+/** 进程间传递的错误（与 `@cairn/protocol` 的 `ErrorInfo` 结构相同；i18n 不依赖其他包）。 */
 export interface ErrorLike {
   readonly code: string
   readonly params?: Readonly<Record<string, string | number | boolean>> | undefined

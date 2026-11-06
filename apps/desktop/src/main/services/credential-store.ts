@@ -19,8 +19,8 @@
  * 不依赖 Electron：加密实现由调用方传入（`safe-storage-cipher.ts`），单元测试用假的实现。
  */
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { isCredentialRef, type CredentialProvider, type ResolvedCredential } from '@nexus/core'
-import { RpcError, type MainForRenderer } from '@nexus/protocol'
+import { isCredentialRef, type CredentialProvider, type ResolvedCredential } from '@cairn/core'
+import { RpcError, type MainForRenderer } from '@cairn/protocol'
 import type { z } from 'zod'
 
 export const CredentialErrorCode = {
@@ -63,7 +63,7 @@ export interface LocalKeyStore extends CredentialProvider {
   has(ref: string): boolean
   /** 系统加密是否可用。 */
   available(): Promise<boolean>
-  /** 本进程中保存或解析过的 Key，供日志脱敏按原文替换（`@nexus/core` 的 `redact`）。 */
+  /** 本进程中保存或解析过的 Key，供日志脱敏按原文替换（`@cairn/core` 的 `redact`）。 */
   knownSecrets(): readonly string[]
 }
 

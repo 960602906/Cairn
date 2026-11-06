@@ -3,7 +3,7 @@
  * 保存失败时界面保持新语言，错误由 store 显示；下次启动仍使用之前保存的语言。
  */
 import { useTranslation } from 'react-i18next'
-import { SUPPORTED_LOCALES, type Locale } from '@nexus/i18n'
+import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
 
 export function LanguageSwitcher({ onSave }: { readonly onSave?: (locale: Locale) => void }) {
   const { t, i18n } = useTranslation()

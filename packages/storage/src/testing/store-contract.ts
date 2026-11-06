@@ -7,7 +7,7 @@
  *
  * 工厂每个用例调用一次，必须返回空的存储，并使用传入的时间来源。
  */
-import type { PermissionRule, PersistedEvent } from '@nexus/protocol'
+import type { PermissionRule, PersistedEvent } from '@cairn/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { StorageError, StorageErrorCode, type Storage } from '../types.js'
 

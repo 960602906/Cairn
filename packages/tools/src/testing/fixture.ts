@@ -10,7 +10,7 @@ import {
   type Logger,
   type ToolContext,
   type ToolDefinition,
-} from '@nexus/core'
+} from '@cairn/core'
 import { createPathResolver } from '../paths.js'
 
 const utf16le = (text: string) => Buffer.from(text, 'utf16le')
@@ -51,7 +51,7 @@ export interface Fixture {
 }
 
 export async function createFixture(): Promise<Fixture> {
-  const base = await fs.realpath(mkdtempSync(path.join(os.tmpdir(), 'nexus-tools-')))
+  const base = await fs.realpath(mkdtempSync(path.join(os.tmpdir(), 'cairn-tools-')))
   const root = path.join(base, 'ws')
   const outside = path.join(base, 'outside')
   await fs.mkdir(outside, { recursive: true })

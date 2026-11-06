@@ -20,7 +20,7 @@ function random(seed: number) {
   }
 }
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-checkpoint-perf-'))
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-checkpoint-perf-'))
 const work = path.join(tmp, 'work')
 
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }))

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { rgPath } from '@vscode/ripgrep'
-import { estimateTokens, ToolError } from '@nexus/core'
+import { estimateTokens, ToolError } from '@cairn/core'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   bundledRipgrepPath,

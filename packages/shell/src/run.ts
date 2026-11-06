@@ -87,7 +87,7 @@ export async function runCommand(
   if (options.signal?.aborted) return notStarted()
   const invocation = buildInvocation(shell, command, {
     tempScriptPath: () =>
-      nodePath.join(options.tempDir ?? tmpdir(), `nexus-command-${randomUUID()}.ps1`),
+      nodePath.join(options.tempDir ?? tmpdir(), `cairn-command-${randomUUID()}.ps1`),
     ...(options.maxCommandLineChars === undefined
       ? {}
       : { maxCommandLineChars: options.maxCommandLineChars }),
@@ -96,7 +96,7 @@ export async function runCommand(
   const temp = invocation.tempScript
   if (temp) await fs.writeFile(temp.path, temp.content)
   try {
-    // 先清洗，再加上调用本身需要的变量（cmd 的 NEXUS_SHELL_COMMAND）
+    // 先清洗，再加上调用本身需要的变量（cmd 的 CAIRN_SHELL_COMMAND）
     const env = { ...sanitizeEnv(options.env ?? process.env), ...invocation.env }
     return await spawnAndCollect(invocation, env, tree, options)
   } finally {

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 禁止用相对路径跨包引用（如 `../../core/src/x`），跨包必须通过 `@nexus/*` 包名，
+ * 禁止用相对路径跨包引用（如 `../../core/src/x`），跨包必须通过 `@cairn/*` 包名，
  * 这样依赖关系才会出现在 package.json 中并受边界规则约束（ADR-0015）。
  */
 import path from 'node:path'
@@ -30,7 +30,7 @@ export default {
     docs: { description: 'Disallow relative imports that cross workspace package boundaries' },
     messages: {
       crossPackage:
-        'Relative import "{{source}}" leaves package "{{pkg}}". Import other packages by their @nexus/* name.',
+        'Relative import "{{source}}" leaves package "{{pkg}}". Import other packages by their @cairn/* name.',
     },
     schema: [],
   },

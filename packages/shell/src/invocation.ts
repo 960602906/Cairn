@@ -15,7 +15,7 @@ import type { ShellInfo } from './select.js'
 export const MAX_COMMAND_LINE_CHARS = 30_000
 
 /** cmd 模式下传递命令的环境变量。 */
-export const CMD_COMMAND_VAR = 'NEXUS_SHELL_COMMAND'
+export const CMD_COMMAND_VAR = 'CAIRN_SHELL_COMMAND'
 
 export interface ShellInvocation {
   readonly file: string

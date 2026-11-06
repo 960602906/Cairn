@@ -12,7 +12,7 @@ import type {
   PermissionRule,
   PersistedEvent,
   ProviderConfig,
-} from '@nexus/protocol'
+} from '@cairn/protocol'
 
 export const StorageErrorCode = {
   /** 记录不存在。 */
