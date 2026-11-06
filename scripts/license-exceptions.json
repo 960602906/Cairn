@@ -1,6 +1,7 @@
 {
   "$comment": "按 \"name@version\" 登记不在白名单内但经确认可用的依赖，值为理由。见 ADR-0014。",
   "exceptions": {
-    "caniuse-lite@1.0.30001820": "开发依赖（electron-vite → @babel/core → browserslist），浏览器兼容性数据，只在构建时使用，不随应用分发。CC-BY-4.0 为宽松的署名许可。"
+    "caniuse-lite@1.0.30001820": "开发依赖（electron-vite → @babel/core → browserslist），浏览器兼容性数据，只在构建时使用，不随应用分发。CC-BY-4.0 为宽松的署名许可。",
+    "@fontsource/jetbrains-mono@5.3.0": "生产依赖（M2-01），JetBrains Mono 字体文件，随界面打包用于代码区。SIL OFL-1.1 允许随软件分发与嵌入，只要求保留版权声明与许可证、不单独出售字体；许可证文本由 THIRD_PARTY_NOTICES 收录。"
   }
 }

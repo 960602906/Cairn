@@ -1,0 +1,150 @@
+/*
+ * 设计令牌（视觉规范 §3，ADR-0024）。由 docs/design/visual-style.md 的表格生成，改动时两处同步。
+ * 浅色写在 :root，深色写在 [data-theme='dark']；主题由 theme.ts 设置到 <html data-theme>。
+ * 组件只能引用这些变量（或 index.css 中映射出的 Tailwind 工具类），不能写死颜色。
+ */
+:root {
+  color-scheme: light;
+  /* 基础 */
+  --chrome: #eeeff2;
+  --paper: #ffffff;
+  --raise: #ffffff;
+  --sunk: #f5f5f7;
+  --sunk2: #efeff2;
+  --hover: rgba(20, 22, 30, 0.045);
+  --press: rgba(20, 22, 30, 0.08);
+  --hair: rgba(20, 22, 30, 0.08);
+  --hair2: rgba(20, 22, 30, 0.13);
+
+  /* 文字 */
+  --fg: #17181c;
+  --fg2: #45474f;
+  --muted: #80838d;
+  --faint: #b1b3ba;
+
+  /* 操作与状态 */
+  --ink: #17181c;
+  --ink-fg: #fafafa;
+  --accent: #3b6ef5;
+  --accent-soft: rgba(59, 110, 245, 0.09);
+  --ok: #1f9d63;
+  --ok-soft: rgba(31, 157, 99, 0.09);
+  --warn: #c2770c;
+  --warn-soft: rgba(194, 119, 12, 0.1);
+  --danger: #e0453f;
+  --danger-soft: rgba(224, 69, 63, 0.09);
+
+  /* 代码区 */
+  --code-bg: #fbfbfc;
+  --code-head: #f5f5f7;
+  --gutter: #b8bac1;
+  --gutter-bg: #f7f7f9;
+  --line-hl: rgba(59, 110, 245, 0.06);
+  --add-bg: #ecf8f1;
+  --add-gut: #dcf2e6;
+  --add-word: #c3ead4;
+  --add-fg: #16794b;
+  --del-bg: #fdf0ef;
+  --del-gut: #fae0de;
+  --del-word: #f6c9c6;
+  --del-fg: #c23a34;
+  --hunk-bg: #f1f4fd;
+  --hunk-fg: #5a72c4;
+  --tk-k: #a2329b;
+  --tk-f: #2b5fd6;
+  --tk-s: #0d7a5c;
+  --tk-n: #b45a00;
+  --tk-c: #9da0a8;
+  --tk-p: #8a8d96;
+  --tk-t: #0c7487;
+  --tk-pr: #6b47c4;
+  --tk-v: #17181c;
+  --term-bg: #16171b;
+  --term-fg: #d8d9de;
+  --term-dim: #6d6f78;
+  --term-ok: #5ad19a;
+  --term-acc: #8aa6ff;
+  --term-line: rgba(255, 255, 255, 0.07);
+
+  /* 阴影 */
+  --sh-1: 0 0 0 0.5px rgba(20, 22, 30, 0.08), 0 1px 2px rgba(20, 22, 30, 0.05);
+  --sh-2:
+    0 0 0 0.5px rgba(20, 22, 30, 0.07), 0 2px 4px rgba(20, 22, 30, 0.04),
+    0 12px 32px -8px rgba(20, 22, 30, 0.12);
+  --sh-3:
+    0 0 0 0.5px rgba(20, 22, 30, 0.08), 0 8px 16px rgba(20, 22, 30, 0.06),
+    0 32px 80px -12px rgba(20, 22, 30, 0.28);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  /* 基础 */
+  --chrome: #141416;
+  --paper: #1b1b1e;
+  --raise: #232327;
+  --sunk: #202023;
+  --sunk2: #26262a;
+  --hover: rgba(255, 255, 255, 0.05);
+  --press: rgba(255, 255, 255, 0.09);
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair2: rgba(255, 255, 255, 0.12);
+
+  /* 文字 */
+  --fg: #ececef;
+  --fg2: #bfc0c6;
+  --muted: #87888f;
+  --faint: #56575d;
+
+  /* 操作与状态 */
+  --ink: #ececef;
+  --ink-fg: #17171a;
+  --accent: #7b9cff;
+  --accent-soft: rgba(123, 156, 255, 0.12);
+  --ok: #4cc790;
+  --ok-soft: rgba(76, 199, 144, 0.12);
+  --warn: #eeac52;
+  --warn-soft: rgba(238, 172, 82, 0.12);
+  --danger: #f2716b;
+  --danger-soft: rgba(242, 113, 107, 0.13);
+
+  /* 代码区 */
+  --code-bg: #161619;
+  --code-head: #1e1e22;
+  --gutter: #4e5058;
+  --gutter-bg: #19191c;
+  --line-hl: rgba(123, 156, 255, 0.07);
+  --add-bg: #15271f;
+  --add-gut: #183325;
+  --add-word: #1f5139;
+  --add-fg: #6fdaa6;
+  --del-bg: #2c191a;
+  --del-gut: #3a1d1f;
+  --del-word: #64292b;
+  --del-fg: #ff8f89;
+  --hunk-bg: #1c2136;
+  --hunk-fg: #8ea6f2;
+  --tk-k: #e58fda;
+  --tk-f: #86aaff;
+  --tk-s: #86d6ad;
+  --tk-n: #f4b96f;
+  --tk-c: #686a73;
+  --tk-p: #8b8d96;
+  --tk-t: #6fd2df;
+  --tk-pr: #c2a7ff;
+  --tk-v: #e6e6ea;
+  --term-bg: #0f0f11;
+  --term-fg: #d8d9de;
+  --term-dim: #61636b;
+  --term-ok: #5ad19a;
+  --term-acc: #8aa6ff;
+  --term-line: rgba(255, 255, 255, 0.06);
+
+  /* 阴影 */
+  --sh-1: 0 0 0 0.5px rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --sh-2:
+    0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 2px 4px rgba(0, 0, 0, 0.2),
+    0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  --sh-3:
+    0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 8px 16px rgba(0, 0, 0, 0.3),
+    0 32px 80px -12px rgba(0, 0, 0, 0.7);
+}

@@ -2,7 +2,7 @@
  * 根组件。界面文案一律通过 i18n key 引用（ADR-0013）。
  * 标题旁是语言切换（M0-15d）；之后是模型设置（M1-16a）、会话列表（M0-15b）与当前会话的消息流、输入框与运行状态
  * （M0-15c）；开发模式下最后是事件查看器（M0-15d）。没有 store（preload 未加载，如在普通浏览器中
- * 打开）时只显示应用名称与语言切换。
+ * 打开）时只显示应用名称与语言切换。主题跟随设置（M2-01，`ThemeSync`）。
  */
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
@@ -14,6 +14,8 @@ import { ModelSettings } from './ModelSettings.js'
 import { SessionList } from './SessionList.js'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
+import { ThemeSync } from './ThemeSync.js'
+import { TooltipProvider } from './ui/index.js'
 
 export interface AppProps {
   readonly i18n: I18nInstance
@@ -36,6 +38,7 @@ function Shell({ store, devTools }: Omit<AppProps, 'i18n'>) {
       </header>
       {store && (
         <SessionStoreProvider store={store}>
+          <ThemeSync />
           <ErrorBanner />
           <ModelSettings />
           <SessionList />
@@ -50,7 +53,9 @@ function Shell({ store, devTools }: Omit<AppProps, 'i18n'>) {
 export function App({ i18n, store, devTools = false }: AppProps) {
   return (
     <I18nextProvider i18n={i18n}>
-      <Shell {...(store ? { store } : {})} devTools={devTools} />
+      <TooltipProvider>
+        <Shell {...(store ? { store } : {})} devTools={devTools} />
+      </TooltipProvider>
     </I18nextProvider>
   )
 }

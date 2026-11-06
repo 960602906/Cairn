@@ -25,6 +25,7 @@ import {
   PermissionMode,
   RpcError,
   Settings,
+  Theme,
   type HostModelConfig,
   type ProviderConfig,
   type SettingsPatch as ProtocolSettingsPatch,
@@ -123,17 +124,24 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
     return parsed.success ? parsed.data : undefined
   }
 
+  const storedTheme = (): Theme | undefined => {
+    const parsed = Theme.safeParse(stored['theme'])
+    return parsed.success ? parsed.data : undefined
+  }
+
   const current = (): Settings => {
     const providers = storage.providers.list()
     const defaultModel = storedDefault(providers)
     const permissionMode = storedMode()
     const instructions = storedInstructions()
+    const theme = storedTheme()
     return {
       locale: resolveLocale(stored['locale'], systemLocales()),
       providers,
       ...(defaultModel ? { defaultModel } : {}),
       ...(permissionMode ? { permissionMode } : {}),
       ...(instructions ? { instructions } : {}),
+      ...(theme ? { theme } : {}),
     }
   }
 
@@ -159,6 +167,7 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       if (patch.locale !== undefined) next['locale'] = patch.locale
       if (patch.defaultModel !== undefined) next['defaultModel'] = patch.defaultModel ?? undefined
       if (patch.permissionMode !== undefined) next['permissionMode'] = patch.permissionMode
+      if (patch.theme !== undefined) next['theme'] = patch.theme
       if (patch.instructions !== undefined) {
         // 只有空白时视为清除
         next['instructions'] = patch.instructions?.trim() ? patch.instructions : undefined

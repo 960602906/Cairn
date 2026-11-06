@@ -17,6 +17,7 @@
 import { chmodSync, copyFileSync, mkdirSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { rgPath } from '@vscode/ripgrep'
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
 import type { Plugin } from 'vite'
@@ -101,7 +102,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(root, 'src/renderer'),
-    plugins: [contentSecurityPolicy(), react()],
+    plugins: [contentSecurityPolicy(), react(), tailwindcss()],
     build: {
       rollupOptions: {
         input: { index: resolve(root, 'src/renderer/index.html') },
