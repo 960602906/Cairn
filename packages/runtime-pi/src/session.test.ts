@@ -473,6 +473,25 @@ describe('PiRuntime：中止', () => {
     expect(h.session.exportHistory().map((m) => m.role)).toEqual(['user'])
   })
 
+  it('中止后不再转发同一网络块中剩余的增量（第一步与工具调用之后的一步）', async () => {
+    const burst: MockResponse = {
+      kind: 'hang',
+      chunks: [sse.text('一'), sse.text('二'), sse.text('三'), sse.text('四')],
+    }
+    for (const responses of [[burst], [TOOL_TURN, burst]]) {
+      const h = await setup(responses)
+      let deltas = 0
+      h.session.onEvent((e) => {
+        if (e.type === 'text.delta' && ++deltas === 2) void h.session.abort()
+      })
+      await h.session.prompt(user('写一篇长文'))
+      expect(h.events.filter((e) => e.type === 'text.delta')).toHaveLength(2)
+      expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'aborted' })
+      await mock?.close()
+      mock = undefined
+    }
+  })
+
   it('工具执行中中止：取消信号传给工具，本轮以 aborted 结束', async () => {
     let toolSignal: AbortSignalLike | undefined
     const h = await setup([TOOL_TURN, ANSWER_TURN], {
