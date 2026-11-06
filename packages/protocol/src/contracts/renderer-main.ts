@@ -36,6 +36,16 @@ export const SessionSummary = z.object({
 })
 export type SessionSummary = z.infer<typeof SessionSummary>
 
+/** 已打开过的项目（M1-16a）。 */
+export const ProjectSummary = z.object({
+  projectId: Id,
+  name: z.string(),
+  /** 项目目录的绝对路径。 */
+  path: z.string().min(1),
+  createdAt: Timestamp,
+})
+export type ProjectSummary = z.infer<typeof ProjectSummary>
+
 /** 自定义说明的长度上限（字符）。 */
 export const INSTRUCTIONS_MAX_LENGTH = 10_000
 
@@ -97,6 +107,19 @@ export const MainForRenderer = defineSide({
         model: ModelRef.optional(),
       }),
       result: z.object({ sessionId: Id }),
+    },
+    /** 已打开过的项目，按打开时间倒序（M1-16a）。 */
+    'project.list': {
+      params: z.object({}),
+      result: z.object({ projects: z.array(ProjectSummary) }),
+    },
+    /**
+     * 用系统的选择文件夹对话框打开项目（M1-16a）：记录并返回所选目录的项目（已打开过的返回原有记录）。
+     * 用户取消时没有 `project`。
+     */
+    'project.open': {
+      params: z.object({}),
+      result: z.object({ project: ProjectSummary.optional() }),
     },
     'session.list': {
       params: z.object({ includeArchived: z.boolean().optional() }),
@@ -221,8 +244,6 @@ export const RendererForMain = defineSide({ requests: {}, events: {} })
  * 已规划、尚未实现的接口名（架构 §15.2）。实现时从这里移入 MainForRenderer。
  */
 export const RESERVED_RENDERER_MAIN_METHODS = [
-  'project.open',
-  'project.list',
   'session.rename',
   'session.archive',
   'provider.test',

@@ -11,6 +11,7 @@ import {
 import { createMemoryStorage } from '@nexus/storage'
 import type { CredentialCommands } from './credential-store.js'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
+import type { ProjectCommands } from './project-service.js'
 import {
   coalesceDeltas,
   createRendererGateway,
@@ -67,11 +68,13 @@ const completed = (sessionId: string, id: string, text: string): UnsequencedEven
 })
 
 const CP = 'a'.repeat(40)
+const PROJECT = { projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }
 const CP_BEFORE = 'b'.repeat(40)
 
 let service: SessionEventService
 let gateway: RendererGateway
 let commands: SessionCommands
+let projects: ProjectCommands
 let settings: SettingsCommands
 let credentials: CredentialCommands
 let changes: ChangeCommands
@@ -91,6 +94,10 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     list: vi.fn(() => ({ sessions: [] })),
     prompt: vi.fn(() => ({ messageId: 'm1' })),
     abort: vi.fn(() => ({})),
+  }
+  projects = {
+    list: vi.fn(() => ({ projects: [PROJECT] })),
+    open: vi.fn(async () => ({ project: PROJECT })),
   }
   settings = {
     get: vi.fn(() => ({ locale: 'zh-CN' as const, providers: [] })),
@@ -125,6 +132,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
     commands,
+    projects,
     settings,
     credentials,
     changes,
@@ -411,6 +419,13 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(approvalListeners.size).toBe(0)
   })
 
+  it('delegates project requests to the project service', async () => {
+    const { client } = setup()
+    await expect(client.request('project.list', {})).resolves.toEqual({ projects: [PROJECT] })
+    await expect(client.request('project.open', {})).resolves.toEqual({ project: PROJECT })
+    expect(projects.open).toHaveBeenCalledOnce()
+  })
+
   it('delegates settings requests to the settings service', async () => {
     const { client } = setup()
     await expect(client.request('settings.get', {})).resolves.toEqual({
@@ -484,6 +499,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
     const g = createRendererGateway({
       events: service,
       commands,
+      projects,
       settings,
       credentials,
       changes,

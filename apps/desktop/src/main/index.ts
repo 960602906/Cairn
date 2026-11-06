@@ -13,6 +13,7 @@ import { openSqliteStorage } from '@nexus/storage'
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   MessageChannelMain,
   safeStorage,
@@ -36,6 +37,7 @@ import { createCredentialCommands, createLocalKeyStore } from './services/creden
 import { createSessionEventService } from './services/event-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
+import { createProjectService } from './services/project-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
@@ -161,9 +163,22 @@ const sessions = createSessionManager({
   onError: reportError,
 })
 sessions.recoverInterrupted()
+/** 项目（M1-16a）：系统的选择文件夹对话框（e2e 中替换 `dialog.showOpenDialog`）。 */
+const projects = createProjectService({
+  storage,
+  pickDirectory: async () => {
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const options: Electron.OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    return result.canceled ? undefined : result.filePaths[0]
+  },
+})
 const gateway = createRendererGateway({
   events,
   commands: sessions,
+  projects,
   settings: {
     get: () => settings.get(),
     // 切换权限模式后，运行中的宿主改用新的预设

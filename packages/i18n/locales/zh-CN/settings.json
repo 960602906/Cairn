@@ -1,0 +1,21 @@
+{
+  "models.open": "模型设置",
+  "models.title": "模型与 Key",
+  "models.empty": "还没有配置模型。选择一个模板添加。",
+  "models.providers": "已配置的提供方",
+  "models.modelCount": "{{count}} 个模型",
+  "models.key.configured": "已保存 Key",
+  "models.key.missing": "未保存 Key",
+  "models.key.notRequired": "不需要 Key",
+  "models.key.unavailable": "系统加密不可用，无法保存 Key。",
+  "models.key.label": "{{name}} 的 Key",
+  "models.key.save": "保存 Key",
+  "models.remove": "删除 {{name}}",
+  "models.add.title": "添加提供方",
+  "models.add.template": "模板",
+  "models.add.baseUrl": "接口地址",
+  "models.add.key": "Key",
+  "models.add.submit": "添加",
+  "models.default.label": "默认模型",
+  "models.default.none": "未选择"
+}
