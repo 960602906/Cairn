@@ -16,5 +16,7 @@ describe('ComponentPreview', () => {
     expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark')
     await userEvent.click(screen.getByRole('switch', { name: '启用' }))
     expect(screen.getByRole('switch', { name: '启用' }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByRole('figure', { name: '代码：src/sum.mjs' })).toBeTruthy()
+    expect(screen.getByRole('figure', { name: '终端：npm test' })).toBeTruthy()
   })
 })
