@@ -19,7 +19,11 @@ const summary = (sessionId: string, title: string, status: SessionSummary['statu
   updatedAt: 1,
 })
 
-function setup(handlers: Record<string, (params: never) => unknown> = {}) {
+function setup(overrides: Record<string, (params: never) => unknown> = {}) {
+  const handlers: Record<string, (params: never) => unknown> = {
+    'project.list': () => ({ projects: [] }),
+    ...overrides,
+  }
   const request = vi.fn(async (method: string, params: unknown) => {
     const handler = handlers[method]
     return handler ? handler(params as never) : {}
@@ -109,5 +113,43 @@ describe('App without the preload API', () => {
     render(<App i18n={createI18n('en-US')} />)
     expect(screen.getByRole('heading').textContent).toBe('NEXUS-OS')
     expect(screen.queryByRole('navigation')).toBeNull()
+  })
+
+  it('fills the project folder from the folder dialog or a recent project', async () => {
+    const recent = { projectId: 'p1', name: 'api', path: '/work/api', createdAt: 1 }
+    const opened = { projectId: 'p2', name: 'web', path: '/work/web', createdAt: 2 }
+    const results = [{ project: opened }, {}]
+    const { request } = setup({
+      'session.list': () => ({ sessions: [] }),
+      'project.list': () => ({ projects: [recent] }),
+      'project.open': () => results.shift(),
+      'session.create': () => ({ sessionId: 's9' }),
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+    })
+    await userEvent.click(await screen.findByRole('button', { name: '新建会话' }))
+    const path = screen.getByLabelText('项目目录') as HTMLInputElement
+    const recentSelect = (await screen.findByLabelText('最近的项目')) as HTMLSelectElement
+    await userEvent.selectOptions(recentSelect, '/work/api')
+    expect(path.value).toBe('/work/api')
+
+    await userEvent.click(screen.getByRole('button', { name: '选择文件夹…' }))
+    await waitFor(() => expect(path.value).toBe('/work/web'))
+    // 新打开的项目排在最前面
+    expect([...recentSelect.options].map((o) => o.value)).toEqual(['', '/work/web', '/work/api'])
+    expect(recentSelect.value).toBe('/work/web')
+
+    // 取消对话框时不改动
+    await userEvent.click(screen.getByRole('button', { name: '选择文件夹…' }))
+    await waitFor(() =>
+      expect(request.mock.calls.filter(([m]) => m === 'project.open')).toHaveLength(2),
+    )
+    expect(path.value).toBe('/work/web')
+    await userEvent.selectOptions(recentSelect, '')
+    expect(path.value).toBe('/work/web')
+
+    await userEvent.click(screen.getByRole('button', { name: '创建' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.create', { projectPath: '/work/web' }),
+    )
   })
 })

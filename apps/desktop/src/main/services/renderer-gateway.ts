@@ -25,6 +25,7 @@ import {
 import type { z } from 'zod'
 import type { CredentialCommands } from './credential-store.js'
 import type { SessionEventService } from './event-service.js'
+import type { ProjectCommands } from './project-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -73,6 +74,8 @@ export const DEFAULT_FRAME_MS = 33
 export interface RendererGatewayOptions {
   readonly events: Pick<SessionEventService, 'readAfter' | 'subscribe'>
   readonly commands: SessionCommands
+  /** 项目（M1-16a）：列表与用系统对话框打开。 */
+  readonly projects: ProjectCommands
   readonly settings: SettingsCommands
   /** 凭据命令（M1-03b）：界面只能写入、删除与查询是否已配置。 */
   readonly credentials: CredentialCommands
@@ -148,7 +151,8 @@ interface Subscription {
 type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
-  const { events, commands, settings, credentials, changes, checkpoints, approvals } = options
+  const { events, commands, projects, settings, credentials, changes, checkpoints, approvals } =
+    options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -204,6 +208,8 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
 
       endpoint.handle('session.create', (params) => commands.create(params))
       endpoint.handle('session.list', (params) => commands.list(params))
+      endpoint.handle('project.list', () => projects.list())
+      endpoint.handle('project.open', () => projects.open())
       endpoint.handle('session.prompt', (params) => commands.prompt(params))
       endpoint.handle('session.abort', (params) => commands.abort(params))
       endpoint.handle('settings.get', () => settings.get())

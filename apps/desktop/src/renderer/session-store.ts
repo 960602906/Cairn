@@ -13,7 +13,9 @@
  *   `turn.started`（或该轮结束、会话崩溃）、发送失败或停止成功时清除。
  * - **事件记录**（开发模式的事件查看器，M0-15d）：`eventLogLimit` 大于 0 时按会话保存收到的原始
  *   事件（补发与实时推送，含增量），每个会话只保留最近的若干条，超出时先丢弃增量事件。默认不保存。
- * - **设置**：`updateSettings` 保存设置；失败时同样写入 `error`。
+ * - **设置**：`loadSettings` 读取、`updateSettings` 保存设置，结果保存在 `settings`；失败时同样写入 `error`。
+ *   Key 只能写入（`saveCredential`）与查询是否已保存（`credentialStatus`），没有读出明文的接口。
+ * - **项目**（M1-16a）：`refreshProjects` 读取已打开过的项目；`openProject` 用系统对话框选择文件夹。
  * - **审批**（M1-11b）：当前会话的未决审批经 `approval.pending` 读取，订阅时与收到 `approval.changed`
  *   通知后重新读取；`resolveApproval` 作出决定（失败时写入 `error`，审批仍保留）。
  *
@@ -28,8 +30,10 @@ import {
   type ErrorInfo,
   type EventEnvelope,
   type PendingApproval,
+  type ProjectSummary,
   type SessionSummary,
   type Settings,
+  type SettingsPatch,
 } from '@nexus/protocol'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { MainApi } from './api.js'
@@ -46,6 +50,10 @@ export interface SessionState {
   readonly eventLog: Readonly<Record<string, readonly EventEnvelope[]>>
   /** 各会话的未决审批（按请求顺序）；只读取当前会话的。 */
   readonly approvals: Readonly<Record<string, readonly PendingApproval[]>>
+  /** 已打开过的项目（按打开时间倒序）。 */
+  readonly projects: readonly ProjectSummary[]
+  /** 最近读取或保存的设置；读取之前为 undefined。 */
+  readonly settings: Settings | undefined
   /** 最近一次失败的错误；界面显示后可以清除。 */
   readonly error: ErrorInfo | undefined
 }
@@ -66,8 +74,16 @@ export interface SessionActions {
     decision: ApprovalDecision,
     feedback?: string,
   ): Promise<boolean>
+  refreshProjects(): Promise<void>
+  /** 用系统对话框选择文件夹作为项目；取消或失败时返回 undefined。 */
+  openProject(): Promise<ProjectSummary | undefined>
+  loadSettings(): Promise<Settings | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
-  updateSettings(patch: Partial<Settings>): Promise<Settings | undefined>
+  updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
+  /** 保存 Key；成功时返回 true。 */
+  saveCredential(ref: string, secret: string): Promise<boolean>
+  /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
+  credentialStatus(ref: string): Promise<{ configured: boolean; available: boolean } | undefined>
   clearError(): void
   /** 取消订阅并停止接收事件。 */
   dispose(): void
@@ -202,6 +218,8 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       awaitingTurn: {},
       eventLog: {},
       approvals: {},
+      projects: [],
+      settings: undefined,
       error: undefined,
 
       async refreshSessions() {
@@ -289,7 +307,38 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         return resolved !== undefined
       },
 
-      updateSettings: (patch) => run(() => api.request('settings.update', patch)),
+      async refreshProjects() {
+        const result = await run(() => api.request('project.list', {}))
+        if (result) set({ projects: result.projects })
+      },
+
+      async openProject() {
+        const result = await run(() => api.request('project.open', {}))
+        const project = result?.project
+        if (!project) return undefined
+        set((state) => ({
+          projects: [project, ...state.projects.filter((p) => p.projectId !== project.projectId)],
+        }))
+        return project
+      },
+
+      async loadSettings() {
+        const result = await run(() => api.request('settings.get', {}))
+        if (result) set({ settings: result })
+        return result
+      },
+
+      async updateSettings(patch) {
+        const result = await run(() => api.request('settings.update', patch))
+        if (result) set({ settings: result })
+        return result
+      },
+
+      async saveCredential(ref, secret) {
+        return (await run(() => api.request('credentials.set', { ref, secret }))) !== undefined
+      },
+
+      credentialStatus: (ref) => run(() => api.request('credentials.status', { ref })),
 
       clearError: () => set({ error: undefined }),
 

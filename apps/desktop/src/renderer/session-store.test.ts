@@ -356,3 +356,82 @@ describe('settings', () => {
     expect(store.getState().error).toEqual({ code: 'settings.write_failed' })
   })
 })
+
+describe('projects and model settings', () => {
+  const project = (projectId: string) => ({
+    projectId,
+    name: projectId,
+    path: `/work/${projectId}`,
+    createdAt: 1,
+  })
+
+  it('lists projects and puts an opened project first', async () => {
+    let picked: ReturnType<typeof project> | undefined = project('b')
+    const { api } = fakeApi({
+      'project.list': () => ({ projects: [project('a'), project('b')] }),
+      'project.open': () => (picked ? { project: picked } : {}),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshProjects()
+    expect(store.getState().projects.map((p) => p.projectId)).toEqual(['a', 'b'])
+
+    await expect(store.getState().openProject()).resolves.toEqual(project('b'))
+    expect(store.getState().projects.map((p) => p.projectId)).toEqual(['b', 'a'])
+
+    picked = undefined
+    await expect(store.getState().openProject()).resolves.toBeUndefined()
+    expect(store.getState().projects.map((p) => p.projectId)).toEqual(['b', 'a'])
+  })
+
+  it('records project dialog failures', async () => {
+    const { api } = fakeApi({
+      'project.open': () => {
+        throw new RpcError('project.invalid_path', { path: 'x' })
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().openProject()).resolves.toBeUndefined()
+    expect(store.getState().error).toEqual({
+      code: 'project.invalid_path',
+      params: { path: 'x' },
+    })
+  })
+
+  it('loads settings and keeps the latest saved settings', async () => {
+    const { api } = fakeApi({
+      'settings.get': () => ({ locale: 'zh-CN', providers: [] }),
+      'settings.update': (patch: object) => ({ locale: 'zh-CN', providers: [], ...patch }),
+    })
+    const store = createSessionStore(api)
+    expect(store.getState().settings).toBeUndefined()
+    await store.getState().loadSettings()
+    expect(store.getState().settings).toEqual({ locale: 'zh-CN', providers: [] })
+    await store.getState().updateSettings({ defaultModel: { providerId: 'p', modelId: 'm' } })
+    expect(store.getState().settings?.defaultModel).toEqual({ providerId: 'p', modelId: 'm' })
+  })
+
+  it('saves keys and reads key status without returning secrets', async () => {
+    let fail = false
+    const { api, calls } = fakeApi({
+      'credentials.set': () => {
+        if (fail) throw new RpcError('credentials.unavailable')
+        return {}
+      },
+      'credentials.status': () => ({ configured: true, available: true }),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().saveCredential('deepseek', 'secret')).resolves.toBe(true)
+    await expect(store.getState().credentialStatus('deepseek')).resolves.toEqual({
+      configured: true,
+      available: true,
+    })
+    expect(calls).toEqual([
+      ['credentials.set', { ref: 'deepseek', secret: 'secret' }],
+      ['credentials.status', { ref: 'deepseek' }],
+    ])
+
+    fail = true
+    await expect(store.getState().saveCredential('deepseek', 'secret')).resolves.toBe(false)
+    expect(store.getState().error).toEqual({ code: 'credentials.unavailable' })
+  })
+})

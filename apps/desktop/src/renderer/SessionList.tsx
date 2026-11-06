@@ -1,6 +1,6 @@
 /**
  * 会话列表与新建（M0-15b）。列表来自 store（主进程 `session.list`），状态随事件投影更新。
- * 新建需要项目目录的完整路径（选择文件夹的对话框在之后接入）。
+ * 新建时选择项目目录（M1-16a）：系统的选择文件夹对话框，或最近打开过的项目，也可以直接填写完整路径。
  */
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -10,9 +10,21 @@ function NewSessionForm({ onDone }: { readonly onDone: () => void }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
   const createSession = useSessionStore((s) => s.createSession)
+  const projects = useSessionStore((s) => s.projects)
+  const refreshProjects = useSessionStore((s) => s.refreshProjects)
+  const openProject = useSessionStore((s) => s.openProject)
   const [projectPath, setProjectPath] = useState('')
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    void refreshProjects()
+  }, [refreshProjects])
+
+  const chooseFolder = async () => {
+    const project = await openProject()
+    if (project) setProjectPath(project.path)
+  }
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -35,6 +47,25 @@ function NewSessionForm({ onDone }: { readonly onDone: () => void }) {
           required
         />
       </label>
+      <button type="button" onClick={() => void chooseFolder()}>
+        {t('new.openFolder')}
+      </button>
+      {projects.length > 0 && (
+        <label>
+          {t('new.recentProjects')}
+          <select
+            value={projects.some((p) => p.path === projectPath) ? projectPath : ''}
+            onChange={(e) => e.target.value !== '' && setProjectPath(e.target.value)}
+          >
+            <option value="">{t('new.chooseProject')}</option>
+            {projects.map((p) => (
+              <option key={p.projectId} value={p.path}>
+                {p.name} — {p.path}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         {t('new.title')}
         <input value={title} onChange={(e) => setTitle(e.target.value)} />

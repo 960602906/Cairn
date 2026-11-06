@@ -13,7 +13,7 @@ import {
 describe('resources', () => {
   it('支持中文与英文（ADR-0013），按命名空间拆分', () => {
     expect(SUPPORTED_LOCALES).toEqual(['zh-CN', 'en-US'])
-    expect(NAMESPACES).toEqual(['common', 'session', 'errors'])
+    expect(NAMESPACES).toEqual(['common', 'session', 'settings', 'errors'])
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale]).sort()).toEqual([...NAMESPACES].sort())
     }
@@ -131,6 +131,7 @@ describe('translateError', () => {
       'credentials.invalid_value',
       'credentials.write_failed',
       'credentials.decrypt_failed',
+      'project.invalid_path',
       'tool.not_found',
       'tool.invalid_input',
       'tool.execution_failed',

@@ -1,0 +1,21 @@
+{
+  "models.open": "Model settings",
+  "models.title": "Models and keys",
+  "models.empty": "No models configured yet. Pick a template to add one.",
+  "models.providers": "Configured providers",
+  "models.modelCount": "Models: {{count}}",
+  "models.key.configured": "Key saved",
+  "models.key.missing": "No key saved",
+  "models.key.notRequired": "No key needed",
+  "models.key.unavailable": "System encryption is unavailable, so keys cannot be saved.",
+  "models.key.label": "Key for {{name}}",
+  "models.key.save": "Save key",
+  "models.remove": "Remove {{name}}",
+  "models.add.title": "Add a provider",
+  "models.add.template": "Template",
+  "models.add.baseUrl": "Base URL",
+  "models.add.key": "Key",
+  "models.add.submit": "Add",
+  "models.default.label": "Default model",
+  "models.default.none": "None"
+}
