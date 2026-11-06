@@ -3,16 +3,19 @@
  * 冒烟测试与端到端测试用的 OpenAI Chat Completions 兼容端点（M1-01d、M1-04b）：只监听 127.0.0.1，
  * 校验 Key（给出 `apiKey` 时）后以 SSE 流式回复固定文本，并记录每次请求的 Key、模型、是否流式与消息。
  *
- * 给出 `toolCall` 时（M1-11b），第一次请求改为调用这个工具，之后的请求回复固定文本。
+ * 给出 `toolCall` 时（M1-11b），第一次请求改为调用这个工具，之后的请求回复固定文本。给出 `toolCalls` 时
+ * （M1-15a），第 n 次请求调用其中第 n 个工具，用完后回复固定文本。
  */
 import { createServer } from 'node:http'
 
 /**
  * @typedef {{ authorization: string | undefined, model: unknown, stream: unknown, messages: unknown }} MockModelRequest
- * @param {{ apiKey?: string, reply: string, toolCall?: { name: string, arguments: object } }} options
+ * @typedef {{ name: string, arguments: object }} MockToolCall
+ * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[] }} options
  * @returns {Promise<{ baseUrl: string, requests: MockModelRequest[], close: () => Promise<void> }>}
  */
-export async function startMockModel({ apiKey, reply, toolCall }) {
+export async function startMockModel({ apiKey, reply, toolCall, toolCalls }) {
+  const script = toolCalls ?? (toolCall ? [toolCall] : [])
   /** @type {MockModelRequest[]} */
   const requests = []
   const server = createServer((req, res) => {
@@ -41,12 +44,13 @@ export async function startMockModel({ apiKey, reply, toolCall }) {
         choices: [{ index: 0, delta, finish_reason: finish }],
       })
       res.writeHead(200, { 'content-type': 'text/event-stream' })
-      if (toolCall && requests.length === 1) {
+      const step = script[requests.length - 1]
+      if (step) {
         const call = {
           index: 0,
-          id: 'call_mock_1',
+          id: `call_mock_${requests.length}`,
           type: 'function',
-          function: { name: toolCall.name, arguments: JSON.stringify(toolCall.arguments) },
+          function: { name: step.name, arguments: JSON.stringify(step.arguments) },
         }
         res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', tool_calls: [call] }))}\n\n`)
         const end = {
