@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "name": "gw-openai-tool",
+  "scenario": "openai-tool",
+  "model": "group/smart-split",
+  "reasoning": true,
+  "source": "http://127.0.0.1:3425",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "group/smart-split",
+          "messages": [
+            {
+              "role": "developer",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "store": false,
+          "max_completion_tokens": 4096,
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "add",
+                "description": "Add two numbers",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "a": {
+                      "type": "number"
+                    },
+                    "b": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "b"
+                  ]
+                }
+              }
+            }
+          ],
+          "reasoning_effort": "high"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          ": heartbeat\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\"We\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\" need\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\" answer\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\".\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\" Need\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\" use\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\" tool\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\" add\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\".\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\" Simple\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"reasoning_content\":\".\",\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"id\":\"call_00_XI58Te7BhlrUmEfG8Jbz9565\",\"type\":\"function\",\"function\":{\"name\":\"add\",\"arguments\":\"\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\"a\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\"\\\"\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\": \"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\"2\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\", \\\"\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\"b\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\"\\\"\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\": \"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\"3\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"tool_calls\":[{\"function\":{\"arguments\":\"}\"},\"index\":0}]},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"refusal\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"tool_calls\",\"index\":0,\"logprobs\":null}],\"created\":1793930773,\"id\":\"44f09231f92510e49af9700cc49e5f90\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":314,\"completion_tokens\":64,\"total_tokens\":378,\"completion_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":11,\"rejected_prediction_tokens\":0,\"cached_tokens\":0},\"prompt_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":0,\"rejected_prediction_tokens\":0,\"cached_tokens\":128},\"prompt_cache_hit_tokens\":128,\"prompt_cache_miss_tokens\":186,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0,\"prompt_cache_write_tokens\":0,\"completion_thinking_tokens\":11,\"credit\":0.03,\"cached_tokens\":0,\"quota\":{\"model\":\"deepseek-v4.1-flash\",\"percent\":43,\"reset_at\":\"1793945807\",\"shared_models\":[]}}}\n\ndata: [DONE]\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "group/smart-split",
+          "messages": [
+            {
+              "role": "developer",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "We need answer. Need use tool add. Simple.",
+              "tool_calls": [
+                {
+                  "id": "call_00_XI58Te7BhlrUmEfG8Jbz9565",
+                  "type": "function",
+                  "function": {
+                    "name": "add",
+                    "arguments": "{\"a\":2,\"b\":3}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "5",
+              "tool_call_id": "call_00_XI58Te7BhlrUmEfG8Jbz9565"
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "store": false,
+          "max_completion_tokens": 4096,
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "add",
+                "description": "Add two numbers",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "a": {
+                      "type": "number"
+                    },
+                    "b": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "a",
+                    "b"
+                  ]
+                }
+              }
+            }
+          ],
+          "reasoning_effort": "high"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          ": heartbeat\ndata: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\",\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"2\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\" +\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\" \",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"3\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\" =\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\" \",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"5\",\"extra_fields\":null,\"function_call\":null,\"refusal\":\"\"},\"finish_reason\":null,\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"choices\":[{\"delta\":{\"content\":\"\",\"extra_fields\":null,\"refusal\":\"\",\"role\":\"assistant\"},\"finish_reason\":\"stop\",\"index\":0,\"logprobs\":null}],\"created\":1793930775,\"id\":\"8508c11fd464894f7ad26fd469a4e2d0\",\"model\":\"group/smart-split\",\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":391,\"completion_tokens\":8,\"total_tokens\":399,\"completion_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":0,\"rejected_prediction_tokens\":0,\"cached_tokens\":0},\"prompt_tokens_details\":{\"accepted_prediction_tokens\":0,\"audio_tokens\":0,\"reasoning_tokens\":0,\"rejected_prediction_tokens\":0,\"cached_tokens\":256},\"prompt_cache_hit_tokens\":256,\"prompt_cache_miss_tokens\":135,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0,\"prompt_cache_write_tokens\":0,\"completion_thinking_tokens\":0,\"credit\":0.01,\"cached_tokens\":0,\"quota\":{\"model\":\"deepseek-v4.1-flash\",\"percent\":43,\"reset_at\":\"1793945807\",\"shared_models\":[]}}}\n\ndata: [DONE]\n\n"
+        ]
+      }
+    }
+  ]
+}

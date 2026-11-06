@@ -1,0 +1,357 @@
+{
+  "events": [
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "deepseek-flash"
+      }
+    },
+    {
+      "type": "text.delta",
+      "text": "I"
+    },
+    {
+      "type": "text.delta",
+      "text": "'ll"
+    },
+    {
+      "type": "text.delta",
+      "text": " compute"
+    },
+    {
+      "type": "text.delta",
+      "text": " both"
+    },
+    {
+      "type": "text.delta",
+      "text": " sums"
+    },
+    {
+      "type": "text.delta",
+      "text": " in"
+    },
+    {
+      "type": "text.delta",
+      "text": " parallel"
+    },
+    {
+      "type": "text.delta",
+      "text": "."
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I'll compute both sums in parallel."
+          }
+        ],
+        "reasoning": {
+          "text": "",
+          "providerId": "contract",
+          "blocks": [
+            {
+              "text": "",
+              "signature": "bd7c3c73-8a1e-4b13-a496-6c4c71434901"
+            }
+          ]
+        },
+        "toolCalls": [
+          {
+            "id": "<toolcall-1>",
+            "name": "add",
+            "input": {
+              "a": 2,
+              "b": 3
+            }
+          },
+          {
+            "id": "<toolcall-2>",
+            "name": "add",
+            "input": {
+              "a": 10,
+              "b": 20
+            }
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "deepseek-flash"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "tool_calls",
+      "usage": {
+        "inputTokens": 321,
+        "outputTokens": 103,
+        "cacheReadTokens": 128
+      }
+    },
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "deepseek-flash"
+      }
+    },
+    {
+      "type": "text.delta",
+      "text": "Both"
+    },
+    {
+      "type": "text.delta",
+      "text": " computations"
+    },
+    {
+      "type": "text.delta",
+      "text": " are"
+    },
+    {
+      "type": "text.delta",
+      "text": " complete"
+    },
+    {
+      "type": "text.delta",
+      "text": ":\n\n"
+    },
+    {
+      "type": "text.delta",
+      "text": "-"
+    },
+    {
+      "type": "text.delta",
+      "text": " **"
+    },
+    {
+      "type": "text.delta",
+      "text": "2"
+    },
+    {
+      "type": "text.delta",
+      "text": " +"
+    },
+    {
+      "type": "text.delta",
+      "text": " "
+    },
+    {
+      "type": "text.delta",
+      "text": "3"
+    },
+    {
+      "type": "text.delta",
+      "text": " ="
+    },
+    {
+      "type": "text.delta",
+      "text": " "
+    },
+    {
+      "type": "text.delta",
+      "text": "5"
+    },
+    {
+      "type": "text.delta",
+      "text": "**\n"
+    },
+    {
+      "type": "text.delta",
+      "text": "-"
+    },
+    {
+      "type": "text.delta",
+      "text": " **"
+    },
+    {
+      "type": "text.delta",
+      "text": "10"
+    },
+    {
+      "type": "text.delta",
+      "text": " +"
+    },
+    {
+      "type": "text.delta",
+      "text": " "
+    },
+    {
+      "type": "text.delta",
+      "text": "20"
+    },
+    {
+      "type": "text.delta",
+      "text": " ="
+    },
+    {
+      "type": "text.delta",
+      "text": " "
+    },
+    {
+      "type": "text.delta",
+      "text": "30"
+    },
+    {
+      "type": "text.delta",
+      "text": "**"
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Both computations are complete:\n\n- **2 + 3 = 5**\n- **10 + 20 = 30**"
+          }
+        ],
+        "reasoning": {
+          "text": "",
+          "providerId": "contract",
+          "blocks": [
+            {
+              "text": "",
+              "signature": "7e4c5782-08ee-410e-863a-80ad549cf460"
+            }
+          ]
+        },
+        "model": {
+          "providerId": "contract",
+          "modelId": "deepseek-flash"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 446,
+        "outputTokens": 26,
+        "cacheReadTokens": 256
+      }
+    },
+    {
+      "type": "loop.ended",
+      "outcome": "completed"
+    }
+  ],
+  "toolCalls": [
+    {
+      "id": "<toolcall-1>",
+      "name": "add",
+      "input": {
+        "a": 2,
+        "b": 3
+      }
+    },
+    {
+      "id": "<toolcall-2>",
+      "name": "add",
+      "input": {
+        "a": 10,
+        "b": 20
+      }
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "I'll compute both sums in parallel."
+        }
+      ],
+      "reasoning": {
+        "text": "",
+        "providerId": "contract",
+        "blocks": [
+          {
+            "text": "",
+            "signature": "bd7c3c73-8a1e-4b13-a496-6c4c71434901"
+          }
+        ]
+      },
+      "toolCalls": [
+        {
+          "id": "<toolcall-1>",
+          "name": "add",
+          "input": {
+            "a": 2,
+            "b": 3
+          }
+        },
+        {
+          "id": "<toolcall-2>",
+          "name": "add",
+          "input": {
+            "a": 10,
+            "b": 20
+          }
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "deepseek-flash"
+      }
+    },
+    {
+      "role": "tool",
+      "toolCallId": "<toolcall-1>",
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "role": "tool",
+      "toolCallId": "<toolcall-2>",
+      "content": [
+        {
+          "type": "text",
+          "text": "30"
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Both computations are complete:\n\n- **2 + 3 = 5**\n- **10 + 20 = 30**"
+        }
+      ],
+      "reasoning": {
+        "text": "",
+        "providerId": "contract",
+        "blocks": [
+          {
+            "text": "",
+            "signature": "7e4c5782-08ee-410e-863a-80ad549cf460"
+          }
+        ]
+      },
+      "model": {
+        "providerId": "contract",
+        "modelId": "deepseek-flash"
+      }
+    }
+  ]
+}

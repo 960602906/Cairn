@@ -1,0 +1,243 @@
+{
+  "events": [
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "group/smart-split"
+      }
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "We"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " need"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " answer"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " using"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " tool"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "."
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " Need"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " invoke"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " add"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " a"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "="
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "2"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " b"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "="
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "3"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "."
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [],
+        "reasoning": {
+          "text": "We need answer using tool. Need invoke add a=2 b=3.",
+          "providerId": "contract"
+        },
+        "toolCalls": [
+          {
+            "id": "<toolcall-1>",
+            "name": "add",
+            "input": {
+              "a": 2,
+              "b": 3
+            }
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "group/smart-split"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "tool_calls",
+      "usage": {
+        "inputTokens": 314,
+        "outputTokens": 69
+      }
+    },
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "group/smart-split"
+      }
+    },
+    {
+      "type": "text.delta",
+      "text": "2"
+    },
+    {
+      "type": "text.delta",
+      "text": " +"
+    },
+    {
+      "type": "text.delta",
+      "text": " "
+    },
+    {
+      "type": "text.delta",
+      "text": "3"
+    },
+    {
+      "type": "text.delta",
+      "text": " ="
+    },
+    {
+      "type": "text.delta",
+      "text": " **"
+    },
+    {
+      "type": "text.delta",
+      "text": "5"
+    },
+    {
+      "type": "text.delta",
+      "text": "**"
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "2 + 3 = **5**"
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "group/smart-split"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 396,
+        "outputTokens": 9,
+        "cacheReadTokens": 256
+      }
+    },
+    {
+      "type": "loop.ended",
+      "outcome": "completed"
+    }
+  ],
+  "toolCalls": [
+    {
+      "id": "<toolcall-1>",
+      "name": "add",
+      "input": {
+        "a": 2,
+        "b": 3
+      }
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What is 2 + 3? Use the add tool."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [],
+      "reasoning": {
+        "text": "We need answer using tool. Need invoke add a=2 b=3.",
+        "providerId": "contract"
+      },
+      "toolCalls": [
+        {
+          "id": "<toolcall-1>",
+          "name": "add",
+          "input": {
+            "a": 2,
+            "b": 3
+          }
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "group/smart-split"
+      }
+    },
+    {
+      "role": "tool",
+      "toolCallId": "<toolcall-1>",
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "2 + 3 = **5**"
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "group/smart-split"
+      }
+    }
+  ]
+}

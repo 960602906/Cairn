@@ -1,0 +1,321 @@
+{
+  "events": [
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "deepseek-flash"
+      }
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "We"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " need"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " answer"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " use"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " tool"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " parallel"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "."
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " Need"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " call"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " add"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " twice"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " same"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": " block"
+    },
+    {
+      "type": "reasoning.delta",
+      "text": "."
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [],
+        "reasoning": {
+          "text": "We need answer use tool parallel. Need call add twice same block.",
+          "providerId": "contract",
+          "blocks": [
+            {
+              "text": "We need answer use tool parallel. Need call add twice same block.",
+              "signature": "reasoning_content"
+            }
+          ]
+        },
+        "toolCalls": [
+          {
+            "id": "<toolcall-1>",
+            "name": "add",
+            "input": {
+              "a": 2,
+              "b": 3
+            }
+          },
+          {
+            "id": "<toolcall-2>",
+            "name": "add",
+            "input": {
+              "a": 10,
+              "b": 20
+            }
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "deepseek-flash"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "tool_calls",
+      "usage": {
+        "inputTokens": 321,
+        "outputTokens": 110,
+        "cacheReadTokens": 128,
+        "reasoningTokens": 14
+      }
+    },
+    {
+      "type": "step.started",
+      "model": {
+        "providerId": "contract",
+        "modelId": "deepseek-flash"
+      }
+    },
+    {
+      "type": "text.delta",
+      "text": "2"
+    },
+    {
+      "type": "text.delta",
+      "text": " +"
+    },
+    {
+      "type": "text.delta",
+      "text": " "
+    },
+    {
+      "type": "text.delta",
+      "text": "3"
+    },
+    {
+      "type": "text.delta",
+      "text": " ="
+    },
+    {
+      "type": "text.delta",
+      "text": " **"
+    },
+    {
+      "type": "text.delta",
+      "text": "5"
+    },
+    {
+      "type": "text.delta",
+      "text": "**"
+    },
+    {
+      "type": "text.delta",
+      "text": "  \n"
+    },
+    {
+      "type": "text.delta",
+      "text": "10"
+    },
+    {
+      "type": "text.delta",
+      "text": " +"
+    },
+    {
+      "type": "text.delta",
+      "text": " "
+    },
+    {
+      "type": "text.delta",
+      "text": "20"
+    },
+    {
+      "type": "text.delta",
+      "text": " ="
+    },
+    {
+      "type": "text.delta",
+      "text": " **"
+    },
+    {
+      "type": "text.delta",
+      "text": "30"
+    },
+    {
+      "type": "text.delta",
+      "text": "**"
+    },
+    {
+      "type": "message.completed",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "2 + 3 = **5**  \n10 + 20 = **30**"
+          }
+        ],
+        "model": {
+          "providerId": "contract",
+          "modelId": "deepseek-flash"
+        }
+      }
+    },
+    {
+      "type": "step.completed",
+      "finishReason": "stop",
+      "usage": {
+        "inputTokens": 453,
+        "outputTokens": 18,
+        "cacheReadTokens": 256,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "type": "loop.ended",
+      "outcome": "completed"
+    }
+  ],
+  "toolCalls": [
+    {
+      "id": "<toolcall-1>",
+      "name": "add",
+      "input": {
+        "a": 2,
+        "b": 3
+      }
+    },
+    {
+      "id": "<toolcall-2>",
+      "name": "add",
+      "input": {
+        "a": 10,
+        "b": 20
+      }
+    }
+  ],
+  "history": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Compute 2 + 3 and 10 + 20 with the add tool, in parallel."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [],
+      "reasoning": {
+        "text": "We need answer use tool parallel. Need call add twice same block.",
+        "providerId": "contract",
+        "blocks": [
+          {
+            "text": "We need answer use tool parallel. Need call add twice same block.",
+            "signature": "reasoning_content"
+          }
+        ]
+      },
+      "toolCalls": [
+        {
+          "id": "<toolcall-1>",
+          "name": "add",
+          "input": {
+            "a": 2,
+            "b": 3
+          }
+        },
+        {
+          "id": "<toolcall-2>",
+          "name": "add",
+          "input": {
+            "a": 10,
+            "b": 20
+          }
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "deepseek-flash"
+      }
+    },
+    {
+      "role": "tool",
+      "toolCallId": "<toolcall-1>",
+      "content": [
+        {
+          "type": "text",
+          "text": "5"
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "role": "tool",
+      "toolCallId": "<toolcall-2>",
+      "content": [
+        {
+          "type": "text",
+          "text": "30"
+        }
+      ],
+      "status": "ok"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "2 + 3 = **5**  \n10 + 20 = **30**"
+        }
+      ],
+      "model": {
+        "providerId": "contract",
+        "modelId": "deepseek-flash"
+      }
+    }
+  ]
+}
