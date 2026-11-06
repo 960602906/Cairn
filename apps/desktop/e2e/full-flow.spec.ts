@@ -92,7 +92,8 @@ test('修复示例项目的 bug 并运行测试，之后撤销本轮', async ({ 
     const command = window.getByRole('article', { name: '需要审批：run_command' })
     await expect(command).toBeVisible()
     await expect(command.getByText('node --test').first()).toBeVisible()
-    await command.getByRole('button', { name: '允许一次' }).click()
+    // 数字键 1 选择“运行一次”（M2-05）
+    await window.keyboard.press('1')
 
     await expect(window.getByText(REPLY)).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲')

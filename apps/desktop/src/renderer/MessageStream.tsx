@@ -1,6 +1,6 @@
 /**
  * 消息流（M0-15c）：已完成的消息（`messages`）之后是进行中的消息（`live`，由增量事件合并），
- * 助手消息中的工具调用显示为工具卡片（M1-16b，`ToolCallCard`）。
+ * 助手消息中的工具调用显示为时间线（M2-05，`ToolTimeline`），紧跟在这条消息的正文之后（模型先写正文再调用工具）。
  * 最后是上一轮的结果（停止、失败、达到限额、宿主崩溃）。被停止或出错打断的部分回复保留并注明未完成。
  * 消息完成时投影移除对应的进行中消息，因此同一条消息不会出现两次。
  *
@@ -15,7 +15,7 @@ import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
 import type { ContentPart, ModelRef } from '@cairn/protocol'
 import { Markdown } from './Markdown.js'
 import { useSessionStore } from './store-context.js'
-import { ToolCallCard } from './ToolCallCard.js'
+import { ToolStep, ToolTimeline } from './ToolTimeline.js'
 import { IconButton, Shimmer } from './ui/index.js'
 
 /** 本轮结束后，最后一条助手消息下面的操作：复制本轮回复；右侧灰字是模型名与本轮 token 数（不显示金额）。 */
@@ -148,13 +148,20 @@ function Message({
   view,
   footer,
   modelName,
+  continued,
 }: {
   readonly message: MessageView
   readonly view: SessionView
   readonly footer: TurnFooter | undefined
   readonly modelName: (model: ModelRef) => string
+  /** 紧跟在同一轮的上一条助手消息之后：间距收紧为块间距（14px）。 */
+  readonly continued: boolean
 }) {
   const { t } = useTranslation('session')
+  const approvals = useSessionStore((s) =>
+    s.activeSessionId === undefined ? undefined : s.approvals[s.activeSessionId],
+  )
+  const awaiting = new Set(approvals?.map((a) => a.toolCallId))
   if (message.role === 'user') {
     return (
       <li className="flex flex-col items-end">
@@ -166,21 +173,26 @@ function Message({
     )
   }
   return (
-    <li className="text-fg">
+    <li className={continued ? '-mt-3.5 text-fg' : 'text-fg'}>
       <strong className="sr-only">{t('message.assistant')}</strong>
       {message.reasoning && message.reasoning.text !== '' && (
         <Reasoning text={message.reasoning.text} />
       )}
       <AssistantContent parts={message.content} />
-      {message.toolCalls.map((call) => (
-        <ToolCallCard
-          key={call.id}
-          name={call.name}
-          input={call.input}
-          tool={view.tools[call.id]}
-          live={view.liveToolOutput[call.id]}
-        />
-      ))}
+      {message.toolCalls.length > 0 && (
+        <ToolTimeline>
+          {message.toolCalls.map((call) => (
+            <ToolStep
+              key={call.id}
+              name={call.name}
+              input={call.input}
+              tool={view.tools[call.id]}
+              live={view.liveToolOutput[call.id]}
+              awaitingApproval={awaiting.has(call.id)}
+            />
+          ))}
+        </ToolTimeline>
+      )}
       {message.incomplete && (
         <em className="mt-1.5 block text-note text-muted not-italic">{t('message.incomplete')}</em>
       )}
@@ -191,10 +203,26 @@ function Message({
   )
 }
 
-function LiveMessage({ live }: { readonly live: LiveMessageView }) {
+/** 同一轮中紧跟在助手消息之后的助手消息。 */
+const continues = (
+  previous: MessageView | undefined,
+  next: { readonly role?: string; readonly turnId: string | undefined },
+) =>
+  previous?.role === 'assistant' &&
+  next.role !== 'user' &&
+  previous.turnId !== undefined &&
+  previous.turnId === next.turnId
+
+function LiveMessage({
+  live,
+  continued,
+}: {
+  readonly live: LiveMessageView
+  readonly continued: boolean
+}) {
   const { t } = useTranslation('session')
   return (
-    <li aria-busy="true" className="text-fg">
+    <li aria-busy="true" className={continued ? '-mt-3.5 text-fg' : 'text-fg'}>
       <strong className="sr-only">{t('message.assistant')}</strong>
       {live.reasoning !== '' && <Reasoning text={live.reasoning} live={live.text === ''} />}
       {live.text !== '' && <Markdown text={live.text} />}
@@ -245,17 +273,22 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
   return (
     <>
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
-        {view?.messages.map((message) => (
+        {view?.messages.map((message, index) => (
           <Message
             key={message.messageId}
             message={message}
             view={view}
             footer={footers.get(message.messageId)}
             modelName={modelName}
+            continued={continues(view.messages[index - 1], message)}
           />
         ))}
-        {live.map((message) => (
-          <LiveMessage key={message.messageId} live={message} />
+        {live.map((message, index) => (
+          <LiveMessage
+            key={message.messageId}
+            live={message}
+            continued={index === 0 && continues(view?.messages.at(-1), message)}
+          />
         ))}
       </ol>
       {outcome && <p className="rounded-card bg-sunk px-3.5 py-2.5 text-ui text-fg2">{outcome}</p>}

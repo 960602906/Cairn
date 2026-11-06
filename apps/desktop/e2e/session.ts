@@ -19,7 +19,8 @@ export function projectDir(userData: string): string {
 export const runStatus = (window: Page) => window.getByRole('status')
 
 const messageItems = (window: Page) =>
-  window.getByRole('list', { name: '消息' }).getByRole('listitem')
+  // 只取直接子项：工具时间线等嵌套列表不算消息
+  window.getByRole('list', { name: '消息' }).locator(':scope > li')
 
 /** 进行中（正在流式输出）的消息。 */
 export const liveMessage = (window: Page) =>
