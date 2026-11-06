@@ -79,9 +79,12 @@ function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): strin
     })
   }
   if (turn?.status !== 'failed') return undefined
-  if (turn.limitReached?.limit === 'maxStepsPerTurn') {
-    return t('turn.limit_reached', { maxSteps: turn.limitReached.value })
+  const limit = turn.limitReached
+  if (limit?.limit === 'maxStepsPerTurn') return t('turn.limit_reached', { maxSteps: limit.value })
+  if (limit?.limit === 'maxTurnDurationMs') {
+    return t('turn.limit.maxTurnDurationMs', { minutes: Math.round(limit.value / 60_000) })
   }
+  if (limit) return t(`turn.limit.${limit.limit}`, { value: limit.value })
   return t('turn.failed', { reason: translateError(i18n, turn.error ?? { code: 'unknown' }) })
 }
 

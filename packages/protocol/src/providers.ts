@@ -40,6 +40,21 @@ export const ModelCompat = z
   .strict()
 export type ModelCompat = z.infer<typeof ModelCompat>
 
+const Price = z.number().nonnegative()
+
+/**
+ * 单价（Runtime §15）：每百万 token 的价格，货币按提供方的计价（界面只显示数字）。用于估算费用与
+ * `maxCostPerTurn` 限额（M1-14b）；没有填写时只统计 token。缓存命中的输入没有单独价格时按普通输入计。
+ */
+export const ModelPricing = z
+  .object({
+    inputPerMillion: Price,
+    outputPerMillion: Price,
+    cacheReadPerMillion: Price.optional(),
+  })
+  .strict()
+export type ModelPricing = z.infer<typeof ModelPricing>
+
 /** 一个模型的能力（架构 §12.1 的 `ModelProfile`）；`verifiedAt` 为最近一次能力探测的时间。 */
 export const ModelProfile = z.object({
   /** 提供方的模型名。 */
@@ -53,6 +68,7 @@ export const ModelProfile = z.object({
   verifiedAt: Timestamp.optional(),
   /** 只对这个模型生效的兼容参数，逐项覆盖提供方的 `compat`。 */
   compat: ModelCompat.optional(),
+  pricing: ModelPricing.optional(),
 })
 export type ModelProfile = z.infer<typeof ModelProfile>
 

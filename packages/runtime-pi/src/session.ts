@@ -7,6 +7,10 @@
  *   不发出 `message.completed`，部分回复由 `RunEngine` 用增量保存；
  * - `agent_end` → `loop.ended`，结果按最后一条助手消息与是否被中止判断。
  *
+ * 非法工具调用（M1-14b）：工具不存在、参数不是合法 JSON（`argumentsError`）或不符合 schema 时，pi 自己把错误
+ * 作为工具结果回给模型，不调用工具的 `execute`。会话从 `tool_execution_start` / `tool_execution_end` 中找出
+ * 这些调用，经 `hooks.toolCallRejected` 报告（`tool.not_found` / `tool.invalid_input`），上层据此记录事件。
+ *
  * 重试（M1-14a）：pi 的 SDK 重试关闭（`maxRetries: 0`），由 `RunEngine` 决定是否重试。`retry()` 从 pi 的
  * 消息中去掉失败的助手消息，再用 `Agent.continue()` 从最后的用户消息或工具结果继续，不重复执行工具。
  *
@@ -31,7 +35,8 @@ import type {
   StepFinishReason,
   UserMessage,
 } from '@nexus/core'
-import type { CanonicalMessage } from '@nexus/protocol'
+import type { CanonicalMessage, ErrorInfo } from '@nexus/protocol'
+import { ToolErrorCode } from '@nexus/core'
 import {
   Agent,
   type AgentEvent,
@@ -94,6 +99,8 @@ class PiSession implements RuntimeSession {
   #inStep = false
   #loopEnded = false
   #lastAssistant: PiAssistantMessage | undefined
+  /** 本次循环中 pi 开始处理的工具调用的参数，`execute` 被调用后移除。 */
+  readonly #toolCalls = new Map<string, unknown>()
   #disposed = false
 
   constructor(init: RuntimeSessionInit, options: PiRuntimeOptions) {
@@ -161,6 +168,7 @@ class PiSession implements RuntimeSession {
     this.#loopEnded = false
     this.#inStep = false
     this.#lastAssistant = undefined
+    this.#toolCalls.clear()
     try {
       if (this.#abortRequested) {
         // 会话已被中止：不发请求，直接以 aborted 结束
@@ -225,6 +233,7 @@ class PiSession implements RuntimeSession {
       parameters: spec.inputSchema,
       executionMode: spec.parallel ? 'parallel' : 'sequential',
       execute: async (toolCallId, params, signal): Promise<AgentToolResult> => {
+        this.#toolCalls.delete(toolCallId)
         const call = { id: toolCallId, name: spec.name, input: params }
         const gate = await hooks.beforeToolCall(call)
         const result: RuntimeToolResult =
@@ -263,12 +272,32 @@ class PiSession implements RuntimeSession {
       case 'message_end':
         this.#endMessage(event.message as PiMessage)
         break
+      case 'tool_execution_start':
+        this.#toolCalls.set(event.toolCallId, event.args)
+        break
+      case 'tool_execution_end':
+        this.#endToolCall(event.toolCallId, event.toolName, event.isError)
+        break
       case 'agent_end':
         this.#endLoop()
         break
       default:
         break
     }
+  }
+
+  /** pi 没有调用 `execute` 就结束的调用：pi 自己拒绝了它（中止时取消的除外）。 */
+  #endToolCall(toolCallId: string, name: string, isError: boolean): void {
+    if (!this.#toolCalls.has(toolCallId)) return
+    const input = this.#toolCalls.get(toolCallId)
+    this.#toolCalls.delete(toolCallId)
+    if (!isError || this.#abortRequested || this.#agent.signal?.aborted) return
+    const known = this.#init.tools.some((t) => t.name === name)
+    const error: ErrorInfo = {
+      code: known ? ToolErrorCode.InvalidInput : ToolErrorCode.NotFound,
+      params: { name },
+    }
+    this.#init.hooks.toolCallRejected?.({ id: toolCallId, name, input }, error)
   }
 
   #startStep(): void {

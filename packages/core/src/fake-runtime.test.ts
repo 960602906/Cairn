@@ -650,6 +650,32 @@ describe('parseFakeScript', () => {
       'turns[0].steps[0].error.code: 必须是非空字符串',
     ],
     [
+      {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'a', input: {}, rejectedWith: 1 },
+              { kind: 'reply', text: '' },
+            ],
+          },
+        ],
+      },
+      'turns[0].steps[0].rejectedWith: 必须是字符串',
+    ],
+    [
+      {
+        turns: [
+          {
+            steps: [
+              { kind: 'tools', calls: [{ name: 'a', input: {}, rejectedWith: false }] },
+              { kind: 'reply', text: '' },
+            ],
+          },
+        ],
+      },
+      'turns[0].steps[0].calls[0].rejectedWith: 必须是字符串',
+    ],
+    [
       { turns: [{ steps: [{ kind: 'fail', error: 'x', retryable: true }] }] },
       'turns[0].steps[0].error.code: 必须是非空字符串',
     ],

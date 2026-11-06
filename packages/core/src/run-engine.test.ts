@@ -25,6 +25,7 @@ import {
   type RuntimeSession,
   type RuntimeSessionInit,
   type ToolExecutor,
+  type ToolPipeline,
 } from './index.js'
 
 const ref: ModelRef = { providerId: 'fake', modelId: 'fake-1' }
@@ -497,6 +498,198 @@ describe('RunEngine：失败与限额', () => {
     expect(states(events)).toEqual(['thinking', 'tooling', 'thinking', 'tooling', 'failed'])
     const view = reduceSessionEvents(createSessionView('s1'), sequenced('?', events))
     expect(view.runs.r1?.turn?.limitReached).toEqual({ limit: 'maxStepsPerTurn', value: 2 })
+  })
+})
+
+describe('RunEngine：限额与非法工具调用', () => {
+  const tool = (extra: object = {}) => ({ kind: 'tool', name: 'a', input: {}, ...extra }) as const
+  const reply = { kind: 'reply', text: '好' } as const
+  const fail: ToolExecutor = async () => ({ status: 'error', content: text('坏了') })
+  const limitOf = (events: readonly UnsequencedEvent[]) =>
+    events.find((e) => e.type === 'turn.limit_reached')?.payload
+  const count = (events: readonly UnsequencedEvent[], type: string) =>
+    types(events).filter((t) => t === type).length
+
+  it('连续工具失败达到上限：结束本轮，不再调用模型', async () => {
+    const { engine, events } = await start(
+      fake({ turns: [{ steps: [tool(), tool(), tool(), tool(), reply] }] }),
+      { executeTool: fail },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(count(events, 'tool.failed')).toBe(3)
+    expect(count(events, 'step.started')).toBe(3)
+    expect(limitOf(events)).toEqual({ limit: 'maxConsecutiveToolErrors', value: 3 })
+    expect(events.at(-1)).toMatchObject({
+      type: 'turn.failed',
+      payload: { error: { params: { limit: 'maxConsecutiveToolErrors' } }, retryable: true },
+    })
+    const view = reduceSessionEvents(createSessionView('s1'), sequenced('?', events))
+    expect(view.runs.r1?.turn?.limitReached).toEqual({
+      limit: 'maxConsecutiveToolErrors',
+      value: 3,
+    })
+    // “继续”开始新的一轮，计数重新开始
+    await engine.prompt({ messageId: 'u2', content: text('继续') })
+    expect(engine.state).toBe('completed')
+  })
+
+  it('成功的调用清零，被拒绝的调用不计', async () => {
+    const results = ['error', 'error', 'ok', 'denied', 'error', 'error'] as const
+    let i = 0
+    const { engine, events } = await start(
+      fake({ turns: [{ steps: [...results.map(() => tool()), reply] }] }),
+      { executeTool: async () => ({ status: results[i++]!, content: text('x') }) },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(limitOf(events)).toBeUndefined()
+    expect(engine.state).toBe('completed')
+  })
+
+  it('运行时拒绝的调用：tool.requested + tool.failed，计入连续失败', async () => {
+    const executeTool = vi.fn<ToolExecutor>()
+    const { engine, events } = await start(
+      fake({
+        turns: [
+          {
+            steps: [
+              tool({ rejectedWith: 'tool.not_found' }),
+              {
+                kind: 'tools',
+                calls: [
+                  { name: 'a', input: {}, rejectedWith: 'tool.invalid_input' },
+                  { name: 'b', input: { x: 1 }, rejectedWith: 'tool.invalid_input' },
+                ],
+              },
+              reply,
+            ],
+          },
+        ],
+      }),
+      { executeTool },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(executeTool).not.toHaveBeenCalled()
+    expect(count(events, 'tool.started')).toBe(0)
+    expect(
+      events.flatMap((e) =>
+        e.type === 'tool.requested' || e.type === 'tool.failed' ? [[e.type, e.payload]] : [],
+      ),
+    ).toEqual([
+      ['tool.requested', { toolCallId: 'fake-call-1', name: 'a', input: {} }],
+      [
+        'tool.failed',
+        { toolCallId: 'fake-call-1', error: { code: 'tool.not_found', params: { name: 'a' } } },
+      ],
+      ['tool.requested', { toolCallId: 'fake-call-2', name: 'a', input: {} }],
+      [
+        'tool.failed',
+        { toolCallId: 'fake-call-2', error: { code: 'tool.invalid_input', params: { name: 'a' } } },
+      ],
+      ['tool.requested', { toolCallId: 'fake-call-3', name: 'b', input: { x: 1 } }],
+      [
+        'tool.failed',
+        { toolCallId: 'fake-call-3', error: { code: 'tool.invalid_input', params: { name: 'b' } } },
+      ],
+    ])
+    expect(states(events)).toEqual(['thinking', 'tooling', 'thinking', 'tooling', 'failed'])
+    expect(limitOf(events)).toEqual({ limit: 'maxConsecutiveToolErrors', value: 3 })
+    // 重建的历史中每个调用都有结果
+    const history = rebuildHistory(sequenced('?', events), { runId: 'r1' })
+    expect(history.filter((m) => m.role === 'tool').map((m) => m.status)).toEqual([
+      'error',
+      'error',
+      'error',
+    ])
+  })
+
+  it('单轮时长不含等待审批的时间', async () => {
+    let clock = 0
+    let waits = 0
+    const pipeline: ToolPipeline = {
+      async run(call, _signal, observer) {
+        observer.started()
+        if (call.input === 'approve') {
+          observer.awaitingApproval(true)
+          clock += 50_000
+          waits += 1
+          observer.awaitingApproval(false)
+        } else {
+          clock += 20_000
+        }
+        return { status: 'ok', content: text('ok'), truncated: false }
+      },
+    }
+    const script = (input: string) =>
+      fake({ turns: [{ steps: [tool({ input }), tool({ input }), tool({ input }), reply] }] })
+    const run = async (input: string) => {
+      clock = 0
+      const r = await start(script(input), { toolPipeline: pipeline, now: () => clock })
+      await r.engine.prompt({ messageId: 'u1', content: text('?') })
+      return r.events
+    }
+    // 等待审批 3 × 50 秒，不计入 60 秒的上限
+    expect(limitOf(await run('approve'))).toBeUndefined()
+    expect(waits).toBe(3)
+    // 执行 3 × 20 秒：第四次调用模型前超出
+    const events = await run('work')
+    expect(limitOf(events)).toEqual({ limit: 'maxTurnDurationMs', value: 60_000 })
+    expect(count(events, 'step.started')).toBe(3)
+  })
+
+  it('token 上限', async () => {
+    const usage = { inputTokens: 40, outputTokens: 20 }
+    const { engine, events } = await start(
+      fake({ turns: [{ steps: [tool({ usage }), tool({ usage }), reply] }] }),
+      {
+        limits: { ...limits, maxTokensPerTurn: 100 },
+        executeTool: async () => ({ status: 'ok', content: text('ok') }),
+      },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(limitOf(events)).toEqual({ limit: 'maxTokensPerTurn', value: 100 })
+    expect(count(events, 'step.started')).toBe(2)
+  })
+
+  it('费用上限：模型有单价时生效', async () => {
+    const usage = { inputTokens: 1_000_000, outputTokens: 100_000 }
+    const script = () => fake({ turns: [{ steps: [tool({ usage }), tool({ usage }), reply] }] })
+    const options = {
+      limits: { ...limits, maxCostPerTurn: 1.5 },
+      executeTool: (async () => ({ status: 'ok', content: text('ok') })) as ToolExecutor,
+    }
+    // 每次 1 + 0.1 × 2 = 1.2：第二次之后超出
+    const priced = await start(script(), {
+      ...options,
+      model: {
+        ...model,
+        profile: { ...model.profile, pricing: { inputPerMillion: 1, outputPerMillion: 2 } },
+      },
+    })
+    await priced.engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(limitOf(priced.events)).toEqual({ limit: 'maxCostPerTurn', value: 1.5 })
+    expect(count(priced.events, 'step.started')).toBe(2)
+
+    const unpriced = await start(script(), options)
+    await unpriced.engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(limitOf(unpriced.events)).toBeUndefined()
+    expect(unpriced.engine.state).toBe('completed')
+  })
+
+  it('轮次结束后收到的拒绝报告被忽略', async () => {
+    let hooks!: RuntimeSessionInit['hooks']
+    const inner = fake({ turns: [] })
+    const runtime: AgentRuntime = {
+      id: 'late',
+      async createSession(init) {
+        hooks = init.hooks
+        return inner.createSession(init)
+      },
+    }
+    const { engine, events } = await start(runtime)
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    const before = events.length
+    hooks.toolCallRejected!({ id: 'c9', name: 'x', input: {} }, { code: 'tool.not_found' })
+    expect(events).toHaveLength(before)
   })
 })
 

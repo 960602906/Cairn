@@ -9,6 +9,7 @@
  * 工具是否放行、如何执行由上层通过 `hooks` 决定（ToolPipeline，M1-05）。
  */
 import type {
+  ModelPricing,
   CanonicalMessage,
   ContentPart,
   ErrorInfo,
@@ -42,6 +43,8 @@ export interface ModelProfile {
   readonly supportsTools: boolean
   readonly supportsParallelToolCalls: boolean
   readonly supportsReasoning: boolean
+  /** 单价（M1-14b）；没有时不估算费用，`maxCostPerTurn` 不生效。 */
+  readonly pricing?: ModelPricing
 }
 
 /** 已解析的模型：运行时直接据此发起请求。 */
@@ -92,6 +95,11 @@ export interface RuntimeHooks {
   beforeToolCall(call: RuntimeToolCall): Promise<RuntimeToolGate>
   executeTool(call: RuntimeToolCall, signal: AbortSignalLike): Promise<RuntimeToolResult>
   beforeModelCall?(ctx: ModelCallContext): Promise<ModelCallContext>
+  /**
+   * 运行时自己拒绝、没有交给 `executeTool` 的调用（M1-14b）：工具不存在、参数不是合法 JSON 或不符合
+   * schema。运行时已把错误作为工具结果回给模型；上层据此记录事件，并计入连续失败。
+   */
+  toolCallRejected?(call: RuntimeToolCall, error: ErrorInfo): void
 }
 
 export interface RuntimeSessionInit {

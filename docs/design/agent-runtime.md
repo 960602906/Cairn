@@ -428,6 +428,18 @@ pi 提供了追加消息的机制，具体对接方式在适配器中实现；�
 - 结束本轮，发出 `turn.limit_reached`，说明是哪项限额；
 - 界面提供"继续"按钮，用户确认后以更高限额继续，而不是直接失败。
 
+检查时机与口径（M1-14b）：每次调用模型之前依次检查，超出时中止，不再发出请求。
+
+| 限额 | 口径 |
+|---|---|
+| `maxStepsPerTurn` | 本轮已调用模型的次数（重试的请求也算） |
+| `maxConsecutiveToolErrors` | 连续失败的工具调用数：执行失败、工具不存在、参数非法都算；成功清零；被拒绝、取消的不计 |
+| `maxTurnDurationMs` | 本轮已进行的时间，不含等待审批的时间 |
+| `maxTokensPerTurn` | 本轮各次调用的输入加输出 token 之和 |
+| `maxCostPerTurn` | 按模型单价（`ModelProfile.pricing`）估算的费用；模型没有单价时不生效 |
+
+“继续”开始新的一轮，计数重新开始。
+
 ### 10.4 模型请求重试
 
 - 运行时只报告失败与是否值得重试（`loop.ended { outcome: 'failed', retryable }`），重试由 `RunEngine` 统一决定，SDK 自带的重试关闭。
@@ -530,7 +542,7 @@ interface EventEnvelope {
 ## 15. 用量统计
 
 - 每次模型调用记录输入 token、输出 token、缓存命中 token（如提供方返回）、耗时。
-- 提供方配置可填写单价，用于估算费用；未配置则只显示 token 数。本地模型（Ollama）费用为 0，只显示 token 和耗时。
+- 提供方配置可填写单价（`ModelProfile.pricing`：每百万输入、输出、缓存命中 token 的价格），用于估算费用；未配置则只显示 token 数。本地模型（Ollama）费用为 0，只显示 token 和耗时。
 - 汇总维度：步骤、轮次、运行、会话、项目、按天。
 - 可选的成本上限（`maxCostPerTurn`）达到时按限额处理（见 10.3）。
 
