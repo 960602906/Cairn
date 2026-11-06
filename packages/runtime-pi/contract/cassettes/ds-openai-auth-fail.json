@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "name": "ds-openai-auth-fail",
+  "scenario": "openai-auth-fail",
+  "model": "deepseek-flash",
+  "reasoning": true,
+  "source": "https://api.deepseek.com",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
+        "query": {},
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "model": "deepseek-flash",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are a calculator."
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Hello"
+                }
+              ]
+            }
+          ],
+          "stream": true,
+          "stream_options": {
+            "include_usage": true
+          },
+          "max_tokens": 4096,
+          "thinking": {
+            "type": "enabled"
+          },
+          "reasoning_effort": "high"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Authentication Fails, Your api key: ****0000 is invalid (request_id: 776521cf-0fd3-4c9f-b808-378a9b4746be)\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "name": "gw-gemini-tool",
+  "scenario": "gemini-tool",
+  "model": "group/smart-split",
+  "reasoning": true,
+  "source": "http://127.0.0.1:3425",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/group/smart-split:streamGenerateContent",
+        "query": {
+          "alt": "sse"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "You are a calculator."
+              }
+            ],
+            "role": "user"
+          },
+          "tools": [
+            {
+              "functionDeclarations": [
+                {
+                  "name": "add",
+                  "description": "Add two numbers",
+                  "parametersJsonSchema": {
+                    "type": "object",
+                    "properties": {
+                      "a": {
+                        "type": "number"
+                      },
+                      "b": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "a",
+                      "b"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "maxOutputTokens": 4096,
+            "thinkingConfig": {
+              "includeThoughts": true,
+              "thinkingBudget": -1
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"We\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" need\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" answer\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" use\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" add\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" tool\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\".\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" Need\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" call\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\".\",\"thought\":true}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"args\":{\"a\":2,\"b\":3},\"id\":\"call_00_VYfEt285K8mhtIJVSfMy2438\",\"name\":\"add\"}}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"8d92766f00df4d2d30d9236536da680a\",\"usageMetadata\":{\"candidatesTokenCount\":53,\"promptTokenCount\":314,\"thoughtsTokenCount\":10,\"totalTokenCount\":377}}\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1beta/models/group/smart-split:streamGenerateContent",
+        "query": {
+          "alt": "sse"
+        },
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ],
+              "role": "user"
+            },
+            {
+              "parts": [
+                {
+                  "text": "We need answer use add tool. Need call.",
+                  "thought": true
+                },
+                {
+                  "functionCall": {
+                    "args": {
+                      "a": 2,
+                      "b": 3
+                    },
+                    "name": "add"
+                  }
+                }
+              ],
+              "role": "model"
+            },
+            {
+              "parts": [
+                {
+                  "functionResponse": {
+                    "name": "add",
+                    "response": {
+                      "output": "5"
+                    }
+                  }
+                }
+              ],
+              "role": "user"
+            }
+          ],
+          "systemInstruction": {
+            "parts": [
+              {
+                "text": "You are a calculator."
+              }
+            ],
+            "role": "user"
+          },
+          "tools": [
+            {
+              "functionDeclarations": [
+                {
+                  "name": "add",
+                  "description": "Add two numbers",
+                  "parametersJsonSchema": {
+                    "type": "object",
+                    "properties": {
+                      "a": {
+                        "type": "number"
+                      },
+                      "b": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "a",
+                      "b"
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "maxOutputTokens": 4096,
+            "thinkingConfig": {
+              "includeThoughts": true,
+              "thinkingBudget": -1
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"2\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"18b843740d16f434cf518375a10d440d\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" +\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"18b843740d16f434cf518375a10d440d\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" \"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"18b843740d16f434cf518375a10d440d\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"3\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"18b843740d16f434cf518375a10d440d\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" =\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"18b843740d16f434cf518375a10d440d\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" \"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"18b843740d16f434cf518375a10d440d\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"5\"}],\"role\":\"model\"},\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"18b843740d16f434cf518375a10d440d\"}\n\n",
+          "data: {\"candidates\":[{\"content\":{\"parts\":[],\"role\":\"model\"},\"finishReason\":\"STOP\",\"index\":0}],\"modelVersion\":\"group/smart-split\",\"responseId\":\"18b843740d16f434cf518375a10d440d\",\"usageMetadata\":{\"cachedContentTokenCount\":256,\"candidatesTokenCount\":8,\"promptTokenCount\":390,\"totalTokenCount\":398}}\n\n"
+        ]
+      }
+    }
+  ]
+}

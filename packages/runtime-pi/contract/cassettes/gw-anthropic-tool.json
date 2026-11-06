@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "name": "gw-anthropic-tool",
+  "scenario": "anthropic-tool",
+  "model": "group/smart-split",
+  "reasoning": true,
+  "source": "http://127.0.0.1:3425",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "interleaved-thinking-2025-05-14"
+        },
+        "body": {
+          "model": "group/smart-split",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is 2 + 3? Use the add tool.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 4096,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "add",
+              "description": "Add two numbers",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ]
+              },
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "enabled",
+            "budget_tokens": 3072,
+            "display": "summarized"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          ": keepalive\nevent: message_start\ndata: {\"message\":{\"content\":[],\"id\":\"msg_3ce604366cbc6a4f9e0b69d7e9a136e2\",\"model\":\"group/smart-split\",\"role\":\"assistant\",\"stop_reason\":null,\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}},\"type\":\"message_start\"}\n\nevent: content_block_start\ndata: {\"content_block\":{\"signature\":\"\",\"thinking\":\"\",\"type\":\"thinking\"},\"index\":0,\"type\":\"content_block_start\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\"We\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" need\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" answer\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" using\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" tool\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\".\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" Need\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" invoke\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" add\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" a\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\"=\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\"2\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\" b\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\"=\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\"3\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"thinking\":\".\",\"type\":\"thinking_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_stop\ndata: {\"index\":0,\"type\":\"content_block_stop\"}\n\n",
+          "event: content_block_start\ndata: {\"content_block\":{\"id\":\"call_00_i7HzHLG2iSM4aSpioPNJ3180\",\"input\":{},\"name\":\"add\",\"type\":\"tool_use\"},\"index\":1,\"type\":\"content_block_start\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"{\\\"\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"a\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"\\\"\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\": \",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"2\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\", \\\"\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"b\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"\\\"\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\": \",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"3\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"}\",\"type\":\"input_json_delta\"},\"index\":1,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_stop\ndata: {\"index\":1,\"type\":\"content_block_stop\"}\n\n",
+          "event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"type\":\"message_delta\",\"usage\":{\"input_tokens\":314,\"output_tokens\":69,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}\n\n",
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ]
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "interleaved-thinking-2025-05-14"
+        },
+        "body": {
+          "model": "group/smart-split",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "What is 2 + 3? Use the add tool."
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "We need answer using tool. Need invoke add a=2 b=3."
+                },
+                {
+                  "type": "tool_use",
+                  "id": "call_00_i7HzHLG2iSM4aSpioPNJ3180",
+                  "name": "add",
+                  "input": {
+                    "a": 2,
+                    "b": 3
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "call_00_i7HzHLG2iSM4aSpioPNJ3180",
+                  "content": "5",
+                  "is_error": false,
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 4096,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "tools": [
+            {
+              "name": "add",
+              "description": "Add two numbers",
+              "eager_input_streaming": true,
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ]
+              },
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "enabled",
+            "budget_tokens": 3072,
+            "display": "summarized"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          ": keepalive\nevent: message_start\ndata: {\"message\":{\"content\":[],\"id\":\"msg_765d656d85830790efe18f9249998c71\",\"model\":\"group/smart-split\",\"role\":\"assistant\",\"stop_reason\":null,\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}},\"type\":\"message_start\"}\n\nevent: content_block_start\ndata: {\"content_block\":{\"text\":\"\",\"type\":\"text\"},\"index\":0,\"type\":\"content_block_start\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"text\":\"2\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"text\":\" +\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"text\":\" \",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"text\":\"3\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"text\":\" =\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"text\":\" **\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"text\":\"5\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_delta\ndata: {\"delta\":{\"text\":\"**\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\n",
+          "event: content_block_stop\ndata: {\"index\":0,\"type\":\"content_block_stop\"}\n\n",
+          "event: message_delta\ndata: {\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"type\":\"message_delta\",\"usage\":{\"input_tokens\":140,\"output_tokens\":9,\"cache_read_input_tokens\":256,\"cache_creation_input_tokens\":0}}\n\n",
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ]
+      }
+    }
+  ]
+}

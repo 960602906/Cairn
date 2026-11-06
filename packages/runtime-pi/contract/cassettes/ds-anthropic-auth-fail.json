@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "name": "ds-anthropic-auth-fail",
+  "scenario": "anthropic-auth-fail",
+  "model": "deepseek-flash",
+  "reasoning": true,
+  "source": "https://api.deepseek.com/anthropic",
+  "pi": "1.5.0",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "query": {
+          "beta": "true"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "interleaved-thinking-2025-05-14"
+        },
+        "body": {
+          "model": "deepseek-flash",
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Hello",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          ],
+          "max_tokens": 4096,
+          "stream": true,
+          "system": [
+            {
+              "type": "text",
+              "text": "You are a calculator.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "thinking": {
+            "type": "enabled",
+            "budget_tokens": 3072,
+            "display": "summarized"
+          }
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "chunks": [
+          "{\"error\":{\"message\":\"Authentication Fails, Your api key: ****0000 is invalid (request_id: 245aea6a-63a2-44c2-b5fe-29c97d629c8c)\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+        ]
+      }
+    }
+  ]
+}
