@@ -184,7 +184,7 @@ describe('ChatPanel', () => {
       '你你好',
       '助手你好！',
       '你再说一次',
-      '助手思考过程想想好的，\n你好！[图片]调用工具：read_file',
+      '助手思考过程想想好的，\n你好！[图片]read_file {} 等待执行',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
     expect(runStatus()).toBe('空闲')
@@ -449,5 +449,158 @@ describe('ChatPanel', () => {
     expect(screen.getByLabelText('Message').getAttribute('placeholder')).toBe(
       'Type a message. Enter to send, Shift+Enter for a new line',
     )
+  })
+})
+
+describe('tool calls and undo turn', () => {
+  const call = { id: 'c1', name: 'run_command', input: { command: 'npm   test' } }
+  const toolTurn = (...tail: EventEnvelope[]): EventEnvelope[] => [
+    created('工具'),
+    runCreated(2),
+    userMessage(3, 'm1', '跑测试'),
+    ev(4, 'turn.started', {}),
+    state(5, 'idle', 'thinking'),
+    completed(6, 'm2', '', { toolCalls: [call] }),
+    ev(7, 'tool.requested', { toolCallId: 'c1', name: 'run_command', input: call.input }),
+    ev(8, 'tool.started', { toolCallId: 'c1' }),
+    ...tail,
+  ]
+  const card = () => screen.getByRole('region', { name: '调用工具：run_command' })
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`).join('\n')
+
+  it('shows the tool name, argument summary, status and the first output lines', async () => {
+    const { open } = setup({
+      history: toolTurn(
+        ev(9, 'tool.completed', {
+          toolCallId: 'c1',
+          output: text(lines(8)),
+          truncated: true,
+          durationMs: 5,
+        }),
+      ),
+    })
+    await open()
+    expect(card().textContent).toContain('run_command npm test 完成')
+    expect(within(card()).getByText(/line 1/).textContent).toBe(lines(5))
+    expect(within(card()).getByText('……还有 3 行')).toBeTruthy()
+    expect(within(card()).getByText('（输出过长，交给模型时已截断）')).toBeTruthy()
+  })
+
+  it('shows the last live output lines while running and the error when failed', async () => {
+    const { open, emit } = setup({ history: toolTurn() })
+    await open()
+    expect(card().textContent).toContain('执行中')
+    emit({
+      ...ev(9, 'tool.output.delta', { toolCallId: 'c1', stream: 'stdout', text: lines(7) }),
+    })
+    expect(within(card()).getByText(/line 7/).textContent).toBe(
+      ['line 3', 'line 4', 'line 5', 'line 6', 'line 7'].join('\n'),
+    )
+    expect(within(card()).getByText('……前面还有 2 行')).toBeTruthy()
+    emit(ev(9, 'tool.failed', { toolCallId: 'c1', error: { code: 'tool.denied' } }))
+    expect(card().textContent).toContain('失败')
+    expect(within(card()).getByRole('note').textContent).not.toBe('')
+  })
+
+  const CHECKPOINT = 'a'.repeat(40)
+  const finished = (...tail: EventEnvelope[]) =>
+    toolTurn(
+      ev(9, 'tool.completed', { toolCallId: 'c1', output: text('ok'), durationMs: 5 }),
+      completed(10, 'm3', '完成'),
+      ev(11, 'turn.completed', { durationMs: 10 }),
+      state(12, 'tooling', 'completed'),
+      ...tail,
+    )
+  const listed = (turnId = 't1') => ({
+    checkpoints: [
+      { checkpointId: CHECKPOINT, reason: 'turn_start', seq: 4, runId: 'r1', turnId, createdAt: 1 },
+    ],
+  })
+
+  it('undoes the turn after showing the files to restore', async () => {
+    const plan = {
+      before: 'b'.repeat(40),
+      files: [
+        { path: 'src/new.ts', status: 'deleted' },
+        { path: 'src/app.ts', status: 'modified' },
+      ],
+    }
+    const { open, request } = setup({
+      history: finished(),
+      handlers: {
+        'checkpoint.list': () => listed(),
+        'checkpoint.preview': () => plan,
+        'checkpoint.restore': () => plan,
+      },
+    })
+    await open()
+    await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
+    const dialog = await screen.findByRole('alertdialog', { name: '撤销本轮' })
+    expect(
+      within(within(dialog).getByRole('list', { name: '将恢复的文件' }))
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['删除 src/new.ts', '还原 src/app.ts'])
+    expect(request).not.toHaveBeenCalledWith('checkpoint.restore', expect.anything())
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
+    await userEvent.click(await screen.findByRole('button', { name: '确认撤销' }))
+    expect(await screen.findByText('已撤销本轮，恢复了 2 个文件。')).toBeTruthy()
+    expect(request).toHaveBeenCalledWith('checkpoint.restore', {
+      sessionId: 's1',
+      checkpointId: CHECKPOINT,
+    })
+  })
+
+  it('cannot confirm when the turn changed no files', async () => {
+    const { open } = setup({
+      history: finished(),
+      handlers: {
+        'checkpoint.list': () => listed(),
+        'checkpoint.preview': () => ({ before: CHECKPOINT, files: [] }),
+      },
+    })
+    await open()
+    await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
+    expect(await screen.findByText('本轮没有改动文件，无需撤销。')).toBeTruthy()
+    expect((screen.getByRole('button', { name: '确认撤销' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+  })
+
+  it('reports a missing turn checkpoint or a failed restore', async () => {
+    let turnId = 'other'
+    const { open, store } = setup({
+      history: finished(),
+      handlers: {
+        'checkpoint.list': () => listed(turnId),
+        'checkpoint.preview': () => ({
+          before: CHECKPOINT,
+          files: [{ path: 'a', status: 'added' }],
+        }),
+        'checkpoint.restore': () => {
+          throw new RpcError('run.busy')
+        },
+      },
+    })
+    await open()
+    await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
+    await waitFor(() => expect(store.getState().error).toEqual({ code: 'checkpoint.not_found' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+
+    turnId = 't1'
+    await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
+    await userEvent.click(await screen.findByRole('button', { name: '确认撤销' }))
+    await waitFor(() => expect(store.getState().error).toEqual({ code: 'run.busy' }))
+    expect(screen.getByRole('button', { name: '撤销本轮' })).toBeTruthy()
+  })
+
+  it('hides undo while the turn is running', async () => {
+    const { open } = setup({ history: RUNNING })
+    await open()
+    expect(screen.queryByRole('button', { name: '撤销本轮' })).toBeNull()
   })
 })

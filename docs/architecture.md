@@ -64,7 +64,7 @@ NEXUS-OS 是一个类似 Codex 的**编程类桌面 agent 应用**。用户选�
 |---|---|
 | 项目名称 | NEXUS-OS |
 | 首发平台 | Windows；后续支持 macOS 和 Linux |
-| 首批模型 | DeepSeek（云端 API）、Ollama（本地模型） |
+| 首批模型 | Anthropic、OpenAI、Gemini 三种协议格式；DeepSeek 等兼容服务走 OpenAI 格式（ADR-0021） |
 | 命令执行 | 第一版即开放，默认每条命令需审批 |
 | Windows 默认 Shell | PowerShell 5.1；检测到 PowerShell 7 时优先使用 |
 | 界面语言 | 中英双语 |
@@ -449,7 +449,6 @@ interface ModelProfile {
 | 提供方 | 接入方式 | 注意事项 |
 |---|---|---|
 | DeepSeek | OpenAI 兼容接口，用户填写 API Key | 需验证推理类模型的思考内容字段和工具调用在 pi-ai 下的兼容性 |
-| Ollama | OpenAI 兼容接口，默认 `http://localhost:11434/v1`，无需 Key | 工具调用能力取决于具体模型；上下文窗口通常较小 |
 | Anthropic | `anthropic` 格式，用户填写 API Key | 推理内容与缓存用量按 Anthropic 格式转换 |
 | OpenAI | `openai` 格式，用户填写 API Key | |
 | Google Gemini | `gemini` 格式，用户填写 API Key | 推理内容按 Gemini 格式转换 |
@@ -462,7 +461,6 @@ interface ModelProfile {
 
 - 设置页提供"测试连接"：检查连通性、发送一次带工具定义的请求，验证模型能否返回合法的工具调用。
 - 探测结果写入 `ModelProfile`；不支持工具调用的模型在选择时给出明确提示，并只能用于纯对话。
-- Ollama：启动时检测本地服务，可列出已安装的模型供用户选择。
 
 ---
 
@@ -723,7 +721,7 @@ NEXUS-OS/
 |---|---|---|
 | **M0 基础** | monorepo 与依赖边界、协议包、事件模型与归约、存储与迁移、进程模型（主进程 + 宿主）、`AgentRuntime` 接口与 `FakeRuntime`、日志、i18n 骨架、Windows CI；完成第 27 节的技术预研 | 用 `FakeRuntime` 跑通"输入 → 事件 → 落库 → 界面显示 → 重启后恢复" |
 | **M1 最小可用** | pi 适配器、DeepSeek 接入、6 个内置工具、权限引擎与审批、PowerShell 执行、基础检查点 | 用 DeepSeek 完成一个真实的改代码并运行测试的任务，可回退 |
-| **M2 可审阅** | Ollama 接入与能力探测、设置页、工具卡片、diff 视图（整文件接受/撤销）、终端输出面板、检查点回退界面 | 两个模型可切换，所有改动可审阅、可撤销 |
+| **M2 可审阅** | 能力探测、设置页、工具卡片、diff 视图（整文件接受/撤销）、终端输出面板、检查点回退界面 | 两个模型可切换，所有改动可审阅、可撤销 |
 | **M3 日常可用** | 项目与会话管理、Agent 管理界面、计划模式、会话要点、规则管理界面、上下文压缩、`AGENTS.md` 支持、Skills、MCP、辅助模型、诊断包、按块撤销 | 可以长期在真实项目中使用，可自定义 Agent 并接入外部工具 |
 | **M4 进阶** | 多 Agent 委派、git worktree 隔离、多会话并行、后台命令、更多模型提供方 | 多任务并行互不干扰 |
 | **M5 发布** | 命令沙箱、自动更新、签名与 Windows 安装包（附带精简版 MinGit 供检查点使用，ADR-0008） | 可以分发给他人安装 |
@@ -741,7 +739,6 @@ NEXUS-OS/
 |---|---|---|
 | pi 在 `utilityProcess` 中运行 | 依赖或环境假设导致无法运行 | 最小示例：宿主进程内跑通一次带工具调用的对话 |
 | DeepSeek 工具调用 | 推理模型字段与 pi-ai 不兼容 | 用真实 key 测试多轮工具调用 |
-| Ollama 本地模型工具调用质量 | 小模型频繁输出非法工具调用 | 选 2～3 个常见模型测试成功率，确定推荐列表 |
 | SQLite 引擎选择 | better-sqlite3 需原生编译；`node:sqlite` 取决于 Electron 内置 Node 版本是否稳定 | 两者各做最小示例，比较打包复杂度 |
 | 影子 Git 检查点性能 | 大仓库快照耗时 | 在万级文件的仓库上测量创建和恢复耗时 |
 | 检查点使用的 Git 来源 | 用户未安装 Git；随应用打包涉及 GPL 分发合规 | 比较本机 Git、打包 Git、isomorphic-git 三种方式 |

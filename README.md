@@ -35,7 +35,7 @@ pnpm e2e     # 用构建产物跑端到端测试（Playwright；Linux 无显示�
 ## 当前计划 / Plan
 
 - 首发平台：Windows，后续支持 macOS 与 Linux
-- 首批模型：DeepSeek、Ollama
+- 首批模型：Anthropic、OpenAI、Gemini 三种协议格式（DeepSeek 等兼容服务走 OpenAI 格式）
 - 界面语言：中文、英文
 
 作者 / Author：960602906

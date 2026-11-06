@@ -1,7 +1,8 @@
 /**
  * 提供方配置模板与模型解析（M1-04b；ADR-0011、ADR-0021；架构 §12.2；S2）。
  *
- * - 五个模板：DeepSeek、Ollama、Anthropic、OpenAI、Gemini，含默认地址、模型列表与兼容参数。
+ * - 四个模板：DeepSeek、Anthropic、OpenAI、Gemini，含默认地址、模型列表与兼容参数（首批只支持
+ *   Anthropic、OpenAI、Gemini 三种协议格式，DeepSeek 用 OpenAI 格式；Ollama 模板已去掉，2026-11-06）。
  *   模型 id 与能力和 pi 1.5.0 的内置目录一致（`runtime-pi` 中有测试核对）。
  * - DeepSeek 模板带兼容参数（`thinkingFormat: 'deepseek'` 等）：运行时只按 `deepseek.com` 地址或
  *   提供方 id 自动设置这些参数，经代理接入时要靠模板显式给出（S2）。
@@ -38,7 +39,7 @@ export interface ProviderTemplate {
   readonly requiresKey: boolean
   readonly compat?: ModelCompat
   readonly models: readonly ModelProfileConfig[]
-  /** 用户手动添加模型（如 Ollama 已安装的模型）时的默认能力。 */
+  /** 用户手动添加模型时的默认能力。 */
   readonly modelDefaults: ModelCapabilities
 }
 
@@ -85,24 +86,6 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
       supportsTools: true,
       supportsParallelToolCalls: true,
       supportsReasoning: true,
-    },
-  },
-  {
-    id: 'ollama',
-    kind: 'openai',
-    displayName: 'Ollama',
-    baseUrl: 'http://localhost:11434/v1',
-    requiresKey: false,
-    // Ollama 的 OpenAI 兼容接口：没有 developer 角色与 store，用 max_tokens
-    compat: { supportsDeveloperRole: false, supportsStore: false, maxTokensField: 'max_tokens' },
-    models: [],
-    // 本地模型上下文通常较小，工具调用能力取决于具体模型（架构 §12.2）
-    modelDefaults: {
-      contextWindow: 32_768,
-      maxOutputTokens: 4_096,
-      supportsTools: true,
-      supportsParallelToolCalls: false,
-      supportsReasoning: false,
     },
   },
   {

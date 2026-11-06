@@ -40,14 +40,14 @@ const CATALOGS: Readonly<Record<string, readonly CatalogEntry[]>> = {
 const template = (id: string): ProviderTemplate => findTemplate(id)!
 
 describe('配置模板', () => {
-  it('五个模板，id 不重复', () => {
+  it('四个模板，id 不重复，都需要 Key', () => {
     expect(PROVIDER_TEMPLATES.map((t) => t.id)).toEqual([
       'deepseek',
-      'ollama',
       'anthropic',
       'openai',
       'gemini',
     ])
+    expect(PROVIDER_TEMPLATES.every((t) => t.requiresKey)).toBe(true)
     expect(findTemplate('missing')).toBeUndefined()
   })
 
@@ -94,9 +94,6 @@ describe('配置模板', () => {
     deepseek.models.pop()
     expect(template('deepseek').models).toHaveLength(2)
 
-    const ollama = providerFromTemplate(template('ollama'))
-    expect(ollama).toMatchObject({ id: 'ollama', baseUrl: 'http://localhost:11434/v1', models: [] })
-    expect(ollama).not.toHaveProperty('credentialRef')
     expect(providerFromTemplate(template('anthropic'))).not.toHaveProperty('compat')
   })
 })
