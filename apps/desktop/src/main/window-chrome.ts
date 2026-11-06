@@ -38,8 +38,15 @@ export interface WindowChromeOptions {
   readonly minHeight: number
 }
 
-/** 创建窗口时的外观选项；`dark` 为当前是否使用深色（避免启动时闪一下浅色底）。 */
-export function windowChromeOptions(platform: string, dark: boolean): WindowChromeOptions {
+/**
+ * 创建窗口时的外观选项；`dark` 为当前是否使用深色（避免启动时闪一下浅色底）。
+ * `headless`：Chromium 以 `--ozone-platform=headless` 运行（冒烟测试），此时不能用 titleBarOverlay（Electron 会崩溃）。
+ */
+export function windowChromeOptions(
+  platform: string,
+  dark: boolean,
+  headless = false,
+): WindowChromeOptions {
   const base = {
     backgroundColor: dark ? CHROME.dark : CHROME.light,
     minWidth: 640,
@@ -48,8 +55,10 @@ export function windowChromeOptions(platform: string, dark: boolean): WindowChro
   if (platform === 'darwin') {
     return { ...base, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 13 } }
   }
+  if (headless) return { ...base, titleBarStyle: 'hidden' }
   return { ...base, titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay(dark) }
 }
 
 /** 主题变化后是否需要更新系统按钮的颜色（只有使用 titleBarOverlay 的平台需要）。 */
-export const usesTitleBarOverlay = (platform: string): boolean => platform !== 'darwin'
+export const usesTitleBarOverlay = (platform: string, headless = false): boolean =>
+  platform !== 'darwin' && !headless

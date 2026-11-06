@@ -67,6 +67,8 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
 
   return (
     <div className="flex h-full bg-chrome text-fg">
+      {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
+      <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
       {sidebarOpen && (
         <Sidebar
           onNewChat={() => {

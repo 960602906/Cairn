@@ -28,4 +28,11 @@ describe('window chrome', () => {
     expect(titleBarOverlay(false)).toMatchObject({ color: '#eeeff2', symbolColor: '#45474f' })
     expect(usesTitleBarOverlay('linux')).toBe(true)
   })
+
+  it('skips the overlay under headless Chromium (smoke test)', () => {
+    const options = windowChromeOptions('linux', false, true)
+    expect(options.titleBarStyle).toBe('hidden')
+    expect(options.titleBarOverlay).toBeUndefined()
+    expect(usesTitleBarOverlay('linux', true)).toBe(false)
+  })
 })

@@ -207,10 +207,13 @@ app.on('web-contents-created', (_event, contents) => {
 })
 
 /** 系统主题跟随设置（M2-02）：界面的 prefers-color-scheme 与系统按钮的颜色都随之变化。 */
+/** 以 `--ozone-platform=headless` 运行（冒烟测试）。 */
+const headless = (): boolean => app.commandLine.getSwitchValue('ozone-platform') === 'headless'
+
 function followThemeSetting(): void {
   nativeTheme.themeSource = settings.get().theme ?? 'system'
   nativeTheme.on('updated', () => {
-    if (!usesTitleBarOverlay(process.platform)) return
+    if (!usesTitleBarOverlay(process.platform, headless())) return
     const overlay = titleBarOverlay(nativeTheme.shouldUseDarkColors)
     for (const window of BrowserWindow.getAllWindows()) window.setTitleBarOverlay(overlay)
   })
@@ -221,7 +224,7 @@ function createWindow(): BrowserWindow {
     width: 1200,
     height: 800,
     show: false,
-    ...windowChromeOptions(process.platform, nativeTheme.shouldUseDarkColors),
+    ...windowChromeOptions(process.platform, nativeTheme.shouldUseDarkColors, headless()),
     webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs')),
   })
   const connection = gateway.connect(
