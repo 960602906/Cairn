@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { FILE_CHANGE_MAX_BYTES, FileChangeInput, FileChangeSummary } from './index.js'
+import {
+  FILE_CHANGE_MAX_BYTES,
+  FILE_CONTENT_MAX_CHARS,
+  FileChangeInput,
+  FileChangeSummary,
+  FileContent,
+} from './index.js'
 
 const base = { path: 'src/a.ts', hunks: [], added: 0, removed: 0 }
 
@@ -54,4 +60,13 @@ it('FileChangeSummary', () => {
   }
   expect(FileChangeSummary.parse(summary)).toEqual(summary)
   expect(FileChangeSummary.safeParse({ ...summary, status: 'done' }).success).toBe(false)
+})
+
+it('FileContent', () => {
+  expect(FileContent.parse({ kind: 'text', text: 'a\n' })).toEqual({ kind: 'text', text: 'a\n' })
+  expect(FileContent.parse({ kind: 'binary', size: 10 })).toEqual({ kind: 'binary', size: 10 })
+  expect(FileContent.safeParse({ kind: 'too_large', size: -1 }).success).toBe(false)
+  expect(
+    FileContent.safeParse({ kind: 'text', text: 'a'.repeat(FILE_CONTENT_MAX_CHARS + 1) }).success,
+  ).toBe(false)
 })

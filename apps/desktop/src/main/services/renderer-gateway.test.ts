@@ -114,6 +114,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   changes = {
     list: vi.fn(() => ({ changes: [] })),
     revert: vi.fn(async () => ({ changes: [] })),
+    content: vi.fn(async () => ({ after: { kind: 'text' as const, text: 'x' } })),
   }
   checkpoints = {
     list: vi.fn(() => ({ checkpoints: [] })),
@@ -383,6 +384,10 @@ describe('createRendererGateway: commands and lifecycle', () => {
     await expect(
       client.request('changes.revert', { sessionId: 's1', changeIds: [] }),
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+    await expect(
+      client.request('changes.content', { sessionId: 's1', changeId: 'c1' }),
+    ).resolves.toEqual({ after: { kind: 'text', text: 'x' } })
+    expect(changes.content).toHaveBeenCalledWith({ sessionId: 's1', changeId: 'c1' })
   })
 
   it('delegates checkpoint requests to the checkpoint service', async () => {

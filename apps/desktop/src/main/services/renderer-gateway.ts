@@ -47,6 +47,7 @@ export interface SessionCommands {
 export interface ChangeCommands {
   readonly list: Handler<'changes.list'>
   readonly revert: Handler<'changes.revert'>
+  readonly content: Handler<'changes.content'>
 }
 
 /** 由检查点服务实现的检查点命令（M1-12c）。 */
@@ -225,6 +226,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('credentials.status', (params) => credentials.status(params))
       endpoint.handle('changes.list', (params) => changes.list(params))
       endpoint.handle('changes.revert', (params) => changes.revert(params))
+      endpoint.handle('changes.content', (params) => changes.content(params))
       endpoint.handle('checkpoint.list', (params) => checkpoints.list(params))
       endpoint.handle('checkpoint.preview', (params) => checkpoints.preview(params))
       endpoint.handle('checkpoint.restore', (params) => checkpoints.restore(params))

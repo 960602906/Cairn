@@ -4,6 +4,8 @@
  * - **记录**（宿主经 `changes.record` 请求）：改动前后的内容写入 blob 存储，记录写入 `file_changes` 与
  *   `hunks`。宿主随后发出 `file.changed`。
  * - **列出**（`changes.list`）：会话的全部改动，按发生顺序，不含文件内容。
+ * - **内容**（`changes.content`，M2-07）：一次改动前后的内容，供界面显示 diff。按读取文件的规则解码
+ *   （BOM、UTF-16、含 NUL 的视为二进制）；二进制与超过 `FILE_CONTENT_MAX_CHARS` 的文本只返回大小。
  * - **整文件撤销**（`changes.revert`；按块撤销在 M3）：按与发生相反的顺序把文件恢复为改动前的内容。
  *   先在内存中逐个核对：文件当前的内容必须与改动后的内容一致（同一文件的多次改动依次核对），任何一处不一致
  *   （改动之后文件又被修改过，或较新的改动没有一起撤销）都整体拒绝，不写任何文件。核对通过后写入文件，
@@ -14,14 +16,16 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
+  FILE_CONTENT_MAX_CHARS,
   RpcError,
   type FileChangeInput,
   type FileChangeKind,
   type FileChangeSummary,
+  type FileContent,
   type UnsequencedEvent,
 } from '@cairn/protocol'
 import type { FileChangeRecord, Storage } from '@cairn/storage'
-import { createPathResolver } from '@cairn/tools'
+import { createPathResolver, decodeFile } from '@cairn/tools'
 import { sha256, type BlobStore } from './blob-store.js'
 import type { SessionEventService } from './event-service.js'
 
@@ -53,6 +57,10 @@ export interface ChangeServiceOptions {
 export interface ChangeService {
   record(sessionId: string, runId: string, input: FileChangeInput): Promise<{ changeId: string }>
   list(params: { sessionId: string }): { changes: FileChangeSummary[] }
+  content(params: {
+    sessionId: string
+    changeId: string
+  }): Promise<{ before?: FileContent; after?: FileContent }>
   revert(params: {
     sessionId: string
     changeIds: readonly string[]
@@ -86,6 +94,16 @@ const INVERSE_KIND: Record<FileChangeKind, FileChangeKind> = {
   create: 'delete',
   delete: 'create',
   modify: 'modify',
+}
+
+/** 交给界面的文件内容：文本、二进制或过大（只有大小）。 */
+export function toFileContent(buffer: Buffer): FileContent {
+  const decoded = decodeFile(buffer)
+  if (decoded.binary) return { kind: 'binary', size: buffer.length }
+  if (decoded.text.length > FILE_CONTENT_MAX_CHARS) {
+    return { kind: 'too_large', size: buffer.length }
+  }
+  return { kind: 'text', text: decoded.text }
 }
 
 const fsCode = (error: unknown) => (error as NodeJS.ErrnoException).code ?? 'unknown'
@@ -248,6 +266,25 @@ export function createChangeService(options: ChangeServiceOptions): ChangeServic
     list({ sessionId }) {
       requireSession(sessionId)
       return { changes: storage.changes.list(sessionId).map(toChangeSummary) }
+    },
+
+    async content({ sessionId, changeId }) {
+      requireSession(sessionId)
+      const change = storage.changes.get(changeId)
+      if (change?.sessionId !== sessionId) {
+        throw new RpcError(ChangeErrorCode.NotFound, { changeId })
+      }
+      const read = async (hash: string | undefined) => {
+        if (hash === undefined) return undefined
+        const content = await blobs.get(hash)
+        if (!content) throw new RpcError(ChangeErrorCode.BlobMissing, { path: change.path })
+        return toFileContent(content)
+      }
+      const [before, after] = await Promise.all([read(change.beforeHash), read(change.afterHash)])
+      return {
+        ...(before === undefined ? {} : { before }),
+        ...(after === undefined ? {} : { after }),
+      }
     },
 
     async revert({ sessionId, changeIds }) {

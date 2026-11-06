@@ -10,7 +10,11 @@ import {
 import fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { FileChangeInput, UnsequencedEvent } from '@cairn/protocol'
+import {
+  FILE_CONTENT_MAX_CHARS,
+  type FileChangeInput,
+  type UnsequencedEvent,
+} from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBlobStore } from './blob-store.js'
@@ -311,5 +315,74 @@ describe('ChangeService：整文件撤销', () => {
     })
     await service.revert({ sessionId: 's1', changeIds: [id] })
     expect(read('a.txt')).toBe('a1')
+  })
+})
+
+describe('ChangeService：改动内容', () => {
+  it('modify 有前后内容，create 只有 after，delete 只有 before', async () => {
+    const { service } = setup()
+    put('a.txt', '\ufeffone\r\n')
+    const modify = await apply(service, 'a.txt', 'two\n')
+    const create = await apply(service, 'b.txt', 'new')
+    const remove = await apply(service, 'b.txt', undefined)
+    await expect(service.content({ sessionId: 's1', changeId: modify })).resolves.toEqual({
+      before: { kind: 'text', text: 'one\r\n' },
+      after: { kind: 'text', text: 'two\n' },
+    })
+    await expect(service.content({ sessionId: 's1', changeId: create })).resolves.toEqual({
+      after: { kind: 'text', text: 'new' },
+    })
+    await expect(service.content({ sessionId: 's1', changeId: remove })).resolves.toEqual({
+      before: { kind: 'text', text: 'new' },
+    })
+  })
+
+  it('二进制与过大的文本只返回大小', async () => {
+    const { service } = setup()
+    const binary = (
+      await service.record('s1', 'run1', {
+        path: 'a.bin',
+        kind: 'create',
+        after: Buffer.from([1, 0, 2]).toString('base64'),
+        hunks: [],
+        added: 0,
+        removed: 0,
+      })
+    ).changeId
+    const big = await apply(service, 'big.txt', 'x'.repeat(FILE_CONTENT_MAX_CHARS + 1))
+    await expect(service.content({ sessionId: 's1', changeId: binary })).resolves.toEqual({
+      after: { kind: 'binary', size: 3 },
+    })
+    await expect(service.content({ sessionId: 's1', changeId: big })).resolves.toEqual({
+      after: { kind: 'too_large', size: FILE_CONTENT_MAX_CHARS + 1 },
+    })
+  })
+
+  it('会话或改动不存在、改动属于其他会话、blob 缺失', async () => {
+    const { service, storage } = setup()
+    storage.sessions.create({
+      sessionId: 's2',
+      projectId: 'p1',
+      workspacePath: workspace,
+      title: '',
+    })
+    const id = await apply(service, 'a.txt', 'x')
+    await expect(service.content({ sessionId: 'nope', changeId: id })).rejects.toMatchObject({
+      code: 'changes.not_found',
+    })
+    await expect(service.content({ sessionId: 's2', changeId: id })).rejects.toMatchObject({
+      code: 'changes.not_found',
+      params: { changeId: id },
+    })
+    await expect(service.content({ sessionId: 's1', changeId: 'nope' })).rejects.toMatchObject({
+      code: 'changes.not_found',
+    })
+    const missing = setup({
+      blobs: { put: async () => 'f'.repeat(64), get: async () => undefined },
+    } as unknown as Partial<ChangeServiceOptions>)
+    const lost = await apply(missing.service, 'c.txt', 'y')
+    await expect(
+      missing.service.content({ sessionId: 's1', changeId: lost }),
+    ).rejects.toMatchObject({ code: 'changes.blob_missing', params: { path: 'c.txt' } })
   })
 })
