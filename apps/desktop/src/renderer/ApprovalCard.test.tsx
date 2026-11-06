@@ -80,7 +80,7 @@ function setup(initial: PendingApproval[], resolve?: (params: unknown) => unknow
   render(<App i18n={createI18n('zh-CN')} store={store} />)
   const open = async () => {
     const [item] = await screen.findAllByRole('listitem')
-    await userEvent.click(within(item!).getByRole('button'))
+    await userEvent.click(within(item!).getAllByRole('button')[0]!)
   }
   const notify = (sessionId: string) => act(() => listeners.forEach((l) => l({ sessionId })))
   const setPending = (next: PendingApproval[]) => (pending = next)

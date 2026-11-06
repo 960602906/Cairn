@@ -46,6 +46,9 @@ export const ProjectSummary = z.object({
 })
 export type ProjectSummary = z.infer<typeof ProjectSummary>
 
+/** 会话标题的长度上限（字符，M2-02）。 */
+export const SESSION_TITLE_MAX_LENGTH = 200
+
 /** 自定义说明的长度上限（字符）。 */
 export const INSTRUCTIONS_MAX_LENGTH = 10_000
 
@@ -137,6 +140,19 @@ export const MainForRenderer = defineSide({
       result: z.object({ messageId: Id }),
     },
     'session.abort': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({}),
+    },
+    /** 重命名会话（M2-02），写入 `session.renamed`。标题去掉首尾空白，可以为空（显示为“未命名会话”）。 */
+    'session.rename': {
+      params: z.object({ sessionId: Id, title: z.string().max(SESSION_TITLE_MAX_LENGTH) }),
+      result: z.object({}),
+    },
+    /**
+     * 删除（归档）会话（M2-02），写入 `session.archived`：不再出现在列表中，事件与改动记录保留。
+     * 会话正在运行时报 `run.busy`。
+     */
+    'session.archive': {
       params: z.object({ sessionId: Id }),
       result: z.object({}),
     },

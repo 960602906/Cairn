@@ -172,3 +172,14 @@
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* 无边框窗口的拖拽区（M2-02）：侧栏顶部与纸面顶栏可以拖动窗口，其中的按钮不行 */
+@utility drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

@@ -7,7 +7,7 @@
  *   （首次或窗口刷新后为 0，从数据库补发）；订阅响应返回之前到达的实时事件先缓存，补发归约后再
  *   归约，避免补发的事件因 seq 较小被丢弃。同一时间只订阅当前会话，切走时取消订阅；投影保留，
  *   切回时只补发之后的事件。
- * - **动作**：刷新列表、新建会话、发送输入、停止。失败时把错误码写入 `error`，由界面经 i18n 显示。
+ * - **动作**：刷新列表、新建会话、重命名与删除（归档，M2-02）、发送输入、停止。失败时把错误码写入 `error`，由界面经 i18n 显示。
  * - **等待开始**：输入已发送、但这一轮还没开始（排队或宿主启动中）时，投影里还没有运行中的轮次；
  *   `awaitingTurn` 记下这段时间，界面与列表把会话当作运行中（可以停止、不能再发送）。收到
  *   `turn.started`（或该轮结束、会话崩溃）、发送失败或停止成功时清除。
@@ -65,6 +65,10 @@ export interface SessionActions {
   refreshSessions(): Promise<void>
   /** 新建会话并选中，返回会话 id；失败时返回 undefined。 */
   createSession(projectPath: string, title?: string): Promise<string | undefined>
+  /** 重命名会话（M2-02），成功后刷新列表；返回是否成功。 */
+  renameSession(sessionId: string, title: string): Promise<boolean>
+  /** 删除（归档）会话（M2-02）：是当前会话时先取消选中；成功后刷新列表。 */
+  archiveSession(sessionId: string): Promise<boolean>
   /** 选中会话并订阅其事件；传 undefined 取消选中。 */
   selectSession(sessionId: string | undefined): Promise<void>
   /** 向当前会话发送文本输入；没有发送（空输入、未选中会话或请求失败）时返回 false。 */
@@ -265,6 +269,21 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         return created.sessionId
       },
 
+      async renameSession(sessionId, title) {
+        const done = await run(() => api.request('session.rename', { sessionId, title }))
+        if (done === undefined) return false
+        await get().refreshSessions()
+        return true
+      },
+
+      async archiveSession(sessionId) {
+        const done = await run(() => api.request('session.archive', { sessionId }))
+        if (done === undefined) return false
+        if (get().activeSessionId === sessionId) await get().selectSession(undefined)
+        await get().refreshSessions()
+        return true
+      },
+
       async selectSession(sessionId) {
         const previous = get().activeSessionId
         if (previous === sessionId) return
@@ -324,7 +343,8 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
 
       async refreshProjects() {
         const result = await run(() => api.request('project.list', {}))
-        if (result) set({ projects: result.projects })
+        // 旧版主进程或测试替身可能不返回列表
+        if (result) set({ projects: result.projects ?? [] })
       },
 
       async openProject() {

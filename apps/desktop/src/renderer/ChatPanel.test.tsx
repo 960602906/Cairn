@@ -87,7 +87,7 @@ function setup({
     act(() => listeners.forEach((l) => l({ sessionId: 's1', events })))
   const open = async () => {
     const [item] = await screen.findAllByRole('listitem')
-    await userEvent.click(within(item!).getByRole('button'))
+    await userEvent.click(within(item!).getAllByRole('button')[0]!)
     await waitFor(() => expect(store.getState().views.s1).toBeDefined())
   }
   return { request, store, emit, open }
@@ -127,7 +127,7 @@ describe('ChatPanel', () => {
       handlers: { 'session.subscribe': () => new Promise((resolve) => (replay = resolve)) },
     })
     const [item] = await screen.findAllByRole('listitem')
-    await userEvent.click(within(item!).getByRole('button'))
+    await userEvent.click(within(item!).getAllByRole('button')[0]!)
     expect(screen.getByRole('heading', { level: 2, name: '未命名会话' })).toBeTruthy()
     expect(runStatus()).toBe('运行中')
     expect(messages()).toEqual([])

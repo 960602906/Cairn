@@ -127,7 +127,7 @@ describe('ModelSettings', () => {
     ])
     expect(request).toHaveBeenCalledWith('credentials.set', { ref: 'gemini', secret: 'k2' })
 
-    await userEvent.click(screen.getByRole('button', { name: '模型设置' }))
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }))
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 

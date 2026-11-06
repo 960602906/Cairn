@@ -1,7 +1,7 @@
 {
   "list.title": "会话",
   "list.empty": "还没有会话",
-  "list.new": "新建会话",
+  "list.new": "新对话",
   "title.untitled": "未命名会话",
   "chat.empty": "选择或新建一个会话开始对话",
   "chat.messages": "消息",
@@ -78,5 +78,21 @@
   "undo.file.modified": "还原",
   "undo.file.deleted": "删除",
   "undo.confirm": "确认撤销",
-  "undo.done": "已撤销本轮，恢复了 {{count}} 个文件。"
+  "undo.done": "已撤销本轮，恢复了 {{count}} 个文件。",
+  "list.group": "项目 {{name}}",
+  "sidebar.collapse": "收起侧栏",
+  "sidebar.expand": "展开侧栏",
+  "item.actions": "会话操作",
+  "item.rename": "重命名",
+  "item.renameLabel": "会话标题",
+  "item.delete": "删除",
+  "delete.title": "删除会话“{{title}}”？",
+  "delete.description": "会话会从列表中移除，项目里的文件不受影响。",
+  "delete.confirm": "删除会话",
+  "new.heading": "新对话",
+  "new.description": "选择项目文件夹。Agent 只会在这个文件夹里读写文件。",
+  "providers.title": "模型供应商",
+  "providers.empty": "还没有配置模型，点这里添加",
+  "providers.default": "默认模型：{{model}}",
+  "providers.noDefault": "还没有选择默认模型"
 }

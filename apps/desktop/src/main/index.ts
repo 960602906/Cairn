@@ -16,12 +16,14 @@ import {
   dialog,
   ipcMain,
   MessageChannelMain,
+  nativeTheme,
   safeStorage,
   session,
   shell,
   utilityProcess,
 } from 'electron'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
+import { titleBarOverlay, usesTitleBarOverlay, windowChromeOptions } from './window-chrome.js'
 import {
   hardenWebContents,
   restrictPermissions,
@@ -185,6 +187,7 @@ const gateway = createRendererGateway({
     update: (patch) => {
       const next = settings.update(patch)
       if (patch.permissionMode !== undefined) sessions.refreshPermissions()
+      if (patch.theme !== undefined) nativeTheme.themeSource = patch.theme
       return next
     },
   },
@@ -203,11 +206,22 @@ app.on('web-contents-created', (_event, contents) => {
   })
 })
 
+/** 系统主题跟随设置（M2-02）：界面的 prefers-color-scheme 与系统按钮的颜色都随之变化。 */
+function followThemeSetting(): void {
+  nativeTheme.themeSource = settings.get().theme ?? 'system'
+  nativeTheme.on('updated', () => {
+    if (!usesTitleBarOverlay(process.platform)) return
+    const overlay = titleBarOverlay(nativeTheme.shouldUseDarkColors)
+    for (const window of BrowserWindow.getAllWindows()) window.setTitleBarOverlay(overlay)
+  })
+}
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
+    ...windowChromeOptions(process.platform, nativeTheme.shouldUseDarkColors),
     webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs')),
   })
   const connection = gateway.connect(
@@ -299,6 +313,7 @@ async function smokeCredentials(): Promise<CredentialCheck> {
 
 void app.whenReady().then(() => {
   restrictPermissions(session.defaultSession)
+  followThemeSetting()
   const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {

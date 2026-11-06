@@ -27,7 +27,7 @@ export const liveMessage = (window: Page) =>
 
 /** 新建会话，等待它成为当前会话。 */
 export async function createSession(window: Page, projectPath: string, title: string) {
-  await window.getByRole('button', { name: '新建会话' }).click()
+  await window.getByRole('button', { name: '新对话' }).click()
   await window.getByLabel('项目目录').fill(projectPath)
   await window.getByLabel('标题（可选）').fill(title)
   await window.getByRole('button', { name: '创建' }).click()

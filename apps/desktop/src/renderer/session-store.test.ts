@@ -109,6 +109,43 @@ describe('session list', () => {
     expect(calls).toContainEqual(['session.subscribe', { sessionId: 's1', afterSeq: 0 }])
   })
 
+  it('renames and archives sessions, deselecting an archived active session (M2-02)', async () => {
+    let sessions = [summary('s1'), summary('s2')]
+    const { api, calls } = fakeApi({
+      'session.list': () => ({ sessions }),
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+      'session.archive': ({ sessionId }: { sessionId: string }) => {
+        if (sessionId === 'busy') throw new RpcError('run.busy')
+        sessions = sessions.filter((s) => s.sessionId !== sessionId)
+        return {}
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    await expect(store.getState().renameSession('s1', 'New')).resolves.toBe(true)
+    expect(calls).toContainEqual(['session.rename', { sessionId: 's1', title: 'New' }])
+
+    await expect(store.getState().archiveSession('s2')).resolves.toBe(true)
+    expect(store.getState().activeSessionId).toBe('s1')
+    await expect(store.getState().archiveSession('s1')).resolves.toBe(true)
+    expect(store.getState().activeSessionId).toBeUndefined()
+    expect(store.getState().sessions).toEqual([])
+
+    await expect(store.getState().archiveSession('busy')).resolves.toBe(false)
+    expect(store.getState().error?.code).toBe('run.busy')
+  })
+
+  it('reports a failed rename', async () => {
+    const { api } = fakeApi({
+      'session.rename': () => {
+        throw new RpcError('storage.not_found')
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().renameSession('x', 'y')).resolves.toBe(false)
+    expect(store.getState().error?.code).toBe('storage.not_found')
+  })
+
   it('returns undefined when creating fails', async () => {
     const { api } = fakeApi({
       'session.create': () => {
