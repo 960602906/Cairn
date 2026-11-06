@@ -134,6 +134,14 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.sessions.get('s1')).not.toHaveProperty('model')
       })
 
+      it('changes the session model (M2-04)', () => {
+        seed()
+        clock = 500
+        const next = { providerId: 'p2', modelId: 'm2' }
+        expect(storage.sessions.setModel('s1', next)).toMatchObject({ model: next, updatedAt: 500 })
+        expect(storage.sessions.get('s1')?.model).toEqual(next)
+      })
+
       it('rejects unknown projects and duplicate ids', () => {
         seed()
         expectStorageError(
@@ -179,6 +187,10 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       it('reports missing sessions on update', () => {
         expectStorageError(() => storage.sessions.rename('nope', 't'), StorageErrorCode.NotFound)
         expectStorageError(() => storage.sessions.archive('nope'), StorageErrorCode.NotFound)
+        expectStorageError(
+          () => storage.sessions.setModel('nope', { providerId: 'p', modelId: 'm' }),
+          StorageErrorCode.NotFound,
+        )
         expectStorageError(() => storage.sessions.touch('nope'), StorageErrorCode.NotFound)
       })
 

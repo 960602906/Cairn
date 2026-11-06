@@ -28,6 +28,7 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
     title: '新会话',
   },
   'session.renamed': { title: '重命名' },
+  'session.model.changed': { model },
   'session.crashed': { error: { code: 'host.crashed' } },
   'session.archived': {},
   'session.brief.updated': { content: '目标：修复测试', editedBy: 'agent' },

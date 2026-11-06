@@ -37,12 +37,14 @@ import {
 } from '@cairn/protocol'
 import { canTransition } from './run-state.js'
 
-/** 会话基本信息（来自 `session.created` / `session.renamed`）。 */
+/** 会话基本信息（来自 `session.created` / `session.renamed` / `session.model.changed`）。 */
 export interface SessionInfo {
   readonly projectId: string
   readonly projectPath: string
   readonly workspacePath: string
   readonly title: string
+  /** 会话使用的模型（下一轮起）；M1-04a 之前创建、没有记录模型的会话为 undefined。 */
+  readonly model: ModelRef | undefined
   readonly createdAt: number
 }
 
@@ -202,6 +204,11 @@ export interface SessionView {
   readonly usage: TokenUsage
   /** 各轮的用量（M2-03，界面在轮次操作中显示 token 数），按 turnId 索引；没有 turnId 的用量不计入。 */
   readonly usageByTurn: Readonly<Record<string, TokenUsage>>
+  /**
+   * 上下文占用（M2-04，输入框的圆环）：最近一次 `usage.reported` 的输入 + 输出 token 数，
+   * 即下一次请求大约要带上的上下文；还没有用量时为 undefined。
+   */
+  readonly contextTokens: number | undefined
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -221,6 +228,7 @@ export function createSessionView(sessionId: string): SessionView {
     liveToolOutput: {},
     usage: ZERO_USAGE,
     usageByTurn: {},
+    contextTokens: undefined,
   }
 }
 
@@ -384,14 +392,16 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
   switch (event.type) {
     case 'session.created': {
       if (view.info) return undefined
-      const { projectId, projectPath, workspacePath, title } = event.payload
+      const { projectId, projectPath, workspacePath, title, model } = event.payload
       return {
         ...view,
-        info: { projectId, projectPath, workspacePath, title, createdAt: event.ts },
+        info: { projectId, projectPath, workspacePath, title, model, createdAt: event.ts },
       }
     }
     case 'session.renamed':
       return view.info ? { ...view, info: { ...view.info, title: event.payload.title } } : undefined
+    case 'session.model.changed':
+      return view.info ? { ...view, info: { ...view.info, model: event.payload.model } } : undefined
     case 'session.archived':
       return { ...view, archived: true }
     case 'session.crashed':
@@ -512,6 +522,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return {
         ...(withRun ?? view),
         usage: addUsage(view.usage, usage),
+        contextTokens: usage.inputTokens + usage.outputTokens,
         ...(turnId === undefined
           ? {}
           : {

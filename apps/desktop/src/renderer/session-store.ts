@@ -32,6 +32,7 @@ import {
   type CheckpointRestorePlan,
   type ErrorInfo,
   type EventEnvelope,
+  type ModelRef,
   type PendingApproval,
   type ProjectSummary,
   type SessionSummary,
@@ -69,6 +70,8 @@ export interface SessionActions {
   renameSession(sessionId: string, title: string): Promise<boolean>
   /** 删除（归档）会话（M2-02）：是当前会话时先取消选中；成功后刷新列表。 */
   archiveSession(sessionId: string): Promise<boolean>
+  /** 更换会话的模型（M2-04），下一轮生效；返回是否成功。 */
+  setSessionModel(sessionId: string, model: ModelRef): Promise<boolean>
   /** 选中会话并订阅其事件；传 undefined 取消选中。 */
   selectSession(sessionId: string | undefined): Promise<void>
   /** 向当前会话发送文本输入；没有发送（空输入、未选中会话或请求失败）时返回 false。 */
@@ -282,6 +285,11 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         if (get().activeSessionId === sessionId) await get().selectSession(undefined)
         await get().refreshSessions()
         return true
+      },
+
+      async setSessionModel(sessionId, model) {
+        const done = await run(() => api.request('session.setModel', { sessionId, model }))
+        return done !== undefined
       },
 
       async selectSession(sessionId) {

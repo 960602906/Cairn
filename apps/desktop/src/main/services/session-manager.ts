@@ -4,6 +4,8 @@
  * - **创建与列表**：按项目路径找到或创建项目，创建会话并写入 `session.created`；列表状态由事件
  *   归约得出（`sessionStatus`），排队或启动中的会话显示为 `running`。
  * - **重命名与归档**（M2-02）：写入 `session.renamed` / `session.archived`；运行中的会话不能归档。
+ * - **更换模型**（M2-04）：写入 `session.model.changed`，下一轮起生效。宿主的模型在启动时确定，
+ *   因此下一次输入时如果宿主的模型与会话的不同，先停掉空闲的宿主，再用新模型启动（继续同一个运行，历史重建）。
  * - **输入**：`session.prompt` 先把 `message.user` 落库，再交给会话的宿主；会话没有宿主时排队，
  *   由调度启动。同一会话正在运行一轮（或已有排队的输入）时报 `run.busy`。
  * - **并发上限与排队**：同时存在的宿主（启动中 + 运行中）不超过上限（默认 3），超出的按先后排队；
@@ -80,6 +82,7 @@ export interface SessionManager extends SessionCommands {
   readonly prompt: Sync<SessionCommands['prompt']>
   readonly rename: Sync<SessionCommands['rename']>
   readonly archive: Sync<SessionCommands['archive']>
+  readonly setModel: Sync<SessionCommands['setModel']>
   /** 会话是否正在运行：排队、宿主启动中，或运行处于活动状态（撤销改动前检查，M1-08b）。 */
   isBusy(sessionId: string): boolean
   /** 启动时调用：把仍处于运行中的运行标记为中断，返回标记的运行数。 */
@@ -110,6 +113,8 @@ interface PendingPrompt {
 
 interface Slot {
   handle: HostHandle | undefined
+  /** 宿主启动时使用的模型。 */
+  readonly model: ModelRef
   /** 已发送输入、尚未收到 `turn.started`。 */
   awaitingTurn: boolean
   /** 启动期间用户停止了排队的输入。 */
@@ -239,6 +244,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     let resolveGone!: () => void
     const slot: Slot = {
       handle: undefined,
+      model: pending.run.model,
       awaitingTurn: false,
       cancelled: false,
       idleTimer: undefined,
@@ -384,16 +390,33 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       return {}
     },
 
+    setModel({ sessionId, model }) {
+      requireSession(sessionId)
+      if (options.models && !options.models.has(model)) {
+        throw new RpcError(SessionErrorCode.UnknownModel, { ...model })
+      }
+      storage.sessions.setModel(sessionId, model)
+      events.publish([
+        { ...header(sessionId, sessionId), type: 'session.model.changed', payload: { model } },
+      ])
+      return {}
+    },
+
     prompt({ sessionId, content }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       const record = requireSession(sessionId)
       const slot = slots.get(sessionId)
-      const hostReady = slot?.handle?.state() === 'running'
       if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
         throw new RpcError(SessionErrorCode.Busy, { sessionId })
       }
+      const running = slot?.handle?.state() === 'running'
+      // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）
+      const modelChanged =
+        running && record.model !== undefined && !sameModel(record.model, slot!.model)
+      if (modelChanged) void slot!.handle!.stop()
+      const hostReady = running && !modelChanged
       // 没有宿主时仍处于运行中的运行，是上一个宿主崩溃留下的
-      if (!hostReady) markInterrupted(sessionId, 'host_lost')
+      if (!running) markInterrupted(sessionId, 'host_lost')
       const view = getView(sessionId)
       const root = rootRun(view)
       const resume = root !== undefined && root.state !== 'disposed' && acceptsInput(root.state)
@@ -414,7 +437,12 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           content,
           history,
           run: resume
-            ? { agent: root.agent, model: root.model, mode: root.mode, limits: root.limits }
+            ? {
+                agent: root.agent,
+                model: record.model ?? root.model,
+                mode: root.mode,
+                limits: root.limits,
+              }
             : { ...options.runDefaults, model: record.model ?? options.runDefaults.model },
           resume: resume ? { state: root.state } : undefined,
           workspacePath: record.workspacePath,
@@ -477,3 +505,6 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     },
   }
 }
+
+const sameModel = (a: ModelRef, b: ModelRef): boolean =>
+  a.providerId === b.providerId && a.modelId === b.modelId

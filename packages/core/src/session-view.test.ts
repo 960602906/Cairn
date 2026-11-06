@@ -103,6 +103,7 @@ describe('createSessionView', () => {
       liveToolOutput: {},
       usage: { inputTokens: 0, outputTokens: 0 },
       usageByTurn: {},
+      contextTokens: undefined,
     })
   })
 })
@@ -195,6 +196,10 @@ describe('reduceSession：一轮完整对话', () => {
     expect(view.usageByTurn[turns[0]!]).toEqual({ inputTokens: 10, outputTokens: 3 })
   })
 
+  it('上下文占用取最近一次用量（M2-04）', () => {
+    expect(view.contextTokens).toBe(13)
+  })
+
   it('sessionStatus 为 idle', () => {
     expect(sessionStatus(view)).toBe('idle')
   })
@@ -276,12 +281,18 @@ describe('reduceSession：会话事件', () => {
       ev('session.created', created),
       ev('session.created', { ...created, title: '重复' }),
       ev('session.renamed', { title: '新' }),
+      ev('session.model.changed', { model: { providerId: 'p', modelId: 'm2' } }),
       ev('session.archived', {}),
     ])
     expect(view.info?.title).toBe('新')
+    expect(view.info?.model).toEqual({ providerId: 'p', modelId: 'm2' })
     expect(view.info?.createdAt).toBe(20)
     expect(view.archived).toBe(true)
     expect(sessionStatus(view)).toBe('archived')
+    const early = reduceAll([
+      ev('session.model.changed', { model: { providerId: 'p', modelId: 'm' } }),
+    ])
+    expect(early.info).toBeUndefined()
   })
 
   it('崩溃后显示 crashed，开始新一轮时清除', () => {

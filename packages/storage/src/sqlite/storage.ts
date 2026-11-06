@@ -248,6 +248,10 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
        VALUES (@sessionId, @projectId, @projectPath, @workspacePath, @title, 0,
           @modelProviderId, @modelId, @at, @at)`,
     ),
+    setSessionModel: db.prepare(
+      `UPDATE sessions SET model_provider_id = @providerId, model_id = @modelId, updated_at = @at
+       WHERE session_id = @sessionId`,
+    ),
     updateSession: db.prepare(
       `UPDATE sessions SET
          title = coalesce(@title, title),
@@ -527,6 +531,11 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       },
       rename: (sessionId, title) => updateSession(sessionId, title, 0),
       archive: (sessionId) => updateSession(sessionId, null, 1),
+      setModel(sessionId, model) {
+        const { changes } = q.setSessionModel.run({ sessionId, ...model, at: now() })
+        if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { sessionId })
+        return toSession(q.sessionById.get(sessionId)!)
+      },
       touch: (sessionId) => updateSession(sessionId, null, 0),
     },
 

@@ -40,6 +40,7 @@ export interface SessionCommands {
   readonly abort: Handler<'session.abort'>
   readonly rename: Handler<'session.rename'>
   readonly archive: Handler<'session.archive'>
+  readonly setModel: Handler<'session.setModel'>
 }
 
 /** 由改动服务实现的改动命令（M1-08b）。 */
@@ -216,6 +217,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.abort', (params) => commands.abort(params))
       endpoint.handle('session.rename', (params) => commands.rename(params))
       endpoint.handle('session.archive', (params) => commands.archive(params))
+      endpoint.handle('session.setModel', (params) => commands.setModel(params))
       endpoint.handle('settings.get', () => settings.get())
       endpoint.handle('settings.update', (patch) => settings.update(patch))
       endpoint.handle('credentials.set', (params) => credentials.set(params))

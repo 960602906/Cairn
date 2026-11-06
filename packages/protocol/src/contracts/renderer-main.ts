@@ -149,6 +149,14 @@ export const MainForRenderer = defineSide({
       result: z.object({}),
     },
     /**
+     * 更换会话的模型（M2-04），写入 `session.model.changed`，从下一轮起生效（正在进行的一轮不受影响）。
+     * 模型必须已配置，否则报 `session.unknown_model`。
+     */
+    'session.setModel': {
+      params: z.object({ sessionId: Id, model: ModelRef }),
+      result: z.object({}),
+    },
+    /**
      * 删除（归档）会话（M2-02），写入 `session.archived`：不再出现在列表中，事件与改动记录保留。
      * 会话正在运行时报 `run.busy`。
      */
