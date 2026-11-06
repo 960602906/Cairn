@@ -472,3 +472,92 @@ describe('projects and model settings', () => {
     expect(store.getState().error).toEqual({ code: 'credentials.unavailable' })
   })
 })
+
+describe('file changes (M2-07)', () => {
+  const change = (changeId: string, over: object = {}) => ({
+    changeId,
+    path: 'a.ts',
+    kind: 'modify',
+    status: 'pending',
+    hunks: [],
+    added: 1,
+    removed: 0,
+    createdAt: 1,
+    ...over,
+  })
+
+  it('loads changes on subscribe and reloads them after file.changed', async () => {
+    let changes = [change('c1')]
+    const { api, calls, emit } = fakeApi({
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+      'changes.list': () => ({ changes }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    expect(store.getState().changes['s1']?.map((c) => c.changeId)).toEqual(['c1'])
+
+    changes = [change('c1'), change('c2')]
+    emit('s1', [ev('s1', 2, 'message.user', { messageId: 'm', content: [] })])
+    await vi.waitFor(() => expect(calls.filter(([m]) => m === 'changes.list')).toHaveLength(1))
+    emit('s1', [ev('s1', 3, 'file.changed', { changeId: 'c2', path: 'a.ts', kind: 'modify' })])
+    await vi.waitFor(() =>
+      expect(store.getState().changes['s1']?.map((c) => c.changeId)).toEqual(['c1', 'c2']),
+    )
+  })
+
+  it('keeps only the latest response and the previous list on failure', async () => {
+    const resolvers: ((value: unknown) => void)[] = []
+    let fail = false
+    const { api } = fakeApi({
+      'changes.list': () => {
+        if (fail) throw new RpcError('changes.not_found')
+        return new Promise((resolve) => resolvers.push(resolve))
+      },
+    })
+    const store = createSessionStore(api)
+    const first = store.getState().loadChanges('s1')
+    const second = store.getState().loadChanges('s1')
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2))
+    resolvers[1]!({ changes: [change('new')] })
+    await second
+    resolvers[0]!({ changes: [change('old')] })
+    await first
+    expect(store.getState().changes['s1']?.map((c) => c.changeId)).toEqual(['new'])
+
+    fail = true
+    await store.getState().loadChanges('s1')
+    expect(store.getState().changes['s1']?.map((c) => c.changeId)).toEqual(['new'])
+    expect(store.getState().error).toEqual({ code: 'changes.not_found' })
+  })
+
+  it('reads change content and reverts files, reloading the list', async () => {
+    let reverted = false
+    const { api, calls } = fakeApi({
+      'changes.content': () => ({ after: { kind: 'text', text: 'x' } }),
+      'changes.revert': () => {
+        if (reverted) throw new RpcError('changes.conflict', { path: 'a.ts' })
+        reverted = true
+        return { changes: [] }
+      },
+      'changes.list': () => ({
+        changes: [change('c1', { status: reverted ? 'reverted' : 'pending' })],
+      }),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().changeContent('s1', 'c1')).resolves.toEqual({
+      after: { kind: 'text', text: 'x' },
+    })
+    await expect(store.getState().revertChanges('s1', ['c1'])).resolves.toBe(true)
+    expect(calls).toContainEqual(['changes.revert', { sessionId: 's1', changeIds: ['c1'] }])
+    expect(store.getState().changes['s1']?.[0]?.status).toBe('reverted')
+    await expect(store.getState().revertChanges('s1', ['c1'])).resolves.toBe(false)
+    expect(store.getState().error).toEqual({ code: 'changes.conflict', params: { path: 'a.ts' } })
+  })
+
+  it('treats a missing list from a test double as empty', async () => {
+    const { api } = fakeApi()
+    const store = createSessionStore(api)
+    await store.getState().loadChanges('s1')
+    expect(store.getState().changes['s1']).toEqual([])
+  })
+})
