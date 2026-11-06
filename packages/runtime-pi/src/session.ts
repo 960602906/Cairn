@@ -7,6 +7,9 @@
  *   不发出 `message.completed`，部分回复由 `RunEngine` 用增量保存；
  * - `agent_end` → `loop.ended`，结果按最后一条助手消息与是否被中止判断。
  *
+ * 中止：中止之后到达的增量不再转发。pi 在中止后仍会处理同一网络块中已收到的事件，否则转发的增量数取决于
+ *   网络分块（M1-02b 的真实录制发现）。
+ *
  * 非法工具调用（M1-14b）：工具不存在、参数不是合法 JSON（`argumentsError`）或不符合 schema 时，pi 自己把错误
  * 作为工具结果回给模型，不调用工具的 `execute`。会话从 `tool_execution_start` / `tool_execution_end` 中找出
  * 这些调用，经 `hooks.toolCallRejected` 报告（`tool.not_found` / `tool.invalid_input`），上层据此记录事件。
@@ -265,6 +268,8 @@ class PiSession implements RuntimeSession {
         break
       case 'message_update': {
         const e = event.assistantMessageEvent
+        // 中止后不再转发增量：pi 会继续解析已经收到的同一网络块中剩余的事件
+        if (this.#abortRequested || this.#agent.signal?.aborted) break
         if (e.type === 'text_delta') this.#emit({ type: 'text.delta', text: e.delta })
         else if (e.type === 'thinking_delta') this.#emit({ type: 'reasoning.delta', text: e.delta })
         break
