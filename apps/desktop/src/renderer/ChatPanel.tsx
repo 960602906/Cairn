@@ -1,11 +1,11 @@
 /**
  * 当前会话（M0-15c）：标题、运行状态、消息流、撤销本轮（M1-16b）、未决审批（M1-11b）、输入框与停止按钮。
  * M2-02 起放在纸面上：顶栏是“项目 / 会话标题”（可拖动窗口，右侧给系统按钮让出位置），下面是可滚动的
- * 对话列（最大宽度 700px），输入框悬浮在底部（M2-04，运行状态条也在输入框上方）。
+ * 对话列（最大宽度 700px，内容变高时贴底滚动），输入框悬浮在底部（M2-04，运行状态条也在输入框上方）。
  * 内容都来自 store 中的事件投影，窗口刷新后经 `afterSeq` 补发恢复。订阅返回之前还没有投影，
  * 标题与状态先取会话列表中的值。已发送、等待这一轮开始时显示为运行中（可以停止）。
  */
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rootRun, sessionStatus } from '@cairn/core'
 import type { SessionStatus } from '@cairn/protocol'
@@ -13,6 +13,7 @@ import { ApprovalList } from './ApprovalCard.js'
 import { Composer } from './Composer.js'
 import { MessageStream } from './MessageStream.js'
 import { lastSegment } from './paths.js'
+import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { UndoTurn } from './UndoTurn.js'
 
@@ -49,6 +50,9 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
     (s) => s.activeSessionId !== undefined && s.awaitingTurn[s.activeSessionId] === true,
   )
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
+  const scroller = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  useStickToBottom(scroller, content, sessionId ?? '')
 
   if (sessionId === undefined) {
     return (
@@ -86,8 +90,11 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
           {title === '' ? t('title.untitled') : title}
         </h2>
       </TopBar>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[700px] flex-col gap-3.5 px-7 py-6 text-body">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          ref={content}
+          className="mx-auto flex max-w-[700px] flex-col gap-3.5 px-7 pt-6 pb-8 text-body"
+        >
           <MessageStream view={view} />
           {canUndo && <UndoTurn key={turn.turnId} sessionId={sessionId} turnId={turn.turnId} />}
           <ApprovalList />
