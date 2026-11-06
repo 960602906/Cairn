@@ -1,7 +1,7 @@
 /**
  * 提供方配置驱动的对话（M1-04a、M1-04b）：经 `settings.update` 配置一个指向本地 mock 端点的提供方并设为
  * 默认模型，新建会话后宿主按配置使用 pi 适配器（不依赖 `NEXUS_RUNTIME` 等开发用环境变量）。
- * 提供方不需要 Key（像 Ollama），Linux CI 没有系统加密也能运行。
+ * 提供方不需要 Key（自定义的本地兼容服务），Linux CI 没有系统加密也能运行。
  */
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'

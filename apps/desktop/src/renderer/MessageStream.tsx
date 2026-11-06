@@ -1,5 +1,6 @@
 /**
  * 消息流（M0-15c）：已完成的消息（`messages`）之后是进行中的消息（`live`，由增量事件合并），
+ * 助手消息中的工具调用显示为工具卡片（M1-16b，`ToolCallCard`）。
  * 最后是上一轮的结果（停止、失败、达到限额、宿主崩溃）。被停止或出错打断的部分回复保留并注明未完成。消息完成时投影移除对应的进行中消息，
  * 因此同一条消息不会出现两次。
  */
@@ -7,6 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { rootRun, type LiveMessageView, type MessageView, type SessionView } from '@nexus/core'
 import { translateError, type I18nInstance, type TFunction } from '@nexus/i18n'
 import type { ContentPart } from '@nexus/protocol'
+import { ToolCallCard } from './ToolCallCard.js'
 
 const PRESERVE_LINES = { whiteSpace: 'pre-wrap' } as const
 
@@ -33,7 +35,7 @@ function Content({ parts }: { readonly parts: readonly ContentPart[] }) {
   )
 }
 
-function Message({ message }: { readonly message: MessageView }) {
+function Message({ message, view }: { readonly message: MessageView; readonly view: SessionView }) {
   const { t } = useTranslation('session')
   const assistant = message.role === 'assistant' ? message : undefined
   return (
@@ -44,7 +46,13 @@ function Message({ message }: { readonly message: MessageView }) {
       )}
       <Content parts={message.content} />
       {assistant?.toolCalls.map((call) => (
-        <p key={call.id}>{t('message.toolCall', { name: call.name })}</p>
+        <ToolCallCard
+          key={call.id}
+          name={call.name}
+          input={call.input}
+          tool={view.tools[call.id]}
+          live={view.liveToolOutput[call.id]}
+        />
       ))}
       {assistant?.incomplete && <em>{t('message.incomplete')}</em>}
     </li>
@@ -96,7 +104,7 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
     <>
       <ol aria-label={t('chat.messages')}>
         {view?.messages.map((message) => (
-          <Message key={message.messageId} message={message} />
+          <Message key={message.messageId} message={message} view={view} />
         ))}
         {live.map((message) => (
           <LiveMessage key={message.messageId} live={message} />

@@ -16,6 +16,8 @@
  * - **设置**：`loadSettings` 读取、`updateSettings` 保存设置，结果保存在 `settings`；失败时同样写入 `error`。
  *   Key 只能写入（`saveCredential`）与查询是否已保存（`credentialStatus`），没有读出明文的接口。
  * - **项目**（M1-16a）：`refreshProjects` 读取已打开过的项目；`openProject` 用系统对话框选择文件夹。
+ * - **撤销本轮**（M1-16b）：`turnCheckpoint` 找到某一轮开始时的检查点，`previewRestore` / `restoreCheckpoint`
+ *   预览与恢复。
  * - **审批**（M1-11b）：当前会话的未决审批经 `approval.pending` 读取，订阅时与收到 `approval.changed`
  *   通知后重新读取；`resolveApproval` 作出决定（失败时写入 `error`，审批仍保留）。
  *
@@ -27,6 +29,7 @@ import {
   RpcError,
   type ContentPart,
   type ApprovalDecision,
+  type CheckpointRestorePlan,
   type ErrorInfo,
   type EventEnvelope,
   type PendingApproval,
@@ -84,6 +87,18 @@ export interface SessionActions {
   saveCredential(ref: string, secret: string): Promise<boolean>
   /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
   credentialStatus(ref: string): Promise<{ configured: boolean; available: boolean } | undefined>
+  /** 会话中某一轮开始时的检查点（`turn_start`）；没有时返回 undefined，失败时写入 `error`。 */
+  turnCheckpoint(sessionId: string, turnId: string): Promise<string | undefined>
+  /** 预览恢复到检查点将改动的文件；失败时返回 undefined。 */
+  previewRestore(
+    sessionId: string,
+    checkpointId: string,
+  ): Promise<CheckpointRestorePlan | undefined>
+  /** 把工作区恢复到检查点；失败时返回 undefined。 */
+  restoreCheckpoint(
+    sessionId: string,
+    checkpointId: string,
+  ): Promise<CheckpointRestorePlan | undefined>
   clearError(): void
   /** 取消订阅并停止接收事件。 */
   dispose(): void
@@ -339,6 +354,22 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       },
 
       credentialStatus: (ref) => run(() => api.request('credentials.status', { ref })),
+
+      async turnCheckpoint(sessionId, turnId) {
+        const result = await run(() => api.request('checkpoint.list', { sessionId }))
+        if (!result) return undefined
+        const found = result.checkpoints.findLast(
+          (c) => c.reason === 'turn_start' && c.turnId === turnId,
+        )
+        if (!found) set({ error: { code: 'checkpoint.not_found' } })
+        return found?.checkpointId
+      },
+
+      previewRestore: (sessionId, checkpointId) =>
+        run(() => api.request('checkpoint.preview', { sessionId, checkpointId })),
+
+      restoreCheckpoint: (sessionId, checkpointId) =>
+        run(() => api.request('checkpoint.restore', { sessionId, checkpointId })),
 
       clearError: () => set({ error: undefined }),
 

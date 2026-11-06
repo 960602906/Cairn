@@ -117,14 +117,15 @@ describe('ModelSettings', () => {
     expect(request).toHaveBeenCalledWith('credentials.set', { ref: 'openai', secret: 'k1' })
     expect((within(row).getByLabelText('OpenAI 的 Key') as HTMLInputElement).value).toBe('')
 
-    await userEvent.selectOptions(within(dialog).getByLabelText('模板'), 'ollama')
-    expect(within(dialog).queryByLabelText('Key')).toBeNull()
+    await userEvent.selectOptions(within(dialog).getByLabelText('模板'), 'gemini')
+    await userEvent.type(within(dialog).getByLabelText('Key'), 'k2')
     await userEvent.click(within(dialog).getByRole('button', { name: '添加' }))
-    await waitFor(() => expect(within(dialog).getByText('不需要 Key')).toBeTruthy())
+    await waitFor(() => expect(within(dialog).getAllByRole('listitem')).toHaveLength(2))
     expect(settings().providers.map((p) => [p.id, p.credentialRef])).toEqual([
       ['openai', 'openai'],
-      ['ollama', undefined],
+      ['gemini', 'gemini'],
     ])
+    expect(request).toHaveBeenCalledWith('credentials.set', { ref: 'gemini', secret: 'k2' })
 
     await userEvent.click(screen.getByRole('button', { name: '模型设置' }))
     expect(screen.queryByRole('dialog')).toBeNull()
