@@ -204,6 +204,11 @@ describe('translateError', () => {
       'skills.too_large',
       'skills.not_found',
       'skills.not_uninstallable',
+      'agent.not_found',
+      'agent.readonly',
+      'agent.invalid',
+      'agent.in_use',
+      'agent.no_draft',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())

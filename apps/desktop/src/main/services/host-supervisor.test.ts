@@ -450,7 +450,7 @@ describe('startHost', () => {
     const resolvePermissionRules = vi.fn(() => permissionRules)
     const { supervisor } = setup(host, { resolvePermissionRules })
     await supervisor.startHost(init)
-    expect(resolvePermissionRules).toHaveBeenCalledWith(init.sessionId)
+    expect(resolvePermissionRules).toHaveBeenCalledWith(init.sessionId, init.agent)
     expect(host.inits).toEqual([{ ...init, permissionRules }])
   })
 

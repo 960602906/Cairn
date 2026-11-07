@@ -14,6 +14,7 @@ import {
   RunState,
   Timestamp,
 } from '../common.js'
+import { AgentDefinition } from '../agents.js'
 import { FileChangeInput } from '../changes.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
 import { ActivePlan, PromptMode } from '../plan.js'
@@ -92,6 +93,11 @@ export const HostForMain = defineSide({
         runId: Id,
         workspacePath: z.string().min(1),
         agent: AgentDefinitionRef,
+        /**
+         * 这个运行引用的 Agent 定义（M3-11）。宿主据此决定指令、工具选择与是否读取项目说明。
+         * 省略时按内置编程助手的行为：全部工具、没有额外指令。
+         */
+        agentDefinition: AgentDefinition.optional(),
         model: ModelRef,
         mode: RunMode,
         limits: RunLimits,

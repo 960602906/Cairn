@@ -26,6 +26,8 @@
 import {
   createEndpoint,
   HostForMain,
+  type AgentDefinition,
+  type AgentDefinitionRef,
   type FileChangeInput,
   type HostApprovalRequest,
   type HostApprovalResponse,
@@ -65,6 +67,7 @@ export type HostInit = Omit<
   | 'instructions'
   | 'shell'
   | 'mcpTools'
+  | 'agentDefinition'
 >
 
 /** 会话的检查点位置（M1-12b）：项目的影子仓库目录与会话的引用。 */
@@ -120,7 +123,10 @@ export interface HostSupervisorOptions {
    * 适用于会话的权限规则（M1-10c，权限服务）。抛出时按启动失败处理。省略时不传，宿主按“询问”模式
    * 的预设判定。
    */
-  readonly resolvePermissionRules?: (sessionId: string) => PermissionRule[]
+  readonly resolvePermissionRules?: (
+    sessionId: string,
+    agent: AgentDefinitionRef,
+  ) => PermissionRule[]
   /** 用户的自定义说明（M1-13b，设置服务）；省略或返回 undefined 时不传。 */
   readonly resolveInstructions?: () => string | undefined
   /** 命令执行使用的 shell（M2-09，设置服务）；省略或返回 undefined 时不传（宿主按 `auto`）。 */
@@ -175,9 +181,20 @@ export interface HostSupervisorOptions {
    * 这一轮交给模型的技能（M3-07）。省略或抛出时宿主这一轮不带技能。
    * 只应返回已启用、且没有被同名技能盖住的。
    */
-  readonly loadSkills?: (sessionId: string) => readonly SkillCatalogEntry[]
+  readonly loadSkills?: (
+    sessionId: string,
+    agent: AgentDefinitionRef,
+  ) => readonly SkillCatalogEntry[]
   /** 这一轮可用的 MCP 工具（M3-09）。省略表示没有。 */
-  readonly resolveMcpTools?: (sessionId: string) => readonly McpToolExposure[]
+  readonly resolveMcpTools?: (
+    sessionId: string,
+    agent: AgentDefinitionRef,
+  ) => readonly McpToolExposure[]
+  /**
+   * 运行引用的 Agent 定义（M3-11）：宿主据此决定指令、工具选择与上下文策略。省略时宿主按
+   * 内置编程助手的行为运行（全部工具、没有额外指令）。
+   */
+  readonly resolveAgentDefinition?: (agent: AgentDefinitionRef) => AgentDefinition | undefined
   /** 执行宿主的 `host.mcp.call`（M3-09）。省略时报 `run.unsupported`。 */
   readonly callMcpTool?: (
     sessionId: string,
@@ -318,7 +335,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
 
       endpoint.handle('host.skills', () => {
         try {
-          return { skills: [...(options.loadSkills?.(sessionId) ?? [])] }
+          return { skills: [...(options.loadSkills?.(sessionId, init.agent) ?? [])] }
         } catch (error) {
           options.onError?.(error)
           return { skills: [] }
@@ -388,16 +405,18 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
       const started = (async () => {
         await endpoint.ready
         const modelConfig = options.resolveModelConfig?.(init.model)
-        const permissionRules = options.resolvePermissionRules?.(sessionId)
+        const permissionRules = options.resolvePermissionRules?.(sessionId, init.agent)
         const checkpoints = options.resolveCheckpoints?.(sessionId)
         const instructions = options.resolveInstructions?.()
         const shell = options.resolveShell?.()
-        const mcpTools = options.resolveMcpTools?.(sessionId)
+        const mcpTools = options.resolveMcpTools?.(sessionId, init.agent)
+        const agentDefinition = options.resolveAgentDefinition?.(init.agent)
         const credential = await options.resolveCredential?.(init.model)
         await endpoint.request(
           'host.init',
           {
             ...init,
+            ...(agentDefinition ? { agentDefinition } : {}),
             ...(credential ? { credential: { apiKey: credential.apiKey } } : {}),
             ...(modelConfig ? { modelConfig } : {}),
             ...(permissionRules ? { permissionRules } : {}),
@@ -459,7 +478,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         async refreshPermissions() {
           if (state !== 'running' || !options.resolvePermissionRules) return
           await endpoint.request('host.permissions.update', {
-            rules: options.resolvePermissionRules(sessionId),
+            rules: options.resolvePermissionRules(sessionId, init.agent),
           })
         },
         exited,

@@ -7,7 +7,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openShadowRepo } from '@cairn/checkpoint'
-import { redact } from '@cairn/core'
+import { BUILTIN_CODER_ID, redact } from '@cairn/core'
 import type { McpStatusEvent } from '@cairn/protocol'
 import { bundledRipgrepPath } from '@cairn/tools'
 import { openSqliteStorage } from '@cairn/storage'
@@ -43,6 +43,7 @@ import { createHostSupervisor } from './services/host-supervisor.js'
 import { loadProjectAgentsMd } from './services/agents-md.js'
 import { createSkillService } from './services/skill-service.js'
 import { createMcpService } from './services/mcp-service.js'
+import { createAgentService } from './services/agent-service.js'
 import { createProjectService } from './services/project-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
@@ -87,7 +88,7 @@ const navigationPolicy: NavigationPolicy = {
 
 /** M0 使用 FakeRuntime；模型与 Agent 配置在 M1 接入设置。 */
 const RUN_DEFAULTS: RunDefaults = {
-  agent: { id: 'default', version: 1 },
+  agent: { id: BUILTIN_CODER_ID, version: 1 },
   model: { providerId: 'fake', modelId: 'fake' },
   mode: 'interactive',
   // 默认不限步数、时长与工具失败次数，长任务可以跑一整晚（2026-11-07）；自定义 Agent 可以自己设限额
@@ -170,6 +171,14 @@ const mcp = createMcpService({
   },
   onError: reportError,
 })
+/** Agent 定义（M3-11）：内置编程助手 + 用户/导入的 Agent，草稿与已发布版本分开。 */
+const agents = createAgentService({
+  storage,
+  events,
+  skills,
+  mcp,
+  models: { has: (model) => settings.hasModel(model) },
+})
 /** 上下文压缩的摘要（M3-03）：宿主经 `host.summarize` 调用，用量记在主进程。 */
 const compaction = createCompactService({
   events,
@@ -191,7 +200,8 @@ const supervisor = createHostSupervisor({
     return ref === undefined ? undefined : credentials.resolve(ref)
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
-  resolvePermissionRules: (sessionId) => permissions.rulesForSession(sessionId),
+  resolvePermissionRules: (sessionId, agent) =>
+    agents.permissionRulesFor(agent, permissions.rulesForSession(sessionId)),
   // 自定义说明（M1-13b）：加入系统提示词；修改后在下次启动宿主时生效
   resolveInstructions: () => settings.instructions(),
   // 默认 Shell（M2-09）：同样在下次启动宿主时生效
@@ -215,8 +225,9 @@ const supervisor = createHostSupervisor({
   },
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
-  loadSkills: (sessionId) => skills.catalog(sessionId),
-  resolveMcpTools: () => mcp.exposures(),
+  loadSkills: (sessionId, agent) => agents.skillsFor(agent, sessionId),
+  resolveMcpTools: (_sessionId, agent) => agents.mcpToolsFor(agent),
+  resolveAgentDefinition: (agent) => agents.definition(agent),
   callMcpTool: (_sessionId, serverId, toolName, input, maxOutputTokens) =>
     mcp.call(serverId, toolName, input, maxOutputTokens),
   onError: reportError,
@@ -226,6 +237,7 @@ const sessions = createSessionManager({
   events,
   supervisor,
   runDefaults: RUN_DEFAULTS,
+  resolveAgent: (agent) => agents.definition(agent),
   models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
   isLocked: (sessionId) => changes.isReverting(sessionId) || checkpoints.isRestoring(sessionId),
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
@@ -305,6 +317,7 @@ const gateway = createRendererGateway({
   approvals,
   skills,
   mcp,
+  agents,
   mcpStatus: (listener) => {
     mcpStatusListeners.add(listener)
     return () => mcpStatusListeners.delete(listener)

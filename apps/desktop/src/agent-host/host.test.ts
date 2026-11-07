@@ -10,6 +10,7 @@ import {
   createEndpoint,
   HostForMain,
   MainForHost,
+  RpcError,
   type PermissionRule,
   type RpcChannel,
   type UnsequencedEvent,
@@ -73,6 +74,16 @@ function setup(script: FakeScript = { turns: [] }, extra: Partial<AgentHostOptio
 }
 
 const text = (t: string) => [{ type: 'text' as const, text: t }]
+
+const echoTool: ToolDefinition<object> = {
+  name: 'echo',
+  description: 'Echo',
+  category: 'read',
+  source: { kind: 'builtin' },
+  trust: 'builtin',
+  inputSchema: { type: 'object', properties: {} },
+  execute: () => Promise.resolve({ content: text('') }),
+}
 
 describe('agent host', () => {
   it('passes the credential from host.init to the runtime factory', async () => {
@@ -591,6 +602,114 @@ describe('agent host', () => {
     })
   })
 
+  it('puts agent instructions in the system prompt and hides unselected tools (M3-11)', async () => {
+    const readTool: ToolDefinition<object> = {
+      name: 'read_file',
+      description: 'Read',
+      category: 'read',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: { type: 'object', properties: {} },
+      execute: () => Promise.resolve({ content: text('') }),
+    }
+    const writeTool: ToolDefinition<object> = {
+      name: 'write_file',
+      description: 'Write',
+      category: 'write',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: { type: 'object', properties: {} },
+      execute: () => Promise.resolve({ content: text('') }),
+    }
+    const prompts: string[] = []
+    const toolNames: string[][] = []
+    const h = setup(
+      { turns: [] },
+      {
+        registerTools: (registry) => {
+          registry.register(readTool)
+          registry.register(writeTool)
+        },
+        createRuntime: (model) => {
+          const fake = new FakeRuntime({ turns: [] })
+          return {
+            runtime: {
+              id: 'spy',
+              createSession: (sessionInit) => {
+                prompts.push(sessionInit.systemPrompt)
+                toolNames.push((sessionInit.tools ?? []).map((tool) => tool.name))
+                return fake.createSession(sessionInit)
+              },
+            },
+            model: fakeModel(model),
+          }
+        },
+      },
+    )
+    await h.main.request('host.init', {
+      ...init,
+      agentDefinition: {
+        id: 'user.reviewer',
+        version: 1,
+        source: 'user',
+        status: 'published',
+        name: { 'en-US': 'Reviewer' },
+        description: { 'en-US': 'Read-only' },
+        instructions: 'Only review, never edit.',
+        model: { mode: 'inherit' },
+        tools: { allow: ['read_file'] },
+        skills: { allow: [] },
+        permissions: 'ask',
+        limits: {},
+        context: { includeProjectInstructions: true, compaction: 'auto' },
+        memory: { scopes: ['session'], write: 'never' },
+        createdAt: 0,
+        updatedAt: 0,
+        schemaVersion: 1,
+      },
+    })
+    expect(prompts[0]).toContain('Only review, never edit.')
+    expect(toolNames[0]).toContain('read_file')
+    expect(toolNames[0]).not.toContain('write_file')
+  })
+
+  it('skips the project instructions when the agent disables them (M3-11)', async () => {
+    const requests: string[] = []
+    const h = setup()
+    h.main.handle('host.agentsMd', () => {
+      requests.push('agentsMd')
+      return {
+        text: 'never',
+        context: { agentsMd: { sha256: 'a'.repeat(64), bytes: 1, truncated: false, lines: 1 } },
+      }
+    })
+    await h.main.request('host.init', {
+      ...init,
+      agentDefinition: {
+        id: 'user.quiet',
+        version: 1,
+        source: 'user',
+        status: 'published',
+        name: { 'en-US': 'Quiet' },
+        description: { 'en-US': 'No project instructions' },
+        instructions: '',
+        model: { mode: 'inherit' },
+        tools: { allow: ['*'] },
+        skills: { allow: [] },
+        permissions: 'ask',
+        limits: {},
+        context: { includeProjectInstructions: false, compaction: 'auto' },
+        memory: { scopes: ['session'], write: 'never' },
+        createdAt: 0,
+        updatedAt: 0,
+        schemaVersion: 1,
+      },
+    })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(requests).toEqual([])
+  })
+
   it('creates a run and answers prompts with events', async () => {
     const { main, events, waitFor } = setup()
     await main.request('host.init', init)
@@ -791,6 +910,18 @@ describe('agent host', () => {
           hasScripts: false,
           files: [],
         },
+        {
+          name: 'tiny',
+          description: 'Short pinned skill.',
+          sha256: sha,
+          source: 'user' as const,
+          pinned: true,
+          root: '/skills/tiny',
+          body: 'tiny body',
+          hasScripts: false,
+          files: [],
+          filesTruncated: true,
+        },
       ],
     }))
     await h.main.request('host.init', init)
@@ -801,6 +932,8 @@ describe('agent host', () => {
     expect(prompt).toContain('- example: Built in.')
     expect(prompt).toContain('# Pinned skills')
     expect(prompt).toContain('## house')
+    expect(prompt).toContain('## tiny')
+    expect(prompt).toContain('tiny body')
     expect(prompt).toContain('Call load_skill to read the rest.')
     expect(prompt).not.toContain(tail)
     expect(prompt.indexOf('# Skills')).toBeLessThan(prompt.indexOf('# Environment'))
@@ -820,6 +953,258 @@ describe('agent host', () => {
     await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
     await h.waitFor('turn.completed')
     expect(h.onError).toHaveBeenCalled()
+  })
+
+  it('continues a turn when AGENTS.md cannot be loaded (M3-02)', async () => {
+    const h = setup({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    h.main.handle('host.agentsMd', () => {
+      throw new Error('agents md down')
+    })
+    await h.main.request('host.init', init)
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(h.onError).toHaveBeenCalled()
+  })
+
+  it('reads the session brief and tolerates missing or failing ones (M3-04)', async () => {
+    const prompts: string[] = []
+    const script: FakeScript = { turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }
+    const h = setup(script, {
+      createRuntime: (model) => {
+        const fake = new FakeRuntime(script)
+        return {
+          runtime: {
+            id: 'spy',
+            createSession: (sessionInit) => {
+              prompts.push(sessionInit.systemPrompt)
+              return fake.createSession(sessionInit)
+            },
+          },
+          model: fakeModel(model),
+        }
+      },
+    })
+    h.main.handle('host.sessionBrief', () => ({ text: 'The user wants tests.' }))
+    await h.main.request('host.init', init)
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(prompts).toHaveLength(1)
+    expect(h.onError).not.toHaveBeenCalled()
+
+    const missing = setup({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    missing.main.handle('host.sessionBrief', () => ({}))
+    await missing.main.request('host.init', init)
+    await missing.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await missing.waitFor('turn.completed')
+    expect(missing.onError).not.toHaveBeenCalled()
+
+    const broken = setup({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    broken.main.handle('host.sessionBrief', () => {
+      throw new Error('brief down')
+    })
+    await broken.main.request('host.init', init)
+    await broken.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await broken.waitFor('turn.completed')
+    expect(broken.onError).toHaveBeenCalled()
+  })
+
+  it('summarizes history on host.compact and tolerates failures (M3-03)', async () => {
+    const history = [
+      { role: 'user' as const, content: text('first'), ts: 1 },
+      {
+        role: 'assistant' as const,
+        content: text('one'),
+        model: { providerId: 'fake', modelId: 'fake-1' },
+        ts: 2,
+      },
+      { role: 'user' as const, content: text('second'), ts: 3 },
+      {
+        role: 'assistant' as const,
+        content: text('two'),
+        model: { providerId: 'fake', modelId: 'fake-1' },
+        ts: 4,
+      },
+      { role: 'user' as const, content: text('third'), ts: 5 },
+      {
+        role: 'assistant' as const,
+        content: text('three'),
+        model: { providerId: 'fake', modelId: 'fake-1' },
+        ts: 6,
+      },
+    ]
+    const ok = setup()
+    const transcripts: string[] = []
+    ok.main.handle('host.summarize', ({ transcript }) => {
+      transcripts.push(transcript)
+      return { text: 'Summary.' }
+    })
+    await ok.main.request('host.init', { ...init, history, resume: { state: 'idle' } })
+    await expect(ok.main.request('host.compact', {})).resolves.toEqual({ compacted: true })
+    expect(transcripts).toHaveLength(1)
+    expect(transcripts[0]).toContain('first')
+    expect(ok.events.some((event) => event.type === 'context.compacted')).toBe(true)
+    expect(ok.onError).not.toHaveBeenCalled()
+
+    const broken = setup()
+    broken.main.handle('host.summarize', () => {
+      throw new RpcError('provider.error', { provider: 'fake' })
+    })
+    await broken.main.request('host.init', { ...init, history, resume: { state: 'idle' } })
+    await expect(broken.main.request('host.compact', {})).resolves.toEqual({ compacted: false })
+    expect(broken.onError).toHaveBeenCalled()
+
+    const missing = setup()
+    await missing.main.request('host.init', { ...init, history, resume: { state: 'idle' } })
+    await expect(missing.main.request('host.compact', {})).resolves.toEqual({ compacted: false })
+    expect(missing.onError).not.toHaveBeenCalled()
+  })
+
+  it('runs the approved plan and exposes update_plan_step (M3-05)', async () => {
+    const plan = {
+      planId: 'plan-1',
+      goal: 'Ship it',
+      steps: [{ id: 'one', title: 'First step' }],
+    }
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            { kind: 'tool', name: 'update_plan_step', input: { stepId: 'one', status: 'done' } },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script, {
+      registerTools: (registry) => registry.register(echoTool),
+    })
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', {
+      messageId: 'm1',
+      content: text('go'),
+      plan,
+    })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'plan.step.updated')?.payload).toMatchObject({
+      planId: 'plan-1',
+      stepIndex: 0,
+      status: 'done',
+    })
+    const completed = h.events.find((event) => event.type === 'tool.completed')
+    expect(completed?.payload).toMatchObject({ output: text('Step one is now done.') })
+  })
+
+  it('resolves workspace paths and reads the skill read-only roots (M3-07)', async () => {
+    const probes: unknown[] = []
+    const probe: ToolDefinition<{ path: string }> = {
+      name: 'probe_path',
+      description: 'Resolve a path',
+      category: 'read',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+      },
+      async execute(input, ctx) {
+        const result = await ctx.resolvePath(input.path)
+        probes.push(result)
+        return { content: text(result.ok ? 'ok' : 'failed') }
+      },
+    }
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            { kind: 'tool', name: 'probe_path', input: { path: 'notes.md' } },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script, { registerTools: (registry) => registry.register(probe) })
+    h.main.handle('host.skills', () => ({
+      skills: [
+        {
+          name: 'house',
+          description: 'House style.',
+          sha256: 'a'.repeat(64),
+          source: 'user' as const,
+          pinned: false,
+          root: '/skills/house',
+          body: 'body',
+          hasScripts: false,
+          files: [],
+        },
+      ],
+    }))
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(probes).toHaveLength(1)
+  })
+
+  it('logs through the silent logger when no logger is configured', async () => {
+    const probe: ToolDefinition<object> = {
+      name: 'log_probe',
+      description: 'Exercise the logger',
+      category: 'read',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: { type: 'object', properties: {} },
+      execute: (_input, ctx) => {
+        ctx.log.setLevel('debug')
+        const enabled = ctx.log.isEnabled('debug')
+        ctx.log.debug('debug')
+        ctx.log.info('info')
+        ctx.log.warn('warn')
+        ctx.log.error('error')
+        return Promise.resolve({ content: text(String(enabled)) })
+      },
+    }
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            { kind: 'tool', name: 'log_probe', input: {} },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script, { registerTools: (registry) => registry.register(probe) })
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tool.completed')?.payload).toMatchObject({
+      output: text('false'),
+    })
+  })
+
+  it('uses the platform default clock and a case-insensitive option', async () => {
+    const [mainSide, hostSide] = channelPair()
+    let id = 0
+    createAgentHost({
+      channel: hostSide,
+      createRuntime: (model) => ({
+        runtime: new FakeRuntime({ turns: [] }),
+        model: fakeModel(model),
+      }),
+      exit: vi.fn(),
+      createId: () => `id${++id}`,
+      caseInsensitive: true,
+    })
+    const main = createEndpoint(mainSide, { local: MainForHost, remote: HostForMain })
+    await main.request('host.init', init)
+    const { ts } = await main.request('host.heartbeat', {})
+    expect(Math.abs(ts - Date.now())).toBeLessThan(5_000)
+  })
+
+  it('passes a retry policy through to the run supervisor', async () => {
+    const h = setup({ turns: [] }, { retry: { maxRetries: 0, baseDelayMs: 10, maxDelayMs: 10 } })
+    await h.main.request('host.init', init)
+    expect(h.events.map((event) => event.type)).toEqual(['run.created'])
   })
 })
 

@@ -5,7 +5,19 @@
 import { z } from 'zod'
 import { FileChangeSummary, FileContent } from '../changes.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
-import { ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
+import { AgentDefinitionRef, ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
+import {
+  AgentDetail,
+  AgentDiff,
+  AgentDiffEndpoint,
+  AgentDraftInput,
+  AgentEffectiveConfig,
+  AgentSource,
+  AgentStatus,
+  AgentSummary,
+  AgentVersionSummary,
+  LocalizedText,
+} from '../agents.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
 import { PLAN_FEEDBACK_MAX, PlanStep, PromptMode } from '../plan.js'
 import { SkillDetail, SkillInstallSource, SkillSource, SkillSummary } from '../skills.js'
@@ -274,6 +286,14 @@ export const MainForRenderer = defineSide({
      */
     'session.setModel': {
       params: z.object({ sessionId: Id, model: ModelRef }),
+      result: z.object({}),
+    },
+    /**
+     * 在会话中切换 Agent（M3-11）：新建一个运行（`run.created` 带新的 Agent 引用），之前的对话作为
+     * 历史。运行中不能切换。草稿状态的 Agent 不能选用。
+     */
+    'session.setAgent': {
+      params: z.object({ sessionId: Id, agent: AgentDefinitionRef }),
       result: z.object({}),
     },
     /**
@@ -589,6 +609,82 @@ export const MainForRenderer = defineSide({
     'mcp.logs': {
       params: z.object({ serverId: Id }),
       result: z.object({ logs: z.array(McpLogEntry) }),
+    },
+    /** 已保存的 Agent（M3-11）：内置的编程助手加上用户与导入的 Agent。 */
+    'agent.list': {
+      params: z.object({
+        includeArchived: z.boolean().optional(),
+        source: AgentSource.optional(),
+        status: AgentStatus.optional(),
+        query: z.string().optional(),
+      }),
+      result: z.object({ agents: z.array(AgentSummary) }),
+    },
+    /**
+     * 一份 Agent 的当前状态：草稿优先，`published` 是最新的已发布版本。给出 `version` 时返回该版本
+     * （`draft` 仍一并返回，便于版本对比）。
+     */
+    'agent.get': {
+      params: z.object({
+        agentId: Id,
+        version: z.number().int().positive().optional(),
+      }),
+      result: AgentDetail,
+    },
+    /** 保存草稿并返回校验结果。内置 Agent 报 `agent.readonly`。 */
+    'agent.saveDraft': {
+      params: z.object({ definition: AgentDraftInput }),
+      result: AgentDetail,
+    },
+    /** 发布草稿为新版本（版本号加一）。有校验错误时报 `agent.invalid`。 */
+    'agent.publish': {
+      params: z.object({ agentId: Id }),
+      result: AgentDetail,
+    },
+    /** 复制为新的用户 Agent（草稿）。 */
+    'agent.duplicate': {
+      params: z.object({ agentId: Id, name: LocalizedText.optional() }),
+      result: AgentDetail,
+    },
+    'agent.archive': {
+      params: z.object({ agentId: Id }),
+      result: AgentDetail,
+    },
+    'agent.unarchive': {
+      params: z.object({ agentId: Id }),
+      result: AgentDetail,
+    },
+    /** 彻底删除：只允许从未被运行引用过的 Agent，否则报 `agent.in_use`。 */
+    'agent.delete': {
+      params: z.object({ agentId: Id }),
+      result: z.object({}),
+    },
+    'agent.versions': {
+      params: z.object({ agentId: Id }),
+      result: z.object({ versions: z.array(AgentVersionSummary) }),
+    },
+    /** 比较草稿（`'draft'`）或两个已发布版本。 */
+    'agent.diff': {
+      params: z.object({ agentId: Id, from: AgentDiffEndpoint, to: AgentDiffEndpoint }),
+      result: AgentDiff,
+    },
+    /** 导出 Markdown（YAML 头部 + 指令正文）。 */
+    'agent.export': {
+      params: z.object({
+        agentId: Id,
+        version: z.number().int().positive().optional(),
+      }),
+      result: z.object({ markdown: z.string() }),
+    },
+    /** 导入 Markdown 为草稿（`source: 'imported'`）；格式错误时报 `agent.invalid`。 */
+    'agent.import': {
+      params: z.object({ markdown: z.string().min(1).max(200_000) }),
+      result: AgentDetail,
+    },
+    /** 生效配置预览：合并后的系统提示词、最终工具 / Skills、权限规则与上下文预算。 */
+    'agent.effectiveConfig': {
+      params: z.object({ agentId: Id, sessionId: Id.optional() }),
+      result: AgentEffectiveConfig,
     },
   },
   events: {

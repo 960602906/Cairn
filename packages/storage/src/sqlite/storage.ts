@@ -21,6 +21,8 @@ import {
   StorageError,
   StorageErrorCode,
   type AddPermissionRuleInput,
+  type AgentRecord,
+  type AgentVersionRecord,
   type CreateFileChangeInput,
   type FileChangeRecord,
   type HunkRecord,
@@ -169,6 +171,38 @@ interface McpToolPrefRow {
   category: ToolCategory
   effect: PermissionEffect
 }
+
+interface AgentRow {
+  agent_id: string
+  source: string
+  archived: number
+  draft: string | null
+  created_at: number
+  updated_at: number
+}
+
+interface AgentVersionRow {
+  agent_id: string
+  version: number
+  definition: string
+  published_at: number
+}
+
+const toAgent = (row: AgentRow): AgentRecord => ({
+  agentId: row.agent_id,
+  source: row.source as AgentRecord['source'],
+  archived: row.archived !== 0,
+  ...(row.draft === null ? {} : { draft: JSON.parse(row.draft) as unknown }),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+})
+
+const toAgentVersion = (row: AgentVersionRow): AgentVersionRecord => ({
+  agentId: row.agent_id,
+  version: row.version,
+  definition: JSON.parse(row.definition) as unknown,
+  publishedAt: row.published_at,
+})
 
 const toPermissionRule = (row: PermissionRuleRow): PermissionRuleRecord => ({
   rule: {
@@ -445,6 +479,30 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
        WHERE server_id = @serverId`,
     ),
     deleteMcpServer: db.prepare('DELETE FROM mcp_servers WHERE server_id = ?'),
+    agents: db.prepare<[], AgentRow>('SELECT * FROM agents ORDER BY created_at'),
+    agentById: db.prepare<[string], AgentRow>('SELECT * FROM agents WHERE agent_id = ?'),
+    insertAgent: db.prepare(
+      `INSERT INTO agents (agent_id, source, archived, draft, created_at, updated_at)
+       VALUES (@agentId, @source, 0, @draft, @at, @at)`,
+    ),
+    setAgentDraft: db.prepare(
+      'UPDATE agents SET draft = @draft, updated_at = @at WHERE agent_id = @agentId',
+    ),
+    setAgentArchived: db.prepare(
+      'UPDATE agents SET archived = @archived, updated_at = @at WHERE agent_id = @agentId',
+    ),
+    deleteAgent: db.prepare('DELETE FROM agents WHERE agent_id = ?'),
+    deleteAgentVersions: db.prepare('DELETE FROM agent_versions WHERE agent_id = ?'),
+    agentVersions: db.prepare<[string], AgentVersionRow>(
+      'SELECT * FROM agent_versions WHERE agent_id = ? ORDER BY version',
+    ),
+    agentVersion: db.prepare<[string, number], AgentVersionRow>(
+      'SELECT * FROM agent_versions WHERE agent_id = ? AND version = ?',
+    ),
+    insertAgentVersion: db.prepare(
+      `INSERT INTO agent_versions (agent_id, version, definition, published_at)
+       VALUES (@agentId, @version, @definition, @at)`,
+    ),
     mcpToolPrefs: db.prepare<[string], McpToolPrefRow>(
       'SELECT * FROM mcp_tool_prefs WHERE server_id = ? ORDER BY name',
     ),
@@ -852,6 +910,76 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       },
       deleteForServer(serverId) {
         q.deleteMcpToolPrefs.run(serverId)
+      },
+    },
+
+    agents: {
+      list: () => q.agents.all().map(toAgent),
+      get(agentId) {
+        const row = q.agentById.get(agentId)
+        return row && toAgent(row)
+      },
+      create(input) {
+        if (q.agentById.get(input.agentId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { agentId: input.agentId })
+        }
+        q.insertAgent.run({
+          agentId: input.agentId,
+          source: input.source,
+          draft: input.draft === undefined ? null : JSON.stringify(input.draft),
+          at: now(),
+        })
+        return toAgent(q.agentById.get(input.agentId)!)
+      },
+      saveDraft(agentId, draft) {
+        if (!q.agentById.get(agentId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        }
+        q.setAgentDraft.run({ agentId, draft: JSON.stringify(draft), at: now() })
+        return toAgent(q.agentById.get(agentId)!)
+      },
+      clearDraft(agentId) {
+        if (!q.agentById.get(agentId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        }
+        q.setAgentDraft.run({ agentId, draft: null, at: now() })
+        return toAgent(q.agentById.get(agentId)!)
+      },
+      setArchived(agentId, archived) {
+        if (!q.agentById.get(agentId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        }
+        q.setAgentArchived.run({ agentId, archived: archived ? 1 : 0, at: now() })
+        return toAgent(q.agentById.get(agentId)!)
+      },
+      remove(agentId) {
+        q.deleteAgentVersions.run(agentId)
+        if (q.deleteAgent.run(agentId).changes === 0) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        }
+      },
+      versions: (agentId) => q.agentVersions.all(agentId).map(toAgentVersion),
+      version(agentId, version) {
+        const row = q.agentVersion.get(agentId, version)
+        return row && toAgentVersion(row)
+      },
+      addVersion(input) {
+        if (!q.agentById.get(input.agentId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId: input.agentId })
+        }
+        if (q.agentVersion.get(input.agentId, input.version)) {
+          throw new StorageError(StorageErrorCode.Conflict, {
+            agentId: input.agentId,
+            version: input.version,
+          })
+        }
+        q.insertAgentVersion.run({
+          agentId: input.agentId,
+          version: input.version,
+          definition: JSON.stringify(input.definition),
+          at: now(),
+        })
+        return toAgentVersion(q.agentVersion.get(input.agentId, input.version)!)
       },
     },
 

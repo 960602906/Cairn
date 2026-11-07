@@ -11,6 +11,8 @@ import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
 import {
   StorageError,
   StorageErrorCode,
+  type AgentRecord,
+  type AgentVersionRecord,
   type CreateProjectInput,
   type CreateSessionInput,
   type FileChangeRecord,
@@ -39,6 +41,9 @@ interface State {
   mcpServers: Map<string, McpServerRecord>
   /** 键为 serverId、name。 */
   mcpToolPrefs: Map<string, McpToolPref>
+  agents: Map<string, AgentRecord>
+  /** 键为 agentId；值按版本号升序。 */
+  agentVersions: Map<string, AgentVersionRecord[]>
 }
 
 const prefKey = (scope: string, source: string, name: string) => `${scope}\0${source}\0${name}`
@@ -55,6 +60,8 @@ function cloneState(state: State): State {
     skillPrefs: new Map(state.skillPrefs),
     mcpServers: new Map(state.mcpServers),
     mcpToolPrefs: new Map(state.mcpToolPrefs),
+    agents: new Map(state.agents),
+    agentVersions: new Map([...state.agentVersions].map(([id, list]) => [id, [...list]])),
   }
 }
 
@@ -75,6 +82,8 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     skillPrefs: new Map(),
     mcpServers: new Map(),
     mcpToolPrefs: new Map(),
+    agents: new Map(),
+    agentVersions: new Map(),
   }
   let closed = false
 
@@ -456,6 +465,96 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         for (const [key, pref] of s.mcpToolPrefs) {
           if (pref.serverId === serverId) s.mcpToolPrefs.delete(key)
         }
+      },
+    },
+
+    agents: {
+      list: () => [...live().agents.values()].map(copy),
+      get(agentId) {
+        const record = live().agents.get(agentId)
+        return record && copy(record)
+      },
+      create(input) {
+        const s = live()
+        if (s.agents.has(input.agentId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { agentId: input.agentId })
+        }
+        const at = now()
+        const record: AgentRecord = {
+          agentId: input.agentId,
+          source: input.source,
+          archived: false,
+          ...(input.draft === undefined ? {} : { draft: copy(input.draft) }),
+          createdAt: at,
+          updatedAt: at,
+        }
+        s.agents.set(record.agentId, record)
+        s.agentVersions.set(record.agentId, [])
+        return copy(record)
+      },
+      saveDraft(agentId, draft) {
+        const s = live()
+        const current = s.agents.get(agentId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        const next: AgentRecord = { ...current, draft: copy(draft), updatedAt: now() }
+        s.agents.set(agentId, next)
+        return copy(next)
+      },
+      clearDraft(agentId) {
+        const s = live()
+        const current = s.agents.get(agentId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        const { draft: _draft, ...rest } = current
+        const next: AgentRecord = { ...rest, updatedAt: now() }
+        s.agents.set(agentId, next)
+        return copy(next)
+      },
+      setArchived(agentId, archived) {
+        const s = live()
+        const current = s.agents.get(agentId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        const next: AgentRecord = { ...current, archived, updatedAt: now() }
+        s.agents.set(agentId, next)
+        return copy(next)
+      },
+      remove(agentId) {
+        const s = live()
+        if (!s.agents.delete(agentId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        }
+        s.agentVersions.delete(agentId)
+      },
+      versions(agentId) {
+        const list = live().agentVersions.get(agentId) ?? []
+        return list.map(copy)
+      },
+      version(agentId, version) {
+        const found = (live().agentVersions.get(agentId) ?? []).find(
+          (item) => item.version === version,
+        )
+        return found && copy(found)
+      },
+      addVersion(input) {
+        const s = live()
+        if (!s.agents.has(input.agentId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId: input.agentId })
+        }
+        const list = s.agentVersions.get(input.agentId) ?? []
+        if (list.some((item) => item.version === input.version)) {
+          throw new StorageError(StorageErrorCode.Conflict, {
+            agentId: input.agentId,
+            version: input.version,
+          })
+        }
+        const record: AgentVersionRecord = {
+          agentId: input.agentId,
+          version: input.version,
+          definition: copy(input.definition),
+          publishedAt: now(),
+        }
+        const next = [...list, record].sort((a, b) => a.version - b.version)
+        s.agentVersions.set(input.agentId, next)
+        return copy(record)
       },
     },
 

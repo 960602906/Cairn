@@ -29,6 +29,7 @@ import type { SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
+import type { AgentCommands } from './agent-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -44,6 +45,7 @@ export interface SessionCommands {
   readonly rename: Handler<'session.rename'>
   readonly archive: Handler<'session.archive'>
   readonly setModel: Handler<'session.setModel'>
+  readonly setAgent: Handler<'session.setAgent'>
   readonly compact: Handler<'session.compact'>
   readonly updateBrief: Handler<'session.brief.update'>
   readonly approvePlan: Handler<'plan.approve'>
@@ -121,6 +123,8 @@ export interface RendererGatewayOptions {
   readonly skills: SkillCommands
   /** MCP 服务（M3-09）：配置、连接、工具与日志。 */
   readonly mcp: McpCommands
+  /** Agent 定义（M3-11）：草稿、发布、版本、导入导出与生效配置。 */
+  readonly agents: AgentCommands
   /** MCP 状态变化的订阅（M3-09）。 */
   readonly mcpStatus: (listener: (event: z.output<typeof McpStatusEvent>) => void) => () => void
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
@@ -191,6 +195,7 @@ type Timer = ReturnType<typeof setTimeout>
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
+  const { agents } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -264,6 +269,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.rename', (params) => commands.rename(params))
       endpoint.handle('session.archive', (params) => commands.archive(params))
       endpoint.handle('session.setModel', (params) => commands.setModel(params))
+      endpoint.handle('session.setAgent', (params) => commands.setAgent(params))
       endpoint.handle('settings.get', () => settings.get())
       endpoint.handle('settings.update', (patch) => settings.update(patch))
       endpoint.handle('settings.shell', (params) => settings.shell(params))
@@ -300,6 +306,19 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('mcp.tools', (params) => mcp.tools(params))
       endpoint.handle('mcp.setTool', (params) => mcp.setTool(params))
       endpoint.handle('mcp.logs', (params) => mcp.logs(params))
+      endpoint.handle('agent.list', (params) => agents.list(params))
+      endpoint.handle('agent.get', (params) => agents.get(params))
+      endpoint.handle('agent.saveDraft', (params) => agents.saveDraft(params))
+      endpoint.handle('agent.publish', (params) => agents.publish(params))
+      endpoint.handle('agent.duplicate', (params) => agents.duplicate(params))
+      endpoint.handle('agent.archive', (params) => agents.archive(params))
+      endpoint.handle('agent.unarchive', (params) => agents.unarchive(params))
+      endpoint.handle('agent.delete', (params) => agents.delete(params))
+      endpoint.handle('agent.versions', (params) => agents.versions(params))
+      endpoint.handle('agent.diff', (params) => agents.diff(params))
+      endpoint.handle('agent.export', (params) => agents.export(params))
+      endpoint.handle('agent.import', (params) => agents.import(params))
+      endpoint.handle('agent.effectiveConfig', (params) => agents.effectiveConfig(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布

@@ -33,6 +33,7 @@ import {
   presetRules,
   buildSystemPrompt,
   operatingSystemName,
+  toolSelected,
   toolOutputBudget,
   planModeGuard,
   planToolVisible,
@@ -150,14 +151,15 @@ export interface AgentHost {
   readonly permissions: PermissionGate
 }
 
+const noop = () => undefined
 const silentLogger: Logger = {
   level: 'error',
-  setLevel: () => undefined,
+  setLevel: noop,
   isEnabled: () => false,
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
   child: () => silentLogger,
 }
 
@@ -211,6 +213,14 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     const toolEnvironment =
       (await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
     const hasBuiltinTools = registry.list().length > 0
+    /** Agent 定义（M3-11）：决定这一份运行的指令、工具选择与上下文策略。 */
+    const agentDefinition = init.agentDefinition
+    const visibleSpecs = (mode: 'normal' | 'plan', executing: boolean) =>
+      registry.specs(
+        (definition) =>
+          planToolVisible(definition.name, mode, executing) &&
+          toolSelected(agentDefinition?.tools, definition),
+      )
     for (const tool of init.mcpTools ?? []) {
       if (registry.get(tool.name)) {
         onError(new Error(`MCP tool name conflicts with a builtin tool: ${tool.name}`))
@@ -227,7 +237,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           const result = await endpoint.request('host.mcp.call', {
             serverId: tool.serverId,
             toolName: tool.originalName,
-            input: (input ?? {}) as Record<string, unknown>,
+            input: input as Record<string, unknown>,
             maxOutputTokens: ctx.maxOutputTokens,
           })
           if (result.isError) {
@@ -256,21 +266,27 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         ),
       )
     }
+    /** 真正交给模型的内置 / MCP 工具（计划工具在 `prepareTurn` 里按模式加回）。 */
+    const hasTools = registry
+      .list()
+      .some((definition) => toolSelected(agentDefinition?.tools, definition))
     registerPlanTools(registry, {
       createId: options.createId,
       activePlan: () => activePlan,
     })
-    const hasTools = registry.list().length > 0
     // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息。项目说明每轮再补（M3-02）。
     const promptBase = {
-      tools: hasBuiltinTools,
+      tools: hasTools,
       environment: {
         os: operatingSystemName(options.platform ?? process.platform),
-        ...(hasBuiltinTools && toolEnvironment.shell ? { shell: toolEnvironment.shell } : {}),
+        ...(hasTools && toolEnvironment.shell ? { shell: toolEnvironment.shell } : {}),
         workspacePath: init.workspacePath,
         date: localDate(now()),
       },
       ...(init.instructions ? { userInstructions: init.instructions } : {}),
+      ...(agentDefinition?.instructions.trim()
+        ? { agentInstructions: agentDefinition.instructions }
+        : {}),
     }
     const systemPrompt = buildSystemPrompt(promptBase)
     const toolPipeline = hasTools
@@ -303,13 +319,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         let context:
           | { agentsMd: { sha256: string; bytes: number; truncated: boolean; lines: number } }
           | undefined
-        try {
-          const loaded = await endpoint.request('host.agentsMd', {})
-          text = loaded.text
-          context = loaded.context
-        } catch (error) {
-          // 测试里的主进程没有这个接口。其他错误只记日志，这一轮不带项目说明。
-          if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+        if (agentDefinition?.context.includeProjectInstructions !== false) {
+          try {
+            const loaded = await endpoint.request('host.agentsMd', {})
+            text = loaded.text
+            context = loaded.context
+          } catch (error) {
+            // 测试里的主进程没有这个接口。其他错误只记日志，这一轮不带项目说明。
+            if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found')
+              onError(error)
+          }
         }
         try {
           const loaded = await endpoint.request('host.skills', {})
@@ -347,9 +366,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
                   }
                 : {}),
           }),
-          tools: registry.specs((definition) =>
-            planToolVisible(definition.name, mode, executing !== undefined),
-          ),
+          tools: visibleSpecs(mode, executing !== undefined),
           ...(context ? { context } : {}),
         }
       },
@@ -358,9 +375,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       now,
       ...(toolPipeline
         ? {
-            tools: registry.specs((definition) =>
-              planToolVisible(definition.name, 'normal', false),
-            ),
+            tools: visibleSpecs('normal', false),
             toolPipeline,
           }
         : {}),

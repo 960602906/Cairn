@@ -43,6 +43,7 @@ describe('openSqliteStorage', () => {
         '0007_skill_prefs',
         '0008_project_skills_default',
         '0009_mcp',
+        '0010_agents',
       ],
     })
     storage.close()
@@ -55,6 +56,8 @@ describe('openSqliteStorage', () => {
       .map((r) => (r as { name: string }).name)
     expect(tables).toEqual([
       'agent_runs',
+      'agent_versions',
+      'agents',
       'events',
       'file_changes',
       'hunks',
@@ -110,7 +113,11 @@ describe('openSqliteStorage', () => {
     db.close()
 
     const storage = openSqliteStorage({ file })
-    expect(storage.migration.applied).toEqual(['0008_project_skills_default', '0009_mcp'])
+    expect(storage.migration.applied).toEqual([
+      '0008_project_skills_default',
+      '0009_mcp',
+      '0010_agents',
+    ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()
   })

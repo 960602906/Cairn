@@ -118,5 +118,10 @@
   "mcp.not_connected": "The MCP server is not connected, so its tools are unavailable",
   "mcp.call_failed": "The MCP tool call failed",
   "mcp.connect_failed": "Could not connect to the MCP server",
-  "mcp.timeout": "The MCP server timed out"
+  "mcp.timeout": "The MCP server timed out",
+  "agent.not_found": "Agent not found",
+  "agent.readonly": "Built-in agents cannot be modified",
+  "agent.invalid": "The agent definition is invalid",
+  "agent.in_use": "This agent is used by a session and cannot be deleted",
+  "agent.no_draft": "This agent has no draft to publish"
 }

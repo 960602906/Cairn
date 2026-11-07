@@ -907,6 +907,70 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     })
 
+    describe('agents', () => {
+      const draft = { id: 'user.reviewer', name: { 'zh-CN': '审查员' }, instructions: 'review' }
+
+      it('creates a draft, publishes versions and keeps them ordered', () => {
+        const created = storage.agents.create({ agentId: 'user.reviewer', source: 'user', draft })
+        expect(created.archived).toBe(false)
+        expect(storage.agents.list()).toHaveLength(1)
+        expect(storage.agents.get('user.reviewer')?.draft).toEqual(draft)
+
+        storage.agents.saveDraft('user.reviewer', { ...draft, instructions: 'second' })
+        expect(storage.agents.get('user.reviewer')?.draft).toEqual({
+          ...draft,
+          instructions: 'second',
+        })
+
+        storage.agents.addVersion({
+          agentId: 'user.reviewer',
+          version: 2,
+          definition: { ...draft, version: 2 },
+        })
+        storage.agents.addVersion({
+          agentId: 'user.reviewer',
+          version: 1,
+          definition: { ...draft, version: 1 },
+        })
+        expect(storage.agents.versions('user.reviewer').map((item) => item.version)).toEqual([1, 2])
+        expect(storage.agents.version('user.reviewer', 2)?.definition).toEqual({
+          ...draft,
+          version: 2,
+        })
+
+        const cleared = storage.agents.clearDraft('user.reviewer')
+        expect(cleared.draft).toBeUndefined()
+        expect(storage.agents.setArchived('user.reviewer', true).archived).toBe(true)
+      })
+
+      it('rejects duplicates and missing records', () => {
+        storage.agents.create({ agentId: 'user.reviewer', source: 'user', draft })
+        expectStorageError(
+          () => storage.agents.create({ agentId: 'user.reviewer', source: 'user' }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.agents.saveDraft('missing', draft),
+          StorageErrorCode.NotFound,
+        )
+        storage.agents.addVersion({ agentId: 'user.reviewer', version: 1, definition: draft })
+        expectStorageError(
+          () =>
+            storage.agents.addVersion({ agentId: 'user.reviewer', version: 1, definition: draft }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(() => storage.agents.remove('missing'), StorageErrorCode.NotFound)
+      })
+
+      it('removes an agent together with its versions', () => {
+        storage.agents.create({ agentId: 'user.reviewer', source: 'user', draft })
+        storage.agents.addVersion({ agentId: 'user.reviewer', version: 1, definition: draft })
+        storage.agents.remove('user.reviewer')
+        expect(storage.agents.get('user.reviewer')).toBeUndefined()
+        expect(storage.agents.versions('user.reviewer')).toEqual([])
+      })
+    })
+
     describe('transaction', () => {
       it('commits all writes and returns the result', () => {
         const result = storage.transaction(() => {

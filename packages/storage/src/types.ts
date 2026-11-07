@@ -15,6 +15,7 @@ import type {
   SkillSource,
 } from '@cairn/protocol'
 import type { McpAuthKind, McpServerKind, PermissionEffect, ToolCategory } from '@cairn/protocol'
+import type { AgentSource } from '@cairn/protocol'
 
 export const StorageErrorCode = {
   /** 记录不存在。 */
@@ -373,6 +374,60 @@ export interface McpToolPrefStore {
   deleteForServer(serverId: string): void
 }
 
+// ---------- Agent 定义（M3-11） ----------
+
+/**
+ * 一条 Agent 记录。`source` 为 `user` / `imported`；内置 Agent 由代码提供，不落库。
+ * `draft` 是 `AgentDraft` 的 JSON（未解析，读取方负责 zod 校验）。
+ */
+export interface AgentRecord {
+  readonly agentId: string
+  readonly source: AgentSource
+  readonly archived: boolean
+  readonly draft?: unknown
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+export interface CreateAgentInput {
+  readonly agentId: string
+  readonly source: AgentSource
+  readonly draft?: unknown
+}
+
+/** 一个已发布的 Agent 版本。`definition` 是 `AgentDefinition` 的 JSON。 */
+export interface AgentVersionRecord {
+  readonly agentId: string
+  readonly version: number
+  readonly definition: unknown
+  readonly publishedAt: number
+}
+
+export interface AddAgentVersionInput {
+  readonly agentId: string
+  readonly version: number
+  readonly definition: unknown
+}
+
+export interface AgentStore {
+  get(agentId: string): AgentRecord | undefined
+  list(): AgentRecord[]
+  /** id 重复时报 `storage.conflict`。 */
+  create(input: CreateAgentInput): AgentRecord
+  /** 写入或覆盖草稿；不存在时报 `storage.not_found`。 */
+  saveDraft(agentId: string, draft: unknown): AgentRecord
+  /** 发布后清掉草稿；不存在时报 `storage.not_found`。 */
+  clearDraft(agentId: string): AgentRecord
+  setArchived(agentId: string, archived: boolean): AgentRecord
+  /** 连同已发布版本一起删除；不存在时报 `storage.not_found`。 */
+  remove(agentId: string): void
+  /** 按版本号升序。 */
+  versions(agentId: string): AgentVersionRecord[]
+  version(agentId: string, version: number): AgentVersionRecord | undefined
+  /** 版本号重复时报 `storage.conflict`。 */
+  addVersion(input: AddAgentVersionInput): AgentVersionRecord
+}
+
 // ---------- 汇总 ----------
 
 export interface Storage {
@@ -385,6 +440,7 @@ export interface Storage {
   readonly skillPrefs: SkillPrefStore
   readonly mcpServers: McpServerStore
   readonly mcpToolPrefs: McpToolPrefStore
+  readonly agents: AgentStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   close(): void
