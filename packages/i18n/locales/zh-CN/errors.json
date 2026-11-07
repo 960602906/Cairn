@@ -89,6 +89,7 @@
   "changes.already_reverted": "这处改动已经撤销过了",
   "changes.conflict": "{{path}} 在改动之后又被修改过（或较新的改动没有一起撤销），无法撤销",
   "changes.blob_missing": "找不到 {{path}} 改动前的内容，无法撤销",
+  "changes.content_missing": "找不到 {{path}} 这次改动的内容，无法显示差异",
   "changes.failed": "无法恢复 {{path}}",
   "shell.spawn_failed": "无法启动命令行（{{shell}}）",
   "checkpoint.git_unavailable": "检查点不可用：需要安装 Git 2.32 或更高版本",

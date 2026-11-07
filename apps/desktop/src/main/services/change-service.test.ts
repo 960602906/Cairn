@@ -383,6 +383,6 @@ describe('ChangeService：改动内容', () => {
     const lost = await apply(missing.service, 'c.txt', 'y')
     await expect(
       missing.service.content({ sessionId: 's1', changeId: lost }),
-    ).rejects.toMatchObject({ code: 'changes.blob_missing', params: { path: 'c.txt' } })
+    ).rejects.toMatchObject({ code: 'changes.content_missing', params: { path: 'c.txt' } })
   })
 })

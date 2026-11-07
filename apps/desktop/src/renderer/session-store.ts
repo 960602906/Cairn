@@ -18,7 +18,7 @@
  * - **项目**（M1-16a）：`refreshProjects` 读取已打开过的项目；`openProject` 用系统对话框选择文件夹。
  * - **撤销本轮**（M1-16b）：`turnCheckpoint` 找到某一轮开始时的检查点，`previewRestore` / `restoreCheckpoint`
  *   预览与恢复。
- * - **文件改动**（M2-07）：订阅时与收到 `file.changed` 后重新读取当前会话的改动记录（`changes.list`，只保留
+ * - **文件改动**（M2-07）：订阅时与收到 `file.changed`、`checkpoint.restored` 后重新读取当前会话的改动记录（`changes.list`，只保留
  *   最新一次请求的结果）；`changeContent` 读取一次改动前后的内容，`revertChanges` 整文件撤销后重新读取。
  * - **审批**（M1-11b）：当前会话的未决审批经 `approval.pending` 读取，订阅时与收到 `approval.changed`
  *   通知后重新读取；`resolveApproval` 作出决定（失败时写入 `error`，审批仍保留）。
@@ -461,7 +461,9 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
     }
     if (sessionId !== subscribed) return
     store.setState((state) => receive(state, sessionId, events))
-    if (events.some((e) => e.type === 'file.changed')) void loadChangesFor(sessionId)
+    // 恢复检查点会把之后的改动标记为已撤销（M2-07），同样要重新读取
+    if (events.some((e) => e.type === 'file.changed' || e.type === 'checkpoint.restored'))
+      void loadChangesFor(sessionId)
   })
   const offApprovals = api.on('approval.changed', ({ sessionId }) => {
     if (sessionId === subscribed) void loadApprovalsFor(sessionId)

@@ -238,7 +238,7 @@ export const MainForRenderer = defineSide({
     /**
      * 一次改动前后的内容（M2-07，界面据此显示 diff）：`create` 没有 `before`，`delete` 没有 `after`。
      * 二进制文件与过大的文本只返回大小。改动不属于该会话时报 `changes.not_found`，内容在 blob 存储中
-     * 找不到时报 `changes.blob_missing`。
+     * 找不到时报 `changes.content_missing`。
      */
     'changes.content': {
       params: z.object({ sessionId: Id, changeId: Id }),

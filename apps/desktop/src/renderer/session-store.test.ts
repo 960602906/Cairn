@@ -503,6 +503,15 @@ describe('file changes (M2-07)', () => {
     await vi.waitFor(() =>
       expect(store.getState().changes['s1']?.map((c) => c.changeId)).toEqual(['c1', 'c2']),
     )
+    // 恢复检查点会把之后的改动标记为已撤销
+    changes = [change('c1'), { ...change('c2'), status: 'reverted' }]
+    emit('s1', [
+      ev('s1', 4, 'checkpoint.restored', {
+        checkpointId: 'a'.repeat(40),
+        truncateConversation: false,
+      }),
+    ])
+    await vi.waitFor(() => expect(store.getState().changes['s1']?.[1]?.status).toBe('reverted'))
   })
 
   it('keeps only the latest response and the previous list on failure', async () => {

@@ -38,6 +38,8 @@ export const ChangeErrorCode = {
   Conflict: 'changes.conflict',
   /** 改动前的内容在 blob 存储中找不到或已损坏。 */
   BlobMissing: 'changes.blob_missing',
+  /** 查看改动时，改动前或改动后的内容在 blob 存储中找不到（M2-07）。 */
+  ContentMissing: 'changes.content_missing',
   /** 读写文件失败。 */
   Failed: 'changes.failed',
   /** 会话正在运行或正在撤销。 */
@@ -277,7 +279,7 @@ export function createChangeService(options: ChangeServiceOptions): ChangeServic
       const read = async (hash: string | undefined) => {
         if (hash === undefined) return undefined
         const content = await blobs.get(hash)
-        if (!content) throw new RpcError(ChangeErrorCode.BlobMissing, { path: change.path })
+        if (!content) throw new RpcError(ChangeErrorCode.ContentMissing, { path: change.path })
         return toFileContent(content)
       }
       const [before, after] = await Promise.all([read(change.beforeHash), read(change.afterHash)])

@@ -148,6 +148,48 @@ describe('checkpoint service', () => {
     await expect(hostCheckpoint('s1')).resolves.toMatch(/^[0-9a-f]{40}$/)
   })
 
+  it('marks the changes recorded after the checkpoint as reverted', async () => {
+    const { service, storage, events, hostCheckpoint } = setup()
+    const change = (changeId: string, extra: { revertOf?: string } = {}) => {
+      storage.changes.create({
+        changeId,
+        sessionId: 's1',
+        path: 'a.txt',
+        kind: 'modify',
+        added: 1,
+        removed: 1,
+        hunks: [],
+        ...extra,
+      })
+      events.publish([
+        {
+          v: 1,
+          sessionId: 's1',
+          runId: 'r1',
+          ts: 6,
+          type: 'file.changed',
+          payload: { changeId, path: 'a.txt', kind: 'modify' },
+        },
+      ])
+    }
+    put('a.txt', 'one')
+    change('before')
+    const first = await hostCheckpoint('s1', 't1')
+    put('a.txt', 'two')
+    change('after')
+    change('undone')
+    storage.changes.setStatus('undone', 'reverted')
+    change('inverse', { revertOf: 'undone' })
+    await service.restore({ sessionId: 's1', checkpointId: first })
+    const status = Object.fromEntries(storage.changes.list('s1').map((c) => [c.changeId, c.status]))
+    expect(status).toEqual({
+      before: 'pending',
+      after: 'reverted',
+      undone: 'reverted',
+      inverse: 'pending',
+    })
+  })
+
   it('only restores checkpoints of the same session', async () => {
     const { service, hostCheckpoint } = setup()
     put('a.txt', 'one')
