@@ -23,11 +23,37 @@ describe('fileEntries', () => {
       change({ changeId: 'a2', path: 'a.ts', added: 2, removed: 1, turnId: 't2' }),
     ]
     expect(fileEntries(changes)).toEqual([
-      { path: 'a.ts', kind: 'create', changeIds: ['a1', 'a2'], added: 5, removed: 1 },
-      { path: 'b.ts', kind: 'modify', changeIds: ['b1'], added: 1, removed: 1 },
+      {
+        path: 'a.ts',
+        kind: 'create',
+        changeIds: ['a1', 'a2'],
+        added: 5,
+        removed: 1,
+        revertedHunks: 0,
+        hunkCount: 0,
+      },
+      {
+        path: 'b.ts',
+        kind: 'modify',
+        changeIds: ['b1'],
+        added: 1,
+        removed: 1,
+        revertedHunks: 0,
+        hunkCount: 0,
+        hunks: [],
+      },
     ])
     expect(turnEntries(changes, 't2')).toEqual([
-      { path: 'a.ts', kind: 'modify', changeIds: ['a2'], added: 2, removed: 1 },
+      {
+        path: 'a.ts',
+        kind: 'modify',
+        changeIds: ['a2'],
+        added: 2,
+        removed: 1,
+        revertedHunks: 0,
+        hunkCount: 0,
+        hunks: [],
+      },
     ])
     expect(totals(fileEntries(changes))).toEqual({ files: 2, added: 6, removed: 2 })
   })
@@ -41,8 +67,38 @@ describe('fileEntries', () => {
       change({ changeId: 'old', path: 'old.ts', kind: 'delete', added: 0, removed: 4 }),
     ]
     expect(fileEntries(changes)).toEqual([
-      { path: 'old.ts', kind: 'delete', changeIds: ['old'], added: 0, removed: 4 },
+      {
+        path: 'old.ts',
+        kind: 'delete',
+        changeIds: ['old'],
+        added: 0,
+        removed: 4,
+        revertedHunks: 0,
+        hunkCount: 0,
+        hunks: [],
+      },
     ])
     expect(totals([])).toEqual({ files: 0, added: 0, removed: 0 })
+  })
+
+  it('一条改动带上各块；部分撤销时记下已撤销的块数', () => {
+    const hunk = { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }
+    const [entry] = fileEntries([
+      change({
+        changeId: 'c1',
+        hunks: [
+          { ...hunk, status: 'reverted' },
+          { ...hunk, oldStart: 8, newStart: 8 },
+        ],
+      }),
+    ])
+    expect(entry).toMatchObject({
+      revertedHunks: 1,
+      hunkCount: 2,
+      hunks: [
+        { index: 0, status: 'reverted' },
+        { index: 1, status: 'pending' },
+      ],
+    })
   })
 })

@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CheckpointError, openShadowRepo, type ShadowRepo } from '@cairn/checkpoint'
 import { createMemoryStorage } from '@cairn/storage'
+import { diffHunks, unifiedDiff } from '@cairn/tools'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createBlobStore } from './blob-store.js'
+import { createChangeService } from './change-service.js'
 import { checkpointLocation } from './checkpoint-location.js'
 import {
   createCheckpointService,
@@ -203,6 +206,64 @@ describe('checkpoint service', () => {
     // 再恢复到第一个检查点
     await service.restore({ sessionId: 's1', checkpointId: first })
     expect(status()).toMatchObject({ before: 'pending', after: 'reverted' })
+  })
+
+  it('keeps a hunk revert across checkpoint restore and puts it back when that restore is undone', async () => {
+    const { service, storage, events, hostCheckpoint } = setup()
+    let n = 0
+    const changes = createChangeService({
+      storage,
+      blobs: createBlobStore(join(dir, 'blobs')),
+      events,
+      isBusy: () => false,
+      createId: () => `ch${++n}`,
+      now: () => 9,
+    })
+    const original = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'].join('\n') + '\n'
+    const modified = original.replace('\nc\n', '\nC\n').replace('\nk\n', '\nK\n')
+    const hunks = diffHunks(unifiedDiff('a/a.txt', 'b/a.txt', original, modified))
+    put('a.txt', original)
+    const first = await hostCheckpoint('s1')
+    put('a.txt', modified)
+    const { changeId } = await changes.record('s1', 'r1', {
+      path: 'a.txt',
+      kind: 'modify',
+      before: Buffer.from(original).toString('base64'),
+      after: Buffer.from(modified).toString('base64'),
+      hunks,
+      added: 2,
+      removed: 2,
+    })
+    events.publish([
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 6,
+        type: 'file.changed',
+        payload: { changeId, path: 'a.txt', kind: 'modify' },
+      },
+    ])
+    await changes.revertHunk({ sessionId: 's1', changeId, hunkIndex: 0 })
+    const partial = read('a.txt')
+    expect(partial).toBe(original.replace('\nk\n', '\nK\n'))
+    const later = await hostCheckpoint('s1')
+    put('a.txt', 'tampered\n')
+
+    const hunksOf = () => storage.changes.get(changeId)!.hunks.map((h) => h.status)
+    await service.restore({ sessionId: 's1', checkpointId: later })
+    expect(read('a.txt')).toBe(partial)
+    expect(storage.changes.get(changeId)!.status).toBe('pending')
+    expect(hunksOf()).toEqual(['reverted', 'pending'])
+
+    await service.restore({ sessionId: 's1', checkpointId: first })
+    expect(read('a.txt')).toBe(original)
+    expect(storage.changes.get(changeId)!.status).toBe('reverted')
+
+    await service.restore({ sessionId: 's1', checkpointId: later })
+    expect(read('a.txt')).toBe(partial)
+    expect(storage.changes.get(changeId)!.status).toBe('pending')
+    expect(hunksOf()).toEqual(['reverted', 'pending'])
   })
 
   it('only restores checkpoints of the same session', async () => {

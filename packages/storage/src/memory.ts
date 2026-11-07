@@ -1,7 +1,12 @@
 /**
  * 内存存储实现，用于测试与开发。与 SQLite 实现通过同一套契约测试（`testing/store-contract.ts`）。
  */
-import { isLiveEventType, type PersistedEvent, type ProviderConfig } from '@cairn/protocol'
+import {
+  isLiveEventType,
+  type FileChangeStatus,
+  type PersistedEvent,
+  type ProviderConfig,
+} from '@cairn/protocol'
 import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
 import {
   StorageError,
@@ -283,6 +288,26 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         const record = s.changes.get(changeId)
         if (!record) throw new StorageError(StorageErrorCode.NotFound, { changeId })
         const next = { ...record, status, hunks: record.hunks.map((h) => ({ ...h, status })) }
+        s.changes.set(changeId, next)
+        return copy(next)
+      },
+      setHunkStatus(changeId, hunkIndex, status) {
+        const s = live()
+        const record = s.changes.get(changeId)
+        const hunk = record?.hunks[hunkIndex]
+        if (!record || !Number.isInteger(hunkIndex) || hunkIndex < 0 || !hunk) {
+          throw new StorageError(StorageErrorCode.NotFound, { changeId, hunkIndex })
+        }
+        const hunks = record.hunks.map((item, index) =>
+          index === hunkIndex ? { ...item, status } : item,
+        )
+        const allReverted = hunks.every((item) => item.status === 'reverted')
+        const nextStatus: FileChangeStatus = allReverted
+          ? 'reverted'
+          : record.status === 'reverted'
+            ? 'pending'
+            : record.status
+        const next = { ...record, status: nextStatus, hunks }
         s.changes.set(changeId, next)
         return copy(next)
       },

@@ -5,7 +5,17 @@
  * - 同一文件的多次改动合成一项：diff 取最早一次改动之前与最后一次改动之后的内容，撤销时一起撤销；
  * - 新建后又删除的文件不显示；增删行数是各次改动之和（显示 diff 后以实际 diff 为准）。
  */
-import type { FileChangeKind, FileChangeSummary } from '@cairn/protocol'
+import type { FileChangeKind, FileChangeStatus, FileChangeSummary } from '@cairn/protocol'
+
+/** 一条改动里可以单独撤销的块（只有这一项只含一条改动时才有）。 */
+export interface EntryHunk {
+  readonly index: number
+  readonly status: FileChangeStatus
+  readonly oldStart: number
+  readonly oldLines: number
+  readonly newStart: number
+  readonly newLines: number
+}
 
 export interface FileEntry {
   readonly path: string
@@ -14,6 +24,11 @@ export interface FileEntry {
   readonly changeIds: readonly string[]
   readonly added: number
   readonly removed: number
+  /** 仍然有效的改动里，已撤销的块与块的总数。 */
+  readonly revertedHunks: number
+  readonly hunkCount: number
+  /** 这一项只有一条改动时，按记录下来的块撤销。 */
+  readonly hunks?: readonly EntryHunk[]
 }
 
 export const isEffective = (change: FileChangeSummary) =>
@@ -36,12 +51,30 @@ export function fileEntries(
     const created = list[0]!.kind === 'create'
     const deleted = list.at(-1)!.kind === 'delete'
     if (created && deleted) continue
+    const only = list.length === 1 ? list[0] : undefined
     entries.push({
       path,
       kind: created ? 'create' : deleted ? 'delete' : 'modify',
       changeIds: list.map((c) => c.changeId),
       added: list.reduce((n, c) => n + c.added, 0),
       removed: list.reduce((n, c) => n + c.removed, 0),
+      revertedHunks: list.reduce(
+        (n, c) => n + (c.hunks ?? []).filter((h) => h.status === 'reverted').length,
+        0,
+      ),
+      hunkCount: list.reduce((n, c) => n + (c.hunks ?? []).length, 0),
+      ...(only
+        ? {
+            hunks: (only.hunks ?? []).map((h, index) => ({
+              index,
+              status: h.status ?? 'pending',
+              oldStart: h.oldStart,
+              oldLines: h.oldLines,
+              newStart: h.newStart,
+              newLines: h.newLines,
+            })),
+          }
+        : {}),
     })
   }
   return entries

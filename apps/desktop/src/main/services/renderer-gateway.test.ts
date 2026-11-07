@@ -139,6 +139,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   changes = {
     list: vi.fn(() => ({ changes: [] })),
     revert: vi.fn(async () => ({ changes: [] })),
+    revertHunk: vi.fn(async () => ({ changes: [] })),
     content: vi.fn(async () => ({ after: { kind: 'text' as const, text: 'x' } })),
   }
   checkpoints = {
@@ -408,6 +409,17 @@ describe('createRendererGateway: commands and lifecycle', () => {
       client.request('changes.revert', { sessionId: 's1', changeIds: ['c1'] }),
     ).resolves.toEqual({ changes: [] })
     expect(changes.revert).toHaveBeenCalledWith({ sessionId: 's1', changeIds: ['c1'] })
+    await expect(
+      client.request('changes.revertHunk', { sessionId: 's1', changeId: 'c1', hunkIndex: 0 }),
+    ).resolves.toEqual({ changes: [] })
+    expect(changes.revertHunk).toHaveBeenCalledWith({
+      sessionId: 's1',
+      changeId: 'c1',
+      hunkIndex: 0,
+    })
+    await expect(
+      client.request('changes.revertHunk', { sessionId: 's1', changeId: 'c1', hunkIndex: -1 }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
     await expect(
       client.request('changes.revert', { sessionId: 's1', changeIds: [] }),
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })

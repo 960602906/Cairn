@@ -131,9 +131,10 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
 
   /**
    * 恢复后同步改动记录的状态（M2-07、M2-08）：工作区回到检查点创建时的样子，改动记录也回到那时的状态。
-   * 按事件重放到该检查点为止：`file.changed` 记下改动（撤销产生的反向记录把原改动记为已撤销），
-   * `checkpoint.restored` 把恢复点之后的改动记为已撤销。检查点之后的改动都记为已撤销；那时有效、
-   * 现在却标记为已撤销的改动（例如撤销这次恢复）重新标记为有效（`pending`）。反向记录本身不变。
+   * 按事件重放到该检查点为止：`file.changed` 记下改动（整文件撤销产生的反向记录把原改动记为已撤销；
+   * 按块撤销只改那一块的状态），`checkpoint.restored` 把恢复点之后的改动记为已撤销。检查点之后的改动
+   * 都记为已撤销；那时有效、现在却标记为已撤销的改动（例如撤销这次恢复）重新标记为有效（`pending`）。
+   * 反向记录本身不变。整文件状态先对齐，再按块把仍然撤销的块标回去。
    */
   function syncChanges(sessionId: string, checkpointId: string) {
     const all = events.readAfter(sessionId, 0)
@@ -147,13 +148,22 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
     const records = new Map(storage.changes.list(sessionId).map((c) => [c.changeId, c]))
     const changedAt = new Map<string, number>()
     const state = new Map<string, 'applied' | 'reverted'>()
+    const hunkState = new Map<string, 'pending' | 'reverted'>()
     const created = new Map<string, number>()
     for (const event of all) {
       if (event.type === 'file.changed') {
         const record = records.get(event.payload.changeId)
         if (!record) continue
         if (record.revertOf !== undefined) {
-          if (event.seq <= target) state.set(record.revertOf, 'reverted')
+          const hunkIndex = event.payload.hunkIndex
+          if (hunkIndex === undefined) {
+            if (event.seq <= target) state.set(record.revertOf, 'reverted')
+          } else {
+            hunkState.set(
+              `${record.revertOf}\0${hunkIndex}`,
+              event.seq <= target ? 'reverted' : 'pending',
+            )
+          }
           continue
         }
         changedAt.set(record.changeId, event.seq)
@@ -176,6 +186,15 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
         storage.changes.setStatus(changeId, 'reverted')
       } else if (desired === 'applied' && status === 'reverted') {
         storage.changes.setStatus(changeId, 'pending')
+      }
+    }
+    for (const [key, desired] of hunkState) {
+      const [changeId, indexText] = key.split('\0')
+      if (changeId === undefined || state.get(changeId) === 'reverted') continue
+      const hunkIndex = Number(indexText)
+      const current = storage.changes.get(changeId)?.hunks[hunkIndex]?.status
+      if (current !== undefined && current !== desired) {
+        storage.changes.setHunkStatus(changeId, hunkIndex, desired)
       }
     }
   }

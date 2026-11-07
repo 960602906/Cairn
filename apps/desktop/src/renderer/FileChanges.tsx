@@ -7,6 +7,7 @@
  * - **顶栏改动摘要**（`SessionChanges`）：“N 个文件 +a −b”，点击打开对话框列出本会话所有改动。
  * - **撤销此文件**：确认后整文件撤销这一项包含的所有改动（`changes.revert`）。只在会话空闲时可用；文件之后又被
  *   修改过时主进程整体拒绝，错误由错误横幅显示。
+ * - **撤销此块**（M3-06）：一项只有一条改动时，diff 里每个对得上的块可以单独撤销。部分撤销时显示“已撤销 1/3 块”。
  */
 import { ChevronRight, FileDiff as FileDiffIcon, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -92,6 +93,7 @@ export function FileDiff({
   const { t: tc } = useTranslation()
   const content = useEntryContent(sessionId, entry)
   const revertChanges = useSessionStore((s) => s.revertChanges)
+  const revertHunk = useSessionStore((s) => s.revertHunk)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const revert = async () => {
@@ -100,6 +102,7 @@ export function FileDiff({
     setBusy(false)
     setConfirming(false)
   }
+  const changeId = entry.changeIds.length === 1 ? entry.changeIds[0] : undefined
   return (
     <>
       <DiffCard
@@ -110,8 +113,18 @@ export function FileDiff({
         content={content}
         added={entry.added}
         removed={entry.removed}
+        hunks={entry.hunks ?? []}
         onRevert={() => setConfirming(true)}
         revertDisabled={!canRevert || busy}
+        onRevertHunk={
+          changeId
+            ? (hunkIndex) => {
+                setBusy(true)
+                void revertHunk(sessionId, changeId, hunkIndex).finally(() => setBusy(false))
+              }
+            : undefined
+        }
+        revertHunkDisabled={!canRevert || busy}
       />
       <Dialog open={confirming} onOpenChange={setConfirming}>
         <DialogContent tone="danger" icon={<TriangleAlert />}>
@@ -142,6 +155,7 @@ export function FileChangeList({
   readonly sessionId: string
   readonly entries: readonly FileEntry[]
 }) {
+  const { t } = useTranslation('session')
   const canRevert = useCanRevert(sessionId)
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
   const toggle = (path: string) =>
@@ -170,6 +184,14 @@ export function FileChangeList({
               </span>
               <KindBadge kind={entry.kind} />
               <span className="ml-auto flex shrink-0 items-center gap-2">
+                {entry.revertedHunks > 0 && (
+                  <span className="text-muted">
+                    {t('diff.revertedCount', {
+                      reverted: entry.revertedHunks,
+                      total: entry.hunkCount,
+                    })}
+                  </span>
+                )}
                 <ChangeCounts added={entry.added} removed={entry.removed} />
                 <RatioBlocks added={entry.added} removed={entry.removed} />
                 <ChevronRight

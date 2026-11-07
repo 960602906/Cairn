@@ -2,7 +2,7 @@
  * 文件改动记录（M1-08b；ADR-0008；架构 §11.1、§14.2）。
  *
  * 写类工具每次改动文件都留下一条记录：改动前后的内容存入内容寻址的 blob 存储（主进程写入），
- * 记录本身只保存 blob 的哈希与 diff 块。界面据此列出改动、整文件撤销（按块撤销在 M3）。
+ * 记录本身只保存 blob 的哈希与 diff 块。界面据此列出改动、整文件撤销与按块撤销（M3-06）。
  */
 import { z } from 'zod'
 import { Id, Timestamp } from './common.js'
@@ -16,12 +16,16 @@ export type FileChangeStatus = z.infer<typeof FileChangeStatus>
 
 const LineCount = z.number().int().nonnegative()
 
-/** 一个 diff 块：改动前后的起始行（从 1 开始；行数为 0 时为插入或删除位置的前一行）与行数。 */
+/**
+ * 一个 diff 块：改动前后的起始行（从 1 开始；行数为 0 时为插入或删除位置的前一行）与行数。
+ * `status` 只出现在列出的记录里（M3-06）；写入改动时不带。
+ */
 export const FileHunk = z.object({
   oldStart: LineCount,
   oldLines: LineCount,
   newStart: LineCount,
   newLines: LineCount,
+  status: FileChangeStatus.optional(),
 })
 export type FileHunk = z.infer<typeof FileHunk>
 

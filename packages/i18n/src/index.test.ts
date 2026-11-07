@@ -177,6 +177,7 @@ describe('translateError', () => {
       'changes.not_found',
       'changes.already_reverted',
       'changes.conflict',
+      'changes.hunk_conflict',
       'changes.blob_missing',
       'changes.content_missing',
       'changes.failed',

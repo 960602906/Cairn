@@ -8,6 +8,7 @@ import { createSessionView } from '@cairn/core'
 import { createI18n } from '@cairn/i18n'
 import { RpcError, type FileChangeSummary, type FileContent } from '@cairn/protocol'
 import type { MainApi } from './api.js'
+import { fileDiff } from './diff-model.js'
 import { combineContent, SessionChanges, TurnChanges } from './FileChanges.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
@@ -42,16 +43,32 @@ const CONTENT: Record<string, { before?: FileContent; after?: FileContent }> = {
   o1: { before: text('a'), after: text('b') },
 }
 
-function setup({ busy = false, fail = {} as Record<string, unknown> } = {}) {
-  let changes = CHANGES
+function setup({ busy = false, fail = {} as Record<string, unknown>, initial = CHANGES } = {}) {
+  let changes = initial
   const request = vi.fn(
-    async (method: string, params: { changeId?: string; changeIds?: string[] }) => {
+    async (
+      method: string,
+      params: { changeId?: string; changeIds?: string[]; hunkIndex?: number },
+    ) => {
       if (fail[method]) throw fail[method]
       if (method === 'changes.content') return CONTENT[params.changeId!]
       if (method === 'changes.list') return { changes }
       if (method === 'changes.revert') {
         changes = changes.map((c) =>
           params.changeIds!.includes(c.changeId) ? { ...c, status: 'reverted' as const } : c,
+        )
+        return { changes: [] }
+      }
+      if (method === 'changes.revertHunk') {
+        changes = changes.map((c) =>
+          c.changeId === params.changeId
+            ? {
+                ...c,
+                hunks: c.hunks.map((h, index) =>
+                  index === params.hunkIndex ? { ...h, status: 'reverted' as const } : h,
+                ),
+              }
+            : c,
         )
         return { changes: [] }
       }
@@ -149,6 +166,45 @@ describe('TurnChanges', () => {
     expect(
       await screen.findByText('这个文件是新建的，撤销后会被删除。其他文件和对话记录不受影响。'),
     ).toBeTruthy()
+  })
+
+  it('一条改动的两块可以单独撤销，部分撤销后显示已撤销的块数', async () => {
+    const before = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'].join('\n')
+    const after = before.replace('c', 'C').replace('k', 'K')
+    const headers = fileDiff(before, after).segments.flatMap((segment) =>
+      segment.kind === 'hunk' ? [segment.header] : [],
+    )
+    CONTENT['h1'] = { before: text(before), after: text(after) }
+    const { wrap, request } = setup({
+      initial: [
+        change({
+          changeId: 'h1',
+          path: 'notes.txt',
+          hunks: headers.map(({ oldStart, oldLines, newStart, newLines }) => ({
+            oldStart,
+            oldLines,
+            newStart,
+            newLines,
+          })),
+          added: 2,
+          removed: 2,
+        }),
+      ],
+    })
+    wrap(<TurnChanges sessionId="s1" turnId="t1" />)
+    await userEvent.click(rowButton(/^notes\.txt/))
+    const diff = await screen.findByRole('figure', { name: '差异：notes.txt' })
+    const buttons = within(diff).getAllByRole('button', { name: '撤销此块' })
+    expect(buttons).toHaveLength(2)
+    await userEvent.click(buttons[0]!)
+    expect(request).toHaveBeenCalledWith('changes.revertHunk', {
+      sessionId: 's1',
+      changeId: 'h1',
+      hunkIndex: 0,
+    })
+    expect(await screen.findAllByText('已撤销 1/2 块')).toHaveLength(2)
+    expect(within(diff).getByText('已撤销')).toBeTruthy()
+    expect(within(diff).getAllByRole('button', { name: '撤销此块' })).toHaveLength(1)
   })
 
   it('会话正在运行时不能撤销', async () => {

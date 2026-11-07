@@ -229,6 +229,11 @@ const payloadSchemas = {
     kind: FileChangeKind,
     /** 撤销产生的改动：被撤销的改动 id。 */
     revertOf: Id.optional(),
+    /**
+     * 按块撤销（M3-06）时，被撤销的是 `revertOf` 那条改动的第几块（0 起）。
+     * 没有这个字段的撤销是整文件撤销。
+     */
+    hunkIndex: z.number().int().nonnegative().optional(),
   }),
   'checkpoint.created': z.object({
     checkpointId: Id,

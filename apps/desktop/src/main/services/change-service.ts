@@ -6,11 +6,14 @@
  * - **列出**（`changes.list`）：会话的全部改动，按发生顺序，不含文件内容。
  * - **内容**（`changes.content`，M2-07）：一次改动前后的内容，供界面显示 diff。按读取文件的规则解码
  *   （BOM、UTF-16、含 NUL 的视为二进制）；二进制与超过 `FILE_CONTENT_MAX_CHARS` 的文本只返回大小。
- * - **整文件撤销**（`changes.revert`；按块撤销在 M3）：按与发生相反的顺序把文件恢复为改动前的内容。
+ * - **整文件撤销**（`changes.revert`）：按与发生相反的顺序把文件恢复为改动前的内容。
  *   先在内存中逐个核对：文件当前的内容必须与改动后的内容一致（同一文件的多次改动依次核对），任何一处不一致
  *   （改动之后文件又被修改过，或较新的改动没有一起撤销）都整体拒绝，不写任何文件。核对通过后写入文件，
  *   为每个被撤销的改动写一条反向的改动记录（`revertOf`），原记录标记为 `reverted`，并发出 `file.changed`。
  *   会话正在运行时拒绝；撤销期间会话不接受新的输入（`isReverting`）。
+ * - **按块撤销**（`changes.revertHunk`，M3-06）：只把这一块的改后内容换回改前内容。按上下文行在当前文件里
+ *   定位，允许整块偏移；对不上时报 `changes.hunk_conflict`。块标记为 `reverted`，并发出带 `hunkIndex` 的
+ *   `file.changed`（`revertOf` 指向原改动），检查点可以按块把状态放回去。每一块都撤销后，改动状态变为 `reverted`。
  */
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
@@ -25,9 +28,16 @@ import {
   type UnsequencedEvent,
 } from '@cairn/protocol'
 import type { FileChangeRecord, Storage } from '@cairn/storage'
-import { createPathResolver, decodeFile } from '@cairn/tools'
+import {
+  createPathResolver,
+  decodeFile,
+  encodeText,
+  splitLines,
+  withLineEnding,
+} from '@cairn/tools'
 import { sha256, type BlobStore } from './blob-store.js'
 import type { SessionEventService } from './event-service.js'
+import { applyHunk, inverseHunk, lineChangeCounts, locateHunk } from './hunk-patch.js'
 
 export const ChangeErrorCode = {
   /** 会话或改动记录不存在，或改动不属于该会话。 */
@@ -36,6 +46,8 @@ export const ChangeErrorCode = {
   AlreadyReverted: 'changes.already_reverted',
   /** 文件在改动之后又被修改过（或较新的改动没有一起撤销），不能撤销。 */
   Conflict: 'changes.conflict',
+  /** 这一块的改后内容在当前文件里对不上，不能按块撤销。 */
+  HunkConflict: 'changes.hunk_conflict',
   /** 改动前的内容在 blob 存储中找不到或已损坏。 */
   BlobMissing: 'changes.blob_missing',
   /** 查看改动时，改动前或改动后的内容在 blob 存储中找不到（M2-07）。 */
@@ -67,6 +79,11 @@ export interface ChangeService {
     sessionId: string
     changeIds: readonly string[]
   }): Promise<{ changes: FileChangeSummary[] }>
+  revertHunk(params: {
+    sessionId: string
+    changeId: string
+    hunkIndex: number
+  }): Promise<{ changes: FileChangeSummary[] }>
   /** 会话是否正在撤销改动（期间不接受新的输入）。 */
   isReverting(sessionId: string): boolean
 }
@@ -80,11 +97,12 @@ export function toChangeSummary(record: FileChangeRecord): FileChangeSummary {
     ...(record.turnId === undefined ? {} : { turnId: record.turnId }),
     ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
     ...(record.revertOf === undefined ? {} : { revertOf: record.revertOf }),
-    hunks: record.hunks.map(({ oldStart, oldLines, newStart, newLines }) => ({
+    hunks: record.hunks.map(({ oldStart, oldLines, newStart, newLines, status }) => ({
       oldStart,
       oldLines,
       newStart,
       newLines,
+      status,
     })),
     added: record.added,
     removed: record.removed,
@@ -240,6 +258,107 @@ export function createChangeService(options: ChangeServiceOptions): ChangeServic
     return { changes: inverse.map(toChangeSummary) }
   }
 
+  async function revertOneHunk(sessionId: string, changeId: string, hunkIndex: number) {
+    const session = requireSession(sessionId)
+    const change = storage.changes.get(changeId)
+    if (change?.sessionId !== sessionId) throw new RpcError(ChangeErrorCode.NotFound, { changeId })
+    if (change.status === 'reverted') {
+      throw new RpcError(ChangeErrorCode.AlreadyReverted, { changeId, path: change.path })
+    }
+    const hunk = change.hunks[hunkIndex]
+    if (!Number.isInteger(hunkIndex) || hunkIndex < 0 || !hunk) {
+      throw new RpcError(ChangeErrorCode.NotFound, { changeId, hunkIndex })
+    }
+    if (hunk.status === 'reverted') {
+      throw new RpcError(ChangeErrorCode.AlreadyReverted, {
+        changeId,
+        path: change.path,
+        hunkIndex,
+      })
+    }
+
+    const resolution = await createPathResolver(session.workspacePath)(change.path)
+    if (!resolution.ok) throw new RpcError(resolution.code, { path: change.path })
+    const { absolute } = resolution.path
+    const conflict = () => new RpcError(ChangeErrorCode.HunkConflict, { path: change.path })
+
+    const linesOf = async (hash: string | undefined) => {
+      if (hash === undefined) return undefined
+      const content = await blobs.get(hash)
+      if (!content) throw new RpcError(ChangeErrorCode.BlobMissing, { path: change.path })
+      const decoded = decodeFile(content)
+      if (decoded.binary || decoded.lossy) throw conflict()
+      return splitLines(decoded.text).lines
+    }
+
+    let currentBuf: Buffer
+    try {
+      currentBuf = await fs.readFile(absolute)
+    } catch (error) {
+      const code = fsCode(error)
+      if (code === 'ENOENT' || code === 'EISDIR') throw conflict()
+      throw new RpcError(ChangeErrorCode.Failed, { path: change.path, cause: code })
+    }
+    const decoded = decodeFile(currentBuf)
+    if (decoded.binary || decoded.lossy) throw conflict()
+    const split = splitLines(decoded.text)
+    const beforeLines = (await linesOf(change.beforeHash)) ?? []
+    const afterLines = await linesOf(change.afterHash)
+    if (!afterLines) throw conflict()
+    const located = locateHunk(split.lines, beforeLines, afterLines, hunk)
+    if (!located) throw conflict()
+
+    const nextLines = applyHunk(split.lines, located)
+    const trailing =
+      decoded.text.length > 0 && (decoded.text.endsWith('\n') || decoded.text.endsWith('\r'))
+    const ending = split.lineEndings === 'CRLF' ? 'CRLF' : split.lineEndings === 'CR' ? 'CR' : 'LF'
+    const text =
+      nextLines.length === 0
+        ? ''
+        : withLineEnding(nextLines.join('\n') + (trailing ? '\n' : ''), ending)
+    const nextBuf = encodeText(text, decoded.encoding)
+    const [beforeHash, afterHash] = await Promise.all([blobs.put(currentBuf), blobs.put(nextBuf)])
+    try {
+      await fs.writeFile(absolute, nextBuf)
+    } catch (error) {
+      throw new RpcError(ChangeErrorCode.Failed, { path: change.path, cause: fsCode(error) })
+    }
+
+    const counts = lineChangeCounts(located.removed, located.added)
+    const inverse = storage.transaction(() => {
+      storage.changes.setHunkStatus(changeId, hunkIndex, 'reverted')
+      return storage.changes.create({
+        changeId: createId(),
+        sessionId,
+        path: change.path,
+        kind: 'modify',
+        beforeHash,
+        afterHash,
+        revertOf: change.changeId,
+        added: counts.added,
+        removed: counts.removed,
+        hunks: [inverseHunk(located.at, located.removed.length, located.added.length)],
+      })
+    })
+    events.publish([
+      {
+        v: 1,
+        sessionId,
+        runId: sessionId,
+        ts: now(),
+        type: 'file.changed',
+        payload: {
+          changeId: inverse.changeId,
+          path: inverse.path,
+          kind: inverse.kind,
+          revertOf: inverse.revertOf!,
+          hunkIndex,
+        },
+      },
+    ])
+    return { changes: [toChangeSummary(inverse)] }
+  }
+
   return {
     async record(sessionId, runId, input) {
       requireSession(sessionId)
@@ -296,6 +415,18 @@ export function createChangeService(options: ChangeServiceOptions): ChangeServic
       reverting.add(sessionId)
       try {
         return await revert(sessionId, changeIds)
+      } finally {
+        reverting.delete(sessionId)
+      }
+    },
+
+    async revertHunk({ sessionId, changeId, hunkIndex }) {
+      if (reverting.has(sessionId) || options.isBusy(sessionId)) {
+        throw new RpcError(ChangeErrorCode.Busy, { sessionId })
+      }
+      reverting.add(sessionId)
+      try {
+        return await revertOneHunk(sessionId, changeId, hunkIndex)
       } finally {
         reverting.delete(sessionId)
       }
