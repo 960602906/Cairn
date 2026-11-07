@@ -690,3 +690,76 @@ describe('file changes (M2-07)', () => {
     expect(store.getState().changes['s1']).toEqual([])
   })
 })
+
+describe('skills (M3-08)', () => {
+  const summary = (name = 'demo') => ({
+    name,
+    description: `${name} description.`,
+    sha256: 'a'.repeat(64),
+    source: 'user' as const,
+    enabled: true,
+    pinned: false,
+    tokens: { index: 5, pinned: 12 },
+    shadowed: false,
+    hasScripts: false,
+    files: [],
+  })
+
+  it('lists, reads, picks, installs, toggles and uninstalls skills', async () => {
+    const { api, calls } = fakeApi({
+      'skill.list': (params: { projectId?: string }) => ({
+        skills: [summary(params.projectId ?? 'global')],
+      }),
+      'skill.get': () => ({ ...summary(), markdown: '---\n', body: 'body' }),
+      'skill.pickSource': () => ({ source: { kind: 'zip', path: '/tmp/demo.zip' } }),
+      'skill.install': () => ({ installed: true, skill: summary() }),
+      'skill.setEnabled': (input: object) => ({ ...summary(), ...input }),
+      'skill.uninstall': () => ({}),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().listSkills()).resolves.toEqual([summary('global')])
+    await expect(store.getState().listSkills('p1')).resolves.toEqual([summary('p1')])
+    await expect(
+      store.getState().getSkill({ name: 'demo', source: 'user' }),
+    ).resolves.toMatchObject({ body: 'body' })
+    await expect(store.getState().pickSkillSource('zip')).resolves.toEqual({
+      kind: 'zip',
+      path: '/tmp/demo.zip',
+    })
+    await expect(
+      store.getState().installSkill({ kind: 'zip', path: '/tmp/demo.zip' }, true),
+    ).resolves.toMatchObject({ installed: true })
+    await expect(
+      store.getState().setSkillEnabled({ name: 'demo', source: 'user', pinned: true }),
+    ).resolves.toMatchObject({ pinned: true })
+    await expect(store.getState().uninstallSkill('demo')).resolves.toBe(true)
+    expect(calls).toContainEqual([
+      'skill.install',
+      { source: { kind: 'zip', path: '/tmp/demo.zip' }, confirm: true },
+    ])
+    expect(calls).toContainEqual([
+      'skill.setEnabled',
+      { name: 'demo', source: 'user', pinned: true },
+    ])
+  })
+
+  it('treats a cancelled picker as no source and records failures', async () => {
+    const { api } = fakeApi({
+      'skill.pickSource': () => ({}),
+      'skill.install': () => {
+        throw new RpcError('skills.duplicate', { name: 'demo' })
+      },
+      'skill.uninstall': () => {
+        throw new RpcError('skills.not_found', { name: 'demo' })
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().pickSkillSource('directory')).resolves.toBeUndefined()
+    await expect(
+      store.getState().installSkill({ kind: 'directory', path: '/tmp/demo' }, true),
+    ).resolves.toBeUndefined()
+    expect(store.getState().error).toEqual({ code: 'skills.duplicate', params: { name: 'demo' } })
+    await expect(store.getState().uninstallSkill('demo')).resolves.toBe(false)
+    expect(store.getState().error).toEqual({ code: 'skills.not_found', params: { name: 'demo' } })
+  })
+})

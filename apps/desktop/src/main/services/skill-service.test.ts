@@ -47,7 +47,7 @@ describe('skill service', () => {
     for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
   })
 
-  function setup() {
+  function setup(pickSource?: (kind: 'directory' | 'zip') => Promise<string | undefined>) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-skill-svc-'))
     roots.push(root)
     const builtin = path.join(root, 'builtin')
@@ -72,7 +72,12 @@ describe('skill service', () => {
       workspacePath: projectPath,
       title: 'S',
     })
-    const skills = createSkillService({ storage, builtinDir: builtin, userDir: user })
+    const skills = createSkillService({
+      storage,
+      builtinDir: builtin,
+      userDir: user,
+      ...(pickSource ? { pickSource } : {}),
+    })
     return { storage, skills, builtin, user, projectPath, project }
   }
 
@@ -151,6 +156,30 @@ describe('skill service', () => {
     })
     expect(skills.get({ name: 'example', source: 'builtin' }).pinned).toBe(true)
     expect(() => skills.get({ name: 'missing', source: 'user' })).toThrow(RpcError)
+  })
+
+  it('picks an install source through the injected picker, or reports a cancel', async () => {
+    const picks: string[] = []
+    const { skills } = setup(async (kind) => {
+      picks.push(kind)
+      return kind === 'zip' ? '/tmp/demo.zip' : undefined
+    })
+    await expect(skills.pickSource({ kind: 'directory' })).resolves.toEqual({})
+    await expect(skills.pickSource({ kind: 'zip' })).resolves.toEqual({
+      source: { kind: 'zip', path: '/tmp/demo.zip' },
+    })
+    expect(picks).toEqual(['directory', 'zip'])
+    const noPicker = setup()
+    await expect(noPicker.skills.pickSource({ kind: 'directory' })).resolves.toEqual({})
+  })
+
+  it('estimates the index and pinned tokens of a skill', () => {
+    const { skills } = setup()
+    const detail = skills.get({ name: 'example', source: 'builtin' })
+    expect(detail.tokens.index).toBeGreaterThan(0)
+    expect(detail.tokens.pinned).toBeGreaterThan(detail.tokens.index)
+    const summary = skills.list({}).skills.find((skill) => skill.name === 'example')
+    expect(summary?.tokens).toEqual(detail.tokens)
   })
 
   it('previews an install without writing, then installs and refuses a duplicate', () => {

@@ -479,6 +479,14 @@ export const MainForRenderer = defineSide({
       result: SkillDetail,
     },
     /**
+     * 用系统对话框选择一份技能的来源（M3-08）：文件夹或 zip。
+     * 取消时结果不含 `source`；选择结果直接交给 `skill.install`。
+     */
+    'skill.pickSource': {
+      params: z.object({ kind: z.enum(['directory', 'zip']) }),
+      result: z.object({ source: SkillInstallSource.optional() }),
+    },
+    /**
      * 从本地文件夹或 zip 安装到用户技能目录（M3-07）。
      * `confirm` 省略或为 false 时只返回预览，不写盘；为 true 时安装。
      * 预览包含 `SKILL.md`、文件列表和是否含脚本。同名已安装时报 `skills.duplicate`，

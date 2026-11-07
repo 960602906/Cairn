@@ -155,6 +155,9 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   skills = {
     list: vi.fn(() => ({ skills: [] })),
     get: vi.fn(),
+    pickSource: vi.fn(async () => ({
+      source: { kind: 'directory' as const, path: '/tmp/demo' },
+    })),
     install: vi.fn(() => ({
       installed: false,
       skill: {
@@ -164,6 +167,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
         source: 'user' as const,
         enabled: true,
         pinned: false,
+        tokens: { index: 5, pinned: 12 },
         shadowed: false,
         hasScripts: false,
         files: [],
@@ -463,6 +467,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       source: 'user' as const,
       enabled: false,
       pinned: true,
+      tokens: { index: 5, pinned: 12 },
       shadowed: false,
       hasScripts: false,
       files: [],
@@ -470,6 +475,10 @@ describe('createRendererGateway: commands and lifecycle', () => {
     vi.mocked(skills.get).mockReturnValue({ ...summary, markdown: '---\n', body: 'body' })
     vi.mocked(skills.setEnabled).mockReturnValue(summary)
     await expect(client.request('skill.list', {})).resolves.toEqual({ skills: [] })
+    await expect(client.request('skill.pickSource', { kind: 'zip' })).resolves.toEqual({
+      source: { kind: 'directory', path: '/tmp/demo' },
+    })
+    expect(skills.pickSource).toHaveBeenCalledWith({ kind: 'zip' })
     await expect(
       client.request('skill.get', { name: 'demo', source: 'user' }),
     ).resolves.toMatchObject({ name: 'demo', body: 'body' })

@@ -27,6 +27,14 @@ export const SkillSummary = z.object({
   enabled: z.boolean(),
   /** 每轮把正文放进系统提示词。 */
   pinned: z.boolean(),
+  /**
+   * 每轮占用的 token 估算（M3-08）。`index` 只算索引行，`pinned` 再加上正文。
+   * 与 `@cairn/core` 的 `estimateTokens` 同一种粗略算法，界面显示时标明“约”。
+   */
+  tokens: z.object({
+    index: z.number().int().nonnegative(),
+    pinned: z.number().int().nonnegative(),
+  }),
   /** 同名的另一份技能优先级更高，这份不会交给模型。 */
   shadowed: z.boolean(),
   hasScripts: z.boolean(),

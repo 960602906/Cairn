@@ -144,6 +144,18 @@ const skills = createSkillService({
   storage,
   builtinDir: join(import.meta.dirname, '../../resources/skills'),
   userDir: join(paths.root, 'skills'),
+  /** 选择安装来源（M3-08）：文件夹或 zip（e2e 中替换 `dialog.showOpenDialog`）。 */
+  pickSource: async (kind) => {
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const options: Electron.OpenDialogOptions =
+      kind === 'zip'
+        ? { properties: ['openFile'], filters: [{ name: 'Zip', extensions: ['zip'] }] }
+        : { properties: ['openDirectory'] }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    return result.canceled ? undefined : result.filePaths[0]
+  },
 })
 /** 上下文压缩的摘要（M3-03）：宿主经 `host.summarize` 调用，用量记在主进程。 */
 const compaction = createCompactService({
