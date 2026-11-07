@@ -10,6 +10,7 @@ import {
   type PermissionRule,
   type PersistedEvent,
   type ProviderConfig,
+  type SkillSource,
 } from '@cairn/protocol'
 import Database from 'better-sqlite3'
 import {
@@ -23,6 +24,7 @@ import {
   type PermissionRuleRecord,
   type ProjectRecord,
   type SessionRecord,
+  type SkillPref,
   type Storage,
   type StorageOptions,
 } from '../types.js'
@@ -63,6 +65,14 @@ interface SessionRow {
   model_id: string | null
   created_at: number
   updated_at: number
+}
+
+interface SkillPrefRow {
+  scope: string
+  source: SkillSource
+  name: string
+  enabled: number
+  pinned: number
 }
 
 interface ProviderRow {
@@ -345,7 +355,31 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     deleteRule: db.prepare('DELETE FROM permission_rules WHERE rule_id = ?'),
     setHunkStatus: db.prepare('UPDATE hunks SET status = ? WHERE change_id = ?'),
     setHunkAt: db.prepare('UPDATE hunks SET status = ? WHERE change_id = ? AND position = ?'),
+    skillPref: db.prepare<[string, string, string], SkillPrefRow>(
+      'SELECT * FROM skill_prefs WHERE scope = ? AND source = ? AND name = ?',
+    ),
+    skillPrefsByScope: db.prepare<[string], SkillPrefRow>(
+      'SELECT * FROM skill_prefs WHERE scope = ? ORDER BY source, name',
+    ),
+    upsertSkillPref: db.prepare(
+      `INSERT INTO skill_prefs (scope, source, name, enabled, pinned)
+       VALUES (@scope, @source, @name, @enabled, @pinned)
+       ON CONFLICT (scope, source, name) DO UPDATE SET
+         enabled = excluded.enabled,
+         pinned = excluded.pinned`,
+    ),
+    deleteSkillPref: db.prepare(
+      'DELETE FROM skill_prefs WHERE scope = ? AND source = ? AND name = ?',
+    ),
   }
+
+  const toSkillPref = (row: SkillPrefRow): SkillPref => ({
+    scope: row.scope,
+    source: row.source,
+    name: row.name,
+    enabled: row.enabled === 1,
+    pinned: row.pinned === 1,
+  })
 
   const updateSession = (
     sessionId: string,
@@ -636,6 +670,27 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       },
       setStatus: (changeId, status) => setChangeStatus(changeId, status),
       setHunkStatus: (changeId, hunkIndex, status) => setOneHunkStatus(changeId, hunkIndex, status),
+    },
+
+    skillPrefs: {
+      get(scope, source, name) {
+        const row = q.skillPref.get(scope, source, name)
+        return row && toSkillPref(row)
+      },
+      list: (scope) => q.skillPrefsByScope.all(scope).map(toSkillPref),
+      set(pref) {
+        q.upsertSkillPref.run({
+          scope: pref.scope,
+          source: pref.source,
+          name: pref.name,
+          enabled: pref.enabled ? 1 : 0,
+          pinned: pref.pinned ? 1 : 0,
+        })
+        return toSkillPref(q.skillPref.get(pref.scope, pref.source, pref.name)!)
+      },
+      delete(scope, source, name) {
+        q.deleteSkillPref.run(scope, source, name)
+      },
     },
 
     permissionRules: {

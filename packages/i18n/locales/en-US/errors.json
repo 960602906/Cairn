@@ -60,6 +60,7 @@
   "path.root_not_absolute": "The workspace folder is not an absolute path",
   "path.root_not_found": "The workspace folder does not exist",
   "path.broken_link": "The path goes through a symbolic link whose target does not exist",
+  "path.read_only": "This path is inside a skill directory and can only be read",
   "tool.not_found": "The tool does not exist",
   "tool.invalid_input": "The tool input is invalid",
   "tool.execution_failed": "The tool ran into an error",
@@ -68,6 +69,7 @@
   "tool.read_file.too_large": "The file is too large to read",
   "tool.read_file.offset_out_of_range": "The start line is beyond the end of the file",
   "tool.read_file.unreadable": "The file cannot be read",
+  "tool.load_skill.not_found": "No enabled skill with that name",
   "tool.list_dir.not_found": "The directory does not exist",
   "tool.list_dir.not_directory": "This is not a directory",
   "tool.list_dir.unreadable": "The directory cannot be read",
@@ -103,5 +105,11 @@
   "plan.not_pending": "This plan is no longer waiting for a decision",
   "plan.unknown_step": "That step is not part of this plan",
   "plan.no_active_plan": "No plan is being carried out",
-  "permission.plan_mode": "Plan mode is read-only. Writing files, running commands, and using the network wait until you approve a plan"
+  "permission.plan_mode": "Plan mode is read-only. Writing files, running commands, and using the network wait until you approve a plan",
+  "skills.invalid": "SKILL.md is missing a name or description, or is not a valid skill",
+  "skills.duplicate": "A skill with this name is already installed",
+  "skills.traversal": "A path in the skill escapes the skill folder",
+  "skills.too_large": "The skill is too large",
+  "skills.not_found": "That skill could not be found",
+  "skills.not_uninstallable": "Built-in skills and project skills cannot be uninstalled here"
 }

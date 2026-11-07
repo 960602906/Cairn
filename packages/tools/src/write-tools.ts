@@ -18,7 +18,7 @@ import {
 } from '@cairn/core'
 import type { FileHunk } from '@cairn/protocol'
 import { createTwoFilesPatch } from 'diff'
-import { resolveOrThrow } from './paths.js'
+import { resolveWritableOrThrow } from './paths.js'
 import {
   bodyTokens,
   decodeFile,
@@ -156,7 +156,7 @@ function formatNote(encoding: Encoding, lineEnding: WritePlan['lineEnding']): st
 
 /** 计算 `write_file` 的结果，不写入。 */
 export async function planWrite(input: WriteFileInput, ctx: ToolContext): Promise<WritePlan> {
-  const path = await resolveOrThrow(ctx, input.path)
+  const path = await resolveWritableOrThrow(ctx, input.path)
   const before = await readExisting(path.absolute, path.relative, WriteFileErrorCode)
   let encoding: Encoding = 'UTF-8'
   let lineEnding: WritePlan['lineEnding']
@@ -225,7 +225,7 @@ function findLoosely(text: string, search: string): number | undefined {
 
 /** 计算 `edit_file` 的结果，不写入。 */
 export async function planEdit(input: EditFileInput, ctx: ToolContext): Promise<WritePlan> {
-  const path = await resolveOrThrow(ctx, input.path)
+  const path = await resolveWritableOrThrow(ctx, input.path)
   const before = await readExisting(path.absolute, path.relative, EditFileErrorCode)
   if (before === undefined) {
     throw new ToolError(
@@ -411,7 +411,7 @@ async function assertUnchanged(
   codes: { ChangedSincePreview: string; Failed: string },
 ): Promise<void> {
   if (expected === undefined) return
-  const path = await resolveOrThrow(ctx, input.path)
+  const path = await resolveWritableOrThrow(ctx, input.path)
   let current: Buffer | undefined
   try {
     current = await fs.readFile(path.absolute)
@@ -500,7 +500,7 @@ const cancelledOutput = (plan: WritePlan) => ({
 })
 
 const normalizePath = async <I extends { path: string }>(input: I, ctx: ToolContext) => {
-  const path = await resolveOrThrow(ctx, input.path)
+  const path = await resolveWritableOrThrow(ctx, input.path)
   return { input: { ...input, path: path.relative }, targets: { paths: [path.relative] } }
 }
 

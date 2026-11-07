@@ -199,6 +199,16 @@ const payloadSchemas = {
     durationMs: DurationMs,
     /** 只给界面显示（M2-06）。 */
     display: ToolDisplay.optional(),
+    /**
+     * `load_skill` 成功时记下名称与 `SKILL.md` 的内容哈希（M3-07）。
+     * 没有这个字段的完成事件不是加载技能。
+     */
+    skill: z
+      .object({
+        name: z.string().min(1),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .optional(),
   }),
   'tool.failed': z.object({ toolCallId: Id, error: ErrorInfo }),
   'tool.cancelled': z.object({

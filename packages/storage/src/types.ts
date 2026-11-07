@@ -12,6 +12,7 @@ import type {
   PermissionRule,
   PersistedEvent,
   ProviderConfig,
+  SkillSource,
 } from '@cairn/protocol'
 
 export const StorageErrorCode = {
@@ -268,6 +269,28 @@ export interface FileChangeStore {
   setHunkStatus(changeId: string, hunkIndex: number, status: FileChangeStatus): FileChangeRecord
 }
 
+// ---------- 技能开关 ----------
+
+/** 一份技能的启用与固定加载（M3-07）。没有记录时按启用、不固定。 */
+export interface SkillPref {
+  /** `global`，或项目 id。 */
+  readonly scope: string
+  readonly source: SkillSource
+  readonly name: string
+  readonly enabled: boolean
+  readonly pinned: boolean
+}
+
+export interface SkillPrefStore {
+  get(scope: string, source: SkillSource, name: string): SkillPref | undefined
+  /** 某一范围里的全部记录。 */
+  list(scope: string): SkillPref[]
+  /** 写入或覆盖。 */
+  set(pref: SkillPref): SkillPref
+  /** 没有记录时什么也不做。 */
+  delete(scope: string, source: SkillSource, name: string): void
+}
+
 // ---------- 汇总 ----------
 
 export interface Storage {
@@ -277,6 +300,7 @@ export interface Storage {
   readonly events: EventStore
   readonly changes: FileChangeStore
   readonly permissionRules: PermissionRuleStore
+  readonly skillPrefs: SkillPrefStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   close(): void

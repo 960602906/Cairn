@@ -777,6 +777,7 @@ export class RunEngine {
           ...(outcome.truncated ? { truncated: true } : {}),
           durationMs: Math.max(0, this.#now() - startedAt),
           ...(outcome.display ? { display: outcome.display } : {}),
+          ...(outcome.loadedSkill ? { skill: outcome.loadedSkill } : {}),
         })
         if (outcome.effects) {
           for (const effect of outcome.effects) this.#emit(effect.type, effect.payload)

@@ -687,6 +687,52 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     })
 
+    describe('skill prefs', () => {
+      it('stores enabled and pinned per scope and source, and delete is idempotent', () => {
+        expect(storage.skillPrefs.get('global', 'user', 'demo')).toBeUndefined()
+        expect(storage.skillPrefs.list('global')).toEqual([])
+        const saved = storage.skillPrefs.set({
+          scope: 'global',
+          source: 'user',
+          name: 'demo',
+          enabled: false,
+          pinned: true,
+        })
+        expect(saved).toEqual({
+          scope: 'global',
+          source: 'user',
+          name: 'demo',
+          enabled: false,
+          pinned: true,
+        })
+        storage.skillPrefs.set({
+          scope: 'p1',
+          source: 'project',
+          name: 'demo',
+          enabled: true,
+          pinned: false,
+        })
+        expect(storage.skillPrefs.list('global')).toEqual([saved])
+        expect(storage.skillPrefs.get('global', 'builtin', 'demo')).toBeUndefined()
+        const updated = storage.skillPrefs.set({ ...saved, enabled: true })
+        expect(storage.skillPrefs.get('global', 'user', 'demo')).toEqual(updated)
+        const copy = storage.skillPrefs.get('global', 'user', 'demo')!
+        ;(copy as { enabled: boolean }).enabled = false
+        expect(storage.skillPrefs.get('global', 'user', 'demo')?.enabled).toBe(true)
+        expect(() =>
+          storage.transaction(() => {
+            storage.skillPrefs.delete('global', 'user', 'demo')
+            throw new Error('boom')
+          }),
+        ).toThrow('boom')
+        expect(storage.skillPrefs.get('global', 'user', 'demo')?.enabled).toBe(true)
+        storage.skillPrefs.delete('global', 'user', 'demo')
+        storage.skillPrefs.delete('global', 'user', 'demo')
+        expect(storage.skillPrefs.get('global', 'user', 'demo')).toBeUndefined()
+        expect(storage.skillPrefs.list('p1')).toHaveLength(1)
+      })
+    })
+
     describe('transaction', () => {
       it('commits all writes and returns the result', () => {
         const result = storage.transaction(() => {

@@ -608,6 +608,112 @@ describe('agent host', () => {
     expect(JSON.stringify(h.events)).not.toContain('should-not-run')
     expect(h.events.filter((event) => event.type === 'step.started')).toHaveLength(2)
   })
+
+  it('puts the skill index in the prompt and records load_skill (M3-07)', async () => {
+    const prompts: string[] = []
+    const tail = 'TAIL-MARKER'
+    const body = `${'x'.repeat(32 * 1024)}${tail}`
+    const sha = 'ab'.repeat(32)
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            { kind: 'tool', name: 'load_skill', input: { name: 'house' } },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const echo: ToolDefinition<object> = {
+      name: 'echo',
+      description: 'Echo',
+      category: 'read',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: { type: 'object', properties: {} },
+      execute: () => Promise.resolve({ content: text('') }),
+    }
+    const h = setup(script, {
+      registerTools: (registry) => registry.register(echo),
+      createRuntime: (model) => {
+        const fake = new FakeRuntime(script)
+        return {
+          runtime: {
+            id: 'spy',
+            async createSession(sessionInit) {
+              const session = await fake.createSession(sessionInit)
+              return {
+                prompt: (input: Parameters<typeof session.prompt>[0]) => session.prompt(input),
+                steer: (input: Parameters<typeof session.steer>[0]) => session.steer(input),
+                abort: () => session.abort(),
+                onEvent: (listener: Parameters<typeof session.onEvent>[0]) =>
+                  session.onEvent(listener),
+                exportHistory: () => session.exportHistory(),
+                dispose: () => session.dispose(),
+                setSystemPrompt(prompt: string) {
+                  prompts.push(prompt)
+                },
+              }
+            },
+          },
+          model: fakeModel(model),
+        }
+      },
+    })
+    h.main.handle('host.skills', () => ({
+      skills: [
+        {
+          name: 'example',
+          description: 'Built in.',
+          sha256: sha,
+          source: 'builtin' as const,
+          pinned: false,
+          root: '/skills/example',
+          body: 'example body',
+          hasScripts: false,
+          files: [],
+        },
+        {
+          name: 'house',
+          description: 'House style.',
+          sha256: sha,
+          source: 'user' as const,
+          pinned: true,
+          root: '/skills/house',
+          body,
+          hasScripts: false,
+          files: [],
+        },
+      ],
+    }))
+    await h.main.request('host.init', init)
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    const prompt = prompts.at(-1) ?? ''
+    expect(prompt).toContain('# Skills')
+    expect(prompt).toContain('- example: Built in.')
+    expect(prompt).toContain('# Pinned skills')
+    expect(prompt).toContain('## house')
+    expect(prompt).toContain('Call load_skill to read the rest.')
+    expect(prompt).not.toContain(tail)
+    expect(prompt.indexOf('# Skills')).toBeLessThan(prompt.indexOf('# Environment'))
+    expect(h.events.find((event) => event.type === 'tool.completed')?.payload).toMatchObject({
+      skill: { name: 'house', sha256: sha },
+    })
+    expect(JSON.stringify(h.events)).toContain(tail)
+  })
+
+  it('continues a turn when the skill index cannot be loaded (M3-07)', async () => {
+    const script: FakeScript = { turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }
+    const h = setup(script)
+    h.main.handle('host.skills', () => {
+      throw new Error('skills down')
+    })
+    await h.main.request('host.init', init)
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(h.onError).toHaveBeenCalled()
+  })
 })
 
 describe('fake model', () => {

@@ -18,6 +18,7 @@
     "@cairn/protocol": "workspace:*",
     "@cairn/runtime-pi": "workspace:*",
     "@cairn/shell": "workspace:*",
+    "@cairn/skills": "workspace:*",
     "@cairn/storage": "workspace:*",
     "@cairn/tools": "workspace:*",
     "@fontsource/jetbrains-mono": "5.3.0",

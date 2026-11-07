@@ -13,6 +13,7 @@ it('exports the public API', () => {
     'file_changes',
     'permission_rules',
     'project_settings',
+    'skill_prefs',
   ])
   expect(storage.StorageErrorCode.SeqConflict).toBe('storage.seq_conflict')
   const error = new storage.StorageError(storage.StorageErrorCode.NotFound)

@@ -39,6 +39,7 @@ describe('openSqliteStorage', () => {
         '0004_file_changes',
         '0005_permission_rules',
         '0006_project_settings',
+        '0007_skill_prefs',
       ],
     })
     storage.close()
@@ -59,6 +60,7 @@ describe('openSqliteStorage', () => {
       'provider_configs',
       'schema_meta',
       'sessions',
+      'skill_prefs',
     ])
     db.close()
   })

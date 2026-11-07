@@ -18,6 +18,7 @@ import {
   type PermissionRuleRecord,
   type ProjectRecord,
   type SessionRecord,
+  type SkillPref,
   type Storage,
   type StorageOptions,
 } from './types.js'
@@ -31,7 +32,11 @@ interface State {
   changes: Map<string, FileChangeRecord>
   /** 按添加顺序。 */
   rules: Map<string, PermissionRuleRecord>
+  /** 键为 scope、source、name。 */
+  skillPrefs: Map<string, SkillPref>
 }
+
+const prefKey = (scope: string, source: string, name: string) => `${scope}\0${source}\0${name}`
 
 function cloneState(state: State): State {
   return {
@@ -41,6 +46,7 @@ function cloneState(state: State): State {
     events: new Map([...state.events].map(([id, list]) => [id, [...list]])),
     changes: new Map(state.changes),
     rules: new Map(state.rules),
+    skillPrefs: new Map(state.skillPrefs),
   }
 }
 
@@ -58,6 +64,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     events: new Map(),
     changes: new Map(),
     rules: new Map(),
+    skillPrefs: new Map(),
   }
   let closed = false
 
@@ -310,6 +317,24 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         const next = { ...record, status: nextStatus, hunks }
         s.changes.set(changeId, next)
         return copy(next)
+      },
+    },
+
+    skillPrefs: {
+      get(scope, source, name) {
+        const pref = live().skillPrefs.get(prefKey(scope, source, name))
+        return pref && copy(pref)
+      },
+      list(scope) {
+        return [...live().skillPrefs.values()].filter((pref) => pref.scope === scope).map(copy)
+      },
+      set(pref) {
+        const record = copy(pref)
+        live().skillPrefs.set(prefKey(pref.scope, pref.source, pref.name), record)
+        return copy(record)
+      },
+      delete(scope, source, name) {
+        live().skillPrefs.delete(prefKey(scope, source, name))
       },
     },
 
