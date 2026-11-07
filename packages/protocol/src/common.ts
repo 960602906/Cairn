@@ -107,13 +107,16 @@ export type RunState = z.infer<typeof RunState>
 export const RunMode = z.enum(['interactive', 'unattended'])
 export type RunMode = z.infer<typeof RunMode>
 
-/** 运行限额（Runtime §3.1）。 */
+/**
+ * 运行限额（Runtime §3.1、§10.3）。省略的项不限制：长任务（例如跑一整晚）不应被步数、时长或工具失败打断，
+ * 默认全部不限，失败的工具结果照常交给模型自行处理（2026-11-07）。
+ */
 export const RunLimits = z.object({
-  maxStepsPerTurn: z.number().int().positive(),
-  maxTurnDurationMs: DurationMs,
+  maxStepsPerTurn: z.number().int().positive().optional(),
+  maxTurnDurationMs: DurationMs.optional(),
   maxTokensPerTurn: z.number().int().positive().optional(),
   maxCostPerTurn: z.number().positive().optional(),
-  maxConsecutiveToolErrors: z.number().int().positive(),
+  maxConsecutiveToolErrors: z.number().int().positive().optional(),
 })
 export type RunLimits = z.infer<typeof RunLimits>
 

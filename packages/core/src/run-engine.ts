@@ -647,9 +647,21 @@ export class RunEngine {
   /** 调用模型前检查限额，返回第一个超出的限额。 */
   #exceededLimit(turn: TurnContext): keyof RunLimits | undefined {
     const limits = this.#limits
-    if (turn.steps >= limits.maxStepsPerTurn) return 'maxStepsPerTurn'
-    if (turn.toolErrors >= limits.maxConsecutiveToolErrors) return 'maxConsecutiveToolErrors'
-    if (this.#activeMs(turn) >= limits.maxTurnDurationMs) return 'maxTurnDurationMs'
+    if (limits.maxStepsPerTurn !== undefined && turn.steps >= limits.maxStepsPerTurn) {
+      return 'maxStepsPerTurn'
+    }
+    if (
+      limits.maxConsecutiveToolErrors !== undefined &&
+      turn.toolErrors >= limits.maxConsecutiveToolErrors
+    ) {
+      return 'maxConsecutiveToolErrors'
+    }
+    if (
+      limits.maxTurnDurationMs !== undefined &&
+      this.#activeMs(turn) >= limits.maxTurnDurationMs
+    ) {
+      return 'maxTurnDurationMs'
+    }
     if (limits.maxTokensPerTurn !== undefined && turn.tokens >= limits.maxTokensPerTurn) {
       return 'maxTokensPerTurn'
     }

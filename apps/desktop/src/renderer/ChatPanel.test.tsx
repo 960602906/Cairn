@@ -523,6 +523,31 @@ describe('ChatPanel', () => {
     expect(sendButton()!.disabled).toBe(false)
   })
 
+  it('continues with one click after a limit stopped the turn', async () => {
+    const { open, emit, request } = setup({ history: RUNNING })
+    await open()
+    emit(
+      ev(12, 'turn.limit_reached', { limit: 'maxStepsPerTurn', value: 50 }, 't2'),
+      ev(13, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }, 't2'),
+      state(14, 'thinking', 'failed'),
+    )
+    await userEvent.click(screen.getByRole('button', { name: '继续' }))
+    expect(request).toHaveBeenCalledWith(
+      'session.prompt',
+      expect.objectContaining({ sessionId: 's1', content: [{ type: 'text', text: '继续' }] }),
+    )
+  })
+
+  it('offers no continue button when a turn failed for another reason', async () => {
+    const { open, emit } = setup({ history: RUNNING })
+    await open()
+    emit(
+      ev(12, 'turn.failed', { error: { code: 'model.unknown_error' }, retryable: false }, 't2'),
+      state(13, 'thinking', 'failed'),
+    )
+    expect(screen.queryByRole('button', { name: '继续' })).toBeNull()
+  })
+
   it('shows that a failed model request is being retried', async () => {
     const { open, emit } = setup({ history: RUNNING })
     await open()
