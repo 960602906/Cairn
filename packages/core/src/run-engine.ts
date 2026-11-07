@@ -50,6 +50,13 @@ import type {
   CanonicalMessage,
   UnsequencedEvent,
 } from '@cairn/protocol'
+import {
+  SUMMARY_PREFIX,
+  compactionEventPayload,
+  compactConversation,
+  estimateOverhead,
+  type CompactionSummarizer,
+} from './compaction.js'
 import { acceptsInput, canTransition, isActiveRunState } from './run-state.js'
 import { TOOL_RESULT_NOTICE } from './system-prompt.js'
 import type { ToolCallObserver, ToolOutcome, ToolPipeline } from './tool-pipeline.js'
@@ -161,6 +168,11 @@ export interface RunEngineOptions {
    * （例如读到的 `AGENTS.md`）。失败时由调用方自己吞掉；这里抛出会让这一轮无法开始。
    */
   readonly prepareTurn?: () => Promise<TurnPreparation | undefined>
+  /**
+   * 上下文压缩用的摘要（M3-03）。返回空或抛出时改为丢掉最早的工具输出。
+   * 不给出时超限只会走失败降级。
+   */
+  readonly summarize?: CompactionSummarizer
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
@@ -230,6 +242,13 @@ export class RunEngine {
   #state: RunState
   #session: RuntimeSession | undefined
   #turn: TurnContext | undefined
+  /** 当前系统提示词，压缩时计入开销。 */
+  #systemPrompt: string
+  /** 按用户消息顺序记下的轮次 id。运行时的历史不一定带着 turnId。 */
+  #userTurnIds: string[] = []
+  #summary: Extract<CanonicalMessage, { role: 'summary' }> | undefined
+  /** 空闲时来不及压缩，就在下一次调用模型前强制压缩。 */
+  #forceCompact = false
   /** 当前轮次结束时 resolve。 */
   #turnDone: Promise<void> | undefined
   #limits: RunLimits
@@ -244,6 +263,15 @@ export class RunEngine {
     // 恢复时若记录的是运行中状态（上次未正常结束），按中断处理（Runtime §13.2）。
     const restored = options.restore?.state ?? 'idle'
     this.#state = isActiveRunState(restored) || restored === 'aborting' ? 'interrupted' : restored
+    const base = options.systemPrompt ?? ''
+    this.#systemPrompt =
+      (options.tools?.length ?? 0) > 0 && !base.includes(TOOL_RESULT_NOTICE)
+        ? [base, TOOL_RESULT_NOTICE].filter(Boolean).join('\n\n')
+        : base
+    for (const message of options.restore?.history ?? []) {
+      if (message.role === 'summary') this.#summary = message
+      else if (message.role === 'user' && message.turnId) this.#userTurnIds.push(message.turnId)
+    }
   }
 
   /** 创建运行时会话；新运行发出 `run.created`。 */
@@ -261,17 +289,14 @@ export class RunEngine {
     const o = this.#o
     this.#session = await o.runtime.createSession({
       model: o.model,
-      // 组装好的系统提示词（`buildSystemPrompt`）已包含安全规则时不再附加
-      systemPrompt:
-        (o.tools?.length ?? 0) > 0 && !o.systemPrompt?.includes(TOOL_RESULT_NOTICE)
-          ? [o.systemPrompt, TOOL_RESULT_NOTICE].filter(Boolean).join('\n\n')
-          : (o.systemPrompt ?? ''),
+      systemPrompt: this.#systemPrompt,
       tools: o.tools ?? [],
       history: o.restore?.history ?? [],
       signal: o.signal,
       hooks: {
         beforeToolCall: (call) => this.#beforeToolCall(call),
         executeTool: (call, signal) => this.#executeTool(call, signal),
+        beforeModelCall: (ctx) => this.#beforeModelCall(ctx),
         toolCallRejected: (call, error) => this.#toolCallRejected(call, error),
       },
     })
@@ -320,7 +345,10 @@ export class RunEngine {
       this.#turn = undefined
       throw error
     }
-    if (prepared?.systemPrompt !== undefined) session.setSystemPrompt?.(prepared.systemPrompt)
+    if (prepared?.systemPrompt !== undefined) {
+      this.#systemPrompt = prepared.systemPrompt
+      session.setSystemPrompt?.(prepared.systemPrompt)
+    }
     this.#emit('turn.started', prepared?.context ? { context: prepared.context } : {})
     this.#transition('thinking')
     const run = async () => {
@@ -330,7 +358,13 @@ export class RunEngine {
           // 创建检查点期间被停止：不再调用模型
           this.#endTurn(turn, { type: 'loop.ended', outcome: 'aborted' })
         } else {
-          await session.prompt({ role: 'user', content: [...input.content], ts: this.#now() })
+          this.#userTurnIds.push(turn.turnId)
+          await session.prompt({
+            role: 'user',
+            content: [...input.content],
+            ts: this.#now(),
+            turnId: turn.turnId,
+          })
           await this.#retryLoop(turn)
         }
       } catch {
@@ -429,8 +463,45 @@ export class RunEngine {
   async steer(input: { messageId: string; content: readonly ContentPart[] }): Promise<boolean> {
     const turn = this.#turn
     if (!turn || turn.ended) return false
-    await this.#session!.steer({ role: 'user', content: [...input.content], ts: this.#now() })
+    this.#userTurnIds.push(turn.turnId)
+    await this.#session!.steer({
+      role: 'user',
+      content: [...input.content],
+      ts: this.#now(),
+      turnId: turn.turnId,
+    })
     return true
+  }
+
+  /**
+   * 立刻压缩（输入 `/compact`）。轮次还在跑时记下来，下一次调用模型前再压。
+   * 返回是否做了压缩或已经排上。
+   */
+  async compact(): Promise<boolean> {
+    if (this.#state === 'disposed') return false
+    const turn = this.#turn
+    if (turn && !turn.ended) {
+      this.#forceCompact = true
+      return true
+    }
+    const session = this.#session
+    if (!session) return false
+    try {
+      const outcome = await compactConversation({
+        messages: session.exportHistory(),
+        budget: this.#budget(),
+        force: true,
+        ...(this.#o.summarize ? { summarize: this.#o.summarize } : {}),
+        now: this.#now(),
+      })
+      if (outcome.kind === 'none') return false
+      this.#remember(outcome.messages)
+      session.replaceMessages?.(outcome.messages)
+      this.#emit('context.compacted', compactionEventPayload(outcome))
+      return true
+    } catch {
+      return false
+    }
   }
 
   /** 中止当前轮次；空闲时无效果。 */
@@ -717,6 +788,78 @@ export class RunEngine {
   }
 
   // ---------- 内部 ----------
+
+  #budget() {
+    return {
+      contextWindow: this.#o.model.profile.contextWindow,
+      maxOutputTokens: this.#o.model.profile.maxOutputTokens,
+      overheadTokens: estimateOverhead(this.#systemPrompt, this.#o.tools ?? []),
+    }
+  }
+
+  /** 把轮次 id 补回运行时历史里的用户消息。没有改动时返回原数组。 */
+  #attachTurns(messages: readonly CanonicalMessage[]): readonly CanonicalMessage[] {
+    let userIndex = 0
+    let changed = false
+    const next = messages.map((message) => {
+      if (message.role === 'summary') {
+        this.#summary = message
+        return message
+      }
+      if (message.role !== 'user') return message
+      const body = message.content.find((part) => part.type === 'text')?.text ?? ''
+      if (
+        this.#summary &&
+        message.content.length === 1 &&
+        message.content[0]?.type === 'text' &&
+        body.startsWith(SUMMARY_PREFIX)
+      ) {
+        changed = true
+        return this.#summary
+      }
+      const turnId = message.turnId ?? this.#userTurnIds[userIndex]
+      userIndex += 1
+      if (!turnId || message.turnId === turnId) return message
+      changed = true
+      return { ...message, turnId }
+    })
+    return changed ? next : messages
+  }
+
+  #remember(messages: readonly CanonicalMessage[]): void {
+    this.#userTurnIds = []
+    this.#summary = undefined
+    for (const message of messages) {
+      if (message.role === 'summary') this.#summary = message
+      else if (message.role === 'user' && message.turnId) this.#userTurnIds.push(message.turnId)
+    }
+  }
+
+  async #beforeModelCall(ctx: {
+    readonly systemPrompt: string
+    readonly messages: readonly CanonicalMessage[]
+  }): Promise<{ readonly systemPrompt: string; readonly messages: readonly CanonicalMessage[] }> {
+    try {
+      const messages = this.#attachTurns(ctx.messages)
+      const outcome = await compactConversation({
+        messages,
+        budget: this.#budget(),
+        force: this.#forceCompact,
+        ...(this.#o.summarize ? { summarize: this.#o.summarize } : {}),
+        now: this.#now(),
+      })
+      this.#forceCompact = false
+      if (outcome.kind === 'none') {
+        return messages === ctx.messages ? ctx : { systemPrompt: ctx.systemPrompt, messages }
+      }
+      this.#remember(outcome.messages)
+      this.#emit('context.compacted', compactionEventPayload(outcome))
+      return { systemPrompt: ctx.systemPrompt, messages: outcome.messages }
+    } catch {
+      this.#forceCompact = false
+      return ctx
+    }
+  }
 
   #transition(to: RunState): void {
     const from = this.#state

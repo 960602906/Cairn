@@ -50,6 +50,7 @@ function fakeHandle(init: HostInit, stopsCleanly = true): FakeHost {
     }),
     abort: vi.fn(async () => undefined),
     refreshPermissions: vi.fn(async () => undefined),
+    compact: vi.fn(async () => false),
     stop: vi.fn(() => {
       if (state === 'running') state = 'stopping'
       if (stopsCleanly) queueMicrotask(() => end({ reason: 'stopped' }))
@@ -683,5 +684,51 @@ describe('shutdown', () => {
       expect.objectContaining({ code: 'run.disposed' }),
     )
     expect(types()).not.toContain('session.crashed')
+  })
+})
+
+describe('compact (M3-03)', () => {
+  it('asks the running host, and compacts from the log when no host is up', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const summarize = vi.fn(async () => 'SUM')
+    const { manager } = setup(supervisor, { summarize, idleTimeoutMs: 60_000 })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: text('一') })
+    await flush()
+    vi.mocked(hosts[0]!.compact).mockResolvedValueOnce(true)
+    await expect(manager.compact({ sessionId })).resolves.toEqual({ compacted: true })
+    expect(hosts[0]?.compact).toHaveBeenCalledOnce()
+
+    const runId = hosts[0]!.runId
+    const assistant = (messageId: string, turnId: string): [string, object, object] => [
+      'message.assistant.completed',
+      { messageId, content: text('ok'), model: defaults.model },
+      { turnId },
+    ]
+    hostEmits(
+      sessionId,
+      runId,
+      ['run.created', defaults],
+      ['turn.started', {}, { turnId: 't1' }],
+      assistant('a1', 't1'),
+      ['message.user', { messageId: 'u2', content: text('二') }, { turnId: 't2' }],
+      ['turn.started', {}, { turnId: 't2' }],
+      assistant('a2', 't2'),
+      ['message.user', { messageId: 'u3', content: text('三') }, { turnId: 't3' }],
+      ['turn.started', {}, { turnId: 't3' }],
+      assistant('a3', 't3'),
+    )
+    finishTurn(sessionId, runId, 't3')
+    await hosts[0]!.stop()
+    await flush()
+    expect(manager.activeSessions()).toEqual([])
+
+    await expect(manager.compact({ sessionId })).resolves.toEqual({ compacted: true })
+    expect(summarize).toHaveBeenCalledOnce()
+    expect(published.at(-1)).toMatchObject({
+      type: 'context.compacted',
+      runId,
+      payload: { summary: 'SUM', coversTurns: ['t1', 't1'] },
+    })
   })
 })

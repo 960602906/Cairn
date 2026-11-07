@@ -59,8 +59,9 @@ export const FOREIGN_API = 'cairn-foreign'
 /** 图片暂不转换时的占位文字（发给模型，因此用英文）。 */
 export const IMAGE_PLACEHOLDER = '[image omitted]'
 
-/** `summary` 转为用户消息时的前缀（发给模型，因此用英文）。 */
-export const SUMMARY_PREFIX = 'Summary of the earlier conversation:\n\n'
+/** `summary` 转为用户消息时的前缀（发给模型，因此用英文）。定义在 core，这里再导出。 */
+import { SUMMARY_PREFIX } from '@cairn/core'
+export { SUMMARY_PREFIX }
 
 const DETAILS_STATUS_KEY = 'cairnStatus'
 

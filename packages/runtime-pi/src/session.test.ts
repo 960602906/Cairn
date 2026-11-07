@@ -182,6 +182,34 @@ describe('PiRuntime：带工具调用的对话（openai 格式 mock 端点）', 
     expect(sentMessages(0)[0]).toMatchObject({ role: 'system', content: '改成新的说明。' })
   })
 
+  it('writes a compaction summary into the model request and the next turn (M3-03)', async () => {
+    const h = await setup([ANSWER_TURN, ANSWER_TURN], {
+      hooks: {
+        beforeModelCall: async (ctx) => ({
+          ...ctx,
+          messages: [
+            {
+              role: 'summary',
+              content: '目标还在',
+              coversTurns: ['t0', 't0'],
+              ts: 1,
+            },
+            ...ctx.messages.slice(-1),
+          ],
+        }),
+      },
+    })
+    await h.session.prompt(user('第一轮'))
+    const first = JSON.stringify(sentMessages(0))
+    expect(first).toContain('Summary of the earlier conversation:')
+    expect(first).toContain('目标还在')
+    expect(h.session.exportHistory()[0]).toMatchObject({ role: 'summary', content: '目标还在' })
+
+    await h.session.prompt(user('第二轮'))
+    const second = JSON.stringify(sentMessages(1))
+    expect(second).toContain('目标还在')
+  })
+
   it('beforeToolCall 拒绝：不执行工具，结果为 denied，原因发给模型', async () => {
     const executeTool = vi.fn()
     const h = await setup([TOOL_TURN, ANSWER_TURN], {

@@ -132,6 +132,11 @@ export const HostForMain = defineSide({
       params: z.object({ messageId: Id, content: z.array(ContentPart).min(1) }),
       result: z.object({}),
     },
+    /** 立刻压缩上下文（M3-03）。轮次还在跑时排到它结束之后。 */
+    'host.compact': {
+      params: z.object({}),
+      result: z.object({ compacted: z.boolean() }),
+    },
     'host.abort': {
       params: z.object({ reason: z.enum(['user', 'shutdown']) }),
       result: z.object({}),
@@ -192,6 +197,14 @@ export const MainForHost = defineSide({
         text: z.string().min(1).optional(),
         context: z.object({ agentsMd: AgentsMdContext }).optional(),
       }),
+    },
+    /**
+     * 把更早的对话总结成一段（M3-03）。会话由连接确定。没有可用模型或总结失败时没有 `text`，
+     * 宿主改为丢掉最早的工具输出。
+     */
+    'host.summarize': {
+      params: z.object({ transcript: z.string().min(1) }),
+      result: z.object({ text: z.string().min(1).optional() }),
     },
   },
   events: {},

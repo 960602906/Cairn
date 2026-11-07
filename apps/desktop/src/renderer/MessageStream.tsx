@@ -166,6 +166,52 @@ export function turnFooters(view: SessionView): ReadonlyMap<string, TurnFooter> 
   return footers
 }
 
+function markBetween(
+  previous: number,
+  seq: number,
+  mark: { readonly seq: number } | undefined,
+): boolean {
+  return mark !== undefined && previous < mark.seq && seq >= mark.seq
+}
+
+function afterLast(last: number, mark: { readonly seq: number } | undefined): boolean {
+  return mark !== undefined && mark.seq > last
+}
+
+function CompactionMark({ summary }: { readonly summary: string }) {
+  const { t } = useTranslation('session')
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3 text-note text-faint">
+        <span aria-hidden className="h-px flex-1 bg-hair" />
+        <button
+          type="button"
+          className="shrink-0 hover:text-muted"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {t('chat.compacted')}
+          <span className="sr-only">
+            {open ? t('chat.compacted.hide') : t('chat.compacted.show')}
+          </span>
+        </button>
+        <span aria-hidden className="h-px flex-1 bg-hair" />
+      </div>
+      {open && (
+        <p className="whitespace-pre-wrap rounded-card bg-sunk px-3.5 py-2.5 text-note text-muted">
+          {summary}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function OmissionNote() {
+  const { t } = useTranslation('session')
+  return <p className="text-note text-faint">{t('chat.toolOutputOmitted')}</p>
+}
+
 function Message({
   message,
   view,
@@ -174,6 +220,8 @@ function Message({
   continued,
   divider,
   restores,
+  compacted,
+  omitted,
 }: {
   readonly message: MessageView
   readonly view: SessionView
@@ -185,15 +233,26 @@ function Message({
   readonly restores: readonly RestoreView[] | undefined
   /** 紧跟在同一轮的上一条助手消息之后：间距收紧为块间距（14px）。 */
   readonly continued: boolean
+  /** 这条消息之前是压缩分隔线。 */
+  readonly compacted: boolean
+  /** 这条消息之前是“工具输出已省略”的提示。 */
+  readonly omitted: boolean
 }) {
   const { t } = useTranslation('session')
   const approvals = useSessionStore((s) =>
     s.activeSessionId === undefined ? undefined : s.approvals[s.activeSessionId],
   )
   const awaiting = new Set(approvals?.map((a) => a.toolCallId))
+  const marks = (compacted || omitted) && (
+    <div className="mb-3.5 flex w-full flex-col gap-2 self-stretch">
+      {compacted && view.compaction && <CompactionMark summary={view.compaction.summary} />}
+      {omitted && <OmissionNote />}
+    </div>
+  )
   if (message.role === 'user') {
     return (
       <li className="flex scroll-mt-4 flex-col items-end" data-turn={message.turnId}>
+        {marks}
         {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
         <div className="max-w-[78%] rounded-input bg-sunk2 px-4 py-2.5 text-fg">
@@ -209,6 +268,7 @@ function Message({
   }
   return (
     <li className={continued ? '-mt-3.5 text-fg' : 'text-fg'}>
+      {marks}
       <strong className="sr-only">{t('message.assistant')}</strong>
       {message.reasoning && message.reasoning.text !== '' && (
         <Reasoning text={message.reasoning.text} />
@@ -325,18 +385,34 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
   return (
     <>
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
-        {view?.messages.map((message, index) => (
-          <Message
-            key={message.messageId}
-            message={message}
-            view={view}
-            footer={footers.get(message.messageId)}
-            modelName={modelName}
-            continued={continues(view.messages[index - 1], message)}
-            divider={dividerFor(message, index)}
-            restores={restores.get(message.messageId)}
-          />
-        ))}
+        {view?.messages.map((message, index) => {
+          const previous = view.messages[index - 1]?.seq ?? 0
+          return (
+            <Message
+              key={message.messageId}
+              message={message}
+              view={view}
+              footer={footers.get(message.messageId)}
+              modelName={modelName}
+              continued={continues(view.messages[index - 1], message)}
+              divider={dividerFor(message, index)}
+              restores={restores.get(message.messageId)}
+              compacted={markBetween(previous, message.seq, view.compaction)}
+              omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
+            />
+          )
+        })}
+        {view?.compaction && afterLast(view.messages.at(-1)?.seq ?? 0, view.compaction) && (
+          <li className="list-none">
+            <CompactionMark summary={view.compaction.summary} />
+          </li>
+        )}
+        {view?.toolOutputOmitted &&
+          afterLast(view.messages.at(-1)?.seq ?? 0, view.toolOutputOmitted) && (
+            <li className="list-none">
+              <OmissionNote />
+            </li>
+          )}
         {live.map((message, index) => (
           <LiveMessage
             key={message.messageId}

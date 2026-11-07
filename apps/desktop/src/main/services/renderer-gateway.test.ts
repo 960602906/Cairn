@@ -101,6 +101,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     rename: vi.fn(() => ({})),
     archive: vi.fn(() => ({})),
     setModel: vi.fn(() => ({})),
+    compact: vi.fn(() => ({ compacted: false })),
   }
   projects = {
     list: vi.fn(() => ({ projects: [PROJECT] })),

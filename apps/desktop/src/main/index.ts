@@ -46,6 +46,7 @@ import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
+import { createCompactService } from './services/compact-service.js'
 import { createTitleService } from './services/title-service.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
@@ -135,6 +136,13 @@ const approvals = createApprovalService({
   permissions,
   onRuleAdded: () => sessions.refreshPermissions(),
 })
+/** 上下文压缩的摘要（M3-03）：宿主经 `host.summarize` 调用，用量记在主进程。 */
+const compaction = createCompactService({
+  events,
+  settings,
+  credentials,
+  onError: reportError,
+})
 const supervisor = createHostSupervisor({
   spawn: createUtilityHostSpawner({
     entry: join(import.meta.dirname, 'agent-host.js'),
@@ -171,6 +179,7 @@ const supervisor = createHostSupervisor({
       return undefined
     }
   },
+  summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
   onError: reportError,
 })
 const sessions = createSessionManager({
@@ -180,6 +189,17 @@ const sessions = createSessionManager({
   runDefaults: RUN_DEFAULTS,
   models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
   isLocked: (sessionId) => changes.isReverting(sessionId) || checkpoints.isRestoring(sessionId),
+  summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
+  contextBudget: (sessionId) => {
+    const session = storage.sessions.get(sessionId)
+    const model = session?.model ?? settings.get().defaultModel
+    const config = model ? settings.hostModelConfig(model) : undefined
+    return {
+      contextWindow: config?.profile.contextWindow ?? 128_000,
+      maxOutputTokens: config?.profile.maxOutputTokens ?? 4_096,
+      overheadTokens: 0,
+    }
+  },
   onError: reportError,
 })
 sessions.recoverInterrupted()
@@ -295,6 +315,7 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   servicesClosed = true
   titles.stop()
+  compaction.stop()
   gateway.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
   void Promise.race([sessions.shutdown(), timeout])

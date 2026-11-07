@@ -12,6 +12,8 @@
  * - 遇到下一条用户或助手消息、轮次结束或事件结束时，仍未得到结果的工具调用补一条 `unknown` 结果
  *   （执行中被中断，结果未知）。不会让模型重新执行这些调用（Runtime §13.2）。
  *   这样每个工具调用都恰好有一个结果，满足各家接口"调用必须配对"的要求。
+ * - `context.compacted`（M3-03）：最后一次摘要替换它覆盖的轮次；被点名的工具输出换成省略说明。
+ *   原始事件仍在日志里，这里只决定发给模型的历史。
  */
 import {
   isPersistedEvent,
@@ -21,6 +23,7 @@ import {
   type EventEnvelope,
   type ToolCall,
 } from '@cairn/protocol'
+import { OMITTED_TOOL_OUTPUT } from './compaction.js'
 
 type ToolStatus = Extract<CanonicalMessage, { role: 'tool' }>['status']
 
@@ -74,7 +77,23 @@ export function rebuildHistory(
     switch (event.type) {
       case 'message.user':
         flush(event.ts)
-        history.push({ role: 'user', content: event.payload.content, ts: event.ts })
+        history.push({
+          role: 'user',
+          content: event.payload.content,
+          ts: event.ts,
+          ...(event.turnId ? { turnId: event.turnId } : {}),
+        })
+        break
+      case 'turn.started': {
+        // `message.user` 由主进程先落库，那时还没有这一轮的 id。用紧接着的 turn.started 补上。
+        const last = history.at(-1)
+        if (last?.role === 'user' && !last.turnId && event.turnId) {
+          history[history.length - 1] = { ...last, turnId: event.turnId }
+        }
+        break
+      }
+      case 'context.compacted':
+        applyCompaction(history, event)
         break
       case 'message.assistant.completed': {
         // 被打断的部分回复只用于显示（运行时自己的历史中也没有它）
@@ -139,6 +158,41 @@ export function rebuildHistory(
   }
   flush(lastTs)
   return history
+}
+
+function applyCompaction(
+  history: CanonicalMessage[],
+  event: EventEnvelope<'context.compacted'>,
+): void {
+  const { summary, coversTurns, degraded, omittedToolCallIds } = event.payload
+  if (!degraded && summary.trim() !== '') {
+    const [start, end] = coversTurns
+    let from = history.findIndex((message) => message.role === 'user' && message.turnId === start)
+    if (from === -1) from = 0
+    let endAt = -1
+    for (let i = from; i < history.length; i += 1) {
+      const message = history[i]
+      if (!message) continue
+      if (message.role === 'user' && message.turnId === end) endAt = i
+      else if (endAt !== -1 && message.role === 'user') break
+      else if (endAt !== -1) endAt = i
+    }
+    if (endAt !== -1) {
+      history.splice(from, endAt - from + 1, {
+        role: 'summary',
+        content: summary,
+        coversTurns,
+        ts: event.ts,
+      })
+    }
+  }
+  if (!omittedToolCallIds?.length) return
+  const ids = new Set(omittedToolCallIds)
+  for (let i = 0; i < history.length; i += 1) {
+    const message = history[i]
+    if (!message || message.role !== 'tool' || !ids.has(message.toolCallId)) continue
+    history[i] = { ...message, content: [{ type: 'text', text: OMITTED_TOOL_OUTPUT }] }
+  }
 }
 
 function errorText(error: ErrorInfo): ContentPart {

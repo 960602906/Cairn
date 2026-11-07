@@ -43,6 +43,7 @@ import { ToolErrorCode } from '@cairn/core'
 import {
   Agent,
   type AgentEvent,
+  type AgentMessage,
   type AgentTool,
   type AgentToolResult,
   type ThinkingLevel,
@@ -113,6 +114,7 @@ class PiSession implements RuntimeSession {
     const thinkingLevel: ThinkingLevel = init.model.profile.supportsReasoning
       ? (options.thinkingLevel ?? 'high')
       : 'off'
+    const held: { agent?: Agent } = {}
     this.#agent = new Agent({
       initialState: {
         systemPrompt: init.systemPrompt,
@@ -125,7 +127,9 @@ class PiSession implements RuntimeSession {
       sessionId: `cairn-${++sessionCounter}`,
       toolExecution: 'parallel',
       identity: { attribution: null },
+      transformContext: (messages) => this.#transformContext(held.agent ?? this.#agent, messages),
     })
+    held.agent = this.#agent
     this.#unsubscribe = this.#agent.subscribe((event) => this.#handle(event))
     init.signal.addEventListener('abort', this.#onSessionAbort, { once: true })
   }
@@ -139,6 +143,11 @@ class PiSession implements RuntimeSession {
 
   exportHistory(): CanonicalMessage[] {
     return [...this.#history]
+  }
+
+  replaceMessages(messages: readonly CanonicalMessage[]): void {
+    this.#history.splice(0, this.#history.length, ...messages)
+    this.#writeAgentMessages(messages)
   }
 
   /** 换掉开头的系统消息正文（M3-02）。工具声明留在原消息上。 */
@@ -165,6 +174,37 @@ class PiSession implements RuntimeSession {
       this.#agent.state.messages = messages.filter((_, i) => i !== index)
     }
     await this.#run(() => this.#agent.continue())
+  }
+
+  /**
+   * 调用模型前压缩（M3-03）。pi 只把返回值用于这一次请求，同一轮后面的步骤仍用传入的数组，
+   * 下一轮则从 `state.messages` 重新取快照。所以三处都要换成压缩后的历史。
+   */
+  async #transformContext(agent: Agent, messages: AgentMessage[]): Promise<AgentMessage[]> {
+    const hook = this.#init.hooks.beforeModelCall
+    if (!hook) return messages
+    const system = messages.filter((message) => message.role === 'system')
+    const head = system[0]
+    const systemPrompt =
+      head && 'content' in head && typeof head.content === 'string'
+        ? head.content
+        : this.#init.systemPrompt
+    const next = await hook({ systemPrompt, messages: this.#history })
+    if (next.messages === this.#history) return messages
+    this.#history.splice(0, this.#history.length, ...next.messages)
+    const replaced = this.#compose(agent, next.messages)
+    messages.splice(0, messages.length, ...replaced)
+    agent.state.messages = [...replaced]
+    return messages
+  }
+
+  #writeAgentMessages(messages: readonly CanonicalMessage[]): void {
+    this.#agent.state.messages = this.#compose(this.#agent, messages)
+  }
+
+  #compose(agent: Agent, messages: readonly CanonicalMessage[]): AgentMessage[] {
+    const system = agent.state.messages.filter((message) => message.role === 'system')
+    return [...system, ...toPiMessages(messages, this.#binding.identity)]
   }
 
   #checkIdle(): void {

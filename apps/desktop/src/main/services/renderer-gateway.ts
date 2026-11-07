@@ -41,6 +41,7 @@ export interface SessionCommands {
   readonly rename: Handler<'session.rename'>
   readonly archive: Handler<'session.archive'>
   readonly setModel: Handler<'session.setModel'>
+  readonly compact: Handler<'session.compact'>
 }
 
 /** 由改动服务实现的改动命令（M1-08b）。 */
@@ -236,6 +237,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('project.update', (params) => projects.update(params))
       endpoint.handle('project.remove', (params) => projects.remove(params))
       endpoint.handle('session.prompt', (params) => commands.prompt(params))
+      endpoint.handle('session.compact', (params) => commands.compact(params))
       endpoint.handle('session.abort', (params) => commands.abort(params))
       endpoint.handle('session.rename', (params) => commands.rename(params))
       endpoint.handle('session.archive', (params) => commands.archive(params))

@@ -173,6 +173,8 @@ export interface RuntimeSession {
    * 替换系统提示词（M3-02）。每轮开始时换上当轮的项目说明；省略时提示词保持创建会话时的内容。
    */
   setSystemPrompt?(prompt: string): void
+  /** 用压缩后的历史替换模型接下来要看到的消息（M3-03）。省略时只有下次 `prompt` 前的钩子能改历史。 */
+  replaceMessages?(messages: readonly CanonicalMessage[]): void
   dispose(): Promise<void>
 }
 

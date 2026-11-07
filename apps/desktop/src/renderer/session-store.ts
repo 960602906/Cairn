@@ -91,6 +91,8 @@ export interface SessionActions {
   selectSession(sessionId: string | undefined): Promise<void>
   /** 向当前会话发送文本输入；没有发送（空输入、未选中会话或请求失败）时返回 false。 */
   sendPrompt(text: string): Promise<boolean>
+  /** 立刻压缩当前会话（M3-03）。失败时返回 false，调用方可以恢复草稿。 */
+  compactSession(): Promise<boolean>
   /** 停止当前会话正在进行的一轮。 */
   abort(): Promise<void>
   /** 决定当前会话的一个审批；成功时返回 true。 */
@@ -381,6 +383,13 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         subscribed = sessionId
         set((state) => receive(state, sessionId, [...result.events, ...(buffered ?? [])]))
         await Promise.all([loadApprovals(sessionId), loadChanges(sessionId)])
+      },
+
+      async compactSession() {
+        const sessionId = get().activeSessionId
+        if (sessionId === undefined) return false
+        const result = await run(() => api.request('session.compact', { sessionId }))
+        return result !== undefined
       },
 
       async sendPrompt(text) {
