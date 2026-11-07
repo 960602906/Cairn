@@ -65,6 +65,12 @@ export interface ApprovalCommands {
   readonly subscribe: (listener: (sessionId: string) => void) => () => void
 }
 
+/** 由供应商服务实现的连接测试与模型列表（M2-10）。 */
+export interface ProviderCommands {
+  readonly test: Handler<'provider.test'>
+  readonly models: Handler<'provider.models'>
+}
+
 /** 由设置服务实现的设置命令。 */
 export interface SettingsCommands {
   readonly get: () => z.input<Requests['settings.get']['result']>
@@ -85,6 +91,8 @@ export interface RendererGatewayOptions {
   readonly settings: SettingsCommands
   /** 凭据命令（M1-03b）：界面只能写入、删除与查询是否已配置。 */
   readonly credentials: CredentialCommands
+  /** 供应商（M2-10）：测试连接与拉取模型列表。 */
+  readonly providers: ProviderCommands
   /** 改动记录（M1-08b）：列出与整文件撤销。 */
   readonly changes: ChangeCommands
   /** 检查点（M1-12c）：列出、预览与恢复。 */
@@ -157,8 +165,8 @@ interface Subscription {
 type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
-  const { events, commands, projects, settings, credentials, changes, checkpoints, approvals } =
-    options
+  const { events, commands, projects, settings, credentials, providers } = options
+  const { changes, checkpoints, approvals } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -227,6 +235,8 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('credentials.set', (params) => credentials.set(params))
       endpoint.handle('credentials.delete', (params) => credentials.delete(params))
       endpoint.handle('credentials.status', (params) => credentials.status(params))
+      endpoint.handle('provider.test', (params) => providers.test(params))
+      endpoint.handle('provider.models', (params) => providers.models(params))
       endpoint.handle('changes.list', (params) => changes.list(params))
       endpoint.handle('changes.revert', (params) => changes.revert(params))
       endpoint.handle('changes.content', (params) => changes.content(params))

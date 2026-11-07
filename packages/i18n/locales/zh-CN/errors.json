@@ -17,6 +17,7 @@
   "model.context_overflow": "对话内容超出了模型的上下文长度",
   "model.bad_request": "模型服务拒绝了请求，请检查模型名称与地址",
   "model.network_error": "无法连接到模型服务",
+  "provider.invalid_response": "模型服务的响应格式不对，可能不支持列出模型，可以手动添加",
   "storage.not_found": "找不到对应的记录",
   "storage.conflict": "记录已存在",
   "storage.seq_conflict": "事件序号冲突",

@@ -15,9 +15,12 @@ import {
   createModels,
   createProvider,
   type Api,
+  type AssistantMessage,
+  type Context,
   type Model,
   type OpenAICompletionsCompat,
   type ProviderStreams,
+  type SimpleStreamOptions,
 } from '@earendil-works/pi-ai'
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy'
 import { googleGenerativeAIApi } from '@earendil-works/pi-ai/api/google-generative-ai.lazy'
@@ -81,6 +84,8 @@ export interface PiModelBinding {
   readonly model: Model<Api>
   readonly identity: PiModelIdentity
   readonly streamFn: StreamFn
+  /** 一次非流式的完整请求（连接测试用，M2-10）。 */
+  readonly complete: (context: Context, options?: SimpleStreamOptions) => Promise<AssistantMessage>
 }
 
 export function bindModel(resolved: ResolvedModel): PiModelBinding {
@@ -106,5 +111,7 @@ export function bindModel(resolved: ResolvedModel): PiModelBinding {
     identity: { ref: resolved.ref, provider: model.provider, api: model.api, id: model.id },
     streamFn: (m, context, options) =>
       models.streamSimple(m, context, { ...options, maxRetries: 0 }),
+    complete: (context, options) =>
+      models.completeSimple(model, context, { ...options, maxRetries: 0 }),
   }
 }

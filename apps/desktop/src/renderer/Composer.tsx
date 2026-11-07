@@ -175,14 +175,17 @@ function ModelMenu({
   const { t } = useTranslation('session')
   const providers = useSessionStore((s) => s.settings?.providers) ?? []
   const setSessionModel = useSessionStore((s) => s.setSessionModel)
-  const options = providers.flatMap((provider) =>
+  const all = providers.flatMap((provider) =>
     provider.models.map((m) => ({
       ref: { providerId: provider.id, modelId: m.id },
       provider: provider.displayName,
       name: m.displayName ?? m.id,
+      enabled: m.enabled !== false,
     })),
   )
-  const current = options.find((o) => sameModel(model, o.ref))
+  // 停用的模型不列出（M2-10）；会话正在用的仍显示它的名称
+  const options = all.filter((o) => o.enabled)
+  const current = all.find((o) => sameModel(model, o.ref))
   const label = current
     ? `${current.provider} · ${current.name}`
     : (model?.modelId ?? t('composer.model.none'))

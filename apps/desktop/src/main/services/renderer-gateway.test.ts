@@ -20,6 +20,7 @@ import {
   type CheckpointCommands,
   type RendererGateway,
   type SessionCommands,
+  type ProviderCommands,
   type SettingsCommands,
 } from './renderer-gateway.js'
 
@@ -77,6 +78,7 @@ let commands: SessionCommands
 let projects: ProjectCommands
 let settings: SettingsCommands
 let credentials: CredentialCommands
+let providers: ProviderCommands
 let changes: ChangeCommands
 let checkpoints: CheckpointCommands
 let approvals: ApprovalCommands
@@ -112,6 +114,10 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     delete: vi.fn(async () => ({ deleted: true })),
     status: vi.fn(async () => ({ configured: true, available: true })),
   }
+  providers = {
+    test: vi.fn(async () => ({ ok: true as const, latencyMs: 12 })),
+    models: vi.fn(async () => ({ ok: true as const, models: [{ id: 'm1' }] })),
+  }
   changes = {
     list: vi.fn(() => ({ changes: [] })),
     revert: vi.fn(async () => ({ changes: [] })),
@@ -140,6 +146,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     projects,
     settings,
     credentials,
+    providers,
     changes,
     checkpoints,
     approvals,
@@ -463,6 +470,26 @@ describe('createRendererGateway: commands and lifecycle', () => {
     })
   })
 
+  it('delegates provider requests to the provider service (M2-10)', async () => {
+    const { client } = setup()
+    const provider = {
+      id: 'p',
+      kind: 'openai' as const,
+      displayName: 'P',
+      baseUrl: 'https://example.com/v1',
+      models: [],
+    }
+    await expect(client.request('provider.test', { provider, modelId: 'm' })).resolves.toEqual({
+      ok: true,
+      latencyMs: 12,
+    })
+    await expect(client.request('provider.models', { provider })).resolves.toEqual({
+      ok: true,
+      models: [{ id: 'm1' }],
+    })
+    expect(providers.test).toHaveBeenCalledWith({ provider, modelId: 'm' })
+  })
+
   it('rejects invalid requests before they reach the session manager', async () => {
     setup()
     const pair = channelPair()
@@ -526,6 +553,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       projects,
       settings,
       credentials,
+      providers,
       changes,
       checkpoints,
       approvals,

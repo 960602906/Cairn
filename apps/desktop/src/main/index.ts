@@ -48,6 +48,7 @@ import { createSessionManager, type RunDefaults } from './services/session-manag
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
 import { createShellInfo } from './services/shell-info.js'
+import { createProviderService } from './services/provider-service.js'
 import { hostEnvironment } from '../shared/host-trace.js'
 import { checkBundledSearch } from './smoke-search.js'
 import {
@@ -196,6 +197,7 @@ const gateway = createRendererGateway({
     shell: createShellInfo(),
   },
   credentials: createCredentialCommands(credentials),
+  providers: createProviderService({ credentials }),
   changes,
   checkpoints,
   approvals,

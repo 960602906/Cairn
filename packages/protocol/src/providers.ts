@@ -66,6 +66,10 @@ export const ModelProfile = z.object({
   supportsParallelToolCalls: z.boolean(),
   supportsReasoning: z.boolean(),
   verifiedAt: Timestamp.optional(),
+  /**
+   * 是否在模型选择中列出（M2-10）；省略表示启用。停用的模型不能设为默认模型，已在使用它的会话不受影响。
+   */
+  enabled: z.boolean().optional(),
   /** 只对这个模型生效的兼容参数，逐项覆盖提供方的 `compat`。 */
   compat: ModelCompat.optional(),
   pricing: ModelPricing.optional(),
@@ -106,3 +110,12 @@ export const ProviderConfigList = z
   .refine((list) => new Set(list.map((p) => p.id)).size === list.length, {
     message: 'duplicate provider id',
   })
+
+/** 从提供方拉取到的模型（M2-10，`provider.models`）：能力只在接口给出时才有。 */
+export const RemoteModel = z.object({
+  id: Id.max(256),
+  displayName: z.string().max(256).optional(),
+  contextWindow: PositiveInt.optional(),
+  maxOutputTokens: PositiveInt.optional(),
+})
+export type RemoteModel = z.infer<typeof RemoteModel>

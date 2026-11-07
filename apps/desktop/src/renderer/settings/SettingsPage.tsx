@@ -2,16 +2,18 @@
  * 设置页框架（M2-09，视觉规范 §8）：与对话页相同的窗口结构。左侧分类导航（顶部“返回对话 Esc”，铺在窗口
  * 底色上），右侧纸面，内容居中、最大宽度 760px。
  *
- * 分类按组列出；M2-09 只有“通用与外观”，模型供应商（M2-10）、权限与审批（M2-11）之后加入，MCP 服务与技能
+ * 分类按组列出：通用与外观（M2-09）、模型供应商（M2-10）；权限与审批（M2-11）之后加入，MCP 服务与技能
  * 在 M3。Esc 返回对话（有对话框或菜单打开时不处理）。
  */
-import { ChevronLeft, PanelLeft, Settings2 } from 'lucide-react'
+import { Cpu, ChevronLeft, PanelLeft, Settings2 } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSessionStore } from '../store-context.js'
 import { IconButton, Kbd } from '../ui/index.js'
 import { GeneralSettings } from './GeneralSettings.js'
+import { ProvidersSettings } from './ProvidersSettings.js'
 
-export type SettingsSection = 'general'
+export type SettingsSection = 'general' | 'providers'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -19,8 +21,13 @@ interface SectionEntry {
 }
 
 /** 分类分组：组名与其中的分类，按显示顺序。 */
-const GROUPS: readonly { readonly group: 'general'; readonly sections: readonly SectionEntry[] }[] =
-  [{ group: 'general', sections: [{ id: 'general', icon: <Settings2 /> }] }]
+const GROUPS: readonly {
+  readonly group: 'general' | 'models'
+  readonly sections: readonly SectionEntry[]
+}[] = [
+  { group: 'general', sections: [{ id: 'general', icon: <Settings2 /> }] },
+  { group: 'models', sections: [{ id: 'providers', icon: <Cpu /> }] },
+]
 
 export function SettingsNav({
   section,
@@ -35,6 +42,7 @@ export function SettingsNav({
 }) {
   const { t } = useTranslation('settings')
   const { t: ts } = useTranslation('session')
+  const providerCount = useSessionStore((s) => s.settings?.providers.length ?? 0)
   return (
     <aside className="flex h-full w-[252px] shrink-0 flex-col">
       <div className="drag flex h-10 shrink-0 items-center justify-end px-2">
@@ -80,7 +88,12 @@ export function SettingsNav({
                   }`}
                 >
                   {icon}
-                  {t(`section.${id}.title`)}
+                  <span className="flex-1">{t(`section.${id}.title`)}</span>
+                  {id === 'providers' && providerCount > 0 && (
+                    <span className="tabular text-[11.5px] font-normal text-faint">
+                      {providerCount}
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -120,6 +133,7 @@ export function SettingsContent({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[760px] flex-col gap-5.5 px-8 pt-4 pb-16">
           {section === 'general' && <GeneralSettings />}
+          {section === 'providers' && <ProvidersSettings />}
         </div>
       </div>
     </>

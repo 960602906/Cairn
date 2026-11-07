@@ -796,6 +796,22 @@ describe('Composer (M2-04)', () => {
     expect(await screen.findByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
   })
 
+  it('hides disabled models from the menu but keeps the current name (M2-10)', async () => {
+    const disabled = [
+      {
+        ...providers[0]!,
+        models: providers[0]!.models.map((m) => ({ ...m, enabled: false })),
+      },
+    ]
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers: disabled }) },
+    })
+    await open()
+    const trigger = await screen.findByRole('button', { name: '模型：测试供应商 · 快' })
+    expect((trigger as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('changes the permission mode and shows the context usage', async () => {
     let settings: object = { providers }
     const { request, open } = setup({

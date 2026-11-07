@@ -20,7 +20,8 @@ export function Sidebar({
   readonly onNewChat: () => void
   readonly onCollapse: () => void
   readonly onSelect: () => void
-  readonly onSettings: () => void
+  /** 打开设置页；`providers` 时直接到“模型供应商”。 */
+  readonly onSettings: (section?: 'providers') => void
 }) {
   const { t } = useTranslation('session')
   return (
@@ -53,10 +54,10 @@ export function Sidebar({
       </nav>
 
       <div className="flex flex-col gap-2 p-2">
-        <ProviderCard />
+        <ProviderCard onOpen={() => onSettings('providers')} />
         <button
           type="button"
-          onClick={onSettings}
+          onClick={() => onSettings()}
           className="flex h-8 w-full items-center gap-2 rounded-item px-2.5 text-ui text-fg2 transition-colors hover:bg-hover hover:text-fg [&_svg]:size-4 [&_svg]:text-muted"
         >
           <Settings />
