@@ -151,9 +151,9 @@ describe('DiffCard：合并视图', () => {
       onRevertHunk,
       revertHunkDisabled: true,
     })
-    expect(
-      (screen.getByRole('button', { name: '撤销此块' }) as HTMLButtonElement).disabled,
-    ).toBe(true)
+    expect((screen.getByRole('button', { name: '撤销此块' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
   })
 
   it('一次最多显示 DIFF_MAX_ROWS 行，其余点击后显示', async () => {
