@@ -12,5 +12,6 @@
   "language.label": "语言",
   "dev.events.title": "事件查看器",
   "dev.events.showDeltas": "显示增量事件",
-  "dev.events.count": "共 {{count}} 条"
+  "dev.events.count": "共 {{count}} 条",
+  "error.title": "操作没有完成"
 }

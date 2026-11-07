@@ -28,3 +28,16 @@ export function isSettingsKey(
   const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
   return mod && !event.shiftKey && !event.altKey && event.key === ','
 }
+
+/** “搜索对话”的快捷键提示（M2-12）。 */
+export const searchShortcut = (platform?: string): string =>
+  isMacPlatform(platform) ? '⌘K' : 'Ctrl K'
+
+/** 按键是否为“搜索对话”（⌘K / Ctrl+K，不带 Shift 与 Alt）。 */
+export function isSearchKey(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
+  platform?: string,
+): boolean {
+  const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
+  return mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k'
+}

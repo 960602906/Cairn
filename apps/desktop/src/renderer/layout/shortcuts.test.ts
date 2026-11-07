@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   isMacPlatform,
   isNewChatKey,
+  isSearchKey,
   isSettingsKey,
   newChatShortcut,
+  searchShortcut,
   settingsShortcut,
 } from './shortcuts.js'
 
@@ -36,5 +38,13 @@ describe('shortcuts', () => {
     expect(isSettingsKey(key({ key: ',', ctrlKey: true }), 'Win32')).toBe(true)
     expect(isSettingsKey(key({ key: ',', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(false)
     expect(isSettingsKey(key({ key: '.', ctrlKey: true }), 'Win32')).toBe(false)
+  })
+  it('searches the sessions with ⌘K or Ctrl+K (M2-12)', () => {
+    expect(searchShortcut('MacIntel')).toBe('⌘K')
+    expect(searchShortcut('Win32')).toBe('Ctrl K')
+    expect(isSearchKey(key({ key: 'k', metaKey: true }), 'MacIntel')).toBe(true)
+    expect(isSearchKey(key({ key: 'K', ctrlKey: true }), 'Win32')).toBe(true)
+    expect(isSearchKey(key({ key: 'k', ctrlKey: true, altKey: true }), 'Win32')).toBe(false)
+    expect(isSearchKey(key({ key: 'k' }), 'Win32')).toBe(false)
   })
 })

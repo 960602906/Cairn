@@ -191,5 +191,15 @@
   "diff.confirm.modify": "The file will be restored to its content before these changes. Other files and the conversation are not affected.",
   "diff.confirm.create": "This file was created, so undoing will delete it. Other files and the conversation are not affected.",
   "diff.confirm.delete": "This file was deleted, so undoing will restore it. Other files and the conversation are not affected.",
-  "sidebar.settings": "Settings"
+  "sidebar.settings": "Settings",
+  "search.open": "Search",
+  "search.title": "Search conversations",
+  "search.placeholder": "Search by title or project",
+  "search.empty": "No matching conversations",
+  "search.results": "Matching conversations",
+  "search.hint": "↑↓ to select · Enter to open · Esc to close",
+  "new.noProject": "You haven't opened a project yet. Choose a folder as the project folder; the agent only reads and writes files inside it.",
+  "new.noProvider.title": "No model provider yet",
+  "new.noProvider.description": "Add a provider with its API key in Settings before you start a conversation.",
+  "new.noProvider.action": "Open settings"
 }
