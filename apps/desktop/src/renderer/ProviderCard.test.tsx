@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import type { Settings } from '@cairn/protocol'
@@ -48,6 +49,17 @@ describe('ProviderCard', () => {
   it('invites adding a provider when none is configured', async () => {
     setup({})
     expect((await card()).textContent).toContain('还没有配置模型，点这里添加')
+    // 纸面上的空状态：去设置，并引导选择文件夹（M2-12）
+    expect((await screen.findByRole('status')).textContent).toContain('先添加模型供应商')
+    expect(await screen.findByText(/还没有项目/)).toBeTruthy()
+    const folder = screen.getByRole('button', { name: '选择文件夹…' })
+    expect(folder.className).toContain('bg-ink')
+  })
+
+  it('opens model settings from the empty-state guide', async () => {
+    setup({})
+    await userEvent.click(await screen.findByRole('button', { name: '打开模型设置' }))
+    expect(await screen.findByRole('heading', { level: 2, name: '模型供应商' })).toBeTruthy()
   })
 
   it('shows the provider count and the default model', async () => {

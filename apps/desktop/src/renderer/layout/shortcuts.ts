@@ -20,6 +20,19 @@ export function isNewChatKey(
 export const settingsShortcut = (platform?: string): string =>
   isMacPlatform(platform) ? '⌘,' : 'Ctrl ,'
 
+/** “搜索会话”的快捷键提示（M2-12）。 */
+export const searchShortcut = (platform?: string): string =>
+  isMacPlatform(platform) ? '⌘K' : 'Ctrl K'
+
+/** 按键是否为“搜索会话”（⌘K / Ctrl+K，不带 Shift 与 Alt）。 */
+export function isSearchKey(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
+  platform?: string,
+): boolean {
+  const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
+  return mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k'
+}
+
 /** 按键是否为“设置”（⌘, / Ctrl+,，不带 Shift 与 Alt）。 */
 export function isSettingsKey(
   event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,

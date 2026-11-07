@@ -4,7 +4,7 @@
 
 A Codex-like coding agent desktop app: **our own agent platform + a pluggable agent engine** (pi preferred). The platform owns run orchestration, tools and permissions, approvals, checkpoints, storage and the UI; the engine only runs the model loop behind the `AgentRuntime` interface. Built with Electron and React, with support for multiple LLM providers.
 
-> M0 基础已完成，正在进行 M1 最小可用（进度见 [docs/plan/m1.md](docs/plan/m1.md)）。 / M0 is done; M1 (minimum usable) is in progress.
+> M0、M1 已完成，M2 可审阅已完成（进度见 [docs/plan/m2.md](docs/plan/m2.md)）。 / M0 and M1 are done; M2 (reviewable UI) is done.
 
 ## 文档 / Docs
 
@@ -17,6 +17,7 @@ A Codex-like coding agent desktop app: **our own agent platform + a pluggable ag
 - 开发计划 / Dev plan
   - [M0 基础：任务分解](docs/plan/m0.md)
   - [M1 最小可用：任务概要](docs/plan/m1.md)
+  - [M2 可审阅：界面任务分解](docs/plan/m2.md)
 
 ## 开发 / Development
 

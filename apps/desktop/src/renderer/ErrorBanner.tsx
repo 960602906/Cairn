@@ -1,4 +1,7 @@
-/** 显示 store 中最近的错误（经 i18n 翻译），可关闭。M2-02 起浮在纸面顶部。 */
+/**
+ * 显示 store 中最近的错误（经 i18n 翻译），可关闭。
+ * M2-12：危险浅底的横幅，浮在纸面顶栏下方，不写成普通浮起卡片。
+ */
 import { CircleAlert, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { translateError } from '@cairn/i18n'
@@ -12,7 +15,7 @@ export function ErrorBanner() {
   return (
     <div
       role="alert"
-      className="absolute top-14 left-1/2 z-30 flex w-[min(560px,calc(100%-32px))] -translate-x-1/2 items-start gap-2.5 rounded-card bg-raise px-3.5 py-2.5 text-ui text-fg shadow-2"
+      className="absolute top-14 left-1/2 z-30 flex w-[min(640px,calc(100%-48px))] -translate-x-1/2 items-start gap-2.5 rounded-card bg-danger-soft px-3.5 py-2.5 text-ui text-fg shadow-hair"
     >
       <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" />
       <span className="flex-1">{translateError(i18n, error)}</span>

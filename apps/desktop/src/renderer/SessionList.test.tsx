@@ -99,6 +99,71 @@ describe('SessionList', () => {
     expect(sessionButton(items[0]!).getAttribute('aria-current')).toBeNull()
   })
 
+  it('opens a session from search with Ctrl+K (M2-12)', async () => {
+    const user = userEvent.setup()
+    const { store } = setup({
+      'session.list': () => ({
+        sessions: [summary('s1', '修复登录'), summary('s2', '写文档', 'idle', '/docs')],
+      }),
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+      'project.list': () => ({
+        projects: [{ projectId: 'p', name: 'API', path: '/work', createdAt: 1 }],
+      }),
+    })
+    await screen.findByRole('button', { name: '修复登录' })
+    await user.keyboard('{Control>}k{/Control}')
+    const dialog = await screen.findByRole('dialog', { name: '搜索会话' })
+    await user.type(within(dialog).getByRole('combobox'), '文档')
+    expect(
+      within(dialog)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['写文档docs'])
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s2'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('moves the search highlight with the arrow keys, click, and closes again', async () => {
+    const user = userEvent.setup()
+    const { store } = setup({
+      'session.list': () => ({
+        sessions: [summary('s1', '修复登录'), summary('s2', '写文档', 'idle', '/docs')],
+      }),
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+    })
+    await screen.findByRole('button', { name: '修复登录' })
+    await user.click(screen.getByRole('button', { name: '搜索' }))
+    const dialog = await screen.findByRole('dialog', { name: '搜索会话' })
+    const options = () => within(dialog).getAllByRole('option')
+    expect(options()[0]!.getAttribute('aria-selected')).toBe('true')
+    await user.keyboard('{ArrowDown}')
+    expect(options()[1]!.getAttribute('aria-selected')).toBe('true')
+    await user.keyboard('{ArrowUp}')
+    expect(options()[0]!.getAttribute('aria-selected')).toBe('true')
+    await user.hover(options()[1]!)
+    expect(options()[1]!.getAttribute('aria-selected')).toBe('true')
+    await user.click(options()[1]!)
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s2'))
+
+    await user.keyboard('{Control>}k{/Control}')
+    const again = await screen.findByRole('dialog', { name: '搜索会话' })
+    const box = within(again).getByRole('combobox')
+    await user.type(box, '没有这回事')
+    expect(within(again).getByText('没有匹配的会话')).toBeTruthy()
+    // 组字期间方向键不改变高亮
+    fireEvent.keyDown(box, { key: 'ArrowDown', isComposing: true })
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{ArrowUp}')
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // 再按一次快捷键打开后，再按一次关闭
+    await user.keyboard('{Control>}k{/Control}')
+    await screen.findByRole('dialog', { name: '搜索会话' })
+    await user.keyboard('{Control>}k{/Control}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
   it('renames a session in place; Esc cancels and unchanged titles are not saved', async () => {
     let sessions = [summary('s1', '旧标题')]
     const { request } = setup({

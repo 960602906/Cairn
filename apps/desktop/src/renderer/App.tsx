@@ -5,6 +5,7 @@
  * （当前会话或新对话表单）。窗口宽度小于 880px 时侧栏收起，可以从顶栏展开。⌘N / Ctrl+N 新对话。
  * 主题跟随设置（M2-01，`ThemeSync`）；开发模式下纸面底部是事件查看器（M0-15d）。
  * M2-09：设置页（侧栏底部“设置”或 ⌘, / Ctrl+,）换掉侧栏与纸面内容，Esc 或“返回对话”回到原来的页面。
+ * M2-12：⌘K / Ctrl+K 搜索会话；还没有供应商或项目时，新对话页给出引导。
  * 没有 store（preload 未加载，如在普通浏览器中打开）时只显示应用名称与语言切换。
  */
 import { PanelLeft } from 'lucide-react'
@@ -15,10 +16,11 @@ import { ChatPanel, TopBar } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
 import { EventViewer } from './EventViewer.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
-import { isNewChatKey, isSettingsKey } from './layout/shortcuts.js'
+import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
 import { NewSession } from './NewSession.js'
+import { SessionSearch } from './SessionSearch.js'
 import type { SessionStore } from './session-store.js'
 import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
@@ -41,6 +43,7 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
   const [sidebarOpen, setSidebarOpen] = useState(!narrow)
   const [composing, setComposing] = useState(false)
   const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
+  const [searchOpen, setSearchOpen] = useState(false)
   // 还没有会话时直接显示新对话表单；已选中的会话（即使不在列表中）仍显示会话
   const showNew = useSessionStore((s) => s.sessions.length === 0 && s.activeSessionId === undefined)
 
@@ -49,13 +52,28 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return
+      if (isSearchKey(event)) {
+        event.preventDefault()
+        const searchDialog = document.querySelector('[data-session-search]')
+        if (searchDialog) {
+          setSearchOpen(false)
+          return
+        }
+        // 别的对话框或菜单开着时不叠一层搜索
+        if (document.querySelector('[role="dialog"], [role="menu"]')) return
+        setSearchOpen(true)
+        return
+      }
       if (isSettingsKey(event)) {
         event.preventDefault()
+        setSearchOpen(false)
         setSettings((current) => current ?? 'general')
         return
       }
       if (!isNewChatKey(event)) return
       event.preventDefault()
+      setSearchOpen(false)
       setSettings(undefined)
       setComposing(true)
     }
@@ -75,6 +93,25 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
   )
 
   const closeSettings = useCallback(() => setSettings(undefined), [])
+  const openSettings = useCallback(
+    (section?: SettingsSection) => {
+      setSearchOpen(false)
+      setSettings(section ?? 'general')
+      if (narrow) setSidebarOpen(false)
+    },
+    [narrow],
+  )
+  const search = (
+    <SessionSearch
+      open={searchOpen}
+      onOpenChange={setSearchOpen}
+      onSelect={() => {
+        setComposing(false)
+        setSettings(undefined)
+        if (narrow) setSidebarOpen(false)
+      }}
+    />
+  )
 
   if (settings) {
     return (
@@ -97,6 +134,7 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
           <ErrorBanner />
           <SettingsContent section={settings} leading={expand} onBack={closeSettings} />
         </main>
+        {search}
       </div>
     )
   }
@@ -109,17 +147,16 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
         <Sidebar
           onNewChat={() => {
             setComposing(true)
+            setSearchOpen(false)
             if (narrow) setSidebarOpen(false)
           }}
+          onSearch={() => setSearchOpen(true)}
           onCollapse={() => setSidebarOpen(false)}
           onSelect={() => {
             setComposing(false)
             if (narrow) setSidebarOpen(false)
           }}
-          onSettings={(section) => {
-            setSettings(section ?? 'general')
-            if (narrow) setSidebarOpen(false)
-          }}
+          onSettings={(section) => openSettings(section)}
         />
       )}
       <main
@@ -129,7 +166,10 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
         {composing || showNew ? (
           <>
             <TopBar>{expand}</TopBar>
-            <NewSession onDone={() => setComposing(false)} />
+            <NewSession
+              onDone={() => setComposing(false)}
+              onOpenSettings={() => openSettings('providers')}
+            />
           </>
         ) : (
           <ChatPanel leading={expand} />
@@ -140,6 +180,7 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
           </div>
         )}
       </main>
+      {search}
     </div>
   )
 }
