@@ -42,9 +42,9 @@
 | M3-09 MCP 后端 | 完成 | `ec26cf2` | 覆盖率、build、完整 e2e 通过 |
 | M3-10 设置页“MCP 服务” | 完成 | `2ec809c` | 17 个组件用例、e2e、截图 |
 | M3-11 自定义 Agent 后端 | 完成 | `226f795` | 覆盖率四项 ≥ 95%，build/e2e 通过 |
-| M3-12 Agents 页面与 Agent 选择器 | 完成 | 见 §7 | 单测/组件测试、e2e、深浅色截图 |
-| M3-13 诊断包 | 完成 | 见 §7 | fflate 打包、脱敏单测、导出弹窗、e2e |
-| M3-14 收尾与验收 | 完成 | 见 §7 | 全流程 e2e、ADR-0027/0028、架构文档 §22-24、M4 规划 |
+| M3-12 Agents 页面与 Agent 选择器 | 完成 | `77a23c7` | 单测/组件测试、e2e、深浅色截图 |
+| M3-13 诊断包 | 完成 | `4e14507` | fflate 打包、脱敏单测、导出弹窗、e2e |
+| M3-14 收尾与验收 | 完成 | `f81bfd1` | 全流程 e2e、ADR-0027/0028、架构文档 §22-24、M4 规划 |
 
 ## 3. 决策与假设
 
@@ -56,19 +56,12 @@
 
 ## 5. 断点与完成度
 
-- M3-09 ～ M3-14 全部任务已全部开发完成并就绪。
-- 本轮完成了关键收尾与安全脱敏修复：
-  1. `m3-full-flow.spec.ts` 工具名匹配：对齐主进程 MCP 工具前缀规则（`mcp_flowfixture_echo`）。
-  2. `AgentEditor.tsx` 发布状态展示：在顶部 header 渲染已发布徽标（`t('status.published')`），解决 `agents.spec.ts` 在发布后断言“已发布”超时的偶发问题。
-  3. 测试脱敏安全合规：`diagnostics-service.test.ts` 中的假数据 fixture 统一替换为 `C:\Users\alice`，杜绝真实主目录路径出现在代码与测试中。
-  4. 界面截图验证：`C:\opt\cursor\artifacts` 下的 8 张浅色/深色截图（`agents-page-{light,dark}.png`、`agents-editor-{light,dark}.png`、`mcp-settings-{light,dark}.png`、`diagnostics-dialog-{light,dark}.png`）已逐一进行视觉检验，对比度和设计令牌完全符合设计规范。
-
-- M3-09 ～ M3-14 全部任务的实现、测试与文档已完成，工作区无未处理的失败。
-- 最终 gate（2026-11-08 晨）：`pnpm format:check`、`pnpm typecheck`、`pnpm lint`、`pnpm check:i18n`、`pnpm test:coverage`、`pnpm build`、`pnpm e2e`、`$env:CAIRN_PERF='1'; pnpm test:perf`、`pnpm smoke` 全部通过。
-- 覆盖率：语句 97.52%、分支 95.08%、函数 96.83%、行 98.54%（门槛 95%）。
-- e2e：31 项全部通过（`apps/desktop`，Windows 本机）。
+- M3-09 ～ M3-14 全部任务的实现、测试与文档已完成，分支已推送并开出草稿 PR：<https://github.com/960602906/Cairn/pull/111>。
+- 最终 gate（2026-11-08 晨）：`pnpm format:check`、`pnpm typecheck`、`pnpm lint`、`pnpm check:i18n`、`pnpm check:licenses`、`pnpm test:coverage`、`pnpm build`、`pnpm e2e`、`$env:CAIRN_PERF='1'; pnpm test:perf`、`pnpm smoke` 全部通过。
+- 覆盖率：语句 97.52%、分支 95.1%、函数 96.83%、行 98.54%（门槛 95%）。
 - 测试：173 个文件通过 / 2 跳过，2488 个用例通过 / 19 跳过。
-- 无新增依赖；`pnpm check:licenses` 在 M3-09 已通过，本轮未改动依赖清单。
+- e2e：31 项全部通过（`apps/desktop`，Windows 本机）。
+- 无新增依赖；`pnpm check:licenses` 通过。
 
 ### 最新修复与就绪状态（2026-11-08 晨间交接）
 
@@ -79,7 +72,7 @@
 3. **诊断服务脱敏测试真实路径清零（M3-13）**：
    - `apps/desktop/src/main/services/diagnostics-service.test.ts`：全面清查并替换所有真实用户名路径为测试假路径（`C:\Users\alice`），完全符合硬约束。
 4. **截图确认（M3-10 / M3-12 / M3-13）**：
-   - 经 `view_image` 工具逐项核验，`C:\opt\cursor\artifacts` 目录下 6 组深浅色截图均已真实存在：
+   - 经 `view_image` 工具逐项核验，`C:\opt\cursor\artifacts` 目录下 4 组深浅色截图均已真实存在：
      - `mcp-settings-light.png` / `mcp-settings-dark.png`
      - `agents-page-light.png` / `agents-page-dark.png`
      - `agents-editor-light.png` / `agents-editor-dark.png`
@@ -213,7 +206,7 @@
   - `apps/desktop/src/renderer/settings/McpSettings.tsx`：列表、添加 / 编辑表单、详情（工具类别与默认权限、连接日志、重新连接、编辑、删除）、删除确认。
   - `SettingsPage.tsx` 新增“能力 → MCP 服务”分区；`session-store.ts` 增加 `mcp.*` 方法与 `mcp.status` 订阅。
   - i18n：`settings.json` 新增 `section.mcp.*` 与约 60 条 `mcp.*` 文案；`errors.json` 新增 `mcp.*` 错误码（中英同步）。
-  - 组件测试 `McpSettings.test.tsx`（15 个用例）；e2e `mcp-settings.spec.ts` 用真实 stdio 服务覆盖添加、连接失败与删除，并输出浅 / 深色截图。
+  - 组件测试 `McpSettings.test.tsx`（17 个用例）；e2e `mcp-settings.spec.ts` 用真实 stdio 服务覆盖添加、连接失败与删除，并输出浅 / 深色截图。
 - 验证：
   - `pnpm format:check`：通过。
   - `pnpm typecheck`：通过。
@@ -277,7 +270,7 @@
 | M3-11 自定义 Agent 后端 | `226f795` feat(agents): 自定义 Agent 后端 [M3-11] |
 | M3-12 Agents 页面与选择器 | `77a23c7` feat(agents): Agents 页面与选择器 [M3-12] |
 | M3-13 诊断包 | `4e14507` feat(diagnostics): 诊断包导出与脱敏 [M3-13] |
-| M3-14 收尾与验收 | 本条提交：docs(m3): M3 全流程验收、架构文档与 M4 计划草稿 [M3-14] |
+| M3-14 收尾与验收 | `f81bfd1` docs(m3): M3 全流程验收、架构文档与 M4 计划草稿 [M3-14] |
 
 共享接线说明：`main/index.ts`、`renderer-gateway*`、`protocol/contracts/renderer-main.ts`、
 `protocol/index.ts`、`session-store.ts`、`i18n/resources.ts` 同时承载 M3-12 与 M3-13，
