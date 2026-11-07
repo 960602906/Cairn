@@ -43,7 +43,7 @@ export const PROJECT_NAME_MAX_LENGTH = 200
 
 /**
  * 已打开过的项目（M1-16a，M3-02 补上会话数、最近使用和两个开关）。
- * 后加的字段都是可选的：省略 `readAgentsMd` 表示读取，省略 `enableProjectSkills` 表示关闭，
+ * 后加的字段都是可选的：省略 `readAgentsMd` 表示读取，省略 `enableProjectSkills` 表示开启（项目内技能默认读取），
  * 省略 `sessionCount` 表示 0。
  */
 export const ProjectSummary = z.object({

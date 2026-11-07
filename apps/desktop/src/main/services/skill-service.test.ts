@@ -76,7 +76,7 @@ describe('skill service', () => {
     return { storage, skills, builtin, user, projectPath, project }
   }
 
-  it('lists builtin skills, and project skills only after the project switch is on', () => {
+  it('lists builtin skills, and project skills unless the project switch is off', () => {
     const { skills, storage } = setup()
     expect(
       skills
@@ -84,6 +84,8 @@ describe('skill service', () => {
         .skills.map((skill) => skill.name)
         .sort(),
     ).toEqual(['example', 'shared'])
+    // 项目内技能默认读取；关掉开关后不再列出
+    storage.projects.update('p1', { enableProjectSkills: false })
     expect(skills.list({ projectId: 'p1' }).skills.map((skill) => skill.source)).not.toContain(
       'project',
     )

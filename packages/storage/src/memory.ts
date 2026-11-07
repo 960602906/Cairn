@@ -109,7 +109,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           ...input,
           createdAt: now(),
           readAgentsMd: true,
-          enableProjectSkills: false,
+          enableProjectSkills: true,
         }
         s.projects.set(record.projectId, record)
         return copy(record)

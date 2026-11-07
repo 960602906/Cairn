@@ -32,7 +32,7 @@ function ProjectCard({ project }: { readonly project: ProjectSummary }) {
   const [name, setName] = useState(project.name)
   const [confirming, setConfirming] = useState(false)
   const readAgentsMd = project.readAgentsMd !== false
-  const skills = project.enableProjectSkills === true
+  const skills = project.enableProjectSkills !== false
   const when = project.lastUsedAt ?? project.createdAt
 
   const saveName = () => {
