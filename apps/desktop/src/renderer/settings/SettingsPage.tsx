@@ -2,9 +2,10 @@
  * 设置页框架（M2-09，视觉规范 §8）：与对话页相同的窗口结构。左侧分类导航（顶部“返回对话 Esc”，铺在窗口
  * 底色上），右侧纸面，内容居中、最大宽度 760px。
  *
- * 分类按组列出：通用与外观（M2-09）、项目（M3-02）、模型供应商（M2-10）、权限与审批（M2-11）；MCP 服务与技能在 M3。Esc 返回对话（有对话框或菜单打开时不处理）。
+ * 分类按组列出：通用与外观（M2-09）、项目（M3-02）、模型供应商（M2-10）、技能（M3-08）、
+ * 权限与审批（M2-11）；MCP 服务在 M3。Esc 返回对话（有对话框或菜单打开时不处理）。
  */
-import { Cpu, ChevronLeft, FolderOpen, PanelLeft, Settings2, Shield } from 'lucide-react'
+import { Cpu, ChevronLeft, FolderOpen, PanelLeft, Settings2, Shield, Sparkles } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
@@ -13,8 +14,9 @@ import { GeneralSettings } from './GeneralSettings.js'
 import { PermissionsSettings } from './PermissionsSettings.js'
 import { ProjectsSettings } from './ProjectsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
+import { SkillsSettings } from './SkillsSettings.js'
 
-export type SettingsSection = 'general' | 'projects' | 'providers' | 'permissions'
+export type SettingsSection = 'general' | 'projects' | 'providers' | 'skills' | 'permissions'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -23,7 +25,7 @@ interface SectionEntry {
 
 /** 分类分组：组名与其中的分类，按显示顺序。 */
 const GROUPS: readonly {
-  readonly group: 'general' | 'models' | 'security'
+  readonly group: 'general' | 'models' | 'capabilities' | 'security'
   readonly sections: readonly SectionEntry[]
 }[] = [
   {
@@ -34,6 +36,7 @@ const GROUPS: readonly {
     ],
   },
   { group: 'models', sections: [{ id: 'providers', icon: <Cpu /> }] },
+  { group: 'capabilities', sections: [{ id: 'skills', icon: <Sparkles /> }] },
   { group: 'security', sections: [{ id: 'permissions', icon: <Shield /> }] },
 ]
 
@@ -143,6 +146,7 @@ export function SettingsContent({
           {section === 'general' && <GeneralSettings />}
           {section === 'projects' && <ProjectsSettings />}
           {section === 'providers' && <ProvidersSettings />}
+          {section === 'skills' && <SkillsSettings />}
           {section === 'permissions' && <PermissionsSettings />}
         </div>
       </div>

@@ -47,6 +47,10 @@ import {
   type Settings,
   type SettingsPatch,
   type ShellPreference,
+  type SkillDetail,
+  type SkillInstallSource,
+  type SkillSource,
+  type SkillSummary,
 } from '@cairn/protocol'
 import type { z } from 'zod'
 import { createStore, type StoreApi } from 'zustand/vanilla'
@@ -121,6 +125,37 @@ export interface SessionActions {
   ): Promise<ProjectSummary | undefined>
   /** 从列表移除项目（M3-02），不删除目录和会话；成功时返回 true。 */
   removeProject(projectId: string): Promise<boolean>
+  /**
+   * 已发现的技能（M3-08）。给出 `projectId` 时一并列出该项目开启后的项目内技能；
+   * 失败时返回 undefined。
+   */
+  listSkills(projectId?: string): Promise<SkillSummary[] | undefined>
+  /** 一份技能的原文与文件；找不到或失败时返回 undefined。 */
+  getSkill(input: {
+    name: string
+    source: SkillSource
+    projectId?: string
+  }): Promise<SkillDetail | undefined>
+  /** 用系统对话框选择文件夹或 zip；取消或失败时返回 undefined。 */
+  pickSkillSource(kind: 'directory' | 'zip'): Promise<SkillInstallSource | undefined>
+  /**
+   * 预览（`confirm` 省略或为 false）或安装一份技能（M3-08）。
+   * 失败时返回 undefined，错误码写入 `error`（例如 `skills.duplicate`）。
+   */
+  installSkill(
+    source: SkillInstallSource,
+    confirm?: boolean,
+  ): Promise<{ installed: boolean; skill: SkillDetail } | undefined>
+  /** 卸载用户安装的技能；成功时返回 true。 */
+  uninstallSkill(name: string): Promise<boolean>
+  /** 启用、停用或改“始终加载”；返回更新后的摘要。 */
+  setSkillEnabled(input: {
+    name: string
+    source: SkillSource
+    projectId?: string
+    enabled?: boolean
+    pinned?: boolean
+  }): Promise<SkillSummary | undefined>
   loadSettings(): Promise<Settings | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
@@ -515,6 +550,25 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         }))
         return true
       },
+
+      listSkills: async (projectId) =>
+        (await run(() => api.request('skill.list', projectId === undefined ? {} : { projectId })))
+          ?.skills,
+
+      getSkill: (input) => run(() => api.request('skill.get', input)),
+
+      pickSkillSource: async (kind) =>
+        (await run(() => api.request('skill.pickSource', { kind })))?.source,
+
+      installSkill: (source, confirm) =>
+        run(() =>
+          api.request('skill.install', confirm === undefined ? { source } : { source, confirm }),
+        ),
+
+      uninstallSkill: async (name) =>
+        (await run(() => api.request('skill.uninstall', { name }))) !== undefined,
+
+      setSkillEnabled: (input) => run(() => api.request('skill.setEnabled', input)),
 
       async loadSettings() {
         const result = await run(() => api.request('settings.get', {}))

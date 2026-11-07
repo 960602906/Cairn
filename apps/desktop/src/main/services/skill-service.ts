@@ -11,12 +11,14 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { estimateTokens } from '@cairn/core'
 import {
   installSkill,
   previewSkill,
   scanSkillRoot,
   SkillError,
   SKILL_NAME_PATTERN,
+  SKILL_PIN_MAX_CHARS,
   type SkillPackage,
 } from '@cairn/skills'
 import {
@@ -29,6 +31,9 @@ import {
   type SkillSummary,
 } from '@cairn/protocol'
 import type { SkillPref, Storage } from '@cairn/storage'
+
+/** 安装时让用户选择的来源种类（M3-08）。 */
+export type SkillPickKind = SkillInstallSource['kind']
 
 export const SkillServiceErrorCode = {
   Invalid: 'skills.invalid',
@@ -51,11 +56,15 @@ export interface SkillServiceOptions {
   readonly builtinDir: string
   /** 用户安装的技能目录（应用数据目录下的 `skills/`）。 */
   readonly userDir: string
+  /** 让用户选择技能来源（M3-08）；取消时返回 undefined。没提供时 `pickSource` 视为取消。 */
+  readonly pickSource?: (kind: SkillPickKind) => Promise<string | undefined>
 }
 
 export interface SkillCommands {
   list(input: { projectId?: string | undefined }): { skills: SkillSummary[] }
   get(input: { name: string; source: SkillSource; projectId?: string | undefined }): SkillDetail
+  /** 用系统对话框选择文件夹或 zip（M3-08）。取消时结果不含 `source`。 */
+  pickSource(input: { kind: SkillPickKind }): Promise<{ source?: SkillInstallSource }>
   install(input: { source: SkillInstallSource; confirm?: boolean | undefined }): {
     installed: boolean
     skill: SkillDetail
@@ -90,6 +99,22 @@ function filesOf(skill: SkillPackage): SkillFileInfo[] {
   return skill.files.map((file) => ({ path: file.path, bytes: file.bytes, script: file.script }))
 }
 
+/**
+ * 每轮的 token 估算（M3-08），尽量贴近 `system-prompt.ts` 实际注入的内容：索引是一行
+ * `- name: description`；固定加载时再加一段正文（超过 32 KB 的部分宿主会截断）。
+ */
+function tokensOf(skill: SkillPackage): { index: number; pinned: number } {
+  const index = estimateTokens(`- ${skill.name}: ${skill.description}`)
+  const body = skill.body.trim()
+  const chars = [...body]
+  const kept =
+    chars.length > SKILL_PIN_MAX_CHARS ? chars.slice(0, SKILL_PIN_MAX_CHARS).join('') : body
+  return {
+    index,
+    pinned: kept === '' ? index : index + estimateTokens(`## ${skill.name}\n${kept}`),
+  }
+}
+
 /** 工作区内用相对路径，否则用绝对路径，供 `read_file` 使用。 */
 export function skillReadPath(workspace: string, skillDir: string, relative: string): string {
   const absolute = path.resolve(skillDir, ...relative.split('/'))
@@ -111,6 +136,7 @@ function summarize(item: Located): SkillSummary {
     ...(item.projectId !== undefined ? { projectId: item.projectId } : {}),
     enabled: item.enabled,
     pinned: item.pinned,
+    tokens: tokensOf(item.skill),
     shadowed: item.shadowed,
     hasScripts: item.skill.hasScripts,
     ...(item.skill.filesTruncated ? { filesTruncated: true as const } : {}),
@@ -130,6 +156,7 @@ function installedDetail(skill: SkillPackage): SkillDetail {
     source: 'user',
     enabled: true,
     pinned: false,
+    tokens: tokensOf(skill),
     shadowed: false,
     hasScripts: skill.hasScripts,
     ...(skill.filesTruncated ? { filesTruncated: true as const } : {}),
@@ -218,6 +245,14 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
 
     get(input) {
       return detailFrom(find(input.projectId, input.name, input.source))
+    },
+
+    async pickSource({ kind }) {
+      const picked = await options.pickSource?.(kind)
+      if (picked === undefined) return {}
+      const source: SkillInstallSource =
+        kind === 'directory' ? { kind: 'directory', path: picked } : { kind: 'zip', path: picked }
+      return { source }
     },
 
     install(input) {

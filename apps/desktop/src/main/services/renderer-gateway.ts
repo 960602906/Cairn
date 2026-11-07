@@ -115,7 +115,7 @@ export interface RendererGatewayOptions {
   readonly checkpoints: CheckpointCommands
   /** 审批（M1-11b）：读取未决审批与作出决定。 */
   readonly approvals: ApprovalCommands
-  /** 技能（M3-07）：列表、安装、卸载与启用。 */
+  /** 技能（M3-07）：列表、安装、卸载与启用；选择来源（M3-08）。 */
   readonly skills: SkillCommands
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
   readonly frameMs?: number
@@ -276,6 +276,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('approval.resolve', (params) => approvals.resolve(params))
       endpoint.handle('skill.list', (params) => skills.list(params))
       endpoint.handle('skill.get', (params) => skills.get(params))
+      endpoint.handle('skill.pickSource', (params) => skills.pickSource(params))
       endpoint.handle('skill.install', (params) => skills.install(params))
       endpoint.handle('skill.uninstall', (params) => skills.uninstall(params))
       endpoint.handle('skill.setEnabled', (params) => skills.setEnabled(params))
