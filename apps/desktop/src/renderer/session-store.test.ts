@@ -481,6 +481,42 @@ describe('projects and model settings', () => {
       options: ['auto', 'cmd'],
     })
   })
+
+  it('lists, adds and deletes permission rules (M2-11)', async () => {
+    const rule = {
+      id: 'r1',
+      scope: 'project' as const,
+      effect: 'deny' as const,
+      match: { tool: 'read_file', path: ['secrets/**'] },
+      source: 'user' as const,
+    }
+    let fail = false
+    const { api, calls } = fakeApi({
+      'permissions.list': () => ({ rules: [{ rule, projectId: 'p1', createdAt: 1 }] }),
+      'permissions.add': (params) => ({ ...(params as object), createdAt: 2 }),
+      'permissions.delete': () => {
+        if (fail) throw Object.assign(new Error('x'), { code: 'storage.not_found' })
+        return {}
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().permissionRules()).resolves.toEqual([
+      { rule, projectId: 'p1', createdAt: 1 },
+    ])
+    await expect(store.getState().addPermissionRule(rule, 'p1')).resolves.toEqual({
+      rule,
+      projectId: 'p1',
+      createdAt: 2,
+    })
+    await store.getState().addPermissionRule({ ...rule, scope: 'global' })
+    expect(calls.filter(([m]) => m === 'permissions.add').map(([, p]) => p)).toEqual([
+      { rule, projectId: 'p1' },
+      { rule: { ...rule, scope: 'global' } },
+    ])
+    await expect(store.getState().deletePermissionRule('r1')).resolves.toBe(true)
+    fail = true
+    await expect(store.getState().deletePermissionRule('r1')).resolves.toBe(false)
+  })
 })
 
 describe('file changes (M2-07)', () => {
