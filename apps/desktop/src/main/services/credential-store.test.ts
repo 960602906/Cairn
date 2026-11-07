@@ -309,12 +309,36 @@ describe('createCredentialCommands', () => {
     const commands = createCredentialCommands(store)
     expect(await commands.status({ ref: 'a' })).toEqual({ configured: false, available: true })
     expect(await commands.set({ ref: 'a', secret: KEY })).toEqual({})
-    expect(await commands.status({ ref: 'a' })).toEqual({ configured: true, available: true })
+    expect(await commands.status({ ref: 'a' })).toEqual({
+      configured: true,
+      available: true,
+      last4: KEY.slice(-4),
+    })
     expect(JSON.stringify(await commands.status({ ref: 'a' }))).not.toContain(KEY)
     expect(await commands.delete({ ref: 'a' })).toEqual({ deleted: true })
     expect(await commands.delete({ ref: 'a' })).toEqual({ deleted: false })
     expect(await codeOf(() => commands.set({ ref: 'a', secret: ' ' }))).toBe(
       CredentialErrorCode.InvalidValue,
     )
+  })
+
+  it('只对足够长的 Key 给出末 4 位，解密失败时不给（M2-10）', async () => {
+    const store = createLocalKeyStore({ file, cipher: fakeCipher() })
+    const commands = createCredentialCommands(store)
+    await commands.set({ ref: 'short', secret: 'abc123' })
+    expect(await commands.status({ ref: 'short' })).toEqual({ configured: true, available: true })
+    await commands.set({ ref: 'a', secret: KEY })
+    const broken = createLocalKeyStore({
+      file,
+      cipher: fakeCipher({
+        decrypt: async () => {
+          throw new Error('bad')
+        },
+      }),
+    })
+    expect(await createCredentialCommands(broken).status({ ref: 'a' })).toEqual({
+      configured: true,
+      available: true,
+    })
   })
 })

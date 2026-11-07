@@ -217,7 +217,7 @@ type Command<M extends keyof RendererRequests> = (
   params: z.output<RendererRequests[M]['params']>,
 ) => Promise<z.input<RendererRequests[M]['result']>>
 
-/** 界面的凭据命令（M1-03b）：只能写入、删除与查询是否已配置，不返回明文。 */
+/** 界面的凭据命令（M1-03b）：只能写入、删除与查询是否已配置，不返回明文（只给末 4 位，M2-10）。 */
 export interface CredentialCommands {
   readonly set: Command<'credentials.set'>
   readonly delete: Command<'credentials.delete'>
@@ -231,6 +231,16 @@ export function createCredentialCommands(store: LocalKeyStore): CredentialComman
       return {}
     },
     delete: async ({ ref }) => ({ deleted: await store.delete(ref) }),
-    status: async ({ ref }) => ({ configured: store.has(ref), available: await store.available() }),
+    status: async ({ ref }) => {
+      const configured = store.has(ref)
+      const available = await store.available()
+      // 末 4 位（M2-10）只在 Key 足够长时给出；解密失败时不给，不影响状态
+      let last4: string | undefined
+      if (configured && available) {
+        const key = await store.resolve(ref).catch(() => undefined)
+        if (key && key.apiKey.length >= 8) last4 = key.apiKey.slice(-4)
+      }
+      return { configured, available, ...(last4 ? { last4 } : {}) }
+    },
   }
 }

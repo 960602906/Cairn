@@ -5,10 +5,10 @@
 import { z } from 'zod'
 import { FileChangeSummary, FileContent } from '../changes.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
-import { ContentPart, Id, ModelRef, Timestamp } from '../common.js'
+import { ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
 import { PermissionMode } from '../permissions.js'
-import { CONFIG_ID_PATTERN, ProviderConfigList } from '../providers.js'
+import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
 
@@ -215,7 +215,42 @@ export const MainForRenderer = defineSide({
     /** `available`：系统加密是否可用；不可用时无法保存（Linux 无密钥环）。 */
     'credentials.status': {
       params: z.object({ ref: CredentialRef }),
-      result: z.object({ configured: z.boolean(), available: z.boolean() }),
+      /** `last4`：已保存的 Key 的末 4 位（M2-10，Key 不少于 8 个字符时才有），用于界面辨认。 */
+      result: z.object({
+        configured: z.boolean(),
+        available: z.boolean(),
+        last4: z.string().length(4).optional(),
+      }),
+    },
+    /**
+     * 测试连接（M2-10）：用这份配置（可以是还没保存的）向模型发一次最小的请求，返回耗时或错误原因。
+     * `secret` 是界面上新填、还没保存的 Key；省略时用配置的凭据引用中保存的 Key。
+     */
+    'provider.test': {
+      params: z.object({
+        provider: ProviderConfig,
+        modelId: Id.max(256),
+        secret: z.string().min(1).max(8192).optional(),
+      }),
+      result: z.discriminatedUnion('ok', [
+        z.object({ ok: z.literal(true), latencyMs: z.number().int().nonnegative() }),
+        z.object({
+          ok: z.literal(false),
+          latencyMs: z.number().int().nonnegative().optional(),
+          error: ErrorInfo,
+        }),
+      ]),
+    },
+    /** 拉取提供方的模型列表（M2-10）；不支持或失败时返回错误，界面允许手动填写。 */
+    'provider.models': {
+      params: z.object({
+        provider: ProviderConfig,
+        secret: z.string().min(1).max(8192).optional(),
+      }),
+      result: z.discriminatedUnion('ok', [
+        z.object({ ok: z.literal(true), models: z.array(RemoteModel).max(1000) }),
+        z.object({ ok: z.literal(false), error: ErrorInfo }),
+      ]),
     },
     /** 会话中等待用户决定的审批（M1-11b），按请求顺序。界面收到 `approval.*` 事件后重新读取。 */
     'approval.pending': {

@@ -17,6 +17,7 @@
   "model.context_overflow": "The conversation exceeds the model's context length",
   "model.bad_request": "The model service rejected the request. Check the model name and address",
   "model.network_error": "Cannot connect to the model service",
+  "provider.invalid_response": "The model service returned an unexpected response; it may not support listing models. Add models manually.",
   "storage.not_found": "The record was not found",
   "storage.conflict": "The record already exists",
   "storage.seq_conflict": "Event sequence conflict",

@@ -83,9 +83,11 @@ test('在输入框中切换模型：两轮分别使用两个模型（M2-04）', 
 
     await sendPrompt(window, '第一轮')
     await expect(runStatus(window)).toHaveText('空闲')
-    await window.getByRole('button', { name: '模型：Local · e2e-model' }).click()
+    await window.getByRole('button', { name: '模型：Local · e2e-model', exact: true }).click()
     await window.getByRole('menuitem', { name: /Second/ }).click()
-    await expect(window.getByRole('button', { name: '模型：Local · Second' })).toBeVisible()
+    await expect(
+      window.getByRole('button', { name: '模型：Local · Second', exact: true }),
+    ).toBeVisible()
 
     await sendPrompt(window, '第二轮')
     await expectMessages(window, [

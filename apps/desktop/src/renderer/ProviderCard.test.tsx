@@ -42,7 +42,7 @@ function setup(settings: Partial<Settings>) {
   render(<App i18n={createI18n('zh-CN')} store={createSessionStore(api)} />)
 }
 
-const card = () => screen.findByRole('button', { name: '模型设置' })
+const card = () => screen.findByRole('button', { name: /^模型供应商/ })
 
 describe('ProviderCard', () => {
   it('invites adding a provider when none is configured', async () => {

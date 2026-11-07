@@ -116,8 +116,8 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
             setComposing(false)
             if (narrow) setSidebarOpen(false)
           }}
-          onSettings={() => {
-            setSettings('general')
+          onSettings={(section) => {
+            setSettings(section ?? 'general')
             if (narrow) setSidebarOpen(false)
           }}
         />

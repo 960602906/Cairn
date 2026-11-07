@@ -6,43 +6,16 @@
  *   已在运行的会话不受影响。
  * - 全局指令（`Settings.instructions`）：加入每个会话的系统提示词；改动后点“保存”，可以还原。
  */
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
 import { INSTRUCTIONS_MAX_LENGTH, type ShellPreference, type Theme } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
-import { Button, SegmentedControl } from '../ui/index.js'
+import { Button, cn, SegmentedControl } from '../ui/index.js'
+import { Field, inputClass, SettingsCard } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
 
 const THEMES: readonly Theme[] = ['system', 'light', 'dark']
-
-/** 一行设置：左侧标签（132px），右侧控件，下面可以有说明。 */
-function Field({
-  label,
-  labelFor,
-  hint,
-  children,
-}: {
-  readonly label: string
-  /** 控件是表单元素时给出它的 id；否则标签只是文字，控件自己带 aria-label。 */
-  readonly labelFor?: string
-  readonly hint?: ReactNode
-  readonly children: ReactNode
-}) {
-  return (
-    <div className="grid grid-cols-[132px_minmax(0,1fr)] items-start gap-x-4 gap-y-2 max-[640px]:grid-cols-1">
-      {labelFor ? (
-        <label htmlFor={labelFor} className="pt-1 text-[13px] text-fg2 max-[640px]:pt-0">
-          {label}
-        </label>
-      ) : (
-        <span className="pt-1 text-[13px] text-fg2 max-[640px]:pt-0">{label}</span>
-      )}
-      <div className="min-w-0">{children}</div>
-      {hint && <p className="-mt-0.5 text-note text-muted min-[641px]:col-start-2">{hint}</p>}
-    </div>
-  )
-}
 
 function ShellField() {
   const { t } = useTranslation('settings')
@@ -135,7 +108,7 @@ function InstructionsField() {
         rows={5}
         placeholder={t('general.instructions.placeholder')}
         onChange={(e) => setDraft(e.target.value)}
-        className="block min-h-24 w-full resize-y rounded-[9px] bg-paper px-2.5 py-2 text-[13px] leading-relaxed text-fg shadow-[inset_0_0_0_1px_var(--hair2)] outline-none placeholder:text-faint focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]"
+        className={cn(inputClass, 'h-auto min-h-24 resize-y py-2 text-[13px] leading-relaxed')}
       />
       <div className="mt-2 flex items-center gap-2">
         <span className="tabular text-note text-faint">
@@ -183,7 +156,7 @@ export function GeneralSettings() {
         title={t('section.general.title')}
         description={t('section.general.description')}
       />
-      <section className="flex flex-col gap-5 rounded-approval bg-raise px-5 pt-4.5 pb-5 shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)]">
+      <SettingsCard>
         <Field label={t('general.theme.label')}>
           <SegmentedControl
             label={t('general.theme.label')}
@@ -205,7 +178,7 @@ export function GeneralSettings() {
         </Field>
         <ShellField />
         <InstructionsField />
-      </section>
+      </SettingsCard>
     </>
   )
 }

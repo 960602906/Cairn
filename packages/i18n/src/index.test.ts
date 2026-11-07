@@ -102,6 +102,7 @@ describe('translateError', () => {
       'model.context_overflow',
       'model.bad_request',
       'model.network_error',
+      'provider.invalid_response',
       'storage.not_found',
       'storage.conflict',
       'storage.seq_conflict',

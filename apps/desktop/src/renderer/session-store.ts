@@ -30,6 +30,7 @@ import {
   RpcError,
   type ContentPart,
   type ApprovalDecision,
+  type MainForRenderer,
   type CheckpointRestorePlan,
   type ErrorInfo,
   type EventEnvelope,
@@ -38,13 +39,19 @@ import {
   type ModelRef,
   type PendingApproval,
   type ProjectSummary,
+  type ProviderConfig,
   type SessionSummary,
   type Settings,
   type SettingsPatch,
   type ShellPreference,
 } from '@cairn/protocol'
+import type { z } from 'zod'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { MainApi } from './api.js'
+
+type Requests = (typeof MainForRenderer)['requests']
+export type ProviderTestResult = z.output<Requests['provider.test']['result']>
+export type ProviderModelsResult = z.output<Requests['provider.models']['result']>
 
 export interface SessionState {
   /** 会话列表（按最近更新排序，由主进程决定）。 */
@@ -100,6 +107,14 @@ export interface SessionActions {
   saveCredential(ref: string, secret: string): Promise<boolean>
   /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
   credentialStatus(ref: string): Promise<{ configured: boolean; available: boolean } | undefined>
+  /** 测试供应商的连接（M2-10）；请求本身失败时返回 undefined（错误写入 `error`）。 */
+  testProvider(
+    provider: ProviderConfig,
+    modelId: string,
+    secret?: string,
+  ): Promise<ProviderTestResult | undefined>
+  /** 拉取供应商的模型列表（M2-10）；请求本身失败时返回 undefined。 */
+  fetchModels(provider: ProviderConfig, secret?: string): Promise<ProviderModelsResult | undefined>
   /** 可选的 shell 与自动选择的结果（M2-09）；失败时返回 undefined。 */
   shellOptions(): Promise<{ detected: string; options: ShellPreference[] } | undefined>
   /** 预览恢复到检查点将改动的文件；失败时返回 undefined。 */
@@ -414,6 +429,14 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       credentialStatus: (ref) => run(() => api.request('credentials.status', { ref })),
 
       shellOptions: () => run(() => api.request('settings.shell', {})),
+
+      testProvider: (provider, modelId, secret) =>
+        run(() =>
+          api.request('provider.test', { provider, modelId, ...(secret ? { secret } : {}) }),
+        ),
+
+      fetchModels: (provider, secret) =>
+        run(() => api.request('provider.models', { provider, ...(secret ? { secret } : {}) })),
 
       previewRestore: (sessionId, checkpointId) =>
         run(() => api.request('checkpoint.preview', { sessionId, checkpointId })),
