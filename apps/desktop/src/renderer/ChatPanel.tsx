@@ -133,7 +133,7 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
             <div
               ref={content}
-              className="mx-auto flex max-w-[700px] flex-col gap-3.5 px-7 pt-6 pb-8 text-body"
+              className="mx-auto flex w-full max-w-[clamp(560px,78%,960px)] flex-col gap-3.5 px-7 pt-6 pb-8 text-body"
             >
               <MessageStream
                 view={view}
@@ -147,7 +147,7 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
             </div>
           </div>
           <TurnRail view={view} />
-          <div className="mx-auto w-full max-w-[720px] px-7 pb-3">
+          <div className="mx-auto w-full max-w-[clamp(580px,82%,980px)] px-7 pb-3">
             <Composer
               key={sessionId}
               sessionId={sessionId}

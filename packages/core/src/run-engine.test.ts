@@ -1489,10 +1489,9 @@ describe('RunEngine：上下文压缩（M3-03）', () => {
 
   it('没有摘要器时仍可整理要点；运行中排队，释放后忽略', async () => {
     vi.useFakeTimers()
-    const { engine } = await start(
-      fake({ delayMs: 10, turns: [turn('一')] }),
-      { sessionBrief: async () => 'keep' },
-    )
+    const { engine } = await start(fake({ delayMs: 10, turns: [turn('一')] }), {
+      sessionBrief: async () => 'keep',
+    })
     const done = engine.prompt({ messageId: 'm1', content: text('运行中') })
     expect(await engine.compact()).toBe(true)
     await vi.advanceTimersByTimeAsync(50)

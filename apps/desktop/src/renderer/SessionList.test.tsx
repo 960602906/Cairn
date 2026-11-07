@@ -91,9 +91,7 @@ describe('SessionList', () => {
     ])
     expect(screen.getByRole('region', { name: '项目 work' })).toBeTruthy()
     expect(screen.getByRole('region', { name: '项目 other' })).toBeTruthy()
-    expect(
-      screen.getByRole('region', { name: '项目 work' }).querySelector('h3 svg'),
-    ).not.toBeNull()
+    expect(screen.getByRole('region', { name: '项目 work' }).querySelector('h3 svg')).not.toBeNull()
 
     await userEvent.click(sessionButton(items[1]!))
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s2'))
@@ -275,10 +273,11 @@ describe('App without the preload API', () => {
     await userEvent.click(screen.getByRole('button', { name: '选择文件夹…' }))
     await waitFor(() => expect(path.value).toBe('/work/web'))
     // 新打开的项目排在最前面
-    expect(within(recentSection()).getAllByRole('button').map((button) => button.textContent)).toEqual([
-      'web/work/web',
-      'api/work/api',
-    ])
+    expect(
+      within(recentSection())
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['web/work/web', 'api/work/api'])
     expect(recentButton('web').getAttribute('aria-pressed')).toBe('true')
 
     // 取消对话框时不改动

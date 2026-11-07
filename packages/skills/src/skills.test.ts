@@ -245,8 +245,7 @@ describe('扫描目录', () => {
 
   it('sorts skills and files, and skips ignored folders and folders without SKILL.md', () => {
     const root = tempDir()
-    const named = (name: string) =>
-      `---\nname: ${name}\ndescription: A sample skill.\n---\nbody\n`
+    const named = (name: string) => `---\nname: ${name}\ndescription: A sample skill.\n---\nbody\n`
     writeSkill(path.join(root, 'zeta'), named('zeta-skill'), {
       'b.txt': 'b',
       'a.txt': 'a',
@@ -385,10 +384,7 @@ describe('安装', () => {
     expect(pkg.files.map((file) => file.path)).toEqual(['refs/guide.md'])
 
     const multiple = path.join(dir, 'multiple.zip')
-    fs.writeFileSync(
-      multiple,
-      zipSync({ 'one/a.txt': strToU8('a'), 'two/b.txt': strToU8('b') }),
-    )
+    fs.writeFileSync(multiple, zipSync({ 'one/a.txt': strToU8('a'), 'two/b.txt': strToU8('b') }))
     expect(catchSkill(() => previewSkill({ kind: 'zip', path: multiple })).code).toBe(
       SkillErrorCode.Invalid,
     )

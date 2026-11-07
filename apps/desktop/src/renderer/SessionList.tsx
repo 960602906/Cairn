@@ -3,14 +3,7 @@
  * 每一项显示运行状态（运行中转圈、等待审批与失败用彩色圆点，并有读屏文字），悬停时出现“会话操作”菜单：
  * 重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
-import {
-  Folder,
-  FolderOpen,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  TriangleAlert,
-} from 'lucide-react'
+import { Folder, FolderOpen, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'
@@ -152,7 +145,10 @@ function SessionItem({
         )}
       >
         {active && (
-          <span aria-hidden className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent" />
+          <span
+            aria-hidden
+            className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent"
+          />
         )}
         <StatusMark status={session.status} />
         <span className="min-w-0 flex-1 truncate">{title}</span>

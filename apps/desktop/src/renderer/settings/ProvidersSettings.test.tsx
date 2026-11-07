@@ -402,9 +402,9 @@ describe('ProvidersSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: /Empty/ }))
     const card = editor('Empty')
     expect(within(card).getByText(/还没有模型/)).toBeTruthy()
-    expect((within(card).getByRole('button', { name: '测试连接' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
+    expect(
+      (within(card).getByRole('button', { name: '测试连接' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
     await userEvent.click(within(card).getByRole('button', { name: '拉取模型列表' }))
     expect(within(card).queryByRole('list', { name: '拉取到的模型' })).toBeNull()
     await userEvent.selectOptions(within(card).getByLabelText('服务'), 'deepseek')
@@ -416,13 +416,17 @@ describe('ProvidersSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: /公司网关/ }))
     const relay = editor('公司网关')
     await userEvent.click(within(relay).getByRole('radio', { name: /Anthropic/ }))
-    expect(within(relay).getByRole('radio', { name: /Anthropic/ }).getAttribute('aria-checked')).toBe(
-      'true',
-    )
+    expect(
+      within(relay)
+        .getByRole('radio', { name: /Anthropic/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true')
     await userEvent.click(within(relay).getByRole('radio', { name: /OpenAI/ }))
-    expect(within(relay).getByRole('radio', { name: /OpenAI/ }).getAttribute('aria-checked')).toBe(
-      'true',
-    )
+    expect(
+      within(relay)
+        .getByRole('radio', { name: /OpenAI/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true')
     await userEvent.type(within(relay).getByLabelText('名称'), ' 2')
     await userEvent.click(within(relay).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(updates).toHaveLength(1))
@@ -433,9 +437,11 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(main).getByRole('button', { name: '测试连接' }))
     expect(await within(main).findByText(/5 ms/)).toBeTruthy()
     await userEvent.click(within(main).getByRole('radio', { name: /Anthropic/ }))
-    expect(within(main).getByRole('radio', { name: /Anthropic/ }).getAttribute('aria-checked')).toBe(
-      'true',
-    )
+    expect(
+      within(main)
+        .getByRole('radio', { name: /Anthropic/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true')
   })
 
   it('disables the key input when system encryption is unavailable', async () => {

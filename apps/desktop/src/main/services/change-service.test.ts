@@ -565,9 +565,7 @@ describe('ChangeService：按块撤销', () => {
     const beforeCr = 'a\rb\r'
     const afterCr = 'a\rB\r'
     put('cr.txt', beforeCr)
-    const crHunks = diffHunks(
-      unifiedDiff('a/cr.txt', 'b/cr.txt', 'a\nb\n', 'a\nB\n'),
-    )
+    const crHunks = diffHunks(unifiedDiff('a/cr.txt', 'b/cr.txt', 'a\nb\n', 'a\nB\n'))
     const cr = await apply(service, 'cr.txt', afterCr, {
       hunks: crHunks,
       added: 1,
@@ -577,9 +575,7 @@ describe('ChangeService：按块撤销', () => {
     expect(read('cr.txt')).toBe(beforeCr)
 
     put('no-eol.txt', 'a\nb')
-    const noEolHunks = diffHunks(
-      unifiedDiff('a/no-eol.txt', 'b/no-eol.txt', 'a\nb', 'a\nB'),
-    )
+    const noEolHunks = diffHunks(unifiedDiff('a/no-eol.txt', 'b/no-eol.txt', 'a\nb', 'a\nB'))
     const noEol = await apply(service, 'no-eol.txt', 'a\nB', {
       hunks: noEolHunks,
       added: 1,

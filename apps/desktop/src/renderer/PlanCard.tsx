@@ -159,11 +159,7 @@ export function PlanSummaryCard({
           >
             {copied ? <Check /> : <Copy />}
           </IconButton>
-          <IconButton
-            label={t('plan.openSide')}
-            size="icon-sm"
-            onClick={() => onOpen(plan.planId)}
-          >
+          <IconButton label={t('plan.openSide')} size="icon-sm" onClick={() => onOpen(plan.planId)}>
             <Maximize2 />
           </IconButton>
         </span>

@@ -354,9 +354,9 @@ describe('createTitleService', () => {
     await vi.waitFor(() => expect(mid.requests).toHaveLength(1))
     await Promise.resolve()
     expect(mid.onError).not.toHaveBeenCalled()
-    expect(
-      mid.events.readAfter('s1', 0).some((event) => event.type === 'usage.reported'),
-    ).toBe(false)
+    expect(mid.events.readAfter('s1', 0).some((event) => event.type === 'usage.reported')).toBe(
+      false,
+    )
 
     const afterStop = setup()
     afterStop.setComplete(async (request) => {
