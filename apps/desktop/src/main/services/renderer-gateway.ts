@@ -233,6 +233,8 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.list', (params) => commands.list(params))
       endpoint.handle('project.list', () => projects.list())
       endpoint.handle('project.open', () => projects.open())
+      endpoint.handle('project.update', (params) => projects.update(params))
+      endpoint.handle('project.remove', (params) => projects.remove(params))
       endpoint.handle('session.prompt', (params) => commands.prompt(params))
       endpoint.handle('session.abort', (params) => commands.abort(params))
       endpoint.handle('session.rename', (params) => commands.rename(params))

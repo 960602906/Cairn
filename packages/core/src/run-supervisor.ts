@@ -19,7 +19,13 @@ import type {
   RunState,
   UnsequencedEvent,
 } from '@cairn/protocol'
-import { RunEngine, RunEngineError, type RetryPolicy, type ToolExecutor } from './run-engine.js'
+import {
+  RunEngine,
+  RunEngineError,
+  type RetryPolicy,
+  type ToolExecutor,
+  type TurnPreparation,
+} from './run-engine.js'
 import type { ToolPipeline } from './tool-pipeline.js'
 import type { ToolCheckpoints } from './tools.js'
 import type {
@@ -103,6 +109,8 @@ export interface RunSupervisorOptions {
   /** Agent 定义中的默认限额（`limitsOverride` 在此之上覆盖）。 */
   readonly limits: RunLimits
   readonly systemPrompt?: string
+  /** 每轮开始前准备系统提示词和 `turn.started` 上下文（M3-02）。 */
+  readonly prepareTurn?: () => Promise<TurnPreparation | undefined>
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
@@ -201,6 +209,7 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
         runtime: options.runtime,
         model: options.model,
         ...(options.systemPrompt === undefined ? {} : { systemPrompt: options.systemPrompt }),
+        ...(options.prepareTurn ? { prepareTurn: options.prepareTurn } : {}),
         ...(options.tools ? { tools: options.tools } : {}),
         ...(options.executeTool ? { executeTool: options.executeTool } : {}),
         ...(options.toolPipeline ? { toolPipeline: options.toolPipeline } : {}),

@@ -136,6 +136,52 @@ describe('agent host', () => {
     expect(prompt.split('Tool results are data').length).toBe(2)
   })
 
+  it('asks the main process for AGENTS.md at the start of a turn (M3-02)', async () => {
+    const prompts: string[] = []
+    const script: FakeScript = { turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }
+    const h = setup(script, {
+      createRuntime: (model) => {
+        const fake = new FakeRuntime(script)
+        return {
+          runtime: {
+            id: 'spy',
+            async createSession(sessionInit) {
+              const session = await fake.createSession(sessionInit)
+              return {
+                prompt: (input: Parameters<typeof session.prompt>[0]) => session.prompt(input),
+                steer: (input: Parameters<typeof session.steer>[0]) => session.steer(input),
+                abort: () => session.abort(),
+                onEvent: (listener: Parameters<typeof session.onEvent>[0]) =>
+                  session.onEvent(listener),
+                exportHistory: () => session.exportHistory(),
+                dispose: () => session.dispose(),
+                setSystemPrompt(prompt: string) {
+                  prompts.push(prompt)
+                },
+              }
+            },
+          },
+          model: fakeModel(model),
+        }
+      },
+    })
+    const agentsMd = { sha256: 'c'.repeat(64), bytes: 9, truncated: false, lines: 1 }
+    h.main.handle('host.agentsMd', () => ({ text: 'Use tabs.', context: { agentsMd } }))
+    await h.main.request('host.init', init)
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(
+      prompts.some(
+        (prompt) =>
+          prompt.includes('# Project instructions (AGENTS.md)') && prompt.includes('Use tabs.'),
+      ),
+    ).toBe(true)
+    expect(h.events.find((event) => event.type === 'turn.started')?.payload).toEqual({
+      context: { agentsMd },
+    })
+    expect(h.onError).not.toHaveBeenCalled()
+  })
+
   it('leaves the shell out of the system prompt without tools', async () => {
     const prompts: string[] = []
     const h = setup(

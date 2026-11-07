@@ -139,6 +139,19 @@ export interface HostSupervisorOptions {
   readonly now?: () => number
   /** 记录异常：写崩溃事件失败、宿主发来其他会话的事件等。 */
   readonly onError?: (error: unknown) => void
+  /**
+   * 这一轮的项目说明（M3-02）。没有文件或项目关闭了读取时返回 undefined。
+   * 省略时宿主每轮得到空结果，不读文件。
+   */
+  readonly loadAgentsMd?: (sessionId: string) =>
+    | {
+        readonly text: string
+        readonly sha256: string
+        readonly bytes: number
+        readonly truncated: boolean
+        readonly lines: number
+      }
+    | undefined
 }
 
 export interface HostSupervisor {
@@ -236,6 +249,13 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
           crash(state === 'starting' ? HostErrorCode.StartFailed : HostErrorCode.Exited, {
             exitCode,
           })
+      })
+
+      endpoint.handle('host.agentsMd', () => {
+        const loaded = options.loadAgentsMd?.(sessionId)
+        if (!loaded) return {}
+        const { text, sha256, bytes, truncated, lines } = loaded
+        return { text, context: { agentsMd: { sha256, bytes, truncated, lines } } }
       })
 
       endpoint.handle('changes.record', (input) => {

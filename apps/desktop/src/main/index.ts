@@ -39,6 +39,7 @@ import { createCredentialCommands, createLocalKeyStore } from './services/creden
 import { createSessionEventService } from './services/event-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
+import { loadProjectAgentsMd } from './services/agents-md.js'
 import { createProjectService } from './services/project-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
@@ -158,6 +159,18 @@ const supervisor = createHostSupervisor({
   requestApproval: (sessionId, runId, request) => approvals.request(sessionId, runId, request),
   cancelApproval: (sessionId, approvalId) => approvals.cancel(sessionId, approvalId),
   recordChange: (sessionId, runId, input) => changes.record(sessionId, runId, input),
+  // 项目说明（M3-02）：每轮按项目开关读一次 AGENTS.md。关了就不读。
+  loadAgentsMd: (sessionId) => {
+    const session = storage.sessions.get(sessionId)
+    const project = session && storage.projects.get(session.projectId)
+    if (!project) return undefined
+    try {
+      return loadProjectAgentsMd(project)
+    } catch (error) {
+      reportError(error)
+      return undefined
+    }
+  },
   onError: reportError,
 })
 const sessions = createSessionManager({

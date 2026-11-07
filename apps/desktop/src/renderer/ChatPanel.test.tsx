@@ -110,6 +110,22 @@ describe('ChatPanel', () => {
     expect(screen.queryByLabelText('输入消息')).toBeNull()
   })
 
+  it('shows a mark when this turn loaded AGENTS.md and drops it on the next turn', async () => {
+    const agentsMd = { sha256: 'a'.repeat(64), bytes: 4, truncated: false, lines: 2 }
+    const { open, emit } = setup({
+      history: HISTORY.map((event) =>
+        event.type === 'turn.started' ? { ...event, payload: { context: { agentsMd } } } : event,
+      ),
+    })
+    await open()
+    expect(screen.getByLabelText('已加载项目说明 AGENTS.md（2 行）')).toBeTruthy()
+    emit(
+      ev(9, 'message.user', { messageId: 'm3', content: text('继续') }, 't2'),
+      ev(10, 'turn.started', {}, 't2'),
+    )
+    expect(screen.queryByLabelText(/已加载项目说明/)).toBeNull()
+  })
+
   it('shows the replayed history of the selected session', async () => {
     const { request, open } = setup({ history: HISTORY })
     await open()

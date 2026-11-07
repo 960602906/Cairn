@@ -21,7 +21,17 @@ describe('project service', () => {
     const { service } = setup([ABS, ABS])
     expect(service.list()).toEqual({ projects: [] })
     const first = await service.open()
-    expect(first).toEqual({ project: { projectId: 'p1', name: 'demo', path: ABS, createdAt: 1 } })
+    expect(first).toEqual({
+      project: {
+        projectId: 'p1',
+        name: 'demo',
+        path: ABS,
+        createdAt: 1,
+        sessionCount: 0,
+        readAgentsMd: true,
+        enableProjectSkills: false,
+      },
+    })
     expect(await service.open()).toEqual(first)
     expect(service.list().projects).toEqual([first.project])
   })
@@ -38,6 +48,54 @@ describe('project service', () => {
       code: 'project.invalid_path',
       params: { path: 'relative/dir' },
     })
+  })
+
+  it('renames, toggles and removes a project, then restores it when opened again', async () => {
+    const { storage, service } = setup([ABS, ABS])
+    await service.open()
+    storage.sessions.create({
+      sessionId: 's1',
+      projectId: 'p1',
+      workspacePath: ABS,
+      title: '',
+    })
+    expect(
+      service.update({ projectId: 'p1', name: '  示例  ', readAgentsMd: false }),
+    ).toMatchObject({
+      name: '示例',
+      readAgentsMd: false,
+      sessionCount: 1,
+      lastUsedAt: 2,
+    })
+    expect(service.update({ projectId: 'p1', enableProjectSkills: true }).enableProjectSkills).toBe(
+      true,
+    )
+    expect(service.remove({ projectId: 'p1' })).toEqual({})
+    expect(service.list().projects).toEqual([])
+    expect(storage.sessions.get('s1')?.projectId).toBe('p1')
+    const again = await service.open()
+    expect(again.project).toMatchObject({
+      projectId: 'p1',
+      name: '示例',
+      readAgentsMd: false,
+      enableProjectSkills: true,
+      sessionCount: 1,
+    })
+  })
+
+  it('rejects an empty name and a missing project', async () => {
+    const { service } = setup([ABS])
+    await service.open()
+    expect(() => service.update({ projectId: 'p1', name: '   ' })).toThrow(
+      expect.objectContaining({ code: 'project.invalid_name' }),
+    )
+    expect(() => service.update({ projectId: 'missing', name: 'x' })).toThrow(
+      expect.objectContaining({ code: 'project.not_found' }),
+    )
+    service.remove({ projectId: 'p1' })
+    expect(() => service.remove({ projectId: 'p1' })).toThrow(
+      expect.objectContaining({ code: 'project.not_found' }),
+    )
   })
 
   it('names a root directory after its path', async () => {

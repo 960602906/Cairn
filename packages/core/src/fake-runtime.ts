@@ -281,6 +281,10 @@ class FakeSession implements RuntimeSession {
     return [...this.#history]
   }
 
+  setSystemPrompt(): void {
+    // 假运行时不发模型请求。调用方每轮都会换提示词，这里收下，避免它去找不存在的方法。
+  }
+
   async steer(input: UserMessage): Promise<void> {
     this.#history.push(input)
   }

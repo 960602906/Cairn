@@ -93,9 +93,14 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         if ([...s.projects.values()].some((p) => p.path === input.path)) {
           throw new StorageError(StorageErrorCode.Conflict, { path: input.path })
         }
-        const record: ProjectRecord = { ...input, createdAt: now() }
+        const record: ProjectRecord = {
+          ...input,
+          createdAt: now(),
+          readAgentsMd: true,
+          enableProjectSkills: false,
+        }
         s.projects.set(record.projectId, record)
-        return { ...record }
+        return copy(record)
       },
       get(projectId) {
         const record = live().projects.get(projectId)
@@ -107,8 +112,42 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
       },
       list() {
         return [...live().projects.values()]
+          .filter((p) => p.removedAt === undefined)
           .sort((a, b) => b.createdAt - a.createdAt || a.projectId.localeCompare(b.projectId))
-          .map((p) => ({ ...p }))
+          .map((p) => copy(p))
+      },
+      update(projectId, patch) {
+        const current = live().projects.get(projectId)
+        if (!current || current.removedAt !== undefined) {
+          throw new StorageError(StorageErrorCode.NotFound, { projectId })
+        }
+        const next: ProjectRecord = {
+          ...current,
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.readAgentsMd !== undefined ? { readAgentsMd: patch.readAgentsMd } : {}),
+          ...(patch.enableProjectSkills !== undefined
+            ? { enableProjectSkills: patch.enableProjectSkills }
+            : {}),
+        }
+        live().projects.set(projectId, next)
+        return copy(next)
+      },
+      remove(projectId) {
+        const current = live().projects.get(projectId)
+        if (!current || current.removedAt !== undefined) {
+          throw new StorageError(StorageErrorCode.NotFound, { projectId })
+        }
+        const next: ProjectRecord = { ...current, removedAt: now() }
+        live().projects.set(projectId, next)
+        return copy(next)
+      },
+      restore(projectId) {
+        const current = live().projects.get(projectId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { projectId })
+        const { removedAt: _removed, ...rest } = current
+        const next: ProjectRecord = rest
+        live().projects.set(projectId, next)
+        return copy(next)
       },
     },
 

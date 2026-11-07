@@ -86,6 +86,15 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
         <h2 id="chat-title" className="truncate text-ui font-medium text-fg">
           {title === '' ? t('title.untitled') : title}
         </h2>
+        {view?.agentsMd && (
+          <span
+            title={t('chat.agentsMd.loaded', { lines: view.agentsMd.lines })}
+            aria-label={t('chat.agentsMd.loaded', { lines: view.agentsMd.lines })}
+            className="shrink-0 rounded-[5px] bg-sunk px-1.5 py-0.5 text-[11px] text-muted"
+          >
+            {t('chat.agentsMd.mark')}
+          </span>
+        )}
         <SessionChanges sessionId={sessionId} />
       </TopBar>
       <div className="relative flex min-h-0 flex-1 flex-col">

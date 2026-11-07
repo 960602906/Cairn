@@ -4,6 +4,8 @@
   "list.new": "新对话",
   "title.untitled": "未命名会话",
   "chat.empty": "选择或新建一个会话开始对话",
+  "chat.agentsMd.mark": "AGENTS.md",
+  "chat.agentsMd.loaded": "已加载项目说明 AGENTS.md（{{lines}} 行）",
   "chat.messages": "消息",
   "message.user": "你",
   "message.assistant": "助手",

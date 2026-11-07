@@ -102,6 +102,13 @@ export interface SessionActions {
   refreshProjects(): Promise<void>
   /** 用系统对话框选择文件夹作为项目；取消或失败时返回 undefined。 */
   openProject(): Promise<ProjectSummary | undefined>
+  /** 修改项目名称或开关（M3-02）；失败时返回 undefined。 */
+  updateProject(
+    projectId: string,
+    patch: { name?: string; readAgentsMd?: boolean; enableProjectSkills?: boolean },
+  ): Promise<ProjectSummary | undefined>
+  /** 从列表移除项目（M3-02），不删除目录和会话；成功时返回 true。 */
+  removeProject(projectId: string): Promise<boolean>
   loadSettings(): Promise<Settings | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
@@ -426,6 +433,24 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
           projects: [project, ...state.projects.filter((p) => p.projectId !== project.projectId)],
         }))
         return project
+      },
+
+      async updateProject(projectId, patch) {
+        const project = await run(() => api.request('project.update', { projectId, ...patch }))
+        if (!project) return undefined
+        set((state) => ({
+          projects: state.projects.map((item) => (item.projectId === projectId ? project : item)),
+        }))
+        return project
+      },
+
+      async removeProject(projectId) {
+        const removed = await run(() => api.request('project.remove', { projectId }))
+        if (removed === undefined) return false
+        set((state) => ({
+          projects: state.projects.filter((item) => item.projectId !== projectId),
+        }))
+        return true
       },
 
       async loadSettings() {

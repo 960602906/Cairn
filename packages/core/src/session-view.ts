@@ -234,6 +234,10 @@ export interface SessionView {
   readonly checkpoints: readonly CheckpointView[]
   /** 恢复，按发生顺序（M2-08）。 */
   readonly restores: readonly RestoreView[]
+  /**
+   * 最近一轮读到的项目说明（M3-02）。这一轮没读到时不出现，顶栏的标记随之消失。
+   */
+  readonly agentsMd?: { readonly lines: number; readonly truncated: boolean }
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -484,10 +488,18 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
     case 'turn.started': {
       const { turnId } = event
       if (turnId === undefined) return undefined
+      const loaded = event.payload.context?.agentsMd
       const next = updateRun(view, event.runId, (run) =>
         run.turn?.turnId === turnId ? undefined : { ...run, turn: newTurn(turnId, event.ts) },
       )
-      return next && { ...next, crash: undefined }
+      // 重复的 turn.started，而且标记不用变：只推进 seq
+      if (!next && view.agentsMd === undefined && loaded === undefined) return undefined
+      const { agentsMd: _previous, ...rest } = next ?? view
+      return {
+        ...rest,
+        crash: undefined,
+        ...(loaded ? { agentsMd: { lines: loaded.lines, truncated: loaded.truncated } } : {}),
+      }
     }
     case 'turn.completed':
       return endTurn(view, event, { status: 'completed', durationMs: event.payload.durationMs })

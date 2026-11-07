@@ -105,6 +105,8 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   projects = {
     list: vi.fn(() => ({ projects: [PROJECT] })),
     open: vi.fn(async () => ({ project: PROJECT })),
+    update: vi.fn(() => PROJECT),
+    remove: vi.fn(() => ({})),
   }
   settings = {
     get: vi.fn(() => ({ locale: 'zh-CN' as const, providers: [] })),
@@ -462,7 +464,13 @@ describe('createRendererGateway: commands and lifecycle', () => {
     const { client } = setup()
     await expect(client.request('project.list', {})).resolves.toEqual({ projects: [PROJECT] })
     await expect(client.request('project.open', {})).resolves.toEqual({ project: PROJECT })
+    await expect(
+      client.request('project.update', { projectId: 'p1', readAgentsMd: false }),
+    ).resolves.toEqual(PROJECT)
+    await expect(client.request('project.remove', { projectId: 'p1' })).resolves.toEqual({})
     expect(projects.open).toHaveBeenCalledOnce()
+    expect(projects.update).toHaveBeenCalledOnce()
+    expect(projects.remove).toHaveBeenCalledOnce()
   })
 
   it('delegates settings requests to the settings service', async () => {

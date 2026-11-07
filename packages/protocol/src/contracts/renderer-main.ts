@@ -36,13 +36,28 @@ export const SessionSummary = z.object({
 })
 export type SessionSummary = z.infer<typeof SessionSummary>
 
-/** 已打开过的项目（M1-16a）。 */
+/** 项目名称的长度上限（字符，M3-02）。 */
+export const PROJECT_NAME_MAX_LENGTH = 200
+
+/**
+ * 已打开过的项目（M1-16a，M3-02 补上会话数、最近使用和两个开关）。
+ * 后加的字段都是可选的：省略 `readAgentsMd` 表示读取，省略 `enableProjectSkills` 表示关闭，
+ * 省略 `sessionCount` 表示 0。
+ */
 export const ProjectSummary = z.object({
   projectId: Id,
   name: z.string(),
   /** 项目目录的绝对路径。 */
   path: z.string().min(1),
   createdAt: Timestamp,
+  /** 未归档的会话数。 */
+  sessionCount: z.number().int().nonnegative().optional(),
+  /** 最近一个会话的更新时间；还没有会话时不出现。 */
+  lastUsedAt: Timestamp.optional(),
+  /** 是否在每轮开始时读取 `AGENTS.md`。省略表示读取。 */
+  readAgentsMd: z.boolean().optional(),
+  /** 是否启用项目内 Skills（M3-07 起生效）。省略表示关闭。 */
+  enableProjectSkills: z.boolean().optional(),
 })
 export type ProjectSummary = z.infer<typeof ProjectSummary>
 
@@ -147,6 +162,34 @@ export const MainForRenderer = defineSide({
     'project.open': {
       params: z.object({}),
       result: z.object({ project: ProjectSummary.optional() }),
+    },
+    /**
+     * 修改项目（M3-02）：名称、是否读取 `AGENTS.md`、是否启用项目内 Skills。至少给出一项。
+     * 名称去掉首尾空白后不能为空。项目不在列表中时报 `project.not_found`。
+     */
+    'project.update': {
+      params: z
+        .object({
+          projectId: Id,
+          name: z.string().max(PROJECT_NAME_MAX_LENGTH).optional(),
+          readAgentsMd: z.boolean().optional(),
+          enableProjectSkills: z.boolean().optional(),
+        })
+        .refine(
+          (patch) =>
+            patch.name !== undefined ||
+            patch.readAgentsMd !== undefined ||
+            patch.enableProjectSkills !== undefined,
+        ),
+      result: ProjectSummary,
+    },
+    /**
+     * 从列表移除项目（M3-02）：只去掉这条记录，不删除目录，也不删除已有会话。
+     * 再次打开同一目录会恢复原来的记录和开关。
+     */
+    'project.remove': {
+      params: z.object({ projectId: Id }),
+      result: z.object({}),
     },
     'session.list': {
       params: z.object({ includeArchived: z.boolean().optional() }),

@@ -4,6 +4,8 @@
   "list.new": "New chat",
   "title.untitled": "Untitled session",
   "chat.empty": "Select or create a session to start chatting",
+  "chat.agentsMd.mark": "AGENTS.md",
+  "chat.agentsMd.loaded": "Loaded project instructions AGENTS.md ({{lines}} lines)",
   "chat.messages": "Messages",
   "message.user": "You",
   "message.assistant": "Assistant",

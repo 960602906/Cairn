@@ -141,6 +141,14 @@ class PiSession implements RuntimeSession {
     return [...this.#history]
   }
 
+  /** 换掉开头的系统消息正文（M3-02）。工具声明留在原消息上。 */
+  setSystemPrompt(prompt: string): void {
+    const messages = this.#agent.state.messages
+    const first = messages[0]
+    if (first?.role !== 'system') return
+    this.#agent.state.messages = [{ ...first, content: prompt }, ...messages.slice(1)]
+  }
+
   async prompt(input: UserMessage): Promise<void> {
     this.#checkIdle()
     this.#pendingUsers.push(input)

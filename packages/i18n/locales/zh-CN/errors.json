@@ -41,6 +41,8 @@
   "host.already_initialized": "Agent 进程已经初始化",
   "settings.write_failed": "设置保存失败",
   "project.invalid_path": "所选的不是有效的文件夹：{{path}}",
+  "project.not_found": "项目不在列表中",
+  "project.invalid_name": "项目名称不能为空",
   "credentials.unavailable": "系统加密不可用，无法保存 Key",
   "credentials.invalid_ref": "凭据名称无效",
   "credentials.invalid_value": "Key 不能为空，且不能超过 4096 个字符",

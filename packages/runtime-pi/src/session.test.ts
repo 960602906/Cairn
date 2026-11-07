@@ -175,6 +175,13 @@ describe('PiRuntime：带工具调用的对话（openai 格式 mock 端点）', 
     })
   })
 
+  it('replaces the system prompt before the next model request (M3-02)', async () => {
+    const h = await setup([ANSWER_TURN])
+    h.session.setSystemPrompt!('改成新的说明。')
+    await h.session.prompt(user('你好'))
+    expect(sentMessages(0)[0]).toMatchObject({ role: 'system', content: '改成新的说明。' })
+  })
+
   it('beforeToolCall 拒绝：不执行工具，结果为 denied，原因发给模型', async () => {
     const executeTool = vi.fn()
     const h = await setup([TOOL_TURN, ANSWER_TURN], {
