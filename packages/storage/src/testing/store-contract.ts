@@ -514,6 +514,31 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         )
       })
 
+      it('reverts hunks one at a time; the change follows only when every hunk is reverted', () => {
+        seed()
+        storage.changes.create(
+          change('c1', { hunks: [hunk, { ...hunk, oldStart: 9, newStart: 10 }] }),
+        )
+        const one = storage.changes.setHunkStatus('c1', 0, 'reverted')
+        expect(one.status).toBe('pending')
+        expect(one.hunks.map((h) => h.status)).toEqual(['reverted', 'pending'])
+        const both = storage.changes.setHunkStatus('c1', 1, 'reverted')
+        expect(both.status).toBe('reverted')
+        expect(both.hunks.map((h) => h.status)).toEqual(['reverted', 'reverted'])
+        const back = storage.changes.setHunkStatus('c1', 0, 'pending')
+        expect(back.status).toBe('pending')
+        expect(back.hunks.map((h) => h.status)).toEqual(['pending', 'reverted'])
+        expect(storage.changes.get('c1')).toEqual(back)
+        expectStorageError(
+          () => storage.changes.setHunkStatus('c1', 2, 'reverted'),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.changes.setHunkStatus('nope', 0, 'reverted'),
+          StorageErrorCode.NotFound,
+        )
+      })
+
       it('rejects unknown sessions, unknown revert targets and duplicate ids', () => {
         expectStorageError(() => storage.changes.create(change('c1')), StorageErrorCode.NotFound)
         seed()

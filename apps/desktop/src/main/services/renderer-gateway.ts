@@ -52,6 +52,7 @@ export interface SessionCommands {
 export interface ChangeCommands {
   readonly list: Handler<'changes.list'>
   readonly revert: Handler<'changes.revert'>
+  readonly revertHunk: Handler<'changes.revertHunk'>
   readonly content: Handler<'changes.content'>
 }
 
@@ -263,6 +264,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('permissions.delete', (params) => permissions.delete(params))
       endpoint.handle('changes.list', (params) => changes.list(params))
       endpoint.handle('changes.revert', (params) => changes.revert(params))
+      endpoint.handle('changes.revertHunk', (params) => changes.revertHunk(params))
       endpoint.handle('changes.content', (params) => changes.content(params))
       endpoint.handle('checkpoint.list', (params) => checkpoints.list(params))
       endpoint.handle('checkpoint.preview', (params) => checkpoints.preview(params))

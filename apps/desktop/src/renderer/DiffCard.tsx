@@ -3,7 +3,8 @@
  *
  * - 标题栏与代码卡片相同：语言图标、路径、新文件 / 已删除标记、增删行数与 5 个比例方块；右侧是“合并 / 分栏”
  *   切换与“撤销此文件”（传入 `onRevert` 时才有）。卡片窄于 `SPLIT_MIN_WIDTH` 时只用合并视图，不显示切换。
- * - 每个 hunk 先是标题行（`@@ -a,b +c,d @@` 加所在函数名），每行是旧行号、新行号、`+` / `−` 标记与内容；
+ * - 每个 hunk 先是标题行（`@@ -a,b +c,d @@` 加所在函数名）。悬停标题行出现“撤销此块”（M3-06）；
+ *   已撤销的块变灰并标注。每行是旧行号、新行号、`+` / `−` 标记与内容；
  *   新增行与删除行整行着色、行号槽更深，行内真正改动的词再加深一层。语法高亮对改动前后的全文分别进行。
  * - hunk 之间未改动的行折叠成一行“展开下方 N 行未改动的代码”；一次最多显示 `DIFF_MAX_ROWS` 行，其余点击后显示。
  * - 分栏视图左旧右新，对侧没有对应行时用斜线底纹占位，长行换行显示。
@@ -11,7 +12,7 @@
 import { Undo2, UnfoldVertical } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { FileChangeKind } from '@cairn/protocol'
+import type { FileChangeKind, FileChangeStatus } from '@cairn/protocol'
 import { LanguageIcon, splitPath } from './CodeCard.js'
 import {
   fileDiff,
@@ -48,7 +49,20 @@ export interface DiffCardProps {
   readonly removed: number
   readonly onRevert?: (() => void) | undefined
   readonly revertDisabled?: boolean
+  /** 记录下来的块。与标题行号对上时才能撤销这一块。 */
+  readonly hunks?: readonly DiffHunkState[]
+  readonly onRevertHunk?: ((hunkIndex: number) => void) | undefined
+  readonly revertHunkDisabled?: boolean
   readonly className?: string
+}
+
+export interface DiffHunkState {
+  readonly index: number
+  readonly status: FileChangeStatus
+  readonly oldStart: number
+  readonly oldLines: number
+  readonly newStart: number
+  readonly newLines: number
 }
 
 /** 增删比例的 5 个小方块。 */
@@ -260,14 +274,30 @@ function useWidth(ref: React.RefObject<HTMLElement | null>) {
   return width
 }
 
+function sameHunk(hunk: DiffHunkState, header: DiffSegment & { kind: 'hunk' }) {
+  const { oldStart, oldLines, newStart, newLines } = header.header
+  return (
+    hunk.oldStart === oldStart &&
+    hunk.oldLines === oldLines &&
+    hunk.newStart === newStart &&
+    hunk.newLines === newLines
+  )
+}
+
 function DiffBody({
   segments,
   split,
   hl,
+  hunks,
+  onRevertHunk,
+  revertHunkDisabled,
 }: {
   readonly segments: readonly DiffSegment[]
   readonly split: boolean
   readonly hl: Highlights
+  readonly hunks: readonly DiffHunkState[]
+  readonly onRevertHunk: ((hunkIndex: number) => void) | undefined
+  readonly revertHunkDisabled: boolean
 }) {
   const { t } = useTranslation('session')
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
@@ -275,6 +305,7 @@ function DiffBody({
   let budget = showAll ? Infinity : DIFF_MAX_ROWS
   let hidden = 0
   let truncated = false
+  const used = new Set<number>()
   const out = segments.map((segment, index) => {
     const open = segment.kind === 'hunk' || expanded.has(index)
     const count = open ? segment.rows.length : 0
@@ -289,19 +320,52 @@ function DiffBody({
       truncated = true
       hidden += count - rows.length
     }
+    const hunk =
+      segment.kind === 'hunk'
+        ? hunks.find((item, at) => {
+            if (used.has(at) || !sameHunk(item, segment)) return false
+            used.add(at)
+            return true
+          })
+        : undefined
+    const reverted = hunk?.status === 'reverted'
     return (
       <Fragment key={index}>
         {segment.kind === 'hunk' && (
-          <div className="flex bg-hunk-bg text-hunk-fg">
-            <span aria-hidden className="w-[46px] shrink-0 select-none" />
-            {!split && <span aria-hidden className="w-[46px] shrink-0 select-none" />}
-            <span className="truncate px-2">
-              {formatHunkHeader(segment.header)}
-              {segment.header.fn && <span className="ml-2 text-muted">{segment.header.fn}</span>}
-            </span>
+          <div
+            data-reverted={reverted ? '' : undefined}
+            className={cn(reverted && 'opacity-60 saturate-0')}
+          >
+            <div className="group/hunk relative flex bg-hunk-bg text-hunk-fg">
+              <span aria-hidden className="w-[46px] shrink-0 select-none" />
+              {!split && <span aria-hidden className="w-[46px] shrink-0 select-none" />}
+              <span className="truncate px-2">
+                {formatHunkHeader(segment.header)}
+                {segment.header.fn && <span className="ml-2 text-muted">{segment.header.fn}</span>}
+              </span>
+              {reverted ? (
+                <span className="ml-auto shrink-0 pr-2 text-note text-muted">
+                  {t('diff.hunkReverted')}
+                </span>
+              ) : (
+                hunk &&
+                onRevertHunk && (
+                  <button
+                    type="button"
+                    disabled={revertHunkDisabled}
+                    onClick={() => onRevertHunk(hunk.index)}
+                    className="absolute top-0 right-1 inline-flex h-full items-center gap-1 rounded-[6px] px-1.5 text-note text-muted opacity-0 transition-opacity group-hover/hunk:opacity-100 focus-visible:opacity-100 hover:bg-hover hover:text-danger disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5"
+                  >
+                    <Undo2 aria-hidden />
+                    {t('diff.revertHunk')}
+                  </button>
+                )
+              )}
+            </div>
+            {open && <Rows rows={rows} split={split} hl={hl} />}
           </div>
         )}
-        {open ? (
+        {segment.kind === 'hunk' ? null : open ? (
           <Rows rows={rows} split={split} hl={hl} />
         ) : (
           <button
@@ -341,6 +405,9 @@ export function DiffCard({
   removed,
   onRevert,
   revertDisabled = false,
+  hunks = [],
+  onRevertHunk,
+  revertHunkDisabled = false,
   className,
 }: DiffCardProps) {
   const { t } = useTranslation('session')
@@ -358,6 +425,7 @@ export function DiffCard({
     new: useHighlight(after, ready ? language : undefined),
   }
   const counts = diff ? { added: diff.added, removed: diff.removed } : { added, removed }
+  const revertedHunks = hunks.filter((hunk) => hunk.status === 'reverted').length
   const { dir, name } = splitPath(path)
 
   const message = !diff
@@ -386,6 +454,11 @@ export function DiffCard({
             <ChangeCounts {...counts} />
             <RatioBlocks {...counts} />
           </>
+        )}
+        {revertedHunks > 0 && (
+          <span className="text-muted">
+            {t('diff.revertedCount', { reverted: revertedHunks, total: hunks.length })}
+          </span>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1 text-muted">
           {canSplit && !message && (
@@ -428,7 +501,14 @@ export function DiffCard({
       ) : (
         <div className="overflow-auto font-mono text-code" style={{ maxHeight: BODY_MAX_HEIGHT }}>
           <div className={split ? 'w-full' : 'w-max min-w-full'}>
-            <DiffBody segments={diff!.segments} split={split} hl={hl} />
+            <DiffBody
+              segments={diff!.segments}
+              split={split}
+              hl={hl}
+              hunks={hunks}
+              onRevertHunk={onRevertHunk}
+              revertHunkDisabled={revertHunkDisabled}
+            />
           </div>
         </div>
       )}

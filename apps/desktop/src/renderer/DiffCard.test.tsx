@@ -130,6 +130,32 @@ describe('DiffCard：合并视图', () => {
     expect(rows(c, 'context').length).toBe(contextBefore + 7)
   })
 
+  it('悬停块标题可以撤销这一块；已撤销的块变灰并标注', async () => {
+    const onRevertHunk = vi.fn()
+    const c = card({
+      hunks: [
+        { index: 0, status: 'pending', oldStart: 1, oldLines: 5, newStart: 1, newLines: 5 },
+        { index: 1, status: 'reverted', oldStart: 13, oldLines: 3, newStart: 13, newLines: 4 },
+      ],
+      onRevertHunk,
+    })
+    expect(within(c).getByText('已撤销 1/2 块')).toBeTruthy()
+    const reverted = c.querySelector('[data-reverted]')
+    expect(reverted?.textContent).toContain('已撤销')
+    expect(reverted?.textContent).toContain('@@ -13,3 +13,4 @@')
+    await userEvent.click(within(c).getByRole('button', { name: '撤销此块' }))
+    expect(onRevertHunk).toHaveBeenCalledWith(0)
+    cleanup()
+    card({
+      hunks: [{ index: 0, status: 'pending', oldStart: 1, oldLines: 5, newStart: 1, newLines: 5 }],
+      onRevertHunk,
+      revertHunkDisabled: true,
+    })
+    expect(
+      (screen.getByRole('button', { name: '撤销此块' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
   it('一次最多显示 DIFF_MAX_ROWS 行，其余点击后显示', async () => {
     const big = Array.from({ length: DIFF_MAX_ROWS + 20 }, (_, i) => `l${i}`).join('\n')
     const c = card({ kind: 'create', content: { state: 'ready', before: '', after: big } })

@@ -16,6 +16,7 @@ import {
   type UnsequencedEvent,
 } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
+import { diffHunks, unifiedDiff } from '@cairn/tools'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBlobStore } from './blob-store.js'
 import { createChangeService, type ChangeServiceOptions } from './change-service.js'
@@ -111,7 +112,7 @@ describe('ChangeService：记录与列出', () => {
           status: 'pending',
           turnId: 't1',
           toolCallId: 'call1',
-          hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2 }],
+          hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 2, status: 'pending' }],
           added: 2,
           removed: 1,
           createdAt: 7,
@@ -154,7 +155,7 @@ describe('ChangeService：整文件撤销', () => {
         kind: 'modify',
         status: 'pending',
         revertOf: 'ch1',
-        hunks: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 1 }],
+        hunks: [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 1, status: 'pending' }],
         added: 1,
         removed: 2,
         createdAt: 7,
@@ -384,5 +385,96 @@ describe('ChangeService：改动内容', () => {
     await expect(
       missing.service.content({ sessionId: 's1', changeId: lost }),
     ).rejects.toMatchObject({ code: 'changes.content_missing', params: { path: 'c.txt' } })
+  })
+})
+
+const LINES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l']
+const originalText = () => `${LINES.join('\n')}\n`
+const modifiedText = () => originalText().replace('\nc\n', '\nC\n').replace('\nk\n', '\nK\n')
+
+describe('ChangeService：按块撤销', () => {
+  async function recordBoth(service: ReturnType<typeof setup>['service']) {
+    const before = originalText()
+    const after = modifiedText()
+    put('a.txt', before)
+    const hunks = diffHunks(unifiedDiff('a/a.txt', 'b/a.txt', before, after))
+    const changeId = await apply(service, 'a.txt', after, { hunks, added: 2, removed: 2 })
+    return { changeId, hunks, before, after }
+  }
+
+  it('整体偏移后仍能定位，只恢复这一块，并在全部块撤销后把改动标为已撤销', async () => {
+    const { service, storage, published } = setup()
+    const { changeId, hunks, after } = await recordBoth(service)
+    expect(hunks).toHaveLength(2)
+    put('a.txt', `X\nY\n${after}`)
+
+    const once = await service.revertHunk({ sessionId: 's1', changeId, hunkIndex: 1 })
+    expect(read('a.txt')).toBe(`X\nY\n${after.replace('\nK\n', '\nk\n')}`)
+    expect(storage.changes.get(changeId)!.status).toBe('pending')
+    expect(storage.changes.get(changeId)!.hunks.map((h) => h.status)).toEqual([
+      'pending',
+      'reverted',
+    ])
+    expect(once.changes[0]).toMatchObject({ revertOf: changeId, kind: 'modify', status: 'pending' })
+    expect(published.at(-1)).toMatchObject({
+      type: 'file.changed',
+      payload: { revertOf: changeId, hunkIndex: 1, path: 'a.txt', kind: 'modify' },
+    })
+    expect(service.list({ sessionId: 's1' }).changes[0]!.hunks.map((h) => h.status)).toEqual([
+      'pending',
+      'reverted',
+    ])
+
+    const again = await recordBoth(service)
+    await service.revertHunk({ sessionId: 's1', changeId: again.changeId, hunkIndex: 0 })
+    await service.revertHunk({ sessionId: 's1', changeId: again.changeId, hunkIndex: 1 })
+    expect(read('a.txt')).toBe(again.before)
+    expect(storage.changes.get(again.changeId)!.status).toBe('reverted')
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId: again.changeId, hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.already_reverted' })
+  })
+
+  it('改后内容对不上时报 changes.hunk_conflict，不写文件、不记反向记录', async () => {
+    const { service, storage } = setup()
+    const { changeId, after } = await recordBoth(service)
+    const tampered = after.replace('\nC\n', '\nnope\n')
+    put('a.txt', tampered)
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId, hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.hunk_conflict', params: { path: 'a.txt' } })
+    expect(read('a.txt')).toBe(tampered)
+    expect(storage.changes.list('s1')).toHaveLength(1)
+    expect(storage.changes.get(changeId)!.hunks.every((h) => h.status === 'pending')).toBe(true)
+  })
+
+  it('保留 CRLF，并拒绝越界、忙碌与已撤销的块', async () => {
+    const { service, storage, busy } = setup()
+    const before = originalText().replace(/\n/g, '\r\n')
+    const after = before.replace('\r\nc\r\n', '\r\nC\r\n').replace('\r\nk\r\n', '\r\nK\r\n')
+    put('a.txt', before)
+    const hunks = diffHunks(
+      unifiedDiff(
+        'a/a.txt',
+        'b/a.txt',
+        before.replace(/\r\n/g, '\n'),
+        after.replace(/\r\n/g, '\n'),
+      ),
+    )
+    const changeId = await apply(service, 'a.txt', after, { hunks, added: 2, removed: 2 })
+    await service.revertHunk({ sessionId: 's1', changeId, hunkIndex: 0 })
+    expect(read('a.txt')).toBe(before.replace('\r\nk\r\n', '\r\nK\r\n'))
+
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId, hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.already_reverted' })
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId, hunkIndex: 9 }),
+    ).rejects.toMatchObject({ code: 'changes.not_found' })
+    busy.value = true
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId, hunkIndex: 1 }),
+    ).rejects.toMatchObject({ code: 'run.busy' })
+    expect(storage.changes.get(changeId)!.hunks[1]!.status).toBe('pending')
   })
 })

@@ -204,7 +204,10 @@ export interface EventStore {
 
 // ---------- 文件改动 ----------
 
-/** 改动中的一个 diff 块（架构 §14.2 `hunks`）；状态在 M1 与所属改动一致，按块处理在 M3。 */
+/**
+ * 改动中的一个 diff 块（架构 §14.2 `hunks`）。
+ * 按块撤销（M3-06）后，块可以单独处于 `reverted`；所属改动要等每一块都撤销才变为 `reverted`。
+ */
 export interface HunkRecord extends FileHunk {
   readonly status: FileChangeStatus
 }
@@ -257,6 +260,12 @@ export interface FileChangeStore {
   list(sessionId: string): FileChangeRecord[]
   /** 改动及其全部块的状态。不存在时报 `storage.not_found`。 */
   setStatus(changeId: string, status: FileChangeStatus): FileChangeRecord
+  /**
+   * 只改一块的状态（M3-06）。每一块都变为 `reverted` 时，改动状态也变为 `reverted`；
+   * 从已撤销的改动里把一块改回非 `reverted` 时，改动状态回到 `pending`。
+   * 改动或块不存在时报 `storage.not_found`。
+   */
+  setHunkStatus(changeId: string, hunkIndex: number, status: FileChangeStatus): FileChangeRecord
 }
 
 // ---------- 汇总 ----------

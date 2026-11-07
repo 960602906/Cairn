@@ -92,6 +92,7 @@
   "changes.not_found": "找不到这条改动记录",
   "changes.already_reverted": "这处改动已经撤销过了",
   "changes.conflict": "{{path}} 在改动之后又被修改过（或较新的改动没有一起撤销），无法撤销",
+  "changes.hunk_conflict": "{{path}} 的这一块对不上当前文件，请改用整文件撤销",
   "changes.blob_missing": "找不到 {{path}} 改动前的内容，无法撤销",
   "changes.content_missing": "找不到 {{path}} 这次改动的内容，无法显示差异",
   "changes.failed": "无法恢复 {{path}}",

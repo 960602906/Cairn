@@ -406,12 +406,25 @@ export const MainForRenderer = defineSide({
       result: z.object({ changes: z.array(FileChangeSummary) }),
     },
     /**
-     * 整文件撤销（M1-08b；按块撤销在 M3）：按与发生相反的顺序把文件恢复为改动前的内容。
+     * 整文件撤销（M1-08b）：按与发生相反的顺序把文件恢复为改动前的内容。
      * 会话正在运行时拒绝；文件在改动之后又被修改过（与记录的内容不一致）时整体拒绝，不做部分撤销。
      * 返回撤销产生的改动记录（`revertOf` 指向被撤销的改动）。
      */
     'changes.revert': {
       params: z.object({ sessionId: Id, changeIds: z.array(Id).min(1).max(1000) }),
+      result: z.object({ changes: z.array(FileChangeSummary) }),
+    },
+    /**
+     * 按块撤销（M3-06）：只撤销这一块。文件里这一块的改后内容必须仍能按上下文行对上（允许整体偏移），
+     * 对不上时报 `changes.hunk_conflict`。返回撤销产生的改动记录（`revertOf` 指向原改动）。
+     * 每一块都撤销后，原改动状态变为 `reverted`。
+     */
+    'changes.revertHunk': {
+      params: z.object({
+        sessionId: Id,
+        changeId: Id,
+        hunkIndex: z.number().int().nonnegative(),
+      }),
       result: z.object({ changes: z.array(FileChangeSummary) }),
     },
     /**

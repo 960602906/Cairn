@@ -623,6 +623,41 @@ describe('file changes (M2-07)', () => {
     expect(store.getState().error).toEqual({ code: 'changes.conflict', params: { path: 'a.ts' } })
   })
 
+  it('reverts one hunk and reloads the list', async () => {
+    let reverted = false
+    const { api, calls } = fakeApi({
+      'changes.revertHunk': () => {
+        if (reverted) throw new RpcError('changes.hunk_conflict', { path: 'a.ts' })
+        reverted = true
+        return { changes: [] }
+      },
+      'changes.list': () => ({
+        changes: [
+          change('c1', {
+            hunks: [
+              {
+                oldStart: 1,
+                oldLines: 1,
+                newStart: 1,
+                newLines: 1,
+                status: reverted ? 'reverted' : 'pending',
+              },
+            ],
+          }),
+        ],
+      }),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().revertHunk('s1', 'c1', 0)).resolves.toBe(true)
+    expect(calls).toContainEqual([
+      'changes.revertHunk',
+      { sessionId: 's1', changeId: 'c1', hunkIndex: 0 },
+    ])
+    expect(store.getState().changes['s1']?.[0]?.hunks[0]?.status).toBe('reverted')
+    await expect(store.getState().revertHunk('s1', 'c1', 0)).resolves.toBe(false)
+    expect(store.getState().error?.code).toBe('changes.hunk_conflict')
+  })
+
   it('sends plan mode only when asked, and forwards plan decisions (M3-05)', async () => {
     const { api, calls } = fakeApi({
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),

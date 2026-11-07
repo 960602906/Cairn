@@ -344,6 +344,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     ),
     deleteRule: db.prepare('DELETE FROM permission_rules WHERE rule_id = ?'),
     setHunkStatus: db.prepare('UPDATE hunks SET status = ? WHERE change_id = ?'),
+    setHunkAt: db.prepare('UPDATE hunks SET status = ? WHERE change_id = ? AND position = ?'),
   }
 
   const updateSession = (
@@ -466,6 +467,25 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { changeId })
       q.setHunkStatus.run(status, changeId)
       return getChange(changeId)!
+    },
+  )
+
+  const setOneHunkStatus = db.transaction(
+    (changeId: string, hunkIndex: number, status: FileChangeStatus): FileChangeRecord => {
+      const current = getChange(changeId)
+      if (!current || !Number.isInteger(hunkIndex) || hunkIndex < 0 || !current.hunks[hunkIndex]) {
+        throw new StorageError(StorageErrorCode.NotFound, { changeId, hunkIndex })
+      }
+      q.setHunkAt.run(status, changeId, hunkIndex)
+      const next = getChange(changeId)!
+      const allReverted = next.hunks.every((hunk) => hunk.status === 'reverted')
+      const changeStatus = allReverted
+        ? 'reverted'
+        : next.status === 'reverted'
+          ? 'pending'
+          : next.status
+      if (changeStatus !== next.status) q.setChangeStatus.run(changeStatus, changeId)
+      return changeStatus === next.status ? next : getChange(changeId)!
     },
   )
 
@@ -615,6 +635,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
           .map((row) => toFileChange(row, hunks.get(row.change_id) ?? []))
       },
       setStatus: (changeId, status) => setChangeStatus(changeId, status),
+      setHunkStatus: (changeId, hunkIndex, status) => setOneHunkStatus(changeId, hunkIndex, status),
     },
 
     permissionRules: {
