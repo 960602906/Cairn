@@ -16,6 +16,7 @@ export * from './ripgrep.js'
 export * from './search.js'
 export * from './write-tools.js'
 export * from './run-command.js'
+export * from './load-skill.js'
 
 /** 注册读类内置工具（M1-07）：`read_file`、`list_dir`、`search`。 */
 export function registerReadTools(registry: ToolRegistry, options: SearchToolOptions): void {

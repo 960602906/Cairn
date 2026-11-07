@@ -35,6 +35,7 @@ import {
   type HostModelConfig,
   type PermissionRule,
   type ShellPreference,
+  type SkillCatalogEntry,
   type RequestOptions,
   type RpcEndpoint,
   type UnsequencedEvent,
@@ -163,6 +164,11 @@ export interface HostSupervisorOptions {
         readonly lines: number
       }
     | undefined
+  /**
+   * 这一轮交给模型的技能（M3-07）。省略或抛出时宿主这一轮不带技能。
+   * 只应返回已启用、且没有被同名技能盖住的。
+   */
+  readonly loadSkills?: (sessionId: string) => readonly SkillCatalogEntry[]
 }
 
 export interface HostSupervisor {
@@ -291,6 +297,15 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         if (!loaded) return {}
         const { text, sha256, bytes, truncated, lines } = loaded
         return { text, context: { agentsMd: { sha256, bytes, truncated, lines } } }
+      })
+
+      endpoint.handle('host.skills', () => {
+        try {
+          return { skills: [...(options.loadSkills?.(sessionId) ?? [])] }
+        } catch (error) {
+          options.onError?.(error)
+          return { skills: [] }
+        }
       })
 
       endpoint.handle('changes.record', (input) => {

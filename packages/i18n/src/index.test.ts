@@ -148,11 +148,13 @@ describe('translateError', () => {
       'path.root_not_absolute',
       'path.root_not_found',
       'path.broken_link',
+      'path.read_only',
       'tool.read_file.not_found',
       'tool.read_file.is_directory',
       'tool.read_file.too_large',
       'tool.read_file.offset_out_of_range',
       'tool.read_file.unreadable',
+      'tool.load_skill.not_found',
       'tool.list_dir.not_found',
       'tool.list_dir.not_directory',
       'tool.list_dir.unreadable',
@@ -189,6 +191,12 @@ describe('translateError', () => {
       'plan.unknown_step',
       'plan.no_active_plan',
       'permission.plan_mode',
+      'skills.invalid',
+      'skills.duplicate',
+      'skills.traversal',
+      'skills.too_large',
+      'skills.not_found',
+      'skills.not_uninstallable',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())

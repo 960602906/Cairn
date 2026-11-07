@@ -60,6 +60,7 @@
   "path.root_not_absolute": "工作区目录不是绝对路径",
   "path.root_not_found": "工作区目录不存在",
   "path.broken_link": "路径经过一个目标不存在的符号链接",
+  "path.read_only": "这个路径属于技能目录，只能读取",
   "tool.not_found": "工具不存在",
   "tool.invalid_input": "工具参数不正确",
   "tool.execution_failed": "工具执行出错",
@@ -68,6 +69,7 @@
   "tool.read_file.too_large": "文件太大，无法读取",
   "tool.read_file.offset_out_of_range": "起始行超出了文件末尾",
   "tool.read_file.unreadable": "无法读取文件",
+  "tool.load_skill.not_found": "没有这个已启用的技能",
   "tool.list_dir.not_found": "目录不存在",
   "tool.list_dir.not_directory": "这不是一个目录",
   "tool.list_dir.unreadable": "无法读取目录",
@@ -103,5 +105,11 @@
   "plan.not_pending": "这份计划已经处理过了",
   "plan.unknown_step": "步骤不在这份计划里",
   "plan.no_active_plan": "没有正在执行的计划",
-  "permission.plan_mode": "计划模式下只能阅读，批准计划后才能改文件、运行命令或访问网络"
+  "permission.plan_mode": "计划模式下只能阅读，批准计划后才能改文件、运行命令或访问网络",
+  "skills.invalid": "SKILL.md 缺少名称或描述，或不是一份有效的技能",
+  "skills.duplicate": "已经安装了同名技能",
+  "skills.traversal": "技能里的路径逃出了技能目录",
+  "skills.too_large": "技能文件太大",
+  "skills.not_found": "找不到这个技能",
+  "skills.not_uninstallable": "内置技能和项目里的技能不能从这里卸载"
 }

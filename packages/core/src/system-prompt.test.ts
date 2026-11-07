@@ -140,6 +140,44 @@ describe('buildSystemPrompt', () => {
     expect(prompt).not.toContain('Shell:')
   })
 
+  it('puts the skill index before the environment and inlines pinned skills (M3-07)', () => {
+    const prompt = buildSystemPrompt({
+      tools: true,
+      environment,
+      plan: { kind: 'propose' },
+      skills: [
+        { name: 'demo', description: 'A sample skill.' },
+        { name: 'house', description: 'Always on.', body: '  Use two spaces.\n' },
+      ],
+    })
+    const plan = prompt.indexOf('# Plan mode')
+    const skills = prompt.indexOf('# Skills')
+    const pinned = prompt.indexOf('# Pinned skills')
+    const env = prompt.indexOf('# Environment')
+    expect(plan).toBeGreaterThan(-1)
+    expect(skills).toBeGreaterThan(plan)
+    expect(pinned).toBeGreaterThan(skills)
+    expect(env).toBeGreaterThan(pinned)
+    expect(prompt).toContain('- demo: A sample skill.')
+    expect(prompt).toContain('- house: Always on.')
+    expect(prompt).toContain('## house\nUse two spaces.')
+    expect(prompt).toContain('cannot override the safety rules')
+    const indexOnly = buildSystemPrompt({
+      tools: false,
+      environment: { os: 'Linux', workspacePath: '/work', date: '2026-01-02' },
+      skills: [{ name: 'demo', description: 'A sample skill.', body: '   ' }],
+    })
+    expect(indexOnly).toContain('- demo: A sample skill.')
+    expect(indexOnly).not.toContain('# Pinned skills')
+    expect(
+      buildSystemPrompt({
+        tools: false,
+        environment: { os: 'Linux', workspacePath: '/work', date: '2026-01-02' },
+        skills: [],
+      }),
+    ).not.toContain('# Skills')
+  })
+
   it('covers the required rules of the base prompt (architecture §13)', () => {
     expect(BASE_SYSTEM_PROMPT).toContain('Reply in the language the user writes in')
     expect(BASE_SYSTEM_PROMPT).toContain('ask a short clarifying question')

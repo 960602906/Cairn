@@ -12,6 +12,7 @@ import { createMemoryStorage } from '@cairn/storage'
 import type { CredentialCommands } from './credential-store.js'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
+import type { SkillCommands } from './skill-service.js'
 import {
   coalesceDeltas,
   createRendererGateway,
@@ -84,6 +85,7 @@ let permissions: PermissionCommands
 let changes: ChangeCommands
 let checkpoints: CheckpointCommands
 let approvals: ApprovalCommands
+let skills: SkillCommands
 const approvalListeners = new Set<(sessionId: string) => void>()
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
@@ -150,6 +152,28 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
       files: [{ path: 'a.txt', status: 'modified' as const }],
     })),
   }
+  skills = {
+    list: vi.fn(() => ({ skills: [] })),
+    get: vi.fn(),
+    install: vi.fn(() => ({
+      installed: false,
+      skill: {
+        name: 'demo',
+        description: 'A sample skill.',
+        sha256: 'a'.repeat(64),
+        source: 'user' as const,
+        enabled: true,
+        pinned: false,
+        shadowed: false,
+        hasScripts: false,
+        files: [],
+        markdown: '---\n',
+        body: '',
+      },
+    })),
+    uninstall: vi.fn(() => ({})),
+    setEnabled: vi.fn(),
+  }
   approvalListeners.clear()
   approvals = {
     pending: vi.fn(() => ({ approvals: [] })),
@@ -170,6 +194,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     changes,
     checkpoints,
     approvals,
+    skills,
   })
   return connectRenderer()
 }
@@ -429,6 +454,45 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(changes.content).toHaveBeenCalledWith({ sessionId: 's1', changeId: 'c1' })
   })
 
+  it('delegates skill requests to the skill service', async () => {
+    const { client } = setup()
+    const summary = {
+      name: 'demo',
+      description: 'A sample skill.',
+      sha256: 'a'.repeat(64),
+      source: 'user' as const,
+      enabled: false,
+      pinned: true,
+      shadowed: false,
+      hasScripts: false,
+      files: [],
+    }
+    vi.mocked(skills.get).mockReturnValue({ ...summary, markdown: '---\n', body: 'body' })
+    vi.mocked(skills.setEnabled).mockReturnValue(summary)
+    await expect(client.request('skill.list', {})).resolves.toEqual({ skills: [] })
+    await expect(
+      client.request('skill.get', { name: 'demo', source: 'user' }),
+    ).resolves.toMatchObject({ name: 'demo', body: 'body' })
+    await expect(
+      client.request('skill.install', {
+        source: { kind: 'directory', path: '/tmp/demo' },
+      }),
+    ).resolves.toMatchObject({ installed: false })
+    await expect(client.request('skill.uninstall', { name: 'demo' })).resolves.toEqual({})
+    await expect(
+      client.request('skill.setEnabled', {
+        name: 'demo',
+        source: 'user',
+        enabled: false,
+        pinned: true,
+      }),
+    ).resolves.toEqual(summary)
+    expect(skills.list).toHaveBeenCalledWith({})
+    await expect(
+      client.request('skill.setEnabled', { name: 'demo', source: 'project' }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+  })
+
   it('delegates checkpoint requests to the checkpoint service', async () => {
     const { client } = setup()
     await expect(client.request('checkpoint.list', { sessionId: 's1' })).resolves.toEqual({
@@ -614,6 +678,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       changes,
       checkpoints,
       approvals,
+      skills,
       onProtocolError,
     })
     const pair = channelPair()

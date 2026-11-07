@@ -20,6 +20,7 @@ import { ActivePlan, PromptMode } from '../plan.js'
 import { PermissionRule, ToolCategory } from '../permissions.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
+import { SkillCatalogEntry } from '../skills.js'
 
 /**
  * 宿主构造模型所需的配置（M1-04b）：由主进程按提供方配置给出，不含 Key。
@@ -223,6 +224,14 @@ export const MainForHost = defineSide({
     'host.sessionBrief': {
       params: z.object({}),
       result: z.object({ text: z.string().min(1).optional() }),
+    },
+    /**
+     * 本轮可以交给模型的技能（M3-07）。会话由连接确定。只含已启用、且没有被同名技能盖住的。
+     * `pinned` 的正文由宿主放进系统提示词；其余只放索引，模型用 `load_skill` 读取。
+     */
+    'host.skills': {
+      params: z.object({}),
+      result: z.object({ skills: z.array(SkillCatalogEntry) }),
     },
   },
   events: {},

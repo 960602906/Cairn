@@ -125,6 +125,8 @@ export type ToolOutcome =
       /** 记下结果后结束本轮（M3-05）。 */
       readonly stopLoop?: boolean
       readonly effects?: readonly RuntimeToolEffect[]
+      /** 写入 `tool.completed.skill`（M3-07）。 */
+      readonly loadedSkill?: { readonly name: string; readonly sha256: string }
     }
   | {
       readonly status: 'error' | 'denied'
@@ -453,6 +455,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         ...(output.display ? { display: output.display } : {}),
         ...(output.stopLoop ? { stopLoop: true } : {}),
         ...(output.effects && output.effects.length > 0 ? { effects: output.effects } : {}),
+        ...(output.loadedSkill ? { loadedSkill: output.loadedSkill } : {}),
       }
     } catch (error) {
       if (error instanceof CancelledError || signal.aborted) return cancelled

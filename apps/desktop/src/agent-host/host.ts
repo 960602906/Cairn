@@ -18,9 +18,9 @@
  * - 检查点（M1-12b）：`host.init` 带 `checkpoints` 且注入了 `openCheckpoints` 时，每轮开始与执行命令前
  *   在项目的影子仓库中创建（`checkpoints.ts`）；否则不创建。
  *
- * 系统提示词（M1-13b，M3-02）：`buildSystemPrompt` 组装基础提示词、`host.init` 的自定义说明与环境信息
- * （操作系统、`registerTools` 给出的 shell、工作区、当前日期）。每轮开始再向主进程要一次 `AGENTS.md`，
- * 换上这一轮的系统提示词。主进程没有这个接口时（测试）跳过，不记日志。
+ * 系统提示词（M1-13b，M3-02，M3-07）：`buildSystemPrompt` 组装基础提示词、`host.init` 的自定义说明与环境信息
+ * （操作系统、`registerTools` 给出的 shell、工作区、当前日期）。每轮开始再向主进程要一次 `AGENTS.md` 和技能索引，
+ * 换上这一轮的系统提示词。固定加载的技能正文一并注入，过长时截断。主进程没有这些接口时（测试）跳过，不记日志。
  *
  * 运行时与模型解析由入口注入，M1 换成 pi 适配器时这里不改。不依赖 Electron。
  */
@@ -59,8 +59,10 @@ import {
   type RpcChannel,
   type RpcEndpoint,
   type ShellPreference,
+  type SkillCatalogEntry,
 } from '@cairn/protocol'
-import { createPathResolver } from '@cairn/tools'
+import { SKILL_PIN_MAX_CHARS } from '@cairn/skills'
+import { createLoadSkillTool, createPathResolver } from '@cairn/tools'
 import { createHostApprovalGate } from './approval-gate.js'
 import { createHostCheckpoints, type OpenShadowRepo } from './checkpoints.js'
 import { createHostChangeRecorder } from './change-recorder.js'
@@ -124,6 +126,13 @@ export interface AgentHostOptions {
 export interface ToolEnvironment {
   /** `run_command` 使用的 shell（`describeShell`）。 */
   readonly shell?: string
+}
+
+/** 固定加载的正文过长时截断，其余仍可由 `load_skill` 读取。 */
+function pinnedSkillBody(body: string): string {
+  const chars = [...body]
+  if (chars.length <= SKILL_PIN_MAX_CHARS) return body
+  return `${chars.slice(0, SKILL_PIN_MAX_CHARS).join('')}\n\n[Truncated: this pinned skill is longer than 32 KB. Call load_skill to read the rest.]`
 }
 
 /** 本地日期 `YYYY-MM-DD`。 */
@@ -200,6 +209,25 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     const toolEnvironment =
       (await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
     const hasBuiltinTools = registry.list().length > 0
+    /** 本轮启用的技能。`prepareTurn` 每轮替换，`load_skill` 按名称读取。 */
+    const skillCatalog: SkillCatalogEntry[] = []
+    /** 技能目录只读。与 `skillCatalog` 一起每轮更新。 */
+    const readOnlyRoots: string[] = []
+    if (hasBuiltinTools) {
+      registry.register(
+        createLoadSkillTool(() =>
+          skillCatalog.map((skill) => ({
+            name: skill.name,
+            description: skill.description,
+            sha256: skill.sha256,
+            body: skill.body,
+            hasScripts: skill.hasScripts,
+            files: skill.files,
+            ...(skill.filesTruncated ? { filesTruncated: true as const } : {}),
+          })),
+        ),
+      )
+    }
     registerPlanTools(registry, {
       createId: options.createId,
       activePlan: () => activePlan,
@@ -228,7 +256,9 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           checkpoints,
           changes: createHostChangeRecorder(endpoint),
           workspaceRoot: init.workspacePath,
-          resolvePath: createPathResolver(init.workspacePath),
+          resolvePath: createPathResolver(init.workspacePath, {
+            readOnlyRoots: () => readOnlyRoots,
+          }),
           log: options.log ?? silentLogger,
           // 单个工具结果的上限按模型的上下文窗口计算（M1-13a）
           maxOutputTokens: toolOutputBudget(model.profile),
@@ -253,6 +283,21 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           // 测试里的主进程没有这个接口。其他错误只记日志，这一轮不带项目说明。
           if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
         }
+        try {
+          const loaded = await endpoint.request('host.skills', {})
+          skillCatalog.splice(0, skillCatalog.length, ...loaded.skills)
+          readOnlyRoots.splice(0, readOnlyRoots.length, ...loaded.skills.map((skill) => skill.root))
+        } catch (error) {
+          skillCatalog.splice(0, skillCatalog.length)
+          readOnlyRoots.splice(0, readOnlyRoots.length)
+          // 测试里的主进程没有这个接口。其他错误只记日志，这一轮不带技能。
+          if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+        }
+        const skills = skillCatalog.map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          ...(skill.pinned ? { body: pinnedSkillBody(skill.body) } : {}),
+        }))
         const mode = planTurn ? 'plan' : 'normal'
         const executing = mode === 'normal' ? activePlan : undefined
         return {
@@ -261,6 +306,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             tools: promptBase.tools || mode === 'plan' || executing !== undefined,
             environment: { ...promptBase.environment, date: localDate(now()) },
             ...(text ? { projectInstructions: text } : {}),
+            ...(skills.length > 0 ? { skills } : {}),
             ...(mode === 'plan'
               ? { plan: { kind: 'propose' as const } }
               : executing

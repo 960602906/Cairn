@@ -40,6 +40,7 @@ import { createSessionEventService } from './services/event-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { loadProjectAgentsMd } from './services/agents-md.js'
+import { createSkillService } from './services/skill-service.js'
 import { createProjectService } from './services/project-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
@@ -138,6 +139,12 @@ const approvals = createApprovalService({
   permissions,
   onRuleAdded: () => sessions.refreshPermissions(),
 })
+/** 技能（M3-07）：内置示例、用户安装目录，以及项目开关打开后的项目内技能。 */
+const skills = createSkillService({
+  storage,
+  builtinDir: join(import.meta.dirname, '../../resources/skills'),
+  userDir: join(paths.root, 'skills'),
+})
 /** 上下文压缩的摘要（M3-03）：宿主经 `host.summarize` 调用，用量记在主进程。 */
 const compaction = createCompactService({
   events,
@@ -183,6 +190,7 @@ const supervisor = createHostSupervisor({
   },
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
+  loadSkills: (sessionId) => skills.catalog(sessionId),
   onError: reportError,
 })
 const sessions = createSessionManager({
@@ -267,6 +275,7 @@ const gateway = createRendererGateway({
   changes,
   checkpoints,
   approvals,
+  skills,
   onProtocolError: (error) => reportError(error),
 })
 

@@ -49,12 +49,13 @@ test('小窗口连续多轮后压缩，会话仍能继续', async ({ launch, use
 
     await createSession(window, projectDir(userData), '压缩')
     const long = 'please remember this goal. '.repeat(400)
-    await sendPrompt(window, `${long}one`)
-    await expect(runStatus(window)).toHaveText('空闲')
-    await sendPrompt(window, `${long}two`)
-    await expect(runStatus(window)).toHaveText('空闲')
-    await sendPrompt(window, `${long}three`)
-    await expect(runStatus(window)).toHaveText('空闲', { timeout: 30_000 })
+    // 发送后状态可能还停在上一轮的“空闲”，所以按回复条数等这一轮真正结束，再发下一条
+    const replies = window.getByText(REPLY, { exact: true })
+    for (const [index, suffix] of ['one', 'two', 'three'].entries()) {
+      await sendPrompt(window, `${long}${suffix}`)
+      await expect(replies).toHaveCount(index + 1, { timeout: 30_000 })
+      await expect(runStatus(window)).toHaveText('空闲')
+    }
 
     const textOf = (messages: unknown) => JSON.stringify(messages)
     const summaryRequest = mock.requests.find((request) =>

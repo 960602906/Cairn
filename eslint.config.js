@@ -19,6 +19,7 @@ const ALLOWED_CAIRN_DEPS = {
   'packages/tools': ['protocol', 'core', 'shell'],
   'packages/shell': [],
   'packages/checkpoint': [],
+  'packages/skills': [],
   'apps/desktop': [
     'protocol',
     'core',
@@ -28,6 +29,7 @@ const ALLOWED_CAIRN_DEPS = {
     'tools',
     'shell',
     'checkpoint',
+    'skills',
   ],
 }
 
@@ -123,6 +125,10 @@ export default tseslint.config(
           {
             regex: '^@cairn/tools$',
             message: 'The renderer must not import tools. They run in the agent host.',
+          },
+          {
+            regex: '^@cairn/skills$',
+            message: 'The renderer must not import skills. They are loaded in the main process.',
           },
           {
             regex: '^electron(\\/.*)?$',

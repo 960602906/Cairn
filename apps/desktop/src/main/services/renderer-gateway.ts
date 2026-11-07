@@ -26,6 +26,7 @@ import type { z } from 'zod'
 import type { CredentialCommands } from './credential-store.js'
 import type { SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
+import type { SkillCommands } from './skill-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -114,6 +115,8 @@ export interface RendererGatewayOptions {
   readonly checkpoints: CheckpointCommands
   /** 审批（M1-11b）：读取未决审批与作出决定。 */
   readonly approvals: ApprovalCommands
+  /** 技能（M3-07）：列表、安装、卸载与启用。 */
+  readonly skills: SkillCommands
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
   readonly frameMs?: number
   readonly onProtocolError?: (error: RpcError, message: unknown) => void
@@ -181,7 +184,7 @@ type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
-  const { changes, checkpoints, approvals, permissions } = options
+  const { changes, checkpoints, approvals, permissions, skills } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -271,6 +274,11 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('checkpoint.restore', (params) => checkpoints.restore(params))
       endpoint.handle('approval.pending', (params) => approvals.pending(params))
       endpoint.handle('approval.resolve', (params) => approvals.resolve(params))
+      endpoint.handle('skill.list', (params) => skills.list(params))
+      endpoint.handle('skill.get', (params) => skills.get(params))
+      endpoint.handle('skill.install', (params) => skills.install(params))
+      endpoint.handle('skill.uninstall', (params) => skills.uninstall(params))
+      endpoint.handle('skill.setEnabled', (params) => skills.setEnabled(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布

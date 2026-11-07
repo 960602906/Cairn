@@ -42,6 +42,9 @@
       "path": "../packages/checkpoint"
     },
     {
+      "path": "../packages/skills"
+    },
+    {
       "path": "../packages/i18n"
     },
     {

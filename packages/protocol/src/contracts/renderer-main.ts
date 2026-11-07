@@ -8,6 +8,7 @@ import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../check
 import { ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
 import { PLAN_FEEDBACK_MAX, PlanStep, PromptMode } from '../plan.js'
+import { SkillDetail, SkillInstallSource, SkillSource, SkillSummary } from '../skills.js'
 import { PermissionMode, PermissionRule } from '../permissions.js'
 import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
 import { defineSide } from '../rpc.js'
@@ -457,6 +458,66 @@ export const MainForRenderer = defineSide({
     'checkpoint.restore': {
       params: z.object({ sessionId: Id, checkpointId: CheckpointId }),
       result: CheckpointRestorePlan,
+    },
+    /**
+     * 已发现的技能（M3-07）。给出 `projectId` 时，在项目开启了项目内技能后一并列出。
+     * 项目不存在时报 `project.not_found`。
+     */
+    'skill.list': {
+      params: z.object({ projectId: Id.optional() }),
+      result: z.object({ skills: z.array(SkillSummary) }),
+    },
+    /** 一份技能的原文。找不到时报 `skills.not_found`。项目内技能必须带 `projectId`。 */
+    'skill.get': {
+      params: z
+        .object({
+          name: z.string().min(1),
+          source: SkillSource,
+          projectId: Id.optional(),
+        })
+        .refine((input) => input.source !== 'project' || input.projectId !== undefined),
+      result: SkillDetail,
+    },
+    /**
+     * 从本地文件夹或 zip 安装到用户技能目录（M3-07）。
+     * `confirm` 省略或为 false 时只返回预览，不写盘；为 true 时安装。
+     * 预览包含 `SKILL.md`、文件列表和是否含脚本。同名已安装时报 `skills.duplicate`，
+     * 路径逃出技能目录时报 `skills.traversal`。
+     */
+    'skill.install': {
+      params: z.object({
+        source: SkillInstallSource,
+        confirm: z.boolean().optional(),
+      }),
+      result: z.object({ installed: z.boolean(), skill: SkillDetail }),
+    },
+    /**
+     * 卸载用户安装的技能（删掉目录）。内置和项目内技能报 `skills.not_uninstallable`。
+     * 没有这份已安装技能时报 `skills.not_found`。
+     */
+    'skill.uninstall': {
+      params: z.object({ name: z.string().min(1) }),
+      result: z.object({}),
+    },
+    /**
+     * 启用、停用，或改“始终加载”（M3-07）。至少给出 `enabled` 或 `pinned` 一项。
+     * 停用的技能不再出现在索引里，也不再挡住同名的低优先级技能。
+     */
+    'skill.setEnabled': {
+      params: z
+        .object({
+          name: z.string().min(1),
+          source: SkillSource,
+          projectId: Id.optional(),
+          enabled: z.boolean().optional(),
+          pinned: z.boolean().optional(),
+        })
+        .refine(
+          (input) =>
+            (input.source !== 'project' || input.projectId !== undefined) &&
+            (input.enabled !== undefined || input.pinned !== undefined),
+        ),
+      result: SkillSummary,
     },
   },
   events: {

@@ -38,7 +38,7 @@ export interface WorkspacePath {
 
 /** 路径校验结果：越界等情况返回错误码，不抛出。 */
 export type PathResolution =
-  | { readonly ok: true; readonly path: WorkspacePath }
+  | { readonly ok: true; readonly path: WorkspacePath; readonly readOnly?: true }
   | { readonly ok: false; readonly code: string }
 
 /** 检查点接口（M1-12 实现）。 */
@@ -102,6 +102,8 @@ export interface ToolOutput {
   readonly stopLoop?: boolean
   /** 成功后写入事件日志的附带事件（M3-05）。失败时流水线丢弃。 */
   readonly effects?: readonly RuntimeToolEffect[]
+  /** `load_skill` 成功时写入 `tool.completed.skill`（M3-07）。 */
+  readonly loadedSkill?: { readonly name: string; readonly sha256: string }
 }
 
 /** 审批时展示给用户的预览（M1-11 细化）。 */
