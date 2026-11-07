@@ -571,4 +571,42 @@ describe('McpSettings', () => {
     release()
     expect(await screen.findByRole('heading', { name: 'Slow' })).toBeTruthy()
   })
+
+  it('renders error-level log entries', async () => {
+    setup({
+      logsFor: () => [
+        { ts: 1_700_000_000_000, level: 'error', message: 'connection lost' },
+        { ts: 1_700_000_001_000, level: 'info', message: 'retrying' },
+      ],
+    })
+    await openMcp()
+    const list = await screen.findByRole('list', { name: 'MCP 服务' })
+    await userEvent.click(within(list).getByRole('button', { name: '查看 Fixture 的详情' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('connection lost')).toBeTruthy()
+    expect(within(dialog).getByText('retrying')).toBeTruthy()
+  })
+
+  it('closes dialogs with Escape and keeps other servers selected', async () => {
+    setup({ servers: [server({ serverId: 'm1' }), server({ serverId: 'm2', name: 'Other' })] })
+    await openMcp()
+    const list = await screen.findByRole('list', { name: 'MCP 服务' })
+
+    await userEvent.click(within(list).getByRole('button', { name: '查看 Fixture 的详情' }))
+    await screen.findByRole('dialog')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(screen.getByRole('button', { name: '添加服务' }))
+    await screen.findByRole('dialog')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(within(list).getByRole('button', { name: '查看 Fixture 的详情' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: '删除' }))
+    await screen.findByRole('dialog')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByText(/会删除这份配置/)).toBeNull())
+  })
 })
