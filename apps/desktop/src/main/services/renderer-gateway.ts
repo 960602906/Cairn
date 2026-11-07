@@ -71,6 +71,8 @@ export interface SettingsCommands {
   readonly update: (
     patch: z.output<Requests['settings.update']['params']>,
   ) => z.input<Requests['settings.update']['result']>
+  /** 可选的 shell（M2-09）。 */
+  readonly shell: Handler<'settings.shell'>
 }
 
 export const DEFAULT_FRAME_MS = 33
@@ -221,6 +223,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.setModel', (params) => commands.setModel(params))
       endpoint.handle('settings.get', () => settings.get())
       endpoint.handle('settings.update', (patch) => settings.update(patch))
+      endpoint.handle('settings.shell', (params) => settings.shell(params))
       endpoint.handle('credentials.set', (params) => credentials.set(params))
       endpoint.handle('credentials.delete', (params) => credentials.delete(params))
       endpoint.handle('credentials.status', (params) => credentials.status(params))

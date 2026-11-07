@@ -4,9 +4,9 @@
  *
  * - `search` 使用随应用打包的 ripgrep（`out/bin`，构建时复制）；
  * - `run_command` 的 shell 在第一次注册时选出（ADR-0012：Windows 优先非商店版 pwsh 7，其次 Windows
- *   PowerShell 5.1），同一个宿主进程只选一次。shell 偏好设置（`auto` / `cmd`）随设置界面加入。
+ *   PowerShell 5.1；设置为 cmd 时用 cmd，M2-09），同一个宿主进程只选一次。
  */
-import { describeShell, selectShell, type ShellInfo } from '@cairn/shell'
+import { describeShell, selectShell, type ShellInfo, type ShellPreference } from '@cairn/shell'
 import {
   bundledRipgrepPath,
   registerExecuteTools,
@@ -19,15 +19,20 @@ export interface BuiltinToolsOptions {
   /** 打包的外部程序所在目录（ripgrep）。 */
   readonly binDir: string
   /** 测试用：替换 shell 选择。 */
-  readonly selectShell?: () => Promise<ShellInfo>
+  readonly selectShell?: (preference: ShellPreference) => Promise<ShellInfo>
 }
 
 export function createBuiltinTools(
   options: BuiltinToolsOptions,
-): (registry: ToolRegistry) => Promise<{ shell: string }> {
+): (
+  registry: ToolRegistry,
+  workspacePath?: string,
+  preference?: ShellPreference,
+) => Promise<{ shell: string }> {
   let shell: Promise<ShellInfo> | undefined
-  return async (registry) => {
-    shell ??= (options.selectShell ?? (() => selectShell()))().catch((error: unknown) => {
+  return async (registry, _workspacePath, preference = 'auto') => {
+    const select = options.selectShell ?? ((p: ShellPreference) => selectShell({ preference: p }))
+    shell ??= select(preference).catch((error: unknown) => {
       shell = undefined
       throw error
     })

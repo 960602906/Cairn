@@ -24,6 +24,14 @@ import { defineSide } from '../rpc.js'
  * 宿主构造模型所需的配置（M1-04b）：由主进程按提供方配置给出，不含 Key。
  * `compat` 已合并提供方与模型两级的兼容参数。
  */
+
+/**
+ * 命令执行使用的 shell（M2-09，ADR-0012）：`auto` 自动选择（Windows 优先非商店版 PowerShell 7，其次
+ * Windows PowerShell 5.1）；`cmd` 只在 Windows 上有效。
+ */
+export const ShellPreference = z.enum(['auto', 'cmd'])
+export type ShellPreference = z.infer<typeof ShellPreference>
+
 export const HostModelConfig = z.object({
   kind: ProviderKind,
   baseUrl: BaseUrl,
@@ -104,6 +112,8 @@ export const HostForMain = defineSide({
         permissionRules: z.array(PermissionRule).optional(),
         /** 用户的自定义说明（M1-13b，设置中的 `instructions`），加入系统提示词。省略表示没有。 */
         instructions: z.string().min(1).optional(),
+        /** 命令执行使用的 shell（M2-09，设置中的 `shell`）。省略时按 `auto`。 */
+        shell: ShellPreference.optional(),
         /**
          * 检查点（M1-12b，ADR-0008）：项目的影子仓库目录（应用数据目录中）与这个会话的检查点引用。
          * 省略时不创建检查点。

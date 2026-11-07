@@ -425,6 +425,12 @@ describe('startHost', () => {
     expect(none.inits).toEqual([init])
   })
 
+  it('passes the shell preference in host.init (M2-09)', async () => {
+    const host = fakeHost()
+    await setup(host, { resolveShell: () => 'cmd' }).supervisor.startHost(init)
+    expect(host.inits).toEqual([{ ...init, shell: 'cmd' }])
+  })
+
   it('records host.start_failed when the permission rules cannot be loaded', async () => {
     const host = fakeHost()
     const { supervisor } = setup(host, {

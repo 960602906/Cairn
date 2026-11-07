@@ -10,7 +10,7 @@ import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
 import { PermissionMode } from '../permissions.js'
 import { CONFIG_ID_PATTERN, ProviderConfigList } from '../providers.js'
 import { defineSide } from '../rpc.js'
-import { HostApprovalRequest } from './host-main.js'
+import { HostApprovalRequest, ShellPreference } from './host-main.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
 export const SessionStatus = z.enum([
@@ -67,6 +67,7 @@ export type Theme = z.infer<typeof Theme>
  * - `permissionMode`：权限模式（M1-10c，架构 §10.3），即使用哪组预设规则；没有设置时不出现，按“询问”。
  * - `instructions`：用户的自定义说明（M1-13b，架构 §13），加入每个会话的系统提示词；没有设置时不出现。
  * - `theme`：界面主题（M2-01）；没有设置时不出现，按“跟随系统”。
+ * - `shell`：命令执行使用的 shell（M2-09）；没有设置时不出现，按 `auto`。
  */
 export const Settings = z.object({
   locale: Locale,
@@ -75,6 +76,7 @@ export const Settings = z.object({
   permissionMode: PermissionMode.optional(),
   instructions: z.string().min(1).max(INSTRUCTIONS_MAX_LENGTH).optional(),
   theme: Theme.optional(),
+  shell: ShellPreference.optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -90,6 +92,7 @@ export const SettingsPatch = z.object({
   /** 空字符串或 null 清除自定义说明。 */
   instructions: z.string().max(INSTRUCTIONS_MAX_LENGTH).nullable().optional(),
   theme: Theme.optional(),
+  shell: ShellPreference.optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 
@@ -185,6 +188,17 @@ export const MainForRenderer = defineSide({
     'settings.update': {
       params: SettingsPatch,
       result: Settings,
+    },
+    /**
+     * 可选的 shell（M2-09）：`auto` 在这台电脑上会选中的 shell（如 `PowerShell 7.5.4`），以及可以设置的选项
+     * （Windows 上有 `cmd`）。
+     */
+    'settings.shell': {
+      params: z.object({}),
+      result: z.object({
+        detected: z.string().min(1),
+        options: z.array(ShellPreference).min(1),
+      }),
     },
     /**
      * 凭据（ADR-0010，M1-03）：界面只能写入、删除与查询是否已配置，没有读出明文的接口。

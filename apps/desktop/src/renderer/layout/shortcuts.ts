@@ -15,3 +15,16 @@ export function isNewChatKey(
   const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
   return mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'n'
 }
+
+/** “设置”的快捷键提示（M2-09）。 */
+export const settingsShortcut = (platform?: string): string =>
+  isMacPlatform(platform) ? '⌘,' : 'Ctrl ,'
+
+/** 按键是否为“设置”（⌘, / Ctrl+,，不带 Shift 与 Alt）。 */
+export function isSettingsKey(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
+  platform?: string,
+): boolean {
+  const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
+  return mod && !event.shiftKey && !event.altKey && event.key === ','
+}

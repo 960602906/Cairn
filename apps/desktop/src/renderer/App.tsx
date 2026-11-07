@@ -4,21 +4,23 @@
  * M2-02 起按视觉规范 §2 布局：窗口底色上左边是侧栏（新对话、会话列表、模型供应商），右边是纸面
  * （当前会话或新对话表单）。窗口宽度小于 880px 时侧栏收起，可以从顶栏展开。⌘N / Ctrl+N 新对话。
  * 主题跟随设置（M2-01，`ThemeSync`）；开发模式下纸面底部是事件查看器（M0-15d）。
+ * M2-09：设置页（侧栏底部“设置”或 ⌘, / Ctrl+,）换掉侧栏与纸面内容，Esc 或“返回对话”回到原来的页面。
  * 没有 store（preload 未加载，如在普通浏览器中打开）时只显示应用名称与语言切换。
  */
 import { PanelLeft } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import { ChatPanel, TopBar } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
 import { EventViewer } from './EventViewer.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
-import { isNewChatKey } from './layout/shortcuts.js'
+import { isNewChatKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
 import { NewSession } from './NewSession.js'
 import type { SessionStore } from './session-store.js'
+import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
 import { ThemeSync } from './ThemeSync.js'
 import { IconButton, TooltipProvider } from './ui/index.js'
@@ -38,6 +40,7 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
   const narrow = useMediaQuery(NARROW_QUERY)
   const [sidebarOpen, setSidebarOpen] = useState(!narrow)
   const [composing, setComposing] = useState(false)
+  const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
   // 还没有会话时直接显示新对话表单；已选中的会话（即使不在列表中）仍显示会话
   const showNew = useSessionStore((s) => s.sessions.length === 0 && s.activeSessionId === undefined)
 
@@ -46,8 +49,14 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (isSettingsKey(event)) {
+        event.preventDefault()
+        setSettings((current) => current ?? 'general')
+        return
+      }
       if (!isNewChatKey(event)) return
       event.preventDefault()
+      setSettings(undefined)
       setComposing(true)
     }
     window.addEventListener('keydown', onKeyDown)
@@ -65,6 +74,33 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
     </IconButton>
   )
 
+  const closeSettings = useCallback(() => setSettings(undefined), [])
+
+  if (settings) {
+    return (
+      <div className="flex h-full bg-chrome text-fg">
+        <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
+        {sidebarOpen && (
+          <SettingsNav
+            section={settings}
+            onSelect={(section) => {
+              setSettings(section)
+              if (narrow) setSidebarOpen(false)
+            }}
+            onBack={closeSettings}
+            onCollapse={() => setSidebarOpen(false)}
+          />
+        )}
+        <main
+          className={`relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-paper bg-paper shadow-1 ${sidebarOpen ? '' : 'ml-2'}`}
+        >
+          <ErrorBanner />
+          <SettingsContent section={settings} leading={expand} onBack={closeSettings} />
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full bg-chrome text-fg">
       {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
@@ -78,6 +114,10 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
           onCollapse={() => setSidebarOpen(false)}
           onSelect={() => {
             setComposing(false)
+            if (narrow) setSidebarOpen(false)
+          }}
+          onSettings={() => {
+            setSettings('general')
             if (narrow) setSidebarOpen(false)
           }}
         />

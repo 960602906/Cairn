@@ -105,6 +105,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   settings = {
     get: vi.fn(() => ({ locale: 'zh-CN' as const, providers: [] })),
     update: vi.fn((patch) => ({ locale: patch.locale ?? ('zh-CN' as const), providers: [] })),
+    shell: vi.fn(async () => ({ detected: 'bash', options: ['auto' as const] })),
   }
   credentials = {
     set: vi.fn(async () => ({})),
@@ -456,6 +457,10 @@ describe('createRendererGateway: commands and lifecycle', () => {
       providers: [],
     })
     expect(settings.update).toHaveBeenCalledWith({ locale: 'en-US' })
+    await expect(client.request('settings.shell', {})).resolves.toEqual({
+      detected: 'bash',
+      options: ['auto'],
+    })
   })
 
   it('rejects invalid requests before they reach the session manager', async () => {

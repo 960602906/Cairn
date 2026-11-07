@@ -89,6 +89,31 @@ describe('createSettingsService', () => {
     ).toBe('dark')
   })
 
+  it('saves the shell preference; omitted when missing or invalid (M2-09)', () => {
+    writeFileSync(file, JSON.stringify({ shell: 'fish' }))
+    const settings = createSettingsService({
+      storage: createMemoryStorage(),
+      file,
+      systemLocales: () => ['zh-CN'],
+    })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.shell()).toBeUndefined()
+    expect(settings.update({ shell: 'cmd' })).toEqual({
+      locale: 'zh-CN',
+      providers: [],
+      shell: 'cmd',
+    })
+    expect(settings.shell()).toBe('cmd')
+    expect(read()).toEqual({ shell: 'cmd' })
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).shell(),
+    ).toBe('cmd')
+  })
+
   it('saves the custom instructions; blank or null clears them (M1-13b)', () => {
     writeFileSync(file, JSON.stringify({ instructions: 42 }))
     const settings = createSettingsService({

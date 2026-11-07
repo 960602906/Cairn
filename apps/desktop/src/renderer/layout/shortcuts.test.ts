@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { isMacPlatform, isNewChatKey, newChatShortcut } from './shortcuts.js'
+import {
+  isMacPlatform,
+  isNewChatKey,
+  isSettingsKey,
+  newChatShortcut,
+  settingsShortcut,
+} from './shortcuts.js'
 
 const key = (init: Partial<KeyboardEvent>) => ({
   key: 'n',
@@ -22,5 +28,13 @@ describe('shortcuts', () => {
     expect(isNewChatKey(key({ ctrlKey: true, shiftKey: true }), 'Win32')).toBe(false)
     expect(isNewChatKey(key({ ctrlKey: true, altKey: true }), 'Win32')).toBe(false)
     expect(isNewChatKey(key({ ctrlKey: true, key: 'm' }), 'Win32')).toBe(false)
+  })
+  it('opens the settings with ⌘, or Ctrl+, (M2-09)', () => {
+    expect(settingsShortcut('MacIntel')).toBe('⌘,')
+    expect(settingsShortcut('Win32')).toBe('Ctrl ,')
+    expect(isSettingsKey(key({ key: ',', metaKey: true }), 'MacIntel')).toBe(true)
+    expect(isSettingsKey(key({ key: ',', ctrlKey: true }), 'Win32')).toBe(true)
+    expect(isSettingsKey(key({ key: ',', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(false)
+    expect(isSettingsKey(key({ key: '.', ctrlKey: true }), 'Win32')).toBe(false)
   })
 })

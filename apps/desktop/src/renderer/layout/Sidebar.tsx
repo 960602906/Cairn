@@ -1,28 +1,28 @@
 /**
  * 侧栏（M2-02，视觉规范 §2）：铺在窗口底色上，没有自己的背景和边框。
  * 从上到下：标题区（macOS 的红绿灯在这里，可拖动窗口）与收起按钮、新对话、按项目分组的会话列表、
- * 底部的模型供应商卡片与界面语言（语言随 M2-09 移到设置页）。搜索、活动、Agents 入口在之后的任务中加入。
+ * 底部的模型供应商卡片与“设置”（M2-09，⌘, / Ctrl+,；界面语言移到设置页）。搜索、活动、Agents 入口在之后的
+ * 任务中加入。
  */
-import { PanelLeft, SquarePen } from 'lucide-react'
+import { PanelLeft, Settings, SquarePen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { LanguageSwitcher } from '../LanguageSwitcher.js'
 import { ProviderCard } from '../ProviderCard.js'
 import { SessionList } from '../SessionList.js'
-import { useSessionStore } from '../store-context.js'
 import { IconButton, Kbd } from '../ui/index.js'
-import { newChatShortcut } from './shortcuts.js'
+import { newChatShortcut, settingsShortcut } from './shortcuts.js'
 
 export function Sidebar({
   onNewChat,
   onCollapse,
   onSelect,
+  onSettings,
 }: {
   readonly onNewChat: () => void
   readonly onCollapse: () => void
   readonly onSelect: () => void
+  readonly onSettings: () => void
 }) {
   const { t } = useTranslation('session')
-  const updateSettings = useSessionStore((s) => s.updateSettings)
   return (
     <aside className="flex h-full w-[252px] shrink-0 flex-col">
       <div className="drag flex h-10 shrink-0 items-center justify-end px-2">
@@ -54,9 +54,15 @@ export function Sidebar({
 
       <div className="flex flex-col gap-2 p-2">
         <ProviderCard />
-        <div className="px-1 text-note text-muted [&_label]:flex [&_label]:items-center [&_label]:justify-between [&_select]:rounded-[6px] [&_select]:bg-transparent [&_select]:text-fg2">
-          <LanguageSwitcher onSave={(locale) => void updateSettings({ locale })} />
-        </div>
+        <button
+          type="button"
+          onClick={onSettings}
+          className="flex h-8 w-full items-center gap-2 rounded-item px-2.5 text-ui text-fg2 transition-colors hover:bg-hover hover:text-fg [&_svg]:size-4 [&_svg]:text-muted"
+        >
+          <Settings />
+          <span className="flex-1 text-left">{t('sidebar.settings')}</span>
+          <Kbd aria-hidden>{settingsShortcut()}</Kbd>
+        </button>
       </div>
     </aside>
   )
