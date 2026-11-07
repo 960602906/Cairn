@@ -1,5 +1,5 @@
 /**
- * 凭据 IPC（M1-03b）：渲染进程只能写入、删除和查询是否已配置，任何返回值都不含明文；
+ * 凭据 IPC（M1-03b）：渲染进程只能写入、删除和查询是否已配置（与末 4 位），任何返回值都不含明文；
  * 保存的文件中也没有明文。Linux CI 容器没有密钥环，系统加密不可用，保存被拒绝。
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -46,7 +46,8 @@ test('渲染进程可以保存与查询凭据，但读不到明文', async ({ la
     expect(saved).toEqual({ ok: true, result: {} })
     expect(await send('credentials.status', { ref: 'deepseek' })).toEqual({
       ok: true,
-      result: { configured: true, available: true },
+      // 只给出末 4 位（M2-10），用于界面显示
+      result: { configured: true, available: true, last4: SECRET.slice(-4) },
     })
     const file = path.join(userData, 'credentials.json')
     expect(existsSync(file)).toBe(true)
