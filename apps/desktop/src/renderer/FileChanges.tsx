@@ -240,7 +240,7 @@ export function SessionChanges({ sessionId }: { readonly sessionId: string }) {
             added: sum.added,
             removed: sum.removed,
           })}
-          className="no-drag ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-item px-2 text-note text-fg2 hover:bg-hover"
+          className="no-drag flex h-7 shrink-0 items-center gap-1.5 rounded-item px-2 text-note text-fg2 hover:bg-hover"
         >
           <FileDiffIcon aria-hidden className="size-3.5 text-muted" />
           {t('changes.files', { count: sum.files })}

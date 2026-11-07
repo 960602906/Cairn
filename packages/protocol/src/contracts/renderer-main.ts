@@ -84,6 +84,7 @@ export type Theme = z.infer<typeof Theme>
  * - `instructions`：用户的自定义说明（M1-13b，架构 §13），加入每个会话的系统提示词；没有设置时不出现。
  * - `theme`：界面主题（M2-01）；没有设置时不出现，按“跟随系统”。
  * - `shell`：命令执行使用的 shell（M2-09）；没有设置时不出现，按 `auto`。
+ * - `sessionBrief`：是否在每轮结束后自动更新会话要点（M3-04）。没有设置时不出现，按开。
  */
 export const Settings = z.object({
   locale: Locale,
@@ -94,6 +95,7 @@ export const Settings = z.object({
   instructions: z.string().min(1).max(INSTRUCTIONS_MAX_LENGTH).optional(),
   theme: Theme.optional(),
   shell: ShellPreference.optional(),
+  sessionBrief: z.boolean().optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -111,6 +113,8 @@ export const SettingsPatch = z.object({
   instructions: z.string().max(INSTRUCTIONS_MAX_LENGTH).nullable().optional(),
   theme: Theme.optional(),
   shell: ShellPreference.optional(),
+  /** false 关闭自动更新；true 重新打开（保存时省略，与没设置一样）。 */
+  sessionBrief: z.boolean().optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 
@@ -203,6 +207,14 @@ export const MainForRenderer = defineSide({
     'session.compact': {
       params: z.object({ sessionId: Id }),
       result: z.object({ compacted: z.boolean() }),
+    },
+    /**
+     * 用户编辑会话要点（M3-04），写入 `session.brief.updated`（`editedBy: user`）。
+     * 与当前要点相同时不写事件。空字符串清空。不是一轮对话。
+     */
+    'session.brief.update': {
+      params: z.object({ sessionId: Id, content: z.string().max(16_000) }),
+      result: z.object({}),
     },
     'session.abort': {
       params: z.object({ sessionId: Id }),

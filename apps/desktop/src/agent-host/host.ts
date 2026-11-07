@@ -256,6 +256,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       checkpoints,
       onCheckpointError: onError,
       ...(options.retry ? { retry: options.retry } : {}),
+      sessionBrief: async () => {
+        try {
+          const result = await endpoint.request('host.sessionBrief', {})
+          return result.text ?? ''
+        } catch (error) {
+          // 测试里的主进程没有这个接口。其他错误只记日志，这一轮不改要点。
+          if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+          return undefined
+        }
+      },
       summarize: async (transcript) => {
         try {
           const result = await endpoint.request(

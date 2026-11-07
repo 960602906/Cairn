@@ -10,7 +10,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { APP_DIR, expect, test } from './app.js'
-import { createSession, runStatus, sendPrompt } from './session.js'
+import { chatRequests, createSession, runStatus, sendPrompt } from './session.js'
 
 const SAMPLE = path.resolve(APP_DIR, '../../fixtures/sample-project')
 const REPLY = 'sum fixed and tests pass'
@@ -112,13 +112,14 @@ test('修复示例项目的 bug 并运行测试：审阅 diff、撤销单个文�
 
     await expect(window.getByText(REPLY)).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲')
-    expect(mock.requests).toHaveLength(5)
+    const firstTurn = chatRequests(mock.requests)
+    expect(firstTurn).toHaveLength(5)
     for (const name of ['read_file', 'edit_file', 'write_file', 'run_command']) {
       await expect(window.getByRole('region', { name: `调用工具：${name}` })).toContainText('完成')
     }
     expect(readFileSync(path.join(project, 'sum.mjs'), 'utf8')).toContain('let i = 0')
     // 测试通过：node:test 的汇总中没有失败
-    const result = lastToolResult(mock.requests)
+    const result = lastToolResult(firstTurn)
     expect(result).toContain('Exit code: 0')
     expect(result).toMatch(/pass 2/)
     expect(result).toMatch(/fail 0/)
@@ -149,7 +150,7 @@ test('修复示例项目的 bug 并运行测试：审阅 diff、撤销单个文�
     await sendPrompt(window, '再确认一下')
     await expect(window.getByText(REPLY)).toHaveCount(2)
     await expect(runStatus(window)).toHaveText('空闲')
-    expect(mock.requests.map((r) => r.model)).toEqual([
+    expect(chatRequests(mock.requests).map((r) => r.model)).toEqual([
       ...Array.from({ length: 5 }, () => 'e2e-model'),
       'e2e-model-2',
     ])

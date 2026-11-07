@@ -10,7 +10,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { chatRequests, createSession, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'done after the tool'
 const COMMAND = 'echo approved-by-e2e'
@@ -106,8 +106,9 @@ for (const decision of ['allow', 'deny'] as const) {
       await expect(window.getByText(REPLY.trim())).toBeVisible()
       await expect(runStatus(window)).toHaveText('空闲')
 
-      expect(mock.requests).toHaveLength(2)
-      const result = toolResult(mock.requests)
+      const chats = chatRequests(mock.requests)
+      expect(chats).toHaveLength(2)
+      const result = toolResult(chats)
       if (decision === 'allow') {
         expect(result).toContain('approved-by-e2e')
         // 项目的影子仓库中有这个会话的检查点（每轮开始、命令前），项目目录中没有 .git

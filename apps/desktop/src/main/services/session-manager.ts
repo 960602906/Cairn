@@ -36,6 +36,7 @@ import {
 } from '@cairn/core'
 import { RpcError, type ContentPart, type ModelRef, type UnsequencedEvent } from '@cairn/protocol'
 import type { Storage } from '@cairn/storage'
+import { latestBrief } from './brief.js'
 import type { SessionEventService } from './event-service.js'
 import type { HostHandle, HostInit, HostSupervisor } from './host-supervisor.js'
 import type { SessionCommands } from './renderer-gateway.js'
@@ -502,6 +503,23 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         },
       ])
       return { compacted: true }
+    },
+
+    updateBrief({ sessionId, content }) {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      requireSession(sessionId)
+      const next = content.trim()
+      const current = latestBrief(events.readAfter(sessionId, 0))?.content ?? ''
+      if (current === next) return {}
+      const root = rootRun(getView(sessionId))
+      events.publish([
+        {
+          ...header(sessionId, root?.runId ?? sessionId),
+          type: 'session.brief.updated',
+          payload: { content: next, editedBy: 'user' },
+        },
+      ])
+      return {}
     },
 
     async abort({ sessionId }) {

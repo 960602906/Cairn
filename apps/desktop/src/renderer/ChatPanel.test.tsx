@@ -126,6 +126,35 @@ describe('ChatPanel', () => {
     expect(screen.queryByLabelText(/已加载项目说明/)).toBeNull()
   })
 
+  it('opens the session brief and saves an edit without sending a prompt', async () => {
+    const { request, open, emit } = setup({
+      history: [
+        ...HISTORY,
+        ev(9, 'session.brief.updated', { content: '目标：修复测试', editedBy: 'agent' }),
+      ],
+      handlers: { 'session.brief.update': () => ({}) },
+    })
+    await open()
+    expect(messages().slice(0, 2)).toEqual(['你你好', '助手你好！fake-1'])
+    await userEvent.click(screen.getByRole('button', { name: '更多' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '会话要点' }))
+    const drawer = screen.getByRole('dialog', { name: '会话要点' })
+    expect(within(drawer).getByText('目标：修复测试')).toBeTruthy()
+    await userEvent.click(within(drawer).getByRole('button', { name: '编辑' }))
+    const box = within(drawer).getByRole('textbox', { name: '编辑' })
+    await userEvent.clear(box)
+    await userEvent.type(box, '不要改 API')
+    await userEvent.click(within(drawer).getByRole('button', { name: '保存' }))
+    expect(request).toHaveBeenCalledWith('session.brief.update', {
+      sessionId: 's1',
+      content: '不要改 API',
+    })
+    expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
+    emit(ev(10, 'session.brief.updated', { content: '不要改 API', editedBy: 'user' }))
+    expect(messages()).toHaveLength(2)
+    expect(within(drawer).getByText('不要改 API')).toBeTruthy()
+  })
+
   it('shows a compaction divider that expands to the summary, and the omission note once', async () => {
     const { open } = setup({
       history: [

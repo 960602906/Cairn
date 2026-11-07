@@ -246,6 +246,11 @@ export interface SessionView {
    * 摘要失败、丢掉工具输出后的那一次提示（M3-03）。只记第一次。
    */
   readonly toolOutputOmitted?: { readonly seq: number }
+  /**
+   * 最新的会话要点（M3-04）。只来自 `session.brief.updated`，不放进 `messages`。
+   * 后面的轮次不会清掉它；空内容表示用户把它清空了。
+   */
+  readonly brief?: { readonly content: string; readonly editedBy: 'agent' | 'user' }
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -576,6 +581,19 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         model,
         incomplete: incomplete ?? false,
       })
+    }
+
+    case 'session.brief.updated': {
+      const content = event.payload.content.trim()
+      if (!content) {
+        if (!view.brief) return undefined
+        const { brief: _brief, ...rest } = view
+        return rest
+      }
+      if (view.brief?.content === content && view.brief.editedBy === event.payload.editedBy) {
+        return undefined
+      }
+      return { ...view, brief: { content, editedBy: event.payload.editedBy } }
     }
 
     case 'context.compacted': {

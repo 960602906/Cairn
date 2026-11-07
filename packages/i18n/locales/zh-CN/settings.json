@@ -30,6 +30,8 @@
   "general.shell.detecting": "正在检测",
   "general.shell.unknown": "无法检测",
   "general.shell.hint": "Agent 运行命令时使用。已在运行的会话不受影响。",
+  "general.sessionBrief.label": "自动更新会话要点",
+  "general.sessionBrief.hint": "每轮结束后，用辅助模型记下你明确说过的目标、约束和偏好。关掉后仍可以手动编辑。",
   "general.instructions.label": "全局指令",
   "general.instructions.placeholder": "例如：回复用中文；改动前先说明计划。",
   "general.instructions.hint": "会加入每个会话的系统提示词。已在运行的会话不受影响。",

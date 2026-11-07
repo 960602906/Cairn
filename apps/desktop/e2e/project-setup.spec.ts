@@ -5,7 +5,7 @@
  */
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
+import { chatRequests, expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'reply via template provider'
 
@@ -61,7 +61,10 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     ])
     await expect(runStatus(window)).toHaveText('空闲')
     // 第一次是测试连接
-    expect(mock.requests.map((r) => r.model)).toEqual(['deepseek-flash', 'deepseek-flash'])
+    expect(chatRequests(mock.requests).map((r) => r.model)).toEqual([
+      'deepseek-flash',
+      'deepseek-flash',
+    ])
   } finally {
     await mock.close()
   }

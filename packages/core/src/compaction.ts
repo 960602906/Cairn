@@ -6,6 +6,12 @@
  * 这里只决定怎么切、怎么估算；真正调用模型由宿主注入。
  */
 import type { CanonicalMessage, ContentPart, EventPayload } from '@cairn/protocol'
+import {
+  SESSION_BRIEF_PREFIX,
+  placeSessionBrief,
+  sessionBriefText,
+  stripSessionBriefs,
+} from './brief.js'
 import { estimateTokens, truncateMiddle } from './context-budget.js'
 import type { RuntimeToolSpec } from './runtime.js'
 
@@ -242,26 +248,39 @@ export async function compactConversation(input: {
   readonly budget: CompactionBudget
   readonly force?: boolean
   readonly summarize?: CompactionSummarizer
+  /**
+   * 必须保留的会话要点（M3-04）。空字符串表示拿掉。
+   * 省略时沿用历史里已有的要点，并在摘要前面放回去，不把它写进被替换的那一段。
+   */
+  readonly brief?: string
   readonly now: number
 }): Promise<CompactionOutcome> {
+  const brief = (
+    input.brief !== undefined ? input.brief : (sessionBriefText(input.messages) ?? '')
+  ).trim()
+  const working = stripSessionBriefs(input.messages)
+  const current = brief ? placeSessionBrief(working, brief, input.now) : working
   const limit = historyTokenLimit(input.budget)
-  const before = contextTokens(input.budget, input.messages)
-  const over = estimateMessagesTokens(input.messages) > limit
+  const before = contextTokens(input.budget, current)
+  const over = estimateMessagesTokens(current) > limit
   if (!input.force && !over) return { kind: 'none' }
 
-  const split = splitForSummary(input.messages)
+  const split = splitForSummary(working)
   if (split && input.summarize && (input.force || over)) {
     let summary: string | undefined
     try {
-      summary = (await input.summarize(renderTranscript(split.earlier)))?.trim()
+      const body = renderTranscript(split.earlier)
+      const transcript = brief ? `${SESSION_BRIEF_PREFIX}${brief}\n\n${body}` : body
+      summary = (await input.summarize(transcript))?.trim()
     } catch {
       summary = undefined
     }
     if (summary) {
-      let messages: readonly CanonicalMessage[] = [
-        summaryMessage(summary, split.coversTurns, input.now),
-        ...split.kept,
-      ]
+      let messages: readonly CanonicalMessage[] = placeSessionBrief(
+        [summaryMessage(summary, split.coversTurns, input.now), ...split.kept],
+        brief,
+        input.now,
+      )
       let omitted: readonly string[] = []
       if (estimateMessagesTokens(messages) > limit) {
         const dropped = omitToolOutputs(messages, limit)
@@ -284,7 +303,7 @@ export async function compactConversation(input: {
 
   // 没超过阈值（只是用户要求压缩，但没有可摘要的更早轮次，或摘要失败）：不改历史。
   if (!over) return { kind: 'none' }
-  const chosen = omitToolOutputs(input.messages, limit)
+  const chosen = omitToolOutputs(current, limit)
   if (!chosen) return { kind: 'none' }
   const span = turnSpan(input.messages) ?? (['compacted', 'compacted'] as const)
   return {

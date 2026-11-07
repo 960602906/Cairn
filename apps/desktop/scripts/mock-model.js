@@ -13,10 +13,19 @@ import { createServer } from 'node:http'
  * @typedef {{ name: string, arguments: object }} MockToolCall
  * `title`（M3-01）：请求内容里带有自动标题的系统提示时，改回这段文字，用来区分对话回复。
  * `summary`（M3-03）：请求内容里带有压缩摘要的系统提示时，改回这段文字。
- * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], title?: string, summary?: string }} options
+ * `brief`（M3-04）：请求内容里带有会话要点的系统提示时，改回这段文字。
+ * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], title?: string, summary?: string, brief?: string }} options
  * @returns {Promise<{ baseUrl: string, requests: MockModelRequest[], close: () => Promise<void> }>}
  */
-export async function startMockModel({ apiKey, reply, toolCall, toolCalls, title, summary }) {
+export async function startMockModel({
+  apiKey,
+  reply,
+  toolCall,
+  toolCalls,
+  title,
+  summary,
+  brief,
+}) {
   const script = toolCalls ?? (toolCall ? [toolCall] : [])
   /** @type {MockModelRequest[]} */
   const requests = []
@@ -66,9 +75,11 @@ export async function startMockModel({ apiKey, reply, toolCall, toolCalls, title
       const messages = JSON.stringify(body.messages ?? '')
       const text = messages.includes('You name a conversation.')
         ? (title ?? reply)
-        : messages.includes('You summarize an earlier part of a coding session')
-          ? (summary ?? reply)
-          : reply
+        : messages.includes('You keep a session brief.')
+          ? (brief ?? reply)
+          : messages.includes('You summarize an earlier part of a coding session')
+            ? (summary ?? reply)
+            : reply
       for (const piece of text.split(' ')) {
         res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', content: `${piece} ` }))}\n\n`)
       }

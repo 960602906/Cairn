@@ -206,6 +206,14 @@ export const MainForHost = defineSide({
       params: z.object({ transcript: z.string().min(1) }),
       result: z.object({ text: z.string().min(1).optional() }),
     },
+    /**
+     * 当前会话要点（M3-04）。会话由连接确定。没有要点时没有 `text`。
+     * 宿主在每次调用模型前读取，所以用户改完后下一轮就能看到。
+     */
+    'host.sessionBrief': {
+      params: z.object({}),
+      result: z.object({ text: z.string().min(1).optional() }),
+    },
   },
   events: {},
 })

@@ -90,11 +90,14 @@ describe('createGitRunner', () => {
   })
 
   it('throws on failure unless allowed', async () => {
-    await expect(git.run(['no-such-command'])).rejects.toMatchObject({
+    // 未知子命令会扫描全部 Git 命令再给出建议，Windows 上可能超过测试时限。
+    // 内建命令的非零退出同样覆盖失败与 allowFail。
+    const args = ['rev-parse', '--verify', 'cairn-missing-object'] as const
+    await expect(git.run(args)).rejects.toMatchObject({
       code: CheckpointErrorCode.Failed,
       params: { exitCode: expect.any(String) },
     })
-    const result = await git.run(['no-such-command'], { allowFail: true })
+    const result = await git.run(args, { allowFail: true })
     expect(result.code).not.toBe(0)
     expect(result.stderr).not.toBe('')
   })

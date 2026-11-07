@@ -9,6 +9,24 @@ import { expect } from './app.js'
 /** 一条消息：作者（"你" / "助手"）与文本。 */
 export type ExpectedMessage = readonly [author: '你' | '助手', text: string]
 
+/**
+ * 辅助模型的请求（标题、会话要点、压缩摘要）不是对话。断言模型请求时先去掉它们。
+ */
+const AUXILIARY_PROMPTS = [
+  'You name a conversation.',
+  'You keep a session brief.',
+  'You summarize an earlier part of a coding session',
+] as const
+
+export function chatRequests<T extends { readonly messages: unknown }>(
+  requests: readonly T[],
+): T[] {
+  return requests.filter((request) => {
+    const text = JSON.stringify(request.messages)
+    return AUXILIARY_PROMPTS.every((phrase) => !text.includes(phrase))
+  })
+}
+
 /** 在数据目录中准备一个项目目录，返回其绝对路径。 */
 export function projectDir(userData: string): string {
   const dir = path.join(userData, 'project')

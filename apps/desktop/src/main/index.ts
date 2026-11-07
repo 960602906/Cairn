@@ -46,6 +46,8 @@ import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
+import { latestBrief } from './services/brief.js'
+import { createBriefService } from './services/brief-service.js'
 import { createCompactService } from './services/compact-service.js'
 import { createTitleService } from './services/title-service.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
@@ -180,6 +182,7 @@ const supervisor = createHostSupervisor({
     }
   },
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
+  sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
   onError: reportError,
 })
 const sessions = createSessionManager({
@@ -203,6 +206,13 @@ const sessions = createSessionManager({
   onError: reportError,
 })
 sessions.recoverInterrupted()
+/** 会话要点（M3-04）：每轮结束后用辅助模型增量更新，失败只写日志。 */
+const briefs = createBriefService({
+  events,
+  settings,
+  credentials,
+  onError: reportError,
+})
 /** 自动标题（M3-01）：第一轮结束后用辅助模型生成，失败只写日志。 */
 const titles = createTitleService({
   events,
@@ -315,6 +325,7 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   servicesClosed = true
   titles.stop()
+  briefs.stop()
   compaction.stop()
   gateway.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))

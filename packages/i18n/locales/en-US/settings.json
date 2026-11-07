@@ -30,6 +30,8 @@
   "general.shell.detecting": "detecting",
   "general.shell.unknown": "unknown",
   "general.shell.hint": "Used when the agent runs commands. Sessions already running are not affected.",
+  "general.sessionBrief.label": "Update the session brief automatically",
+  "general.sessionBrief.hint": "After each turn, the auxiliary model records goals, constraints, and preferences you stated. You can still edit the brief when this is off.",
   "general.instructions.label": "Global instructions",
   "general.instructions.placeholder": "For example: reply in English; explain the plan before changing files.",
   "general.instructions.hint": "Added to the system prompt of every session. Sessions already running are not affected.",

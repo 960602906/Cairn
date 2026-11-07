@@ -60,7 +60,12 @@ export const FOREIGN_API = 'cairn-foreign'
 export const IMAGE_PLACEHOLDER = '[image omitted]'
 
 /** `summary` 转为用户消息时的前缀（发给模型，因此用英文）。定义在 core，这里再导出。 */
-import { SUMMARY_PREFIX } from '@cairn/core'
+import {
+  isSessionBrief,
+  SESSION_BRIEF_PREFIX,
+  sessionBriefMessage,
+  SUMMARY_PREFIX,
+} from '@cairn/core'
 export { SUMMARY_PREFIX }
 
 const DETAILS_STATUS_KEY = 'cairnStatus'
@@ -90,7 +95,13 @@ export function toPiMessages(
       case 'summary':
         result.push({
           role: 'user',
-          content: [{ type: 'text', text: SUMMARY_PREFIX + message.content }],
+          content: [
+            {
+              type: 'text',
+              // 要点自己带前缀，不再套一层摘要前缀，往返时才认得出。
+              text: isSessionBrief(message) ? message.content : SUMMARY_PREFIX + message.content,
+            },
+          ],
           timestamp: message.ts,
         })
         break
@@ -204,16 +215,21 @@ export function fromPiMessages(
   const result: CanonicalMessage[] = []
   for (const message of messages) {
     switch (message.role) {
-      case 'user':
-        result.push({
-          role: 'user',
-          content:
-            typeof message.content === 'string'
-              ? [{ type: 'text', text: message.content }]
-              : message.content.map(fromPiContent),
-          ts: message.timestamp,
-        })
+      case 'user': {
+        const content =
+          typeof message.content === 'string'
+            ? [{ type: 'text' as const, text: message.content }]
+            : message.content.map(fromPiContent)
+        const text = content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('')
+        if (content.length === 1 && text.startsWith(SESSION_BRIEF_PREFIX)) {
+          result.push(
+            sessionBriefMessage(text.slice(SESSION_BRIEF_PREFIX.length), message.timestamp),
+          )
+          break
+        }
+        result.push({ role: 'user', content, ts: message.timestamp })
         break
+      }
       case 'assistant':
         result.push(fromPiAssistant(message, model))
         break

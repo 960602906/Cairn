@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
+    // Windows 上 Git 与 PowerShell 启动较慢，和全量测试并行时个别用例会超过默认 5 秒。
+    testTimeout: process.platform === 'win32' ? 20_000 : 5_000,
     include: [
       'packages/*/src/**/*.test.ts',
       'apps/*/src/**/*.test.{ts,tsx}',

@@ -7,7 +7,14 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
+import {
+  chatRequests,
+  createSession,
+  expectMessages,
+  projectDir,
+  runStatus,
+  sendPrompt,
+} from './session.js'
 
 const REPLY = 'reply from configured provider'
 
@@ -66,7 +73,9 @@ test('按提供方配置新建会话：回复来自配置的模型端点', async
       ['助手', REPLY],
     ])
     await expect(runStatus(window)).toHaveText('空闲')
-    expect(mock.requests.map((r) => [r.model, r.stream])).toEqual([['e2e-model', true]])
+    expect(chatRequests(mock.requests).map((r) => [r.model, r.stream])).toEqual([
+      ['e2e-model', true],
+    ])
   } finally {
     await mock.close()
   }
@@ -97,7 +106,7 @@ test('在输入框中切换模型：两轮分别使用两个模型（M2-04）', 
       ['助手', REPLY],
     ])
     await expect(runStatus(window)).toHaveText('空闲')
-    expect(mock.requests.map((r) => r.model)).toEqual(['e2e-model', 'e2e-model-2'])
+    expect(chatRequests(mock.requests).map((r) => r.model)).toEqual(['e2e-model', 'e2e-model-2'])
   } finally {
     await mock.close()
   }

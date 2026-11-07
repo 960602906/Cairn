@@ -94,11 +94,11 @@ test('Key 只发给模型端点，不出现在渲染进程、进程输出与数�
     await expect(window.getByText(REPLY)).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲')
 
-    // Key 确实用于请求模型（两次请求：调用工具、回复）
-    expect(mock.requests.map((r) => r.authorization)).toEqual([
-      `Bearer ${SECRET}`,
-      `Bearer ${SECRET}`,
-    ])
+    // Key 确实用于请求模型：调用工具、回复，以及轮次结束后的会话要点。
+    await expect
+      .poll(() => mock.requests.map((request) => request.authorization))
+      .toEqual([`Bearer ${SECRET}`, `Bearer ${SECRET}`, `Bearer ${SECRET}`])
+    expect(JSON.stringify(mock.requests[2]?.messages)).toContain('You keep a session brief.')
 
     expect(await window.content()).not.toContain(SECRET)
     expect(JSON.stringify(replies)).not.toContain(SECRET)
