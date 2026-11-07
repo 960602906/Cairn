@@ -8,6 +8,8 @@
  */
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Download } from 'lucide-react'
+import { DiagnosticsExportDialog } from './DiagnosticsExportDialog.js'
 import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
 import { INSTRUCTIONS_MAX_LENGTH, type ShellPreference, type Theme } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
@@ -134,6 +136,7 @@ function InstructionsField() {
 }
 
 export function GeneralSettings() {
+  const [exportOpen, setExportOpen] = useState(false)
   const { t, i18n } = useTranslation('settings')
   const { t: tc } = useTranslation()
   const theme = useSessionStore((s) => s.settings?.theme ?? 'system')
@@ -191,6 +194,17 @@ export function GeneralSettings() {
         </div>
         <InstructionsField />
       </SettingsCard>
+      <section className="flex flex-col gap-2 border-t-[0.5px] border-hair pt-5">
+        <h3 className="text-[13px] font-medium text-fg">{t('general.diagnostics.title')}</h3>
+        <p className="text-note text-muted">{t('general.diagnostics.description')}</p>
+        <div className="pt-1">
+          <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
+            <Download />
+            {t('general.diagnostics.export')}
+          </Button>
+        </div>
+      </section>
+      <DiagnosticsExportDialog open={exportOpen} onOpenChange={setExportOpen} />
     </>
   )
 }

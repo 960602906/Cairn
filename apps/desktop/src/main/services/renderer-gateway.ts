@@ -30,6 +30,7 @@ import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
 import type { AgentCommands } from './agent-service.js'
+import type { DiagnosticsCommands } from './diagnostics-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -125,6 +126,8 @@ export interface RendererGatewayOptions {
   readonly mcp: McpCommands
   /** Agent 定义（M3-11）：草稿、发布、版本、导入导出与生效配置。 */
   readonly agents: AgentCommands
+  /** 诊断包（M3-13）：导出前清单、生成 zip 与在文件夹中显示。 */
+  readonly diagnostics: DiagnosticsCommands
   /** MCP 状态变化的订阅（M3-09）。 */
   readonly mcpStatus: (listener: (event: z.output<typeof McpStatusEvent>) => void) => () => void
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
@@ -195,7 +198,7 @@ type Timer = ReturnType<typeof setTimeout>
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
-  const { agents } = options
+  const { agents, diagnostics } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -319,6 +322,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('agent.export', (params) => agents.export(params))
       endpoint.handle('agent.import', (params) => agents.import(params))
       endpoint.handle('agent.effectiveConfig', (params) => agents.effectiveConfig(params))
+      endpoint.handle('diagnostics.summary', (params) => diagnostics.summary(params))
+      endpoint.handle('diagnostics.export', (params) => diagnostics.export(params))
+      endpoint.handle('diagnostics.showInFolder', (params) => diagnostics.showInFolder(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布

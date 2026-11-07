@@ -2,7 +2,7 @@
  * 主进程入口（ADR-0002、ADR-0003，架构 §4、§17）。只做启动引导：确定数据目录、应用安全基线、
  * 组装主进程服务（存储、设置、宿主管理、IPC 网关）、创建窗口。服务本身不依赖 Electron，见 `services/`。
  */
-import { mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -44,6 +44,7 @@ import { loadProjectAgentsMd } from './services/agents-md.js'
 import { createSkillService } from './services/skill-service.js'
 import { createMcpService } from './services/mcp-service.js'
 import { createAgentService } from './services/agent-service.js'
+import { DiagnosticsService } from './services/diagnostics-service.js'
 import { createProjectService } from './services/project-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
@@ -102,6 +103,20 @@ let knownSecrets: () => readonly string[] = () => []
 // 日志服务接入前，异常先写到标准错误（经过脱敏）
 const reportError = (error: unknown) =>
   console.error('[cairn]', redact(error, { homeDirs: [homedir()], secrets: knownSecrets() }))
+
+/** 读取日志文件末尾的若干行（诊断包用）；不存在或读取失败时返回空串。 */
+const DIAGNOSTICS_LOG_TAIL = 500
+function readLogFile(file: string): string {
+  try {
+    if (!existsSync(file)) return ''
+    const content = readFileSync(file, 'utf8')
+    const lines = content.split(/\r?\n/)
+    return lines.slice(Math.max(0, lines.length - DIAGNOSTICS_LOG_TAIL)).join('\n')
+  } catch (error) {
+    reportError(error)
+    return ''
+  }
+}
 
 const storage = openSqliteStorage({ file: paths.database })
 /** 凭据（ADR-0010）：界面经 IPC 写入，启动宿主时按提供方配置的凭据引用解析后经 `host.init` 传入。 */
@@ -178,6 +193,40 @@ const agents = createAgentService({
   skills,
   mcp,
   models: { has: (model) => settings.hasModel(model) },
+})
+/** 诊断包（M3-13）：读取日志与事件摘要，统一脱敏后打包；不包含任何凭据。 */
+const diagnostics = new DiagnosticsService({
+  getAppVersion: () => app.getVersion(),
+  getElectronVersion: () => process.versions.electron ?? '',
+  getSettings: async () => settings.get(),
+  getMcpServers: async () => mcp.list({}).servers,
+  getSession: async (sessionId) => {
+    const session = storage.sessions.get(sessionId)
+    if (!session) return undefined
+    const persisted = events
+      .readAfter(sessionId, 0)
+      .map((event) => event as unknown as Record<string, unknown>)
+    return { title: session.title, events: persisted }
+  },
+  getMainLogs: () => readLogFile(join(paths.logs, 'main.log')),
+  getHostLogs: () => readLogFile(join(paths.logs, 'host.log')),
+  showSaveDialog: async (defaultName) => {
+    // 端到端测试：指定目录时跳过系统保存对话框（不弹出原生窗口）
+    const override = process.env['CAIRN_DIAGNOSTICS_DIR']?.trim()
+    if (override) return join(override, defaultName)
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const options: Electron.SaveDialogOptions = {
+      defaultPath: join(app.getPath('downloads'), defaultName),
+      filters: [{ name: 'Zip', extensions: ['zip'] }],
+    }
+    const result = parent
+      ? await dialog.showSaveDialog(parent, options)
+      : await dialog.showSaveDialog(options)
+    return result.canceled ? undefined : result.filePath
+  },
+  showItemInFolder: (filePath) => shell.showItemInFolder(filePath),
+  userHomeDir: homedir(),
+  getKnownSecrets: () => credentials.knownSecrets(),
 })
 /** 上下文压缩的摘要（M3-03）：宿主经 `host.summarize` 调用，用量记在主进程。 */
 const compaction = createCompactService({
@@ -318,6 +367,7 @@ const gateway = createRendererGateway({
   skills,
   mcp,
   agents,
+  diagnostics,
   mcpStatus: (listener) => {
     mcpStatusListeners.add(listener)
     return () => mcpStatusListeners.delete(listener)

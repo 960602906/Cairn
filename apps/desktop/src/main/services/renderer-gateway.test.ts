@@ -15,6 +15,7 @@ import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
 import type { AgentCommands } from './agent-service.js'
+import type { DiagnosticsCommands } from './diagnostics-service.js'
 import {
   coalesceDeltas,
   createRendererGateway,
@@ -89,6 +90,7 @@ let checkpoints: CheckpointCommands
 let approvals: ApprovalCommands
 let skills: SkillCommands
 let agents: AgentCommands
+let diagnostics: DiagnosticsCommands
 const approvalListeners = new Set<(sessionId: string) => void>()
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
@@ -228,6 +230,19 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
       return () => approvalListeners.delete(listener)
     }),
   }
+  diagnostics = {
+    summary: vi.fn(() => ({
+      appVersion: '0.0.0',
+      electronVersion: '0.0.0',
+      platform: process.platform,
+      arch: process.arch,
+      logs: { mainLogLines: 0, hostLogLines: 0 },
+      settings: { providersCount: 0, mcpServersCount: 0, hasAuxiliaryModel: false },
+      exportItems: ['manifest.json'],
+    })),
+    export: vi.fn(() => ({ cancelled: true })),
+    showInFolder: vi.fn(() => ({ shown: true })),
+  }
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
     commands,
@@ -242,6 +257,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     skills,
     mcp: {} as unknown as McpCommands,
     agents,
+    diagnostics,
     mcpStatus: () => () => undefined,
   })
   return connectRenderer()
@@ -761,6 +777,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       skills,
       mcp: {} as unknown as McpCommands,
       agents,
+      diagnostics,
       mcpStatus: () => () => undefined,
       onProtocolError,
     })
