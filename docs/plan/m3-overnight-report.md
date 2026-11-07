@@ -39,7 +39,7 @@
 
 | 任务 | 状态 | 提交 | 备注 |
 |---|---|---|---|
-| M3-09 MCP 后端 | 未开始 | — | |
+| M3-09 MCP 后端 | 完成 | `feat(mcp): MCP 后端 [M3-09]` | 覆盖率、build、完整 e2e 通过 |
 | M3-10 设置页“MCP 服务” | 未开始 | — | |
 | M3-11 自定义 Agent 后端 | 未开始 | — | |
 | M3-12 Agents 页面与 Agent 选择器 | 未开始 | — | |
@@ -56,4 +56,32 @@
 
 ## 5. 断点
 
-- 当前断点：启动与基线完成，准备开始 M3-09。
+- 当前断点：M3-09 完成并提交，准备开始 M3-10。
+
+## 6. 任务实施记录
+
+### M3-09 MCP 后端
+
+- 状态：完成。
+- 主要改动：
+  - 新包 `packages/mcp`：连接管理器、SDK 薄包装、脱敏、真实 stdio 集成测试。
+  - 协议：`packages/protocol/src/mcp.ts`、`host.init.mcpTools`、`host.mcp.call`、`mcp.*` RPC 与 `mcp.status` 事件。
+  - 存储：迁移 0009、`mcp_servers` / `mcp_tool_prefs` 的内存与 SQLite 实现及契约测试。
+  - 主进程：`mcp-service`、宿主工具适配、`renderer-gateway`、应用启动连接与退出关闭。
+  - ADR-0026：MCP 连接放主进程，宿主经 RPC 调用。
+  - e2e：`apps/desktop/e2e/mcp.spec.ts`（添加服务 → mock 模型调用 → 审批 → 结果回传）。
+- 验证：
+  - `pnpm format:check`：通过。
+  - `pnpm typecheck`：通过。
+  - `pnpm lint`：通过。
+  - `pnpm check:i18n`：通过。
+  - `pnpm test:coverage`：通过，四项均达到 95%。
+  - `pnpm build`：通过。
+  - `pnpm e2e`：完整 26 项通过；新增 MCP e2e 单独复跑通过（完整套件在新增前跑过一次，新增后单跑通过）。
+  - `pnpm check:licenses`：通过。
+- 关键决策与差异：
+  - 工具名使用 `mcp_<服务>_<工具>`，不使用点号（ADR-0026）。
+  - 工具名改为按存储顺序一次性分配，保证列表与宿主名称一致。
+  - Windows 上用 `taskkill /T /F` 结束 stdio 子进程树；其他平台只结束直接子进程。
+  - 覆盖率补充：新增 MCP 单测与存储契约用例；保留 7 个防御性分支未覆盖（平台差异、不可达的保护判断）。
+- 已知问题：无。

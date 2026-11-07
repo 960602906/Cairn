@@ -484,6 +484,113 @@ describe('agent host', () => {
     })
   })
 
+  it('registers MCP tools from host.init and calls main for execution (M3-09)', async () => {
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            { kind: 'tool' as const, name: 'mcp_fixture_echo', input: { text: 'hi' } },
+            { kind: 'reply' as const, text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script)
+    const calls: unknown[] = []
+    h.main.handle('host.mcp.call', (params) => {
+      calls.push(params)
+      return { text: 'echo:hi', isError: false }
+    })
+    h.main.handle('host.approval.request', () => ({ decision: 'allow_once' as const }))
+    await h.main.request('host.init', {
+      ...init,
+      mcpTools: [
+        {
+          name: 'mcp_fixture_echo',
+          description: 'Echo',
+          inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
+          serverId: 'fixture',
+          originalName: 'echo',
+          category: 'network',
+        },
+      ],
+    })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+    expect(calls).toEqual([
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        input: { text: 'hi' },
+        maxOutputTokens: expect.any(Number),
+      },
+    ])
+    const completed = h.events.filter((e) => e.type === 'tool.completed')
+    expect(completed[0]?.payload).toMatchObject({ output: text('echo:hi') })
+  })
+
+  it('skips an MCP tool whose name conflicts with a builtin', async () => {
+    const echo: ToolDefinition<object> = {
+      name: 'mcp_fixture_echo',
+      description: 'Builtin',
+      category: 'read',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: { type: 'object', properties: {} },
+      execute: () => Promise.resolve({ content: text('') }),
+    }
+    const h = setup({ turns: [] }, { registerTools: (registry) => registry.register(echo) })
+    await h.main.request('host.init', {
+      ...init,
+      mcpTools: [
+        {
+          name: 'mcp_fixture_echo',
+          description: 'MCP',
+          inputSchema: { type: 'object', properties: {} },
+          serverId: 'fixture',
+          originalName: 'echo',
+          category: 'network',
+        },
+      ],
+    })
+    expect(h.onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/conflicts/) }),
+    )
+  })
+
+  it('uses a fallback description and reports MCP tool errors (M3-09)', async () => {
+    const h = setup({
+      turns: [
+        {
+          steps: [
+            { kind: 'tool' as const, name: 'mcp_fixture_blank', input: {} },
+            { kind: 'reply' as const, text: 'done' },
+          ],
+        },
+      ],
+    })
+    h.main.handle('host.mcp.call', () => ({ text: 'boom', isError: true }))
+    h.main.handle('host.approval.request', () => ({ decision: 'allow_once' as const }))
+    await h.main.request('host.init', {
+      ...init,
+      mcpTools: [
+        {
+          name: 'mcp_fixture_blank',
+          description: '',
+          inputSchema: { type: 'object', properties: {} },
+          serverId: 'fixture',
+          originalName: 'blank',
+          category: 'network',
+        },
+      ],
+    })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.execution_failed' },
+    })
+  })
+
   it('creates a run and answers prompts with events', async () => {
     const { main, events, waitFor } = setup()
     await main.request('host.init', init)

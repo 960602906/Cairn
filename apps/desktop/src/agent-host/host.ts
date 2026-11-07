@@ -45,6 +45,8 @@ import {
   type ResolvedModel,
   type RunSupervisor,
   type ToolCheckpoints,
+  ToolError,
+  ToolErrorCode,
   type ToolRegistry,
 } from '@cairn/core'
 import {
@@ -209,6 +211,32 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     const toolEnvironment =
       (await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
     const hasBuiltinTools = registry.list().length > 0
+    for (const tool of init.mcpTools ?? []) {
+      if (registry.get(tool.name)) {
+        onError(new Error(`MCP tool name conflicts with a builtin tool: ${tool.name}`))
+        continue
+      }
+      registry.register({
+        name: tool.name,
+        description: tool.description || `MCP tool ${tool.originalName}`,
+        inputSchema: tool.inputSchema,
+        category: tool.category,
+        source: { kind: 'mcp', serverId: tool.serverId },
+        trust: 'third-party',
+        async execute(input, ctx) {
+          const result = await endpoint.request('host.mcp.call', {
+            serverId: tool.serverId,
+            toolName: tool.originalName,
+            input: (input ?? {}) as Record<string, unknown>,
+            maxOutputTokens: ctx.maxOutputTokens,
+          })
+          if (result.isError) {
+            throw new ToolError(ToolErrorCode.ExecutionFailed, result.text)
+          }
+          return { content: [{ type: 'text', text: result.text }] }
+        },
+      })
+    }
     /** 本轮启用的技能。`prepareTurn` 每轮替换，`load_skill` 按名称读取。 */
     const skillCatalog: SkillCatalogEntry[] = []
     /** 技能目录只读。与 `skillCatalog` 一起每轮更新。 */

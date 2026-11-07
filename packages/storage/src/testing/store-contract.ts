@@ -733,6 +733,180 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     })
 
+    describe('mcp servers', () => {
+      it('creates, reads and updates stdio and http servers', () => {
+        const created = storage.mcpServers.create({
+          serverId: 'm1',
+          name: 'Local',
+          kind: 'stdio',
+          command: 'node',
+          args: ['server.mjs'],
+          env: [{ name: 'TOKEN', credentialRef: 'ref-token' }],
+        })
+        expect(created).toMatchObject({
+          serverId: 'm1',
+          name: 'Local',
+          kind: 'stdio',
+          command: 'node',
+          args: ['server.mjs'],
+          env: [{ name: 'TOKEN', credentialRef: 'ref-token' }],
+          enabled: true,
+          createdAt: 100,
+          updatedAt: 100,
+        })
+        clock = 200
+        const updated = storage.mcpServers.update('m1', {
+          kind: 'http',
+          url: 'https://example.com/mcp',
+          command: null,
+          cwd: null,
+          auth: 'bearer',
+          credentialRef: 'ref-auth',
+          headerName: null,
+          env: [],
+          enabled: false,
+        })
+        expect(updated).toMatchObject({
+          kind: 'http',
+          url: 'https://example.com/mcp',
+          auth: 'bearer',
+          credentialRef: 'ref-auth',
+          enabled: false,
+          updatedAt: 200,
+        })
+        expect(updated.command).toBeUndefined()
+        expect(storage.mcpServers.list()).toEqual([updated])
+      })
+
+      it('rejects duplicate ids and unknown records', () => {
+        storage.mcpServers.create({ serverId: 'm1', name: 'A', kind: 'stdio', command: 'node' })
+        expectStorageError(
+          () =>
+            storage.mcpServers.create({
+              serverId: 'm1',
+              name: 'B',
+              kind: 'stdio',
+              command: 'node',
+            }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.mcpServers.update('missing', { name: 'X' }),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(() => storage.mcpServers.remove('missing'), StorageErrorCode.NotFound)
+      })
+
+      it('stores tool preferences and removes them with the server', () => {
+        storage.mcpServers.create({ serverId: 'm1', name: 'A', kind: 'stdio', command: 'node' })
+        expect(storage.mcpToolPrefs.get('m1', 'echo')).toBeUndefined()
+        const pref = storage.mcpToolPrefs.set({
+          serverId: 'm1',
+          name: 'echo',
+          category: 'read',
+          effect: 'allow',
+        })
+        expect(pref).toEqual({
+          serverId: 'm1',
+          name: 'echo',
+          category: 'read',
+          effect: 'allow',
+        })
+        expect(storage.mcpToolPrefs.list('m1')).toEqual([pref])
+        storage.mcpServers.remove('m1')
+        expect(storage.mcpToolPrefs.list('m1')).toEqual([])
+      })
+
+      it('rejects preferences for unknown servers', () => {
+        expectStorageError(
+          () =>
+            storage.mcpToolPrefs.set({
+              serverId: 'missing',
+              name: 'echo',
+              category: 'read',
+              effect: 'allow',
+            }),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('handles optional fields and deletes preferences by server', () => {
+        const full = storage.mcpServers.create({
+          serverId: 'm2',
+          name: 'Full',
+          kind: 'stdio',
+          cwd: '/work',
+          url: 'https://example.com/mcp',
+          headerName: 'X-Key',
+          credentialRef: 'ref',
+          enabled: false,
+        })
+        expect(full).toMatchObject({
+          cwd: '/work',
+          url: 'https://example.com/mcp',
+          headerName: 'X-Key',
+          credentialRef: 'ref',
+          enabled: false,
+        })
+
+        const patched = storage.mcpServers.update('m2', {
+          command: 'node',
+          args: ['server.mjs'],
+          cwd: '/next',
+          url: 'https://next.example.com/mcp',
+          headerName: 'X-Next',
+          credentialRef: 'ref-next',
+          enabled: true,
+        })
+        expect(patched).toMatchObject({
+          command: 'node',
+          args: ['server.mjs'],
+          cwd: '/next',
+          url: 'https://next.example.com/mcp',
+          headerName: 'X-Next',
+          credentialRef: 'ref-next',
+          enabled: true,
+        })
+
+        const minimal = storage.mcpServers.create({
+          serverId: 'm3',
+          name: 'Minimal',
+          kind: 'http',
+        })
+        expect(minimal.command).toBeUndefined()
+        expect(minimal.cwd).toBeUndefined()
+        expect(minimal.url).toBeUndefined()
+        expect(minimal.headerName).toBeUndefined()
+        expect(minimal.credentialRef).toBeUndefined()
+        expect(minimal.enabled).toBe(true)
+
+        const renamed = storage.mcpServers.update('m3', { name: 'Renamed' })
+        expect(renamed.name).toBe('Renamed')
+        expect(renamed.command).toBeUndefined()
+        expect(renamed.url).toBeUndefined()
+        expect(renamed.enabled).toBe(true)
+
+        storage.mcpToolPrefs.set({
+          serverId: 'm2',
+          name: 'echo',
+          category: 'read',
+          effect: 'allow',
+        })
+        storage.mcpToolPrefs.set({
+          serverId: 'm3',
+          name: 'echo',
+          category: 'write',
+          effect: 'deny',
+        })
+        storage.mcpToolPrefs.deleteForServer('m2')
+        expect(storage.mcpToolPrefs.list('m2')).toEqual([])
+        expect(storage.mcpToolPrefs.list('m3')).toHaveLength(1)
+
+        storage.mcpServers.remove('m2')
+        expect(storage.mcpServers.get('m2')).toBeUndefined()
+      })
+    })
+
     describe('transaction', () => {
       it('commits all writes and returns the result', () => {
         const result = storage.transaction(() => {

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openShadowRepo } from '@cairn/checkpoint'
 import { redact } from '@cairn/core'
+import type { McpStatusEvent } from '@cairn/protocol'
 import { bundledRipgrepPath } from '@cairn/tools'
 import { openSqliteStorage } from '@cairn/storage'
 import {
@@ -41,6 +42,7 @@ import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { loadProjectAgentsMd } from './services/agents-md.js'
 import { createSkillService } from './services/skill-service.js'
+import { createMcpService } from './services/mcp-service.js'
 import { createProjectService } from './services/project-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
@@ -158,6 +160,16 @@ const skills = createSkillService({
     return result.canceled ? undefined : result.filePaths[0]
   },
 })
+/** MCP 服务（M3-09）：配置、连接与工具调用都在主进程。 */
+const mcpStatusListeners = new Set<(event: McpStatusEvent) => void>()
+const mcp = createMcpService({
+  storage,
+  credentials,
+  onStatus: (event) => {
+    for (const listener of [...mcpStatusListeners]) listener(event)
+  },
+  onError: reportError,
+})
 /** 上下文压缩的摘要（M3-03）：宿主经 `host.summarize` 调用，用量记在主进程。 */
 const compaction = createCompactService({
   events,
@@ -204,6 +216,9 @@ const supervisor = createHostSupervisor({
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
   loadSkills: (sessionId) => skills.catalog(sessionId),
+  resolveMcpTools: () => mcp.exposures(),
+  callMcpTool: (_sessionId, serverId, toolName, input, maxOutputTokens) =>
+    mcp.call(serverId, toolName, input, maxOutputTokens),
   onError: reportError,
 })
 const sessions = createSessionManager({
@@ -289,6 +304,11 @@ const gateway = createRendererGateway({
   checkpoints,
   approvals,
   skills,
+  mcp,
+  mcpStatus: (listener) => {
+    mcpStatusListeners.add(listener)
+    return () => mcpStatusListeners.delete(listener)
+  },
   onProtocolError: (error) => reportError(error),
 })
 
@@ -350,6 +370,7 @@ app.on('before-quit', (event) => {
   briefs.stop()
   compaction.stop()
   gateway.close()
+  void mcp.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
   void Promise.race([sessions.shutdown(), timeout])
     .catch(reportError)
@@ -414,6 +435,7 @@ async function smokeCredentials(): Promise<CredentialCheck> {
 void app.whenReady().then(() => {
   restrictPermissions(session.defaultSession)
   followThemeSetting()
+  void mcp.initialize()
   const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {

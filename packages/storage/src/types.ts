@@ -14,6 +14,7 @@ import type {
   ProviderConfig,
   SkillSource,
 } from '@cairn/protocol'
+import type { McpAuthKind, McpServerKind, PermissionEffect, ToolCategory } from '@cairn/protocol'
 
 export const StorageErrorCode = {
   /** 记录不存在。 */
@@ -291,6 +292,87 @@ export interface SkillPrefStore {
   delete(scope: string, source: SkillSource, name: string): void
 }
 
+// ---------- MCP 服务 ----------
+
+/** 环境变量的凭据引用（M3-09）。值只在凭据服务中。 */
+export interface McpEnvRef {
+  readonly name: string
+  readonly credentialRef: string
+}
+
+/** 一条 MCP 服务配置。环境变量值与令牌只保存引用。 */
+export interface McpServerRecord {
+  readonly serverId: string
+  readonly name: string
+  readonly kind: McpServerKind
+  readonly command?: string | undefined
+  readonly args: readonly string[]
+  readonly cwd?: string | undefined
+  readonly url?: string | undefined
+  readonly auth: McpAuthKind
+  readonly headerName?: string | undefined
+  /** 认证令牌的凭据引用（`bearer` / `header`）。 */
+  readonly credentialRef?: string | undefined
+  readonly env: readonly McpEnvRef[]
+  readonly enabled: boolean
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+export interface CreateMcpServerInput {
+  readonly serverId: string
+  readonly name: string
+  readonly kind: McpServerKind
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly cwd?: string
+  readonly url?: string
+  readonly auth?: McpAuthKind
+  readonly headerName?: string
+  readonly credentialRef?: string
+  readonly env?: readonly McpEnvRef[]
+  readonly enabled?: boolean
+}
+
+export interface UpdateMcpServerInput {
+  readonly name?: string
+  readonly kind?: McpServerKind
+  readonly command?: string | null
+  readonly args?: readonly string[]
+  readonly cwd?: string | null
+  readonly url?: string | null
+  readonly auth?: McpAuthKind
+  readonly headerName?: string | null
+  readonly credentialRef?: string | null
+  readonly env?: readonly McpEnvRef[]
+  readonly enabled?: boolean
+}
+
+export interface McpServerStore {
+  list(): McpServerRecord[]
+  get(serverId: string): McpServerRecord | undefined
+  /** id 重复时报 `storage.conflict`。 */
+  create(input: CreateMcpServerInput): McpServerRecord
+  /** 不存在时报 `storage.not_found`。 */
+  update(serverId: string, patch: UpdateMcpServerInput): McpServerRecord
+  remove(serverId: string): void
+}
+
+/** 一个 MCP 工具的类别与默认效果（M3-09）。没有记录时按 `network` / `ask`。 */
+export interface McpToolPref {
+  readonly serverId: string
+  readonly name: string
+  readonly category: ToolCategory
+  readonly effect: PermissionEffect
+}
+
+export interface McpToolPrefStore {
+  get(serverId: string, name: string): McpToolPref | undefined
+  list(serverId: string): McpToolPref[]
+  set(pref: McpToolPref): McpToolPref
+  deleteForServer(serverId: string): void
+}
+
 // ---------- 汇总 ----------
 
 export interface Storage {
@@ -301,6 +383,8 @@ export interface Storage {
   readonly changes: FileChangeStore
   readonly permissionRules: PermissionRuleStore
   readonly skillPrefs: SkillPrefStore
+  readonly mcpServers: McpServerStore
+  readonly mcpToolPrefs: McpToolPrefStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   close(): void

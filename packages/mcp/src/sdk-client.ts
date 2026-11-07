@@ -1,0 +1,147 @@
+/**
+ * 官方 TypeScript SDK 的薄包装（M3-09）。只有这个文件接触 `@modelcontextprotocol/sdk`。
+ */
+import { spawnSync } from 'node:child_process'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { McpCallOptions, McpCallResult, McpClient, McpServerSpec, McpTool } from './types.js'
+
+export function contentToText(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return content === undefined ? '' : JSON.stringify(content)
+  }
+  const parts: string[] = []
+  for (const raw of content) {
+    if (typeof raw !== 'object' || raw === null) {
+      parts.push(String(raw))
+      continue
+    }
+    const item = raw as Record<string, unknown>
+    switch (item['type']) {
+      case 'text':
+        parts.push(typeof item['text'] === 'string' ? item['text'] : '')
+        break
+      case 'image':
+        parts.push(`[image ${String(item['mimeType'] ?? 'unknown')}]`)
+        break
+      case 'audio':
+        parts.push(`[audio ${String(item['mimeType'] ?? 'unknown')}]`)
+        break
+      case 'resource': {
+        const resource = item['resource']
+        if (typeof resource === 'object' && resource !== null) {
+          const value = resource as Record<string, unknown>
+          if (typeof value['text'] === 'string') parts.push(value['text'])
+          else parts.push(`[resource ${String(value['uri'] ?? 'unknown')}]`)
+        } else {
+          parts.push('[resource]')
+        }
+        break
+      }
+      default:
+        parts.push(JSON.stringify(item))
+    }
+  }
+  return parts.join('\n')
+}
+
+export function createSdkClient(spec: McpServerSpec): McpClient {
+  const client = new Client({ name: 'cairn', version: '0.0.0' })
+  let closed = false
+  let closeListener: (() => void) | undefined
+  let logListener: ((line: string) => void) | undefined
+  let stdioPid: number | null = null
+  const connectTimeout = spec.connectTimeoutMs ?? 15_000
+  const callTimeout = spec.callTimeoutMs ?? 60_000
+
+  return {
+    async connect() {
+      let transport: StdioClientTransport | StreamableHTTPClientTransport
+      if (spec.transport.kind === 'stdio') {
+        transport = new StdioClientTransport({
+          command: spec.transport.command,
+          ...(spec.transport.args ? { args: [...spec.transport.args] } : {}),
+          ...(spec.transport.cwd ? { cwd: spec.transport.cwd } : {}),
+          ...(spec.transport.env ? { env: { ...spec.transport.env } } : {}),
+          stderr: 'pipe',
+        })
+        transport.stderr?.on('data', (chunk: unknown) => {
+          const text = String(chunk).trim()
+          if (text) logListener?.(text)
+        })
+      } else {
+        transport = new StreamableHTTPClientTransport(new URL(spec.transport.url), {
+          ...(spec.transport.headers
+            ? { requestInit: { headers: { ...spec.transport.headers } } }
+            : {}),
+        })
+      }
+      client.onclose = () => {
+        if (!closed) closeListener?.()
+      }
+      await client.connect(transport, { timeout: connectTimeout })
+      /* v8 ignore next -- HTTP 传输没有 pid；成功连接的 stdio 分支由集成测试覆盖 */
+      stdioPid = transport instanceof StdioClientTransport ? transport.pid : null
+    },
+
+    async listTools() {
+      const result = await client.listTools(undefined, { timeout: connectTimeout })
+      return result.tools.map((tool): McpTool => ({
+        name: tool.name,
+        description: tool.description ?? '',
+        inputSchema: tool.inputSchema as Readonly<Record<string, unknown>>,
+      }))
+    },
+
+    async callTool(
+      name: string,
+      input: Readonly<Record<string, unknown>>,
+      options: McpCallOptions = {},
+    ): Promise<McpCallResult> {
+      const result = await client.callTool({ name, arguments: { ...input } }, undefined, {
+        timeout: options.timeoutMs ?? callTimeout,
+        ...(options.signal ? { signal: options.signal } : {}),
+      })
+      const text =
+        contentToText(result.content).trim() ||
+        (result.structuredContent === undefined
+          ? ''
+          : JSON.stringify(result.structuredContent, null, 2))
+      return { text, isError: result.isError === true }
+    },
+
+    async close() {
+      closed = true
+      await client.close()
+      terminateProcessTree(stdioPid)
+      stdioPid = null
+    },
+
+    onClose(listener) {
+      closeListener = listener
+    },
+
+    onLog(listener) {
+      logListener = listener
+    },
+  }
+}
+
+/** 退出时结束 stdio MCP 子进程树；远程传输没有 pid。 */
+function terminateProcessTree(pid: number | null): void {
+  if (pid === null) return
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    })
+    return
+  }
+  /* v8 ignore next 3 -- 只在非 Windows 平台执行 */
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    // 进程已经退出
+  }
+}

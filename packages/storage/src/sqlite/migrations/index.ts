@@ -7,6 +7,7 @@ import { permissionRules } from './0005-permission-rules.js'
 import { projectSettings } from './0006-project-settings.js'
 import { skillPrefs } from './0007-skill-prefs.js'
 import { projectSkillsDefault } from './0008-project-skills-default.js'
+import { mcp } from './0009-mcp.js'
 
 /** 应用的全部迁移，按编号排列。新增迁移时追加到末尾。 */
 export const MIGRATIONS: readonly Migration[] = [
@@ -18,4 +19,5 @@ export const MIGRATIONS: readonly Migration[] = [
   projectSettings,
   skillPrefs,
   projectSkillsDefault,
+  mcp,
 ]

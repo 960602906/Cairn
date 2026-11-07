@@ -11,6 +11,10 @@ import {
   type PersistedEvent,
   type ProviderConfig,
   type SkillSource,
+  type McpAuthKind,
+  type McpServerKind,
+  type PermissionEffect,
+  type ToolCategory,
 } from '@cairn/protocol'
 import Database from 'better-sqlite3'
 import {
@@ -21,6 +25,9 @@ import {
   type FileChangeRecord,
   type HunkRecord,
   type ListSessionsOptions,
+  type McpEnvRef,
+  type McpServerRecord,
+  type McpToolPref,
   type PermissionRuleRecord,
   type ProjectRecord,
   type SessionRecord,
@@ -139,6 +146,30 @@ interface PermissionRuleRow {
   created_at: number
 }
 
+interface McpServerRow {
+  server_id: string
+  name: string
+  kind: McpServerKind
+  command: string | null
+  args: string
+  cwd: string | null
+  url: string | null
+  auth: McpAuthKind
+  header_name: string | null
+  credential_ref: string | null
+  env: string
+  enabled: number
+  created_at: number
+  updated_at: number
+}
+
+interface McpToolPrefRow {
+  server_id: string
+  name: string
+  category: ToolCategory
+  effect: PermissionEffect
+}
+
 const toPermissionRule = (row: PermissionRuleRow): PermissionRuleRecord => ({
   rule: {
     id: row.rule_id,
@@ -226,6 +257,30 @@ const toEvent = (row: EventRow): PersistedEvent =>
     type: row.type,
     payload: JSON.parse(row.payload) as unknown,
   }) as PersistedEvent
+
+const toMcpServer = (row: McpServerRow): McpServerRecord => ({
+  serverId: row.server_id,
+  name: row.name,
+  kind: row.kind,
+  ...(row.command === null ? {} : { command: row.command }),
+  args: JSON.parse(row.args) as string[],
+  ...(row.cwd === null ? {} : { cwd: row.cwd }),
+  ...(row.url === null ? {} : { url: row.url }),
+  auth: row.auth,
+  ...(row.header_name === null ? {} : { headerName: row.header_name }),
+  ...(row.credential_ref === null ? {} : { credentialRef: row.credential_ref }),
+  env: JSON.parse(row.env) as McpEnvRef[],
+  enabled: row.enabled === 1,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+})
+
+const toMcpToolPref = (row: McpToolPrefRow): McpToolPref => ({
+  serverId: row.server_id,
+  name: row.name,
+  category: row.category,
+  effect: row.effect,
+})
 
 export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage {
   const now = options.now ?? Date.now
@@ -371,6 +426,39 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     deleteSkillPref: db.prepare(
       'DELETE FROM skill_prefs WHERE scope = ? AND source = ? AND name = ?',
     ),
+    mcpServers: db.prepare<[], McpServerRow>('SELECT * FROM mcp_servers ORDER BY created_at'),
+    mcpServerById: db.prepare<[string], McpServerRow>(
+      'SELECT * FROM mcp_servers WHERE server_id = ?',
+    ),
+    insertMcpServer: db.prepare(
+      `INSERT INTO mcp_servers
+         (server_id, name, kind, command, args, cwd, url, auth, header_name, credential_ref,
+          env, enabled, created_at, updated_at)
+       VALUES (@serverId, @name, @kind, @command, @args, @cwd, @url, @auth, @headerName,
+          @credentialRef, @env, @enabled, @at, @at)`,
+    ),
+    updateMcpServer: db.prepare(
+      `UPDATE mcp_servers SET
+         name = @name, kind = @kind, command = @command, args = @args, cwd = @cwd,
+         url = @url, auth = @auth, header_name = @headerName, credential_ref = @credentialRef,
+         env = @env, enabled = @enabled, updated_at = @at
+       WHERE server_id = @serverId`,
+    ),
+    deleteMcpServer: db.prepare('DELETE FROM mcp_servers WHERE server_id = ?'),
+    mcpToolPrefs: db.prepare<[string], McpToolPrefRow>(
+      'SELECT * FROM mcp_tool_prefs WHERE server_id = ? ORDER BY name',
+    ),
+    mcpToolPref: db.prepare<[string, string], McpToolPrefRow>(
+      'SELECT * FROM mcp_tool_prefs WHERE server_id = ? AND name = ?',
+    ),
+    upsertMcpToolPref: db.prepare(
+      `INSERT INTO mcp_tool_prefs (server_id, name, category, effect)
+       VALUES (@serverId, @name, @category, @effect)
+       ON CONFLICT (server_id, name) DO UPDATE SET
+         category = excluded.category,
+         effect = excluded.effect`,
+    ),
+    deleteMcpToolPrefs: db.prepare('DELETE FROM mcp_tool_prefs WHERE server_id = ?'),
   }
 
   const toSkillPref = (row: SkillPrefRow): SkillPref => ({
@@ -690,6 +778,80 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       },
       delete(scope, source, name) {
         q.deleteSkillPref.run(scope, source, name)
+      },
+    },
+
+    mcpServers: {
+      list: () => q.mcpServers.all().map(toMcpServer),
+      get(serverId) {
+        const row = q.mcpServerById.get(serverId)
+        return row && toMcpServer(row)
+      },
+      create(input) {
+        if (q.mcpServerById.get(input.serverId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { serverId: input.serverId })
+        }
+        q.insertMcpServer.run({
+          serverId: input.serverId,
+          name: input.name,
+          kind: input.kind,
+          command: input.command ?? null,
+          args: JSON.stringify(input.args ?? []),
+          cwd: input.cwd ?? null,
+          url: input.url ?? null,
+          auth: input.auth ?? 'none',
+          headerName: input.headerName ?? null,
+          credentialRef: input.credentialRef ?? null,
+          env: JSON.stringify(input.env ?? []),
+          enabled: input.enabled === false ? 0 : 1,
+          at: now(),
+        })
+        return toMcpServer(q.mcpServerById.get(input.serverId)!)
+      },
+      update(serverId, patch) {
+        const current = q.mcpServerById.get(serverId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { serverId })
+        const next = toMcpServer(current)
+        q.updateMcpServer.run({
+          serverId,
+          name: patch.name ?? next.name,
+          kind: patch.kind ?? next.kind,
+          command: patch.command === undefined ? (next.command ?? null) : patch.command,
+          args: JSON.stringify(patch.args ?? next.args),
+          cwd: patch.cwd === undefined ? (next.cwd ?? null) : patch.cwd,
+          url: patch.url === undefined ? (next.url ?? null) : patch.url,
+          auth: patch.auth ?? next.auth,
+          headerName: patch.headerName === undefined ? (next.headerName ?? null) : patch.headerName,
+          credentialRef:
+            patch.credentialRef === undefined ? (next.credentialRef ?? null) : patch.credentialRef,
+          env: JSON.stringify(patch.env ?? next.env),
+          enabled: (patch.enabled ?? next.enabled) ? 1 : 0,
+          at: now(),
+        })
+        return toMcpServer(q.mcpServerById.get(serverId)!)
+      },
+      remove(serverId) {
+        const { changes } = q.deleteMcpServer.run(serverId)
+        if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { serverId })
+        q.deleteMcpToolPrefs.run(serverId)
+      },
+    },
+
+    mcpToolPrefs: {
+      get(serverId, name) {
+        const row = q.mcpToolPref.get(serverId, name)
+        return row && toMcpToolPref(row)
+      },
+      list: (serverId) => q.mcpToolPrefs.all(serverId).map(toMcpToolPref),
+      set(pref) {
+        if (!q.mcpServerById.get(pref.serverId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { serverId: pref.serverId })
+        }
+        q.upsertMcpToolPref.run(pref)
+        return toMcpToolPref(q.mcpToolPref.get(pref.serverId, pref.name)!)
+      },
+      deleteForServer(serverId) {
+        q.deleteMcpToolPrefs.run(serverId)
       },
     },
 

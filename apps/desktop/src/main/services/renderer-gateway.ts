@@ -17,6 +17,7 @@ import {
   createEndpoint,
   isPersistedEvent,
   MainForRenderer,
+  type McpStatusEvent,
   RendererForMain,
   type EventEnvelope,
   type RpcChannel,
@@ -27,6 +28,7 @@ import type { CredentialCommands } from './credential-store.js'
 import type { SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
+import type { McpCommands } from './mcp-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -117,6 +119,10 @@ export interface RendererGatewayOptions {
   readonly approvals: ApprovalCommands
   /** 技能（M3-07）：列表、安装、卸载与启用；选择来源（M3-08）。 */
   readonly skills: SkillCommands
+  /** MCP 服务（M3-09）：配置、连接、工具与日志。 */
+  readonly mcp: McpCommands
+  /** MCP 状态变化的订阅（M3-09）。 */
+  readonly mcpStatus: (listener: (event: z.output<typeof McpStatusEvent>) => void) => () => void
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
   readonly frameMs?: number
   readonly onProtocolError?: (error: RpcError, message: unknown) => void
@@ -184,11 +190,12 @@ type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
-  const { changes, checkpoints, approvals, permissions, skills } = options
+  const { changes, checkpoints, approvals, permissions, skills, mcp } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
     approvalsChanged: (sessionId: string) => void
+    mcpStatus: (event: z.output<typeof McpStatusEvent>) => void
     close: () => void
   }>()
 
@@ -197,6 +204,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   })
   const unsubscribeApprovals = approvals.subscribe((sessionId) => {
     for (const connection of connections) connection.approvalsChanged(sessionId)
+  })
+  const unsubscribeMcp = options.mcpStatus((event) => {
+    for (const connection of connections) connection.mcpStatus(event)
   })
 
   return {
@@ -280,6 +290,16 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('skill.install', (params) => skills.install(params))
       endpoint.handle('skill.uninstall', (params) => skills.uninstall(params))
       endpoint.handle('skill.setEnabled', (params) => skills.setEnabled(params))
+      endpoint.handle('mcp.list', (params) => mcp.list(params))
+      endpoint.handle('mcp.get', (params) => mcp.get(params))
+      endpoint.handle('mcp.add', (params) => mcp.add(params))
+      endpoint.handle('mcp.update', (params) => mcp.update(params))
+      endpoint.handle('mcp.remove', (params) => mcp.remove(params))
+      endpoint.handle('mcp.reconnect', (params) => mcp.reconnect(params))
+      endpoint.handle('mcp.setEnabled', (params) => mcp.setEnabled(params))
+      endpoint.handle('mcp.tools', (params) => mcp.tools(params))
+      endpoint.handle('mcp.setTool', (params) => mcp.setTool(params))
+      endpoint.handle('mcp.logs', (params) => mcp.logs(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布
@@ -322,6 +342,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           flush()
           endpoint.emit('approval.changed', { sessionId })
         },
+        mcpStatus(event: z.output<typeof McpStatusEvent>) {
+          if (closed) return
+          endpoint.emit('mcp.status', event)
+        },
         close() {
           if (closed) return
           closed = true
@@ -344,6 +368,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
     close() {
       unsubscribeEvents()
       unsubscribeApprovals()
+      unsubscribeMcp()
       for (const connection of [...connections]) connection.close()
     },
   }

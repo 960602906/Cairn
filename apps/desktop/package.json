@@ -15,6 +15,7 @@
     "@cairn/checkpoint": "workspace:*",
     "@cairn/core": "workspace:*",
     "@cairn/i18n": "workspace:*",
+    "@cairn/mcp": "workspace:*",
     "@cairn/protocol": "workspace:*",
     "@cairn/runtime-pi": "workspace:*",
     "@cairn/shell": "workspace:*",

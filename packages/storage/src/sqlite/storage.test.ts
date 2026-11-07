@@ -42,6 +42,7 @@ describe('openSqliteStorage', () => {
         '0006_project_settings',
         '0007_skill_prefs',
         '0008_project_skills_default',
+        '0009_mcp',
       ],
     })
     storage.close()
@@ -57,6 +58,8 @@ describe('openSqliteStorage', () => {
       'events',
       'file_changes',
       'hunks',
+      'mcp_servers',
+      'mcp_tool_prefs',
       'permission_rules',
       'projects',
       'provider_configs',
@@ -107,7 +110,7 @@ describe('openSqliteStorage', () => {
     db.close()
 
     const storage = openSqliteStorage({ file })
-    expect(storage.migration.applied).toEqual(['0008_project_skills_default'])
+    expect(storage.migration.applied).toEqual(['0008_project_skills_default', '0009_mcp'])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()
   })

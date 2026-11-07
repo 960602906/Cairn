@@ -13,6 +13,7 @@ import type { CredentialCommands } from './credential-store.js'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
+import type { McpCommands } from './mcp-service.js'
 import {
   coalesceDeltas,
   createRendererGateway,
@@ -199,6 +200,8 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     checkpoints,
     approvals,
     skills,
+    mcp: {} as unknown as McpCommands,
+    mcpStatus: () => () => undefined,
   })
   return connectRenderer()
 }
@@ -688,6 +691,8 @@ describe('createRendererGateway: commands and lifecycle', () => {
       checkpoints,
       approvals,
       skills,
+      mcp: {} as unknown as McpCommands,
+      mcpStatus: () => () => undefined,
       onProtocolError,
     })
     const pair = channelPair()
