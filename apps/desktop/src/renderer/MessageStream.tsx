@@ -34,7 +34,7 @@ import {
 } from './Checkpoints.js'
 import { TurnChanges } from './FileChanges.js'
 import { Markdown } from './Markdown.js'
-import { SessionPlanCard } from './PlanCard.js'
+import { PlanSummaryCard } from './PlanCard.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
 import { Button, IconButton, Shimmer } from './ui/index.js'
@@ -225,6 +225,7 @@ function Message({
   restores,
   compacted,
   omitted,
+  onOpenPlan,
 }: {
   readonly message: MessageView
   readonly view: SessionView
@@ -241,13 +242,16 @@ function Message({
   readonly compacted: boolean
   /** 这条消息之前是“工具输出已省略”的提示。 */
   readonly omitted: boolean
+  readonly onOpenPlan: (planId: string) => void
 }) {
   const { t } = useTranslation('session')
   const approvals = useSessionStore((s) =>
     s.activeSessionId === undefined ? undefined : s.approvals[s.activeSessionId],
   )
   const awaiting = new Set(approvals?.map((a) => a.toolCallId))
-  const cards = plans.map((plan) => <SessionPlanCard key={plan.planId} plan={plan} />)
+  const cards = plans.map((plan) => (
+    <PlanSummaryCard key={plan.planId} plan={plan} onOpen={onOpenPlan} />
+  ))
   const marks = (compacted || omitted) && (
     <div className="mb-3.5 flex w-full flex-col gap-2 self-stretch">
       {compacted && view.compaction && <CompactionMark summary={view.compaction.summary} />}
@@ -364,7 +368,13 @@ function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): strin
   return t('turn.failed', { reason: translateError(i18n, turn.error ?? { code: 'unknown' }) })
 }
 
-export function MessageStream({ view }: { readonly view: SessionView | undefined }) {
+export function MessageStream({
+  view,
+  onOpenPlan,
+}: {
+  readonly view: SessionView | undefined
+  readonly onOpenPlan: (planId: string) => void
+}) {
   const { t, i18n } = useTranslation('session')
   const providers = useSessionStore((s) => s.settings?.providers)
   const live = Object.values(view?.live ?? {}).sort((a, b) => a.startedAt - b.startedAt)
@@ -423,6 +433,7 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
               restores={restores.get(message.messageId)}
               compacted={markBetween(previous, message.seq, view.compaction)}
               omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
+              onOpenPlan={onOpenPlan}
             />
           )
         })}
@@ -430,7 +441,7 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
           .filter((plan) => !anchored.has(plan.planId))
           .map((plan) => (
             <li key={plan.planId} className="list-none">
-              <SessionPlanCard plan={plan} />
+              <PlanSummaryCard plan={plan} onOpen={onOpenPlan} />
             </li>
           ))}
         {view?.compaction && afterLast(view.messages.at(-1)?.seq ?? 0, view.compaction) && (

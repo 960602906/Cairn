@@ -347,45 +347,6 @@ describe('commands', () => {
   })
 })
 
-describe('event log', () => {
-  const delta = (seq: number) =>
-    ev('s1', seq, 'message.assistant.delta', { messageId: 'a1', text: 'x' })
-
-  it('is not recorded by default', async () => {
-    const { api, emit } = fakeApi({
-      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
-    })
-    const store = createSessionStore(api)
-    await store.getState().selectSession('s1')
-    emit('s1', [user('s1', 2, 'hi')])
-    expect(store.getState().views.s1?.lastSeq).toBe(2)
-    expect(store.getState().eventLog).toEqual({})
-  })
-
-  it('keeps the latest received events per session, dropping deltas first', async () => {
-    const { api, emit } = fakeApi({
-      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
-    })
-    const store = createSessionStore(api, { eventLogLimit: 3 })
-    await store.getState().selectSession('s1')
-    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1])
-    emit('s1', [user('s1', 2, 'hi'), delta(3)])
-    emit('s1', [])
-    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1, 2, 3])
-    // 超出时先丢弃最早的增量事件，持久化事件保留
-    emit('s1', [delta(4)])
-    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1, 2, 4])
-    emit('s1', [delta(5), delta(6)])
-    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([1, 2, 6])
-    // 只剩持久化事件时丢弃最早的
-    emit('s1', [user('s1', 7, 'a'), user('s1', 8, 'b')])
-    expect(store.getState().eventLog.s1?.map((e) => e.seq)).toEqual([2, 7, 8])
-    // 其他会话（未订阅）的事件不记录
-    emit('s2', [user('s2', 1, 'other')])
-    expect(Object.keys(store.getState().eventLog)).toEqual(['s1'])
-  })
-})
-
 describe('settings', () => {
   it('saves settings and records failures', async () => {
     let fail = false
@@ -761,5 +722,81 @@ describe('skills (M3-08)', () => {
     expect(store.getState().error).toEqual({ code: 'skills.duplicate', params: { name: 'demo' } })
     await expect(store.getState().uninstallSkill('demo')).resolves.toBe(false)
     expect(store.getState().error).toEqual({ code: 'skills.not_found', params: { name: 'demo' } })
+  })
+})
+
+describe('inactive and failing commands', () => {
+  it('rejects actions without a selected session', async () => {
+    const { api } = fakeApi()
+    const store = createSessionStore(api)
+    await expect(store.getState().compactSession()).resolves.toBe(false)
+    await expect(store.getState().sendPrompt('hello')).resolves.toBe(false)
+    await expect(store.getState().sendPrompt('   ')).resolves.toBe(false)
+    await expect(store.getState().approvePlan('plan')).resolves.toBe(false)
+    await expect(store.getState().replan('plan', 'feedback')).resolves.toBe(false)
+    await expect(store.getState().abandonPlan('plan')).resolves.toBe(false)
+    await expect(store.getState().resolveApproval('a1', 'allow_once')).resolves.toBe(false)
+  })
+
+  it('clears awaiting and returns false when requests fail', async () => {
+    const { api } = fakeApi({
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+      'session.prompt': () => undefined,
+      'plan.approve': () => {
+        throw new RpcError('run.busy')
+      },
+      'plan.replan': () => undefined,
+      'plan.abandon': () => undefined,
+      'approval.pending': () => undefined,
+      'settings.get': () => undefined,
+      'project.list': () => ({}),
+      'project.update': () => undefined,
+      'project.remove': () => undefined,
+      'provider.models': () => ({ ok: true, models: [] }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+
+    await expect(store.getState().sendPrompt('hello')).resolves.toBe(false)
+    await expect(store.getState().approvePlan('plan')).resolves.toBe(false)
+    await expect(store.getState().replan('plan', 'again')).resolves.toBe(false)
+    await expect(store.getState().abandonPlan('plan')).resolves.toBe(false)
+    await expect(store.getState().resolveApproval('a1', 'deny', '  ')).resolves.toBe(true)
+    await expect(store.getState().loadSettings()).resolves.toBeUndefined()
+    await store.getState().refreshProjects()
+    await expect(store.getState().updateProject('p1', { name: 'x' })).resolves.toBeUndefined()
+    await expect(store.getState().removeProject('p1')).resolves.toBe(false)
+    const provider = {
+      id: 'p',
+      kind: 'openai' as const,
+      displayName: 'P',
+      baseUrl: 'https://example.com',
+      models: [],
+    }
+    await expect(store.getState().fetchModels(provider)).resolves.toEqual({ ok: true, models: [] })
+  })
+
+  it('updates one project without touching the others', async () => {
+    const a = {
+      projectId: 'p1',
+      name: 'A',
+      path: '/a',
+      createdAt: 1,
+      sessionCount: 0,
+      readAgentsMd: true,
+      enableProjectSkills: false,
+    }
+    const b = { ...a, projectId: 'p2', name: 'B', path: '/b' }
+    const { api } = fakeApi({
+      'project.list': () => ({ projects: [a, b] }),
+      'project.update': ({ projectId }: { projectId: string }) => ({
+        ...(projectId === 'p2' ? b : a),
+        name: 'Renamed',
+      }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshProjects()
+    await store.getState().updateProject('p2', { name: 'Renamed' })
+    expect(store.getState().projects.map((project) => project.name)).toEqual(['A', 'Renamed'])
   })
 })

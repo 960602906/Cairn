@@ -1,44 +1,14 @@
 /**
- * 会话要点（M3-04）：顶栏“更多”里打开右侧抽屉。显示 Markdown，可以编辑。
+ * 会话要点（M3-04）：右侧会话信息栏的一个标签页。显示 Markdown，可以编辑。
  * 保存走 `session.brief.update`，不是一轮对话。
  */
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { MoreHorizontal, X } from 'lucide-react'
 import { Markdown } from './Markdown.js'
 import { useSessionStore } from './store-context.js'
-import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  IconButton,
-} from './ui/index.js'
+import { Button } from './ui/index.js'
 
-export function SessionBriefMenu({ onOpen }: { readonly onOpen: () => void }) {
-  const { t } = useTranslation('session')
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <IconButton label={t('chat.more')} size="icon-sm" className="no-drag">
-          <MoreHorizontal />
-        </IconButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={onOpen}>{t('brief.open')}</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-export function SessionBriefDrawer({
-  sessionId,
-  onClose,
-}: {
-  readonly sessionId: string
-  readonly onClose: () => void
-}) {
+export function SessionBriefPanel({ sessionId }: { readonly sessionId: string }) {
   const { t } = useTranslation('session')
   const brief = useSessionStore((s) => s.views[sessionId]?.brief)
   const updateBrief = useSessionStore((s) => s.updateBrief)
@@ -54,17 +24,7 @@ export function SessionBriefDrawer({
   }
 
   return (
-    <aside
-      role="dialog"
-      aria-label={t('brief.title')}
-      className="absolute inset-y-0 right-0 z-20 flex w-[min(360px,100%)] flex-col border-l-[0.5px] border-hair bg-paper shadow-2"
-    >
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b-[0.5px] border-hair px-3">
-        <h3 className="text-ui font-medium text-fg">{t('brief.title')}</h3>
-        <IconButton label={t('brief.close')} size="icon-sm" className="ml-auto" onClick={onClose}>
-          <X />
-        </IconButton>
-      </header>
+    <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {editing ? (
           <textarea
@@ -101,6 +61,6 @@ export function SessionBriefDrawer({
           </Button>
         )}
       </footer>
-    </aside>
+    </div>
   )
 }

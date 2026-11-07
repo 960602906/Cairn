@@ -9,7 +9,7 @@ import { createI18n } from '@cairn/i18n'
 import { RpcError, type FileChangeSummary, type FileContent } from '@cairn/protocol'
 import type { MainApi } from './api.js'
 import { fileDiff } from './diff-model.js'
-import { combineContent, SessionChanges, TurnChanges } from './FileChanges.js'
+import { combineContent, SessionChangesPanel, TurnChanges } from './FileChanges.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 
@@ -225,28 +225,24 @@ describe('TurnChanges', () => {
   })
 })
 
-describe('SessionChanges', () => {
-  it('顶栏摘要：本会话所有改动的文件数与增删数，点击打开列表', async () => {
+describe('SessionChangesPanel', () => {
+  it('列出本会话所有改动的文件与增删数', async () => {
     const { wrap } = setup()
-    wrap(<SessionChanges sessionId="s1" />)
-    const button = screen.getByRole('button', {
-      name: '本会话改动了 3 个文件，新增 5 行，删除 2 行',
-    })
-    expect(button.textContent).toBe('3 个文件+5 −2')
-    await userEvent.click(button)
-    const dialog = await screen.findByRole('dialog', { name: '本会话的改动' })
+    wrap(<SessionChangesPanel sessionId="s1" />)
+    const panel = screen.getByRole('region', { name: '本会话的改动' })
+    expect(panel.querySelector('header')!.textContent).toBe('本会话的改动+5 −2')
     expect(
-      within(dialog)
+      within(panel)
         .getAllByRole('button')
         .map((b) => b.textContent),
     ).toEqual(['TSsrc/a.ts+2 −1', 'TSsrc/new.ts新文件+2 −0', 'MDold.md+1 −1'])
   })
 
-  it('没有改动或还没读取时不显示', () => {
+  it('没有改动时显示空状态', () => {
     const { wrap, store } = setup()
     store.setState({ changes: {} })
-    wrap(<SessionChanges sessionId="s1" />)
-    expect(screen.queryByRole('button')).toBeNull()
+    wrap(<SessionChangesPanel sessionId="s1" />)
+    expect(screen.getByText('还没有文件改动。')).toBeTruthy()
   })
 })
 

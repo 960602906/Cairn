@@ -204,4 +204,24 @@ describe('SettingsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
     expect(screen.queryByRole('navigation', { name: '设置分类' })).toBeNull()
   })
+
+  it('animates the category list while it opens and collapses', async () => {
+    setup()
+    await openSettings()
+    const nav = screen.getByRole('navigation', { name: '设置分类' })
+    const aside = nav.closest('aside')!
+    expect(aside.className).toContain('transition-[width,opacity]')
+    expect(aside.className).toContain('duration-200')
+    expect(aside.className).toContain('w-[252px]')
+    expect(aside.className).toContain('opacity-100')
+    expect(aside.getAttribute('aria-hidden')).toBe('false')
+
+    await userEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
+    expect(aside.className).toContain('w-0')
+    expect(aside.className).toContain('opacity-0')
+    expect(aside.className).toContain('pointer-events-none')
+    expect(aside.firstElementChild?.className).toContain('-translate-x-3')
+    expect(aside.getAttribute('aria-hidden')).toBe('true')
+    expect(aside.hasAttribute('inert')).toBe(true)
+  })
 })

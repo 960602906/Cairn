@@ -54,6 +54,11 @@ interface SetupOptions {
   readonly projectSkillsEnabled?: boolean
   readonly pick?: SkillInstallSource
   readonly duplicate?: boolean
+  readonly projectReturn?: SkillSummary[]
+  readonly projects?: ProjectSummary[]
+  readonly failBaseList?: boolean
+  readonly failProjectList?: boolean
+  readonly detailUndefined?: readonly string[]
 }
 
 function setup(options: SetupOptions = {}) {
@@ -63,7 +68,9 @@ function setup(options: SetupOptions = {}) {
   ]
   let projectSkills = options.projectSkills ?? []
   let pick = options.pick
-  const projects = [project({ enableProjectSkills: options.projectSkillsEnabled ?? false })]
+  const projects = options.projects ?? [
+    project({ enableProjectSkills: options.projectSkillsEnabled ?? false }),
+  ]
   const incoming = skill({
     name: 'marker',
     description: 'Marker skill.',
@@ -90,9 +97,15 @@ function setup(options: SetupOptions = {}) {
         return { projects }
       case 'skill.list': {
         const { projectId } = params as { projectId?: string }
+        if (projectId === undefined && options.failBaseList) throw new RpcError('skills.failed')
+        if (projectId !== undefined && options.failProjectList) throw new RpcError('skills.failed')
         return {
           skills: projectId
-            ? [...skills, ...projectSkills.filter((item) => item.projectId === projectId)]
+            ? [
+                ...skills,
+                ...(options.projectReturn ??
+                  projectSkills.filter((item) => item.projectId === projectId)),
+              ]
             : skills,
         }
       }
@@ -109,6 +122,7 @@ function setup(options: SetupOptions = {}) {
       }
       case 'skill.get': {
         const input = params as { name: string; source: SkillSource; projectId?: string }
+        if (options.detailUndefined?.includes(input.name)) return undefined
         const found = find(input)
         if (!found) throw new RpcError('skills.not_found', { name: input.name })
         return detailOf(found, found.name === 'demo' ? 'Demo body.' : `${found.name} body.`)
@@ -299,5 +313,92 @@ describe('SkillsSettings', () => {
       '已经安装了同名技能',
     )
     expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('renders badges, file sizes and project fallbacks, and closes dialogs with Escape', async () => {
+    const files = [
+      { path: 'run.sh', bytes: 2048, script: true },
+      { path: 'data.bin', bytes: 2 * 1024 * 1024, script: false },
+    ]
+    const shadowed = skill({
+      name: 'shadowed',
+      source: 'builtin',
+      shadowed: true,
+      hasScripts: true,
+      files,
+      filesTruncated: true,
+    })
+    const orphan = skill({
+      name: 'orphan',
+      source: 'project',
+      projectId: 'p9',
+      enabled: false,
+      pinned: false,
+    })
+    const unknown = skill({ name: 'unknown', source: 'project', projectId: undefined })
+    const { request } = setup({
+      skills: [shadowed, skill({ name: 'removable' })],
+      projectSkillsEnabled: true,
+      projectReturn: [orphan, unknown],
+      detailUndefined: ['orphan'],
+      pick: { kind: 'zip', path: '/tmp/again.zip' },
+    })
+    await openSkills()
+    const list = await screen.findByRole('list', { name: '技能' })
+    await waitFor(() => expect(within(list).getByText('orphan')).toBeTruthy())
+    expect(within(list).getByText('被覆盖')).toBeTruthy()
+    expect(within(list).getByText('项目 · p9')).toBeTruthy()
+    expect(within(list).getAllByText(/项目 ·/).length).toBe(2)
+
+    await userEvent.click(within(list).getByRole('switch', { name: '启用 orphan' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('skill.setEnabled', {
+        name: 'orphan',
+        source: 'project',
+        projectId: 'p9',
+        enabled: true,
+      }),
+    )
+
+    await userEvent.click(within(list).getByRole('button', { name: '查看 shadowed 的详情' }))
+    const detail = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(detail).getByText('2.0 KB')).toBeTruthy())
+    expect(within(detail).getByText('2.0 MB')).toBeTruthy()
+    expect(within(detail).getByText('文件太多，只显示一部分。')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(within(list).getByRole('button', { name: '查看 orphan 的详情' }))
+    const loading = await screen.findByRole('dialog')
+    expect(within(loading).getByText('正在读取…')).toBeTruthy()
+    expect(request).toHaveBeenCalledWith('skill.get', {
+      name: 'orphan',
+      source: 'project',
+      projectId: 'p9',
+    })
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.click(screen.getByRole('button', { name: '安装技能' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '从 zip 安装' }))
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(within(list).getByRole('button', { name: '卸载 removable' }))
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('keeps the base list when a project or base skill request fails', async () => {
+    setup({ failBaseList: true })
+    await openSkills()
+    expect(await screen.findByText(/还没有技能/)).toBeTruthy()
+    cleanup()
+
+    setup({ projectSkillsEnabled: true, failProjectList: true })
+    await openSkills()
+    const list = await screen.findByRole('list', { name: '技能' })
+    expect(within(list).getByText('demo')).toBeTruthy()
   })
 })

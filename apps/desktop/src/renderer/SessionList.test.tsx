@@ -67,7 +67,7 @@ describe('SessionList', () => {
   it('shows an empty state and the new chat form', async () => {
     setup({ 'session.list': () => ({ sessions: [] }) })
     expect(await screen.findByText('还没有会话')).toBeTruthy()
-    expect(screen.getByRole('heading', { level: 2, name: '新对话' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2, name: '开始新的对话' })).toBeTruthy()
     // 没有会话时不能取消
     expect(screen.queryByRole('button', { name: '取消' })).toBeNull()
   })
@@ -91,12 +91,37 @@ describe('SessionList', () => {
     ])
     expect(screen.getByRole('region', { name: '项目 work' })).toBeTruthy()
     expect(screen.getByRole('region', { name: '项目 other' })).toBeTruthy()
+    expect(
+      screen.getByRole('region', { name: '项目 work' }).querySelector('h3 svg'),
+    ).not.toBeNull()
 
     await userEvent.click(sessionButton(items[1]!))
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s2'))
     expect(request).toHaveBeenCalledWith('session.subscribe', { sessionId: 's2', afterSeq: 0 })
     expect(sessionButton(items[1]!).getAttribute('aria-current')).toBe('true')
     expect(sessionButton(items[0]!).getAttribute('aria-current')).toBeNull()
+  })
+
+  it('collapses a project group and swaps its folder icon', async () => {
+    setup({
+      'session.list': () => ({
+        sessions: [summary('s1', '第一项'), summary('s2', '第二项')],
+      }),
+    })
+    const group = await screen.findByRole('region', { name: '项目 work' })
+    const toggle = within(group).getByRole('button', { name: 'work' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('folder-open')
+    expect(within(group).getAllByRole('listitem')).toHaveLength(2)
+
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('lucide-folder')
+    expect(group.querySelector('h3 svg')?.getAttribute('class')).not.toContain('folder-open')
+    expect(within(group).queryByRole('listitem')).toBeNull()
+
+    await userEvent.click(toggle)
+    expect(within(group).getAllByRole('listitem')).toHaveLength(2)
   })
 
   it('renames a session in place; Esc cancels and unchanged titles are not saved', async () => {
@@ -240,15 +265,21 @@ describe('App without the preload API', () => {
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),
     })
     const path = (await screen.findByLabelText('项目目录')) as HTMLInputElement
-    const recentSelect = (await screen.findByLabelText('最近的项目')) as HTMLSelectElement
-    await userEvent.selectOptions(recentSelect, '/work/api')
+    const recentSection = () => screen.getByRole('region', { name: '最近的项目' })
+    const recentButton = (name: string) =>
+      within(recentSection()).getByRole('button', { name: new RegExp(name) })
+    await userEvent.click(recentButton('api'))
     expect(path.value).toBe('/work/api')
+    expect(recentButton('api').getAttribute('aria-pressed')).toBe('true')
 
     await userEvent.click(screen.getByRole('button', { name: '选择文件夹…' }))
     await waitFor(() => expect(path.value).toBe('/work/web'))
     // 新打开的项目排在最前面
-    expect([...recentSelect.options].map((o) => o.value)).toEqual(['', '/work/web', '/work/api'])
-    expect(recentSelect.value).toBe('/work/web')
+    expect(within(recentSection()).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'web/work/web',
+      'api/work/api',
+    ])
+    expect(recentButton('web').getAttribute('aria-pressed')).toBe('true')
 
     // 取消对话框时不改动
     await userEvent.click(screen.getByRole('button', { name: '选择文件夹…' }))
@@ -256,7 +287,9 @@ describe('App without the preload API', () => {
       expect(request.mock.calls.filter(([m]) => m === 'project.open')).toHaveLength(2),
     )
     expect(path.value).toBe('/work/web')
-    await userEvent.selectOptions(recentSelect, '')
+    await userEvent.click(recentButton('api'))
+    expect(path.value).toBe('/work/api')
+    await userEvent.click(recentButton('web'))
     expect(path.value).toBe('/work/web')
 
     await userEvent.click(screen.getByRole('button', { name: '创建' }))

@@ -34,7 +34,11 @@ const manual: PermissionRuleEntry = {
   createdAt: 2,
 }
 
-function setup(initial: Partial<Settings> = {}, rules: PermissionRuleEntry[] = []) {
+function setup(
+  initial: Partial<Settings> = {},
+  rules: PermissionRuleEntry[] = [],
+  options: { failList?: boolean } = {},
+) {
   let settings: Settings = { locale: 'zh-CN', providers: [], ...initial }
   let stored = [...rules]
   const updates: SettingsPatch[] = []
@@ -51,6 +55,7 @@ function setup(initial: Partial<Settings> = {}, rules: PermissionRuleEntry[] = [
       case 'settings.shell':
         return { detected: 'bash', options: ['auto'] }
       case 'permissions.list':
+        if (options.failList) throw new Error('list failed')
         return { rules: stored }
       case 'permissions.add': {
         const { rule, projectId } = params as { rule: PermissionRule; projectId?: string }
@@ -176,5 +181,30 @@ describe('PermissionsSettings', () => {
     await userEvent.click(within(form).getByRole('button', { name: '取消' }))
     expect(screen.queryByRole('region', { name: '添加规则' })).toBeNull()
     expect(request).not.toHaveBeenCalledWith('permissions.add', expect.anything())
+  })
+
+  it('describes wildcard path rules, unknown projects, and survives a failed list', async () => {
+    const wildcard: PermissionRuleEntry = {
+      rule: {
+        id: 'w1',
+        scope: 'project',
+        effect: 'allow',
+        match: { path: ['src/**'] },
+        source: 'user',
+      },
+      projectId: 'gone',
+      createdAt: 4,
+    }
+    setup({}, [wildcard])
+    await open()
+    await waitFor(() => expect(within(rules()).getAllByRole('listitem')).toHaveLength(1))
+    const row = within(rules()).getAllByRole('listitem')[0]!
+    expect(row.textContent).toContain('任意工具: src/**')
+    expect(row.textContent).toContain('已移除的项目')
+    cleanup()
+
+    setup({}, [], { failList: true })
+    await open()
+    expect(await screen.findByText(/还没有规则/)).toBeTruthy()
   })
 })

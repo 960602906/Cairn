@@ -228,7 +228,7 @@ function KindCards({
           aria-checked={kind === value}
           onClick={() => onChange(kind)}
           className={cn(
-            'flex flex-col gap-0.5 rounded-[10px] bg-paper px-3 py-2.5 text-left shadow-[inset_0_0_0_1px_var(--hair2)] transition-colors',
+            'flex flex-col gap-0.5 rounded-[10px] bg-paper px-3 py-2.5 text-left shadow-[inset_0_0_0_0.5px_var(--hair2)] transition-colors',
             kind === value && 'bg-accent-soft shadow-[inset_0_0_0_1.5px_var(--accent)]',
           )}
         >
@@ -927,7 +927,7 @@ function ProviderEditor({
         ) : (
           <ul
             aria-label={t('providers.field.models')}
-            className="rounded-[10px] shadow-[inset_0_0_0_1px_var(--hair2)]"
+            className="rounded-[10px] shadow-[inset_0_0_0_0.5px_var(--hair2)]"
           >
             {draft.models.map((m) => (
               <ModelRow
@@ -1146,7 +1146,7 @@ export function ProvidersSettings() {
         providers.length > 0 && (
           <ul
             aria-label={t('providers.list')}
-            className="overflow-hidden rounded-approval bg-raise shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)] [&>li+li]:shadow-[0_-0.5px_0_var(--hair)]"
+            className="overflow-hidden rounded-card bg-raise shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)] [&>li+li]:shadow-[0_-0.5px_0_var(--hair)]"
           >
             {providers.map((p) => (
               <ProviderRow

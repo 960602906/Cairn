@@ -10,8 +10,5 @@
   "language.zh-CN": "简体中文",
   "language.en-US": "English",
   "language.label": "Language",
-  "dev.events.title": "Event viewer",
-  "dev.events.showDeltas": "Show delta events",
-  "dev.events.count": "Shown: {{count}}",
   "error.title": "Something went wrong"
 }

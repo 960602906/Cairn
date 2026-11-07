@@ -184,6 +184,34 @@ describe('skill service', () => {
     expect(summary?.tokens).toEqual(detail.tokens)
   })
 
+  it('handles long and empty bodies and reports truncated file lists', () => {
+    const { skills, builtin } = setup()
+    const huge = path.join(builtin, 'huge')
+    fs.mkdirSync(huge)
+    fs.writeFileSync(
+      path.join(huge, 'SKILL.md'),
+      `---\nname: huge\ndescription: Huge skill.\n---\n${'x'.repeat(33 * 1024)}\n`,
+    )
+    const empty = path.join(builtin, 'empty')
+    fs.mkdirSync(empty)
+    fs.writeFileSync(
+      path.join(empty, 'SKILL.md'),
+      '---\nname: empty\ndescription: Empty skill.\n---\n',
+    )
+    const files: Record<string, string> = {}
+    for (let i = 0; i < 201; i += 1) files[`n${i}.txt`] = 'x'
+    writeSkill(builtin, 'many', files)
+
+    const listed = skills.list({}).skills
+    const hugeSkill = listed.find((skill) => skill.name === 'huge')!
+    const emptySkill = listed.find((skill) => skill.name === 'empty')!
+    expect(hugeSkill.tokens.pinned).toBeGreaterThan(hugeSkill.tokens.index)
+    expect(emptySkill.tokens.pinned).toBe(emptySkill.tokens.index)
+    expect(listed.find((skill) => skill.name === 'many')?.filesTruncated).toBe(true)
+    expect(skills.get({ name: 'many', source: 'builtin' }).filesTruncated).toBe(true)
+    expect(skills.catalog('s1').find((entry) => entry.name === 'many')?.filesTruncated).toBe(true)
+  })
+
   it('previews an install without writing, then installs and refuses a duplicate', () => {
     const { skills, user, root } = (() => {
       const ctx = setup()

@@ -153,11 +153,43 @@
 
   :focus-visible {
     outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline-offset: 2px;
   }
 
   ::selection {
     background: var(--accent-soft);
+  }
+
+  /* 图标统一使用视觉规范要求的 1.5px 线宽（§9）。 */
+  svg.lucide {
+    stroke-width: 1.5;
+  }
+
+  /* 细滚动条：不滚动时不抢视觉，悬停时略微加深。 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--hair2) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: var(--hair2);
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+    background-clip: content-box;
   }
 
   /* 尊重“减少动态效果”：关闭所有循环动画与过渡（§5） */

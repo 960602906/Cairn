@@ -706,11 +706,27 @@ describe('shutdown', () => {
     expect(() => manager.create({ projectPath: '/d' })).toThrow(
       expect.objectContaining({ code: 'run.disposed' }),
     )
+    await expect(manager.compact({ sessionId: ids[0]! })).rejects.toMatchObject({
+      code: 'run.disposed',
+    })
+    expect(() => manager.updateBrief({ sessionId: ids[0]!, content: 'x' })).toThrow(
+      expect.objectContaining({ code: 'run.disposed' }),
+    )
+    expect(() => manager.approvePlan({ sessionId: ids[0]!, planId: 'p' })).toThrow(
+      expect.objectContaining({ code: 'run.disposed' }),
+    )
     expect(types()).not.toContain('session.crashed')
   })
 })
 
 describe('compact (M3-03)', () => {
+  it('returns no compaction for a session without runs or without anything to compact', async () => {
+    const { supervisor } = fakeSupervisor()
+    const { manager } = setup(supervisor, { idleTimeoutMs: 60_000 })
+    const empty = manager.create({ projectPath: '/empty' }).sessionId
+    await expect(manager.compact({ sessionId: empty })).resolves.toEqual({ compacted: false })
+  })
+
   it('asks the running host, and compacts from the log when no host is up', async () => {
     const { supervisor, hosts } = fakeSupervisor()
     const summarize = vi.fn(async () => 'SUM')

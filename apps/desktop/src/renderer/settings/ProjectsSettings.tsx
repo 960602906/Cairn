@@ -55,7 +55,7 @@ function ProjectCard({ project }: { readonly project: ProjectSummary }) {
       <SettingsCard aria-label={project.name}>
         <input
           aria-label={t('projects.name')}
-          className="h-[34px] w-full min-w-0 rounded-[9px] bg-paper px-2.5 text-[15px] font-medium text-fg shadow-[inset_0_0_0_1px_var(--hair2)] outline-none focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]"
+          className="h-9 w-full min-w-0 rounded-[9px] bg-paper px-2.5 text-[15px] font-medium text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)] outline-none focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]"
           value={name}
           maxLength={PROJECT_NAME_MAX_LENGTH}
           onChange={(event) => setName(event.target.value)}

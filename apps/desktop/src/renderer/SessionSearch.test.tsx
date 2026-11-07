@@ -146,7 +146,7 @@ describe('NewSession empty states (M2-12)', () => {
         { id: 'p', kind: 'openai', displayName: 'P', baseUrl: 'https://p.example', models: [] },
       ],
     })
-    expect(await screen.findByRole('heading', { level: 2, name: '新对话' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { level: 2, name: '开始新的对话' })).toBeTruthy()
     await waitFor(() =>
       expect(screen.queryByRole('region', { name: '还没有配置模型供应商' })).toBeNull(),
     )

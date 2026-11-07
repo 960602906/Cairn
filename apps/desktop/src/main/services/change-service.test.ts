@@ -477,4 +477,157 @@ describe('ChangeService：按块撤销', () => {
     ).rejects.toMatchObject({ code: 'run.busy' })
     expect(storage.changes.get(changeId)!.hunks[1]!.status).toBe('pending')
   })
+
+  it('rejects unknown changes, missing and binary files, and escaping paths', async () => {
+    const { service } = setup()
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId: 'nope', hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.not_found' })
+
+    const { changeId } = await recordBoth(service)
+    rmSync(join(workspace, 'a.txt'))
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId, hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.hunk_conflict' })
+
+    put('a.txt', modifiedText())
+    const binary = await recordBoth(service)
+    writeFileSync(join(workspace, 'a.txt'), Buffer.from([0, 1, 2, 3]))
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId: binary.changeId, hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.hunk_conflict' })
+
+    put('../escape.txt', 'before')
+    const escaping = await apply(service, '../escape.txt', 'after', {
+      hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+      added: 1,
+      removed: 1,
+    })
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId: escaping, hunkIndex: 0 }),
+    ).rejects.toThrow()
+  })
+
+  it('撤销新建文件的块、缺失的 blob 与二进制 blob', async () => {
+    const { service } = setup()
+    put('created.txt', 'one\n')
+    const created = (
+      await service.record('s1', 'run1', {
+        path: 'created.txt',
+        kind: 'create',
+        after: b64('one\n'),
+        hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 1 }],
+        added: 1,
+        removed: 0,
+      })
+    ).changeId
+    await service.revertHunk({ sessionId: 's1', changeId: created, hunkIndex: 0 })
+    expect(read('created.txt')).toBe('')
+
+    put('binary.txt', 'text\n')
+    const binary = (
+      await service.record('s1', 'run1', {
+        path: 'binary.txt',
+        kind: 'modify',
+        before: Buffer.from([0, 1]).toString('base64'),
+        after: Buffer.from([0, 2]).toString('base64'),
+        hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+        added: 1,
+        removed: 1,
+      })
+    ).changeId
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId: binary, hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.hunk_conflict' })
+
+    put('lost.txt', 'one\n')
+    const lost = await apply(service, 'lost.txt', 'two\n', {
+      hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+    })
+    rmSync(join(dir, 'blobs'), { recursive: true })
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId: lost, hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.blob_missing', params: { path: 'lost.txt' } })
+  })
+
+  it('把目录当作文件读取时报冲突，并保留 CR 与无尾换行', async () => {
+    const { service } = setup()
+    put('folder.txt', 'one\n')
+    const folder = await apply(service, 'folder.txt', 'two\n', {
+      hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+    })
+    rmSync(join(workspace, 'folder.txt'))
+    mkdirSync(join(workspace, 'folder.txt'))
+    await expect(
+      service.revertHunk({ sessionId: 's1', changeId: folder, hunkIndex: 0 }),
+    ).rejects.toMatchObject({ code: 'changes.hunk_conflict' })
+
+    const beforeCr = 'a\rb\r'
+    const afterCr = 'a\rB\r'
+    put('cr.txt', beforeCr)
+    const crHunks = diffHunks(
+      unifiedDiff('a/cr.txt', 'b/cr.txt', 'a\nb\n', 'a\nB\n'),
+    )
+    const cr = await apply(service, 'cr.txt', afterCr, {
+      hunks: crHunks,
+      added: 1,
+      removed: 1,
+    })
+    await service.revertHunk({ sessionId: 's1', changeId: cr, hunkIndex: 0 })
+    expect(read('cr.txt')).toBe(beforeCr)
+
+    put('no-eol.txt', 'a\nb')
+    const noEolHunks = diffHunks(
+      unifiedDiff('a/no-eol.txt', 'b/no-eol.txt', 'a\nb', 'a\nB'),
+    )
+    const noEol = await apply(service, 'no-eol.txt', 'a\nB', {
+      hunks: noEolHunks,
+      added: 1,
+      removed: 1,
+    })
+    await service.revertHunk({ sessionId: 's1', changeId: noEol, hunkIndex: 0 })
+    expect(read('no-eol.txt')).toBe('a\nb')
+  })
+})
+
+describe('ChangeService：默认配置与净零撤销', () => {
+  it('使用默认时钟与默认 id，并跳过净零写入', async () => {
+    const storage = createMemoryStorage()
+    storage.projects.create({ projectId: 'p1', name: 'demo', path: workspace })
+    storage.sessions.create({
+      sessionId: 's1',
+      projectId: 'p1',
+      workspacePath: workspace,
+      title: '',
+    })
+    const service = createChangeService({
+      storage,
+      blobs: createBlobStore(join(dir, 'blobs')),
+      events: { publish: () => [] },
+      isBusy: () => false,
+    })
+    const created = await apply(service, 'temp.txt', 'same\n')
+    const deleted = await apply(service, 'temp.txt', undefined)
+    const { changes } = await service.revert({
+      sessionId: 's1',
+      changeIds: [created, deleted],
+    })
+    expect(existsSync(join(workspace, 'temp.txt'))).toBe(false)
+    expect(changes).toHaveLength(2)
+    expect(changes[0]?.changeId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    )
+    expect(changes[0]?.createdAt).toBeGreaterThan(0)
+  })
+
+  it('文件系统错误没有 code 时报告 unknown', async () => {
+    const { service } = setup()
+    put('a.txt', 'one\n')
+    const id = await apply(service, 'a.txt', 'two\n')
+    vi.spyOn(fs, 'readFile').mockRejectedValueOnce(new Error('boom'))
+    await expect(service.revert({ sessionId: 's1', changeIds: [id] })).rejects.toMatchObject({
+      code: 'changes.failed',
+      params: { path: 'a.txt', cause: 'unknown' },
+    })
+  })
 })

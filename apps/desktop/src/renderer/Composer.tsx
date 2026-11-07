@@ -7,7 +7,6 @@
  *   运行中不能发送（主进程会报 `run.busy`），发送按钮换成停止按钮。发送时立即清空，失败时恢复。
  * - 下方左边是权限模式（只读 / 询问 / 自动，全局设置），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、
  *   上下文占用圆环（悬停显示百分比与 token 数）与发送 / 停止按钮。
- * - 最下面一行灰字“修改文件前会自动保存检查点”。
  */
 import {
   ArrowUp,
@@ -377,7 +376,7 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
         onClick={(e) => {
           if (e.target === e.currentTarget) textarea.current?.focus()
         }}
-        className="rounded-input bg-raise px-3 pt-3 pb-2 shadow-2"
+        className="rounded-input bg-raise px-3.5 pt-3.5 pb-2.5 shadow-2"
       >
         <textarea
           ref={textarea}
@@ -435,7 +434,6 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
           </div>
         </div>
       </form>
-      <p className="mt-2 text-center text-note text-faint">{t('composer.checkpointHint')}</p>
     </div>
   )
 }

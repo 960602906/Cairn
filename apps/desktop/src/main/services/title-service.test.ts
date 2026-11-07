@@ -333,4 +333,45 @@ describe('createTitleService', () => {
     expect(broken.requests).toHaveLength(0)
     broken.service.stop()
   })
+
+  it('ignores turns after stop and stops quietly when stopped mid-completion', async () => {
+    const inert = setup()
+    inert.service.stop()
+    publish(inert.events, [opened(), ...turn('t1')])
+    await Promise.resolve()
+    expect(inert.requests).toHaveLength(0)
+
+    const mid = setup()
+    mid.setComplete(async (request) => {
+      mid.requests.push({
+        model: request.model.ref,
+        content: request.messages.map((message) => message.content).join('\n'),
+      })
+      mid.service.stop()
+      throw new Error('late failure')
+    })
+    publish(mid.events, [opened(), ...turn('t1')])
+    await vi.waitFor(() => expect(mid.requests).toHaveLength(1))
+    await Promise.resolve()
+    expect(mid.onError).not.toHaveBeenCalled()
+    expect(
+      mid.events.readAfter('s1', 0).some((event) => event.type === 'usage.reported'),
+    ).toBe(false)
+
+    const afterStop = setup()
+    afterStop.setComplete(async (request) => {
+      afterStop.requests.push({
+        model: request.model.ref,
+        content: request.messages.map((message) => message.content).join('\n'),
+      })
+      afterStop.service.stop()
+      return { ok: true, text: '迟到的标题', usage: { inputTokens: 1, outputTokens: 1 } }
+    })
+    publish(afterStop.events, [opened(), ...turn('t1')])
+    await vi.waitFor(() => expect(afterStop.requests).toHaveLength(1))
+    await Promise.resolve()
+    expect(
+      afterStop.events.readAfter('s1', 0).some((event) => event.type === 'usage.reported'),
+    ).toBe(false)
+  })
 })

@@ -15,7 +15,7 @@ export function SettingsCard({
   return (
     <section
       className={cn(
-        'flex flex-col gap-5 rounded-approval bg-raise px-5 pt-4.5 pb-5 shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)]',
+        'flex flex-col gap-5 rounded-card bg-raise px-5 pt-5 pb-5 shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)]',
         className,
       )}
       {...rest}
@@ -39,7 +39,7 @@ export function Field({
   readonly children: ReactNode
 }) {
   return (
-    <div className="grid grid-cols-[132px_minmax(0,1fr)] items-start gap-x-4 gap-y-2 max-[640px]:grid-cols-1">
+    <div className="grid grid-cols-[148px_minmax(0,1fr)] items-start gap-x-6 gap-y-2 max-[640px]:grid-cols-1">
       {labelFor ? (
         <label htmlFor={labelFor} className="pt-1 text-[13px] text-fg2 max-[640px]:pt-0">
           {label}
@@ -53,6 +53,6 @@ export function Field({
   )
 }
 
-/** 单行输入框（视觉规范 §8）：纸面底，1px 描边，聚焦时强调色。 */
+/** 单行输入框（视觉规范 §8）：纸面底，0.5px 描边，聚焦时强调色。 */
 export const inputClass =
-  'block h-[34px] w-full min-w-0 rounded-[9px] bg-paper px-2.5 text-[13.5px] text-fg shadow-[inset_0_0_0_1px_var(--hair2)] outline-none placeholder:text-faint focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)] disabled:opacity-60 aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--danger)]'
+  'block h-9 w-full min-w-0 rounded-[9px] bg-paper px-2.5 text-[13.5px] text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)] outline-none placeholder:text-faint focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)] disabled:opacity-60 aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--danger)]'

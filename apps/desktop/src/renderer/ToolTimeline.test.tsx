@@ -144,6 +144,38 @@ describe('ToolStep：其他工具', () => {
     expect(document.querySelector('pre')!.textContent).toBe('hit')
     expect(screen.queryByRole('figure')).toBeNull()
   })
+
+  it('renders cancelled steps, awaiting approval and undefined or image-only arguments', async () => {
+    const user = userEvent.setup()
+    step({
+      name: 'search',
+      tool: tool({ name: 'search', status: 'requested' }),
+      awaitingApproval: true,
+    })
+    expect(screen.getByText(/等待审批/)).toBeTruthy()
+    cleanup()
+
+    step({
+      name: 'search',
+      tool: tool({ name: 'search', status: 'cancelled', input: undefined }),
+    })
+    expect(screen.getByText(/已取消/)).toBeTruthy()
+    await user.click(toggle())
+    expect(screen.getAllByText('undefined').length).toBeGreaterThan(0)
+    cleanup()
+
+    step({
+      name: 'search',
+      tool: tool({
+        name: 'search',
+        status: 'completed',
+        input: 'query',
+        output: [{ type: 'image', data: '', mediaType: 'image/png' }],
+      }),
+    })
+    await user.click(toggle())
+    expect(screen.queryByText('输出')).toBeNull()
+  })
 })
 
 describe('terminalData', () => {
