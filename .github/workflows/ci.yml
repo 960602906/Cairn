@@ -48,6 +48,12 @@ jobs:
       - name: Test (coverage ≥ 90%)
         run: pnpm test:coverage
 
+      # 检查点性能验收单独运行：与其他测试同时运行会拖慢用到 Git 的测试
+      - name: Checkpoint performance
+        run: pnpm test:perf
+        env:
+          CAIRN_PERF: '1'
+
       - name: Upload coverage report
         if: always() && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4

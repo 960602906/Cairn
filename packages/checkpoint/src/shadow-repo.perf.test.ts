@@ -1,6 +1,7 @@
 /**
  * 性能验收（M1-12，S5）：约 1 万个文件的工作区上，日常检查点 < 2 s、恢复 < 5 s。
- * 只在 CI 中运行（`CI` 环境变量），Windows 是首发平台。首次检查点（每个项目一次）与大改动之后的
+ * 只在 CI 中单独运行（`pnpm test:perf`，`CAIRN_PERF` 环境变量；与其他测试同时运行会拖慢用到 Git 的测试，
+ * 导致超时），Windows 是首发平台。首次检查点（每个项目一次）与大改动之后的
  * 检查点只记录耗时（S5：Windows 上约 12 s、4 s）；恢复取 3 轮的中位数。
  */
 import fs from 'node:fs'
@@ -31,7 +32,7 @@ const timed = async <T>(task: () => Promise<T>) => {
   return { result, ms: performance.now() - start }
 }
 
-describe.runIf(process.env.CI)('checkpoint performance (10k files)', () => {
+describe.runIf(process.env['CAIRN_PERF'])('checkpoint performance (10k files)', () => {
   it('creates daily checkpoints in < 2 s and restores in < 5 s', { timeout: 300_000 }, async () => {
     const next = random(42)
     const line = 'export const value = computeSomething(input, options) // padding text\n'

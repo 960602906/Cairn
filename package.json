@@ -16,6 +16,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:perf": "vitest run packages/checkpoint/src/shadow-repo.perf.test.ts",
     "test:watch": "vitest",
     "contract:record": "vitest run packages/runtime-pi/src/contract-record.test.ts",
     "format": "prettier --write .",
