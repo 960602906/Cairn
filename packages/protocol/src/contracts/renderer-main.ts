@@ -7,7 +7,7 @@ import { FileChangeSummary, FileContent } from '../changes.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
 import { ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
-import { PermissionMode } from '../permissions.js'
+import { PermissionMode, PermissionRule } from '../permissions.js'
 import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
@@ -106,6 +106,17 @@ export const APPROVAL_FEEDBACK_MAX_LENGTH = 2000
 /** 凭据引用（ADR-0010）：字母、数字、`.`、`_`、`-`，1～128 个字符（例如提供方 id）。 */
 export const CREDENTIAL_REF_PATTERN = CONFIG_ID_PATTERN
 export const CredentialRef = z.string().regex(CREDENTIAL_REF_PATTERN)
+
+/**
+ * 保存的一条权限规则（M2-11）：全局规则没有 `projectId`，项目规则带所属项目。会话范围的规则只在会话中
+ * 生效，设置页不列出。
+ */
+export const PermissionRuleEntry = z.object({
+  rule: PermissionRule,
+  projectId: Id.optional(),
+  createdAt: Timestamp,
+})
+export type PermissionRuleEntry = z.infer<typeof PermissionRuleEntry>
 
 /** seq 从 1 开始；afterSeq 为 0 表示从头读取。 */
 const Seq = z.number().int().nonnegative()
@@ -251,6 +262,28 @@ export const MainForRenderer = defineSide({
         z.object({ ok: z.literal(true), models: z.array(RemoteModel).max(1000) }),
         z.object({ ok: z.literal(false), error: ErrorInfo }),
       ]),
+    },
+    /**
+     * 保存的全局与项目权限规则（M2-11）：全局在前，项目按打开时间倒序，同一范围内按添加顺序。
+     * 权限模式的预设不保存，不在其中。
+     */
+    'permissions.list': {
+      params: z.object({}),
+      result: z.object({ rules: z.array(PermissionRuleEntry) }),
+    },
+    /**
+     * 手动添加一条规则（M2-11）：来源必须是 `user`，范围是 `global` 或 `project`（这时给出 `projectId`）。
+     * 规则无效时报 `rpc.invalid_params`，项目不存在时报 `storage.not_found`，id 重复时报 `storage.conflict`。
+     * 运行中的会话立即改用新规则。
+     */
+    'permissions.add': {
+      params: z.object({ rule: PermissionRule, projectId: Id.optional() }),
+      result: PermissionRuleEntry,
+    },
+    /** 删除一条保存的规则（M2-11，含审批时添加的）；不存在时报 `storage.not_found`。 */
+    'permissions.delete': {
+      params: z.object({ ruleId: Id }),
+      result: z.object({}),
     },
     /** 会话中等待用户决定的审批（M1-11b），按请求顺序。界面收到 `approval.*` 事件后重新读取。 */
     'approval.pending': {

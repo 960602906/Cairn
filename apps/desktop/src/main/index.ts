@@ -198,6 +198,20 @@ const gateway = createRendererGateway({
   },
   credentials: createCredentialCommands(credentials),
   providers: createProviderService({ credentials }),
+  // 权限规则（M2-11）：增删之后运行中的宿主立即改用新规则
+  permissions: {
+    list: () => ({ rules: permissions.listRules() }),
+    add: ({ rule, projectId }) => {
+      const entry = permissions.addUserRule(rule, projectId)
+      sessions.refreshPermissions()
+      return entry
+    },
+    delete: ({ ruleId }) => {
+      permissions.deleteRule(ruleId)
+      sessions.refreshPermissions()
+      return {}
+    },
+  },
   changes,
   checkpoints,
   approvals,

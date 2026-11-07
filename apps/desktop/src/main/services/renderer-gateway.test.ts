@@ -20,6 +20,7 @@ import {
   type CheckpointCommands,
   type RendererGateway,
   type SessionCommands,
+  type PermissionCommands,
   type ProviderCommands,
   type SettingsCommands,
 } from './renderer-gateway.js'
@@ -79,6 +80,7 @@ let projects: ProjectCommands
 let settings: SettingsCommands
 let credentials: CredentialCommands
 let providers: ProviderCommands
+let permissions: PermissionCommands
 let changes: ChangeCommands
 let checkpoints: CheckpointCommands
 let approvals: ApprovalCommands
@@ -118,6 +120,15 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     test: vi.fn(async () => ({ ok: true as const, latencyMs: 12 })),
     models: vi.fn(async () => ({ ok: true as const, models: [{ id: 'm1' }] })),
   }
+  permissions = {
+    list: vi.fn(() => ({ rules: [] })),
+    add: vi.fn(({ rule, projectId }) => ({
+      rule,
+      ...(projectId ? { projectId } : {}),
+      createdAt: 1,
+    })),
+    delete: vi.fn(() => ({})),
+  }
   changes = {
     list: vi.fn(() => ({ changes: [] })),
     revert: vi.fn(async () => ({ changes: [] })),
@@ -147,6 +158,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     settings,
     credentials,
     providers,
+    permissions,
     changes,
     checkpoints,
     approvals,
@@ -490,6 +502,25 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(providers.test).toHaveBeenCalledWith({ provider, modelId: 'm' })
   })
 
+  it('delegates permission rule requests to the permission service (M2-11)', async () => {
+    const { client } = setup()
+    const rule = {
+      id: 'r1',
+      scope: 'project' as const,
+      effect: 'allow' as const,
+      match: { tool: 'run_command', command: ['npm test'] },
+      source: 'user' as const,
+    }
+    await expect(client.request('permissions.list', {})).resolves.toEqual({ rules: [] })
+    await expect(client.request('permissions.add', { rule, projectId: 'p1' })).resolves.toEqual({
+      rule,
+      projectId: 'p1',
+      createdAt: 1,
+    })
+    await expect(client.request('permissions.delete', { ruleId: 'r1' })).resolves.toEqual({})
+    expect(permissions.delete).toHaveBeenCalledWith({ ruleId: 'r1' })
+  })
+
   it('rejects invalid requests before they reach the session manager', async () => {
     setup()
     const pair = channelPair()
@@ -554,6 +585,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       settings,
       credentials,
       providers,
+      permissions,
       changes,
       checkpoints,
       approvals,

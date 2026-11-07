@@ -38,6 +38,8 @@ import {
   type FileContent,
   type ModelRef,
   type PendingApproval,
+  type PermissionRule,
+  type PermissionRuleEntry,
   type ProjectSummary,
   type ProviderConfig,
   type SessionSummary,
@@ -115,6 +117,15 @@ export interface SessionActions {
   ): Promise<ProviderTestResult | undefined>
   /** 拉取供应商的模型列表（M2-10）；请求本身失败时返回 undefined。 */
   fetchModels(provider: ProviderConfig, secret?: string): Promise<ProviderModelsResult | undefined>
+  /** 保存的全局与项目权限规则（M2-11）；失败时返回 undefined。 */
+  permissionRules(): Promise<PermissionRuleEntry[] | undefined>
+  /** 手动添加一条权限规则（M2-11）；失败时返回 undefined。 */
+  addPermissionRule(
+    rule: PermissionRule,
+    projectId?: string,
+  ): Promise<PermissionRuleEntry | undefined>
+  /** 删除一条保存的权限规则（M2-11）；成功时返回 true。 */
+  deletePermissionRule(ruleId: string): Promise<boolean>
   /** 可选的 shell 与自动选择的结果（M2-09）；失败时返回 undefined。 */
   shellOptions(): Promise<{ detected: string; options: ShellPreference[] } | undefined>
   /** 预览恢复到检查点将改动的文件；失败时返回 undefined。 */
@@ -429,6 +440,19 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       credentialStatus: (ref) => run(() => api.request('credentials.status', { ref })),
 
       shellOptions: () => run(() => api.request('settings.shell', {})),
+
+      permissionRules: async () => (await run(() => api.request('permissions.list', {})))?.rules,
+
+      addPermissionRule: (rule, projectId) =>
+        run(() =>
+          api.request('permissions.add', {
+            rule,
+            ...(projectId !== undefined ? { projectId } : {}),
+          }),
+        ),
+
+      deletePermissionRule: async (ruleId) =>
+        (await run(() => api.request('permissions.delete', { ruleId }))) !== undefined,
 
       testProvider: (provider, modelId, secret) =>
         run(() =>

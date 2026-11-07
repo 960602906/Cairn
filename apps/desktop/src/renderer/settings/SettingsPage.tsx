@@ -2,18 +2,18 @@
  * 设置页框架（M2-09，视觉规范 §8）：与对话页相同的窗口结构。左侧分类导航（顶部“返回对话 Esc”，铺在窗口
  * 底色上），右侧纸面，内容居中、最大宽度 760px。
  *
- * 分类按组列出：通用与外观（M2-09）、模型供应商（M2-10）；权限与审批（M2-11）之后加入，MCP 服务与技能
- * 在 M3。Esc 返回对话（有对话框或菜单打开时不处理）。
+ * 分类按组列出：通用与外观（M2-09）、模型供应商（M2-10）、权限与审批（M2-11）；MCP 服务与技能在 M3。Esc 返回对话（有对话框或菜单打开时不处理）。
  */
-import { Cpu, ChevronLeft, PanelLeft, Settings2 } from 'lucide-react'
+import { Cpu, ChevronLeft, PanelLeft, Settings2, Shield } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { IconButton, Kbd } from '../ui/index.js'
 import { GeneralSettings } from './GeneralSettings.js'
+import { PermissionsSettings } from './PermissionsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
 
-export type SettingsSection = 'general' | 'providers'
+export type SettingsSection = 'general' | 'providers' | 'permissions'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -22,11 +22,12 @@ interface SectionEntry {
 
 /** 分类分组：组名与其中的分类，按显示顺序。 */
 const GROUPS: readonly {
-  readonly group: 'general' | 'models'
+  readonly group: 'general' | 'models' | 'security'
   readonly sections: readonly SectionEntry[]
 }[] = [
   { group: 'general', sections: [{ id: 'general', icon: <Settings2 /> }] },
   { group: 'models', sections: [{ id: 'providers', icon: <Cpu /> }] },
+  { group: 'security', sections: [{ id: 'permissions', icon: <Shield /> }] },
 ]
 
 export function SettingsNav({
@@ -134,6 +135,7 @@ export function SettingsContent({
         <div className="mx-auto flex max-w-[760px] flex-col gap-5.5 px-8 pt-4 pb-16">
           {section === 'general' && <GeneralSettings />}
           {section === 'providers' && <ProvidersSettings />}
+          {section === 'permissions' && <PermissionsSettings />}
         </div>
       </div>
     </>

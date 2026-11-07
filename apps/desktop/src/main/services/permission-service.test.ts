@@ -81,4 +81,58 @@ describe('createPermissionService', () => {
       expect.objectContaining({ code: 'storage.not_found' }),
     )
   })
+
+  it('lists global rules, then the rules of each project, without session rules (M2-11)', () => {
+    const { storage, service } = setup()
+    service.addRule('s1', rule('p1-rule', 'project'))
+    service.addRule('s2', rule('p2-rule', 'project'))
+    service.addRule('s1', rule('session', 'session'))
+    service.addUserRule(rule('global', 'global', { source: 'user' }))
+    const listed = service.listRules()
+    expect(listed[0]?.rule.id).toBe('global')
+    expect(listed.slice(1).map((e) => [e.rule.id, e.projectId])).toEqual(
+      storage.projects.list().map(({ projectId }) => [`${projectId}-rule`, projectId]),
+    )
+    expect(listed[0]).not.toHaveProperty('projectId')
+    expect(listed[0]?.createdAt).toEqual(expect.any(Number))
+  })
+
+  it('adds user rules to the global scope or a project and deletes stored rules (M2-11)', () => {
+    const { storage, service } = setup()
+    const entry = service.addUserRule(rule('u', 'project', { source: 'user' }), 'p2')
+    expect(entry).toMatchObject({ rule: rule('u', 'project', { source: 'user' }), projectId: 'p2' })
+    expect(storage.permissionRules.get('u')).toMatchObject({ projectId: 'p2' })
+    expect(service.rulesForSession('s2').map((r) => r.id)).toContain('u')
+
+    service.addRule('s1', rule('approved', 'project'))
+    service.deleteRule('approved')
+    service.deleteRule('u')
+    expect(service.listRules()).toEqual([])
+    expect(() => service.deleteRule('u')).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+  })
+
+  it('rejects manual rules that are not user rules or have the wrong owner (M2-11)', () => {
+    const { service } = setup()
+    const invalid = expect.objectContaining({ code: 'rpc.invalid_params' })
+    expect(() => service.addUserRule(rule('a', 'global'))).toThrow(invalid)
+    expect(() => service.addUserRule(rule('b', 'global', { source: 'user' }), 'p1')).toThrow(
+      invalid,
+    )
+    expect(() => service.addUserRule(rule('c', 'project', { source: 'user' }))).toThrow(invalid)
+    expect(() => service.addUserRule(rule('d', 'session', { source: 'user' }), 'p1')).toThrow(
+      invalid,
+    )
+    expect(() =>
+      service.addUserRule({ ...rule('e', 'global', { source: 'user' }), match: { path: [] } }),
+    ).toThrow(invalid)
+    expect(() => service.addUserRule(rule('f', 'project', { source: 'user' }), 'nope')).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+    service.addUserRule(rule('g', 'global', { source: 'user' }))
+    expect(() => service.addUserRule(rule('g', 'global', { source: 'user' }))).toThrow(
+      expect.objectContaining({ code: 'storage.conflict' }),
+    )
+  })
 })
