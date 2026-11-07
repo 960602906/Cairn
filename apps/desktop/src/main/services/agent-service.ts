@@ -230,6 +230,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
         status: 'published',
         version: BUILTIN_CODER.version,
         hasDraft: false,
+        modelMode: BUILTIN_CODER.model.mode,
         updatedAt: 0,
       }
     }
@@ -249,6 +250,10 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
       status: published ? 'published' : 'draft',
       version: published?.version ?? 0,
       hasDraft: draft !== undefined,
+      modelMode: fields.model.mode,
+      ...(fields.model.mode === 'fixed' && fields.model.primary
+        ? { model: fields.model.primary }
+        : {}),
       updatedAt: record.updatedAt,
     }
   }

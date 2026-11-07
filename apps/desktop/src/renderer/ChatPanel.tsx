@@ -49,6 +49,10 @@ export function TopBar({ children }: { readonly children: ReactNode }) {
 export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
   const { t } = useTranslation('session')
   const sessionId = useSessionStore((s) => s.activeSessionId)
+  const refreshAgents = useSessionStore((s) => s.refreshAgents)
+  useEffect(() => {
+    void refreshAgents({ includeArchived: true })
+  }, [refreshAgents])
   const view = useSessionStore((s) =>
     s.activeSessionId === undefined ? undefined : s.views[s.activeSessionId],
   )
@@ -153,6 +157,7 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
               sessionId={sessionId}
               status={status}
               run={run}
+              agent={run?.agent}
               model={view?.info?.model ?? summary?.model ?? defaultModel}
               contextTokens={view?.contextTokens}
             />

@@ -236,3 +236,277 @@ describe('MessageStream 渲染', () => {
     expect(screen.getByRole('list', { name: '消息' })).toBeTruthy()
   })
 })
+
+describe('MessageStream Agent 标记', () => {
+  const agent = (id: string, version: number) => ({ id, version })
+  const assistant = (
+    messageId: string,
+    runId: string,
+    turnId: string,
+    seq: number,
+    extra: object = {},
+  ) => ({
+    messageId,
+    role: 'assistant' as const,
+    runId,
+    turnId,
+    seq,
+    ts: seq,
+    content: [{ type: 'text' as const, text: messageId }],
+    toolCalls: [],
+    model,
+    ...extra,
+  })
+  const user = (messageId: string, runId: string, turnId: string, seq: number) => ({
+    messageId,
+    role: 'user' as const,
+    runId,
+    turnId,
+    seq,
+    ts: seq,
+    content: [{ type: 'text' as const, text: messageId }],
+  })
+
+  const base = {
+    sessionId: 's1',
+    lastSeq: 20,
+    info: undefined,
+    archived: false,
+    crash: undefined,
+    tools: {},
+    liveToolOutput: {},
+    usage: { inputTokens: 0, outputTokens: 0 },
+    usageByTurn: {},
+    contextTokens: undefined,
+    checkpoints: [],
+    restores: [],
+    compaction: undefined,
+    toolOutputOmitted: undefined,
+    plans: [],
+  }
+
+  const multiRun = {
+    ...base,
+    runs: {
+      r1: { runId: 'r1', agent: agent('builtin.coder', 1) },
+      r2: { runId: 'r2', agent: agent('user.custom', 3) },
+      r3: { runId: 'r3', agent: agent('user.unknown', 1) },
+    },
+    runOrder: ['r1', 'r2'],
+    messages: [
+      user('u1', 'r1', 't1', 1),
+      assistant('a1', 'r1', 't1', 2),
+      user('u2', 'r2', 't2', 3),
+      assistant('a2', 'r2', 't2', 4),
+    ],
+    live: {},
+  } as unknown as SessionView
+
+  const store = (agents: unknown[] = []) =>
+    createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      settings: { providers: [] },
+      agents,
+      changes: {},
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+
+  const renderStream = (view: SessionView, agents: unknown[] = []) =>
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store(agents)}>
+          <MessageStream view={view} onOpenPlan={vi.fn()} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+
+  it('renders an agent badge and a switch divider for the second run', () => {
+    renderStream(multiRun, [
+      {
+        agentId: 'user.custom',
+        name: { 'zh-CN': '自定义助手' },
+        description: {},
+        version: 3,
+        status: 'published',
+        source: 'user',
+        archived: false,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ])
+    expect(screen.getByText('编程助手')).toBeDefined()
+    expect(screen.getAllByText('自定义助手').length).toBeGreaterThan(0)
+    expect(screen.getByText('已切换到 自定义助手 v3')).toBeDefined()
+  })
+
+  it('falls back to the agent id when no summary exists', () => {
+    renderStream(multiRun, [])
+    expect(screen.getByText('已切换到 user.custom v3')).toBeDefined()
+    expect(screen.getByText('user.custom')).toBeDefined()
+  })
+
+  it('shows a switch divider before a live message from a later run', () => {
+    const live = {
+      ...multiRun,
+      runOrder: ['r1', 'r3'],
+      messages: [user('u1', 'r1', 't1', 1), assistant('a1', 'r1', 't1', 2)],
+      live: {
+        l3: {
+          messageId: 'l3',
+          runId: 'r3',
+          turnId: 't3',
+          text: '',
+          reasoning: 'thinking',
+          lastDeltaSeq: 5,
+          startedAt: 3,
+        },
+      },
+    } as unknown as SessionView
+    renderStream(live, [])
+    expect(screen.getByText('已切换到 user.unknown v1')).toBeDefined()
+    expect(screen.getByText('user.unknown')).toBeDefined()
+  })
+
+  it('renders a footer without turn tokens when the turn is unknown', () => {
+    const view = {
+      ...base,
+      runs: { r1: { runId: 'r1', agent: agent('builtin.coder', 1) } },
+      runOrder: ['r1'],
+      messages: [
+        user('u1', 'r1', 't1', 1),
+        assistant('a1', 'r1', undefined as unknown as string, 2),
+      ],
+      live: {},
+    } as unknown as SessionView
+    renderStream(view, [])
+    expect(screen.getByText('a1')).toBeDefined()
+  })
+
+  it('shows compaction and omission marks between messages and after the last one', () => {
+    const view = {
+      ...multiRun,
+      messages: [
+        user('u1', 'r1', 't1', 1),
+        assistant('a1', 'r1', 't1', 2),
+        assistant('a2', 'r1', 't1', 5),
+      ],
+      compaction: { summary: '摘要', seq: 3 },
+      toolOutputOmitted: { seq: 6 },
+    } as unknown as SessionView
+    renderStream(view, [])
+    expect(screen.getByRole('button', { name: /较早的对话已压缩/ })).toBeDefined()
+    expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeDefined()
+  })
+
+  it('renders restore marks under a user message', () => {
+    const view = {
+      ...multiRun,
+      messages: [user('u1', 'r1', 't1', 1)],
+      restores: [{ checkpointId: 'c1', seq: 2, ts: 2 }],
+      checkpoints: [
+        { checkpointId: 'c1', reason: 'turn', seq: 1, runId: 'r1', turnId: 't1', createdAt: 1 },
+      ],
+    } as unknown as SessionView
+    renderStream(view, [])
+    expect(screen.getByText('u1')).toBeDefined()
+  })
+
+  it('labels a live message with the known agent and a known switched run', () => {
+    const agents = [
+      {
+        agentId: 'user.custom',
+        name: { 'zh-CN': '自定义助手' },
+        description: {},
+        version: 3,
+        status: 'published',
+        source: 'user',
+        archived: false,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ]
+    const live = {
+      ...multiRun,
+      runOrder: ['r1', 'r2'],
+      messages: [user('u1', 'r1', 't1', 1), assistant('a1', 'r1', 't1', 2)],
+      live: {
+        l2: {
+          messageId: 'l2',
+          runId: 'r2',
+          turnId: 't2',
+          text: '实时',
+          reasoning: '',
+          lastDeltaSeq: 5,
+          startedAt: 3,
+        },
+      },
+    } as unknown as SessionView
+    renderStream(live, agents)
+    expect(screen.getByText('已切换到 自定义助手 v3')).toBeDefined()
+    expect(screen.getByText('实时')).toBeDefined()
+  })
+
+  it('falls back to the default agent name for the built-in coder', () => {
+    const view = {
+      ...multiRun,
+      runOrder: ['r1', 'r2'],
+      runs: {
+        r1: { runId: 'r1', agent: agent('builtin.coder', 1) },
+        r2: { runId: 'r2', agent: agent('builtin.coder', 2) },
+      },
+      messages: [
+        user('u1', 'r1', 't1', 1),
+        assistant('a1', 'r1', 't1', 2),
+        user('u2', 'r2', 't2', 3),
+        assistant('a2', 'r2', 't2', 4),
+      ],
+    } as unknown as SessionView
+    renderStream(view, [])
+    expect(screen.getByText('已切换到 编程助手 v2')).toBeDefined()
+  })
+
+  it('renders both marks between messages and after the last message', () => {
+    const between = {
+      ...multiRun,
+      messages: [user('u1', 'r1', 't1', 1), assistant('a1', 'r1', 't1', 4)],
+      compaction: { summary: '摘要', seq: 2 },
+      toolOutputOmitted: { seq: 3 },
+    } as unknown as SessionView
+    renderStream(between, [])
+    expect(screen.getAllByRole('button', { name: /较早的对话已压缩/ }).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('较早的工具输出已省略，以腾出上下文。').length).toBeGreaterThan(0)
+  })
+
+  it('renders trailing marks after the last message', () => {
+    const trailing = {
+      ...multiRun,
+      messages: [user('u1', 'r1', 't1', 1), assistant('a1', 'r1', 't1', 2)],
+      compaction: { summary: '摘要', seq: 9 },
+      toolOutputOmitted: { seq: 10 },
+    } as unknown as SessionView
+    renderStream(trailing, [])
+    expect(screen.getByRole('button', { name: /较早的对话已压缩/ })).toBeDefined()
+    expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeDefined()
+  })
+
+  it('shows a generic failure reason when a turn fails without a limit', () => {
+    const failed = {
+      ...multiRun,
+      runs: {
+        r1: {
+          runId: 'r1',
+          agent: agent('builtin.coder', 1),
+          turn: { turnId: 't1', status: 'failed', error: { code: 'provider_error' } },
+        },
+      },
+      runOrder: ['r1'],
+      messages: [user('u1', 'r1', 't1', 1), assistant('a1', 'r1', 't1', 2)],
+    } as unknown as SessionView
+    renderStream(failed, [])
+    expect(screen.getByText(/失败|错误/)).toBeDefined()
+  })
+})

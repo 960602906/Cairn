@@ -18,6 +18,7 @@ import { LanguageSwitcher } from './LanguageSwitcher.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
+import { AgentsView } from './agents/AgentsView.js'
 import { NewSession } from './NewSession.js'
 import type { SessionStore } from './session-store.js'
 import { SessionSearch } from './SessionSearch.js'
@@ -40,6 +41,7 @@ function Workspace() {
   const [sidebarOpen, setSidebarOpen] = useState(!narrow)
   const [composing, setComposing] = useState(false)
   const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
+  const [agents, setAgents] = useState(false)
   const [searching, setSearching] = useState(false)
   // 还没有会话时直接显示新对话表单；已选中的会话（即使不在列表中）仍显示会话
   const showNew = useSessionStore((s) => s.sessions.length === 0 && s.activeSessionId === undefined)
@@ -62,6 +64,7 @@ function Workspace() {
       if (!isNewChatKey(event)) return
       event.preventDefault()
       setSettings(undefined)
+      setAgents(false)
       setComposing(true)
     }
     window.addEventListener('keydown', onKeyDown)
@@ -81,12 +84,20 @@ function Workspace() {
 
   const closeSettings = useCallback(() => setSettings(undefined), [])
 
+  const showAgents = agents
+  const openAgents = useCallback(() => {
+    setSettings(undefined)
+    setComposing(false)
+    setAgents(true)
+  }, [])
+
   const search = (
     <SessionSearch
       open={searching}
       onOpenChange={setSearching}
       onSelect={() => {
         setSettings(undefined)
+        setAgents(false)
         setComposing(false)
         if (narrow) setSidebarOpen(false)
       }}
@@ -118,6 +129,43 @@ function Workspace() {
     )
   }
 
+  if (showAgents) {
+    return (
+      <div className="flex h-full bg-chrome text-fg">
+        <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
+        <Sidebar
+          open={sidebarOpen}
+          onNewChat={() => {
+            setAgents(false)
+            setComposing(true)
+            if (narrow) setSidebarOpen(false)
+          }}
+          onCollapse={() => setSidebarOpen(false)}
+          onSearch={() => setSearching(true)}
+          onSelect={() => {
+            setAgents(false)
+            setComposing(false)
+            if (narrow) setSidebarOpen(false)
+          }}
+          onAgents={openAgents}
+          agentsActive
+          onSettings={(section) => {
+            setAgents(false)
+            setSettings(section ?? 'general')
+            if (narrow) setSidebarOpen(false)
+          }}
+        />
+        <main
+          className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper ${sidebarOpen ? 'border-l-[0.5px] border-hair' : ''}`}
+        >
+          <ErrorBanner />
+          <AgentsView leading={expand} />
+        </main>
+        {search}
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full bg-chrome text-fg">
       {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
@@ -126,14 +174,17 @@ function Workspace() {
         open={sidebarOpen}
         onNewChat={() => {
           setComposing(true)
+          setAgents(false)
           if (narrow) setSidebarOpen(false)
         }}
         onCollapse={() => setSidebarOpen(false)}
         onSearch={() => setSearching(true)}
         onSelect={() => {
           setComposing(false)
+          setAgents(false)
           if (narrow) setSidebarOpen(false)
         }}
+        onAgents={openAgents}
         onSettings={(section) => {
           setSettings(section ?? 'general')
           if (narrow) setSidebarOpen(false)

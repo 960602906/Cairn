@@ -11,7 +11,7 @@
  * （`Checkpoints.tsx`）。
  */
 import { Check, ChevronRight, Copy } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   rootRun,
@@ -38,6 +38,8 @@ import { PlanSummaryCard } from './PlanCard.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
 import { Button, IconButton, Shimmer } from './ui/index.js'
+import { AgentAvatar } from './agents/AgentAvatar.js'
+import { agentName } from './agents/AgentsPage.js'
 
 /** 本轮结束后，最后一条助手消息下面的操作：复制本轮回复；右侧灰字是模型名与本轮 token 数（不显示金额）。 */
 function TurnActions({
@@ -209,6 +211,23 @@ function CompactionMark({ summary }: { readonly summary: string }) {
   )
 }
 
+function AgentSwitchDivider({
+  name,
+  version,
+}: {
+  readonly name: string
+  readonly version: number
+}) {
+  const { t } = useTranslation('session')
+  return (
+    <div className="flex items-center gap-3 text-note text-faint">
+      <span aria-hidden className="h-px flex-1 bg-hair" />
+      <span className="shrink-0">{t('chat.agentSwitched', { name, version })}</span>
+      <span aria-hidden className="h-px flex-1 bg-hair" />
+    </div>
+  )
+}
+
 function OmissionNote() {
   const { t } = useTranslation('session')
   return <p className="text-note text-faint">{t('chat.toolOutputOmitted')}</p>
@@ -248,6 +267,8 @@ function Message({
   const approvals = useSessionStore((s) =>
     s.activeSessionId === undefined ? undefined : s.approvals[s.activeSessionId],
   )
+  const agents = useSessionStore((s) => s.agents) ?? []
+  const { i18n } = useTranslation('session')
   const awaiting = new Set(approvals?.map((a) => a.toolCallId))
   const cards = plans.map((plan) => (
     <PlanSummaryCard key={plan.planId} plan={plan} onOpen={onOpenPlan} />
@@ -280,6 +301,24 @@ function Message({
     <li className={continued ? '-mt-3.5 text-fg' : 'text-fg'}>
       {marks}
       <strong className="sr-only">{t('message.assistant')}</strong>
+      {(() => {
+        const run = view.runs[message.runId]
+        const showAgentBadge = view.runOrder.length > 1 && !continued
+        const agent = run?.agent
+        const agentSummary = agent ? agents.find((a) => a.agentId === agent.id) : undefined
+        const agentDisplayName = agentSummary
+          ? agentName(agentSummary, i18n.language)
+          : agent?.id === 'builtin.coder'
+            ? t('composer.agent.default')
+            : agent?.id
+        if (!showAgentBadge || !agentDisplayName) return null
+        return (
+          <div className="mb-1.5 flex items-center gap-1.5 text-note font-medium text-fg2">
+            <AgentAvatar icon={agentSummary?.icon} color={agentSummary?.color} size={16} />
+            <span>{agentDisplayName}</span>
+          </div>
+        )
+      })()}
       {message.reasoning && message.reasoning.text !== '' && (
         <Reasoning text={message.reasoning.text} />
       )}
@@ -327,15 +366,33 @@ const continues = (
 
 function LiveMessage({
   live,
+  view,
   continued,
 }: {
   readonly live: LiveMessageView
+  readonly view: SessionView | undefined
   readonly continued: boolean
 }) {
-  const { t } = useTranslation('session')
+  const { t, i18n } = useTranslation('session')
+  const agents = useSessionStore((s) => s.agents) ?? []
+  const run = view?.runs[live.runId]
+  const showAgentBadge = view !== undefined && view.runOrder.length > 1 && !continued
+  const agent = run?.agent
+  const agentSummary = agent ? agents.find((a) => a.agentId === agent.id) : undefined
+  const agentDisplayName = agentSummary
+    ? agentName(agentSummary, i18n.language)
+    : agent?.id === 'builtin.coder'
+      ? t('composer.agent.default')
+      : agent?.id
   return (
     <li aria-busy="true" className={continued ? '-mt-3.5 text-fg' : 'text-fg'}>
       <strong className="sr-only">{t('message.assistant')}</strong>
+      {showAgentBadge && agentDisplayName && (
+        <div className="mb-1.5 flex items-center gap-1.5 text-note font-medium text-fg2">
+          <AgentAvatar icon={agentSummary?.icon} color={agentSummary?.color} size={16} />
+          <span>{agentDisplayName}</span>
+        </div>
+      )}
       {live.reasoning !== '' && <Reasoning text={live.reasoning} live={live.text === ''} />}
       {live.text !== '' && <Markdown text={live.text} />}
     </li>
@@ -380,9 +437,51 @@ export function MessageStream({
   const live = Object.values(view?.live ?? {}).sort((a, b) => a.startedAt - b.startedAt)
   const outcome = view && turnOutcome(view, t, i18n)
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
+  const agents = useSessionStore((s) => s.agents) ?? []
   /** 上一轮因限额停下时，可以一键接着做（Runtime §10.3：开始新的一轮，计数重新开始）。 */
   const canContinue = view !== undefined && rootRun(view)?.turn?.limitReached !== undefined
   const footers = view ? turnFooters(view) : new Map<string, TurnFooter>()
+  const switchedRuns = useMemo(() => {
+    if (!view || view.runOrder.length <= 1)
+      return new Map<string, { name: string; version: number }>()
+    const map = new Map<string, { name: string; version: number }>()
+    for (let i = 1; i < view.runOrder.length; i++) {
+      const runId = view.runOrder[i]
+      if (runId === undefined) continue
+      const run = view.runs[runId]
+      if (!run) continue
+      const firstMsg = view.messages.find((m) => m.runId === runId)
+      if (firstMsg) {
+        const summary = agents.find((a) => a.agentId === run.agent.id)
+        const name = summary
+          ? agentName(summary, i18n.language)
+          : run.agent.id === 'builtin.coder'
+            ? t('composer.agent.default')
+            : run.agent.id
+        map.set(firstMsg.messageId, { name, version: run.agent.version })
+      }
+    }
+    return map
+  }, [view, agents, i18n.language, t])
+  const liveSwitch = useMemo(() => {
+    if (!view || view.runOrder.length <= 1 || live.length === 0) return undefined
+    const firstLive = live[0]
+    if (!firstLive) return undefined
+    const runIdx = view.runOrder.indexOf(firstLive.runId)
+    if (runIdx > 0 && !view.messages.some((m) => m.runId === firstLive.runId)) {
+      const run = view.runs[firstLive.runId]
+      if (run) {
+        const summary = agents.find((a) => a.agentId === run.agent.id)
+        const name = summary
+          ? agentName(summary, i18n.language)
+          : run.agent.id === 'builtin.coder'
+            ? t('composer.agent.default')
+            : run.agent.id
+        return { name, version: run.agent.version }
+      }
+    }
+    return undefined
+  }, [view, live, agents, i18n.language, t])
   const anchored = new Set(
     (view?.plans ?? []).flatMap((plan) =>
       plan.turnId !== undefined && view?.messages.some((message) => message.turnId === plan.turnId)
@@ -416,25 +515,32 @@ export function MessageStream({
           const previous = view.messages[index - 1]?.seq ?? 0
           const next = view.messages[index + 1]
           const lastOfTurn = next === undefined || next.turnId !== message.turnId
+          const switchInfo = switchedRuns.get(message.messageId)
           return (
-            <Message
-              key={message.messageId}
-              message={message}
-              view={view}
-              footer={footers.get(message.messageId)}
-              plans={
-                lastOfTurn && message.turnId !== undefined
-                  ? view.plans.filter((plan) => plan.turnId === message.turnId)
-                  : []
-              }
-              modelName={modelName}
-              continued={continues(view.messages[index - 1], message)}
-              divider={dividerFor(message, index)}
-              restores={restores.get(message.messageId)}
-              compacted={markBetween(previous, message.seq, view.compaction)}
-              omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
-              onOpenPlan={onOpenPlan}
-            />
+            <Fragment key={message.messageId}>
+              {switchInfo && (
+                <li className="list-none">
+                  <AgentSwitchDivider name={switchInfo.name} version={switchInfo.version} />
+                </li>
+              )}
+              <Message
+                message={message}
+                view={view}
+                footer={footers.get(message.messageId)}
+                plans={
+                  lastOfTurn && message.turnId !== undefined
+                    ? view.plans.filter((plan) => plan.turnId === message.turnId)
+                    : []
+                }
+                modelName={modelName}
+                continued={continues(view.messages[index - 1], message)}
+                divider={dividerFor(message, index)}
+                restores={restores.get(message.messageId)}
+                compacted={markBetween(previous, message.seq, view.compaction)}
+                omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
+                onOpenPlan={onOpenPlan}
+              />
+            </Fragment>
           )
         })}
         {view?.plans
@@ -455,10 +561,16 @@ export function MessageStream({
               <OmissionNote />
             </li>
           )}
+        {liveSwitch && (
+          <li className="list-none">
+            <AgentSwitchDivider name={liveSwitch.name} version={liveSwitch.version} />
+          </li>
+        )}
         {live.map((message, index) => (
           <LiveMessage
             key={message.messageId}
             live={message}
+            view={view}
             continued={index === 0 && continues(view?.messages.at(-1), message)}
           />
         ))}

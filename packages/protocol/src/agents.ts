@@ -151,6 +151,10 @@ export const AgentSummary = z.object({
   /** 最新的已发布版本；从未发布为 0。 */
   version: z.number().int().nonnegative(),
   hasDraft: z.boolean(),
+  /** 列表里显示“固定模型 / 跟随会话”（M3-12）。 */
+  modelMode: z.enum(['fixed', 'inherit']),
+  /** `fixed` 时的主模型。 */
+  model: ModelRef.optional(),
   updatedAt: z.number().int().nonnegative(),
 })
 export type AgentSummary = z.infer<typeof AgentSummary>

@@ -132,6 +132,31 @@ describe('agent-service drafts and versions', () => {
     })
   })
 
+  it('summarizes the model mode for the list (M3-12)', () => {
+    const { service } = setup()
+    // 内置编程助手跟随会话：没有固定模型。
+    const builtin = service.list({}).agents[0]!
+    expect(builtin.modelMode).toBe('inherit')
+    expect(builtin.model).toBeUndefined()
+
+    // 跟随会话的用户 Agent 同样只报模式。
+    const inherit = service.saveDraft({ definition: draft() })
+    const inheritSummary = service.list({}).agents.find((a) => a.agentId === inherit.agentId)!
+    expect(inheritSummary.modelMode).toBe('inherit')
+    expect(inheritSummary.model).toBeUndefined()
+
+    // 固定模型时带出主模型，列表里可以显示 “provider · model”。
+    const fixed = service.saveDraft({
+      definition: draft({
+        model: { mode: 'fixed', primary: { providerId: 'openai', modelId: 'gpt' } },
+      }),
+    })
+    expect(fixed.validation.ok).toBe(true)
+    const fixedSummary = service.list({}).agents.find((a) => a.agentId === fixed.agentId)!
+    expect(fixedSummary.modelMode).toBe('fixed')
+    expect(fixedSummary.model).toEqual({ providerId: 'openai', modelId: 'gpt' })
+  })
+
   it('publishes a draft as version 1 and keeps the draft/published versions apart', () => {
     const { service, storage } = setup()
     const created = service.saveDraft({ definition: draft() })

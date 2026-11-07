@@ -5,6 +5,11 @@
 import { z } from 'zod'
 import { FileChangeSummary, FileContent } from '../changes.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
+import {
+  DiagnosticsExportInput,
+  DiagnosticsExportResult,
+  DiagnosticsSummary,
+} from '../diagnostics.js'
 import { AgentDefinitionRef, ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
 import {
   AgentDetail,
@@ -685,6 +690,21 @@ export const MainForRenderer = defineSide({
     'agent.effectiveConfig': {
       params: z.object({ agentId: Id, sessionId: Id.optional() }),
       result: AgentEffectiveConfig,
+    },
+    /** 诊断包导出前的清单（M3-13）：只含计数与版本，不含任何凭据或路径。 */
+    'diagnostics.summary': {
+      params: DiagnosticsExportInput,
+      result: DiagnosticsSummary,
+    },
+    /** 生成脱敏诊断包 zip；`cancelled` 表示用户在保存对话框中取消（M3-13）。 */
+    'diagnostics.export': {
+      params: DiagnosticsExportInput,
+      result: DiagnosticsExportResult,
+    },
+    /** 在系统文件管理器中显示诊断包（M3-13）。 */
+    'diagnostics.showInFolder': {
+      params: z.object({ path: z.string().min(1) }),
+      result: z.object({ shown: z.boolean() }),
     },
   },
   events: {

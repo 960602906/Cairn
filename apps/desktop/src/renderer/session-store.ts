@@ -26,6 +26,18 @@
 import { createSessionView, reduceSession, sessionStatus, type SessionView } from '@cairn/core'
 import {
   RpcError,
+  type AgentDefinitionRef,
+  type AgentDetail,
+  type AgentDiff,
+  type AgentDiffEndpoint,
+  type AgentDraftInput,
+  type AgentEffectiveConfig,
+  type AgentSource,
+  type AgentSummary,
+  type AgentVersionSummary,
+  type DiagnosticsExportInput,
+  type DiagnosticsExportResult,
+  type DiagnosticsSummary,
   type ContentPart,
   type ApprovalDecision,
   type MainForRenderer,
@@ -83,6 +95,10 @@ export interface SessionState {
   readonly settings: Settings | undefined
   /** 最近一次失败的错误；界面显示后可以清除。 */
   readonly error: ErrorInfo | undefined
+  /** 已保存的 Agent（M3-12）：内置编程助手加上用户与导入的 Agent。 */
+  readonly agents: readonly AgentSummary[]
+  /** 最近在会话里选用过的 Agent，最近的在前。 */
+  readonly recentAgents: readonly string[]
 }
 
 export interface SessionActions {
@@ -184,6 +200,44 @@ export interface SessionActions {
   mcpLogs(serverId: string): Promise<McpLogEntry[] | undefined>
   /** 订阅 MCP 连接状态；返回取消订阅函数。 */
   onMcpStatus(listener: (event: McpStatusEvent) => void): () => void
+  /** 重新读取 Agent 列表（M3-12）。 */
+  refreshAgents(input?: {
+    includeArchived?: boolean
+    source?: AgentSource
+    status?: 'draft' | 'published'
+    query?: string
+  }): Promise<AgentSummary[] | undefined>
+  /** 一份 Agent 的当前状态（草稿优先）；失败时返回 undefined。 */
+  getAgent(agentId: string, version?: number): Promise<AgentDetail | undefined>
+  /** 保存草稿；校验错误由主进程返回在 detail.validation 中。 */
+  saveAgentDraft(definition: AgentDraftInput): Promise<AgentDetail | undefined>
+  publishAgent(agentId: string): Promise<AgentDetail | undefined>
+  duplicateAgent(agentId: string): Promise<AgentDetail | undefined>
+  archiveAgent(agentId: string): Promise<AgentDetail | undefined>
+  unarchiveAgent(agentId: string): Promise<AgentDetail | undefined>
+  deleteAgent(agentId: string): Promise<boolean>
+  agentVersions(agentId: string): Promise<AgentVersionSummary[] | undefined>
+  agentDiff(
+    agentId: string,
+    from: AgentDiffEndpoint,
+    to: AgentDiffEndpoint,
+  ): Promise<AgentDiff | undefined>
+  /** 导出 Markdown（YAML 头部 + 指令正文）；失败时返回 undefined。 */
+  exportAgent(agentId: string, version?: number): Promise<string | undefined>
+  /** 导入 Markdown 为草稿；失败时返回 undefined。 */
+  importAgent(markdown: string): Promise<AgentDetail | undefined>
+  agentEffectiveConfig(
+    agentId: string,
+    sessionId?: string,
+  ): Promise<AgentEffectiveConfig | undefined>
+  /** 获取诊断包导出前清单（M3-13）。 */
+  diagnosticsSummary(input?: DiagnosticsExportInput): Promise<DiagnosticsSummary | undefined>
+  /** 导出脱敏诊断包 zip（M3-13）。 */
+  exportDiagnostics(input?: DiagnosticsExportInput): Promise<DiagnosticsExportResult | undefined>
+  /** 在文件夹中显示诊断包文件（M3-13）。 */
+  showDiagnosticsInFolder(path: string): Promise<boolean>
+  /** 在会话中切换 Agent（新建一个运行）；运行中会失败。 */
+  setSessionAgent(sessionId: string, agent: AgentDefinitionRef): Promise<boolean>
   loadSettings(): Promise<Settings | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
@@ -240,6 +294,32 @@ export type SessionStore = StoreApi<SessionState & SessionActions>
 
 const toError = (error: unknown): ErrorInfo =>
   error instanceof RpcError ? error.toInfo() : { code: 'unknown' }
+
+/** 最近使用的 Agent（M3-12）：只存 id，界面按列表过滤；本地存储不可用时只在本次会话里保留。 */
+const RECENT_AGENTS_KEY = 'cairn.recentAgents'
+const RECENT_AGENTS_MAX = 8
+
+export function readRecentAgents(
+  storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage,
+): string[] {
+  try {
+    const raw = storage?.getItem(RECENT_AGENTS_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string').slice(0, RECENT_AGENTS_MAX)
+      : []
+  } catch {
+    return []
+  }
+}
+
+function writeRecentAgents(ids: readonly string[]): void {
+  try {
+    globalThis.localStorage?.setItem(RECENT_AGENTS_KEY, JSON.stringify(ids))
+  } catch {
+    // 隐私模式或测试环境里 localStorage 不可用
+  }
+}
 
 /** 这些事件说明等待的那一轮已经开始或不会再开始。 */
 const TURN_SETTLED = new Set(['turn.started', 'turn.failed', 'turn.aborted', 'session.crashed'])
@@ -361,6 +441,8 @@ export function createSessionStore(api: MainApi): SessionStore {
       projects: [],
       settings: undefined,
       error: undefined,
+      agents: [],
+      recentAgents: readRecentAgents(),
 
       async refreshSessions() {
         const result = await run(() => api.request('session.list', {}))
@@ -591,6 +673,74 @@ export function createSessionStore(api: MainApi): SessionStore {
       mcpLogs: async (serverId) => (await run(() => api.request('mcp.logs', { serverId })))?.logs,
 
       onMcpStatus: (listener) => api.on('mcp.status', listener),
+
+      async refreshAgents(input) {
+        const result = await run(() => api.request('agent.list', input ?? {}))
+        if (!result) return undefined
+        set({ agents: result.agents })
+        return result.agents
+      },
+
+      getAgent: (agentId, version) =>
+        run(() =>
+          api.request('agent.get', version === undefined ? { agentId } : { agentId, version }),
+        ),
+
+      saveAgentDraft: (definition) => run(() => api.request('agent.saveDraft', { definition })),
+
+      publishAgent: (agentId) => run(() => api.request('agent.publish', { agentId })),
+
+      duplicateAgent: (agentId) => run(() => api.request('agent.duplicate', { agentId })),
+
+      archiveAgent: (agentId) => run(() => api.request('agent.archive', { agentId })),
+
+      unarchiveAgent: (agentId) => run(() => api.request('agent.unarchive', { agentId })),
+
+      deleteAgent: async (agentId) =>
+        (await run(() => api.request('agent.delete', { agentId }))) !== undefined,
+
+      agentVersions: async (agentId) =>
+        (await run(() => api.request('agent.versions', { agentId })))?.versions,
+
+      agentDiff: (agentId, from, to) => run(() => api.request('agent.diff', { agentId, from, to })),
+
+      exportAgent: async (agentId, version) =>
+        (
+          await run(() =>
+            api.request('agent.export', version === undefined ? { agentId } : { agentId, version }),
+          )
+        )?.markdown,
+
+      importAgent: (markdown) => run(() => api.request('agent.import', { markdown })),
+
+      agentEffectiveConfig: (agentId, sessionId) =>
+        run(() =>
+          api.request(
+            'agent.effectiveConfig',
+            sessionId === undefined ? { agentId } : { agentId, sessionId },
+          ),
+        ),
+
+      diagnosticsSummary: (input) => run(() => api.request('diagnostics.summary', input ?? {})),
+
+      exportDiagnostics: (input) => run(() => api.request('diagnostics.export', input ?? {})),
+
+      showDiagnosticsInFolder: async (filePath) =>
+        (await run(() => api.request('diagnostics.showInFolder', { path: filePath }))) !==
+        undefined,
+
+      async setSessionAgent(sessionId, agent) {
+        const done = await run(() => api.request('session.setAgent', { sessionId, agent }))
+        if (done === undefined) return false
+        set((state) => ({
+          recentAgents: [agent.id, ...state.recentAgents.filter((id) => id !== agent.id)].slice(
+            0,
+            RECENT_AGENTS_MAX,
+          ),
+        }))
+        writeRecentAgents(get().recentAgents)
+        return true
+      },
 
       async loadSettings() {
         const result = await run(() => api.request('settings.get', {}))
