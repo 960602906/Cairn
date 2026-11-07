@@ -190,5 +190,6 @@
   "diff.confirm.title": "撤销对这个文件的改动？",
   "diff.confirm.modify": "文件会恢复为改动之前的内容。其他文件和对话记录不受影响。",
   "diff.confirm.create": "这个文件是新建的，撤销后会被删除。其他文件和对话记录不受影响。",
-  "diff.confirm.delete": "这个文件被删除了，撤销后会恢复。其他文件和对话记录不受影响。"
+  "diff.confirm.delete": "这个文件被删除了，撤销后会恢复。其他文件和对话记录不受影响。",
+  "sidebar.settings": "设置"
 }

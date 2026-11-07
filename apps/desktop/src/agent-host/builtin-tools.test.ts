@@ -21,6 +21,20 @@ describe('createBuiltinTools', () => {
     ])
     await register(createToolRegistry())
     expect(selectShell).toHaveBeenCalledTimes(1)
+    expect(selectShell).toHaveBeenCalledWith('auto')
+  })
+
+  it('passes the shell preference from the settings (M2-09)', async () => {
+    const selectShell = vi.fn(async () => ({ kind: 'cmd' as const, exe: 'cmd.exe' }))
+    const register = createBuiltinTools({ binDir: '/bin', selectShell })
+    await expect(register(createToolRegistry(), '/w', 'cmd')).resolves.toEqual({ shell: 'cmd.exe' })
+    expect(selectShell).toHaveBeenCalledWith('cmd')
+  })
+
+  it('uses the real shell selection by default', async () => {
+    const register = createBuiltinTools({ binDir: '/bin' })
+    const result = await register(createToolRegistry())
+    expect(result.shell.length).toBeGreaterThan(0)
   })
 
   it('selects the shell again after a failure', async () => {

@@ -41,6 +41,7 @@ import {
   type SessionSummary,
   type Settings,
   type SettingsPatch,
+  type ShellPreference,
 } from '@cairn/protocol'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { MainApi } from './api.js'
@@ -99,6 +100,8 @@ export interface SessionActions {
   saveCredential(ref: string, secret: string): Promise<boolean>
   /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
   credentialStatus(ref: string): Promise<{ configured: boolean; available: boolean } | undefined>
+  /** 可选的 shell 与自动选择的结果（M2-09）；失败时返回 undefined。 */
+  shellOptions(): Promise<{ detected: string; options: ShellPreference[] } | undefined>
   /** 预览恢复到检查点将改动的文件；失败时返回 undefined。 */
   previewRestore(
     sessionId: string,
@@ -409,6 +412,8 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       },
 
       credentialStatus: (ref) => run(() => api.request('credentials.status', { ref })),
+
+      shellOptions: () => run(() => api.request('settings.shell', {})),
 
       previewRestore: (sessionId, checkpointId) =>
         run(() => api.request('checkpoint.preview', { sessionId, checkpointId })),

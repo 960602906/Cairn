@@ -34,6 +34,7 @@ import {
   type ErrorInfo,
   type HostModelConfig,
   type PermissionRule,
+  type ShellPreference,
   type RequestOptions,
   type RpcEndpoint,
 } from '@cairn/protocol'
@@ -54,7 +55,7 @@ export const HostErrorCode = {
 /** 会话管理器给出的初始化参数；凭据、模型配置、权限规则与检查点由监督器解析后加入。 */
 export type HostInit = Omit<
   z.input<(typeof HostForMain)['requests']['host.init']['params']>,
-  'credential' | 'modelConfig' | 'permissionRules' | 'checkpoints' | 'instructions'
+  'credential' | 'modelConfig' | 'permissionRules' | 'checkpoints' | 'instructions' | 'shell'
 >
 
 /** 会话的检查点位置（M1-12b）：项目的影子仓库目录与会话的引用。 */
@@ -103,6 +104,8 @@ export interface HostSupervisorOptions {
   readonly resolvePermissionRules?: (sessionId: string) => PermissionRule[]
   /** 用户的自定义说明（M1-13b，设置服务）；省略或返回 undefined 时不传。 */
   readonly resolveInstructions?: () => string | undefined
+  /** 命令执行使用的 shell（M2-09，设置服务）；省略或返回 undefined 时不传（宿主按 `auto`）。 */
+  readonly resolveShell?: () => ShellPreference | undefined
   /** 会话的检查点位置（M1-12b）；省略或返回 undefined 时宿主不创建检查点。 */
   readonly resolveCheckpoints?: (sessionId: string) => HostCheckpointLocation | undefined
   /**
@@ -296,6 +299,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         const permissionRules = options.resolvePermissionRules?.(sessionId)
         const checkpoints = options.resolveCheckpoints?.(sessionId)
         const instructions = options.resolveInstructions?.()
+        const shell = options.resolveShell?.()
         const credential = await options.resolveCredential?.(init.model)
         await endpoint.request(
           'host.init',
@@ -306,6 +310,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
             ...(permissionRules ? { permissionRules } : {}),
             ...(checkpoints ? { checkpoints } : {}),
             ...(instructions ? { instructions } : {}),
+            ...(shell ? { shell } : {}),
           },
           { timeoutMs: startTimeoutMs },
         )

@@ -190,5 +190,6 @@
   "diff.confirm.title": "Undo the changes to this file?",
   "diff.confirm.modify": "The file will be restored to its content before these changes. Other files and the conversation are not affected.",
   "diff.confirm.create": "This file was created, so undoing will delete it. Other files and the conversation are not affected.",
-  "diff.confirm.delete": "This file was deleted, so undoing will restore it. Other files and the conversation are not affected."
+  "diff.confirm.delete": "This file was deleted, so undoing will restore it. Other files and the conversation are not affected.",
+  "sidebar.settings": "Settings"
 }

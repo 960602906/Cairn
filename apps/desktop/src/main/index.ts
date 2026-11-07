@@ -47,6 +47,7 @@ import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
+import { createShellInfo } from './services/shell-info.js'
 import { hostEnvironment } from '../shared/host-trace.js'
 import { checkBundledSearch } from './smoke-search.js'
 import {
@@ -148,6 +149,8 @@ const supervisor = createHostSupervisor({
   resolvePermissionRules: (sessionId) => permissions.rulesForSession(sessionId),
   // 自定义说明（M1-13b）：加入系统提示词；修改后在下次启动宿主时生效
   resolveInstructions: () => settings.instructions(),
+  // 默认 Shell（M2-09）：同样在下次启动宿主时生效
+  resolveShell: () => settings.shell(),
   // 检查点（M1-12b）：每个项目一个影子仓库，会话各用自己的引用
   resolveCheckpoints: (sessionId) => checkpointLocation(paths.checkpoints, storage, sessionId),
   requestApproval: (sessionId, runId, request) => approvals.request(sessionId, runId, request),
@@ -190,6 +193,7 @@ const gateway = createRendererGateway({
       if (patch.theme !== undefined) nativeTheme.themeSource = patch.theme
       return next
     },
+    shell: createShellInfo(),
   },
   credentials: createCredentialCommands(credentials),
   changes,

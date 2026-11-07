@@ -163,6 +163,16 @@ describe('agent host', () => {
     expect(prompts[0]).toContain('# Environment')
   })
 
+  it('passes the shell preference from host.init to registerTools (M2-09)', async () => {
+    const registerTools = vi.fn(() => undefined)
+    const h = setup({ turns: [] }, { registerTools })
+    await h.main.request('host.init', { ...init, shell: 'cmd' })
+    expect(registerTools).toHaveBeenCalledWith(expect.anything(), init.workspacePath, 'cmd')
+    const other = setup({ turns: [] }, { registerTools })
+    await other.main.request('host.init', init)
+    expect(registerTools).toHaveBeenLastCalledWith(expect.anything(), init.workspacePath, 'auto')
+  })
+
   it('passes the model config from host.init to the runtime factory', async () => {
     const modelConfig = {
       kind: 'anthropic' as const,

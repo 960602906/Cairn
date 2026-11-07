@@ -471,6 +471,16 @@ describe('projects and model settings', () => {
     await expect(store.getState().saveCredential('deepseek', 'secret')).resolves.toBe(false)
     expect(store.getState().error).toEqual({ code: 'credentials.unavailable' })
   })
+
+  it('reads the shell options (M2-09)', async () => {
+    const { api } = fakeApi({
+      'settings.shell': () => ({ detected: 'PowerShell 7.5.4', options: ['auto', 'cmd'] }),
+    })
+    await expect(createSessionStore(api).getState().shellOptions()).resolves.toEqual({
+      detected: 'PowerShell 7.5.4',
+      options: ['auto', 'cmd'],
+    })
+  })
 })
 
 describe('file changes (M2-07)', () => {

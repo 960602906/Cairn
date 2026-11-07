@@ -53,6 +53,7 @@ import {
   type PermissionRule,
   type RpcChannel,
   type RpcEndpoint,
+  type ShellPreference,
 } from '@cairn/protocol'
 import { createPathResolver } from '@cairn/tools'
 import { createHostApprovalGate } from './approval-gate.js'
@@ -95,11 +96,12 @@ export interface AgentHostOptions {
   readonly caseInsensitive?: boolean
   /**
    * 注册工作区可用的工具（M1-11a）；省略或没有注册工具时运行不带工具。可以返回工具的环境信息
-   * （`run_command` 使用的 shell），写入系统提示词（M1-13b）。
+   * （`run_command` 使用的 shell），写入系统提示词（M1-13b）。`shell` 是设置中的 shell 偏好（M2-09）。
    */
   readonly registerTools?: (
     registry: ToolRegistry,
     workspacePath: string,
+    shell: ShellPreference,
   ) => void | ToolEnvironment | Promise<void | ToolEnvironment>
   /** 操作系统（`process.platform` 的值），写入系统提示词；默认当前进程的。 */
   readonly platform?: string
@@ -186,7 +188,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       init.modelConfig,
     )
     const registry = createToolRegistry()
-    const toolEnvironment = (await options.registerTools?.(registry, init.workspacePath)) ?? {}
+    const toolEnvironment =
+      (await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
     const hasTools = registry.list().length > 0
     // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息
     const systemPrompt = buildSystemPrompt({
