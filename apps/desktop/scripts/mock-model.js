@@ -11,10 +11,11 @@ import { createServer } from 'node:http'
 /**
  * @typedef {{ authorization: string | undefined, model: unknown, stream: unknown, messages: unknown }} MockModelRequest
  * @typedef {{ name: string, arguments: object }} MockToolCall
- * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[] }} options
+ * `title`（M3-01）：请求内容里带有自动标题的系统提示时，改回这段文字，用来区分对话回复。
+ * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], title?: string }} options
  * @returns {Promise<{ baseUrl: string, requests: MockModelRequest[], close: () => Promise<void> }>}
  */
-export async function startMockModel({ apiKey, reply, toolCall, toolCalls }) {
+export async function startMockModel({ apiKey, reply, toolCall, toolCalls, title }) {
   const script = toolCalls ?? (toolCall ? [toolCall] : [])
   /** @type {MockModelRequest[]} */
   const requests = []
@@ -61,7 +62,9 @@ export async function startMockModel({ apiKey, reply, toolCall, toolCalls }) {
         res.end('data: [DONE]\n\n')
         return
       }
-      for (const piece of reply.split(' ')) {
+      const messages = JSON.stringify(body.messages ?? '')
+      const text = title && messages.includes('You name a conversation.') ? title : reply
+      for (const piece of text.split(' ')) {
         res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', content: `${piece} ` }))}\n\n`)
       }
       const done = {

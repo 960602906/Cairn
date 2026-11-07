@@ -227,6 +227,32 @@ describe('reduceSession：一轮完整对话', () => {
     expect(view.contextTokens).toBe(13)
   })
 
+  it('辅助模型用量计入统计但不改上下文圆环（M3-01）', () => {
+    const auxiliary = {
+      v: 1 as const,
+      sessionId: SID,
+      runId: RUN,
+      turnId: 't1',
+      seq: view.lastSeq + 1,
+      ts: view.lastSeq * 10 + 10,
+      type: 'usage.reported' as const,
+      payload: {
+        model,
+        usage: { inputTokens: 4, outputTokens: 2 },
+        auxiliary: true as const,
+      },
+    }
+    const next = reduceSession(view, auxiliary)
+    expect(next.contextTokens).toBe(13)
+    expect(next.usage).toEqual({ inputTokens: 14, outputTokens: 5 })
+    expect(next.runs[RUN]?.usage).toEqual({ inputTokens: 14, outputTokens: 5 })
+    expect(next.usageByTurn['t1']).toEqual({ inputTokens: 14, outputTokens: 5 })
+
+    const alone = reduceSession(createSessionView(SID), { ...auxiliary, seq: 1 })
+    expect(alone.contextTokens).toBeUndefined()
+    expect(alone.usage).toEqual({ inputTokens: 4, outputTokens: 2 })
+  })
+
   it('sessionStatus 为 idle', () => {
     expect(sessionStatus(view)).toBe('idle')
   })

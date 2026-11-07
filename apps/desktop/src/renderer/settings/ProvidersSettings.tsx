@@ -8,6 +8,7 @@
  *   （开关、默认、上下文长度、能力；拉取模型列表或手动添加）、高级选项（兼容参数，只对 OpenAI 格式）。
  * - 改动在“保存”时一起提交：配置经 `settings.update`，新填的 Key 经 `credentials.set`。测试连接与拉取模型
  *   用当前的草稿和新填的 Key，不需要先保存。
+ * - 顶部选择辅助模型（M3-01）；没有选择时，标题等短任务使用会话的主模型。
  * - 不显示单价与任何金额（规范 §10）。
  */
 import { findTemplate } from '@cairn/core'
@@ -15,6 +16,7 @@ import type {
   ErrorInfo,
   ModelCompat,
   ModelProfile,
+  ModelRef,
   ProviderConfig,
   ProviderKind,
   RemoteModel,
@@ -1022,6 +1024,57 @@ function ProviderEditor({
   )
 }
 
+const modelKey = (model: ModelRef) => JSON.stringify([model.providerId, model.modelId])
+
+/** 辅助模型（M3-01）：没有选择时，标题等短任务使用会话的主模型。 */
+function AuxiliaryModel({ providers }: { readonly providers: readonly ProviderConfig[] }) {
+  const { t } = useTranslation('settings')
+  const id = useId()
+  const settings = useSessionStore((s) => s.settings)
+  const updateSettings = useSessionStore((s) => s.updateSettings)
+  const current = settings?.auxiliaryModel
+  const options = providers.flatMap((provider) =>
+    provider.models.map((model) => ({
+      key: modelKey({ providerId: provider.id, modelId: model.id }),
+      label: t('providers.auxiliary.option', {
+        provider: provider.displayName,
+        model: model.displayName ?? model.id,
+      }),
+    })),
+  )
+  const value =
+    current && options.some((option) => option.key === modelKey(current)) ? modelKey(current) : ''
+  return (
+    <SettingsCard>
+      <Field
+        label={t('providers.auxiliary.label')}
+        labelFor={id}
+        hint={t('providers.auxiliary.hint')}
+      >
+        <select
+          id={id}
+          className={inputClass}
+          value={value}
+          onChange={(event) => {
+            const picked = options.find((option) => option.key === event.target.value)
+            const model = picked ? (JSON.parse(picked.key) as [string, string]) : undefined
+            void updateSettings({
+              auxiliaryModel: model ? { providerId: model[0], modelId: model[1] } : null,
+            })
+          }}
+        >
+          <option value="">{t('providers.auxiliary.same')}</option>
+          {options.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+    </SettingsCard>
+  )
+}
+
 export function ProvidersSettings() {
   const { t } = useTranslation('settings')
   const settings = useSessionStore((s) => s.settings)
@@ -1078,6 +1131,8 @@ export function ProvidersSettings() {
           {t('providers.add')}
         </Button>
       </div>
+
+      <AuxiliaryModel providers={providers} />
 
       {providers.length === 0 && selected !== 'new' ? (
         <SettingsCard className="items-start">

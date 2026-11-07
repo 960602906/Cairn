@@ -47,6 +47,7 @@
   "credentials.write_failed": "Failed to save the key",
   "credentials.decrypt_failed": "The saved key cannot be read. Please enter it again",
   "settings.invalid_default_model": "The default model is not one of the configured models",
+  "settings.invalid_auxiliary_model": "The auxiliary model is not one of the configured models",
   "session.unknown_model": "The selected model is not configured",
   "path.empty": "The path is empty",
   "path.invalid_character": "The path contains characters that are not allowed",

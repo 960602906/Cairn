@@ -404,4 +404,51 @@ describe('model settings', () => {
     expect(settings.credentialRef({ providerId: 'ollama', modelId: 'qwen3' })).toBeUndefined()
     expect(settings.credentialRef({ providerId: 'fake', modelId: 'x' })).toBeUndefined()
   })
+
+  it('saves, clears and drops the auxiliary model the same way as the default (M3-01)', () => {
+    const { settings } = setup()
+    const auxiliary = { providerId: 'ollama', modelId: 'qwen3' }
+    expect(
+      settings.update({
+        providers: [deepseek, ollama],
+        defaultModel: ref,
+        auxiliaryModel: auxiliary,
+      }),
+    ).toMatchObject({ defaultModel: ref, auxiliaryModel: auxiliary })
+    expect(read()).toEqual({ defaultModel: ref, auxiliaryModel: auxiliary })
+
+    expect(settings.update({ auxiliaryModel: null })).toMatchObject({ defaultModel: ref })
+    expect(settings.get()).not.toHaveProperty('auxiliaryModel')
+    expect(read()).toEqual({ defaultModel: ref })
+
+    settings.update({ auxiliaryModel: auxiliary })
+    // 删除辅助模型所在的提供方时只清除辅助模型
+    expect(settings.update({ providers: [deepseek] })).toMatchObject({ defaultModel: ref })
+    expect(settings.get()).not.toHaveProperty('auxiliaryModel')
+    expect(read()).toEqual({ defaultModel: ref })
+
+    let thrown: unknown
+    try {
+      settings.update({ auxiliaryModel: auxiliary })
+    } catch (error) {
+      thrown = error
+    }
+    expect((thrown as RpcError).toInfo()).toMatchObject({
+      code: 'settings.invalid_auxiliary_model',
+      params: auxiliary,
+    })
+    expect(settings.get()).not.toHaveProperty('auxiliaryModel')
+  })
+
+  it('ignores an invalid auxiliary model stored in the file', () => {
+    const { storage } = setup()
+    storage.providers.replaceAll([deepseek])
+    writeFileSync(
+      file,
+      JSON.stringify({ defaultModel: ref, auxiliaryModel: { providerId: 'gone', modelId: 'm' } }),
+    )
+    const settings = createSettingsService({ storage, file, systemLocales: () => ['zh-CN'] })
+    expect(settings.get().defaultModel).toEqual(ref)
+    expect(settings.get()).not.toHaveProperty('auxiliaryModel')
+  })
 })

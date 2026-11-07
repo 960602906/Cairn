@@ -198,7 +198,14 @@ function reduceInto(
   return {
     views: { ...state.views, [sessionId]: view },
     awaitingTurn,
-    sessions: withStatus(state.sessions, sessionId, displayStatus({ awaitingTurn }, view)),
+    sessions: state.sessions.map((session) => {
+      if (session.sessionId !== sessionId) return session
+      const status = displayStatus({ awaitingTurn }, view)
+      const title = view.info ? view.info.title : session.title
+      return session.status === status && session.title === title
+        ? session
+        : { ...session, status, title }
+    }),
   }
 }
 

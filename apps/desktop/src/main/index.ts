@@ -45,6 +45,7 @@ import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
+import { createTitleService } from './services/title-service.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
 import { createShellInfo } from './services/shell-info.js'
@@ -169,6 +170,14 @@ const sessions = createSessionManager({
   onError: reportError,
 })
 sessions.recoverInterrupted()
+/** 自动标题（M3-01）：第一轮结束后用辅助模型生成，失败只写日志。 */
+const titles = createTitleService({
+  events,
+  storage,
+  settings,
+  credentials,
+  onError: reportError,
+})
 /** 项目（M1-16a）：系统的选择文件夹对话框（e2e 中替换 `dialog.showOpenDialog`）。 */
 const projects = createProjectService({
   storage,
@@ -272,6 +281,7 @@ app.on('before-quit', (event) => {
   if (servicesClosed) return
   event.preventDefault()
   servicesClosed = true
+  titles.stop()
   gateway.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
   void Promise.race([sessions.shutdown(), timeout])

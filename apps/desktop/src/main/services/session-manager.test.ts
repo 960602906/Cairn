@@ -225,7 +225,7 @@ describe('create and list', () => {
     expect(published.at(-1)).toMatchObject({
       type: 'session.renamed',
       runId: sessionId,
-      payload: { title: 'New' },
+      payload: { title: 'New', source: 'user' },
     })
     expect(() => manager.rename({ sessionId: 'missing', title: 'x' })).toThrow(
       expect.objectContaining({ code: 'storage.not_found' }),

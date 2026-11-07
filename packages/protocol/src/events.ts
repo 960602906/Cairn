@@ -79,7 +79,14 @@ const payloadSchemas = {
     /** 会话使用的模型（M1-04a）。 */
     model: ModelRef.optional(),
   }),
-  'session.renamed': z.object({ title: z.string() }),
+  /**
+   * 重命名会话。`source` 为 `auto` 时是自动标题（M3-01）；省略或 `user` 表示用户改过，
+   * 之后不再自动改标题。
+   */
+  'session.renamed': z.object({
+    title: z.string(),
+    source: z.enum(['user', 'auto']).optional(),
+  }),
   /** 会话换了模型（M2-04），从下一轮起使用。 */
   'session.model.changed': z.object({ model: ModelRef }),
   'session.crashed': z.object({ error: ErrorInfo }),
@@ -213,7 +220,15 @@ const payloadSchemas = {
   }),
 
   // ---------- 其他 ----------
-  'usage.reported': z.object({ model: ModelRef, usage: TokenUsage }),
+  /**
+   * 一次模型调用的用量。`auxiliary`（M3-01）表示辅助模型：计入会话 token 统计，
+   * 不更新上下文圆环（圆环只看主模型最近一次用量）。
+   */
+  'usage.reported': z.object({
+    model: ModelRef,
+    usage: TokenUsage,
+    auxiliary: z.literal(true).optional(),
+  }),
   'context.compacted': z.object({
     summary: z.string(),
     coversTurns: z.tuple([Id, Id]),
