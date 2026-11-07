@@ -21,12 +21,16 @@ import { randomUUID } from 'node:crypto'
 import { basename, isAbsolute } from 'node:path'
 import {
   acceptsInput,
+  compactionEventPayload,
+  compactConversation,
+  coveredSeqRange,
   createSessionView,
   isActiveRunState,
   rebuildHistory,
   reduceSessionEvents,
   rootRun,
   sessionStatus,
+  type CompactionBudget,
   type RunView,
   type SessionView,
 } from '@cairn/core'
@@ -66,6 +70,10 @@ export interface SessionManagerOptions {
   readonly maxConcurrent?: number
   /** 宿主空闲多久后回收，默认 5 分钟。 */
   readonly idleTimeoutMs?: number
+  /** 压缩时总结更早的对话（M3-03）。没有时，手动压缩只在历史超限且能丢掉工具输出时生效。 */
+  readonly summarize?: (sessionId: string, transcript: string) => Promise<string | undefined>
+  /** 这个会话的压缩预算。省略时用一个很大的窗口，手动压缩仍会总结更早的轮次。 */
+  readonly contextBudget?: (sessionId: string) => CompactionBudget
   readonly createId?: () => string
   readonly now?: () => number
   readonly onError?: (error: unknown) => void
@@ -454,6 +462,46 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         pump()
       }
       return { messageId }
+    },
+
+    async compact({ sessionId }) {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      requireSession(sessionId)
+      if (options.isLocked?.(sessionId)) throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      const slot = slots.get(sessionId)
+      if (waiting.has(sessionId) || (slot && slot.handle?.state() !== 'running')) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      if (slot?.handle) return { compacted: await slot.handle.compact() }
+      const recorded = events.readAfter(sessionId, 0)
+      const root = rootRun(getView(sessionId))
+      if (!root) return { compacted: false }
+      const history = rebuildHistory(recorded, { runId: root.runId })
+      const summarize = options.summarize
+      const outcome = await compactConversation({
+        messages: history,
+        budget: options.contextBudget?.(sessionId) ?? {
+          contextWindow: 128_000,
+          maxOutputTokens: 4_096,
+          overheadTokens: 0,
+        },
+        force: true,
+        ...(summarize
+          ? { summarize: (transcript: string) => summarize(sessionId, transcript) }
+          : {}),
+        now: now(),
+      })
+      if (outcome.kind === 'none') return { compacted: false }
+      const payload = compactionEventPayload(outcome)
+      const range = coveredSeqRange(recorded, outcome.coversTurns)
+      events.publish([
+        {
+          ...header(sessionId, root.runId),
+          type: 'context.compacted',
+          payload: range ? { ...payload, replacedSeq: [range[0], range[1]] } : payload,
+        },
+      ])
+      return { compacted: true }
     },
 
     async abort({ sessionId }) {

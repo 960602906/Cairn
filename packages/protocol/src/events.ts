@@ -248,9 +248,20 @@ const payloadSchemas = {
     usage: TokenUsage,
     auxiliary: z.literal(true).optional(),
   }),
+  /**
+   * 上下文已压缩（M3-03，Runtime §8.3）。原始事件保留，界面仍显示完整历史。
+   * `degraded`：摘要失败，改成丢掉 `omittedToolCallIds` 的工具输出。
+   * `replacedSeq` 是被摘要替换的事件 seq 范围（含端点）。`tokensBefore` / `tokensAfter`
+   * 是压缩前后的估算占用（系统提示词、工具定义与历史）。
+   */
   'context.compacted': z.object({
     summary: z.string(),
     coversTurns: z.tuple([Id, Id]),
+    replacedSeq: z.tuple([z.number().int().positive(), z.number().int().positive()]).optional(),
+    tokensBefore: z.number().int().nonnegative().optional(),
+    tokensAfter: z.number().int().nonnegative().optional(),
+    degraded: z.literal(true).optional(),
+    omittedToolCallIds: z.array(Id).optional(),
   }),
   'model.fallback': z.object({ from: ModelRef, to: ModelRef, error: ErrorInfo }),
   /**

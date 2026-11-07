@@ -285,6 +285,10 @@ class FakeSession implements RuntimeSession {
     // 假运行时不发模型请求。调用方每轮都会换提示词，这里收下，避免它去找不存在的方法。
   }
 
+  replaceMessages(messages: readonly CanonicalMessage[]): void {
+    this.#history.splice(0, this.#history.length, ...messages)
+  }
+
   async steer(input: UserMessage): Promise<void> {
     this.#history.push(input)
   }
@@ -352,6 +356,13 @@ class FakeSession implements RuntimeSession {
 
   /** 返回 true 表示本轮已结束。 */
   async #runStep(step: FakeStep, signal: AbortSignalLike): Promise<boolean> {
+    const hook = this.#init.hooks.beforeModelCall
+    if (hook) {
+      const next = await hook({ systemPrompt: this.#init.systemPrompt, messages: this.#history })
+      if (next.messages !== this.#history) {
+        this.#history.splice(0, this.#history.length, ...next.messages)
+      }
+    }
     const model = this.#init.model.ref
     this.#checkAborted()
     this.#emit({ type: 'step.started', model })

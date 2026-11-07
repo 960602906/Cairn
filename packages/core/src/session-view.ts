@@ -238,6 +238,14 @@ export interface SessionView {
    * 最近一轮读到的项目说明（M3-02）。这一轮没读到时不出现，顶栏的标记随之消失。
    */
   readonly agentsMd?: { readonly lines: number; readonly truncated: boolean }
+  /**
+   * 最近一次成功的上下文压缩（M3-03）。原始消息仍在 `messages` 里；界面在这条事件的 seq 处画分隔线。
+   */
+  readonly compaction?: { readonly summary: string; readonly seq: number }
+  /**
+   * 摘要失败、丢掉工具输出后的那一次提示（M3-03）。只记第一次。
+   */
+  readonly toolOutputOmitted?: { readonly seq: number }
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -568,6 +576,17 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         model,
         incomplete: incomplete ?? false,
       })
+    }
+
+    case 'context.compacted': {
+      const { summary, tokensAfter, degraded, omittedToolCallIds } = event.payload
+      const dropping = degraded === true || (omittedToolCallIds?.length ?? 0) > 0
+      return {
+        ...view,
+        ...(tokensAfter === undefined ? {} : { contextTokens: tokensAfter }),
+        ...(!degraded && summary.trim() !== '' ? { compaction: { summary, seq: event.seq } } : {}),
+        ...(view.toolOutputOmitted || !dropping ? {} : { toolOutputOmitted: { seq: event.seq } }),
+      }
     }
 
     case 'usage.reported': {

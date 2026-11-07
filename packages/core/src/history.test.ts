@@ -68,7 +68,7 @@ describe('rebuildHistory', () => {
       ev('turn.completed', { durationMs: 1 }),
     ])
     expect(history).toEqual([
-      { role: 'user', content: text('你好'), ts: 20 },
+      { role: 'user', content: text('你好'), ts: 20, turnId: 't1' },
       {
         role: 'assistant',
         content: text('你好！'),
@@ -141,7 +141,7 @@ describe('rebuildHistory', () => {
       }),
       ev('turn.aborted', { reason: 'user' }),
     ])
-    expect(history).toEqual([{ role: 'user', content: text('写一段'), ts: 20 }])
+    expect(history).toEqual([{ role: 'user', content: text('写一段'), ts: 20, turnId: 't1' }])
   })
 
   it('空的 toolCalls 不写入助手消息', () => {
@@ -381,5 +381,89 @@ describe('rebuildHistory', () => {
       'assistant',
       'tool:c3:error',
     ])
+  })
+
+  it('用最后一次压缩替换被覆盖的轮次，而不是重放原始消息', () => {
+    const ev = stream()
+    const history = rebuild([
+      ev('message.user', { messageId: 'u1', content: text('早') }, { turnId: 't1' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a1', content: text('一'), model },
+        { turnId: 't1' },
+      ),
+      ev('message.user', { messageId: 'u2', content: text('中') }, { turnId: 't2' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a2', content: text('二'), model },
+        { turnId: 't2' },
+      ),
+      ev('message.user', { messageId: 'u3', content: text('晚') }, { turnId: 't3' }),
+      ev('context.compacted', { summary: '只剩目标', coversTurns: ['t1', 't2'] }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a3', content: text('三'), model },
+        { turnId: 't3' },
+      ),
+    ])
+    expect(roles(history)).toEqual(['summary', 'user', 'assistant'])
+    expect(history[0]).toMatchObject({
+      role: 'summary',
+      content: '只剩目标',
+      coversTurns: ['t1', 't2'],
+    })
+    expect(history[1]).toMatchObject({ role: 'user', turnId: 't3' })
+  })
+
+  it('再次压缩时用新摘要换掉上一次的摘要', () => {
+    const ev = stream()
+    const history = rebuild([
+      ev('message.user', { messageId: 'u1', content: text('早') }, { turnId: 't1' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a1', content: text('一'), model },
+        { turnId: 't1' },
+      ),
+      ev('context.compacted', { summary: '第一次', coversTurns: ['t1', 't1'] }),
+      ev('message.user', { messageId: 'u2', content: text('中') }, { turnId: 't2' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a2', content: text('二'), model },
+        { turnId: 't2' },
+      ),
+      ev('message.user', { messageId: 'u3', content: text('晚') }, { turnId: 't3' }),
+      ev('context.compacted', { summary: '第二次', coversTurns: ['t1', 't2'] }),
+    ])
+    expect(
+      history.map((message) => (message.role === 'summary' ? message.content : message.role)),
+    ).toEqual(['第二次', 'user'])
+  })
+
+  it('摘要失败时把点名的工具输出换成省略说明', () => {
+    const ev = stream()
+    const history = rebuild([
+      ev('message.assistant.completed', {
+        messageId: 'a1',
+        content: [],
+        toolCalls: [call('c1')],
+        model,
+      }),
+      ev('tool.completed', { toolCallId: 'c1', output: text('secret'), durationMs: 1 }),
+      ev('context.compacted', {
+        summary: '',
+        coversTurns: ['t1', 't1'],
+        degraded: true,
+        omittedToolCallIds: ['c1'],
+      }),
+    ])
+    expect(history[1]).toMatchObject({
+      role: 'tool',
+      content: [
+        {
+          type: 'text',
+          text: 'Tool output omitted to free context space. The call itself still happened; do not assume its output.',
+        },
+      ],
+    })
   })
 })

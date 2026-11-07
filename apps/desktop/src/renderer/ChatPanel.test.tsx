@@ -126,6 +126,44 @@ describe('ChatPanel', () => {
     expect(screen.queryByLabelText(/已加载项目说明/)).toBeNull()
   })
 
+  it('shows a compaction divider that expands to the summary, and the omission note once', async () => {
+    const { open } = setup({
+      history: [
+        ...HISTORY,
+        ev(9, 'context.compacted', {
+          summary: '只剩目标',
+          coversTurns: ['t1', 't1'],
+          tokensAfter: 12,
+        }),
+        ev(10, 'context.compacted', {
+          summary: '',
+          coversTurns: ['t1', 't1'],
+          degraded: true,
+          omittedToolCallIds: ['c1'],
+        }),
+      ],
+    })
+    await open()
+    expect(messages().slice(0, 2)).toEqual(['你你好', '助手你好！fake-1'])
+    expect(screen.getByRole('button', { name: /较早的对话已压缩/ })).toBeTruthy()
+    expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeTruthy()
+    expect(screen.queryByText('只剩目标')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /较早的对话已压缩/ }))
+    expect(screen.getByText('只剩目标')).toBeTruthy()
+  })
+
+  it('sends /compact as a compaction, not a user message', async () => {
+    const { request, open } = setup({
+      history: HISTORY,
+      handlers: { 'session.compact': () => ({ compacted: true }) },
+    })
+    await open()
+    await userEvent.type(input(), '/compact{Enter}')
+    expect(request).toHaveBeenCalledWith('session.compact', { sessionId: 's1' })
+    expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
+    expect(input().value).toBe('')
+  })
+
   it('shows the replayed history of the selected session', async () => {
     const { request, open } = setup({ history: HISTORY })
     await open()

@@ -256,6 +256,20 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       checkpoints,
       onCheckpointError: onError,
       ...(options.retry ? { retry: options.retry } : {}),
+      summarize: async (transcript) => {
+        try {
+          const result = await endpoint.request(
+            'host.summarize',
+            { transcript },
+            { timeoutMs: 120_000 },
+          )
+          return result.text
+        } catch (error) {
+          // 测试里的主进程没有这个接口。其他错误只记日志，这一次不写摘要。
+          if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+          return undefined
+        }
+      },
     })
     supervisor.onEvent((event) => endpoint.emit('host.event', { event }))
     run = await supervisor.createRun({
@@ -281,6 +295,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     await requireRun().abort(reason)
     return {}
   })
+
+  endpoint.handle('host.compact', async () => ({ compacted: await requireRun().compact() }))
 
   endpoint.handle('host.shutdown', async () => {
     await supervisor?.abortAll('shutdown')

@@ -1322,3 +1322,41 @@ describe('RunEngine：每轮开始的检查点（M1-12b）', () => {
     expect(engine.state).toBe('idle')
   })
 })
+
+describe('RunEngine：上下文压缩（M3-03）', () => {
+  const turn = (body: string): FakeScript['turns'][number] => ({
+    steps: [{ kind: 'reply', text: body }],
+  })
+
+  it('短对话不压缩；手动压缩后下一轮仍带着摘要', async () => {
+    const seen: string[] = []
+    const summarize = vi.fn(async (transcript: string) => {
+      seen.push(transcript)
+      return 'SUM'
+    })
+    const runtime = fake({ turns: [turn('一'), turn('二'), turn('三'), turn('四')] })
+    const { engine, events } = await start(runtime, { summarize })
+    await engine.prompt({ messageId: 'm1', content: text('第一') })
+    await engine.prompt({ messageId: 'm2', content: text('第二') })
+    await engine.prompt({ messageId: 'm3', content: text('第三') })
+    expect(events.some((event) => event.type === 'context.compacted')).toBe(false)
+    expect(summarize).not.toHaveBeenCalled()
+
+    expect(await engine.compact()).toBe(true)
+    expect(events.find((event) => event.type === 'context.compacted')).toMatchObject({
+      type: 'context.compacted',
+      payload: { summary: 'SUM' },
+    })
+    await engine.prompt({ messageId: 'm4', content: text(`${'word '.repeat(8_000)}第四`) })
+    expect(seen.at(-1)).toContain('SUM')
+    expect(events.filter((event) => event.type === 'context.compacted').length).toBeGreaterThan(1)
+  })
+
+  it('只有一两轮时手动压缩什么都不做', async () => {
+    const summarize = vi.fn(async () => 'SUM')
+    const { engine } = await start(fake({ turns: [turn('一')] }), { summarize })
+    await engine.prompt({ messageId: 'm1', content: text('只有一轮') })
+    expect(await engine.compact()).toBe(false)
+    expect(summarize).not.toHaveBeenCalled()
+  })
+})

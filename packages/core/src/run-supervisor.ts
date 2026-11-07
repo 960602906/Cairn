@@ -85,6 +85,8 @@ export interface AgentRunHandle {
   readonly workspace: WorkspaceInfo
   /** 本次输入对应的轮次结束后 resolve。 */
   send(input: RunInput, mode?: SendMode): Promise<void>
+  /** 立刻压缩上下文（M3-03）。排在已有输入之后；返回是否压缩了或已排上。 */
+  compact(): Promise<boolean>
   abort(reason?: 'user' | 'shutdown'): Promise<void>
   resolveApproval(approvalId: string, decision: ApprovalDecision): void
   updateLimits(limits: Partial<RunLimits>): void
@@ -111,6 +113,8 @@ export interface RunSupervisorOptions {
   readonly systemPrompt?: string
   /** 每轮开始前准备系统提示词和 `turn.started` 上下文（M3-02）。 */
   readonly prepareTurn?: () => Promise<TurnPreparation | undefined>
+  /** 上下文压缩的摘要（M3-03）。 */
+  readonly summarize?: (transcript: string) => Promise<string | undefined>
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
@@ -158,6 +162,15 @@ class RunHandle implements AgentRunHandle {
     const job = this.#queue.then(() => this.#engine.prompt(input))
     // 一次输入失败（例如运行已释放）不影响之后的排队输入
     this.#queue = job.catch(() => {})
+    return job
+  }
+
+  compact(): Promise<boolean> {
+    const job = this.#queue.then(() => this.#engine.compact())
+    this.#queue = job.then(
+      () => {},
+      () => {},
+    )
     return job
   }
 
@@ -210,6 +223,7 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
         model: options.model,
         ...(options.systemPrompt === undefined ? {} : { systemPrompt: options.systemPrompt }),
         ...(options.prepareTurn ? { prepareTurn: options.prepareTurn } : {}),
+        ...(options.summarize ? { summarize: options.summarize } : {}),
         ...(options.tools ? { tools: options.tools } : {}),
         ...(options.executeTool ? { executeTool: options.executeTool } : {}),
         ...(options.toolPipeline ? { toolPipeline: options.toolPipeline } : {}),

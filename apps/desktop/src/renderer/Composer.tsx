@@ -276,6 +276,7 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
+  const compactSession = useSessionStore((s) => s.compactSession)
   const abort = useSessionStore((s) => s.abort)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -298,7 +299,8 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
     const draft = text
     setText('')
     setSending(true)
-    const sent = await sendPrompt(draft)
+    // /compact 立刻压缩，不作为用户消息发给模型。
+    const sent = draft.trim() === '/compact' ? await compactSession() : await sendPrompt(draft)
     setSending(false)
     if (!sent) setText((current) => (current === '' ? draft : current))
   }

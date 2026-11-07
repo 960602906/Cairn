@@ -37,8 +37,9 @@ import {
   type ShellPreference,
   type RequestOptions,
   type RpcEndpoint,
+  type UnsequencedEvent,
 } from '@cairn/protocol'
-import type { ResolvedCredential } from '@cairn/core'
+import { coveredSeqRange, type ResolvedCredential } from '@cairn/core'
 import type { z } from 'zod'
 import type { SessionEventService } from './event-service.js'
 import type { HostProcess, SpawnHost } from './host-process.js'
@@ -81,6 +82,8 @@ export interface HostHandle {
   abort(reason: 'user' | 'shutdown'): Promise<void>
   /** 重新汇总权限规则并交给宿主（`host.permissions.update`，M1-11b）：新增规则或切换模式之后调用。 */
   refreshPermissions(): Promise<void>
+  /** 立刻压缩上下文（M3-03）。宿主空闲时马上做；轮次还在跑时排到它结束之后。 */
+  compact(): Promise<boolean>
   /** 请求宿主正常退出；超时后强制结束。重复调用返回同一个 Promise。 */
   stop(): Promise<HostExit>
   /** 宿主结束（正常停止或崩溃）时 resolve。 */
@@ -89,7 +92,13 @@ export interface HostHandle {
 
 export interface HostSupervisorOptions {
   readonly spawn: SpawnHost
-  readonly events: Pick<SessionEventService, 'publish'>
+  readonly events: Pick<SessionEventService, 'publish'> &
+    Partial<Pick<SessionEventService, 'readAfter'>>
+  /**
+   * 压缩时总结更早的对话（M3-03）。由主进程调用辅助模型。没有可用模型时返回 undefined，
+   * 宿主改为丢掉最早的工具输出。
+   */
+  readonly summarize?: (sessionId: string, transcript: string) => Promise<string | undefined>
   /** 按模型解析凭据（M1-03b）；没有保存凭据时返回 undefined。省略表示不传凭据。 */
   readonly resolveCredential?: (model: HostInit['model']) => Promise<ResolvedCredential | undefined>
   /**
@@ -159,6 +168,20 @@ export interface HostSupervisor {
 }
 
 type Timer = ReturnType<typeof setTimeout>
+
+/** 主进程知道 seq，宿主不知道。压缩事件的被替换范围在落库前补上。 */
+function compactionWithRange(
+  events: HostSupervisorOptions['events'],
+  sessionId: string,
+  event: UnsequencedEvent,
+): UnsequencedEvent {
+  if (event.type !== 'context.compacted' || event.payload.replacedSeq !== undefined) return event
+  const readAfter = events.readAfter
+  if (!readAfter) return event
+  const range = coveredSeqRange(readAfter(sessionId, 0), event.payload.coversTurns)
+  if (!range) return event
+  return { ...event, payload: { ...event.payload, replacedSeq: [range[0], range[1]] } }
+}
 
 export function createHostSupervisor(options: HostSupervisorOptions): HostSupervisor {
   const startTimeoutMs = options.startTimeoutMs ?? 10_000
@@ -251,6 +274,11 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
           })
       })
 
+      endpoint.handle('host.summarize', async ({ transcript }) => {
+        const text = await options.summarize?.(sessionId, transcript)
+        return text ? { text } : {}
+      })
+
       endpoint.handle('host.agentsMd', () => {
         const loaded = options.loadAgentsMd?.(sessionId)
         if (!loaded) return {}
@@ -292,7 +320,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
           return
         }
         try {
-          options.events.publish([event])
+          options.events.publish([compactionWithRange(options.events, sessionId, event)])
         } catch (e) {
           options.onError?.(e)
         }
@@ -378,6 +406,10 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         state: () => state,
         prompt: (params) => call('host.prompt', params),
         abort: (reason) => call('host.abort', { reason }),
+        compact: async () => {
+          const result = await endpoint.request('host.compact', {}, { timeoutMs: 120_000 })
+          return result.compacted
+        },
         async refreshPermissions() {
           if (state !== 'running' || !options.resolvePermissionRules) return
           await endpoint.request('host.permissions.update', {

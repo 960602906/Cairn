@@ -253,6 +253,51 @@ describe('reduceSession：一轮完整对话', () => {
     expect(alone.usage).toEqual({ inputTokens: 4, outputTokens: 2 })
   })
 
+  it('压缩后圆环立刻下降，消息仍在，失败提示只出现一次（M3-03）', () => {
+    const base = {
+      v: 1 as const,
+      sessionId: SID,
+      runId: RUN,
+      turnId: 't1',
+      ts: 1,
+    }
+    const compacted = reduceSession(view, {
+      ...base,
+      seq: view.lastSeq + 1,
+      type: 'context.compacted',
+      payload: {
+        summary: '只剩目标',
+        coversTurns: ['t1', 't1'] as [string, string],
+        tokensAfter: 40,
+      },
+    })
+    expect(compacted.compaction).toEqual({ summary: '只剩目标', seq: view.lastSeq + 1 })
+    expect(compacted.contextTokens).toBe(40)
+    expect(compacted.messages).toBe(view.messages)
+
+    const firstDrop = reduceSession(view, {
+      ...base,
+      seq: view.lastSeq + 2,
+      type: 'context.compacted',
+      payload: {
+        summary: '',
+        coversTurns: ['t1', 't1'] as [string, string],
+        degraded: true,
+        omittedToolCallIds: ['c1'],
+        tokensAfter: 20,
+      },
+    })
+    expect(firstDrop.toolOutputOmitted).toEqual({ seq: view.lastSeq + 2 })
+    expect(firstDrop.compaction).toBeUndefined()
+    const again = reduceSession(firstDrop, {
+      ...base,
+      seq: view.lastSeq + 3,
+      type: 'context.compacted',
+      payload: { summary: '', coversTurns: ['t1', 't1'] as [string, string], degraded: true },
+    })
+    expect(again.toolOutputOmitted).toEqual({ seq: view.lastSeq + 2 })
+  })
+
   it('sessionStatus 为 idle', () => {
     expect(sessionStatus(view)).toBe('idle')
   })

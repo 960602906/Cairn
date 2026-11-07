@@ -199,6 +199,11 @@ export const MainForRenderer = defineSide({
       params: z.object({ sessionId: Id, content: z.array(ContentPart).min(1) }),
       result: z.object({ messageId: Id }),
     },
+    /** 立刻压缩这个会话的上下文（M3-03）。不是一轮对话，不写用户消息。 */
+    'session.compact': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ compacted: z.boolean() }),
+    },
     'session.abort': {
       params: z.object({ sessionId: Id }),
       result: z.object({}),

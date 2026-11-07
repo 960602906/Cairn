@@ -122,7 +122,13 @@ export type RunLimits = z.infer<typeof RunLimits>
  * 由事件推导，也用于 `host.init` 传递历史与 `run_snapshots` 快照。
  */
 export const CanonicalMessage = z.discriminatedUnion('role', [
-  z.object({ role: z.literal('user'), content: z.array(ContentPart), ts: Timestamp }),
+  z.object({
+    role: z.literal('user'),
+    content: z.array(ContentPart),
+    ts: Timestamp,
+    /** 这一轮的 id（M3-03）。压缩按轮次切开时用；旧历史没有。 */
+    turnId: Id.optional(),
+  }),
   z.object({
     role: z.literal('assistant'),
     content: z.array(ContentPart),
