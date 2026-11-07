@@ -63,11 +63,15 @@ function setup(initial: Partial<Settings> = {}, handlers: Record<string, Handler
       case 'settings.update': {
         const patch = params as SettingsPatch
         updates.push(patch)
-        settings = {
+        const next: Settings = {
           ...settings,
           ...(patch.providers ? { providers: patch.providers } : {}),
           ...(patch.defaultModel ? { defaultModel: patch.defaultModel } : {}),
+          ...(patch.auxiliaryModel ? { auxiliaryModel: patch.auxiliaryModel } : {}),
         }
+        if (patch.defaultModel === null) delete next.defaultModel
+        if (patch.auxiliaryModel === null) delete next.auxiliaryModel
+        settings = next
         return settings
       }
       case 'credentials.status': {
@@ -347,5 +351,30 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: '删除供应商' }))
     await waitFor(() => expect(updates).toEqual([{ providers: [gateway] }]))
     expect(await screen.findByRole('region', { name: '公司网关' })).toBeTruthy()
+  })
+
+  it('sets the auxiliary model and clears it back to the main model (M3-01)', async () => {
+    const { updates } = setup({
+      providers: [deepseek, gateway],
+      defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
+      auxiliaryModel: { providerId: 'gw', modelId: 'claude-x' },
+    })
+    await open()
+    const select = screen.getByLabelText('辅助模型') as HTMLSelectElement
+    expect(select.value).toBe(JSON.stringify(['gw', 'claude-x']))
+    expect(screen.getByRole('option', { name: '与主模型相同' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'DeepSeek · DeepSeek V4.1 Flash' })).toBeTruthy()
+
+    await userEvent.selectOptions(select, JSON.stringify(['deepseek', 'deepseek-v4-pro']))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).toEqual({
+      auxiliaryModel: { providerId: 'deepseek', modelId: 'deepseek-v4-pro' },
+    })
+    expect(select.value).toBe(JSON.stringify(['deepseek', 'deepseek-v4-pro']))
+
+    await userEvent.selectOptions(select, '')
+    await waitFor(() => expect(updates).toHaveLength(2))
+    expect(updates[1]).toEqual({ auxiliaryModel: null })
+    expect(select.value).toBe('')
   })
 })

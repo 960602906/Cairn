@@ -375,7 +375,11 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       const next = title.trim()
       storage.sessions.rename(sessionId, next)
       events.publish([
-        { ...header(sessionId, sessionId), type: 'session.renamed', payload: { title: next } },
+        {
+          ...header(sessionId, sessionId),
+          type: 'session.renamed',
+          payload: { title: next, source: 'user' },
+        },
       ])
       return {}
     },

@@ -184,6 +184,20 @@ describe('subscription', () => {
     expect(store.getState().sessions.map((s) => s.status)).toEqual(['running', 'idle'])
   })
 
+  it('updates the list title when the session is renamed, including an automatic title', async () => {
+    const { api, emit } = fakeApi({
+      'session.list': () => ({ sessions: [summary('s1')] }),
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshSessions()
+    await store.getState().selectSession('s1')
+    expect(store.getState().sessions[0]?.title).toBe('')
+    emit('s1', [ev('s1', 2, 'session.renamed', { title: '整理日志', source: 'auto' })])
+    expect(store.getState().views['s1']?.info?.title).toBe('整理日志')
+    expect(store.getState().sessions[0]?.title).toBe('整理日志')
+  })
+
   it('applies live events that arrive before the backfill after it', async () => {
     let emitLive = () => {}
     const { api, emit } = fakeApi({

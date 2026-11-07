@@ -225,8 +225,9 @@ export interface SessionView {
   /** 各轮的用量（M2-03，界面在轮次操作中显示 token 数），按 turnId 索引；没有 turnId 的用量不计入。 */
   readonly usageByTurn: Readonly<Record<string, TokenUsage>>
   /**
-   * 上下文占用（M2-04，输入框的圆环）：最近一次 `usage.reported` 的输入 + 输出 token 数，
-   * 即下一次请求大约要带上的上下文；还没有用量时为 undefined。
+   * 上下文占用（M2-04，输入框的圆环）：最近一次主模型 `usage.reported` 的输入 + 输出 token 数，
+   * 即下一次请求大约要带上的上下文；还没有用量时为 undefined。辅助模型用量（`auxiliary`，M3-01）
+   * 计入 `usage`，不更新这里。
    */
   readonly contextTokens: number | undefined
   /** 检查点，按创建顺序（M2-08）。 */
@@ -567,7 +568,9 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return {
         ...(withRun ?? view),
         usage: addUsage(view.usage, usage),
-        contextTokens: usage.inputTokens + usage.outputTokens,
+        contextTokens: event.payload.auxiliary
+          ? view.contextTokens
+          : usage.inputTokens + usage.outputTokens,
         ...(turnId === undefined
           ? {}
           : {
