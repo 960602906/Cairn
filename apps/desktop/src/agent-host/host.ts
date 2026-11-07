@@ -18,8 +18,9 @@
  * - 检查点（M1-12b）：`host.init` 带 `checkpoints` 且注入了 `openCheckpoints` 时，每轮开始与执行命令前
  *   在项目的影子仓库中创建（`checkpoints.ts`）；否则不创建。
  *
- * 系统提示词（M1-13b）：`buildSystemPrompt` 组装基础提示词、`host.init` 的自定义说明与环境信息（操作系统、
- * `registerTools` 给出的 shell、工作区、当前日期）。
+ * 系统提示词（M1-13b，M3-02）：`buildSystemPrompt` 组装基础提示词、`host.init` 的自定义说明与环境信息
+ * （操作系统、`registerTools` 给出的 shell、工作区、当前日期）。每轮开始再向主进程要一次 `AGENTS.md`，
+ * 换上这一轮的系统提示词。主进程没有这个接口时（测试）跳过，不记日志。
  *
  * 运行时与模型解析由入口注入，M1 换成 pi 适配器时这里不改。不依赖 Electron。
  */
@@ -191,8 +192,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     const toolEnvironment =
       (await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
     const hasTools = registry.list().length > 0
-    // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息
-    const systemPrompt = buildSystemPrompt({
+    // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息。项目说明每轮再补（M3-02）。
+    const promptBase = {
       tools: hasTools,
       environment: {
         os: operatingSystemName(options.platform ?? process.platform),
@@ -201,7 +202,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         date: localDate(now()),
       },
       ...(init.instructions ? { userInstructions: init.instructions } : {}),
-    })
+    }
+    const systemPrompt = buildSystemPrompt(promptBase)
     const toolPipeline = hasTools
       ? createToolPipeline({
           registry,
@@ -225,6 +227,28 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       model,
       limits: init.limits,
       systemPrompt,
+      prepareTurn: async () => {
+        let text: string | undefined
+        let context:
+          | { agentsMd: { sha256: string; bytes: number; truncated: boolean; lines: number } }
+          | undefined
+        try {
+          const loaded = await endpoint.request('host.agentsMd', {})
+          text = loaded.text
+          context = loaded.context
+        } catch (error) {
+          // 测试里的主进程没有这个接口。其他错误只记日志，这一轮不带项目说明。
+          if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+        }
+        return {
+          systemPrompt: buildSystemPrompt({
+            ...promptBase,
+            environment: { ...promptBase.environment, date: localDate(now()) },
+            ...(text ? { projectInstructions: text } : {}),
+          }),
+          ...(context ? { context } : {}),
+        }
+      },
       signal: shutdown.signal,
       createId: options.createId,
       now,

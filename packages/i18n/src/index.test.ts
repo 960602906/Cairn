@@ -134,6 +134,8 @@ describe('translateError', () => {
       'credentials.write_failed',
       'credentials.decrypt_failed',
       'project.invalid_path',
+      'project.not_found',
+      'project.invalid_name',
       'tool.not_found',
       'tool.invalid_input',
       'tool.execution_failed',

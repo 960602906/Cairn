@@ -47,6 +47,9 @@ interface ProjectRow {
   name: string
   path: string
   created_at: number
+  read_agents_md: number
+  enable_project_skills: number
+  removed_at: number | null
 }
 
 interface SessionRow {
@@ -170,6 +173,9 @@ const toProject = (row: ProjectRow): ProjectRecord => ({
   name: row.name,
   path: row.path,
   createdAt: row.created_at,
+  readAgentsMd: row.read_agents_md === 1,
+  enableProjectSkills: row.enable_project_skills === 1,
+  ...(row.removed_at === null ? {} : { removedAt: row.removed_at }),
 })
 
 const toSession = (row: SessionRow): SessionRecord => ({
@@ -229,10 +235,25 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     projectById: db.prepare<[string], ProjectRow>('SELECT * FROM projects WHERE project_id = ?'),
     projectByPath: db.prepare<[string], ProjectRow>('SELECT * FROM projects WHERE path = ?'),
     projects: db.prepare<[], ProjectRow>(
-      'SELECT * FROM projects ORDER BY created_at DESC, project_id',
+      'SELECT * FROM projects WHERE removed_at IS NULL ORDER BY created_at DESC, project_id',
     ),
     insertProject: db.prepare(
-      'INSERT INTO projects (project_id, name, path, created_at) VALUES (@projectId, @name, @path, @createdAt)',
+      `INSERT INTO projects
+         (project_id, name, path, created_at, read_agents_md, enable_project_skills)
+       VALUES (@projectId, @name, @path, @createdAt, 1, 0)`,
+    ),
+    updateProject: db.prepare(
+      `UPDATE projects SET
+         name = coalesce(@name, name),
+         read_agents_md = coalesce(@readAgentsMd, read_agents_md),
+         enable_project_skills = coalesce(@enableSkills, enable_project_skills)
+       WHERE project_id = @projectId AND removed_at IS NULL`,
+    ),
+    removeProject: db.prepare(
+      'UPDATE projects SET removed_at = @at WHERE project_id = @projectId AND removed_at IS NULL',
+    ),
+    restoreProject: db.prepare(
+      'UPDATE projects SET removed_at = NULL WHERE project_id = @projectId',
     ),
     sessionById: db.prepare<[string], SessionRow>('SELECT * FROM sessions WHERE session_id = ?'),
     sessions: db.prepare<{ projectId: string | null; includeArchived: number }, SessionRow>(
@@ -484,9 +505,8 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         if (q.projectByPath.get(input.path)) {
           throw new StorageError(StorageErrorCode.Conflict, { path: input.path })
         }
-        const record: ProjectRecord = { ...input, createdAt: now() }
-        q.insertProject.run(record)
-        return record
+        q.insertProject.run({ ...input, createdAt: now() })
+        return toProject(q.projectById.get(input.projectId)!)
       },
       get(projectId) {
         const row = q.projectById.get(projectId)
@@ -497,6 +517,29 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         return row && toProject(row)
       },
       list: () => q.projects.all().map(toProject),
+      update(projectId, patch) {
+        const info = q.updateProject.run({
+          projectId,
+          name: patch.name ?? null,
+          readAgentsMd: patch.readAgentsMd === undefined ? null : patch.readAgentsMd ? 1 : 0,
+          enableSkills:
+            patch.enableProjectSkills === undefined ? null : patch.enableProjectSkills ? 1 : 0,
+        })
+        if (info.changes === 0) throw new StorageError(StorageErrorCode.NotFound, { projectId })
+        return toProject(q.projectById.get(projectId)!)
+      },
+      remove(projectId) {
+        const info = q.removeProject.run({ projectId, at: now() })
+        if (info.changes === 0) throw new StorageError(StorageErrorCode.NotFound, { projectId })
+        return toProject(q.projectById.get(projectId)!)
+      },
+      restore(projectId) {
+        if (!q.projectById.get(projectId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { projectId })
+        }
+        q.restoreProject.run({ projectId })
+        return toProject(q.projectById.get(projectId)!)
+      },
     },
 
     sessions: {

@@ -64,6 +64,18 @@ export const ApprovalDecision = z.enum(['allow_once', 'allow_session', 'allow_pr
 export type ApprovalDecision = z.infer<typeof ApprovalDecision>
 
 /**
+ * 本轮读到的 `AGENTS.md`（M3-02）。`sha256` 是纳入提示词的字节（截断时是前缀）的哈希，
+ * `bytes` 是文件的完整大小，`lines` 是纳入的行数（不含截断说明）。
+ */
+export const AgentsMdContext = z.object({
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  bytes: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  lines: z.number().int().positive(),
+})
+export type AgentsMdContext = z.infer<typeof AgentsMdContext>
+
+/**
  * 每种事件的 payload schema。
  * M0 用到的事件（session / run / step / turn / message / usage）给出完整定义；
  * 其余事件给出当前设计确定的最小字段，后续阶段只能追加可选字段。
@@ -132,7 +144,14 @@ const payloadSchemas = {
   }),
 
   // ---------- 轮次（一次用户输入到 agent 结束） ----------
-  'turn.started': z.object({}),
+  /** 没有读到 `AGENTS.md` 时 `context` 不出现（M3-02）。 */
+  'turn.started': z.object({
+    context: z
+      .object({
+        agentsMd: AgentsMdContext.optional(),
+      })
+      .optional(),
+  }),
   'turn.completed': z.object({ durationMs: DurationMs }),
   'turn.aborted': z.object({ reason: z.enum(['user', 'shutdown', 'superseded']) }),
   'turn.failed': z.object({ error: ErrorInfo, retryable: z.boolean() }),

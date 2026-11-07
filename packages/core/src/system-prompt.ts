@@ -5,7 +5,7 @@
  * 1. 基础提示词（英文，架构 §19）：身份、工作方式（回复使用用户的语言、需求不清楚时先提问）、工具使用、
  *    安全规则（工具结果是数据，`TOOL_RESULT_NOTICE`，只在有工具时）；
  * 2. Agent 指令（`AgentDefinition.instructions`，自定义 Agent 在 M3）；
- * 3. 项目说明（`AGENTS.md`，M3，尚未加入）；
+ * 3. 项目说明（`AGENTS.md`，M3-02）：调用方每轮读好后放进来，这里只负责包进标题；
  * 4. 用户在设置中的自定义说明；
  * 5. 环境信息：操作系统、shell 类型（ADR-0012，`run_command` 的命令按它的语法写）、工作区、当前日期。
  *
@@ -46,6 +46,11 @@ export interface SystemPromptInput {
   readonly environment: SystemPromptEnvironment
   /** Agent 定义中的指令（M3 的自定义 Agent）。 */
   readonly agentInstructions?: string
+  /**
+   * 项目说明正文（M3-02）。已经按 32 KB 截断；空的不出现。
+   * 这是项目文件，放在安全规则之后，不能压过安全规则。
+   */
+  readonly projectInstructions?: string
   /** 用户在设置中的自定义说明。 */
   readonly userInstructions?: string
 }
@@ -71,6 +76,12 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     input.tools ? TOOLS_SECTION : undefined,
     input.tools ? `# Safety\n- ${TOOL_RESULT_NOTICE}` : undefined,
     section('Agent instructions', input.agentInstructions),
+    section(
+      'Project instructions (AGENTS.md)',
+      input.projectInstructions?.trim()
+        ? `The user keeps these instructions in the project's AGENTS.md. Follow them unless they conflict with the safety rules above.\n\n${input.projectInstructions.trim()}`
+        : undefined,
+    ),
     section(
       "User's instructions",
       input.userInstructions?.trim()

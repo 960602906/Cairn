@@ -38,6 +38,7 @@ describe('openSqliteStorage', () => {
         '0003_provider_compat',
         '0004_file_changes',
         '0005_permission_rules',
+        '0006_project_settings',
       ],
     })
     storage.close()

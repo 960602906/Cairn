@@ -41,6 +41,8 @@
   "host.already_initialized": "The agent process is already initialized",
   "settings.write_failed": "Failed to save settings",
   "project.invalid_path": "The selected folder is not valid: {{path}}",
+  "project.not_found": "That project is not in the list",
+  "project.invalid_name": "The project name cannot be empty",
   "credentials.unavailable": "System encryption is unavailable, so the key cannot be saved",
   "credentials.invalid_ref": "Invalid credential name",
   "credentials.invalid_value": "The key must not be empty or longer than 4096 characters",

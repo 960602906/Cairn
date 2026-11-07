@@ -15,7 +15,7 @@ import {
   Timestamp,
 } from '../common.js'
 import { FileChangeInput } from '../changes.js'
-import { ApprovalDecision, UnsequencedEventSchema } from '../events.js'
+import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
 import { PermissionRule, ToolCategory } from '../permissions.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
@@ -181,6 +181,17 @@ export const MainForHost = defineSide({
     'changes.record': {
       params: FileChangeInput,
       result: z.object({ changeId: Id }),
+    },
+    /**
+     * 本轮要放进系统提示词的项目说明（M3-02）。会话由连接确定。没有文件、或项目关闭了读取时，
+     * 没有 `text`。主进程每轮读一次，所以改开关后下一轮就生效。
+     */
+    'host.agentsMd': {
+      params: z.object({}),
+      result: z.object({
+        text: z.string().min(1).optional(),
+        context: z.object({ agentsMd: AgentsMdContext }).optional(),
+      }),
     },
   },
   events: {},

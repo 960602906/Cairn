@@ -94,6 +94,39 @@ function sequenced(userText: string, events: readonly UnsequencedEvent[]): Event
   return [...created, user, ...rest].map((e, i) => ({ ...e, seq: i + 1 }) as EventEnvelope)
 }
 
+describe('RunEngine：项目说明', () => {
+  it('在调用模型前换上 prepareTurn 的系统提示词，并写入 turn.started', async () => {
+    const prompts: string[] = []
+    const inner = fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    const runtime: AgentRuntime = {
+      id: 'wrap',
+      async createSession(init) {
+        const session = await inner.createSession(init)
+        return {
+          prompt: (input) => session.prompt(input),
+          steer: (input) => session.steer(input),
+          abort: (reason) => session.abort(reason),
+          onEvent: (listener) => session.onEvent(listener),
+          exportHistory: () => session.exportHistory(),
+          setSystemPrompt: (prompt: string) => {
+            prompts.push(prompt)
+          },
+          dispose: () => session.dispose(),
+        }
+      },
+    }
+    const agentsMd = { sha256: 'b'.repeat(64), bytes: 8, truncated: false, lines: 1 }
+    const { engine, events } = await start(runtime, {
+      prepareTurn: async () => ({ systemPrompt: 'with agents', context: { agentsMd } }),
+    })
+    await engine.prompt({ messageId: 'u1', content: text('hi') })
+    expect(prompts).toEqual(['with agents'])
+    expect(events.find((event) => event.type === 'turn.started')?.payload).toEqual({
+      context: { agentsMd },
+    })
+  })
+})
+
 describe('RunEngine：正常完成', () => {
   it('事件顺序、状态与投影', async () => {
     const { engine, events } = await start(

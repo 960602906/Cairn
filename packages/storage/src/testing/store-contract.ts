@@ -73,6 +73,8 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           name: 'Demo',
           path: '/work/demo',
           createdAt: 100,
+          readAgentsMd: true,
+          enableProjectSkills: false,
         })
         expect(storage.projects.get('p1')).toEqual(created)
         expect(storage.projects.getByPath('/work/demo')).toEqual(created)
@@ -98,6 +100,41 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           StorageErrorCode.Conflict,
         )
         expect(storage.projects.list()).toHaveLength(1)
+      })
+
+      it('updates settings and hides a removed project until it is restored', () => {
+        storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work/demo' })
+        expect(
+          storage.projects.update('p1', { name: 'Renamed', readAgentsMd: false }),
+        ).toMatchObject({
+          name: 'Renamed',
+          readAgentsMd: false,
+          enableProjectSkills: false,
+        })
+        expect(
+          storage.projects.update('p1', { enableProjectSkills: true }).enableProjectSkills,
+        ).toBe(true)
+        clock = 300
+        const removed = storage.projects.remove('p1')
+        expect(removed.removedAt).toBe(300)
+        expect(storage.projects.list()).toEqual([])
+        expect(storage.projects.get('p1')?.removedAt).toBe(300)
+        expect(storage.projects.getByPath('/work/demo')?.name).toBe('Renamed')
+        expectStorageError(
+          () => storage.projects.update('p1', { name: 'X' }),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(() => storage.projects.remove('p1'), StorageErrorCode.NotFound)
+        expectStorageError(() => storage.projects.remove('missing'), StorageErrorCode.NotFound)
+        const restored = storage.projects.restore('p1')
+        expect(restored.removedAt).toBeUndefined()
+        expect(restored).toMatchObject({
+          name: 'Renamed',
+          readAgentsMd: false,
+          enableProjectSkills: true,
+        })
+        expect(storage.projects.list().map((p) => p.projectId)).toEqual(['p1'])
+        expectStorageError(() => storage.projects.restore('missing'), StorageErrorCode.NotFound)
       })
     })
 

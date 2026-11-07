@@ -425,6 +425,29 @@ describe('startHost', () => {
     expect(none.inits).toEqual([init])
   })
 
+  it('returns the project instructions for host.agentsMd (M3-02)', async () => {
+    const host = fakeHost()
+    const loaded = {
+      text: 'Use tabs.',
+      sha256: 'd'.repeat(64),
+      bytes: 9,
+      truncated: false,
+      lines: 1,
+    }
+    const { supervisor } = setup(host, { loadAgentsMd: () => loaded })
+    await supervisor.startHost(init)
+    await expect(host.endpoint?.request('host.agentsMd', {})).resolves.toEqual({
+      text: loaded.text,
+      context: {
+        agentsMd: { sha256: loaded.sha256, bytes: 9, truncated: false, lines: 1 },
+      },
+    })
+
+    const empty = fakeHost()
+    await setup(empty, { loadAgentsMd: () => undefined }).supervisor.startHost(init)
+    await expect(empty.endpoint?.request('host.agentsMd', {})).resolves.toEqual({})
+  })
+
   it('passes the shell preference in host.init (M2-09)', async () => {
     const host = fakeHost()
     await setup(host, { resolveShell: () => 'cmd' }).supervisor.startHost(init)

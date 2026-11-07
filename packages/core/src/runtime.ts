@@ -169,6 +169,10 @@ export interface RuntimeSession {
   onEvent(listener: (event: RuntimeEvent) => void): Unsubscribe
   /** 当前完整历史（含本会话中新增的消息）。 */
   exportHistory(): CanonicalMessage[]
+  /**
+   * 替换系统提示词（M3-02）。每轮开始时换上当轮的项目说明；省略时提示词保持创建会话时的内容。
+   */
+  setSystemPrompt?(prompt: string): void
   dispose(): Promise<void>
 }
 

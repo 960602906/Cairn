@@ -140,6 +140,12 @@ function toOutcome(result: RuntimeToolResult, hasExecutor: boolean): ToolOutcome
   return { status: result.status, content: result.content, error: { code, params: { message } } }
 }
 
+/** 一轮开始前准备好的系统提示词和 `turn.started` 上下文（M3-02）。 */
+export interface TurnPreparation {
+  readonly systemPrompt?: string
+  readonly context?: EventPayload<'turn.started'>['context']
+}
+
 export interface RunEngineOptions {
   readonly sessionId: string
   readonly runId: string
@@ -150,6 +156,11 @@ export interface RunEngineOptions {
   readonly runtime: AgentRuntime
   readonly model: ResolvedModel
   readonly systemPrompt?: string
+  /**
+   * 每轮开始、调用模型之前（M3-02）：可以换掉系统提示词，并给出要写进 `turn.started` 的上下文
+   * （例如读到的 `AGENTS.md`）。失败时由调用方自己吞掉；这里抛出会让这一轮无法开始。
+   */
+  readonly prepareTurn?: () => Promise<TurnPreparation | undefined>
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
@@ -302,7 +313,15 @@ export class RunEngine {
       wake: undefined,
     }
     this.#turn = turn
-    this.#emit('turn.started', {})
+    let prepared: TurnPreparation | undefined
+    try {
+      prepared = await this.#o.prepareTurn?.()
+    } catch (error) {
+      this.#turn = undefined
+      throw error
+    }
+    if (prepared?.systemPrompt !== undefined) session.setSystemPrompt?.(prepared.systemPrompt)
+    this.#emit('turn.started', prepared?.context ? { context: prepared.context } : {})
     this.#transition('thinking')
     const run = async () => {
       try {

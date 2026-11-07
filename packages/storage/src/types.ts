@@ -56,6 +56,18 @@ export interface ProjectRecord {
   /** 用户项目的绝对路径，唯一。 */
   readonly path: string
   readonly createdAt: number
+  /** 每轮开始时是否读取 `AGENTS.md`（M3-02）。新建的项目默认读取。 */
+  readonly readAgentsMd: boolean
+  /** 是否启用项目内 Skills（M3-02 只保存，M3-07 起生效）。新建的项目默认关闭。 */
+  readonly enableProjectSkills: boolean
+  /** 从列表移除的时间（M3-02）。还在列表中时不出现。 */
+  readonly removedAt?: number
+}
+
+export interface UpdateProjectInput {
+  readonly name?: string
+  readonly readAgentsMd?: boolean
+  readonly enableProjectSkills?: boolean
 }
 
 export interface CreateProjectInput {
@@ -65,12 +77,19 @@ export interface CreateProjectInput {
 }
 
 export interface ProjectStore {
-  /** 路径已存在时报 `storage.conflict`。 */
+  /** 路径已存在时报 `storage.conflict`（含已从列表移除的项目）。 */
   create(input: CreateProjectInput): ProjectRecord
+  /** 含已从列表移除的项目，会话仍要能找到它。 */
   get(projectId: string): ProjectRecord | undefined
   getByPath(path: string): ProjectRecord | undefined
-  /** 按创建时间倒序。 */
+  /** 按创建时间倒序，不含已从列表移除的。 */
   list(): ProjectRecord[]
+  /** 项目不存在或已移除时报 `storage.not_found`。 */
+  update(projectId: string, patch: UpdateProjectInput): ProjectRecord
+  /** 从列表移除（不删目录、不删会话）。已经移除或不存在时报 `storage.not_found`。 */
+  remove(projectId: string): ProjectRecord
+  /** 重新放回列表。不存在时报 `storage.not_found`。 */
+  restore(projectId: string): ProjectRecord
 }
 
 // ---------- 会话 ----------

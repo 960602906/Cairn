@@ -446,6 +446,18 @@ describe('reduceSession：轮次', () => {
     expect(next.runs).toBe(view.runs)
   })
 
+  it('记录本轮读到的 AGENTS.md，下一轮没读到就清掉', () => {
+    const { view, ev } = midTurn()
+    const agentsMd = { sha256: 'a'.repeat(64), bytes: 12, truncated: false, lines: 3 }
+    const loaded = reduceSession(
+      view,
+      ev('turn.started', { context: { agentsMd } }, { turnId: 't2' }),
+    )
+    expect(loaded.agentsMd).toEqual({ lines: 3, truncated: false })
+    const cleared = reduceSession(loaded, ev('turn.started', {}, { turnId: 't3' }))
+    expect(cleared.agentsMd).toBeUndefined()
+  })
+
   it('重复的 turn.started 不会重置轮次', () => {
     const { view, ev } = midTurn()
     const withStep = reduceSession(
