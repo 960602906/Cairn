@@ -46,7 +46,7 @@ export function parseLineRanges(meta: string | undefined): ReadonlySet<number> {
   return lines
 }
 
-function splitPath(path: string): { dir: string; name: string } {
+export function splitPath(path: string): { dir: string; name: string } {
   const at = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
   return { dir: path.slice(0, at + 1), name: path.slice(at + 1) }
 }
@@ -67,7 +67,7 @@ export function LanguageIcon({ language }: { readonly language: LanguageInfo | u
   )
 }
 
-function Token({ token }: { readonly token: HighlightToken }) {
+export function Token({ token }: { readonly token: HighlightToken }) {
   const style: CSSProperties = {
     ...(token.color ? { color: token.color } : {}),
     ...(token.italic ? { fontStyle: 'italic' } : {}),

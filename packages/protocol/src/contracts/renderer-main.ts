@@ -3,7 +3,7 @@
  * 渲染进程只调用主进程的请求、接收主进程的事件；渲染进程自身不提供接口。
  */
 import { z } from 'zod'
-import { FileChangeSummary } from '../changes.js'
+import { FileChangeSummary, FileContent } from '../changes.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
 import { ContentPart, Id, ModelRef, Timestamp } from '../common.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
@@ -234,6 +234,15 @@ export const MainForRenderer = defineSide({
     'changes.revert': {
       params: z.object({ sessionId: Id, changeIds: z.array(Id).min(1).max(1000) }),
       result: z.object({ changes: z.array(FileChangeSummary) }),
+    },
+    /**
+     * 一次改动前后的内容（M2-07，界面据此显示 diff）：`create` 没有 `before`，`delete` 没有 `after`。
+     * 二进制文件与过大的文本只返回大小。改动不属于该会话时报 `changes.not_found`，内容在 blob 存储中
+     * 找不到时报 `changes.content_missing`。
+     */
+    'changes.content': {
+      params: z.object({ sessionId: Id, changeId: Id }),
+      result: z.object({ before: FileContent.optional(), after: FileContent.optional() }),
     },
     /** 会话的检查点（M1-12c），按创建顺序；会话所属项目没有影子仓库时为空。 */
     'checkpoint.list': {

@@ -6,6 +6,11 @@
  * - **恢复**（`checkpoint.restore`）：先建检查点并写入 `checkpoint.created`（`before_restore`，恢复到它
  *   即可撤销这次恢复），再改写工作区并写入 `checkpoint.restored`。对话不截断（M1 不提供）。
  *
+ * 恢复后，本会话在这个检查点之后记录的、仍然有效的文件改动（`file.changed` 晚于该检查点的
+ * `checkpoint.created`）标记为 `reverted`（M2-07）：文件已经回到检查点时的内容，本轮变更与顶栏摘要不再
+ * 列出它们，也不能再整文件撤销。撤销这次恢复（恢复到 `before_restore`）不会把它们重新标记为有效（M2-08
+ * 提供撤销恢复时一并处理）。
+ *
  * 只能预览与恢复这个会话自己的检查点（同一项目的会话共用影子仓库，对象互相可见）。同一项目有会话正在运行
  * （或正在撤销改动、恢复检查点）时拒绝，因为它们改动的是同一个工作区；恢复期间会话不接受输入
  * （`isRestoring`）。
@@ -36,7 +41,7 @@ export type OpenCheckpointRepo = (
 ) => Promise<Pick<ShadowRepo, 'preview' | 'restore'>>
 
 export interface CheckpointServiceOptions {
-  readonly storage: Pick<Storage, 'sessions'>
+  readonly storage: Pick<Storage, 'sessions' | 'changes'>
   readonly events: Pick<SessionEventService, 'publish' | 'readAfter'>
   /** 会话的检查点位置（与宿主相同，`checkpoint-location.ts`）；没有时会话没有检查点。 */
   readonly location: (sessionId: string) => HostCheckpointLocation | undefined
@@ -125,6 +130,29 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
     }
   }
 
+  /** 检查点之后记录的有效改动随恢复撤销：标记为 `reverted`。 */
+  function markRestored(sessionId: string, checkpointId: string) {
+    let after: number | undefined
+    const changed: string[] = []
+    for (const event of events.readAfter(sessionId, 0)) {
+      if (
+        after === undefined &&
+        event.type === 'checkpoint.created' &&
+        event.payload.checkpointId === checkpointId
+      ) {
+        after = event.seq
+      } else if (after !== undefined && event.type === 'file.changed') {
+        changed.push(event.payload.changeId)
+      }
+    }
+    for (const changeId of changed) {
+      const change = storage.changes.get(changeId)
+      if (change && change.status !== 'reverted' && change.revertOf === undefined) {
+        storage.changes.setStatus(changeId, 'reverted')
+      }
+    }
+  }
+
   const toPlan = (plan: Awaited<ReturnType<ShadowRepo['preview']>>): CheckpointRestorePlan => ({
     before: plan.before,
     files: plan.changes.map(({ path, status }) => ({ path, status })),
@@ -139,6 +167,7 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
     restore: ({ sessionId, checkpointId }) =>
       exclusive(sessionId, checkpointId, async (repo) => {
         const plan = toPlan(await repo.restore(checkpointId))
+        markRestored(sessionId, checkpointId)
         const header = { v: 1 as const, sessionId, runId: sessionId, ts: now() }
         events.publish([
           {

@@ -18,6 +18,8 @@
  * - **项目**（M1-16a）：`refreshProjects` 读取已打开过的项目；`openProject` 用系统对话框选择文件夹。
  * - **撤销本轮**（M1-16b）：`turnCheckpoint` 找到某一轮开始时的检查点，`previewRestore` / `restoreCheckpoint`
  *   预览与恢复。
+ * - **文件改动**（M2-07）：订阅时与收到 `file.changed`、`checkpoint.restored` 后重新读取当前会话的改动记录（`changes.list`，只保留
+ *   最新一次请求的结果）；`changeContent` 读取一次改动前后的内容，`revertChanges` 整文件撤销后重新读取。
  * - **审批**（M1-11b）：当前会话的未决审批经 `approval.pending` 读取，订阅时与收到 `approval.changed`
  *   通知后重新读取；`resolveApproval` 作出决定（失败时写入 `error`，审批仍保留）。
  *
@@ -32,6 +34,8 @@ import {
   type CheckpointRestorePlan,
   type ErrorInfo,
   type EventEnvelope,
+  type FileChangeSummary,
+  type FileContent,
   type ModelRef,
   type PendingApproval,
   type ProjectSummary,
@@ -54,6 +58,8 @@ export interface SessionState {
   readonly eventLog: Readonly<Record<string, readonly EventEnvelope[]>>
   /** 各会话的未决审批（按请求顺序）；只读取当前会话的。 */
   readonly approvals: Readonly<Record<string, readonly PendingApproval[]>>
+  /** 各会话的文件改动记录（按发生顺序）；只读取当前会话的。 */
+  readonly changes: Readonly<Record<string, readonly FileChangeSummary[]>>
   /** 已打开过的项目（按打开时间倒序）。 */
   readonly projects: readonly ProjectSummary[]
   /** 最近读取或保存的设置；读取之前为 undefined。 */
@@ -106,6 +112,15 @@ export interface SessionActions {
     sessionId: string,
     checkpointId: string,
   ): Promise<CheckpointRestorePlan | undefined>
+  /** 重新读取会话的改动记录；失败时保留之前的结果。 */
+  loadChanges(sessionId: string): Promise<void>
+  /** 一次改动前后的内容；失败时返回 undefined。 */
+  changeContent(
+    sessionId: string,
+    changeId: string,
+  ): Promise<{ before?: FileContent | undefined; after?: FileContent | undefined } | undefined>
+  /** 整文件撤销这些改动，成功后重新读取改动记录；返回是否成功。 */
+  revertChanges(sessionId: string, changeIds: readonly string[]): Promise<boolean>
   clearError(): void
   /** 取消订阅并停止接收事件。 */
   dispose(): void
@@ -193,6 +208,9 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
   let subscribed: string | undefined
 
   let loadApprovalsFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
+  let loadChangesFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
+  /** 各会话最近一次读取改动记录的序号：较早的请求晚返回时丢弃。 */
+  const changeRequests = new Map<string, number>()
   const store = createStore<SessionState & SessionActions>()((set, get) => {
     const run = async <T>(action: () => Promise<T>): Promise<T | undefined> => {
       try {
@@ -227,6 +245,17 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
 
     loadApprovalsFor = loadApprovals
 
+    const loadChanges = async (sessionId: string) => {
+      const request = (changeRequests.get(sessionId) ?? 0) + 1
+      changeRequests.set(sessionId, request)
+      const result = await run(() => api.request('changes.list', { sessionId }))
+      if (result && changeRequests.get(sessionId) === request) {
+        // 测试替身可能不返回列表
+        set((state) => ({ changes: { ...state.changes, [sessionId]: result.changes ?? [] } }))
+      }
+    }
+    loadChangesFor = loadChanges
+
     const unsubscribe = async (sessionId: string) => {
       pending.delete(sessionId)
       if (subscribed === sessionId) subscribed = undefined
@@ -240,6 +269,7 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       awaitingTurn: {},
       eventLog: {},
       approvals: {},
+      changes: {},
       projects: [],
       settings: undefined,
       error: undefined,
@@ -310,7 +340,7 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         }
         subscribed = sessionId
         set((state) => receive(state, sessionId, [...result.events, ...(buffered ?? [])]))
-        await loadApprovals(sessionId)
+        await Promise.all([loadApprovals(sessionId), loadChanges(sessionId)])
       },
 
       async sendPrompt(text) {
@@ -399,6 +429,19 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       restoreCheckpoint: (sessionId, checkpointId) =>
         run(() => api.request('checkpoint.restore', { sessionId, checkpointId })),
 
+      loadChanges,
+
+      changeContent: (sessionId, changeId) =>
+        run(() => api.request('changes.content', { sessionId, changeId })),
+
+      async revertChanges(sessionId, changeIds) {
+        const done = await run(() =>
+          api.request('changes.revert', { sessionId, changeIds: [...changeIds] }),
+        )
+        await loadChanges(sessionId)
+        return done !== undefined
+      },
+
       clearError: () => set({ error: undefined }),
 
       dispose() {
@@ -418,6 +461,9 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
     }
     if (sessionId !== subscribed) return
     store.setState((state) => receive(state, sessionId, events))
+    // 恢复检查点会把之后的改动标记为已撤销（M2-07），同样要重新读取
+    if (events.some((e) => e.type === 'file.changed' || e.type === 'checkpoint.restored'))
+      void loadChangesFor(sessionId)
   })
   const offApprovals = api.on('approval.changed', ({ sessionId }) => {
     if (sessionId === subscribed) void loadApprovalsFor(sessionId)

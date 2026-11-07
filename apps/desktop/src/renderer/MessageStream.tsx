@@ -6,6 +6,7 @@
  *
  * M2-03：用户消息是右对齐的气泡；助手正文按 Markdown 渲染；思考过程可展开；每轮结束后最后一条助手消息下面
  * 是轮次操作（复制，模型名与 token 数）。作者名只给读屏（sr-only）。
+ * M2-07：这一轮有文件改动时，轮次操作上面是“本轮变更”（`FileChanges.tsx`）。
  */
 import { Check, ChevronRight, Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -13,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { rootRun, type LiveMessageView, type MessageView, type SessionView } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
 import type { ContentPart, ModelRef } from '@cairn/protocol'
+import { TurnChanges } from './FileChanges.js'
 import { Markdown } from './Markdown.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
@@ -195,6 +197,9 @@ function Message({
       )}
       {message.incomplete && (
         <em className="mt-1.5 block text-note text-muted not-italic">{t('message.incomplete')}</em>
+      )}
+      {footer && message.turnId !== undefined && (
+        <TurnChanges sessionId={view.sessionId} turnId={message.turnId} />
       )}
       {footer && (
         <TurnActions text={footer.text} model={modelName(footer.model)} tokens={footer.tokens} />

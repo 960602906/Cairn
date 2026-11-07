@@ -76,3 +76,14 @@ export const FileChangeSummary = z.object({
   createdAt: Timestamp,
 })
 export type FileChangeSummary = z.infer<typeof FileChangeSummary>
+
+/** 交给界面显示 diff 的文本上限（字符数）；超过时只告诉界面文件太大。 */
+export const FILE_CONTENT_MAX_CHARS = 1_000_000
+
+/** 改动前或改动后的文件内容（`changes.content`，M2-07）。`size` 为字节数。 */
+export const FileContent = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('text'), text: z.string().max(FILE_CONTENT_MAX_CHARS) }),
+  z.object({ kind: z.literal('binary'), size: LineCount }),
+  z.object({ kind: z.literal('too_large'), size: LineCount }),
+])
+export type FileContent = z.infer<typeof FileContent>

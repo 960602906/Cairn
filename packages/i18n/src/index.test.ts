@@ -174,6 +174,7 @@ describe('translateError', () => {
       'changes.already_reverted',
       'changes.conflict',
       'changes.blob_missing',
+      'changes.content_missing',
       'changes.failed',
       'shell.spawn_failed',
       'checkpoint.git_unavailable',
