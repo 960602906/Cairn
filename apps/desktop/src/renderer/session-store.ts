@@ -11,8 +11,6 @@
  * - **等待开始**：输入已发送、但这一轮还没开始（排队或宿主启动中）时，投影里还没有运行中的轮次；
  *   `awaitingTurn` 记下这段时间，界面与列表把会话当作运行中（可以停止、不能再发送）。收到
  *   `turn.started`（或该轮结束、会话崩溃）、发送失败或停止成功时清除。
- * - **事件记录**（开发模式的事件查看器，M0-15d）：`eventLogLimit` 大于 0 时按会话保存收到的原始
- *   事件（补发与实时推送，含增量），每个会话只保留最近的若干条，超出时先丢弃增量事件。默认不保存。
  * - **设置**：`loadSettings` 读取、`updateSettings` 保存设置，结果保存在 `settings`；失败时同样写入 `error`。
  *   Key 只能写入（`saveCredential`）与查询是否已保存（`credentialStatus`），没有读出明文的接口。
  * - **项目**（M1-16a）：`refreshProjects` 读取已打开过的项目；`openProject` 用系统对话框选择文件夹。
@@ -27,7 +25,6 @@
  */
 import { createSessionView, reduceSession, sessionStatus, type SessionView } from '@cairn/core'
 import {
-  isPersistedEvent,
   RpcError,
   type ContentPart,
   type ApprovalDecision,
@@ -68,8 +65,6 @@ export interface SessionState {
   readonly activeSessionId: string | undefined
   /** 已发送输入、等待这一轮开始的会话。 */
   readonly awaitingTurn: Readonly<Record<string, true>>
-  /** 各会话收到的原始事件（按到达顺序）；只在开启事件记录时保存。 */
-  readonly eventLog: Readonly<Record<string, readonly EventEnvelope[]>>
   /** 各会话的未决审批（按请求顺序）；只读取当前会话的。 */
   readonly approvals: Readonly<Record<string, readonly PendingApproval[]>>
   /** 各会话的文件改动记录（按发生顺序）；只读取当前会话的。 */
@@ -210,11 +205,6 @@ export interface SessionActions {
 
 export type SessionStore = StoreApi<SessionState & SessionActions>
 
-export interface SessionStoreOptions {
-  /** 每个会话保存的原始事件条数上限；0（默认）表示不保存。 */
-  readonly eventLogLimit?: number
-}
-
 const toError = (error: unknown): ErrorInfo =>
   error instanceof RpcError ? error.toInfo() : { code: 'unknown' }
 
@@ -265,32 +255,9 @@ function reduceInto(
   }
 }
 
-/**
- * 把事件追加到会话的记录中，最多保留 `limit` 条。超出时先丢弃最早的增量事件（一次长回复就有上千条），
- * 只剩持久化事件时再丢弃最早的。
- */
-function appendLog(
-  log: SessionState['eventLog'],
-  sessionId: string,
-  events: readonly EventEnvelope[],
-  limit: number,
-): SessionState['eventLog'] {
-  if (limit <= 0 || events.length === 0) return log
-  let next = [...(log[sessionId] ?? []), ...events]
-  let excess = next.length - limit
-  if (excess > 0) {
-    next = next.filter((event) => isPersistedEvent(event) || excess-- <= 0)
-    if (next.length > limit) next = next.slice(-limit)
-  }
-  return { ...log, [sessionId]: next }
-}
-
-export function createSessionStore(api: MainApi, options: SessionStoreOptions = {}): SessionStore {
-  const eventLogLimit = options.eventLogLimit ?? 0
-  const receive = (state: SessionState, sessionId: string, events: readonly EventEnvelope[]) => ({
-    ...reduceInto(state, sessionId, events),
-    eventLog: appendLog(state.eventLog, sessionId, events, eventLogLimit),
-  })
+export function createSessionStore(api: MainApi): SessionStore {
+  const receive = (state: SessionState, sessionId: string, events: readonly EventEnvelope[]) =>
+    reduceInto(state, sessionId, events)
   /** 正在等待订阅响应的会话 → 期间到达的实时事件。 */
   const pending = new Map<string, EventEnvelope[]>()
   /** 当前已订阅的会话（订阅响应已返回）。 */
@@ -356,7 +323,6 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       views: {},
       activeSessionId: undefined,
       awaitingTurn: {},
-      eventLog: {},
       approvals: {},
       changes: {},
       projects: [],

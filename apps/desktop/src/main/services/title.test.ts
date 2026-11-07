@@ -211,6 +211,65 @@ describe('autoTitleInput', () => {
   })
 })
 
+describe('autoTitleInput edge cases', () => {
+  it('ignores events without turn ids', () => {
+    const events = sequenced([
+      {
+        ...header('session.created', { runId: 's1' }),
+        type: 'session.created',
+        payload: {
+          projectId: 'p1',
+          projectPath: '/work',
+          workspacePath: '/work',
+          title: '',
+          model,
+        },
+      },
+      { ...header('turn.started', { turnId: 't1' }), type: 'turn.started', payload: {} },
+      {
+        ...header('message.user', { turnId: 't1' }),
+        type: 'message.user',
+        payload: { messageId: 'u1', content: [{ type: 'text', text: '整理' }] },
+      },
+      {
+        ...header('message.assistant.completed'),
+        type: 'message.assistant.completed',
+        payload: { messageId: 'a1', content: [{ type: 'text', text: '好' }], model },
+      },
+      { ...header('turn.completed'), type: 'turn.completed', payload: { durationMs: 1 } },
+    ])
+    expect(autoTitleInput(events)).toBeUndefined()
+  })
+
+  it('skips a completed first turn without an assistant message', () => {
+    const events = sequenced([
+      {
+        ...header('session.created', { runId: 's1' }),
+        type: 'session.created',
+        payload: {
+          projectId: 'p1',
+          projectPath: '/work',
+          workspacePath: '/work',
+          title: '',
+          model,
+        },
+      },
+      { ...header('turn.started', { turnId: 't1' }), type: 'turn.started', payload: {} },
+      {
+        ...header('message.user', { turnId: 't1' }),
+        type: 'message.user',
+        payload: { messageId: 'u1', content: [{ type: 'text', text: '整理' }] },
+      },
+      {
+        ...header('turn.completed', { turnId: 't1' }),
+        type: 'turn.completed',
+        payload: { durationMs: 0 },
+      },
+    ])
+    expect(autoTitleInput(events)).toBeUndefined()
+  })
+})
+
 describe('autoTitleBlocked', () => {
   it('is blocked by a manual rename and by a non-empty title', () => {
     expect(autoTitleBlocked(firstTurn())).toBe(false)

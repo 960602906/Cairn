@@ -87,6 +87,8 @@ function setup(initial: Partial<Settings> = {}, handlers: Record<string, Handler
         keys.set(ref, secret)
         return {}
       }
+      case 'settings.shell':
+        return { detected: 'pwsh', options: ['auto', 'cmd'] }
       case 'session.list':
         return { sessions: [] }
       case 'project.list':
@@ -101,14 +103,16 @@ function setup(initial: Partial<Settings> = {}, handlers: Record<string, Handler
 }
 
 const open = async () => {
-  await userEvent.click(await screen.findByRole('button', { name: /^模型供应商/ }))
+  await userEvent.click(await screen.findByRole('button', { name: '设置' }))
+  const nav = await screen.findByRole('navigation', { name: '设置分类' })
+  await userEvent.click(within(nav).getByRole('button', { name: /^模型供应商/ }))
   return screen.findByRole('heading', { name: '模型供应商' })
 }
 
 const editor = (name: string) => screen.getByRole('region', { name })
 
 describe('ProvidersSettings', () => {
-  it('opens from the sidebar card and adds the first provider with its key', async () => {
+  it('opens from settings and adds the first provider with its key', async () => {
     const { request, updates } = setup(
       {},
       { 'provider.test': () => ({ ok: true, latencyMs: 312 }) },
@@ -376,5 +380,100 @@ describe('ProvidersSettings', () => {
     await waitFor(() => expect(updates).toHaveLength(2))
     expect(updates[1]).toEqual({ auxiliaryModel: null })
     expect(select.value).toBe('')
+  })
+
+  it('handles an empty provider, template switches and a missing model list', async () => {
+    const empty: ProviderConfig = {
+      id: 'empty',
+      kind: 'openai',
+      displayName: 'Empty',
+      baseUrl: 'https://empty.example.com',
+      models: [],
+    }
+    const { updates } = setup(
+      {
+        providers: [deepseek, gateway, empty],
+        defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
+      },
+      { 'provider.models': () => undefined, 'provider.test': () => ({ ok: true, latencyMs: 5 }) },
+    )
+    await open()
+
+    await userEvent.click(screen.getByRole('button', { name: /Empty/ }))
+    const card = editor('Empty')
+    expect(within(card).getByText(/还没有模型/)).toBeTruthy()
+    expect(
+      (within(card).getByRole('button', { name: '测试连接' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+    await userEvent.click(within(card).getByRole('button', { name: '拉取模型列表' }))
+    expect(within(card).queryByRole('list', { name: '拉取到的模型' })).toBeNull()
+    await userEvent.selectOptions(within(card).getByLabelText('服务'), 'deepseek')
+    await userEvent.click(within(card).getByRole('button', { name: /高级/ }))
+    await userEvent.selectOptions(within(card).getByLabelText('思考参数格式'), 'qwen')
+    await userEvent.selectOptions(within(card).getByLabelText('思考参数格式'), '')
+    expect((within(card).getByLabelText('思考参数格式') as HTMLSelectElement).value).toBe('')
+
+    await userEvent.click(screen.getByRole('button', { name: /公司网关/ }))
+    const relay = editor('公司网关')
+    await userEvent.click(within(relay).getByRole('radio', { name: /Anthropic/ }))
+    expect(
+      within(relay)
+        .getByRole('radio', { name: /Anthropic/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true')
+    await userEvent.click(within(relay).getByRole('radio', { name: /OpenAI/ }))
+    expect(
+      within(relay)
+        .getByRole('radio', { name: /OpenAI/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true')
+    await userEvent.type(within(relay).getByLabelText('名称'), ' 2')
+    await userEvent.click(within(relay).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).not.toHaveProperty('defaultModel')
+
+    await userEvent.click(screen.getByRole('button', { name: /DeepSeek/ }))
+    const main = editor('DeepSeek')
+    await userEvent.click(within(main).getByRole('button', { name: '测试连接' }))
+    expect(await within(main).findByText(/5 ms/)).toBeTruthy()
+    await userEvent.click(within(main).getByRole('radio', { name: /Anthropic/ }))
+    expect(
+      within(main)
+        .getByRole('radio', { name: /Anthropic/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true')
+  })
+
+  it('disables the key input when system encryption is unavailable', async () => {
+    setup(
+      { providers: [deepseek] },
+      { 'credentials.status': () => ({ configured: false, available: false }) },
+    )
+    await open()
+    const card = editor('DeepSeek')
+    const key = (await within(card).findByLabelText('API Key')) as HTMLInputElement
+    await waitFor(() => expect(key.disabled).toBe(true))
+    expect(within(card).getByText('系统加密不可用，无法保存 Key。')).toBeTruthy()
+  })
+
+  it('keeps the editor open when saving or deleting fails, and ignores a missing key status', async () => {
+    setup(
+      { providers: [deepseek] },
+      {
+        'settings.update': () => undefined,
+        'credentials.status': () => undefined,
+      },
+    )
+    await open()
+    const card = editor('DeepSeek')
+    await userEvent.type(within(card).getByLabelText('名称'), '!')
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    expect(await within(card).findByLabelText('API Key')).toBeTruthy()
+    expect(within(card).getByRole('button', { name: '保存' })).toBeTruthy()
+
+    await userEvent.click(within(card).getByRole('button', { name: '删除' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: '删除供应商' }))
+    expect(await screen.findByRole('region', { name: 'DeepSeek' })).toBeTruthy()
   })
 })

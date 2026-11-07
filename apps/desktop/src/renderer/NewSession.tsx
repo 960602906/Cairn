@@ -5,11 +5,11 @@
  * 空状态（M2-12）：还没有配置模型供应商时，表单上方提示先去设置添加；还没有打开过项目时，说明换成引导选择
  * 文件夹，“选择文件夹…”在填写路径之前是主按钮。
  */
-import { Cpu, FolderOpen } from 'lucide-react'
+import { Check, Cpu, FolderOpen } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from './store-context.js'
-import { Button } from './ui/index.js'
+import { Button, CairnMark, cn } from './ui/index.js'
 
 const field =
   'h-9 w-full rounded-item bg-raise px-3 text-ui text-fg shadow-hair2 outline-none placeholder:text-faint focus:shadow-[0_0_0_1.5px_var(--accent)]'
@@ -56,12 +56,27 @@ export function NewSession({
   }
 
   return (
-    <div className="flex flex-1 items-start justify-center overflow-y-auto px-7 pt-[12vh] pb-10">
-      <form onSubmit={(e) => void submit(e)} className="w-full max-w-[520px]">
+    <div className="flex flex-1 items-start justify-center overflow-y-auto px-7 pt-[9vh] pb-10">
+      <form onSubmit={(e) => void submit(e)} className="w-full max-w-[560px]">
+        <header className="mb-8">
+          <div className="mb-5 inline-flex size-[76px] items-center justify-center rounded-[20px] bg-sunk text-fg shadow-hair2">
+            <CairnMark size={64} />
+          </div>
+          <p className="text-note font-semibold tracking-[0.14em] text-muted uppercase">
+            {tc('app.name')}
+          </p>
+          <h2 className="mt-1.5 text-[28px] leading-[1.15] font-semibold tracking-[-0.03em] text-fg">
+            {t('new.heading')}
+          </h2>
+          <p className="mt-2.5 max-w-[500px] text-ui leading-relaxed text-muted">
+            {projects.length === 0 ? t('new.noProject') : t('new.description')}
+          </p>
+        </header>
+
         {noProvider && (
           <section
             aria-label={t('new.noProvider.title')}
-            className="mb-8 flex items-start gap-3 rounded-card bg-sunk px-4 py-3.5"
+            className="mb-6 flex items-start gap-3 rounded-card bg-sunk px-4 py-3.5 shadow-hair"
           >
             <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-raise text-fg2 shadow-1 [&_svg]:size-4">
               <Cpu />
@@ -79,10 +94,44 @@ export function NewSession({
             )}
           </section>
         )}
-        <h2 className="text-page">{t('new.heading')}</h2>
-        <p className="mt-1.5 mb-7 text-ui text-muted">
-          {projects.length === 0 ? t('new.noProject') : t('new.description')}
-        </p>
+
+        {projects.length > 0 && (
+          <section className="mb-5" aria-label={t('new.recentProjects')}>
+            <p className={labelText}>{t('new.recentProjects')}</p>
+            <div className="max-h-[196px] overflow-y-auto rounded-card bg-sunk p-1.5 shadow-hair">
+              <div className="flex flex-col gap-0.5">
+                {projects.map((project) => {
+                  const selected = project.path === projectPath
+                  return (
+                    <button
+                      key={project.projectId}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setProjectPath(project.path)}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-item px-2.5 py-2 text-left transition-colors',
+                        selected
+                          ? 'bg-raise text-fg shadow-hair2'
+                          : 'text-fg2 hover:bg-hover hover:text-fg',
+                      )}
+                    >
+                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-raise text-muted shadow-hair [&_svg]:size-4">
+                        <FolderOpen />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-ui font-medium">{project.name}</span>
+                        <span className="mt-0.5 block truncate font-mono text-[11.5px] font-normal text-muted">
+                          {project.path}
+                        </span>
+                      </span>
+                      {selected && <Check className="size-4 shrink-0 text-accent" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </section>
+        )}
 
         <label className="mb-4 block">
           <span className={labelText}>{t('new.projectPath')}</span>
@@ -105,25 +154,7 @@ export function NewSession({
           </span>
         </label>
 
-        {projects.length > 0 && (
-          <label className="mb-4 block">
-            <span className={labelText}>{t('new.recentProjects')}</span>
-            <select
-              className={field}
-              value={projects.some((p) => p.path === projectPath) ? projectPath : ''}
-              onChange={(e) => e.target.value !== '' && setProjectPath(e.target.value)}
-            >
-              <option value="">{t('new.chooseProject')}</option>
-              {projects.map((p) => (
-                <option key={p.projectId} value={p.path}>
-                  {p.name} — {p.path}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <label className="mb-7 block">
+        <label className="mb-8 block">
           <span className={labelText}>{t('new.title')}</span>
           <input className={field} value={title} onChange={(e) => setTitle(e.target.value)} />
         </label>

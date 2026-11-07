@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
-import { createSessionView, reduceSessionEvents } from '@cairn/core'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createSessionView, reduceSessionEvents, type SessionView } from '@cairn/core'
 import type { EventEnvelope } from '@cairn/protocol'
+import { createI18n } from '@cairn/i18n'
+import { I18nextProvider } from 'react-i18next'
+import { createStore } from 'zustand/vanilla'
+import type { SessionStore } from './session-store.js'
+import { SessionStoreProvider } from './store-context.js'
 import { Markdown } from './Markdown.js'
-import { turnFooters } from './MessageStream.js'
+import { MessageStream, turnFooters } from './MessageStream.js'
 
 afterEach(cleanup)
 
@@ -96,5 +102,137 @@ describe('Markdown（M2-03）', () => {
     expect(good.getAttribute('href')).toBe('https://example.com')
     expect(good.getAttribute('target')).toBe('_blank')
     expect(good.getAttribute('rel')).toBe('noreferrer')
+  })
+})
+
+describe('MessageStream 渲染', () => {
+  const plan = {
+    planId: 'pl2',
+    content: {
+      goal: '验证',
+      files: [],
+      steps: [{ id: 'one', title: '一步' }],
+      risks: '',
+      verification: '',
+      markdown: '',
+    },
+    steps: [{ id: 'one', title: '一步', status: 'pending' }],
+    status: 'proposed',
+    seq: 8,
+    runId: 'r1',
+  }
+
+  const rich = {
+    sessionId: 's1',
+    lastSeq: 20,
+    info: undefined,
+    archived: false,
+    crash: undefined,
+    runs: {
+      r1: {
+        runId: 'r1',
+        parentRunId: undefined,
+        turn: {
+          turnId: 't1',
+          status: 'failed',
+          limitReached: { limit: 'maxTurnDurationMs', value: 120_000 },
+        },
+      },
+    },
+    runOrder: ['r1'],
+    messages: [
+      {
+        messageId: 'u1',
+        role: 'user',
+        runId: 'r1',
+        turnId: 't1',
+        seq: 2,
+        ts: 1,
+        content: [
+          { type: 'text', text: '你好' },
+          { type: 'image', data: '', mediaType: 'image/png' },
+        ],
+      },
+      {
+        messageId: 'a1',
+        role: 'assistant',
+        runId: 'r1',
+        turnId: 't1',
+        seq: 3,
+        ts: 2,
+        content: [{ type: 'text', text: '完成' }],
+        reasoning: { type: 'text', text: '想一想' },
+        toolCalls: [],
+        model,
+        incomplete: true,
+      },
+    ],
+    live: {
+      l1: {
+        messageId: 'l1',
+        runId: 'r1',
+        turnId: 't1',
+        text: '',
+        reasoning: '正在思考',
+        lastDeltaSeq: 5,
+        startedAt: 3,
+      },
+    },
+    tools: {},
+    liveToolOutput: {},
+    usage: { inputTokens: 0, outputTokens: 0 },
+    usageByTurn: { t1: { inputTokens: 1, outputTokens: 2 } },
+    contextTokens: undefined,
+    checkpoints: [
+      { checkpointId: 'c1', reason: 'turn', seq: 1, runId: 'r1', turnId: 't1', createdAt: 1 },
+    ],
+    restores: [{ checkpointId: 'c1', seq: 4, ts: 3 }],
+    compaction: { summary: '压缩摘要', seq: 19 },
+    toolOutputOmitted: { seq: 20 },
+    plans: [plan, { ...plan, planId: 'pl3', turnId: 't1', seq: 9 }],
+  } as unknown as SessionView
+
+  it('renders messages, reasoning, marks, plans and a limit outcome', async () => {
+    const sendPrompt = vi.fn(async () => true)
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      settings: { providers: [] },
+      sendPrompt,
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={rich} onOpenPlan={vi.fn()} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(screen.getByText('想一想')).toBeTruthy()
+    expect(screen.getByText('正在思考')).toBeTruthy()
+    expect(screen.getByText('完成')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /较早的对话已压缩/ }))
+    expect(screen.getByText('压缩摘要')).toBeTruthy()
+    expect(screen.getAllByText(/分钟/).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /继续/ })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /继续/ }))
+    expect(sendPrompt).toHaveBeenCalled()
+  })
+
+  it('renders the empty stream without a view', () => {
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      approvals: {},
+      settings: undefined,
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={undefined} onOpenPlan={vi.fn()} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(screen.getByRole('list', { name: '消息' })).toBeTruthy()
   })
 })

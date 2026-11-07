@@ -55,7 +55,7 @@ function ModeCards() {
           aria-checked={option === mode}
           onClick={() => option !== mode && void updateSettings({ permissionMode: option })}
           className={cn(
-            'flex flex-col gap-0.5 rounded-[10px] bg-paper px-3 py-2.5 text-left shadow-[inset_0_0_0_1px_var(--hair2)] transition-colors',
+            'flex flex-col gap-0.5 rounded-[10px] bg-paper px-3 py-2.5 text-left shadow-[inset_0_0_0_0.5px_var(--hair2)] transition-colors',
             option === mode && 'bg-accent-soft shadow-[inset_0_0_0_1.5px_var(--accent)]',
           )}
         >
@@ -313,7 +313,7 @@ export function PermissionsSettings() {
       )}
       <section
         aria-label={t('permissions.rules.title')}
-        className="overflow-hidden rounded-approval bg-raise shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)]"
+        className="overflow-hidden rounded-card bg-raise shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)]"
       >
         {entries !== undefined && rows.length === 0 ? (
           <p className="px-3.5 py-4 text-ui text-muted">{t('permissions.rules.empty')}</p>

@@ -3,7 +3,7 @@
  *
  * M2-02 起按视觉规范 §2 布局：窗口底色上左边是侧栏（新对话、会话列表、模型供应商），右边是纸面
  * （当前会话或新对话表单）。窗口宽度小于 880px 时侧栏收起，可以从顶栏展开。⌘N / Ctrl+N 新对话。
- * 主题跟随设置（M2-01，`ThemeSync`）；开发模式下纸面底部是事件查看器（M0-15d）。
+ * 主题跟随设置（M2-01，`ThemeSync`）。
  * M2-09：设置页（侧栏底部“设置”或 ⌘, / Ctrl+,）换掉侧栏与纸面内容，Esc 或“返回对话”回到原来的页面。
  * M2-12：⌘K / Ctrl+K 搜索对话（在设置页中也可以），选中后回到对话页。
  * 没有 store（preload 未加载，如在普通浏览器中打开）时只显示应用名称与语言切换。
@@ -14,7 +14,6 @@ import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import { ChatPanel, TopBar } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
-import { EventViewer } from './EventViewer.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
@@ -25,19 +24,17 @@ import { SessionSearch } from './SessionSearch.js'
 import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
 import { ThemeSync } from './ThemeSync.js'
-import { IconButton, TooltipProvider } from './ui/index.js'
+import { CairnMark, IconButton, TooltipProvider } from './ui/index.js'
 
 export interface AppProps {
   readonly i18n: I18nInstance
   readonly store?: SessionStore
-  /** 显示开发工具（事件查看器）；store 需开启事件记录。 */
-  readonly devTools?: boolean
 }
 
 /** 窗口宽度小于这个值时侧栏收起（视觉规范 §2）。 */
 const NARROW_QUERY = '(max-width: 879px)'
 
-function Workspace({ devTools }: { readonly devTools: boolean }) {
+function Workspace() {
   const { t } = useTranslation('session')
   const narrow = useMediaQuery(NARROW_QUERY)
   const [sidebarOpen, setSidebarOpen] = useState(!narrow)
@@ -100,19 +97,18 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
     return (
       <div className="flex h-full bg-chrome text-fg">
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        {sidebarOpen && (
-          <SettingsNav
-            section={settings}
-            onSelect={(section) => {
-              setSettings(section)
-              if (narrow) setSidebarOpen(false)
-            }}
-            onBack={closeSettings}
-            onCollapse={() => setSidebarOpen(false)}
-          />
-        )}
+        <SettingsNav
+          open={sidebarOpen}
+          section={settings}
+          onSelect={(section) => {
+            setSettings(section)
+            if (narrow) setSidebarOpen(false)
+          }}
+          onBack={closeSettings}
+          onCollapse={() => setSidebarOpen(false)}
+        />
         <main
-          className={`relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-paper bg-paper shadow-1 ${sidebarOpen ? '' : 'ml-2'}`}
+          className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper ${sidebarOpen ? 'border-l-[0.5px] border-hair' : ''}`}
         >
           <ErrorBanner />
           <SettingsContent section={settings} leading={expand} onBack={closeSettings} />
@@ -126,26 +122,25 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
     <div className="flex h-full bg-chrome text-fg">
       {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
       <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-      {sidebarOpen && (
-        <Sidebar
-          onNewChat={() => {
-            setComposing(true)
-            if (narrow) setSidebarOpen(false)
-          }}
-          onCollapse={() => setSidebarOpen(false)}
-          onSearch={() => setSearching(true)}
-          onSelect={() => {
-            setComposing(false)
-            if (narrow) setSidebarOpen(false)
-          }}
-          onSettings={(section) => {
-            setSettings(section ?? 'general')
-            if (narrow) setSidebarOpen(false)
-          }}
-        />
-      )}
+      <Sidebar
+        open={sidebarOpen}
+        onNewChat={() => {
+          setComposing(true)
+          if (narrow) setSidebarOpen(false)
+        }}
+        onCollapse={() => setSidebarOpen(false)}
+        onSearch={() => setSearching(true)}
+        onSelect={() => {
+          setComposing(false)
+          if (narrow) setSidebarOpen(false)
+        }}
+        onSettings={(section) => {
+          setSettings(section ?? 'general')
+          if (narrow) setSidebarOpen(false)
+        }}
+      />
       <main
-        className={`relative my-2 mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-paper bg-paper shadow-1 ${sidebarOpen ? '' : 'ml-2'}`}
+        className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper ${sidebarOpen ? 'border-l-[0.5px] border-hair' : ''}`}
       >
         <ErrorBanner />
         {composing || showNew ? (
@@ -159,22 +154,18 @@ function Workspace({ devTools }: { readonly devTools: boolean }) {
         ) : (
           <ChatPanel leading={expand} />
         )}
-        {devTools && (
-          <div className="max-h-[35%] shrink-0 overflow-y-auto border-t-[0.5px] border-hair p-3 text-note">
-            <EventViewer />
-          </div>
-        )}
       </main>
       {search}
     </div>
   )
 }
 
-function Shell({ store, devTools }: Omit<AppProps, 'i18n'>) {
+function Shell({ store }: Omit<AppProps, 'i18n'>) {
   const { t } = useTranslation()
   if (!store) {
     return (
       <main className="flex h-full flex-col items-center justify-center gap-3 bg-chrome">
+        <CairnMark size={64} label={t('app.name')} className="text-fg" />
         <h1 className="text-page">{t('app.name')}</h1>
         <LanguageSwitcher />
       </main>
@@ -183,16 +174,16 @@ function Shell({ store, devTools }: Omit<AppProps, 'i18n'>) {
   return (
     <SessionStoreProvider store={store}>
       <ThemeSync />
-      <Workspace devTools={devTools ?? false} />
+      <Workspace />
     </SessionStoreProvider>
   )
 }
 
-export function App({ i18n, store, devTools = false }: AppProps) {
+export function App({ i18n, store }: AppProps) {
   return (
     <I18nextProvider i18n={i18n}>
       <TooltipProvider>
-        <Shell {...(store ? { store } : {})} devTools={devTools} />
+        <Shell {...(store ? { store } : {})} />
       </TooltipProvider>
     </I18nextProvider>
   )

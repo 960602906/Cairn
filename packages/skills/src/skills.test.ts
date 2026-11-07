@@ -155,6 +155,16 @@ function tempDir(): string {
   return dir
 }
 
+function symlinkDirectory(target: string, link: string): boolean {
+  try {
+    fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') return false
+    throw error
+  }
+}
+
 function writeSkill(
   dir: string,
   text = markdown('license: MIT\n'),
@@ -179,7 +189,7 @@ describe('扫描目录', () => {
     })
     fs.writeFileSync(path.join(root, 'demo', 'bin-tool'), '#!/bin/sh\necho\n')
     writeSkill(path.join(root, 'broken'), 'not a skill')
-    fs.symlinkSync(path.join(root, 'demo'), path.join(root, 'linked'))
+    symlinkDirectory(path.join(root, 'demo'), path.join(root, 'linked'))
     fs.writeFileSync(path.join(root, 'readme.txt'), 'ignore')
     const missing = scanSkillRoot(path.join(root, 'nope'))
     expect(missing).toEqual({ skills: [], duplicates: [], skipped: [] })
@@ -232,6 +242,27 @@ describe('扫描目录', () => {
     fs.writeFileSync(file, 'x')
     expect(scanSkillRoot(file)).toEqual({ skills: [], duplicates: [], skipped: [] })
   })
+
+  it('sorts skills and files, and skips ignored folders and folders without SKILL.md', () => {
+    const root = tempDir()
+    const named = (name: string) => `---\nname: ${name}\ndescription: A sample skill.\n---\nbody\n`
+    writeSkill(path.join(root, 'zeta'), named('zeta-skill'), {
+      'b.txt': 'b',
+      'a.txt': 'a',
+    })
+    writeSkill(path.join(root, 'alpha'), named('alpha-skill'))
+    fs.mkdirSync(path.join(root, 'zeta', 'node_modules'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'zeta', 'node_modules', 'ignored.js'), 'x')
+    fs.mkdirSync(path.join(root, 'plain'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'plain', 'readme.txt'), 'x')
+    writeSkill(path.join(root, 'zbroken'), 'not a skill')
+    writeSkill(path.join(root, 'abroken'), 'not a skill')
+
+    const scan = scanSkillRoot(root)
+    expect(scan.skills.map((item) => item.skill.name)).toEqual(['alpha-skill', 'zeta-skill'])
+    expect(scan.skills[1]?.skill.files.map((file) => file.path)).toEqual(['a.txt', 'b.txt'])
+    expect(scan.skipped).toHaveLength(2)
+  })
 })
 
 describe('安装', () => {
@@ -255,7 +286,7 @@ describe('安装', () => {
     const source = tempDir()
     const dest = tempDir()
     writeSkill(source)
-    fs.symlinkSync(path.join(source, 'SKILL.md'), path.join(source, 'link.md'))
+    symlinkDirectory(source, path.join(source, 'link-dir'))
     expect(catchSkill(() => installSkill({ kind: 'directory', path: source }, dest)).code).toBe(
       SkillErrorCode.Traversal,
     )
@@ -268,7 +299,7 @@ describe('安装', () => {
     expect(catchSkill(() => previewSkill({ kind: 'directory', path: file })).code).toBe(
       SkillErrorCode.Invalid,
     )
-    fs.symlinkSync(source, path.join(dest, 'linked-src'))
+    symlinkDirectory(source, path.join(dest, 'linked-src'))
     expect(
       catchSkill(() => previewSkill({ kind: 'directory', path: path.join(dest, 'linked-src') }))
         .code,
@@ -335,5 +366,33 @@ describe('安装', () => {
     expect(catchSkill(() => previewSkill({ kind: 'zip', path: nested })).message).toContain(
       'SKILL.md',
     )
+  })
+
+  it('reads a zip with SKILL.md at the root, ignores directory entries and rejects multiple roots', () => {
+    const dir = tempDir()
+    const flat = path.join(dir, 'flat.zip')
+    fs.writeFileSync(
+      flat,
+      zipSync({
+        'SKILL.md': strToU8(markdown()),
+        'folder/': new Uint8Array(),
+        'refs/guide.md': strToU8('guide'),
+      }),
+    )
+    const pkg = previewSkill({ kind: 'zip', path: flat })
+    expect(pkg.name).toBe('demo-skill')
+    expect(pkg.files.map((file) => file.path)).toEqual(['refs/guide.md'])
+
+    const multiple = path.join(dir, 'multiple.zip')
+    fs.writeFileSync(multiple, zipSync({ 'one/a.txt': strToU8('a'), 'two/b.txt': strToU8('b') }))
+    expect(catchSkill(() => previewSkill({ kind: 'zip', path: multiple })).code).toBe(
+      SkillErrorCode.Invalid,
+    )
+
+    const file = path.join(dir, 'source.txt')
+    fs.writeFileSync(file, 'x')
+    expect(
+      catchSkill(() => previewSkill({ kind: 'directory', path: path.join(file, 'nested') })).code,
+    ).toBe(SkillErrorCode.NotFound)
   })
 })

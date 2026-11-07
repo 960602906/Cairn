@@ -9,7 +9,10 @@ import { App } from './App.js'
 import { formatElapsed } from './Composer.js'
 import { createSessionStore } from './session-store.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 type Listener = (data: { sessionId: string; events: EventEnvelope[] }) => void
 
@@ -102,12 +105,45 @@ const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
 /** 运行中发送按钮换成停止按钮，此时为 null。 */
 const sendButton = () => screen.queryByRole('button', { name: '发送' }) as HTMLButtonElement
 const stopButton = () => screen.queryByRole('button', { name: '停止' }) as HTMLButtonElement | null
+/** 右侧会话信息栏默认收起，交互前先打开（窄窗口时它不再在可访问树里）。 */
+const showPanel = async () => {
+  const toggle = screen.getByRole('button', { name: '会话信息' })
+  if (toggle.getAttribute('aria-expanded') === 'false') await userEvent.click(toggle)
+}
 
 describe('ChatPanel', () => {
   it('asks to pick a session when none is selected', async () => {
     setup()
     expect(await screen.findByText('选择或新建一个会话开始对话')).toBeTruthy()
     expect(screen.queryByLabelText('输入消息')).toBeNull()
+  })
+
+  it('opens and closes the session panel from the header on narrow windows', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    const toggle = screen.getByRole('button', { name: '会话信息' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('complementary', { name: '会话信息' })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '关闭会话信息' }))
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('starts with the session panel open on wide windows and can collapse it', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('min-width'),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    const { open } = setup({ history: HISTORY })
+    await open()
+    const toggle = screen.getByRole('button', { name: '会话信息' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
   })
 
   it('shows a mark when this turn loaded AGENTS.md and drops it on the next turn', async () => {
@@ -136,15 +172,15 @@ describe('ChatPanel', () => {
     })
     await open()
     expect(messages().slice(0, 2)).toEqual(['你你好', '助手你好！fake-1'])
-    await userEvent.click(screen.getByRole('button', { name: '更多' }))
-    await userEvent.click(screen.getByRole('menuitem', { name: '会话要点' }))
-    const drawer = screen.getByRole('dialog', { name: '会话要点' })
-    expect(within(drawer).getByText('目标：修复测试')).toBeTruthy()
-    await userEvent.click(within(drawer).getByRole('button', { name: '编辑' }))
-    const box = within(drawer).getByRole('textbox', { name: '编辑' })
+    await showPanel()
+    await userEvent.click(screen.getByRole('tab', { name: '会话要点' }))
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    expect(within(panel).getByText('目标：修复测试')).toBeTruthy()
+    await userEvent.click(within(panel).getByRole('button', { name: '编辑' }))
+    const box = within(panel).getByRole('textbox', { name: '编辑' })
     await userEvent.clear(box)
     await userEvent.type(box, '不要改 API')
-    await userEvent.click(within(drawer).getByRole('button', { name: '保存' }))
+    await userEvent.click(within(panel).getByRole('button', { name: '保存' }))
     expect(request).toHaveBeenCalledWith('session.brief.update', {
       sessionId: 's1',
       content: '不要改 API',
@@ -152,7 +188,7 @@ describe('ChatPanel', () => {
     expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
     emit(ev(10, 'session.brief.updated', { content: '不要改 API', editedBy: 'user' }))
     expect(messages()).toHaveLength(2)
-    expect(within(drawer).getByText('不要改 API')).toBeTruthy()
+    expect(within(panel).getByText('不要改 API')).toBeTruthy()
   })
 
   it('shows a compaction divider that expands to the summary, and the omission note once', async () => {
@@ -933,7 +969,6 @@ describe('Composer (M2-04)', () => {
     expect(
       await screen.findByRole('img', { name: '上下文已用 25%（25,000 / 100,000 tokens）' }),
     ).toBeTruthy()
-    expect(screen.getByText('修改文件前会自动保存检查点')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '权限模式：询问' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /自动/ }))
     expect(request).toHaveBeenCalledWith('settings.update', { permissionMode: 'auto' })
@@ -962,6 +997,97 @@ describe('Composer (M2-04)', () => {
     expect(formatElapsed(3_725_000)).toBe('1:02:05')
     expect(formatElapsed(-5)).toBe('0:00')
   })
+
+  it('toggles plan mode and sends the next turn in plan mode', async () => {
+    const { request, open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    const toggle = screen.getByRole('button', { name: '计划模式' })
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(input().placeholder).toBe('描述要做的事。这一轮只会阅读项目并提出计划')
+    await userEvent.type(input(), '先看看{Enter}')
+    expect(request).toHaveBeenCalledWith('session.prompt', {
+      sessionId: 's1',
+      content: [{ type: 'text', text: '先看看' }],
+      mode: 'plan',
+    })
+  })
+
+  it('handles Shift+Tab only outside dialogs and other fields', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    const toggle = screen.getByRole('button', { name: '计划模式' })
+    const pressed = () => toggle.getAttribute('aria-pressed')
+    expect(pressed()).toBe('false')
+
+    fireEvent.keyDown(document.body, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(document.body, { key: 'Tab' })
+    fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true, ctrlKey: true })
+    fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true, metaKey: true })
+    fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true, altKey: true })
+    expect(pressed()).toBe('false')
+
+    fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true })
+    expect(pressed()).toBe('true')
+    fireEvent.keyDown(input(), { key: 'Tab', shiftKey: true })
+    expect(pressed()).toBe('false')
+
+    const other = document.createElement('input')
+    document.body.append(other)
+    fireEvent.keyDown(other, { key: 'Tab', shiftKey: true })
+    other.remove()
+    expect(pressed()).toBe('false')
+
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const inside = document.createElement('button')
+    dialog.append(inside)
+    document.body.append(dialog)
+    fireEvent.keyDown(inside, { key: 'Tab', shiftKey: true })
+    dialog.remove()
+    expect(pressed()).toBe('false')
+
+    const prevented = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: true,
+      cancelable: true,
+      bubbles: true,
+    })
+    prevented.preventDefault()
+    window.dispatchEvent(prevented)
+    expect(pressed()).toBe('false')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }))
+    expect(pressed()).toBe('false')
+  })
+
+  it('uses warning and danger context tones and falls back to the model id', async () => {
+    const unnamed = [
+      {
+        ...providers[0]!,
+        models: [{ ...providers[0]!.models[0]!, displayName: undefined }],
+      },
+    ]
+    const { emit, open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers: unnamed }) },
+    })
+    await open()
+    expect(await screen.findByRole('button', { name: '模型：测试供应商 · fake-1' })).toBeTruthy()
+    emit(ev(10, 'usage.reported', { model, usage: { inputTokens: 75_000, outputTokens: 0 } }))
+    expect(
+      await screen.findByRole('img', { name: '上下文已用 75%（75,000 / 100,000 tokens）' }),
+    ).toBeTruthy()
+    emit(ev(11, 'usage.reported', { model, usage: { inputTokens: 95_000, outputTokens: 0 } }))
+    expect(
+      await screen.findByRole('img', { name: '上下文已用 95%（95,000 / 100,000 tokens）' }),
+    ).toBeTruthy()
+  })
 })
 
 describe('file changes (M2-07)', () => {
@@ -977,17 +1103,18 @@ describe('file changes (M2-07)', () => {
     createdAt: 1,
   }
 
-  it('shows the session summary in the top bar and the turn changes under the last reply', async () => {
+  it('shows session changes in the right panel and the turn changes under the last reply', async () => {
     const { open } = setup({
       history: HISTORY,
       handlers: { 'changes.list': () => ({ changes: [change] }) },
     })
     await open()
-    expect(
-      await screen.findByRole('button', {
-        name: '本会话改动了 1 个文件，新增 3 行，删除 1 行',
-      }),
-    ).toBeTruthy()
+    await showPanel()
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    expect(within(panel).getByRole('tab', { name: '改动' }).getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    expect(await within(panel).findByRole('region', { name: '本会话的改动' })).toBeTruthy()
     const list = screen.getByRole('list', { name: '消息' })
     const turn = within(list).getByRole('region', { name: '本轮变更' })
     expect(within(turn).getByRole('button', { name: /src\/app\.ts/ })).toBeTruthy()
@@ -997,6 +1124,8 @@ describe('file changes (M2-07)', () => {
     const { open } = setup({ history: HISTORY })
     await open()
     expect(screen.queryByRole('region', { name: '本轮变更' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /本会话改动了/ })).toBeNull()
+    await showPanel()
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    expect(within(panel).getByText('还没有文件改动。')).toBeTruthy()
   })
 })

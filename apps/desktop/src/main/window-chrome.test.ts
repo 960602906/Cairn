@@ -20,12 +20,12 @@ describe('window chrome', () => {
     const options = windowChromeOptions('win32', true)
     expect(options.titleBarStyle).toBe('hidden')
     expect(options.titleBarOverlay).toEqual({
-      color: '#141416',
+      color: '#1b1b1e',
       symbolColor: '#bfc0c6',
       height: TITLE_BAR_HEIGHT,
     })
     expect(options.backgroundColor).toBe('#141416')
-    expect(titleBarOverlay(false)).toMatchObject({ color: '#eeeff2', symbolColor: '#45474f' })
+    expect(titleBarOverlay(false)).toMatchObject({ color: '#ffffff', symbolColor: '#45474f' })
     expect(usesTitleBarOverlay('linux')).toBe(true)
   })
 

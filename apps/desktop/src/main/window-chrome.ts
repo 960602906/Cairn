@@ -2,17 +2,18 @@
  * 无边框窗口（M2-02，视觉规范 §2）：窗口自己画标题区，侧栏铺在窗口底色上。
  *
  * - macOS：`hiddenInset`，红绿灯放在侧栏左上角；
- * - Windows / Linux：`hidden` + `titleBarOverlay`，系统按钮叠在窗口右上角，颜色随主题（`--chrome` 与 `--fg2`）。
+ * - Windows / Linux：`hidden` + `titleBarOverlay`，系统按钮叠在窗口右上角，颜色随主题（`--paper` 与 `--fg2`）。
  *   界面用 CSS `env(titlebar-area-*)` 给按钮让出位置。
  *
  * 纯函数，不依赖 Electron，便于测试。
  */
 
-/** 标题区高度：侧栏顶部的拖拽区与系统按钮的高度。 */
-export const TITLE_BAR_HEIGHT = 40
+/** 标题区高度：纸面顶栏与系统按钮使用同一高度，避免出现错位的第二条横线。 */
+export const TITLE_BAR_HEIGHT = 48
 
-/** 与 tokens.css 中的 `--chrome`、`--fg2` 一致。 */
+/** 与 tokens.css 中的 `--chrome`、`--paper`、`--fg2` 一致。 */
 const CHROME = { light: '#eeeff2', dark: '#141416' } as const
+const PAPER = { light: '#ffffff', dark: '#1b1b1e' } as const
 const SYMBOL = { light: '#45474f', dark: '#bfc0c6' } as const
 
 export interface TitleBarOverlay {
@@ -23,7 +24,7 @@ export interface TitleBarOverlay {
 
 export function titleBarOverlay(dark: boolean): TitleBarOverlay {
   return {
-    color: dark ? CHROME.dark : CHROME.light,
+    color: dark ? PAPER.dark : PAPER.light,
     symbolColor: dark ? SYMBOL.dark : SYMBOL.light,
     height: TITLE_BAR_HEIGHT,
   }

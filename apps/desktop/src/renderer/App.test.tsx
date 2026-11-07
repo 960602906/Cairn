@@ -6,7 +6,9 @@ import { App } from './App.js'
 describe('App', () => {
   it('renders the app name and the language switcher without preload', () => {
     const html = renderToStaticMarkup(<App i18n={createI18n('zh-CN')} />)
-    expect(html).toMatch(/^<main[^>]*><h1[^>]*>Cairn<\/h1><label>语言<select>/)
+    expect(html).toMatch(/^<main[^>]*><svg[^>]*aria-label="Cairn"[^>]*>/)
+    expect(html).toContain('<h1 class="text-page">Cairn</h1>')
+    expect(html).toContain('<label>语言<select>')
     expect(html).not.toContain('事件查看器')
   })
 

@@ -22,7 +22,7 @@ const project = (patch: Partial<ProjectSummary> = {}): ProjectSummary => ({
   ...patch,
 })
 
-function setup(initial: ProjectSummary[] = [project()]) {
+function setup(initial: ProjectSummary[] = [project()], options: { failUpdate?: boolean } = {}) {
   let projects = initial
   const request = vi.fn(async (method: string, params: unknown) => {
     if (method === 'settings.get') return { locale: 'zh-CN', providers: [] } satisfies Settings
@@ -30,6 +30,7 @@ function setup(initial: ProjectSummary[] = [project()]) {
     if (method === 'session.list') return { sessions: [] }
     if (method === 'project.list') return { projects }
     if (method === 'project.update') {
+      if (options.failUpdate) return undefined
       const patch = params as {
         projectId: string
         name?: string
@@ -99,5 +100,23 @@ describe('ProjectsSettings', () => {
     expect(screen.getByText(/不删除磁盘上的文件/)).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '移除' }))
     expect(await screen.findByText(/还没有打开过项目/)).toBeTruthy()
+  })
+
+  it('falls back to the created time and zero sessions, and resets empty or failed renames', async () => {
+    setup([project({ lastUsedAt: undefined, sessionCount: undefined })], { failUpdate: true })
+    await openProjects()
+    const card = screen.getByRole('list', { name: '已打开的项目' })
+    expect(within(card).getByText(/0 个会话/)).toBeTruthy()
+
+    const name = within(card).getByLabelText('项目名称') as HTMLInputElement
+    await userEvent.click(name)
+    await userEvent.keyboard('{Enter}')
+    await userEvent.clear(name)
+    await userEvent.tab()
+    expect(name.value).toBe('示例')
+
+    await userEvent.type(name, '新名字')
+    await userEvent.tab()
+    expect(name.value).toBe('示例')
   })
 })

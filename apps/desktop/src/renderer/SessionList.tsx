@@ -3,7 +3,7 @@
  * 每一项显示运行状态（运行中转圈、等待审批与失败用彩色圆点，并有读屏文字），悬停时出现“会话操作”菜单：
  * 重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
-import { MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
+import { Folder, FolderOpen, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'
@@ -140,10 +140,16 @@ function SessionItem({
         aria-current={active ? 'true' : undefined}
         onClick={onSelect}
         className={cn(
-          'flex h-8 w-full items-center gap-2 rounded-item pr-8 pl-2.5 text-left text-ui text-fg2 transition-colors hover:bg-hover',
+          'relative flex h-8 w-full items-center gap-2 rounded-item pr-8 pl-2.5 text-left text-ui text-fg2 transition-colors hover:bg-hover',
           active && 'bg-raise font-medium text-fg shadow-1 hover:bg-raise',
         )}
       >
+        {active && (
+          <span
+            aria-hidden
+            className="absolute top-1.5 bottom-1.5 left-0 w-0.5 rounded-full bg-accent"
+          />
+        )}
         <StatusMark status={session.status} />
         <span className="min-w-0 flex-1 truncate">{title}</span>
         {session.status !== 'idle' && (
@@ -205,6 +211,7 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const refreshSessions = useSessionStore((s) => s.refreshSessions)
   const selectSession = useSessionStore((s) => s.selectSession)
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
 
   // 项目名默认就是目录名（project-service），项目列表还没读取时用路径最后一段
   useEffect(() => {
@@ -218,22 +225,44 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
     <div className="flex flex-col gap-3">
       {groupSessions(sessions, projects).map((group) => (
         <section key={group.projectPath} aria-label={t('list.group', { name: group.name })}>
-          <h3 title={group.projectPath} className="truncate px-2.5 pb-1 text-note text-muted">
-            {group.name}
+          <h3>
+            <button
+              type="button"
+              title={group.projectPath}
+              aria-expanded={!collapsed.has(group.projectPath)}
+              onClick={() =>
+                setCollapsed((current) => {
+                  const next = new Set(current)
+                  if (next.has(group.projectPath)) next.delete(group.projectPath)
+                  else next.add(group.projectPath)
+                  return next
+                })
+              }
+              className="flex w-full items-center gap-1.5 rounded-item px-2.5 py-1 text-left text-note text-muted transition-colors hover:bg-hover hover:text-fg2"
+            >
+              {collapsed.has(group.projectPath) ? (
+                <Folder aria-hidden className="size-3.5 shrink-0 text-faint" />
+              ) : (
+                <FolderOpen aria-hidden className="size-3.5 shrink-0 text-faint" />
+              )}
+              <span className="truncate">{group.name}</span>
+            </button>
           </h3>
-          <ul className="flex flex-col gap-px">
-            {group.sessions.map((s) => (
-              <SessionItem
-                key={s.sessionId}
-                session={s}
-                active={s.sessionId === activeSessionId}
-                onSelect={() => {
-                  void selectSession(s.sessionId)
-                  onSelect?.()
-                }}
-              />
-            ))}
-          </ul>
+          {!collapsed.has(group.projectPath) && (
+            <ul className="mt-0.5 flex flex-col gap-px">
+              {group.sessions.map((s) => (
+                <SessionItem
+                  key={s.sessionId}
+                  session={s}
+                  active={s.sessionId === activeSessionId}
+                  onSelect={() => {
+                    void selectSession(s.sessionId)
+                    onSelect?.()
+                  }}
+                />
+              ))}
+            </ul>
+          )}
         </section>
       ))}
     </div>

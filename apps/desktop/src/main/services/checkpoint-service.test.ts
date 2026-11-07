@@ -360,4 +360,64 @@ describe('checkpoint service', () => {
     })
     expect(events.readAfter('s1', 1)).toEqual([])
   })
+
+  it('ignores unknown change and restore references while syncing', async () => {
+    const { service, storage, events, hostCheckpoint } = setup()
+    storage.changes.create({
+      changeId: 'tracked',
+      sessionId: 's1',
+      path: 'a.txt',
+      kind: 'modify',
+      added: 1,
+      removed: 1,
+      hunks: [],
+    })
+    const older = 'a'.repeat(40)
+    events.publish([
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 1,
+        type: 'checkpoint.created',
+        payload: { checkpointId: older, reason: 'turn_start' },
+      },
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 2,
+        type: 'file.changed',
+        payload: { changeId: 'tracked', path: 'a.txt', kind: 'modify' },
+      },
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 3,
+        type: 'checkpoint.restored',
+        payload: { checkpointId: older, truncateConversation: false },
+      },
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 4,
+        type: 'file.changed',
+        payload: { changeId: 'unknown', path: 'ghost.txt', kind: 'modify' },
+      },
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 5,
+        type: 'checkpoint.restored',
+        payload: { checkpointId: 'b'.repeat(40), truncateConversation: false },
+      },
+    ])
+    put('a.txt', 'one')
+    const current = await hostCheckpoint('s1')
+    await service.restore({ sessionId: 's1', checkpointId: current })
+    expect(storage.changes.get('tracked')?.status).toBe('reverted')
+  })
 })

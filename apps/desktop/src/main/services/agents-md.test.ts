@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,6 +15,20 @@ function tempDir(): string {
   dirs.push(dir)
   return dir
 }
+
+const canCreateFileSymlink = (() => {
+  const dir = mkdtempSync(join(tmpdir(), 'cairn-symlink-'))
+  try {
+    writeFileSync(join(dir, 'target'), 'x')
+    symlinkSync(join(dir, 'target'), join(dir, 'link'))
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') return false
+    throw error
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 describe('readAgentsMd', () => {
   it('reads AGENTS.md case-insensitively and prefers the exact name', () => {
@@ -51,12 +65,27 @@ describe('readAgentsMd', () => {
     expect(loaded?.lines).toBe(1)
   })
 
-  it('follows a symlink to the file', () => {
+  it.runIf(canCreateFileSymlink)('follows a symlink to the file', () => {
     const dir = tempDir()
     const target = join(dir, 'real.md')
     writeFileSync(target, '来自链接')
     symlinkSync(target, join(dir, 'AGENTS.md'))
     expect(readAgentsMd(dir)?.text).toBe('来自链接')
+  })
+
+  it('ignores directories, rejects a directory named AGENTS.md and treats ENOTDIR as missing', () => {
+    const dir = tempDir()
+    mkdirSync(join(dir, 'assets'))
+    writeFileSync(join(dir, 'agents.md'), '内容\n')
+    expect(readAgentsMd(dir)?.text).toBe('内容')
+
+    const blocked = tempDir()
+    mkdirSync(join(blocked, 'AGENTS.md'))
+    expect(readAgentsMd(blocked)).toBeUndefined()
+
+    const file = join(tempDir(), 'plain.txt')
+    writeFileSync(file, 'x')
+    expect(readAgentsMd(join(file, 'nested'))).toBeUndefined()
   })
 })
 

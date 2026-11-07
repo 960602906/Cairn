@@ -21,7 +21,13 @@ const configOf = (model: ModelRef): HostModelConfig => ({
   },
 })
 
-function setup(options?: { readonly auxiliary?: ModelRef; readonly configured?: boolean }) {
+function setup(options?: {
+  readonly auxiliary?: ModelRef
+  readonly configured?: boolean
+  readonly failResult?: boolean
+  readonly throwError?: boolean
+  readonly skipEvents?: boolean
+}) {
   const storage = createMemoryStorage()
   storage.projects.create({ projectId: 'p1', name: 'demo', path: '/work' })
   storage.sessions.create({
@@ -32,28 +38,34 @@ function setup(options?: { readonly auxiliary?: ModelRef; readonly configured?: 
     model: sessionModel,
   })
   const events = createSessionEventService({ storage })
-  events.publish([
-    {
-      v: 1,
-      sessionId: 's1',
-      runId: 'r1',
-      ts: 1,
-      type: 'session.created',
-      payload: {
-        projectId: 'p1',
-        projectPath: '/work',
-        workspacePath: '/work',
-        title: '',
-        model: sessionModel,
+  if (!options?.skipEvents) {
+    events.publish([
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 1,
+        type: 'session.created',
+        payload: {
+          projectId: 'p1',
+          projectPath: '/work',
+          workspacePath: '/work',
+          title: '',
+          model: sessionModel,
+        },
       },
-    },
-  ])
+    ])
+  }
   const requests: { model: ModelRef; system?: string }[] = []
   const complete: CompleteFn = async (request) => {
     requests.push({
       model: request.model.ref,
       ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
     })
+    if (options?.throwError) throw new Error('boom')
+    if (options?.failResult) {
+      return { ok: false, error: { code: 'model.failed' }, retryable: false }
+    }
     return { ok: true, text: '  目标还在  ', usage: { inputTokens: 4, outputTokens: 3 } }
   }
   const onError = vi.fn()
@@ -125,5 +137,24 @@ describe('compact service', () => {
     })
     await expect(again.summarize('s1', 'transcript')).resolves.toBeUndefined()
     expect(events.readAfter('s1', 0).some((event) => event.type === 'usage.reported')).toBe(true)
+  })
+
+  it('skips an empty transcript and a session without a model', async () => {
+    const { service } = setup()
+    await expect(service.summarize('s1', '   ')).resolves.toBeUndefined()
+
+    const none = setup({ skipEvents: true })
+    await expect(none.service.summarize('s1', 'transcript')).resolves.toBeUndefined()
+    expect(none.requests).toHaveLength(0)
+  })
+
+  it('reports failed and thrown completions', async () => {
+    const failed = setup({ failResult: true })
+    await expect(failed.service.summarize('s1', 'transcript')).resolves.toBeUndefined()
+    expect(failed.onError.mock.calls[0]?.[0]).toMatchObject({ message: 'model.failed' })
+
+    const thrown = setup({ throwError: true })
+    await expect(thrown.service.summarize('s1', 'transcript')).resolves.toBeUndefined()
+    expect(thrown.onError.mock.calls[0]?.[0]).toMatchObject({ message: 'boom' })
   })
 })

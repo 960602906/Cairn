@@ -25,6 +25,9 @@ function setup(options?: {
   readonly auxiliary?: ModelRef
   readonly sessionBrief?: boolean
   readonly configured?: (model: ModelRef) => boolean
+  readonly failResult?: boolean
+  readonly throwError?: boolean
+  readonly pause?: Promise<void>
 }) {
   const storage = createMemoryStorage()
   storage.projects.create({ projectId: 'p1', name: 'demo', path: '/work' })
@@ -44,6 +47,11 @@ function setup(options?: {
       content: request.messages.map((message) => message.content).join('\n'),
       ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
     })
+    if (options?.pause) await options.pause
+    if (options?.throwError) throw new Error('boom')
+    if (options?.failResult) {
+      return { ok: false, error: { code: 'model.failed' }, retryable: false }
+    }
     return { ok: true, text, usage: { inputTokens: 3, outputTokens: 2 } }
   }
   const onError = vi.fn()
@@ -202,5 +210,53 @@ describe('createBriefService', () => {
     publish(noisy.events, [opened(), ...turn('t1')])
     await vi.waitFor(() => expect(noisy.onError).toHaveBeenCalled())
     noisy.service.stop()
+  })
+
+  it('skips a turn without a user message', async () => {
+    const { events, requests, service } = setup()
+    publish(events, [
+      opened(),
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 4,
+        turnId: 't1',
+        type: 'turn.completed',
+        payload: { durationMs: 5 },
+      },
+    ])
+    await Promise.resolve()
+    expect(requests).toHaveLength(0)
+    service.stop()
+  })
+
+  it('reports a failed completion and a thrown completion', async () => {
+    const failed = setup({ failResult: true })
+    publish(failed.events, [opened(), ...turn('t1')])
+    await vi.waitFor(() => expect(failed.onError).toHaveBeenCalled())
+    expect(failed.onError.mock.calls[0]?.[0]).toMatchObject({ message: 'model.failed' })
+    failed.service.stop()
+
+    const thrown = setup({ throwError: true })
+    publish(thrown.events, [opened(), ...turn('t1')])
+    await vi.waitFor(() => expect(thrown.onError).toHaveBeenCalled())
+    expect(thrown.onError.mock.calls[0]?.[0]).toMatchObject({ message: 'boom' })
+    thrown.service.stop()
+  })
+
+  it('does not publish after stopping while a completion is in flight', async () => {
+    let release!: () => void
+    const pause = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { events, requests, service } = setup({ pause })
+    publish(events, [opened(), ...turn('t1')])
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    service.stop()
+    release()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(briefs(events)).toHaveLength(0)
   })
 })

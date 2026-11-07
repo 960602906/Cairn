@@ -6,7 +6,7 @@
 :root {
   color-scheme: light;
   /* 基础 */
-  --chrome: #eeeff2;
+  --chrome: #f1f2f4;
   --paper: #ffffff;
   --raise: #ffffff;
   --sunk: #f5f5f7;
@@ -19,27 +19,27 @@
   /* 文字 */
   --fg: #17181c;
   --fg2: #45474f;
-  --muted: #80838d;
-  --faint: #b1b3ba;
+  --muted: #696c76;
+  --faint: #7a7d87;
 
   /* 操作与状态 */
   --ink: #17181c;
   --ink-fg: #fafafa;
-  --accent: #3b6ef5;
-  --accent-soft: rgba(59, 110, 245, 0.09);
-  --ok: #1f9d63;
-  --ok-soft: rgba(31, 157, 99, 0.09);
-  --warn: #c2770c;
-  --warn-soft: rgba(194, 119, 12, 0.1);
-  --danger: #e0453f;
-  --danger-soft: rgba(224, 69, 63, 0.09);
+  --accent: #2f62e8;
+  --accent-soft: rgba(47, 98, 232, 0.09);
+  --ok: #167a4f;
+  --ok-soft: rgba(22, 122, 79, 0.09);
+  --warn: #9a5b00;
+  --warn-soft: rgba(154, 91, 0, 0.1);
+  --danger: #c23832;
+  --danger-soft: rgba(194, 56, 50, 0.09);
 
   /* 代码区 */
   --code-bg: #fbfbfc;
   --code-head: #f5f5f7;
   --gutter: #b8bac1;
   --gutter-bg: #f7f7f9;
-  --line-hl: rgba(59, 110, 245, 0.06);
+  --line-hl: rgba(47, 98, 232, 0.06);
   --add-bg: #ecf8f1;
   --add-gut: #dcf2e6;
   --add-word: #c3ead4;
@@ -110,8 +110,8 @@
   /* 文字 */
   --fg: #ececef;
   --fg2: #bfc0c6;
-  --muted: #87888f;
-  --faint: #56575d;
+  --muted: #8f9199;
+  --faint: #75777f;
 
   /* 操作与状态 */
   --ink: #ececef;

@@ -4,7 +4,7 @@
  * - **本轮变更**（视觉规范 §7.4，`TurnChanges`）：每轮结束、有文件改动时出现在最后一条助手消息下面，标题
  *   “本轮变更”和总增删数，下面每个文件一行（语言图标、路径、新文件 / 已删除标记、增删数、比例方块），点击展开
  *   对应的 diff 卡片。
- * - **顶栏改动摘要**（`SessionChanges`）：“N 个文件 +a −b”，点击打开对话框列出本会话所有改动。
+ * - **右侧改动栏**（`SessionChangesPanel`）：列出本会话所有改动，可展开 diff 并撤销。
  * - **撤销此文件**：确认后整文件撤销这一项包含的所有改动（`changes.revert`）。只在会话空闲时可用；文件之后又被
  *   修改过时主进程整体拒绝，错误由错误横幅显示。
  * - **撤销此块**（M3-06）：一项只有一条改动时，diff 里每个对得上的块可以单独撤销。部分撤销时显示“已撤销 1/3 块”。
@@ -28,7 +28,6 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTitle,
-  DialogTrigger,
 } from './ui/index.js'
 
 /** 可以撤销文件的会话状态：没有在运行或等待审批。 */
@@ -245,39 +244,27 @@ export function TurnChanges({
   )
 }
 
-/** 顶栏的本会话改动摘要；点击打开对话框列出所有改动。没有改动时不显示。 */
-export function SessionChanges({ sessionId }: { readonly sessionId: string }) {
+/** 右侧会话信息栏中的全部改动。 */
+export function SessionChangesPanel({ sessionId }: { readonly sessionId: string }) {
   const { t } = useTranslation('session')
   const changes = useSessionStore((s) => s.changes[sessionId])
   const entries = useMemo(() => (changes ? fileEntries(changes) : []), [changes])
-  if (entries.length === 0) return null
+  if (entries.length === 0) {
+    return <p className="px-4 py-3 text-ui text-muted">{t('changes.empty')}</p>
+  }
   const sum = totals(entries)
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          aria-label={t('changes.summary', {
-            count: sum.files,
-            added: sum.added,
-            removed: sum.removed,
-          })}
-          className="no-drag flex h-7 shrink-0 items-center gap-1.5 rounded-item px-2 text-note text-fg2 hover:bg-hover"
-        >
-          <FileDiffIcon aria-hidden className="size-3.5 text-muted" />
-          {t('changes.files', { count: sum.files })}
+    <section aria-label={t('changes.session')} className="flex h-full min-h-0 flex-col">
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b-[0.5px] border-hair px-3 text-note">
+        <FileDiffIcon aria-hidden className="size-3.5 text-muted" />
+        <h3 className="font-medium text-fg">{t('changes.session')}</h3>
+        <span className="ml-auto shrink-0">
           <ChangeCounts added={sum.added} removed={sum.removed} />
-        </button>
-      </DialogTrigger>
-      <DialogContent className="flex max-h-[calc(100vh-64px)] w-[min(860px,calc(100vw-32px))] flex-col p-0">
-        <div className="px-6 pt-5 pb-3">
-          <DialogTitle>{t('changes.session')}</DialogTitle>
-          <DialogDescription>{t('changes.sessionHint')}</DialogDescription>
-        </div>
-        <div className="min-h-0 overflow-y-auto border-t-[0.5px] border-hair pb-2">
-          <FileChangeList sessionId={sessionId} entries={entries} />
-        </div>
-      </DialogContent>
-    </Dialog>
+        </span>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+        <FileChangeList sessionId={sessionId} entries={entries} />
+      </div>
+    </section>
   )
 }

@@ -63,9 +63,10 @@ test('抽屉显示会话要点，编辑后的文字不会被自动更新盖掉',
     ])
     await expect(runStatus(window)).toHaveText('空闲')
 
-    await window.getByRole('button', { name: '更多' }).click()
-    await window.getByRole('menuitem', { name: '会话要点' }).click()
-    const drawer = window.getByRole('dialog', { name: '会话要点' })
+    const panelToggle = window.getByRole('button', { name: '会话信息', exact: true })
+    if ((await panelToggle.getAttribute('aria-expanded')) === 'false') await panelToggle.click()
+    const drawer = window.getByRole('complementary', { name: '会话信息' })
+    await drawer.getByRole('tab', { name: '会话要点' }).click()
     await expect(drawer).toContainText(BRIEF)
 
     await drawer.getByRole('button', { name: '编辑' }).click()

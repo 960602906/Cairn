@@ -13,6 +13,7 @@ import {
   RunEngine,
   retryDelay,
   RunEngineErrorCode,
+  SESSION_BRIEF_PREFIX,
   createSessionView,
   rebuildHistory,
   reduceSessionEvents,
@@ -773,6 +774,31 @@ describe('RunEngine：限额与非法工具调用', () => {
     hooks.toolCallRejected!({ id: 'c9', name: 'x', input: {} }, { code: 'tool.not_found' })
     expect(events).toHaveLength(before)
   })
+
+  it('工具流水线重复报告开始只发出一次 tool.started', async () => {
+    const pipeline: ToolPipeline = {
+      async run(_call, _signal, observer) {
+        observer.started()
+        observer.started()
+        return { status: 'ok', content: text('ok'), truncated: false }
+      },
+    }
+    const { engine, events } = await start(
+      fake({
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'read', input: {} },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      }),
+      { toolPipeline: pipeline },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(types(events).filter((type) => type === 'tool.started')).toHaveLength(1)
+  })
 })
 
 describe('RunEngine：模型请求重试', () => {
@@ -1110,6 +1136,30 @@ describe('RunEngine：生命周期', () => {
       code: RunEngineErrorCode.Disposed,
     })
   })
+
+  it('恢复历史时区分会话要点与普通摘要，并记住用户轮次', async () => {
+    const history = [
+      {
+        role: 'summary' as const,
+        content: 'old summary',
+        coversTurns: ['t0', 't0'] as [string, string],
+        ts: 1,
+      },
+      {
+        role: 'summary' as const,
+        content: `${SESSION_BRIEF_PREFIX}keep this`,
+        coversTurns: ['brief', 'brief'] as [string, string],
+        ts: 2,
+      },
+      { role: 'user' as const, content: text('first'), turnId: 't1', ts: 3 },
+      { role: 'user' as const, content: text('second'), ts: 4 },
+    ]
+    const { engine, events } = await start(fake({ turns: [] }), {
+      restore: { history, state: 'idle' },
+    })
+    await engine.prompt({ messageId: 'u1', content: text('next') })
+    expect(events.at(-1)?.type).toBe('turn.completed')
+  })
 })
 
 /** 由测试逐条发出运行时事件的运行时，用来覆盖异常与边界情况。 */
@@ -1435,5 +1485,20 @@ describe('RunEngine：上下文压缩（M3-03）', () => {
     await engine.prompt({ messageId: 'm1', content: text('只有一轮') })
     expect(await engine.compact()).toBe(false)
     expect(summarize).not.toHaveBeenCalled()
+  })
+
+  it('没有摘要器时仍可整理要点；运行中排队，释放后忽略', async () => {
+    vi.useFakeTimers()
+    const { engine } = await start(fake({ delayMs: 10, turns: [turn('一')] }), {
+      sessionBrief: async () => 'keep',
+    })
+    const done = engine.prompt({ messageId: 'm1', content: text('运行中') })
+    expect(await engine.compact()).toBe(true)
+    await vi.advanceTimersByTimeAsync(50)
+    await done
+    expect(await engine.compact()).toBe(false)
+
+    await engine.dispose()
+    expect(await engine.compact()).toBe(false)
   })
 })
