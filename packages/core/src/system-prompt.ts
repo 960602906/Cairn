@@ -10,7 +10,9 @@
  * 5. 环境信息：操作系统、shell 类型（ADR-0012，`run_command` 的命令按它的语法写）、工作区、当前日期。
  *
  * 不依赖 DOM 与 Node 类型；操作系统、shell 与日期由调用方给出。
+ * 计划模式（M3-05）的说明加在用户说明之后、环境信息之前。
  */
+import { executionPlanInstructions, PLAN_MODE_INSTRUCTIONS } from './plan.js'
 
 /** 有工具时附加的安全规则（架构 §17，防提示注入）。 */
 export const TOOL_RESULT_NOTICE =
@@ -53,6 +55,16 @@ export interface SystemPromptInput {
   readonly projectInstructions?: string
   /** 用户在设置中的自定义说明。 */
   readonly userInstructions?: string
+  /**
+   * 计划模式（M3-05）。`propose` 是这一轮只读并提出计划；`execute` 是按已批准的计划执行。
+   */
+  readonly plan?:
+    | { readonly kind: 'propose' }
+    | {
+        readonly kind: 'execute'
+        readonly goal: string
+        readonly steps: readonly { readonly id: string; readonly title: string }[]
+      }
 }
 
 const section = (title: string, body: string | undefined) => {
@@ -88,6 +100,11 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
         ? `The user set these instructions for all sessions. Follow them unless they conflict with the safety rules above.\n\n${input.userInstructions.trim()}`
         : undefined,
     ),
+    input.plan?.kind === 'propose'
+      ? PLAN_MODE_INSTRUCTIONS
+      : input.plan?.kind === 'execute'
+        ? executionPlanInstructions(input.plan)
+        : undefined,
     `# Environment\n${environment}`,
   ]
     .filter((part): part is string => part !== undefined)

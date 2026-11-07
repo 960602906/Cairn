@@ -184,6 +184,10 @@ describe('translateError', () => {
       'checkpoint.git_unavailable',
       'checkpoint.not_found',
       'checkpoint.failed',
+      'plan.not_pending',
+      'plan.unknown_step',
+      'plan.no_active_plan',
+      'permission.plan_mode',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())

@@ -558,6 +558,56 @@ describe('agent host', () => {
     await main.request('host.shutdown', {})
     await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
   })
+
+  it('keeps plan mode read-only and ends the turn after propose_plan (M3-05)', async () => {
+    const plan = {
+      goal: '读代码',
+      files: ['src/a.ts'],
+      steps: [{ id: 'read', title: '读 src/a.ts' }],
+      risks: '',
+      verification: '单测通过',
+      markdown: '1. 读代码',
+    }
+    const write: ToolDefinition = {
+      name: 'write_note',
+      description: 'Write a note',
+      category: 'write',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: { type: 'object' },
+      execute: () => Promise.resolve({ content: text('wrote') }),
+    }
+    const h = setup(
+      {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'write_note', input: {} },
+              { kind: 'tool', name: 'propose_plan', input: plan },
+              { kind: 'reply', text: 'should-not-run' },
+            ],
+          },
+        ],
+      },
+      { registerTools: (registry) => registry.register(write) },
+    )
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', {
+      messageId: 'm1',
+      content: text('计划一下'),
+      mode: 'plan',
+    })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: {
+        code: 'tool.denied',
+        params: { reason: expect.stringContaining('Plan mode is read-only') },
+      },
+    })
+    expect(h.events.some((event) => event.type === 'plan.proposed')).toBe(true)
+    expect(JSON.stringify(h.events)).not.toContain('should-not-run')
+    expect(h.events.filter((event) => event.type === 'step.started')).toHaveLength(2)
+  })
 })
 
 describe('fake model', () => {

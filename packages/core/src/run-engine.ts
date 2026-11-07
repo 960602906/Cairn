@@ -141,7 +141,15 @@ const noTools: ToolExecutor = async (call) => ({
 
 /** `executeTool` 的结果转换为流水线结果（M0 的错误码不变）。 */
 function toOutcome(result: RuntimeToolResult, hasExecutor: boolean): ToolOutcome {
-  if (result.status === 'ok') return { status: 'ok', content: result.content, truncated: false }
+  if (result.status === 'ok') {
+    return {
+      status: 'ok',
+      content: result.content,
+      truncated: false,
+      ...(result.stopLoop ? { stopLoop: true } : {}),
+      ...(result.effects && result.effects.length > 0 ? { effects: result.effects } : {}),
+    }
+  }
   if (result.status === 'cancelled') return { status: 'cancelled', content: result.content }
   const message = result.content.map((p) => (p.type === 'text' ? p.text : '')).join('')
   const code =
@@ -157,6 +165,8 @@ function toOutcome(result: RuntimeToolResult, hasExecutor: boolean): ToolOutcome
 export interface TurnPreparation {
   readonly systemPrompt?: string
   readonly context?: EventPayload<'turn.started'>['context']
+  /** 这一轮交给模型的工具（M3-05）。省略时保持上一轮的工具。 */
+  readonly tools?: readonly RuntimeToolSpec[]
 }
 
 export interface RunEngineOptions {
@@ -362,6 +372,7 @@ export class RunEngine {
       this.#systemPrompt = prepared.systemPrompt
       session.setSystemPrompt?.(prepared.systemPrompt)
     }
+    if (prepared?.tools) session.setTools?.(prepared.tools)
     this.#emit('turn.started', prepared?.context ? { context: prepared.context } : {})
     this.#transition('thinking')
     const run = async () => {
@@ -767,6 +778,9 @@ export class RunEngine {
           durationMs: Math.max(0, this.#now() - startedAt),
           ...(outcome.display ? { display: outcome.display } : {}),
         })
+        if (outcome.effects) {
+          for (const effect of outcome.effects) this.#emit(effect.type, effect.payload)
+        }
         break
       case 'cancelled':
         this.#emit('tool.cancelled', {
@@ -778,7 +792,11 @@ export class RunEngine {
         this.#emit('tool.failed', { toolCallId, error: outcome.error })
     }
     this.#countToolResult(outcome.status)
-    return { status: outcome.status, content: outcome.content }
+    return {
+      status: outcome.status,
+      content: outcome.content,
+      ...(outcome.status === 'ok' && outcome.stopLoop ? { stopLoop: true } : {}),
+    }
   }
 
   #toolCallRejected(call: RuntimeToolCall, error: ErrorInfo): void {

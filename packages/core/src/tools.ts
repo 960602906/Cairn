@@ -11,7 +11,7 @@
 import type { ContentPart, FileChangeKind, FileHunk, ToolDisplay } from '@cairn/protocol'
 import { z } from 'zod'
 import type { Logger } from './logger.js'
-import type { AbortSignalLike, RuntimeToolSpec } from './runtime.js'
+import type { AbortSignalLike, RuntimeToolEffect, RuntimeToolSpec } from './runtime.js'
 
 /** 工具类别（架构 §9.1）：权限默认值与并行策略据此决定（只有 `read` 可以并行，Runtime §6.2）。 */
 export type ToolCategory = 'read' | 'write' | 'execute' | 'network' | 'delegate'
@@ -98,6 +98,10 @@ export interface ToolOutput {
   readonly content: readonly ContentPart[]
   /** 只给界面显示（写入 `tool.completed.display`），不交给模型。 */
   readonly display?: ToolDisplay
+  /** 记下结果后结束本轮，不再调用模型（M3-05，`propose_plan`）。 */
+  readonly stopLoop?: boolean
+  /** 成功后写入事件日志的附带事件（M3-05）。失败时流水线丢弃。 */
+  readonly effects?: readonly RuntimeToolEffect[]
 }
 
 /** 审批时展示给用户的预览（M1-11 细化）。 */

@@ -103,6 +103,9 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     setModel: vi.fn(() => ({})),
     compact: vi.fn(() => ({ compacted: false })),
     updateBrief: vi.fn(() => ({})),
+    approvePlan: vi.fn(() => ({ messageId: 'm1' })),
+    replan: vi.fn(() => ({ messageId: 'm1' })),
+    abandonPlan: vi.fn(() => ({})),
   }
   projects = {
     list: vi.fn(() => ({ projects: [PROJECT] })),

@@ -101,10 +101,20 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   'context.compacted': { summary: '摘要', coversTurns: ['t1', 't3'] },
   'model.fallback': { from: model, to: { providerId: 'ollama', modelId: 'qwen' }, error: err },
   'model.retry': { attempt: 1, maxRetries: 3, delayMs: 1000, error: err },
-  'plan.proposed': { planId: 'pl1', content: '1. 读代码' },
+  'plan.proposed': {
+    planId: 'pl1',
+    content: {
+      goal: '读代码',
+      files: ['src/a.ts'],
+      steps: [{ id: 'read', title: '读 src/a.ts' }],
+      risks: '',
+      verification: '单测通过',
+      markdown: '1. 读代码',
+    },
+  },
   'plan.approved': { planId: 'pl1' },
   'plan.rejected': { planId: 'pl1', feedback: '太复杂' },
-  'plan.step.updated': { planId: 'pl1', stepIndex: 0, status: 'done' },
+  'plan.step.updated': { planId: 'pl1', stepIndex: 0, status: 'done', note: '改了测试' },
 }
 
 function envelope(type: string, payload: unknown, extra: Record<string, unknown> = {}) {

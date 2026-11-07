@@ -106,9 +106,12 @@ class PiSession implements RuntimeSession {
   /** 本次循环中 pi 开始处理的工具调用的参数，`execute` 被调用后移除。 */
   readonly #toolCalls = new Map<string, unknown>()
   #disposed = false
+  /** 当前这一轮的工具，`setTools` 会换掉。 */
+  #tools: RuntimeSessionInit['tools']
 
   constructor(init: RuntimeSessionInit, options: PiRuntimeOptions) {
     this.#init = init
+    this.#tools = init.tools
     this.#binding = bindModel(init.model)
     this.#history = [...init.history]
     const thinkingLevel: ThinkingLevel = init.model.profile.supportsReasoning
@@ -148,6 +151,12 @@ class PiSession implements RuntimeSession {
   replaceMessages(messages: readonly CanonicalMessage[]): void {
     this.#history.splice(0, this.#history.length, ...messages)
     this.#writeAgentMessages(messages)
+  }
+
+  /** 换掉这一轮模型看得到的工具（M3-05）。计划工具只在对应轮次出现。 */
+  setTools(tools: readonly RuntimeToolSpec[]): void {
+    this.#tools = tools
+    this.#agent.state.tools = tools.map((spec) => this.#toAgentTool(spec))
   }
 
   /** 换掉开头的系统消息正文（M3-02）。工具声明留在原消息上。 */
@@ -304,7 +313,13 @@ class PiSession implements RuntimeSession {
           this.#binding.identity,
         )
         const { content, details } = message as Extract<PiMessage, { role: 'toolResult' }>
-        return { content, details, isError: result.status !== 'ok' }
+        return {
+          content,
+          details,
+          isError: result.status !== 'ok',
+          // pi 在这一批工具都带 terminate 时结束循环，不再请求模型。结果先记下，本轮按完成结束。
+          ...(result.stopLoop ? { terminate: true } : {}),
+        }
       },
     }
   }
@@ -345,7 +360,7 @@ class PiSession implements RuntimeSession {
     const input = this.#toolCalls.get(toolCallId)
     this.#toolCalls.delete(toolCallId)
     if (!isError || this.#abortRequested || this.#agent.signal?.aborted) return
-    const known = this.#init.tools.some((t) => t.name === name)
+    const known = this.#tools.some((t) => t.name === name)
     const error: ErrorInfo = {
       code: known ? ToolErrorCode.InvalidInput : ToolErrorCode.NotFound,
       params: { name },

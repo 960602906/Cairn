@@ -9,6 +9,7 @@
  * - 宿主发出的事件没有 seq（UnsequencedEvent），由主进程分配 seq 后成为 EventEnvelope。
  */
 import { z } from 'zod'
+import { PlanDocument, PlanStepStatus } from './plan.js'
 import {
   AgentDefinitionRef,
   ContentPart,
@@ -275,14 +276,20 @@ const payloadSchemas = {
     error: ErrorInfo,
   }),
 
-  // ---------- 计划模式（Runtime §25.1，M3） ----------
-  'plan.proposed': z.object({ planId: Id, content: z.string() }),
-  'plan.approved': z.object({ planId: Id }),
+  // ---------- 计划模式（Runtime §25.1，M3-05） ----------
+  /** 模型调用 `propose_plan` 后写入。`content.markdown` 是给界面显示的原文。 */
+  'plan.proposed': z.object({ planId: Id, content: PlanDocument }),
+  /**
+   * 用户批准。`content` 是批准时的计划（步骤标题可能被改过）；省略时沿用 `plan.proposed`。
+   */
+  'plan.approved': z.object({ planId: Id, content: PlanDocument.optional() }),
   'plan.rejected': z.object({ planId: Id, feedback: z.string().optional() }),
   'plan.step.updated': z.object({
     planId: Id,
     stepIndex: z.number().int().nonnegative(),
-    status: z.enum(['pending', 'in_progress', 'done', 'skipped']),
+    status: PlanStepStatus,
+    /** 模型对这一步的说明。偏离计划时写在这里，不阻止执行。 */
+    note: z.string().max(2_000).optional(),
   }),
 } satisfies Record<string, z.ZodType>
 

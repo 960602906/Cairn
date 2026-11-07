@@ -21,6 +21,9 @@ import { randomUUID } from 'node:crypto'
 import { basename, isAbsolute } from 'node:path'
 import {
   acceptsInput,
+  activeExecutionPlan,
+  applyStepTitles,
+  approvedPlanMessage,
   compactionEventPayload,
   compactConversation,
   coveredSeqRange,
@@ -34,7 +37,14 @@ import {
   type RunView,
   type SessionView,
 } from '@cairn/core'
-import { RpcError, type ContentPart, type ModelRef, type UnsequencedEvent } from '@cairn/protocol'
+import {
+  RpcError,
+  type ActivePlan,
+  type ContentPart,
+  type ModelRef,
+  type PromptMode,
+  type UnsequencedEvent,
+} from '@cairn/protocol'
 import type { Storage } from '@cairn/storage'
 import { latestBrief } from './brief.js'
 import type { SessionEventService } from './event-service.js'
@@ -49,6 +59,9 @@ export const SessionErrorCode = {
   InvalidParams: 'rpc.invalid_params',
   /** 创建会话时指定的模型没有配置。 */
   UnknownModel: 'session.unknown_model',
+  /** 计划不是待审状态（不存在、已批准或已拒绝）。 */
+  PlanNotPending: 'plan.not_pending',
+  UnknownStep: 'plan.unknown_step',
 } as const
 
 /** 新运行使用的配置。 */
@@ -113,6 +126,8 @@ interface PendingPrompt {
   readonly runId: string
   readonly messageId: string
   readonly content: ContentPart[]
+  /** 这一轮的工作方式。省略的旧调用按正常模式。 */
+  readonly mode: PromptMode
   readonly history: HostInit['history']
   readonly run: RunDefaults
   /** 继续已有的运行时为其当前状态。 */
@@ -232,16 +247,34 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     if (waiting.size > 0) pump()
   }
 
+  /** 正在执行的计划。计划模式的新一轮不带上旧计划。 */
+  function executionPlan(sessionId: string, mode: PromptMode): ActivePlan | undefined {
+    if (mode === 'plan') return undefined
+    const plan = activeExecutionPlan(getView(sessionId))
+    if (!plan) return undefined
+    return {
+      planId: plan.planId,
+      goal: plan.content.goal,
+      steps: plan.steps.map((step) => ({ id: step.id, title: step.title })),
+    }
+  }
+
   function send(
     sessionId: string,
     slot: Slot,
     handle: HostHandle,
-    pending: Pick<PendingPrompt, 'messageId' | 'content'>,
+    pending: Pick<PendingPrompt, 'messageId' | 'content' | 'mode'>,
   ) {
     slot.awaitingTurn = true
     updateIdle(sessionId, slot)
+    const plan = executionPlan(sessionId, pending.mode)
     handle
-      .prompt({ messageId: pending.messageId, content: pending.content })
+      .prompt({
+        messageId: pending.messageId,
+        content: pending.content,
+        ...(pending.mode === 'plan' ? { mode: 'plan' as const } : {}),
+        ...(plan ? { plan } : {}),
+      })
       .catch((error: unknown) => {
         onError(error)
         slot.awaitingTurn = false
@@ -321,7 +354,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     return record
   }
 
-  return {
+  const manager: SessionManager = {
     create({ projectPath, title, model: requested }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       if (!isAbsolute(projectPath))
@@ -415,7 +448,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       return {}
     },
 
-    prompt({ sessionId, content }) {
+    prompt({ sessionId, content, mode = 'normal' }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       const record = requireSession(sessionId)
       const slot = slots.get(sessionId)
@@ -442,12 +475,13 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       ])
 
       if (slot?.handle && hostReady) {
-        send(sessionId, slot, slot.handle, { messageId, content })
+        send(sessionId, slot, slot.handle, { messageId, content, mode })
       } else {
         waiting.set(sessionId, {
           runId,
           messageId,
           content,
+          mode,
           history,
           run: resume
             ? {
@@ -463,6 +497,56 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         pump()
       }
       return { messageId }
+    },
+
+    approvePlan({ sessionId, planId, steps }) {
+      const plan = requirePendingPlan(sessionId, planId)
+      if (steps?.some((step) => !plan.content.steps.some((current) => current.id === step.id))) {
+        throw new RpcError(SessionErrorCode.UnknownStep, { planId })
+      }
+      const content = applyStepTitles(plan.content, steps)
+      const root = rootRun(getView(sessionId))
+      events.publish([
+        {
+          ...header(sessionId, root?.runId ?? sessionId),
+          type: 'plan.approved',
+          payload: { planId, content },
+        },
+      ])
+      return manager.prompt({
+        sessionId,
+        content: [{ type: 'text', text: approvedPlanMessage(plan.content, content) }],
+      })
+    },
+
+    replan({ sessionId, planId, feedback }) {
+      requirePendingPlan(sessionId, planId)
+      const root = rootRun(getView(sessionId))
+      events.publish([
+        {
+          ...header(sessionId, root?.runId ?? sessionId),
+          type: 'plan.rejected',
+          payload: { planId, feedback },
+        },
+      ])
+      return manager.prompt({
+        sessionId,
+        content: [{ type: 'text', text: feedback }],
+        mode: 'plan',
+      })
+    },
+
+    abandonPlan({ sessionId, planId }) {
+      requirePendingPlan(sessionId, planId)
+      const root = rootRun(getView(sessionId))
+      events.publish([
+        {
+          ...header(sessionId, root?.runId ?? sessionId),
+          type: 'plan.rejected',
+          payload: { planId },
+        },
+      ])
+      return {}
     },
 
     async compact({ sessionId }) {
@@ -574,6 +658,21 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       await Promise.all(all.map((slot) => slot.gone))
     },
   }
+
+  function requirePendingPlan(sessionId: string, planId: string) {
+    if (closed) throw new RpcError(SessionErrorCode.Closed)
+    requireSession(sessionId)
+    if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
+      throw new RpcError(SessionErrorCode.Busy, { sessionId })
+    }
+    const plan = getView(sessionId).plans.find((item) => item.planId === planId)
+    if (!plan || plan.status !== 'proposed') {
+      throw new RpcError(SessionErrorCode.PlanNotPending, { planId })
+    }
+    return plan
+  }
+
+  return manager
 }
 
 const sameModel = (a: ModelRef, b: ModelRef): boolean =>

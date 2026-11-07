@@ -25,6 +25,7 @@ const defaults: RunDefaults = {
 interface FakeHost extends HostHandle {
   readonly init: HostInit
   readonly prompts: string[]
+  readonly inputs: unknown[]
   crash(): void
 }
 
@@ -33,6 +34,7 @@ function fakeHandle(init: HostInit, stopsCleanly = true): FakeHost {
   let resolveExited!: (exit: HostExit) => void
   const exited = new Promise<HostExit>((resolve) => (resolveExited = resolve))
   const prompts: string[] = []
+  const inputs: unknown[] = []
   const end = (exit: HostExit) => {
     if (state === 'stopped' || state === 'crashed') return
     state = exit.reason
@@ -41,12 +43,14 @@ function fakeHandle(init: HostInit, stopsCleanly = true): FakeHost {
   return {
     init,
     prompts,
+    inputs,
     sessionId: init.sessionId,
     runId: init.runId,
     pid: 1,
     state: () => state,
-    prompt: vi.fn(async ({ messageId }) => {
-      prompts.push(messageId)
+    prompt: vi.fn(async (input) => {
+      prompts.push(input.messageId)
+      inputs.push(input)
     }),
     abort: vi.fn(async () => undefined),
     refreshPermissions: vi.fn(async () => undefined),
@@ -749,5 +753,90 @@ describe('compact (M3-03)', () => {
       runId,
       payload: { summary: 'SUM', coversTurns: ['t1', 't1'] },
     })
+  })
+})
+
+describe('plan (M3-05)', () => {
+  const content = {
+    goal: '读代码',
+    files: ['a.ts'],
+    steps: [{ id: 'read', title: '读 a.ts' }],
+    risks: '',
+    verification: '单测',
+    markdown: '1. 读 a.ts',
+  }
+
+  async function proposed(mode: 'plan' | 'normal' = 'plan') {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, { idleTimeoutMs: 60_000 })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: text('计划一下'), ...(mode === 'plan' ? { mode } : {}) })
+    await flush()
+    const host = hosts[0]!
+    startTurn(sessionId, host.runId, 't1')
+    hostEmits(sessionId, host.runId, [
+      'plan.proposed',
+      { planId: 'pl1', content },
+      { turnId: 't1' },
+    ])
+    finishTurn(sessionId, host.runId, 't1')
+    return { manager, sessionId, host }
+  }
+
+  it('approves edited steps and keeps that plan after a later one is abandoned', async () => {
+    const { manager, sessionId, host } = await proposed()
+    expect(host.inputs[0]).toMatchObject({ mode: 'plan' })
+    expect(host.inputs[0]).not.toHaveProperty('plan')
+    expect(() =>
+      manager.approvePlan({ sessionId, planId: 'pl1', steps: [{ id: 'missing', title: 'x' }] }),
+    ).toThrow(expect.objectContaining({ code: 'plan.unknown_step' }))
+    const approved = manager.approvePlan({
+      sessionId,
+      planId: 'pl1',
+      steps: [{ id: 'read', title: '先读测试' }],
+    })
+    if (!('messageId' in approved)) throw new Error('approvePlan should resolve immediately')
+    await flush()
+    expect(published.some((event) => event.type === 'plan.approved')).toBe(true)
+    expect(host.inputs[1]).toMatchObject({
+      messageId: approved.messageId,
+      plan: { planId: 'pl1', goal: '读代码', steps: [{ id: 'read', title: '先读测试' }] },
+    })
+    expect(host.inputs[1]).not.toHaveProperty('mode')
+    expect(
+      JSON.stringify(published.filter((event) => event.type === 'message.user').at(-1)),
+    ).toContain('先读测试')
+
+    startTurn(sessionId, host.runId, 't2', false)
+    finishTurn(sessionId, host.runId, 't2')
+    hostEmits(sessionId, host.runId, [
+      'plan.proposed',
+      { planId: 'pl2', content },
+      { turnId: 't2' },
+    ])
+    expect(manager.abandonPlan({ sessionId, planId: 'pl2' })).toEqual({})
+    manager.prompt({ sessionId, content: text('继续') })
+    await flush()
+    expect(host.inputs.at(-1)).toMatchObject({ plan: { planId: 'pl1' } })
+    expect(host.inputs.at(-1)).not.toHaveProperty('mode')
+  })
+
+  it('replans in plan mode and rejects a plan that is not pending', async () => {
+    const { manager, sessionId, host } = await proposed()
+    const next = manager.replan({ sessionId, planId: 'pl1', feedback: '换个做法' })
+    if (!('messageId' in next)) throw new Error('replan should resolve immediately')
+    await flush()
+    expect(published.some((event) => event.type === 'plan.rejected')).toBe(true)
+    expect(host.inputs[1]).toMatchObject({
+      messageId: next.messageId,
+      mode: 'plan',
+      content: text('换个做法'),
+    })
+    expect(host.inputs[1]).not.toHaveProperty('plan')
+    startTurn(sessionId, host.runId, 't2', false)
+    finishTurn(sessionId, host.runId, 't2')
+    expect(() => manager.abandonPlan({ sessionId, planId: 'pl1' })).toThrow(
+      expect.objectContaining({ code: 'plan.not_pending' }),
+    )
   })
 })

@@ -262,12 +262,19 @@ class FakeSession implements RuntimeSession {
   /** 当前是否处于已发出 step.started、尚未发出 step.completed 的步骤中。 */
   #inStep = false
   #disposed = false
+  /** 当前交给模型的工具（M3-05 会按轮替换）。 */
+  #tools: RuntimeSessionInit['tools']
 
   constructor(init: RuntimeSessionInit, script: FakeScript, now: () => number) {
     this.#init = init
     this.#script = script
     this.#now = now
     this.#history = [...init.history]
+    this.#tools = init.tools
+  }
+
+  setTools(tools: RuntimeSessionInit['tools']): void {
+    this.#tools = tools
   }
 
   onEvent(listener: (event: RuntimeEvent) => void) {
@@ -423,7 +430,7 @@ class FakeSession implements RuntimeSession {
     }
 
     const parallel = calls.every(
-      (c) => this.#init.tools.find((t) => t.name === c.name)?.parallel === true,
+      (c) => this.#tools.find((t) => t.name === c.name)?.parallel === true,
     )
     const results: RuntimeToolResult[] = []
     if (parallel) {
@@ -445,6 +452,11 @@ class FakeSession implements RuntimeSession {
         ts: this.#now(),
       })
     })
+    // propose_plan：记下结果后结束本轮，脚本里后面的步骤不再执行
+    if (results.some((result) => result.stopLoop)) {
+      this.#emit({ type: 'loop.ended', outcome: 'completed' })
+      return true
+    }
     return false
   }
 

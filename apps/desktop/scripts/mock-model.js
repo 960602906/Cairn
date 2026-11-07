@@ -55,7 +55,39 @@ export async function startMockModel({
         choices: [{ index: 0, delta, finish_reason: finish }],
       })
       res.writeHead(200, { 'content-type': 'text/event-stream' })
-      const step = script[requests.length - 1]
+      const messages = JSON.stringify(body.messages ?? '')
+      const auxiliary = messages.includes('You name a conversation.')
+        ? (title ?? reply)
+        : messages.includes('You keep a session brief.')
+          ? (brief ?? reply)
+          : messages.includes('You summarize an earlier part of a coding session')
+            ? (summary ?? reply)
+            : undefined
+      // 标题、要点、摘要不是对话，不能占掉工具脚本的位置（M3-05）
+      if (auxiliary !== undefined) {
+        for (const piece of auxiliary.split(' ')) {
+          res.write(
+            `data: ${JSON.stringify(chunk({ role: 'assistant', content: `${piece} ` }))}\n\n`,
+          )
+        }
+        const done = {
+          ...chunk({}, 'stop'),
+          usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 },
+        }
+        res.write(`data: ${JSON.stringify(done)}\n\n`)
+        res.end('data: [DONE]\n\n')
+        return
+      }
+      const chatIndex =
+        requests.filter((request) => {
+          const text = JSON.stringify(request.messages ?? '')
+          return (
+            !text.includes('You name a conversation.') &&
+            !text.includes('You keep a session brief.') &&
+            !text.includes('You summarize an earlier part of a coding session')
+          )
+        }).length - 1
+      const step = script[chatIndex]
       if (step) {
         const call = {
           index: 0,
@@ -72,14 +104,7 @@ export async function startMockModel({
         res.end('data: [DONE]\n\n')
         return
       }
-      const messages = JSON.stringify(body.messages ?? '')
-      const text = messages.includes('You name a conversation.')
-        ? (title ?? reply)
-        : messages.includes('You keep a session brief.')
-          ? (brief ?? reply)
-          : messages.includes('You summarize an earlier part of a coding session')
-            ? (summary ?? reply)
-            : reply
+      const text = reply
       for (const piece of text.split(' ')) {
         res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', content: `${piece} ` }))}\n\n`)
       }

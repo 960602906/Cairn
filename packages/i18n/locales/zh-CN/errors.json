@@ -98,5 +98,9 @@
   "shell.spawn_failed": "无法启动命令行（{{shell}}）",
   "checkpoint.git_unavailable": "检查点不可用：需要安装 Git 2.32 或更高版本",
   "checkpoint.not_found": "该检查点已不存在",
-  "checkpoint.failed": "检查点操作失败"
+  "checkpoint.failed": "检查点操作失败",
+  "plan.not_pending": "这份计划已经处理过了",
+  "plan.unknown_step": "步骤不在这份计划里",
+  "plan.no_active_plan": "没有正在执行的计划",
+  "permission.plan_mode": "计划模式下只能阅读，批准计划后才能改文件、运行命令或访问网络"
 }

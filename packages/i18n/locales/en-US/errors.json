@@ -98,5 +98,9 @@
   "shell.spawn_failed": "Cannot start the shell ({{shell}})",
   "checkpoint.git_unavailable": "Checkpoints are unavailable: Git 2.32 or later is required",
   "checkpoint.not_found": "The checkpoint no longer exists",
-  "checkpoint.failed": "The checkpoint operation failed"
+  "checkpoint.failed": "The checkpoint operation failed",
+  "plan.not_pending": "This plan is no longer waiting for a decision",
+  "plan.unknown_step": "That step is not part of this plan",
+  "plan.no_active_plan": "No plan is being carried out",
+  "permission.plan_mode": "Plan mode is read-only. Writing files, running commands, and using the network wait until you approve a plan"
 }
