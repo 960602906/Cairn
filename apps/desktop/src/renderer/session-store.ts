@@ -34,7 +34,14 @@ import {
   type EventEnvelope,
   type FileChangeSummary,
   type FileContent,
+  type McpLogEntry,
+  type McpServerDetail,
+  type McpServerInput,
+  type McpServerSummary,
+  type McpStatusEvent,
+  type McpToolSummary,
   type ModelRef,
+  type PermissionEffect,
   type PendingApproval,
   type PermissionRule,
   type PermissionRuleEntry,
@@ -48,6 +55,7 @@ import {
   type SkillInstallSource,
   type SkillSource,
   type SkillSummary,
+  type ToolCategory,
 } from '@cairn/protocol'
 import type { z } from 'zod'
 import { createStore, type StoreApi } from 'zustand/vanilla'
@@ -151,6 +159,31 @@ export interface SessionActions {
     enabled?: boolean
     pinned?: boolean
   }): Promise<SkillSummary | undefined>
+  /** 已配置的 MCP 服务（M3-10）；失败时返回 undefined。 */
+  listMcpServers(): Promise<McpServerSummary[] | undefined>
+  /** 一份 MCP 配置、凭据状态与当前工具；失败时返回 undefined。 */
+  getMcpServer(serverId: string): Promise<McpServerDetail | undefined>
+  /** 添加服务并立即连接；失败时返回 undefined（错误写入 `error`）。 */
+  addMcpServer(input: McpServerInput): Promise<McpServerDetail | undefined>
+  /** 修改服务并重新连接；失败时返回 undefined。 */
+  updateMcpServer(serverId: string, server: McpServerInput): Promise<McpServerDetail | undefined>
+  /** 删除配置与凭据；成功时返回 true。 */
+  removeMcpServer(serverId: string): Promise<boolean>
+  /** 重新连接；失败时返回 undefined。 */
+  reconnectMcpServer(serverId: string): Promise<McpServerSummary | undefined>
+  /** 启用或停用；失败时返回 undefined。 */
+  setMcpServerEnabled(serverId: string, enabled: boolean): Promise<McpServerSummary | undefined>
+  /** 修改单个工具的类别与默认效果；失败时返回 undefined。 */
+  setMcpTool(input: {
+    serverId: string
+    name: string
+    category?: ToolCategory
+    effect?: PermissionEffect
+  }): Promise<McpToolSummary | undefined>
+  /** 最近若干条连接日志；失败时返回 undefined。 */
+  mcpLogs(serverId: string): Promise<McpLogEntry[] | undefined>
+  /** 订阅 MCP 连接状态；返回取消订阅函数。 */
+  onMcpStatus(listener: (event: McpStatusEvent) => void): () => void
   loadSettings(): Promise<Settings | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
@@ -535,6 +568,29 @@ export function createSessionStore(api: MainApi): SessionStore {
         (await run(() => api.request('skill.uninstall', { name }))) !== undefined,
 
       setSkillEnabled: (input) => run(() => api.request('skill.setEnabled', input)),
+
+      listMcpServers: async () => (await run(() => api.request('mcp.list', {})))?.servers,
+
+      getMcpServer: (serverId) => run(() => api.request('mcp.get', { serverId })),
+
+      addMcpServer: (input) => run(() => api.request('mcp.add', input)),
+
+      updateMcpServer: (serverId, server) =>
+        run(() => api.request('mcp.update', { serverId, server })),
+
+      removeMcpServer: async (serverId) =>
+        (await run(() => api.request('mcp.remove', { serverId }))) !== undefined,
+
+      reconnectMcpServer: (serverId) => run(() => api.request('mcp.reconnect', { serverId })),
+
+      setMcpServerEnabled: (serverId, enabled) =>
+        run(() => api.request('mcp.setEnabled', { serverId, enabled })),
+
+      setMcpTool: (input) => run(() => api.request('mcp.setTool', input)),
+
+      mcpLogs: async (serverId) => (await run(() => api.request('mcp.logs', { serverId })))?.logs,
+
+      onMcpStatus: (listener) => api.on('mcp.status', listener),
 
       async loadSettings() {
         const result = await run(() => api.request('settings.get', {}))

@@ -111,5 +111,12 @@
   "skills.traversal": "A path in the skill escapes the skill folder",
   "skills.too_large": "The skill is too large",
   "skills.not_found": "That skill could not be found",
-  "skills.not_uninstallable": "Built-in skills and project skills cannot be uninstalled here"
+  "skills.not_uninstallable": "Built-in skills and project skills cannot be uninstalled here",
+  "mcp.not_found": "MCP server not found",
+  "mcp.invalid": "MCP server configuration is invalid",
+  "mcp.tool_not_found": "MCP tool not found",
+  "mcp.not_connected": "The MCP server is not connected, so its tools are unavailable",
+  "mcp.call_failed": "The MCP tool call failed",
+  "mcp.connect_failed": "Could not connect to the MCP server",
+  "mcp.timeout": "The MCP server timed out"
 }

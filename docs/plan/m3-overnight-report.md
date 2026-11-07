@@ -40,7 +40,7 @@
 | 任务 | 状态 | 提交 | 备注 |
 |---|---|---|---|
 | M3-09 MCP 后端 | 完成 | `feat(mcp): MCP 后端 [M3-09]` | 覆盖率、build、完整 e2e 通过 |
-| M3-10 设置页“MCP 服务” | 未开始 | — | |
+| M3-10 设置页“MCP 服务” | 完成 | `feat(settings): MCP 服务设置页 [M3-10]` | 15 个组件用例、e2e、截图 |
 | M3-11 自定义 Agent 后端 | 未开始 | — | |
 | M3-12 Agents 页面与 Agent 选择器 | 未开始 | — | |
 | M3-13 诊断包 | 未开始 | — | 不依赖 MCP |
@@ -56,7 +56,7 @@
 
 ## 5. 断点
 
-- 当前断点：M3-09 完成并提交，准备开始 M3-10。
+- 当前断点：M3-10 完成并提交，准备开始 M3-11（自定义 Agent 后端）。
 
 ## 6. 任务实施记录
 
@@ -84,4 +84,27 @@
   - 工具名改为按存储顺序一次性分配，保证列表与宿主名称一致。
   - Windows 上用 `taskkill /T /F` 结束 stdio 子进程树；其他平台只结束直接子进程。
   - 覆盖率补充：新增 MCP 单测与存储契约用例；保留 7 个防御性分支未覆盖（平台差异、不可达的保护判断）。
+- 已知问题：无。
+
+### M3-10 设置页“MCP 服务”
+
+- 状态：完成。
+- 主要改动：
+  - `apps/desktop/src/renderer/settings/McpSettings.tsx`：列表、添加 / 编辑表单、详情（工具类别与默认权限、连接日志、重新连接、编辑、删除）、删除确认。
+  - `SettingsPage.tsx` 新增“能力 → MCP 服务”分区；`session-store.ts` 增加 `mcp.*` 方法与 `mcp.status` 订阅。
+  - i18n：`settings.json` 新增 `section.mcp.*` 与约 60 条 `mcp.*` 文案；`errors.json` 新增 `mcp.*` 错误码（中英同步）。
+  - 组件测试 `McpSettings.test.tsx`（15 个用例）；e2e `mcp-settings.spec.ts` 用真实 stdio 服务覆盖添加、连接失败与删除，并输出浅 / 深色截图。
+- 验证：
+  - `pnpm format:check`：通过。
+  - `pnpm typecheck`：通过。
+  - `pnpm lint`：通过。
+  - `pnpm check:i18n`：通过。
+  - `pnpm test:coverage`：通过，四项均达到 95%（补测前分支一度为 94.76%，补充组件用例后恢复）。
+  - `pnpm build`：通过。
+  - `pnpm e2e`：28 项全部通过。
+- 关键决策与差异：
+  - 配置里不保存环境变量值与令牌，界面只显示“已设置”，留空保持原值；清除令牌用单独开关。
+  - 状态刷新由 `mcp.status` 驱动：列表总是刷新，详情只在同一服务时刷新。
+  - 覆盖率调整只新增测试与消除不可达的分支判断，没有放宽阈值或跳过测试。
+- 截图：`/opt/cursor/artifacts/mcp-settings-{light,dark}.png`、`mcp-settings-detail-{light,dark}.png`（Windows 实际路径 `C:\opt\cursor\artifacts`）。
 - 已知问题：无。
