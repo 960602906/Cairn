@@ -14,6 +14,8 @@
  *   这样每个工具调用都恰好有一个结果，满足各家接口"调用必须配对"的要求。
  * - `context.compacted`（M3-03）：最后一次摘要替换它覆盖的轮次；被点名的工具输出换成省略说明。
  *   原始事件仍在日志里，这里只决定发给模型的历史。
+ * - `session.brief.updated`（M3-04）：最新的会话要点放在历史最前面，不按 runId 过滤。
+ *   压缩会换掉更早的摘要，要点在最后再放回去，所以不会被摘要吃掉。
  */
 import {
   isPersistedEvent,
@@ -23,6 +25,7 @@ import {
   type EventEnvelope,
   type ToolCall,
 } from '@cairn/protocol'
+import { sessionBriefMessage } from './brief.js'
 import { OMITTED_TOOL_OUTPUT } from './compaction.js'
 
 type ToolStatus = Extract<CanonicalMessage, { role: 'tool' }>['status']
@@ -48,6 +51,8 @@ export function rebuildHistory(
   const approvals = new Map<string, string>()
   let lastSeq = 0
   let lastTs = 0
+  /** 最新的会话要点。要点是会话级的，不按本次重建的 runId 丢掉。 */
+  let brief: { content: string; ts: number } | undefined
 
   const resolve = (toolCallId: string, status: ToolStatus, content: ContentPart[], ts: number) => {
     const index = pending.findIndex((call) => call.id === toolCallId)
@@ -70,7 +75,15 @@ export function rebuildHistory(
   }
 
   for (const event of events) {
-    if (event.runId !== runId || !isPersistedEvent(event) || event.seq <= lastSeq) continue
+    if (!isPersistedEvent(event) || event.seq <= lastSeq) continue
+    if (event.type === 'session.brief.updated') {
+      lastSeq = event.seq
+      lastTs = event.ts
+      const content = event.payload.content.trim()
+      brief = content ? { content, ts: event.ts } : undefined
+      continue
+    }
+    if (event.runId !== runId) continue
     lastSeq = event.seq
     lastTs = event.ts
 
@@ -157,6 +170,7 @@ export function rebuildHistory(
     }
   }
   flush(lastTs)
+  if (brief) history.unshift(sessionBriefMessage(brief.content, brief.ts))
   return history
 }
 

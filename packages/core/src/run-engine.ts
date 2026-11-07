@@ -51,6 +51,12 @@ import type {
   UnsequencedEvent,
 } from '@cairn/protocol'
 import {
+  isSessionBrief,
+  placeSessionBrief,
+  sessionBriefMessage,
+  SESSION_BRIEF_PREFIX,
+} from './brief.js'
+import {
   SUMMARY_PREFIX,
   compactionEventPayload,
   compactConversation,
@@ -173,6 +179,12 @@ export interface RunEngineOptions {
    * 不给出时超限只会走失败降级。
    */
   readonly summarize?: CompactionSummarizer
+  /**
+   * 当前会话要点（M3-04）。返回的文字放在模型历史最前面，压缩时也不会被摘要换掉。
+   * 空字符串表示没有要点。返回 undefined 表示这次不知道（例如主进程没有这个接口），历史保持原样。
+   * 抛出时同样保持原样，不因此失败这一轮。
+   */
+  readonly sessionBrief?: () => Promise<string | undefined>
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
@@ -269,8 +281,9 @@ export class RunEngine {
         ? [base, TOOL_RESULT_NOTICE].filter(Boolean).join('\n\n')
         : base
     for (const message of options.restore?.history ?? []) {
-      if (message.role === 'summary') this.#summary = message
-      else if (message.role === 'user' && message.turnId) this.#userTurnIds.push(message.turnId)
+      if (message.role === 'summary') {
+        if (!isSessionBrief(message)) this.#summary = message
+      } else if (message.role === 'user' && message.turnId) this.#userTurnIds.push(message.turnId)
     }
   }
 
@@ -487,14 +500,22 @@ export class RunEngine {
     const session = this.#session
     if (!session) return false
     try {
+      const history = session.exportHistory()
+      const prepared = await this.#withBrief(history)
       const outcome = await compactConversation({
-        messages: session.exportHistory(),
+        messages: prepared,
         budget: this.#budget(),
         force: true,
         ...(this.#o.summarize ? { summarize: this.#o.summarize } : {}),
         now: this.#now(),
       })
-      if (outcome.kind === 'none') return false
+      if (outcome.kind === 'none') {
+        if (prepared !== history) {
+          this.#remember(prepared)
+          session.replaceMessages?.(prepared)
+        }
+        return false
+      }
       this.#remember(outcome.messages)
       session.replaceMessages?.(outcome.messages)
       this.#emit('context.compacted', compactionEventPayload(outcome))
@@ -803,11 +824,19 @@ export class RunEngine {
     let changed = false
     const next = messages.map((message) => {
       if (message.role === 'summary') {
-        this.#summary = message
+        if (!isSessionBrief(message)) this.#summary = message
         return message
       }
       if (message.role !== 'user') return message
       const body = message.content.find((part) => part.type === 'text')?.text ?? ''
+      if (
+        message.content.length === 1 &&
+        message.content[0]?.type === 'text' &&
+        body.startsWith(SESSION_BRIEF_PREFIX)
+      ) {
+        changed = true
+        return sessionBriefMessage(body.slice(SESSION_BRIEF_PREFIX.length), message.ts)
+      }
       if (
         this.#summary &&
         message.content.length === 1 &&
@@ -830,8 +859,9 @@ export class RunEngine {
     this.#userTurnIds = []
     this.#summary = undefined
     for (const message of messages) {
-      if (message.role === 'summary') this.#summary = message
-      else if (message.role === 'user' && message.turnId) this.#userTurnIds.push(message.turnId)
+      if (message.role === 'summary') {
+        if (!isSessionBrief(message)) this.#summary = message
+      } else if (message.role === 'user' && message.turnId) this.#userTurnIds.push(message.turnId)
     }
   }
 
@@ -840,7 +870,8 @@ export class RunEngine {
     readonly messages: readonly CanonicalMessage[]
   }): Promise<{ readonly systemPrompt: string; readonly messages: readonly CanonicalMessage[] }> {
     try {
-      const messages = this.#attachTurns(ctx.messages)
+      const attached = this.#attachTurns(ctx.messages)
+      const messages = await this.#withBrief(attached)
       const outcome = await compactConversation({
         messages,
         budget: this.#budget(),
@@ -858,6 +889,19 @@ export class RunEngine {
     } catch {
       this.#forceCompact = false
       return ctx
+    }
+  }
+
+  /** 按主进程给出的最新要点整理历史。不知道要点时原样返回。 */
+  async #withBrief(messages: readonly CanonicalMessage[]): Promise<readonly CanonicalMessage[]> {
+    const load = this.#o.sessionBrief
+    if (!load) return messages
+    try {
+      const brief = await load()
+      if (brief === undefined) return messages
+      return placeSessionBrief(messages, brief, this.#now())
+    } catch {
+      return messages
     }
   }
 

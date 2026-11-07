@@ -4,7 +4,7 @@
  */
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { chatRequests, createSession, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'still going'
 const SUMMARY = 'goals remain'
@@ -61,13 +61,7 @@ test('小窗口连续多轮后压缩，会话仍能继续', async ({ launch, use
       textOf(request.messages).includes('You summarize an earlier part of a coding session'),
     )
     expect(summaryRequest).toBeTruthy()
-    const chats = mock.requests.filter((request) => {
-      const text = textOf(request.messages)
-      return (
-        !text.includes('You summarize an earlier part of a coding session') &&
-        !text.includes('You name a conversation.')
-      )
-    })
+    const chats = chatRequests(mock.requests)
     expect(textOf(chats.at(-1)?.messages)).toContain('Summary of the earlier conversation')
     expect(textOf(chats.at(-1)?.messages)).toContain(SUMMARY)
 

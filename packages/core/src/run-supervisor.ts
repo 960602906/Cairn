@@ -115,6 +115,8 @@ export interface RunSupervisorOptions {
   readonly prepareTurn?: () => Promise<TurnPreparation | undefined>
   /** 上下文压缩的摘要（M3-03）。 */
   readonly summarize?: (transcript: string) => Promise<string | undefined>
+  /** 会话要点（M3-04）。见 `RunEngineOptions.sessionBrief`。 */
+  readonly sessionBrief?: () => Promise<string | undefined>
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
@@ -224,6 +226,7 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
         ...(options.systemPrompt === undefined ? {} : { systemPrompt: options.systemPrompt }),
         ...(options.prepareTurn ? { prepareTurn: options.prepareTurn } : {}),
         ...(options.summarize ? { summarize: options.summarize } : {}),
+        ...(options.sessionBrief ? { sessionBrief: options.sessionBrief } : {}),
         ...(options.tools ? { tools: options.tools } : {}),
         ...(options.executeTool ? { executeTool: options.executeTool } : {}),
         ...(options.toolPipeline ? { toolPipeline: options.toolPipeline } : {}),

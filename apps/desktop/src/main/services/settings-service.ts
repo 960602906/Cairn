@@ -160,6 +160,7 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       ...(instructions ? { instructions } : {}),
       ...(theme ? { theme } : {}),
       ...(shell ? { shell } : {}),
+      ...(stored['sessionBrief'] === false ? { sessionBrief: false } : {}),
     }
   }
 
@@ -190,6 +191,10 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       if (patch.permissionMode !== undefined) next['permissionMode'] = patch.permissionMode
       if (patch.theme !== undefined) next['theme'] = patch.theme
       if (patch.shell !== undefined) next['shell'] = patch.shell
+      if (patch.sessionBrief !== undefined) {
+        // 开是默认值，不写入文件
+        next['sessionBrief'] = patch.sessionBrief ? undefined : false
+      }
       if (patch.instructions !== undefined) {
         // 只有空白时视为清除
         next['instructions'] = patch.instructions?.trim() ? patch.instructions : undefined

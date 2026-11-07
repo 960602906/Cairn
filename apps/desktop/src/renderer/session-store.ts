@@ -93,6 +93,8 @@ export interface SessionActions {
   sendPrompt(text: string): Promise<boolean>
   /** 立刻压缩当前会话（M3-03）。失败时返回 false，调用方可以恢复草稿。 */
   compactSession(): Promise<boolean>
+  /** 保存用户编辑的会话要点（M3-04）。失败时返回 false。 */
+  updateBrief(sessionId: string, content: string): Promise<boolean>
   /** 停止当前会话正在进行的一轮。 */
   abort(): Promise<void>
   /** 决定当前会话的一个审批；成功时返回 true。 */
@@ -389,6 +391,11 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
         const sessionId = get().activeSessionId
         if (sessionId === undefined) return false
         const result = await run(() => api.request('session.compact', { sessionId }))
+        return result !== undefined
+      },
+
+      async updateBrief(sessionId, content) {
+        const result = await run(() => api.request('session.brief.update', { sessionId, content }))
         return result !== undefined
       },
 

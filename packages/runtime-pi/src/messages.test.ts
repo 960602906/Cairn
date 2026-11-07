@@ -5,6 +5,7 @@ import type {
   Usage,
 } from '@earendil-works/pi-ai'
 import { transformMessages } from '@earendil-works/pi-ai/api/transform-messages'
+import { sessionBriefMessage, SESSION_BRIEF_PREFIX } from '@cairn/core'
 import { CanonicalMessage, type ModelRef } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import {
@@ -304,6 +305,17 @@ describe('转换细节', () => {
         timestamp: 5,
       },
     ])
+  })
+
+  it('会话要点保留自己的前缀，转回来仍是要点', () => {
+    const brief = sessionBriefMessage('目标：修复测试', 5)
+    const [pi] = toPiMessages([brief], target)
+    expect(pi).toEqual({
+      role: 'user',
+      content: [{ type: 'text', text: `${SESSION_BRIEF_PREFIX}目标：修复测试` }],
+      timestamp: 5,
+    })
+    expect(fromPiMessages([pi!], target.ref)).toEqual([brief])
   })
 
   it('图片暂以文字占位', () => {

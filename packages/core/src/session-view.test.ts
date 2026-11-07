@@ -503,6 +503,35 @@ describe('reduceSession：轮次', () => {
     expect(cleared.agentsMd).toBeUndefined()
   })
 
+  it('记下会话要点，下一轮不会清掉，也不改消息列表', () => {
+    const { view, ev } = midTurn()
+    const before = view.messages.length
+    const noted = reduceSession(
+      view,
+      ev('session.brief.updated', { content: '目标：修复测试', editedBy: 'agent' }),
+    )
+    expect(noted.brief).toEqual({ content: '目标：修复测试', editedBy: 'agent' })
+    expect(noted.messages).toHaveLength(before)
+    const kept = reduceSession(noted, ev('turn.started', {}, { turnId: 't3' }))
+    expect(kept.brief).toEqual(noted.brief)
+    const edited = reduceSession(
+      kept,
+      ev('session.brief.updated', { content: '不要改 API', editedBy: 'user' }),
+    )
+    expect(edited.brief).toEqual({ content: '不要改 API', editedBy: 'user' })
+    const same = reduceSession(
+      edited,
+      ev('session.brief.updated', { content: '不要改 API', editedBy: 'user' }),
+    )
+    expect(same.brief).toEqual(edited.brief)
+    expect(same.messages).toBe(edited.messages)
+    const cleared = reduceSession(
+      edited,
+      ev('session.brief.updated', { content: '  ', editedBy: 'user' }),
+    )
+    expect(cleared.brief).toBeUndefined()
+  })
+
   it('重复的 turn.started 不会重置轮次', () => {
     const { view, ev } = midTurn()
     const withStep = reduceSession(

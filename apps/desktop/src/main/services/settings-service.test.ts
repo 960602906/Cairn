@@ -405,6 +405,15 @@ describe('model settings', () => {
     expect(settings.credentialRef({ providerId: 'fake', modelId: 'x' })).toBeUndefined()
   })
 
+  it('stores automatic session briefs as off only, and treats anything else as on (M3-04)', () => {
+    const { settings } = setup()
+    expect(settings.get()).not.toHaveProperty('sessionBrief')
+    expect(settings.update({ sessionBrief: false })).toMatchObject({ sessionBrief: false })
+    expect(read()).toEqual({ sessionBrief: false })
+    expect(settings.update({ sessionBrief: true })).not.toHaveProperty('sessionBrief')
+    expect(settings.get()).not.toHaveProperty('sessionBrief')
+  })
+
   it('saves, clears and drops the auxiliary model the same way as the default (M3-01)', () => {
     const { settings } = setup()
     const auxiliary = { providerId: 'ollama', modelId: 'qwen3' }

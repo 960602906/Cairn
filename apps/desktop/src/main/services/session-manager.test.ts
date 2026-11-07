@@ -216,6 +216,25 @@ describe('create and list', () => {
     ).toThrow(expect.objectContaining({ code: 'session.unknown_model' }))
   })
 
+  it('saves a user brief and skips an unchanged one (M3-04)', () => {
+    const { supervisor } = fakeSupervisor()
+    const { manager } = setup(supervisor)
+    const { sessionId } = manager.create({ projectPath: '/work', title: 'Old' })
+    expect(manager.updateBrief({ sessionId, content: '  ' })).toEqual({})
+    expect(published.some((event) => event.type === 'session.brief.updated')).toBe(false)
+    manager.updateBrief({ sessionId, content: '  不要改 API  ' })
+    expect(published.at(-1)).toMatchObject({
+      type: 'session.brief.updated',
+      payload: { content: '不要改 API', editedBy: 'user' },
+    })
+    const count = published.length
+    expect(manager.updateBrief({ sessionId, content: '不要改 API' })).toEqual({})
+    expect(published).toHaveLength(count)
+    expect(() => manager.updateBrief({ sessionId: 'missing', content: 'x' })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+  })
+
   it('renames and archives sessions (M2-02)', () => {
     const { supervisor } = fakeSupervisor()
     let locked = false

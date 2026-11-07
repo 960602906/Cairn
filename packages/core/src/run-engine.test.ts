@@ -1352,6 +1352,58 @@ describe('RunEngine：上下文压缩（M3-03）', () => {
     expect(events.filter((event) => event.type === 'context.compacted').length).toBeGreaterThan(1)
   })
 
+  it('调用模型前放上会话要点，不因此发出压缩事件', async () => {
+    const inner = fake({ turns: [turn('好'), turn('也好')] })
+    let exported: { role: string; content?: string }[] = []
+    const runtime: AgentRuntime = {
+      id: 'wrap',
+      async createSession(init) {
+        const session = await inner.createSession(init)
+        return {
+          prompt: async (input) => {
+            await session.prompt(input)
+            exported = session.exportHistory().map((message) =>
+              message.role === 'summary' || message.role === 'user'
+                ? {
+                    role: message.role,
+                    content:
+                      message.role === 'summary'
+                        ? message.content
+                        : message.content
+                            .map((part) => (part.type === 'text' ? part.text : ''))
+                            .join(''),
+                  }
+                : { role: message.role },
+            )
+          },
+          steer: (input) => session.steer(input),
+          abort: (reason) => session.abort(reason),
+          onEvent: (listener) => session.onEvent(listener),
+          exportHistory: () => session.exportHistory(),
+          replaceMessages: (messages) => session.replaceMessages?.(messages),
+          setSystemPrompt: () => {},
+          dispose: () => session.dispose(),
+        }
+      },
+    }
+    let brief = '目标：修复测试'
+    const { engine, events } = await start(runtime, { sessionBrief: async () => brief })
+    await engine.prompt({ messageId: 'm1', content: text('请修复测试') })
+    expect(events.some((event) => event.type === 'context.compacted')).toBe(false)
+    expect(exported[0]).toEqual({
+      role: 'summary',
+      content: expect.stringContaining('目标：修复测试'),
+    })
+    brief = '用户改成：不要动 API'
+    await engine.prompt({ messageId: 'm2', content: text('继续') })
+    expect(exported[0]).toEqual({
+      role: 'summary',
+      content: expect.stringContaining('用户改成：不要动 API'),
+    })
+    expect(exported[0]?.content).not.toContain('目标：修复测试')
+    expect(events.some((event) => event.type === 'context.compacted')).toBe(false)
+  })
+
   it('只有一两轮时手动压缩什么都不做', async () => {
     const summarize = vi.fn(async () => 'SUM')
     const { engine } = await start(fake({ turns: [turn('一')] }), { summarize })

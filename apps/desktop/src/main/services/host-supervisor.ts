@@ -99,6 +99,8 @@ export interface HostSupervisorOptions {
    * 宿主改为丢掉最早的工具输出。
    */
   readonly summarize?: (sessionId: string, transcript: string) => Promise<string | undefined>
+  /** 当前会话要点（M3-04）。没有要点时返回 undefined 或空字符串。 */
+  readonly sessionBrief?: (sessionId: string) => string | undefined
   /** 按模型解析凭据（M1-03b）；没有保存凭据时返回 undefined。省略表示不传凭据。 */
   readonly resolveCredential?: (model: HostInit['model']) => Promise<ResolvedCredential | undefined>
   /**
@@ -276,6 +278,11 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
 
       endpoint.handle('host.summarize', async ({ transcript }) => {
         const text = await options.summarize?.(sessionId, transcript)
+        return text ? { text } : {}
+      })
+
+      endpoint.handle('host.sessionBrief', () => {
+        const text = options.sessionBrief?.(sessionId)?.trim()
         return text ? { text } : {}
       })
 

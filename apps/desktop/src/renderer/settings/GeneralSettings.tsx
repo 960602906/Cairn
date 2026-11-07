@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
 import { INSTRUCTIONS_MAX_LENGTH, type ShellPreference, type Theme } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
-import { Button, cn, SegmentedControl } from '../ui/index.js'
+import { Button, cn, SegmentedControl, Switch } from '../ui/index.js'
 import { Field, inputClass, SettingsCard } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
 
@@ -137,6 +137,7 @@ export function GeneralSettings() {
   const { t, i18n } = useTranslation('settings')
   const { t: tc } = useTranslation()
   const theme = useSessionStore((s) => s.settings?.theme ?? 'system')
+  const sessionBrief = useSessionStore((s) => s.settings?.sessionBrief !== false)
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const loadSettings = useSessionStore((s) => s.loadSettings)
   const loaded = useSessionStore((s) => s.settings !== undefined)
@@ -177,6 +178,17 @@ export function GeneralSettings() {
           />
         </Field>
         <ShellField />
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-ui text-fg">{t('general.sessionBrief.label')}</p>
+            <p className="mt-1 text-note text-muted">{t('general.sessionBrief.hint')}</p>
+          </div>
+          <Switch
+            checked={sessionBrief}
+            aria-label={t('general.sessionBrief.label')}
+            onCheckedChange={(checked) => void updateSettings({ sessionBrief: checked })}
+          />
+        </div>
         <InstructionsField />
       </SettingsCard>
     </>

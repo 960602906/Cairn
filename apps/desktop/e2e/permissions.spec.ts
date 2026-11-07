@@ -5,7 +5,7 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { chatRequests, createSession, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'ran without approval'
 const COMMAND = 'echo allowed-by-rule'
@@ -79,8 +79,9 @@ test('权限与审批：项目规则放行命令，规则可以删除', async ({
     await expect(window.getByText(REPLY)).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲')
     await expect(window.getByRole('article', { name: /^需要审批/ })).toHaveCount(0)
-    expect(mock.requests).toHaveLength(2)
-    expect(JSON.stringify(mock.requests[1]?.messages)).toContain('allowed-by-rule')
+    const chats = chatRequests(mock.requests)
+    expect(chats).toHaveLength(2)
+    expect(JSON.stringify(chats[1]?.messages)).toContain('allowed-by-rule')
 
     // 再次打开时规则仍在；删除后列表为空
     await window.keyboard.press(process.platform === 'darwin' ? 'Meta+Comma' : 'Control+Comma')

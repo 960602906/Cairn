@@ -5,7 +5,7 @@ import {
   type EventType,
 } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
-import { INTERRUPTED_TOOL_RESULT_TEXT, rebuildHistory } from './index.js'
+import { SESSION_BRIEF_PREFIX, INTERRUPTED_TOOL_RESULT_TEXT, rebuildHistory } from './index.js'
 
 const model = { providerId: 'fake', modelId: 'fake-1' }
 const text = (t: string) => [{ type: 'text' as const, text: t }]
@@ -465,5 +465,42 @@ describe('rebuildHistory', () => {
         },
       ],
     })
+  })
+
+  it('把最新的会话要点放在摘要前面，压缩不会把它换掉', () => {
+    const ev = stream()
+    const history = rebuild([
+      ev('session.brief.updated', { content: '旧要点', editedBy: 'agent' }, { runId: 'other' }),
+      ev('message.user', { messageId: 'u1', content: text('早') }, { turnId: 't1' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a1', content: text('一'), model },
+        { turnId: 't1' },
+      ),
+      ev('message.user', { messageId: 'u2', content: text('晚') }, { turnId: 't2' }),
+      ev('context.compacted', { summary: '只剩目标', coversTurns: ['t1', 't1'] }),
+      ev(
+        'session.brief.updated',
+        { content: '目标：修复测试', editedBy: 'user' },
+        { runId: 'other' },
+      ),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a2', content: text('二'), model },
+        { turnId: 't2' },
+      ),
+    ])
+    expect(roles(history)).toEqual(['summary', 'summary', 'user', 'assistant'])
+    expect(history[0]).toMatchObject({
+      content: `${SESSION_BRIEF_PREFIX}目标：修复测试`,
+    })
+    expect(history[1]).toMatchObject({ content: '只剩目标' })
+
+    const cleared = rebuild([
+      ev('session.brief.updated', { content: '目标：修复测试', editedBy: 'user' }),
+      ev('session.brief.updated', { content: '  ', editedBy: 'user' }),
+      ev('message.user', { messageId: 'u1', content: text('晚') }, { turnId: 't2' }),
+    ])
+    expect(roles(cleared)).toEqual(['user'])
   })
 })

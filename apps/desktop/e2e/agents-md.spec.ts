@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
+import { chatRequests, expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'reply from configured provider'
 const INSTRUCTIONS = 'Always mention the cairn marker when answering.'
@@ -67,9 +67,7 @@ test('项目里的 AGENTS.md 进入模型请求，顶栏显示标记', async ({ 
     await expect(runStatus(window)).toHaveText('空闲')
     await expect(window.getByLabel('已加载项目说明 AGENTS.md（1 行）')).toBeVisible()
 
-    const chat = mock.requests.filter(
-      (request) => !JSON.stringify(request.messages).includes('You name a conversation.'),
-    )
+    const chat = chatRequests(mock.requests)
     expect(chat).toHaveLength(1)
     const messages = JSON.stringify(chat[0]!.messages)
     expect(messages).toContain('# Project instructions (AGENTS.md)')

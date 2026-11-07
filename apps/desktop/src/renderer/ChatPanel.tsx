@@ -7,13 +7,14 @@
  * M2-07：顶栏右侧是本会话的改动摘要（`SessionChanges`），点击列出所有改动。
  * M2-08：对话列左侧是对话导航条（合并了检查点入口）；撤销本轮移到轮次操作中（`Checkpoints.tsx`）。
  */
-import { useRef, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rootRun, sessionStatus } from '@cairn/core'
 import { ApprovalList } from './ApprovalCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { SessionChanges } from './FileChanges.js'
+import { SessionBriefDrawer, SessionBriefMenu } from './SessionBrief.js'
 import { MessageStream } from './MessageStream.js'
 import { lastSegment } from './paths.js'
 import { useStickToBottom } from './stick-to-bottom.js'
@@ -49,6 +50,7 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
     (s) => s.activeSessionId !== undefined && s.awaitingTurn[s.activeSessionId] === true,
   )
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
+  const [briefSession, setBriefSession] = useState<string | undefined>()
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   useStickToBottom(scroller, content, sessionId ?? '')
@@ -95,7 +97,10 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
             {t('chat.agentsMd.mark')}
           </span>
         )}
-        <SessionChanges sessionId={sessionId} />
+        <div className="no-drag ml-auto flex shrink-0 items-center">
+          <SessionChanges sessionId={sessionId} />
+          <SessionBriefMenu onOpen={() => setBriefSession(sessionId)} />
+        </div>
       </TopBar>
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
@@ -108,6 +113,9 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
           </div>
         </div>
         <TurnRail view={view} />
+        {briefSession === sessionId && (
+          <SessionBriefDrawer sessionId={sessionId} onClose={() => setBriefSession(undefined)} />
+        )}
       </div>
       <div className="mx-auto w-full max-w-[720px] px-7 pb-3">
         <Composer

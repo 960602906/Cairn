@@ -175,6 +175,17 @@ describe('SettingsPage', () => {
     await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(''))
   })
 
+  it('turns automatic session briefs off and back on', async () => {
+    const { updates } = setup()
+    await openSettings()
+    const toggle = await screen.findByRole('switch', { name: '自动更新会话要点' })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    await userEvent.click(toggle)
+    expect(updates).toContainEqual({ sessionBrief: false })
+    await userEvent.click(toggle)
+    expect(updates).toContainEqual({ sessionBrief: true })
+  })
+
   it('collapses the category list in a narrow window', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('max-width'),

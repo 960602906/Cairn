@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CanonicalMessage } from '@cairn/protocol'
+import { SESSION_BRIEF_PREFIX, sessionBriefMessage } from './brief.js'
 import {
   COMPACTION_KEEP_TURNS,
   OMITTED_TOOL_OUTPUT,
@@ -178,6 +179,52 @@ describe('compactConversation', () => {
       now: 8,
     })
     expect(once).toEqual({ kind: 'none' })
+  })
+
+  it('keeps the session brief in front of the summary and out of the replaced turns', async () => {
+    let transcript = ''
+    const outcome = await compactConversation({
+      messages: [
+        sessionBriefMessage('旧要点', 0),
+        user('t1', '很早的目标', 1),
+        assistant('a', 2, 'c1'),
+        tool('c1', 'file', 3),
+        user('t2', '最近', 4),
+        assistant('b', 5),
+        user('t3', '更近', 6),
+        assistant('c', 7),
+      ],
+      brief: '目标：修复测试',
+      budget: roomy,
+      force: true,
+      summarize: async (text) => {
+        transcript = text
+        return '只剩目标'
+      },
+      now: 9,
+    })
+    expect(outcome.kind).toBe('summary')
+    if (outcome.kind !== 'summary') return
+    expect(transcript.startsWith(`${SESSION_BRIEF_PREFIX}目标：修复测试`)).toBe(true)
+    expect(transcript).not.toContain(`Previous summary:\n${SESSION_BRIEF_PREFIX}`)
+    expect(transcript).toContain('很早的目标')
+    expect(outcome.messages[0]).toMatchObject({
+      role: 'summary',
+      content: `${SESSION_BRIEF_PREFIX}目标：修复测试`,
+    })
+    expect(outcome.messages[1]).toMatchObject({ role: 'summary', content: '只剩目标' })
+    expect(outcome.messages.map((message) => message.role)).toEqual([
+      'summary',
+      'summary',
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ])
+    const keptTool = outcome.messages.find(
+      (message) => message.role === 'tool' && message.toolCallId === 'c1',
+    )
+    expect(keptTool).toBeUndefined()
   })
 })
 
