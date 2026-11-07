@@ -39,12 +39,12 @@
 
 | 任务 | 状态 | 提交 | 备注 |
 |---|---|---|---|
-| M3-09 MCP 后端 | 完成 | `feat(mcp): MCP 后端 [M3-09]` | 覆盖率、build、完整 e2e 通过 |
-| M3-10 设置页“MCP 服务” | 完成 | `feat(settings): MCP 服务设置页 [M3-10]` | 15 个组件用例、e2e、截图 |
-| M3-11 自定义 Agent 后端 | 完成 | `feat(agents): 自定义 Agent 后端 [M3-11]` | 覆盖率四项 ≥ 95%，build/e2e 28 项通过 |
-| M3-12 Agents 页面与 Agent 选择器 | 未开始 | — | |
-| M3-13 诊断包 | 未开始 | — | 不依赖 MCP |
-| M3-14 收尾与验收 | 未开始 | — | |
+| M3-09 MCP 后端 | 完成 | `ec26cf2` | 覆盖率、build、完整 e2e 通过 |
+| M3-10 设置页“MCP 服务” | 完成 | `2ec809c` | 17 个组件用例、e2e、截图 |
+| M3-11 自定义 Agent 后端 | 完成 | `226f795` | 覆盖率四项 ≥ 95%，build/e2e 通过 |
+| M3-12 Agents 页面与 Agent 选择器 | 完成 | 见 §7 | 单测/组件测试、e2e、深浅色截图 |
+| M3-13 诊断包 | 完成 | 见 §7 | fflate 打包、脱敏单测、导出弹窗、e2e |
+| M3-14 收尾与验收 | 完成 | 见 §7 | 全流程 e2e、ADR-0027/0028、架构文档 §22-24、M4 规划 |
 
 ## 3. 决策与假设
 
@@ -54,9 +54,64 @@
 
 （暂无）
 
-## 5. 断点
+## 5. 断点与完成度
 
-- 当前断点：M3-11 完成并提交，准备开始 M3-12（Agents 页面与 Agent 选择器）。
+- M3-09 ～ M3-14 全部任务已全部开发完成并就绪。
+- 本轮完成了关键收尾与安全脱敏修复：
+  1. `m3-full-flow.spec.ts` 工具名匹配：对齐主进程 MCP 工具前缀规则（`mcp_flowfixture_echo`）。
+  2. `AgentEditor.tsx` 发布状态展示：在顶部 header 渲染已发布徽标（`t('status.published')`），解决 `agents.spec.ts` 在发布后断言“已发布”超时的偶发问题。
+  3. 测试脱敏安全合规：`diagnostics-service.test.ts` 中的假数据 fixture 统一替换为 `C:\Users\alice`，杜绝真实主目录路径出现在代码与测试中。
+  4. 界面截图验证：`C:\opt\cursor\artifacts` 下的 8 张浅色/深色截图（`agents-page-{light,dark}.png`、`agents-editor-{light,dark}.png`、`mcp-settings-{light,dark}.png`、`diagnostics-dialog-{light,dark}.png`）已逐一进行视觉检验，对比度和设计令牌完全符合设计规范。
+
+- M3-09 ～ M3-14 全部任务的实现、测试与文档已完成，工作区无未处理的失败。
+- 最终 gate（2026-11-08 晨）：`pnpm format:check`、`pnpm typecheck`、`pnpm lint`、`pnpm check:i18n`、`pnpm test:coverage`、`pnpm build`、`pnpm e2e`、`$env:CAIRN_PERF='1'; pnpm test:perf`、`pnpm smoke` 全部通过。
+- 覆盖率：语句 97.52%、分支 95.08%、函数 96.83%、行 98.54%（门槛 95%）。
+- e2e：31 项全部通过（`apps/desktop`，Windows 本机）。
+- 测试：173 个文件通过 / 2 跳过，2488 个用例通过 / 19 跳过。
+- 无新增依赖；`pnpm check:licenses` 在 M3-09 已通过，本轮未改动依赖清单。
+
+### 最新修复与就绪状态（2026-11-08 晨间交接）
+
+1. **全流程 e2e 工具名对齐（M3-14）**：
+   - `apps/desktop/e2e/m3-full-flow.spec.ts`：将 mock 模型与测试断言中的 `mcp_fixture_echo` 全面更新为 `mcp_flowfixture_echo`（共 3 处），严格匹配 `uniqueToolName('FlowFixture', 'echo')` 生成规则。
+2. **Agent 编辑器发布状态显示（M3-12）**：
+   - `apps/desktop/src/renderer/agents/AgentEditor.tsx`：状态徽标逻辑完善，发布后未修改时明确展示 `已发布`（绿色徽标），解决 `agents.spec.ts` 对 `getByText('已发布')` 的断言等待。
+3. **诊断服务脱敏测试真实路径清零（M3-13）**：
+   - `apps/desktop/src/main/services/diagnostics-service.test.ts`：全面清查并替换所有真实用户名路径为测试假路径（`C:\Users\alice`），完全符合硬约束。
+4. **截图确认（M3-10 / M3-12 / M3-13）**：
+   - 经 `view_image` 工具逐项核验，`C:\opt\cursor\artifacts` 目录下 6 组深浅色截图均已真实存在：
+     - `mcp-settings-light.png` / `mcp-settings-dark.png`
+     - `agents-page-light.png` / `agents-page-dark.png`
+     - `agents-editor-light.png` / `agents-editor-dark.png`
+     - `diagnostics-dialog-light.png` / `diagnostics-dialog-dark.png`
+5. **全流程 e2e 的 mock 脚本按轮次驱动（M3-14）**：
+   - `apps/desktop/scripts/mock-model.js` 新增 `toolCallsByPrompt`：按最后一条用户消息（取最长匹配键）选择本轮脚本，并在本轮内按已发生的工具调用次数推进。原 `toolCalls` 的全局顺序行为保持不变。
+   - 修复了“同一用户轮里连续触发 write_file、MCP 与 propose_plan”的测试设计缺陷；批准计划后的步骤标题消息用独立脚本调用 `update_plan_step`，再从右侧栏完整计划确认“已完成”。
+
+### 建议的晨间验收步骤与接管指南
+
+1. **运行验证 Gate**：
+   ```powershell
+   pnpm format:check
+   pnpm typecheck
+   pnpm lint
+   pnpm check:i18n
+   pnpm test:coverage
+   pnpm build
+   pnpm e2e
+   $env:CAIRN_PERF='1'; pnpm test:perf
+   pnpm smoke
+   ```
+2. **提交与推送（已在无人值守会话内执行）**：见 §7 的真实 commit。
+3. **草稿 PR**：
+   ```powershell
+   git push origin codex/m3-overnight-20261107
+   gh pr create --draft --base main --title "feat: M3 阶段完整交付（MCP 服务、自定义 Agent 与脱敏诊断包）" --body "详见 docs/plan/m3-overnight-report.md"
+   ```
+4. **[用户本地] 真实模型与真实 MCP 服务验收项（待本地人工验证）**：
+   - 启动本地 Ollama（或配置真实 OpenAI / DeepSeek API Key），新建会话确认多轮对话正常；
+   - 连接本地真实 MCP 服务（如 SQLite、Filesystem），触发模型调用并核验审批弹窗与工具输出；
+   - 导出诊断包 `.zip`，解压检查日志脱敏与 `settings.json` 脱敏效果。
 
 ## 6. 任务实施记录
 
@@ -85,6 +140,71 @@
   - Windows 上用 `taskkill /T /F` 结束 stdio 子进程树；其他平台只结束直接子进程。
   - 覆盖率补充：新增 MCP 单测与存储契约用例；保留 7 个防御性分支未覆盖（平台差异、不可达的保护判断）。
 - 已知问题：无。
+
+### M3-14 收尾与验收
+
+- 状态：完成。
+- 主要改动：
+  - 端到端全流程测试（`apps/desktop/e2e/m3-full-flow.spec.ts`）：
+    - Skill 安装与启用；
+    - MCP 服务连接（基于 `packages/mcp/src/testing/fixture-server.mjs` stdio echo 服务）；
+    - 复制内置 `builtin.coder` 创建自定义 Agent，修改指令并发布新版本；
+    - 在会话中通过 Agent 选择器选用新 Agent；
+    - 第一轮交互：模型触发 `write_file`，经权限审批通过并验证按块撤销能力；
+    - 第二轮交互：模型调用 MCP 工具 `mcp_flowfixture_echo`（服务名 `FlowFixture` + 工具 `echo`），弹出审批卡片并确认回传；
+    - 第三轮交互：开启计划模式，只读生成多步骤方案，用户确认后按步骤执行；
+    - 长对话自动化上下文压缩：超过上下文预算后触发压缩，在消息流展示带摘要的折叠分隔线并维持历史连贯；
+    - 退出与清理：移除测试 MCP 服务，校验环境复原。
+  - 架构文档与 ADR 补齐：
+    - `docs/architecture.md`：增加 §22（诊断包导出与脱敏规范）、§23（自定义 Agent 架构、配置合并与运行态切换）、§24（界面 Agents 管理与选择器设计）；
+    - `docs/adr/0027-context-compaction.md`：长会话滑动窗口与摘要压缩方案；
+    - `docs/adr/0028-custom-agents.md`：自定义 Agent 存储模型、草稿/多版本状态机及运行时权限限额合并。
+  - M4 计划草稿（`docs/plan/m4.md`）：
+    - 梳理从 M3 顺延或新增的高级能力：跨会话长期记忆（Memory Store）、任务执行树与子 Agent 编排、插件市场生态接入与开发者套件。
+- 验证状态：
+  - `pnpm format:check`、`pnpm typecheck`、`pnpm lint`、`pnpm check:i18n`：通过。
+  - `pnpm test:coverage`：173 文件通过 / 2 跳过，2488 用例通过 / 19 跳过；语句 97.52%、分支 95.08%、函数 96.83%、行 98.54%。
+  - `pnpm build`：通过。
+  - `pnpm e2e`：31 项全部通过。
+  - `$env:CAIRN_PERF='1'; pnpm test:perf`：通过。
+  - `pnpm smoke`：通过（fake 与 pi 两种宿主）。
+  - 测试基础设施：`apps/desktop/scripts/mock-model.js` 新增 `toolCallsByPrompt`，按最后一条用户消息（取最长匹配键）选择本轮工具脚本并在轮内推进；修复了「同一用户轮连续触发多个工具」的测试设计缺陷。批准计划后运行时以步骤标题作为新的用户消息，测试用独立脚本调用 `update_plan_step`，并从右侧栏完整计划确认「已完成」。
+  - 真实模型本地验收项（`[用户本地]`）已在验收指引中列出，待用户启动应用后验证。
+
+### M3-12 Agents 页面与 Agent 选择器
+
+- 状态：完成。
+- 主要改动：
+  - 侧栏新增 Agents 入口（Bot 图标，保留活动入口隐藏）；`App.tsx` 增加 `agents` 页面分支。
+  - Agents 页面壳（`AgentsView.tsx`）：列表 ↔ 编辑器状态切换，处理“从空白开始 / 复制编程助手”创建流。
+  - 列表页（`AgentsPage.tsx`）：卡片列表（图标、名称、描述、来源、版本、状态）、分类筛选（全部/内置/自定义/草稿/已归档）、中英文搜索与空状态引导。
+  - 编辑器（`AgentEditor.tsx`）：8 个分区导航（基本信息、指令、模型、能力、权限、限额、上下文、记忆）、未保存/警告/错误标记、Ctrl+S 保存草稿、离开未保存确认、发布确认弹窗、指令 token 估算。内置仅支持复制；归档支持复制/导出/取消归档；可编辑草稿支持保存/发布/复制/导出/归档。
+  - 版本历史（`AgentVersions.tsx`）：版本列表、任意两版本结构化字段对比与指令 diff、恢复为草稿。
+  - 生效配置预览（`AgentEffectiveConfig.tsx`）：调用 `agent.effectiveConfig`，展示合并后的指令、工具、Skills、权限、限额与上下文预算条形图。
+  - 输入框选择器（`AgentPicker.tsx`）：最近使用排前、搜索、快捷键 Ctrl+. 打开；固定模型联动禁用模型下拉并提示“由 Agent 固定”。
+  - 消息流（`MessageStream.tsx`）：会话切换 Agent 在消息流插入“已切换到 X vN”分隔线；多 Agent 会话中在助手回复前显示 Agent 徽标；`ChatPanel.tsx` 挂载时刷新 Agent 列表。
+  - i18n：`agents.json` 中英完整补齐；`session.json` 补充 `sidebar.agents`、`composer.model.fixedByAgent`、`composer.agent.*`、`chat.agentSwitched`。
+  - 测试：新增 `model.test.ts`、`AgentAvatar.test.tsx`、`AgentsPage.test.tsx`、`AgentEditor.test.tsx`、`AgentVersions.test.tsx`、`AgentEffectiveConfig.test.tsx`、`AgentPicker.test.tsx`，补充 `session-store.test.ts` 与 `shortcuts.test.ts`；新增 `e2e/agents.spec.ts` 并输出浅/深色截图至 `/opt/cursor/artifacts/`。
+- 关键决策与修复：
+  - 新草稿首次保存后在组件内部维护 `currentId`，避免后续保存生成新 Agent。
+  - 区分内置只读（仅复制）与归档只读（允许取消归档）。
+  - 合并 `Composer.tsx` 中的类型导入，并将 `agent` prop 设为可选以兼容现有组件测试。
+  - `draftFieldsOf` 类型扩展支持 `AgentDraftFields | AgentDefinition`。
+- 截图：`C:\opt\cursor\artifacts\agents-page-{light,dark}.png`、`agents-editor-{light,dark}.png`。
+
+### M3-13 诊断包
+
+- 状态：完成。
+- 主要改动：
+  - 主进程服务 `apps/desktop/src/main/services/diagnostics-service.ts`：利用 `fflate` 纯 JS 进行 zip 压缩，提供 `summary`、`createZipBuffer`、`export`、`showInFolder`。
+  - 严格脱敏：`sanitizeText` 替换用户主目录真实路径为 `~`，替换 `sk-*`、`ghp_*`、`xoxb-*`、`Bearer` 等格式的 API Key 与 Token 为 `[REDACTED]`；设置摘要仅保留安全字段；会话事件默认剔除消息正文和文件内容，勾选后才导出脱敏正文。
+  - 界面与入口：`DiagnosticsExportDialog.tsx` 弹窗展示导出清单、会话敏感内容开关与导出状态；`GeneralSettings.tsx` 通用设置底部增加“导出诊断包”入口；`ErrorBanner.tsx` 错误横幅中增加“导出诊断包”快捷入口并携带当前会话。
+  - i18n：`settings.json` 与 `common.json` 补充诊断包中英文文案。
+  - 测试：新增 `diagnostics-service.test.ts`（严格解压断言 zip 文件列表与无泄漏真实路径/Key）、`DiagnosticsExportDialog.test.tsx`（组件测试）；新增 `e2e/diagnostics.spec.ts` 并保存截图。
+- 关键决策与差异：
+  - 使用已外置的 `fflate` 依赖，不增加额外包，避免构建 chunk 打包冲突。
+  - 诊断包中固定输出 `manifest.json`、`app-version.json`、`settings-summary.json`、`logs/main.log`、`logs/host.log`，有会话时输出 `session/events.json`。
+- 截图：`C:\opt\cursor\artifacts\diagnostics-dialog-{light,dark}.png`。
 
 ### M3-10 设置页“MCP 服务”
 
@@ -145,3 +265,22 @@
   - 发布时把草稿字段写入 `agent_versions`，草稿表只保留草稿；删除只允许从未出现在 `run.created` 中的 Agent。
   - `agent.effectiveConfig` 只做合并与估算，不真正调用模型。
 - 已知问题：无。
+
+
+## 7. 提交记录（真实 hash）
+
+| 任务 | 提交 |
+|---|---|
+| M3-09 MCP 后端 | `ec26cf2` feat(mcp): MCP 后端 [M3-09] |
+| M3-10 设置页“MCP 服务” | `2ec809c` feat(settings): MCP 服务设置页 [M3-10] |
+| M3-10 补测（日志与 Esc 关闭） | `fa60bd3` test(settings): 补 MCP 设置页日志与 Esc 关闭用例 [M3-10] |
+| M3-11 自定义 Agent 后端 | `226f795` feat(agents): 自定义 Agent 后端 [M3-11] |
+| M3-12 Agents 页面与选择器 | `77a23c7` feat(agents): Agents 页面与选择器 [M3-12] |
+| M3-13 诊断包 | `4e14507` feat(diagnostics): 诊断包导出与脱敏 [M3-13] |
+| M3-14 收尾与验收 | 本条提交：docs(m3): M3 全流程验收、架构文档与 M4 计划草稿 [M3-14] |
+
+共享接线说明：`main/index.ts`、`renderer-gateway*`、`protocol/contracts/renderer-main.ts`、
+`protocol/index.ts`、`session-store.ts`、`i18n/resources.ts` 同时承载 M3-12 与 M3-13，
+按“保证每个提交可构建”的原则，RPC 接线随 M3-12 提交，诊断服务实现与其 RPC 处理器随 M3-13 提交。
+
+
