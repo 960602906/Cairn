@@ -12,5 +12,6 @@
   "language.label": "Language",
   "dev.events.title": "Event viewer",
   "dev.events.showDeltas": "Show delta events",
-  "dev.events.count": "Shown: {{count}}"
+  "dev.events.count": "Shown: {{count}}",
+  "error.title": "Something went wrong"
 }
