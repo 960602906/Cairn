@@ -1,6 +1,7 @@
 import type { EventEnvelope, EventPayload, EventType, TokenUsage } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import {
+  activeExecutionPlan,
   createSessionView,
   MAX_LIVE_TOOL_OUTPUT_CHARS,
   reduceSession,
@@ -106,6 +107,7 @@ describe('createSessionView', () => {
       contextTokens: undefined,
       checkpoints: [],
       restores: [],
+      plans: [],
     })
   })
 })
@@ -881,5 +883,64 @@ describe('reduceSession：工具调用（M1-05c）', () => {
     expect(
       reduceSession(v, ev('session.crashed', { error: { code: 'host.crashed' } })).liveToolOutput,
     ).toEqual({})
+  })
+})
+
+describe('reduceSession：计划（M3-05）', () => {
+  const doc = {
+    goal: '读代码',
+    files: ['src/a.ts'],
+    steps: [
+      { id: 'read', title: '读 src/a.ts' },
+      { id: 'test', title: '跑测试' },
+    ],
+    risks: '',
+    verification: '单测通过',
+    markdown: '1. 读代码',
+  }
+
+  it('提出、改标题批准、更新进度，并忽略越界的更新', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }, { turnId: 't1' }),
+      ev('plan.proposed', { planId: 'pl1', content: doc }, { turnId: 't1' }),
+      ev('plan.step.updated', { planId: 'pl1', stepIndex: 0, status: 'done' }),
+      ev('plan.approved', {
+        planId: 'pl1',
+        content: {
+          ...doc,
+          steps: [
+            { id: 'read', title: '先读测试' },
+            { id: 'test', title: '跑测试' },
+          ],
+        },
+      }),
+      ev('plan.step.updated', { planId: 'pl1', stepIndex: 0, status: 'done', note: '改了测试' }),
+      ev('plan.step.updated', { planId: 'pl1', stepIndex: 9, status: 'done' }),
+    ])
+    expect(view.plans).toHaveLength(1)
+    expect(view.plans[0]).toMatchObject({
+      status: 'approved',
+      turnId: 't1',
+      steps: [
+        { id: 'read', title: '先读测试', status: 'done', note: '改了测试' },
+        { id: 'test', title: '跑测试', status: 'pending' },
+      ],
+    })
+    expect(activeExecutionPlan(view)?.planId).toBe('pl1')
+  })
+
+  it('拒绝待审计划，已批准的计划还留着', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.approved', { planId: 'pl1' }),
+      ev('plan.proposed', { planId: 'pl2', content: doc }),
+      ev('plan.rejected', { planId: 'pl2', feedback: '太复杂' }),
+      ev('plan.rejected', { planId: 'pl1' }),
+    ])
+    expect(view.plans.map((plan) => plan.status)).toEqual(['approved', 'rejected'])
+    expect(view.plans[1]?.feedback).toBe('太复杂')
+    expect(activeExecutionPlan(view)?.planId).toBe('pl1')
   })
 })

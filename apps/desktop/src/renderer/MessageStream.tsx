@@ -18,6 +18,7 @@ import {
   type CheckpointView,
   type LiveMessageView,
   type MessageView,
+  type PlanView,
   type RestoreView,
   type SessionView,
 } from '@cairn/core'
@@ -33,6 +34,7 @@ import {
 } from './Checkpoints.js'
 import { TurnChanges } from './FileChanges.js'
 import { Markdown } from './Markdown.js'
+import { SessionPlanCard } from './PlanCard.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
 import { IconButton, Shimmer } from './ui/index.js'
@@ -216,6 +218,7 @@ function Message({
   message,
   view,
   footer,
+  plans,
   modelName,
   continued,
   divider,
@@ -226,6 +229,7 @@ function Message({
   readonly message: MessageView
   readonly view: SessionView
   readonly footer: TurnFooter | undefined
+  readonly plans: readonly PlanView[]
   readonly modelName: (model: ModelRef) => string
   /** 用户消息上方的检查点分隔线。 */
   readonly divider: { readonly turn: number; readonly checkpoint: CheckpointView } | undefined
@@ -243,6 +247,7 @@ function Message({
     s.activeSessionId === undefined ? undefined : s.approvals[s.activeSessionId],
   )
   const awaiting = new Set(approvals?.map((a) => a.toolCallId))
+  const cards = plans.map((plan) => <SessionPlanCard key={plan.planId} plan={plan} />)
   const marks = (compacted || omitted) && (
     <div className="mb-3.5 flex w-full flex-col gap-2 self-stretch">
       {compacted && view.compaction && <CompactionMark summary={view.compaction.summary} />}
@@ -263,6 +268,7 @@ function Message({
             <RestoreMarks view={view} restores={restores} />
           </div>
         )}
+        {cards}
       </li>
     )
   }
@@ -299,6 +305,7 @@ function Message({
           {message.turnId !== undefined && <UndoTurnButton view={view} turnId={message.turnId} />}
         </TurnActions>
       )}
+      {cards}
       {restores && <RestoreMarks view={view} restores={restores} />}
     </li>
   )
@@ -363,6 +370,13 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
   const live = Object.values(view?.live ?? {}).sort((a, b) => a.startedAt - b.startedAt)
   const outcome = view && turnOutcome(view, t, i18n)
   const footers = view ? turnFooters(view) : new Map<string, TurnFooter>()
+  const anchored = new Set(
+    (view?.plans ?? []).flatMap((plan) =>
+      plan.turnId !== undefined && view?.messages.some((message) => message.turnId === plan.turnId)
+        ? [plan.planId]
+        : [],
+    ),
+  )
   const turns = view ? turnNumbers(view) : new Map<string, number>()
   const checkpoints = view ? turnCheckpoints(view) : new Map<string, CheckpointView>()
   const restores = view ? restoresByMessage(view) : new Map<string, readonly RestoreView[]>()
@@ -387,12 +401,19 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
         {view?.messages.map((message, index) => {
           const previous = view.messages[index - 1]?.seq ?? 0
+          const next = view.messages[index + 1]
+          const lastOfTurn = next === undefined || next.turnId !== message.turnId
           return (
             <Message
               key={message.messageId}
               message={message}
               view={view}
               footer={footers.get(message.messageId)}
+              plans={
+                lastOfTurn && message.turnId !== undefined
+                  ? view.plans.filter((plan) => plan.turnId === message.turnId)
+                  : []
+              }
               modelName={modelName}
               continued={continues(view.messages[index - 1], message)}
               divider={dividerFor(message, index)}
@@ -402,6 +423,13 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
             />
           )
         })}
+        {view?.plans
+          .filter((plan) => !anchored.has(plan.planId))
+          .map((plan) => (
+            <li key={plan.planId} className="list-none">
+              <SessionPlanCard plan={plan} />
+            </li>
+          ))}
         {view?.compaction && afterLast(view.messages.at(-1)?.seq ?? 0, view.compaction) && (
           <li className="list-none">
             <CompactionMark summary={view.compaction.summary} />

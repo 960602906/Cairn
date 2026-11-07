@@ -7,6 +7,7 @@ import { FileChangeSummary, FileContent } from '../changes.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
 import { ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
+import { PLAN_FEEDBACK_MAX, PlanStep, PromptMode } from '../plan.js'
 import { PermissionMode, PermissionRule } from '../permissions.js'
 import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
 import { defineSide } from '../rpc.js'
@@ -199,9 +200,42 @@ export const MainForRenderer = defineSide({
       params: z.object({ includeArchived: z.boolean().optional() }),
       result: z.object({ sessions: z.array(SessionSummary) }),
     },
+    /**
+     * 发送用户输入。`mode: 'plan'`（M3-05）时这一轮只读并提出计划；省略为正常执行。
+     */
     'session.prompt': {
-      params: z.object({ sessionId: Id, content: z.array(ContentPart).min(1) }),
+      params: z.object({
+        sessionId: Id,
+        content: z.array(ContentPart).min(1),
+        mode: PromptMode.optional(),
+      }),
       result: z.object({ messageId: Id }),
+    },
+    /**
+     * 批准一份待审计划并开始执行（M3-05）。`steps` 是用户改过的步骤标题，按 id 对应；
+     * 省略表示不改。随后以正常模式开始新的一轮，输入是批准后的计划。
+     */
+    'plan.approve': {
+      params: z.object({
+        sessionId: Id,
+        planId: Id,
+        steps: z.array(PlanStep).max(20).optional(),
+      }),
+      result: z.object({ messageId: Id }),
+    },
+    /** 拒绝当前计划并带着说明重新规划（M3-05）。新的一轮仍是计划模式。 */
+    'plan.replan': {
+      params: z.object({
+        sessionId: Id,
+        planId: Id,
+        feedback: z.string().trim().min(1).max(PLAN_FEEDBACK_MAX),
+      }),
+      result: z.object({ messageId: Id }),
+    },
+    /** 放弃当前计划（M3-05），不再开始新的一轮。 */
+    'plan.abandon': {
+      params: z.object({ sessionId: Id, planId: Id }),
+      result: z.object({}),
     },
     /** 立刻压缩这个会话的上下文（M3-03）。不是一轮对话，不写用户消息。 */
     'session.compact': {

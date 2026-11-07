@@ -34,6 +34,9 @@ import {
   buildSystemPrompt,
   operatingSystemName,
   toolOutputBudget,
+  planModeGuard,
+  planToolVisible,
+  registerPlanTools,
   type AgentRunHandle,
   type AgentRuntime,
   type Logger,
@@ -49,6 +52,7 @@ import {
   HostForMain,
   MainForHost,
   RpcError,
+  type ActivePlan,
   type HostModelConfig,
   type ModelRef,
   type PermissionRule,
@@ -158,9 +162,13 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let run: AgentRunHandle | undefined
   let initializing = false
   let permissionRules: readonly PermissionRule[] = presetRules('ask')
+  /** 当前这一轮是不是计划模式（M3-05）。轮次结束后清掉，权限拦截读它。 */
+  let planTurn = false
+  /** 正在执行的已批准计划。下一次 `host.prompt` 会换掉或清掉。 */
+  let activePlan: ActivePlan | undefined
   const permissions = createPermissionEngine({
     rules: () => permissionRules,
-    guards: DEFAULT_PERMISSION_GUARDS,
+    guards: [...DEFAULT_PERMISSION_GUARDS, planModeGuard(() => planTurn)],
     ...(options.caseInsensitive !== undefined ? { caseInsensitive: options.caseInsensitive } : {}),
   })
 
@@ -191,13 +199,18 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     const registry = createToolRegistry()
     const toolEnvironment =
       (await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
+    const hasBuiltinTools = registry.list().length > 0
+    registerPlanTools(registry, {
+      createId: options.createId,
+      activePlan: () => activePlan,
+    })
     const hasTools = registry.list().length > 0
     // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息。项目说明每轮再补（M3-02）。
     const promptBase = {
-      tools: hasTools,
+      tools: hasBuiltinTools,
       environment: {
         os: operatingSystemName(options.platform ?? process.platform),
-        ...(hasTools && toolEnvironment.shell ? { shell: toolEnvironment.shell } : {}),
+        ...(hasBuiltinTools && toolEnvironment.shell ? { shell: toolEnvironment.shell } : {}),
         workspacePath: init.workspacePath,
         date: localDate(now()),
       },
@@ -240,19 +253,43 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           // 测试里的主进程没有这个接口。其他错误只记日志，这一轮不带项目说明。
           if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
         }
+        const mode = planTurn ? 'plan' : 'normal'
+        const executing = mode === 'normal' ? activePlan : undefined
         return {
           systemPrompt: buildSystemPrompt({
             ...promptBase,
+            tools: promptBase.tools || mode === 'plan' || executing !== undefined,
             environment: { ...promptBase.environment, date: localDate(now()) },
             ...(text ? { projectInstructions: text } : {}),
+            ...(mode === 'plan'
+              ? { plan: { kind: 'propose' as const } }
+              : executing
+                ? {
+                    plan: {
+                      kind: 'execute' as const,
+                      goal: executing.goal,
+                      steps: executing.steps,
+                    },
+                  }
+                : {}),
           }),
+          tools: registry.specs((definition) =>
+            planToolVisible(definition.name, mode, executing !== undefined),
+          ),
           ...(context ? { context } : {}),
         }
       },
       signal: shutdown.signal,
       createId: options.createId,
       now,
-      ...(toolPipeline ? { tools: registry.specs(), toolPipeline } : {}),
+      ...(toolPipeline
+        ? {
+            tools: registry.specs((definition) =>
+              planToolVisible(definition.name, 'normal', false),
+            ),
+            toolPipeline,
+          }
+        : {}),
       checkpoints,
       onCheckpointError: onError,
       ...(options.retry ? { retry: options.retry } : {}),
@@ -296,8 +333,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   })
 
   endpoint.handle('host.prompt', (input) => {
-    // 一轮结束才 resolve；结果以事件回传，这里不等待
-    requireRun().send(input).catch(onError)
+    planTurn = input.mode === 'plan'
+    activePlan = planTurn ? undefined : input.plan
+    // 一轮结束才 resolve；结果以事件回传，这里不等待。计划模式的只读拦截维持到这一轮结束。
+    requireRun()
+      .send(input)
+      .finally(() => {
+        planTurn = false
+      })
+      .catch(onError)
     return {}
   })
 

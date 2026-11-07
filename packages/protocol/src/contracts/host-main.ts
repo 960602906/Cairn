@@ -16,6 +16,7 @@ import {
 } from '../common.js'
 import { FileChangeInput } from '../changes.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
+import { ActivePlan, PromptMode } from '../plan.js'
 import { PermissionRule, ToolCategory } from '../permissions.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
@@ -127,9 +128,18 @@ export const HostForMain = defineSide({
       }),
       result: z.object({}),
     },
-    /** 用户输入已由主进程落库为 message.user，messageId 与之对应。 */
+    /**
+     * 用户输入已由主进程落库为 message.user，messageId 与之对应。
+     * `mode: 'plan'`（M3-05）时这一轮只读，并多一个 `propose_plan`。
+     * `plan` 是正在执行的已批准计划，有它时提供 `update_plan_step`。
+     */
     'host.prompt': {
-      params: z.object({ messageId: Id, content: z.array(ContentPart).min(1) }),
+      params: z.object({
+        messageId: Id,
+        content: z.array(ContentPart).min(1),
+        mode: PromptMode.optional(),
+        plan: ActivePlan.optional(),
+      }),
       result: z.object({}),
     },
     /** 立刻压缩上下文（M3-03）。轮次还在跑时排到它结束之后。 */

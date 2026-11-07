@@ -623,6 +623,31 @@ describe('file changes (M2-07)', () => {
     expect(store.getState().error).toEqual({ code: 'changes.conflict', params: { path: 'a.ts' } })
   })
 
+  it('sends plan mode only when asked, and forwards plan decisions (M3-05)', async () => {
+    const { api, calls } = fakeApi({
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+      'session.prompt': () => ({ messageId: 'm1' }),
+      'plan.approve': () => ({ messageId: 'm2' }),
+      'plan.replan': () => ({ messageId: 'm3' }),
+      'plan.abandon': () => ({}),
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    expect(await store.getState().sendPrompt('  计划  ', 'plan')).toBe(true)
+    expect(calls.at(-1)).toEqual([
+      'session.prompt',
+      { sessionId: 's1', content: [{ type: 'text', text: '计划' }], mode: 'plan' },
+    ])
+    expect(await store.getState().approvePlan('pl1', [{ id: 'read', title: '读' }])).toBe(true)
+    expect(calls.at(-1)).toEqual([
+      'plan.approve',
+      { sessionId: 's1', planId: 'pl1', steps: [{ id: 'read', title: '读' }] },
+    ])
+    expect(await store.getState().replan('pl2', '换个做法')).toBe(true)
+    expect(await store.getState().abandonPlan('pl3')).toBe(true)
+    expect(calls.at(-1)).toEqual(['plan.abandon', { sessionId: 's1', planId: 'pl3' }])
+  })
+
   it('treats a missing list from a test double as empty', async () => {
     const { api } = fakeApi()
     const store = createSessionStore(api)

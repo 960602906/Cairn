@@ -34,3 +34,4 @@
 | [0024](0024-conversation-first-visual-style.md) | 界面采用“对话风”视觉风格 | 已接受 |
 | [0025](0025-product-name-cairn.md) | 产品命名为 Cairn（石标） | 已接受 |
 | [0027](0027-context-compaction.md) | 上下文压缩：摘要替换模型历史，原始事件保留 | 已接受 |
+| [0028](0028-plan-mode.md) | 计划模式：结构化计划、只读轮次与两个工具 | 已接受 |

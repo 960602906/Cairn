@@ -22,7 +22,7 @@ import type { ContentPart, ErrorInfo, EventPayload, ToolDisplay } from '@cairn/p
 import { TOOL_OUTPUT_MAX_TOKENS, truncateMiddle } from './context-budget.js'
 import type { Logger } from './logger.js'
 import type { ApprovalDecision } from './run-supervisor.js'
-import type { AbortSignalLike, RuntimeToolCall } from './runtime.js'
+import type { AbortSignalLike, RuntimeToolCall, RuntimeToolEffect } from './runtime.js'
 import {
   ToolError,
   ToolErrorCode,
@@ -122,6 +122,9 @@ export type ToolOutcome =
       readonly content: readonly ContentPart[]
       readonly truncated: boolean
       readonly display?: ToolDisplay
+      /** 记下结果后结束本轮（M3-05）。 */
+      readonly stopLoop?: boolean
+      readonly effects?: readonly RuntimeToolEffect[]
     }
   | {
       readonly status: 'error' | 'denied'
@@ -448,6 +451,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         content,
         truncated,
         ...(output.display ? { display: output.display } : {}),
+        ...(output.stopLoop ? { stopLoop: true } : {}),
+        ...(output.effects && output.effects.length > 0 ? { effects: output.effects } : {}),
       }
     } catch (error) {
       if (error instanceof CancelledError || signal.aborted) return cancelled

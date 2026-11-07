@@ -9,7 +9,16 @@
  *   上下文占用圆环（悬停显示百分比与 token 数）与发送 / 停止按钮。
  * - 最下面一行灰字“修改文件前会自动保存检查点”。
  */
-import { ArrowUp, Check, ChevronDown, Eye, ShieldCheck, Square, Zap } from 'lucide-react'
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Eye,
+  ListChecks,
+  ShieldCheck,
+  Square,
+  Zap,
+} from 'lucide-react'
 import {
   Fragment,
   useEffect,
@@ -279,6 +288,7 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
   const compactSession = useSessionStore((s) => s.compactSession)
   const abort = useSessionStore((s) => s.abort)
   const [text, setText] = useState('')
+  const [planMode, setPlanMode] = useState(false)
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
@@ -300,7 +310,10 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
     setText('')
     setSending(true)
     // /compact 立刻压缩，不作为用户消息发给模型。
-    const sent = draft.trim() === '/compact' ? await compactSession() : await sendPrompt(draft)
+    const sent =
+      draft.trim() === '/compact'
+        ? await compactSession()
+        : await sendPrompt(draft, planMode ? 'plan' : 'normal')
     setSending(false)
     if (!sent) setText((current) => (current === '' ? draft : current))
   }
@@ -327,6 +340,24 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [canStop])
 
+  // Shift+Tab 在正常 / 计划之间切换。对话框、菜单和其他输入框里不抢焦点。
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Tab' || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
+        return
+      if (event.defaultPrevented) return
+      const target = event.target
+      if (!(target instanceof HTMLElement)) return
+      if (target.closest('[role="dialog"], [role="menu"]')) return
+      const field = target.closest('input, textarea, [contenteditable="true"]')
+      if (field && field !== textarea.current) return
+      event.preventDefault()
+      setPlanMode((on) => !on)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
     void send()
@@ -352,7 +383,7 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
           ref={textarea}
           rows={1}
           aria-label={t('input.label')}
-          placeholder={t('input.placeholder')}
+          placeholder={planMode ? t('composer.plan.placeholder') : t('input.placeholder')}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={keyDown}
@@ -360,6 +391,20 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
         />
         <div className="mt-2 flex items-center gap-1">
           <PermissionMenu />
+          <button
+            type="button"
+            aria-pressed={planMode}
+            aria-label={t('composer.plan.label')}
+            title={t('composer.plan.hint')}
+            onClick={() => setPlanMode((on) => !on)}
+            className={cn(
+              'flex h-7 items-center gap-1 rounded-item px-2 text-ui',
+              planMode ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-hover',
+            )}
+          >
+            <ListChecks className="size-3.5" />
+            {t('composer.plan.toggle')}
+          </button>
           <div className="ml-auto flex min-w-0 items-center gap-1">
             <ModelMenu sessionId={sessionId} model={model} />
             <ContextRing model={model} tokens={contextTokens ?? 0} />

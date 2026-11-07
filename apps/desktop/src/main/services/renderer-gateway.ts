@@ -43,6 +43,9 @@ export interface SessionCommands {
   readonly setModel: Handler<'session.setModel'>
   readonly compact: Handler<'session.compact'>
   readonly updateBrief: Handler<'session.brief.update'>
+  readonly approvePlan: Handler<'plan.approve'>
+  readonly replan: Handler<'plan.replan'>
+  readonly abandonPlan: Handler<'plan.abandon'>
 }
 
 /** 由改动服务实现的改动命令（M1-08b）。 */
@@ -238,6 +241,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('project.update', (params) => projects.update(params))
       endpoint.handle('project.remove', (params) => projects.remove(params))
       endpoint.handle('session.prompt', (params) => commands.prompt(params))
+      endpoint.handle('plan.approve', (params) => commands.approvePlan(params))
+      endpoint.handle('plan.replan', (params) => commands.replan(params))
+      endpoint.handle('plan.abandon', (params) => commands.abandonPlan(params))
       endpoint.handle('session.compact', (params) => commands.compact(params))
       endpoint.handle('session.brief.update', (params) => commands.updateBrief(params))
       endpoint.handle('session.abort', (params) => commands.abort(params))

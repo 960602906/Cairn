@@ -32,6 +32,8 @@ import {
   type RunMode,
   type RunState,
   type CheckpointReason,
+  type PlanDocument,
+  type PlanStepStatus,
   type SessionStatus,
   type TokenUsage,
   type ToolCall,
@@ -200,6 +202,37 @@ export interface RestoreView {
   readonly ts: number
 }
 
+/** 计划里的一步（M3-05）。状态从 `pending` 起，由 `plan.step.updated` 推进。 */
+export interface PlanStepView {
+  readonly id: string
+  readonly title: string
+  readonly status: PlanStepStatus
+  readonly note?: string
+}
+
+export type PlanCardStatus = 'proposed' | 'approved' | 'rejected'
+
+/** 一份计划（`plan.proposed` 起）。步骤标题在批准时可能被用户改过。 */
+export interface PlanView {
+  readonly planId: string
+  readonly content: PlanDocument
+  readonly steps: readonly PlanStepView[]
+  readonly status: PlanCardStatus
+  readonly feedback?: string
+  readonly seq: number
+  readonly runId: string
+  readonly turnId?: string
+}
+
+/** 最近一份已批准的计划。后面又提出或放弃的计划不会把它盖掉。 */
+export function activeExecutionPlan(view: SessionView): PlanView | undefined {
+  for (let index = view.plans.length - 1; index >= 0; index -= 1) {
+    const plan = view.plans[index]
+    if (plan?.status === 'approved') return plan
+  }
+  return undefined
+}
+
 export interface SessionView {
   readonly sessionId: string
   /** 已归约的最后一条持久化事件的 seq；0 表示尚未处理任何事件（seq 从 1 开始）。 */
@@ -251,6 +284,8 @@ export interface SessionView {
    * 后面的轮次不会清掉它；空内容表示用户把它清空了。
    */
   readonly brief?: { readonly content: string; readonly editedBy: 'agent' | 'user' }
+  /** 会话里的计划，按提出顺序（M3-05）。 */
+  readonly plans: readonly PlanView[]
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -273,6 +308,7 @@ export function createSessionView(sessionId: string): SessionView {
     contextTokens: undefined,
     checkpoints: [],
     restores: [],
+    plans: [],
   }
 }
 
@@ -431,6 +467,49 @@ function updateTool(
   return next === tool ? undefined : { ...view, tools: { ...view.tools, [toolCallId]: next } }
 }
 
+function stepsFrom(content: PlanDocument, previous: readonly PlanStepView[]): PlanStepView[] {
+  return content.steps.map((step) => {
+    const prior = previous.find((item) => item.id === step.id)
+    return {
+      id: step.id,
+      title: step.title,
+      status: prior?.status ?? 'pending',
+      ...(prior?.note ? { note: prior.note } : {}),
+    }
+  })
+}
+
+function proposePlan(
+  view: SessionView,
+  event: EventEnvelope<'plan.proposed'>,
+): SessionView | undefined {
+  if (view.plans.some((plan) => plan.planId === event.payload.planId)) return undefined
+  const plan: PlanView = {
+    planId: event.payload.planId,
+    content: event.payload.content,
+    steps: stepsFrom(event.payload.content, []),
+    status: 'proposed',
+    seq: event.seq,
+    runId: event.runId,
+    ...(event.turnId ? { turnId: event.turnId } : {}),
+  }
+  return { ...view, plans: [...view.plans, plan] }
+}
+
+function resolvePlan(
+  view: SessionView,
+  planId: string,
+  update: (plan: PlanView) => PlanView | undefined,
+): SessionView | undefined {
+  const index = view.plans.findIndex((plan) => plan.planId === planId)
+  if (index < 0) return undefined
+  const next = update(view.plans[index]!)
+  if (!next || next === view.plans[index]) return undefined
+  const plans = view.plans.slice()
+  plans[index] = next
+  return { ...view, plans }
+}
+
 /** 返回 `undefined` 表示事件内容被忽略（只推进 lastSeq）。 */
 function apply(view: SessionView, event: PersistedEvent): SessionView | undefined {
   switch (event.type) {
@@ -582,6 +661,47 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         incomplete: incomplete ?? false,
       })
     }
+
+    case 'plan.proposed':
+      return proposePlan(view, event)
+    case 'plan.approved':
+      return resolvePlan(view, event.payload.planId, (plan) => {
+        if (plan.status !== 'proposed') return undefined
+        const content = event.payload.content ?? plan.content
+        return {
+          ...plan,
+          content,
+          steps: stepsFrom(content, plan.steps),
+          status: 'approved',
+        }
+      })
+    case 'plan.rejected':
+      return resolvePlan(view, event.payload.planId, (plan) => {
+        if (plan.status !== 'proposed') return undefined
+        return {
+          ...plan,
+          status: 'rejected',
+          ...(event.payload.feedback ? { feedback: event.payload.feedback } : {}),
+        }
+      })
+    case 'plan.step.updated':
+      return resolvePlan(view, event.payload.planId, (plan) => {
+        if (plan.status !== 'approved') return undefined
+        const index = event.payload.stepIndex
+        const current = plan.steps[index]
+        if (!current) return undefined
+        const note = event.payload.note?.trim()
+        const steps = plan.steps.map((step, i) =>
+          i === index
+            ? {
+                ...step,
+                status: event.payload.status,
+                ...(note ? { note } : step.note ? { note: step.note } : {}),
+              }
+            : step,
+        )
+        return { ...plan, steps }
+      })
 
     case 'session.brief.updated': {
       const content = event.payload.content.trim()

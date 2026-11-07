@@ -79,10 +79,20 @@ export type RuntimeToolCall = ToolCall
 export type RuntimeToolGate =
   { readonly action: 'allow' } | { readonly action: 'deny'; readonly reason: string }
 
+/**
+ * 工具成功后要写入事件日志的附带事件（M3-05）。流水线原样交给 `RunEngine` 发出，不回给模型。
+ */
+export type RuntimeToolEffect =
+  | { readonly type: 'plan.proposed'; readonly payload: EventPayload<'plan.proposed'> }
+  | { readonly type: 'plan.step.updated'; readonly payload: EventPayload<'plan.step.updated'> }
+
 /** 工具执行结果，回填给模型。状态与 `CanonicalMessage` 的工具结果一致（`unknown` 只用于恢复）。 */
 export interface RuntimeToolResult {
   readonly status: 'ok' | 'error' | 'denied' | 'cancelled'
   readonly content: readonly ContentPart[]
+  /** 为 true 时，运行时在记下这次结果后结束本轮，不再调用模型（`propose_plan`）。 */
+  readonly stopLoop?: boolean
+  readonly effects?: readonly RuntimeToolEffect[]
 }
 
 /** 每次调用模型之前，上层可以调整的上下文（上下文压缩等，M1-13）。 */
@@ -173,6 +183,11 @@ export interface RuntimeSession {
    * 替换系统提示词（M3-02）。每轮开始时换上当轮的项目说明；省略时提示词保持创建会话时的内容。
    */
   setSystemPrompt?(prompt: string): void
+  /**
+   * 替换这一轮交给模型的工具（M3-05）。计划模式加上 `propose_plan`，执行已批准的计划时加上
+   * `update_plan_step`。省略时工具保持创建会话时的那一份。
+   */
+  setTools?(tools: readonly RuntimeToolSpec[]): void
   /** 用压缩后的历史替换模型接下来要看到的消息（M3-03）。省略时只有下次 `prompt` 前的钩子能改历史。 */
   replaceMessages?(messages: readonly CanonicalMessage[]): void
   dispose(): Promise<void>
