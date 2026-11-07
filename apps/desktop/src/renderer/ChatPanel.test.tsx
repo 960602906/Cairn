@@ -655,7 +655,7 @@ describe('tool calls and undo turn', () => {
     await waitFor(() => expect(store.getState().error).toEqual({ code: 'run.busy' }))
   })
 
-  it('lists the checkpoints in the history menu, newest first', async () => {
+  it('navigates turns from the rail and goes back to before a turn', async () => {
     const { open, request } = setup({
       history: finished(
         checkpoint(13),
@@ -671,33 +671,59 @@ describe('tool calls and undo turn', () => {
         ev(18, 'turn.completed', { durationMs: 1 }, 't2'),
         ev(19, 'run.state.changed', { from: 'thinking', to: 'completed' }, 't2'),
       ),
-      handlers: { 'checkpoint.preview': () => plan },
+      handlers: {
+        'checkpoint.preview': () => plan,
+        'changes.list': () => ({
+          changes: [
+            {
+              changeId: 'x1',
+              sessionId: 's1',
+              turnId: 't1',
+              path: 'a.ts',
+              kind: 'modify',
+              status: 'pending',
+              added: 1,
+              removed: 0,
+              createdAt: 1,
+            },
+          ],
+        }),
+      },
     })
     await open()
     expect(screen.getAllByRole('separator').map((s) => s.getAttribute('aria-label'))).toEqual([
       expect.stringMatching(/^第 1 轮前/),
       expect.stringMatching(/^第 2 轮前/),
     ])
-    await userEvent.click(screen.getByRole('button', { name: '历史与检查点' }))
-    const items = await screen.findAllByRole('menuitem')
-    expect(items.map((i) => i.textContent)).toEqual([
-      expect.stringMatching(/^第 2 轮开始之前/),
-      expect.stringMatching(/^第 1 轮开始之前/),
-    ])
-    await userEvent.click(items[1]!)
+    const rail = screen.getByRole('navigation', { name: '对话导航' })
+    const first = within(rail).getByRole('button', { name: '跳到第 1 轮：跑测试' })
+    const scrolled = vi.fn()
+    const target = document.querySelector<HTMLElement>('[data-turn="t1"]')!
+    target.scrollIntoView = scrolled
+    await userEvent.click(first)
+    expect(scrolled).toHaveBeenCalled()
+
+    await userEvent.hover(first)
+    const preview = within(rail).getByRole('group', { name: '第 1 轮' })
+    expect(preview.textContent).toContain('改动了 1 个文件')
+    expect(preview.textContent).toContain('跑测试')
+    expect(preview.textContent).toContain('完成')
+    await userEvent.click(within(preview).getByRole('button', { name: '回到这一轮之前' }))
     expect(await dialog('撤销第 1 轮及之后的改动？')).toBeTruthy()
     expect(request).toHaveBeenCalledWith('checkpoint.preview', {
       sessionId: 's1',
       checkpointId: CHECKPOINT,
     })
+    await userEvent.keyboard('{Escape}')
+    await userEvent.unhover(first)
+    expect(within(rail).queryByRole('group')).toBeNull()
   })
 
-  it('shows an empty history and no undo button without checkpoints', async () => {
+  it('has no rail with a single turn and no undo button without checkpoints', async () => {
     const { open } = setup({ history: finished() })
     await open()
     expect(screen.queryByRole('button', { name: '撤销本轮' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: '历史与检查点' }))
-    expect(await screen.findByText('还没有检查点')).toBeTruthy()
+    expect(screen.queryByRole('navigation', { name: '对话导航' })).toBeNull()
   })
 
   it('disables undo while the session is running', async () => {

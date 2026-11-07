@@ -193,7 +193,7 @@ function Message({
   const awaiting = new Set(approvals?.map((a) => a.toolCallId))
   if (message.role === 'user') {
     return (
-      <li className="flex flex-col items-end">
+      <li className="flex scroll-mt-4 flex-col items-end" data-turn={message.turnId}>
         {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
         <div className="max-w-[78%] rounded-input bg-sunk2 px-4 py-2.5 text-fg">

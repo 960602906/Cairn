@@ -5,13 +5,13 @@
  * 内容都来自 store 中的事件投影，窗口刷新后经 `afterSeq` 补发恢复。订阅返回之前还没有投影，
  * 标题与状态先取会话列表中的值。已发送、等待这一轮开始时显示为运行中（可以停止）。
  * M2-07：顶栏右侧是本会话的改动摘要（`SessionChanges`），点击列出所有改动。
- * M2-08：顶栏最右是“历史与检查点”菜单；撤销本轮移到轮次操作中（`Checkpoints.tsx`）。
+ * M2-08：对话列左侧是对话导航条（合并了检查点入口）；撤销本轮移到轮次操作中（`Checkpoints.tsx`）。
  */
 import { useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rootRun, sessionStatus } from '@cairn/core'
 import { ApprovalList } from './ApprovalCard.js'
-import { HistoryMenu } from './Checkpoints.js'
+import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { SessionChanges } from './FileChanges.js'
 import { MessageStream } from './MessageStream.js'
@@ -86,19 +86,19 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
         <h2 id="chat-title" className="truncate text-ui font-medium text-fg">
           {title === '' ? t('title.untitled') : title}
         </h2>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <SessionChanges sessionId={sessionId} />
-          <HistoryMenu view={view} />
-        </div>
+        <SessionChanges sessionId={sessionId} />
       </TopBar>
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
-        <div
-          ref={content}
-          className="mx-auto flex max-w-[700px] flex-col gap-3.5 px-7 pt-6 pb-8 text-body"
-        >
-          <MessageStream view={view} />
-          <ApprovalList />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            ref={content}
+            className="mx-auto flex max-w-[700px] flex-col gap-3.5 px-7 pt-6 pb-8 text-body"
+          >
+            <MessageStream view={view} />
+            <ApprovalList />
+          </div>
         </div>
+        <TurnRail view={view} />
       </div>
       <div className="mx-auto w-full max-w-[720px] px-7 pb-3">
         <Composer

@@ -7,32 +7,29 @@
  *   是“撤销第 3 轮及之后的改动？”），正文说明后果，列出受影响的文件和各自的结果（恢复 / 恢复原内容 / 删除）；
  *   两个等宽按钮，按钮写明数量（“撤销 2 个文件”）。打开时先预览（`checkpoint.preview`），确认后恢复
  *   （`checkpoint.restore`）。对话记录保留。
- * - **入口**：轮次操作中的“撤销本轮”（这一轮有检查点时），顶栏“历史与检查点”菜单列出本会话的检查点，
- *   可以回到任一轮开始之前，或回到某次恢复之前（撤销那次恢复）。
+ * - **入口**：轮次操作中的“撤销本轮”（这一轮有检查点时）；左侧的对话导航条（`TurnRail`）每轮一条横线，
+ *   悬停预览这一轮，可以“回到这一轮之前”。
  * - **恢复标记**：恢复之后，在当时最后一条消息下方显示“已撤销到第 N 轮开始之前 · 时间”；最近一次恢复旁边是
  *   “撤销这次恢复”（恢复到恢复前自动保存的检查点）。
  *
  * 会话正在运行或等待审批时不能恢复（按钮不可用）。预览或恢复失败时错误由错误横幅显示。
  */
-import { History, RotateCcw, TriangleAlert, Undo2 } from 'lucide-react'
+import { RotateCcw, TriangleAlert, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sessionStatus, type CheckpointView, type RestoreView, type SessionView } from '@cairn/core'
-import type { CheckpointFileChange, SessionStatus } from '@cairn/protocol'
+import type { CheckpointFileChange, ContentPart, SessionStatus } from '@cairn/protocol'
+import { turnEntries } from './file-changes.js'
 import { useSessionStore } from './store-context.js'
 import {
   Button,
+  cn,
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
   IconButton,
   Spinner,
 } from './ui/index.js'
@@ -357,65 +354,143 @@ export function RestoreDialog({
   )
 }
 
-/** 顶栏“历史与检查点”菜单：本会话的检查点，新的在前；选择后打开撤销确认框。 */
-export function HistoryMenu({ view }: { readonly view: SessionView | undefined }) {
+const textOf = (parts: readonly ContentPart[]) =>
+  parts
+    .flatMap((p) => (p.type === 'text' ? [p.text] : []))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+export interface RailTurn {
+  readonly turnId: string
+  readonly turn: number
+  readonly user: string
+  readonly reply: string
+  readonly checkpoint: CheckpointView | undefined
+}
+
+/** 导航条的每一轮：用户消息、回复的开头与这一轮开始时的检查点。 */
+export function railTurns(view: SessionView): RailTurn[] {
+  const turns = turnNumbers(view)
+  const checkpoints = turnCheckpoints(view)
+  return [...turns].map(([turnId, turn]) => {
+    const messages = view.messages.filter((m) => m.turnId === turnId)
+    const user = messages.find((m) => m.role === 'user')
+    const reply = messages.find((m) => m.role === 'assistant' && textOf(m.content) !== '')
+    return {
+      turnId,
+      turn,
+      user: user ? textOf(user.content) : '',
+      reply: reply ? textOf(reply.content) : '',
+      checkpoint: checkpoints.get(turnId),
+    }
+  })
+}
+
+/** 跳到某一轮的用户消息（消息流中带 `data-turn` 的列表项）。 */
+function scrollToTurn(turnId: string) {
+  const target = [...document.querySelectorAll<HTMLElement>('[data-turn]')].find(
+    (el) => el.dataset['turn'] === turnId,
+  )
+  target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+}
+
+/**
+ * 左侧的对话导航条（M2-08）：每一轮一条短横线，点击跳到这一轮；悬停或聚焦时显示这一轮的预览（用户消息、
+ * 回复的开头、改动的文件数与检查点），可以从这里“回到这一轮之前”（打开撤销确认框）。改动过文件的轮次横线
+ * 颜色更深。少于两轮时不显示。
+ */
+export function TurnRail({ view }: { readonly view: SessionView | undefined }) {
   const { t, i18n } = useTranslation('session')
   const canRestore = useCanRestore(view)
+  const changes = useSessionStore((s) => (view ? s.changes[view.sessionId] : undefined))
+  const [open, setOpen] = useState<string>()
   const [target, setTarget] = useState<RestoreTarget>()
-  if (!view) return null
-  const turns = turnNumbers(view)
-  const items = [...turnCheckpoints(view)]
-    .flatMap(([turnId, checkpoint]): { checkpoint: CheckpointView; turn: number | undefined }[] => {
-      const turn = turns.get(turnId)
-      return turn === undefined ? [] : [{ checkpoint, turn }]
-    })
-    .concat(
-      view.checkpoints
-        .filter((c) => c.reason === 'before_restore')
-        .map((checkpoint) => ({ checkpoint, turn: undefined })),
-    )
-    .sort((a, b) => b.checkpoint.seq - a.checkpoint.seq)
+  const turns = useMemo(() => (view ? railTurns(view) : []), [view])
+  if (!view || turns.length < 2) return null
+  const changed = (turnId: string) => (changes ? turnEntries(changes, turnId).length : 0)
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <IconButton label={t('history.button')} size="icon-sm" className="no-drag">
-            <History />
-          </IconButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="max-h-80 w-72 overflow-y-auto">
-          <DropdownMenuLabel>{t('history.title')}</DropdownMenuLabel>
-          {items.length === 0 && (
-            <div className="px-2 pb-2 text-note text-muted">{t('history.empty')}</div>
-          )}
-          {items.map(({ checkpoint, turn }) => (
-            <DropdownMenuItem
-              key={checkpoint.seq}
-              disabled={!canRestore}
-              onSelect={() =>
-                setTarget({
-                  checkpointId: checkpoint.checkpointId,
-                  turn,
-                  later: turn !== undefined && turn < turns.size,
-                })
-              }
+    <nav aria-label={t('rail.label')} className="absolute top-1/2 left-2 z-10 -translate-y-1/2">
+      <ol className="flex max-h-[60vh] flex-col py-1">
+        {turns.map((item) => {
+          const files = changed(item.turnId)
+          const shown = open === item.turnId
+          return (
+            <li
+              key={item.turnId}
+              className="relative"
+              onMouseEnter={() => setOpen(item.turnId)}
+              onMouseLeave={() => setOpen(undefined)}
+              onFocus={() => setOpen(item.turnId)}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(undefined)
+              }}
             >
-              {turn === undefined ? <RotateCcw /> : <Undo2 />}
-              <span className="min-w-0 flex-1 truncate">
-                {turn === undefined ? t('history.beforeRestore') : t('history.turn', { turn })}
-              </span>
-              <span className="shrink-0 text-note text-muted tabular">
-                {formatTime(checkpoint.createdAt, i18n.language)}
-              </span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+              <button
+                type="button"
+                aria-label={t('rail.jump', { turn: item.turn, text: item.user })}
+                onClick={() => scrollToTurn(item.turnId)}
+                className="group/rail flex h-[9px] w-7 items-center px-1.5 outline-none"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'h-[2px] rounded-full transition-all',
+                    shown ? 'w-4 bg-fg2' : files > 0 ? 'w-3 bg-muted' : 'w-3 bg-hair2',
+                  )}
+                />
+              </button>
+              {shown && (
+                <div
+                  role="group"
+                  aria-label={t('rail.turn', { turn: item.turn })}
+                  className="absolute top-1/2 left-full z-20 ml-1 w-72 -translate-y-1/2 rounded-card bg-raise p-3 text-ui shadow-2"
+                >
+                  <div className="mb-1 text-note text-muted">
+                    {t('rail.turn', { turn: item.turn })}
+                    {files > 0 && ` · ${t('rail.changed', { count: files })}`}
+                  </div>
+                  <div className="line-clamp-2 text-fg">{item.user}</div>
+                  {item.reply !== '' && (
+                    <div className="mt-1 line-clamp-2 text-note text-muted">{item.reply}</div>
+                  )}
+                  {item.checkpoint && (
+                    <div className="mt-2.5 flex items-center gap-2 border-t-[0.5px] border-hair pt-2.5">
+                      <span className="min-w-0 flex-1 truncate text-note text-faint">
+                        {t('rail.checkpoint', {
+                          time: formatTime(item.checkpoint.createdAt, i18n.language),
+                        })}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!canRestore}
+                        onClick={() => {
+                          const checkpointId = item.checkpoint!.checkpointId
+                          setOpen(undefined)
+                          setTarget({
+                            checkpointId,
+                            turn: item.turn,
+                            later: item.turn < turns.length,
+                          })
+                        }}
+                      >
+                        <Undo2 className="size-3.5" />
+                        {t('rail.restore')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ol>
       <RestoreDialog
         sessionId={view.sessionId}
         target={target}
         onClose={() => setTarget(undefined)}
       />
-    </>
+    </nav>
   )
 }
