@@ -93,7 +93,8 @@ describe.each(CASSETTES.map((cassette) => ({ name: cassette.name, cassette })))(
         expect(result.mismatches, JSON.stringify(chunking)).toEqual([])
         expect(result.trace, JSON.stringify(chunking)).toEqual(reference.trace)
       }
-    })
+      // 每份录制要依次回放十几次；本地不到 1 秒，但 Windows CI 上与检查点性能测试同时运行时会超过默认的 5 秒
+    }, 30_000)
   },
 )
 
