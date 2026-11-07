@@ -18,7 +18,8 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
       dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folder] })) as never
     }, dir)
 
-    // 设置页“模型供应商”（M2-10）：从侧栏卡片进入，用 DeepSeek 经中转接入
+    // 设置页“模型供应商”（M2-10）：从侧栏设置进入，用 DeepSeek 经中转接入
+    await window.getByRole('button', { name: /^设置/ }).click()
     await window.getByRole('button', { name: /^模型供应商/ }).click()
     await expect(window.getByText(/还没有配置模型供应商/)).toBeVisible()
     await window.getByRole('button', { name: '添加供应商' }).first().click()
@@ -40,16 +41,14 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     await expect(providers).toContainText('默认')
     await expect(providers).toContainText('正常')
     await window.keyboard.press('Escape')
-    await expect(window.getByRole('button', { name: /^模型供应商/ })).toContainText(
-      '默认模型：DeepSeek · DeepSeek V4.1 Flash',
-    )
 
     await window.getByRole('button', { name: '新对话' }).click()
     await window.getByRole('button', { name: '选择文件夹…' }).click()
     await expect(window.getByLabel('项目目录')).toHaveValue(dir)
-    await expect(window.getByLabel('最近的项目').locator('option:checked')).toHaveText(
-      `project — ${dir}`,
-    )
+    const recent = window.getByRole('region', { name: '最近的项目' })
+    const selected = recent.getByRole('button', { name: /project/ })
+    await expect(selected).toHaveAttribute('aria-pressed', 'true')
+    await expect(selected).toContainText(dir)
     await window.getByLabel('标题（可选）').fill('模板配置')
     await window.getByRole('button', { name: '创建' }).click()
     await expect(window.getByRole('heading', { level: 2, name: '模板配置' })).toBeVisible()
