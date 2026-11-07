@@ -104,7 +104,34 @@ describe('createSessionView', () => {
       usage: { inputTokens: 0, outputTokens: 0 },
       usageByTurn: {},
       contextTokens: undefined,
+      checkpoints: [],
+      restores: [],
     })
+  })
+})
+
+describe('reduceSession：检查点与恢复（M2-08）', () => {
+  it('按顺序记录检查点与恢复', () => {
+    const ev = stream()
+    const a = 'a'.repeat(40)
+    const b = 'b'.repeat(40)
+    const view = reduceAll([
+      ev('checkpoint.created', { checkpointId: a, reason: 'turn_start' }, { turnId: 't1' }),
+      ev('checkpoint.created', { checkpointId: b, reason: 'before_restore' }, { runId: SID }),
+      ev('checkpoint.restored', { checkpointId: a, truncateConversation: false }, { runId: SID }),
+    ])
+    expect(view.checkpoints).toEqual([
+      { checkpointId: a, reason: 'turn_start', seq: 1, runId: RUN, turnId: 't1', createdAt: 10 },
+      {
+        checkpointId: b,
+        reason: 'before_restore',
+        seq: 2,
+        runId: SID,
+        turnId: undefined,
+        createdAt: 20,
+      },
+    ])
+    expect(view.restores).toEqual([{ checkpointId: a, seq: 3, ts: 30 }])
   })
 })
 

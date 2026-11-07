@@ -109,10 +109,10 @@ test('修复示例项目的 bug 并运行测试，之后撤销本轮', async ({ 
     expect(result).toMatch(/fail 0/)
 
     await window.getByRole('button', { name: '撤销本轮' }).click()
-    const dialog = window.getByRole('alertdialog', { name: '撤销本轮' })
-    await expect(dialog.getByRole('list', { name: '将恢复的文件' })).toHaveText('还原 sum.mjs')
-    await dialog.getByRole('button', { name: '确认撤销' }).click()
-    await expect(window.getByText('已撤销本轮，恢复了 1 个文件。')).toBeVisible()
+    const dialog = window.getByRole('dialog', { name: '撤销第 1 轮的改动？' })
+    await expect(dialog.getByRole('list', { name: '受影响的文件' })).toHaveText('sum.mjs恢复原内容')
+    await dialog.getByRole('button', { name: '撤销 1 个文件' }).click()
+    await expect(window.getByText(/^已撤销到第 1 轮开始之前 · /)).toBeVisible()
     expect(snapshot(project)).toEqual(initial)
   } finally {
     await mock.close()

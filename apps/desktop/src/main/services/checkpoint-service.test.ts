@@ -148,7 +148,7 @@ describe('checkpoint service', () => {
     await expect(hostCheckpoint('s1')).resolves.toMatch(/^[0-9a-f]{40}$/)
   })
 
-  it('marks the changes recorded after the checkpoint as reverted', async () => {
+  it('syncs change statuses with the restored checkpoint, also when undoing a restore', async () => {
     const { service, storage, events, hostCheckpoint } = setup()
     const change = (changeId: string, extra: { revertOf?: string } = {}) => {
       storage.changes.create({
@@ -180,14 +180,29 @@ describe('checkpoint service', () => {
     change('undone')
     storage.changes.setStatus('undone', 'reverted')
     change('inverse', { revertOf: 'undone' })
-    await service.restore({ sessionId: 's1', checkpointId: first })
-    const status = Object.fromEntries(storage.changes.list('s1').map((c) => [c.changeId, c.status]))
-    expect(status).toEqual({
+    const { before } = await service.restore({ sessionId: 's1', checkpointId: first })
+    const status = () =>
+      Object.fromEntries(storage.changes.list('s1').map((c) => [c.changeId, c.status]))
+    expect(status()).toEqual({
       before: 'pending',
       after: 'reverted',
       undone: 'reverted',
       inverse: 'pending',
     })
+
+    // 撤销这次恢复：恢复前有效的改动重新有效，恢复前已经撤销的仍是撤销
+    await service.restore({ sessionId: 's1', checkpointId: before })
+    expect(read('a.txt')).toBe('two')
+    expect(status()).toEqual({
+      before: 'pending',
+      after: 'pending',
+      undone: 'reverted',
+      inverse: 'pending',
+    })
+
+    // 再恢复到第一个检查点
+    await service.restore({ sessionId: 's1', checkpointId: first })
+    expect(status()).toMatchObject({ before: 'pending', after: 'reverted' })
   })
 
   it('only restores checkpoints of the same session', async () => {
