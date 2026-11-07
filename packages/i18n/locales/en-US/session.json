@@ -46,6 +46,8 @@
   "turn.limit.maxTurnDurationMs": "This turn ran for more than {{minutes}} minutes. You can continue.",
   "turn.limit.maxTokensPerTurn": "This turn reached its token limit of {{value}}. You can continue.",
   "turn.limit.maxCostPerTurn": "This turn reached its estimated cost limit of {{value}}. You can continue.",
+  "turn.continue": "Continue",
+  "turn.continue.prompt": "Continue.",
   "turn.retrying": "Model request failed ({{reason}}). Retrying in {{seconds}}s (attempt {{attempt}} of {{maxRetries}}).",
   "crashed.message": "The agent process exited unexpectedly. You can continue from the last saved point.",
   "new.projectPath": "Project folder",

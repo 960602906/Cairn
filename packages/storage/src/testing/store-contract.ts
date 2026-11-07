@@ -74,7 +74,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           path: '/work/demo',
           createdAt: 100,
           readAgentsMd: true,
-          enableProjectSkills: false,
+          enableProjectSkills: true,
         })
         expect(storage.projects.get('p1')).toEqual(created)
         expect(storage.projects.getByPath('/work/demo')).toEqual(created)
@@ -109,11 +109,11 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         ).toMatchObject({
           name: 'Renamed',
           readAgentsMd: false,
-          enableProjectSkills: false,
+          enableProjectSkills: true,
         })
         expect(
-          storage.projects.update('p1', { enableProjectSkills: true }).enableProjectSkills,
-        ).toBe(true)
+          storage.projects.update('p1', { enableProjectSkills: false }).enableProjectSkills,
+        ).toBe(false)
         clock = 300
         const removed = storage.projects.remove('p1')
         expect(removed.removedAt).toBe(300)
@@ -131,7 +131,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(restored).toMatchObject({
           name: 'Renamed',
           readAgentsMd: false,
-          enableProjectSkills: true,
+          enableProjectSkills: false,
         })
         expect(storage.projects.list().map((p) => p.projectId)).toEqual(['p1'])
         expectStorageError(() => storage.projects.restore('missing'), StorageErrorCode.NotFound)

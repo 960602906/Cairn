@@ -37,7 +37,7 @@ import { Markdown } from './Markdown.js'
 import { SessionPlanCard } from './PlanCard.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
-import { IconButton, Shimmer } from './ui/index.js'
+import { Button, IconButton, Shimmer } from './ui/index.js'
 
 /** 本轮结束后，最后一条助手消息下面的操作：复制本轮回复；右侧灰字是模型名与本轮 token 数（不显示金额）。 */
 function TurnActions({
@@ -369,6 +369,9 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
   const providers = useSessionStore((s) => s.settings?.providers)
   const live = Object.values(view?.live ?? {}).sort((a, b) => a.startedAt - b.startedAt)
   const outcome = view && turnOutcome(view, t, i18n)
+  const sendPrompt = useSessionStore((s) => s.sendPrompt)
+  /** 上一轮因限额停下时，可以一键接着做（Runtime §10.3：开始新的一轮，计数重新开始）。 */
+  const canContinue = view !== undefined && rootRun(view)?.turn?.limitReached !== undefined
   const footers = view ? turnFooters(view) : new Map<string, TurnFooter>()
   const anchored = new Set(
     (view?.plans ?? []).flatMap((plan) =>
@@ -449,7 +452,16 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
           />
         ))}
       </ol>
-      {outcome && <p className="rounded-card bg-sunk px-3.5 py-2.5 text-ui text-fg2">{outcome}</p>}
+      {outcome && (
+        <div className="flex items-center gap-3 rounded-card bg-sunk px-3.5 py-2.5 text-ui text-fg2">
+          <p className="min-w-0 flex-1">{outcome}</p>
+          {canContinue && (
+            <Button size="sm" onClick={() => void sendPrompt(t('turn.continue.prompt'))}>
+              {t('turn.continue')}
+            </Button>
+          )}
+        </div>
+      )}
     </>
   )
 }

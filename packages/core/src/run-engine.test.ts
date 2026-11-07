@@ -534,6 +534,31 @@ describe('RunEngine：失败与限额', () => {
   })
 })
 
+describe('RunEngine：不设限额', () => {
+  it('省略的限额不限制：步数、时长与连续工具失败都不会结束本轮', async () => {
+    const steps = Array.from(
+      { length: 30 },
+      () => ({ kind: 'tool', name: 'a', input: {} }) as const,
+    )
+    let clock = 0
+    const { engine, events } = await start(
+      fake({ turns: [{ steps: [...steps, { kind: 'reply', text: '完成' }] }] }),
+      {
+        limits: {},
+        executeTool: async () => {
+          clock += 3_600_000
+          return { status: 'error', content: text('坏了') }
+        },
+        now: () => clock,
+      },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('跑一整晚') })
+    expect(types(events).filter((t) => t === 'step.started')).toHaveLength(31)
+    expect(types(events)).not.toContain('turn.limit_reached')
+    expect(types(events).at(-1)).toBe('turn.completed')
+  })
+})
+
 describe('RunEngine：限额与非法工具调用', () => {
   const tool = (extra: object = {}) => ({ kind: 'tool', name: 'a', input: {}, ...extra }) as const
   const reply = { kind: 'reply', text: '好' } as const

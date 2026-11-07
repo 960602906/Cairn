@@ -29,7 +29,7 @@ describe('project service', () => {
         createdAt: 1,
         sessionCount: 0,
         readAgentsMd: true,
-        enableProjectSkills: false,
+        enableProjectSkills: true,
       },
     })
     expect(await service.open()).toEqual(first)

@@ -4,6 +4,7 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { describeStorageContract, userEvent } from '../testing/store-contract.js'
+import { migrateDatabase } from './migrate.js'
 import { MIGRATIONS } from './migrations/index.js'
 import { openSqliteStorage } from './storage.js'
 
@@ -40,6 +41,7 @@ describe('openSqliteStorage', () => {
         '0005_permission_rules',
         '0006_project_settings',
         '0007_skill_prefs',
+        '0008_project_skills_default',
       ],
     })
     storage.close()
@@ -93,6 +95,21 @@ describe('openSqliteStorage', () => {
     ])
     expect(second.events.maxSeq('s1')).toBe(2)
     second.close()
+  })
+
+  it('turns project skills on for projects created before they became the default', () => {
+    migrateDatabase({ file, migrations: MIGRATIONS.slice(0, 7) })
+    const db = new Database(file)
+    db.prepare(
+      `INSERT INTO projects (project_id, name, path, created_at, read_agents_md, enable_project_skills)
+       VALUES ('p1', 'Old', '/work/old', 1, 1, 0)`,
+    ).run()
+    db.close()
+
+    const storage = openSqliteStorage({ file })
+    expect(storage.migration.applied).toEqual(['0008_project_skills_default'])
+    expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
+    storage.close()
   })
 
   it('uses Date.now by default', () => {

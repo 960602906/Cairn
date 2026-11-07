@@ -250,7 +250,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     insertProject: db.prepare(
       `INSERT INTO projects
          (project_id, name, path, created_at, read_agents_md, enable_project_skills)
-       VALUES (@projectId, @name, @path, @createdAt, 1, 0)`,
+       VALUES (@projectId, @name, @path, @createdAt, 1, 1)`,
     ),
     updateProject: db.prepare(
       `UPDATE projects SET

@@ -88,7 +88,8 @@ const RUN_DEFAULTS: RunDefaults = {
   agent: { id: 'default', version: 1 },
   model: { providerId: 'fake', modelId: 'fake' },
   mode: 'interactive',
-  limits: { maxStepsPerTurn: 50, maxTurnDurationMs: 10 * 60_000, maxConsecutiveToolErrors: 5 },
+  // 默认不限步数、时长与工具失败次数，长任务可以跑一整晚（2026-11-07）；自定义 Agent 可以自己设限额
+  limits: {},
 }
 /** 退出时等待宿主结束的上限。 */
 const SHUTDOWN_TIMEOUT_MS = 5_000

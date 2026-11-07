@@ -1,8 +1,8 @@
 /**
  * 项目说明（M3-02）：项目根目录有 AGENTS.md 时，第一轮发给模型的系统提示词包含它，
- * 顶栏显示已加载的标记。
+ * 顶栏显示已加载的标记。项目内 `.agents/skills/` 的技能不用打开开关，默认进入技能索引。
  */
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
@@ -50,6 +50,12 @@ test('项目里的 AGENTS.md 进入模型请求，顶栏显示标记', async ({ 
   const mock = await startMockModel({ reply: REPLY, title: '项目说明' })
   const dir = projectDir(userData)
   writeFileSync(path.join(dir, 'agents.md'), `${INSTRUCTIONS}\n`)
+  const skillDir = path.join(dir, '.agents', 'skills', 'release-notes')
+  mkdirSync(skillDir, { recursive: true })
+  writeFileSync(
+    path.join(skillDir, 'SKILL.md'),
+    '---\nname: release-notes\ndescription: Writes release notes for this project.\n---\nSteps.\n',
+  )
   try {
     const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     expect(await configure(window, mock.baseUrl)).toMatchObject({ ok: true })
@@ -72,6 +78,7 @@ test('项目里的 AGENTS.md 进入模型请求，顶栏显示标记', async ({ 
     const messages = JSON.stringify(chat[0]!.messages)
     expect(messages).toContain('# Project instructions (AGENTS.md)')
     expect(messages).toContain(INSTRUCTIONS)
+    expect(messages).toContain('- release-notes: Writes release notes for this project.')
   } finally {
     await mock.close()
   }
