@@ -549,76 +549,94 @@ describe('tool calls and undo turn', () => {
       state(12, 'tooling', 'completed'),
       ...tail,
     )
-  const listed = (turnId = 't1') => ({
-    checkpoints: [
-      { checkpointId: CHECKPOINT, reason: 'turn_start', seq: 4, runId: 'r1', turnId, createdAt: 1 },
+  const BEFORE = 'b'.repeat(40)
+  const checkpoint = (seq: number, checkpointId = CHECKPOINT, turnId = 't1') =>
+    ev(seq, 'checkpoint.created', { checkpointId, reason: 'turn_start' }, turnId)
+  const plan = {
+    before: BEFORE,
+    files: [
+      { path: 'src/new.ts', status: 'deleted' },
+      { path: 'src/app.ts', status: 'modified' },
+      { path: 'src/gone.ts', status: 'added' },
     ],
-  })
+  }
+  const dialog = (name: string) => screen.findByRole('dialog', { name })
 
-  it('undoes the turn after showing the files to restore', async () => {
-    const plan = {
-      before: 'b'.repeat(40),
-      files: [
-        { path: 'src/new.ts', status: 'deleted' },
-        { path: 'src/app.ts', status: 'modified' },
-      ],
-    }
-    const { open, request } = setup({
-      history: finished(),
+  it('shows the checkpoint divider and undoes the turn, then the restore', async () => {
+    const { open, request, emit } = setup({
+      history: finished(checkpoint(13)),
       handlers: {
-        'checkpoint.list': () => listed(),
         'checkpoint.preview': () => plan,
         'checkpoint.restore': () => plan,
       },
     })
     await open()
+    expect(screen.getByRole('separator', { name: /^第 1 轮前已保存检查点 · / })).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
-    const dialog = await screen.findByRole('alertdialog', { name: '撤销本轮' })
+    const confirm = await dialog('撤销第 1 轮的改动？')
+    expect(within(confirm).getByText(/对话记录保留/)).toBeTruthy()
     expect(
-      within(within(dialog).getByRole('list', { name: '将恢复的文件' }))
+      within(within(confirm).getByRole('list', { name: '受影响的文件' }))
         .getAllByRole('listitem')
         .map((li) => li.textContent),
-    ).toEqual(['删除 src/new.ts', '还原 src/app.ts'])
+    ).toEqual(['src/app.ts恢复原内容', 'src/gone.ts恢复', 'src/new.ts删除'])
     expect(request).not.toHaveBeenCalledWith('checkpoint.restore', expect.anything())
-
-    await userEvent.click(within(dialog).getByRole('button', { name: '取消' }))
-    expect(screen.queryByRole('alertdialog')).toBeNull()
+    await userEvent.click(within(confirm).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
-    await userEvent.click(await screen.findByRole('button', { name: '确认撤销' }))
-    expect(await screen.findByText('已撤销本轮，恢复了 2 个文件。')).toBeTruthy()
+    await userEvent.click(
+      within(await dialog('撤销第 1 轮的改动？')).getByRole('button', { name: '撤销 3 个文件' }),
+    )
     expect(request).toHaveBeenCalledWith('checkpoint.restore', {
       sessionId: 's1',
       checkpointId: CHECKPOINT,
     })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // 主进程写入恢复事件后显示恢复标记，可以撤销这次恢复
+    emit(ev(14, 'checkpoint.created', { checkpointId: BEFORE, reason: 'before_restore' }))
+    emit(ev(15, 'checkpoint.restored', { checkpointId: CHECKPOINT, truncateConversation: false }))
+    expect(await screen.findByText(/^已撤销到第 1 轮开始之前 · /)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '撤销这次恢复' }))
+    await userEvent.click(
+      within(await dialog('撤销这次恢复？')).getByRole('button', { name: '撤销 3 个文件' }),
+    )
+    expect(request).toHaveBeenCalledWith('checkpoint.restore', {
+      sessionId: 's1',
+      checkpointId: BEFORE,
+    })
+    emit(ev(16, 'checkpoint.created', { checkpointId: 'c'.repeat(40), reason: 'before_restore' }))
+    emit(ev(17, 'checkpoint.restored', { checkpointId: BEFORE, truncateConversation: false }))
+    expect(await screen.findByText(/^已撤销上一次恢复 · /)).toBeTruthy()
+    // 只有最近一次恢复可以撤销
+    expect(screen.getAllByRole('button', { name: '撤销这次恢复' })).toHaveLength(1)
   })
 
-  it('cannot confirm when the turn changed no files', async () => {
+  it('cannot confirm when no file needs restoring', async () => {
     const { open } = setup({
-      history: finished(),
-      handlers: {
-        'checkpoint.list': () => listed(),
-        'checkpoint.preview': () => ({ before: CHECKPOINT, files: [] }),
-      },
+      history: finished(checkpoint(13)),
+      handlers: { 'checkpoint.preview': () => ({ before: BEFORE, files: [] }) },
     })
     await open()
     await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
-    expect(await screen.findByText('本轮没有改动文件，无需撤销。')).toBeTruthy()
-    expect((screen.getByRole('button', { name: '确认撤销' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
+    const confirm = await dialog('撤销第 1 轮的改动？')
+    expect(await within(confirm).findByText('文件和检查点时一样，没有需要恢复的。')).toBeTruthy()
+    expect(
+      (within(confirm).getByRole('button', { name: '撤销 0 个文件' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
   })
 
-  it('reports a missing turn checkpoint or a failed restore', async () => {
-    let turnId = 'other'
+  it('reports a failed preview or restore', async () => {
+    let failPreview = true
     const { open, store } = setup({
-      history: finished(),
+      history: finished(checkpoint(13)),
       handlers: {
-        'checkpoint.list': () => listed(turnId),
-        'checkpoint.preview': () => ({
-          before: CHECKPOINT,
-          files: [{ path: 'a', status: 'added' }],
-        }),
+        'checkpoint.preview': () => {
+          if (failPreview) throw new RpcError('checkpoint.not_found')
+          return plan
+        },
         'checkpoint.restore': () => {
           throw new RpcError('run.busy')
         },
@@ -627,19 +645,99 @@ describe('tool calls and undo turn', () => {
     await open()
     await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
     await waitFor(() => expect(store.getState().error).toEqual({ code: 'checkpoint.not_found' }))
-    expect(screen.queryByRole('alertdialog')).toBeNull()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    turnId = 't1'
+    failPreview = false
     await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
-    await userEvent.click(await screen.findByRole('button', { name: '确认撤销' }))
+    await userEvent.click(
+      within(await dialog('撤销第 1 轮的改动？')).getByRole('button', { name: '撤销 3 个文件' }),
+    )
     await waitFor(() => expect(store.getState().error).toEqual({ code: 'run.busy' }))
-    expect(screen.getByRole('button', { name: '撤销本轮' })).toBeTruthy()
   })
 
-  it('hides undo while the turn is running', async () => {
-    const { open } = setup({ history: RUNNING })
+  it('navigates turns from the rail and goes back to before a turn', async () => {
+    const { open, request } = setup({
+      history: finished(
+        checkpoint(13),
+        ev(14, 'message.user', { messageId: 'm4', content: text('再改一次') }, 't2'),
+        ev(15, 'turn.started', {}, 't2'),
+        checkpoint(16, 'd'.repeat(40), 't2'),
+        ev(
+          17,
+          'message.assistant.completed',
+          { messageId: 'm5', content: text('好'), model },
+          't2',
+        ),
+        ev(18, 'turn.completed', { durationMs: 1 }, 't2'),
+        ev(19, 'run.state.changed', { from: 'thinking', to: 'completed' }, 't2'),
+      ),
+      handlers: {
+        'checkpoint.preview': () => plan,
+        'changes.list': () => ({
+          changes: [
+            {
+              changeId: 'x1',
+              sessionId: 's1',
+              turnId: 't1',
+              path: 'a.ts',
+              kind: 'modify',
+              status: 'pending',
+              added: 1,
+              removed: 0,
+              createdAt: 1,
+            },
+          ],
+        }),
+      },
+    })
+    await open()
+    expect(screen.getAllByRole('separator').map((s) => s.getAttribute('aria-label'))).toEqual([
+      expect.stringMatching(/^第 1 轮前/),
+      expect.stringMatching(/^第 2 轮前/),
+    ])
+    const rail = screen.getByRole('navigation', { name: '对话导航' })
+    const first = within(rail).getByRole('button', { name: '跳到第 1 轮：跑测试' })
+    const scrolled = vi.fn()
+    const target = document.querySelector<HTMLElement>('[data-turn="t1"]')!
+    target.scrollIntoView = scrolled
+    await userEvent.click(first)
+    expect(scrolled).toHaveBeenCalled()
+
+    await userEvent.hover(first)
+    const preview = within(rail).getByRole('group', { name: '第 1 轮' })
+    expect(preview.textContent).toContain('改动了 1 个文件')
+    expect(preview.textContent).toContain('跑测试')
+    expect(preview.textContent).toContain('完成')
+    await userEvent.click(within(preview).getByRole('button', { name: '回到这一轮之前' }))
+    expect(await dialog('撤销第 1 轮及之后的改动？')).toBeTruthy()
+    expect(request).toHaveBeenCalledWith('checkpoint.preview', {
+      sessionId: 's1',
+      checkpointId: CHECKPOINT,
+    })
+    await userEvent.keyboard('{Escape}')
+    await userEvent.unhover(first)
+    expect(within(rail).queryByRole('group')).toBeNull()
+  })
+
+  it('has no rail with a single turn and no undo button without checkpoints', async () => {
+    const { open } = setup({ history: finished() })
     await open()
     expect(screen.queryByRole('button', { name: '撤销本轮' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: '对话导航' })).toBeNull()
+  })
+
+  it('disables undo while the session is running', async () => {
+    const { open } = setup({ history: [...finished(checkpoint(13))] })
+    await open()
+    expect((screen.getByRole('button', { name: '撤销本轮' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    await userEvent.type(screen.getByLabelText('输入消息'), '继续{Enter}')
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: '撤销本轮' }) as HTMLButtonElement).disabled).toBe(
+        true,
+      ),
+    )
   })
 })
 

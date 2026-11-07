@@ -1,7 +1,7 @@
 /**
  * 工具调用显示与撤销本轮（M1-16b）：模型（本地 mock 端点）调用 `write_file` 新建文件，审批后执行；
  * 消息流中显示工具名、参数摘要与状态。之后“撤销本轮”先列出将恢复的文件，确认后工作区回到本轮开始时，
- * 新建的文件被删除，项目中原有的文件不变。
+ * 新建的文件被删除，项目中原有的文件不变。M2-08：确认框按规范重做；撤销这次恢复后文件回来。
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -63,13 +63,21 @@ test('消息流显示工具调用，撤销本轮恢复项目文件', async ({ la
     expect(readFileSync(created, 'utf8')).toBe('hi\n')
 
     await window.getByRole('button', { name: '撤销本轮' }).click()
-    const dialog = window.getByRole('alertdialog', { name: '撤销本轮' })
-    await expect(dialog.getByRole('list', { name: '将恢复的文件' })).toHaveText('删除 hello.txt')
+    const dialog = window.getByRole('dialog', { name: '撤销第 1 轮的改动？' })
+    await expect(dialog.getByRole('list', { name: '受影响的文件' })).toHaveText('hello.txt删除')
     expect(existsSync(created)).toBe(true)
-    await dialog.getByRole('button', { name: '确认撤销' }).click()
-    await expect(window.getByText('已撤销本轮，恢复了 1 个文件。')).toBeVisible()
+    await dialog.getByRole('button', { name: '撤销 1 个文件' }).click()
+    await expect(window.getByText(/^已撤销到第 1 轮开始之前 · /)).toBeVisible()
     expect(existsSync(created)).toBe(false)
     expect(readFileSync(path.join(dir, 'keep.txt'), 'utf8')).toBe('original\n')
+
+    // 撤销这次恢复（M2-08）：新建的文件回来
+    await window.getByRole('button', { name: '撤销这次恢复' }).click()
+    const undo = window.getByRole('dialog', { name: '撤销这次恢复？' })
+    await expect(undo.getByRole('list', { name: '受影响的文件' })).toHaveText('hello.txt恢复')
+    await undo.getByRole('button', { name: '撤销 1 个文件' }).click()
+    await expect(window.getByText(/^已撤销上一次恢复 · /)).toBeVisible()
+    expect(readFileSync(created, 'utf8')).toBe('hi\n')
   } finally {
     await mock.close()
   }

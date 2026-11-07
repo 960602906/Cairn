@@ -7,13 +7,30 @@
  * M2-03：用户消息是右对齐的气泡；助手正文按 Markdown 渲染；思考过程可展开；每轮结束后最后一条助手消息下面
  * 是轮次操作（复制，模型名与 token 数）。作者名只给读屏（sr-only）。
  * M2-07：这一轮有文件改动时，轮次操作上面是“本轮变更”（`FileChanges.tsx`）。
+ * M2-08：每轮的用户消息上方是检查点分隔线，轮次操作中有“撤销本轮”，恢复之后显示恢复标记
+ * （`Checkpoints.tsx`）。
  */
 import { Check, ChevronRight, Copy } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { rootRun, type LiveMessageView, type MessageView, type SessionView } from '@cairn/core'
+import {
+  rootRun,
+  type CheckpointView,
+  type LiveMessageView,
+  type MessageView,
+  type RestoreView,
+  type SessionView,
+} from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
 import type { ContentPart, ModelRef } from '@cairn/protocol'
+import {
+  CheckpointDivider,
+  RestoreMarks,
+  restoresByMessage,
+  turnCheckpoints,
+  turnNumbers,
+  UndoTurnButton,
+} from './Checkpoints.js'
 import { TurnChanges } from './FileChanges.js'
 import { Markdown } from './Markdown.js'
 import { useSessionStore } from './store-context.js'
@@ -25,10 +42,13 @@ function TurnActions({
   text,
   model,
   tokens,
+  children,
 }: {
   readonly text: string
   readonly model: string
   readonly tokens: number | undefined
+  /** 复制之后的其他操作（撤销本轮）。 */
+  readonly children?: ReactNode
 }) {
   const { t, i18n } = useTranslation('session')
   const [copied, setCopied] = useState(false)
@@ -55,6 +75,7 @@ function TurnActions({
       >
         {copied ? <Check className="text-ok" /> : <Copy />}
       </IconButton>
+      {children}
       <span className="ml-auto truncate">{model}</span>
       {tokens !== undefined && (
         <span className="tabular shrink-0">
@@ -151,11 +172,17 @@ function Message({
   footer,
   modelName,
   continued,
+  divider,
+  restores,
 }: {
   readonly message: MessageView
   readonly view: SessionView
   readonly footer: TurnFooter | undefined
   readonly modelName: (model: ModelRef) => string
+  /** 用户消息上方的检查点分隔线。 */
+  readonly divider: { readonly turn: number; readonly checkpoint: CheckpointView } | undefined
+  /** 这条消息之后发生的恢复。 */
+  readonly restores: readonly RestoreView[] | undefined
   /** 紧跟在同一轮的上一条助手消息之后：间距收紧为块间距（14px）。 */
   readonly continued: boolean
 }) {
@@ -166,11 +193,17 @@ function Message({
   const awaiting = new Set(approvals?.map((a) => a.toolCallId))
   if (message.role === 'user') {
     return (
-      <li className="flex flex-col items-end">
+      <li className="flex scroll-mt-4 flex-col items-end" data-turn={message.turnId}>
+        {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
         <div className="max-w-[78%] rounded-input bg-sunk2 px-4 py-2.5 text-fg">
           <UserContent parts={message.content} />
         </div>
+        {restores && (
+          <div className="self-stretch">
+            <RestoreMarks view={view} restores={restores} />
+          </div>
+        )}
       </li>
     )
   }
@@ -202,8 +235,11 @@ function Message({
         <TurnChanges sessionId={view.sessionId} turnId={message.turnId} />
       )}
       {footer && (
-        <TurnActions text={footer.text} model={modelName(footer.model)} tokens={footer.tokens} />
+        <TurnActions text={footer.text} model={modelName(footer.model)} tokens={footer.tokens}>
+          {message.turnId !== undefined && <UndoTurnButton view={view} turnId={message.turnId} />}
+        </TurnActions>
       )}
+      {restores && <RestoreMarks view={view} restores={restores} />}
     </li>
   )
 }
@@ -267,6 +303,17 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
   const live = Object.values(view?.live ?? {}).sort((a, b) => a.startedAt - b.startedAt)
   const outcome = view && turnOutcome(view, t, i18n)
   const footers = view ? turnFooters(view) : new Map<string, TurnFooter>()
+  const turns = view ? turnNumbers(view) : new Map<string, number>()
+  const checkpoints = view ? turnCheckpoints(view) : new Map<string, CheckpointView>()
+  const restores = view ? restoresByMessage(view) : new Map<string, readonly RestoreView[]>()
+  /** 每轮第一条用户消息上方的检查点分隔线。 */
+  const dividerFor = (message: MessageView, index: number) => {
+    if (message.role !== 'user' || message.turnId === undefined) return undefined
+    if (view?.messages[index - 1]?.turnId === message.turnId) return undefined
+    const checkpoint = checkpoints.get(message.turnId)
+    const turn = turns.get(message.turnId)
+    return checkpoint && turn !== undefined ? { turn, checkpoint } : undefined
+  }
   /** 模型显示名：已配置的“供应商 · 模型”，否则为模型 id。 */
   const modelName = (model: ModelRef) => {
     const provider = providers?.find((p) => p.id === model.providerId)
@@ -286,6 +333,8 @@ export function MessageStream({ view }: { readonly view: SessionView | undefined
             footer={footers.get(message.messageId)}
             modelName={modelName}
             continued={continues(view.messages[index - 1], message)}
+            divider={dividerFor(message, index)}
+            restores={restores.get(message.messageId)}
           />
         ))}
         {live.map((message, index) => (

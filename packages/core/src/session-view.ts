@@ -31,6 +31,7 @@ import {
   type RunLimits,
   type RunMode,
   type RunState,
+  type CheckpointReason,
   type SessionStatus,
   type TokenUsage,
   type ToolCall,
@@ -181,6 +182,24 @@ export interface RunView {
   readonly usage: TokenUsage
 }
 
+/** 会话的一个检查点（`checkpoint.created`，M2-08 的检查点分隔线与历史菜单）。 */
+export interface CheckpointView {
+  readonly checkpointId: string
+  readonly reason: CheckpointReason
+  readonly seq: number
+  readonly runId: string
+  /** 创建时所在的轮次；恢复前创建的检查点没有。 */
+  readonly turnId: string | undefined
+  readonly createdAt: number
+}
+
+/** 一次恢复（`checkpoint.restored`）。 */
+export interface RestoreView {
+  readonly checkpointId: string
+  readonly seq: number
+  readonly ts: number
+}
+
 export interface SessionView {
   readonly sessionId: string
   /** 已归约的最后一条持久化事件的 seq；0 表示尚未处理任何事件（seq 从 1 开始）。 */
@@ -210,6 +229,10 @@ export interface SessionView {
    * 即下一次请求大约要带上的上下文；还没有用量时为 undefined。
    */
   readonly contextTokens: number | undefined
+  /** 检查点，按创建顺序（M2-08）。 */
+  readonly checkpoints: readonly CheckpointView[]
+  /** 恢复，按发生顺序（M2-08）。 */
+  readonly restores: readonly RestoreView[]
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -230,6 +253,8 @@ export function createSessionView(sessionId: string): SessionView {
     usage: ZERO_USAGE,
     usageByTurn: {},
     contextTokens: undefined,
+    checkpoints: [],
+    restores: [],
   }
 }
 
@@ -405,6 +430,25 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return view.info ? { ...view, info: { ...view.info, model: event.payload.model } } : undefined
     case 'session.archived':
       return { ...view, archived: true }
+    case 'checkpoint.created': {
+      const checkpoint: CheckpointView = {
+        checkpointId: event.payload.checkpointId,
+        reason: event.payload.reason,
+        seq: event.seq,
+        runId: event.runId,
+        turnId: event.turnId,
+        createdAt: event.ts,
+      }
+      return { ...view, checkpoints: [...view.checkpoints, checkpoint] }
+    }
+    case 'checkpoint.restored': {
+      const restore: RestoreView = {
+        checkpointId: event.payload.checkpointId,
+        seq: event.seq,
+        ts: event.ts,
+      }
+      return { ...view, restores: [...view.restores, restore] }
+    }
     case 'session.crashed':
       return { ...view, crash: event.payload.error }
 

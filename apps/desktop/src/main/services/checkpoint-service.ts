@@ -6,10 +6,9 @@
  * - **恢复**（`checkpoint.restore`）：先建检查点并写入 `checkpoint.created`（`before_restore`，恢复到它
  *   即可撤销这次恢复），再改写工作区并写入 `checkpoint.restored`。对话不截断（M1 不提供）。
  *
- * 恢复后，本会话在这个检查点之后记录的、仍然有效的文件改动（`file.changed` 晚于该检查点的
- * `checkpoint.created`）标记为 `reverted`（M2-07）：文件已经回到检查点时的内容，本轮变更与顶栏摘要不再
- * 列出它们，也不能再整文件撤销。撤销这次恢复（恢复到 `before_restore`）不会把它们重新标记为有效（M2-08
- * 提供撤销恢复时一并处理）。
+ * 恢复后，本会话的改动记录回到检查点创建时的状态（`syncChanges`，M2-07、M2-08）：检查点之后的改动
+ * 标记为 `reverted`，本轮变更与顶栏摘要不再列出它们；撤销这次恢复（恢复到 `before_restore`）时，
+ * 被这次恢复撤销的改动重新标记为有效。
  *
  * 只能预览与恢复这个会话自己的检查点（同一项目的会话共用影子仓库，对象互相可见）。同一项目有会话正在运行
  * （或正在撤销改动、恢复检查点）时拒绝，因为它们改动的是同一个工作区；恢复期间会话不接受输入
@@ -130,25 +129,53 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
     }
   }
 
-  /** 检查点之后记录的有效改动随恢复撤销：标记为 `reverted`。 */
-  function markRestored(sessionId: string, checkpointId: string) {
-    let after: number | undefined
-    const changed: string[] = []
-    for (const event of events.readAfter(sessionId, 0)) {
-      if (
-        after === undefined &&
-        event.type === 'checkpoint.created' &&
-        event.payload.checkpointId === checkpointId
-      ) {
-        after = event.seq
-      } else if (after !== undefined && event.type === 'file.changed') {
-        changed.push(event.payload.changeId)
+  /**
+   * 恢复后同步改动记录的状态（M2-07、M2-08）：工作区回到检查点创建时的样子，改动记录也回到那时的状态。
+   * 按事件重放到该检查点为止：`file.changed` 记下改动（撤销产生的反向记录把原改动记为已撤销），
+   * `checkpoint.restored` 把恢复点之后的改动记为已撤销。检查点之后的改动都记为已撤销；那时有效、
+   * 现在却标记为已撤销的改动（例如撤销这次恢复）重新标记为有效（`pending`）。反向记录本身不变。
+   */
+  function syncChanges(sessionId: string, checkpointId: string) {
+    const all = events.readAfter(sessionId, 0)
+    let target: number | undefined
+    for (const event of all) {
+      if (event.type === 'checkpoint.created' && event.payload.checkpointId === checkpointId) {
+        target = event.seq
       }
     }
-    for (const changeId of changed) {
-      const change = storage.changes.get(changeId)
-      if (change && change.status !== 'reverted' && change.revertOf === undefined) {
+    if (target === undefined) return
+    const records = new Map(storage.changes.list(sessionId).map((c) => [c.changeId, c]))
+    const changedAt = new Map<string, number>()
+    const state = new Map<string, 'applied' | 'reverted'>()
+    const created = new Map<string, number>()
+    for (const event of all) {
+      if (event.type === 'file.changed') {
+        const record = records.get(event.payload.changeId)
+        if (!record) continue
+        if (record.revertOf !== undefined) {
+          if (event.seq <= target) state.set(record.revertOf, 'reverted')
+          continue
+        }
+        changedAt.set(record.changeId, event.seq)
+        state.set(record.changeId, event.seq <= target ? 'applied' : 'reverted')
+      } else if (event.seq > target) {
+        continue
+      } else if (event.type === 'checkpoint.created') {
+        created.set(event.payload.checkpointId, event.seq)
+      } else if (event.type === 'checkpoint.restored') {
+        const from = created.get(event.payload.checkpointId)
+        if (from === undefined) continue
+        for (const [changeId, at] of changedAt) {
+          if (at > from && at < event.seq) state.set(changeId, 'reverted')
+        }
+      }
+    }
+    for (const [changeId, desired] of state) {
+      const status = records.get(changeId)?.status
+      if (desired === 'reverted' && status !== 'reverted') {
         storage.changes.setStatus(changeId, 'reverted')
+      } else if (desired === 'applied' && status === 'reverted') {
+        storage.changes.setStatus(changeId, 'pending')
       }
     }
   }
@@ -167,7 +194,7 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
     restore: ({ sessionId, checkpointId }) =>
       exclusive(sessionId, checkpointId, async (repo) => {
         const plan = toPlan(await repo.restore(checkpointId))
-        markRestored(sessionId, checkpointId)
+        syncChanges(sessionId, checkpointId)
         const header = { v: 1 as const, sessionId, runId: sessionId, ts: now() }
         events.publish([
           {

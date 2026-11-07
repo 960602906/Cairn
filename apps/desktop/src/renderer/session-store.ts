@@ -16,8 +16,7 @@
  * - **设置**：`loadSettings` 读取、`updateSettings` 保存设置，结果保存在 `settings`；失败时同样写入 `error`。
  *   Key 只能写入（`saveCredential`）与查询是否已保存（`credentialStatus`），没有读出明文的接口。
  * - **项目**（M1-16a）：`refreshProjects` 读取已打开过的项目；`openProject` 用系统对话框选择文件夹。
- * - **撤销本轮**（M1-16b）：`turnCheckpoint` 找到某一轮开始时的检查点，`previewRestore` / `restoreCheckpoint`
- *   预览与恢复。
+ * - **撤销**（M1-16b；M2-08 起检查点来自会话投影）：`previewRestore` / `restoreCheckpoint` 预览与恢复。
  * - **文件改动**（M2-07）：订阅时与收到 `file.changed`、`checkpoint.restored` 后重新读取当前会话的改动记录（`changes.list`，只保留
  *   最新一次请求的结果）；`changeContent` 读取一次改动前后的内容，`revertChanges` 整文件撤销后重新读取。
  * - **审批**（M1-11b）：当前会话的未决审批经 `approval.pending` 读取，订阅时与收到 `approval.changed`
@@ -100,8 +99,6 @@ export interface SessionActions {
   saveCredential(ref: string, secret: string): Promise<boolean>
   /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
   credentialStatus(ref: string): Promise<{ configured: boolean; available: boolean } | undefined>
-  /** 会话中某一轮开始时的检查点（`turn_start`）；没有时返回 undefined，失败时写入 `error`。 */
-  turnCheckpoint(sessionId: string, turnId: string): Promise<string | undefined>
   /** 预览恢复到检查点将改动的文件；失败时返回 undefined。 */
   previewRestore(
     sessionId: string,
@@ -412,16 +409,6 @@ export function createSessionStore(api: MainApi, options: SessionStoreOptions = 
       },
 
       credentialStatus: (ref) => run(() => api.request('credentials.status', { ref })),
-
-      async turnCheckpoint(sessionId, turnId) {
-        const result = await run(() => api.request('checkpoint.list', { sessionId }))
-        if (!result) return undefined
-        const found = result.checkpoints.findLast(
-          (c) => c.reason === 'turn_start' && c.turnId === turnId,
-        )
-        if (!found) set({ error: { code: 'checkpoint.not_found' } })
-        return found?.checkpointId
-      },
 
       previewRestore: (sessionId, checkpointId) =>
         run(() => api.request('checkpoint.preview', { sessionId, checkpointId })),
