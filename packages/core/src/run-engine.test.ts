@@ -1502,3 +1502,163 @@ describe('RunEngine：上下文压缩（M3-03）', () => {
     expect(await engine.compact()).toBe(false)
   })
 })
+
+describe('RunEngine：子运行接口（M4-01）', () => {
+  const tool = { kind: 'tool', name: 'a', input: {} } as const
+  const reply = { kind: 'reply', text: 'done' } as const
+  /** 挂起工具执行，让运行停在 tooling 状态。 */
+  const gatedTool = () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return {
+      release: () => release(),
+      executeTool: async () => {
+        await gate
+        return { status: 'ok' as const, content: text('ok') }
+      },
+    }
+  }
+
+  it('remainingLimits：空闲返回完整限额', async () => {
+    const { engine } = await start(fake({ turns: [] }))
+    expect(engine.remainingLimits).toEqual(limits)
+  })
+
+  it('remainingLimits：轮次中反映已用步数与时长', async () => {
+    const gated = gatedTool()
+    let clock = 1000
+    const fullLimits: RunLimits = {
+      ...limits,
+      maxTokensPerTurn: 100,
+      maxCostPerTurn: 5,
+    }
+    const { engine } = await start(fake({ turns: [{ steps: [tool, reply] }] }), {
+      executeTool: gated.executeTool,
+      now: () => clock,
+      limits: fullLimits,
+    })
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.waitFor(() => expect(engine.state).toBe('tooling'))
+    clock = 2000
+    expect(engine.remainingLimits).toMatchObject({
+      maxStepsPerTurn: 9,
+      maxTurnDurationMs: 59_000,
+      maxConsecutiveToolErrors: 3,
+      maxTokensPerTurn: 100,
+      maxCostPerTurn: 5,
+    })
+    gated.release()
+    await done
+    expect(engine.remainingLimits).toEqual(fullLimits)
+  })
+
+  it('remainingLimits：没有限额时全部为 undefined', async () => {
+    const gated = gatedTool()
+    const { engine } = await start(fake({ turns: [{ steps: [tool, reply] }] }), {
+      executeTool: gated.executeTool,
+      limits: {},
+    })
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.waitFor(() => expect(engine.state).toBe('tooling'))
+    expect(engine.remainingLimits).toEqual({
+      maxStepsPerTurn: undefined,
+      maxTurnDurationMs: undefined,
+      maxConsecutiveToolErrors: undefined,
+      maxTokensPerTurn: undefined,
+      maxCostPerTurn: undefined,
+    })
+    gated.release()
+    await done
+    expect(engine.remainingLimits).toEqual({})
+  })
+
+  it('awaitingChildren：tooling → awaiting_children → tooling', async () => {
+    const gated = gatedTool()
+    const { engine, events } = await start(fake({ turns: [{ steps: [tool, reply] }] }), {
+      executeTool: gated.executeTool,
+    })
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.waitFor(() => expect(engine.state).toBe('tooling'))
+    engine.awaitingChildren(true)
+    expect(engine.state).toBe('awaiting_children')
+    engine.awaitingChildren(false)
+    expect(engine.state).toBe('tooling')
+    gated.release()
+    await done
+    expect(states(events)).toContain('awaiting_children')
+  })
+
+  it('awaitingChildren：非 tooling 时只计数，不非法转换', async () => {
+    const { engine, events } = await start(fake({ turns: [] }))
+    engine.awaitingChildren(true)
+    engine.awaitingChildren(true)
+    engine.awaitingChildren(false)
+    engine.awaitingChildren(false)
+    engine.awaitingChildren(false)
+    expect(engine.state).toBe('idle')
+    expect(states(events)).toEqual([])
+  })
+
+  it('recordChildUsage：子运行用量计入本轮 token，超过上限时结束本轮', async () => {
+    const gated = gatedTool()
+    const { engine, events } = await start(fake({ turns: [{ steps: [tool, reply] }] }), {
+      limits: { ...limits, maxTokensPerTurn: 100 },
+      executeTool: gated.executeTool,
+    })
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.waitFor(() => expect(engine.state).toBe('tooling'))
+    engine.recordChildUsage({ inputTokens: 60, outputTokens: 50 })
+    gated.release()
+    await done
+    expect(events.find((e) => e.type === 'turn.limit_reached')).toMatchObject({
+      payload: { limit: 'maxTokensPerTurn', value: 100 },
+    })
+    expect(engine.state).toBe('failed')
+  })
+
+  it('recordChildUsage：计入费用并在超过费用上限时结束本轮', async () => {
+    const gated = gatedTool()
+    const priced = {
+      ...model,
+      profile: { ...model.profile, pricing: { inputPerMillion: 1, outputPerMillion: 2 } },
+    }
+    const { engine, events } = await start(fake({ turns: [{ steps: [tool, reply] }] }), {
+      model: priced,
+      limits: { ...limits, maxCostPerTurn: 1.5 },
+      executeTool: gated.executeTool,
+    })
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.waitFor(() => expect(engine.state).toBe('tooling'))
+    engine.recordChildUsage({ inputTokens: 2_000_000, outputTokens: 0 })
+    gated.release()
+    await done
+    expect(events.find((e) => e.type === 'turn.limit_reached')).toMatchObject({
+      payload: { limit: 'maxCostPerTurn', value: 1.5 },
+    })
+    expect(engine.state).toBe('failed')
+  })
+
+  it('recordChildUsage：空闲时不生效', async () => {
+    const { engine, events } = await start(fake({ turns: [] }))
+    engine.recordChildUsage({ inputTokens: 999, outputTokens: 999 })
+    expect(engine.state).toBe('idle')
+    expect(types(events)).toEqual(['run.created'])
+  })
+
+  it('recordChildUsage：未超限时只累加，不结束本轮', async () => {
+    const gated = gatedTool()
+    const { engine, events } = await start(fake({ turns: [{ steps: [tool, reply] }] }), {
+      limits: { ...limits, maxTokensPerTurn: 100 },
+      executeTool: gated.executeTool,
+    })
+    const done = engine.prompt({ messageId: 'u1', content: text('?') })
+    await vi.waitFor(() => expect(engine.state).toBe('tooling'))
+    engine.recordChildUsage({ inputTokens: 10, outputTokens: 10 })
+    gated.release()
+    await done
+    expect(types(events)).not.toContain('turn.limit_reached')
+    expect(engine.state).toBe('completed')
+  })
+})

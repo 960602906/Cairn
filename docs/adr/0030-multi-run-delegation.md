@@ -1,6 +1,6 @@
 # ADR-0030 同一宿主内的多运行、父子运行与委派边界
 
-- 状态：提议（M4-00 起草；M4-01 / M4-02 定稿）
+- 状态：已接受（M4-00 起草；M4-01 落地多运行与父子运行部分，M4-02 落地委派协议与 `delegate` 工具）
 - 日期：2026-11-08
 - 详细设计：[多 Agent 协作](../design/multi-agent.md)、[Agent Runtime](../design/agent-runtime.md) §16
 - 相关决策：ADR-0003、ADR-0005、ADR-0016、ADR-0018、ADR-0020

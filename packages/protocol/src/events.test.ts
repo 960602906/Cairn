@@ -40,8 +40,21 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   },
   'run.state.changed': { from: 'idle', to: 'thinking' },
   'run.disposed': {},
-  'run.delegated': { childRunId: 'r2', agent: { id: 'builtin.explorer', version: 1 }, task: 't' },
-  'run.child.completed': { childRunId: 'r2', status: 'completed', summary: 'done' },
+  'run.delegated': {
+    childRunId: 'r2',
+    agent: { id: 'builtin.explorer', version: 1 },
+    task: 't',
+    workspace: 'isolated',
+    workspacePath: 'C:\\code\\demo\\.cairn\\worktrees\\r2',
+  },
+  'run.child.completed': {
+    childRunId: 'r2',
+    status: 'completed',
+    summary: 'done',
+    usage: { inputTokens: 100, outputTokens: 20 },
+    changeSetId: 'cs1',
+    issues: ['i1'],
+  },
   'step.started': { model },
   'step.completed': {
     model,

@@ -48,6 +48,7 @@ import type {
   RunState,
   AgentDefinitionRef,
   CanonicalMessage,
+  TokenUsage,
   UnsequencedEvent,
 } from '@cairn/protocol'
 import {
@@ -95,8 +96,11 @@ export const RunEngineErrorCode = {
 } as const
 
 export class RunEngineError extends Error {
-  constructor(readonly code: string) {
-    super(code)
+  constructor(
+    readonly code: string,
+    message?: string,
+  ) {
+    super(message ?? code)
     this.name = 'RunEngineError'
   }
 }
@@ -478,6 +482,60 @@ export class RunEngine {
   /** 调整限额（Runtime §10.3"继续"），从下一次检查起生效。 */
   updateLimits(limits: Partial<RunLimits>): void {
     this.#limits = { ...this.#limits, ...limits } as RunLimits
+  }
+
+  /** 当前轮次的剩余限额；空闲时返回完整限额。 */
+  get remainingLimits(): Partial<RunLimits> {
+    const limits = this.#limits
+    const turn = this.#turn
+    if (!turn) return { ...limits }
+    const activeMs = this.#activeMs(turn)
+    return {
+      maxStepsPerTurn:
+        limits.maxStepsPerTurn !== undefined
+          ? Math.max(0, limits.maxStepsPerTurn - turn.steps)
+          : undefined,
+      maxTurnDurationMs:
+        limits.maxTurnDurationMs !== undefined
+          ? Math.max(0, limits.maxTurnDurationMs - activeMs)
+          : undefined,
+      maxConsecutiveToolErrors: limits.maxConsecutiveToolErrors,
+      maxTokensPerTurn:
+        limits.maxTokensPerTurn !== undefined
+          ? Math.max(0, limits.maxTokensPerTurn - turn.tokens)
+          : undefined,
+      maxCostPerTurn:
+        limits.maxCostPerTurn !== undefined
+          ? Math.max(0, limits.maxCostPerTurn - turn.cost)
+          : undefined,
+    }
+  }
+
+  #childrenPending = 0
+
+  /** 并行的多个子运行委派可能同时等待：第一个开始时进入、最后一个结束时离开 awaiting_children。 */
+  awaitingChildren(waiting: boolean): void {
+    this.#childrenPending += waiting ? 1 : -1
+    if (this.#childrenPending < 0) this.#childrenPending = 0
+    if (waiting && this.#childrenPending === 1 && this.#state === 'tooling') {
+      this.#transition('awaiting_children')
+    } else if (!waiting && this.#childrenPending === 0 && this.#state === 'awaiting_children') {
+      this.#transition('tooling')
+    }
+  }
+
+  /** 子运行消耗计入父运行本轮消耗（ADR-0030）。超出限额时发出事件并中止父运行。 */
+  recordChildUsage(usage: TokenUsage, pricing = this.#o.model.profile.pricing): void {
+    const turn = this.#turn
+    if (!turn || turn.ended) return
+    turn.tokens += billedTokens(usage)
+    if (pricing) turn.cost += estimateCost(usage, pricing)
+    const limit = this.#exceededLimit(turn)
+    if (limit) {
+      turn.limitHit = limit
+      // 与 `#onRuntimeEvent` 的限额中止一致：不设置 abortReason，让 `#endTurn` 走限额分支
+      void this.#session!.abort('limit')
+    }
   }
 
   /**

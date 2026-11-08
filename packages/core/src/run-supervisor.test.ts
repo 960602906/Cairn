@@ -1,6 +1,7 @@
 import type { RunLimits } from '@cairn/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  computeChildLimits,
   FakeRuntime,
   RunEngineErrorCode,
   RunSupervisorErrorCode,
@@ -12,6 +13,7 @@ import {
   type ResolvedModel,
   type RunEvent,
   type RunSupervisorOptions,
+  type ToolPipeline,
 } from './index.js'
 
 const ref = { providerId: 'fake', modelId: 'fake-1' }
@@ -106,16 +108,46 @@ describe('RunSupervisor：创建与事件', () => {
     })
   })
 
-  it('M0 只允许一个运行；释放后可以再创建', async () => {
+  it('支持多个运行：按 id 区分，释放后从管理器中清理', async () => {
     const { supervisor } = setup(fake({ turns: [] }))
-    const run = await supervisor.createRun(init)
+    const a = await supervisor.createRun(init)
+    const b = await supervisor.createRun({ ...init, runId: 'r-b' })
+    expect(a.runId).toBe('run-1')
+    expect(b.runId).toBe('r-b')
+    expect(supervisor.getRun(a.runId)).toBe(a)
+    expect(supervisor.getRun(b.runId)).toBe(b)
+    await a.dispose()
+    expect(supervisor.getRun(a.runId)).toBeUndefined()
+    expect(supervisor.getRun(b.runId)).toBe(b)
+  })
+
+  it('重复 runId 抛出 DuplicateRun', async () => {
+    const { supervisor } = setup(fake({ turns: [] }))
+    await supervisor.createRun({ ...init, runId: 'r1' })
+    await expect(supervisor.createRun({ ...init, runId: 'r1' })).rejects.toMatchObject({
+      code: RunSupervisorErrorCode.DuplicateRun,
+    })
+  })
+
+  it('达到 maxRuns 时抛出 TooManyRuns', async () => {
+    const { supervisor } = setup(fake({ turns: [] }), { maxRuns: 1 })
+    await supervisor.createRun(init)
     await expect(supervisor.createRun(init)).rejects.toMatchObject({
       code: RunSupervisorErrorCode.TooManyRuns,
     })
-    await run.dispose()
-    expect(supervisor.getRun(run.runId)).toBeUndefined()
-    const next = await supervisor.createRun(init)
-    expect(next.runId).toBe('run-2')
+  })
+
+  it('listRuns 与 listChildren', async () => {
+    const { supervisor } = setup(fake({ turns: [] }))
+    const parent = await supervisor.createRun(init)
+    const child = await supervisor.createRun({
+      ...init,
+      runId: 'c1',
+      parentRunId: parent.runId,
+    })
+    expect(supervisor.listRuns().map((r) => r.runId)).toEqual([parent.runId, child.runId])
+    expect(supervisor.listChildren(parent.runId).map((r) => r.runId)).toEqual([child.runId])
+    expect(supervisor.listChildren('missing')).toEqual([])
   })
 
   it('默认使用当前时间', async () => {
@@ -359,5 +391,273 @@ describe('RunSupervisor：限额、中止与释放', () => {
     expect(seen).toEqual({ systemPrompt: `你是助手\n\n${TOOL_RESULT_NOTICE}`, tools: [tool] })
     expect(executeTool).toHaveBeenCalledOnce()
     expect(types(events)).toContain('tool.completed')
+  })
+})
+
+describe('RunSupervisor：父子运行取消树（M4-01）', () => {
+  const slow: FakeScript = {
+    delayMs: 10,
+    turns: [{ steps: [{ kind: 'reply', text: 'working' }] }],
+  }
+
+  it('父运行中止级联子运行', async () => {
+    vi.useFakeTimers()
+    const { supervisor, events } = setup(fake(slow))
+    const parent = await supervisor.createRun(init)
+    const child = await supervisor.createRun({
+      ...init,
+      runId: 'c1',
+      parentRunId: parent.runId,
+    })
+    const parentDone = parent.send(input('u1'))
+    const childDone = child.send(input('u1'))
+    await vi.advanceTimersByTimeAsync(15)
+    await parent.abort('user')
+    await Promise.all([parentDone, childDone])
+    expect(turnEnds(events.filter((e) => e.runId === parent.runId))).toEqual(['turn.aborted'])
+    expect(turnEnds(events.filter((e) => e.runId === child.runId))).toEqual(['turn.aborted'])
+  })
+
+  it('子运行单独中止不影响父运行', async () => {
+    vi.useFakeTimers()
+    const { supervisor, events } = setup(fake(slow))
+    const parent = await supervisor.createRun(init)
+    const child = await supervisor.createRun({
+      ...init,
+      runId: 'c1',
+      parentRunId: parent.runId,
+    })
+    const parentDone = parent.send(input('u1'))
+    const childDone = child.send(input('u1'))
+    await vi.advanceTimersByTimeAsync(15)
+    await child.abort('user')
+    await vi.advanceTimersByTimeAsync(1000)
+    await Promise.all([parentDone, childDone])
+    expect(turnEnds(events.filter((e) => e.runId === parent.runId))).toEqual(['turn.completed'])
+    expect(turnEnds(events.filter((e) => e.runId === child.runId))).toEqual(['turn.aborted'])
+  })
+
+  it('dispose 级联释放子运行', async () => {
+    const { supervisor } = setup(fake({ turns: [] }))
+    const parent = await supervisor.createRun(init)
+    const child = await supervisor.createRun({
+      ...init,
+      runId: 'c1',
+      parentRunId: parent.runId,
+    })
+    await parent.dispose()
+    expect(supervisor.getRun(parent.runId)).toBeUndefined()
+    expect(supervisor.getRun(child.runId)).toBeUndefined()
+  })
+})
+
+describe('RunSupervisor：awaiting_children 与子运行用量（M4-01）', () => {
+  const tool = { kind: 'tool', name: 'a', input: {} } as const
+  const reply = { kind: 'reply', text: 'done' } as const
+  const gatedTool = () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return {
+      release: () => release(),
+      executeTool: async () => {
+        await gate
+        return { status: 'ok' as const, content: text('ok') }
+      },
+    }
+  }
+
+  it('awaitChildren：包裹期间进入 awaiting_children，结束后恢复 tooling', async () => {
+    const gated = gatedTool()
+    const { supervisor, events } = setup(fake({ turns: [{ steps: [tool, reply] }] }), {
+      executeTool: gated.executeTool,
+    })
+    const run = await supervisor.createRun(init)
+    const done = run.send(input('u1'))
+    await vi.waitFor(() => expect(run.state).toBe('tooling'))
+    let sawAwaitingChildren = false
+    await run.awaitChildren(async () => {
+      expect(run.state).toBe('awaiting_children')
+      sawAwaitingChildren = true
+    })
+    expect(sawAwaitingChildren).toBe(true)
+    expect(run.state).toBe('tooling')
+    gated.release()
+    await done
+    expect(
+      events.some((e) => e.type === 'run.state.changed' && e.payload.to === 'awaiting_children'),
+    ).toBe(true)
+  })
+
+  it('recordChildUsage：委托给运行引擎计入本轮', async () => {
+    const gated = gatedTool()
+    const { supervisor, events } = setup(fake({ turns: [{ steps: [tool, reply] }] }), {
+      limits: { ...limits, maxTokensPerTurn: 100 },
+      executeTool: gated.executeTool,
+    })
+    const run = await supervisor.createRun(init)
+    const done = run.send(input('u1'))
+    await vi.waitFor(() => expect(run.state).toBe('tooling'))
+    run.recordChildUsage({ inputTokens: 60, outputTokens: 50 })
+    gated.release()
+    await done
+    expect(events.find((e) => e.type === 'turn.limit_reached')).toMatchObject({
+      payload: { limit: 'maxTokensPerTurn', value: 100 },
+    })
+    expect(run.state).toBe('failed')
+  })
+})
+
+describe('RunSupervisor：按运行创建上下文（M4-01）', () => {
+  it('createRunContext 优先于全局配置', async () => {
+    const childModel: ResolvedModel = {
+      ...model,
+      ref: { providerId: 'fake', modelId: 'child' },
+    }
+    const calls: CreateRunInput[] = []
+    const { supervisor } = setup(fake({ turns: [] }), {
+      createRunContext: (i) => {
+        calls.push(i)
+        return { model: childModel, limits: { ...limits, maxStepsPerTurn: 7 } }
+      },
+    })
+    const run = await supervisor.createRun({ ...init, runId: 'r-child', parentRunId: 'p' })
+    expect(calls).toEqual([{ ...init, runId: 'r-child', parentRunId: 'p' }])
+    expect(run.runId).toBe('r-child')
+    expect(run.parentRunId).toBe('p')
+    expect(run.remainingLimits).toMatchObject({ maxStepsPerTurn: 7 })
+  })
+
+  it('没有运行时或模型时抛出 Unsupported', async () => {
+    const controller = new AbortController()
+    const supervisor = createRunSupervisor({ signal: controller.signal })
+    await expect(supervisor.createRun(init)).rejects.toMatchObject({
+      code: RunSupervisorErrorCode.Unsupported,
+    })
+  })
+
+  it('createRunContext 提供完整上下文时优先使用', async () => {
+    const echoTool = { name: 'echo', description: 'echo', inputSchema: {} }
+    const pipeline: ToolPipeline = {
+      run: async () => ({ status: 'ok', content: text('ok'), truncated: false }),
+    }
+    const { supervisor } = setup(fake({ turns: [] }), {
+      createRunContext: () => ({
+        runtime: fake({ turns: [] }),
+        model,
+        limits,
+        systemPrompt: 'child prompt',
+        prepareTurn: async () => undefined,
+        summarize: async () => undefined,
+        sessionBrief: async () => undefined,
+        tools: [echoTool],
+        executeTool: async () => ({ status: 'ok', content: text('ok') }),
+        toolPipeline: pipeline,
+        checkpoints: { create: async () => 'cp1' },
+        onCheckpointError: () => {},
+        retry: { maxRetries: 0, baseDelayMs: 0, maxDelayMs: 0 },
+      }),
+    })
+    const run = await supervisor.createRun(init)
+    expect(run.state).toBe('idle')
+    expect(run.remainingLimits).toEqual(limits)
+  })
+
+  it('createRunContext 省略的字段回退到全局配置', async () => {
+    const pipeline: ToolPipeline = {
+      run: async () => ({ status: 'ok', content: text('ok'), truncated: false }),
+    }
+    const { supervisor } = setup(fake({ turns: [] }), {
+      createRunContext: () => ({ runtime: fake({ turns: [] }), model, limits }),
+      prepareTurn: async () => undefined,
+      summarize: async () => undefined,
+      sessionBrief: async () => undefined,
+      toolPipeline: pipeline,
+      checkpoints: { create: async () => 'cp1' },
+      onCheckpointError: () => {},
+    })
+    const run = await supervisor.createRun(init)
+    expect(run.state).toBe('idle')
+  })
+
+  it('没有任何限额来源时使用空限额', async () => {
+    const controller = new AbortController()
+    const supervisor = createRunSupervisor({
+      signal: controller.signal,
+      createRunContext: () => ({ runtime: fake({ turns: [] }), model }),
+      createId: () => 'r-empty',
+    })
+    const events: RunEvent[] = []
+    supervisor.onEvent((e) => events.push(e))
+    const run = await supervisor.createRun(init)
+    expect(run.runId).toBe('r-empty')
+    expect(events[0]).toMatchObject({ type: 'run.created', payload: { limits: {} } })
+  })
+})
+
+describe('computeChildLimits', () => {
+  it('取子 Agent、任务书与父剩余预算 × share 的最小值', () => {
+    expect(
+      computeChildLimits({
+        childAgentLimits: { maxStepsPerTurn: 5, maxTokensPerTurn: 5000 },
+        taskLimits: { maxStepsPerTurn: 3, maxTurnDurationMs: 10_000 },
+        parentRemainingLimits: {
+          maxStepsPerTurn: 10,
+          maxTokensPerTurn: 10_000,
+          maxTurnDurationMs: 60_000,
+        },
+        childBudgetShare: 0.5,
+      }),
+    ).toEqual({
+      maxStepsPerTurn: 3,
+      maxTokensPerTurn: 5000,
+      maxTurnDurationMs: 10_000,
+    })
+  })
+
+  it('share 默认 1，越界钳到 [0, 1]', () => {
+    expect(
+      computeChildLimits({ parentRemainingLimits: { maxStepsPerTurn: 4 }, childBudgetShare: 2 }),
+    ).toEqual({ maxStepsPerTurn: 4 })
+    expect(
+      computeChildLimits({ parentRemainingLimits: { maxStepsPerTurn: 4 }, childBudgetShare: -1 }),
+    ).toEqual({ maxStepsPerTurn: 1 })
+    expect(computeChildLimits({ parentRemainingLimits: { maxStepsPerTurn: 4 } })).toEqual({
+      maxStepsPerTurn: 4,
+    })
+  })
+
+  it('空输入返回空限额', () => {
+    expect(computeChildLimits({})).toEqual({})
+  })
+
+  it('连续工具失败优先取子 Agent，其次任务书', () => {
+    expect(
+      computeChildLimits({
+        childAgentLimits: { maxConsecutiveToolErrors: 2 },
+        taskLimits: { maxConsecutiveToolErrors: 9 },
+      }),
+    ).toEqual({ maxConsecutiveToolErrors: 2 })
+    expect(computeChildLimits({ taskLimits: { maxConsecutiveToolErrors: 9 } })).toEqual({
+      maxConsecutiveToolErrors: 9,
+    })
+  })
+
+  it('费用上限取三者最小值', () => {
+    expect(
+      computeChildLimits({
+        childAgentLimits: { maxCostPerTurn: 2 },
+        taskLimits: { maxCostPerTurn: 5 },
+        parentRemainingLimits: { maxCostPerTurn: 8 },
+        childBudgetShare: 0.5,
+      }),
+    ).toEqual({ maxCostPerTurn: 2 })
+  })
+
+  it('步数与 token 最低不低于 1', () => {
+    expect(
+      computeChildLimits({ parentRemainingLimits: { maxStepsPerTurn: 0, maxTokensPerTurn: 0 } }),
+    ).toEqual({ maxStepsPerTurn: 1, maxTokensPerTurn: 1 })
   })
 })
