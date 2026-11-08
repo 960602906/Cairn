@@ -16,7 +16,8 @@ import { createServer } from 'node:http'
  * `title`（M3-01）：请求内容里带有自动标题的系统提示时，改回这段文字，用来区分对话回复。
  * `summary`（M3-03）：请求内容里带有压缩摘要的系统提示时，改回这段文字。
  * `brief`（M3-04）：请求内容里带有会话要点的系统提示时，改回这段文字。
- * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], toolCallsByPrompt?: Readonly<Record<string, readonly MockToolCall[]>>, title?: string, summary?: string, brief?: string }} options
+ * `parallelToolCalls`（M4-05）：第一次对话请求同时返回多个工具调用，用于端到端验证并行委派。
+ * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], parallelToolCalls?: readonly MockToolCall[], toolCallsByPrompt?: Readonly<Record<string, readonly MockToolCall[]>>, title?: string, summary?: string, brief?: string }} options
  * @returns {Promise<{ baseUrl: string, requests: MockModelRequest[], close: () => Promise<void> }>}
  */
 export async function startMockModel({
@@ -24,6 +25,7 @@ export async function startMockModel({
   reply,
   toolCall,
   toolCalls,
+  parallelToolCalls,
   toolCallsByPrompt,
   title,
   summary,
@@ -117,6 +119,22 @@ export async function startMockModel({
             !text.includes('You summarize an earlier part of a coding session')
           )
         }).length - 1
+      if (parallelToolCalls && chatIndex === 0) {
+        const calls = parallelToolCalls.map((item, index) => ({
+          index,
+          id: `call_mock_${requests.length}_${index}`,
+          type: 'function',
+          function: { name: item.name, arguments: JSON.stringify(item.arguments) },
+        }))
+        res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', tool_calls: calls }))}\n\n`)
+        const end = {
+          ...chunk({}, 'tool_calls'),
+          usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 },
+        }
+        res.write(`data: ${JSON.stringify(end)}\n\n`)
+        res.end('data: [DONE]\n\n')
+        return
+      }
       const step = toolCallsByPrompt
         ? promptStep(Array.isArray(body.messages) ? body.messages : [])
         : script[chatIndex]

@@ -80,7 +80,8 @@ function Option({
   )
 }
 
-function Card({
+/** 一张审批卡片；委派卡片也复用它显示子运行的审批。 */
+export function ApprovalCard({
   approval,
   active,
 }: {
@@ -255,14 +256,20 @@ function Card({
 /** 当前会话的未决审批；没有时不显示。 */
 export function ApprovalList() {
   const { t } = useTranslation('session')
-  const approvals = useSessionStore((s) =>
+  const all = useSessionStore((s) =>
     s.activeSessionId === undefined ? NONE : (s.approvals[s.activeSessionId] ?? NONE),
   )
+  // 子运行的审批显示在对应的委派卡片里，避免同一个审批出现两次（M4-05）。
+  const approvals = all.filter((approval) => approval.parentRunId === undefined)
   if (approvals.length === 0) return null
   return (
     <section aria-label={t('approval.region')} className="flex flex-col gap-3.5">
-      {approvals.map((approval, index) => (
-        <Card key={approval.approvalId} approval={approval} active={index === 0} />
+      {approvals.map((approval) => (
+        <ApprovalCard
+          key={approval.approvalId}
+          approval={approval}
+          active={all[0]?.approvalId === approval.approvalId}
+        />
       ))}
     </section>
   )

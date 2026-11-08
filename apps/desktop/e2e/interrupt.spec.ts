@@ -32,12 +32,12 @@ test('运行中停止：本轮以 turn.aborted 结束，之后可以继续对话
 
   await sendPrompt(window, LONG_PROMPT)
   await expect(liveMessage(window)).toContainText(LONG_PROMPT.slice(0, 5))
-  await window.getByRole('button', { name: '停止' }).click()
+  await window.getByRole('button', { name: '停止', exact: true }).click()
 
   // 停止后已输出的部分回复保留，注明未完成（Runtime §10.2）
   await expect(window.getByText('已停止', { exact: true })).toBeVisible()
   await expect(runStatus(window)).toHaveText('空闲')
-  await expect(window.getByRole('button', { name: '停止' })).toHaveCount(0)
+  await expect(window.getByRole('button', { name: '停止', exact: true })).toHaveCount(0)
   await expect(window.getByText('（回复未完成）')).toHaveCount(1)
   const partial = (await messageTexts(window)).at(-1)!
   expect(partial.length).toBeGreaterThan(0)
@@ -86,7 +86,7 @@ test('强制结束宿主进程：界面显示崩溃提示，继续对话时新�
   await expect(runStatus(window)).toHaveText('已崩溃')
   const crashed: ExpectedMessage[] = [...before, ['你', LONG_PROMPT]]
   await expectMessages(window, crashed)
-  await expect(window.getByRole('button', { name: '停止' })).toHaveCount(0)
+  await expect(window.getByRole('button', { name: '停止', exact: true })).toHaveCount(0)
   await expect.poll(() => agentHostPids(app.app)).toEqual([])
 
   await converse(window, '继续', crashed)

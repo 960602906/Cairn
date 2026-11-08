@@ -108,6 +108,7 @@ describe('createSessionView', () => {
       checkpoints: [],
       restores: [],
       plans: [],
+      delegations: [],
     })
   })
 })
@@ -454,6 +455,84 @@ describe('reduceSession：运行', () => {
     expect(sessionStatus(next)).toBe('running')
   })
 
+  it('委派记录来自 run.delegated，并用 run.child.completed 补齐结果', () => {
+    const { view, ev } = midTurn()
+    const delegated = reduceSession(
+      view,
+      ev(
+        'run.delegated',
+        {
+          childRunId: 'child',
+          agent: { id: 'builtin.reviewer', version: 2 },
+          task: '检查登录流程',
+          workspace: 'shared',
+          budget: { maxStepsPerTurn: 8 },
+        },
+        { turnId: 't1' },
+      ),
+    )
+    expect(delegated.delegations).toEqual([
+      {
+        childRunId: 'child',
+        parentRunId: RUN,
+        agent: { id: 'builtin.reviewer', version: 2 },
+        task: '检查登录流程',
+        workspace: 'shared',
+        workspacePath: undefined,
+        budget: { maxStepsPerTurn: 8 },
+        turnId: 't1',
+        createdAt: delegated.delegations[0]?.createdAt,
+        completed: undefined,
+      },
+    ])
+    const duplicate = reduceSession(
+      delegated,
+      ev(
+        'run.delegated',
+        {
+          childRunId: 'child',
+          agent: { id: 'builtin.reviewer', version: 2 },
+          task: '重复',
+        },
+        { turnId: 't1' },
+      ),
+    )
+    expect(duplicate.delegations).toBe(delegated.delegations)
+
+    const completed = reduceSession(
+      duplicate,
+      ev(
+        'run.child.completed',
+        {
+          childRunId: 'child',
+          status: 'completed',
+          summary: '没有发现阻塞问题',
+          usage: { inputTokens: 12, outputTokens: 4 },
+          changeSetId: 'cs1',
+          issues: ['建议补测试'],
+        },
+        { turnId: 't1' },
+      ),
+    )
+    expect(completed.delegations[0]?.completed).toEqual({
+      status: 'completed',
+      summary: '没有发现阻塞问题',
+      usage: { inputTokens: 12, outputTokens: 4 },
+      changeSetId: 'cs1',
+      issues: ['建议补测试'],
+    })
+  })
+
+  it('未知子运行的完成事件只推进 seq', () => {
+    const { view, ev } = midTurn()
+    const next = reduceSession(
+      view,
+      ev('run.child.completed', { childRunId: 'missing', status: 'failed' }),
+    )
+    expect(next.delegations).toBe(view.delegations)
+    expect(next.lastSeq).toBe(view.lastSeq + 1)
+  })
+
   it.each([
     [['thinking'], 'running'],
     [['thinking', 'tooling'], 'running'],
@@ -674,6 +753,22 @@ describe('reduceSession：步骤', () => {
 })
 
 describe('reduceSession：消息', () => {
+  it('把先落库、尚无 turnId 的用户消息关联到随后开始的轮次', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('run.created', { agent: { id: 'a', version: 1 }, model, mode: 'interactive', limits }),
+      ev('message.user', { messageId: 'm1', content: text('你好') }),
+      ev('turn.started', {}, { turnId: 't1' }),
+    ])
+    expect(view.messages[0]).toMatchObject({ messageId: 'm1', turnId: 't1' })
+  })
+
+  it('轮次已经开始时，后到的用户消息直接归入该轮', () => {
+    const { view, ev } = midTurn()
+    const next = reduceSession(view, ev('message.user', { messageId: 'm1', content: text('补充') }))
+    expect(next.messages[0]).toMatchObject({ messageId: 'm1', turnId: 't1' })
+  })
+
   it('同一 messageId 原位替换，保留推理与工具调用', () => {
     const { view, ev } = midTurn()
     const s = { turnId: 't1', stepId: 'a' }

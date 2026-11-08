@@ -1129,3 +1129,103 @@ describe('file changes (M2-07)', () => {
     expect(within(panel).getByText('还没有文件改动。')).toBeTruthy()
   })
 })
+
+describe('run status bar and inspector (M4-05)', () => {
+  const emptyInspection = {
+    tree: { sessionId: 's1', rootRunId: 'r1', generatedAt: 1, runs: [] },
+    snapshots: [],
+    settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+  }
+  const limited = [
+    created('修复登录'),
+    ev(2, 'run.created', {
+      agent: { id: 'a', version: 1 },
+      model,
+      mode: 'interactive',
+      limits: { maxStepsPerTurn: 1, maxTokensPerTurn: 1600, maxTurnDurationMs: 1 },
+    }),
+    userMessage(3, 'm1', '你好'),
+    ev(4, 'turn.started', {}),
+    state(5, 'idle', 'thinking'),
+    ev(6, 'usage.reported', { model, usage: { inputTokens: 1200, outputTokens: 300 } }),
+    { ...ev(7, 'step.started', { model }), stepId: 'st1' } as EventEnvelope,
+  ]
+
+  it('shows step, elapsed and token with warning colors, then opens the inspector', async () => {
+    const { open, request } = setup({
+      history: limited,
+      handlers: { 'run.inspect': () => emptyInspection },
+    })
+    await open()
+    expect(screen.getByText(/第 1\/1 步/)).toBeTruthy()
+    expect(screen.getByText(/1\.5K token/)).toBeTruthy()
+    expect(document.querySelectorAll('[data-tone="warn"]').length).toBeGreaterThanOrEqual(2)
+    await userEvent.click(screen.getByRole('button', { name: '检查器' }))
+    expect(request).toHaveBeenCalledWith('run.inspect', { sessionId: 's1' })
+    expect(await screen.findByRole('tab', { name: '时间线' })).toBeTruthy()
+    expect(screen.getByText('没有运行记录。')).toBeTruthy()
+  })
+
+  it('shows child tasks as delegation cards, hides child messages, and keeps child approvals there', async () => {
+    const childApproval = {
+      approvalId: 'a1',
+      toolCallId: 'tc1',
+      runId: 'c1',
+      parentRunId: 'r1',
+      agent: { id: 'builtin.reviewer', version: 1 },
+      tool: { name: 'write_file', category: 'write' as const },
+      input: { path: 'src/a.ts' },
+      targets: { paths: ['src/a.ts'] },
+      kind: 'tool' as const,
+      preview: { summary: '写入 src/a.ts' },
+      reasonCode: 'permission.category_default',
+      matchedRuleIds: [],
+    }
+    const delegated = [
+      created('修复登录'),
+      runCreated(2),
+      userMessage(3, 'm1', '你好'),
+      ev(4, 'turn.started', {}),
+      state(5, 'idle', 'thinking'),
+      completed(6, 'm2', '你好！'),
+      ev(7, 'run.delegated', {
+        childRunId: 'c1',
+        agent: { id: 'builtin.reviewer', version: 1 },
+        task: '检查登录流程',
+        workspace: 'shared',
+      }),
+      {
+        ...ev(
+          8,
+          'run.created',
+          {
+            agent: { id: 'builtin.reviewer', version: 1 },
+            model,
+            mode: 'unattended',
+            limits,
+          },
+          'ct1',
+        ),
+        runId: 'c1',
+        parentRunId: 'r1',
+      } as EventEnvelope,
+      {
+        ...ev(9, 'message.user', { messageId: 'cm1', content: text('子任务输入') }, 'ct1'),
+        runId: 'c1',
+        parentRunId: 'r1',
+      } as EventEnvelope,
+    ]
+    const { open } = setup({
+      history: delegated,
+      handlers: {
+        'approval.pending': () => ({ approvals: [childApproval] }),
+        'run.inspect': () => emptyInspection,
+      },
+    })
+    await open()
+    const card = await screen.findByRole('article', { name: '委派任务：检查登录流程' })
+    expect(within(card).getByRole('article', { name: '需要审批：write_file' })).toBeTruthy()
+    expect(screen.queryByText('子任务输入')).toBeNull()
+    expect(screen.getAllByRole('article', { name: '需要审批：write_file' })).toHaveLength(1)
+  })
+})
