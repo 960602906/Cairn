@@ -2,12 +2,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { I18nextProvider } from 'react-i18next'
+import { createSessionView } from '@cairn/core'
 import { createI18n, type Locale } from '@cairn/i18n'
 import { RpcError, type EventEnvelope, type SessionSummary } from '@cairn/protocol'
 import type { MainApi } from './api.js'
 import { App } from './App.js'
+import { ChatPanel } from './ChatPanel.js'
 import { formatElapsed } from './Composer.js'
 import { createSessionStore } from './session-store.js'
+import { SessionStoreProvider } from './store-context.js'
 
 afterEach(() => {
   cleanup()
@@ -112,6 +116,42 @@ const showPanel = async () => {
 }
 
 describe('ChatPanel', () => {
+  it('opens the change set review from an entry request (M4-10)', async () => {
+    const request = vi.fn(async () => ({}))
+    const api = {
+      ready: () => Promise.resolve(),
+      request,
+      on: () => () => {},
+    } as unknown as MainApi
+    const store = createSessionStore(api)
+    store.setState({
+      activeSessionId: 's1',
+      sessions: [summary('修复登录')],
+      views: { s1: createSessionView('s1') },
+      awaitingTurn: {},
+      projects: [],
+      changeSets: { s1: [] },
+      changeSetLoading: {},
+      changeSetDetails: {},
+      changeSetErrors: {},
+      loadChangeSet: vi.fn(async () => undefined),
+    })
+    const opened = vi.fn()
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <ChatPanel
+            initialChangeSetId="cs1"
+            initialChangeSetSessionId="s1"
+            onInitialChangeSetOpened={opened}
+          />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(await screen.findByRole('region', { name: '改动集审阅' })).toBeTruthy()
+    expect(opened).toHaveBeenCalled()
+  })
+
   it('asks to pick a session when none is selected', async () => {
     setup()
     expect(await screen.findByText('选择或新建一个会话开始对话')).toBeTruthy()

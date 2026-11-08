@@ -1079,6 +1079,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         runId: 'run-child',
         parentRunId: 'run-parent',
         baseCommit: 'a'.repeat(40),
+        baseCreatedAt: 90,
         gitDir: '/data/checkpoints/p1.git',
         workspacePath: '/data/worktrees/s1/run-child',
         ...extra,
@@ -1093,6 +1094,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           runId: 'run-child',
           parentRunId: 'run-parent',
           baseCommit: 'a'.repeat(40),
+          baseCreatedAt: 90,
           gitDir: '/data/checkpoints/p1.git',
           workspacePath: '/data/worktrees/s1/run-child',
           status: 'pending',
@@ -1100,6 +1102,19 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         })
         expect(storage.changeSets.get('cs-1')).toEqual(created)
         expect(storage.changeSets.get('missing')).toBeUndefined()
+      })
+
+      it('omits the baseline time for old records', () => {
+        seed()
+        const created = storage.changeSets.create({
+          changeSetId: 'cs-old',
+          sessionId: 's1',
+          runId: 'run-child',
+          baseCommit: 'a'.repeat(40),
+          gitDir: '/data/checkpoints/p1.git',
+          workspacePath: '/data/worktrees/s1/run-child',
+        })
+        expect(created).not.toHaveProperty('baseCreatedAt')
       })
 
       it('lists change sets of a session oldest first', () => {

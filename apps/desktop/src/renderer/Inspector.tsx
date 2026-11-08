@@ -460,6 +460,7 @@ function RunNodeView({
   delegations,
   onLocate,
   onSelectRun,
+  onOpenChanges,
 }: {
   readonly node: RunTreeNode
   readonly rootRunId: string
@@ -467,6 +468,7 @@ function RunNodeView({
   readonly delegations: ReadonlyMap<string, DelegationView>
   readonly onLocate: ((runId: string, turnId: string) => void) | undefined
   readonly onSelectRun: ((runId: string) => void) | undefined
+  readonly onOpenChanges: ((changeSetId: string) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const agents = useStore((state) => state.agents) ?? []
@@ -479,6 +481,7 @@ function RunNodeView({
       ? t('composer.agent.default')
       : node.agent.id
   const delegation = delegations.get(node.runId)
+  const changeSetId = delegation?.completed?.changeSetId
   const children = childrenMap.get(node.runId) ?? []
   return (
     <li className="list-none">
@@ -521,6 +524,15 @@ function RunNodeView({
               className="shrink-0 rounded-[5px] px-1.5 py-0.5 text-[11px] text-accent outline-none hover:bg-accent-soft focus-visible:ring-1 focus-visible:ring-accent"
             >
               {t('inspector.timeline.openRun')}
+            </button>
+          )}
+          {onOpenChanges && changeSetId !== undefined && (
+            <button
+              type="button"
+              onClick={() => onOpenChanges(changeSetId)}
+              className="shrink-0 rounded-[5px] px-1.5 py-0.5 text-[11px] text-accent outline-none hover:bg-accent-soft focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              {t('inspector.timeline.openChanges')}
             </button>
           )}
         </div>
@@ -633,6 +645,7 @@ function RunNodeView({
                     delegations={delegations}
                     onLocate={onLocate}
                     onSelectRun={onSelectRun}
+                    onOpenChanges={onOpenChanges}
                   />
                 ))}
               </ul>
@@ -650,11 +663,13 @@ export function RunTimeline({
   delegations = [],
   onLocate,
   onSelectRun,
+  onOpenChanges,
 }: {
   readonly tree: RunTree
   readonly delegations?: readonly DelegationView[]
   readonly onLocate?: ((runId: string, turnId: string) => void) | undefined
   readonly onSelectRun?: ((runId: string) => void) | undefined
+  readonly onOpenChanges?: ((changeSetId: string) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const byId = new Map(tree.runs.map((run) => [run.runId, run]))
@@ -677,6 +692,7 @@ export function RunTimeline({
         delegations={delegationMap}
         onLocate={onLocate}
         onSelectRun={onSelectRun}
+        onOpenChanges={onOpenChanges}
       />
     </ul>
   )
@@ -686,10 +702,12 @@ export function Inspector({
   sessionId,
   delegations = [],
   onLocate,
+  onOpenChanges,
 }: {
   readonly sessionId: string
   readonly delegations?: readonly DelegationView[]
   readonly onLocate?: ((runId: string, turnId: string) => void) | undefined
+  readonly onOpenChanges?: ((changeSetId: string) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const [tab, setTab] = useState<InspectorTab>('timeline')
@@ -790,6 +808,7 @@ export function Inspector({
               delegations={delegations}
               onLocate={selectedRunId === undefined ? onLocate : undefined}
               onSelectRun={(runId) => setSelectedRunId(runId)}
+              onOpenChanges={onOpenChanges}
             />
           </div>
         ) : tab === 'context' ? (

@@ -652,6 +652,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           runId: input.runId,
           ...(input.parentRunId === undefined ? {} : { parentRunId: input.parentRunId }),
           baseCommit: input.baseCommit,
+          ...(input.baseCreatedAt === undefined ? {} : { baseCreatedAt: input.baseCreatedAt }),
           gitDir: input.gitDir,
           workspacePath: input.workspacePath,
           status: 'pending',

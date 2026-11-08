@@ -57,6 +57,8 @@ export const ActivityCompleted = z.object({
   status: ActivityCompletedStatus,
   summary: z.string(),
   completedAt: Timestamp,
+  /** 这一轮里最近一个子运行产生的改动集；没有改动集时省略。 */
+  changeSetId: Id.optional(),
 })
 export type ActivityCompleted = z.infer<typeof ActivityCompleted>
 

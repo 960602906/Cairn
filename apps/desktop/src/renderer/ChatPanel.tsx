@@ -46,7 +46,19 @@ export function TopBar({ children }: { readonly children: ReactNode }) {
   )
 }
 
-export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
+export function ChatPanel({
+  leading,
+  initialChangeSetId,
+  initialChangeSetSessionId,
+  onInitialChangeSetOpened,
+}: {
+  readonly leading?: ReactNode
+  /** 从活动中心等入口打开会话时要直接显示的改动集。 */
+  readonly initialChangeSetId?: string | undefined
+  /** 请求打开改动集的会话；当前会话不同时不打开。 */
+  readonly initialChangeSetSessionId?: string | undefined
+  readonly onInitialChangeSetOpened?: (() => void) | undefined
+}) {
   const { t } = useTranslation('session')
   const sessionId = useSessionStore((s) => s.activeSessionId)
   const refreshAgents = useSessionStore((s) => s.refreshAgents)
@@ -64,6 +76,7 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
   const [panel, setPanel] = useState<SessionPanel>('diff')
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
+  const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | undefined>()
   const [locatedTurnId, setLocatedTurnId] = useState<string | undefined>()
   const wide = useMediaQuery('(min-width: 1200px)')
   const [panelPreference, setPanelPreference] = useState<boolean>()
@@ -74,9 +87,19 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
 
   useEffect(() => {
     setSelectedPlanId(undefined)
+    setSelectedChangeSetId(undefined)
     setLocatedTurnId(undefined)
     setPanel('diff')
   }, [sessionId])
+
+  useEffect(() => {
+    if (initialChangeSetId === undefined) return
+    if (initialChangeSetSessionId !== undefined && initialChangeSetSessionId !== sessionId) return
+    setSelectedChangeSetId(initialChangeSetId)
+    setPanel('diff')
+    setPanelPreference(true)
+    onInitialChangeSetOpened?.()
+  }, [initialChangeSetId, initialChangeSetSessionId, onInitialChangeSetOpened, sessionId])
 
   const locateTurn = (runId: string, turnId: string) => {
     void runId
@@ -158,7 +181,8 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
               <MessageStream
                 view={view}
                 locatedTurnId={locatedTurnId}
-                onOpenChanges={() => {
+                onOpenChanges={(changeSetId) => {
+                  setSelectedChangeSetId(changeSetId)
                   setPanel('diff')
                   setPanelPreference(true)
                 }}
@@ -193,6 +217,8 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
           view={view}
           panel={panel}
           selectedPlanId={selectedPlanId}
+          selectedChangeSetId={selectedChangeSetId}
+          onSelectChangeSet={setSelectedChangeSetId}
           onPanelChange={setPanel}
           open={panelOpen}
           onClose={() => setPanelPreference(false)}

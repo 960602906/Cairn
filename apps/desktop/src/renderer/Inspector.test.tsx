@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { DelegationView } from '@cairn/core'
 import { createI18n } from '@cairn/i18n'
 import type { AgentSummary, RunInspectResult, RunTreeNode, RunUsage } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
@@ -122,6 +123,7 @@ function setup(
     loading?: boolean
     noData?: boolean
     agents?: readonly AgentSummary[]
+    delegations?: readonly DelegationView[]
   } = {},
 ) {
   const key = inspectionKey('s1')
@@ -150,14 +152,20 @@ function setup(
     inspectRun,
   })) as unknown as SessionStore
   const onLocate = vi.fn()
+  const onOpenChanges = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreProvider store={store}>
-        <Inspector sessionId="s1" onLocate={onLocate} />
+        <Inspector
+          sessionId="s1"
+          onLocate={onLocate}
+          delegations={entry.delegations ?? []}
+          onOpenChanges={onOpenChanges}
+        />
       </SessionStoreProvider>
     </I18nextProvider>,
   )
-  return { inspectRun, onLocate }
+  return { inspectRun, onLocate, onOpenChanges }
 }
 
 afterEach(cleanup)
@@ -197,6 +205,34 @@ describe('Inspector', () => {
     expect(screen.getByRole('button', { name: '收起运行：builtin.reviewer' })).toBeTruthy()
     await user.click(screen.getByRole('button', { name: '返回父运行' }))
     expect(screen.getByRole('button', { name: '收起运行：编程助手' })).toBeTruthy()
+  })
+
+  it('opens the change set from a child run node (M4-10)', async () => {
+    const user = userEvent.setup()
+    const { onOpenChanges } = setup({
+      delegations: [
+        {
+          childRunId: 'c1',
+          parentRunId: 'r1',
+          agent: { id: 'builtin.reviewer', version: 1 },
+          task: '检查登录流程',
+          workspace: 'isolated',
+          workspacePath: undefined,
+          budget: undefined,
+          turnId: 't1',
+          createdAt: 1,
+          completed: {
+            status: 'completed',
+            summary: undefined,
+            usage: undefined,
+            changeSetId: 'cs1',
+            issues: undefined,
+          },
+        },
+      ],
+    })
+    await user.click(screen.getByRole('button', { name: '查看改动' }))
+    expect(onOpenChanges).toHaveBeenCalledWith('cs1')
   })
 
   it('does not offer locating turns for child runs outside the main conversation', async () => {

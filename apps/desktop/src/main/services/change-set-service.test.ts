@@ -135,7 +135,7 @@ beforeEach(async () => {
     workspacePath: project,
     title: 'Demo',
   })
-  workspaces = createWorkspaceService({ root: worktreeRoot })
+  workspaces = createWorkspaceService({ root: worktreeRoot, now: () => 200 })
   published = []
   busy = new Set()
   ids = 0
@@ -173,6 +173,7 @@ describe('create', () => {
       runId: 'r1',
       parentRunId: 'run-parent',
       baseCommit,
+      baseCreatedAt: 200,
       status: 'pending',
       createdAt: 100,
       conflicts: 0,

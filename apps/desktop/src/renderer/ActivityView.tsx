@@ -4,7 +4,7 @@
  * 数据只来自主进程的 `activity.list` 快照，并随 `activity.changed` 重新读取；界面不维护第二份
  * 审批或运行状态。待审批可以就地决定，需要看 diff 的审批通过“查看”回到对应会话。
  */
-import { CheckCircle2, Clock3, Play, RefreshCw, ShieldAlert } from 'lucide-react'
+import { CheckCircle2, Clock3, FileDiff, Play, RefreshCw, ShieldAlert } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -203,7 +203,7 @@ function CompletedRow({
 }: {
   readonly completed: ActivityCompleted
   readonly agents: readonly AgentSummary[]
-  readonly onOpen: (sessionId: string) => void
+  readonly onOpen: (sessionId: string, changeSetId?: string) => void
 }) {
   const { t, i18n } = useTranslation('session')
   return (
@@ -243,13 +243,25 @@ function CompletedRow({
           })}
         </time>
       </div>
-      <button
-        type="button"
-        onClick={() => onOpen(completed.sessionId)}
-        className="flex h-7 shrink-0 items-center rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
-      >
-        {t('activity.view')}
-      </button>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {completed.changeSetId !== undefined && (
+          <button
+            type="button"
+            onClick={() => onOpen(completed.sessionId, completed.changeSetId)}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            <FileDiff aria-hidden className="size-3.5" />
+            {t('activity.viewChanges')}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onOpen(completed.sessionId)}
+          className="flex h-7 shrink-0 items-center rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          {t('activity.view')}
+        </button>
+      </div>
     </article>
   )
 }
@@ -259,7 +271,7 @@ export function ActivityView({
   onOpenSession,
 }: {
   readonly leading?: ReactNode
-  readonly onOpenSession: (sessionId: string) => void
+  readonly onOpenSession: (sessionId: string, changeSetId?: string) => void
 }) {
   const { t, i18n } = useTranslation('session')
   const activity = useSessionStore((state) => state.activity)
