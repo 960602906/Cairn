@@ -15,6 +15,7 @@ import type { I18nInstance } from '@cairn/i18n'
 import { ChatPanel, TopBar } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
+import { ActivityView } from './ActivityView.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
@@ -42,7 +43,12 @@ function Workspace() {
   const [composing, setComposing] = useState(false)
   const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
   const [agents, setAgents] = useState(false)
+  const [activity, setActivity] = useState(false)
   const [searching, setSearching] = useState(false)
+  const refreshActivity = useSessionStore((s) => s.refreshActivity)
+  const onActivityOpen = useSessionStore((s) => s.onActivityOpen)
+  const selectSession = useSessionStore((s) => s.selectSession)
+  const activityBadge = useSessionStore((s) => s.activity?.counts?.approvals ?? 0)
   // 还没有会话时直接显示新对话表单；已选中的会话（即使不在列表中）仍显示会话
   const showNew = useSessionStore((s) => s.sessions.length === 0 && s.activeSessionId === undefined)
 
@@ -65,11 +71,29 @@ function Workspace() {
       event.preventDefault()
       setSettings(undefined)
       setAgents(false)
+      setActivity(false)
       setComposing(true)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  useEffect(() => {
+    void refreshActivity()
+  }, [refreshActivity])
+
+  useEffect(
+    () =>
+      onActivityOpen(({ sessionId }) => {
+        setSettings(undefined)
+        setAgents(false)
+        setActivity(false)
+        setComposing(false)
+        void selectSession(sessionId)
+        if (narrow) setSidebarOpen(false)
+      }),
+    [narrow, onActivityOpen, selectSession],
+  )
 
   const expand = sidebarOpen ? undefined : (
     <IconButton
@@ -88,8 +112,27 @@ function Workspace() {
   const openAgents = useCallback(() => {
     setSettings(undefined)
     setComposing(false)
+    setActivity(false)
     setAgents(true)
   }, [])
+
+  const openActivity = useCallback(() => {
+    setSettings(undefined)
+    setComposing(false)
+    setAgents(false)
+    setActivity(true)
+  }, [])
+
+  const openSessionFromActivity = useCallback(
+    (sessionId: string) => {
+      setActivity(false)
+      setAgents(false)
+      setComposing(false)
+      void selectSession(sessionId)
+      if (narrow) setSidebarOpen(false)
+    },
+    [narrow, selectSession],
+  )
 
   const search = (
     <SessionSearch
@@ -98,6 +141,7 @@ function Workspace() {
       onSelect={() => {
         setSettings(undefined)
         setAgents(false)
+        setActivity(false)
         setComposing(false)
         if (narrow) setSidebarOpen(false)
       }}
@@ -137,6 +181,7 @@ function Workspace() {
           open={sidebarOpen}
           onNewChat={() => {
             setAgents(false)
+            setActivity(false)
             setComposing(true)
             if (narrow) setSidebarOpen(false)
           }}
@@ -144,11 +189,14 @@ function Workspace() {
           onSearch={() => setSearching(true)}
           onSelect={() => {
             setAgents(false)
+            setActivity(false)
             setComposing(false)
             if (narrow) setSidebarOpen(false)
           }}
           onAgents={openAgents}
           agentsActive
+          onActivity={openActivity}
+          activityBadge={activityBadge}
           onSettings={(section) => {
             setAgents(false)
             setSettings(section ?? 'general')
@@ -166,6 +214,45 @@ function Workspace() {
     )
   }
 
+  if (activity) {
+    return (
+      <div className="flex h-full bg-chrome text-fg">
+        <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
+        <Sidebar
+          open={sidebarOpen}
+          onNewChat={() => {
+            setActivity(false)
+            setComposing(true)
+            if (narrow) setSidebarOpen(false)
+          }}
+          onCollapse={() => setSidebarOpen(false)}
+          onSearch={() => setSearching(true)}
+          onSelect={() => {
+            setActivity(false)
+            setComposing(false)
+            if (narrow) setSidebarOpen(false)
+          }}
+          onAgents={openAgents}
+          onActivity={openActivity}
+          activityActive
+          activityBadge={activityBadge}
+          onSettings={(section) => {
+            setActivity(false)
+            setSettings(section ?? 'general')
+            if (narrow) setSidebarOpen(false)
+          }}
+        />
+        <main
+          className={`relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper ${sidebarOpen ? 'border-l-[0.5px] border-hair' : ''}`}
+        >
+          <ErrorBanner />
+          <ActivityView leading={expand} onOpenSession={openSessionFromActivity} />
+        </main>
+        {search}
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full bg-chrome text-fg">
       {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
@@ -175,6 +262,7 @@ function Workspace() {
         onNewChat={() => {
           setComposing(true)
           setAgents(false)
+          setActivity(false)
           if (narrow) setSidebarOpen(false)
         }}
         onCollapse={() => setSidebarOpen(false)}
@@ -182,9 +270,13 @@ function Workspace() {
         onSelect={() => {
           setComposing(false)
           setAgents(false)
+          setActivity(false)
           if (narrow) setSidebarOpen(false)
         }}
         onAgents={openAgents}
+        onActivity={openActivity}
+        activityActive={activity}
+        activityBadge={activityBadge}
         onSettings={(section) => {
           setSettings(section ?? 'general')
           if (narrow) setSidebarOpen(false)

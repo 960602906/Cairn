@@ -6,6 +6,7 @@ import { createI18n } from '@cairn/i18n'
 import { App } from './App.js'
 import { createSessionStore } from './session-store.js'
 import type { MainApi } from './api.js'
+import type { ActivityListResult } from '@cairn/protocol'
 
 afterEach(cleanup)
 
@@ -17,11 +18,49 @@ function makeStore() {
       if (method === 'agent.list') return { agents: [] }
       if (method === 'settings.get') return { providers: [], theme: 'system', language: 'zh-CN' }
       if (method === 'settings.shell') return { detected: 'bash', options: ['auto'] }
+      if (method === 'activity.list')
+        return { approvals: [], running: [], completed: [], counts: { approvals: 0, running: 0 } }
       return {}
     },
     on: () => () => {},
   }
   return createSessionStore(fakeApi as unknown as MainApi)
+}
+
+const emptyActivity: ActivityListResult = {
+  approvals: [],
+  running: [],
+  completed: [],
+  counts: { approvals: 0, running: 0 },
+}
+
+function makeActivityStore(activity: ActivityListResult = emptyActivity) {
+  const listeners = new Map<string, Set<(data: unknown) => void>>()
+  const fakeApi = {
+    ready: () => Promise.resolve(),
+    request: async (method: string) => {
+      if (method === 'session.list') return { sessions: [] }
+      if (method === 'agent.list') return { agents: [] }
+      if (method === 'settings.get') return { providers: [], theme: 'system', language: 'zh-CN' }
+      if (method === 'settings.shell') return { detected: 'bash', options: ['auto'] }
+      if (method === 'activity.list') return activity
+      if (method === 'session.subscribe') return { events: [], lastSeq: 0 }
+      if (method === 'approval.pending') return { approvals: [] }
+      if (method === 'changes.list') return { changes: [] }
+      return {}
+    },
+    on: (name: string, listener: (data: unknown) => void) => {
+      const set = listeners.get(name) ?? new Set()
+      set.add(listener)
+      listeners.set(name, set)
+      return () => set.delete(listener)
+    },
+  }
+  return {
+    store: createSessionStore(fakeApi as unknown as MainApi),
+    emit: (name: string, data: unknown) =>
+      listeners.get(name)?.forEach((listener) => listener(data)),
+  }
 }
 
 describe('App', () => {
@@ -63,5 +102,31 @@ describe('App', () => {
 
     fireEvent.keyDown(window, { key: 'n', ctrlKey: true })
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agents' })).toBeNull())
+  })
+
+  it('opens the activity center and returns to a new chat', async () => {
+    const { store } = makeActivityStore()
+    render(<App i18n={createI18n('zh-CN')} store={store} />)
+    fireEvent.click(await screen.findByRole('button', { name: '活动' }))
+    expect(await screen.findByRole('heading', { name: '活动' })).toBeDefined()
+    expect(screen.getByText('目前没有需要关注的活动')).toBeDefined()
+
+    fireEvent.keyDown(window, { key: 'n', ctrlKey: true })
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '活动' })).toBeNull())
+  })
+
+  it('shows the approval badge and opens the session requested by a notification', async () => {
+    const activity: ActivityListResult = {
+      ...emptyActivity,
+      counts: { approvals: 2, running: 0 },
+    }
+    const { store, emit } = makeActivityStore(activity)
+    render(<App i18n={createI18n('zh-CN')} store={store} />)
+    fireEvent.click(await screen.findByRole('button', { name: '活动，2 个待审批' }))
+    await screen.findByRole('heading', { name: '活动' })
+
+    emit('activity.open', { sessionId: 's1' })
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
+    expect(screen.queryByRole('heading', { name: '活动' })).toBeNull()
   })
 })

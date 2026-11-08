@@ -35,6 +35,8 @@ import {
   type AgentSource,
   type AgentSummary,
   type AgentVersionSummary,
+  type ActivityDecision,
+  type ActivityListResult,
   type DiagnosticsExportInput,
   type DiagnosticsExportResult,
   type DiagnosticsSummary,
@@ -108,6 +110,12 @@ export interface SessionState {
   readonly recentAgents: readonly string[]
   /** 运行检查器的按需结果，键为 `inspectionKey(sessionId, runId)`。 */
   readonly inspections: Readonly<Record<string, InspectionState>>
+  /** 跨会话活动中心快照（M4-07）；读取之前为 undefined。 */
+  readonly activity: ActivityListResult | undefined
+  /** 活动中心正在读取快照。 */
+  readonly activityLoading: boolean
+  /** 活动中心最近一次读取失败。 */
+  readonly activityError: ErrorInfo | undefined
 }
 
 export interface SessionActions {
@@ -249,6 +257,16 @@ export interface SessionActions {
   setSessionAgent(sessionId: string, agent: AgentDefinitionRef): Promise<boolean>
   /** 按需读取运行检查器；`runId` 省略时读取会话当前根运行。 */
   inspectRun(sessionId: string, runId?: string): Promise<RunInspectResult | undefined>
+  /** 重新读取活动中心快照（M4-07）。 */
+  refreshActivity(): Promise<void>
+  /** 在活动中心就地决定一个审批；成功后刷新快照。 */
+  resolveActivity(
+    approvalId: string,
+    decision: ActivityDecision,
+    feedback?: string,
+  ): Promise<boolean>
+  /** 订阅“打开活动对应会话”的请求（通知点击或活动页跳转）。 */
+  onActivityOpen(listener: (input: { sessionId: string }) => void): () => void
   loadSettings(): Promise<Settings | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
@@ -460,6 +478,9 @@ export function createSessionStore(api: MainApi): SessionStore {
       agents: [],
       recentAgents: readRecentAgents(),
       inspections: {},
+      activity: undefined,
+      activityLoading: false,
+      activityError: undefined,
 
       async refreshSessions() {
         const result = await run(() => api.request('session.list', {}))
@@ -800,6 +821,32 @@ export function createSessionStore(api: MainApi): SessionStore {
         }
       },
 
+      async refreshActivity() {
+        set({ activityLoading: true, activityError: undefined })
+        try {
+          const result = await api.request('activity.list', {})
+          set({ activity: result, activityLoading: false })
+        } catch (error) {
+          set({ activityLoading: false, activityError: toError(error) })
+        }
+      },
+
+      async resolveActivity(approvalId, decision, feedback) {
+        const done = await run(() =>
+          api.request(
+            'activity.resolve',
+            feedback === undefined || feedback.trim() === ''
+              ? { approvalId, decision }
+              : { approvalId, decision, feedback: feedback.trim() },
+          ),
+        )
+        if (done === undefined) return false
+        await get().refreshActivity()
+        return true
+      },
+
+      onActivityOpen: (listener) => api.on('activity.open', listener),
+
       async loadSettings() {
         const result = await run(() => api.request('settings.get', {}))
         if (result) set({ settings: result })
@@ -873,6 +920,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       dispose() {
         offEvents()
         offApprovals()
+        offActivity()
         pending.clear()
         inspectionRequests.clear()
         subscribed = undefined
@@ -894,6 +942,9 @@ export function createSessionStore(api: MainApi): SessionStore {
   })
   const offApprovals = api.on('approval.changed', ({ sessionId }) => {
     if (sessionId === subscribed) void loadApprovalsFor(sessionId)
+  })
+  const offActivity = api.on('activity.changed', () => {
+    void store.getState().refreshActivity()
   })
 
   return store

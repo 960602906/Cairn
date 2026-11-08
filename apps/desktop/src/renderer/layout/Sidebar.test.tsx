@@ -10,7 +10,14 @@ import { Sidebar } from './Sidebar.js'
 
 const i18n = createI18n('zh-CN')
 
-function renderSidebar(open: boolean) {
+function renderSidebar(
+  open: boolean,
+  options: {
+    onActivity?: () => void
+    activityActive?: boolean
+    activityBadge?: number
+  } = {},
+) {
   const store = createStore<Record<string, unknown>>(() => ({
     sessions: [],
     projects: [],
@@ -29,6 +36,7 @@ function renderSidebar(open: boolean) {
           onSearch={vi.fn()}
           onSelect={vi.fn()}
           onSettings={vi.fn()}
+          {...options}
         />
       </SessionStoreProvider>
     </I18nextProvider>,
@@ -57,5 +65,23 @@ describe('Sidebar', () => {
     expect(sidebar.className).toContain('opacity-0')
     expect(sidebar.className).toContain('pointer-events-none')
     expect(sidebar.firstElementChild?.className).toContain('-translate-x-3')
+  })
+
+  it('shows the activity entry, active state, and pending approval badge', () => {
+    const onActivity = vi.fn()
+    renderSidebar(true, { onActivity, activityActive: true, activityBadge: 2 })
+    const entry = screen.getByRole('button', { name: '活动，2 个待审批' })
+    expect(entry.getAttribute('aria-current')).toBe('page')
+    expect(entry.textContent).toContain('2')
+    expect(screen.queryByRole('button', { name: '活动' })).toBeNull()
+  })
+
+  it('caps the badge and hides the activity entry without a handler', () => {
+    renderSidebar(true, { onActivity: vi.fn(), activityBadge: 120 })
+    expect(screen.getByRole('button', { name: '活动，120 个待审批' }).textContent).toContain('99+')
+    cleanup()
+
+    renderSidebar(true)
+    expect(screen.queryByRole('button', { name: /^活动/ })).toBeNull()
   })
 })
