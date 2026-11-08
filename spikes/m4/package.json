@@ -1,0 +1,7 @@
+{
+  "name": "spike-m4",
+  "private": true,
+  "version": "0.0.0",
+  "description": "M4-00：多运行、隔离工作区、活动中心通知与后台命令预研（不进入正式构建）",
+  "type": "module"
+}
