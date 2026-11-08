@@ -173,6 +173,82 @@ describe('changes.record（M1-08b）', () => {
   })
 })
 
+describe('委派目标解析（M4-02）', () => {
+  const definition = {
+    id: 'builtin.reviewer',
+    version: 1,
+    source: 'builtin' as const,
+    status: 'published' as const,
+    name: { 'en-US': 'Reviewer' },
+    description: { 'en-US': 'Reviews' },
+    instructions: '',
+    model: { mode: 'inherit' as const },
+    tools: { allow: ['*'] },
+    skills: { allow: [] },
+    permissions: 'read-only' as const,
+    limits: {},
+    context: { includeProjectInstructions: true, compaction: 'auto' as const },
+    memory: { scopes: [], write: 'never' as const },
+    createdAt: 0,
+    updatedAt: 0,
+    schemaVersion: 1 as const,
+  }
+
+  it('返回已发布定义、模型与权限规则', async () => {
+    const host = fakeHost()
+    const resolveDelegation = vi.fn(async () => ({
+      definition,
+      model: { providerId: 'fake', modelId: 'fake-1' },
+      permissionRules: [],
+      skills: [],
+      mcpTools: [],
+      workspace: 'shared' as const,
+    }))
+    const { supervisor } = setup(host, { resolveDelegation })
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.delegate', { agent: 'builtin.reviewer' }),
+    ).resolves.toMatchObject({ definition, workspace: 'shared' })
+    expect(resolveDelegation).toHaveBeenCalledWith('s1', 'builtin.reviewer')
+  })
+
+  it('目标不存在时报 delegation.agent_not_published', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host, { resolveDelegation: () => undefined })
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.delegate', { agent: 'missing' }),
+    ).rejects.toMatchObject({ code: 'delegation.agent_not_published' })
+  })
+
+  it('没有解析器时报 run.unsupported；目标列表默认为空', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host)
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.delegate', { agent: 'builtin.reviewer' }),
+    ).rejects.toMatchObject({ code: 'run.unsupported' })
+    await expect(
+      host.endpoint!.request('host.delegate.targets', { agents: ['builtin.reviewer'] }),
+    ).resolves.toEqual({ targets: [] })
+  })
+
+  it('返回工具说明用的目标名称与描述', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host, {
+      resolveDelegateTargets: () => [
+        { id: 'builtin.reviewer', name: 'Reviewer', description: 'Reviews' },
+      ],
+    })
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.delegate.targets', { agents: ['builtin.reviewer'] }),
+    ).resolves.toEqual({
+      targets: [{ id: 'builtin.reviewer', name: 'Reviewer', description: 'Reviews' }],
+    })
+  })
+})
+
 describe('MCP 工具（M3-09）', () => {
   const tool = {
     name: 'mcp_fixture_echo',

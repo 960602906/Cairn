@@ -277,6 +277,40 @@ const supervisor = createHostSupervisor({
   loadSkills: (sessionId, agent) => agents.skillsFor(agent, sessionId),
   resolveMcpTools: (_sessionId, agent) => agents.mcpToolsFor(agent),
   resolveAgentDefinition: (agent) => agents.definition(agent),
+  // 委派目标（M4-02）：已发布定义、模型、凭据、工具与工作区方式。凭据只经私有接口传回宿主内存。
+  resolveDelegation: async (sessionId, agentId) => {
+    const definition = agents.get({ agentId }).published
+    if (!definition) return undefined
+    const session = storage.sessions.get(sessionId)
+    const sessionModel = session?.model ?? settings.get().defaultModel
+    const model =
+      (definition.model.mode === 'fixed' ? definition.model.primary : undefined) ?? sessionModel
+    if (!model) return undefined
+    const ref = { id: definition.id, version: definition.version }
+    const credentialRef = settings.credentialRef(model)
+    const credential =
+      credentialRef === undefined ? undefined : await credentials.resolve(credentialRef)
+    const modelConfig = settings.hostModelConfig(model)
+    return {
+      definition,
+      model,
+      ...(credential ? { credential: { apiKey: credential.apiKey } } : {}),
+      ...(modelConfig ? { modelConfig } : {}),
+      permissionRules: agents.permissionRulesFor(ref, permissions.rulesForSession(sessionId)),
+      skills: agents.skillsFor(ref, sessionId),
+      mcpTools: agents.mcpToolsFor(ref),
+      // 隔离工作区在 M4-08 落地；M4-02 只支持共享工作区。
+      workspace: 'shared',
+    }
+  },
+  resolveDelegateTargets: (_sessionId, agentIds) =>
+    agentIds.flatMap((id) => {
+      const published = agents.get({ agentId: id }).published
+      if (!published) return []
+      const name = published.name['zh-CN'] ?? published.name['en-US'] ?? id
+      const description = published.description['zh-CN'] ?? published.description['en-US'] ?? ''
+      return [{ id, name, description }]
+    }),
   callMcpTool: (_sessionId, serverId, toolName, input, maxOutputTokens) =>
     mcp.call(serverId, toolName, input, maxOutputTokens),
   onError: reportError,

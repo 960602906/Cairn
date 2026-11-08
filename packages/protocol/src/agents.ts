@@ -6,6 +6,7 @@
  */
 import { z } from 'zod'
 import { Id, ModelRef, RunLimits } from './common.js'
+import { DelegationPolicy } from './delegation.js'
 import { PermissionMode, PermissionRule, ToolCategory } from './permissions.js'
 
 /** 名称与描述，至少一种语言。显示时回退到另一种。 */
@@ -106,6 +107,11 @@ const draftFields = {
   limits: RunLimits,
   context: AgentContextPolicy,
   memory: AgentMemoryPolicy,
+  /**
+   * 委派策略（M4-02，设计 §10.1）。省略时视为未启用委派；已保存的旧定义没有这个字段，
+   * 因此保持可选，读取时由 `resolveDelegationPolicy` 补默认值。
+   */
+  delegation: DelegationPolicy.optional(),
   inputSchema: z.record(z.string(), z.unknown()).optional(),
   outputSchema: z.record(z.string(), z.unknown()).optional(),
   tags: z.array(z.string().min(1).max(40)).max(20).optional(),
