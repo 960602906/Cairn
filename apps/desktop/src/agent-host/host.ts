@@ -72,6 +72,7 @@ import {
   RpcError,
   type ActivePlan,
   type AgentDefinition,
+  type DelegateChanges,
   DelegateInput,
   type HostModelConfig,
   type McpToolExposure,
@@ -696,6 +697,33 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
               parentRemaining: remaining ?? {},
               systemPrompt: context.systemPrompt ?? '',
               onChildCreated: (created) => (childHandleRef.current = created),
+              ...(isolatedRunId !== undefined
+                ? {
+                    // 隔离工作区里的改动先算成改动集（`changeset.created` 早于 `run.child.completed`），
+                    // 再由下面的 finally 清理工作区。
+                    collectChanges: async (
+                      childId: string,
+                    ): Promise<DelegateChanges | undefined> => {
+                      try {
+                        const created = await endpoint.request('host.changeset.create', {
+                          runId: childId,
+                          parentRunId: parent.runId,
+                        })
+                        return {
+                          changeSetId: created.changeSetId,
+                          files: created.files,
+                          merge: 'pending_review',
+                        }
+                      } catch (error) {
+                        // 旧主进程没有这个接口，或改动集生成失败：委派结果照常返回。
+                        if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') {
+                          onError(error)
+                        }
+                        return undefined
+                      }
+                    },
+                  }
+                : {}),
             })
             return { content: [{ type: 'text', text: JSON.stringify(result) }] }
           } finally {

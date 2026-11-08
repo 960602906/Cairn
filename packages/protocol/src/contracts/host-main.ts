@@ -337,6 +337,27 @@ export const MainForHost = defineSide({
       result: z.object({ cleaned: z.boolean() }),
     },
     /**
+     * 计算隔离工作区中的改动集（M4-09，ADR-0031）：以工作区创建时的基线提交为准，与隔离目录
+     * 当前内容比较，生成文件级 diff 并写入 `change_sets`。会话由连接确定。
+     * 必须在清理工作区之前调用；`parentRunId` 是发起委派的运行（事件与界面按它归属）。
+     */
+    'host.changeset.create': {
+      params: z.object({
+        runId: Id,
+        parentRunId: Id.optional(),
+      }),
+      result: z.object({
+        changeSetId: Id,
+        files: z.array(
+          z.object({
+            path: z.string().min(1),
+            added: z.number().int().nonnegative(),
+            removed: z.number().int().nonnegative(),
+          }),
+        ),
+      }),
+    },
+    /**
      * 记录一次模型调用前的上下文快照（M4-04，ADR-0033）。会话由连接确定；主进程脱敏、截断后
      * 写入 `run_snapshots`，每个运行保留最近 20 份。
      */

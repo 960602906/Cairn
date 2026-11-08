@@ -45,6 +45,7 @@ describe('openSqliteStorage', () => {
         '0009_mcp',
         '0010_agents',
         '0011_run-snapshots',
+        '0012_change-sets',
       ],
     })
     storage.close()
@@ -59,6 +60,8 @@ describe('openSqliteStorage', () => {
       'agent_runs',
       'agent_versions',
       'agents',
+      'change_set_files',
+      'change_sets',
       'events',
       'file_changes',
       'hunks',
@@ -120,6 +123,7 @@ describe('openSqliteStorage', () => {
       '0009_mcp',
       '0010_agents',
       '0011_run-snapshots',
+      '0012_change-sets',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

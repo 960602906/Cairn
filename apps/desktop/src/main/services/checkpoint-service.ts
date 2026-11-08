@@ -37,7 +37,7 @@ export const CheckpointServiceErrorCode = {
 
 export type OpenCheckpointRepo = (
   options: ShadowRepoOptions,
-) => Promise<Pick<ShadowRepo, 'preview' | 'restore'>>
+) => Promise<Pick<ShadowRepo, 'preview' | 'restore' | 'checkpoint'>>
 
 export interface CheckpointServiceOptions {
   readonly storage: Pick<Storage, 'sessions' | 'changes'>
@@ -55,6 +55,11 @@ export interface CheckpointService {
   list(params: { sessionId: string }): { checkpoints: CheckpointSummary[] }
   preview(params: { sessionId: string; checkpointId: string }): Promise<CheckpointRestorePlan>
   restore(params: { sessionId: string; checkpointId: string }): Promise<CheckpointRestorePlan>
+  /**
+   * 在主工作区创建一个检查点（M4-09：合并改动集之前）。写入 `checkpoint.created`，
+   * 原因 `before_merge`；恢复它即可回退这次合并。
+   */
+  create(params: { sessionId: string }): Promise<{ checkpointId: string }>
   /** 会话所属项目是否正在恢复检查点（期间不接受新的输入，也不能撤销改动）。 */
   isRestoring(sessionId: string): boolean
 }
@@ -209,6 +214,45 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
 
     preview: ({ sessionId, checkpointId }) =>
       exclusive(sessionId, checkpointId, async (repo) => toPlan(await repo.preview(checkpointId))),
+
+    async create({ sessionId }) {
+      const session = requireSession(sessionId)
+      const location = options.location(sessionId)
+      if (!location) {
+        throw new RpcError(CheckpointServiceErrorCode.NotFound, { sessionId })
+      }
+      const siblings = storage.sessions
+        .list({ includeArchived: true })
+        .filter((s) => s.projectId === session.projectId)
+        .map((s) => s.sessionId)
+      if (working.has(session.projectId) || siblings.some((id) => options.isBusy(id))) {
+        throw new RpcError(CheckpointServiceErrorCode.Busy, { sessionId })
+      }
+      working.add(session.projectId)
+      try {
+        const repo = await options.open({
+          gitDir: location.gitDir,
+          workTree: session.workspacePath,
+          ref: location.ref,
+        })
+        const result = await repo.checkpoint('before merge')
+        events.publish([
+          {
+            v: 1,
+            sessionId,
+            runId: sessionId,
+            ts: now(),
+            type: 'checkpoint.created',
+            payload: { checkpointId: result.commit, reason: 'before_merge' },
+          },
+        ])
+        return { checkpointId: result.commit }
+      } catch (error) {
+        throw toRpcError(error)
+      } finally {
+        working.delete(session.projectId)
+      }
+    },
 
     restore: ({ sessionId, checkpointId }) =>
       exclusive(sessionId, checkpointId, async (repo) => {

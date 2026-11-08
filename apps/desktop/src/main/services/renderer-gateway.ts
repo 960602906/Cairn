@@ -69,6 +69,15 @@ export interface CheckpointCommands {
   readonly restore: Handler<'checkpoint.restore'>
 }
 
+/** 由改动集服务实现的审阅与合并命令（M4-09）。 */
+export interface ChangeSetCommands {
+  readonly list: Handler<'changeset.list'>
+  readonly get: Handler<'changeset.get'>
+  readonly apply: Handler<'changeset.apply'>
+  readonly reject: Handler<'changeset.reject'>
+  readonly resolveConflict: Handler<'changeset.resolveConflict'>
+}
+
 /** 由审批服务实现的审批命令（M1-11b）。 */
 export interface ApprovalCommands {
   readonly pending: Handler<'approval.pending'>
@@ -130,6 +139,8 @@ export interface RendererGatewayOptions {
   readonly changes: ChangeCommands
   /** 检查点（M1-12c）：列出、预览与恢复。 */
   readonly checkpoints: CheckpointCommands
+  /** 改动集（M4-09）：列出、读取、合并、拒绝与冲突处理。 */
+  readonly changeSets: ChangeSetCommands
   /** 审批（M1-11b）：读取未决审批与作出决定。 */
   readonly approvals: ApprovalCommands
   /** 技能（M3-07）：列表、安装、卸载与启用；选择来源（M3-08）。 */
@@ -216,7 +227,7 @@ type Timer = ReturnType<typeof setTimeout>
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
-  const { agents, diagnostics, activity } = options
+  const { agents, diagnostics, activity, changeSets } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -314,6 +325,11 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('checkpoint.list', (params) => checkpoints.list(params))
       endpoint.handle('checkpoint.preview', (params) => checkpoints.preview(params))
       endpoint.handle('checkpoint.restore', (params) => checkpoints.restore(params))
+      endpoint.handle('changeset.list', (params) => changeSets.list(params))
+      endpoint.handle('changeset.get', (params) => changeSets.get(params))
+      endpoint.handle('changeset.apply', (params) => changeSets.apply(params))
+      endpoint.handle('changeset.reject', (params) => changeSets.reject(params))
+      endpoint.handle('changeset.resolveConflict', (params) => changeSets.resolveConflict(params))
       endpoint.handle('approval.pending', (params) => approvals.pending(params))
       endpoint.handle('approval.resolve', (params) => approvals.resolve(params))
       endpoint.handle('activity.list', (params) => activity.list(params))

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { openShadowRepo } from '@cairn/checkpoint'
+import { createGitRunner, isolatedGitEnv, openShadowRepo } from '@cairn/checkpoint'
 import { BUILTIN_CODER_ID, redact } from '@cairn/core'
 import type { McpStatusEvent } from '@cairn/protocol'
 import { bundledRipgrepPath } from '@cairn/tools'
@@ -37,6 +37,7 @@ import { createBlobStore } from './services/blob-store.js'
 import { createActivityNotifier } from './services/activity-notifier.js'
 import { createActivityService } from './services/activity-service.js'
 import { createChangeService } from './services/change-service.js'
+import { createChangeSetService } from './services/change-set-service.js'
 import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
@@ -142,10 +143,11 @@ const settings = createSettingsService({
 })
 const events = createSessionEventService({ storage, onListenerError: reportError })
 const inspect = createInspectService({ storage, events })
+const blobs = createBlobStore(paths.blobs)
 /** 改动记录（M1-08b）：宿主报告的改动写入 blob 存储与数据库；界面列出与撤销。 */
 const changes = createChangeService({
   storage,
-  blobs: createBlobStore(paths.blobs),
+  blobs,
   events,
   isBusy: (sessionId) => sessions.isBusy(sessionId) || checkpoints.isRestoring(sessionId),
 })
@@ -160,6 +162,22 @@ const checkpoints = createCheckpointService({
 /** 隔离工作区（M4-08）：写入类子运行的独立副本，启动时清扫上次留下的目录。 */
 const workspaces = createWorkspaceService({ root: paths.worktrees, onError: reportError })
 void workspaces.sweep().catch(reportError)
+/** 改动集（M4-09）：隔离工作区里的改动与主工作区合并，合并前先建检查点。 */
+const changeSets = createChangeSetService({
+  storage,
+  blobs,
+  events,
+  workspaces,
+  checkpoints: { create: (sessionId) => checkpoints.create({ sessionId }) },
+  git: createGitRunner({
+    env: isolatedGitEnv(process.env, join(paths.worktrees, 'no-global-config')),
+  }),
+  isBusy: (sessionId) =>
+    sessions.isBusy(sessionId) ||
+    changes.isReverting(sessionId) ||
+    checkpoints.isRestoring(sessionId),
+  onError: reportError,
+})
 /** 权限规则（M1-10c）：权限模式的预设与保存的规则，启动宿主时经 `host.init` 下发。 */
 const permissions = createPermissionService({ storage, mode: () => settings.permissionMode() })
 /** 审批（M1-11b）：宿主的审批请求等待界面决定；“始终允许”生成的规则通知所有运行中的宿主。 */
@@ -353,6 +371,12 @@ const supervisor = createHostSupervisor({
     }
   },
   cleanupWorkspace: (runId) => workspaces.cleanup(runId),
+  createChangeSet: (sessionId, input) =>
+    changeSets.create({
+      sessionId,
+      runId: input.runId,
+      ...(input.parentRunId === undefined ? {} : { parentRunId: input.parentRunId }),
+    }),
   callMcpTool: (_sessionId, serverId, toolName, input, maxOutputTokens) =>
     mcp.call(serverId, toolName, input, maxOutputTokens),
   onError: reportError,
@@ -439,6 +463,7 @@ const gateway = createRendererGateway({
   },
   changes,
   checkpoints,
+  changeSets,
   approvals,
   activity,
   skills,

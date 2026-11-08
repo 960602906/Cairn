@@ -11,9 +11,13 @@ import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
 import {
   StorageError,
   StorageErrorCode,
+  type AddChangeSetFileInput,
   type AgentRecord,
   type AgentVersionRecord,
   type AddRunSnapshotInput,
+  type ChangeSetFileRecord,
+  type ChangeSetRecord,
+  type CreateChangeSetInput,
   type CreateProjectInput,
   type CreateSessionInput,
   type FileChangeRecord,
@@ -48,6 +52,10 @@ interface State {
   agentVersions: Map<string, AgentVersionRecord[]>
   /** 按 snapshotId；列表按创建顺序与插入顺序。 */
   runSnapshots: Map<string, RunSnapshotRecord>
+  /** 按 changeSetId；列表按创建顺序与插入顺序。 */
+  changeSets: Map<string, ChangeSetRecord>
+  /** 按 changeSetId → 路径 → 文件记录。 */
+  changeSetFiles: Map<string, Map<string, ChangeSetFileRecord>>
 }
 
 const prefKey = (scope: string, source: string, name: string) => `${scope}\0${source}\0${name}`
@@ -67,6 +75,8 @@ function cloneState(state: State): State {
     agents: new Map(state.agents),
     agentVersions: new Map([...state.agentVersions].map(([id, list]) => [id, [...list]])),
     runSnapshots: new Map(state.runSnapshots),
+    changeSets: new Map(state.changeSets),
+    changeSetFiles: new Map([...state.changeSetFiles].map(([id, files]) => [id, new Map(files)])),
   }
 }
 
@@ -90,6 +100,8 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     agents: new Map(),
     agentVersions: new Map(),
     runSnapshots: new Map(),
+    changeSets: new Map(),
+    changeSetFiles: new Map(),
   }
   let closed = false
 
@@ -624,6 +636,105 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           .sort((a, b) => a.createdAt - b.createdAt)
           .slice(0, limit)
           .map(copy)
+      },
+    },
+
+    changeSets: {
+      create(input: CreateChangeSetInput) {
+        const s = live()
+        requireSession(input.sessionId)
+        if (s.changeSets.has(input.changeSetId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { changeSetId: input.changeSetId })
+        }
+        const record: ChangeSetRecord = {
+          changeSetId: input.changeSetId,
+          sessionId: input.sessionId,
+          runId: input.runId,
+          ...(input.parentRunId === undefined ? {} : { parentRunId: input.parentRunId }),
+          baseCommit: input.baseCommit,
+          gitDir: input.gitDir,
+          workspacePath: input.workspacePath,
+          status: 'pending',
+          createdAt: now(),
+        }
+        s.changeSets.set(record.changeSetId, record)
+        s.changeSetFiles.set(record.changeSetId, new Map())
+        return copy(record)
+      },
+      get(changeSetId) {
+        const record = live().changeSets.get(changeSetId)
+        return record && copy(record)
+      },
+      listBySession(sessionId) {
+        return [...live().changeSets.values()]
+          .filter((item) => item.sessionId === sessionId)
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .map(copy)
+      },
+      setStatus(changeSetId, status) {
+        const s = live()
+        const record = s.changeSets.get(changeSetId)
+        if (!record) throw new StorageError(StorageErrorCode.NotFound, { changeSetId })
+        const next: ChangeSetRecord = {
+          ...record,
+          status,
+          ...(status === 'applied' ? { mergedAt: now() } : {}),
+        }
+        s.changeSets.set(changeSetId, next)
+        return copy(next)
+      },
+      setCheckpointCommit(changeSetId, commit) {
+        const s = live()
+        const record = s.changeSets.get(changeSetId)
+        if (!record) throw new StorageError(StorageErrorCode.NotFound, { changeSetId })
+        const next: ChangeSetRecord = { ...record, checkpointCommit: commit }
+        s.changeSets.set(changeSetId, next)
+        return copy(next)
+      },
+      addFile(input: AddChangeSetFileInput) {
+        const s = live()
+        if (!s.changeSets.has(input.changeSetId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { changeSetId: input.changeSetId })
+        }
+        const files = s.changeSetFiles.get(input.changeSetId)!
+        if (files.has(input.path)) {
+          throw new StorageError(StorageErrorCode.Conflict, {
+            changeSetId: input.changeSetId,
+            path: input.path,
+          })
+        }
+        const record: ChangeSetFileRecord = {
+          changeSetId: input.changeSetId,
+          path: input.path,
+          status: 'pending',
+          kind: input.kind,
+          added: input.added,
+          removed: input.removed,
+          ...(input.patch === undefined ? {} : { patch: input.patch }),
+          binary: input.binary,
+          large: input.large,
+          ...(input.baseHash === undefined ? {} : { baseHash: input.baseHash }),
+          ...(input.contentHash === undefined ? {} : { contentHash: input.contentHash }),
+        }
+        files.set(record.path, record)
+        return copy(record)
+      },
+      listFiles(changeSetId) {
+        const files = live().changeSetFiles.get(changeSetId)
+        if (!files) return []
+        return [...files.values()]
+          .sort((a, b) => Buffer.compare(Buffer.from(a.path, 'utf8'), Buffer.from(b.path, 'utf8')))
+          .map(copy)
+      },
+      setFileStatus(changeSetId, path, status) {
+        const s = live()
+        const files = s.changeSetFiles.get(changeSetId)
+        if (!files) throw new StorageError(StorageErrorCode.NotFound, { changeSetId })
+        const record = files.get(path)
+        if (!record) throw new StorageError(StorageErrorCode.NotFound, { changeSetId, path })
+        const next: ChangeSetFileRecord = { ...record, status }
+        files.set(path, next)
+        return copy(next)
       },
     },
 
