@@ -28,6 +28,7 @@ function setup() {
     permissions: { addRule },
     onRuleAdded,
     createId: () => `rule${++id}`,
+    now: () => 123,
   })
   return { service, addRule, added, onRuleAdded }
 }
@@ -50,6 +51,24 @@ describe('createApprovalService', () => {
     await expect(a1).resolves.toEqual({ decision: 'deny', feedback: 'use b' })
     expect(service.pending({ sessionId: 's1' }).approvals).toEqual([])
     expect(addRule).not.toHaveBeenCalled()
+  })
+
+  it('lists pending approvals across sessions with request time', () => {
+    const { service } = setup()
+    void service.request('s1', 'r1', request('a1'))
+    void service.request('s2', 'r2', request('a2'))
+    expect(service.list()).toEqual([
+      {
+        sessionId: 's1',
+        requestedAt: 123,
+        request: expect.objectContaining({ approvalId: 'a1' }),
+      },
+      {
+        sessionId: 's2',
+        requestedAt: 123,
+        request: expect.objectContaining({ approvalId: 'a2' }),
+      },
+    ])
   })
 
   it('saves a rule for "always allow" and returns it to the host', async () => {

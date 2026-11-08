@@ -20,6 +20,7 @@ import type { DiagnosticsCommands } from './diagnostics-service.js'
 import {
   coalesceDeltas,
   createRendererGateway,
+  type ActivityCommands,
   type ApprovalCommands,
   type ChangeCommands,
   type CheckpointCommands,
@@ -94,7 +95,9 @@ let skills: SkillCommands
 let agents: AgentCommands
 let diagnostics: DiagnosticsCommands
 let inspect: InspectCommands
+let activity: ActivityCommands
 const approvalListeners = new Set<(sessionId: string) => void>()
+const activityListeners = new Set<() => void>()
 
 const INSPECT_RESULT: RunInspectResult = {
   tree: {
@@ -105,6 +108,13 @@ const INSPECT_RESULT: RunInspectResult = {
   },
   snapshots: [],
   settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+}
+
+const ACTIVITY_RESULT = {
+  approvals: [],
+  running: [],
+  completed: [],
+  counts: { approvals: 0, running: 0 },
 }
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
@@ -260,6 +270,14 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   inspect = {
     inspect: vi.fn(() => INSPECT_RESULT),
   }
+  activity = {
+    list: vi.fn(() => ACTIVITY_RESULT),
+    resolve: vi.fn(() => ({})),
+    subscribe: vi.fn((listener: () => void) => {
+      activityListeners.add(listener)
+      return () => activityListeners.delete(listener)
+    }),
+  }
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
     commands,
@@ -276,6 +294,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     agents,
     diagnostics,
     inspect,
+    activity,
     mcpStatus: () => () => undefined,
   })
   return connectRenderer()
@@ -611,6 +630,31 @@ describe('createRendererGateway: commands and lifecycle', () => {
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
   })
 
+  it('delegates activity requests and pushes change/open events', async () => {
+    const { client } = setup()
+    await expect(client.request('activity.list', {})).resolves.toEqual(ACTIVITY_RESULT)
+    const params = {
+      approvalId: 'a1',
+      decision: 'allow_session' as const,
+      feedback: 'ok',
+    }
+    await expect(client.request('activity.resolve', params)).resolves.toEqual({})
+    expect(activity.resolve).toHaveBeenCalledWith(params)
+    await expect(
+      client.request('activity.resolve', { ...params, feedback: 'x'.repeat(2001) }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+
+    const changed: number[] = []
+    const opened: string[] = []
+    client.on('activity.changed', () => changed.push(1))
+    client.on('activity.open', ({ sessionId }) => opened.push(sessionId))
+    activityListeners.forEach((listener) => listener())
+    gateway.openActivitySession('s2')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(changed).toHaveLength(1)
+    expect(opened).toEqual(['s2'])
+  })
+
   it('notifies subscribed windows when pending approvals change, after queued events', async () => {
     const { client, pushed } = setup()
     const order: string[] = []
@@ -809,6 +853,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       agents,
       diagnostics,
       inspect: {} as unknown as InspectCommands,
+      activity: { subscribe: () => () => undefined } as unknown as ActivityCommands,
       mcpStatus: () => () => undefined,
       onProtocolError,
     })
