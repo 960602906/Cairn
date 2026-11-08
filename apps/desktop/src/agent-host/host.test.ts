@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  BUILTIN_TESTER,
   FakeRuntime,
   presetRules,
   type FakeScript,
@@ -336,6 +337,35 @@ describe('agent host', () => {
     expect(await decide(ruled, 'npm run build')).toMatchObject({ decision: 'ask' })
     // 强制拦截不能被规则覆盖
     expect(await decide(ruled, 'rm -rf /')).toMatchObject({ decision: 'deny' })
+  })
+
+  it('enforces the Agent write path policy from host.init (M4-11)', async () => {
+    const write = {
+      name: 'write_file',
+      description: 'Write',
+      category: 'write' as const,
+      inputSchema: { type: 'object' },
+      execute: () => Promise.resolve({ content: [] }),
+    }
+    const request = (path: string) => ({
+      definition: write,
+      input: { path },
+      targets: { paths: [path] },
+      toolCallId: 'call1',
+    })
+    const h = setup()
+    await h.main.request('host.init', {
+      ...init,
+      agentDefinition: BUILTIN_TESTER,
+      permissionRules: presetRules('auto'),
+    })
+    expect(await h.host.permissions.decide(request('tests/a.ts') as never)).toEqual({
+      decision: 'allow',
+    })
+    expect(await h.host.permissions.decide(request('src/a.ts') as never)).toMatchObject({
+      decision: 'deny',
+      reasonCode: 'permission.agent_path_denied',
+    })
   })
 
   describe('tools and approvals (M1-11a)', () => {

@@ -9,6 +9,7 @@ import type {
   AgentDraftFields,
   AgentValidationIssue,
   AgentValidationResult,
+  DelegationPolicy,
   LocalizedText,
 } from '@cairn/protocol'
 
@@ -18,6 +19,7 @@ export type AgentSection =
   | 'model'
   | 'capabilities'
   | 'permissions'
+  | 'delegation'
   | 'limits'
   | 'context'
   | 'memory'
@@ -28,6 +30,7 @@ export const AGENT_SECTIONS: readonly AgentSection[] = [
   'model',
   'capabilities',
   'permissions',
+  'delegation',
   'limits',
   'context',
   'memory',
@@ -39,7 +42,8 @@ const SECTION_PREFIXES: Readonly<Record<AgentSection, readonly string[]>> = {
   instructions: ['instructions'],
   model: ['model'],
   capabilities: ['tools', 'skills'],
-  permissions: ['permissions'],
+  permissions: ['permissions', 'pathPolicy'],
+  delegation: ['delegation'],
   limits: ['limits'],
   context: ['context'],
   memory: ['memory'],
@@ -101,6 +105,21 @@ export function defaultDraft(): AgentDraftFields {
     limits: {},
     context: { includeProjectInstructions: true, compaction: 'auto' },
     memory: { scopes: ['session'], write: 'never' },
+    delegation: defaultDelegationPolicy(),
+  }
+}
+
+/** 委派分区的初始策略：默认关闭，打开后使用设计默认值。 */
+export function defaultDelegationPolicy(): DelegationPolicy {
+  return {
+    enabled: false,
+    allowedAgents: [],
+    maxDepth: 1,
+    maxChildrenPerTurn: 6,
+    maxParallel: 3,
+    childBudgetShare: 0.5,
+    defaultWorkspace: 'auto',
+    mergeReview: 'user',
   }
 }
 
@@ -116,6 +135,8 @@ export function draftFieldsOf(definition: AgentDraftFields | AgentDefinition): A
     tools: definition.tools,
     skills: definition.skills,
     permissions: definition.permissions,
+    ...(definition.pathPolicy ? { pathPolicy: definition.pathPolicy } : {}),
+    ...(definition.delegation ? { delegation: definition.delegation } : {}),
     limits: definition.limits,
     context: definition.context,
     memory: definition.memory,
@@ -149,7 +170,8 @@ export function sectionChanged(
     instructions: ['instructions'],
     model: ['model'],
     capabilities: ['tools', 'skills'],
-    permissions: ['permissions'],
+    permissions: ['permissions', 'pathPolicy'],
+    delegation: ['delegation'],
     limits: ['limits'],
     context: ['context'],
     memory: ['memory'],

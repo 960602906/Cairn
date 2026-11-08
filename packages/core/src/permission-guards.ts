@@ -15,9 +15,10 @@
  * `$(…)` 与反引号中的命令也会检查。这是防误操作的安全网，不是安全边界（ADR-0007、架构 §10.5）：脚本、
  * 变量拼接等间接执行无法识别。
  */
+import type { AgentPathPolicy } from '@cairn/protocol'
 import { normalizeCommand, parseCommand } from './command-match.js'
 import { matchGlob } from './glob.js'
-import type { GuardResult, PermissionGuard } from './permissions.js'
+import { PermissionReasonCode, type GuardResult, type PermissionGuard } from './permissions.js'
 
 export const GuardReasonCode = {
   BlockedCommand: 'permission.blocked_command',
@@ -362,3 +363,39 @@ export const DEFAULT_PERMISSION_GUARDS: readonly PermissionGuard[] = [
   dangerousCommandGuard,
   sensitivePathGuard,
 ]
+
+/**
+ * Agent 级写入路径守卫（M4-11）：`pathPolicy.write` 给出时，写类工具只能修改匹配的路径。
+ *
+ * 这是硬边界，不依赖提示词；空路径、缺少规范化目标或任一目标越出白名单都直接拒绝。读取与执行不受影响，
+ * 仍由 Agent 的工具选择、权限预设与默认强制规则决定。
+ */
+export function createAgentPathGuard(
+  policy: AgentPathPolicy | undefined,
+  options: { readonly caseInsensitive?: boolean } = {},
+): PermissionGuard {
+  const allowed = policy?.write ?? []
+  if (allowed.length === 0) return () => undefined
+  return (request) => {
+    if (request.definition.category !== 'write') return undefined
+    const paths = request.targets.paths ?? []
+    const permitted =
+      paths.length > 0 &&
+      paths.every((path) =>
+        allowed.some((pattern) =>
+          matchGlob(pattern, path, {
+            ...(options.caseInsensitive !== undefined
+              ? { caseInsensitive: options.caseInsensitive }
+              : {}),
+          }),
+        ),
+      )
+    if (permitted) return undefined
+    return {
+      effect: 'deny',
+      reasonCode: PermissionReasonCode.AgentPathDenied,
+      reason:
+        'This agent may only write test files. Use a test directory or a *.test.* / *.spec.* file.',
+    }
+  }
+}

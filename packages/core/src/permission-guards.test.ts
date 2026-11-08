@@ -5,6 +5,7 @@ import type { PermissionRule } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   assessCommand,
+  createAgentPathGuard,
   DEFAULT_PERMISSION_GUARDS,
   GuardReasonCode,
   isSensitivePath,
@@ -313,5 +314,71 @@ describe('与权限引擎一起使用', () => {
     expect(decide(read, { paths: ['README.md'] }, []).decision).toBe('allow')
     expect(decide(read, { paths: ['id_ed25519'] }, []).decision).toBe('ask')
     expect(decide(read, {}, []).decision).toBe('allow')
+  })
+})
+
+describe('Agent 写入路径守卫（M4-11）', () => {
+  const def = (name: string, category: ToolCategory): ToolDefinition => ({
+    name,
+    description: name,
+    inputSchema: { type: 'object' },
+    category,
+    source: { kind: 'builtin' },
+    trust: 'builtin',
+    execute: () => Promise.resolve({ content: [] }),
+  })
+  const write = def('write_file', 'write')
+  const read = def('read_file', 'read')
+  const run = def('run_command', 'execute')
+  const allowAll: PermissionRule[] = [
+    { id: 'all', scope: 'session', effect: 'allow', match: {}, source: 'user' },
+  ]
+  const decide = (
+    definition: ToolDefinition,
+    targets: ToolTargets,
+    guard: ReturnType<typeof createAgentPathGuard>,
+  ) =>
+    decidePermission({ toolCallId: 'c', definition, input: {}, targets }, allowAll, {
+      guards: [guard],
+    })
+
+  it('does nothing without a non-empty write allowlist', () => {
+    expect(
+      createAgentPathGuard(undefined)({
+        toolCallId: 'c',
+        definition: write,
+        input: {},
+        targets: { paths: ['src/a.ts'] },
+      }),
+    ).toBeUndefined()
+    expect(
+      createAgentPathGuard({ write: [] })({
+        toolCallId: 'c',
+        definition: write,
+        input: {},
+        targets: { paths: ['src/a.ts'] },
+      }),
+    ).toBeUndefined()
+  })
+
+  it('allows writes that match a test path and denies everything else', () => {
+    const guard = createAgentPathGuard({
+      write: ['**/*.{test,spec}.*', '**/tests/**'],
+    })
+    expect(decide(write, { paths: ['src/a.test.ts'] }, guard).decision).toBe('allow')
+    expect(decide(write, { paths: ['tests/a.ts'] }, guard).decision).toBe('allow')
+    expect(decide(write, { paths: ['src/a.ts'] }, guard)).toMatchObject({
+      decision: 'deny',
+      reasonCode: 'permission.agent_path_denied',
+    })
+    expect(decide(write, { paths: ['tests/a.ts', 'src/a.ts'] }, guard).decision).toBe('deny')
+    expect(decide(write, {}, guard).decision).toBe('deny')
+  })
+
+  it('only constrains write tools and honors case-insensitive paths', () => {
+    const guard = createAgentPathGuard({ write: ['**/TESTS/**'] }, { caseInsensitive: true })
+    expect(decide(read, { paths: ['src/a.ts'] }, guard).decision).toBe('allow')
+    expect(decide(run, { command: 'npm test' }, guard).decision).toBe('allow')
+    expect(decide(write, { paths: ['pkg/Tests/a.ts'] }, guard).decision).toBe('allow')
   })
 })
