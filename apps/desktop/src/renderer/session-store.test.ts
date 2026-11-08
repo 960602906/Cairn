@@ -12,6 +12,7 @@ type Handler = (params: never) => unknown
 
 function fakeApi(handlers: Record<string, Handler> = {}) {
   const listeners = new Set<(data: { sessionId: string; events: EventEnvelope[] }) => void>()
+  const channels = new Map<string, Set<(data: never) => void>>()
   const calls: [string, unknown][] = []
   const api = {
     ready: () => Promise.resolve(),
@@ -24,14 +25,23 @@ function fakeApi(handlers: Record<string, Handler> = {}) {
       name: string,
       listener: (data: { sessionId: string; events: EventEnvelope[] }) => void,
     ) => {
-      if (name !== 'session.events') return () => {}
-      listeners.add(listener)
-      return () => listeners.delete(listener)
+      if (name === 'session.events') {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      }
+      const set = channels.get(name) ?? new Set()
+      set.add(listener as unknown as (data: never) => void)
+      channels.set(name, set)
+      return () => {
+        set.delete(listener as unknown as (data: never) => void)
+      }
     },
   } as unknown as MainApi
   const emit = (sessionId: string, events: EventEnvelope[]) =>
     listeners.forEach((l) => l({ sessionId, events }))
-  return { api, calls, emit, listeners }
+  const emitChannel = (name: string, data: unknown) =>
+    channels.get(name)?.forEach((listener) => listener(data as never))
+  return { api, calls, emit, emitChannel, listeners, channels }
 }
 
 describe('agent actions in session store', () => {
@@ -1036,5 +1046,70 @@ describe('inactive and failing commands', () => {
     await store.getState().refreshProjects()
     await store.getState().updateProject('p2', { name: 'Renamed' })
     expect(store.getState().projects.map((project) => project.name)).toEqual(['A', 'Renamed'])
+  })
+})
+
+describe('activity center', () => {
+  const snapshot = {
+    approvals: [
+      {
+        approvalId: 'a1',
+        sessionId: 's1',
+        sessionTitle: '修复登录',
+        runId: 'r1',
+        agent: { id: 'builtin.coder', version: 1 },
+        toolName: 'run_command',
+        toolCategory: 'execute',
+        kind: 'tool',
+        summary: 'npm install',
+        reasonCode: 'permission.ask',
+        matchedRuleIds: [],
+        requestedAt: 10,
+      },
+    ],
+    running: [],
+    completed: [],
+    counts: { approvals: 1, running: 0 },
+  }
+
+  it('loads snapshots, refreshes on push, resolves approvals, and forwards opens', async () => {
+    const { api, calls, emitChannel } = fakeApi({
+      'activity.list': () => snapshot,
+      'activity.resolve': () => ({}),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshActivity()
+    expect(store.getState().activity).toEqual(snapshot)
+    expect(store.getState().activityLoading).toBe(false)
+
+    emitChannel('activity.changed', {})
+    await vi.waitFor(() =>
+      expect(calls.filter(([method]) => method === 'activity.list')).toHaveLength(2),
+    )
+
+    await expect(store.getState().resolveActivity('a1', 'allow_session', '  ')).resolves.toBe(true)
+    expect(calls).toContainEqual([
+      'activity.resolve',
+      { approvalId: 'a1', decision: 'allow_session' },
+    ])
+
+    const opened: string[] = []
+    const off = store.getState().onActivityOpen(({ sessionId }) => opened.push(sessionId))
+    emitChannel('activity.open', { sessionId: 's1' })
+    expect(opened).toEqual(['s1'])
+    off()
+  })
+
+  it('records activity load failures without clearing a previous snapshot', async () => {
+    const { api } = fakeApi({
+      'activity.list': () => {
+        throw new RpcError('activity.failed')
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshActivity()
+    expect(store.getState().activity).toBeUndefined()
+    expect(store.getState().activityLoading).toBe(false)
+    expect(store.getState().activityError?.code).toBe('activity.failed')
   })
 })

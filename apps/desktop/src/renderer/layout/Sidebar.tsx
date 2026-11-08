@@ -2,9 +2,9 @@
  * 侧栏（M2-02，视觉规范 §2）：铺在窗口底色上，没有自己的背景和边框。
  * 从上到下：标题区（macOS 的红绿灯在这里，可拖动窗口）与收起按钮、新对话、搜索（M2-12，⌘K / Ctrl+K）、
  * 按项目分组的会话列表与底部的“设置”（M2-09，⌘, / Ctrl+,；界面语言移到设置页）。Agents 入口
- * 在 M3-12 加入；活动入口仍隐藏。
+ * 在 M3-12 加入；活动入口在 M4-07 加入，有待审批时显示角标。
  */
-import { Bot, PanelLeft, Search, Settings, SquarePen } from 'lucide-react'
+import { Activity, Bot, PanelLeft, Search, Settings, SquarePen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SessionList } from '../SessionList.js'
 import { CairnMark, cn, IconButton, Kbd } from '../ui/index.js'
@@ -19,6 +19,9 @@ export function Sidebar({
   onSettings,
   onAgents,
   agentsActive = false,
+  onActivity,
+  activityActive = false,
+  activityBadge = 0,
 }: {
   readonly open?: boolean
   readonly onNewChat: () => void
@@ -31,6 +34,11 @@ export function Sidebar({
   /** 打开 Agents 页面（M3-12）。 */
   readonly onAgents?: () => void
   readonly agentsActive?: boolean
+  /** 打开活动中心（M4-07）。 */
+  readonly onActivity?: () => void
+  readonly activityActive?: boolean
+  /** 待审批数量；大于 0 时显示角标。 */
+  readonly activityBadge?: number
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -102,6 +110,35 @@ export function Sidebar({
             >
               <Bot />
               <span className="flex-1 text-left">{t('sidebar.agents')}</span>
+            </button>
+          )}
+          {onActivity && (
+            <button
+              type="button"
+              aria-current={activityActive ? 'page' : undefined}
+              aria-label={
+                activityBadge > 0
+                  ? t('sidebar.activityWithBadge', { count: activityBadge })
+                  : undefined
+              }
+              onClick={onActivity}
+              className={cn(
+                'mt-1 flex h-8 w-full items-center gap-2 rounded-item px-2.5 text-ui transition-colors [&_svg]:size-4 [&_svg]:text-muted',
+                activityActive
+                  ? 'bg-raise font-medium text-fg shadow-1'
+                  : 'text-fg2 hover:bg-hover hover:text-fg',
+              )}
+            >
+              <Activity />
+              <span className="flex-1 text-left">{t('sidebar.activity')}</span>
+              {activityBadge > 0 && (
+                <span
+                  aria-hidden
+                  className="tabular min-w-5 rounded-full bg-accent px-1.5 py-0.5 text-center text-[11px] font-medium text-ink-fg"
+                >
+                  {activityBadge > 99 ? '99+' : activityBadge}
+                </span>
+              )}
             </button>
           )}
         </div>
