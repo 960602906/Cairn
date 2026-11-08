@@ -595,6 +595,312 @@ describe('commands', () => {
   })
 })
 
+describe('trial sessions (M4-12)', () => {
+  const started = (
+    sessionId: string,
+    overrides: Partial<{
+      agent: { id: string; draftHash: string }
+      draftHash: string
+      useAgentPermissions: boolean
+    }> = {},
+  ) => ({
+    sessionId,
+    agent: { id: 'user.reviewer', draftHash: `hash-${sessionId}` },
+    draftHash: `hash-${sessionId}`,
+    useAgentPermissions: false,
+    ...overrides,
+  })
+
+  it('subscribes a trial beside the active session without mixing events', async () => {
+    const { api, calls, emit } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'trial.start': () => started('t1'),
+      'approval.pending': () => ({ approvals: [] }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+
+    const trial = await store.getState().startTrial({
+      agentId: 'user.reviewer',
+      projectPath: '/work',
+      configKey: 'draft-1',
+    })
+    expect(trial?.sessionId).toBe('t1')
+    expect(store.getState().trial).toEqual({
+      sessionId: 't1',
+      agent: { id: 'user.reviewer', draftHash: 'hash-t1' },
+      draftHash: 'hash-t1',
+      projectPath: '/work',
+      useAgentPermissions: false,
+      configKey: 'draft-1',
+    })
+    expect(calls).toContainEqual(['session.subscribe', { sessionId: 't1', afterSeq: 0 }])
+    expect(store.getState().views['t1']?.info?.projectPath).toBe('/work')
+    expect(store.getState().activeSessionId).toBe('s1')
+
+    emit('t1', [user('t1', 2, 'trial only')])
+    expect(store.getState().views['t1']?.messages).toHaveLength(1)
+    expect(store.getState().views['s1']?.messages).toHaveLength(0)
+
+    emit('s1', [user('s1', 2, 'normal')])
+    expect(store.getState().views['s1']?.messages).toHaveLength(1)
+    expect(store.getState().views['t1']?.messages).toHaveLength(1)
+  })
+
+  it('sends prompts, stops the trial, and reports failures', async () => {
+    let fail = false
+    const { api, calls } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'trial.start': () => started('t1'),
+      'approval.pending': () => ({ approvals: [] }),
+      'session.prompt': () => {
+        if (fail) throw new RpcError('run.busy', { sessionId: 't1' })
+        return { messageId: 'm1' }
+      },
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().sendTrialPrompt('ignored')).toBe(false)
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+
+    expect(await store.getState().sendTrialPrompt('   ')).toBe(false)
+    expect(await store.getState().sendTrialPrompt('  hello  ')).toBe(true)
+    expect(store.getState().awaitingTurn['t1']).toBe(true)
+    expect(calls).toContainEqual([
+      'session.prompt',
+      { sessionId: 't1', content: [{ type: 'text', text: 'hello' }] },
+    ])
+
+    await store.getState().abortTrial()
+    expect(store.getState().awaitingTurn['t1']).toBeUndefined()
+    expect(calls).toContainEqual(['session.abort', { sessionId: 't1' }])
+
+    fail = true
+    expect(await store.getState().sendTrialPrompt('again')).toBe(false)
+    expect(store.getState().awaitingTurn['t1']).toBeUndefined()
+    expect(store.getState().error?.code).toBe('run.busy')
+  })
+
+  it('restarts with a new subscription and keeps the project', async () => {
+    let next = started('t2', { useAgentPermissions: true })
+    const { api, calls } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'trial.start': () => started('t1'),
+      'trial.restart': () => next,
+      'approval.pending': () => ({ approvals: [] }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().startTrial({
+      agentId: 'user.reviewer',
+      projectPath: '/work',
+      configKey: 'draft-1',
+    })
+
+    const restarted = await store.getState().restartTrial(undefined, 'draft-2')
+    expect(restarted?.sessionId).toBe('t2')
+    expect(calls).toContainEqual(['session.unsubscribe', { sessionId: 't1' }])
+    expect(calls).toContainEqual(['session.subscribe', { sessionId: 't2', afterSeq: 0 }])
+    expect(calls).toContainEqual(['trial.restart', { sessionId: 't1' }])
+    expect(store.getState().trial).toMatchObject({
+      sessionId: 't2',
+      draftHash: 'hash-t2',
+      projectPath: '/work',
+      useAgentPermissions: true,
+      configKey: 'draft-2',
+    })
+
+    next = started('t3')
+    await store.getState().restartTrial(false)
+    expect(calls).toContainEqual(['trial.restart', { sessionId: 't2', useAgentPermissions: false }])
+    expect(store.getState().trial?.configKey).toBe('draft-2')
+  })
+
+  it('routes trial approvals to the trial session', async () => {
+    const pending = [
+      {
+        approvalId: 'a1',
+        sessionId: 't1',
+        toolCallId: 'c1',
+        tool: 'run_command',
+        input: {},
+        createdAt: 1,
+      },
+    ]
+    const { api, calls } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'trial.start': () => started('t1'),
+      'approval.pending': () => ({ approvals: pending }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+    expect(store.getState().approvals['t1']).toEqual(pending)
+
+    expect(await store.getState().resolveTrialApproval('a1', 'deny', '  no  ')).toBe(true)
+    expect(calls).toContainEqual([
+      'approval.resolve',
+      { sessionId: 't1', approvalId: 'a1', decision: 'deny', feedback: 'no' },
+    ])
+    expect(await store.getState().resolveTrialApproval('a1', 'allow_once')).toBe(true)
+    expect(calls).toContainEqual([
+      'approval.resolve',
+      { sessionId: 't1', approvalId: 'a1', decision: 'allow_once' },
+    ])
+  })
+
+  it('closes, lists, and clears trial history', async () => {
+    const { api, calls } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'trial.start': () => started('t1'),
+      'trial.list': () => ({
+        trials: [
+          {
+            sessionId: 't1',
+            agent: { id: 'user.reviewer', draftHash: 'hash-t1' },
+            projectPath: '/work',
+            title: '',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      }),
+      'trial.clear': () => ({ cleared: 2 }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().closeTrial()
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+    await store.getState().closeTrial()
+    expect(calls).toContainEqual(['session.unsubscribe', { sessionId: 't1' }])
+    expect(store.getState().trial).toBeUndefined()
+    await store.getState().closeTrial()
+
+    expect(await store.getState().listTrials('user.reviewer')).toHaveLength(1)
+    expect(await store.getState().clearTrials('user.reviewer')).toBe(2)
+  })
+
+  it('returns undefined when the trial cannot start or subscribe', async () => {
+    const failing = fakeApi({
+      'trial.start': () => {
+        throw new RpcError('agent.not_found', { agentId: 'user.reviewer' })
+      },
+    })
+    const store = createSessionStore(failing.api)
+    expect(
+      await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' }),
+    ).toBeUndefined()
+    expect(store.getState().error?.code).toBe('agent.not_found')
+
+    const noSubscribe = fakeApi({
+      'trial.start': () => started('t1'),
+      'session.subscribe': () => {
+        throw new RpcError('rpc.closed')
+      },
+    })
+    const second = createSessionStore(noSubscribe.api)
+    expect(
+      await second.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' }),
+    ).toBeUndefined()
+    expect(second.getState().trial).toBeUndefined()
+  })
+
+  it('does not restart without an active trial', async () => {
+    const { api } = fakeApi()
+    const store = createSessionStore(api)
+    expect(await store.getState().restartTrial()).toBeUndefined()
+    expect(await store.getState().resolveTrialApproval('a1', 'allow_once')).toBe(false)
+    await store.getState().abortTrial()
+    expect(store.getState().trial).toBeUndefined()
+  })
+
+  it('unsubscribes the previous trial when starting another one', async () => {
+    let next = 0
+    const { api, calls } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'trial.start': () => started(`t${++next}`),
+      'approval.pending': () => ({ approvals: [] }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+    expect(calls).toContainEqual(['session.unsubscribe', { sessionId: 't1' }])
+    expect(calls).toContainEqual(['session.subscribe', { sessionId: 't2', afterSeq: 0 }])
+    expect(store.getState().trial?.sessionId).toBe('t2')
+  })
+
+  it('keeps the current trial when a restart fails', async () => {
+    const { api } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'trial.start': () => started('t1'),
+      'trial.restart': () => {
+        throw new RpcError('agent.not_found', { agentId: 'user.reviewer' })
+      },
+      'approval.pending': () => ({ approvals: [] }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+    expect(await store.getState().restartTrial()).toBeUndefined()
+    expect(store.getState().error?.code).toBe('agent.not_found')
+    expect(store.getState().trial?.sessionId).toBe('t1')
+  })
+
+  it('clears the trial when its restarted subscription fails', async () => {
+    const { api } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => {
+        if (sessionId === 't2') throw new RpcError('rpc.closed')
+        return { events: [created(sessionId)], lastSeq: 1 }
+      },
+      'trial.start': () => started('t1'),
+      'trial.restart': () => started('t2'),
+      'approval.pending': () => ({ approvals: [] }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+    expect(await store.getState().restartTrial()).toBeUndefined()
+    expect(store.getState().trial).toBeUndefined()
+  })
+
+  it('keeps awaiting when the trial abort fails', async () => {
+    const { api } = fakeApi({
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'trial.start': () => started('t1'),
+      'approval.pending': () => ({ approvals: [] }),
+      'session.prompt': () => ({ messageId: 'm1' }),
+      'session.abort': () => {
+        throw new RpcError('rpc.closed')
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+    await store.getState().sendTrialPrompt('hello')
+    expect(store.getState().awaitingTurn['t1']).toBe(true)
+    await store.getState().abortTrial()
+    expect(store.getState().awaitingTurn['t1']).toBe(true)
+    expect(store.getState().error?.code).toBe('rpc.closed')
+  })
+})
+
 describe('settings', () => {
   it('saves settings and records failures', async () => {
     let fail = false

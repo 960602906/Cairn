@@ -562,6 +562,75 @@ describe('agent-service runtime helpers', () => {
     expect(rules.length).toBeGreaterThan(1)
     expect(rules.some((entry) => entry.effect === 'deny')).toBe(true)
   })
+
+  it('resolves unpublished drafts by content hash for trial runs', () => {
+    const { service } = setup()
+    const created = service.saveDraft({
+      definition: draft({ instructions: 'Draft instruction.', skills: { allow: ['review'] } }),
+    })
+    const trial = service.trialDraft(created.agentId)
+    expect(trial.definition).toMatchObject({
+      id: created.agentId,
+      status: 'draft',
+      instructions: 'Draft instruction.',
+    })
+    expect(trial.draftHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(service.trialDraft(created.agentId).draftHash).toBe(trial.draftHash)
+    const ref = { id: created.agentId, draftHash: trial.draftHash }
+    expect(service.definition(ref)?.instructions).toBe('Draft instruction.')
+    expect(service.skillsFor(ref, 's1').map((skill) => skill.name)).toEqual(['review'])
+    expect(service.permissionRulesFor(ref, [rule]).at(-1)).toEqual(rule)
+    expect(service.definition({ ...ref, draftHash: 'stale' })).toBeUndefined()
+    expect(() => service.trialDraft('missing')).toThrow('agent.not_found')
+  })
+
+  it('trial-runs builtin agents without inventing a published version', () => {
+    const { service } = setup()
+    const trial = service.trialDraft(BUILTIN_CODER_ID)
+    expect(trial.definition.id).toBe(BUILTIN_CODER_ID)
+    expect(trial.draftHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(service.definition({ id: BUILTIN_CODER_ID, draftHash: trial.draftHash })?.id).toBe(
+      BUILTIN_CODER_ID,
+    )
+  })
+
+  it('trial-runs a published agent after its draft is cleared', () => {
+    const { service } = setup()
+    const created = service.saveDraft({ definition: draft({ instructions: 'Published.' }) })
+    service.publish({ agentId: created.agentId })
+    const trial = service.trialDraft(created.agentId)
+    expect(trial.definition).toMatchObject({
+      id: created.agentId,
+      version: 1,
+      status: 'published',
+      instructions: 'Published.',
+    })
+  })
+
+  it('counts only published runs in version usage', () => {
+    const { service, events } = setup()
+    const created = service.saveDraft({ definition: draft() })
+    service.publish({ agentId: created.agentId })
+    const model = { providerId: 'openai', modelId: 'gpt' }
+    const limits = {
+      maxStepsPerTurn: 10,
+      maxTurnDurationMs: 1000,
+      maxConsecutiveToolErrors: 1,
+    }
+    const run = (agent: { id: string; version: number } | { id: string; draftHash: string }) => ({
+      v: 1 as const,
+      sessionId: 's1',
+      runId: `run-${Math.random()}`,
+      ts: 1,
+      type: 'run.created' as const,
+      payload: { agent, model, mode: 'interactive' as const, limits },
+    })
+    events.publish([
+      run({ id: created.agentId, version: 1 }),
+      run({ id: created.agentId, draftHash: 'draft-hash' }),
+    ])
+    expect(service.versions({ agentId: created.agentId }).versions[0]?.usedBySessions).toBe(1)
+  })
 })
 
 describe('agent-service effective config', () => {

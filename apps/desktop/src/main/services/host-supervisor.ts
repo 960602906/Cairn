@@ -27,7 +27,6 @@ import {
   createEndpoint,
   HostForMain,
   type AgentDefinition,
-  type AgentDefinitionRef,
   type FileChangeInput,
   type HostApprovalRequest,
   type HostApprovalResponse,
@@ -39,6 +38,7 @@ import {
   type ModelRef,
   type PermissionRule,
   type PermissionMode,
+  type RunAgentRef,
   type RunSnapshotInput,
   type ShellPreference,
   type SkillCatalogEntry,
@@ -147,10 +147,7 @@ export interface HostSupervisorOptions {
    * 适用于会话的权限规则（M1-10c，权限服务）。抛出时按启动失败处理。省略时不传，宿主按“询问”模式
    * 的预设判定。
    */
-  readonly resolvePermissionRules?: (
-    sessionId: string,
-    agent: AgentDefinitionRef,
-  ) => PermissionRule[]
+  readonly resolvePermissionRules?: (sessionId: string, agent: RunAgentRef) => PermissionRule[]
   /** 用户的自定义说明（M1-13b，设置服务）；省略或返回 undefined 时不传。 */
   readonly resolveInstructions?: () => string | undefined
   /** 命令执行使用的 shell（M2-09，设置服务）；省略或返回 undefined 时不传（宿主按 `auto`）。 */
@@ -207,20 +204,14 @@ export interface HostSupervisorOptions {
    * 这一轮交给模型的技能（M3-07）。省略或抛出时宿主这一轮不带技能。
    * 只应返回已启用、且没有被同名技能盖住的。
    */
-  readonly loadSkills?: (
-    sessionId: string,
-    agent: AgentDefinitionRef,
-  ) => readonly SkillCatalogEntry[]
+  readonly loadSkills?: (sessionId: string, agent: RunAgentRef) => readonly SkillCatalogEntry[]
   /** 这一轮可用的 MCP 工具（M3-09）。省略表示没有。 */
-  readonly resolveMcpTools?: (
-    sessionId: string,
-    agent: AgentDefinitionRef,
-  ) => readonly McpToolExposure[]
+  readonly resolveMcpTools?: (sessionId: string, agent: RunAgentRef) => readonly McpToolExposure[]
   /**
    * 运行引用的 Agent 定义（M3-11）：宿主据此决定指令、工具选择与上下文策略。省略时宿主按
    * 内置编程助手的行为运行（全部工具、没有额外指令）。
    */
-  readonly resolveAgentDefinition?: (agent: AgentDefinitionRef) => AgentDefinition | undefined
+  readonly resolveAgentDefinition?: (agent: RunAgentRef) => AgentDefinition | undefined
   /**
    * 解析一次委派的目标 Agent（M4-02）：已发布定义、模型、凭据、模型配置、权限规则、Skills、MCP 与
    * 工作区方式。返回 undefined 表示目标不存在或未发布。省略时宿主的 `delegate` 报 `run.unsupported`。

@@ -7,6 +7,7 @@
  */
 import { projectRunTree, redact } from '@cairn/core'
 import {
+  isAgentDraftRef,
   RpcError,
   type ActivityApproval,
   type ActivityCompleted,
@@ -82,8 +83,9 @@ function approvalOf(
   entry: ReturnType<ApprovalService['list']>[number],
   title: string,
   options: ActivityServiceOptions,
-): ActivityApproval {
+): ActivityApproval | undefined {
   const request = entry.request
+  if (isAgentDraftRef(request.agent)) return undefined
   const summary =
     request.preview?.summary ??
     request.targets.command ??
@@ -119,13 +121,20 @@ export function createActivityService(options: ActivityServiceOptions): Activity
   }
 
   const sessions = () => options.storage.sessions.list()
-  const sessionMap = () => new Map(sessions().map((session) => [session.sessionId, session]))
+  const sessionMap = () =>
+    new Map(
+      options.storage.sessions
+        .list({ includeTrial: true })
+        .map((session) => [session.sessionId, session]),
+    )
 
   const currentApprovals = (): ActivityApproval[] => {
     const sessionById = sessionMap()
-    return options.approvals
-      .list()
-      .map((entry) => approvalOf(entry, sessionById.get(entry.sessionId)?.title ?? '', options))
+    return options.approvals.list().flatMap((entry) => {
+      if (sessionById.get(entry.sessionId)?.kind === 'trial') return []
+      const approval = approvalOf(entry, sessionById.get(entry.sessionId)?.title ?? '', options)
+      return approval ? [approval] : []
+    })
   }
 
   let knownApprovals = new Set(currentApprovals().map((item) => item.approvalId))
@@ -164,10 +173,12 @@ export function createActivityService(options: ActivityServiceOptions): Activity
     for (const event of events) {
       switch (event.type) {
         case 'run.created':
-          runInfo.set(event.runId, {
-            agent: event.payload.agent,
-            ...(event.parentRunId ? { parentRunId: event.parentRunId } : {}),
-          })
+          if (!isAgentDraftRef(event.payload.agent)) {
+            runInfo.set(event.runId, {
+              agent: event.payload.agent,
+              ...(event.parentRunId ? { parentRunId: event.parentRunId } : {}),
+            })
+          }
           break
         case 'message.user': {
           lastText = cleanText(eventText(event), options)
@@ -224,6 +235,7 @@ export function createActivityService(options: ActivityServiceOptions): Activity
     if (
       !crashed &&
       root &&
+      !isAgentDraftRef(root.agent) &&
       (root.state === 'thinking' ||
         root.state === 'tooling' ||
         root.state === 'awaiting_children' ||

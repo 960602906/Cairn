@@ -41,10 +41,10 @@ import {
   RpcError,
   type ActivePlan,
   type AgentDefinition,
-  type AgentDefinitionRef,
   type ContentPart,
   type ModelRef,
   type PromptMode,
+  type RunAgentRef,
   type RunLimits,
   type UnsequencedEvent,
 } from '@cairn/protocol'
@@ -67,6 +67,8 @@ export const SessionErrorCode = {
   UnknownStep: 'plan.unknown_step',
   /** 会话要用的 Agent 不存在，或还没有发布过。 */
   AgentNotFound: 'agent.not_found',
+  /** 试运行开始后草稿又改过；必须用新配置重新开始。 */
+  DraftChanged: 'trial.draft_changed',
 } as const
 
 /** 新运行使用的配置。 */
@@ -87,7 +89,7 @@ export interface SessionManagerOptions {
    * 按引用取已发布的 Agent 定义（M3-11，Agent 服务）。省略时一律用 `runDefaults`；给出时用于固定
    * 模型与限额，以及 `session.setAgent` 的校验。
    */
-  readonly resolveAgent?: (agent: AgentDefinitionRef) => AgentDefinition | undefined
+  readonly resolveAgent?: (agent: RunAgentRef) => AgentDefinition | undefined
   /** 会话是否暂时不接受输入（如正在撤销改动，M1-08b），此时输入报 `run.busy`。 */
   readonly isLocked?: (sessionId: string) => boolean
   /** 同时存在的宿主上限，默认 3。 */
@@ -272,17 +274,18 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
   /**
    * Agent 定义决定运行用的模型与限额（M3-11）：`mode: 'fixed'` 时忽略会话模型；限额在
-   * `runDefaults.limits` 之上覆盖。没有注入 `resolveAgent`（或未发布）时用默认配置。
+   * `runDefaults.limits` 之上覆盖。没有固定模型时用会话模型，再回退到已配置的默认模型；
+   * 没有注入 `resolveAgent`（或未发布）时用默认配置。
    */
   function runConfig(
-    agent: AgentDefinitionRef,
+    agent: RunAgentRef,
     sessionModel: ModelRef | undefined,
   ): { model: ModelRef | undefined; limits: RunLimits } {
     const definition = options.resolveAgent?.(agent)
     if (!definition) return { model: sessionModel, limits: options.runDefaults.limits }
     const fixed = definition.model.mode === 'fixed' ? definition.model.primary : undefined
     return {
-      model: fixed ?? sessionModel,
+      model: fixed ?? sessionModel ?? options.models?.defaultModel(),
       limits: { ...options.runDefaults.limits, ...definition.limits },
     }
   }
@@ -517,7 +520,19 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       if (!running) markInterrupted(sessionId, 'host_lost')
       const view = getView(sessionId)
       const root = rootRun(view)
-      const agent = root?.agent ?? options.runDefaults.agent
+      if (
+        record.kind === 'trial' &&
+        (record.trialAgentId === undefined || record.trialDraftHash === undefined)
+      ) {
+        throw new RpcError(SessionErrorCode.NotFound, { sessionId })
+      }
+      const agent: RunAgentRef =
+        record.kind === 'trial'
+          ? { id: record.trialAgentId!, draftHash: record.trialDraftHash! }
+          : (root?.agent ?? options.runDefaults.agent)
+      if (record.kind === 'trial' && !options.resolveAgent?.(agent)) {
+        throw new RpcError(SessionErrorCode.DraftChanged, { sessionId })
+      }
       const next = runConfig(agent, record.model)
       // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）
       const modelChanged =
@@ -688,7 +703,10 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
     recoverInterrupted() {
       let count = 0
-      for (const session of storage.sessions.list({ includeArchived: true })) {
+      for (const session of storage.sessions.list({
+        includeArchived: true,
+        includeTrial: true,
+      })) {
         if (slots.has(session.sessionId)) continue
         try {
           count += markInterrupted(session.sessionId, 'app_restart')

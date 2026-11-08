@@ -31,6 +31,7 @@ import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
 import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
+import type { TrialCommands } from './trial-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -149,6 +150,8 @@ export interface RendererGatewayOptions {
   readonly mcp: McpCommands
   /** Agent 定义（M3-11）：草稿、发布、版本、导入导出与生效配置。 */
   readonly agents: AgentCommands
+  /** Agent 试运行（M4-12）。 */
+  readonly trials: TrialCommands
   /** 诊断包（M3-13）：导出前清单、生成 zip 与在文件夹中显示。 */
   readonly diagnostics: DiagnosticsCommands
   /** 运行检查器（M4-04）：运行树、上下文快照与生效设置。 */
@@ -227,7 +230,7 @@ type Timer = ReturnType<typeof setTimeout>
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
-  const { agents, diagnostics, activity, changeSets } = options
+  const { agents, trials, diagnostics, activity, changeSets } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
@@ -363,6 +366,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('agent.export', (params) => agents.export(params))
       endpoint.handle('agent.import', (params) => agents.import(params))
       endpoint.handle('agent.effectiveConfig', (params) => agents.effectiveConfig(params))
+      endpoint.handle('trial.start', (params) => trials.start(params))
+      endpoint.handle('trial.restart', (params) => trials.restart(params))
+      endpoint.handle('trial.clear', (params) => trials.clear(params))
+      endpoint.handle('trial.list', (params) => trials.list(params))
       endpoint.handle('diagnostics.summary', (params) => diagnostics.summary(params))
       endpoint.handle('diagnostics.export', (params) => diagnostics.export(params))
       endpoint.handle('diagnostics.showInFolder', (params) => diagnostics.showInFolder(params))

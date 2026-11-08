@@ -1,0 +1,22 @@
+{
+  "title": "试运行",
+  "intro": "用当前草稿运行一次，不发布、不影响正常会话。默认只读；需要写文件或执行命令时再手动切换。",
+  "status.running": "运行中",
+  "status.idle": "空闲",
+  "project.label": "项目",
+  "project.placeholder": "选择项目",
+  "project.open": "选择项目文件夹",
+  "permissions.useAgent": "使用 Agent 自身的权限",
+  "permissions.hint": "切换后会重新开始一次试运行。",
+  "configChanged": "配置已变化。用新配置重新开始后才会生效。",
+  "approvals": "待审批",
+  "input.label": "试运行输入",
+  "input.placeholder": "描述要验证的任务，Ctrl+Enter 发送",
+  "cleared": "已清除 {{count}} 条试运行记录",
+  "action.close": "关闭试运行",
+  "action.start": "开始试运行",
+  "action.restart": "重新开始",
+  "action.clear": "清除记录",
+  "action.stop": "停止",
+  "action.send": "发送"
+}

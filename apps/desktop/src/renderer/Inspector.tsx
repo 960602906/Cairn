@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { estimateTokens, type DelegationView } from '@cairn/core'
 import { translateError, type TFunction } from '@cairn/i18n'
 import type {
-  AgentDefinitionRef,
+  RunAgentRef,
   RunInspectResult,
   RunLimits,
   RunSnapshot,
@@ -18,6 +18,7 @@ import type {
   RunTreeNode,
   RunUsage,
 } from '@cairn/protocol'
+import { isAgentDraftRef } from '@cairn/protocol'
 import { agentName } from './agents/AgentsPage.js'
 import { formatCompactTokens as compactTokens, formatDuration } from './format.js'
 import { inspectionKey } from './session-store.js'
@@ -276,12 +277,14 @@ function UsageTab({
 }) {
   const { t, i18n } = useTranslation('session')
   const agents = useStore((state) => state.agents) ?? []
-  const groups = new Map<string, { agent: AgentDefinitionRef; usage: RunUsage; runs: number }>()
+  const groups = new Map<string, { agent: RunAgentRef; usage: RunUsage; runs: number }>()
   let total = { ...EMPTY_USAGE }
   for (const node of tree.runs) {
     const usage = directUsage(node)
     total = addUsage(total, usage)
-    const key = `${node.agent.id}@${node.agent.version}`
+    const key = isAgentDraftRef(node.agent)
+      ? `${node.agent.id}@draft:${node.agent.draftHash}`
+      : `${node.agent.id}@${node.agent.version}`
     const group = groups.get(key) ?? { agent: node.agent, usage: { ...EMPTY_USAGE }, runs: 0 }
     groups.set(key, { ...group, usage: addUsage(group.usage, usage), runs: group.runs + 1 })
   }
@@ -311,8 +314,10 @@ function UsageTab({
                   <div className="flex items-center gap-2">
                     <span className="min-w-0 flex-1 truncate font-medium text-fg2">{name}</span>
                     <span className="text-note text-muted">
-                      {t('inspector.versionShort', { version: group.agent.version })} ·{' '}
-                      {t('inspector.usage.runCount', { count: group.runs })}
+                      {isAgentDraftRef(group.agent)
+                        ? t('inspector.draftShort')
+                        : t('inspector.versionShort', { version: group.agent.version })}{' '}
+                      · {t('inspector.usage.runCount', { count: group.runs })}
                     </span>
                   </div>
                   <UsageLine usage={group.usage} />
@@ -379,7 +384,11 @@ function SettingsTab({
           <dt className="text-muted">{t('inspector.settings.agentId')}</dt>
           <dd className="break-all font-mono">{selected.agent.id}</dd>
           <dt className="text-muted">{t('inspector.settings.version')}</dt>
-          <dd>{t('inspector.versionShort', { version: selected.agent.version })}</dd>
+          <dd>
+            {isAgentDraftRef(selected.agent)
+              ? t('inspector.draftShort')
+              : t('inspector.versionShort', { version: selected.agent.version })}
+          </dd>
           <dt className="text-muted">{t('inspector.settings.model')}</dt>
           <dd className="break-all font-mono text-[12.5px]">
             {selected.model.providerId} · {selected.model.modelId}
@@ -502,7 +511,9 @@ function RunNodeView({
             />
             <span className="min-w-0 flex-1 truncate text-note font-medium text-fg2">{name}</span>
             <span className="shrink-0 text-[11px] text-muted">
-              {t('inspector.versionShort', { version: node.agent.version })}
+              {isAgentDraftRef(node.agent)
+                ? t('inspector.draftShort')
+                : t('inspector.versionShort', { version: node.agent.version })}
             </span>
             <span
               className={cn(

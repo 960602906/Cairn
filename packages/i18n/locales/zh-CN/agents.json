@@ -33,6 +33,7 @@
   "editor.save": "保存草稿",
   "editor.publish": "发布",
   "editor.publishVersion": "发布 v{{version}}",
+  "editor.trial": "试运行",
   "editor.duplicate": "复制",
   "editor.export": "导出",
   "editor.archive": "归档",

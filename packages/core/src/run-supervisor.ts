@@ -9,7 +9,7 @@
  * - 运行 id 在会话内全局唯一，释放后自动从管理器中清理。
  */
 import type {
-  AgentDefinitionRef,
+  RunAgentRef,
   CanonicalMessage,
   ContentPart,
   EventPayload,
@@ -77,7 +77,7 @@ export interface CreateRunInput {
   readonly sessionId: string
   /** 新运行的 id；省略时由 createId 生成。恢复时以 restoreFrom.runId 为准。 */
   readonly runId?: string
-  readonly agent: AgentDefinitionRef
+  readonly agent: RunAgentRef
   readonly workspace: WorkspaceInfo
   readonly parentRunId?: string
   readonly mode: RunMode

@@ -6,10 +6,10 @@
  */
 import { z } from 'zod'
 import {
-  AgentDefinitionRef,
   ErrorInfo,
   Id,
   ModelRef,
+  RunAgentRef,
   RunLimits,
   RunMode,
   RunState,
@@ -78,7 +78,7 @@ export type RunTreeTurn = z.infer<typeof RunTreeTurn>
 export const RunTreeNode = z.object({
   runId: Id,
   parentRunId: Id.optional(),
-  agent: AgentDefinitionRef,
+  agent: RunAgentRef,
   model: ModelRef,
   mode: RunMode,
   state: RunState,
@@ -144,7 +144,7 @@ export const RunSnapshot = z.object({
   sessionId: Id,
   runId: Id,
   parentRunId: Id.optional(),
-  agent: AgentDefinitionRef,
+  agent: RunAgentRef,
   model: ModelRef,
   turnId: Id.optional(),
   stepId: Id.optional(),

@@ -56,6 +56,7 @@ import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
+import { createTrialService } from './services/trial-service.js'
 import { createWorkspaceService } from './services/workspace-service.js'
 import { latestBrief } from './services/brief.js'
 import { createBriefService } from './services/brief-service.js'
@@ -286,7 +287,9 @@ const supervisor = createHostSupervisor({
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
   resolvePermissionRules: (sessionId, agent) =>
-    agents.permissionRulesFor(agent, permissions.rulesForSession(sessionId)),
+    trials
+      ? trials.permissionRulesFor(sessionId, agent, permissions.rulesForSession(sessionId))
+      : agents.permissionRulesFor(agent, permissions.rulesForSession(sessionId)),
   // 自定义说明（M1-13b）：加入系统提示词；修改后在下次启动宿主时生效
   resolveInstructions: () => settings.instructions(),
   // 默认 Shell（M2-09）：同样在下次启动宿主时生效
@@ -402,6 +405,7 @@ const sessions = createSessionManager({
   },
   onError: reportError,
 })
+const trials = createTrialService({ storage, events, agents, sessions })
 sessions.recoverInterrupted()
 /** 会话要点（M3-04）：每轮结束后用辅助模型增量更新，失败只写日志。 */
 const briefs = createBriefService({
@@ -469,6 +473,7 @@ const gateway = createRendererGateway({
   skills,
   mcp,
   agents,
+  trials,
   diagnostics,
   inspect: {
     inspect: (params) =>

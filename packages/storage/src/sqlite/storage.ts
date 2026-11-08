@@ -79,6 +79,9 @@ interface SessionRow {
   workspace_path: string
   title: string
   archived: number
+  kind: SessionRecord['kind']
+  trial_agent_id: string | null
+  trial_draft_hash: string | null
   model_provider_id: string | null
   model_id: string | null
   created_at: number
@@ -351,6 +354,9 @@ const toSession = (row: SessionRow): SessionRecord => ({
   workspacePath: row.workspace_path,
   title: row.title,
   archived: row.archived === 1,
+  kind: row.kind,
+  ...(row.trial_agent_id === null ? {} : { trialAgentId: row.trial_agent_id }),
+  ...(row.trial_draft_hash === null ? {} : { trialDraftHash: row.trial_draft_hash }),
   ...(row.model_provider_id === null || row.model_id === null
     ? {}
     : { model: { providerId: row.model_provider_id, modelId: row.model_id } }),
@@ -446,17 +452,23 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       'UPDATE projects SET removed_at = NULL WHERE project_id = @projectId',
     ),
     sessionById: db.prepare<[string], SessionRow>('SELECT * FROM sessions WHERE session_id = ?'),
-    sessions: db.prepare<{ projectId: string | null; includeArchived: number }, SessionRow>(
+    sessions: db.prepare<
+      { projectId: string | null; includeArchived: number; includeTrial: number },
+      SessionRow
+    >(
       `SELECT * FROM sessions
        WHERE (@includeArchived = 1 OR archived = 0)
+         AND (@includeTrial = 1 OR kind = 'normal')
          AND (@projectId IS NULL OR project_id = @projectId)
        ORDER BY updated_at DESC, session_id`,
     ),
     insertSession: db.prepare(
       `INSERT INTO sessions
          (session_id, project_id, project_path, workspace_path, title, archived,
+          kind, trial_agent_id, trial_draft_hash,
           model_provider_id, model_id, created_at, updated_at)
        VALUES (@sessionId, @projectId, @projectPath, @workspacePath, @title, 0,
+          @kind, @trialAgentId, @trialDraftHash,
           @modelProviderId, @modelId, @at, @at)`,
     ),
     setSessionModel: db.prepare(
@@ -470,6 +482,13 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
          updated_at = @at
        WHERE session_id = @sessionId`,
     ),
+    deleteSessionEvents: db.prepare('DELETE FROM events WHERE session_id = ?'),
+    deleteSessionFileChanges: db.prepare('DELETE FROM file_changes WHERE session_id = ?'),
+    deleteSessionPermissionRules: db.prepare('DELETE FROM permission_rules WHERE session_id = ?'),
+    deleteSessionRuns: db.prepare('DELETE FROM agent_runs WHERE session_id = ?'),
+    deleteSessionSnapshots: db.prepare('DELETE FROM run_snapshots WHERE session_id = ?'),
+    deleteSessionChangeSets: db.prepare('DELETE FROM change_sets WHERE session_id = ?'),
+    deleteSession: db.prepare('DELETE FROM sessions WHERE session_id = ?'),
     providers: db.prepare<[], ProviderRow>('SELECT * FROM provider_configs ORDER BY position'),
     providerById: db.prepare<[string], ProviderRow>(
       'SELECT * FROM provider_configs WHERE provider_id = ?',
@@ -970,10 +989,13 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         if (q.sessionById.get(input.sessionId)) {
           throw new StorageError(StorageErrorCode.Conflict, { sessionId: input.sessionId })
         }
-        const { model, ...rest } = input
+        const { model, kind, trialAgentId, trialDraftHash, ...rest } = input
         q.insertSession.run({
           ...rest,
           projectPath: project.path,
+          kind: kind ?? 'normal',
+          trialAgentId: trialAgentId ?? null,
+          trialDraftHash: trialDraftHash ?? null,
           modelProviderId: model?.providerId ?? null,
           modelId: model?.modelId ?? null,
           at: now(),
@@ -989,8 +1011,23 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
           .all({
             projectId: listOptions.projectId ?? null,
             includeArchived: listOptions.includeArchived ? 1 : 0,
+            includeTrial: listOptions.includeTrial ? 1 : 0,
           })
           .map(toSession)
+      },
+      remove(sessionId) {
+        if (!q.sessionById.get(sessionId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { sessionId })
+        }
+        db.transaction(() => {
+          q.deleteSessionEvents.run(sessionId)
+          q.deleteSessionFileChanges.run(sessionId)
+          q.deleteSessionPermissionRules.run(sessionId)
+          q.deleteSessionRuns.run(sessionId)
+          q.deleteSessionSnapshots.run(sessionId)
+          q.deleteSessionChangeSets.run(sessionId)
+          q.deleteSession.run(sessionId)
+        })()
       },
       rename: (sessionId, title) => updateSession(sessionId, title, 0),
       archive: (sessionId) => updateSession(sessionId, null, 1),

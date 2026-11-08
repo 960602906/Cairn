@@ -6,7 +6,7 @@
  */
 import {
   emptyRunUsage,
-  type AgentDefinitionRef,
+  type RunAgentRef,
   type ErrorInfo,
   type EventEnvelope,
   type ModelRef,
@@ -67,7 +67,7 @@ interface MutableTurn {
 interface MutableRun {
   runId: string
   parentRunId?: string
-  agent: AgentDefinitionRef
+  agent: RunAgentRef
   model: ModelRef
   mode: RunMode
   state: RunState

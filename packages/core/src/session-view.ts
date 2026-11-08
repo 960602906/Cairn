@@ -20,6 +20,7 @@
 import {
   isPersistedEvent,
   type AgentDefinitionRef,
+  type RunAgentRef,
   type ContentPart,
   type ErrorInfo,
   type EventEnvelope,
@@ -173,7 +174,7 @@ export interface RetryView {
 export interface RunView {
   readonly runId: string
   readonly parentRunId: string | undefined
-  readonly agent: AgentDefinitionRef
+  readonly agent: RunAgentRef
   readonly model: ModelRef
   readonly mode: RunMode
   readonly limits: RunLimits

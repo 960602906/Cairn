@@ -47,6 +47,7 @@ describe('openSqliteStorage', () => {
         '0011_run-snapshots',
         '0012_change-sets',
         '0013_change-set-baseline-time',
+        '0014_session-kind',
       ],
     })
     storage.close()
@@ -126,6 +127,7 @@ describe('openSqliteStorage', () => {
       '0011_run-snapshots',
       '0012_change-sets',
       '0013_change-set-baseline-time',
+      '0014_session-kind',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

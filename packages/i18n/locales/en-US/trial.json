@@ -1,0 +1,22 @@
+{
+  "title": "Trial run",
+  "intro": "Run the current draft without publishing or affecting normal sessions. Read-only by default; switch to the Agent's own permissions when it needs to write or execute.",
+  "status.running": "Running",
+  "status.idle": "Idle",
+  "project.label": "Project",
+  "project.placeholder": "Select a project",
+  "project.open": "Choose project folder",
+  "permissions.useAgent": "Use the Agent's own permissions",
+  "permissions.hint": "Switching restarts the trial run.",
+  "configChanged": "Configuration changed. Restart with the new configuration to apply it.",
+  "approvals": "Pending approvals",
+  "input.label": "Trial input",
+  "input.placeholder": "Describe what to verify; Ctrl+Enter to send",
+  "cleared": "Cleared {{count}} trial runs",
+  "action.close": "Close trial run",
+  "action.start": "Start trial",
+  "action.restart": "Restart",
+  "action.clear": "Clear history",
+  "action.stop": "Stop",
+  "action.send": "Send"
+}

@@ -100,6 +100,8 @@ export interface ProjectStore {
 
 // ---------- 会话 ----------
 
+export type SessionKind = 'normal' | 'trial'
+
 export interface SessionRecord {
   readonly sessionId: string
   readonly projectId: string
@@ -108,6 +110,12 @@ export interface SessionRecord {
   readonly workspacePath: string
   readonly title: string
   readonly archived: boolean
+  /** 普通会话或 Agent 试运行（M4-12）。 */
+  readonly kind: SessionKind
+  /** 试运行引用的 Agent；普通会话没有。 */
+  readonly trialAgentId?: string
+  /** 试运行时使用的草稿内容哈希；普通会话没有。 */
+  readonly trialDraftHash?: string
   /** 会话使用的模型（M1-04a）；之前创建的会话没有。 */
   readonly model?: ModelRef
   readonly createdAt: number
@@ -119,20 +127,28 @@ export interface CreateSessionInput {
   readonly projectId: string
   readonly workspacePath: string
   readonly title: string
+  /** 省略时为普通会话。 */
+  readonly kind?: SessionKind
+  readonly trialAgentId?: string
+  readonly trialDraftHash?: string
   readonly model?: ModelRef
 }
 
 export interface ListSessionsOptions {
   readonly projectId?: string
   readonly includeArchived?: boolean
+  /** 默认排除试运行会话；只有试运行历史与启动恢复需要显式包含。 */
+  readonly includeTrial?: boolean
 }
 
 export interface SessionStore {
   /** 项目不存在时报 `storage.not_found`，id 重复时报 `storage.conflict`。 */
   create(input: CreateSessionInput): SessionRecord
   get(sessionId: string): SessionRecord | undefined
-  /** 按 `updatedAt` 倒序；默认不含已归档会话。 */
+  /** 按 `updatedAt` 倒序；默认不含已归档与试运行会话。 */
   list(options?: ListSessionsOptions): SessionRecord[]
+  /** 删除会话及其事件、改动、快照与权限规则；不存在时报 `storage.not_found`。 */
+  remove(sessionId: string): void
   rename(sessionId: string, title: string): SessionRecord
   archive(sessionId: string): SessionRecord
   /** 更换会话使用的模型（M2-04），下一轮生效。 */
