@@ -14,6 +14,7 @@ import {
   RunState,
   Timestamp,
 } from '../common.js'
+import { AgentDefinition } from '../agents.js'
 import { FileChangeInput } from '../changes.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
 import { ActivePlan, PromptMode } from '../plan.js'
@@ -21,6 +22,7 @@ import { PermissionRule, ToolCategory } from '../permissions.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { SkillCatalogEntry } from '../skills.js'
+import { McpToolExposure } from '../mcp.js'
 
 /**
  * 宿主构造模型所需的配置（M1-04b）：由主进程按提供方配置给出，不含 Key。
@@ -91,6 +93,11 @@ export const HostForMain = defineSide({
         runId: Id,
         workspacePath: z.string().min(1),
         agent: AgentDefinitionRef,
+        /**
+         * 这个运行引用的 Agent 定义（M3-11）。宿主据此决定指令、工具选择与是否读取项目说明。
+         * 省略时按内置编程助手的行为：全部工具、没有额外指令。
+         */
+        agentDefinition: AgentDefinition.optional(),
         model: ModelRef,
         mode: RunMode,
         limits: RunLimits,
@@ -126,6 +133,11 @@ export const HostForMain = defineSide({
             ref: z.string().regex(/^refs\/cairn\/[A-Za-z0-9._/-]+$/),
           })
           .optional(),
+        /**
+         * 这一轮可用的 MCP 工具（M3-09）。宿主只拿到定义；调用经 `host.mcp.call` 交给主进程，
+         * 由主进程的连接管理器执行。
+         */
+        mcpTools: z.array(McpToolExposure).optional(),
       }),
       result: z.object({}),
     },
@@ -232,6 +244,19 @@ export const MainForHost = defineSide({
     'host.skills': {
       params: z.object({}),
       result: z.object({ skills: z.array(SkillCatalogEntry) }),
+    },
+    /**
+     * 执行一个 MCP 工具（M3-09）。服务与工具由 `host.init.mcpTools` 给出；主进程校验服务仍然可用。
+     * 结果已转成文本，并按工具输出预算截断。
+     */
+    'host.mcp.call': {
+      params: z.object({
+        serverId: Id,
+        toolName: z.string().min(1),
+        input: z.record(z.string(), z.unknown()),
+        maxOutputTokens: z.number().int().positive().optional(),
+      }),
+      result: z.object({ text: z.string(), isError: z.boolean() }),
     },
   },
   events: {},

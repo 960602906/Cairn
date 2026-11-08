@@ -5,11 +5,36 @@
 import { z } from 'zod'
 import { FileChangeSummary, FileContent } from '../changes.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
-import { ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
+import {
+  DiagnosticsExportInput,
+  DiagnosticsExportResult,
+  DiagnosticsSummary,
+} from '../diagnostics.js'
+import { AgentDefinitionRef, ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
+import {
+  AgentDetail,
+  AgentDiff,
+  AgentDiffEndpoint,
+  AgentDraftInput,
+  AgentEffectiveConfig,
+  AgentSource,
+  AgentStatus,
+  AgentSummary,
+  AgentVersionSummary,
+  LocalizedText,
+} from '../agents.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
 import { PLAN_FEEDBACK_MAX, PlanStep, PromptMode } from '../plan.js'
 import { SkillDetail, SkillInstallSource, SkillSource, SkillSummary } from '../skills.js'
-import { PermissionMode, PermissionRule } from '../permissions.js'
+import {
+  McpLogEntry,
+  McpServerDetail,
+  McpServerInput,
+  McpServerSummary,
+  McpStatusEvent,
+  McpToolSummary,
+} from '../mcp.js'
+import { PermissionEffect, PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
 import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
@@ -266,6 +291,14 @@ export const MainForRenderer = defineSide({
      */
     'session.setModel': {
       params: z.object({ sessionId: Id, model: ModelRef }),
+      result: z.object({}),
+    },
+    /**
+     * 在会话中切换 Agent（M3-11）：新建一个运行（`run.created` 带新的 Agent 引用），之前的对话作为
+     * 历史。运行中不能切换。草稿状态的 Agent 不能选用。
+     */
+    'session.setAgent': {
+      params: z.object({ sessionId: Id, agent: AgentDefinitionRef }),
       result: z.object({}),
     },
     /**
@@ -527,6 +560,152 @@ export const MainForRenderer = defineSide({
         ),
       result: SkillSummary,
     },
+    /** 已配置的 MCP 服务（M3-09）：不含环境变量值与令牌。 */
+    'mcp.list': {
+      params: z.object({}),
+      result: z.object({ servers: z.array(McpServerSummary) }),
+    },
+    /** 一份 MCP 服务的可编辑配置与工具列表（M3-10）。找不到时报 `mcp.not_found`。 */
+    'mcp.get': {
+      params: z.object({ serverId: Id }),
+      result: McpServerDetail,
+    },
+    /** 添加服务；保存后立即连接（M3-09）。 */
+    'mcp.add': {
+      params: McpServerInput,
+      result: McpServerDetail,
+    },
+    /** 修改服务；保存后重新连接。`env` 中省略 value 的项保留原值。 */
+    'mcp.update': {
+      params: z.object({ serverId: Id, server: McpServerInput }),
+      result: McpServerDetail,
+    },
+    /** 删除服务：断开连接并删除它的工具偏好。 */
+    'mcp.remove': {
+      params: z.object({ serverId: Id }),
+      result: z.object({}),
+    },
+    /** 重新连接（M3-09）：重置重试计数并立即尝试。 */
+    'mcp.reconnect': {
+      params: z.object({ serverId: Id }),
+      result: McpServerSummary,
+    },
+    /** 启用或停用服务；停用后不再连接，工具也从下一轮起隐藏。 */
+    'mcp.setEnabled': {
+      params: z.object({ serverId: Id, enabled: z.boolean() }),
+      result: McpServerSummary,
+    },
+    /** 一个服务的工具与各自的类别 / 默认效果（M3-10）。 */
+    'mcp.tools': {
+      params: z.object({ serverId: Id }),
+      result: z.object({ tools: z.array(McpToolSummary) }),
+    },
+    /** 修改一个工具的类别与默认效果（M3-09）。找不到时报 `mcp.tool_not_found`。 */
+    'mcp.setTool': {
+      params: z.object({
+        serverId: Id,
+        name: z.string().min(1),
+        category: ToolCategory.optional(),
+        effect: PermissionEffect.optional(),
+      }),
+      result: McpToolSummary,
+    },
+    /** 最近 200 行连接日志（已脱敏）。 */
+    'mcp.logs': {
+      params: z.object({ serverId: Id }),
+      result: z.object({ logs: z.array(McpLogEntry) }),
+    },
+    /** 已保存的 Agent（M3-11）：内置的编程助手加上用户与导入的 Agent。 */
+    'agent.list': {
+      params: z.object({
+        includeArchived: z.boolean().optional(),
+        source: AgentSource.optional(),
+        status: AgentStatus.optional(),
+        query: z.string().optional(),
+      }),
+      result: z.object({ agents: z.array(AgentSummary) }),
+    },
+    /**
+     * 一份 Agent 的当前状态：草稿优先，`published` 是最新的已发布版本。给出 `version` 时返回该版本
+     * （`draft` 仍一并返回，便于版本对比）。
+     */
+    'agent.get': {
+      params: z.object({
+        agentId: Id,
+        version: z.number().int().positive().optional(),
+      }),
+      result: AgentDetail,
+    },
+    /** 保存草稿并返回校验结果。内置 Agent 报 `agent.readonly`。 */
+    'agent.saveDraft': {
+      params: z.object({ definition: AgentDraftInput }),
+      result: AgentDetail,
+    },
+    /** 发布草稿为新版本（版本号加一）。有校验错误时报 `agent.invalid`。 */
+    'agent.publish': {
+      params: z.object({ agentId: Id }),
+      result: AgentDetail,
+    },
+    /** 复制为新的用户 Agent（草稿）。 */
+    'agent.duplicate': {
+      params: z.object({ agentId: Id, name: LocalizedText.optional() }),
+      result: AgentDetail,
+    },
+    'agent.archive': {
+      params: z.object({ agentId: Id }),
+      result: AgentDetail,
+    },
+    'agent.unarchive': {
+      params: z.object({ agentId: Id }),
+      result: AgentDetail,
+    },
+    /** 彻底删除：只允许从未被运行引用过的 Agent，否则报 `agent.in_use`。 */
+    'agent.delete': {
+      params: z.object({ agentId: Id }),
+      result: z.object({}),
+    },
+    'agent.versions': {
+      params: z.object({ agentId: Id }),
+      result: z.object({ versions: z.array(AgentVersionSummary) }),
+    },
+    /** 比较草稿（`'draft'`）或两个已发布版本。 */
+    'agent.diff': {
+      params: z.object({ agentId: Id, from: AgentDiffEndpoint, to: AgentDiffEndpoint }),
+      result: AgentDiff,
+    },
+    /** 导出 Markdown（YAML 头部 + 指令正文）。 */
+    'agent.export': {
+      params: z.object({
+        agentId: Id,
+        version: z.number().int().positive().optional(),
+      }),
+      result: z.object({ markdown: z.string() }),
+    },
+    /** 导入 Markdown 为草稿（`source: 'imported'`）；格式错误时报 `agent.invalid`。 */
+    'agent.import': {
+      params: z.object({ markdown: z.string().min(1).max(200_000) }),
+      result: AgentDetail,
+    },
+    /** 生效配置预览：合并后的系统提示词、最终工具 / Skills、权限规则与上下文预算。 */
+    'agent.effectiveConfig': {
+      params: z.object({ agentId: Id, sessionId: Id.optional() }),
+      result: AgentEffectiveConfig,
+    },
+    /** 诊断包导出前的清单（M3-13）：只含计数与版本，不含任何凭据或路径。 */
+    'diagnostics.summary': {
+      params: DiagnosticsExportInput,
+      result: DiagnosticsSummary,
+    },
+    /** 生成脱敏诊断包 zip；`cancelled` 表示用户在保存对话框中取消（M3-13）。 */
+    'diagnostics.export': {
+      params: DiagnosticsExportInput,
+      result: DiagnosticsExportResult,
+    },
+    /** 在系统文件管理器中显示诊断包（M3-13）。 */
+    'diagnostics.showInFolder': {
+      params: z.object({ path: z.string().min(1) }),
+      result: z.object({ shown: z.boolean() }),
+    },
   },
   events: {
     /** 实时事件推送；增量事件在主进程合并后按帧率批量推送（架构 §22）。 */
@@ -536,6 +715,8 @@ export const MainForRenderer = defineSide({
      * 只推送给订阅了该会话的窗口。审批请求在 `approval.requested` 事件之后才登记，因此不能只靠事件。
      */
     'approval.changed': z.object({ sessionId: Id }),
+    /** MCP 服务的连接状态变化（M3-09）。 */
+    'mcp.status': McpStatusEvent,
   },
 })
 

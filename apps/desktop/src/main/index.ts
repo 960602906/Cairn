@@ -2,12 +2,13 @@
  * 主进程入口（ADR-0002、ADR-0003，架构 §4、§17）。只做启动引导：确定数据目录、应用安全基线、
  * 组装主进程服务（存储、设置、宿主管理、IPC 网关）、创建窗口。服务本身不依赖 Electron，见 `services/`。
  */
-import { mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openShadowRepo } from '@cairn/checkpoint'
-import { redact } from '@cairn/core'
+import { BUILTIN_CODER_ID, redact } from '@cairn/core'
+import type { McpStatusEvent } from '@cairn/protocol'
 import { bundledRipgrepPath } from '@cairn/tools'
 import { openSqliteStorage } from '@cairn/storage'
 import {
@@ -41,6 +42,9 @@ import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { loadProjectAgentsMd } from './services/agents-md.js'
 import { createSkillService } from './services/skill-service.js'
+import { createMcpService } from './services/mcp-service.js'
+import { createAgentService } from './services/agent-service.js'
+import { DiagnosticsService } from './services/diagnostics-service.js'
 import { createProjectService } from './services/project-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
@@ -85,7 +89,7 @@ const navigationPolicy: NavigationPolicy = {
 
 /** M0 使用 FakeRuntime；模型与 Agent 配置在 M1 接入设置。 */
 const RUN_DEFAULTS: RunDefaults = {
-  agent: { id: 'default', version: 1 },
+  agent: { id: BUILTIN_CODER_ID, version: 1 },
   model: { providerId: 'fake', modelId: 'fake' },
   mode: 'interactive',
   // 默认不限步数、时长与工具失败次数，长任务可以跑一整晚（2026-11-07）；自定义 Agent 可以自己设限额
@@ -99,6 +103,20 @@ let knownSecrets: () => readonly string[] = () => []
 // 日志服务接入前，异常先写到标准错误（经过脱敏）
 const reportError = (error: unknown) =>
   console.error('[cairn]', redact(error, { homeDirs: [homedir()], secrets: knownSecrets() }))
+
+/** 读取日志文件末尾的若干行（诊断包用）；不存在或读取失败时返回空串。 */
+const DIAGNOSTICS_LOG_TAIL = 500
+function readLogFile(file: string): string {
+  try {
+    if (!existsSync(file)) return ''
+    const content = readFileSync(file, 'utf8')
+    const lines = content.split(/\r?\n/)
+    return lines.slice(Math.max(0, lines.length - DIAGNOSTICS_LOG_TAIL)).join('\n')
+  } catch (error) {
+    reportError(error)
+    return ''
+  }
+}
 
 const storage = openSqliteStorage({ file: paths.database })
 /** 凭据（ADR-0010）：界面经 IPC 写入，启动宿主时按提供方配置的凭据引用解析后经 `host.init` 传入。 */
@@ -158,6 +176,58 @@ const skills = createSkillService({
     return result.canceled ? undefined : result.filePaths[0]
   },
 })
+/** MCP 服务（M3-09）：配置、连接与工具调用都在主进程。 */
+const mcpStatusListeners = new Set<(event: McpStatusEvent) => void>()
+const mcp = createMcpService({
+  storage,
+  credentials,
+  onStatus: (event) => {
+    for (const listener of [...mcpStatusListeners]) listener(event)
+  },
+  onError: reportError,
+})
+/** Agent 定义（M3-11）：内置编程助手 + 用户/导入的 Agent，草稿与已发布版本分开。 */
+const agents = createAgentService({
+  storage,
+  events,
+  skills,
+  mcp,
+  models: { has: (model) => settings.hasModel(model) },
+})
+/** 诊断包（M3-13）：读取日志与事件摘要，统一脱敏后打包；不包含任何凭据。 */
+const diagnostics = new DiagnosticsService({
+  getAppVersion: () => app.getVersion(),
+  getElectronVersion: () => process.versions.electron ?? '',
+  getSettings: async () => settings.get(),
+  getMcpServers: async () => mcp.list({}).servers,
+  getSession: async (sessionId) => {
+    const session = storage.sessions.get(sessionId)
+    if (!session) return undefined
+    const persisted = events
+      .readAfter(sessionId, 0)
+      .map((event) => event as unknown as Record<string, unknown>)
+    return { title: session.title, events: persisted }
+  },
+  getMainLogs: () => readLogFile(join(paths.logs, 'main.log')),
+  getHostLogs: () => readLogFile(join(paths.logs, 'host.log')),
+  showSaveDialog: async (defaultName) => {
+    // 端到端测试：指定目录时跳过系统保存对话框（不弹出原生窗口）
+    const override = process.env['CAIRN_DIAGNOSTICS_DIR']?.trim()
+    if (override) return join(override, defaultName)
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const options: Electron.SaveDialogOptions = {
+      defaultPath: join(app.getPath('downloads'), defaultName),
+      filters: [{ name: 'Zip', extensions: ['zip'] }],
+    }
+    const result = parent
+      ? await dialog.showSaveDialog(parent, options)
+      : await dialog.showSaveDialog(options)
+    return result.canceled ? undefined : result.filePath
+  },
+  showItemInFolder: (filePath) => shell.showItemInFolder(filePath),
+  userHomeDir: homedir(),
+  getKnownSecrets: () => credentials.knownSecrets(),
+})
 /** 上下文压缩的摘要（M3-03）：宿主经 `host.summarize` 调用，用量记在主进程。 */
 const compaction = createCompactService({
   events,
@@ -179,7 +249,8 @@ const supervisor = createHostSupervisor({
     return ref === undefined ? undefined : credentials.resolve(ref)
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
-  resolvePermissionRules: (sessionId) => permissions.rulesForSession(sessionId),
+  resolvePermissionRules: (sessionId, agent) =>
+    agents.permissionRulesFor(agent, permissions.rulesForSession(sessionId)),
   // 自定义说明（M1-13b）：加入系统提示词；修改后在下次启动宿主时生效
   resolveInstructions: () => settings.instructions(),
   // 默认 Shell（M2-09）：同样在下次启动宿主时生效
@@ -203,7 +274,11 @@ const supervisor = createHostSupervisor({
   },
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
-  loadSkills: (sessionId) => skills.catalog(sessionId),
+  loadSkills: (sessionId, agent) => agents.skillsFor(agent, sessionId),
+  resolveMcpTools: (_sessionId, agent) => agents.mcpToolsFor(agent),
+  resolveAgentDefinition: (agent) => agents.definition(agent),
+  callMcpTool: (_sessionId, serverId, toolName, input, maxOutputTokens) =>
+    mcp.call(serverId, toolName, input, maxOutputTokens),
   onError: reportError,
 })
 const sessions = createSessionManager({
@@ -211,6 +286,7 @@ const sessions = createSessionManager({
   events,
   supervisor,
   runDefaults: RUN_DEFAULTS,
+  resolveAgent: (agent) => agents.definition(agent),
   models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
   isLocked: (sessionId) => changes.isReverting(sessionId) || checkpoints.isRestoring(sessionId),
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
@@ -289,6 +365,13 @@ const gateway = createRendererGateway({
   checkpoints,
   approvals,
   skills,
+  mcp,
+  agents,
+  diagnostics,
+  mcpStatus: (listener) => {
+    mcpStatusListeners.add(listener)
+    return () => mcpStatusListeners.delete(listener)
+  },
   onProtocolError: (error) => reportError(error),
 })
 
@@ -350,6 +433,7 @@ app.on('before-quit', (event) => {
   briefs.stop()
   compaction.stop()
   gateway.close()
+  void mcp.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
   void Promise.race([sessions.shutdown(), timeout])
     .catch(reportError)
@@ -414,6 +498,7 @@ async function smokeCredentials(): Promise<CredentialCheck> {
 void app.whenReady().then(() => {
   restrictPermissions(session.defaultSession)
   followThemeSetting()
+  void mcp.initialize()
   const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {

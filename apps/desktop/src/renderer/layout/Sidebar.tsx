@@ -1,10 +1,10 @@
 /**
  * 侧栏（M2-02，视觉规范 §2）：铺在窗口底色上，没有自己的背景和边框。
  * 从上到下：标题区（macOS 的红绿灯在这里，可拖动窗口）与收起按钮、新对话、搜索（M2-12，⌘K / Ctrl+K）、
- * 按项目分组的会话列表与底部的“设置”（M2-09，⌘, / Ctrl+,；界面语言移到设置页）。活动、
- * Agents 入口在 M4 加入。
+ * 按项目分组的会话列表与底部的“设置”（M2-09，⌘, / Ctrl+,；界面语言移到设置页）。Agents 入口
+ * 在 M3-12 加入；活动入口仍隐藏。
  */
-import { PanelLeft, Search, Settings, SquarePen } from 'lucide-react'
+import { Bot, PanelLeft, Search, Settings, SquarePen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SessionList } from '../SessionList.js'
 import { CairnMark, cn, IconButton, Kbd } from '../ui/index.js'
@@ -17,6 +17,8 @@ export function Sidebar({
   onSearch,
   onSelect,
   onSettings,
+  onAgents,
+  agentsActive = false,
 }: {
   readonly open?: boolean
   readonly onNewChat: () => void
@@ -26,6 +28,9 @@ export function Sidebar({
   readonly onSelect: () => void
   /** 打开设置页；`providers` 时直接到“模型供应商”。 */
   readonly onSettings: (section?: 'providers') => void
+  /** 打开 Agents 页面（M3-12）。 */
+  readonly onAgents?: () => void
+  readonly agentsActive?: boolean
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -83,6 +88,22 @@ export function Sidebar({
             <span className="flex-1 text-left">{t('search.open')}</span>
             <Kbd aria-hidden>{searchShortcut()}</Kbd>
           </button>
+          {onAgents && (
+            <button
+              type="button"
+              aria-current={agentsActive ? 'page' : undefined}
+              onClick={onAgents}
+              className={cn(
+                'mt-1 flex h-8 w-full items-center gap-2 rounded-item px-2.5 text-ui transition-colors [&_svg]:size-4 [&_svg]:text-muted',
+                agentsActive
+                  ? 'bg-raise font-medium text-fg shadow-1'
+                  : 'text-fg2 hover:bg-hover hover:text-fg',
+              )}
+            >
+              <Bot />
+              <span className="flex-1 text-left">{t('sidebar.agents')}</span>
+            </button>
+          )}
         </div>
 
         <nav aria-label={t('list.title')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">

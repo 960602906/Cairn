@@ -173,6 +173,56 @@ describe('changes.record（M1-08b）', () => {
   })
 })
 
+describe('MCP 工具（M3-09）', () => {
+  const tool = {
+    name: 'mcp_fixture_echo',
+    description: 'Echo',
+    inputSchema: { type: 'object' as const, properties: {} },
+    serverId: 'fixture',
+    originalName: 'echo',
+    category: 'network' as const,
+  }
+
+  it('把工具定义交给宿主，没有工具时省略字段', async () => {
+    const empty = fakeHost()
+    const emptySetup = setup(empty, { resolveMcpTools: () => [] })
+    await emptySetup.supervisor.startHost(init)
+    expect(empty.inits[0]).not.toHaveProperty('mcpTools')
+
+    const host = fakeHost()
+    const { supervisor } = setup(host, { resolveMcpTools: () => [tool] })
+    await supervisor.startHost(init)
+    expect(host.inits[0]).toMatchObject({ mcpTools: [tool] })
+  })
+
+  it('调用时回到主进程，没有服务时报 run.unsupported', async () => {
+    const host = fakeHost()
+    const callMcpTool = vi.fn(async () => ({ text: 'ok', isError: false }))
+    const { supervisor } = setup(host, { callMcpTool })
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.mcp.call', {
+        serverId: 'fixture',
+        toolName: 'echo',
+        input: {},
+        maxOutputTokens: 100,
+      }),
+    ).resolves.toEqual({ text: 'ok', isError: false })
+    expect(callMcpTool).toHaveBeenCalledWith('s1', 'fixture', 'echo', {}, 100)
+
+    const unsupported = fakeHost()
+    const plain = setup(unsupported)
+    await plain.supervisor.startHost(init)
+    await expect(
+      unsupported.endpoint!.request('host.mcp.call', {
+        serverId: 'fixture',
+        toolName: 'echo',
+        input: {},
+      }),
+    ).rejects.toMatchObject({ code: 'run.unsupported' })
+  })
+})
+
 describe('refreshPermissions（M1-11b）', () => {
   it('重新汇总规则并交给运行中的宿主', async () => {
     const host = fakeHost()
@@ -400,7 +450,7 @@ describe('startHost', () => {
     const resolvePermissionRules = vi.fn(() => permissionRules)
     const { supervisor } = setup(host, { resolvePermissionRules })
     await supervisor.startHost(init)
-    expect(resolvePermissionRules).toHaveBeenCalledWith(init.sessionId)
+    expect(resolvePermissionRules).toHaveBeenCalledWith(init.sessionId, init.agent)
     expect(host.inits).toEqual([{ ...init, permissionRules }])
   })
 

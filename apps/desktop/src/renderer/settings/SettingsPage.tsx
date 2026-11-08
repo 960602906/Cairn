@@ -3,20 +3,31 @@
  * 底色上），右侧纸面，内容居中、最大宽度 760px。
  *
  * 分类按组列出：通用与外观（M2-09）、项目（M3-02）、模型供应商（M2-10）、技能（M3-08）、
- * 权限与审批（M2-11）；MCP 服务在 M3。Esc 返回对话（有对话框或菜单打开时不处理）。
+ * MCP 服务（M3-10）、权限与审批（M2-11）。Esc 返回对话（有对话框或菜单打开时不处理）。
  */
-import { Cpu, ChevronLeft, FolderOpen, PanelLeft, Settings2, Shield, Sparkles } from 'lucide-react'
+import {
+  Cpu,
+  ChevronLeft,
+  FolderOpen,
+  PanelLeft,
+  Server,
+  Settings2,
+  Shield,
+  Sparkles,
+} from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { CairnMark, IconButton, Kbd } from '../ui/index.js'
 import { GeneralSettings } from './GeneralSettings.js'
+import { McpSettings } from './McpSettings.js'
 import { PermissionsSettings } from './PermissionsSettings.js'
 import { ProjectsSettings } from './ProjectsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
 import { SkillsSettings } from './SkillsSettings.js'
 
-export type SettingsSection = 'general' | 'projects' | 'providers' | 'skills' | 'permissions'
+export type SettingsSection =
+  'general' | 'projects' | 'providers' | 'skills' | 'mcp' | 'permissions'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -36,7 +47,13 @@ const GROUPS: readonly {
     ],
   },
   { group: 'models', sections: [{ id: 'providers', icon: <Cpu /> }] },
-  { group: 'capabilities', sections: [{ id: 'skills', icon: <Sparkles /> }] },
+  {
+    group: 'capabilities',
+    sections: [
+      { id: 'skills', icon: <Sparkles /> },
+      { id: 'mcp', icon: <Server /> },
+    ],
+  },
   { group: 'security', sections: [{ id: 'permissions', icon: <Shield /> }] },
 ]
 
@@ -168,6 +185,7 @@ export function SettingsContent({
           {section === 'projects' && <ProjectsSettings />}
           {section === 'providers' && <ProvidersSettings />}
           {section === 'skills' && <SkillsSettings />}
+          {section === 'mcp' && <McpSettings />}
           {section === 'permissions' && <PermissionsSettings />}
         </div>
       </div>

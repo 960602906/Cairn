@@ -13,7 +13,7 @@ import {
 describe('resources', () => {
   it('支持中文与英文（ADR-0013），按命名空间拆分', () => {
     expect(SUPPORTED_LOCALES).toEqual(['zh-CN', 'en-US'])
-    expect(NAMESPACES).toEqual(['common', 'session', 'settings', 'errors'])
+    expect(NAMESPACES).toEqual(['common', 'session', 'settings', 'agents', 'errors'])
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale]).sort()).toEqual([...NAMESPACES].sort())
     }
@@ -124,6 +124,13 @@ describe('translateError', () => {
       'host.unresponsive',
       'host.not_initialized',
       'host.already_initialized',
+      'mcp.call_failed',
+      'mcp.connect_failed',
+      'mcp.invalid',
+      'mcp.not_connected',
+      'mcp.not_found',
+      'mcp.timeout',
+      'mcp.tool_not_found',
       'settings.write_failed',
       'settings.invalid_default_model',
       'settings.invalid_auxiliary_model',
@@ -197,6 +204,11 @@ describe('translateError', () => {
       'skills.too_large',
       'skills.not_found',
       'skills.not_uninstallable',
+      'agent.not_found',
+      'agent.readonly',
+      'agent.invalid',
+      'agent.in_use',
+      'agent.no_draft',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())

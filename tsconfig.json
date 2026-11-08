@@ -9,6 +9,7 @@
     { "path": "packages/shell" },
     { "path": "packages/checkpoint" },
     { "path": "packages/skills" },
+    { "path": "packages/mcp" },
     { "path": "packages/i18n" },
     { "path": "apps/desktop" },
     { "path": "tooling" }

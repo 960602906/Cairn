@@ -10,5 +10,6 @@
   "language.zh-CN": "简体中文",
   "language.en-US": "English",
   "language.label": "语言",
-  "error.title": "操作没有完成"
+  "error.title": "操作没有完成",
+  "errorBanner.diagnostics": "导出诊断包"
 }

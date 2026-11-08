@@ -10,5 +10,6 @@
   "language.zh-CN": "简体中文",
   "language.en-US": "English",
   "language.label": "Language",
-  "error.title": "Something went wrong"
+  "error.title": "Something went wrong",
+  "errorBanner.diagnostics": "Export Diagnostics"
 }

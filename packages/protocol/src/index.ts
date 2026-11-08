@@ -3,13 +3,16 @@
  * 最底层的包：不得依赖任何其他 @cairn/* 包。
  */
 export * from './common.js'
+export * from './agents.js'
 export * from './changes.js'
 export * from './checkpoints.js'
 export * from './events.js'
+export * from './mcp.js'
 export * from './plan.js'
 export * from './providers.js'
 export * from './permissions.js'
 export * from './skills.js'
+export * from './diagnostics.js'
 export * from './rpc.js'
 export * from './bridge.js'
 export * from './contracts/renderer-main.js'

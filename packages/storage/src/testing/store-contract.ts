@@ -733,6 +733,244 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     })
 
+    describe('mcp servers', () => {
+      it('creates, reads and updates stdio and http servers', () => {
+        const created = storage.mcpServers.create({
+          serverId: 'm1',
+          name: 'Local',
+          kind: 'stdio',
+          command: 'node',
+          args: ['server.mjs'],
+          env: [{ name: 'TOKEN', credentialRef: 'ref-token' }],
+        })
+        expect(created).toMatchObject({
+          serverId: 'm1',
+          name: 'Local',
+          kind: 'stdio',
+          command: 'node',
+          args: ['server.mjs'],
+          env: [{ name: 'TOKEN', credentialRef: 'ref-token' }],
+          enabled: true,
+          createdAt: 100,
+          updatedAt: 100,
+        })
+        clock = 200
+        const updated = storage.mcpServers.update('m1', {
+          kind: 'http',
+          url: 'https://example.com/mcp',
+          command: null,
+          cwd: null,
+          auth: 'bearer',
+          credentialRef: 'ref-auth',
+          headerName: null,
+          env: [],
+          enabled: false,
+        })
+        expect(updated).toMatchObject({
+          kind: 'http',
+          url: 'https://example.com/mcp',
+          auth: 'bearer',
+          credentialRef: 'ref-auth',
+          enabled: false,
+          updatedAt: 200,
+        })
+        expect(updated.command).toBeUndefined()
+        expect(storage.mcpServers.list()).toEqual([updated])
+      })
+
+      it('rejects duplicate ids and unknown records', () => {
+        storage.mcpServers.create({ serverId: 'm1', name: 'A', kind: 'stdio', command: 'node' })
+        expectStorageError(
+          () =>
+            storage.mcpServers.create({
+              serverId: 'm1',
+              name: 'B',
+              kind: 'stdio',
+              command: 'node',
+            }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.mcpServers.update('missing', { name: 'X' }),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(() => storage.mcpServers.remove('missing'), StorageErrorCode.NotFound)
+      })
+
+      it('stores tool preferences and removes them with the server', () => {
+        storage.mcpServers.create({ serverId: 'm1', name: 'A', kind: 'stdio', command: 'node' })
+        expect(storage.mcpToolPrefs.get('m1', 'echo')).toBeUndefined()
+        const pref = storage.mcpToolPrefs.set({
+          serverId: 'm1',
+          name: 'echo',
+          category: 'read',
+          effect: 'allow',
+        })
+        expect(pref).toEqual({
+          serverId: 'm1',
+          name: 'echo',
+          category: 'read',
+          effect: 'allow',
+        })
+        expect(storage.mcpToolPrefs.list('m1')).toEqual([pref])
+        storage.mcpServers.remove('m1')
+        expect(storage.mcpToolPrefs.list('m1')).toEqual([])
+      })
+
+      it('rejects preferences for unknown servers', () => {
+        expectStorageError(
+          () =>
+            storage.mcpToolPrefs.set({
+              serverId: 'missing',
+              name: 'echo',
+              category: 'read',
+              effect: 'allow',
+            }),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('handles optional fields and deletes preferences by server', () => {
+        const full = storage.mcpServers.create({
+          serverId: 'm2',
+          name: 'Full',
+          kind: 'stdio',
+          cwd: '/work',
+          url: 'https://example.com/mcp',
+          headerName: 'X-Key',
+          credentialRef: 'ref',
+          enabled: false,
+        })
+        expect(full).toMatchObject({
+          cwd: '/work',
+          url: 'https://example.com/mcp',
+          headerName: 'X-Key',
+          credentialRef: 'ref',
+          enabled: false,
+        })
+
+        const patched = storage.mcpServers.update('m2', {
+          command: 'node',
+          args: ['server.mjs'],
+          cwd: '/next',
+          url: 'https://next.example.com/mcp',
+          headerName: 'X-Next',
+          credentialRef: 'ref-next',
+          enabled: true,
+        })
+        expect(patched).toMatchObject({
+          command: 'node',
+          args: ['server.mjs'],
+          cwd: '/next',
+          url: 'https://next.example.com/mcp',
+          headerName: 'X-Next',
+          credentialRef: 'ref-next',
+          enabled: true,
+        })
+
+        const minimal = storage.mcpServers.create({
+          serverId: 'm3',
+          name: 'Minimal',
+          kind: 'http',
+        })
+        expect(minimal.command).toBeUndefined()
+        expect(minimal.cwd).toBeUndefined()
+        expect(minimal.url).toBeUndefined()
+        expect(minimal.headerName).toBeUndefined()
+        expect(minimal.credentialRef).toBeUndefined()
+        expect(minimal.enabled).toBe(true)
+
+        const renamed = storage.mcpServers.update('m3', { name: 'Renamed' })
+        expect(renamed.name).toBe('Renamed')
+        expect(renamed.command).toBeUndefined()
+        expect(renamed.url).toBeUndefined()
+        expect(renamed.enabled).toBe(true)
+
+        storage.mcpToolPrefs.set({
+          serverId: 'm2',
+          name: 'echo',
+          category: 'read',
+          effect: 'allow',
+        })
+        storage.mcpToolPrefs.set({
+          serverId: 'm3',
+          name: 'echo',
+          category: 'write',
+          effect: 'deny',
+        })
+        storage.mcpToolPrefs.deleteForServer('m2')
+        expect(storage.mcpToolPrefs.list('m2')).toEqual([])
+        expect(storage.mcpToolPrefs.list('m3')).toHaveLength(1)
+
+        storage.mcpServers.remove('m2')
+        expect(storage.mcpServers.get('m2')).toBeUndefined()
+      })
+    })
+
+    describe('agents', () => {
+      const draft = { id: 'user.reviewer', name: { 'zh-CN': '审查员' }, instructions: 'review' }
+
+      it('creates a draft, publishes versions and keeps them ordered', () => {
+        const created = storage.agents.create({ agentId: 'user.reviewer', source: 'user', draft })
+        expect(created.archived).toBe(false)
+        expect(storage.agents.list()).toHaveLength(1)
+        expect(storage.agents.get('user.reviewer')?.draft).toEqual(draft)
+
+        storage.agents.saveDraft('user.reviewer', { ...draft, instructions: 'second' })
+        expect(storage.agents.get('user.reviewer')?.draft).toEqual({
+          ...draft,
+          instructions: 'second',
+        })
+
+        storage.agents.addVersion({
+          agentId: 'user.reviewer',
+          version: 2,
+          definition: { ...draft, version: 2 },
+        })
+        storage.agents.addVersion({
+          agentId: 'user.reviewer',
+          version: 1,
+          definition: { ...draft, version: 1 },
+        })
+        expect(storage.agents.versions('user.reviewer').map((item) => item.version)).toEqual([1, 2])
+        expect(storage.agents.version('user.reviewer', 2)?.definition).toEqual({
+          ...draft,
+          version: 2,
+        })
+
+        const cleared = storage.agents.clearDraft('user.reviewer')
+        expect(cleared.draft).toBeUndefined()
+        expect(storage.agents.setArchived('user.reviewer', true).archived).toBe(true)
+      })
+
+      it('rejects duplicates and missing records', () => {
+        storage.agents.create({ agentId: 'user.reviewer', source: 'user', draft })
+        expectStorageError(
+          () => storage.agents.create({ agentId: 'user.reviewer', source: 'user' }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.agents.saveDraft('missing', draft),
+          StorageErrorCode.NotFound,
+        )
+        storage.agents.addVersion({ agentId: 'user.reviewer', version: 1, definition: draft })
+        expectStorageError(
+          () =>
+            storage.agents.addVersion({ agentId: 'user.reviewer', version: 1, definition: draft }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(() => storage.agents.remove('missing'), StorageErrorCode.NotFound)
+      })
+
+      it('removes an agent together with its versions', () => {
+        storage.agents.create({ agentId: 'user.reviewer', source: 'user', draft })
+        storage.agents.addVersion({ agentId: 'user.reviewer', version: 1, definition: draft })
+        storage.agents.remove('user.reviewer')
+        expect(storage.agents.get('user.reviewer')).toBeUndefined()
+        expect(storage.agents.versions('user.reviewer')).toEqual([])
+      })
+    })
+
     describe('transaction', () => {
       it('commits all writes and returns the result', () => {
         const result = storage.transaction(() => {

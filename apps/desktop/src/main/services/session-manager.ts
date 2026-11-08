@@ -40,9 +40,12 @@ import {
 import {
   RpcError,
   type ActivePlan,
+  type AgentDefinition,
+  type AgentDefinitionRef,
   type ContentPart,
   type ModelRef,
   type PromptMode,
+  type RunLimits,
   type UnsequencedEvent,
 } from '@cairn/protocol'
 import type { Storage } from '@cairn/storage'
@@ -62,6 +65,8 @@ export const SessionErrorCode = {
   /** 计划不是待审状态（不存在、已批准或已拒绝）。 */
   PlanNotPending: 'plan.not_pending',
   UnknownStep: 'plan.unknown_step',
+  /** 会话要用的 Agent 不存在，或还没有发布过。 */
+  AgentNotFound: 'agent.not_found',
 } as const
 
 /** 新运行使用的配置。 */
@@ -78,6 +83,11 @@ export interface SessionManagerOptions {
     defaultModel(): ModelRef | undefined
     has(model: ModelRef): boolean
   }
+  /**
+   * 按引用取已发布的 Agent 定义（M3-11，Agent 服务）。省略时一律用 `runDefaults`；给出时用于固定
+   * 模型与限额，以及 `session.setAgent` 的校验。
+   */
+  readonly resolveAgent?: (agent: AgentDefinitionRef) => AgentDefinition | undefined
   /** 会话是否暂时不接受输入（如正在撤销改动，M1-08b），此时输入报 `run.busy`。 */
   readonly isLocked?: (sessionId: string) => boolean
   /** 同时存在的宿主上限，默认 3。 */
@@ -105,6 +115,7 @@ export interface SessionManager extends SessionCommands {
   readonly rename: Sync<SessionCommands['rename']>
   readonly archive: Sync<SessionCommands['archive']>
   readonly setModel: Sync<SessionCommands['setModel']>
+  readonly setAgent: SessionCommands['setAgent']
   /** 会话是否正在运行：排队、宿主启动中，或运行处于活动状态（撤销改动前检查，M1-08b）。 */
   isBusy(sessionId: string): boolean
   /** 启动时调用：把仍处于运行中的运行标记为中断，返回标记的运行数。 */
@@ -256,6 +267,23 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       planId: plan.planId,
       goal: plan.content.goal,
       steps: plan.steps.map((step) => ({ id: step.id, title: step.title })),
+    }
+  }
+
+  /**
+   * Agent 定义决定运行用的模型与限额（M3-11）：`mode: 'fixed'` 时忽略会话模型；限额在
+   * `runDefaults.limits` 之上覆盖。没有注入 `resolveAgent`（或未发布）时用默认配置。
+   */
+  function runConfig(
+    agent: AgentDefinitionRef,
+    sessionModel: ModelRef | undefined,
+  ): { model: ModelRef | undefined; limits: RunLimits } {
+    const definition = options.resolveAgent?.(agent)
+    if (!definition) return { model: sessionModel, limits: options.runDefaults.limits }
+    const fixed = definition.model.mode === 'fixed' ? definition.model.primary : undefined
+    return {
+      model: fixed ?? sessionModel,
+      limits: { ...options.runDefaults.limits, ...definition.limits },
     }
   }
 
@@ -448,6 +476,35 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       return {}
     },
 
+    /**
+     * 切换 Agent（M3-11）：新建一个运行，`run.created` 引用 `id@version`，之前的对话作为历史
+     * （下一次输入时重建）。运行中不能切换；空闲的宿主先停止，新宿主带新 Agent 的指令与工具。
+     */
+    async setAgent({ sessionId, agent }) {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      const record = requireSession(sessionId)
+      if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      if (!options.resolveAgent?.(agent)) {
+        throw new RpcError(SessionErrorCode.AgentNotFound, { ...agent })
+      }
+      const slot = slots.get(sessionId)
+      if (slot?.handle && slot.handle.state() === 'running') await slot.handle.stop()
+      const next = runConfig(agent, record.model)
+      const model = next.model ?? record.model ?? options.runDefaults.model
+      if (!model) throw new RpcError(SessionErrorCode.UnknownModel)
+      const runId = createId()
+      events.publish([
+        {
+          ...header(sessionId, runId),
+          type: 'run.created',
+          payload: { agent, model, mode: options.runDefaults.mode, limits: next.limits },
+        },
+      ])
+      return {}
+    },
+
     prompt({ sessionId, content, mode = 'normal' }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       const record = requireSession(sessionId)
@@ -456,15 +513,17 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         throw new RpcError(SessionErrorCode.Busy, { sessionId })
       }
       const running = slot?.handle?.state() === 'running'
-      // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）
-      const modelChanged =
-        running && record.model !== undefined && !sameModel(record.model, slot!.model)
-      if (modelChanged) void slot!.handle!.stop()
-      const hostReady = running && !modelChanged
       // 没有宿主时仍处于运行中的运行，是上一个宿主崩溃留下的
       if (!running) markInterrupted(sessionId, 'host_lost')
       const view = getView(sessionId)
       const root = rootRun(view)
+      const agent = root?.agent ?? options.runDefaults.agent
+      const next = runConfig(agent, record.model)
+      // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）
+      const modelChanged =
+        running && next.model !== undefined && !sameModel(next.model, slot!.model)
+      if (modelChanged) void slot!.handle!.stop()
+      const hostReady = running && !modelChanged
       const resume = root !== undefined && root.state !== 'disposed' && acceptsInput(root.state)
       const runId = resume ? root.runId : createId()
       const history = hostReady ? [] : rebuildHistory(events.readAfter(sessionId, 0), { runId })
@@ -485,12 +544,17 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           history,
           run: resume
             ? {
-                agent: root.agent,
-                model: record.model ?? root.model,
+                agent,
+                model: next.model ?? root.model,
                 mode: root.mode,
                 limits: root.limits,
               }
-            : { ...options.runDefaults, model: record.model ?? options.runDefaults.model },
+            : {
+                agent,
+                model: next.model ?? record.model ?? options.runDefaults.model,
+                mode: options.runDefaults.mode,
+                limits: next.limits,
+              },
           resume: resume ? { state: root.state } : undefined,
           workspacePath: record.workspacePath,
         })

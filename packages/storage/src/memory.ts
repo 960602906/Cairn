@@ -11,10 +11,14 @@ import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
 import {
   StorageError,
   StorageErrorCode,
+  type AgentRecord,
+  type AgentVersionRecord,
   type CreateProjectInput,
   type CreateSessionInput,
   type FileChangeRecord,
   type ListSessionsOptions,
+  type McpServerRecord,
+  type McpToolPref,
   type PermissionRuleRecord,
   type ProjectRecord,
   type SessionRecord,
@@ -34,9 +38,16 @@ interface State {
   rules: Map<string, PermissionRuleRecord>
   /** 键为 scope、source、name。 */
   skillPrefs: Map<string, SkillPref>
+  mcpServers: Map<string, McpServerRecord>
+  /** 键为 serverId、name。 */
+  mcpToolPrefs: Map<string, McpToolPref>
+  agents: Map<string, AgentRecord>
+  /** 键为 agentId；值按版本号升序。 */
+  agentVersions: Map<string, AgentVersionRecord[]>
 }
 
 const prefKey = (scope: string, source: string, name: string) => `${scope}\0${source}\0${name}`
+const mcpToolKey = (serverId: string, name: string) => `${serverId}\0${name}`
 
 function cloneState(state: State): State {
   return {
@@ -47,6 +58,10 @@ function cloneState(state: State): State {
     changes: new Map(state.changes),
     rules: new Map(state.rules),
     skillPrefs: new Map(state.skillPrefs),
+    mcpServers: new Map(state.mcpServers),
+    mcpToolPrefs: new Map(state.mcpToolPrefs),
+    agents: new Map(state.agents),
+    agentVersions: new Map([...state.agentVersions].map(([id, list]) => [id, [...list]])),
   }
 }
 
@@ -65,6 +80,10 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     changes: new Map(),
     rules: new Map(),
     skillPrefs: new Map(),
+    mcpServers: new Map(),
+    mcpToolPrefs: new Map(),
+    agents: new Map(),
+    agentVersions: new Map(),
   }
   let closed = false
 
@@ -335,6 +354,207 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
       },
       delete(scope, source, name) {
         live().skillPrefs.delete(prefKey(scope, source, name))
+      },
+    },
+
+    mcpServers: {
+      list: () => [...live().mcpServers.values()].map(copy),
+      get(serverId) {
+        const record = live().mcpServers.get(serverId)
+        return record && copy(record)
+      },
+      create(input) {
+        const s = live()
+        if (s.mcpServers.has(input.serverId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { serverId: input.serverId })
+        }
+        const at = now()
+        const record: McpServerRecord = {
+          serverId: input.serverId,
+          name: input.name,
+          kind: input.kind,
+          ...(input.command === undefined ? {} : { command: input.command }),
+          args: [...(input.args ?? [])],
+          ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
+          ...(input.url === undefined ? {} : { url: input.url }),
+          auth: input.auth ?? 'none',
+          ...(input.headerName === undefined ? {} : { headerName: input.headerName }),
+          ...(input.credentialRef === undefined ? {} : { credentialRef: input.credentialRef }),
+          env: copy([...(input.env ?? [])]),
+          enabled: input.enabled !== false,
+          createdAt: at,
+          updatedAt: at,
+        }
+        s.mcpServers.set(record.serverId, record)
+        return copy(record)
+      },
+      update(serverId, patch) {
+        const s = live()
+        const current = s.mcpServers.get(serverId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { serverId })
+        const next: McpServerRecord = {
+          ...current,
+          ...(patch.name === undefined ? {} : { name: patch.name }),
+          ...(patch.kind === undefined ? {} : { kind: patch.kind }),
+          ...(patch.command === undefined
+            ? {}
+            : patch.command === null
+              ? { command: undefined }
+              : { command: patch.command }),
+          ...(patch.args === undefined ? {} : { args: [...patch.args] }),
+          ...(patch.cwd === undefined
+            ? {}
+            : patch.cwd === null
+              ? { cwd: undefined }
+              : { cwd: patch.cwd }),
+          ...(patch.url === undefined
+            ? {}
+            : patch.url === null
+              ? { url: undefined }
+              : { url: patch.url }),
+          ...(patch.auth === undefined ? {} : { auth: patch.auth }),
+          ...(patch.headerName === undefined
+            ? {}
+            : patch.headerName === null
+              ? { headerName: undefined }
+              : { headerName: patch.headerName }),
+          ...(patch.credentialRef === undefined
+            ? {}
+            : patch.credentialRef === null
+              ? { credentialRef: undefined }
+              : { credentialRef: patch.credentialRef }),
+          ...(patch.env === undefined ? {} : { env: copy([...patch.env]) }),
+          ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+          updatedAt: now(),
+        }
+        s.mcpServers.set(serverId, next)
+        return copy(next)
+      },
+      remove(serverId) {
+        const s = live()
+        if (!s.mcpServers.delete(serverId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { serverId })
+        }
+        for (const [key, pref] of s.mcpToolPrefs) {
+          if (pref.serverId === serverId) s.mcpToolPrefs.delete(key)
+        }
+      },
+    },
+
+    mcpToolPrefs: {
+      get(serverId, name) {
+        const pref = live().mcpToolPrefs.get(mcpToolKey(serverId, name))
+        return pref && copy(pref)
+      },
+      list(serverId) {
+        return [...live().mcpToolPrefs.values()]
+          .filter((pref) => pref.serverId === serverId)
+          .map(copy)
+      },
+      set(pref) {
+        const s = live()
+        if (!s.mcpServers.has(pref.serverId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { serverId: pref.serverId })
+        }
+        const record = copy(pref)
+        s.mcpToolPrefs.set(mcpToolKey(pref.serverId, pref.name), record)
+        return copy(record)
+      },
+      deleteForServer(serverId) {
+        const s = live()
+        for (const [key, pref] of s.mcpToolPrefs) {
+          if (pref.serverId === serverId) s.mcpToolPrefs.delete(key)
+        }
+      },
+    },
+
+    agents: {
+      list: () => [...live().agents.values()].map(copy),
+      get(agentId) {
+        const record = live().agents.get(agentId)
+        return record && copy(record)
+      },
+      create(input) {
+        const s = live()
+        if (s.agents.has(input.agentId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { agentId: input.agentId })
+        }
+        const at = now()
+        const record: AgentRecord = {
+          agentId: input.agentId,
+          source: input.source,
+          archived: false,
+          ...(input.draft === undefined ? {} : { draft: copy(input.draft) }),
+          createdAt: at,
+          updatedAt: at,
+        }
+        s.agents.set(record.agentId, record)
+        s.agentVersions.set(record.agentId, [])
+        return copy(record)
+      },
+      saveDraft(agentId, draft) {
+        const s = live()
+        const current = s.agents.get(agentId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        const next: AgentRecord = { ...current, draft: copy(draft), updatedAt: now() }
+        s.agents.set(agentId, next)
+        return copy(next)
+      },
+      clearDraft(agentId) {
+        const s = live()
+        const current = s.agents.get(agentId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        const { draft: _draft, ...rest } = current
+        const next: AgentRecord = { ...rest, updatedAt: now() }
+        s.agents.set(agentId, next)
+        return copy(next)
+      },
+      setArchived(agentId, archived) {
+        const s = live()
+        const current = s.agents.get(agentId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        const next: AgentRecord = { ...current, archived, updatedAt: now() }
+        s.agents.set(agentId, next)
+        return copy(next)
+      },
+      remove(agentId) {
+        const s = live()
+        if (!s.agents.delete(agentId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId })
+        }
+        s.agentVersions.delete(agentId)
+      },
+      versions(agentId) {
+        const list = live().agentVersions.get(agentId) ?? []
+        return list.map(copy)
+      },
+      version(agentId, version) {
+        const found = (live().agentVersions.get(agentId) ?? []).find(
+          (item) => item.version === version,
+        )
+        return found && copy(found)
+      },
+      addVersion(input) {
+        const s = live()
+        if (!s.agents.has(input.agentId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { agentId: input.agentId })
+        }
+        const list = s.agentVersions.get(input.agentId) ?? []
+        if (list.some((item) => item.version === input.version)) {
+          throw new StorageError(StorageErrorCode.Conflict, {
+            agentId: input.agentId,
+            version: input.version,
+          })
+        }
+        const record: AgentVersionRecord = {
+          agentId: input.agentId,
+          version: input.version,
+          definition: copy(input.definition),
+          publishedAt: now(),
+        }
+        const next = [...list, record].sort((a, b) => a.version - b.version)
+        s.agentVersions.set(input.agentId, next)
+        return copy(record)
       },
     },
 

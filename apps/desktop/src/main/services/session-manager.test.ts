@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { EventEnvelope, UnsequencedEvent } from '@cairn/protocol'
+import type { AgentDefinition, EventEnvelope, UnsequencedEvent } from '@cairn/protocol'
 import { createMemoryStorage, type Storage } from '@cairn/storage'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import type {
@@ -854,5 +854,95 @@ describe('plan (M3-05)', () => {
     expect(() => manager.abandonPlan({ sessionId, planId: 'pl1' })).toThrow(
       expect.objectContaining({ code: 'plan.not_pending' }),
     )
+  })
+})
+
+describe('agent switching (M3-11)', () => {
+  const definition = (overrides: Partial<AgentDefinition> = {}): AgentDefinition => ({
+    id: 'user.reviewer',
+    version: 3,
+    source: 'user',
+    status: 'published',
+    name: { 'en-US': 'Reviewer' },
+    description: { 'en-US': 'Read-only review' },
+    instructions: 'Only review.',
+    model: { mode: 'inherit' },
+    tools: { allow: ['read_file'] },
+    skills: { allow: [] },
+    permissions: 'ask',
+    limits: {},
+    context: { includeProjectInstructions: true, compaction: 'auto' },
+    memory: { scopes: ['session'], write: 'never' },
+    createdAt: 1,
+    updatedAt: 1,
+    schemaVersion: 1,
+    ...overrides,
+  })
+
+  const resolver = (def: AgentDefinition | undefined) =>
+    ({ resolveAgent: () => def }) satisfies Partial<SessionManagerOptions>
+
+  it('starts a new run with the chosen agent and fixed model', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const fixed = definition({
+      model: { mode: 'fixed', primary: { providerId: 'openai', modelId: 'gpt' } },
+      limits: { maxStepsPerTurn: 4 },
+    })
+    const { manager } = setup(supervisor, resolver(fixed))
+    const { sessionId } = manager.create({ projectPath: '/work' })
+
+    await manager.setAgent({ sessionId, agent: { id: fixed.id, version: fixed.version } })
+    expect(published.at(-1)).toMatchObject({
+      type: 'run.created',
+      payload: {
+        agent: { id: 'user.reviewer', version: 3 },
+        model: { providerId: 'openai', modelId: 'gpt' },
+        limits: { maxStepsPerTurn: 4 },
+      },
+    })
+
+    manager.prompt({ sessionId, content: text('go') })
+    await flush()
+    expect(hosts[0]?.init).toMatchObject({
+      agent: { id: 'user.reviewer', version: 3 },
+      model: { providerId: 'openai', modelId: 'gpt' },
+      limits: { maxStepsPerTurn: 4 },
+    })
+  })
+
+  it('rejects an unknown agent and a busy session', async () => {
+    const { supervisor } = fakeSupervisor()
+    const { manager } = setup(supervisor, resolver(undefined))
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    await expect(
+      manager.setAgent({ sessionId, agent: { id: 'missing', version: 1 } }),
+    ).rejects.toMatchObject({ code: 'agent.not_found' })
+
+    const known = definition()
+    const other = setup(fakeSupervisor().supervisor, resolver(known))
+    const created = other.manager.create({ projectPath: '/work' })
+    other.manager.prompt({ sessionId: created.sessionId, content: text('hi') })
+    await expect(
+      other.manager.setAgent({
+        sessionId: created.sessionId,
+        agent: { id: known.id, version: known.version },
+      }),
+    ).rejects.toMatchObject({ code: 'run.busy' })
+  })
+
+  it('resumes the new run with the agent model and limits on the next prompt', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const fixed = definition({
+      model: { mode: 'fixed', primary: { providerId: 'openai', modelId: 'gpt' } },
+      limits: { maxStepsPerTurn: 4 },
+    })
+    const { manager } = setup(supervisor, resolver(fixed))
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    await manager.setAgent({ sessionId, agent: { id: fixed.id, version: fixed.version } })
+    const runId = published.at(-1)?.runId ?? ''
+    manager.prompt({ sessionId, content: text('go') })
+    await flush()
+    expect(hosts[0]?.init).toMatchObject({ runId })
+    expect(hosts[0]?.init).toMatchObject({ model: { providerId: 'openai', modelId: 'gpt' } })
   })
 })

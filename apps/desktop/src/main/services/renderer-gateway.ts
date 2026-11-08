@@ -17,6 +17,7 @@ import {
   createEndpoint,
   isPersistedEvent,
   MainForRenderer,
+  type McpStatusEvent,
   RendererForMain,
   type EventEnvelope,
   type RpcChannel,
@@ -27,6 +28,9 @@ import type { CredentialCommands } from './credential-store.js'
 import type { SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
+import type { McpCommands } from './mcp-service.js'
+import type { AgentCommands } from './agent-service.js'
+import type { DiagnosticsCommands } from './diagnostics-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -42,6 +46,7 @@ export interface SessionCommands {
   readonly rename: Handler<'session.rename'>
   readonly archive: Handler<'session.archive'>
   readonly setModel: Handler<'session.setModel'>
+  readonly setAgent: Handler<'session.setAgent'>
   readonly compact: Handler<'session.compact'>
   readonly updateBrief: Handler<'session.brief.update'>
   readonly approvePlan: Handler<'plan.approve'>
@@ -117,6 +122,14 @@ export interface RendererGatewayOptions {
   readonly approvals: ApprovalCommands
   /** 技能（M3-07）：列表、安装、卸载与启用；选择来源（M3-08）。 */
   readonly skills: SkillCommands
+  /** MCP 服务（M3-09）：配置、连接、工具与日志。 */
+  readonly mcp: McpCommands
+  /** Agent 定义（M3-11）：草稿、发布、版本、导入导出与生效配置。 */
+  readonly agents: AgentCommands
+  /** 诊断包（M3-13）：导出前清单、生成 zip 与在文件夹中显示。 */
+  readonly diagnostics: DiagnosticsCommands
+  /** MCP 状态变化的订阅（M3-09）。 */
+  readonly mcpStatus: (listener: (event: z.output<typeof McpStatusEvent>) => void) => () => void
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
   readonly frameMs?: number
   readonly onProtocolError?: (error: RpcError, message: unknown) => void
@@ -184,11 +197,13 @@ type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
-  const { changes, checkpoints, approvals, permissions, skills } = options
+  const { changes, checkpoints, approvals, permissions, skills, mcp } = options
+  const { agents, diagnostics } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
     approvalsChanged: (sessionId: string) => void
+    mcpStatus: (event: z.output<typeof McpStatusEvent>) => void
     close: () => void
   }>()
 
@@ -197,6 +212,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   })
   const unsubscribeApprovals = approvals.subscribe((sessionId) => {
     for (const connection of connections) connection.approvalsChanged(sessionId)
+  })
+  const unsubscribeMcp = options.mcpStatus((event) => {
+    for (const connection of connections) connection.mcpStatus(event)
   })
 
   return {
@@ -254,6 +272,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.rename', (params) => commands.rename(params))
       endpoint.handle('session.archive', (params) => commands.archive(params))
       endpoint.handle('session.setModel', (params) => commands.setModel(params))
+      endpoint.handle('session.setAgent', (params) => commands.setAgent(params))
       endpoint.handle('settings.get', () => settings.get())
       endpoint.handle('settings.update', (patch) => settings.update(patch))
       endpoint.handle('settings.shell', (params) => settings.shell(params))
@@ -280,6 +299,32 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('skill.install', (params) => skills.install(params))
       endpoint.handle('skill.uninstall', (params) => skills.uninstall(params))
       endpoint.handle('skill.setEnabled', (params) => skills.setEnabled(params))
+      endpoint.handle('mcp.list', (params) => mcp.list(params))
+      endpoint.handle('mcp.get', (params) => mcp.get(params))
+      endpoint.handle('mcp.add', (params) => mcp.add(params))
+      endpoint.handle('mcp.update', (params) => mcp.update(params))
+      endpoint.handle('mcp.remove', (params) => mcp.remove(params))
+      endpoint.handle('mcp.reconnect', (params) => mcp.reconnect(params))
+      endpoint.handle('mcp.setEnabled', (params) => mcp.setEnabled(params))
+      endpoint.handle('mcp.tools', (params) => mcp.tools(params))
+      endpoint.handle('mcp.setTool', (params) => mcp.setTool(params))
+      endpoint.handle('mcp.logs', (params) => mcp.logs(params))
+      endpoint.handle('agent.list', (params) => agents.list(params))
+      endpoint.handle('agent.get', (params) => agents.get(params))
+      endpoint.handle('agent.saveDraft', (params) => agents.saveDraft(params))
+      endpoint.handle('agent.publish', (params) => agents.publish(params))
+      endpoint.handle('agent.duplicate', (params) => agents.duplicate(params))
+      endpoint.handle('agent.archive', (params) => agents.archive(params))
+      endpoint.handle('agent.unarchive', (params) => agents.unarchive(params))
+      endpoint.handle('agent.delete', (params) => agents.delete(params))
+      endpoint.handle('agent.versions', (params) => agents.versions(params))
+      endpoint.handle('agent.diff', (params) => agents.diff(params))
+      endpoint.handle('agent.export', (params) => agents.export(params))
+      endpoint.handle('agent.import', (params) => agents.import(params))
+      endpoint.handle('agent.effectiveConfig', (params) => agents.effectiveConfig(params))
+      endpoint.handle('diagnostics.summary', (params) => diagnostics.summary(params))
+      endpoint.handle('diagnostics.export', (params) => diagnostics.export(params))
+      endpoint.handle('diagnostics.showInFolder', (params) => diagnostics.showInFolder(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布
@@ -322,6 +367,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           flush()
           endpoint.emit('approval.changed', { sessionId })
         },
+        mcpStatus(event: z.output<typeof McpStatusEvent>) {
+          if (closed) return
+          endpoint.emit('mcp.status', event)
+        },
         close() {
           if (closed) return
           closed = true
@@ -344,6 +393,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
     close() {
       unsubscribeEvents()
       unsubscribeApprovals()
+      unsubscribeMcp()
       for (const connection of [...connections]) connection.close()
     },
   }

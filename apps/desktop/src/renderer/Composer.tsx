@@ -29,7 +29,14 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RunView } from '@cairn/core'
-import type { ModelRef, PermissionMode, RunState, SessionStatus } from '@cairn/protocol'
+import type {
+  AgentDefinitionRef,
+  ModelRef,
+  PermissionMode,
+  RunState,
+  SessionStatus,
+} from '@cairn/protocol'
+import { AgentPicker } from './agents/AgentPicker.js'
 import { useSessionStore } from './store-context.js'
 import {
   cn,
@@ -47,6 +54,8 @@ export interface ComposerProps {
   readonly sessionId: string
   readonly status: SessionStatus
   readonly run: RunView | undefined
+  /** 当前运行的 Agent（M3-12）；没有运行时为 undefined。 */
+  readonly agent?: AgentDefinitionRef | undefined
   /** 会话的模型（下一轮使用）；没有记录时用默认模型。 */
   readonly model: ModelRef | undefined
   /** 上下文占用的 token 数（最近一次用量）。 */
@@ -176,9 +185,12 @@ function PermissionMenu() {
 function ModelMenu({
   sessionId,
   model,
+  fixed,
 }: {
   readonly sessionId: string
   readonly model: ModelRef | undefined
+  /** Agent 固定了模型（M3-12）：显示当前模型并禁用。 */
+  readonly fixed: boolean
 }) {
   const { t } = useTranslation('session')
   const providers = useSessionStore((s) => s.settings?.providers) ?? []
@@ -200,8 +212,9 @@ function ModelMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        disabled={options.length === 0}
+        disabled={options.length === 0 || fixed}
         aria-label={t('composer.model.label', { model: label })}
+        title={fixed ? t('composer.model.fixedByAgent') : undefined}
         className="flex h-7 max-w-[240px] items-center gap-1 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover disabled:opacity-60 [&_svg]:size-3.5"
       >
         <span className="truncate">{label}</span>
@@ -280,12 +293,15 @@ function ContextRing({
   )
 }
 
-export function Composer({ sessionId, status, run, model, contextTokens }: ComposerProps) {
+export function Composer({ sessionId, status, run, agent, model, contextTokens }: ComposerProps) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const compactSession = useSessionStore((s) => s.compactSession)
   const abort = useSessionStore((s) => s.abort)
+  const agents = useSessionStore((s) => s.agents) ?? []
+  const fixedAgentModel =
+    agent !== undefined && agents.find((item) => item.agentId === agent.id)?.modelMode === 'fixed'
   const [text, setText] = useState('')
   const [planMode, setPlanMode] = useState(false)
   const [sending, setSending] = useState(false)
@@ -389,6 +405,7 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
           className="block max-h-[200px] min-h-6 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
         />
         <div className="mt-2 flex items-center gap-1">
+          <AgentPicker sessionId={sessionId} agent={agent} disabled={active} />
           <PermissionMenu />
           <button
             type="button"
@@ -405,7 +422,11 @@ export function Composer({ sessionId, status, run, model, contextTokens }: Compo
             {t('composer.plan.toggle')}
           </button>
           <div className="ml-auto flex min-w-0 items-center gap-1">
-            <ModelMenu sessionId={sessionId} model={model} />
+            <ModelMenu
+              sessionId={sessionId}
+              model={model}
+              fixed={agent !== undefined && run?.agent.id === agent.id && fixedAgentModel}
+            />
             <ContextRing model={model} tokens={contextTokens ?? 0} />
             {active ? (
               <button

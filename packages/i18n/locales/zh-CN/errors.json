@@ -111,5 +111,17 @@
   "skills.traversal": "技能里的路径逃出了技能目录",
   "skills.too_large": "技能文件太大",
   "skills.not_found": "找不到这个技能",
-  "skills.not_uninstallable": "内置技能和项目里的技能不能从这里卸载"
+  "skills.not_uninstallable": "内置技能和项目里的技能不能从这里卸载",
+  "mcp.not_found": "找不到这个 MCP 服务",
+  "mcp.invalid": "MCP 服务配置无效",
+  "mcp.tool_not_found": "找不到这个 MCP 工具",
+  "mcp.not_connected": "MCP 服务没有连接，工具暂时不可用",
+  "mcp.call_failed": "MCP 工具调用失败",
+  "mcp.connect_failed": "无法连接 MCP 服务",
+  "mcp.timeout": "MCP 服务响应超时",
+  "agent.not_found": "找不到这个 Agent",
+  "agent.readonly": "内置 Agent 不能修改",
+  "agent.invalid": "Agent 定义无效",
+  "agent.in_use": "这个 Agent 已被会话使用，不能删除",
+  "agent.no_draft": "这个 Agent 没有待发布的草稿"
 }

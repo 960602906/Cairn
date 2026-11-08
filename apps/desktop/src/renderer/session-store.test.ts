@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RpcError, type EventEnvelope, type SessionSummary } from '@cairn/protocol'
+import {
+  RpcError,
+  type AgentDraftInput,
+  type EventEnvelope,
+  type SessionSummary,
+} from '@cairn/protocol'
 import type { MainApi } from './api.js'
 import { createSessionStore } from './session-store.js'
 
@@ -28,6 +33,193 @@ function fakeApi(handlers: Record<string, Handler> = {}) {
     listeners.forEach((l) => l({ sessionId, events }))
   return { api, calls, emit, listeners }
 }
+
+describe('agent actions in session store', () => {
+  it('manages agents, drafts, publications, and recent list', async () => {
+    const calls: { method: string; params: unknown }[] = []
+    const fakeApi = {
+      request: async (method: string, params: unknown) => {
+        calls.push({ method, params })
+        if (method === 'agent.list') {
+          return {
+            agents: [
+              {
+                agentId: 'builtin.coder',
+                source: 'builtin',
+                version: 1,
+                status: 'published',
+                hasDraft: false,
+                archived: false,
+                name: { 'zh-CN': '编程助手' },
+                description: { 'zh-CN': '写代码' },
+                modelMode: 'inherit',
+              },
+            ],
+          }
+        }
+        if (method === 'agent.get') {
+          return { agentId: 'agent.1', source: 'user', archived: false }
+        }
+        if (method === 'agent.saveDraft') {
+          return {
+            agentId: 'agent.1',
+            source: 'user',
+            archived: false,
+            draft: { name: { 'zh-CN': '新助手' } },
+          }
+        }
+        if (method === 'agent.publish') {
+          return { agentId: 'agent.1', source: 'user', archived: false, published: { version: 1 } }
+        }
+        if (method === 'agent.duplicate') {
+          return { agentId: 'agent.2', source: 'user', archived: false }
+        }
+        if (method === 'agent.archive') {
+          return { agentId: 'agent.1', source: 'user', archived: true }
+        }
+        if (method === 'agent.unarchive') {
+          return { agentId: 'agent.1', source: 'user', archived: false }
+        }
+        if (method === 'agent.delete') {
+          return {}
+        }
+        if (method === 'agent.versions') {
+          return {
+            versions: [
+              {
+                version: 1,
+                publishedAt: 1000,
+                name: { 'zh-CN': '编程助手' },
+                description: {},
+                instructionsBytes: 4,
+                usedBySessions: 0,
+              },
+            ],
+          }
+        }
+        if (method === 'agent.diff') {
+          return { fields: [], instructions: { from: 'Run', to: 'Run' } }
+        }
+        if (method === 'agent.export') {
+          return { markdown: '# Agent' }
+        }
+        if (method === 'agent.import') {
+          return { agentId: 'agent.3', source: 'imported', archived: false }
+        }
+        if (method === 'agent.effectiveConfig') {
+          return {
+            agentId: 'agent.1',
+            source: 'published',
+            version: 1,
+            systemPrompt: 'Run',
+            tools: [],
+            skills: [],
+            permissionRules: [],
+            budget: {
+              contextWindow: 128000,
+              reserveOutputTokens: 1000,
+              systemPromptTokens: 10,
+              skillsTokens: 0,
+              toolsTokens: 0,
+              historyTokens: 0,
+            },
+          }
+        }
+        if (method === 'session.setAgent') {
+          return {}
+        }
+        if (method === 'diagnostics.summary') {
+          return { appVersion: '1.0.0', exportItems: ['manifest.json'] }
+        }
+        if (method === 'diagnostics.export') {
+          return { path: '/tmp/diag.zip', cancelled: false }
+        }
+        if (method === 'diagnostics.showInFolder') {
+          return {}
+        }
+        return undefined
+      },
+      on: () => () => {},
+    }
+
+    const { createSessionStore, readRecentAgents } = await import('./session-store.js')
+    const store = createSessionStore(fakeApi as unknown as MainApi)
+
+    // Refresh agents
+    const agents = await store.getState().refreshAgents()
+    expect(agents?.length).toBe(1)
+    expect(store.getState().agents[0]?.agentId).toBe('builtin.coder')
+
+    // Get agent
+    const detail = await store.getState().getAgent('agent.1')
+    expect(detail?.agentId).toBe('agent.1')
+
+    // Save draft
+    const saved = await store
+      .getState()
+      .saveAgentDraft({ id: 'agent.1', instructions: 'Hello' } as unknown as AgentDraftInput)
+    expect(saved?.draft?.name['zh-CN']).toBe('新助手')
+
+    // Publish
+    const pub = await store.getState().publishAgent('agent.1')
+    expect(pub?.published?.version).toBe(1)
+
+    // Duplicate
+    const dup = await store.getState().duplicateAgent('builtin.coder')
+    expect(dup?.agentId).toBe('agent.2')
+
+    // Archive & Unarchive
+    const arc = await store.getState().archiveAgent('agent.1')
+    expect(arc?.archived).toBe(true)
+    const unarc = await store.getState().unarchiveAgent('agent.1')
+    expect(unarc?.archived).toBe(false)
+
+    // Delete
+    const del = await store.getState().deleteAgent('agent.1')
+    expect(del).toBe(true)
+
+    // Versions & Diff
+    const vers = await store.getState().agentVersions('agent.1')
+    expect(vers?.length).toBe(1)
+    const diff = await store.getState().agentDiff('agent.1', 'draft', 1)
+    expect(diff?.instructions.from).toBe(diff?.instructions.to)
+
+    // Export & Import
+    const exp = await store.getState().exportAgent('agent.1')
+    expect(exp).toBe('# Agent')
+    const imp = await store.getState().importAgent('# Draft')
+    expect(imp?.agentId).toBe('agent.3')
+
+    // Effective config
+    const eff = await store.getState().agentEffectiveConfig('agent.1')
+    expect(eff?.budget.contextWindow).toBe(128000)
+
+    // Set session agent updates recent list
+    const setOk = await store
+      .getState()
+      .setSessionAgent('session-1', { id: 'agent.custom', version: 1 })
+    expect(setOk).toBe(true)
+    expect(store.getState().recentAgents).toContain('agent.custom')
+
+    // Diagnostics actions
+    const diagSum = await store.getState().diagnosticsSummary()
+    expect(diagSum?.appVersion).toBe('1.0.0')
+    const diagExp = await store.getState().exportDiagnostics()
+    expect(diagExp?.path).toBe('/tmp/diag.zip')
+    const shown = await store.getState().showDiagnosticsInFolder('/tmp/diag.zip')
+    expect(shown).toBe(true)
+
+    // readRecentAgents fallback
+    const mockStorage = {
+      getItem: (key: string) =>
+        key === 'cairn.recentAgents' ? JSON.stringify(['a1', 'a2']) : null,
+    }
+    expect(readRecentAgents(mockStorage as Pick<Storage, 'getItem'>)).toEqual(['a1', 'a2'])
+    expect(readRecentAgents({ getItem: () => 'invalid-json' } as Pick<Storage, 'getItem'>)).toEqual(
+      [],
+    )
+  })
+})
 
 const summary = (sessionId: string, status: SessionSummary['status'] = 'idle'): SessionSummary => ({
   sessionId,

@@ -13,6 +13,9 @@ import type { CredentialCommands } from './credential-store.js'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
+import type { McpCommands } from './mcp-service.js'
+import type { AgentCommands } from './agent-service.js'
+import type { DiagnosticsCommands } from './diagnostics-service.js'
 import {
   coalesceDeltas,
   createRendererGateway,
@@ -86,6 +89,8 @@ let changes: ChangeCommands
 let checkpoints: CheckpointCommands
 let approvals: ApprovalCommands
 let skills: SkillCommands
+let agents: AgentCommands
+let diagnostics: DiagnosticsCommands
 const approvalListeners = new Set<(sessionId: string) => void>()
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
@@ -108,6 +113,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     approvePlan: vi.fn(() => ({ messageId: 'm1' })),
     replan: vi.fn(() => ({ messageId: 'm1' })),
     abandonPlan: vi.fn(() => ({})),
+    setAgent: vi.fn(() => ({})),
   }
   projects = {
     list: vi.fn(() => ({ projects: [PROJECT] })),
@@ -179,6 +185,43 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     setEnabled: vi.fn(),
   }
   approvalListeners.clear()
+  const agentDetail = {
+    agentId: 'user.x',
+    source: 'user' as const,
+    archived: false,
+    validation: { ok: true, errors: [], warnings: [] },
+  }
+  agents = {
+    list: vi.fn(() => ({ agents: [] })),
+    get: vi.fn(() => agentDetail),
+    saveDraft: vi.fn(() => agentDetail),
+    publish: vi.fn(() => agentDetail),
+    duplicate: vi.fn(() => agentDetail),
+    archive: vi.fn(() => agentDetail),
+    unarchive: vi.fn(() => agentDetail),
+    delete: vi.fn(() => ({})),
+    versions: vi.fn(() => ({ versions: [] })),
+    diff: vi.fn(() => ({ fields: [], instructions: { from: '', to: '' } })),
+    export: vi.fn(() => ({ markdown: '---\n---\n' })),
+    import: vi.fn(() => agentDetail),
+    effectiveConfig: vi.fn(() => ({
+      agentId: 'user.x',
+      source: 'published' as const,
+      version: 1,
+      systemPrompt: 'prompt',
+      tools: [],
+      skills: [],
+      permissionRules: [],
+      budget: {
+        contextWindow: 128_000,
+        reserveOutputTokens: 4_096,
+        systemPromptTokens: 1,
+        toolsTokens: 0,
+        skillsTokens: 0,
+        historyTokens: 0,
+      },
+    })),
+  }
   approvals = {
     pending: vi.fn(() => ({ approvals: [] })),
     resolve: vi.fn(() => ({})),
@@ -186,6 +229,19 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
       approvalListeners.add(listener)
       return () => approvalListeners.delete(listener)
     }),
+  }
+  diagnostics = {
+    summary: vi.fn(() => ({
+      appVersion: '0.0.0',
+      electronVersion: '0.0.0',
+      platform: process.platform,
+      arch: process.arch,
+      logs: { mainLogLines: 0, hostLogLines: 0 },
+      settings: { providersCount: 0, mcpServersCount: 0, hasAuxiliaryModel: false },
+      exportItems: ['manifest.json'],
+    })),
+    export: vi.fn(() => ({ cancelled: true })),
+    showInFolder: vi.fn(() => ({ shown: true })),
   }
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
@@ -199,6 +255,10 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     checkpoints,
     approvals,
     skills,
+    mcp: {} as unknown as McpCommands,
+    agents,
+    diagnostics,
+    mcpStatus: () => () => undefined,
   })
   return connectRenderer()
 }
@@ -563,6 +623,33 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(projects.remove).toHaveBeenCalledOnce()
   })
 
+  it('delegates agent requests and session.setAgent (M3-11)', async () => {
+    const { client } = setup()
+    await expect(client.request('agent.list', {})).resolves.toEqual({ agents: [] })
+    await expect(client.request('agent.get', { agentId: 'user.x' })).resolves.toMatchObject({
+      agentId: 'user.x',
+    })
+    await expect(client.request('agent.publish', { agentId: 'user.x' })).resolves.toMatchObject({
+      agentId: 'user.x',
+    })
+    await expect(client.request('agent.delete', { agentId: 'user.x' })).resolves.toEqual({})
+    const config = await client.request('agent.effectiveConfig', {
+      agentId: 'user.x',
+      sessionId: 's1',
+    })
+    expect(config.agentId).toBe('user.x')
+    await expect(
+      client.request('session.setAgent', {
+        sessionId: 's1',
+        agent: { id: 'user.x', version: 1 },
+      }),
+    ).resolves.toEqual({})
+    expect(commands.setAgent).toHaveBeenCalledWith({
+      sessionId: 's1',
+      agent: { id: 'user.x', version: 1 },
+    })
+  })
+
   it('delegates settings requests to the settings service', async () => {
     const { client } = setup()
     await expect(client.request('settings.get', {})).resolves.toEqual({
@@ -688,6 +775,10 @@ describe('createRendererGateway: commands and lifecycle', () => {
       checkpoints,
       approvals,
       skills,
+      mcp: {} as unknown as McpCommands,
+      agents,
+      diagnostics,
+      mcpStatus: () => () => undefined,
       onProtocolError,
     })
     const pair = channelPair()
