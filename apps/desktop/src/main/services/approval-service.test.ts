@@ -5,6 +5,8 @@ import { createApprovalService } from './approval-service.js'
 const request = (approvalId: string, extra: Partial<HostApprovalRequest> = {}) => ({
   approvalId,
   toolCallId: `call-${approvalId}`,
+  runId: 'r1',
+  agent: { id: 'builtin.coder', version: 1 },
   tool: { name: 'run_command', category: 'execute' as const },
   input: { command: 'npm test && npm run lint' },
   targets: { command: 'npm test && npm run lint' },

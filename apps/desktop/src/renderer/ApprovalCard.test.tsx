@@ -15,6 +15,8 @@ type Listener = (data: { sessionId: string }) => void
 const approval = (approvalId: string, extra: Partial<PendingApproval> = {}): PendingApproval => ({
   approvalId,
   toolCallId: `call-${approvalId}`,
+  runId: 'r1',
+  agent: { id: 'builtin.coder', version: 1 },
   tool: { name: 'run_command', category: 'execute' },
   input: { command: 'npm test' },
   targets: { command: 'npm test' },

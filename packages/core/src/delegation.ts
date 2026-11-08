@@ -21,6 +21,7 @@ import type {
   DelegationIssue,
   DelegationPolicy,
   DelegationValidation,
+  PermissionMode,
   RunLimits,
   RunState,
   TaskBrief,
@@ -239,6 +240,15 @@ export function validateDelegation(input: ValidateDelegationInput): DelegationVa
     ) {
       issues.push(issue(DelegationErrorCode.BudgetExceeded))
     }
+  } else if (
+    remaining &&
+    (remaining.maxStepsPerTurn === 0 ||
+      remaining.maxTokensPerTurn === 0 ||
+      remaining.maxCostPerTurn === 0 ||
+      remaining.maxTurnDurationMs === 0)
+  ) {
+    // 父运行已经没有可用预算：即使任务书没有写预算，也不能再分派。
+    issues.push(issue(DelegationErrorCode.BudgetExceeded))
   }
 
   const ok = !issues.some((entry) => entry.severity === 'error')
@@ -259,6 +269,8 @@ export interface DelegateTargetInfo {
   readonly id: string
   readonly name: string
   readonly description: string
+  /** 目标 Agent 的权限模式（M4-03）：写入类目标在委派前需要审批。 */
+  readonly permissions?: PermissionMode
 }
 
 /** `delegate` 工具给模型看的名称。 */
@@ -571,6 +583,17 @@ function childStatus(
   return parsed?.status ?? 'completed'
 }
 
+/** 父运行的任一剩余限额已经归零（M4-03）：不再分派，正在运行的子运行一起停止。 */
+function limitsExhausted(remaining: Partial<RunLimits> | undefined): boolean {
+  if (!remaining) return false
+  return (
+    remaining.maxStepsPerTurn === 0 ||
+    remaining.maxTokensPerTurn === 0 ||
+    remaining.maxCostPerTurn === 0 ||
+    remaining.maxTurnDurationMs === 0
+  )
+}
+
 /**
  * 执行一次委派（设计 §5、§6、§12）：
  * 创建子运行 → 进入 `awaiting_children` → 发送任务书 → 等待 → 解析结构化结果 → 回填父运行。
@@ -609,6 +632,7 @@ export async function runDelegation(input: RunDelegationInput): Promise<Delegate
     task: delegate.task,
     workspace: resolveDelegationWorkspace(session.policy, delegate),
     workspacePath: child.workspace.path,
+    budget: limits,
   })
 
   const collected: { type: string; payload: unknown; ts: number }[] = []
@@ -646,7 +670,6 @@ export async function runDelegation(input: RunDelegationInput): Promise<Delegate
       turnEvents = [...turnEvents, ...retried]
       parsed = parseReplyOf(retried, delegate.brief.outputSchema)
     }
-    const status = childStatus(child.state, collected, parsed)
     const summary = summarizeChildTurn(turnEvents)
     const usage: DelegateUsage = {
       tokens: billedTokens(summary.usage),
@@ -657,6 +680,17 @@ export async function runDelegation(input: RunDelegationInput): Promise<Delegate
         : {}),
     }
     parent.recordChildUsage(summary.usage)
+    const parentAtLimit = limitsExhausted(parent.remainingLimits)
+    const status = parentAtLimit ? 'limit_reached' : childStatus(child.state, collected, parsed)
+    if (parentAtLimit) {
+      // 父运行没有预算了：同一父运行下的其他子运行也停止（M4-03）。
+      await Promise.all(
+        supervisor
+          .listChildren(parent.runId)
+          .filter((sibling) => sibling.runId !== child.runId)
+          .map((sibling) => sibling.abort('user')),
+      )
+    }
     parent.emitEvent('run.child.completed', {
       childRunId: child.runId,
       status,

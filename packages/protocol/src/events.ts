@@ -130,6 +130,8 @@ const payloadSchemas = {
     task: z.string(),
     workspace: z.enum(['shared', 'isolated', 'auto']).optional(),
     workspacePath: z.string().optional(),
+    /** 这次子运行可用的限额（M4-03）；界面据此显示并行分派的预计最大消耗。 */
+    budget: RunLimits.optional(),
   }),
   'run.child.completed': z.object({
     childRunId: Id,

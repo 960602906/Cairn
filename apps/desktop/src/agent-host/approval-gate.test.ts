@@ -24,13 +24,23 @@ function request(signal: AbortSignal, extra: Partial<ApprovalRequest> = {}): App
 }
 
 describe('createHostApprovalGate', () => {
+  const attribution = {
+    runId: 'r1',
+    parentRunId: 'p1',
+    agent: { id: 'builtin.coder', version: 1 },
+  }
+
   it('sends the request without a timeout and returns the decision', async () => {
     const endpoint = {
       request: vi.fn(async () => ({ decision: 'deny' as const, feedback: 'no' })),
       emit: vi.fn(),
     }
     const onRule = vi.fn()
-    const gate = createHostApprovalGate({ endpoint: endpoint as never, onRule })
+    const gate = createHostApprovalGate({
+      endpoint: endpoint as never,
+      onRule,
+      attribution: () => attribution,
+    })
     await expect(gate.request(request(new AbortController().signal))).resolves.toEqual({
       decision: 'deny',
       feedback: 'no',
@@ -40,6 +50,9 @@ describe('createHostApprovalGate', () => {
       {
         approvalId: 'a1',
         toolCallId: 'c1',
+        runId: 'r1',
+        parentRunId: 'p1',
+        agent: { id: 'builtin.coder', version: 1 },
         tool: { name: 'write_file', category: 'write' },
         input: { path: 'a.ts' },
         targets: { paths: ['a.ts'] },
@@ -68,7 +81,11 @@ describe('createHostApprovalGate', () => {
       emit: vi.fn(),
     }
     const onRule = vi.fn()
-    const gate = createHostApprovalGate({ endpoint: endpoint as never, onRule })
+    const gate = createHostApprovalGate({
+      endpoint: endpoint as never,
+      onRule,
+      attribution: () => attribution,
+    })
     const controller = new AbortController()
     const pending = gate.request(
       request(controller.signal, { kind: 'no_checkpoint', targets: { command: 'x' } }),

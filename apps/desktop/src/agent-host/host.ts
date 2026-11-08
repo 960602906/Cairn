@@ -29,10 +29,12 @@ import {
   createRunSupervisor,
   createToolPipeline,
   createToolRegistry,
+  combinePermissionGates,
   DEFAULT_PERMISSION_GUARDS,
   DELEGATE_RESULT_INSTRUCTION,
   DelegationSession,
   delegateToolSpec,
+  PermissionReasonCode,
   resolveDelegationPolicy,
   runDelegation,
   presetRules,
@@ -49,6 +51,7 @@ import {
   type DelegationTarget,
   type Logger,
   type PermissionGate,
+  type PermissionGuard,
   type RetryPolicy,
   type ResolvedModel,
   type RunContext,
@@ -70,6 +73,7 @@ import {
   type HostModelConfig,
   type McpToolExposure,
   type ModelRef,
+  type PermissionMode,
   type PermissionRule,
   type RpcChannel,
   type RpcEndpoint,
@@ -203,9 +207,19 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let planTurn = false
   /** 正在执行的已批准计划。下一次 `host.prompt` 会换掉或清掉。 */
   let activePlan: ActivePlan | undefined
+  /** 可委派目标的权限模式（M4-03）：委派给写入类 Agent 默认需要审批。 */
+  const delegationTargetModes = new Map<string, PermissionMode>()
+  const delegationApprovalGuard: PermissionGuard = (request) => {
+    if (request.definition.name !== 'delegate') return undefined
+    const input = request.input as { readonly agent?: unknown } | null
+    const agent = input && typeof input.agent === 'string' ? input.agent : undefined
+    const mode = agent === undefined ? undefined : delegationTargetModes.get(agent)
+    if (mode === undefined || mode === 'read-only') return undefined
+    return { effect: 'ask', reasonCode: PermissionReasonCode.DelegationTarget }
+  }
   const permissions = createPermissionEngine({
     rules: () => permissionRules,
-    guards: [...DEFAULT_PERMISSION_GUARDS, planModeGuard(() => planTurn)],
+    guards: [...DEFAULT_PERMISSION_GUARDS, planModeGuard(() => planTurn), delegationApprovalGuard],
     ...(options.caseInsensitive !== undefined ? { caseInsensitive: options.caseInsensitive } : {}),
   })
 
@@ -304,6 +318,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         const { targets } = await endpoint.request('host.delegate.targets', {
           agents: [...agentIds],
         })
+        for (const target of targets) delegationTargetModes.set(target.id, target.permissions)
         return targets
       } catch (error) {
         if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
@@ -319,6 +334,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       resolved: DelegatedTarget,
       chain: DelegationChain,
       handleRef: { current?: AgentRunHandle },
+      parentGate: PermissionGate,
+      parentRunId: string,
     ): Promise<RunContext> {
       const definition = resolved.definition
       const child = await options.createRuntime(
@@ -349,24 +366,39 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         )
       }
       const policy = resolveDelegationPolicy(definition.delegation)
-      await registerDelegateTool(childRegistry, policy, chain, handleRef)
-      const specs = childRegistry.specs((tool) => toolSelected(definition.tools, tool))
-      const hasTools = specs.length > 0
       let rules: readonly PermissionRule[] = [...resolved.permissionRules]
       const childPermissions = createPermissionEngine({
         rules: () => rules,
-        guards: [...DEFAULT_PERMISSION_GUARDS],
+        guards: [...DEFAULT_PERMISSION_GUARDS, delegationApprovalGuard],
         ...(options.caseInsensitive !== undefined
           ? { caseInsensitive: options.caseInsensitive }
           : {}),
       })
+      // 嵌套委派继承整条祖先链：下一层以“父运行限制 ∩ 当前子 Agent 权限”为上限。
+      const effectiveGate = combinePermissionGates(parentGate, childPermissions)
+      await registerDelegateTool(
+        childRegistry,
+        policy,
+        chain,
+        handleRef,
+        effectiveGate,
+        parentRunId,
+      )
+      const specs = childRegistry.specs((tool) => toolSelected(definition.tools, tool))
+      const hasTools = specs.length > 0
       const childPipeline = hasTools
         ? createToolPipeline({
             registry: childRegistry,
             permissions: childPermissions,
+            restriction: parentGate,
             approvals: createHostApprovalGate({
               endpoint,
               onRule: (rule) => (rules = [...rules, rule]),
+              attribution: () => ({
+                runId: handleRef.current?.runId ?? '',
+                parentRunId,
+                agent: { id: definition.id, version: definition.version },
+              }),
             }),
             checkpoints: NO_CHECKPOINTS,
             changes: createHostChangeRecorder(endpoint),
@@ -418,6 +450,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       policy: ReturnType<typeof resolveDelegationPolicy>,
       chain: DelegationChain,
       handleRef: { current?: AgentRunHandle },
+      parentGate: PermissionGate,
+      parentRunId: string,
     ): Promise<void> {
       const maxDepth = Math.min(chain.maxDepth ?? policy.maxDepth, policy.maxDepth)
       if (!policy.enabled || policy.allowedAgents.length === 0 || chain.depth + 1 > maxDepth) {
@@ -480,7 +514,13 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             maxDepth: Math.min(maxDepth, childPolicy.maxDepth),
           }
           const childHandleRef: { current?: AgentRunHandle } = {}
-          const context = await buildDelegatedContext(resolved, childChain, childHandleRef)
+          const context = await buildDelegatedContext(
+            resolved,
+            childChain,
+            childHandleRef,
+            parentGate,
+            handleRef.current?.runId ?? parentRunId,
+          )
           if (!supervisor) {
             throw new ToolError(ToolErrorCode.ExecutionFailed, 'The host is not ready.')
           }
@@ -515,6 +555,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         maxDepth: rootPolicy.maxDepth,
       },
       rootHandleRef,
+      permissions,
+      init.runId,
     )
 
     /** 真正交给模型的内置 / MCP 工具（计划工具在 `prepareTurn` 里按模式加回）。 */
@@ -547,6 +589,10 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           approvals: createHostApprovalGate({
             endpoint,
             onRule: (rule) => (permissionRules = [...permissionRules, rule]),
+            attribution: () => ({
+              runId: run?.runId ?? init.runId,
+              agent: init.agent,
+            }),
           }),
           checkpoints,
           changes: createHostChangeRecorder(endpoint),
