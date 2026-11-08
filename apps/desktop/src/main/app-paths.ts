@@ -18,6 +18,8 @@ export interface AppPaths {
   readonly database: string
   readonly blobs: string
   readonly checkpoints: string
+  /** 隔离工作区（M4-08）：`<root>/worktrees/<sessionId>/<runId>`。 */
+  readonly worktrees: string
   readonly settings: string
   /** 加密保存的凭据（M1-03，ADR-0010）。 */
   readonly credentials: string
@@ -44,6 +46,7 @@ export function resolveAppPaths({ appData, dev, env = {} }: ResolveAppPathsOptio
     database: join(data, 'cairn.db'),
     blobs: join(data, 'blobs'),
     checkpoints: join(root, 'checkpoints'),
+    worktrees: join(root, 'worktrees'),
     settings: join(root, 'settings.json'),
     credentials: join(root, 'credentials.json'),
     logs: join(root, 'logs'),
@@ -53,5 +56,5 @@ export function resolveAppPaths({ appData, dev, env = {} }: ResolveAppPathsOptio
 
 /** 启动时需要存在的目录。 */
 export function requiredDirectories(paths: AppPaths): readonly string[] {
-  return [paths.root, paths.data, paths.blobs, paths.checkpoints, paths.logs]
+  return [paths.root, paths.data, paths.blobs, paths.checkpoints, paths.worktrees, paths.logs]
 }

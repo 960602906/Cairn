@@ -39,6 +39,19 @@ describe('createHostCheckpoints', () => {
     expect(r.messages).toEqual(['turn start'])
   })
 
+  it('passes extra excludes through and labels delegation checkpoints', async () => {
+    const r = repo('cp0')
+    const open = vi.fn<OpenShadowRepo>(async () => r.repo)
+    const checkpoints = createHostCheckpoints({
+      ...location,
+      open,
+      extraExcludes: ['.git'],
+    })
+    await expect(checkpoints.create('delegation')).resolves.toBe('cp1')
+    expect(open).toHaveBeenCalledWith({ ...location, extraExcludes: ['.git'] })
+    expect(r.messages).toEqual(['before delegation'])
+  })
+
   it('reports a failed background checkpoint', async () => {
     const onError = vi.fn()
     const failing = {

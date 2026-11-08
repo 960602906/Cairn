@@ -118,6 +118,14 @@ interface DelegatedTarget {
   readonly workspace: 'shared' | 'isolated'
 }
 
+/** 子运行使用的工作区（M4-08）：共享父工作区，或主进程创建的隔离副本。 */
+interface DelegatedWorkspace {
+  readonly path: string
+  readonly checkpoints: ToolCheckpoints
+  /** 嵌套委派的基线影子仓库；省略时主进程按会话解析。 */
+  readonly gitDir?: string
+}
+
 export interface AgentHostOptions {
   readonly channel: RpcChannel
   /**
@@ -210,6 +218,18 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let planTurn = false
   /** 正在执行的已批准计划。下一次 `host.prompt` 会换掉或清掉。 */
   let activePlan: ActivePlan | undefined
+  /**
+   * 共享写入锁（M4-08）：同一会话同一时刻只允许一个写入类子运行修改父工作区。宿主按会话创建，
+   * 因此内存中的队列就够用；隔离工作区不受这个锁限制，可以并行。
+   */
+  let sharedWriteTail: Promise<void> = Promise.resolve()
+  const acquireSharedWrite = (): Promise<() => void> => {
+    let release!: () => void
+    const mine = new Promise<void>((resolve) => (release = resolve))
+    const previous = sharedWriteTail
+    sharedWriteTail = previous.then(() => mine)
+    return previous.then(() => () => release())
+  }
   /** 根运行的 Agent 定义；路径守卫在 `host.init` 拿到定义后才生效。 */
   let agentDefinition: AgentDefinition | undefined
   let rootPathGuard: PermissionGuard = () => undefined
@@ -389,6 +409,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       handleRef: { current?: AgentRunHandle },
       parentGate: PermissionGate,
       parentRunId: string,
+      workspace: DelegatedWorkspace,
     ): Promise<RunContext> {
       const definition = resolved.definition
       const child = await options.createRuntime(
@@ -398,8 +419,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       )
       const childRegistry = createToolRegistry()
       const environment =
-        (await options.registerTools?.(childRegistry, init.workspacePath, init.shell ?? 'auto')) ??
-        {}
+        (await options.registerTools?.(childRegistry, workspace.path, init.shell ?? 'auto')) ?? {}
       registerMcpToolsInto(childRegistry, resolved.mcpTools)
       const skills = [...resolved.skills]
       const roots = skills.map((skill) => skill.root)
@@ -444,6 +464,9 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         handleRef,
         effectiveGate,
         parentRunId,
+        workspace.checkpoints,
+        workspace.path,
+        workspace.gitDir,
       )
       const specs = childRegistry.specs((tool) => toolSelected(definition.tools, tool))
       const hasTools = specs.length > 0
@@ -461,10 +484,10 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
                 agent: { id: definition.id, version: definition.version },
               }),
             }),
-            checkpoints: NO_CHECKPOINTS,
+            checkpoints: workspace.checkpoints,
             changes: createHostChangeRecorder(endpoint),
-            workspaceRoot: init.workspacePath,
-            resolvePath: createPathResolver(init.workspacePath, {
+            workspaceRoot: workspace.path,
+            resolvePath: createPathResolver(workspace.path, {
               readOnlyRoots: () => roots,
             }),
             log: options.log ?? silentLogger,
@@ -477,7 +500,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         environment: {
           os: operatingSystemName(options.platform ?? process.platform),
           ...(hasTools && environment.shell ? { shell: environment.shell } : {}),
-          workspacePath: init.workspacePath,
+          workspacePath: workspace.path,
           date: localDate(now()),
         },
         ...(definition.instructions.trim() ? { agentInstructions: definition.instructions } : {}),
@@ -507,6 +530,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             })),
           ),
         tools: specs,
+        checkpoints: workspace.checkpoints,
+        onCheckpointError: onError,
         ...(childPipeline ? { toolPipeline: childPipeline } : {}),
       }
     }
@@ -522,6 +547,9 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       handleRef: { current?: AgentRunHandle },
       parentGate: PermissionGate,
       parentRunId: string,
+      parentCheckpoints: ToolCheckpoints,
+      parentWorkspacePath: string,
+      parentGitDir?: string,
     ): Promise<void> {
       const maxDepth = Math.min(chain.maxDepth ?? policy.maxDepth, policy.maxDepth)
       if (!policy.enabled || policy.allowedAgents.length === 0 || chain.depth + 1 > maxDepth) {
@@ -584,32 +612,102 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             maxDepth: Math.min(maxDepth, childPolicy.maxDepth),
           }
           const childHandleRef: { current?: AgentRunHandle } = {}
-          const context = await buildDelegatedContext(
-            resolved,
-            childChain,
-            childHandleRef,
-            parentGate,
-            handleRef.current?.runId ?? parentRunId,
-          )
-          if (!supervisor) {
-            throw new ToolError(ToolErrorCode.ExecutionFailed, 'The host is not ready.')
+          const childRunId = options.createId()
+          const readOnly = resolved.definition.permissions === 'read-only'
+          const requested = input.workspace ?? policy.defaultWorkspace
+          let workspaceMode: 'shared' | 'isolated' =
+            requested === 'auto' ? (readOnly ? 'shared' : 'isolated') : requested
+          let workspacePath = parentWorkspacePath
+          let childCheckpoints = parentCheckpoints
+          let childGitDir = parentGitDir
+          let isolatedRunId: string | undefined
+          let releaseShared: (() => void) | undefined
+          try {
+            if (workspaceMode === 'isolated') {
+              let baseCommit: string | undefined
+              try {
+                baseCommit = await parentCheckpoints.create('delegation')
+              } catch (error) {
+                onError(error)
+              }
+              if (baseCommit === undefined) {
+                // 没有可用的检查点（未安装 Git 等）：退化为共享写入，由会话级锁串行。
+                workspaceMode = 'shared'
+              } else {
+                try {
+                  const created = await endpoint.request('host.workspace.create', {
+                    projectPath: parentWorkspacePath,
+                    baseCommit,
+                    sessionId: init.sessionId,
+                    runId: childRunId,
+                    ...(parentGitDir !== undefined ? { gitDir: parentGitDir } : {}),
+                  })
+                  workspacePath = created.path
+                  isolatedRunId = childRunId
+                  childGitDir = created.checkpoint.gitDir
+                  childCheckpoints = options.openCheckpoints
+                    ? createHostCheckpoints({
+                        gitDir: created.checkpoint.gitDir,
+                        ref: created.checkpoint.ref,
+                        workTree: created.path,
+                        open: options.openCheckpoints,
+                        extraExcludes: ['.git'],
+                        onError,
+                      })
+                    : NO_CHECKPOINTS
+                } catch (error) {
+                  // 主进程没有隔离工作区服务、磁盘配额或创建失败：回退到共享写入。
+                  onError(error)
+                  workspaceMode = 'shared'
+                }
+              }
+            }
+            if (workspaceMode === 'shared' && !readOnly) {
+              releaseShared = await acquireSharedWrite()
+            }
+            const context = await buildDelegatedContext(
+              resolved,
+              childChain,
+              childHandleRef,
+              parentGate,
+              handleRef.current?.runId ?? parentRunId,
+              {
+                path: workspacePath,
+                checkpoints: childCheckpoints,
+                ...(childGitDir !== undefined ? { gitDir: childGitDir } : {}),
+              },
+            )
+            if (!supervisor) {
+              throw new ToolError(ToolErrorCode.ExecutionFailed, 'The host is not ready.')
+            }
+            const result = await runDelegation({
+              sessionId: init.sessionId,
+              supervisor,
+              parent,
+              session,
+              target: {
+                definition: resolved.definition,
+                context,
+                workspace: { path: workspacePath },
+              } satisfies DelegationTarget,
+              input,
+              childRunId,
+              workspace: workspaceMode,
+              parentRemaining: remaining ?? {},
+              systemPrompt: context.systemPrompt ?? '',
+              onChildCreated: (created) => (childHandleRef.current = created),
+            })
+            return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+          } finally {
+            releaseShared?.()
+            if (isolatedRunId !== undefined) {
+              try {
+                await endpoint.request('host.workspace.cleanup', { runId: isolatedRunId })
+              } catch (error) {
+                onError(error)
+              }
+            }
           }
-          const result = await runDelegation({
-            sessionId: init.sessionId,
-            supervisor,
-            parent,
-            session,
-            target: {
-              definition: resolved.definition,
-              context,
-              workspace: { path: init.workspacePath },
-            } satisfies DelegationTarget,
-            input,
-            parentRemaining: remaining ?? {},
-            systemPrompt: context.systemPrompt ?? '',
-            onChildCreated: (created) => (childHandleRef.current = created),
-          })
-          return { content: [{ type: 'text', text: JSON.stringify(result) }] }
         },
       })
     }
@@ -627,6 +725,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       rootHandleRef,
       permissions,
       init.runId,
+      checkpoints,
+      init.workspacePath,
     )
 
     /** 真正交给模型的内置 / MCP 工具（计划工具在 `prepareTurn` 里按模式加回）。 */

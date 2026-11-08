@@ -247,10 +247,10 @@ describe('validateDelegation', () => {
     }
   })
 
-  it('M4-02 不支持隔离工作区', () => {
+  it('隔离工作区在 M4-08 后允许委派', () => {
     expect(
-      validateDelegation({ ...baseValidation, input: delegate({ workspace: 'isolated' }) }).issues,
-    ).toContainEqual(expect.objectContaining({ code: 'delegation.workspace_unsupported' }))
+      validateDelegation({ ...baseValidation, input: delegate({ workspace: 'isolated' }) }).ok,
+    ).toBe(true)
     expect(resolveDelegationWorkspace(policy({ defaultWorkspace: 'isolated' }), delegate())).toBe(
       'isolated',
     )
@@ -261,6 +261,20 @@ describe('validateDelegation', () => {
         delegate({ workspace: 'shared' }),
       ),
     ).toBe('shared')
+  })
+
+  it('auto 工作区按目标 Agent 权限选择共享或隔离', () => {
+    const auto = policy({ defaultWorkspace: 'auto' })
+    expect(resolveDelegationWorkspace(auto, delegate(), 'read-only')).toBe('shared')
+    expect(resolveDelegationWorkspace(auto, delegate(), 'ask')).toBe('isolated')
+    expect(resolveDelegationWorkspace(auto, delegate(), 'auto')).toBe('isolated')
+    // 显式请求优先于目标权限
+    expect(resolveDelegationWorkspace(auto, delegate({ workspace: 'shared' }), 'auto')).toBe(
+      'shared',
+    )
+    expect(resolveDelegationWorkspace(auto, delegate({ workspace: 'isolated' }), 'read-only')).toBe(
+      'isolated',
+    )
   })
 })
 

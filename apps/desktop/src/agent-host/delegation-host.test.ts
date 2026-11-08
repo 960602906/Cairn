@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { CheckpointError, CheckpointErrorCode } from '@cairn/checkpoint'
 import {
   FakeRuntime,
   presetRules,
@@ -125,6 +126,8 @@ interface SetupOptions {
   readonly definition?: AgentDefinition
   readonly targets?: readonly { id: string; definition: AgentDefinition }[]
   readonly delegationError?: RpcError
+  readonly targetsError?: unknown
+  readonly delegateFailure?: unknown
   readonly host?: Partial<AgentHostOptions>
   readonly credential?: { apiKey: string }
   readonly skills?: readonly SkillCatalogEntry[]
@@ -136,6 +139,25 @@ interface SetupOptions {
     rule?: PermissionRule
   }
   readonly permissionRules?: readonly PermissionRule[]
+  /** `host.delegate` 返回的工作区方式（M4-08）；默认共享。 */
+  readonly targetWorkspace?: 'shared' | 'isolated'
+  /** 父运行的检查点位置；给出时宿主可以创建委派基线检查点。 */
+  readonly checkpoints?: { readonly gitDir: string; readonly ref: string }
+  /** 创建隔离工作区；默认按 runId 返回 `/worktrees/s1/<runId>`。 */
+  readonly workspaceCreate?: (input: {
+    readonly projectPath: string
+    readonly baseCommit: string
+    readonly sessionId: string
+    readonly runId: string
+    readonly gitDir?: string | undefined
+  }) => Promise<{
+    path: string
+    mode: 'worktree' | 'export'
+    sharedDirs: string[]
+    checkpoint: { gitDir: string; ref: string }
+  }>
+  readonly noWorkspaceHandler?: boolean
+  readonly workspaceCleanupError?: unknown
 }
 
 function setup(options: SetupOptions = {}) {
@@ -145,6 +167,16 @@ function setup(options: SetupOptions = {}) {
   const runtimeTools: Record<string, readonly { name: string; description: string }[]> = {}
   const systemPrompts: Record<string, string> = {}
   const createdRuntimes: string[] = []
+  const workspacePaths: string[] = []
+  const workspaceRuns: string[] = []
+  const workspaceCreateInputs: {
+    projectPath: string
+    baseCommit: string
+    sessionId: string
+    runId: string
+    gitDir?: string | undefined
+  }[] = []
+  const cleanupCalls: string[] = []
   const definitions = new Map(
     (options.targets ?? [{ id: reviewer.id, definition: reviewer }]).map((entry) => [
       entry.id,
@@ -157,6 +189,7 @@ function setup(options: SetupOptions = {}) {
     coder: options.grandchildScript ?? { turns: [] },
   }
   let id = 0
+  const registerTools = options.host?.registerTools
   const host = createAgentHost({
     channel: hostSide,
     createRuntime: (model) => {
@@ -176,30 +209,39 @@ function setup(options: SetupOptions = {}) {
     createId: () => `id${++id}`,
     now: () => 7,
     onError,
-    registerTools: (registry) => registry.register(lookup),
     ...options.host,
+    registerTools: (registry, workspacePath, shell) => {
+      workspacePaths.push(workspacePath)
+      return registerTools
+        ? registerTools(registry, workspacePath, shell)
+        : registry.register(lookup)
+    },
   })
   const main = createEndpoint(mainSide, { local: MainForHost, remote: HostForMain })
   main.on('host.event', ({ event }) => events.push(event))
   if (!options.noTargetsHandler) {
-    main.handle('host.delegate.targets', ({ agents }) => ({
-      targets: agents.flatMap((agentId) => {
-        const definition = definitions.get(agentId)
-        return definition
-          ? [
-              {
-                id: agentId,
-                name: definition.name['en-US'] ?? agentId,
-                description: definition.description['en-US'] ?? '',
-                permissions: definition.permissions,
-              },
-            ]
-          : []
-      }),
-    }))
+    main.handle('host.delegate.targets', ({ agents }) => {
+      if (options.targetsError !== undefined) throw options.targetsError
+      return {
+        targets: agents.flatMap((agentId) => {
+          const definition = definitions.get(agentId)
+          return definition
+            ? [
+                {
+                  id: agentId,
+                  name: definition.name['en-US'] ?? agentId,
+                  description: definition.description['en-US'] ?? '',
+                  permissions: definition.permissions,
+                },
+              ]
+            : []
+        }),
+      }
+    })
   }
   main.handle('host.delegate', async ({ agent: agentId }) => {
     if (options.delegationError) throw options.delegationError
+    if (options.delegateFailure !== undefined) throw options.delegateFailure
     const definition = definitions.get(agentId)
     if (!definition) throw new RpcError('delegation.agent_not_published', { agent: agentId })
     return {
@@ -212,9 +254,30 @@ function setup(options: SetupOptions = {}) {
       permissionRules: presetRules(definition.permissions),
       skills: [...(options.skills ?? [])],
       mcpTools: [...(options.mcpTools ?? [])],
-      workspace: 'shared' as const,
+      workspace: options.targetWorkspace ?? ('shared' as const),
     }
   })
+  if (!options.noWorkspaceHandler) {
+    main.handle('host.workspace.create', async (input) => {
+      workspaceRuns.push(input.runId)
+      workspaceCreateInputs.push(input)
+      if (options.workspaceCreate) return options.workspaceCreate(input)
+      return {
+        path: `/worktrees/s1/${input.runId}`,
+        mode: 'worktree' as const,
+        sharedDirs: ['node_modules'],
+        checkpoint: {
+          gitDir: `/data/worktrees/s1/${input.runId}.checkpoints.git`,
+          ref: `refs/cairn/worktrees/${input.runId}`,
+        },
+      }
+    })
+    main.handle('host.workspace.cleanup', ({ runId }) => {
+      cleanupCalls.push(runId)
+      if (options.workspaceCleanupError !== undefined) throw options.workspaceCleanupError
+      return { cleaned: true }
+    })
+  }
   if (options.approval) {
     const approval = options.approval
     main.handle('host.approval.request', (request) => approval(request))
@@ -227,11 +290,16 @@ function setup(options: SetupOptions = {}) {
     runtimeTools,
     systemPrompts,
     createdRuntimes,
+    workspacePaths,
+    workspaceRuns,
+    workspaceCreateInputs,
+    cleanupCalls,
     initHost: () =>
       main.request('host.init', {
         ...baseInit,
         agentDefinition: options.definition ?? parentDefinition(),
         ...(options.permissionRules ? { permissionRules: [...options.permissionRules] } : {}),
+        ...(options.checkpoints ? { checkpoints: options.checkpoints } : {}),
       }),
     waitFor: async (type: string, count = 1) => {
       await vi.waitFor(() =>
@@ -358,6 +426,17 @@ describe('host delegation (M4-02)', () => {
           hasScripts: false,
           files: [],
         },
+        {
+          name: 'optional-skill',
+          description: 'Optional checklist',
+          sha256: 'c'.repeat(64),
+          source: 'user',
+          pinned: false,
+          root: '/skills/optional',
+          body: 'Optional skill body',
+          hasScripts: false,
+          files: [],
+        },
       ],
       mcpTools: [
         {
@@ -377,6 +456,7 @@ describe('host delegation (M4-02)', () => {
     expect(names).toContain('mcp_echo')
     expect(names).toContain('load_skill')
     expect(h.systemPrompts['reviewer']).toContain('Pinned review checklist')
+    expect(h.systemPrompts['reviewer']).not.toContain('Optional skill body')
     expect(h.systemPrompts['reviewer']).toContain('reviewer instructions')
   })
 
@@ -387,9 +467,60 @@ describe('host delegation (M4-02)', () => {
     expect(delegate?.description).toContain('builtin.reviewer')
   })
 
+  it('目标列表接口失败时回退到 id 并记录错误', async () => {
+    const h = setup({ targetsError: new Error('target list unavailable') })
+    await h.initHost()
+    const delegate = h.runtimeTools['fake-1']?.find((tool) => tool.name === 'delegate')
+    expect(delegate?.description).toContain('builtin.reviewer')
+    expect(h.onError).toHaveBeenCalled()
+  })
+
+  it('拒绝缺少任务与简报的委派输入', async () => {
+    const h = setup({
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'delegate', input: { agent: 'builtin.reviewer' } },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('tool.invalid_input')
+    expect(h.createdRuntimes).toEqual(['fake-1'])
+  })
+
+  it('把主进程的委派失败映射为工具错误', async () => {
+    const h = setup({
+      delegateFailure: new Error('delegate backend unavailable'),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'done' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(h.createdRuntimes).toEqual(['fake-1'])
+  })
+
   it('allowedAgents 为空时不登记 delegate', async () => {
     const h = setup({
       definition: parentDefinition({ delegation: { ...delegation, allowedAgents: [] } }),
+    })
+    await h.initHost()
+    expect(h.runtimeTools['fake-1']?.map((tool) => tool.name)).not.toContain('delegate')
+  })
+
+  it('allowedAgents 中没有已发布目标时不登记 delegate', async () => {
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...delegation, allowedAgents: ['missing.agent'] },
+      }),
     })
     await h.initHost()
     expect(h.runtimeTools['fake-1']?.map((tool) => tool.name)).not.toContain('delegate')
@@ -424,6 +555,38 @@ describe('host delegation (M4-02)', () => {
     await h.waitFor('run.child.completed')
     expect(h.runtimeTools['reviewer']).toEqual([])
     expect(h.systemPrompts['reviewer']).not.toContain('Optional body')
+  })
+
+  it('子运行没有注册任何工具时不登记 load_skill', async () => {
+    const toolLess = agent('builtin.reviewer', { tools: { allow: [] } })
+    const h = setup({
+      targets: [{ id: reviewer.id, definition: toolLess }],
+      host: { registerTools: () => undefined },
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+      skills: [
+        {
+          name: 'pinned-skill',
+          description: 'Pinned',
+          sha256: 'd'.repeat(64),
+          source: 'builtin',
+          pinned: true,
+          root: '/skills/pinned',
+          body: 'Pinned body',
+          hasScripts: false,
+          files: [],
+        },
+      ],
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+    expect(h.runtimeTools['reviewer']).toEqual([])
+    expect(h.systemPrompts['reviewer']).toContain('Pinned body')
   })
 
   it('子运行的工具环境与大小写选项传入工具流水线', async () => {
@@ -574,6 +737,366 @@ describe('host delegation (M4-02)', () => {
     // 子运行的模型上下文里没有 delegate（深度已达上限）
     expect(h.runtimeTools['reviewer']?.map((tool) => tool.name)).not.toContain('delegate')
     expect(h.createdRuntimes).toEqual(['fake-1', 'reviewer'])
+  })
+})
+
+describe('host isolated workspace (M4-08)', () => {
+  const tester = agent('builtin.tester', { permissions: 'ask' })
+  const autoParent = parentDefinition({
+    delegation: { ...delegation, allowedAgents: ['builtin.tester'], defaultWorkspace: 'auto' },
+  })
+  const checkpoints = { gitDir: '/data/p1.git', ref: 'refs/cairn/sessions/s1' }
+  const baseline = 'a'.repeat(40)
+
+  it('子运行可以加载技能正文与额外文件提示', async () => {
+    const skillUser = agent('builtin.tester', {
+      permissions: 'ask',
+      tools: { allow: ['load_skill'] },
+    })
+    const h = setup({
+      definition: autoParent,
+      targets: [{ id: skillUser.id, definition: skillUser }],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: {
+        openCheckpoints: async () => ({
+          head: () => baseline,
+          checkpoint: async () => ({ commit: baseline }) as never,
+        }),
+      },
+      approval: () => ({ decision: 'allow_once' }),
+      skills: [
+        {
+          name: 'review-checklist',
+          description: 'Review checklist',
+          sha256: 'e'.repeat(64),
+          source: 'builtin',
+          pinned: false,
+          root: '/skills/review',
+          body: 'Skill body loaded on demand',
+          hasScripts: false,
+          files: [],
+          filesTruncated: true,
+        },
+      ],
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'load_skill', input: { name: 'review-checklist' } },
+              { kind: 'reply', text: '{"summary":"ok"}' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+    expect(toolCompletedText(h.events)).toContain('Skill body loaded on demand')
+  })
+
+  it('creates an isolated workspace and roots the child run at it', async () => {
+    const openCheckpoints = vi.fn(async () => ({
+      head: () => baseline,
+      checkpoint: vi.fn(async () => ({ commit: baseline }) as never),
+    }))
+    const h = setup({
+      definition: autoParent,
+      targets: [{ id: tester.id, definition: tester }],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: { openCheckpoints },
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    expect(h.workspaceRuns).toHaveLength(1)
+    const childRunId = h.workspaceRuns[0]!
+    const isolated = `/worktrees/s1/${childRunId}`
+    expect(h.events.find((event) => event.type === 'run.delegated')).toMatchObject({
+      payload: { workspace: 'isolated', workspacePath: isolated },
+    })
+    // 父运行与子运行的工具都拿到正确的工作区根
+    expect(h.workspacePaths).toEqual(['/work', isolated])
+    expect(h.systemPrompts['reviewer']).toContain(isolated)
+    // 子运行使用自己的检查点位置，并把 .git 文件排除在外
+    expect(openCheckpoints).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gitDir: `/data/worktrees/s1/${childRunId}.checkpoints.git`,
+        ref: `refs/cairn/worktrees/${childRunId}`,
+        workTree: isolated,
+        extraExcludes: ['.git'],
+      }),
+    )
+    expect(h.cleanupCalls).toEqual([childRunId])
+  })
+
+  it('records cleanup failures without failing the delegated result', async () => {
+    const h = setup({
+      definition: autoParent,
+      targets: [{ id: tester.id, definition: tester }],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: {
+        openCheckpoints: async () => ({
+          head: () => baseline,
+          checkpoint: async () => ({ commit: baseline }) as never,
+        }),
+      },
+      workspaceCleanupError: new Error('cleanup failed'),
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    expect(h.cleanupCalls).toHaveLength(1)
+    expect(h.onError).toHaveBeenCalled()
+    expect(toolCompletedText(h.events)).toContain('ok')
+  })
+
+  it('falls back to shared when the delegation checkpoint fails', async () => {
+    const h = setup({
+      definition: autoParent,
+      targets: [{ id: tester.id, definition: tester }],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: {
+        openCheckpoints: async () => ({
+          head: () => baseline,
+          checkpoint: async () => {
+            throw new Error('checkpoint disk full')
+          },
+        }),
+      },
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    expect(h.workspaceRuns).toEqual([])
+    expect(h.events.find((event) => event.type === 'run.delegated')).toMatchObject({
+      payload: { workspace: 'shared', workspacePath: '/work' },
+    })
+    expect(h.onError).toHaveBeenCalled()
+  })
+
+  it('nests isolated workspaces and gives the grandchild its own checkpoint root', async () => {
+    const nestedTester = agent('builtin.tester', {
+      permissions: 'ask',
+      delegation: {
+        ...delegation,
+        allowedAgents: ['builtin.coder'],
+        maxDepth: 2,
+        defaultWorkspace: 'auto',
+      },
+    })
+    const writer = agent('builtin.coder', { permissions: 'ask' })
+    const h = setup({
+      definition: parentDefinition({
+        delegation: {
+          ...delegation,
+          allowedAgents: ['builtin.tester'],
+          maxDepth: 2,
+          defaultWorkspace: 'auto',
+        },
+      }),
+      targets: [
+        { id: nestedTester.id, definition: nestedTester },
+        { id: writer.id, definition: writer },
+      ],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: {
+        openCheckpoints: async () => ({
+          head: () => baseline,
+          checkpoint: async () => ({ commit: baseline }) as never,
+        }),
+      },
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [
+              delegateStep('builtin.coder'),
+              { kind: 'reply', text: '{"summary":"child done"}' },
+            ],
+          },
+        ],
+      },
+      grandchildScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"grandchild done"}' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed', 2)
+
+    expect(h.workspaceCreateInputs).toHaveLength(2)
+    const [childCreate, grandchildCreate] = h.workspaceCreateInputs
+    expect(childCreate!.gitDir).toBeUndefined()
+    expect(grandchildCreate!.gitDir).toBe(
+      `/data/worktrees/s1/${childCreate!.runId}.checkpoints.git`,
+    )
+    expect(grandchildCreate!.runId).not.toBe(childCreate!.runId)
+    expect(h.cleanupCalls).toEqual([grandchildCreate!.runId, childCreate!.runId])
+  })
+
+  it('falls back to the shared workspace when creation fails', async () => {
+    const h = setup({
+      definition: autoParent,
+      targets: [{ id: tester.id, definition: tester }],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: {
+        openCheckpoints: async () => ({
+          head: () => 'cp0',
+          checkpoint: async () => ({ commit: 'cp0' }) as never,
+        }),
+      },
+      workspaceCreate: async () => {
+        throw new Error('quota exceeded')
+      },
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    expect(h.events.find((event) => event.type === 'run.delegated')).toMatchObject({
+      payload: { workspace: 'shared', workspacePath: '/work' },
+    })
+    expect(h.cleanupCalls).toEqual([])
+    expect(h.onError).toHaveBeenCalled()
+  })
+
+  it('falls back to shared when no checkpoint baseline is available', async () => {
+    const h = setup({
+      definition: autoParent,
+      targets: [{ id: tester.id, definition: tester }],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: {
+        openCheckpoints: async () => {
+          throw new CheckpointError(CheckpointErrorCode.GitUnavailable, 'git not found')
+        },
+      },
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    expect(h.workspaceRuns).toEqual([])
+    expect(h.events.find((event) => event.type === 'run.delegated')).toMatchObject({
+      payload: { workspace: 'shared', workspacePath: '/work' },
+    })
+  })
+
+  it('keeps the parent workspace when the policy explicitly asks for shared', async () => {
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...delegation, allowedAgents: ['builtin.tester'] },
+      }),
+      targets: [{ id: tester.id, definition: tester }],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: {
+        openCheckpoints: async () => ({
+          head: () => 'cp0',
+          checkpoint: async () => ({ commit: 'cp0' }) as never,
+        }),
+      },
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    expect(h.workspaceRuns).toEqual([])
+    expect(h.events.find((event) => event.type === 'run.delegated')).toMatchObject({
+      payload: { workspace: 'shared', workspacePath: '/work' },
+    })
+  })
+
+  it('serializes shared writes so only one child mutates the parent workspace', async () => {
+    const parallel = {
+      ...delegation,
+      allowedAgents: ['builtin.tester'],
+      maxChildrenPerTurn: 2,
+      maxParallel: 2,
+    }
+    const step = (task: string) => ({
+      kind: 'tool' as const,
+      name: 'delegate',
+      input: { agent: 'builtin.tester', task, brief: { goal: 'g', deliverable: 'd' } },
+    })
+    const h = setup({
+      definition: parentDefinition({ delegation: parallel }),
+      targets: [{ id: tester.id, definition: tester }],
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [step('first'), step('second'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed', 2)
+
+    const delegated = h.events.filter((event) => event.type === 'run.delegated')
+    expect(delegated).toHaveLength(2)
+    const firstCompleted = h.events.findIndex((event) => event.type === 'run.child.completed')
+    const secondDelegated = h.events.indexOf(delegated[1]!)
+    expect(secondDelegated).toBeGreaterThan(firstCompleted)
   })
 })
 
