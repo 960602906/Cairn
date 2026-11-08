@@ -52,6 +52,8 @@ export const ChangeSetInfo = z.object({
   parentRunId: Id.optional(),
   /** 基线提交：父工作区在委派时刻的检查点。 */
   baseCommit: z.string().min(1),
+  /** 基线快照的创建时间；旧数据没有这个字段。 */
+  baseCreatedAt: Timestamp.optional(),
   status: ChangeSetStatus,
   createdAt: Timestamp,
   /** 合并完成时间。 */
@@ -71,6 +73,8 @@ export const ChangeSetSummary = z.object({
   parentRunId: Id.optional(),
   status: ChangeSetStatus,
   createdAt: Timestamp,
+  /** 基线快照的创建时间；旧数据没有这个字段。 */
+  baseCreatedAt: Timestamp.optional(),
   mergedAt: Timestamp.optional(),
   /** 文件数。 */
   files: z.number().int().nonnegative(),

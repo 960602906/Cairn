@@ -168,6 +168,7 @@ function setup({
       createdAt: 1,
     },
   ],
+  changeSets = [],
   onOpenChangesAvailable = true,
   withChildRun = true,
   agentId,
@@ -177,6 +178,11 @@ function setup({
   readonly approvals?: readonly PendingApproval[]
   readonly completed?: DelegationView['completed']
   readonly changes?: readonly FileChangeSummary[]
+  readonly changeSets?: readonly {
+    changeSetId: string
+    added: number
+    removed: number
+  }[]
   readonly onOpenChangesAvailable?: boolean
   readonly withChildRun?: boolean
   readonly agentId?: string
@@ -196,6 +202,7 @@ function setup({
     },
     approvals: { s1: approvals },
     changes: { s1: changes },
+    changeSets: { s1: changeSets },
     inspectRun,
     resolveApproval,
   })) as unknown as SessionStore
@@ -249,6 +256,17 @@ describe('DelegationCard', () => {
     const card = screen.getByRole('article', { name: '委派任务：检查登录流程' })
     await user.click(withinCard(card).getByRole('button', { name: /检查登录流程/ }))
     expect(withinCard(card).getByRole('alert').textContent).toBe('无法读取子运行过程。')
+  })
+
+  it('opens the change set review and prefers its summary counts (M4-10)', async () => {
+    const user = userEvent.setup()
+    const { onOpenChanges } = setup({
+      completed: completed({ changeSetId: 'cs1' }),
+      changeSets: [{ changeSetId: 'cs1', added: 5, removed: 2 }],
+    })
+    const card = screen.getByRole('article', { name: '委派任务：检查登录流程' })
+    await user.click(withinCard(card).getByRole('button', { name: '查看改动（+5 −2）' }))
+    expect(onOpenChanges).toHaveBeenCalledWith('cs1')
   })
 
   it('shows child approvals in the delegation card and resolves them', async () => {

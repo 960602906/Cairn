@@ -4,8 +4,9 @@ import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSessionView, type PlanView } from '@cairn/core'
+import { createSessionView, type DelegationView, type PlanView } from '@cairn/core'
 import { createI18n } from '@cairn/i18n'
+import type { ChangeSetSummary } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
 import { inspectionKey, type SessionStore } from './session-store.js'
 import { SessionSidePanel, type SessionPanel } from './SessionSidePanel.js'
@@ -50,26 +51,118 @@ const changes = [
   },
 ]
 
-function Harness({ open = true }: { readonly open?: boolean }) {
+const delegation: DelegationView = {
+  childRunId: 'child1',
+  parentRunId: 'r1',
+  agent: { id: 'builtin.coder', version: 2 },
+  task: '补全登录测试',
+  workspace: 'isolated',
+  workspacePath: '/tmp/ws',
+  budget: undefined,
+  turnId: 't1',
+  createdAt: 1,
+  completed: {
+    status: 'completed',
+    summary: '完成',
+    usage: undefined,
+    changeSetId: 'cs1',
+    issues: undefined,
+  },
+}
+
+function Harness({
+  open = true,
+  selectedChangeSetId: initialChangeSetId,
+  showPlan = true,
+  delegations = [],
+  onClose,
+}: {
+  readonly open?: boolean
+  readonly selectedChangeSetId?: string | undefined
+  readonly showPlan?: boolean
+  readonly delegations?: readonly DelegationView[]
+  readonly onClose?: (() => void) | undefined
+}) {
   const [panel, setPanel] = useState<SessionPanel>('diff')
+  const [selectedChangeSetId, setSelectedChangeSetId] = useState(initialChangeSetId)
   return (
     <SessionSidePanel
       sessionId="s1"
-      view={view}
+      view={showPlan ? { ...view, delegations } : { ...view, plans: [], delegations }}
       panel={panel}
       selectedPlanId={plan.planId}
+      selectedChangeSetId={selectedChangeSetId}
+      onSelectChangeSet={setSelectedChangeSetId}
       onPanelChange={setPanel}
       open={open}
+      {...(onClose === undefined ? {} : { onClose })}
     />
   )
 }
 
-const wrap = (ui: ReactNode) => {
+const changeSetSummary: ChangeSetSummary = {
+  changeSetId: 'cs1',
+  runId: 'child1',
+  parentRunId: 'r1',
+  status: 'pending' as const,
+  createdAt: 10,
+  baseCreatedAt: 5,
+  files: 1,
+  conflicts: 0,
+  added: 2,
+  removed: 1,
+}
+
+const changeSetDetail = {
+  changeSetId: 'cs1',
+  sessionId: 's1',
+  runId: 'child1',
+  parentRunId: 'r1',
+  baseCommit: 'a'.repeat(40),
+  baseCreatedAt: 5,
+  status: 'pending' as const,
+  createdAt: 10,
+  conflicts: 0,
+  files: [
+    {
+      path: 'src/a.ts',
+      status: 'pending' as const,
+      kind: 'modified' as const,
+      added: 2,
+      removed: 1,
+      binary: false,
+      large: false,
+    },
+  ],
+}
+
+const wrap = (
+  ui: ReactNode,
+  {
+    changeSets = [],
+    details = {},
+    loading = false,
+  }: {
+    readonly changeSets?: readonly (typeof changeSetSummary)[]
+    readonly details?: Readonly<Record<string, typeof changeSetDetail>>
+    readonly loading?: boolean
+  } = {},
+) => {
   const store = createStore<Record<string, unknown>>(() => ({
     activeSessionId: 's1',
     awaitingTurn: {},
     views: { s1: view },
     changes: { s1: changes },
+    changeSets: { s1: changeSets },
+    changeSetsLoading: { s1: loading },
+    changeSetDetails: details,
+    changeSetLoading: {},
+    changeSetErrors: {},
+    loadChangeSet: vi.fn(async () => changeSetDetail),
+    applyChangeSet: vi.fn(async () => changeSetDetail),
+    rejectChangeSet: vi.fn(async () => changeSetDetail),
+    resolveChangeSetConflict: vi.fn(async () => changeSetDetail),
+    restoreCheckpoint: vi.fn(async () => ({ checkpointId: 'c', files: [] })),
     approvePlan: vi.fn(),
     replan: vi.fn(),
     abandonPlan: vi.fn(),
@@ -133,6 +226,79 @@ describe('SessionSidePanel', () => {
       'true',
     )
     expect(within(panel).getByText('没有运行记录。')).toBeTruthy()
+  })
+
+  it('lists change sets and opens the review, then returns to the list (M4-10)', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness delegations={[delegation]} />, {
+      changeSets: [changeSetSummary],
+      details: { cs1: changeSetDetail },
+    })
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const list = within(panel).getByRole('list', { name: '改动集列表' })
+    expect(within(list).getByText('1 个文件')).toBeTruthy()
+    expect(within(list).getByText('补全登录测试')).toBeTruthy()
+    await user.click(within(list).getByRole('button', { name: /补全登录测试/ }))
+    expect(within(panel).getByRole('region', { name: '改动集审阅' })).toBeTruthy()
+    expect(within(panel).getByText('补全登录测试')).toBeTruthy()
+    expect(within(panel).getByText('src/a.ts')).toBeTruthy()
+    await user.click(within(panel).getByRole('button', { name: '返回改动集列表' }))
+    expect(within(panel).getByRole('list', { name: '改动集列表' })).toBeTruthy()
+  })
+
+  it('shows loading and empty change set states', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness />, { loading: true })
+    let panel = screen.getByRole('complementary', { name: '会话信息' })
+    await user.click(within(panel).getByRole('radio', { name: '改动集' }))
+    expect(within(panel).getByRole('status').textContent).toContain('正在读取改动集')
+    cleanup()
+
+    wrap(<Harness />)
+    panel = screen.getByRole('complementary', { name: '会话信息' })
+    await user.click(within(panel).getByRole('radio', { name: '改动集' }))
+    expect(within(panel).getByText(/还没有改动集/)).toBeTruthy()
+  })
+
+  it('renders applied, rejected, and conflicting change set summaries', () => {
+    wrap(<Harness />, {
+      changeSets: [
+        {
+          ...changeSetSummary,
+          changeSetId: 'cs-applied',
+          status: 'applied' as const,
+          conflicts: 2,
+        },
+        { ...changeSetSummary, changeSetId: 'cs-rejected', status: 'rejected' as const },
+        changeSetSummary,
+      ],
+    })
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const list = within(panel).getByRole('list', { name: '改动集列表' })
+    expect(within(list).getByText('已合并')).toBeTruthy()
+    expect(within(list).getByText('已拒绝')).toBeTruthy()
+    expect(within(list).getByText('待审阅')).toBeTruthy()
+    expect(within(list).getByText('2 个冲突')).toBeTruthy()
+  })
+
+  it('opens a change set selected outside the list with its delegation', () => {
+    wrap(<Harness selectedChangeSetId="cs1" delegations={[delegation]} />, {
+      details: { cs1: changeSetDetail },
+    })
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    expect(within(panel).getByRole('region', { name: '改动集审阅' })).toBeTruthy()
+    expect(within(panel).getByText('补全登录测试')).toBeTruthy()
+  })
+
+  it('closes the panel and renders an empty plan state', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    wrap(<Harness showPlan={false} onClose={onClose} />)
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    await user.click(within(panel).getByRole('tab', { name: '计划' }))
+    expect(within(panel).getByText('还没有计划。')).toBeTruthy()
+    await user.click(within(panel).getByRole('button', { name: '关闭会话信息' }))
+    expect(onClose).toHaveBeenCalled()
   })
 
   it('collapses to zero width and removes itself from the accessible tree', () => {

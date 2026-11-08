@@ -154,6 +154,10 @@ export function createActivityService(options: ActivityServiceOptions): Activity
     const runInfo = new Map<string, RunInfo>()
     const turnLimit = new Set<string>()
     const turnText = new Map<string, string>()
+    /** 父运行每一轮最近一个子运行产生的改动集：`runId:turnId` → changeSetId。 */
+    const turnChangeSets = new Map<string, string>()
+    /** 父运行最近一个子运行的改动集；没有 turnId 时回退到它。 */
+    const runChangeSets = new Map<string, string>()
     const terminal = new Map<string, ActivityCompleted>()
     let lastText = ''
 
@@ -173,6 +177,12 @@ export function createActivityService(options: ActivityServiceOptions): Activity
         case 'turn.limit_reached':
           if (event.turnId) turnLimit.add(event.turnId)
           break
+        case 'run.child.completed':
+          if (event.payload.changeSetId !== undefined) {
+            turnChangeSets.set(`${event.runId}:${event.turnId ?? ''}`, event.payload.changeSetId)
+            runChangeSets.set(event.runId, event.payload.changeSetId)
+          }
+          break
         case 'turn.completed':
         case 'turn.aborted':
         case 'turn.failed': {
@@ -187,6 +197,9 @@ export function createActivityService(options: ActivityServiceOptions): Activity
                   ? 'limit_reached'
                   : 'failed'
           const key = `${event.runId}:${event.turnId ?? ''}`
+          const changeSetId =
+            turnChangeSets.get(key) ??
+            (event.turnId === undefined ? runChangeSets.get(event.runId) : undefined)
           terminal.set(key, {
             sessionId,
             sessionTitle: title,
@@ -196,6 +209,7 @@ export function createActivityService(options: ActivityServiceOptions): Activity
             status,
             summary: (event.turnId ? turnText.get(event.turnId) : undefined) ?? lastText,
             completedAt: event.ts,
+            ...(changeSetId === undefined ? {} : { changeSetId }),
           })
           break
         }

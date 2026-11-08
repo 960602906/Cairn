@@ -254,6 +254,34 @@ describe('createActivityService', () => {
     ])
   })
 
+  it('links completed turns to the latest child change set (M4-10)', () => {
+    const { events, activity } = setup()
+    events.publish([
+      created('s1', 1),
+      user('s1', '委派写文件', 't1', 2),
+      event(
+        's1',
+        'run.child.completed',
+        { childRunId: 'child1', status: 'completed', changeSetId: 'cs1' },
+        { turnId: 't1', ts: 3 },
+      ),
+      event(
+        's1',
+        'run.child.completed',
+        { childRunId: 'child2', status: 'completed', changeSetId: 'cs2' },
+        { turnId: 't1', ts: 4 },
+      ),
+      event('s1', 'turn.completed', { durationMs: 1 }, { turnId: 't1', ts: 5 }),
+      user('s1', '没有改动的轮次', 't2', 6),
+      event('s1', 'turn.completed', { durationMs: 1 }, { turnId: 't2', ts: 7 }),
+    ])
+
+    const completed = activity.list().completed
+    expect(completed[0]).toMatchObject({ turnId: 't2' })
+    expect(completed[0]).not.toHaveProperty('changeSetId')
+    expect(completed[1]).toMatchObject({ turnId: 't1', changeSetId: 'cs2' })
+  })
+
   it('redacts home directories and configured secrets in summaries', () => {
     const { events, activity } = setup()
     events.publish([

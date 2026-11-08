@@ -44,6 +44,9 @@ import {
   type ApprovalDecision,
   type MainForRenderer,
   type CheckpointRestorePlan,
+  type ChangeSetConflictResolution,
+  type ChangeSetInfo,
+  type ChangeSetSummary,
   type ErrorInfo,
   type EventEnvelope,
   type FileChangeSummary,
@@ -98,6 +101,16 @@ export interface SessionState {
   readonly approvals: Readonly<Record<string, readonly PendingApproval[]>>
   /** 各会话的文件改动记录（按发生顺序）；只读取当前会话的。 */
   readonly changes: Readonly<Record<string, readonly FileChangeSummary[]>>
+  /** 各会话的改动集汇总（按创建顺序）；只读取当前会话的。 */
+  readonly changeSets: Readonly<Record<string, readonly ChangeSetSummary[]>>
+  /** 改动集汇总正在读取。 */
+  readonly changeSetsLoading: Readonly<Record<string, boolean>>
+  /** 已读取的改动集详情，键为 changeSetId。 */
+  readonly changeSetDetails: Readonly<Record<string, ChangeSetInfo>>
+  /** 改动集详情正在读取，键为 changeSetId。 */
+  readonly changeSetLoading: Readonly<Record<string, boolean>>
+  /** 改动集读取或操作失败，键为 changeSetId。 */
+  readonly changeSetErrors: Readonly<Record<string, ErrorInfo>>
   /** 已打开过的项目（按打开时间倒序）。 */
   readonly projects: readonly ProjectSummary[]
   /** 最近读取或保存的设置；读取之前为 undefined。 */
@@ -314,6 +327,29 @@ export interface SessionActions {
   revertChanges(sessionId: string, changeIds: readonly string[]): Promise<boolean>
   /** 撤销一条改动中的一块，成功后重新读取改动记录；返回是否成功。 */
   revertHunk(sessionId: string, changeId: string, hunkIndex: number): Promise<boolean>
+  /** 重新读取会话的改动集汇总；失败时保留之前的结果。 */
+  loadChangeSets(sessionId: string): Promise<void>
+  /** 读取一个改动集的详情（含文件 diff）。 */
+  loadChangeSet(sessionId: string, changeSetId: string): Promise<ChangeSetInfo | undefined>
+  /** 接受全部或部分待处理文件；成功时更新详情并重新读取汇总。 */
+  applyChangeSet(
+    sessionId: string,
+    changeSetId: string,
+    paths?: readonly string[],
+  ): Promise<ChangeSetInfo | undefined>
+  /** 拒绝全部或部分文件；成功时更新详情并重新读取汇总。 */
+  rejectChangeSet(
+    sessionId: string,
+    changeSetId: string,
+    paths?: readonly string[],
+  ): Promise<ChangeSetInfo | undefined>
+  /** 处理一个冲突文件：保留主工作区、采用子运行或手动处理。 */
+  resolveChangeSetConflict(
+    sessionId: string,
+    changeSetId: string,
+    path: string,
+    resolution: ChangeSetConflictResolution,
+  ): Promise<ChangeSetInfo | undefined>
   clearError(): void
   /** 取消订阅并停止接收事件。 */
   dispose(): void
@@ -410,8 +446,17 @@ export function createSessionStore(api: MainApi): SessionStore {
 
   let loadApprovalsFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
   let loadChangesFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
+  let loadChangeSetsFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
+  let loadChangeSetFor: (
+    sessionId: string,
+    changeSetId: string,
+  ) => Promise<ChangeSetInfo | undefined> = () => Promise.resolve(undefined)
   /** 各会话最近一次读取改动记录的序号：较早的请求晚返回时丢弃。 */
   const changeRequests = new Map<string, number>()
+  /** 各会话最近一次读取改动集汇总的序号。 */
+  const changeSetListRequests = new Map<string, number>()
+  /** 各改动集最近一次读取详情的序号。 */
+  const changeSetRequests = new Map<string, number>()
   /** 检查器请求序号：切换标签后较早的响应不应覆盖新结果。 */
   const inspectionRequests = new Map<string, number>()
   const store = createStore<SessionState & SessionActions>()((set, get) => {
@@ -459,6 +504,81 @@ export function createSessionStore(api: MainApi): SessionStore {
     }
     loadChangesFor = loadChanges
 
+    const loadChangeSets = async (sessionId: string) => {
+      const request = (changeSetListRequests.get(sessionId) ?? 0) + 1
+      changeSetListRequests.set(sessionId, request)
+      set((state) => ({
+        changeSetsLoading: { ...state.changeSetsLoading, [sessionId]: true },
+      }))
+      try {
+        const result = await api.request('changeset.list', { sessionId })
+        if (changeSetListRequests.get(sessionId) !== request) return
+        set((state) => ({
+          changeSets: { ...state.changeSets, [sessionId]: result.changeSets ?? [] },
+          changeSetsLoading: { ...state.changeSetsLoading, [sessionId]: false },
+        }))
+      } catch (error) {
+        if (changeSetListRequests.get(sessionId) !== request) return
+        set((state) => ({
+          changeSetsLoading: { ...state.changeSetsLoading, [sessionId]: false },
+          error: toError(error),
+        }))
+      }
+    }
+    loadChangeSetsFor = loadChangeSets
+
+    const loadChangeSet = async (sessionId: string, changeSetId: string) => {
+      const request = (changeSetRequests.get(changeSetId) ?? 0) + 1
+      changeSetRequests.set(changeSetId, request)
+      set((state) => ({
+        changeSetLoading: { ...state.changeSetLoading, [changeSetId]: true },
+        changeSetErrors: withoutKey(state.changeSetErrors, changeSetId),
+      }))
+      try {
+        const result = await api.request('changeset.get', { sessionId, changeSetId })
+        if (changeSetRequests.get(changeSetId) !== request) return undefined
+        set((state) => ({
+          changeSetDetails: { ...state.changeSetDetails, [changeSetId]: result.changeSet },
+          changeSetLoading: { ...state.changeSetLoading, [changeSetId]: false },
+        }))
+        return result.changeSet
+      } catch (error) {
+        if (changeSetRequests.get(changeSetId) !== request) return undefined
+        set((state) => ({
+          changeSetLoading: { ...state.changeSetLoading, [changeSetId]: false },
+          changeSetErrors: { ...state.changeSetErrors, [changeSetId]: toError(error) },
+        }))
+        return undefined
+      }
+    }
+    loadChangeSetFor = loadChangeSet
+
+    const mutateChangeSet = async (
+      sessionId: string,
+      changeSetId: string,
+      action: () => Promise<{ changeSet: ChangeSetInfo }>,
+    ) => {
+      set((state) => ({
+        changeSetLoading: { ...state.changeSetLoading, [changeSetId]: true },
+        changeSetErrors: withoutKey(state.changeSetErrors, changeSetId),
+      }))
+      try {
+        const result = await action()
+        set((state) => ({
+          changeSetDetails: { ...state.changeSetDetails, [changeSetId]: result.changeSet },
+          changeSetLoading: { ...state.changeSetLoading, [changeSetId]: false },
+        }))
+        await Promise.all([loadChangeSets(sessionId), loadChanges(sessionId)])
+        return result.changeSet
+      } catch (error) {
+        set((state) => ({
+          changeSetLoading: { ...state.changeSetLoading, [changeSetId]: false },
+          changeSetErrors: { ...state.changeSetErrors, [changeSetId]: toError(error) },
+        }))
+        return undefined
+      }
+    }
+
     const unsubscribe = async (sessionId: string) => {
       pending.delete(sessionId)
       if (subscribed === sessionId) subscribed = undefined
@@ -472,6 +592,11 @@ export function createSessionStore(api: MainApi): SessionStore {
       awaitingTurn: {},
       approvals: {},
       changes: {},
+      changeSets: {},
+      changeSetsLoading: {},
+      changeSetDetails: {},
+      changeSetLoading: {},
+      changeSetErrors: {},
       projects: [],
       settings: undefined,
       error: undefined,
@@ -548,7 +673,11 @@ export function createSessionStore(api: MainApi): SessionStore {
         }
         subscribed = sessionId
         set((state) => receive(state, sessionId, [...result.events, ...(buffered ?? [])]))
-        await Promise.all([loadApprovals(sessionId), loadChanges(sessionId)])
+        await Promise.all([
+          loadApprovals(sessionId),
+          loadChanges(sessionId),
+          loadChangeSets(sessionId),
+        ])
       },
 
       async compactSession() {
@@ -896,6 +1025,40 @@ export function createSessionStore(api: MainApi): SessionStore {
 
       loadChanges,
 
+      loadChangeSets,
+
+      loadChangeSet,
+
+      applyChangeSet: (sessionId, changeSetId, paths) =>
+        mutateChangeSet(sessionId, changeSetId, () =>
+          api.request(
+            'changeset.apply',
+            paths === undefined
+              ? { sessionId, changeSetId }
+              : { sessionId, changeSetId, paths: [...paths] },
+          ),
+        ),
+
+      rejectChangeSet: (sessionId, changeSetId, paths) =>
+        mutateChangeSet(sessionId, changeSetId, () =>
+          api.request(
+            'changeset.reject',
+            paths === undefined
+              ? { sessionId, changeSetId }
+              : { sessionId, changeSetId, paths: [...paths] },
+          ),
+        ),
+
+      resolveChangeSetConflict: (sessionId, changeSetId, path, resolution) =>
+        mutateChangeSet(sessionId, changeSetId, () =>
+          api.request('changeset.resolveConflict', {
+            sessionId,
+            changeSetId,
+            path,
+            resolution,
+          }),
+        ),
+
       changeContent: (sessionId, changeId) =>
         run(() => api.request('changes.content', { sessionId, changeId })),
 
@@ -923,6 +1086,8 @@ export function createSessionStore(api: MainApi): SessionStore {
         offActivity()
         pending.clear()
         inspectionRequests.clear()
+        changeSetListRequests.clear()
+        changeSetRequests.clear()
         subscribed = undefined
       },
     }
@@ -939,6 +1104,21 @@ export function createSessionStore(api: MainApi): SessionStore {
     // 恢复检查点会把之后的改动标记为已撤销（M2-07），同样要重新读取
     if (events.some((e) => e.type === 'file.changed' || e.type === 'checkpoint.restored'))
       void loadChangesFor(sessionId)
+    const changeSetEvents = events.filter((event) => event.type.startsWith('changeset.'))
+    if (changeSetEvents.length > 0) {
+      void loadChangeSetsFor(sessionId)
+      const ids = new Set<string>()
+      for (const event of changeSetEvents) {
+        if ('changeSetId' in event.payload && typeof event.payload.changeSetId === 'string') {
+          ids.add(event.payload.changeSetId)
+        }
+      }
+      for (const changeSetId of ids) {
+        if (store.getState().changeSetDetails[changeSetId] !== undefined) {
+          void loadChangeSetFor(sessionId, changeSetId)
+        }
+      }
+    }
   })
   const offApprovals = api.on('approval.changed', ({ sessionId }) => {
     if (sessionId === subscribed) void loadApprovalsFor(sessionId)

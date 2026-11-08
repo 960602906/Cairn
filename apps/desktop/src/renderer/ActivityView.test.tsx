@@ -118,6 +118,19 @@ describe('ActivityView', () => {
     expect(screen.getByText('重构完成')).toBeTruthy()
   })
 
+  it('opens the change set from a completed turn (M4-10)', async () => {
+    const user = userEvent.setup()
+    const { onOpenSession } = setup({
+      activity: {
+        ...snapshot,
+        completed: [{ ...snapshot.completed[0]!, changeSetId: 'cs1' }],
+      },
+    })
+    const item = screen.getByRole('article', { name: '最近完成：重构工具' })
+    await user.click(within(item).getByRole('button', { name: '查看改动' }))
+    expect(onOpenSession).toHaveBeenCalledWith('s3', 'cs1')
+  })
+
   it('decides approvals in place and hides session-wide allow for no_checkpoint', async () => {
     const user = userEvent.setup()
     const { resolveActivity } = setup()

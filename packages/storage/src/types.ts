@@ -482,6 +482,8 @@ export interface ChangeSetRecord {
   /** 发起委派的运行；事件与界面按它归属。 */
   readonly parentRunId?: string
   readonly baseCommit: string
+  /** 基线快照的创建时间；旧数据没有这个字段。 */
+  readonly baseCreatedAt?: number
   readonly gitDir: string
   readonly workspacePath: string
   readonly status: ChangeSetStatus
@@ -496,6 +498,7 @@ export interface CreateChangeSetInput {
   readonly runId: string
   readonly parentRunId?: string
   readonly baseCommit: string
+  readonly baseCreatedAt?: number
   readonly gitDir: string
   readonly workspacePath: string
 }

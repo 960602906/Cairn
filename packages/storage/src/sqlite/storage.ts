@@ -215,6 +215,7 @@ interface ChangeSetRow {
   run_id: string
   parent_run_id: string | null
   base_commit: string
+  base_created_at: number | null
   git_dir: string
   workspace_path: string
   status: ChangeSetStatus
@@ -243,6 +244,7 @@ const toChangeSet = (row: ChangeSetRow): ChangeSetRecord => ({
   runId: row.run_id,
   ...(row.parent_run_id === null ? {} : { parentRunId: row.parent_run_id }),
   baseCommit: row.base_commit,
+  ...(row.base_created_at === null ? {} : { baseCreatedAt: row.base_created_at }),
   gitDir: row.git_dir,
   workspacePath: row.workspace_path,
   status: row.status,
@@ -631,10 +633,10 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     ),
     insertChangeSet: db.prepare(
       `INSERT INTO change_sets
-         (change_set_id, session_id, run_id, parent_run_id, base_commit, git_dir, workspace_path,
-          status, created_at, merged_at, checkpoint_commit)
-       VALUES (@changeSetId, @sessionId, @runId, @parentRunId, @baseCommit, @gitDir, @workspacePath,
-         @status, @createdAt, NULL, NULL)`,
+         (change_set_id, session_id, run_id, parent_run_id, base_commit, base_created_at, git_dir,
+          workspace_path, status, created_at, merged_at, checkpoint_commit)
+       VALUES (@changeSetId, @sessionId, @runId, @parentRunId, @baseCommit, @baseCreatedAt, @gitDir,
+         @workspacePath, @status, @createdAt, NULL, NULL)`,
     ),
     setChangeSetStatus: db.prepare(
       `UPDATE change_sets
@@ -741,6 +743,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       runId: input.runId,
       parentRunId: input.parentRunId ?? null,
       baseCommit: input.baseCommit,
+      baseCreatedAt: input.baseCreatedAt ?? null,
       gitDir: input.gitDir,
       workspacePath: input.workspacePath,
       status: 'pending',

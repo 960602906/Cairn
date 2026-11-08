@@ -34,12 +34,16 @@ const emptyActivity: ActivityListResult = {
   counts: { approvals: 0, running: 0 },
 }
 
-function makeActivityStore(activity: ActivityListResult = emptyActivity) {
+function makeActivityStore(
+  activity: ActivityListResult = emptyActivity,
+  sessions: unknown[] = [],
+  changeSet?: unknown,
+) {
   const listeners = new Map<string, Set<(data: unknown) => void>>()
   const fakeApi = {
     ready: () => Promise.resolve(),
     request: async (method: string) => {
-      if (method === 'session.list') return { sessions: [] }
+      if (method === 'session.list') return { sessions }
       if (method === 'agent.list') return { agents: [] }
       if (method === 'settings.get') return { providers: [], theme: 'system', language: 'zh-CN' }
       if (method === 'settings.shell') return { detected: 'bash', options: ['auto'] }
@@ -47,6 +51,8 @@ function makeActivityStore(activity: ActivityListResult = emptyActivity) {
       if (method === 'session.subscribe') return { events: [], lastSeq: 0 }
       if (method === 'approval.pending') return { approvals: [] }
       if (method === 'changes.list') return { changes: [] }
+      if (method === 'changeset.list') return { changeSets: [] }
+      if (method === 'changeset.get' && changeSet) return { changeSet }
       return {}
     },
     on: (name: string, listener: (data: unknown) => void) => {
@@ -128,5 +134,53 @@ describe('App', () => {
     emit('activity.open', { sessionId: 's1' })
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
     expect(screen.queryByRole('heading', { name: '活动' })).toBeNull()
+  })
+
+  it('opens the change set review from a completed activity item (M4-10)', async () => {
+    const activity: ActivityListResult = {
+      ...emptyActivity,
+      completed: [
+        {
+          sessionId: 's1',
+          sessionTitle: '修复登录',
+          runId: 'r1',
+          turnId: 't1',
+          agent: { id: 'builtin.coder', version: 1 },
+          status: 'completed',
+          summary: '完成',
+          completedAt: 10,
+          changeSetId: 'cs1',
+        },
+      ],
+    }
+    const detail = {
+      changeSetId: 'cs1',
+      sessionId: 's1',
+      runId: 'child1',
+      baseCommit: 'a'.repeat(40),
+      status: 'pending',
+      createdAt: 10,
+      conflicts: 0,
+      files: [],
+    }
+    const { store } = makeActivityStore(
+      activity,
+      [
+        {
+          sessionId: 's1',
+          title: '修复登录',
+          projectPath: '/work',
+          status: 'idle',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      detail,
+    )
+    render(<App i18n={createI18n('zh-CN')} store={store} />)
+    fireEvent.click(await screen.findByRole('button', { name: '活动' }))
+    fireEvent.click(await screen.findByRole('button', { name: '查看改动' }))
+    expect(await screen.findByRole('region', { name: '改动集审阅' })).toBeTruthy()
+    expect(store.getState().activeSessionId).toBe('s1')
   })
 })

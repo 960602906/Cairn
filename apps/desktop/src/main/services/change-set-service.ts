@@ -176,6 +176,7 @@ export function createChangeSetService(options: ChangeSetServiceOptions): Change
       runId: record.runId,
       ...(record.parentRunId === undefined ? {} : { parentRunId: record.parentRunId }),
       baseCommit: record.baseCommit,
+      ...(record.baseCreatedAt === undefined ? {} : { baseCreatedAt: record.baseCreatedAt }),
       status: record.status,
       createdAt: record.createdAt,
       ...(record.mergedAt === undefined ? {} : { mergedAt: record.mergedAt }),
@@ -195,6 +196,7 @@ export function createChangeSetService(options: ChangeSetServiceOptions): Change
       ...(record.parentRunId === undefined ? {} : { parentRunId: record.parentRunId }),
       status: record.status,
       createdAt: record.createdAt,
+      ...(record.baseCreatedAt === undefined ? {} : { baseCreatedAt: record.baseCreatedAt }),
       ...(record.mergedAt === undefined ? {} : { mergedAt: record.mergedAt }),
       files: files.length,
       conflicts: files.filter((file) => file.status === 'conflict').length,
@@ -512,6 +514,7 @@ export function createChangeSetService(options: ChangeSetServiceOptions): Change
           runId,
           ...(parentRunId === undefined ? {} : { parentRunId }),
           baseCommit: workspace.baseCommit,
+          baseCreatedAt: workspace.createdAt,
           gitDir: workspace.projectGitDir,
           workspacePath: workspace.path,
         })

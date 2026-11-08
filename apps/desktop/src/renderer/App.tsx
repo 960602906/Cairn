@@ -45,6 +45,10 @@ function Workspace() {
   const [agents, setAgents] = useState(false)
   const [activity, setActivity] = useState(false)
   const [searching, setSearching] = useState(false)
+  /** 活动中心要求打开的改动集；`ChatPanel` 打开后清空。 */
+  const [pendingChangeSet, setPendingChangeSet] = useState<
+    { sessionId: string; changeSetId: string } | undefined
+  >()
   const refreshActivity = useSessionStore((s) => s.refreshActivity)
   const onActivityOpen = useSessionStore((s) => s.onActivityOpen)
   const selectSession = useSessionStore((s) => s.selectSession)
@@ -124,10 +128,11 @@ function Workspace() {
   }, [])
 
   const openSessionFromActivity = useCallback(
-    (sessionId: string) => {
+    (sessionId: string, changeSetId?: string) => {
       setActivity(false)
       setAgents(false)
       setComposing(false)
+      setPendingChangeSet(changeSetId === undefined ? undefined : { sessionId, changeSetId })
       void selectSession(sessionId)
       if (narrow) setSidebarOpen(false)
     },
@@ -295,7 +300,16 @@ function Workspace() {
             />
           </>
         ) : (
-          <ChatPanel leading={expand} />
+          <ChatPanel
+            leading={expand}
+            {...(pendingChangeSet === undefined
+              ? {}
+              : {
+                  initialChangeSetId: pendingChangeSet.changeSetId,
+                  initialChangeSetSessionId: pendingChangeSet.sessionId,
+                })}
+            onInitialChangeSetOpened={() => setPendingChangeSet(undefined)}
+          />
         )}
       </main>
       {search}

@@ -453,7 +453,7 @@ export function MessageStream({
 }: {
   readonly view: SessionView | undefined
   readonly onOpenPlan: (planId: string) => void
-  readonly onOpenChanges?: (() => void) | undefined
+  readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
   readonly locatedTurnId?: string | undefined
 }) {
   const { t, i18n } = useTranslation('session')

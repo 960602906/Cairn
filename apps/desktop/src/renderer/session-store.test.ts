@@ -900,6 +900,192 @@ describe('file changes (M2-07)', () => {
   })
 })
 
+describe('change sets (M4-10)', () => {
+  const summary = (changeSetId = 'cs1', over: object = {}) => ({
+    changeSetId,
+    runId: 'child1',
+    parentRunId: 'r1',
+    status: 'pending' as const,
+    createdAt: 10,
+    baseCreatedAt: 5,
+    files: 1,
+    conflicts: 0,
+    added: 2,
+    removed: 1,
+    ...over,
+  })
+  const detail = (changeSetId = 'cs1', over: object = {}) => ({
+    changeSetId,
+    sessionId: 's1',
+    runId: 'child1',
+    parentRunId: 'r1',
+    baseCommit: 'a'.repeat(40),
+    baseCreatedAt: 5,
+    status: 'pending' as const,
+    createdAt: 10,
+    conflicts: 0,
+    files: [
+      {
+        path: 'src/a.ts',
+        status: 'pending' as const,
+        kind: 'modified' as const,
+        added: 2,
+        removed: 1,
+        binary: false,
+        large: false,
+      },
+    ],
+    ...over,
+  })
+
+  it('loads summaries when subscribing and details on demand', async () => {
+    const { api, calls } = fakeApi({
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+      'changeset.list': () => ({ changeSets: [summary()] }),
+      'changeset.get': () => ({ changeSet: detail() }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    expect(store.getState().changeSets['s1']?.map((item) => item.changeSetId)).toEqual(['cs1'])
+    expect(calls).toContainEqual(['changeset.list', { sessionId: 's1' }])
+
+    await expect(store.getState().loadChangeSet('s1', 'cs1')).resolves.toMatchObject({
+      changeSetId: 'cs1',
+    })
+    expect(store.getState().changeSetDetails['cs1']?.files[0]?.path).toBe('src/a.ts')
+    expect(store.getState().changeSetLoading['cs1']).toBe(false)
+  })
+
+  it('records change set summary failures and clears the loading flag', async () => {
+    const { api } = fakeApi({
+      'changeset.list': () => {
+        throw new RpcError('changeset.list_failed')
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().loadChangeSets('s1')
+    expect(store.getState().changeSetsLoading['s1']).toBe(false)
+    expect(store.getState().error).toEqual({ code: 'changeset.list_failed' })
+  })
+
+  it('treats a missing change set list from a test double as empty', async () => {
+    const { api } = fakeApi({ 'changeset.list': () => ({}) })
+    const store = createSessionStore(api)
+    await store.getState().loadChangeSets('s1')
+    expect(store.getState().changeSets['s1']).toEqual([])
+  })
+
+  it('keeps the latest detail response and records failures without dropping the previous detail', async () => {
+    const resolvers: ((value: unknown) => void)[] = []
+    let fail = false
+    const { api } = fakeApi({
+      'changeset.get': () => {
+        if (fail) throw new RpcError('changeset.failed')
+        return new Promise((resolve) => resolvers.push(resolve))
+      },
+    })
+    const store = createSessionStore(api)
+    const first = store.getState().loadChangeSet('s1', 'cs1')
+    const second = store.getState().loadChangeSet('s1', 'cs1')
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2))
+    resolvers[1]!({ changeSet: detail('cs1', { createdAt: 20 }) })
+    await second
+    resolvers[0]!({ changeSet: detail('cs1', { createdAt: 30 }) })
+    await first
+    expect(store.getState().changeSetDetails['cs1']?.createdAt).toBe(20)
+
+    fail = true
+    await expect(store.getState().loadChangeSet('s1', 'cs1')).resolves.toBeUndefined()
+    expect(store.getState().changeSetDetails['cs1']?.createdAt).toBe(20)
+    expect(store.getState().changeSetErrors['cs1']).toEqual({ code: 'changeset.failed' })
+  })
+
+  it('applies, rejects and resolves conflicts, refreshing summaries and file changes', async () => {
+    const { api, calls } = fakeApi({
+      'changeset.apply': () => ({
+        changeSet: detail('cs1', { status: 'applied', checkpointCommit: 'b'.repeat(40) }),
+        applied: ['src/a.ts'],
+        conflicts: [],
+      }),
+      'changeset.reject': () => ({
+        changeSet: detail('cs1', { status: 'rejected' }),
+      }),
+      'changeset.resolveConflict': () => ({
+        changeSet: detail('cs1', {
+          files: [{ ...detail().files[0]!, status: 'accepted' }],
+        }),
+      }),
+      'changeset.list': () => ({ changeSets: [summary('cs1', { status: 'applied' })] }),
+      'changes.list': () => ({ changes: [] }),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().applyChangeSet('s1', 'cs1', ['src/a.ts'])).resolves.toMatchObject(
+      { status: 'applied' },
+    )
+    expect(calls).toContainEqual([
+      'changeset.apply',
+      { sessionId: 's1', changeSetId: 'cs1', paths: ['src/a.ts'] },
+    ])
+    expect(calls).toContainEqual(['changeset.list', { sessionId: 's1' }])
+    expect(calls).toContainEqual(['changes.list', { sessionId: 's1' }])
+
+    await expect(store.getState().applyChangeSet('s1', 'cs1')).resolves.toMatchObject({
+      status: 'applied',
+    })
+    expect(calls).toContainEqual(['changeset.apply', { sessionId: 's1', changeSetId: 'cs1' }])
+
+    await expect(store.getState().rejectChangeSet('s1', 'cs1')).resolves.toMatchObject({
+      status: 'rejected',
+    })
+    expect(calls).toContainEqual(['changeset.reject', { sessionId: 's1', changeSetId: 'cs1' }])
+
+    await expect(
+      store.getState().resolveChangeSetConflict('s1', 'cs1', 'src/a.ts', 'take-child'),
+    ).resolves.toMatchObject({ changeSetId: 'cs1' })
+    expect(calls).toContainEqual([
+      'changeset.resolveConflict',
+      { sessionId: 's1', changeSetId: 'cs1', path: 'src/a.ts', resolution: 'take-child' },
+    ])
+    expect(store.getState().changeSetDetails['cs1']?.files[0]?.status).toBe('accepted')
+  })
+
+  it('records operation failures and refreshes summaries after change set events', async () => {
+    let listCalls = 0
+    let detailCalls = 0
+    const { api, emit } = fakeApi({
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+      'changeset.list': () => {
+        listCalls += 1
+        return { changeSets: [summary('cs1', { status: listCalls > 1 ? 'applied' : 'pending' })] }
+      },
+      'changeset.get': () => {
+        detailCalls += 1
+        return { changeSet: detail('cs1', { createdAt: detailCalls }) }
+      },
+      'changeset.apply': () => {
+        throw new RpcError('changeset.not_pending')
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    await store.getState().loadChangeSet('s1', 'cs1')
+    expect(store.getState().changeSetDetails['cs1']?.createdAt).toBe(1)
+
+    emit('s1', [
+      ev('s1', 2, 'changeset.applied', {
+        changeSetId: 'cs1',
+        paths: ['src/a.ts'],
+        checkpointCommit: 'b'.repeat(40),
+      }),
+    ])
+    await vi.waitFor(() => expect(store.getState().changeSets['s1']?.[0]?.status).toBe('applied'))
+    await vi.waitFor(() => expect(store.getState().changeSetDetails['cs1']?.createdAt).toBe(2))
+
+    await expect(store.getState().applyChangeSet('s1', 'cs1')).resolves.toBeUndefined()
+    expect(store.getState().changeSetErrors['cs1']).toEqual({ code: 'changeset.not_pending' })
+  })
+})
+
 describe('skills (M3-08)', () => {
   const summary = (name = 'demo') => ({
     name,

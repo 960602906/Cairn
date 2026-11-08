@@ -29,7 +29,7 @@ export function DelegationCard({
   readonly sessionId: string
   readonly view: SessionView
   readonly delegation: DelegationView
-  readonly onOpenChanges: (() => void) | undefined
+  readonly onOpenChanges: ((changeSetId?: string) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const [expanded, setExpanded] = useState(false)
@@ -39,6 +39,12 @@ export function DelegationCard({
   )
   const approvals = useSessionStore((state) => state.approvals[sessionId] ?? EMPTY_APPROVALS)
   const changes = useSessionStore((state) => state.changes[sessionId] ?? EMPTY_CHANGES)
+  const changeSetId = delegation.completed?.changeSetId
+  const changeSetSummary = useSessionStore((state) =>
+    changeSetId === undefined
+      ? undefined
+      : state.changeSets?.[sessionId]?.find((item) => item.changeSetId === changeSetId),
+  )
   const agents = useSessionStore((state) => state.agents) ?? []
   const agent = agents.find((item) => item.agentId === delegation.agent.id)
   const name = agent
@@ -61,9 +67,11 @@ export function DelegationCard({
     (change) =>
       change.status !== 'reverted' && change.turnId !== undefined && turns.has(change.turnId),
   )
-  const added = changed.reduce((sum, change) => sum + change.added, 0)
-  const removed = changed.reduce((sum, change) => sum + change.removed, 0)
-  const changesAvailable = delegation.completed?.changeSetId !== undefined || changed.length > 0
+  const added = changeSetSummary?.added ?? changed.reduce((sum, change) => sum + change.added, 0)
+  const removed =
+    changeSetSummary?.removed ?? changed.reduce((sum, change) => sum + change.removed, 0)
+  const changesAvailable = changeSetId !== undefined || changed.length > 0
+  const hasCounts = changeSetSummary !== undefined || changed.length > 0
 
   const toggle = () => {
     const next = !expanded
@@ -131,12 +139,12 @@ export function DelegationCard({
       {changesAvailable && (
         <button
           type="button"
-          onClick={() => onOpenChanges?.()}
+          onClick={() => onOpenChanges?.(changeSetId)}
           disabled={onOpenChanges === undefined}
           className="mt-2 flex h-7 items-center gap-1.5 rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50"
         >
           <FileDiff aria-hidden className="size-3.5" />
-          {t('delegation.changes', { added, removed })}
+          {hasCounts ? t('delegation.changes', { added, removed }) : t('delegation.changesPlain')}
         </button>
       )}
       {expanded && (
