@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ResolvedModel } from '@cairn/core'
-import { complete } from './complete.js'
+import { complete, sleep } from './complete.js'
 import { sse, startMockOpenAI, type MockOpenAI } from './testing/mock-openai.js'
 
 let mock: MockOpenAI | undefined
@@ -24,6 +24,14 @@ const resolved = (baseUrl: string, supportsReasoning = false): ResolvedModel => 
 })
 
 const fast = { maxRetries: 3, baseDelayMs: 10, maxDelayMs: 25 }
+
+async function waitForRequest(count: number) {
+  const deadline = Date.now() + 2_000
+  while (mock === undefined || mock.requests.length < count) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${count} request(s)`)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
 
 describe('complete', () => {
   it('returns text and usage, drops reasoning, and sends no tools', async () => {
@@ -185,36 +193,15 @@ describe('complete', () => {
         throw new Error('should not retry')
       },
     })
-    setTimeout(() => controller.abort(), 30)
+    await waitForRequest(1)
+    controller.abort()
     const result = await pending
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.retryable).toBe(false)
     expect(mock.requests).toHaveLength(1)
   })
 
-  it('waits with the built-in timer and can be aborted during the wait', async () => {
-    mock = await startMockOpenAI([
-      { kind: 'error', status: 429, body: { error: { message: 'slow' } } },
-      { kind: 'stream', chunks: [sse.text('late'), sse.finish('stop')] },
-    ])
-    const controller = new AbortController()
-    const pending = complete({
-      model: resolved(mock.baseUrl),
-      messages: [{ role: 'user', content: 'hi' }],
-      maxOutputTokens: 16,
-      signal: controller.signal,
-      retry: { maxRetries: 1, baseDelayMs: 60_000, maxDelayMs: 60_000 },
-    })
-    setTimeout(() => controller.abort(), 20)
-    const aborted = await pending
-    expect(aborted).toMatchObject({
-      ok: false,
-      retryable: false,
-      error: { code: 'model.rate_limited' },
-    })
-    expect(mock.requests).toHaveLength(1)
-
-    await mock.close()
+  it('waits with the built-in timer before retrying', async () => {
     mock = await startMockOpenAI([
       { kind: 'error', status: 429, body: { error: { message: 'slow' } } },
       { kind: 'stream', chunks: [sse.text('ok'), sse.finish('stop')] },
@@ -223,10 +210,24 @@ describe('complete', () => {
       model: resolved(mock.baseUrl),
       messages: [{ role: 'user', content: 'hi' }],
       maxOutputTokens: 16,
-      retry: { maxRetries: 1, baseDelayMs: 0, maxDelayMs: 0 },
+      retry: { maxRetries: 1, baseDelayMs: 1, maxDelayMs: 1 },
     })
     expect(retried).toMatchObject({ ok: true, text: 'ok' })
     expect(mock.requests).toHaveLength(2)
+  })
+
+  it('aborts the built-in retry wait immediately', async () => {
+    const controller = new AbortController()
+    const pending = sleep(60_000, controller.signal)
+    controller.abort()
+    await expect(pending).resolves.toBe(false)
+  })
+
+  it('returns immediately for zero delays and already aborted waits', async () => {
+    await expect(sleep(0, undefined)).resolves.toBe(true)
+    const controller = new AbortController()
+    controller.abort()
+    await expect(sleep(60_000, controller.signal)).resolves.toBe(false)
   })
 
   it('does not send a request when the signal is already aborted', async () => {

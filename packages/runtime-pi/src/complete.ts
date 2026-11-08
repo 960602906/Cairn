@@ -38,7 +38,7 @@ export type CompleteResult =
   | { readonly ok: true; readonly text: string; readonly usage: TokenUsage }
   | { readonly ok: false; readonly error: { readonly code: string }; readonly retryable: boolean }
 
-function sleep(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
+export function sleep(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
   if (signal?.aborted) return Promise.resolve(false)
   if (ms <= 0) return Promise.resolve(true)
   return new Promise((resolve) => {
