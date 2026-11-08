@@ -6,6 +6,7 @@ import {
   MainForHost,
   PROTOCOL_VERSION,
   type EventEnvelope,
+  type RunSnapshotInput,
   type RpcChannel,
   type UnsequencedEvent,
 } from '@cairn/protocol'
@@ -168,6 +169,37 @@ describe('changes.record（M1-08b）', () => {
     const { supervisor } = setup(host)
     await supervisor.startHost(init)
     await expect(host.endpoint!.request('changes.record', change)).rejects.toMatchObject({
+      code: 'run.unsupported',
+    })
+  })
+})
+
+describe('host.snapshot（M4-04）', () => {
+  const snapshot: RunSnapshotInput = {
+    runId: 'r1',
+    agent: { id: 'builtin.coder', version: 1 },
+    model: { providerId: 'fake', modelId: 'fake-1' },
+    tokens: 5,
+    systemPrompt: [{ title: 'Base', text: 'hello', tokens: 1 }],
+    skills: [],
+    tools: [],
+    history: { messages: 0, tokens: 0, preview: [] },
+  }
+
+  it('passes the session and snapshot to the inspect service', async () => {
+    const host = fakeHost()
+    const recordSnapshot = vi.fn()
+    const { supervisor } = setup(host, { recordSnapshot })
+    await supervisor.startHost(init)
+    await expect(host.endpoint!.request('host.snapshot', snapshot)).resolves.toEqual({})
+    expect(recordSnapshot).toHaveBeenCalledWith('s1', snapshot)
+  })
+
+  it('reports run.unsupported when no inspect service is configured', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host)
+    await supervisor.startHost(init)
+    await expect(host.endpoint!.request('host.snapshot', snapshot)).rejects.toMatchObject({
       code: 'run.unsupported',
     })
   })

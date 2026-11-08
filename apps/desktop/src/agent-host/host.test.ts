@@ -12,6 +12,7 @@ import {
   MainForHost,
   RpcError,
   type PermissionRule,
+  type RunSnapshotInput,
   type RpcChannel,
   type UnsequencedEvent,
 } from '@cairn/protocol'
@@ -86,6 +87,52 @@ const echoTool: ToolDefinition<object> = {
 }
 
 describe('agent host', () => {
+  it('reports the context of each model call to the main process (M4-04)', async () => {
+    const snapshots: RunSnapshotInput[] = []
+    const h = setup({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    h.main.handle('host.snapshot', (snapshot) => {
+      snapshots.push(snapshot)
+      return {}
+    })
+    await h.main.request('host.init', init)
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hello') })
+    await h.waitFor('turn.completed')
+    await vi.waitFor(() => expect(snapshots).toHaveLength(1))
+
+    expect(snapshots[0]).toMatchObject({
+      runId: 'r1',
+      agent: init.agent,
+      model: init.model,
+      turnId: expect.any(String),
+    })
+    expect(snapshots[0]!.systemPrompt.length).toBeGreaterThan(0)
+    expect(snapshots[0]!.history.preview.at(-1)).toMatchObject({ role: 'user', text: 'hello' })
+  })
+
+  it('does not fail a turn when snapshot reporting fails', async () => {
+    const h = setup({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    h.main.handle('host.snapshot', () => {
+      throw new RpcError('storage.conflict')
+    })
+    await h.main.request('host.init', init)
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hello') })
+    await h.waitFor('turn.completed')
+    await vi.waitFor(() =>
+      expect(h.onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'storage.conflict' })),
+    )
+  })
+
+  it('ignores missing snapshot support in older main processes', async () => {
+    const h = setup({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    await h.main.request('host.init', init)
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hello') })
+    await h.waitFor('turn.completed')
+    await vi.waitFor(() =>
+      expect(h.events.some((event) => event.type === 'turn.completed')).toBe(true),
+    )
+    expect(h.onError).not.toHaveBeenCalled()
+  })
+
   it('passes the credential from host.init to the runtime factory', async () => {
     const withKey = setup()
     await withKey.main.request('host.init', { ...init, credential: { apiKey: 'secret-key-value' } })

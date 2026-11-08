@@ -173,6 +173,20 @@ export interface TurnPreparation {
   readonly tools?: readonly RuntimeToolSpec[]
 }
 
+/** 一次模型调用前的实际上下文（M4-04）：宿主据此生成检查器快照。 */
+export interface ModelCallSnapshot {
+  readonly runId: string
+  readonly parentRunId?: string
+  readonly turnId?: string
+  readonly stepId?: string
+  readonly agent: AgentDefinitionRef
+  readonly model: ResolvedModel
+  readonly systemPrompt: string
+  readonly messages: readonly CanonicalMessage[]
+  readonly tools: readonly RuntimeToolSpec[]
+  readonly compaction?: EventPayload<'context.compacted'>
+}
+
 export interface RunEngineOptions {
   readonly sessionId: string
   readonly runId: string
@@ -199,6 +213,12 @@ export interface RunEngineOptions {
    * 抛出时同样保持原样，不因此失败这一轮。
    */
   readonly sessionBrief?: () => Promise<string | undefined>
+  /**
+   * 每次调用模型前收到最终系统提示词与历史（M4-04）。抛出或 reject 只交给 `onModelCallError`，
+   * 不影响这一轮。
+   */
+  readonly onModelCall?: (snapshot: ModelCallSnapshot) => void | Promise<void>
+  readonly onModelCallError?: (error: unknown) => void
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 `executeTool`。 */
@@ -270,6 +290,7 @@ export class RunEngine {
   #turn: TurnContext | undefined
   /** 当前系统提示词，压缩时计入开销。 */
   #systemPrompt: string
+  #tools: readonly RuntimeToolSpec[]
   /** 按用户消息顺序记下的轮次 id。运行时的历史不一定带着 turnId。 */
   #userTurnIds: string[] = []
   #summary: Extract<CanonicalMessage, { role: 'summary' }> | undefined
@@ -278,6 +299,7 @@ export class RunEngine {
   /** 当前轮次结束时 resolve。 */
   #turnDone: Promise<void> | undefined
   #limits: RunLimits
+  #lastCompaction: EventPayload<'context.compacted'> | undefined
 
   private constructor(options: RunEngineOptions) {
     this.#o = options
@@ -290,13 +312,20 @@ export class RunEngine {
     const restored = options.restore?.state ?? 'idle'
     this.#state = isActiveRunState(restored) || restored === 'aborting' ? 'interrupted' : restored
     const base = options.systemPrompt ?? ''
+    this.#tools = options.tools ?? []
     this.#systemPrompt =
       (options.tools?.length ?? 0) > 0 && !base.includes(TOOL_RESULT_NOTICE)
         ? [base, TOOL_RESULT_NOTICE].filter(Boolean).join('\n\n')
         : base
     for (const message of options.restore?.history ?? []) {
       if (message.role === 'summary') {
-        if (!isSessionBrief(message)) this.#summary = message
+        if (!isSessionBrief(message)) {
+          this.#summary = message
+          this.#lastCompaction = {
+            summary: message.content,
+            coversTurns: [message.coversTurns[0], message.coversTurns[1]],
+          }
+        }
       } else if (message.role === 'user' && message.turnId) this.#userTurnIds.push(message.turnId)
     }
   }
@@ -377,6 +406,7 @@ export class RunEngine {
       session.setSystemPrompt?.(prepared.systemPrompt)
     }
     if (prepared?.tools) session.setTools?.(prepared.tools)
+    if (prepared?.tools) this.#tools = prepared.tools
     this.#emit('turn.started', prepared?.context ? { context: prepared.context } : {})
     this.#transition('thinking')
     const run = async () => {
@@ -595,7 +625,9 @@ export class RunEngine {
       }
       this.#remember(outcome.messages)
       session.replaceMessages?.(outcome.messages)
-      this.#emit('context.compacted', compactionEventPayload(outcome))
+      const compaction = compactionEventPayload(outcome)
+      this.#lastCompaction = compaction
+      this.#emit('context.compacted', compaction)
       return true
     } catch {
       return false
@@ -955,9 +987,16 @@ export class RunEngine {
   #remember(messages: readonly CanonicalMessage[]): void {
     this.#userTurnIds = []
     this.#summary = undefined
+    this.#lastCompaction = undefined
     for (const message of messages) {
       if (message.role === 'summary') {
-        if (!isSessionBrief(message)) this.#summary = message
+        if (!isSessionBrief(message)) {
+          this.#summary = message
+          this.#lastCompaction = {
+            summary: message.content,
+            coversTurns: [message.coversTurns[0], message.coversTurns[1]],
+          }
+        }
       } else if (message.role === 'user' && message.turnId) this.#userTurnIds.push(message.turnId)
     }
   }
@@ -978,14 +1017,50 @@ export class RunEngine {
       })
       this.#forceCompact = false
       if (outcome.kind === 'none') {
-        return messages === ctx.messages ? ctx : { systemPrompt: ctx.systemPrompt, messages }
+        const result =
+          messages === ctx.messages ? ctx : { systemPrompt: ctx.systemPrompt, messages }
+        this.#notifyModelCall(result)
+        return result
       }
       this.#remember(outcome.messages)
-      this.#emit('context.compacted', compactionEventPayload(outcome))
-      return { systemPrompt: ctx.systemPrompt, messages: outcome.messages }
+      const compaction = compactionEventPayload(outcome)
+      this.#lastCompaction = compaction
+      this.#emit('context.compacted', compaction)
+      const result = { systemPrompt: ctx.systemPrompt, messages: outcome.messages }
+      this.#notifyModelCall(result)
+      return result
     } catch {
       this.#forceCompact = false
+      this.#notifyModelCall(ctx)
       return ctx
+    }
+  }
+
+  #notifyModelCall(ctx: {
+    readonly systemPrompt: string
+    readonly messages: readonly CanonicalMessage[]
+  }): void {
+    const callback = this.#o.onModelCall
+    if (!callback) return
+    const turn = this.#turn
+    const step = turn?.step
+    const report = (error: unknown) => this.#o.onModelCallError?.(error)
+    try {
+      const outcome = callback({
+        runId: this.#o.runId,
+        ...(this.#o.parentRunId ? { parentRunId: this.#o.parentRunId } : {}),
+        ...(turn ? { turnId: turn.turnId } : {}),
+        ...(step ? { stepId: step.stepId } : {}),
+        agent: this.#o.agent,
+        model: this.#o.model,
+        systemPrompt: ctx.systemPrompt,
+        messages: ctx.messages,
+        tools: this.#tools,
+        ...(this.#lastCompaction ? { compaction: this.#lastCompaction } : {}),
+      })
+      if (outcome instanceof Promise) void outcome.catch(report)
+    } catch (error) {
+      report(error)
     }
   }
 

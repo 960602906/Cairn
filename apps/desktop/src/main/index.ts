@@ -38,6 +38,7 @@ import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
 import { createSessionEventService } from './services/event-service.js'
+import { createInspectService } from './services/inspect-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { loadProjectAgentsMd } from './services/agents-md.js'
@@ -136,6 +137,7 @@ const settings = createSettingsService({
   onError: reportError,
 })
 const events = createSessionEventService({ storage, onListenerError: reportError })
+const inspect = createInspectService({ storage, events })
 /** 改动记录（M1-08b）：宿主报告的改动写入 blob 存储与数据库；界面列出与撤销。 */
 const changes = createChangeService({
   storage,
@@ -260,6 +262,9 @@ const supervisor = createHostSupervisor({
   requestApproval: (sessionId, runId, request) => approvals.request(sessionId, runId, request),
   cancelApproval: (sessionId, approvalId) => approvals.cancel(sessionId, approvalId),
   recordChange: (sessionId, runId, input) => changes.record(sessionId, runId, input),
+  recordSnapshot: (sessionId, snapshot) => {
+    inspect.record(sessionId, snapshot)
+  },
   // 项目说明（M3-02）：每轮按项目开关读一次 AGENTS.md。关了就不读。
   loadAgentsMd: (sessionId) => {
     const session = storage.sessions.get(sessionId)
@@ -402,6 +407,13 @@ const gateway = createRendererGateway({
   mcp,
   agents,
   diagnostics,
+  inspect: {
+    inspect: (params) =>
+      inspect.inspect({
+        sessionId: params.sessionId,
+        ...(params.runId ? { runId: params.runId } : {}),
+      }),
+  },
   mcpStatus: (listener) => {
     mcpStatusListeners.add(listener)
     return () => mcpStatusListeners.delete(listener)

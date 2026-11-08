@@ -77,6 +77,11 @@ export interface ApprovalCommands {
   readonly subscribe: (listener: (sessionId: string) => void) => () => void
 }
 
+/** 运行检查器（M4-04）。 */
+export interface InspectCommands {
+  readonly inspect: Handler<'run.inspect'>
+}
+
 /** 由供应商服务实现的连接测试与模型列表（M2-10）。 */
 export interface ProviderCommands {
   readonly test: Handler<'provider.test'>
@@ -128,6 +133,8 @@ export interface RendererGatewayOptions {
   readonly agents: AgentCommands
   /** 诊断包（M3-13）：导出前清单、生成 zip 与在文件夹中显示。 */
   readonly diagnostics: DiagnosticsCommands
+  /** 运行检查器（M4-04）：运行树、上下文快照与生效设置。 */
+  readonly inspect: InspectCommands
   /** MCP 状态变化的订阅（M3-09）。 */
   readonly mcpStatus: (listener: (event: z.output<typeof McpStatusEvent>) => void) => () => void
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
@@ -345,6 +352,8 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
         subs.delete(sessionId)
         return {}
       })
+
+      endpoint.handle('run.inspect', (params) => options.inspect.inspect(params))
 
       const connection = {
         deliver(sessionId: string, batch: readonly EventEnvelope[]) {

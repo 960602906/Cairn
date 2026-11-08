@@ -428,6 +428,42 @@ export interface AgentStore {
   addVersion(input: AddAgentVersionInput): AgentVersionRecord
 }
 
+// ---------- 运行快照（M4-04） ----------
+
+/**
+ * 一次模型调用前的上下文快照。`data` 是已解析的 `RunSnapshot` JSON；写入方负责脱敏与截断。
+ * 每个运行最多保留最近 20 份。
+ */
+export interface RunSnapshotRecord {
+  readonly snapshotId: string
+  readonly sessionId: string
+  readonly runId: string
+  readonly parentRunId?: string
+  readonly turnId?: string
+  readonly stepId?: string
+  readonly createdAt: number
+  readonly tokens: number
+  readonly data: unknown
+}
+
+export interface AddRunSnapshotInput {
+  readonly snapshotId: string
+  readonly sessionId: string
+  readonly runId: string
+  readonly parentRunId?: string
+  readonly turnId?: string
+  readonly stepId?: string
+  readonly tokens: number
+  readonly data: unknown
+}
+
+export interface RunSnapshotStore {
+  /** 会话不存在时报 `storage.not_found`，id 重复时报 `storage.conflict`。 */
+  add(input: AddRunSnapshotInput): RunSnapshotRecord
+  /** 按时间从旧到新；`limit` 默认 20。 */
+  list(runId: string, limit?: number): RunSnapshotRecord[]
+}
+
 // ---------- 汇总 ----------
 
 export interface Storage {
@@ -441,6 +477,7 @@ export interface Storage {
   readonly mcpServers: McpServerStore
   readonly mcpToolPrefs: McpToolPrefStore
   readonly agents: AgentStore
+  readonly runSnapshots: RunSnapshotStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   close(): void

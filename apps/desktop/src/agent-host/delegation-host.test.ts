@@ -17,6 +17,7 @@ import {
   type HostApprovalRequest,
   type McpToolExposure,
   type PermissionRule,
+  type RunSnapshotInput,
   type RpcChannel,
   type SkillCatalogEntry,
   type UnsequencedEvent,
@@ -293,6 +294,40 @@ describe('host delegation (M4-02)', () => {
     // 工具说明列出了可委派目标
     const delegate = h.runtimeTools['fake-1']?.find((tool) => tool.name === 'delegate')
     expect(delegate?.description).toContain('builtin.reviewer')
+  })
+
+  it('父子运行分别上报带运行归属的上下文快照（M4-04）', async () => {
+    const snapshots: RunSnapshotInput[] = []
+    const h = setup({
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"status":"completed","summary":"ok"}' }] }],
+      },
+    })
+    h.main.handle('host.snapshot', (snapshot) => {
+      snapshots.push(snapshot)
+      return {}
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('please review') })
+    await h.waitFor('run.child.completed')
+    await h.waitFor('turn.completed')
+    await vi.waitFor(() => expect(snapshots.some((item) => item.parentRunId === 'r1')).toBe(true))
+
+    const parent = snapshots.find((item) => item.runId === 'r1')
+    const child = snapshots.find((item) => item.parentRunId === 'r1')
+    expect(parent).toMatchObject({
+      agent: { id: 'default', version: 1 },
+      model: { providerId: 'fake', modelId: 'fake-1' },
+    })
+    expect(child).toMatchObject({
+      agent: { id: 'builtin.reviewer', version: 1 },
+      model: { providerId: 'fake', modelId: 'reviewer' },
+    })
+    expect(child!.history.preview.some((message) => message.role === 'user')).toBe(true)
+    expect(child!.tools.map((tool) => tool.name)).toContain('lookup')
   })
 
   it('未启用委派时 delegate 工具不可见', async () => {

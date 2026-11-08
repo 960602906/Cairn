@@ -971,6 +971,107 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     })
 
+    describe('run snapshots', () => {
+      const snapshot = (snapshotId: string, runId = 'run-1', extra: object = {}) => ({
+        snapshotId,
+        sessionId: 's1',
+        runId,
+        tokens: 12,
+        data: {
+          runId,
+          agent: { id: 'builtin.coder', version: 1 },
+          model: { providerId: 'fake', modelId: 'fake-1' },
+          tokens: 12,
+          systemPrompt: [],
+          skills: [],
+          tools: [],
+          history: { messages: 0, tokens: 0, preview: [] },
+        },
+        ...extra,
+      })
+
+      it('stores snapshots, fills createdAt and returns copies', () => {
+        seed()
+        const added = storage.runSnapshots.add(
+          snapshot('snap-1', 'run-1', { parentRunId: 'parent', turnId: 't1', stepId: 'st1' }),
+        )
+        expect(added).toMatchObject({
+          snapshotId: 'snap-1',
+          sessionId: 's1',
+          runId: 'run-1',
+          parentRunId: 'parent',
+          turnId: 't1',
+          stepId: 'st1',
+          createdAt: 100,
+          tokens: 12,
+        })
+        expect(storage.runSnapshots.list('run-1')).toEqual([added])
+        ;(added.data as { runId: string }).runId = 'changed'
+        expect((storage.runSnapshots.list('run-1')[0]!.data as { runId: string }).runId).toBe(
+          'run-1',
+        )
+      })
+
+      it('keeps the latest 20 per run and lists them oldest first', () => {
+        seed()
+        for (let i = 1; i <= 25; i += 1) {
+          clock = 100 + i
+          storage.runSnapshots.add(snapshot(`snap-${i}`))
+        }
+        const kept = storage.runSnapshots.list('run-1')
+        expect(kept).toHaveLength(20)
+        expect(kept.map((item) => item.snapshotId)).toEqual(
+          Array.from({ length: 20 }, (_, index) => `snap-${index + 6}`),
+        )
+        expect(storage.runSnapshots.list('run-1', 3).map((item) => item.snapshotId)).toEqual([
+          'snap-6',
+          'snap-7',
+          'snap-8',
+        ])
+        expect(storage.runSnapshots.list('run-1', 0)).toEqual([])
+        expect(storage.runSnapshots.list('other')).toEqual([])
+      })
+
+      it('limits each run independently', () => {
+        seed()
+        storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p1',
+          workspacePath: '/work/demo',
+          title: '',
+        })
+        storage.runSnapshots.add(snapshot('a1', 'a'))
+        storage.runSnapshots.add(snapshot('b1', 'b'))
+        storage.runSnapshots.add(snapshot('a2', 'a'))
+        expect(storage.runSnapshots.list('a').map((item) => item.snapshotId)).toEqual(['a1', 'a2'])
+        expect(storage.runSnapshots.list('b').map((item) => item.snapshotId)).toEqual(['b1'])
+      })
+
+      it('rejects unknown sessions and duplicate ids', () => {
+        seed()
+        storage.runSnapshots.add(snapshot('snap-1'))
+        expectStorageError(
+          () => storage.runSnapshots.add(snapshot('snap-1')),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.runSnapshots.add({ ...snapshot('snap-2'), sessionId: 'missing' }),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('rolls back with transactions', () => {
+        seed()
+        expect(() =>
+          storage.transaction(() => {
+            storage.runSnapshots.add(snapshot('snap-1'))
+            throw new Error('boom')
+          }),
+        ).toThrow('boom')
+        expect(storage.runSnapshots.list('run-1')).toEqual([])
+      })
+    })
+
     describe('transaction', () => {
       it('commits all writes and returns the result', () => {
         const result = storage.transaction(() => {

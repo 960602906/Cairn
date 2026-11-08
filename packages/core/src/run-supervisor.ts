@@ -21,6 +21,7 @@ import type {
   UnsequencedEvent,
 } from '@cairn/protocol'
 import {
+  type ModelCallSnapshot,
   RunEngine,
   RunEngineError,
   type RetryPolicy,
@@ -135,6 +136,8 @@ export interface RunContext {
   readonly prepareTurn?: (() => Promise<TurnPreparation | undefined>) | undefined
   readonly summarize?: ((transcript: string) => Promise<string | undefined>) | undefined
   readonly sessionBrief?: (() => Promise<string | undefined>) | undefined
+  readonly onModelCall?: ((snapshot: ModelCallSnapshot) => void | Promise<void>) | undefined
+  readonly onModelCallError?: ((error: unknown) => void) | undefined
   readonly tools?: readonly RuntimeToolSpec[] | undefined
   readonly executeTool?: ToolExecutor | undefined
   readonly toolPipeline?: ToolPipeline | undefined
@@ -159,6 +162,9 @@ export interface RunSupervisorOptions {
   readonly summarize?: (transcript: string) => Promise<string | undefined>
   /** 会话要点（M3-04）。见 RunEngineOptions.sessionBrief。 */
   readonly sessionBrief?: () => Promise<string | undefined>
+  /** 每次模型调用前的实际上下文（M4-04）。 */
+  readonly onModelCall?: (snapshot: ModelCallSnapshot) => void | Promise<void>
+  readonly onModelCallError?: (error: unknown) => void
   readonly tools?: readonly RuntimeToolSpec[]
   readonly executeTool?: ToolExecutor
   /** 工具流水线（M1-05b）；给出时优先于 executeTool。 */
@@ -420,6 +426,16 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
           ? { sessionBrief: ctx.sessionBrief }
           : options.sessionBrief
             ? { sessionBrief: options.sessionBrief }
+            : {}),
+        ...(ctx.onModelCall
+          ? { onModelCall: ctx.onModelCall }
+          : options.onModelCall
+            ? { onModelCall: options.onModelCall }
+            : {}),
+        ...(ctx.onModelCallError
+          ? { onModelCallError: ctx.onModelCallError }
+          : options.onModelCallError
+            ? { onModelCallError: options.onModelCallError }
             : {}),
         ...(ctx.tools ? { tools: ctx.tools } : options.tools ? { tools: options.tools } : {}),
         ...(ctx.executeTool

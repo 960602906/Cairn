@@ -5,6 +5,7 @@ import {
   MainForRenderer,
   RendererForMain,
   type EventEnvelope,
+  type RunInspectResult,
   type RpcChannel,
   type UnsequencedEvent,
 } from '@cairn/protocol'
@@ -22,6 +23,7 @@ import {
   type ApprovalCommands,
   type ChangeCommands,
   type CheckpointCommands,
+  type InspectCommands,
   type RendererGateway,
   type SessionCommands,
   type PermissionCommands,
@@ -91,7 +93,19 @@ let approvals: ApprovalCommands
 let skills: SkillCommands
 let agents: AgentCommands
 let diagnostics: DiagnosticsCommands
+let inspect: InspectCommands
 const approvalListeners = new Set<(sessionId: string) => void>()
+
+const INSPECT_RESULT: RunInspectResult = {
+  tree: {
+    sessionId: 's1',
+    rootRunId: 'r1',
+    generatedAt: 1,
+    runs: [],
+  },
+  snapshots: [],
+  settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+}
 
 function setup(eventsOverride?: Partial<SessionEventService>) {
   const storage = createMemoryStorage({ now: () => 1 })
@@ -243,6 +257,9 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     export: vi.fn(() => ({ cancelled: true })),
     showInFolder: vi.fn(() => ({ shown: true })),
   }
+  inspect = {
+    inspect: vi.fn(() => INSPECT_RESULT),
+  }
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
     commands,
@@ -258,6 +275,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     mcp: {} as unknown as McpCommands,
     agents,
     diagnostics,
+    inspect,
     mcpStatus: () => () => undefined,
   })
   return connectRenderer()
@@ -650,6 +668,18 @@ describe('createRendererGateway: commands and lifecycle', () => {
     })
   })
 
+  it('delegates run.inspect requests to the inspect service (M4-04)', async () => {
+    const { client } = setup()
+    await expect(client.request('run.inspect', { sessionId: 's1' })).resolves.toEqual(
+      INSPECT_RESULT,
+    )
+    await expect(client.request('run.inspect', { sessionId: 's1', runId: 'r1' })).resolves.toEqual(
+      INSPECT_RESULT,
+    )
+    expect(inspect.inspect).toHaveBeenNthCalledWith(1, { sessionId: 's1' })
+    expect(inspect.inspect).toHaveBeenNthCalledWith(2, { sessionId: 's1', runId: 'r1' })
+  })
+
   it('delegates settings requests to the settings service', async () => {
     const { client } = setup()
     await expect(client.request('settings.get', {})).resolves.toEqual({
@@ -778,6 +808,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       mcp: {} as unknown as McpCommands,
       agents,
       diagnostics,
+      inspect: {} as unknown as InspectCommands,
       mcpStatus: () => () => undefined,
       onProtocolError,
     })

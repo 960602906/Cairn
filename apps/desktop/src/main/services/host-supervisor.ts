@@ -38,6 +38,7 @@ import {
   type ModelRef,
   type PermissionRule,
   type PermissionMode,
+  type RunSnapshotInput,
   type ShellPreference,
   type SkillCatalogEntry,
   type McpToolExposure,
@@ -175,6 +176,8 @@ export interface HostSupervisorOptions {
   ) => Promise<HostApprovalResponse>
   /** 宿主取消了未决审批（M1-11a）。 */
   readonly cancelApproval?: (sessionId: string, approvalId: string) => void
+  /** 宿主上报一次模型调用前的上下文快照（M4-04）。 */
+  readonly recordSnapshot?: (sessionId: string, snapshot: RunSnapshotInput) => void
   /** 握手与 `host.init` 的总时限，默认 10 秒。 */
   readonly startTimeoutMs?: number
   /** 心跳间隔，默认 5 秒。 */
@@ -397,6 +400,12 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
       endpoint.handle('host.delegate.targets', ({ agents }) => ({
         targets: [...(options.resolveDelegateTargets?.(sessionId, agents) ?? [])],
       }))
+
+      endpoint.handle('host.snapshot', (snapshot) => {
+        if (!options.recordSnapshot) throw new RpcError('run.unsupported')
+        options.recordSnapshot(sessionId, snapshot)
+        return {}
+      })
 
       endpoint.handle('host.approval.request', async (request) => {
         if (!options.requestApproval) throw new RpcError('run.unsupported')

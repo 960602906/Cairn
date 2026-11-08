@@ -17,6 +17,7 @@ import {
 import { AgentDefinition } from '../agents.js'
 import { FileChangeInput } from '../changes.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
+import { RunSnapshotInput } from '../inspect.js'
 import { ActivePlan, PromptMode } from '../plan.js'
 import { PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
@@ -298,6 +299,14 @@ export const MainForHost = defineSide({
           }),
         ),
       }),
+    },
+    /**
+     * 记录一次模型调用前的上下文快照（M4-04，ADR-0033）。会话由连接确定；主进程脱敏、截断后
+     * 写入 `run_snapshots`，每个运行保留最近 20 份。
+     */
+    'host.snapshot': {
+      params: RunSnapshotInput,
+      result: z.object({}),
     },
   },
   events: {},
