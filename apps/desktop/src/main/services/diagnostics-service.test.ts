@@ -1,4 +1,7 @@
 import { unzipSync } from 'fflate'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   DiagnosticsService,
@@ -158,21 +161,28 @@ describe('DiagnosticsService zip generation and export', () => {
   })
 
   it('exports zip and delegates to dialog/fs', async () => {
-    const showSaveDialog = vi.fn().mockResolvedValue('C:\\tmp\\test-diag.zip')
-    const showItemInFolder = vi.fn()
-    const service = new DiagnosticsService({
-      ...fakeDeps,
-      showSaveDialog,
-      showItemInFolder,
-    })
+    const dir = mkdtempSync(join(tmpdir(), 'cairn-diag-'))
+    const target = join(dir, 'test-diag.zip')
+    try {
+      const showSaveDialog = vi.fn().mockResolvedValue(target)
+      const showItemInFolder = vi.fn()
+      const service = new DiagnosticsService({
+        ...fakeDeps,
+        showSaveDialog,
+        showItemInFolder,
+      })
 
-    const result = await service.export({ sessionId: 'session-123' })
-    expect(result.cancelled).toBe(false)
-    expect(result.path).toBe('C:\\tmp\\test-diag.zip')
-    expect(showSaveDialog).toHaveBeenCalled()
+      const result = await service.export({ sessionId: 'session-123' })
+      expect(result.cancelled).toBe(false)
+      expect(result.path).toBe(target)
+      expect(showSaveDialog).toHaveBeenCalled()
+      expect(readFileSync(target).length).toBeGreaterThan(0)
 
-    expect(service.showInFolder({ path: 'C:\\tmp\\test-diag.zip' })).toEqual({ shown: true })
-    expect(showItemInFolder).toHaveBeenCalledWith('C:\\tmp\\test-diag.zip')
+      expect(service.showInFolder({ path: target })).toEqual({ shown: true })
+      expect(showItemInFolder).toHaveBeenCalledWith(target)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
