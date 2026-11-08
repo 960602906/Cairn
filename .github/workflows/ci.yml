@@ -23,6 +23,9 @@ jobs:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    env:
+      # GitHub Releases 的 Electron 资产偶发 504；镜像对两端平台都可用。
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
     steps:
       - uses: actions/checkout@v5
 
