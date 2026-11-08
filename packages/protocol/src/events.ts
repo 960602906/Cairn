@@ -123,16 +123,21 @@ const payloadSchemas = {
     reason: z.string().optional(),
   }),
   'run.disposed': z.object({ reason: z.string().optional() }),
-  /** 多 Agent 委派（ADR-0020，第一版预留）。 */
+  /** 多 Agent 委派（ADR-0020、ADR-0030）。 */
   'run.delegated': z.object({
     childRunId: Id,
     agent: AgentDefinitionRef,
     task: z.string(),
+    workspace: z.enum(['shared', 'isolated', 'auto']).optional(),
+    workspacePath: z.string().optional(),
   }),
   'run.child.completed': z.object({
     childRunId: Id,
-    status: z.enum(['completed', 'failed', 'aborted']),
+    status: z.enum(['completed', 'failed', 'aborted', 'needs_input', 'limit_reached']),
     summary: z.string().optional(),
+    usage: TokenUsage.optional(),
+    changeSetId: Id.optional(),
+    issues: z.array(z.string()).optional(),
   }),
 
   // ---------- 步骤（一次模型调用） ----------
