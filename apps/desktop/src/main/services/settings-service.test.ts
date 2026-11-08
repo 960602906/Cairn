@@ -414,6 +414,19 @@ describe('model settings', () => {
     expect(settings.get()).not.toHaveProperty('sessionBrief')
   })
 
+  it('stores activity notifications as off only, and treats anything else as on (M4-06)', () => {
+    const { settings } = setup()
+    expect(settings.get()).not.toHaveProperty('activityNotifications')
+    expect(settings.update({ activityNotifications: false })).toMatchObject({
+      activityNotifications: false,
+    })
+    expect(read()).toEqual({ activityNotifications: false })
+    expect(settings.update({ activityNotifications: true })).not.toHaveProperty(
+      'activityNotifications',
+    )
+    expect(settings.get()).not.toHaveProperty('activityNotifications')
+  })
+
   it('saves, clears and drops the auxiliary model the same way as the default (M3-01)', () => {
     const { settings } = setup()
     const auxiliary = { providerId: 'ollama', modelId: 'qwen3' }

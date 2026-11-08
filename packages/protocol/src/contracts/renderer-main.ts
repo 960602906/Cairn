@@ -4,6 +4,7 @@
  */
 import { z } from 'zod'
 import { FileChangeSummary, FileContent } from '../changes.js'
+import { ActivityDecision, ActivityListResult } from '../activity.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
 import {
   DiagnosticsExportInput,
@@ -113,6 +114,7 @@ export type Theme = z.infer<typeof Theme>
  * - `theme`：界面主题（M2-01）；没有设置时不出现，按“跟随系统”。
  * - `shell`：命令执行使用的 shell（M2-09）；没有设置时不出现，按 `auto`。
  * - `sessionBrief`：是否在每轮结束后自动更新会话要点（M3-04）。没有设置时不出现，按开。
+ * - `activityNotifications`：是否发送活动中心系统通知（M4-06）。没有设置时不出现，按开。
  */
 export const Settings = z.object({
   locale: Locale,
@@ -124,6 +126,7 @@ export const Settings = z.object({
   theme: Theme.optional(),
   shell: ShellPreference.optional(),
   sessionBrief: z.boolean().optional(),
+  activityNotifications: z.boolean().optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -143,6 +146,8 @@ export const SettingsPatch = z.object({
   shell: ShellPreference.optional(),
   /** false 关闭自动更新；true 重新打开（保存时省略，与没设置一样）。 */
   sessionBrief: z.boolean().optional(),
+  /** false 关闭活动中心通知；true 重新打开（保存时省略，与没设置一样）。 */
+  activityNotifications: z.boolean().optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 
@@ -443,6 +448,23 @@ export const MainForRenderer = defineSide({
       }),
       result: z.object({}),
     },
+    /** 跨会话活动快照（M4-06）：待审批、运行中与最近完成。 */
+    'activity.list': {
+      params: z.object({}),
+      result: ActivityListResult,
+    },
+    /**
+     * 在活动中心就地决定一个审批（M4-06）：按 approvalId 路由到所属会话。审批已结束或不存在时报
+     * `approval.not_found`。
+     */
+    'activity.resolve': {
+      params: z.object({
+        approvalId: Id,
+        decision: ActivityDecision,
+        feedback: z.string().max(APPROVAL_FEEDBACK_MAX_LENGTH).optional(),
+      }),
+      result: z.object({}),
+    },
     /** 会话的文件改动记录（M1-08b），按发生顺序。 */
     'changes.list': {
       params: z.object({ sessionId: Id }),
@@ -726,6 +748,10 @@ export const MainForRenderer = defineSide({
     'approval.changed': z.object({ sessionId: Id }),
     /** MCP 服务的连接状态变化（M3-09）。 */
     'mcp.status': McpStatusEvent,
+    /** 活动中心快照有变化（M4-06）；界面重新读取 `activity.list`。 */
+    'activity.changed': z.object({}),
+    /** 点击系统通知后打开对应会话（M4-06）；界面负责切到会话页。 */
+    'activity.open': z.object({ sessionId: Id }),
   },
 })
 

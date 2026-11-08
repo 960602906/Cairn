@@ -161,6 +161,7 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       ...(theme ? { theme } : {}),
       ...(shell ? { shell } : {}),
       ...(stored['sessionBrief'] === false ? { sessionBrief: false } : {}),
+      ...(stored['activityNotifications'] === false ? { activityNotifications: false } : {}),
     }
   }
 
@@ -194,6 +195,10 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       if (patch.sessionBrief !== undefined) {
         // 开是默认值，不写入文件
         next['sessionBrief'] = patch.sessionBrief ? undefined : false
+      }
+      if (patch.activityNotifications !== undefined) {
+        // 开是默认值，不写入文件
+        next['activityNotifications'] = patch.activityNotifications ? undefined : false
       }
       if (patch.instructions !== undefined) {
         // 只有空白时视为清除

@@ -3,6 +3,7 @@
  * 最底层的包：不得依赖任何其他 @cairn/* 包。
  */
 export * from './common.js'
+export * from './activity.js'
 export * from './agents.js'
 export * from './delegation.js'
 export * from './changes.js'

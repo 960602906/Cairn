@@ -82,6 +82,13 @@ export interface InspectCommands {
   readonly inspect: Handler<'run.inspect'>
 }
 
+/** 活动中心（M4-06）：跨会话快照与就地审批。 */
+export interface ActivityCommands {
+  readonly list: Handler<'activity.list'>
+  readonly resolve: Handler<'activity.resolve'>
+  readonly subscribe: (listener: () => void) => () => void
+}
+
 /** 由供应商服务实现的连接测试与模型列表（M2-10）。 */
 export interface ProviderCommands {
   readonly test: Handler<'provider.test'>
@@ -135,6 +142,8 @@ export interface RendererGatewayOptions {
   readonly diagnostics: DiagnosticsCommands
   /** 运行检查器（M4-04）：运行树、上下文快照与生效设置。 */
   readonly inspect: InspectCommands
+  /** 活动中心（M4-06）：跨会话快照与就地审批。 */
+  readonly activity: ActivityCommands
   /** MCP 状态变化的订阅（M3-09）。 */
   readonly mcpStatus: (listener: (event: z.output<typeof McpStatusEvent>) => void) => () => void
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
@@ -153,6 +162,8 @@ export interface RendererConnection {
 
 export interface RendererGateway {
   connect(channel: RpcChannel): RendererConnection
+  /** 点击系统通知后让所有窗口打开对应会话（M4-06）。 */
+  openActivitySession(sessionId: string): void
   /** 关闭所有连接并停止接收事件。 */
   close(): void
 }
@@ -205,11 +216,13 @@ type Timer = ReturnType<typeof setTimeout>
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
-  const { agents, diagnostics } = options
+  const { agents, diagnostics, activity } = options
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
     approvalsChanged: (sessionId: string) => void
+    activityChanged: () => void
+    openActivitySession: (sessionId: string) => void
     mcpStatus: (event: z.output<typeof McpStatusEvent>) => void
     close: () => void
   }>()
@@ -219,6 +232,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   })
   const unsubscribeApprovals = approvals.subscribe((sessionId) => {
     for (const connection of connections) connection.approvalsChanged(sessionId)
+  })
+  const unsubscribeActivity = activity.subscribe(() => {
+    for (const connection of connections) connection.activityChanged()
   })
   const unsubscribeMcp = options.mcpStatus((event) => {
     for (const connection of connections) connection.mcpStatus(event)
@@ -300,6 +316,8 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('checkpoint.restore', (params) => checkpoints.restore(params))
       endpoint.handle('approval.pending', (params) => approvals.pending(params))
       endpoint.handle('approval.resolve', (params) => approvals.resolve(params))
+      endpoint.handle('activity.list', (params) => activity.list(params))
+      endpoint.handle('activity.resolve', (params) => activity.resolve(params))
       endpoint.handle('skill.list', (params) => skills.list(params))
       endpoint.handle('skill.get', (params) => skills.get(params))
       endpoint.handle('skill.pickSource', (params) => skills.pickSource(params))
@@ -376,6 +394,14 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           flush()
           endpoint.emit('approval.changed', { sessionId })
         },
+        activityChanged() {
+          if (closed) return
+          endpoint.emit('activity.changed', {})
+        },
+        openActivitySession(sessionId: string) {
+          if (closed) return
+          endpoint.emit('activity.open', { sessionId })
+        },
         mcpStatus(event: z.output<typeof McpStatusEvent>) {
           if (closed) return
           endpoint.emit('mcp.status', event)
@@ -399,9 +425,14 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       }
     },
 
+    openActivitySession(sessionId) {
+      for (const connection of connections) connection.openActivitySession(sessionId)
+    },
+
     close() {
       unsubscribeEvents()
       unsubscribeApprovals()
+      unsubscribeActivity()
       unsubscribeMcp()
       for (const connection of [...connections]) connection.close()
     },

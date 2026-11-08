@@ -18,6 +18,7 @@ import {
   ipcMain,
   MessageChannelMain,
   nativeTheme,
+  Notification,
   safeStorage,
   session,
   shell,
@@ -33,6 +34,8 @@ import {
   type WebContentsLike,
 } from './security.js'
 import { createBlobStore } from './services/blob-store.js'
+import { createActivityNotifier } from './services/activity-notifier.js'
+import { createActivityService } from './services/activity-service.js'
 import { createChangeService } from './services/change-service.js'
 import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
@@ -159,6 +162,15 @@ const permissions = createPermissionService({ storage, mode: () => settings.perm
 const approvals = createApprovalService({
   permissions,
   onRuleAdded: () => sessions.refreshPermissions(),
+})
+/** 活动中心（M4-06）：跨会话审批、运行与最近完成；只读投影，不保存第二份状态。 */
+const activity = createActivityService({
+  storage,
+  events,
+  approvals,
+  homeDirs: [homedir()],
+  secrets: () => credentials.knownSecrets(),
+  onError: reportError,
 })
 /** 技能（M3-07）：内置示例、用户安装目录，以及项目开关打开后的项目内技能。 */
 const skills = createSkillService({
@@ -403,6 +415,7 @@ const gateway = createRendererGateway({
   changes,
   checkpoints,
   approvals,
+  activity,
   skills,
   mcp,
   agents,
@@ -419,6 +432,54 @@ const gateway = createRendererGateway({
     return () => mcpStatusListeners.delete(listener)
   },
   onProtocolError: (error) => reportError(error),
+})
+/** 活动中心系统通知（M4-06）：只在所有窗口都不在前台时发送，按会话合并。 */
+const activityNotifier = createActivityNotifier({
+  activity,
+  isForeground: () =>
+    BrowserWindow.getAllWindows().some((window) => window.isVisible() && window.isFocused()),
+  enabled: () => settings.get().activityNotifications !== false,
+  format: ({ kind, title, agentId }) => {
+    const english = settings.get().locale === 'en-US'
+    let agentName = agentId
+    try {
+      const definition = agents.get({ agentId }).published
+      agentName =
+        definition?.name[english ? 'en-US' : 'zh-CN'] ?? definition?.name['en-US'] ?? agentId
+    } catch {
+      // 定义已删除时仍用 id，通知本身不应失败。
+    }
+    return {
+      title: title || agentName,
+      body:
+        kind === 'approval'
+          ? english
+            ? `${agentName} · Approval needed`
+            : `${agentName} · 需要审批`
+          : english
+            ? `${agentName} · Run completed`
+            : `${agentName} · 运行已完成`,
+    }
+  },
+  notify: ({ title, body, sessionId }) => {
+    if (!Notification.isSupported()) return
+    try {
+      const notification = new Notification({ title, body })
+      notification.on('click', () => {
+        const window = BrowserWindow.getAllWindows()[0]
+        if (window) {
+          if (window.isMinimized()) window.restore()
+          window.show()
+          window.focus()
+        }
+        gateway.openActivitySession(sessionId)
+      })
+      notification.show()
+    } catch (error) {
+      reportError(error)
+    }
+  },
+  onError: reportError,
 })
 
 // 对所有 WebContents（含将来的子窗口、DevTools 之外的页面）拦截导航、新窗口与 <webview>
@@ -478,6 +539,7 @@ app.on('before-quit', (event) => {
   titles.stop()
   briefs.stop()
   compaction.stop()
+  activityNotifier.close()
   gateway.close()
   void mcp.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))

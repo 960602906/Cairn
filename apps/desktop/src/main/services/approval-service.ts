@@ -34,6 +34,7 @@ export interface ApprovalServiceOptions {
   /** 新规则保存之后调用（通知运行中的宿主）。 */
   readonly onRuleAdded?: (sessionId: string, rule: PermissionRule) => void
   readonly createId?: () => string
+  readonly now?: () => number
 }
 
 export interface ResolveApprovalParams {
@@ -54,13 +55,22 @@ export interface ApprovalService {
   cancel(sessionId: string, approvalId: string): void
   /** 会话中的未决审批，按请求顺序。 */
   pending(params: { sessionId: string }): { approvals: HostApprovalRequest[] }
+  /** 所有会话中的未决审批，按请求顺序（M4-06 活动中心）。 */
+  list(): PendingApprovalEntry[]
   resolve(params: ResolveApprovalParams): Record<string, never>
   /** 会话的未决审批有变化时调用；返回取消函数。 */
   subscribe(listener: (sessionId: string) => void): () => void
 }
 
+export interface PendingApprovalEntry {
+  readonly sessionId: string
+  readonly requestedAt: number
+  readonly request: HostApprovalRequest
+}
+
 interface Pending {
   readonly sessionId: string
+  readonly requestedAt: number
   readonly request: HostApprovalRequest
   readonly resolve: (response: HostApprovalResponse) => void
   readonly reject: (error: unknown) => void
@@ -68,6 +78,7 @@ interface Pending {
 
 export function createApprovalService(options: ApprovalServiceOptions): ApprovalService {
   const createId = options.createId ?? randomUUID
+  const now = options.now ?? Date.now
   /** 按请求顺序（Map 保持插入顺序）。 */
   const pending = new Map<string, Pending>()
   const listeners = new Set<(sessionId: string) => void>()
@@ -85,7 +96,7 @@ export function createApprovalService(options: ApprovalServiceOptions): Approval
       return new Promise<HostApprovalResponse>((resolve, reject) => {
         // 同一 id 重复请求：先取消之前的
         pending.get(request.approvalId)?.reject(new RpcError(ApprovalErrorCode.Cancelled))
-        pending.set(request.approvalId, { sessionId, request, resolve, reject })
+        pending.set(request.approvalId, { sessionId, requestedAt: now(), request, resolve, reject })
         changed(sessionId)
       })
     },
@@ -103,6 +114,13 @@ export function createApprovalService(options: ApprovalServiceOptions): Approval
         .filter((p) => p.sessionId === sessionId)
         .map((p) => p.request),
     }),
+
+    list: () =>
+      [...pending.values()].map((entry) => ({
+        sessionId: entry.sessionId,
+        requestedAt: entry.requestedAt,
+        request: entry.request,
+      })),
 
     resolve({ sessionId, approvalId, decision, feedback }) {
       const entry = take(sessionId, approvalId)
