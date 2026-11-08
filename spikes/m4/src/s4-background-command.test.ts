@@ -47,6 +47,7 @@ describe('S4 进程树清理', () => {
   it('关闭作业句柄（应用退出）会结束整个进程树', async () => {
     const tree = await createProcessTree()
     const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      detached: tree.detached,
       stdio: 'ignore',
       windowsHide: true,
     })
