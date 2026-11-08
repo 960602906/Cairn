@@ -63,6 +63,20 @@
 - e2e：31 项全部通过（`apps/desktop`，Windows 本机）。
 - 无新增依赖；`pnpm check:licenses` 通过。
 
+### CI 修复（2026-11-08）
+
+- **现象**：PR #111 的 `check (windows-latest)` 在 `pnpm test:coverage` 阶段失败，报
+  `ENOENT: no such file or directory, open 'C:\tmp\test-diag.zip'`；`ubuntu-latest` 与 `licenses` 通过。
+- **原因**：`apps/desktop/src/main/services/diagnostics-service.test.ts` 的导出用例把保存路径硬编码为
+  `C:\tmp\test-diag.zip`。本机恰好存在 `C:\tmp`，GitHub Windows runner 上不存在。
+- **修复**：`f7f365a` 用 `mkdtempSync(join(tmpdir(), 'cairn-diag-'))` 创建真实临时目录，导出后断言
+  文件非空并在 `finally` 中清理；不再依赖任何固定盘符路径。
+- **验证**：本地重跑该用例（15 项通过）、`pnpm format:check`、`pnpm typecheck`、`pnpm lint`、
+  `pnpm check:i18n`、`pnpm test:coverage`（四项 97.52% / 95.1% / 96.83% / 98.54%）、`pnpm build`、
+  `pnpm e2e`（31 项）全部通过；CI run
+  [42431186270](https://github.com/960602906/Cairn/actions/runs/42431186270) 三个作业全部成功
+  （ubuntu 2m36s、windows 6m49s、licenses 14s）。
+
 ### 最新修复与就绪状态（2026-11-08 晨间交接）
 
 1. **全流程 e2e 工具名对齐（M3-14）**：
@@ -270,6 +284,7 @@
 | M3-11 自定义 Agent 后端 | `226f795` feat(agents): 自定义 Agent 后端 [M3-11] |
 | M3-12 Agents 页面与选择器 | `77a23c7` feat(agents): Agents 页面与选择器 [M3-12] |
 | M3-13 诊断包 | `4e14507` feat(diagnostics): 诊断包导出与脱敏 [M3-13] |
+| M3-13 CI 修复 | `f7f365a` test(diagnostics): 诊断包导出用例改用系统临时目录 [M3-13] |
 | M3-14 收尾与验收 | `f81bfd1` docs(m3): M3 全流程验收、架构文档与 M4 计划草稿 [M3-14] |
 
 共享接线说明：`main/index.ts`、`renderer-gateway*`、`protocol/contracts/renderer-main.ts`、
