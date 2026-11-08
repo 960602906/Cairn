@@ -44,6 +44,7 @@ describe('openSqliteStorage', () => {
         '0008_project_skills_default',
         '0009_mcp',
         '0010_agents',
+        '0011_run-snapshots',
       ],
     })
     storage.close()
@@ -66,6 +67,7 @@ describe('openSqliteStorage', () => {
       'permission_rules',
       'projects',
       'provider_configs',
+      'run_snapshots',
       'schema_meta',
       'sessions',
       'skill_prefs',
@@ -117,6 +119,7 @@ describe('openSqliteStorage', () => {
       '0008_project_skills_default',
       '0009_mcp',
       '0010_agents',
+      '0011_run-snapshots',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

@@ -581,6 +581,24 @@ describe('RunSupervisor：按运行创建上下文（M4-01）', () => {
     expect(run.state).toBe('idle')
   })
 
+  it('运行上下文覆盖全局的模型调用回调（M4-04）', async () => {
+    const global = vi.fn()
+    const child = vi.fn()
+    const { supervisor } = setup(fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }), {
+      onModelCall: global,
+      createRunContext: () => ({
+        runtime: fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }),
+        model,
+        limits,
+        onModelCall: child,
+      }),
+    })
+    const run = await supervisor.createRun(init)
+    await run.send(input('u1'))
+    expect(child).toHaveBeenCalledTimes(1)
+    expect(global).not.toHaveBeenCalled()
+  })
+
   it('没有任何限额来源时使用空限额', async () => {
     const controller = new AbortController()
     const supervisor = createRunSupervisor({

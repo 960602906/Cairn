@@ -21,6 +21,7 @@ import {
   StorageError,
   StorageErrorCode,
   type AddPermissionRuleInput,
+  type AddRunSnapshotInput,
   type AgentRecord,
   type AgentVersionRecord,
   type CreateFileChangeInput,
@@ -32,6 +33,7 @@ import {
   type McpToolPref,
   type PermissionRuleRecord,
   type ProjectRecord,
+  type RunSnapshotRecord,
   type SessionRecord,
   type SkillPref,
   type Storage,
@@ -181,6 +183,18 @@ interface AgentRow {
   updated_at: number
 }
 
+interface RunSnapshotRow {
+  snapshot_id: string
+  session_id: string
+  run_id: string
+  parent_run_id: string | null
+  turn_id: string | null
+  step_id: string | null
+  created_at: number
+  tokens: number
+  data: string
+}
+
 interface AgentVersionRow {
   agent_id: string
   version: number
@@ -202,6 +216,18 @@ const toAgentVersion = (row: AgentVersionRow): AgentVersionRecord => ({
   version: row.version,
   definition: JSON.parse(row.definition) as unknown,
   publishedAt: row.published_at,
+})
+
+const toRunSnapshot = (row: RunSnapshotRow): RunSnapshotRecord => ({
+  snapshotId: row.snapshot_id,
+  sessionId: row.session_id,
+  runId: row.run_id,
+  ...(row.parent_run_id === null ? {} : { parentRunId: row.parent_run_id }),
+  ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
+  ...(row.step_id === null ? {} : { stepId: row.step_id }),
+  createdAt: row.created_at,
+  tokens: row.tokens,
+  data: JSON.parse(row.data) as unknown,
 })
 
 const toPermissionRule = (row: PermissionRuleRow): PermissionRuleRecord => ({
@@ -517,6 +543,23 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
          effect = excluded.effect`,
     ),
     deleteMcpToolPrefs: db.prepare('DELETE FROM mcp_tool_prefs WHERE server_id = ?'),
+    runSnapshotById: db.prepare<[string], RunSnapshotRow>(
+      'SELECT * FROM run_snapshots WHERE snapshot_id = ?',
+    ),
+    insertRunSnapshot: db.prepare(
+      `INSERT INTO run_snapshots
+         (snapshot_id, session_id, run_id, parent_run_id, turn_id, step_id, created_at, tokens, data)
+       VALUES (@snapshotId, @sessionId, @runId, @parentRunId, @turnId, @stepId, @at, @tokens, @data)`,
+    ),
+    runSnapshotsByRun: db.prepare<[string, number], RunSnapshotRow>(
+      'SELECT * FROM run_snapshots WHERE run_id = ? ORDER BY created_at, rowid LIMIT ?',
+    ),
+    pruneRunSnapshots: db.prepare(
+      `DELETE FROM run_snapshots WHERE run_id = @runId AND snapshot_id NOT IN (
+         SELECT snapshot_id FROM run_snapshots WHERE run_id = @runId
+         ORDER BY created_at DESC, rowid DESC LIMIT 20
+       )`,
+    ),
   }
 
   const toSkillPref = (row: SkillPrefRow): SkillPref => ({
@@ -538,6 +581,28 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
   }
 
   const maxSeq = (sessionId: string): number => q.maxSeq.get(sessionId)?.seq ?? 0
+
+  const addRunSnapshot = db.transaction((input: AddRunSnapshotInput): RunSnapshotRecord => {
+    if (!q.sessionById.get(input.sessionId)) {
+      throw new StorageError(StorageErrorCode.NotFound, { sessionId: input.sessionId })
+    }
+    if (q.runSnapshotById.get(input.snapshotId)) {
+      throw new StorageError(StorageErrorCode.Conflict, { snapshotId: input.snapshotId })
+    }
+    q.insertRunSnapshot.run({
+      snapshotId: input.snapshotId,
+      sessionId: input.sessionId,
+      runId: input.runId,
+      parentRunId: input.parentRunId ?? null,
+      turnId: input.turnId ?? null,
+      stepId: input.stepId ?? null,
+      at: now(),
+      tokens: input.tokens,
+      data: JSON.stringify(input.data),
+    })
+    q.pruneRunSnapshots.run({ runId: input.runId })
+    return toRunSnapshot(q.runSnapshotById.get(input.snapshotId)!)
+  })
 
   const replaceProviders = db.transaction((configs: readonly ProviderConfig[]) => {
     q.deleteProviders.run()
@@ -1000,6 +1065,11 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         const { changes } = q.deleteRule.run(ruleId)
         if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { ruleId })
       },
+    },
+
+    runSnapshots: {
+      add: (input) => addRunSnapshot(input),
+      list: (runId, limit = 20) => q.runSnapshotsByRun.all(runId, limit).map(toRunSnapshot),
     },
 
     transaction: <T>(fn: () => T): T => db.transaction(fn)(),

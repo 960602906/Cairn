@@ -13,6 +13,7 @@ import {
   StorageErrorCode,
   type AgentRecord,
   type AgentVersionRecord,
+  type AddRunSnapshotInput,
   type CreateProjectInput,
   type CreateSessionInput,
   type FileChangeRecord,
@@ -21,6 +22,7 @@ import {
   type McpToolPref,
   type PermissionRuleRecord,
   type ProjectRecord,
+  type RunSnapshotRecord,
   type SessionRecord,
   type SkillPref,
   type Storage,
@@ -44,6 +46,8 @@ interface State {
   agents: Map<string, AgentRecord>
   /** 键为 agentId；值按版本号升序。 */
   agentVersions: Map<string, AgentVersionRecord[]>
+  /** 按 snapshotId；列表按创建顺序与插入顺序。 */
+  runSnapshots: Map<string, RunSnapshotRecord>
 }
 
 const prefKey = (scope: string, source: string, name: string) => `${scope}\0${source}\0${name}`
@@ -62,6 +66,7 @@ function cloneState(state: State): State {
     mcpToolPrefs: new Map(state.mcpToolPrefs),
     agents: new Map(state.agents),
     agentVersions: new Map([...state.agentVersions].map(([id, list]) => [id, [...list]])),
+    runSnapshots: new Map(state.runSnapshots),
   }
 }
 
@@ -84,6 +89,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     mcpToolPrefs: new Map(),
     agents: new Map(),
     agentVersions: new Map(),
+    runSnapshots: new Map(),
   }
   let closed = false
 
@@ -592,6 +598,32 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         if (!live().rules.delete(ruleId)) {
           throw new StorageError(StorageErrorCode.NotFound, { ruleId })
         }
+      },
+    },
+
+    runSnapshots: {
+      add(input: AddRunSnapshotInput) {
+        const s = live()
+        requireSession(input.sessionId)
+        if (s.runSnapshots.has(input.snapshotId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { snapshotId: input.snapshotId })
+        }
+        const record: RunSnapshotRecord = { ...copy(input), createdAt: now() }
+        s.runSnapshots.set(record.snapshotId, record)
+        const forRun = [...s.runSnapshots.values()]
+          .filter((item) => item.runId === input.runId)
+          .sort((a, b) => a.createdAt - b.createdAt)
+        for (const old of forRun.slice(0, Math.max(0, forRun.length - 20))) {
+          s.runSnapshots.delete(old.snapshotId)
+        }
+        return copy(record)
+      },
+      list(runId, limit = 20) {
+        return [...live().runSnapshots.values()]
+          .filter((item) => item.runId === runId)
+          .sort((a, b) => a.createdAt - b.createdAt)
+          .slice(0, limit)
+          .map(copy)
       },
     },
 

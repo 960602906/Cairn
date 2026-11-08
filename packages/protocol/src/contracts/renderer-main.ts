@@ -10,6 +10,7 @@ import {
   DiagnosticsExportResult,
   DiagnosticsSummary,
 } from '../diagnostics.js'
+import { RunInspectResult } from '../inspect.js'
 import { AgentDefinitionRef, ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
 import {
   AgentDetail,
@@ -320,6 +321,14 @@ export const MainForRenderer = defineSide({
     'session.unsubscribe': {
       params: z.object({ sessionId: Id }),
       result: z.object({}),
+    },
+    /**
+     * 运行检查器（M4-04，管理界面 §8.2）：从事件日志投影运行树，并返回最近 20 份上下文快照与
+     * 生效设置。省略 `runId` 时使用会话当前的根运行。会话不存在或没有运行时报 `run.not_found`。
+     */
+    'run.inspect': {
+      params: z.object({ sessionId: Id, runId: Id.optional() }),
+      result: RunInspectResult,
     },
     /** 当前设置；没有保存过的项取默认值（语言按系统语言检测）。 */
     'settings.get': {

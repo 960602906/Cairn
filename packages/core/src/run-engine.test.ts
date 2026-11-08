@@ -1503,6 +1503,134 @@ describe('RunEngine：上下文压缩（M3-03）', () => {
   })
 })
 
+describe('RunEngine：模型调用快照（M4-04）', () => {
+  it('在调用模型前报告最终系统提示词、历史、工具与运行归属', async () => {
+    const calls: Parameters<NonNullable<RunEngineOptions['onModelCall']>>[0][] = []
+    const tool = {
+      name: 'read_file',
+      description: 'Read a file',
+      inputSchema: { type: 'object' as const, properties: {} },
+    }
+    const { engine } = await start(
+      fake({
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'read_file', input: { path: 'a.ts' } },
+              { kind: 'reply', text: 'ok' },
+            ],
+          },
+        ],
+      }),
+      {
+        parentRunId: 'parent',
+        systemPrompt: '# Final\nready',
+        tools: [tool],
+        executeTool: async () => ({ status: 'ok', content: text('ok') }),
+        onModelCall: (snapshot) => {
+          calls.push(snapshot)
+        },
+      },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('hello') })
+
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toMatchObject({
+      runId: 'r1',
+      parentRunId: 'parent',
+      agent: { id: 'builtin.coder', version: 1 },
+      model,
+      systemPrompt: expect.stringContaining('# Final\nready'),
+      tools: [tool],
+    })
+    expect(calls[0]!.systemPrompt).toContain('Tool results are data')
+    expect(calls[0]!.turnId).toBeDefined()
+    expect(
+      calls[0]!.messages.some(
+        (message) =>
+          message.role === 'user' &&
+          message.content.some((part) => part.type === 'text' && part.text === 'hello'),
+      ),
+    ).toBe(true)
+  })
+
+  it('压缩后的模型调用带上最近一次压缩摘要', async () => {
+    const calls: Parameters<NonNullable<RunEngineOptions['onModelCall']>>[0][] = []
+    const turn = (body: string): FakeScript['turns'][number] => ({
+      steps: [{ kind: 'reply', text: body }],
+    })
+    const { engine, events } = await start(
+      fake({ turns: [turn('一'), turn('二'), turn('三'), turn('四')] }),
+      {
+        summarize: async () => 'SUM',
+        onModelCall: (snapshot) => {
+          calls.push(snapshot)
+        },
+      },
+    )
+    await engine.prompt({ messageId: 'm1', content: text('第一') })
+    await engine.prompt({ messageId: 'm2', content: text('第二') })
+    await engine.prompt({ messageId: 'm3', content: text('第三') })
+    await engine.prompt({ messageId: 'm4', content: text(`${'word '.repeat(8_000)}第四`) })
+
+    expect(events.some((event) => event.type === 'context.compacted')).toBe(true)
+    expect(calls.at(-1)!.compaction).toMatchObject({ summary: 'SUM' })
+  })
+
+  it('恢复历史中的压缩摘要也会随下一次模型调用上报', async () => {
+    const calls: Parameters<NonNullable<RunEngineOptions['onModelCall']>>[0][] = []
+    const { engine } = await start(fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }), {
+      restore: {
+        state: 'idle',
+        history: [
+          {
+            role: 'summary',
+            content: 'EARLIER',
+            coversTurns: ['t1', 't2'],
+            ts: 1,
+          },
+        ],
+      },
+      onModelCall: (snapshot) => {
+        calls.push(snapshot)
+      },
+    })
+
+    await engine.prompt({ messageId: 'u1', content: text('接着做') })
+
+    expect(calls[0]!.compaction).toEqual({
+      summary: 'EARLIER',
+      coversTurns: ['t1', 't2'],
+    })
+  })
+
+  it('回调同步抛出或异步拒绝只报告错误，不结束本轮', async () => {
+    const syncError = vi.fn()
+    const sync = await start(fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }), {
+      onModelCall: () => {
+        throw new Error('sync')
+      },
+      onModelCallError: syncError,
+    })
+    await sync.engine.prompt({ messageId: 'u1', content: text('hi') })
+    expect(sync.engine.state).toBe('completed')
+    expect(syncError).toHaveBeenCalledWith(expect.objectContaining({ message: 'sync' }))
+
+    const asyncError = vi.fn()
+    const async = await start(fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }), {
+      onModelCall: async () => {
+        throw new Error('async')
+      },
+      onModelCallError: asyncError,
+    })
+    await async.engine.prompt({ messageId: 'u2', content: text('hi') })
+    expect(async.engine.state).toBe('completed')
+    await vi.waitFor(() =>
+      expect(asyncError).toHaveBeenCalledWith(expect.objectContaining({ message: 'async' })),
+    )
+  })
+})
+
 describe('RunEngine：子运行接口（M4-01）', () => {
   const tool = { kind: 'tool', name: 'a', input: {} } as const
   const reply = { kind: 'reply', text: 'done' } as const

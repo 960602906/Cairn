@@ -39,6 +39,7 @@ import {
   runDelegation,
   presetRules,
   buildSystemPrompt,
+  buildRunSnapshot,
   operatingSystemName,
   toolSelected,
   toolOutputBudget,
@@ -50,6 +51,7 @@ import {
   type DelegationChain,
   type DelegationTarget,
   type Logger,
+  type ModelCallSnapshot,
   type PermissionGate,
   type PermissionGuard,
   type RetryPolicy,
@@ -326,6 +328,43 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       }
     }
 
+    /** 把一次模型调用的上下文交给主进程存成检查器快照（M4-04）。 */
+    function reportModelCall(
+      call: ModelCallSnapshot,
+      skills: readonly { name: string; description: string; pinned: boolean }[],
+    ): void {
+      const snapshot = buildRunSnapshot({
+        runId: call.runId,
+        ...(call.parentRunId ? { parentRunId: call.parentRunId } : {}),
+        agent: call.agent,
+        model: call.model.ref,
+        ...(call.turnId ? { turnId: call.turnId } : {}),
+        ...(call.stepId ? { stepId: call.stepId } : {}),
+        systemPrompt: call.systemPrompt,
+        tools: call.tools,
+        skills,
+        history: call.messages,
+        ...(call.compaction
+          ? {
+              compaction: {
+                summary: call.compaction.summary,
+                coversTurns: call.compaction.coversTurns,
+                ...(call.compaction.tokensBefore === undefined
+                  ? {}
+                  : { tokensBefore: call.compaction.tokensBefore }),
+                ...(call.compaction.tokensAfter === undefined
+                  ? {}
+                  : { tokensAfter: call.compaction.tokensAfter }),
+              },
+            }
+          : {}),
+      })
+      void endpoint.request('host.snapshot', snapshot).catch((error: unknown) => {
+        // 测试或旧主进程没有这个接口；其他错误只记日志。
+        if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+      })
+    }
+
     /**
      * 构造委派子运行的工具与上下文（M4-02）：独立的运行时、工具选择、权限规则、Skills 与系统提示词。
      * 子运行可以继续委派时，按同一条链登记 `delegate`。
@@ -436,6 +475,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         model: child.model,
         limits: definition.limits,
         systemPrompt,
+        onModelCall: (call) =>
+          reportModelCall(
+            call,
+            resolved.skills.map((skill) => ({
+              name: skill.name,
+              description: skill.description,
+              pinned: skill.pinned,
+            })),
+          ),
         tools: specs,
         ...(childPipeline ? { toolPipeline: childPipeline } : {}),
       }
@@ -667,6 +715,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           ...(context ? { context } : {}),
         }
       },
+      onModelCall: (call) =>
+        reportModelCall(
+          call,
+          skillCatalog.map((skill) => ({
+            name: skill.name,
+            description: skill.description,
+            pinned: skill.pinned,
+          })),
+        ),
+      onModelCallError: onError,
       signal: shutdown.signal,
       createId: options.createId,
       now,
