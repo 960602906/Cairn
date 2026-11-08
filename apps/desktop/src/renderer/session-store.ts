@@ -26,6 +26,7 @@
 import { createSessionView, reduceSession, sessionStatus, type SessionView } from '@cairn/core'
 import {
   RpcError,
+  type AgentDraftRef,
   type AgentDefinitionRef,
   type AgentDetail,
   type AgentDiff,
@@ -74,6 +75,8 @@ import {
   type SkillSource,
   type SkillSummary,
   type ToolCategory,
+  type TrialStarted,
+  type TrialSummary,
 } from '@cairn/protocol'
 import type { z } from 'zod'
 import { createStore, type StoreApi } from 'zustand/vanilla'
@@ -87,6 +90,16 @@ export interface InspectionState {
   readonly loading: boolean
   readonly result: RunInspectResult | undefined
   readonly error: ErrorInfo | undefined
+}
+
+export interface TrialState {
+  readonly sessionId: string
+  readonly agent: AgentDraftRef
+  readonly draftHash: string
+  readonly projectPath: string
+  readonly useAgentPermissions: boolean
+  /** 界面草稿的稳定序列化，用于提示“配置已变化”。 */
+  readonly configKey: string
 }
 
 export interface SessionState {
@@ -129,6 +142,8 @@ export interface SessionState {
   readonly activityLoading: boolean
   /** 活动中心最近一次读取失败。 */
   readonly activityError: ErrorInfo | undefined
+  /** Agent 编辑器的试运行会话（M4-12）；关闭面板后清空。 */
+  readonly trial: TrialState | undefined
 }
 
 export interface SessionActions {
@@ -260,6 +275,31 @@ export interface SessionActions {
     agentId: string,
     sessionId?: string,
   ): Promise<AgentEffectiveConfig | undefined>
+  /** 用当前草稿开始试运行并订阅它；失败时返回 undefined。 */
+  startTrial(input: {
+    agentId: string
+    projectPath: string
+    useAgentPermissions?: boolean
+    configKey?: string
+  }): Promise<TrialStarted | undefined>
+  /** 用当前草稿重新开始试运行；旧会话保留到清理或超出保留条数。 */
+  restartTrial(useAgentPermissions?: boolean, configKey?: string): Promise<TrialStarted | undefined>
+  /** 向试运行会话发送输入。 */
+  sendTrialPrompt(text: string): Promise<boolean>
+  /** 停止试运行当前的一轮。 */
+  abortTrial(): Promise<void>
+  /** 决定试运行会话中的一个审批。 */
+  resolveTrialApproval(
+    approvalId: string,
+    decision: ApprovalDecision,
+    feedback?: string,
+  ): Promise<boolean>
+  /** 关闭试运行面板并取消订阅；不删除历史记录。 */
+  closeTrial(): Promise<void>
+  /** 读取一个 Agent 的试运行历史。 */
+  listTrials(agentId: string): Promise<TrialSummary[] | undefined>
+  /** 清除一个 Agent 的全部试运行记录；返回清除条数。 */
+  clearTrials(agentId: string): Promise<number | undefined>
   /** 获取诊断包导出前清单（M3-13）。 */
   diagnosticsSummary(input?: DiagnosticsExportInput): Promise<DiagnosticsSummary | undefined>
   /** 导出脱敏诊断包 zip（M3-13）。 */
@@ -443,6 +483,8 @@ export function createSessionStore(api: MainApi): SessionStore {
   const pending = new Map<string, EventEnvelope[]>()
   /** 当前已订阅的会话（订阅响应已返回）。 */
   let subscribed: string | undefined
+  /** 试运行会话的独立订阅；与普通会话同时存在。 */
+  let trialSubscribed: string | undefined
 
   let loadApprovalsFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
   let loadChangesFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
@@ -582,6 +624,7 @@ export function createSessionStore(api: MainApi): SessionStore {
     const unsubscribe = async (sessionId: string) => {
       pending.delete(sessionId)
       if (subscribed === sessionId) subscribed = undefined
+      if (trialSubscribed === sessionId) trialSubscribed = undefined
       await run(() => api.request('session.unsubscribe', { sessionId }))
     }
 
@@ -606,6 +649,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       activity: undefined,
       activityLoading: false,
       activityError: undefined,
+      trial: undefined,
 
       async refreshSessions() {
         const result = await run(() => api.request('session.list', {}))
@@ -678,6 +722,139 @@ export function createSessionStore(api: MainApi): SessionStore {
           loadChanges(sessionId),
           loadChangeSets(sessionId),
         ])
+      },
+
+      async startTrial({ agentId, projectPath, useAgentPermissions = false, configKey = '' }) {
+        const started = await run(() =>
+          api.request('trial.start', {
+            agentId,
+            projectPath,
+            useAgentPermissions,
+          }),
+        )
+        if (!started) return undefined
+        const previous = get().trial
+        if (previous && previous.sessionId !== started.sessionId) {
+          await unsubscribe(previous.sessionId)
+        }
+        set({
+          trial: {
+            sessionId: started.sessionId,
+            agent: started.agent,
+            draftHash: started.draftHash,
+            projectPath,
+            useAgentPermissions: started.useAgentPermissions,
+            configKey,
+          },
+        })
+        pending.set(started.sessionId, [])
+        const afterSeq = get().views[started.sessionId]?.lastSeq ?? 0
+        const result = await run(() =>
+          api.request('session.subscribe', { sessionId: started.sessionId, afterSeq }),
+        )
+        const buffered = pending.get(started.sessionId)
+        pending.delete(started.sessionId)
+        if (!result) {
+          set({ trial: undefined })
+          return undefined
+        }
+        trialSubscribed = started.sessionId
+        set((state) => receive(state, started.sessionId, [...result.events, ...(buffered ?? [])]))
+        await loadApprovals(started.sessionId)
+        return started
+      },
+
+      async restartTrial(useAgentPermissions, configKey) {
+        const current = get().trial
+        if (!current) return undefined
+        const started = await run(() =>
+          api.request('trial.restart', {
+            sessionId: current.sessionId,
+            ...(useAgentPermissions === undefined ? {} : { useAgentPermissions }),
+          }),
+        )
+        if (!started) return undefined
+        await unsubscribe(current.sessionId)
+        set({
+          trial: {
+            sessionId: started.sessionId,
+            agent: started.agent,
+            draftHash: started.draftHash,
+            projectPath: current.projectPath,
+            useAgentPermissions: started.useAgentPermissions,
+            configKey: configKey ?? current.configKey,
+          },
+        })
+        pending.set(started.sessionId, [])
+        const afterSeq = get().views[started.sessionId]?.lastSeq ?? 0
+        const result = await run(() =>
+          api.request('session.subscribe', { sessionId: started.sessionId, afterSeq }),
+        )
+        const buffered = pending.get(started.sessionId)
+        pending.delete(started.sessionId)
+        if (!result) {
+          set({ trial: undefined })
+          return undefined
+        }
+        trialSubscribed = started.sessionId
+        set((state) => receive(state, started.sessionId, [...result.events, ...(buffered ?? [])]))
+        await loadApprovals(started.sessionId)
+        return started
+      },
+
+      async sendTrialPrompt(text) {
+        const trial = get().trial
+        const trimmed = text.trim()
+        if (!trial || trimmed === '') return false
+        setAwaiting(trial.sessionId, true)
+        const sent = await run(() =>
+          api.request('session.prompt', {
+            sessionId: trial.sessionId,
+            content: [{ type: 'text', text: trimmed }],
+          }),
+        )
+        if (sent === undefined) setAwaiting(trial.sessionId, false)
+        return sent !== undefined
+      },
+
+      async abortTrial() {
+        const trial = get().trial
+        if (!trial) return
+        const stopped = await run(() =>
+          api.request('session.abort', { sessionId: trial.sessionId }),
+        )
+        if (stopped !== undefined) setAwaiting(trial.sessionId, false)
+      },
+
+      async resolveTrialApproval(approvalId, decision, feedback) {
+        const trial = get().trial
+        if (!trial) return false
+        const trimmed = feedback?.trim()
+        const resolved = await run(() =>
+          api.request('approval.resolve', {
+            sessionId: trial.sessionId,
+            approvalId,
+            decision,
+            ...(decision === 'deny' && trimmed ? { feedback: trimmed } : {}),
+          }),
+        )
+        await loadApprovals(trial.sessionId)
+        return resolved !== undefined
+      },
+
+      async closeTrial() {
+        const trial = get().trial
+        if (!trial) return
+        await unsubscribe(trial.sessionId)
+        set({ trial: undefined })
+      },
+
+      listTrials: async (agentId) =>
+        (await run(() => api.request('trial.list', { agentId })))?.trials,
+
+      clearTrials: async (agentId) => {
+        const result = await run(() => api.request('trial.clear', { agentId }))
+        return result?.cleared
       },
 
       async compactSession() {
@@ -1089,6 +1266,7 @@ export function createSessionStore(api: MainApi): SessionStore {
         changeSetListRequests.clear()
         changeSetRequests.clear()
         subscribed = undefined
+        trialSubscribed = undefined
       },
     }
   })
@@ -1099,7 +1277,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       buffer.push(...events)
       return
     }
-    if (sessionId !== subscribed) return
+    if (sessionId !== subscribed && sessionId !== trialSubscribed) return
     store.setState((state) => receive(state, sessionId, events))
     // 恢复检查点会把之后的改动标记为已撤销（M2-07），同样要重新读取
     if (events.some((e) => e.type === 'file.changed' || e.type === 'checkpoint.restored'))
@@ -1121,7 +1299,9 @@ export function createSessionStore(api: MainApi): SessionStore {
     }
   })
   const offApprovals = api.on('approval.changed', ({ sessionId }) => {
-    if (sessionId === subscribed) void loadApprovalsFor(sessionId)
+    if (sessionId === subscribed || sessionId === trialSubscribed) {
+      void loadApprovalsFor(sessionId)
+    }
   })
   const offActivity = api.on('activity.changed', () => {
     void store.getState().refreshActivity()

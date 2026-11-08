@@ -148,6 +148,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           workspacePath: '/work/demo',
           title: '第一个会话',
           archived: false,
+          kind: 'normal',
           createdAt: 100,
           updatedAt: 100,
         })
@@ -261,6 +262,90 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(
           storage.sessions.list({ projectId: 'p1', includeArchived: true }).map((s) => s.sessionId),
         ).toEqual(['s1', 's2'])
+      })
+
+      it('marks trial sessions and excludes them from the default list', () => {
+        seed()
+        clock = 200
+        const trial = storage.sessions.create({
+          sessionId: 't1',
+          projectId: 'p1',
+          workspacePath: '/work/demo',
+          title: '试运行',
+          kind: 'trial',
+          trialAgentId: 'user.reviewer',
+          trialDraftHash: 'draft-1',
+        })
+        expect(trial).toMatchObject({
+          sessionId: 't1',
+          kind: 'trial',
+          trialAgentId: 'user.reviewer',
+          trialDraftHash: 'draft-1',
+        })
+        expect(storage.sessions.list().map((s) => s.sessionId)).toEqual(['s1'])
+        expect(storage.sessions.list({ includeTrial: true }).map((s) => s.sessionId)).toEqual([
+          't1',
+          's1',
+        ])
+        expect(storage.sessions.get('t1')).toEqual(trial)
+      })
+
+      it('removes a session with its events and reports missing sessions', () => {
+        seed()
+        storage.events.append([userEvent('s1', 1)])
+        storage.changes.create({
+          changeId: 'change-1',
+          sessionId: 's1',
+          path: 'a.ts',
+          kind: 'modify',
+          added: 1,
+          removed: 0,
+          hunks: [],
+        })
+        storage.permissionRules.add({
+          rule: {
+            id: 'rule-1',
+            scope: 'session',
+            effect: 'allow',
+            match: { tool: 'read_file' },
+            source: 'user',
+          },
+          sessionId: 's1',
+        })
+        storage.runSnapshots.add({
+          snapshotId: 'snapshot-1',
+          sessionId: 's1',
+          runId: 'r1',
+          tokens: 1,
+          data: {},
+        })
+        storage.changeSets.create({
+          changeSetId: 'change-set-1',
+          sessionId: 's1',
+          runId: 'r1',
+          baseCommit: 'base',
+          gitDir: '/repo/.git',
+          workspacePath: '/work/isolated',
+        })
+        storage.changeSets.addFile({
+          changeSetId: 'change-set-1',
+          path: 'a.ts',
+          kind: 'modified',
+          added: 1,
+          removed: 0,
+          binary: false,
+          large: false,
+        })
+        storage.sessions.remove('s1')
+        expect(storage.sessions.get('s1')).toBeUndefined()
+        expect(storage.events.maxSeq('s1')).toBe(0)
+        expect(storage.events.readAfter('s1', 0)).toEqual([])
+        expect(storage.changes.list('s1')).toEqual([])
+        expect(storage.permissionRules.get('rule-1')).toBeUndefined()
+        expect(storage.runSnapshots.list('r1')).toEqual([])
+        expect(storage.changeSets.get('change-set-1')).toBeUndefined()
+        expect(storage.changeSets.listFiles('change-set-1')).toEqual([])
+        expectStorageError(() => storage.sessions.remove('s1'), StorageErrorCode.NotFound)
       })
     })
 

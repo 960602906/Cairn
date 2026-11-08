@@ -210,10 +210,13 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           throw new StorageError(StorageErrorCode.Conflict, { sessionId: input.sessionId })
         }
         const at = now()
-        const { model, ...rest } = input
+        const { model, kind, trialAgentId, trialDraftHash, ...rest } = input
         const record: SessionRecord = {
           ...rest,
           ...(model ? { model: { ...model } } : {}),
+          kind: kind ?? 'normal',
+          ...(trialAgentId === undefined ? {} : { trialAgentId }),
+          ...(trialDraftHash === undefined ? {} : { trialDraftHash }),
           projectPath: project.path,
           archived: false,
           createdAt: at,
@@ -229,11 +232,35 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
       list(listOptions: ListSessionsOptions = {}) {
         return [...live().sessions.values()]
           .filter((r) => listOptions.includeArchived || !r.archived)
+          .filter((r) => listOptions.includeTrial || r.kind === 'normal')
           .filter(
             (r) => listOptions.projectId === undefined || r.projectId === listOptions.projectId,
           )
           .sort((a, b) => b.updatedAt - a.updatedAt || a.sessionId.localeCompare(b.sessionId))
           .map(copy)
+      },
+      remove(sessionId) {
+        const s = live()
+        if (!s.sessions.has(sessionId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { sessionId })
+        }
+        s.sessions.delete(sessionId)
+        s.events.delete(sessionId)
+        for (const [changeId, change] of s.changes) {
+          if (change.sessionId === sessionId) s.changes.delete(changeId)
+        }
+        for (const [ruleId, record] of s.rules) {
+          if (record.sessionId === sessionId) s.rules.delete(ruleId)
+        }
+        for (const [snapshotId, snapshot] of s.runSnapshots) {
+          if (snapshot.sessionId === sessionId) s.runSnapshots.delete(snapshotId)
+        }
+        for (const [changeSetId, changeSet] of s.changeSets) {
+          if (changeSet.sessionId === sessionId) {
+            s.changeSets.delete(changeSetId)
+            s.changeSetFiles.delete(changeSetId)
+          }
+        }
       },
       rename: (sessionId, title) => updateSession(sessionId, { title }),
       archive: (sessionId) => updateSession(sessionId, { archived: true }),

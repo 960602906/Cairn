@@ -17,6 +17,7 @@ import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
 import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
+import type { TrialCommands } from './trial-service.js'
 import {
   coalesceDeltas,
   createRendererGateway,
@@ -105,6 +106,7 @@ let changeSets: ChangeSetCommands
 let approvals: ApprovalCommands
 let skills: SkillCommands
 let agents: AgentCommands
+let trials: TrialCommands
 let diagnostics: DiagnosticsCommands
 let inspect: InspectCommands
 let activity: ActivityCommands
@@ -265,6 +267,22 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
       },
     })),
   }
+  trials = {
+    start: vi.fn(() => ({
+      sessionId: 'trial-1',
+      agent: { id: 'user.x', draftHash: 'hash' },
+      draftHash: 'hash',
+      useAgentPermissions: false,
+    })),
+    restart: vi.fn(() => ({
+      sessionId: 'trial-2',
+      agent: { id: 'user.x', draftHash: 'hash' },
+      draftHash: 'hash',
+      useAgentPermissions: false,
+    })),
+    clear: vi.fn(() => ({ cleared: 0 })),
+    list: vi.fn(() => ({ trials: [] })),
+  }
   approvals = {
     pending: vi.fn(() => ({ approvals: [] })),
     resolve: vi.fn(() => ({})),
@@ -312,6 +330,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     skills,
     mcp: {} as unknown as McpCommands,
     agents,
+    trials,
     diagnostics,
     inspect,
     activity,
@@ -902,6 +921,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       skills,
       mcp: {} as unknown as McpCommands,
       agents,
+      trials,
       diagnostics,
       inspect: {} as unknown as InspectCommands,
       activity: { subscribe: () => () => undefined } as unknown as ActivityCommands,

@@ -13,7 +13,7 @@ import {
 describe('resources', () => {
   it('支持中文与英文（ADR-0013），按命名空间拆分', () => {
     expect(SUPPORTED_LOCALES).toEqual(['zh-CN', 'en-US'])
-    expect(NAMESPACES).toEqual(['common', 'session', 'settings', 'agents', 'errors'])
+    expect(NAMESPACES).toEqual(['common', 'session', 'settings', 'agents', 'trial', 'errors'])
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale]).sort()).toEqual([...NAMESPACES].sort())
     }

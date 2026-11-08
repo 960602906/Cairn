@@ -7,16 +7,18 @@ import enCommon from '../locales/en-US/common.json' with { type: 'json' }
 import enErrors from '../locales/en-US/errors.json' with { type: 'json' }
 import enSession from '../locales/en-US/session.json' with { type: 'json' }
 import enSettings from '../locales/en-US/settings.json' with { type: 'json' }
+import enTrial from '../locales/en-US/trial.json' with { type: 'json' }
 import zhAgents from '../locales/zh-CN/agents.json' with { type: 'json' }
 import zhCommon from '../locales/zh-CN/common.json' with { type: 'json' }
 import zhErrors from '../locales/zh-CN/errors.json' with { type: 'json' }
 import zhSession from '../locales/zh-CN/session.json' with { type: 'json' }
 import zhSettings from '../locales/zh-CN/settings.json' with { type: 'json' }
+import zhTrial from '../locales/zh-CN/trial.json' with { type: 'json' }
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type Locale = (typeof SUPPORTED_LOCALES)[number]
 
-export const NAMESPACES = ['common', 'session', 'settings', 'agents', 'errors'] as const
+export const NAMESPACES = ['common', 'session', 'settings', 'agents', 'trial', 'errors'] as const
 export type Namespace = (typeof NAMESPACES)[number]
 
 export const DEFAULT_NAMESPACE: Namespace = 'common'
@@ -30,6 +32,7 @@ export const RESOURCES: Readonly<Record<Locale, Readonly<Record<Namespace, Messa
     session: zhSession,
     settings: zhSettings,
     agents: zhAgents,
+    trial: zhTrial,
     errors: zhErrors,
   },
   'en-US': {
@@ -37,6 +40,7 @@ export const RESOURCES: Readonly<Record<Locale, Readonly<Record<Namespace, Messa
     session: enSession,
     settings: enSettings,
     agents: enAgents,
+    trial: enTrial,
     errors: enErrors,
   },
 }

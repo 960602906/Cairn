@@ -33,6 +33,7 @@
   "editor.save": "Save draft",
   "editor.publish": "Publish",
   "editor.publishVersion": "Publish v{{version}}",
+  "editor.trial": "Trial run",
   "editor.duplicate": "Duplicate",
   "editor.export": "Export",
   "editor.archive": "Archive",

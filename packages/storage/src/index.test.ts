@@ -20,6 +20,7 @@ it('exports the public API', () => {
     'run-snapshots',
     'change-sets',
     'change-set-baseline-time',
+    'session-kind',
   ])
   expect(storage.StorageErrorCode.SeqConflict).toBe('storage.seq_conflict')
   const error = new storage.StorageError(storage.StorageErrorCode.NotFound)

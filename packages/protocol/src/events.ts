@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { PlanDocument, PlanStepStatus } from './plan.js'
 import {
   AgentDefinitionRef,
+  RunAgentRef,
   ContentPart,
   DurationMs,
   ErrorInfo,
@@ -112,7 +113,7 @@ const payloadSchemas = {
 
   // ---------- 运行 ----------
   'run.created': z.object({
-    agent: AgentDefinitionRef,
+    agent: RunAgentRef,
     model: ModelRef,
     mode: RunMode,
     limits: RunLimits,

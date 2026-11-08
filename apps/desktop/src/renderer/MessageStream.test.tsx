@@ -509,4 +509,206 @@ describe('MessageStream Agent 标记', () => {
     renderStream(failed, [])
     expect(screen.getByText(/失败|错误/)).toBeDefined()
   })
+
+  it('renders a switch divider for a live draft run', () => {
+    const live = {
+      ...multiRun,
+      runs: {
+        r1: { runId: 'r1', agent: agent('builtin.coder', 1) },
+        r2: { runId: 'r2', agent: { id: 'user.custom', draftHash: 'hash' } },
+      },
+      runOrder: ['r1', 'r2'],
+      messages: [user('u1', 'r1', 't1', 1), assistant('a1', 'r1', 't1', 2)],
+      live: {
+        m2: {
+          messageId: 'm2',
+          runId: 'r2',
+          reasoning: '',
+          text: 'hi',
+          lastDeltaSeq: 3,
+          startedAt: 3,
+        },
+      },
+    } as unknown as SessionView
+    renderStream(live, [
+      {
+        agentId: 'user.custom',
+        name: { 'zh-CN': '自定义助手' },
+        description: {},
+        version: 1,
+        status: 'draft',
+        source: 'user',
+        archived: false,
+        hasDraft: true,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ])
+    expect(screen.getByText('已切换到 自定义助手 草稿')).toBeDefined()
+  })
+
+  it('ignores a live switch for an unknown or first run', () => {
+    const unknown = {
+      ...multiRun,
+      runs: { r1: { runId: 'r1', agent: agent('builtin.coder', 1) } },
+      runOrder: ['r1', 'r2'],
+      messages: [user('u1', 'r1', 't1', 1), assistant('a1', 'r1', 't1', 2)],
+      live: {
+        m2: {
+          messageId: 'm2',
+          runId: 'r2',
+          reasoning: '',
+          text: 'hi',
+          lastDeltaSeq: 3,
+          startedAt: 3,
+        },
+      },
+    } as unknown as SessionView
+    renderStream(unknown, [])
+    expect(screen.queryByText(/已切换到/)).toBeNull()
+
+    const first = {
+      ...unknown,
+      runs: { r1: { runId: 'r1', agent: agent('builtin.coder', 1) } },
+      live: {
+        m1: {
+          messageId: 'm1',
+          runId: 'r1',
+          reasoning: '',
+          text: 'hi',
+          lastDeltaSeq: 3,
+          startedAt: 3,
+        },
+      },
+    } as unknown as SessionView
+    renderStream(first, [])
+    expect(screen.queryByText(/已切换到/)).toBeNull()
+  })
+})
+
+describe('MessageStream 试运行（M4-12）', () => {
+  const trialEv = (seq: number, type: string, payload: object, turnId = 't1'): EventEnvelope =>
+    ({ ...ev(seq, type, payload, turnId), sessionId: 't1' }) as EventEnvelope
+
+  const renderWith = (
+    view: SessionView,
+    state: Record<string, unknown>,
+    props: { sessionId?: string; onContinue?: (prompt: string) => void } = {},
+  ) => {
+    const store = createStore<Record<string, unknown>>(() => state) as unknown as SessionStore
+    return render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={view} onOpenPlan={vi.fn()} {...props} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('reads approval state from the given trial session', () => {
+    const view = reduceSessionEvents(createSessionView('t1'), [
+      trialEv(1, 'session.created', {
+        projectId: 'p1',
+        projectPath: '/w',
+        workspacePath: '/w',
+        title: '',
+      }),
+      trialEv(2, 'run.created', {
+        agent: { id: 'user.reviewer', draftHash: 'h1' },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      trialEv(3, 'message.user', { messageId: 'u1', content: text('检查') }),
+      trialEv(4, 'turn.started', {}),
+      trialEv(5, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: text('执行'),
+        model,
+        toolCalls: [{ id: 'c1', name: 'run_command', input: { command: 'ls' } }],
+      }),
+    ])
+    renderWith(
+      view,
+      {
+        activeSessionId: 'normal',
+        approvals: {
+          normal: [],
+          t1: [{ toolCallId: 'c1', approvalId: 'a1' }],
+        },
+        settings: { providers: [] },
+        agents: [],
+        sendPrompt: vi.fn(),
+      },
+      { sessionId: 't1' },
+    )
+    expect(screen.getByText('等待审批')).toBeDefined()
+  })
+
+  it('uses the supplied continue action instead of the active session', async () => {
+    const view = reduceSessionEvents(createSessionView('t1'), [
+      trialEv(1, 'session.created', {
+        projectId: 'p1',
+        projectPath: '/w',
+        workspacePath: '/w',
+        title: '',
+      }),
+      trialEv(2, 'run.created', {
+        agent: { id: 'user.reviewer', draftHash: 'h1' },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      trialEv(3, 'message.user', { messageId: 'u1', content: text('检查') }),
+      trialEv(4, 'turn.started', {}),
+      trialEv(5, 'turn.limit_reached', { limit: 'maxStepsPerTurn', value: 1 }),
+      trialEv(6, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }),
+    ])
+    const sendPrompt = vi.fn(async () => true)
+    const onContinue = vi.fn()
+    renderWith(
+      view,
+      {
+        activeSessionId: 'normal',
+        approvals: {},
+        settings: { providers: [] },
+        agents: [],
+        sendPrompt,
+      },
+      { sessionId: 't1', onContinue },
+    )
+    await userEvent.click(screen.getByRole('button', { name: /继续/ }))
+    expect(onContinue).toHaveBeenCalledWith(expect.any(String))
+    expect(sendPrompt).not.toHaveBeenCalled()
+  })
+
+  it('renders trailing marks when the view has no messages', () => {
+    const view = {
+      sessionId: 't1',
+      messages: [],
+      live: {},
+      runs: {},
+      runOrder: [],
+      tools: {},
+      liveToolOutput: {},
+      usage: { inputTokens: 0, outputTokens: 0 },
+      usageByTurn: {},
+      contextTokens: undefined,
+      checkpoints: [],
+      restores: [],
+      compaction: { summary: '摘要', seq: 1 },
+      toolOutputOmitted: { seq: 2 },
+      plans: [],
+      delegations: [],
+    } as unknown as SessionView
+    renderWith(view, {
+      activeSessionId: undefined,
+      approvals: {},
+      settings: { providers: [] },
+      agents: [],
+      sendPrompt: vi.fn(),
+    })
+    expect(screen.getByRole('button', { name: /较早的对话已压缩/ })).toBeTruthy()
+    expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeTruthy()
+  })
 })

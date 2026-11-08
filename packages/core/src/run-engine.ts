@@ -46,7 +46,7 @@ import type {
   RunLimits,
   RunMode,
   RunState,
-  AgentDefinitionRef,
+  RunAgentRef,
   CanonicalMessage,
   TokenUsage,
   UnsequencedEvent,
@@ -179,7 +179,7 @@ export interface ModelCallSnapshot {
   readonly parentRunId?: string
   readonly turnId?: string
   readonly stepId?: string
-  readonly agent: AgentDefinitionRef
+  readonly agent: RunAgentRef
   readonly model: ResolvedModel
   readonly systemPrompt: string
   readonly messages: readonly CanonicalMessage[]
@@ -191,7 +191,7 @@ export interface RunEngineOptions {
   readonly sessionId: string
   readonly runId: string
   readonly parentRunId?: string
-  readonly agent: AgentDefinitionRef
+  readonly agent: RunAgentRef
   readonly mode: RunMode
   readonly limits: RunLimits
   readonly runtime: AgentRuntime

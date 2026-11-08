@@ -84,12 +84,17 @@ function Option({
 export function ApprovalCard({
   approval,
   active,
+  onResolve,
 }: {
   readonly approval: PendingApproval
   readonly active: boolean
+  readonly onResolve?:
+    | ((approvalId: string, decision: ApprovalDecision, feedback?: string) => Promise<boolean>)
+    | undefined
 }) {
   const { t } = useTranslation('session')
-  const resolveApproval = useSessionStore((s) => s.resolveApproval)
+  const resolveActiveApproval = useSessionStore((s) => s.resolveApproval)
+  const resolveApproval = onResolve ?? resolveActiveApproval
   const [feedback, setFeedback] = useState('')
   const [denying, setDenying] = useState(false)
   const [busy, setBusy] = useState(false)

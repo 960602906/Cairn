@@ -339,6 +339,87 @@ describe('createActivityService', () => {
     await Promise.all(pending)
   })
 
+  it('excludes trial sessions from approvals and run summaries', async () => {
+    const { storage, events, approvals, activity } = setup()
+    storage.sessions.create({
+      sessionId: 'trial',
+      projectId: 'p1',
+      workspacePath: '/work',
+      title: '',
+      kind: 'trial',
+      trialAgentId: 'user.reviewer',
+      trialDraftHash: 'hash',
+    })
+    events.publish([
+      {
+        v: 1,
+        sessionId: 'trial',
+        runId: 'r-trial',
+        ts: 10,
+        type: 'run.created',
+        payload: {
+          agent: { id: 'user.reviewer', draftHash: 'hash' },
+          model: { providerId: 'fake', modelId: 'fake' },
+          mode: 'interactive',
+          limits: {},
+        },
+      },
+      {
+        v: 1,
+        sessionId: 'trial',
+        runId: 'r-trial',
+        turnId: 'turn-trial',
+        ts: 11,
+        type: 'turn.started',
+        payload: {},
+      },
+    ])
+    const pending = approvals.request('trial', 'r-trial', approval('trial-approval'))
+    expect(activity.list()).toMatchObject({
+      approvals: [],
+      running: [],
+      completed: [],
+    })
+    activity.resolve({ approvalId: 'trial-approval', decision: 'deny' })
+    await pending
+  })
+
+  it('ignores draft agents and approvals in normal sessions', async () => {
+    const { events, approvals, activity } = setup()
+    const draftAgent = { id: 'user.reviewer', draftHash: 'draft-hash' }
+    events.publish([
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 10,
+        type: 'run.created',
+        payload: { agent: draftAgent, model, mode: 'interactive', limits },
+      },
+    ])
+    const pending = approvals.request('s1', 'r1', approval('draft-approval', { agent: draftAgent }))
+    expect(activity.list()).toMatchObject({ approvals: [], running: [], completed: [] })
+    activity.resolve({ approvalId: 'draft-approval', decision: 'deny' })
+    await pending
+  })
+
+  it('associates a change set with a turn that has no turn id', () => {
+    const { events, activity } = setup()
+    events.publish([
+      created('s1', 1),
+      event(
+        's1',
+        'run.child.completed',
+        { childRunId: 'child', status: 'completed', changeSetId: 'cs1' },
+        { runId: 'r1', ts: 2 },
+      ),
+      event('s1', 'turn.completed', { durationMs: 1 }, { runId: 'r1', ts: 3 }),
+    ])
+    expect(activity.list().completed.find((item) => item.sessionId === 's1')).toMatchObject({
+      changeSetId: 'cs1',
+    })
+  })
+
   it('handles messages without text, missing turn ids and step fallbacks', () => {
     const { storage, events, activity, changes } = setup()
     storage.sessions.create({

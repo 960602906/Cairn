@@ -8,10 +8,10 @@
  */
 import type { ApprovalGate, ApprovalResponse } from '@cairn/core'
 import type {
-  AgentDefinitionRef,
   HostForMain,
   MainForHost,
   PermissionRule,
+  RunAgentRef,
   RpcEndpoint,
 } from '@cairn/protocol'
 
@@ -19,7 +19,7 @@ import type {
 export interface HostApprovalAttribution {
   readonly runId: string
   readonly parentRunId?: string
-  readonly agent: AgentDefinitionRef
+  readonly agent: RunAgentRef
 }
 
 export interface HostApprovalGateOptions {

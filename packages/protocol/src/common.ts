@@ -35,6 +35,19 @@ export const AgentDefinitionRef = z.object({
 })
 export type AgentDefinitionRef = z.infer<typeof AgentDefinitionRef>
 
+/** 未发布草稿的引用（M4-12）：哈希标识试运行实际使用的草稿内容。 */
+export const AgentDraftRef = z.object({
+  id: Id,
+  draftHash: Id,
+})
+export type AgentDraftRef = z.infer<typeof AgentDraftRef>
+
+/** 运行可以引用已发布版本或试运行草稿。 */
+export const RunAgentRef = z.union([AgentDefinitionRef, AgentDraftRef])
+export type RunAgentRef = z.infer<typeof RunAgentRef>
+
+export const isAgentDraftRef = (agent: RunAgentRef): agent is AgentDraftRef => 'draftHash' in agent
+
 /** 消息内容片段（Runtime §17）。图片为预留。 */
 export const ContentPart = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),

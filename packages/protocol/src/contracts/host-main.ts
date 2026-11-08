@@ -4,11 +4,11 @@
  */
 import { z } from 'zod'
 import {
-  AgentDefinitionRef,
   CanonicalMessage,
   ContentPart,
   Id,
   ModelRef,
+  RunAgentRef,
   RunLimits,
   RunMode,
   RunState,
@@ -72,7 +72,7 @@ export const HostApprovalRequest = z.object({
   runId: Id,
   parentRunId: Id.optional(),
   /** 发起调用的 Agent 定义（M4-03）。 */
-  agent: AgentDefinitionRef,
+  agent: RunAgentRef,
   tool: z.object({ name: z.string().min(1), category: ToolCategory }),
   /** 规范化后的参数（JSON）。 */
   input: z.unknown(),
@@ -114,7 +114,7 @@ export const HostForMain = defineSide({
         sessionId: Id,
         runId: Id,
         workspacePath: z.string().min(1),
-        agent: AgentDefinitionRef,
+        agent: RunAgentRef,
         /**
          * 这个运行引用的 Agent 定义（M3-11）。宿主据此决定指令、工具选择与是否读取项目说明。
          * 省略时按内置编程助手的行为：全部工具、没有额外指令。

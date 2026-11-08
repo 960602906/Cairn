@@ -6,7 +6,7 @@
  * - 校验需要工具、MCP、Skills 与模型清单，由调用方注入（这里不读文件、不连 MCP）。
  * - 运行相关：主进程从这里取指令、最终工具 / Skills、权限预设与固定模型，写入 `host.init`。
  */
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import {
   BUILTIN_AGENTS,
@@ -27,6 +27,7 @@ import {
   AgentDraft,
   AgentDraftFields,
   AgentDraftInput,
+  isAgentDraftRef,
   RpcError,
   type AgentDefinitionRef,
   type AgentDetail,
@@ -41,6 +42,7 @@ import {
   type McpToolExposure,
   type ModelRef,
   type PermissionRule,
+  type RunAgentRef,
   type SkillCatalogEntry,
   type SkillSummary,
 } from '@cairn/protocol'
@@ -94,14 +96,16 @@ export interface AgentCommands {
 }
 
 export interface AgentService extends AgentCommands {
-  /** 运行引用：只返回已发布版本。 */
-  definition(ref: AgentDefinitionRef): AgentDefinition | undefined
+  /** 运行引用：已发布版本按 `id@version`，草稿按当前内容哈希。 */
+  definition(ref: RunAgentRef): AgentDefinition | undefined
+  /** 试运行使用的草稿定义与内容哈希；草稿未发布也可以运行。 */
+  trialDraft(agentId: string): { definition: AgentDefinition; draftHash: string }
   /** 按 Agent 的选择过滤这一轮的技能。 */
-  skillsFor(ref: AgentDefinitionRef, sessionId: string): SkillCatalogEntry[]
+  skillsFor(ref: RunAgentRef, sessionId: string): SkillCatalogEntry[]
   /** 按 Agent 的选择过滤这一轮的 MCP 工具。 */
-  mcpToolsFor(ref: AgentDefinitionRef): McpToolExposure[]
+  mcpToolsFor(ref: RunAgentRef): McpToolExposure[]
   /** Agent 的权限预设叠加应用已有的规则（引擎取最严格的）。 */
-  permissionRulesFor(ref: AgentDefinitionRef, rules: readonly PermissionRule[]): PermissionRule[]
+  permissionRulesFor(ref: RunAgentRef, rules: readonly PermissionRule[]): PermissionRule[]
 }
 
 const option = (value: string | undefined): string | undefined => {
@@ -117,6 +121,24 @@ const generatedId = (name: LocalizedText, prefix: 'user' | 'imported', random: (
     .slice(0, 40)
   return `${prefix}.${slug || 'agent'}-${random()}`
 }
+
+const canonicalJson = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalJson)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalJson(item)]),
+    )
+  }
+  return value
+}
+
+const draftHash = (fields: AgentDraftFields): string =>
+  createHash('sha256')
+    .update(JSON.stringify(canonicalJson(fields)))
+    .digest('hex')
 
 export function createAgentService(options: AgentServiceOptions): AgentService {
   const { storage, events } = options
@@ -275,6 +297,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
       const seen = new Set<number>()
       for (const event of events.readAfter(session.sessionId, 0)) {
         if (event.type !== 'run.created' || event.payload.agent.id !== agentId) continue
+        if (!('version' in event.payload.agent)) continue
         const version = event.payload.agent.version
         if (seen.has(version)) continue
         seen.add(version)
@@ -291,6 +314,47 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
   function runDefinition(ref: AgentDefinitionRef): AgentDefinition | undefined {
     const definition = publishedOf(ref.id, ref.version)
     return definition && definition.status === 'published' ? definition : undefined
+  }
+
+  function trialDefinition(agentId: string): {
+    definition: AgentDefinition
+    draftHash: string
+  } {
+    const builtin = builtinAgent(agentId)
+    if (builtin) {
+      return {
+        definition: builtin,
+        draftHash: draftHash(pickDraftFields(builtin)),
+      }
+    }
+    const record = recordOf(agentId)
+    const draft = draftOf(agentId)
+    const published = publishedOf(agentId)
+    const fields = draft ?? published
+    if (!fields) throw new RpcError(AgentServiceErrorCode.NotFound, { agentId })
+    return {
+      definition: {
+        id: agentId,
+        version: published?.version ?? 1,
+        source: record.source,
+        status: draft ? 'draft' : 'published',
+        ...pickDraftFields(fields),
+        createdAt: record.createdAt,
+        updatedAt: now(),
+        schemaVersion: 1,
+      },
+      draftHash: draftHash(pickDraftFields(fields)),
+    }
+  }
+
+  function definitionForRun(ref: RunAgentRef): AgentDefinition | undefined {
+    if (!isAgentDraftRef(ref)) return runDefinition(ref)
+    try {
+      const current = trialDefinition(ref.id)
+      return current.draftHash === ref.draftHash ? current.definition : undefined
+    } catch {
+      return undefined
+    }
   }
 
   function fieldsOfEndpoint(agentId: string, endpoint: AgentDiffEndpoint): AgentDraftFields {
@@ -647,17 +711,19 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
       }
     },
 
-    definition: runDefinition,
+    definition: definitionForRun,
+
+    trialDraft: trialDefinition,
 
     skillsFor(ref, sessionId) {
       const catalog = options.skills.catalog(sessionId)
-      const definition = runDefinition(ref)
+      const definition = definitionForRun(ref)
       return definition ? selectSkills(definition.skills, catalog) : catalog
     },
 
     mcpToolsFor(ref) {
       const exposures = options.mcp.exposures()
-      const definition = runDefinition(ref)
+      const definition = definitionForRun(ref)
       if (!definition) return exposures
       return exposures.filter((tool) =>
         toolSelected(definition.tools, {
@@ -669,7 +735,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     },
 
     permissionRulesFor(ref, rules) {
-      const definition = runDefinition(ref)
+      const definition = definitionForRun(ref)
       if (!definition) return [...rules]
       return [...presetRules(definition.permissions), ...rules]
     },

@@ -6,7 +6,7 @@
  * - 内置 Agent 只读，只能“复制为新 Agent”。
  * - 指令区实时估算 token 与占上下文的比例（按主模型或固定模型的上下文窗口）。
  */
-import { ArrowLeft, Check, Copy, Download, Save, Upload } from 'lucide-react'
+import { ArrowLeft, Check, Copy, Download, Play, Save, Upload } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -47,6 +47,7 @@ import {
 import { inputClass } from '../settings/Field.js'
 import { AgentVersions } from './AgentVersions.js'
 import { AgentEffectiveConfig } from './AgentEffectiveConfig.js'
+import { TrialPanel } from './TrialPanel.js'
 
 type View = 'edit' | 'versions' | 'effective'
 
@@ -402,6 +403,7 @@ export function AgentEditor({
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmPublish, setConfirmPublish] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [trialOpen, setTrialOpen] = useState(false)
   const dirty =
     fields !== undefined &&
     baseline !== undefined &&
@@ -591,6 +593,7 @@ export function AgentEditor({
   const nextVersion = (published?.version ?? 0) + 1
   const title =
     fields.name[i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US'] || t('editor.untitled')
+  const trialAgentId = currentId ?? detail?.agentId
 
   const modelSelect = (
     label: string,
@@ -626,509 +629,541 @@ export function AgentEditor({
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-2 border-b-[0.5px] border-hair px-8 py-3">
-        <Button variant="ghost" size="sm" onClick={back}>
-          <ArrowLeft />
-          {t('action.back')}
-        </Button>
-        <AgentAvatar icon={fields.icon} color={fields.color} size={26} />
-        <h2 className="min-w-0 truncate text-ui font-medium text-fg">{title}</h2>
-        {published && (
-          <span className="tabular rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
-            {t('version', { version: published.version })}
-          </span>
-        )}
-        {detail?.source && (
-          <span className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
-            {t(`source.${detail.source}`)}
-          </span>
-        )}
-        <span
-          className={cn(
-            'rounded-full px-2 py-0.5 text-[11.5px]',
-            published && !dirty && 'bg-ok-soft text-ok',
-            !published && 'bg-warn-soft text-warn',
-            dirty && 'bg-accent-soft text-accent',
+    <div className="flex min-h-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-center gap-2 border-b-[0.5px] border-hair px-8 py-3">
+          <Button variant="ghost" size="sm" onClick={back}>
+            <ArrowLeft />
+            {t('action.back')}
+          </Button>
+          <AgentAvatar icon={fields.icon} color={fields.color} size={26} />
+          <h2 className="min-w-0 truncate text-ui font-medium text-fg">{title}</h2>
+          {published && (
+            <span className="tabular rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+              {t('version', { version: published.version })}
+            </span>
           )}
-        >
-          {dirty ? t('status.dirty') : published ? t('status.published') : t('status.draft')}
-        </span>
-        <div className="ml-auto flex items-center gap-1.5">
-          {savedAt && !dirty && <Check aria-label={t('editor.saved')} className="size-4 text-ok" />}
-          {detail?.source === 'builtin' ? (
-            <Button variant="primary" size="sm" disabled={busy} onClick={() => void duplicate()}>
-              <Copy />
-              {t('new.copy')}
-            </Button>
-          ) : detail?.archived ? (
-            <>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void duplicate()}>
-                <Copy />
-                {t('editor.duplicate')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => void exportAgent()}>
-                <Download />
-                {t('editor.export')}
-              </Button>
-              <Button variant="primary" size="sm" disabled={busy} onClick={() => void unarchive()}>
-                <Upload />
-                {t('editor.unarchive')}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={saving || !dirty}
-                onClick={() => void save()}
-              >
-                <Save />
-                {t('editor.save')}
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={busy || validation?.ok === false}
-                onClick={() => setConfirmPublish(true)}
-              >
-                {t('editor.publishVersion', { version: nextVersion })}
-              </Button>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void duplicate()}>
-                <Copy />
-                {t('editor.duplicate')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => void exportAgent()}>
-                <Download />
-                {t('editor.export')}
-              </Button>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void archive()}>
-                {t('editor.archive')}
-              </Button>
-            </>
+          {detail?.source && (
+            <span className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+              {t(`source.${detail.source}`)}
+            </span>
           )}
-        </div>
-      </header>
+          <span
+            className={cn(
+              'rounded-full px-2 py-0.5 text-[11.5px]',
+              published && !dirty && 'bg-ok-soft text-ok',
+              !published && 'bg-warn-soft text-warn',
+              dirty && 'bg-accent-soft text-accent',
+            )}
+          >
+            {dirty ? t('status.dirty') : published ? t('status.published') : t('status.draft')}
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            {savedAt && !dirty && (
+              <Check aria-label={t('editor.saved')} className="size-4 text-ok" />
+            )}
+            {trialAgentId && (
+              <Button variant="secondary" size="sm" onClick={() => setTrialOpen(true)}>
+                <Play />
+                {t('editor.trial')}
+              </Button>
+            )}
+            {detail?.source === 'builtin' ? (
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => void duplicate()}>
+                <Copy />
+                {t('new.copy')}
+              </Button>
+            ) : detail?.archived ? (
+              <>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => void duplicate()}>
+                  <Copy />
+                  {t('editor.duplicate')}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => void exportAgent()}>
+                  <Download />
+                  {t('editor.export')}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void unarchive()}
+                >
+                  <Upload />
+                  {t('editor.unarchive')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={saving || !dirty}
+                  onClick={() => void save()}
+                >
+                  <Save />
+                  {t('editor.save')}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={busy || validation?.ok === false}
+                  onClick={() => setConfirmPublish(true)}
+                >
+                  {t('editor.publishVersion', { version: nextVersion })}
+                </Button>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => void duplicate()}>
+                  <Copy />
+                  {t('editor.duplicate')}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => void exportAgent()}>
+                  <Download />
+                  {t('editor.export')}
+                </Button>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => void archive()}>
+                  {t('editor.archive')}
+                </Button>
+              </>
+            )}
+          </div>
+        </header>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="w-[196px] shrink-0 overflow-y-auto py-4 pl-3">
-          <SectionNav
-            section={section}
-            onSelect={setSection}
-            baseline={baseline ?? fields}
-            fields={fields}
-            validation={validation}
-            view={view}
-            onView={setView}
-          />
-        </div>
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-[720px] flex-col gap-5 px-6 py-5">
-            {readonly && (
-              <p className="rounded-card bg-sunk px-3.5 py-2.5 text-note text-muted">
-                {t('editor.readonly')}
-              </p>
-            )}
-            {view === 'versions' && detail && (
-              <AgentVersions
-                agentId={currentId ?? detail.agentId}
-                onRestore={async (next) => {
-                  setDetail(next)
-                  setCurrentId(next.agentId)
-                  const restored = next.draft ? draftFieldsOf(next.draft) : fields
-                  setFields(restored)
-                  setBaseline(restored)
-                  setValidation(next.validation)
-                  setView('edit')
-                  onChanged()
-                }}
-              />
-            )}
-            {view === 'effective' && detail && (
-              <AgentEffectiveConfig agentId={currentId ?? detail.agentId} />
-            )}
-            {view === 'edit' && section === 'basic' && (
-              <section className="flex flex-col gap-4">
-                <LocalizedFields
-                  idPrefix="agent-name"
-                  labelZh={t('basic.nameZh')}
-                  labelEn={t('basic.nameEn')}
-                  value={fields.name}
-                  onChange={(name) => setFields(update(fields, 'name', name))}
+        <div className="flex min-h-0 flex-1">
+          <div className="w-[196px] shrink-0 overflow-y-auto py-4 pl-3">
+            <SectionNav
+              section={section}
+              onSelect={setSection}
+              baseline={baseline ?? fields}
+              fields={fields}
+              validation={validation}
+              view={view}
+              onView={setView}
+            />
+          </div>
+          <div className="min-w-0 flex-1 overflow-y-auto">
+            <div className="mx-auto flex max-w-[720px] flex-col gap-5 px-6 py-5">
+              {readonly && (
+                <p className="rounded-card bg-sunk px-3.5 py-2.5 text-note text-muted">
+                  {t('editor.readonly')}
+                </p>
+              )}
+              {view === 'versions' && detail && (
+                <AgentVersions
+                  agentId={currentId ?? detail.agentId}
+                  onRestore={async (next) => {
+                    setDetail(next)
+                    setCurrentId(next.agentId)
+                    const restored = next.draft ? draftFieldsOf(next.draft) : fields
+                    setFields(restored)
+                    setBaseline(restored)
+                    setValidation(next.validation)
+                    setView('edit')
+                    onChanged()
+                  }}
                 />
-                <LocalizedFields
-                  idPrefix="agent-description"
-                  labelZh={t('basic.descriptionZh')}
-                  labelEn={t('basic.descriptionEn')}
-                  value={fields.description}
-                  onChange={(description) => setFields(update(fields, 'description', description))}
-                />
-                <p className="text-note text-muted">{t('basic.languageHint')}</p>
-                <Issues list={errorsAtBasic} tone="error" />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-1 block text-[13px] text-fg2">{t('basic.icon')}</span>
-                    <select
-                      aria-label={t('basic.icon')}
-                      className={inputClass}
-                      value={fields.icon ?? ''}
-                      onChange={(e) =>
-                        setFields(update(fields, 'icon', e.target.value || undefined))
-                      }
-                    >
-                      <option value="">—</option>
-                      {AGENT_ICON_NAMES.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-[13px] text-fg2">{t('basic.color')}</span>
-                    <select
-                      aria-label={t('basic.color')}
-                      className={inputClass}
-                      value={fields.color ?? ''}
-                      onChange={(e) =>
-                        setFields(update(fields, 'color', e.target.value || undefined))
-                      }
-                    >
-                      <option value="">—</option>
-                      {AGENT_COLOR_NAMES.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <label className="block">
-                  <span className="mb-1 block text-[13px] text-fg2">{t('basic.tags')}</span>
-                  <input
-                    className={inputClass}
-                    value={(fields.tags ?? []).join(', ')}
-                    onChange={(e) => {
-                      const tags = e.target.value
-                        .split(',')
-                        .map((tag) => tag.trim())
-                        .filter((tag) => tag !== '')
-                      setFields(update(fields, 'tags', tags.length > 0 ? tags : undefined))
-                    }}
+              )}
+              {view === 'effective' && detail && (
+                <AgentEffectiveConfig agentId={currentId ?? detail.agentId} />
+              )}
+              {view === 'edit' && section === 'basic' && (
+                <section className="flex flex-col gap-4">
+                  <LocalizedFields
+                    idPrefix="agent-name"
+                    labelZh={t('basic.nameZh')}
+                    labelEn={t('basic.nameEn')}
+                    value={fields.name}
+                    onChange={(name) => setFields(update(fields, 'name', name))}
                   />
-                  <span className="mt-1 block text-note text-muted">{t('basic.tagsHint')}</span>
-                </label>
-              </section>
-            )}
-            {view === 'edit' && section === 'instructions' && (
-              <section className="flex flex-col gap-2">
-                <label className="block">
-                  <span className="mb-1 block text-[13px] text-fg2">{t('instructions.label')}</span>
-                  <textarea
-                    aria-label={t('instructions.label')}
-                    className={`${inputClass} h-auto min-h-[320px] resize-y py-2.5 font-mono text-[12.5px] leading-relaxed`}
-                    value={fields.instructions}
-                    onChange={(e) => setFields(update(fields, 'instructions', e.target.value))}
+                  <LocalizedFields
+                    idPrefix="agent-description"
+                    labelZh={t('basic.descriptionZh')}
+                    labelEn={t('basic.descriptionEn')}
+                    value={fields.description}
+                    onChange={(description) =>
+                      setFields(update(fields, 'description', description))
+                    }
                   />
-                </label>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-note text-muted">
-                  <span className="tabular">
-                    {t('instructions.tokens', { tokens: tokenCount, percent })}
-                  </span>
-                  <span className="tabular">
-                    {fields.instructions.length.toLocaleString()} /{' '}
-                    {AGENT_INSTRUCTIONS_MAX_CHARS.toLocaleString()}
-                  </span>
-                </div>
-                {percent >= 25 && <p className="text-note text-warn">{t('instructions.long')}</p>}
-                <p className="text-note text-muted">{t('instructions.hint')}</p>
-                <Issues list={issuesAt(validation, 'instructions', 'errors')} tone="error" />
-              </section>
-            )}
-            {view === 'edit' && section === 'model' && (
-              <section className="flex flex-col gap-4">
-                <div>
-                  <span className="mb-1 block text-[13px] text-fg2">{t('model.mode')}</span>
-                  <SegmentedControl
-                    label={t('model.mode')}
-                    value={fields.model.mode}
-                    onChange={(mode) =>
+                  <p className="text-note text-muted">{t('basic.languageHint')}</p>
+                  <Issues list={errorsAtBasic} tone="error" />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-[13px] text-fg2">{t('basic.icon')}</span>
+                      <select
+                        aria-label={t('basic.icon')}
+                        className={inputClass}
+                        value={fields.icon ?? ''}
+                        onChange={(e) =>
+                          setFields(update(fields, 'icon', e.target.value || undefined))
+                        }
+                      >
+                        <option value="">—</option>
+                        {AGENT_ICON_NAMES.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[13px] text-fg2">{t('basic.color')}</span>
+                      <select
+                        aria-label={t('basic.color')}
+                        className={inputClass}
+                        value={fields.color ?? ''}
+                        onChange={(e) =>
+                          setFields(update(fields, 'color', e.target.value || undefined))
+                        }
+                      >
+                        <option value="">—</option>
+                        {AGENT_COLOR_NAMES.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="block">
+                    <span className="mb-1 block text-[13px] text-fg2">{t('basic.tags')}</span>
+                    <input
+                      className={inputClass}
+                      value={(fields.tags ?? []).join(', ')}
+                      onChange={(e) => {
+                        const tags = e.target.value
+                          .split(',')
+                          .map((tag) => tag.trim())
+                          .filter((tag) => tag !== '')
+                        setFields(update(fields, 'tags', tags.length > 0 ? tags : undefined))
+                      }}
+                    />
+                    <span className="mt-1 block text-note text-muted">{t('basic.tagsHint')}</span>
+                  </label>
+                </section>
+              )}
+              {view === 'edit' && section === 'instructions' && (
+                <section className="flex flex-col gap-2">
+                  <label className="block">
+                    <span className="mb-1 block text-[13px] text-fg2">
+                      {t('instructions.label')}
+                    </span>
+                    <textarea
+                      aria-label={t('instructions.label')}
+                      className={`${inputClass} h-auto min-h-[320px] resize-y py-2.5 font-mono text-[12.5px] leading-relaxed`}
+                      value={fields.instructions}
+                      onChange={(e) => setFields(update(fields, 'instructions', e.target.value))}
+                    />
+                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-note text-muted">
+                    <span className="tabular">
+                      {t('instructions.tokens', { tokens: tokenCount, percent })}
+                    </span>
+                    <span className="tabular">
+                      {fields.instructions.length.toLocaleString()} /{' '}
+                      {AGENT_INSTRUCTIONS_MAX_CHARS.toLocaleString()}
+                    </span>
+                  </div>
+                  {percent >= 25 && <p className="text-note text-warn">{t('instructions.long')}</p>}
+                  <p className="text-note text-muted">{t('instructions.hint')}</p>
+                  <Issues list={issuesAt(validation, 'instructions', 'errors')} tone="error" />
+                </section>
+              )}
+              {view === 'edit' && section === 'model' && (
+                <section className="flex flex-col gap-4">
+                  <div>
+                    <span className="mb-1 block text-[13px] text-fg2">{t('model.mode')}</span>
+                    <SegmentedControl
+                      label={t('model.mode')}
+                      value={fields.model.mode}
+                      onChange={(mode) =>
+                        setFields(
+                          update(fields, 'model', {
+                            ...fields.model,
+                            mode,
+                          }),
+                        )
+                      }
+                      options={[
+                        { value: 'fixed', label: t('model.fixed') },
+                        { value: 'inherit', label: t('model.inherit') },
+                      ]}
+                    />
+                  </div>
+                  {fields.model.mode === 'fixed' &&
+                    modelSelect(t('model.primary'), fields.model.primary, (primaryModel) =>
                       setFields(
                         update(fields, 'model', {
                           ...fields.model,
-                          mode,
+                          ...(primaryModel ? { primary: primaryModel } : {}),
                         }),
-                      )
-                    }
-                    options={[
-                      { value: 'fixed', label: t('model.fixed') },
-                      { value: 'inherit', label: t('model.inherit') },
-                    ]}
-                  />
-                </div>
-                {fields.model.mode === 'fixed' &&
-                  modelSelect(t('model.primary'), fields.model.primary, (primaryModel) =>
+                      ),
+                    )}
+                  {modelSelect(t('model.auxiliary'), fields.model.auxiliary, (auxiliary) =>
                     setFields(
                       update(fields, 'model', {
                         ...fields.model,
-                        ...(primaryModel ? { primary: primaryModel } : {}),
+                        ...(auxiliary ? { auxiliary } : {}),
                       }),
                     ),
                   )}
-                {modelSelect(t('model.auxiliary'), fields.model.auxiliary, (auxiliary) =>
-                  setFields(
-                    update(fields, 'model', {
-                      ...fields.model,
-                      ...(auxiliary ? { auxiliary } : {}),
-                    }),
-                  ),
-                )}
-                <p className="text-note text-muted">{t('model.auxiliaryHint')}</p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block">
+                  <p className="text-note text-muted">{t('model.auxiliaryHint')}</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-[13px] text-fg2">
+                        {t('model.temperature')}
+                      </span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="2"
+                        className={inputClass}
+                        value={fields.model.params?.temperature ?? ''}
+                        onChange={(e) =>
+                          setFields(
+                            update(fields, 'model', {
+                              ...fields.model,
+                              params: {
+                                ...fields.model.params,
+                                ...(e.target.value === ''
+                                  ? {}
+                                  : { temperature: Number(e.target.value) }),
+                              },
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[13px] text-fg2">
+                        {t('model.maxOutput')}
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        className={inputClass}
+                        value={fields.model.params?.maxOutputTokens ?? ''}
+                        onChange={(e) =>
+                          setFields(
+                            update(fields, 'model', {
+                              ...fields.model,
+                              params: {
+                                ...fields.model.params,
+                                ...(e.target.value === ''
+                                  ? {}
+                                  : { maxOutputTokens: Number(e.target.value) }),
+                              },
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                  <Issues list={issuesAt(validation, 'model', 'errors')} tone="error" />
+                  <Issues list={issuesAt(validation, 'model', 'warnings')} tone="warn" />
+                </section>
+              )}
+              {view === 'edit' && section === 'capabilities' && (
+                <CapabilitiesSection fields={fields} onChange={setFields} validation={validation} />
+              )}
+              {view === 'edit' && section === 'permissions' && (
+                <section className="flex flex-col gap-3">
+                  {MODES.map((mode) => (
+                    <label
+                      key={mode}
+                      className={`flex cursor-pointer items-start gap-3 rounded-card px-3.5 py-3 shadow-[0_0_0_0.5px_var(--hair2)] ${
+                        fields.permissions === mode ? 'bg-accent-soft' : 'bg-raise'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="agent-permissions"
+                        className="mt-1"
+                        checked={fields.permissions === mode}
+                        onChange={() => setFields(update(fields, 'permissions', mode))}
+                      />
+                      <span>
+                        <span className="block text-ui font-medium text-fg">
+                          {t(`permissions.${mode}`)}
+                        </span>
+                        <span className="mt-0.5 block text-note text-muted">
+                          {t(`permissions.${mode}.hint`)}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </section>
+              )}
+              {view === 'edit' && section === 'delegation' && (
+                <DelegationSection
+                  fields={fields}
+                  agents={store.agents}
+                  validation={validation}
+                  onChange={setFields}
+                />
+              )}
+              {view === 'edit' && section === 'limits' && (
+                <section className="flex flex-col gap-3">
+                  <p className="text-note text-muted">{t('limits.intro')}</p>
+                  {(
+                    [
+                      ['maxStepsPerTurn', 'limits.steps', 1],
+                      ['maxTurnDurationMs', 'limits.duration', 60_000],
+                      ['maxTokensPerTurn', 'limits.tokens', 1],
+                      ['maxConsecutiveToolErrors', 'limits.toolErrors', 1],
+                    ] as const
+                  ).map(([key, label, scale]) => (
+                    <label key={key} className="block">
+                      <span className="mb-1 block text-[13px] text-fg2">{t(label)}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        className={inputClass}
+                        value={
+                          fields.limits[key] === undefined
+                            ? ''
+                            : Math.round(fields.limits[key]! / scale)
+                        }
+                        onChange={(e) =>
+                          setFields(
+                            update(fields, 'limits', {
+                              ...fields.limits,
+                              [key]:
+                                e.target.value === '' ? undefined : Number(e.target.value) * scale,
+                            }),
+                          )
+                        }
+                      />
+                    </label>
+                  ))}
+                </section>
+              )}
+              {view === 'edit' && section === 'context' && (
+                <section className="flex flex-col gap-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-[13px] text-fg2">{t('context.agentsMd')}</span>
+                    <Switch
+                      aria-label={t('context.agentsMd')}
+                      checked={fields.context.includeProjectInstructions}
+                      onCheckedChange={(on) =>
+                        setFields(
+                          update(fields, 'context', {
+                            ...fields.context,
+                            includeProjectInstructions: on,
+                          }),
+                        )
+                      }
+                    />
+                  </div>
+                  <div>
                     <span className="mb-1 block text-[13px] text-fg2">
-                      {t('model.temperature')}
+                      {t('context.compaction')}
                     </span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="2"
-                      className={inputClass}
-                      value={fields.model.params?.temperature ?? ''}
-                      onChange={(e) =>
-                        setFields(
-                          update(fields, 'model', {
-                            ...fields.model,
-                            params: {
-                              ...fields.model.params,
-                              ...(e.target.value === ''
-                                ? {}
-                                : { temperature: Number(e.target.value) }),
-                            },
-                          }),
-                        )
+                    <SegmentedControl
+                      label={t('context.compaction')}
+                      value={fields.context.compaction}
+                      onChange={(compaction) =>
+                        setFields(update(fields, 'context', { ...fields.context, compaction }))
                       }
+                      options={[
+                        { value: 'auto', label: t('context.auto') },
+                        { value: 'off', label: t('context.off') },
+                      ]}
                     />
-                  </label>
+                  </div>
                   <label className="block">
-                    <span className="mb-1 block text-[13px] text-fg2">{t('model.maxOutput')}</span>
+                    <span className="mb-1 block text-[13px] text-fg2">{t('context.reserve')}</span>
                     <input
                       type="number"
                       min="1"
                       className={inputClass}
-                      value={fields.model.params?.maxOutputTokens ?? ''}
+                      value={fields.context.reserveOutputTokens ?? ''}
                       onChange={(e) =>
                         setFields(
-                          update(fields, 'model', {
-                            ...fields.model,
-                            params: {
-                              ...fields.model.params,
-                              ...(e.target.value === ''
-                                ? {}
-                                : { maxOutputTokens: Number(e.target.value) }),
-                            },
+                          update(fields, 'context', {
+                            ...fields.context,
+                            ...(e.target.value === ''
+                              ? { reserveOutputTokens: undefined }
+                              : { reserveOutputTokens: Number(e.target.value) }),
                           }),
                         )
                       }
                     />
                   </label>
-                </div>
-                <Issues list={issuesAt(validation, 'model', 'errors')} tone="error" />
-                <Issues list={issuesAt(validation, 'model', 'warnings')} tone="warn" />
-              </section>
-            )}
-            {view === 'edit' && section === 'capabilities' && (
-              <CapabilitiesSection fields={fields} onChange={setFields} validation={validation} />
-            )}
-            {view === 'edit' && section === 'permissions' && (
-              <section className="flex flex-col gap-3">
-                {MODES.map((mode) => (
-                  <label
-                    key={mode}
-                    className={`flex cursor-pointer items-start gap-3 rounded-card px-3.5 py-3 shadow-[0_0_0_0.5px_var(--hair2)] ${
-                      fields.permissions === mode ? 'bg-accent-soft' : 'bg-raise'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="agent-permissions"
-                      className="mt-1"
-                      checked={fields.permissions === mode}
-                      onChange={() => setFields(update(fields, 'permissions', mode))}
-                    />
-                    <span>
-                      <span className="block text-ui font-medium text-fg">
-                        {t(`permissions.${mode}`)}
-                      </span>
-                      <span className="mt-0.5 block text-note text-muted">
-                        {t(`permissions.${mode}.hint`)}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </section>
-            )}
-            {view === 'edit' && section === 'delegation' && (
-              <DelegationSection
-                fields={fields}
-                agents={store.agents}
-                validation={validation}
-                onChange={setFields}
-              />
-            )}
-            {view === 'edit' && section === 'limits' && (
-              <section className="flex flex-col gap-3">
-                <p className="text-note text-muted">{t('limits.intro')}</p>
-                {(
-                  [
-                    ['maxStepsPerTurn', 'limits.steps', 1],
-                    ['maxTurnDurationMs', 'limits.duration', 60_000],
-                    ['maxTokensPerTurn', 'limits.tokens', 1],
-                    ['maxConsecutiveToolErrors', 'limits.toolErrors', 1],
-                  ] as const
-                ).map(([key, label, scale]) => (
-                  <label key={key} className="block">
-                    <span className="mb-1 block text-[13px] text-fg2">{t(label)}</span>
-                    <input
-                      type="number"
-                      min="1"
-                      className={inputClass}
-                      value={
-                        fields.limits[key] === undefined
-                          ? ''
-                          : Math.round(fields.limits[key]! / scale)
-                      }
-                      onChange={(e) =>
-                        setFields(
-                          update(fields, 'limits', {
-                            ...fields.limits,
-                            [key]:
-                              e.target.value === '' ? undefined : Number(e.target.value) * scale,
-                          }),
-                        )
-                      }
-                    />
-                  </label>
-                ))}
-              </section>
-            )}
-            {view === 'edit' && section === 'context' && (
-              <section className="flex flex-col gap-4">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-[13px] text-fg2">{t('context.agentsMd')}</span>
-                  <Switch
-                    aria-label={t('context.agentsMd')}
-                    checked={fields.context.includeProjectInstructions}
-                    onCheckedChange={(on) =>
-                      setFields(
-                        update(fields, 'context', {
-                          ...fields.context,
-                          includeProjectInstructions: on,
-                        }),
-                      )
-                    }
-                  />
-                </div>
-                <div>
-                  <span className="mb-1 block text-[13px] text-fg2">{t('context.compaction')}</span>
-                  <SegmentedControl
-                    label={t('context.compaction')}
-                    value={fields.context.compaction}
-                    onChange={(compaction) =>
-                      setFields(update(fields, 'context', { ...fields.context, compaction }))
-                    }
-                    options={[
-                      { value: 'auto', label: t('context.auto') },
-                      { value: 'off', label: t('context.off') },
-                    ]}
-                  />
-                </div>
-                <label className="block">
-                  <span className="mb-1 block text-[13px] text-fg2">{t('context.reserve')}</span>
-                  <input
-                    type="number"
-                    min="1"
-                    className={inputClass}
-                    value={fields.context.reserveOutputTokens ?? ''}
-                    onChange={(e) =>
-                      setFields(
-                        update(fields, 'context', {
-                          ...fields.context,
-                          ...(e.target.value === ''
-                            ? { reserveOutputTokens: undefined }
-                            : { reserveOutputTokens: Number(e.target.value) }),
-                        }),
-                      )
-                    }
-                  />
-                </label>
-              </section>
-            )}
-            {view === 'edit' && section === 'memory' && (
-              <section className="flex flex-col gap-2">
-                <span className="inline-flex w-fit rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
-                  {t('memory.coming')}
-                </span>
-                <p className="text-note leading-relaxed text-muted">{t('memory.description')}</p>
-              </section>
-            )}
-            {dirtySections.size > 0 && view === 'edit' && (
-              <p className="sr-only">{t('section.pending')}</p>
-            )}
+                </section>
+              )}
+              {view === 'edit' && section === 'memory' && (
+                <section className="flex flex-col gap-2">
+                  <span className="inline-flex w-fit rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+                    {t('memory.coming')}
+                  </span>
+                  <p className="text-note leading-relaxed text-muted">{t('memory.description')}</p>
+                </section>
+              )}
+              {dirtySections.size > 0 && view === 'edit' && (
+                <p className="sr-only">{t('section.pending')}</p>
+              )}
+            </div>
           </div>
         </div>
+
+        <Dialog open={confirmLeave} onOpenChange={setConfirmLeave}>
+          <DialogContent>
+            <DialogTitle>{t('editor.leave.title')}</DialogTitle>
+            <DialogDescription>{t('editor.leave.description')}</DialogDescription>
+            <DialogFooter className="grid-cols-1">
+              <Button variant="primary" onClick={() => void leave(true)}>
+                {t('editor.leave.save')}
+              </Button>
+              <Button variant="secondary" onClick={() => void leave('discard')}>
+                {t('editor.leave.discard')}
+              </Button>
+              <DialogClose asChild>
+                <Button variant="ghost">{t('editor.leave.cancel')}</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={confirmPublish} onOpenChange={setConfirmPublish}>
+          <DialogContent>
+            <DialogTitle>{t('publish.title')}</DialogTitle>
+            <DialogDescription>
+              {published
+                ? t('publish.changes', {
+                    version: published.version,
+                    fields:
+                      dirtySections.size > 0
+                        ? [...dirtySections].map((id) => t(`section.${id}`)).join('、')
+                        : t('publish.noChanges'),
+                  })
+                : t('publish.first')}
+            </DialogDescription>
+            {(validation?.warnings.length ?? 0) > 0 && (
+              <div className="mt-3">
+                <p className="text-note font-medium text-warn">{t('publish.warnings')}</p>
+                <Issues list={validation!.warnings} tone="warn" />
+              </div>
+            )}
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="secondary">{t('editor.leave.cancel')}</Button>
+              </DialogClose>
+              <Button variant="primary" disabled={busy} onClick={() => void publish()}>
+                {t('publish.confirm')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
-
-      <Dialog open={confirmLeave} onOpenChange={setConfirmLeave}>
-        <DialogContent>
-          <DialogTitle>{t('editor.leave.title')}</DialogTitle>
-          <DialogDescription>{t('editor.leave.description')}</DialogDescription>
-          <DialogFooter className="grid-cols-1">
-            <Button variant="primary" onClick={() => void leave(true)}>
-              {t('editor.leave.save')}
-            </Button>
-            <Button variant="secondary" onClick={() => void leave('discard')}>
-              {t('editor.leave.discard')}
-            </Button>
-            <DialogClose asChild>
-              <Button variant="ghost">{t('editor.leave.cancel')}</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={confirmPublish} onOpenChange={setConfirmPublish}>
-        <DialogContent>
-          <DialogTitle>{t('publish.title')}</DialogTitle>
-          <DialogDescription>
-            {published
-              ? t('publish.changes', {
-                  version: published.version,
-                  fields:
-                    dirtySections.size > 0
-                      ? [...dirtySections].map((id) => t(`section.${id}`)).join('、')
-                      : t('publish.noChanges'),
-                })
-              : t('publish.first')}
-          </DialogDescription>
-          {(validation?.warnings.length ?? 0) > 0 && (
-            <div className="mt-3">
-              <p className="text-note font-medium text-warn">{t('publish.warnings')}</p>
-              <Issues list={validation!.warnings} tone="warn" />
-            </div>
-          )}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="secondary">{t('editor.leave.cancel')}</Button>
-            </DialogClose>
-            <Button variant="primary" disabled={busy} onClick={() => void publish()}>
-              {t('publish.confirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {trialOpen && trialAgentId && (
+        <TrialPanel
+          agentId={trialAgentId}
+          agentName={title}
+          draftKey={JSON.stringify(fields)}
+          {...(readonly || !dirty ? {} : { saveDraft: save })}
+          onClose={() => setTrialOpen(false)}
+        />
+      )}
     </div>
   )
 }

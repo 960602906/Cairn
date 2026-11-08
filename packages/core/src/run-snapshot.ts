@@ -3,7 +3,7 @@
  * 压缩摘要整理成可检查的摘要。只保存估算 token 与截断后的预览，不保存完整工具输出。
  */
 import {
-  type AgentDefinitionRef,
+  type RunAgentRef,
   type CanonicalMessage,
   type ModelRef,
   type RunSnapshotInput,
@@ -33,7 +33,7 @@ export interface SnapshotCompaction {
 export interface BuildRunSnapshotInput {
   readonly runId: string
   readonly parentRunId?: string
-  readonly agent: AgentDefinitionRef
+  readonly agent: RunAgentRef
   readonly model: ModelRef
   readonly turnId?: string
   readonly stepId?: string

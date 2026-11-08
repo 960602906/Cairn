@@ -11,6 +11,7 @@ import { PanelRight } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rootRun, sessionStatus } from '@cairn/core'
+import { isAgentDraftRef } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
@@ -202,7 +203,7 @@ export function ChatPanel({
               sessionId={sessionId}
               status={status}
               run={run}
-              agent={run?.agent}
+              agent={run?.agent && !isAgentDraftRef(run.agent) ? run.agent : undefined}
               model={view?.info?.model ?? summary?.model ?? defaultModel}
               contextTokens={view?.contextTokens}
               onInspect={() => {

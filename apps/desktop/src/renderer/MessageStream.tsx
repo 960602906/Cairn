@@ -24,7 +24,7 @@ import {
   type SessionView,
 } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
-import type { ContentPart, ModelRef } from '@cairn/protocol'
+import { isAgentDraftRef, type ContentPart, type ModelRef } from '@cairn/protocol'
 import {
   CheckpointDivider,
   RestoreMarks,
@@ -94,6 +94,8 @@ function TurnActions({
 }
 
 const COPIED_MS = 1600
+
+const noopPlan = () => undefined
 
 function Reasoning({ text, live = false }: { readonly text: string; readonly live?: boolean }) {
   const { t } = useTranslation('session')
@@ -222,13 +224,17 @@ function AgentSwitchDivider({
   version,
 }: {
   readonly name: string
-  readonly version: number
+  readonly version: number | undefined
 }) {
   const { t } = useTranslation('session')
   return (
     <div className="flex items-center gap-3 text-note text-faint">
       <span aria-hidden className="h-px flex-1 bg-hair" />
-      <span className="shrink-0">{t('chat.agentSwitched', { name, version })}</span>
+      <span className="shrink-0">
+        {version === undefined
+          ? t('chat.agentSwitchedDraft', { name })
+          : t('chat.agentSwitched', { name, version })}
+      </span>
       <span aria-hidden className="h-px flex-1 bg-hair" />
     </div>
   )
@@ -245,6 +251,7 @@ function Message({
   footer,
   plans,
   modelName,
+  sessionId,
   continued,
   divider,
   restores,
@@ -258,6 +265,8 @@ function Message({
   readonly footer: TurnFooter | undefined
   readonly plans: readonly PlanView[]
   readonly modelName: (model: ModelRef) => string
+  /** 审批状态所属的会话；省略时使用当前选中的会话。 */
+  readonly sessionId: string | undefined
   /** 用户消息上方的检查点分隔线。 */
   readonly divider: { readonly turn: number; readonly checkpoint: CheckpointView } | undefined
   /** 这条消息之后发生的恢复。 */
@@ -272,9 +281,10 @@ function Message({
   readonly locatedTurnId?: string | undefined
 }) {
   const { t } = useTranslation('session')
-  const approvals = useSessionStore((s) =>
-    s.activeSessionId === undefined ? undefined : s.approvals[s.activeSessionId],
-  )
+  const approvals = useSessionStore((s) => {
+    const id = sessionId ?? s.activeSessionId
+    return id === undefined ? undefined : s.approvals[id]
+  })
   const agents = useSessionStore((s) => s.agents) ?? []
   const { i18n } = useTranslation('session')
   const awaiting = new Set(approvals?.map((a) => a.toolCallId))
@@ -450,13 +460,20 @@ export function MessageStream({
   onOpenPlan,
   onOpenChanges,
   locatedTurnId,
+  sessionId,
+  onContinue,
 }: {
   readonly view: SessionView | undefined
-  readonly onOpenPlan: (planId: string) => void
+  readonly onOpenPlan?: ((planId: string) => void) | undefined
   readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
   readonly locatedTurnId?: string | undefined
+  /** 审批状态所属的会话；省略时使用当前选中的会话。 */
+  readonly sessionId?: string | undefined
+  /** 达到限额后“继续”的动作；省略时向当前选中的会话发送继续提示。 */
+  readonly onContinue?: ((prompt: string) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
+  const openPlan = onOpenPlan ?? noopPlan
   const providers = useSessionStore((s) => s.settings?.providers)
   const messages = view
     ? view.messages.filter((message) => {
@@ -478,8 +495,8 @@ export function MessageStream({
   const footers = view ? turnFooters(view) : new Map<string, TurnFooter>()
   const switchedRuns = useMemo(() => {
     if (!view || view.runOrder.length <= 1)
-      return new Map<string, { name: string; version: number }>()
-    const map = new Map<string, { name: string; version: number }>()
+      return new Map<string, { name: string; version: number | undefined }>()
+    const map = new Map<string, { name: string; version: number | undefined }>()
     for (let i = 1; i < view.runOrder.length; i++) {
       const runId = view.runOrder[i]
       if (runId === undefined) continue
@@ -493,7 +510,10 @@ export function MessageStream({
           : run.agent.id === 'builtin.coder'
             ? t('composer.agent.default')
             : run.agent.id
-        map.set(firstMsg.messageId, { name, version: run.agent.version })
+        map.set(firstMsg.messageId, {
+          name,
+          version: isAgentDraftRef(run.agent) ? undefined : run.agent.version,
+        })
       }
     }
     return map
@@ -512,7 +532,10 @@ export function MessageStream({
           : run.agent.id === 'builtin.coder'
             ? t('composer.agent.default')
             : run.agent.id
-        return { name, version: run.agent.version }
+        return {
+          name,
+          version: isAgentDraftRef(run.agent) ? undefined : run.agent.version,
+        }
       }
     }
     return undefined
@@ -582,12 +605,13 @@ export function MessageStream({
                     : []
                 }
                 modelName={modelName}
+                sessionId={sessionId}
                 continued={continues(messages[index - 1], message)}
                 divider={dividerFor(message, index)}
                 restores={restores.get(message.messageId)}
                 compacted={markBetween(previous, message.seq, view.compaction)}
                 omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
-                onOpenPlan={onOpenPlan}
+                onOpenPlan={openPlan}
                 locatedTurnId={locatedTurnId}
               />
               {lastOfTurn &&
@@ -619,7 +643,7 @@ export function MessageStream({
           .filter((plan) => !anchored.has(plan.planId))
           .map((plan) => (
             <li key={plan.planId} className="list-none">
-              <PlanSummaryCard plan={plan} onOpen={onOpenPlan} />
+              <PlanSummaryCard plan={plan} onOpen={openPlan} />
             </li>
           ))}
         {view?.compaction && afterLast(messages.at(-1)?.seq ?? 0, view.compaction) && (
@@ -651,7 +675,14 @@ export function MessageStream({
         <div className="flex items-center gap-3 rounded-card bg-sunk px-3.5 py-2.5 text-ui text-fg2">
           <p className="min-w-0 flex-1">{outcome}</p>
           {canContinue && (
-            <Button size="sm" onClick={() => void sendPrompt(t('turn.continue.prompt'))}>
+            <Button
+              size="sm"
+              onClick={() => {
+                const prompt = t('turn.continue.prompt')
+                if (onContinue) onContinue(prompt)
+                else void sendPrompt(prompt)
+              }}
+            >
               {t('turn.continue')}
             </Button>
           )}

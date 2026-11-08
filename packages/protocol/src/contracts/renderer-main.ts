@@ -46,6 +46,7 @@ import { PermissionEffect, PermissionMode, PermissionRule, ToolCategory } from '
 import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
+import { TrialStarted, TrialSummary } from '../trial.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
 export const SessionStatus = z.enum([
@@ -312,6 +313,36 @@ export const MainForRenderer = defineSide({
     'session.setAgent': {
       params: z.object({ sessionId: Id, agent: AgentDefinitionRef }),
       result: z.object({}),
+    },
+    /**
+     * 用当前草稿开始一次试运行（M4-12）。试运行会话不出现在 `session.list` 中，默认只读；
+     * 草稿不需要发布。项目目录不存在时会像普通会话一样创建项目记录。
+     */
+    'trial.start': {
+      params: z.object({
+        agentId: Id,
+        projectPath: z.string().min(1),
+        useAgentPermissions: z.boolean().optional(),
+      }),
+      result: TrialStarted,
+    },
+    /** 用当前草稿重新开始试运行，返回新的隐藏会话；旧记录保留到清理或超出保留条数。 */
+    'trial.restart': {
+      params: z.object({
+        sessionId: Id,
+        useAgentPermissions: z.boolean().optional(),
+      }),
+      result: TrialStarted,
+    },
+    /** 清除一个 Agent 的全部试运行记录（含事件、快照与改动）。 */
+    'trial.clear': {
+      params: z.object({ agentId: Id }),
+      result: z.object({ cleared: z.number().int().nonnegative() }),
+    },
+    /** 一个 Agent 的试运行历史，按更新时间倒序。 */
+    'trial.list': {
+      params: z.object({ agentId: Id }),
+      result: z.object({ trials: z.array(TrialSummary) }),
     },
     /**
      * 删除（归档）会话（M2-02），写入 `session.archived`：不再出现在列表中，事件与改动记录保留。
