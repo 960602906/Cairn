@@ -46,6 +46,22 @@ export const HostModelConfig = z.object({
 export type HostModelConfig = z.infer<typeof HostModelConfig>
 
 /**
+ * 隔离工作区（M4-08，ADR-0031）：宿主在主进程创建后拿到路径、创建方式、只读共享的依赖目录，以及
+ * 子运行自己的检查点位置。子运行的路径校验、检查点与改动记录都以 `path` 为根。
+ */
+export const IsolatedWorkspaceInfo = z.object({
+  path: z.string().min(1),
+  mode: z.enum(['worktree', 'export']),
+  /** 相对隔离工作区、以 `/` 分隔的依赖目录（`node_modules` 等）。 */
+  sharedDirs: z.array(z.string()),
+  checkpoint: z.object({
+    gitDir: z.string().min(1),
+    ref: z.string().min(1),
+  }),
+})
+export type IsolatedWorkspaceInfo = z.infer<typeof IsolatedWorkspaceInfo>
+
+/**
  * 宿主发起的审批请求（M1-11a，架构 §10.4）：界面显示工具、参数、预览与判定理由。
  * `kind`：`tool` 为权限判定需要审批；`no_checkpoint` 为检查点创建失败，确认是否不带检查点继续。
  */
@@ -299,6 +315,26 @@ export const MainForHost = defineSide({
           }),
         ),
       }),
+    },
+    /**
+     * 创建隔离工作区（M4-08）：以父工作区的检查点提交为基线，在主进程的应用数据目录中创建工作树或
+     * 导出副本。宿主在委派写入类子运行前调用；失败时宿主回退到共享工作区。
+     */
+    'host.workspace.create': {
+      params: z.object({
+        projectPath: z.string().min(1),
+        baseCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+        sessionId: Id,
+        runId: Id,
+        /** 嵌套委派使用子运行自己的影子仓库；省略时主进程按会话解析项目影子仓库。 */
+        gitDir: z.string().min(1).optional(),
+      }),
+      result: IsolatedWorkspaceInfo,
+    },
+    /** 清理隔离工作区（M4-08）：子运行结束、改动集处理完后调用。 */
+    'host.workspace.cleanup': {
+      params: z.object({ runId: Id }),
+      result: z.object({ cleaned: z.boolean() }),
     },
     /**
      * 记录一次模型调用前的上下文快照（M4-04，ADR-0033）。会话由连接确定；主进程脱敏、截断后

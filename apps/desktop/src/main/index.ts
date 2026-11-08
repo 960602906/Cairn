@@ -55,6 +55,7 @@ import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
+import { createWorkspaceService } from './services/workspace-service.js'
 import { latestBrief } from './services/brief.js'
 import { createBriefService } from './services/brief-service.js'
 import { createCompactService } from './services/compact-service.js'
@@ -156,6 +157,9 @@ const checkpoints = createCheckpointService({
   open: openShadowRepo,
   isBusy: (sessionId) => sessions.isBusy(sessionId) || changes.isReverting(sessionId),
 })
+/** 隔离工作区（M4-08）：写入类子运行的独立副本，启动时清扫上次留下的目录。 */
+const workspaces = createWorkspaceService({ root: paths.worktrees, onError: reportError })
+void workspaces.sweep().catch(reportError)
 /** 权限规则（M1-10c）：权限模式的预设与保存的规则，启动宿主时经 `host.init` 下发。 */
 const permissions = createPermissionService({ storage, mode: () => settings.permissionMode() })
 /** 审批（M1-11b）：宿主的审批请求等待界面决定；“始终允许”生成的规则通知所有运行中的宿主。 */
@@ -316,8 +320,8 @@ const supervisor = createHostSupervisor({
       permissionRules: agents.permissionRulesFor(ref, permissions.rulesForSession(sessionId)),
       skills: agents.skillsFor(ref, sessionId),
       mcpTools: agents.mcpToolsFor(ref),
-      // 隔离工作区在 M4-08 落地；M4-02 只支持共享工作区。
-      workspace: 'shared',
+      // 写入类目标可以在隔离工作区中运行（M4-08）；宿主按委派策略决定是否真的隔离。
+      workspace: definition.permissions === 'read-only' ? 'shared' : 'isolated',
     }
   },
   resolveDelegateTargets: (_sessionId, agentIds) =>
@@ -328,6 +332,27 @@ const supervisor = createHostSupervisor({
       const description = published.description['zh-CN'] ?? published.description['en-US'] ?? ''
       return [{ id, name, description, permissions: published.permissions }]
     }),
+  createIsolatedWorkspace: async (input) => {
+    const location =
+      input.gitDir !== undefined
+        ? { gitDir: input.gitDir }
+        : checkpointLocation(paths.checkpoints, storage, input.sessionId)
+    if (!location) throw new Error('no checkpoint location for the session')
+    const workspace = await workspaces.createIsolated({
+      projectPath: input.projectPath,
+      gitDir: location.gitDir,
+      baseCommit: input.baseCommit,
+      sessionId: input.sessionId,
+      runId: input.runId,
+    })
+    return {
+      path: workspace.path,
+      mode: workspace.mode,
+      sharedDirs: [...workspace.sharedDirs],
+      checkpoint: workspace.checkpoint,
+    }
+  },
+  cleanupWorkspace: (runId) => workspaces.cleanup(runId),
   callMcpTool: (_sessionId, serverId, toolName, input, maxOutputTokens) =>
     mcp.call(serverId, toolName, input, maxOutputTokens),
   onError: reportError,

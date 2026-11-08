@@ -60,7 +60,6 @@ export const DelegationErrorCode = {
   ParallelExceeded: 'delegation.parallel_exceeded',
   BriefTooLarge: 'delegation.brief_too_large',
   BudgetExceeded: 'delegation.budget_exceeded',
-  WorkspaceUnsupported: 'delegation.workspace_unsupported',
   ResultInvalid: 'delegation.result_invalid',
 } as const
 
@@ -220,10 +219,6 @@ export function validateDelegation(input: ValidateDelegationInput): DelegationVa
       }),
     )
   }
-  if (resolveDelegationWorkspace(policy, delegate) === 'isolated') {
-    // 隔离工作区在 M4-08 落地；在此之前的委派只能共享父运行的工作区。
-    issues.push(issue(DelegationErrorCode.WorkspaceUnsupported))
-  }
   const budget = delegate.brief.budget
   const remaining = input.parentRemaining
   if (budget && remaining) {
@@ -255,13 +250,19 @@ export function validateDelegation(input: ValidateDelegationInput): DelegationVa
   return { ok, issues }
 }
 
-/** 子运行的工作区方式：`auto` 由目标 Agent 的权限决定；M4-02 只支持共享工作区。 */
+/**
+ * 子运行的工作区方式（M4-08）：显式请求优先；`auto` 由目标 Agent 的权限决定——只读 Agent 共享父工作区，
+ * 写入类 Agent 使用隔离工作区。创建隔离工作区失败时宿主回退到共享工作区。
+ */
 export function resolveDelegationWorkspace(
   policy: DelegationPolicy,
   input: DelegateInput,
+  targetPermissions?: PermissionMode,
 ): 'shared' | 'isolated' {
   const requested = input.workspace ?? policy.defaultWorkspace
-  return requested === 'isolated' ? 'isolated' : 'shared'
+  if (requested === 'isolated') return 'isolated'
+  if (requested === 'shared') return 'shared'
+  return targetPermissions === 'read-only' ? 'shared' : 'isolated'
 }
 
 /** 可委派目标：工具说明里列出名称与描述，帮助模型选择。 */
@@ -428,6 +429,10 @@ export interface RunDelegationInput {
   readonly session: DelegationSession
   readonly target: DelegationTarget
   readonly input: DelegateInput
+  /** 子运行的 id；宿主在创建隔离工作区前生成，保证工作区目录与运行一致。 */
+  readonly childRunId?: string
+  /** 实际使用的工作区方式（宿主在创建失败时回退到共享）；省略时按策略与目标权限解析。 */
+  readonly workspace?: 'shared' | 'isolated'
   /** 父运行本轮的剩余限额，用于计算子运行预算。 */
   readonly parentRemaining: Partial<RunLimits>
   /** 子运行本轮的系统提示词（带结果格式说明）。 */
@@ -615,6 +620,7 @@ export async function runDelegation(input: RunDelegationInput): Promise<Delegate
 
   const child = await supervisor.createRun({
     sessionId: input.sessionId,
+    ...(input.childRunId !== undefined ? { runId: input.childRunId } : {}),
     agent: agentRef,
     workspace: target.workspace,
     parentRunId: parent.runId,
@@ -630,7 +636,9 @@ export async function runDelegation(input: RunDelegationInput): Promise<Delegate
     childRunId: child.runId,
     agent: agentRef,
     task: delegate.task,
-    workspace: resolveDelegationWorkspace(session.policy, delegate),
+    workspace:
+      input.workspace ??
+      resolveDelegationWorkspace(session.policy, delegate, target.definition.permissions),
     workspacePath: child.workspace.path,
     budget: limits,
   })

@@ -26,6 +26,8 @@ export interface HostCheckpointsOptions {
   readonly ref: string
   readonly workTree: string
   readonly open: OpenShadowRepo
+  /** 额外的排除规则（如隔离工作区中的 `.git` 文件）。 */
+  readonly extraExcludes?: readonly string[]
   /** 后台创建首个检查点失败、Git 不可用等情况的记录。 */
   readonly onError?: (error: unknown) => void
 }
@@ -38,6 +40,7 @@ export interface HostCheckpoints extends ToolCheckpoints {
 const MESSAGES: Readonly<Record<CheckpointReason, string>> = {
   turn_start: 'turn start',
   before_command: 'before command',
+  delegation: 'before delegation',
 }
 
 export function createHostCheckpoints(options: HostCheckpointsOptions): HostCheckpoints {
@@ -46,7 +49,12 @@ export function createHostCheckpoints(options: HostCheckpointsOptions): HostChec
 
   const open = (): Promise<Repo | undefined> => {
     opening ??= options
-      .open({ gitDir: options.gitDir, workTree: options.workTree, ref: options.ref })
+      .open({
+        gitDir: options.gitDir,
+        workTree: options.workTree,
+        ref: options.ref,
+        ...(options.extraExcludes !== undefined ? { extraExcludes: options.extraExcludes } : {}),
+      })
       .then(
         (repo) => {
           if (repo.head() === undefined) repo.checkpoint('initial').catch(onError)

@@ -35,6 +35,7 @@ import {
   RpcError,
   type ErrorInfo,
   type HostModelConfig,
+  type IsolatedWorkspaceInfo,
   type ModelRef,
   type PermissionRule,
   type PermissionMode,
@@ -233,6 +234,19 @@ export interface HostSupervisorOptions {
     sessionId: string,
     agentIds: readonly string[],
   ) => readonly HostDelegateTargetInfo[]
+  /**
+   * 创建隔离工作区（M4-08）。省略时宿主的 `host.workspace.create` 报 `run.unsupported`，写入类委派
+   * 回退到共享工作区。
+   */
+  readonly createIsolatedWorkspace?: (input: {
+    readonly projectPath: string
+    readonly baseCommit: string
+    readonly sessionId: string
+    readonly runId: string
+    readonly gitDir?: string | undefined
+  }) => Promise<IsolatedWorkspaceInfo>
+  /** 清理隔离工作区（M4-08）。省略时返回 `cleaned: false`。 */
+  readonly cleanupWorkspace?: (runId: string) => Promise<boolean>
   /** 执行宿主的 `host.mcp.call`（M3-09）。省略时报 `run.unsupported`。 */
   readonly callMcpTool?: (
     sessionId: string,
@@ -399,6 +413,15 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
 
       endpoint.handle('host.delegate.targets', ({ agents }) => ({
         targets: [...(options.resolveDelegateTargets?.(sessionId, agents) ?? [])],
+      }))
+
+      endpoint.handle('host.workspace.create', async (input) => {
+        if (!options.createIsolatedWorkspace) throw new RpcError('run.unsupported')
+        return options.createIsolatedWorkspace(input)
+      })
+
+      endpoint.handle('host.workspace.cleanup', async ({ runId: childRunId }) => ({
+        cleaned: (await options.cleanupWorkspace?.(childRunId)) ?? false,
       }))
 
       endpoint.handle('host.snapshot', (snapshot) => {

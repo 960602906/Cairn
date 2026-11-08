@@ -42,8 +42,11 @@ export type PathResolution =
   | { readonly ok: false; readonly code: string }
 
 /** 检查点接口（M1-12 实现）。 */
-/** 创建检查点的时机（架构 §11.2）：每轮开始、每次执行命令前。 */
-export type CheckpointReason = 'turn_start' | 'before_command'
+/**
+ * 创建检查点的时机（架构 §11.2）：每轮开始、每次执行命令前；委派写入类子运行前也要为父工作区
+ * 建一个基线检查点（M4-08）。
+ */
+export type CheckpointReason = 'turn_start' | 'before_command' | 'delegation'
 
 export interface ToolCheckpoints {
   /**

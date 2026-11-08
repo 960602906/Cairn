@@ -13,6 +13,7 @@ describe('resolveAppPaths', () => {
       database: join(root, 'data', 'cairn.db'),
       blobs: join(root, 'data', 'blobs'),
       checkpoints: join(root, 'checkpoints'),
+      worktrees: join(root, 'worktrees'),
       settings: join(root, 'settings.json'),
       credentials: join(root, 'credentials.json'),
       logs: join(root, 'logs'),
@@ -44,6 +45,7 @@ describe('requiredDirectories', () => {
       paths.data,
       paths.blobs,
       paths.checkpoints,
+      paths.worktrees,
       paths.logs,
     ])
   })
