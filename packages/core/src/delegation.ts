@@ -14,6 +14,7 @@
 import type {
   AgentDefinition,
   AgentDefinitionRef,
+  DelegateChanges,
   DelegateInput,
   DelegateResult,
   DelegateStatus,
@@ -439,6 +440,12 @@ export interface RunDelegationInput {
   readonly systemPrompt: string
   /** 子运行创建后回调（宿主用它给嵌套委派绑定运行句柄）。 */
   readonly onChildCreated?: (child: AgentRunHandle) => void
+  /**
+   * 子运行结束后收集它的改动（M4-09）：写入类子运行在隔离工作区里的改动算成一个改动集。
+   * 在 `run.child.completed` 之前调用，因此 `changeset.created` 早于该事件。
+   * 返回 undefined 表示没有改动集（共享工作区或没有改动）。
+   */
+  readonly collectChanges?: (childRunId: string) => Promise<DelegateChanges | undefined>
   readonly now?: () => number
   readonly createId?: () => string
 }
@@ -699,11 +706,14 @@ export async function runDelegation(input: RunDelegationInput): Promise<Delegate
           .map((sibling) => sibling.abort('user')),
       )
     }
+    // 改动集先算出来，`changeset.created` 才能早于 `run.child.completed`。
+    const changes = await input.collectChanges?.(child.runId)
     parent.emitEvent('run.child.completed', {
       childRunId: child.runId,
       status,
       ...(parsed?.summary || summary.reply ? { summary: parsed?.summary ?? summary.reply } : {}),
       usage: summary.usage,
+      ...(changes ? { changeSetId: changes.changeSetId } : {}),
       ...(parsed?.question ? { issues: [parsed.question] } : {}),
     })
 
@@ -719,6 +729,7 @@ export async function runDelegation(input: RunDelegationInput): Promise<Delegate
           : 'Sub-agent did not finish.'),
       ...(parsed?.output !== undefined ? { output: parsed.output } : {}),
       ...(parsed?.question !== undefined ? { question: parsed.question } : {}),
+      ...(changes ? { changes } : {}),
       usage,
       childRunId: child.runId,
     }

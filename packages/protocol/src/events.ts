@@ -261,6 +261,34 @@ const payloadSchemas = {
     truncateConversation: z.boolean(),
   }),
 
+  // ---------- 改动集（M4-09，ADR-0031） ----------
+  /**
+   * 子运行在隔离工作区里的改动已算出。挂在父运行上（`runId` 为父运行 id），并带子运行 id；
+   * 在 `run.child.completed` 之前写入，界面据此把改动集与子运行对应起来。
+   */
+  'changeset.created': z.object({
+    changeSetId: Id,
+    childRunId: Id,
+    /** 改动的文件数。 */
+    files: z.number().int().nonnegative(),
+    added: z.number().int().nonnegative(),
+    removed: z.number().int().nonnegative(),
+  }),
+  /** 改动集已合并到主工作区；`checkpointCommit` 是合并前创建的检查点，恢复它即可回退。 */
+  'changeset.applied': z.object({
+    changeSetId: Id,
+    paths: z.array(z.string()),
+    checkpointCommit: z.string().optional(),
+  }),
+  /** 改动集被整体拒绝。 */
+  'changeset.rejected': z.object({ changeSetId: Id }),
+  /** 某个文件与主工作区冲突；`resolution` 为 `pending` 表示尚未处理。 */
+  'changeset.conflict': z.object({
+    changeSetId: Id,
+    path: z.string(),
+    resolution: z.enum(['pending', 'keep-main', 'take-child', 'manual']),
+  }),
+
   // ---------- 其他 ----------
   /**
    * 一次模型调用的用量。`auxiliary`（M3-01）表示辅助模型：计入会话 token 统计，

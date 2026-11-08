@@ -5,6 +5,9 @@
  */
 import {
   isLiveEventType,
+  type ChangeSetFileKind,
+  type ChangeSetFileStatus,
+  type ChangeSetStatus,
   type FileChangeKind,
   type FileChangeStatus,
   type PermissionRule,
@@ -20,10 +23,14 @@ import Database from 'better-sqlite3'
 import {
   StorageError,
   StorageErrorCode,
+  type AddChangeSetFileInput,
   type AddPermissionRuleInput,
   type AddRunSnapshotInput,
   type AgentRecord,
   type AgentVersionRecord,
+  type ChangeSetFileRecord,
+  type ChangeSetRecord,
+  type CreateChangeSetInput,
   type CreateFileChangeInput,
   type FileChangeRecord,
   type HunkRecord,
@@ -201,6 +208,62 @@ interface AgentVersionRow {
   definition: string
   published_at: number
 }
+
+interface ChangeSetRow {
+  change_set_id: string
+  session_id: string
+  run_id: string
+  parent_run_id: string | null
+  base_commit: string
+  git_dir: string
+  workspace_path: string
+  status: ChangeSetStatus
+  created_at: number
+  merged_at: number | null
+  checkpoint_commit: string | null
+}
+
+interface ChangeSetFileRow {
+  change_set_id: string
+  path: string
+  status: ChangeSetFileStatus
+  kind: ChangeSetFileKind
+  added: number
+  removed: number
+  patch: string | null
+  binary: number
+  large: number
+  base_hash: string | null
+  content_hash: string | null
+}
+
+const toChangeSet = (row: ChangeSetRow): ChangeSetRecord => ({
+  changeSetId: row.change_set_id,
+  sessionId: row.session_id,
+  runId: row.run_id,
+  ...(row.parent_run_id === null ? {} : { parentRunId: row.parent_run_id }),
+  baseCommit: row.base_commit,
+  gitDir: row.git_dir,
+  workspacePath: row.workspace_path,
+  status: row.status,
+  createdAt: row.created_at,
+  ...(row.merged_at === null ? {} : { mergedAt: row.merged_at }),
+  ...(row.checkpoint_commit === null ? {} : { checkpointCommit: row.checkpoint_commit }),
+})
+
+const toChangeSetFile = (row: ChangeSetFileRow): ChangeSetFileRecord => ({
+  changeSetId: row.change_set_id,
+  path: row.path,
+  status: row.status,
+  kind: row.kind,
+  added: row.added,
+  removed: row.removed,
+  ...(row.patch === null ? {} : { patch: row.patch }),
+  binary: row.binary === 1,
+  large: row.large === 1,
+  ...(row.base_hash === null ? {} : { baseHash: row.base_hash }),
+  ...(row.content_hash === null ? {} : { contentHash: row.content_hash }),
+})
 
 const toAgent = (row: AgentRow): AgentRecord => ({
   agentId: row.agent_id,
@@ -560,6 +623,45 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
          ORDER BY created_at DESC, rowid DESC LIMIT 20
        )`,
     ),
+    changeSetById: db.prepare<[string], ChangeSetRow>(
+      'SELECT * FROM change_sets WHERE change_set_id = ?',
+    ),
+    changeSetsBySession: db.prepare<[string], ChangeSetRow>(
+      'SELECT * FROM change_sets WHERE session_id = ? ORDER BY created_at, rowid',
+    ),
+    insertChangeSet: db.prepare(
+      `INSERT INTO change_sets
+         (change_set_id, session_id, run_id, parent_run_id, base_commit, git_dir, workspace_path,
+          status, created_at, merged_at, checkpoint_commit)
+       VALUES (@changeSetId, @sessionId, @runId, @parentRunId, @baseCommit, @gitDir, @workspacePath,
+         @status, @createdAt, NULL, NULL)`,
+    ),
+    setChangeSetStatus: db.prepare(
+      `UPDATE change_sets
+       SET status = @status,
+           merged_at = CASE WHEN @status = 'applied' THEN @at ELSE merged_at END
+       WHERE change_set_id = @changeSetId`,
+    ),
+    setChangeSetCheckpoint: db.prepare(
+      'UPDATE change_sets SET checkpoint_commit = @commit WHERE change_set_id = @changeSetId',
+    ),
+    changeSetFiles: db.prepare<[string], ChangeSetFileRow>(
+      'SELECT * FROM change_set_files WHERE change_set_id = ? ORDER BY path',
+    ),
+    changeSetFile: db.prepare<[string, string], ChangeSetFileRow>(
+      'SELECT * FROM change_set_files WHERE change_set_id = ? AND path = ?',
+    ),
+    insertChangeSetFile: db.prepare(
+      `INSERT INTO change_set_files
+         (change_set_id, path, status, kind, added, removed, patch, binary, large, base_hash,
+          content_hash)
+       VALUES (@changeSetId, @path, 'pending', @kind, @added, @removed, @patch, @binary, @large,
+         @baseHash, @contentHash)`,
+    ),
+    setChangeSetFileStatus: db.prepare(
+      `UPDATE change_set_files SET status = @status
+       WHERE change_set_id = @changeSetId AND path = @path`,
+    ),
   }
 
   const toSkillPref = (row: SkillPrefRow): SkillPref => ({
@@ -624,6 +726,56 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         at,
       })
     })
+  })
+
+  const createChangeSet = db.transaction((input: CreateChangeSetInput): ChangeSetRecord => {
+    if (!q.sessionById.get(input.sessionId)) {
+      throw new StorageError(StorageErrorCode.NotFound, { sessionId: input.sessionId })
+    }
+    if (q.changeSetById.get(input.changeSetId)) {
+      throw new StorageError(StorageErrorCode.Conflict, { changeSetId: input.changeSetId })
+    }
+    q.insertChangeSet.run({
+      changeSetId: input.changeSetId,
+      sessionId: input.sessionId,
+      runId: input.runId,
+      parentRunId: input.parentRunId ?? null,
+      baseCommit: input.baseCommit,
+      gitDir: input.gitDir,
+      workspacePath: input.workspacePath,
+      status: 'pending',
+      createdAt: now(),
+    })
+    return toChangeSet(q.changeSetById.get(input.changeSetId)!)
+  })
+
+  const requireChangeSet = (changeSetId: string): ChangeSetRow => {
+    const row = q.changeSetById.get(changeSetId)
+    if (!row) throw new StorageError(StorageErrorCode.NotFound, { changeSetId })
+    return row
+  }
+
+  const addChangeSetFile = db.transaction((input: AddChangeSetFileInput): ChangeSetFileRecord => {
+    requireChangeSet(input.changeSetId)
+    if (q.changeSetFile.get(input.changeSetId, input.path)) {
+      throw new StorageError(StorageErrorCode.Conflict, {
+        changeSetId: input.changeSetId,
+        path: input.path,
+      })
+    }
+    q.insertChangeSetFile.run({
+      changeSetId: input.changeSetId,
+      path: input.path,
+      kind: input.kind,
+      added: input.added,
+      removed: input.removed,
+      patch: input.patch ?? null,
+      binary: input.binary ? 1 : 0,
+      large: input.large ? 1 : 0,
+      baseHash: input.baseHash ?? null,
+      contentHash: input.contentHash ?? null,
+    })
+    return toChangeSetFile(q.changeSetFile.get(input.changeSetId, input.path)!)
   })
 
   const append = db.transaction((events: readonly PersistedEvent[]) => {
@@ -1070,6 +1222,35 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     runSnapshots: {
       add: (input) => addRunSnapshot(input),
       list: (runId, limit = 20) => q.runSnapshotsByRun.all(runId, limit).map(toRunSnapshot),
+    },
+
+    changeSets: {
+      create: (input) => createChangeSet(input),
+      get: (changeSetId) => {
+        const row = q.changeSetById.get(changeSetId)
+        return row && toChangeSet(row)
+      },
+      listBySession: (sessionId) => q.changeSetsBySession.all(sessionId).map(toChangeSet),
+      setStatus(changeSetId, status) {
+        requireChangeSet(changeSetId)
+        q.setChangeSetStatus.run({ changeSetId, status, at: now() })
+        return toChangeSet(q.changeSetById.get(changeSetId)!)
+      },
+      setCheckpointCommit(changeSetId, commit) {
+        requireChangeSet(changeSetId)
+        q.setChangeSetCheckpoint.run({ changeSetId, commit })
+        return toChangeSet(q.changeSetById.get(changeSetId)!)
+      },
+      addFile: (input) => addChangeSetFile(input),
+      listFiles: (changeSetId) => q.changeSetFiles.all(changeSetId).map(toChangeSetFile),
+      setFileStatus(changeSetId, path, status) {
+        requireChangeSet(changeSetId)
+        if (!q.changeSetFile.get(changeSetId, path)) {
+          throw new StorageError(StorageErrorCode.NotFound, { changeSetId, path })
+        }
+        q.setChangeSetFileStatus.run({ changeSetId, path, status })
+        return toChangeSetFile(q.changeSetFile.get(changeSetId, path)!)
+      },
     },
 
     transaction: <T>(fn: () => T): T => db.transaction(fn)(),

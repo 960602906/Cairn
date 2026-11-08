@@ -1072,6 +1072,205 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     })
 
+    describe('changeSets', () => {
+      const changeSet = (changeSetId: string, extra: object = {}) => ({
+        changeSetId,
+        sessionId: 's1',
+        runId: 'run-child',
+        parentRunId: 'run-parent',
+        baseCommit: 'a'.repeat(40),
+        gitDir: '/data/checkpoints/p1.git',
+        workspacePath: '/data/worktrees/s1/run-child',
+        ...extra,
+      })
+
+      it('creates and reads change sets', () => {
+        seed()
+        const created = storage.changeSets.create(changeSet('cs-1'))
+        expect(created).toEqual({
+          changeSetId: 'cs-1',
+          sessionId: 's1',
+          runId: 'run-child',
+          parentRunId: 'run-parent',
+          baseCommit: 'a'.repeat(40),
+          gitDir: '/data/checkpoints/p1.git',
+          workspacePath: '/data/worktrees/s1/run-child',
+          status: 'pending',
+          createdAt: 100,
+        })
+        expect(storage.changeSets.get('cs-1')).toEqual(created)
+        expect(storage.changeSets.get('missing')).toBeUndefined()
+      })
+
+      it('lists change sets of a session oldest first', () => {
+        seed()
+        storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p1',
+          workspacePath: '/work/demo',
+          title: '',
+        })
+        storage.changeSets.create(changeSet('cs-1'))
+        clock = 200
+        storage.changeSets.create(changeSet('cs-2'))
+        expect(storage.changeSets.listBySession('s1').map((item) => item.changeSetId)).toEqual([
+          'cs-1',
+          'cs-2',
+        ])
+        expect(storage.changeSets.listBySession('s2')).toEqual([])
+      })
+
+      it('updates status, checkpoint and mergedAt', () => {
+        seed()
+        storage.changeSets.create(changeSet('cs-1'))
+        const withCheckpoint = storage.changeSets.setCheckpointCommit('cs-1', 'b'.repeat(40))
+        expect(withCheckpoint.checkpointCommit).toBe('b'.repeat(40))
+        clock = 300
+        const applied = storage.changeSets.setStatus('cs-1', 'applied')
+        expect(applied.status).toBe('applied')
+        expect(applied.mergedAt).toBe(300)
+        expect(applied.checkpointCommit).toBe('b'.repeat(40))
+        const rejected = storage.changeSets.setStatus('cs-1', 'rejected')
+        expect(rejected.status).toBe('rejected')
+        expect(rejected.mergedAt).toBe(300)
+      })
+
+      it('rejects unknown sessions, duplicate ids and unknown change sets', () => {
+        seed()
+        storage.changeSets.create(changeSet('cs-1'))
+        expectStorageError(
+          () => storage.changeSets.create(changeSet('cs-1')),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.changeSets.create(changeSet('cs-2', { sessionId: 'missing' })),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.changeSets.setStatus('missing', 'applied'),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.changeSets.setCheckpointCommit('missing', 'b'.repeat(40)),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('stores files with their metadata and lists them by path', () => {
+        seed()
+        storage.changeSets.create(changeSet('cs-1'))
+        const file = storage.changeSets.addFile({
+          changeSetId: 'cs-1',
+          path: 'src/a.ts',
+          kind: 'modified',
+          added: 3,
+          removed: 1,
+          patch: '@@ -1 +1 @@',
+          binary: false,
+          large: false,
+          baseHash: 'h1',
+          contentHash: 'h2',
+        })
+        expect(file).toEqual({
+          changeSetId: 'cs-1',
+          path: 'src/a.ts',
+          status: 'pending',
+          kind: 'modified',
+          added: 3,
+          removed: 1,
+          patch: '@@ -1 +1 @@',
+          binary: false,
+          large: false,
+          baseHash: 'h1',
+          contentHash: 'h2',
+        })
+        storage.changeSets.addFile({
+          changeSetId: 'cs-1',
+          path: 'src/b.ts',
+          kind: 'added',
+          added: 1,
+          removed: 0,
+          binary: true,
+          large: false,
+          contentHash: 'h3',
+        })
+        expect(storage.changeSets.listFiles('cs-1').map((item) => item.path)).toEqual([
+          'src/a.ts',
+          'src/b.ts',
+        ])
+        expect(storage.changeSets.listFiles('cs-1')[1]).not.toHaveProperty('baseHash')
+      })
+
+      it('rejects duplicate files and unknown change sets', () => {
+        seed()
+        storage.changeSets.create(changeSet('cs-1'))
+        storage.changeSets.addFile({
+          changeSetId: 'cs-1',
+          path: 'src/a.ts',
+          kind: 'added',
+          added: 1,
+          removed: 0,
+          binary: false,
+          large: false,
+          contentHash: 'h1',
+        })
+        expectStorageError(
+          () =>
+            storage.changeSets.addFile({
+              changeSetId: 'cs-1',
+              path: 'src/a.ts',
+              kind: 'added',
+              added: 1,
+              removed: 0,
+              binary: false,
+              large: false,
+              contentHash: 'h2',
+            }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () =>
+            storage.changeSets.addFile({
+              changeSetId: 'missing',
+              path: 'src/a.ts',
+              kind: 'added',
+              added: 1,
+              removed: 0,
+              binary: false,
+              large: false,
+              contentHash: 'h2',
+            }),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('updates the status of one file', () => {
+        seed()
+        storage.changeSets.create(changeSet('cs-1'))
+        storage.changeSets.addFile({
+          changeSetId: 'cs-1',
+          path: 'src/a.ts',
+          kind: 'added',
+          added: 1,
+          removed: 0,
+          binary: false,
+          large: false,
+          contentHash: 'h1',
+        })
+        const updated = storage.changeSets.setFileStatus('cs-1', 'src/a.ts', 'accepted')
+        expect(updated.status).toBe('accepted')
+        expect(storage.changeSets.listFiles('cs-1')[0]!.status).toBe('accepted')
+        expectStorageError(
+          () => storage.changeSets.setFileStatus('cs-1', 'missing.ts', 'accepted'),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.changeSets.setFileStatus('missing', 'src/a.ts', 'accepted'),
+          StorageErrorCode.NotFound,
+        )
+      })
+    })
+
     describe('transaction', () => {
       it('commits all writes and returns the result', () => {
         const result = storage.transaction(() => {

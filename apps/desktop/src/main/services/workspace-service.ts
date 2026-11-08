@@ -87,8 +87,16 @@ export interface WorkspaceService {
   createIsolated(input: CreateIsolatedWorkspaceInput): Promise<IsolatedWorkspace>
   cleanup(runId: string): Promise<boolean>
   list(): Promise<IsolatedWorkspace[]>
+  /** 按子运行 id 找隔离工作区（M4-09：改动集按基线与隔离目录计算）。找不到时为 undefined。 */
+  get(runId: string): Promise<IsolatedWorkspaceInfo | undefined>
   /** 启动时清扫上次留下的工作区（包括没有元数据的目录）。 */
   sweep(): Promise<number>
+}
+
+/** 隔离工作区加上它的影子仓库（M4-09：改动集需要按基线提交读出基线文件）。 */
+export interface IsolatedWorkspaceInfo extends IsolatedWorkspace {
+  /** 基线提交所在的影子仓库。 */
+  readonly projectGitDir: string
 }
 
 interface WorkspaceMeta extends IsolatedWorkspace {
@@ -517,6 +525,11 @@ export function createWorkspaceService(options: WorkspaceServiceOptions): Worksp
     },
 
     cleanup,
+
+    async get(runId) {
+      const meta = await findMeta(runId)
+      return meta && { ...meta, projectGitDir: meta.projectGitDir }
+    },
 
     async list() {
       return allMeta()

@@ -10,7 +10,12 @@ import { Id, Timestamp } from './common.js'
 /** 检查点 id：完整的 Git 提交 id（SHA-1 或 SHA-256）。 */
 export const CheckpointId = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
 
-export const CheckpointReason = z.enum(['turn_start', 'before_command', 'before_restore'])
+export const CheckpointReason = z.enum([
+  'turn_start',
+  'before_command',
+  'before_restore',
+  'before_merge',
+])
 export type CheckpointReason = z.infer<typeof CheckpointReason>
 
 /** 会话的一个检查点（一条 `checkpoint.created` 事件）。工作区没有变化时，相邻的检查点 id 可能相同。 */

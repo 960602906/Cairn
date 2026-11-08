@@ -5,6 +5,9 @@
  * 同步接口让 `transaction` 与 `EventStore.append` 的原子性简单可靠。
  */
 import type {
+  ChangeSetFileKind,
+  ChangeSetFileStatus,
+  ChangeSetStatus,
   FileChangeKind,
   FileChangeStatus,
   FileHunk,
@@ -464,6 +467,89 @@ export interface RunSnapshotStore {
   list(runId: string, limit?: number): RunSnapshotRecord[]
 }
 
+// ---------- 改动集（M4-09） ----------
+
+/**
+ * 一个改动集（M4-09，ADR-0031）：一次隔离工作区中的委派产生的文件级改动。
+ * `baseCommit` 是隔离工作区创建时的基线提交，`gitDir` 是保存该提交的影子仓库，
+ * `workspacePath` 是隔离目录；合并到主工作区后 `checkpointCommit` 指向合并前的检查点。
+ */
+export interface ChangeSetRecord {
+  readonly changeSetId: string
+  readonly sessionId: string
+  /** 产生改动的子运行。 */
+  readonly runId: string
+  /** 发起委派的运行；事件与界面按它归属。 */
+  readonly parentRunId?: string
+  readonly baseCommit: string
+  readonly gitDir: string
+  readonly workspacePath: string
+  readonly status: ChangeSetStatus
+  readonly createdAt: number
+  readonly mergedAt?: number
+  readonly checkpointCommit?: string
+}
+
+export interface CreateChangeSetInput {
+  readonly changeSetId: string
+  readonly sessionId: string
+  readonly runId: string
+  readonly parentRunId?: string
+  readonly baseCommit: string
+  readonly gitDir: string
+  readonly workspacePath: string
+}
+
+/**
+ * 改动集中的一个文件。`patch` 是文本文件的 unified diff；二进制与超大文件没有。
+ * `baseHash` 是基线内容的 blob 哈希（新增文件没有），`contentHash` 是子运行版本的 blob 哈希
+ * （删除的文件没有）。哈希指向主进程的 blob 存储。
+ */
+export interface ChangeSetFileRecord {
+  readonly changeSetId: string
+  readonly path: string
+  readonly status: ChangeSetFileStatus
+  readonly kind: ChangeSetFileKind
+  readonly added: number
+  readonly removed: number
+  readonly patch?: string
+  readonly binary: boolean
+  readonly large: boolean
+  readonly baseHash?: string
+  readonly contentHash?: string
+}
+
+export interface AddChangeSetFileInput {
+  readonly changeSetId: string
+  readonly path: string
+  readonly kind: ChangeSetFileKind
+  readonly added: number
+  readonly removed: number
+  readonly patch?: string
+  readonly binary: boolean
+  readonly large: boolean
+  readonly baseHash?: string
+  readonly contentHash?: string
+}
+
+export interface ChangeSetStore {
+  /** 会话不存在时报 `storage.not_found`，id 重复时报 `storage.conflict`。状态为 `pending`。 */
+  create(input: CreateChangeSetInput): ChangeSetRecord
+  get(changeSetId: string): ChangeSetRecord | undefined
+  /** 会话的改动集，按创建顺序。 */
+  listBySession(sessionId: string): ChangeSetRecord[]
+  /** 不存在时报 `storage.not_found`。合并时同时记录 `mergedAt`。 */
+  setStatus(changeSetId: string, status: ChangeSetStatus): ChangeSetRecord
+  /** 记录合并前的检查点；不存在时报 `storage.not_found`。 */
+  setCheckpointCommit(changeSetId: string, commit: string): ChangeSetRecord
+  /** 改动集不存在、或同一路径重复时报 `storage.conflict`。状态为 `pending`。 */
+  addFile(input: AddChangeSetFileInput): ChangeSetFileRecord
+  /** 按路径升序。 */
+  listFiles(changeSetId: string): ChangeSetFileRecord[]
+  /** 改动集或文件不存在时报 `storage.not_found`。 */
+  setFileStatus(changeSetId: string, path: string, status: ChangeSetFileStatus): ChangeSetFileRecord
+}
+
 // ---------- 汇总 ----------
 
 export interface Storage {
@@ -478,6 +564,7 @@ export interface Storage {
   readonly mcpToolPrefs: McpToolPrefStore
   readonly agents: AgentStore
   readonly runSnapshots: RunSnapshotStore
+  readonly changeSets: ChangeSetStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   close(): void

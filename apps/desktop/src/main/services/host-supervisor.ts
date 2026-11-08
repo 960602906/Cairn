@@ -247,6 +247,17 @@ export interface HostSupervisorOptions {
   }) => Promise<IsolatedWorkspaceInfo>
   /** 清理隔离工作区（M4-08）。省略时返回 `cleaned: false`。 */
   readonly cleanupWorkspace?: (runId: string) => Promise<boolean>
+  /**
+   * 计算隔离工作区中的改动集（M4-09）。省略时宿主的 `host.changeset.create` 报 `run.unsupported`，
+   * 子运行的改动不再可审阅。
+   */
+  readonly createChangeSet?: (
+    sessionId: string,
+    input: { readonly runId: string; readonly parentRunId?: string | undefined },
+  ) => Promise<{
+    changeSetId: string
+    files: { path: string; added: number; removed: number }[]
+  }>
   /** 执行宿主的 `host.mcp.call`（M3-09）。省略时报 `run.unsupported`。 */
   readonly callMcpTool?: (
     sessionId: string,
@@ -423,6 +434,11 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
       endpoint.handle('host.workspace.cleanup', async ({ runId: childRunId }) => ({
         cleaned: (await options.cleanupWorkspace?.(childRunId)) ?? false,
       }))
+
+      endpoint.handle('host.changeset.create', async (input) => {
+        if (!options.createChangeSet) throw new RpcError('run.unsupported')
+        return options.createChangeSet(sessionId, input)
+      })
 
       endpoint.handle('host.snapshot', (snapshot) => {
         if (!options.recordSnapshot) throw new RpcError('run.unsupported')

@@ -23,6 +23,7 @@ import {
   type ActivityCommands,
   type ApprovalCommands,
   type ChangeCommands,
+  type ChangeSetCommands,
   type CheckpointCommands,
   type InspectCommands,
   type RendererGateway,
@@ -79,6 +80,16 @@ const completed = (sessionId: string, id: string, text: string): UnsequencedEven
 const CP = 'a'.repeat(40)
 const PROJECT = { projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }
 const CP_BEFORE = 'b'.repeat(40)
+const CHANGE_SET = {
+  changeSetId: 'cs1',
+  sessionId: 's1',
+  runId: 'run-child',
+  baseCommit: CP,
+  status: 'pending' as const,
+  createdAt: 1,
+  files: [],
+  conflicts: 0,
+}
 
 let service: SessionEventService
 let gateway: RendererGateway
@@ -90,6 +101,7 @@ let providers: ProviderCommands
 let permissions: PermissionCommands
 let changes: ChangeCommands
 let checkpoints: CheckpointCommands
+let changeSets: ChangeSetCommands
 let approvals: ApprovalCommands
 let skills: SkillCommands
 let agents: AgentCommands
@@ -181,6 +193,13 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
       before: CP_BEFORE,
       files: [{ path: 'a.txt', status: 'modified' as const }],
     })),
+  }
+  changeSets = {
+    list: vi.fn(() => ({ changeSets: [] })),
+    get: vi.fn(() => ({ changeSet: CHANGE_SET })),
+    apply: vi.fn(async () => ({ changeSet: CHANGE_SET, applied: [], conflicts: [] })),
+    reject: vi.fn(async () => ({ changeSet: CHANGE_SET })),
+    resolveConflict: vi.fn(async () => ({ changeSet: CHANGE_SET })),
   }
   skills = {
     list: vi.fn(() => ({ skills: [] })),
@@ -288,6 +307,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     permissions,
     changes,
     checkpoints,
+    changeSets,
     approvals,
     skills,
     mcp: {} as unknown as McpCommands,
@@ -617,6 +637,36 @@ describe('createRendererGateway: commands and lifecycle', () => {
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
   })
 
+  it('delegates change set requests to the change set service', async () => {
+    const { client } = setup()
+    await expect(client.request('changeset.list', { sessionId: 's1' })).resolves.toEqual({
+      changeSets: [],
+    })
+    await expect(
+      client.request('changeset.get', { sessionId: 's1', changeSetId: 'cs1' }),
+    ).resolves.toEqual({ changeSet: CHANGE_SET })
+    const apply = { sessionId: 's1', changeSetId: 'cs1', paths: ['a.txt'] }
+    await expect(client.request('changeset.apply', apply)).resolves.toEqual({
+      changeSet: CHANGE_SET,
+      applied: [],
+      conflicts: [],
+    })
+    expect(changeSets.apply).toHaveBeenCalledWith(apply)
+    await expect(
+      client.request('changeset.reject', { sessionId: 's1', changeSetId: 'cs1' }),
+    ).resolves.toEqual({ changeSet: CHANGE_SET })
+    const conflict = {
+      sessionId: 's1',
+      changeSetId: 'cs1',
+      path: 'a.txt',
+      resolution: 'manual' as const,
+    }
+    await expect(client.request('changeset.resolveConflict', conflict)).resolves.toEqual({
+      changeSet: CHANGE_SET,
+    })
+    expect(changeSets.resolveConflict).toHaveBeenCalledWith(conflict)
+  })
+
   it('delegates approval requests to the approval service', async () => {
     const { client } = setup()
     await expect(client.request('approval.pending', { sessionId: 's1' })).resolves.toEqual({
@@ -847,6 +897,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       permissions,
       changes,
       checkpoints,
+      changeSets,
       approvals,
       skills,
       mcp: {} as unknown as McpCommands,

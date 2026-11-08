@@ -158,6 +158,16 @@ interface SetupOptions {
   }>
   readonly noWorkspaceHandler?: boolean
   readonly workspaceCleanupError?: unknown
+  /** 计算改动集（M4-09）；默认按子运行返回一个单文件改动集。 */
+  readonly changesetCreate?: (input: {
+    readonly runId: string
+    readonly parentRunId?: string | undefined
+  }) => Promise<{
+    changeSetId: string
+    files: { path: string; added: number; removed: number }[]
+  }>
+  /** 不注册 `host.changeset.create`（模拟旧主进程）。 */
+  readonly noChangeSetHandler?: boolean
 }
 
 function setup(options: SetupOptions = {}) {
@@ -177,6 +187,8 @@ function setup(options: SetupOptions = {}) {
     gitDir?: string | undefined
   }[] = []
   const cleanupCalls: string[] = []
+  const changeSetCalls: { runId: string; parentRunId?: string | undefined }[] = []
+  const callOrder: string[] = []
   const definitions = new Map(
     (options.targets ?? [{ id: reviewer.id, definition: reviewer }]).map((entry) => [
       entry.id,
@@ -218,7 +230,12 @@ function setup(options: SetupOptions = {}) {
     },
   })
   const main = createEndpoint(mainSide, { local: MainForHost, remote: HostForMain })
-  main.on('host.event', ({ event }) => events.push(event))
+  main.on('host.event', ({ event }) => {
+    events.push(event)
+    if (event.type === 'run.child.completed') {
+      callOrder.push(`completed:${event.payload.childRunId}`)
+    }
+  })
   if (!options.noTargetsHandler) {
     main.handle('host.delegate.targets', ({ agents }) => {
       if (options.targetsError !== undefined) throw options.targetsError
@@ -274,8 +291,21 @@ function setup(options: SetupOptions = {}) {
     })
     main.handle('host.workspace.cleanup', ({ runId }) => {
       cleanupCalls.push(runId)
+      callOrder.push(`cleanup:${runId}`)
       if (options.workspaceCleanupError !== undefined) throw options.workspaceCleanupError
       return { cleaned: true }
+    })
+  }
+  if (!options.noChangeSetHandler) {
+    main.handle('host.changeset.create', async (input) => {
+      changeSetCalls.push(input)
+      callOrder.push(`changeset:${input.runId}`)
+      return options.changesetCreate
+        ? options.changesetCreate(input)
+        : {
+            changeSetId: `cs-${input.runId}`,
+            files: [{ path: 'src/a.ts', added: 1, removed: 0 }],
+          }
     })
   }
   if (options.approval) {
@@ -294,6 +324,8 @@ function setup(options: SetupOptions = {}) {
     workspaceRuns,
     workspaceCreateInputs,
     cleanupCalls,
+    changeSetCalls,
+    callOrder,
     initHost: () =>
       main.request('host.init', {
         ...baseInit,
@@ -1097,6 +1129,106 @@ describe('host isolated workspace (M4-08)', () => {
     const firstCompleted = h.events.findIndex((event) => event.type === 'run.child.completed')
     const secondDelegated = h.events.indexOf(delegated[1]!)
     expect(secondDelegated).toBeGreaterThan(firstCompleted)
+  })
+})
+
+describe('host change sets (M4-09)', () => {
+  const tester = agent('builtin.tester', { permissions: 'ask' })
+  const autoParent = parentDefinition({
+    delegation: { ...delegation, allowedAgents: ['builtin.tester'], defaultWorkspace: 'auto' },
+  })
+  const checkpoints = { gitDir: '/data/p1.git', ref: 'refs/cairn/sessions/s1' }
+  const baseline = 'a'.repeat(40)
+
+  const isolatedSetup = (extra: Partial<SetupOptions> = {}) =>
+    setup({
+      definition: autoParent,
+      targets: [{ id: tester.id, definition: tester }],
+      targetWorkspace: 'isolated',
+      checkpoints,
+      host: {
+        openCheckpoints: async () => ({
+          head: () => baseline,
+          checkpoint: async () => ({ commit: baseline }) as never,
+        }),
+      },
+      approval: () => ({ decision: 'allow_once' }),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+      ...extra,
+    })
+
+  it('collects the change set before the child completes and before cleanup', async () => {
+    const h = isolatedSetup()
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    const childRunId = h.workspaceRuns[0]!
+    expect(h.changeSetCalls).toEqual([{ runId: childRunId, parentRunId: 'r1' }])
+    // 主进程先写 changeset.created，再收到 run.child.completed，最后才清理隔离目录。
+    expect(h.callOrder).toEqual([
+      `changeset:${childRunId}`,
+      `completed:${childRunId}`,
+      `cleanup:${childRunId}`,
+    ])
+    const completed = h.events.find((event) => event.type === 'run.child.completed')!
+    expect(completed.payload).toMatchObject({ changeSetId: `cs-${childRunId}` })
+    // 结果里带改动集，父 Agent 知道有改动待审阅。
+    expect(toolCompletedText(h.events)).toContain(`cs-${childRunId}`)
+    expect(toolCompletedText(h.events)).toContain('pending_review')
+  })
+
+  it('does not collect change sets for shared workspaces', async () => {
+    const h = isolatedSetup({
+      targetWorkspace: 'shared',
+      definition: parentDefinition({
+        delegation: {
+          ...delegation,
+          allowedAgents: ['builtin.tester'],
+          defaultWorkspace: 'shared',
+        },
+      }),
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+    expect(h.changeSetCalls).toEqual([])
+    const delegated = h.events.find((event) => event.type === 'run.delegated')!
+    expect(h.callOrder).toEqual([`completed:${delegated.payload.childRunId}`])
+    const completed = h.events.find((event) => event.type === 'run.child.completed')!
+    expect(completed.payload).not.toHaveProperty('changeSetId')
+  })
+
+  it('still completes the delegation when the main process has no change set service', async () => {
+    const h = isolatedSetup({ noChangeSetHandler: true })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+    const completed = h.events.find((event) => event.type === 'run.child.completed')!
+    expect(completed.payload).toMatchObject({ status: 'completed' })
+    expect(completed.payload).not.toHaveProperty('changeSetId')
+    // 旧主进程没有这个接口：不当作错误。
+    expect(h.onError).not.toHaveBeenCalled()
+  })
+
+  it('still completes the delegation and reports an ordinary change set failure', async () => {
+    const h = isolatedSetup({
+      changesetCreate: async () => {
+        throw new Error('change set failed')
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+    const completed = h.events.find((event) => event.type === 'run.child.completed')!
+    expect(completed.payload).toMatchObject({ status: 'completed' })
+    expect(completed.payload).not.toHaveProperty('changeSetId')
+    expect(h.onError).toHaveBeenCalledTimes(1)
   })
 })
 

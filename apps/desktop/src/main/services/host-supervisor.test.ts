@@ -293,6 +293,34 @@ describe('委派目标解析（M4-02）', () => {
   })
 })
 
+describe('host.changeset.create（M4-09）', () => {
+  it('把请求交给主进程的改动集服务', async () => {
+    const host = fakeHost()
+    const createChangeSet = vi.fn(async () => ({
+      changeSetId: 'cs-1',
+      files: [{ path: 'src/a.ts', added: 2, removed: 1 }],
+    }))
+    const { supervisor } = setup(host, { createChangeSet })
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.changeset.create', { runId: 'id-child', parentRunId: 'r1' }),
+    ).resolves.toEqual({
+      changeSetId: 'cs-1',
+      files: [{ path: 'src/a.ts', added: 2, removed: 1 }],
+    })
+    expect(createChangeSet).toHaveBeenCalledWith('s1', { runId: 'id-child', parentRunId: 'r1' })
+  })
+
+  it('没有改动集服务时报 run.unsupported', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host)
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.changeset.create', { runId: 'id-child' }),
+    ).rejects.toMatchObject({ code: 'run.unsupported' })
+  })
+})
+
 describe('MCP 工具（M3-09）', () => {
   const tool = {
     name: 'mcp_fixture_echo',

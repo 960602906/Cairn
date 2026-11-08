@@ -26,6 +26,12 @@ import {
   LocalizedText,
 } from '../agents.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
+import {
+  ChangeSetApplyResult,
+  ChangeSetConflictResolution,
+  ChangeSetInfo,
+  ChangeSetSummary,
+} from '../change-sets.js'
 import { PLAN_FEEDBACK_MAX, PlanStep, PromptMode } from '../plan.js'
 import { SkillDetail, SkillInstallSource, SkillSource, SkillSummary } from '../skills.js'
 import {
@@ -500,6 +506,57 @@ export const MainForRenderer = defineSide({
     'changes.content': {
       params: z.object({ sessionId: Id, changeId: Id }),
       result: z.object({ before: FileContent.optional(), after: FileContent.optional() }),
+    },
+    /**
+     * 会话的改动集（M4-09，ADR-0031）：写入类子运行在隔离工作区中的改动，按创建顺序。
+     * 只含汇总，文件明细由 `changeset.get` 读取。
+     */
+    'changeset.list': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ changeSets: z.array(ChangeSetSummary) }),
+    },
+    /** 一个改动集的详情（含每个文件的 diff）。改动集不属于该会话时报 `changeset.not_found`。 */
+    'changeset.get': {
+      params: z.object({ sessionId: Id, changeSetId: Id }),
+      result: z.object({ changeSet: ChangeSetInfo }),
+    },
+    /**
+     * 合并改动集到主工作区（M4-09）：先建检查点（`before_merge`），再按文件写入。
+     * `paths` 省略时合并全部待处理文件；给出时只合并这些路径（按文件接受）。
+     * 主工作区在基线之后改过的文件标记为冲突，不写入。合并后恢复检查点即可回退。
+     */
+    'changeset.apply': {
+      params: z.object({
+        sessionId: Id,
+        changeSetId: Id,
+        paths: z.array(z.string().min(1)).max(5000).optional(),
+      }),
+      result: ChangeSetApplyResult,
+    },
+    /**
+     * 拒绝改动集（M4-09）：`paths` 省略时拒绝整个改动集，给出时只拒绝这些文件。
+     * 拒绝不写主工作区；被拒绝的文件保持 `rejected`。
+     */
+    'changeset.reject': {
+      params: z.object({
+        sessionId: Id,
+        changeSetId: Id,
+        paths: z.array(z.string().min(1)).max(5000).optional(),
+      }),
+      result: z.object({ changeSet: ChangeSetInfo }),
+    },
+    /**
+     * 处理一个冲突文件（M4-09）：保留主工作区（`keep-main`）、采用子运行版本（`take-child`），
+     * 或交给用户手动处理（`manual`，不写文件）。
+     */
+    'changeset.resolveConflict': {
+      params: z.object({
+        sessionId: Id,
+        changeSetId: Id,
+        path: z.string().min(1),
+        resolution: ChangeSetConflictResolution,
+      }),
+      result: z.object({ changeSet: ChangeSetInfo }),
     },
     /** 会话的检查点（M1-12c），按创建顺序；会话所属项目没有影子仓库时为空。 */
     'checkpoint.list': {

@@ -18,6 +18,7 @@ it('exports the public API', () => {
     'mcp',
     'agents',
     'run-snapshots',
+    'change-sets',
   ])
   expect(storage.StorageErrorCode.SeqConflict).toBe('storage.seq_conflict')
   const error = new storage.StorageError(storage.StorageErrorCode.NotFound)

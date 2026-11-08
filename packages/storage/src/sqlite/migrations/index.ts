@@ -10,6 +10,7 @@ import { projectSkillsDefault } from './0008-project-skills-default.js'
 import { mcp } from './0009-mcp.js'
 import { agents } from './0010-agents.js'
 import { runSnapshots } from './0011-run-snapshots.js'
+import { changeSets } from './0012-change-sets.js'
 
 /** 应用的全部迁移，按编号排列。新增迁移时追加到末尾。 */
 export const MIGRATIONS: readonly Migration[] = [
@@ -24,4 +25,5 @@ export const MIGRATIONS: readonly Migration[] = [
   mcp,
   agents,
   runSnapshots,
+  changeSets,
 ]

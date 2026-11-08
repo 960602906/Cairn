@@ -79,6 +79,76 @@ function setup(over: Partial<CheckpointServiceOptions> = {}) {
 }
 
 describe('checkpoint service', () => {
+  it('creates a before-merge checkpoint that restores the previous workspace', async () => {
+    const { service, events } = setup()
+    put('a.txt', 'before merge')
+
+    const created = await service.create({ sessionId: 's1' })
+    expect(created.checkpointId).toMatch(/^[0-9a-f]{40}$/)
+    expect(service.list({ sessionId: 's1' }).checkpoints).toMatchObject([
+      {
+        checkpointId: created.checkpointId,
+        reason: 'before_merge',
+        runId: 's1',
+        createdAt: 9,
+      },
+    ])
+    expect(events.readAfter('s1', 0).at(-1)).toMatchObject({
+      type: 'checkpoint.created',
+      payload: { checkpointId: created.checkpointId, reason: 'before_merge' },
+    })
+
+    put('a.txt', 'after merge')
+    await service.restore({ sessionId: 's1', checkpointId: created.checkpointId })
+    expect(read('a.txt')).toBe('before merge')
+  })
+
+  it('refuses to create a merge checkpoint when a sibling session is busy', async () => {
+    const { service, busy, events } = setup()
+    busy.add('s2')
+    await expect(service.create({ sessionId: 's1' })).rejects.toMatchObject({
+      code: 'run.busy',
+    })
+    expect(events.readAfter('s1', 0)).toEqual([])
+  })
+
+  it('refuses to create a merge checkpoint without a session or location', async () => {
+    const { service } = setup({ location: () => undefined })
+    await expect(service.create({ sessionId: 'missing' })).rejects.toMatchObject({
+      code: 'checkpoint.not_found',
+    })
+    await expect(service.create({ sessionId: 's1' })).rejects.toMatchObject({
+      code: 'checkpoint.not_found',
+    })
+  })
+
+  it('releases the project lock after a failed merge checkpoint', async () => {
+    const checkpoint = vi
+      .fn()
+      .mockRejectedValueOnce(new CheckpointError('checkpoint.failed', 'git failed'))
+      .mockResolvedValue({
+        commit: 'c'.repeat(40),
+        created: true,
+        skippedLarge: [],
+        nestedRepos: [],
+        warnings: '',
+      })
+    const open: OpenCheckpointRepo = async () => ({
+      preview: vi.fn(),
+      restore: vi.fn(),
+      checkpoint,
+    })
+    const { service, events } = setup({ open })
+
+    await expect(service.create({ sessionId: 's1' })).rejects.toMatchObject({
+      code: 'checkpoint.failed',
+    })
+    expect(events.readAfter('s1', 0)).toEqual([])
+    const created = await service.create({ sessionId: 's1' })
+    expect(created.checkpointId).toBe('c'.repeat(40))
+    expect(checkpoint).toHaveBeenCalledTimes(2)
+  })
+
   it('lists the checkpoints of a session from its events', async () => {
     const { service, hostCheckpoint } = setup()
     expect(service.list({ sessionId: 's1' })).toEqual({ checkpoints: [] })
@@ -302,6 +372,13 @@ describe('checkpoint service', () => {
         await gate
         return plan
       },
+      checkpoint: async () => ({
+        commit: 'c'.repeat(40),
+        created: true,
+        skippedLarge: [],
+        nestedRepos: [],
+        warnings: '',
+      }),
     })
     const { service, hostCheckpoint } = setup({ open })
     put('a.txt', 'one')
@@ -346,11 +423,12 @@ describe('checkpoint service', () => {
   })
 
   it('does not publish events when the restore fails', async () => {
-    const repo: Pick<ShadowRepo, 'preview' | 'restore'> = {
+    const repo: Pick<ShadowRepo, 'preview' | 'restore' | 'checkpoint'> = {
       preview: vi.fn(),
       restore: vi.fn(async () => {
         throw new CheckpointError('checkpoint.failed', 'git failed', { exitCode: '128' })
       }),
+      checkpoint: vi.fn(),
     }
     const { service, events, hostCheckpoint } = setup({ open: async () => repo })
     put('a.txt', 'one')
