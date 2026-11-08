@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 import {
   rootRun,
   type CheckpointView,
+  type DelegationView,
   type LiveMessageView,
   type MessageView,
   type PlanView,
@@ -33,11 +34,12 @@ import {
   UndoTurnButton,
 } from './Checkpoints.js'
 import { TurnChanges } from './FileChanges.js'
+import { DelegationCard } from './DelegationCard.js'
 import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
-import { Button, IconButton, Shimmer } from './ui/index.js'
+import { Button, cn, IconButton, Shimmer } from './ui/index.js'
 import { AgentAvatar } from './agents/AgentAvatar.js'
 import { agentName } from './agents/AgentsPage.js'
 
@@ -147,15 +149,19 @@ export function turnFooters(view: SessionView): ReadonlyMap<string, TurnFooter> 
   const running = rootRun(view)?.turn
   const runningTurn = running?.status === 'running' ? running.turnId : undefined
   const footers = new Map<string, TurnFooter>()
+  const messages = view.messages.filter((message) => {
+    const run = view.runs[message.runId]
+    return run === undefined || run.parentRunId === undefined
+  })
   const texts: string[] = []
-  view.messages.forEach((message, index) => {
+  messages.forEach((message, index) => {
     if (message.role === 'user') {
       texts.length = 0
       return
     }
     const text = textOf(message.content)
     if (text !== '') texts.push(text)
-    const next = view.messages[index + 1]
+    const next = messages[index + 1]
     const lastOfTurn = next === undefined || next.role === 'user' || next.turnId !== message.turnId
     if (!lastOfTurn || (message.turnId !== undefined && message.turnId === runningTurn)) return
     if (next === undefined && Object.keys(view.live).length > 0) return
@@ -245,6 +251,7 @@ function Message({
   compacted,
   omitted,
   onOpenPlan,
+  locatedTurnId,
 }: {
   readonly message: MessageView
   readonly view: SessionView
@@ -262,6 +269,7 @@ function Message({
   /** 这条消息之前是“工具输出已省略”的提示。 */
   readonly omitted: boolean
   readonly onOpenPlan: (planId: string) => void
+  readonly locatedTurnId?: string | undefined
 }) {
   const { t } = useTranslation('session')
   const approvals = useSessionStore((s) =>
@@ -281,7 +289,14 @@ function Message({
   )
   if (message.role === 'user') {
     return (
-      <li className="flex scroll-mt-4 flex-col items-end" data-turn={message.turnId}>
+      <li
+        tabIndex={-1}
+        className={cn(
+          'flex scroll-mt-4 flex-col items-end rounded-item outline-none',
+          locatedTurnId === message.turnId && 'ring-1 ring-accent/40',
+        )}
+        data-turn={message.turnId}
+      >
         {marks}
         {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
@@ -303,7 +318,9 @@ function Message({
       <strong className="sr-only">{t('message.assistant')}</strong>
       {(() => {
         const run = view.runs[message.runId]
-        const showAgentBadge = view.runOrder.length > 1 && !continued
+        const showAgentBadge =
+          view.runOrder.filter((runId) => view.runs[runId]?.parentRunId === undefined).length > 1 &&
+          !continued
         const agent = run?.agent
         const agentSummary = agent ? agents.find((a) => a.agentId === agent.id) : undefined
         const agentDisplayName = agentSummary
@@ -376,7 +393,10 @@ function LiveMessage({
   const { t, i18n } = useTranslation('session')
   const agents = useSessionStore((s) => s.agents) ?? []
   const run = view?.runs[live.runId]
-  const showAgentBadge = view !== undefined && view.runOrder.length > 1 && !continued
+  const showAgentBadge =
+    view !== undefined &&
+    view.runOrder.filter((runId) => view.runs[runId]?.parentRunId === undefined).length > 1 &&
+    !continued
   const agent = run?.agent
   const agentSummary = agent ? agents.find((a) => a.agentId === agent.id) : undefined
   const agentDisplayName = agentSummary
@@ -428,13 +448,28 @@ function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): strin
 export function MessageStream({
   view,
   onOpenPlan,
+  onOpenChanges,
+  locatedTurnId,
 }: {
   readonly view: SessionView | undefined
   readonly onOpenPlan: (planId: string) => void
+  readonly onOpenChanges?: (() => void) | undefined
+  readonly locatedTurnId?: string | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const providers = useSessionStore((s) => s.settings?.providers)
-  const live = Object.values(view?.live ?? {}).sort((a, b) => a.startedAt - b.startedAt)
+  const messages = view
+    ? view.messages.filter((message) => {
+        const run = view.runs[message.runId]
+        return run === undefined || run.parentRunId === undefined
+      })
+    : []
+  const live = Object.values(view?.live ?? {})
+    .filter((message) => {
+      const run = view?.runs[message.runId]
+      return run === undefined || run.parentRunId === undefined
+    })
+    .sort((a, b) => a.startedAt - b.startedAt)
   const outcome = view && turnOutcome(view, t, i18n)
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const agents = useSessionStore((s) => s.agents) ?? []
@@ -449,7 +484,7 @@ export function MessageStream({
       const runId = view.runOrder[i]
       if (runId === undefined) continue
       const run = view.runs[runId]
-      if (!run) continue
+      if (!run || run.parentRunId !== undefined) continue
       const firstMsg = view.messages.find((m) => m.runId === runId)
       if (firstMsg) {
         const summary = agents.find((a) => a.agentId === run.agent.id)
@@ -468,7 +503,7 @@ export function MessageStream({
     const firstLive = live[0]
     if (!firstLive) return undefined
     const runIdx = view.runOrder.indexOf(firstLive.runId)
-    if (runIdx > 0 && !view.messages.some((m) => m.runId === firstLive.runId)) {
+    if (runIdx > 0 && !messages.some((m) => m.runId === firstLive.runId)) {
       const run = view.runs[firstLive.runId]
       if (run) {
         const summary = agents.find((a) => a.agentId === run.agent.id)
@@ -481,10 +516,10 @@ export function MessageStream({
       }
     }
     return undefined
-  }, [view, live, agents, i18n.language, t])
+  }, [view, live, messages, agents, i18n.language, t])
   const anchored = new Set(
     (view?.plans ?? []).flatMap((plan) =>
-      plan.turnId !== undefined && view?.messages.some((message) => message.turnId === plan.turnId)
+      plan.turnId !== undefined && messages.some((message) => message.turnId === plan.turnId)
         ? [plan.planId]
         : [],
     ),
@@ -492,6 +527,17 @@ export function MessageStream({
   const turns = view ? turnNumbers(view) : new Map<string, number>()
   const checkpoints = view ? turnCheckpoints(view) : new Map<string, CheckpointView>()
   const restores = view ? restoresByMessage(view) : new Map<string, readonly RestoreView[]>()
+  const delegationsByTurn = useMemo(() => {
+    const map = new Map<string, DelegationView[]>()
+    for (const delegation of view?.delegations ?? []) {
+      if (delegation.turnId === undefined) continue
+      const list = map.get(delegation.turnId) ?? []
+      list.push(delegation)
+      map.set(delegation.turnId, list)
+    }
+    return map
+  }, [view])
+  const looseDelegations = (view?.delegations ?? []).filter((item) => item.turnId === undefined)
   /** 每轮第一条用户消息上方的检查点分隔线。 */
   const dividerFor = (message: MessageView, index: number) => {
     if (message.role !== 'user' || message.turnId === undefined) return undefined
@@ -508,12 +554,15 @@ export function MessageStream({
       ? `${provider.displayName} · ${configured.displayName ?? configured.id}`
       : model.modelId
   }
+  if (!view) {
+    return <ol aria-label={t('chat.messages')} className="flex flex-col gap-7" />
+  }
   return (
     <>
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
-        {view?.messages.map((message, index) => {
-          const previous = view.messages[index - 1]?.seq ?? 0
-          const next = view.messages[index + 1]
+        {messages.map((message, index) => {
+          const previous = messages[index - 1]?.seq ?? 0
+          const next = messages[index + 1]
           const lastOfTurn = next === undefined || next.turnId !== message.turnId
           const switchInfo = switchedRuns.get(message.messageId)
           return (
@@ -533,16 +582,39 @@ export function MessageStream({
                     : []
                 }
                 modelName={modelName}
-                continued={continues(view.messages[index - 1], message)}
+                continued={continues(messages[index - 1], message)}
                 divider={dividerFor(message, index)}
                 restores={restores.get(message.messageId)}
                 compacted={markBetween(previous, message.seq, view.compaction)}
                 omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
                 onOpenPlan={onOpenPlan}
+                locatedTurnId={locatedTurnId}
               />
+              {lastOfTurn &&
+                message.turnId !== undefined &&
+                (delegationsByTurn.get(message.turnId) ?? []).map((delegation) => (
+                  <li key={delegation.childRunId} className="list-none">
+                    <DelegationCard
+                      sessionId={view.sessionId}
+                      view={view}
+                      delegation={delegation}
+                      onOpenChanges={onOpenChanges}
+                    />
+                  </li>
+                ))}
             </Fragment>
           )
         })}
+        {looseDelegations.map((delegation) => (
+          <li key={delegation.childRunId} className="list-none">
+            <DelegationCard
+              sessionId={view!.sessionId}
+              view={view!}
+              delegation={delegation}
+              onOpenChanges={onOpenChanges}
+            />
+          </li>
+        ))}
         {view?.plans
           .filter((plan) => !anchored.has(plan.planId))
           .map((plan) => (
@@ -550,13 +622,13 @@ export function MessageStream({
               <PlanSummaryCard plan={plan} onOpen={onOpenPlan} />
             </li>
           ))}
-        {view?.compaction && afterLast(view.messages.at(-1)?.seq ?? 0, view.compaction) && (
+        {view?.compaction && afterLast(messages.at(-1)?.seq ?? 0, view.compaction) && (
           <li className="list-none">
             <CompactionMark summary={view.compaction.summary} />
           </li>
         )}
         {view?.toolOutputOmitted &&
-          afterLast(view.messages.at(-1)?.seq ?? 0, view.toolOutputOmitted) && (
+          afterLast(messages.at(-1)?.seq ?? 0, view.toolOutputOmitted) && (
             <li className="list-none">
               <OmissionNote />
             </li>
@@ -571,7 +643,7 @@ export function MessageStream({
             key={message.messageId}
             live={message}
             view={view}
-            continued={index === 0 && continues(view?.messages.at(-1), message)}
+            continued={index === 0 && continues(messages.at(-1), message)}
           />
         ))}
       </ol>

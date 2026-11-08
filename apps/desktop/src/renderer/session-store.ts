@@ -59,6 +59,7 @@ import {
   type PermissionRuleEntry,
   type ProjectSummary,
   type ProviderConfig,
+  type RunInspectResult,
   type SessionSummary,
   type Settings,
   type SettingsPatch,
@@ -76,6 +77,12 @@ import type { MainApi } from './api.js'
 type Requests = (typeof MainForRenderer)['requests']
 export type ProviderTestResult = z.output<Requests['provider.test']['result']>
 export type ProviderModelsResult = z.output<Requests['provider.models']['result']>
+
+export interface InspectionState {
+  readonly loading: boolean
+  readonly result: RunInspectResult | undefined
+  readonly error: ErrorInfo | undefined
+}
 
 export interface SessionState {
   /** 会话列表（按最近更新排序，由主进程决定）。 */
@@ -99,6 +106,8 @@ export interface SessionState {
   readonly agents: readonly AgentSummary[]
   /** 最近在会话里选用过的 Agent，最近的在前。 */
   readonly recentAgents: readonly string[]
+  /** 运行检查器的按需结果，键为 `inspectionKey(sessionId, runId)`。 */
+  readonly inspections: Readonly<Record<string, InspectionState>>
 }
 
 export interface SessionActions {
@@ -238,6 +247,8 @@ export interface SessionActions {
   showDiagnosticsInFolder(path: string): Promise<boolean>
   /** 在会话中切换 Agent（新建一个运行）；运行中会失败。 */
   setSessionAgent(sessionId: string, agent: AgentDefinitionRef): Promise<boolean>
+  /** 按需读取运行检查器；`runId` 省略时读取会话当前根运行。 */
+  inspectRun(sessionId: string, runId?: string): Promise<RunInspectResult | undefined>
   loadSettings(): Promise<Settings | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
@@ -298,6 +309,9 @@ const toError = (error: unknown): ErrorInfo =>
 /** 最近使用的 Agent（M3-12）：只存 id，界面按列表过滤；本地存储不可用时只在本次会话里保留。 */
 const RECENT_AGENTS_KEY = 'cairn.recentAgents'
 const RECENT_AGENTS_MAX = 8
+
+export const inspectionKey = (sessionId: string, runId?: string) =>
+  `${sessionId}:${runId ?? 'root'}`
 
 export function readRecentAgents(
   storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage,
@@ -380,6 +394,8 @@ export function createSessionStore(api: MainApi): SessionStore {
   let loadChangesFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
   /** 各会话最近一次读取改动记录的序号：较早的请求晚返回时丢弃。 */
   const changeRequests = new Map<string, number>()
+  /** 检查器请求序号：切换标签后较早的响应不应覆盖新结果。 */
+  const inspectionRequests = new Map<string, number>()
   const store = createStore<SessionState & SessionActions>()((set, get) => {
     const run = async <T>(action: () => Promise<T>): Promise<T | undefined> => {
       try {
@@ -443,6 +459,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       error: undefined,
       agents: [],
       recentAgents: readRecentAgents(),
+      inspections: {},
 
       async refreshSessions() {
         const result = await run(() => api.request('session.list', {}))
@@ -742,6 +759,47 @@ export function createSessionStore(api: MainApi): SessionStore {
         return true
       },
 
+      async inspectRun(sessionId, runId) {
+        const key = inspectionKey(sessionId, runId)
+        const request = (inspectionRequests.get(key) ?? 0) + 1
+        inspectionRequests.set(key, request)
+        set((state) => ({
+          inspections: {
+            ...state.inspections,
+            [key]: { loading: true, result: state.inspections[key]?.result, error: undefined },
+          },
+        }))
+        try {
+          const result = await api.request(
+            'run.inspect',
+            runId === undefined ? { sessionId } : { sessionId, runId },
+          )
+          if (inspectionRequests.get(key) === request) {
+            set((state) => ({
+              inspections: {
+                ...state.inspections,
+                [key]: { loading: false, result, error: undefined },
+              },
+            }))
+          }
+          return result
+        } catch (error) {
+          if (inspectionRequests.get(key) === request) {
+            set((state) => ({
+              inspections: {
+                ...state.inspections,
+                [key]: {
+                  loading: false,
+                  result: state.inspections[key]?.result,
+                  error: toError(error),
+                },
+              },
+            }))
+          }
+          return undefined
+        }
+      },
+
       async loadSettings() {
         const result = await run(() => api.request('settings.get', {}))
         if (result) set({ settings: result })
@@ -816,6 +874,7 @@ export function createSessionStore(api: MainApi): SessionStore {
         offEvents()
         offApprovals()
         pending.clear()
+        inspectionRequests.clear()
         subscribed = undefined
       },
     }

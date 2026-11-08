@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Eye,
   ListChecks,
+  Search,
   ShieldCheck,
   Square,
   Zap,
@@ -37,6 +38,7 @@ import type {
   SessionStatus,
 } from '@cairn/protocol'
 import { AgentPicker } from './agents/AgentPicker.js'
+import { formatCompactTokens } from './format.js'
 import { useSessionStore } from './store-context.js'
 import {
   cn,
@@ -60,6 +62,8 @@ export interface ComposerProps {
   readonly model: ModelRef | undefined
   /** 上下文占用的 token 数（最近一次用量）。 */
   readonly contextTokens: number | undefined
+  /** 打开运行检查器。 */
+  readonly onInspect: () => void
 }
 
 /** 运行中时进一步说明的运行状态。 */
@@ -99,9 +103,11 @@ function useNow(active: boolean): number {
 function RunBar({
   status,
   run,
+  onInspect,
 }: {
   readonly status: SessionStatus
   readonly run: RunView | undefined
+  readonly onInspect: () => void
 }) {
   const { t } = useTranslation('session')
   const active = status === 'running' || status === 'waiting_approval'
@@ -114,24 +120,68 @@ function RunBar({
   const now = useNow(active)
   const detail = status === 'running' && run && RUN_DETAILS.has(run.state) ? run.state : undefined
   const text = `${t(`status.${status}`)}${detail ? ` · ${t(`run.${detail}`)}` : ''}`
-  if (!active) {
+  if (!active && run === undefined) {
     return (
       <p role="status" className="sr-only">
         {text}
       </p>
     )
   }
+  const elapsed = now - (turn?.startedAt ?? sentAt)
+  const steps = turn?.stepCount ?? 0
+  const maxSteps = run?.limits.maxStepsPerTurn
+  const tokens = run ? run.usage.inputTokens + run.usage.outputTokens : 0
+  const maxTokens = run?.limits.maxTokensPerTurn
+  const maxDuration = run?.limits.maxTurnDurationMs
+  const stepWarn = maxSteps !== undefined && steps / maxSteps >= 0.8
+  const tokenWarn = maxTokens !== undefined && tokens / maxTokens >= 0.8
+  const durationWarn = maxDuration !== undefined && elapsed / maxDuration >= 0.8
   return (
-    <div className="mb-2 flex items-center gap-2 px-3 text-note text-muted">
-      <Spinner />
+    <div className="mb-2 flex min-w-0 items-center gap-2 px-3 text-note text-muted">
+      {active ? <Spinner /> : <span aria-hidden className="size-1.5 rounded-full bg-faint" />}
       <p role="status" className="text-fg2">
         {text}
       </p>
-      <span aria-hidden className="tabular">
-        · {formatElapsed(now - (turn?.startedAt ?? sentAt))}
-      </span>
+      {active && (
+        <span
+          aria-hidden
+          className={cn('tabular shrink-0', durationWarn && 'font-medium text-warn')}
+          data-tone={durationWarn ? 'warn' : 'normal'}
+        >
+          · {formatElapsed(elapsed)}
+        </span>
+      )}
+      {active && steps > 0 && (
+        <span
+          aria-hidden
+          className={cn('tabular shrink-0', stepWarn && 'font-medium text-warn')}
+          data-tone={stepWarn ? 'warn' : 'normal'}
+        >
+          ·{' '}
+          {maxSteps === undefined
+            ? t('runBar.stepUnlimited', { count: steps })
+            : t('runBar.step', { count: steps, max: maxSteps })}
+        </span>
+      )}
+      {tokens > 0 && (
+        <span
+          aria-hidden
+          className={cn('tabular shrink-0', tokenWarn && 'font-medium text-warn')}
+          data-tone={tokenWarn ? 'warn' : 'normal'}
+        >
+          · {t('runBar.tokens', { count: formatCompactTokens(tokens) })}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onInspect}
+        className="ml-auto flex h-6 shrink-0 items-center gap-1 rounded-[5px] px-1.5 text-note text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
+      >
+        <Search aria-hidden className="size-3.5" />
+        {t('runBar.inspector')}
+      </button>
       {status === 'running' && (
-        <span className="ml-auto flex items-center gap-1">
+        <span className="flex shrink-0 items-center gap-1">
           {t('composer.escToStop.before')}
           <Kbd>{t('composer.escKey')}</Kbd>
           {t('composer.escToStop.after')}
@@ -293,7 +343,15 @@ function ContextRing({
   )
 }
 
-export function Composer({ sessionId, status, run, agent, model, contextTokens }: ComposerProps) {
+export function Composer({
+  sessionId,
+  status,
+  run,
+  agent,
+  model,
+  contextTokens,
+  onInspect,
+}: ComposerProps) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
@@ -386,7 +444,7 @@ export function Composer({ sessionId, status, run, agent, model, contextTokens }
 
   return (
     <div>
-      <RunBar status={status} run={run} />
+      <RunBar status={status} run={run} onInspect={onInspect} />
       <form
         onSubmit={submit}
         onClick={(e) => {

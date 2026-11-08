@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSessionView, type PlanView } from '@cairn/core'
 import { createI18n } from '@cairn/i18n'
 import { createStore } from 'zustand/vanilla'
-import type { SessionStore } from './session-store.js'
+import { inspectionKey, type SessionStore } from './session-store.js'
 import { SessionSidePanel, type SessionPanel } from './SessionSidePanel.js'
 import { SessionStoreProvider } from './store-context.js'
 
@@ -74,6 +74,19 @@ const wrap = (ui: ReactNode) => {
     replan: vi.fn(),
     abandonPlan: vi.fn(),
     updateBrief: vi.fn(async () => true),
+    agents: [],
+    inspections: {
+      [inspectionKey('s1')]: {
+        loading: false,
+        result: {
+          tree: { sessionId: 's1', rootRunId: '', generatedAt: 1, runs: [] },
+          snapshots: [],
+          settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+        },
+        error: undefined,
+      },
+    },
+    inspectRun: vi.fn(),
   })) as unknown as SessionStore
   return render(
     <I18nextProvider i18n={i18n}>
@@ -109,6 +122,17 @@ describe('SessionSidePanel', () => {
     expect(panel.className).toContain('translate-x-0')
     expect(panel.className).toContain('opacity-100')
     expect(panel.getAttribute('aria-hidden')).toBe('false')
+  })
+
+  it('opens the inspector as the fourth side panel tab', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness />)
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    await user.click(within(panel).getByRole('tab', { name: '检查器' }))
+    expect(within(panel).getByRole('tab', { name: '检查器' }).getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    expect(within(panel).getByText('没有运行记录。')).toBeTruthy()
   })
 
   it('collapses to zero width and removes itself from the accessible tree', () => {

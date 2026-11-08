@@ -6,7 +6,7 @@ import {
   type SessionSummary,
 } from '@cairn/protocol'
 import type { MainApi } from './api.js'
-import { createSessionStore } from './session-store.js'
+import { createSessionStore, inspectionKey } from './session-store.js'
 
 type Handler = (params: never) => unknown
 
@@ -218,6 +218,52 @@ describe('agent actions in session store', () => {
     expect(readRecentAgents({ getItem: () => 'invalid-json' } as Pick<Storage, 'getItem'>)).toEqual(
       [],
     )
+  })
+})
+
+describe('run inspector in session store', () => {
+  it('loads an inspection on demand and caches it by session and run', async () => {
+    const result = {
+      tree: { sessionId: 's1', rootRunId: 'r1', generatedAt: 1, runs: [] },
+      snapshots: [],
+      settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+    }
+    const { api, calls } = fakeApi({ 'run.inspect': () => result })
+    const store = createSessionStore(api)
+    expect(await store.getState().inspectRun('s1')).toBe(result)
+    expect(calls.at(-1)).toEqual(['run.inspect', { sessionId: 's1' }])
+    expect(store.getState().inspections[inspectionKey('s1')]).toEqual({
+      loading: false,
+      result,
+      error: undefined,
+    })
+    await store.getState().inspectRun('s1', 'child')
+    expect(calls.at(-1)).toEqual(['run.inspect', { sessionId: 's1', runId: 'child' }])
+  })
+
+  it('stores inspector errors without replacing a previous result', async () => {
+    let fail = false
+    const result = {
+      tree: { sessionId: 's1', rootRunId: 'r1', generatedAt: 1, runs: [] },
+      snapshots: [],
+      settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+    }
+    const { api } = fakeApi({
+      'run.inspect': () => {
+        if (fail) throw new RpcError('run.not_found')
+        return result
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().inspectRun('s1')
+    fail = true
+    expect(await store.getState().inspectRun('s1')).toBeUndefined()
+    expect(store.getState().inspections[inspectionKey('s1')]).toMatchObject({
+      loading: false,
+      result,
+      error: { code: 'run.not_found' },
+    })
+    expect(store.getState().error).toBeUndefined()
   })
 })
 

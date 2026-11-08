@@ -184,6 +184,28 @@ export interface RunView {
   readonly usage: TokenUsage
 }
 
+/** 父运行发起的一次委派（`run.delegated`，M4-02）；完成状态来自 `run.child.completed`。 */
+export interface DelegationView {
+  readonly childRunId: string
+  readonly parentRunId: string
+  readonly agent: AgentDefinitionRef
+  readonly task: string
+  readonly workspace: 'shared' | 'isolated' | 'auto' | undefined
+  readonly workspacePath: string | undefined
+  readonly budget: RunLimits | undefined
+  readonly turnId: string | undefined
+  readonly createdAt: number
+  readonly completed:
+    | {
+        readonly status: 'completed' | 'failed' | 'aborted' | 'needs_input' | 'limit_reached'
+        readonly summary: string | undefined
+        readonly usage: TokenUsage | undefined
+        readonly changeSetId: string | undefined
+        readonly issues: readonly string[] | undefined
+      }
+    | undefined
+}
+
 /** 会话的一个检查点（`checkpoint.created`，M2-08 的检查点分隔线与历史菜单）。 */
 export interface CheckpointView {
   readonly checkpointId: string
@@ -286,6 +308,8 @@ export interface SessionView {
   readonly brief?: { readonly content: string; readonly editedBy: 'agent' | 'user' }
   /** 会话里的计划，按提出顺序（M3-05）。 */
   readonly plans: readonly PlanView[]
+  /** 父运行发起的子任务，按发生顺序（M4-05）。 */
+  readonly delegations: readonly DelegationView[]
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -309,6 +333,7 @@ export function createSessionView(sessionId: string): SessionView {
     checkpoints: [],
     restores: [],
     plans: [],
+    delegations: [],
   }
 }
 
@@ -577,16 +602,54 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         run.state === 'disposed' ? undefined : { ...run, state: 'disposed' },
       )
 
+    case 'run.delegated': {
+      if (view.delegations.some((item) => item.childRunId === event.payload.childRunId)) {
+        return undefined
+      }
+      const delegation: DelegationView = {
+        childRunId: event.payload.childRunId,
+        parentRunId: event.runId,
+        agent: event.payload.agent,
+        task: event.payload.task,
+        workspace: event.payload.workspace,
+        workspacePath: event.payload.workspacePath,
+        budget: event.payload.budget,
+        turnId: event.turnId,
+        createdAt: event.ts,
+        completed: undefined,
+      }
+      return { ...view, delegations: [...view.delegations, delegation] }
+    }
+    case 'run.child.completed': {
+      const index = view.delegations.findIndex(
+        (item) => item.childRunId === event.payload.childRunId,
+      )
+      if (index < 0) return undefined
+      const current = view.delegations[index]!
+      const completed: DelegationView['completed'] = {
+        status: event.payload.status,
+        summary: event.payload.summary,
+        usage: event.payload.usage,
+        changeSetId: event.payload.changeSetId,
+        issues: event.payload.issues,
+      }
+      return {
+        ...view,
+        delegations: view.delegations.with(index, { ...current, completed }),
+      }
+    }
+
     case 'turn.started': {
       const { turnId } = event
       if (turnId === undefined) return undefined
       const loaded = event.payload.context?.agentsMd
-      const next = updateRun(view, event.runId, (run) =>
+      const withTurn = updateRun(view, event.runId, (run) =>
         run.turn?.turnId === turnId ? undefined : { ...run, turn: newTurn(turnId, event.ts) },
       )
+      const next = attachPendingUserMessage(withTurn ?? view, event.runId, turnId)
       // 重复的 turn.started，而且标记不用变：只推进 seq
-      if (!next && view.agentsMd === undefined && loaded === undefined) return undefined
-      const { agentsMd: _previous, ...rest } = next ?? view
+      if (next === view && view.agentsMd === undefined && loaded === undefined) return undefined
+      const { agentsMd: _previous, ...rest } = next
       return {
         ...rest,
         crash: undefined,
@@ -643,12 +706,17 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         return { ...turn, step: { ...step, status: 'completed', finishReason, durationMs } }
       })
 
-    case 'message.user':
+    case 'message.user': {
+      // 只借用正在进行的轮次，避免把下一轮输入误挂到上一轮已完成的消息上。
+      // 正常顺序是 message.user 先落库、turn.started 后到；宿主恢复等情况下也可能反过来。
+      const run = view.runs[event.runId]
+      const turnId = event.turnId ?? (run?.turn?.status === 'running' ? run.turn.turnId : undefined)
       return upsertMessage(view, {
         role: 'user',
-        ...meta(event, event.payload.messageId),
+        ...meta(event, event.payload.messageId, turnId),
         content: event.payload.content,
       })
+    }
     case 'message.assistant.completed': {
       const { messageId, content, reasoning, toolCalls, model, incomplete } = event.payload
       return upsertMessage(view, {
@@ -858,8 +926,23 @@ function endTurn(
   )
 }
 
-function meta(event: PersistedEvent, messageId: string): MessageMeta {
-  return { messageId, runId: event.runId, turnId: event.turnId, seq: event.seq, ts: event.ts }
+function meta(event: PersistedEvent, messageId: string, turnId = event.turnId): MessageMeta {
+  return { messageId, runId: event.runId, turnId, seq: event.seq, ts: event.ts }
+}
+
+/** 主进程先落库的用户消息没有 turnId；轮次开始后把同运行最近的一条补上，供定位使用。 */
+function attachPendingUserMessage(view: SessionView, runId: string, turnId: string): SessionView {
+  for (let index = view.messages.length - 1; index >= 0; index -= 1) {
+    const message = view.messages[index]!
+    if (message.role !== 'user' || message.runId !== runId || message.turnId !== undefined) {
+      continue
+    }
+    return {
+      ...view,
+      messages: view.messages.with(index, { ...message, turnId }),
+    }
+  }
+  return view
 }
 
 /** 新消息追加到末尾；同一 messageId 已存在时原位替换（保持显示顺序）。 */

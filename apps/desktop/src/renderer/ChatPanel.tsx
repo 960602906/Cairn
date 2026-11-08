@@ -64,6 +64,7 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
   const [panel, setPanel] = useState<SessionPanel>('diff')
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
+  const [locatedTurnId, setLocatedTurnId] = useState<string | undefined>()
   const wide = useMediaQuery('(min-width: 1200px)')
   const [panelPreference, setPanelPreference] = useState<boolean>()
   const panelOpen = panelPreference ?? wide
@@ -73,8 +74,23 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
 
   useEffect(() => {
     setSelectedPlanId(undefined)
+    setLocatedTurnId(undefined)
     setPanel('diff')
   }, [sessionId])
+
+  const locateTurn = (runId: string, turnId: string) => {
+    void runId
+    setLocatedTurnId(turnId)
+    setPanel('inspector')
+    setPanelPreference(true)
+    requestAnimationFrame(() => {
+      const target = scroller.current?.querySelector<HTMLElement>(
+        `[data-turn="${CSS.escape(turnId)}"]`,
+      )
+      target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      target?.focus({ preventScroll: true })
+    })
+  }
 
   if (sessionId === undefined) {
     return (
@@ -141,6 +157,11 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
             >
               <MessageStream
                 view={view}
+                locatedTurnId={locatedTurnId}
+                onOpenChanges={() => {
+                  setPanel('diff')
+                  setPanelPreference(true)
+                }}
                 onOpenPlan={(planId) => {
                   setSelectedPlanId(planId)
                   setPanel('plan')
@@ -160,6 +181,10 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
               agent={run?.agent}
               model={view?.info?.model ?? summary?.model ?? defaultModel}
               contextTokens={view?.contextTokens}
+              onInspect={() => {
+                setPanel('inspector')
+                setPanelPreference(true)
+              }}
             />
           </div>
         </div>
@@ -171,6 +196,7 @@ export function ChatPanel({ leading }: { readonly leading?: ReactNode }) {
           onPanelChange={setPanel}
           open={panelOpen}
           onClose={() => setPanelPreference(false)}
+          onLocateTurn={locateTurn}
         />
       </div>
     </section>
