@@ -30,6 +30,11 @@ import {
   createToolPipeline,
   createToolRegistry,
   DEFAULT_PERMISSION_GUARDS,
+  DELEGATE_RESULT_INSTRUCTION,
+  DelegationSession,
+  delegateToolSpec,
+  resolveDelegationPolicy,
+  runDelegation,
   presetRules,
   buildSystemPrompt,
   operatingSystemName,
@@ -40,14 +45,18 @@ import {
   registerPlanTools,
   type AgentRunHandle,
   type AgentRuntime,
+  type DelegationChain,
+  type DelegationTarget,
   type Logger,
   type PermissionGate,
   type RetryPolicy,
   type ResolvedModel,
+  type RunContext,
   type RunSupervisor,
   type ToolCheckpoints,
   ToolError,
   ToolErrorCode,
+  type JsonSchema,
   type ToolRegistry,
 } from '@cairn/core'
 import {
@@ -56,7 +65,10 @@ import {
   MainForHost,
   RpcError,
   type ActivePlan,
+  type AgentDefinition,
+  DelegateInput,
   type HostModelConfig,
+  type McpToolExposure,
   type ModelRef,
   type PermissionRule,
   type RpcChannel,
@@ -85,6 +97,18 @@ export interface HostCredential {
 export interface HostRuntime {
   readonly runtime: AgentRuntime
   readonly model: ResolvedModel
+}
+
+/** `host.delegate` 解析出的目标（M4-02）；凭据只在宿主内存中使用。 */
+interface DelegatedTarget {
+  readonly definition: AgentDefinition
+  readonly model: ModelRef
+  readonly credential?: { readonly apiKey: string } | undefined
+  readonly modelConfig?: HostModelConfig | undefined
+  readonly permissionRules: readonly PermissionRule[]
+  readonly skills: readonly SkillCatalogEntry[]
+  readonly mcpTools: readonly McpToolExposure[]
+  readonly workspace: 'shared' | 'isolated'
 }
 
 export interface AgentHostOptions {
@@ -215,38 +239,45 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     const hasBuiltinTools = registry.list().length > 0
     /** Agent 定义（M3-11）：决定这一份运行的指令、工具选择与上下文策略。 */
     const agentDefinition = init.agentDefinition
+    /** 注册 MCP 工具代理（根运行与委派子运行共用）。 */
+    const registerMcpToolsInto = (
+      target: ToolRegistry,
+      tools: readonly McpToolExposure[],
+    ): void => {
+      for (const tool of tools) {
+        if (target.get(tool.name)) {
+          onError(new Error(`MCP tool name conflicts with a builtin tool: ${tool.name}`))
+          continue
+        }
+        target.register({
+          name: tool.name,
+          description: tool.description || `MCP tool ${tool.originalName}`,
+          inputSchema: tool.inputSchema,
+          category: tool.category,
+          source: { kind: 'mcp', serverId: tool.serverId },
+          trust: 'third-party',
+          async execute(input, ctx) {
+            const result = await endpoint.request('host.mcp.call', {
+              serverId: tool.serverId,
+              toolName: tool.originalName,
+              input: input as Record<string, unknown>,
+              maxOutputTokens: ctx.maxOutputTokens,
+            })
+            if (result.isError) {
+              throw new ToolError(ToolErrorCode.ExecutionFailed, result.text)
+            }
+            return { content: [{ type: 'text', text: result.text }] }
+          },
+        })
+      }
+    }
     const visibleSpecs = (mode: 'normal' | 'plan', executing: boolean) =>
       registry.specs(
         (definition) =>
           planToolVisible(definition.name, mode, executing) &&
           toolSelected(agentDefinition?.tools, definition),
       )
-    for (const tool of init.mcpTools ?? []) {
-      if (registry.get(tool.name)) {
-        onError(new Error(`MCP tool name conflicts with a builtin tool: ${tool.name}`))
-        continue
-      }
-      registry.register({
-        name: tool.name,
-        description: tool.description || `MCP tool ${tool.originalName}`,
-        inputSchema: tool.inputSchema,
-        category: tool.category,
-        source: { kind: 'mcp', serverId: tool.serverId },
-        trust: 'third-party',
-        async execute(input, ctx) {
-          const result = await endpoint.request('host.mcp.call', {
-            serverId: tool.serverId,
-            toolName: tool.originalName,
-            input: input as Record<string, unknown>,
-            maxOutputTokens: ctx.maxOutputTokens,
-          })
-          if (result.isError) {
-            throw new ToolError(ToolErrorCode.ExecutionFailed, result.text)
-          }
-          return { content: [{ type: 'text', text: result.text }] }
-        },
-      })
-    }
+    registerMcpToolsInto(registry, init.mcpTools ?? [])
     /** 本轮启用的技能。`prepareTurn` 每轮替换，`load_skill` 按名称读取。 */
     const skillCatalog: SkillCatalogEntry[] = []
     /** 技能目录只读。与 `skillCatalog` 一起每轮更新。 */
@@ -266,6 +297,226 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         ),
       )
     }
+
+    /** 可委派目标的名称与描述（M4-02）；主进程没有这个接口时只列 id。 */
+    async function loadDelegateTargets(agentIds: readonly string[]) {
+      try {
+        const { targets } = await endpoint.request('host.delegate.targets', {
+          agents: [...agentIds],
+        })
+        return targets
+      } catch (error) {
+        if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+        return agentIds.map((id) => ({ id, name: id, description: '' }))
+      }
+    }
+
+    /**
+     * 构造委派子运行的工具与上下文（M4-02）：独立的运行时、工具选择、权限规则、Skills 与系统提示词。
+     * 子运行可以继续委派时，按同一条链登记 `delegate`。
+     */
+    async function buildDelegatedContext(
+      resolved: DelegatedTarget,
+      chain: DelegationChain,
+      handleRef: { current?: AgentRunHandle },
+    ): Promise<RunContext> {
+      const definition = resolved.definition
+      const child = await options.createRuntime(
+        resolved.model,
+        resolved.credential,
+        resolved.modelConfig,
+      )
+      const childRegistry = createToolRegistry()
+      const environment =
+        (await options.registerTools?.(childRegistry, init.workspacePath, init.shell ?? 'auto')) ??
+        {}
+      registerMcpToolsInto(childRegistry, resolved.mcpTools)
+      const skills = [...resolved.skills]
+      const roots = skills.map((skill) => skill.root)
+      if (childRegistry.list().length > 0) {
+        childRegistry.register(
+          createLoadSkillTool(() =>
+            skills.map((skill) => ({
+              name: skill.name,
+              description: skill.description,
+              sha256: skill.sha256,
+              body: skill.body,
+              hasScripts: skill.hasScripts,
+              files: skill.files,
+              ...(skill.filesTruncated ? { filesTruncated: true as const } : {}),
+            })),
+          ),
+        )
+      }
+      const policy = resolveDelegationPolicy(definition.delegation)
+      await registerDelegateTool(childRegistry, policy, chain, handleRef)
+      const specs = childRegistry.specs((tool) => toolSelected(definition.tools, tool))
+      const hasTools = specs.length > 0
+      let rules: readonly PermissionRule[] = [...resolved.permissionRules]
+      const childPermissions = createPermissionEngine({
+        rules: () => rules,
+        guards: [...DEFAULT_PERMISSION_GUARDS],
+        ...(options.caseInsensitive !== undefined
+          ? { caseInsensitive: options.caseInsensitive }
+          : {}),
+      })
+      const childPipeline = hasTools
+        ? createToolPipeline({
+            registry: childRegistry,
+            permissions: childPermissions,
+            approvals: createHostApprovalGate({
+              endpoint,
+              onRule: (rule) => (rules = [...rules, rule]),
+            }),
+            checkpoints: NO_CHECKPOINTS,
+            changes: createHostChangeRecorder(endpoint),
+            workspaceRoot: init.workspacePath,
+            resolvePath: createPathResolver(init.workspacePath, {
+              readOnlyRoots: () => roots,
+            }),
+            log: options.log ?? silentLogger,
+            maxOutputTokens: toolOutputBudget(child.model.profile),
+            createId: options.createId,
+          })
+        : undefined
+      const prompt = buildSystemPrompt({
+        tools: hasTools,
+        environment: {
+          os: operatingSystemName(options.platform ?? process.platform),
+          ...(hasTools && environment.shell ? { shell: environment.shell } : {}),
+          workspacePath: init.workspacePath,
+          date: localDate(now()),
+        },
+        ...(definition.instructions.trim() ? { agentInstructions: definition.instructions } : {}),
+        ...(skills.some((skill) => skill.pinned)
+          ? {
+              skills: skills.map((skill) => ({
+                name: skill.name,
+                description: skill.description,
+                ...(skill.pinned ? { body: pinnedSkillBody(skill.body) } : {}),
+              })),
+            }
+          : {}),
+      })
+      const systemPrompt = `${prompt}\n\n${DELEGATE_RESULT_INSTRUCTION}`
+      return {
+        runtime: child.runtime,
+        model: child.model,
+        limits: definition.limits,
+        systemPrompt,
+        tools: specs,
+        ...(childPipeline ? { toolPipeline: childPipeline } : {}),
+      }
+    }
+
+    /**
+     * 登记 `delegate` 工具（M4-02）：权限 → 校验 → 解析目标 → 创建子运行 → 等待 → 结构化结果。
+     * 未启用委派、没有可委派目标或深度已到上限时不登记，模型看不到这个工具。
+     */
+    async function registerDelegateTool(
+      target: ToolRegistry,
+      policy: ReturnType<typeof resolveDelegationPolicy>,
+      chain: DelegationChain,
+      handleRef: { current?: AgentRunHandle },
+    ): Promise<void> {
+      const maxDepth = Math.min(chain.maxDepth ?? policy.maxDepth, policy.maxDepth)
+      if (!policy.enabled || policy.allowedAgents.length === 0 || chain.depth + 1 > maxDepth) {
+        return
+      }
+      const spec = delegateToolSpec(await loadDelegateTargets(policy.allowedAgents))
+      if (!spec) return
+      let session: DelegationSession | undefined
+      target.register({
+        name: spec.name,
+        description: spec.description,
+        inputSchema: spec.inputSchema as JsonSchema,
+        category: 'delegate',
+        source: { kind: 'builtin' },
+        trust: 'builtin',
+        parallel: true,
+        async execute(raw) {
+          const parsed = DelegateInput.safeParse(raw)
+          if (!parsed.success) {
+            throw new ToolError(
+              ToolErrorCode.InvalidInput,
+              `Invalid delegate input: ${parsed.error.issues
+                .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+                .join('; ')}`,
+            )
+          }
+          const input = parsed.data
+          const parent = handleRef.current
+          if (!parent) {
+            throw new ToolError(ToolErrorCode.ExecutionFailed, 'Delegation is not ready yet.')
+          }
+          session ??= new DelegationSession({ policy, parent, chain })
+          const remaining = parent.remainingLimits
+          const validation = session.validate(input, {
+            ...(remaining ? { parentRemaining: remaining } : {}),
+          })
+          if (!validation.ok) {
+            const problem = validation.issues.find((entry) => entry.severity === 'error')
+            if (problem) {
+              throw new ToolError(problem.code, problem.code, problem.params ?? {})
+            }
+          }
+          let resolved: DelegatedTarget
+          try {
+            resolved = await endpoint.request('host.delegate', { agent: input.agent })
+          } catch (error) {
+            if (error instanceof RpcError) {
+              throw new ToolError(
+                error.code,
+                `Cannot delegate to ${input.agent}: ${error.code}`,
+                error.params ?? {},
+              )
+            }
+            throw error
+          }
+          const childPolicy = resolveDelegationPolicy(resolved.definition.delegation)
+          const childChain: DelegationChain = {
+            agentIds: [...chain.agentIds, resolved.definition.id],
+            depth: chain.depth + 1,
+            maxDepth: Math.min(maxDepth, childPolicy.maxDepth),
+          }
+          const childHandleRef: { current?: AgentRunHandle } = {}
+          const context = await buildDelegatedContext(resolved, childChain, childHandleRef)
+          if (!supervisor) {
+            throw new ToolError(ToolErrorCode.ExecutionFailed, 'The host is not ready.')
+          }
+          const result = await runDelegation({
+            sessionId: init.sessionId,
+            supervisor,
+            parent,
+            session,
+            target: {
+              definition: resolved.definition,
+              context,
+              workspace: { path: init.workspacePath },
+            } satisfies DelegationTarget,
+            input,
+            parentRemaining: remaining ?? {},
+            systemPrompt: context.systemPrompt ?? '',
+            onChildCreated: (created) => (childHandleRef.current = created),
+          })
+          return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+        },
+      })
+    }
+
+    const rootPolicy = resolveDelegationPolicy(agentDefinition?.delegation)
+    const rootHandleRef: { current?: AgentRunHandle } = {}
+    await registerDelegateTool(
+      registry,
+      rootPolicy,
+      {
+        agentIds: agentDefinition ? [agentDefinition.id] : [],
+        depth: 0,
+        maxDepth: rootPolicy.maxDepth,
+      },
+      rootHandleRef,
+    )
+
     /** 真正交给模型的内置 / MCP 工具（计划工具在 `prepareTurn` 里按模式加回）。 */
     const hasTools = registry
       .list()
@@ -418,6 +669,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         ? { restoreFrom: { runId: init.runId, history: init.history, state: init.resume.state } }
         : {}),
     })
+    rootHandleRef.current = run
     return {}
   })
 

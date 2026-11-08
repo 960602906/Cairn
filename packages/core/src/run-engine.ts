@@ -484,6 +484,14 @@ export class RunEngine {
     this.#limits = { ...this.#limits, ...limits } as RunLimits
   }
 
+  /**
+   * 以这个运行的信封发出一条事件（M4-02）：委派事件归在父运行名下，`runId` / `parentRunId` /
+   * `turnId` 与父运行的其他事件一致。载荷由调用方保证符合协议。
+   */
+  emitEvent<T extends EventType>(type: T, payload: EventPayload<T>): void {
+    this.#emit(type, payload)
+  }
+
   /** 当前轮次的剩余限额；空闲时返回完整限额。 */
   get remainingLimits(): Partial<RunLimits> {
     const limits = this.#limits

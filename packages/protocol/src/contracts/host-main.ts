@@ -258,6 +258,40 @@ export const MainForHost = defineSide({
       }),
       result: z.object({ text: z.string(), isError: z.boolean() }),
     },
+    /**
+     * 解析一次委派的目标（M4-02，设计 §5）：主进程给出目标 Agent 的已发布定义、模型、凭据、模型配置、
+     * 权限规则、Skills、MCP 工具与工作区方式。凭据只经这条私有接口传回宿主内存，不写入事件与日志。
+     * 目标不存在或未发布时以 `delegation.agent_not_published` 拒绝。
+     */
+    'host.delegate': {
+      params: z.object({ agent: Id }),
+      result: z.object({
+        definition: AgentDefinition,
+        model: ModelRef,
+        credential: z.object({ apiKey: z.string().min(1) }).optional(),
+        modelConfig: HostModelConfig.optional(),
+        permissionRules: z.array(PermissionRule),
+        skills: z.array(SkillCatalogEntry),
+        mcpTools: z.array(McpToolExposure),
+        workspace: z.enum(['shared', 'isolated']),
+      }),
+    },
+    /**
+     * 列出可委派目标的名称与描述（M4-02）：宿主用它在 `delegate` 工具说明里帮助模型选择目标。
+     * 只返回已发布的 Agent；省略或没有结果时工具说明只列 id。
+     */
+    'host.delegate.targets': {
+      params: z.object({ agents: z.array(Id).max(50) }),
+      result: z.object({
+        targets: z.array(
+          z.object({
+            id: Id,
+            name: z.string().min(1),
+            description: z.string(),
+          }),
+        ),
+      }),
+    },
   },
   events: {},
 })

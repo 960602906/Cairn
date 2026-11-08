@@ -139,6 +139,11 @@ export interface ToolDefinition<I = unknown> {
   readonly source: ToolSource
   readonly trust: ToolTrust
   /**
+   * 是否允许在一步中与其他工具并行执行（Runtime §7）。省略时按类别判断：`read` 类可并行。
+   * `delegate` 需要与其它只读工具并行（M4-02）。
+   */
+  readonly parallel?: boolean
+  /**
    * 路径与命令规范化（Runtime §7 第 4 阶段）：把路径解析为工作区内的路径、解析命令，给出权限判定用的
    * 目标。越界等问题抛出 `ToolError`。省略时参数原样使用，没有目标。
    */
@@ -245,7 +250,7 @@ export function createToolRegistry(): ToolRegistry {
           name: d.name,
           description: d.description,
           inputSchema: d.inputSchema,
-          ...(d.category === 'read' ? { parallel: true } : {}),
+          ...((d.parallel ?? d.category === 'read') ? { parallel: true } : {}),
         }))
     },
 

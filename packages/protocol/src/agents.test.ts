@@ -40,6 +40,40 @@ describe('AgentDraftFields', () => {
   it('rejects an unknown permission mode', () => {
     expect(AgentDraftFields.safeParse({ ...fields, permissions: 'nope' }).success).toBe(false)
   })
+
+  it('accepts an optional delegation policy and validates it', () => {
+    expect(AgentDraftFields.safeParse({ ...fields, delegation: undefined }).success).toBe(true)
+    expect(
+      AgentDraftFields.safeParse({
+        ...fields,
+        delegation: {
+          enabled: true,
+          allowedAgents: ['builtin.reviewer'],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
+      }).success,
+    ).toBe(true)
+    expect(
+      AgentDraftFields.safeParse({
+        ...fields,
+        delegation: {
+          enabled: true,
+          allowedAgents: [],
+          maxDepth: 9,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
+      }).success,
+    ).toBe(false)
+  })
 })
 
 describe('AgentDraftInput', () => {

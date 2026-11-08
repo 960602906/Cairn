@@ -13,6 +13,7 @@ import type {
   CanonicalMessage,
   ContentPart,
   EventPayload,
+  EventType,
   RunLimits,
   RunMode,
   RunState,
@@ -81,6 +82,11 @@ export interface CreateRunInput {
   readonly mode: RunMode
   readonly limitsOverride?: Partial<RunLimits>
   readonly restoreFrom?: RunRestoreData
+  /**
+   * 这个运行的上下文（M4-01/M4-02）：子运行由委派直接给出运行时、模型、系统提示词与工具，
+   * 省略时由 `createRunContext` 创建。
+   */
+  readonly context?: RunContext
 }
 
 export interface AgentRunHandle {
@@ -101,6 +107,8 @@ export interface AgentRunHandle {
   setAwaitingChildren(waiting: boolean): void
   /** 将子运行产生的用量累加到父运行当前轮次（ADR-0030）。 */
   recordChildUsage(usage: TokenUsage): void
+  /** 以这个运行的信封发出一条事件（M4-02）：委派事件归在父运行名下。 */
+  emitEvent<T extends EventType>(type: T, payload: EventPayload<T>): void
   /** 订阅此后发出的事件（创建时的 run.created 请用 RunSupervisor.onEvent 接收）。 */
   onEvent(listener: (event: RunEvent) => void): Unsubscribe
   dispose(reason?: string): Promise<void>
@@ -316,6 +324,10 @@ class RunHandle implements AgentRunHandle {
     this.#engine.recordChildUsage(usage)
   }
 
+  emitEvent<T extends EventType>(type: T, payload: EventPayload<T>): void {
+    this.#engine.emitEvent(type, payload)
+  }
+
   resolveApproval(): void {
     throw new RunEngineError(RunSupervisorErrorCode.Unsupported)
   }
@@ -366,7 +378,8 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
       }
 
       const runListeners = new Set<(event: RunEvent) => void>()
-      const ctx = options.createRunContext ? await options.createRunContext(init) : {}
+      const ctx =
+        init.context ?? (options.createRunContext ? await options.createRunContext(init) : {})
       const runtime = ctx.runtime ?? options.runtime
       const model = ctx.model ?? options.model
       if (!runtime || !model) {

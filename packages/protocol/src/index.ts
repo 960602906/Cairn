@@ -4,6 +4,7 @@
  */
 export * from './common.js'
 export * from './agents.js'
+export * from './delegation.js'
 export * from './changes.js'
 export * from './checkpoints.js'
 export * from './events.js'

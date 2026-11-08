@@ -35,6 +35,7 @@ import {
   RpcError,
   type ErrorInfo,
   type HostModelConfig,
+  type ModelRef,
   type PermissionRule,
   type ShellPreference,
   type SkillCatalogEntry,
@@ -74,6 +75,25 @@ export type HostInit = Omit<
 export interface HostCheckpointLocation {
   readonly gitDir: string
   readonly ref: string
+}
+
+/** `host.delegate` 解析出的目标（M4-02）：凭据只留在宿主内存。 */
+export interface HostDelegationTarget {
+  readonly definition: AgentDefinition
+  readonly model: ModelRef
+  readonly credential?: { readonly apiKey: string }
+  readonly modelConfig?: HostModelConfig
+  readonly permissionRules: PermissionRule[]
+  readonly skills: SkillCatalogEntry[]
+  readonly mcpTools: McpToolExposure[]
+  readonly workspace: 'shared' | 'isolated'
+}
+
+/** `delegate` 工具说明里列出的可委派目标（M4-02）。 */
+export interface HostDelegateTargetInfo {
+  readonly id: string
+  readonly name: string
+  readonly description: string
 }
 
 export type HostState = 'starting' | 'running' | 'stopping' | 'stopped' | 'crashed'
@@ -195,6 +215,19 @@ export interface HostSupervisorOptions {
    * 内置编程助手的行为运行（全部工具、没有额外指令）。
    */
   readonly resolveAgentDefinition?: (agent: AgentDefinitionRef) => AgentDefinition | undefined
+  /**
+   * 解析一次委派的目标 Agent（M4-02）：已发布定义、模型、凭据、模型配置、权限规则、Skills、MCP 与
+   * 工作区方式。返回 undefined 表示目标不存在或未发布。省略时宿主的 `delegate` 报 `run.unsupported`。
+   */
+  readonly resolveDelegation?: (
+    sessionId: string,
+    agentId: string,
+  ) => HostDelegationTarget | undefined | Promise<HostDelegationTarget | undefined>
+  /** 可委派目标的名称与描述（M4-02），用于 `delegate` 工具说明。省略时宿主只列 id。 */
+  readonly resolveDelegateTargets?: (
+    sessionId: string,
+    agentIds: readonly string[],
+  ) => readonly HostDelegateTargetInfo[]
   /** 执行宿主的 `host.mcp.call`（M3-09）。省略时报 `run.unsupported`。 */
   readonly callMcpTool?: (
     sessionId: string,
@@ -351,6 +384,17 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         if (!options.recordChange) throw new RpcError('run.unsupported')
         return options.recordChange(sessionId, runId, input)
       })
+
+      endpoint.handle('host.delegate', async ({ agent }) => {
+        if (!options.resolveDelegation) throw new RpcError('run.unsupported')
+        const target = await options.resolveDelegation(sessionId, agent)
+        if (!target) throw new RpcError('delegation.agent_not_published', { agent })
+        return target
+      })
+
+      endpoint.handle('host.delegate.targets', ({ agents }) => ({
+        targets: [...(options.resolveDelegateTargets?.(sessionId, agents) ?? [])],
+      }))
 
       endpoint.handle('host.approval.request', async (request) => {
         if (!options.requestApproval) throw new RpcError('run.unsupported')
