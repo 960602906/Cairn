@@ -63,6 +63,7 @@ const writeFile: ToolDefinition<{ path: string }> = {
     properties: { path: { type: 'string' } },
     required: ['path'],
   },
+  normalize: (input) => Promise.resolve({ input, targets: { paths: [input.path] } }),
   execute: () => Promise.resolve({ content: text('wrote') }),
 }
 
@@ -676,6 +677,55 @@ describe('host delegation permissions (M4-03)', () => {
     await h.waitFor('run.child.completed')
 
     expect(requests.map((request) => request.tool.name)).toEqual(['delegate'])
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.denied' },
+    })
+  })
+
+  it('子 Agent 的路径策略阻止写测试目录之外的文件', async () => {
+    const tester = agent('builtin.tester', {
+      permissions: 'auto',
+      pathPolicy: { write: ['**/*.{test,spec}.*', '**/tests/**'] },
+    })
+    const requests: HostApprovalRequest[] = []
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...delegation, allowedAgents: ['builtin.tester'] },
+      }),
+      targets: [{ id: tester.id, definition: tester }],
+      permissionRules: presetRules('auto'),
+      approval: (request) => {
+        requests.push(request)
+        return { decision: 'allow_once' }
+      },
+      host: { registerTools },
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.tester'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'write_file', input: { path: 'tests/a.ts' } },
+              { kind: 'tool', name: 'write_file', input: { path: 'src/a.ts' } },
+              { kind: 'reply', text: '{"summary":"ok"}' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    expect(requests.map((request) => request.tool.name)).toEqual(['delegate'])
+    expect(
+      h.events
+        .filter((event) => event.type === 'tool.requested')
+        .map((event) => JSON.stringify(event.payload))
+        .join('\n'),
+    ).toContain('tests/a.ts')
+    expect(h.events.filter((event) => event.type === 'tool.failed')).toHaveLength(1)
     expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
       error: { code: 'tool.denied' },
     })

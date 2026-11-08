@@ -27,6 +27,8 @@ export const PermissionReasonCode = {
   ThirdPartyTool: 'permission.third_party_tool',
   /** 委派给可写入的 Agent 默认需要审批（M4-03）。 */
   DelegationTarget: 'permission.delegation_target_requires_approval',
+  /** Agent 的路径策略不允许这次写入（M4-11）。 */
+  AgentPathDenied: 'permission.agent_path_denied',
 } as const
 
 /** 强制拦截的结果。 */

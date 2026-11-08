@@ -74,6 +74,27 @@ describe('AgentDraftFields', () => {
       }).success,
     ).toBe(false)
   })
+
+  it('accepts an optional write path policy', () => {
+    expect(
+      AgentDraftFields.safeParse({
+        ...fields,
+        pathPolicy: { write: ['**/*.test.ts', 'tests/**'] },
+      }).success,
+    ).toBe(true)
+    expect(
+      AgentDraftFields.safeParse({
+        ...fields,
+        pathPolicy: { write: [] },
+      }).success,
+    ).toBe(true)
+    expect(
+      AgentDraftFields.safeParse({
+        ...fields,
+        pathPolicy: { write: [1] },
+      }).success,
+    ).toBe(false)
+  })
 })
 
 describe('AgentDraftInput', () => {

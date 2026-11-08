@@ -9,8 +9,8 @@
 import { randomBytes } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import {
-  BUILTIN_CODER,
-  BUILTIN_CODER_ID,
+  BUILTIN_AGENTS,
+  builtinAgent,
   BUILTIN_TOOL_CATALOG,
   buildSystemPrompt,
   estimateTokens,
@@ -131,12 +131,19 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
   /** 校验上下文：内置工具、已配置的 MCP 服务、当前连接的工具与已安装技能。 */
   function validationContext(): AgentValidationContext {
     const skills = options.skills.list({}).skills
+    const records = storage.agents.list()
     return {
       knownTools: BUILTIN_TOOL_CATALOG.map((tool) => tool.name),
       mcpServers: storage.mcpServers.list().map((server) => server.serverId),
       mcpTools: options.mcp.exposures().map((tool) => tool.name),
       skillNames: skills.map((skill) => skill.name),
       hasModel: (model) => options.models.has(model),
+      publishedAgentIds: [
+        ...BUILTIN_AGENTS.map((agent) => agent.id),
+        ...records
+          .filter((record) => storage.agents.versions(record.agentId).length > 0)
+          .map((record) => record.agentId),
+      ],
     }
   }
 
@@ -151,8 +158,9 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
   }
 
   function publishedOf(agentId: string, version?: number): AgentDefinition | undefined {
-    if (agentId === BUILTIN_CODER_ID) {
-      return version === undefined || version === BUILTIN_CODER.version ? BUILTIN_CODER : undefined
+    const builtin = builtinAgent(agentId)
+    if (builtin) {
+      return version === undefined || version === builtin.version ? builtin : undefined
     }
     const record = storage.agents.get(agentId)
     if (!record) return undefined
@@ -164,23 +172,24 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
   }
 
   function draftOf(agentId: string): AgentDraft | undefined {
-    if (agentId === BUILTIN_CODER_ID) return undefined
+    if (builtinAgent(agentId)) return undefined
     const record = storage.agents.get(agentId)
     if (!record || record.draft === undefined) return undefined
     return AgentDraft.parse(record.draft)
   }
 
   function detailOf(agentId: string, version?: number): AgentDetail {
-    if (agentId === BUILTIN_CODER_ID) {
-      if (version !== undefined && version !== BUILTIN_CODER.version) {
+    const builtin = builtinAgent(agentId)
+    if (builtin) {
+      if (version !== undefined && version !== builtin.version) {
         throw new RpcError(AgentServiceErrorCode.NotFound, { agentId, version })
       }
       return {
         agentId,
         source: 'builtin',
         archived: false,
-        published: BUILTIN_CODER,
-        validation: validate(BUILTIN_CODER),
+        published: builtin,
+        validation: validate(builtin),
       }
     }
     const record = recordOf(agentId)
@@ -208,7 +217,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
   ): string {
     const agentId =
       requestedId ?? generatedId(fields.name, source === 'imported' ? 'imported' : 'user', createId)
-    if (agentId === BUILTIN_CODER_ID) throw new RpcError(AgentServiceErrorCode.Readonly)
+    if (builtinAgent(agentId)) throw new RpcError(AgentServiceErrorCode.Readonly)
     if (!storage.agents.get(agentId)) {
       storage.agents.create({ agentId, source, draft: { id: agentId, ...fields } })
     } else {
@@ -218,19 +227,20 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
   }
 
   function summaryOf(agentId: string): AgentSummary {
-    if (agentId === BUILTIN_CODER_ID) {
+    const builtin = builtinAgent(agentId)
+    if (builtin) {
       return {
         agentId,
-        name: BUILTIN_CODER.name,
-        description: BUILTIN_CODER.description,
-        icon: BUILTIN_CODER.icon,
-        color: BUILTIN_CODER.color,
+        name: builtin.name,
+        description: builtin.description,
+        icon: builtin.icon,
+        color: builtin.color,
         source: 'builtin',
         archived: false,
         status: 'published',
-        version: BUILTIN_CODER.version,
+        version: builtin.version,
         hasDraft: false,
-        modelMode: BUILTIN_CODER.model.mode,
+        modelMode: builtin.model.mode,
         updatedAt: 0,
       }
     }
@@ -303,6 +313,8 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     'tools',
     'skills',
     'permissions',
+    'pathPolicy',
+    'delegation',
     'limits',
     'context',
     'memory',
@@ -347,7 +359,10 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
 
   return {
     list(input) {
-      const all = [BUILTIN_CODER_ID, ...storage.agents.list().map((record) => record.agentId)]
+      const all = [
+        ...BUILTIN_AGENTS.map((agent) => agent.id),
+        ...storage.agents.list().map((record) => record.agentId),
+      ]
       const query = input.query?.trim().toLowerCase()
       const agents = all
         .map(summaryOf)
@@ -389,7 +404,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     },
 
     publish({ agentId }) {
-      if (agentId === BUILTIN_CODER_ID) throw new RpcError(AgentServiceErrorCode.Readonly)
+      if (builtinAgent(agentId)) throw new RpcError(AgentServiceErrorCode.Readonly)
       const record = recordOf(agentId)!
       const draft = draftOf(agentId)
       if (!draft) throw new RpcError(AgentServiceErrorCode.NoDraft, { agentId })
@@ -433,21 +448,21 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     },
 
     archive({ agentId }) {
-      if (agentId === BUILTIN_CODER_ID) throw new RpcError(AgentServiceErrorCode.Readonly)
+      if (builtinAgent(agentId)) throw new RpcError(AgentServiceErrorCode.Readonly)
       recordOf(agentId)
       storage.agents.setArchived(agentId, true)
       return detailOf(agentId)
     },
 
     unarchive({ agentId }) {
-      if (agentId === BUILTIN_CODER_ID) throw new RpcError(AgentServiceErrorCode.Readonly)
+      if (builtinAgent(agentId)) throw new RpcError(AgentServiceErrorCode.Readonly)
       recordOf(agentId)
       storage.agents.setArchived(agentId, false)
       return detailOf(agentId)
     },
 
     delete({ agentId }) {
-      if (agentId === BUILTIN_CODER_ID) throw new RpcError(AgentServiceErrorCode.Readonly)
+      if (builtinAgent(agentId)) throw new RpcError(AgentServiceErrorCode.Readonly)
       recordOf(agentId)
       if (usageOf(agentId).size > 0) throw new RpcError(AgentServiceErrorCode.InUse, { agentId })
       storage.agents.remove(agentId)
@@ -455,15 +470,16 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     },
 
     versions({ agentId }) {
-      if (agentId === BUILTIN_CODER_ID) {
+      const builtin = builtinAgent(agentId)
+      if (builtin) {
         return {
           versions: [
             {
-              version: 1,
+              version: builtin.version,
               publishedAt: 0,
-              name: BUILTIN_CODER.name,
-              description: BUILTIN_CODER.description,
-              instructionsBytes: Buffer.byteLength(BUILTIN_CODER.instructions, 'utf8'),
+              name: builtin.name,
+              description: builtin.description,
+              instructionsBytes: Buffer.byteLength(builtin.instructions, 'utf8'),
               usedBySessions: usageOf(agentId).get(1) ?? 0,
             },
           ],
@@ -509,6 +525,8 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
         tools: fields.tools,
         skills: fields.skills,
         permissions: fields.permissions,
+        ...(fields.pathPolicy ? { pathPolicy: fields.pathPolicy } : {}),
+        ...(fields.delegation ? { delegation: fields.delegation } : {}),
         limits: fields.limits,
         context: fields.context,
         memory: fields.memory,

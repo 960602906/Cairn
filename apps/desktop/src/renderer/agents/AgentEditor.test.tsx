@@ -375,6 +375,97 @@ describe('AgentEditor sections and actions', () => {
     fireEvent.click(screen.getByRole('button', { name: '生效配置' }))
     expect(await screen.findByText('prompt')).toBeDefined()
   })
+
+  it('edits the delegation policy and lists only published agents', async () => {
+    const saved: { delegation?: unknown }[] = []
+    const store = makeStore({
+      'agent.get': () => mockDetail,
+      'agent.list': () => ({
+        agents: [
+          {
+            agentId: 'builtin.explorer',
+            name: { 'zh-CN': '代码探索员', 'en-US': 'Explorer' },
+            description: {},
+            icon: 'sparkles',
+            color: 'agent-green',
+            source: 'builtin',
+            archived: false,
+            status: 'published',
+            version: 1,
+            hasDraft: false,
+            modelMode: 'inherit',
+            updatedAt: 0,
+          },
+          {
+            agentId: 'builtin.reviewer',
+            name: { 'zh-CN': '代码审查员', 'en-US': 'Reviewer' },
+            description: {},
+            icon: 'shield',
+            color: 'agent-amber',
+            source: 'builtin',
+            archived: false,
+            status: 'published',
+            version: 1,
+            hasDraft: false,
+            modelMode: 'inherit',
+            updatedAt: 0,
+          },
+          {
+            agentId: 'user.draft-only',
+            name: { 'zh-CN': '草稿 Agent', 'en-US': 'Draft only' },
+            description: {},
+            source: 'user',
+            archived: false,
+            status: 'draft',
+            version: 0,
+            hasDraft: true,
+            modelMode: 'inherit',
+            updatedAt: 0,
+          },
+        ],
+      }),
+      'agent.saveDraft': (params) => {
+        saved.push((params as { definition: { delegation?: unknown } }).definition)
+        return mockDetail
+      },
+    })
+    await store.getState().refreshAgents()
+    renderEditor(store)
+    await screen.findByText('测试助手')
+
+    fireEvent.click(screen.getByRole('button', { name: /^委派/ }))
+    expect(screen.getByText(/未启用委派/)).toBeDefined()
+    expect(screen.queryByRole('checkbox', { name: /代码探索员/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole('switch', { name: '允许委派' }))
+    expect(screen.getByRole('checkbox', { name: /代码探索员/ })).toBeDefined()
+    expect(screen.getByRole('checkbox', { name: /代码审查员/ })).toBeDefined()
+    expect(screen.queryByRole('checkbox', { name: /草稿 Agent/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /代码探索员/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /代码审查员/ }))
+    fireEvent.change(screen.getByLabelText('最大委派深度'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('每轮最多子任务'), { target: { value: '4' } })
+    fireEvent.change(screen.getByLabelText('最多并行子任务'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('子任务预算比例'), { target: { value: '0.4' } })
+    fireEvent.change(screen.getByLabelText('默认工作区'), { target: { value: 'isolated' } })
+    fireEvent.change(screen.getByLabelText('合并审阅'), {
+      target: { value: 'parent-then-user' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+    await waitFor(() => expect(saved).toHaveLength(1))
+    expect(saved[0]?.delegation).toEqual({
+      enabled: true,
+      allowedAgents: ['builtin.explorer', 'builtin.reviewer'],
+      maxDepth: 2,
+      maxChildrenPerTurn: 4,
+      maxParallel: 2,
+      childBudgetShare: 0.4,
+      defaultWorkspace: 'isolated',
+      mergeReview: 'parent-then-user',
+    })
+  })
 })
 
 const validationDetail: AgentDetail = {
@@ -580,6 +671,42 @@ describe('AgentEditor edge paths', () => {
     expect(screen.getByText('还没有配置 MCP 服务。')).toBeDefined()
     fireEvent.click(screen.getByRole('checkbox', { name: '读取' }))
     fireEvent.click(screen.getByRole('switch', { name: '全部已启用的 Skills' }))
+  })
+
+  it('shows delegation validation errors and the empty target state', async () => {
+    const invalid: AgentDetail = {
+      ...mockDetail,
+      draft: {
+        ...mockDetail.draft!,
+        delegation: {
+          enabled: true,
+          allowedAgents: ['builtin.missing'],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'auto',
+          mergeReview: 'user',
+        },
+      },
+      validation: {
+        ok: false,
+        errors: [
+          {
+            path: 'delegation.allowedAgents.0',
+            code: 'delegation_agent_not_published',
+            params: { agent: 'builtin.missing' },
+          },
+        ],
+        warnings: [],
+      },
+    }
+    const store = makeStore({ 'agent.get': () => invalid })
+    renderEditor(store, { initial: invalid })
+    await screen.findByText('测试助手')
+    fireEvent.click(screen.getByRole('button', { name: /^委派/ }))
+    expect(screen.getByText('还没有可委派的已发布 Agent。')).toBeDefined()
+    expect(screen.getByText('找不到已发布的 Agent builtin.missing')).toBeDefined()
   })
 
   it('falls back to published fields when there is no draft', async () => {

@@ -3,6 +3,7 @@ import type { AgentDefinition, AgentValidationResult } from '@cairn/protocol'
 import {
   AGENT_SECTIONS,
   defaultDraft,
+  defaultDelegationPolicy,
   draftFieldsOf,
   issuesAt,
   localized,
@@ -26,6 +27,8 @@ describe('agents/model', () => {
       expect(sectionOf('tools.allow')).toBe('capabilities')
       expect(sectionOf('skills.allow.0')).toBe('capabilities')
       expect(sectionOf('permissions')).toBe('permissions')
+      expect(sectionOf('pathPolicy.write')).toBe('permissions')
+      expect(sectionOf('delegation.allowedAgents')).toBe('delegation')
       expect(sectionOf('limits.maxStepsPerTurn')).toBe('limits')
       expect(sectionOf('context.includeProjectInstructions')).toBe('context')
       expect(sectionOf('memory.scopes')).toBe('memory')
@@ -94,6 +97,12 @@ describe('agents/model', () => {
       expect(draft.skills.allow).toEqual(['*'])
       expect(draft.context.includeProjectInstructions).toBe(true)
       expect(draft.context.compaction).toBe('auto')
+      expect(draft.delegation).toEqual(defaultDelegationPolicy())
+      expect(draft.delegation?.enabled).toBe(false)
+      expect(draft.delegation?.maxDepth).toBe(1)
+      expect(draft.delegation?.maxChildrenPerTurn).toBe(6)
+      expect(draft.delegation?.maxParallel).toBe(3)
+      expect(draft.delegation?.childBudgetShare).toBe(0.5)
     })
   })
 
@@ -116,9 +125,22 @@ describe('agents/model', () => {
         tools: { allow: ['read'] },
         skills: { allow: ['s1'] },
         permissions: 'auto',
+        pathPolicy: { write: ['tests/**'] },
+        delegation: {
+          enabled: true,
+          allowedAgents: ['builtin.reviewer'],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
         limits: { maxStepsPerTurn: 5 },
         context: { includeProjectInstructions: false, compaction: 'off' },
         memory: { scopes: ['session'], write: 'never' },
+        inputSchema: { type: 'object' },
+        outputSchema: { type: 'object' },
         tags: ['helper'],
       }
       const fields = draftFieldsOf(def)
@@ -132,9 +154,22 @@ describe('agents/model', () => {
         tools: { allow: ['read'] },
         skills: { allow: ['s1'] },
         permissions: 'auto',
+        pathPolicy: { write: ['tests/**'] },
+        delegation: {
+          enabled: true,
+          allowedAgents: ['builtin.reviewer'],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
         limits: { maxStepsPerTurn: 5 },
         context: { includeProjectInstructions: false, compaction: 'off' },
         memory: { scopes: ['session'], write: 'never' },
+        inputSchema: { type: 'object' },
+        outputSchema: { type: 'object' },
         tags: ['helper'],
       })
       expect('version' in fields).toBe(false)
@@ -164,6 +199,14 @@ describe('agents/model', () => {
 
       const c = { ...a, model: { mode: 'fixed' as const } }
       expect(sectionChanged(a, c, 'model')).toBe(true)
+
+      const d = {
+        ...a,
+        delegation: { ...defaultDelegationPolicy(), enabled: true },
+        pathPolicy: { write: ['tests/**'] },
+      }
+      expect(sectionChanged(a, d, 'delegation')).toBe(true)
+      expect(sectionChanged(a, d, 'permissions')).toBe(true)
     })
   })
 })

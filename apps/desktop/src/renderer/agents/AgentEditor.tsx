@@ -13,8 +13,10 @@ import {
   AGENT_INSTRUCTIONS_MAX_CHARS,
   type AgentDraftFields,
   type AgentDetail,
+  type AgentSummary,
   type AgentValidationIssue,
   type AgentValidationResult,
+  type DelegationPolicy,
   type LocalizedText,
 } from '@cairn/protocol'
 import { AGENT_COLOR_NAMES, AGENT_ICON_NAMES, AgentAvatar } from './AgentAvatar.js'
@@ -22,8 +24,10 @@ import {
   AGENT_SECTIONS,
   type AgentSection,
   defaultDraft,
+  defaultDelegationPolicy,
   draftFieldsOf,
   issuesAt,
+  localized,
   sectionChanged,
   sectionMarks,
 } from './model.js'
@@ -199,6 +203,169 @@ function SectionNav({
         {t('effective.title')}
       </button>
     </nav>
+  )
+}
+
+function DelegationSection({
+  fields,
+  agents,
+  validation,
+  onChange,
+}: {
+  readonly fields: AgentDraftFields
+  readonly agents: readonly AgentSummary[]
+  readonly validation: AgentValidationResult | undefined
+  readonly onChange: (next: AgentDraftFields) => void
+}) {
+  const { t, i18n } = useTranslation('agents')
+  const policy = fields.delegation ?? defaultDelegationPolicy()
+  const setPolicy = (patch: Partial<DelegationPolicy>) =>
+    onChange(update(fields, 'delegation', { ...policy, ...patch }))
+  const published = agents.filter((agent) => agent.status === 'published' && !agent.archived)
+  const otherErrors = issuesAt(validation, 'delegation', 'errors').filter(
+    (issue) => !issue.path.startsWith('delegation.allowedAgents'),
+  )
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <span className="block text-[13px] font-medium text-fg2">{t('delegation.enabled')}</span>
+          <span className="mt-0.5 block text-note text-muted">{t('delegation.enabledHint')}</span>
+        </div>
+        <Switch
+          aria-label={t('delegation.enabled')}
+          checked={policy.enabled}
+          onCheckedChange={(enabled) => setPolicy({ enabled })}
+        />
+      </div>
+
+      {!policy.enabled ? (
+        <p className="rounded-card bg-raise px-3.5 py-3 text-note text-muted">
+          {t('delegation.disabledHint')}
+        </p>
+      ) : (
+        <>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-[13px] text-fg2">{t('delegation.allowed')}</legend>
+            <p className="text-note text-muted">{t('delegation.allowedHint')}</p>
+            {published.length === 0 ? (
+              <p className="text-note text-faint">{t('delegation.noAgents')}</p>
+            ) : (
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {published.map((agent) => {
+                  const checked = policy.allowedAgents.includes(agent.agentId)
+                  return (
+                    <label
+                      key={agent.agentId}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-2 rounded-item px-2.5 py-2 text-ui',
+                        checked ? 'bg-accent-soft' : 'bg-raise',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setPolicy({
+                            allowedAgents: toggleInList(policy.allowedAgents, agent.agentId),
+                          })
+                        }
+                      />
+                      <AgentAvatar
+                        icon={agent.icon}
+                        color={agent.color}
+                        size={22}
+                        className="shrink-0"
+                      />
+                      <span className="min-w-0 flex-1 truncate">
+                        {localized(agent.name, i18n.language, agent.agentId)}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+            <Issues
+              list={issuesAt(validation, 'delegation.allowedAgents', 'errors')}
+              tone="error"
+            />
+          </fieldset>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(
+              [
+                ['maxDepth', 'delegation.maxDepth', 0, 3],
+                ['maxChildrenPerTurn', 'delegation.maxChildren', 1, 12],
+                ['maxParallel', 'delegation.maxParallel', 1, 8],
+              ] as const
+            ).map(([key, label, min, max]) => (
+              <label key={key} className="block">
+                <span className="mb-1 block text-[13px] text-fg2">{t(label)}</span>
+                <input
+                  type="number"
+                  min={min}
+                  max={max}
+                  className={inputClass}
+                  value={policy[key]}
+                  onChange={(e) => setPolicy({ [key]: Number(e.target.value) })}
+                />
+              </label>
+            ))}
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-fg2">{t('delegation.budgetShare')}</span>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                className={inputClass}
+                value={policy.childBudgetShare}
+                onChange={(e) => setPolicy({ childBudgetShare: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-fg2">{t('delegation.workspace')}</span>
+              <select
+                className={inputClass}
+                value={policy.defaultWorkspace}
+                onChange={(e) =>
+                  setPolicy({
+                    defaultWorkspace: e.target.value as DelegationPolicy['defaultWorkspace'],
+                  })
+                }
+              >
+                {(['auto', 'shared', 'isolated'] as const).map((value) => (
+                  <option key={value} value={value}>
+                    {t(`delegation.workspace.${value}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-fg2">{t('delegation.mergeReview')}</span>
+              <select
+                className={inputClass}
+                value={policy.mergeReview}
+                onChange={(e) =>
+                  setPolicy({ mergeReview: e.target.value as DelegationPolicy['mergeReview'] })
+                }
+              >
+                {(['user', 'parent-then-user'] as const).map((value) => (
+                  <option key={value} value={value}>
+                    {t(`delegation.mergeReview.${value}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <Issues list={otherErrors} tone="error" />
+          <Issues list={issuesAt(validation, 'delegation', 'warnings')} tone="warn" />
+        </>
+      )}
+    </section>
   )
 }
 
@@ -802,6 +969,14 @@ export function AgentEditor({
                   </label>
                 ))}
               </section>
+            )}
+            {view === 'edit' && section === 'delegation' && (
+              <DelegationSection
+                fields={fields}
+                agents={store.agents}
+                validation={validation}
+                onChange={setFields}
+              />
             )}
             {view === 'edit' && section === 'limits' && (
               <section className="flex flex-col gap-3">

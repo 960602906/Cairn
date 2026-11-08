@@ -89,6 +89,19 @@ export const AgentContextPolicy = z
   .strict()
 export type AgentContextPolicy = z.infer<typeof AgentContextPolicy>
 
+/**
+ * Agent 级路径策略（M4-11）：在权限预设之外进一步收窄可写路径。
+ *
+ * `write` 是相对工作区的 glob 白名单；给出时，写类工具只能修改匹配的路径，其余一律拒绝。
+ * 省略或空数组表示不额外限制。只读 Agent 仍由 `permissions: 'read-only'` 强制。
+ */
+export const AgentPathPolicy = z
+  .object({
+    write: z.array(z.string().min(1)).max(100).optional(),
+  })
+  .strict()
+export type AgentPathPolicy = z.infer<typeof AgentPathPolicy>
+
 /** 指令长度上限：超过会挤占上下文，保存时报错。 */
 export const AGENT_INSTRUCTIONS_MAX_CHARS = 64_000
 
@@ -104,6 +117,8 @@ const draftFields = {
   skills: AgentSkillSelection,
   /** 权限预设：只读 / 询问 / 自动。 */
   permissions: PermissionMode,
+  /** 额外的路径白名单；省略时不限制。 */
+  pathPolicy: AgentPathPolicy.optional(),
   limits: RunLimits,
   context: AgentContextPolicy,
   memory: AgentMemoryPolicy,

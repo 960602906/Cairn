@@ -5,6 +5,16 @@ import {
   type SkillCatalogEntry,
 } from '@cairn/protocol'
 import {
+  BUILTIN_AGENTS,
+  BUILTIN_CODER,
+  BUILTIN_CODER_ID,
+  BUILTIN_EXPLORER,
+  BUILTIN_EXPLORER_ID,
+  BUILTIN_REVIEWER,
+  BUILTIN_REVIEWER_ID,
+  BUILTIN_TESTER,
+  BUILTIN_TESTER_ID,
+  builtinAgent,
   selectSkills,
   skillSelected,
   toolSelected,
@@ -239,5 +249,136 @@ describe('validateAgentDefinition', () => {
       context(),
     )
     expect(result).toEqual({ ok: true, errors: [], warnings: [] })
+  })
+
+  it('requires at least one published target when delegation is enabled', () => {
+    const required = validateAgentDefinition(
+      {
+        ...baseFields(),
+        delegation: {
+          enabled: true,
+          allowedAgents: [],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
+      },
+      context({ publishedAgentIds: [] }),
+    )
+    expect(required.errors).toContainEqual({
+      path: 'delegation.allowedAgents',
+      code: 'delegation_agents_required',
+    })
+
+    const unpublished = validateAgentDefinition(
+      {
+        ...baseFields(),
+        delegation: {
+          enabled: true,
+          allowedAgents: ['user.draft-only'],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
+      },
+      context({ publishedAgentIds: [BUILTIN_REVIEWER_ID] }),
+    )
+    expect(unpublished.errors).toContainEqual({
+      path: 'delegation.allowedAgents.0',
+      code: 'delegation_agent_not_published',
+      params: { agent: 'user.draft-only' },
+    })
+
+    const withoutPublishedContext = validateAgentDefinition(
+      {
+        ...baseFields(),
+        delegation: {
+          enabled: true,
+          allowedAgents: ['user.unknown'],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
+      },
+      context(),
+    )
+    expect(withoutPublishedContext.ok).toBe(true)
+  })
+})
+
+describe('builtin agents (M4-11)', () => {
+  const context: AgentValidationContext = {
+    knownTools: ['read_file', 'list_dir', 'search', 'write_file', 'edit_file', 'run_command'],
+    mcpServers: [],
+    mcpTools: [],
+    skillNames: [],
+    hasModel: () => false,
+    publishedAgentIds: BUILTIN_AGENTS.map((agent) => agent.id),
+  }
+
+  it('publishes the coder first and resolves every builtin by id', () => {
+    expect(BUILTIN_AGENTS.map((agent) => agent.id)).toEqual([
+      BUILTIN_CODER_ID,
+      BUILTIN_EXPLORER_ID,
+      BUILTIN_REVIEWER_ID,
+      BUILTIN_TESTER_ID,
+    ])
+    expect(builtinAgent(BUILTIN_CODER_ID)).toBe(BUILTIN_CODER)
+    expect(builtinAgent('user.custom')).toBeUndefined()
+  })
+
+  it('validates all builtin definitions and their default delegation policy', () => {
+    for (const agent of BUILTIN_AGENTS) {
+      expect(validateAgentDefinition(agent, context)).toEqual({
+        ok: true,
+        errors: [],
+        warnings: [],
+      })
+    }
+    expect(BUILTIN_CODER.delegation).toEqual({
+      enabled: true,
+      allowedAgents: [BUILTIN_EXPLORER_ID, BUILTIN_REVIEWER_ID, BUILTIN_TESTER_ID],
+      maxDepth: 1,
+      maxChildrenPerTurn: 6,
+      maxParallel: 3,
+      childBudgetShare: 0.5,
+      defaultWorkspace: 'auto',
+      mergeReview: 'user',
+    })
+  })
+
+  it('keeps the explorer and reviewer strictly read-only', () => {
+    for (const agent of [BUILTIN_EXPLORER, BUILTIN_REVIEWER]) {
+      expect(agent.permissions).toBe('read-only')
+      expect(agent.tools.allow).toEqual(['read_file', 'list_dir', 'search'])
+      expect(agent.tools.deny).toBeUndefined()
+    }
+    expect(BUILTIN_REVIEWER.outputSchema).toMatchObject({
+      required: ['issues'],
+    })
+  })
+
+  it('constrains the tester to test paths and keeps execution behind approval', () => {
+    expect(BUILTIN_TESTER.permissions).toBe('ask')
+    expect(BUILTIN_TESTER.tools.allow).toEqual([
+      'read_file',
+      'list_dir',
+      'search',
+      'write_file',
+      'edit_file',
+      'run_command',
+    ])
+    expect(BUILTIN_TESTER.pathPolicy?.write).toEqual(
+      expect.arrayContaining(['**/*.{test,spec}.*', '**/tests/**', '**/e2e/**']),
+    )
   })
 })

@@ -25,6 +25,7 @@
  * 运行时与模型解析由入口注入，M1 换成 pi 适配器时这里不改。不依赖 Electron。
  */
 import {
+  createAgentPathGuard,
   createPermissionEngine,
   createRunSupervisor,
   createToolPipeline,
@@ -209,6 +210,9 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let planTurn = false
   /** 正在执行的已批准计划。下一次 `host.prompt` 会换掉或清掉。 */
   let activePlan: ActivePlan | undefined
+  /** 根运行的 Agent 定义；路径守卫在 `host.init` 拿到定义后才生效。 */
+  let agentDefinition: AgentDefinition | undefined
+  let rootPathGuard: PermissionGuard = () => undefined
   /** 可委派目标的权限模式（M4-03）：委派给写入类 Agent 默认需要审批。 */
   const delegationTargetModes = new Map<string, PermissionMode>()
   const delegationApprovalGuard: PermissionGuard = (request) => {
@@ -221,7 +225,12 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   }
   const permissions = createPermissionEngine({
     rules: () => permissionRules,
-    guards: [...DEFAULT_PERMISSION_GUARDS, planModeGuard(() => planTurn), delegationApprovalGuard],
+    guards: [
+      ...DEFAULT_PERMISSION_GUARDS,
+      planModeGuard(() => planTurn),
+      delegationApprovalGuard,
+      (request) => rootPathGuard(request),
+    ],
     ...(options.caseInsensitive !== undefined ? { caseInsensitive: options.caseInsensitive } : {}),
   })
 
@@ -254,7 +263,12 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       (await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
     const hasBuiltinTools = registry.list().length > 0
     /** Agent 定义（M3-11）：决定这一份运行的指令、工具选择与上下文策略。 */
-    const agentDefinition = init.agentDefinition
+    agentDefinition = init.agentDefinition
+    rootPathGuard = createAgentPathGuard(agentDefinition?.pathPolicy, {
+      ...(options.caseInsensitive !== undefined
+        ? { caseInsensitive: options.caseInsensitive }
+        : {}),
+    })
     /** 注册 MCP 工具代理（根运行与委派子运行共用）。 */
     const registerMcpToolsInto = (
       target: ToolRegistry,
@@ -408,7 +422,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       let rules: readonly PermissionRule[] = [...resolved.permissionRules]
       const childPermissions = createPermissionEngine({
         rules: () => rules,
-        guards: [...DEFAULT_PERMISSION_GUARDS, delegationApprovalGuard],
+        guards: [
+          ...DEFAULT_PERMISSION_GUARDS,
+          delegationApprovalGuard,
+          createAgentPathGuard(definition.pathPolicy, {
+            ...(options.caseInsensitive !== undefined
+              ? { caseInsensitive: options.caseInsensitive }
+              : {}),
+          }),
+        ],
         ...(options.caseInsensitive !== undefined
           ? { caseInsensitive: options.caseInsensitive }
           : {}),

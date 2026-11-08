@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { BUILTIN_CODER_ID } from '@cairn/core'
+import {
+  BUILTIN_AGENTS,
+  BUILTIN_CODER_ID,
+  BUILTIN_EXPLORER_ID,
+  BUILTIN_REVIEWER_ID,
+  BUILTIN_TESTER_ID,
+} from '@cairn/core'
 import type {
   AgentDraftInput,
   McpToolExposure,
@@ -122,9 +128,15 @@ describe('agent-service drafts and versions', () => {
     expect(created.validation.ok).toBe(true)
 
     const list = service.list({})
-    expect(list.agents.map((agent) => agent.agentId)).toEqual([BUILTIN_CODER_ID, created.agentId])
+    expect(list.agents.map((agent) => agent.agentId)).toEqual([
+      BUILTIN_CODER_ID,
+      BUILTIN_EXPLORER_ID,
+      BUILTIN_REVIEWER_ID,
+      BUILTIN_TESTER_ID,
+      created.agentId,
+    ])
     expect(list.agents[0]).toMatchObject({ source: 'builtin', status: 'published', version: 1 })
-    expect(list.agents[1]).toMatchObject({
+    expect(list.agents.at(-1)).toMatchObject({
       source: 'user',
       status: 'draft',
       version: 0,
@@ -216,6 +228,22 @@ describe('agent-service drafts and versions', () => {
     expect(copy.draft?.instructions).toBe('Review the diff.')
   })
 
+  it('duplicates builtins with their delegation and path policy intact', () => {
+    const { service } = setup()
+    const coder = service.duplicate({ agentId: BUILTIN_CODER_ID })
+    expect(coder.source).toBe('user')
+    expect(coder.draft?.delegation?.allowedAgents).toEqual([
+      BUILTIN_EXPLORER_ID,
+      BUILTIN_REVIEWER_ID,
+      BUILTIN_TESTER_ID,
+    ])
+    const tester = service.duplicate({ agentId: BUILTIN_TESTER_ID })
+    expect(tester.draft?.pathPolicy?.write).toEqual(
+      expect.arrayContaining(['**/*.{test,spec}.*', '**/tests/**']),
+    )
+    expect(tester.draft?.tools.allow).toContain('write_file')
+  })
+
   it('rejects duplicate names supplied explicitly without id', () => {
     const { service } = setup()
     const created = service.saveDraft({ definition: draft() })
@@ -245,6 +273,9 @@ describe('agent-service drafts and versions', () => {
     ])
     expect(service.list({ source: 'builtin' }).agents.map((agent) => agent.agentId)).toEqual([
       BUILTIN_CODER_ID,
+      BUILTIN_EXPLORER_ID,
+      BUILTIN_REVIEWER_ID,
+      BUILTIN_TESTER_ID,
     ])
     expect(service.list({ status: 'draft' }).agents.map((agent) => agent.agentId)).toEqual([
       created.agentId,
@@ -253,6 +284,85 @@ describe('agent-service drafts and versions', () => {
       created.agentId,
     ])
     expect(service.list({ query: 'nothing' }).agents).toEqual([])
+  })
+
+  it('lists and reads every builtin as published read-only definitions', () => {
+    const { service } = setup()
+    const builtins = service.list({ source: 'builtin' }).agents
+    expect(builtins).toHaveLength(BUILTIN_AGENTS.length)
+    for (const summary of builtins) {
+      const detail = service.get({ agentId: summary.agentId })
+      expect(detail.source).toBe('builtin')
+      expect(detail.draft).toBeUndefined()
+      expect(detail.published?.id).toBe(summary.agentId)
+      expect(detail.validation).toEqual({ ok: true, errors: [], warnings: [] })
+    }
+    expect(service.get({ agentId: BUILTIN_REVIEWER_ID }).published?.outputSchema).toMatchObject({
+      required: ['issues'],
+    })
+    expect(service.get({ agentId: BUILTIN_TESTER_ID }).published?.pathPolicy?.write).toEqual(
+      expect.arrayContaining(['**/*.{test,spec}.*', '**/tests/**']),
+    )
+  })
+
+  it('validates delegation targets against published agents only', () => {
+    const { service } = setup()
+    const draftOnly = service.saveDraft({ definition: draft() })
+    const invalid = service.saveDraft({
+      definition: draft({
+        delegation: {
+          enabled: true,
+          allowedAgents: [draftOnly.agentId],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
+      }),
+    })
+    expect(invalid.validation.errors).toContainEqual({
+      path: 'delegation.allowedAgents.0',
+      code: 'delegation_agent_not_published',
+      params: { agent: draftOnly.agentId },
+    })
+    expect(() => service.publish({ agentId: invalid.agentId })).toThrow('agent.invalid')
+
+    const valid = service.saveDraft({
+      definition: draft({
+        delegation: {
+          enabled: true,
+          allowedAgents: [BUILTIN_EXPLORER_ID, BUILTIN_REVIEWER_ID],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'auto',
+          mergeReview: 'user',
+        },
+      }),
+    })
+    expect(valid.validation).toEqual({ ok: true, errors: [], warnings: [] })
+
+    const empty = service.saveDraft({
+      definition: draft({
+        delegation: {
+          enabled: true,
+          allowedAgents: [],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'auto',
+          mergeReview: 'user',
+        },
+      }),
+    })
+    expect(empty.validation.errors).toContainEqual({
+      path: 'delegation.allowedAgents',
+      code: 'delegation_agents_required',
+    })
   })
 })
 
@@ -287,15 +397,17 @@ describe('agent-service deletion and versions', () => {
 
   it('reports builtin versions and blocks editing builtins', () => {
     const { service } = setup()
-    const versions = service.versions({ agentId: BUILTIN_CODER_ID }).versions
-    expect(versions).toHaveLength(1)
-    expect(versions[0]?.version).toBe(1)
-    expect(() => service.archive({ agentId: BUILTIN_CODER_ID })).toThrow('agent.readonly')
-    expect(() => service.publish({ agentId: BUILTIN_CODER_ID })).toThrow('agent.readonly')
-    expect(() => service.delete({ agentId: BUILTIN_CODER_ID })).toThrow('agent.readonly')
-    expect(() => service.saveDraft({ definition: { ...draft(), id: BUILTIN_CODER_ID } })).toThrow(
-      'agent.readonly',
-    )
+    for (const agent of BUILTIN_AGENTS) {
+      const versions = service.versions({ agentId: agent.id }).versions
+      expect(versions).toHaveLength(1)
+      expect(versions[0]?.version).toBe(1)
+      expect(() => service.archive({ agentId: agent.id })).toThrow('agent.readonly')
+      expect(() => service.publish({ agentId: agent.id })).toThrow('agent.readonly')
+      expect(() => service.delete({ agentId: agent.id })).toThrow('agent.readonly')
+      expect(() => service.saveDraft({ definition: { ...draft(), id: agent.id } })).toThrow(
+        'agent.readonly',
+      )
+    }
   })
 
   it('reports not_found for unknown agents and versions', () => {
@@ -338,6 +450,61 @@ describe('agent-service diff, export and import', () => {
     expect(imported.draft?.name['en-US']).toBe('Reviewer')
     expect(imported.draft?.instructions.trim()).toBe('Review the diff.')
     expect(imported.draft?.tools).toEqual({ allow: ['read'] })
+  })
+
+  it('round-trips delegation and path policy through YAML front matter', () => {
+    const { service } = setup()
+    const created = service.saveDraft({
+      definition: draft({
+        pathPolicy: { write: ['tests/**'] },
+        delegation: {
+          enabled: true,
+          allowedAgents: [BUILTIN_EXPLORER_ID],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
+      }),
+    })
+    const imported = service.import({
+      markdown: service.export({ agentId: created.agentId }).markdown,
+    })
+    expect(imported.draft?.pathPolicy).toEqual({ write: ['tests/**'] })
+    expect(imported.draft?.delegation).toMatchObject({
+      enabled: true,
+      allowedAgents: [BUILTIN_EXPLORER_ID],
+    })
+  })
+
+  it('includes delegation and path policy in drafts diffs', () => {
+    const { service } = setup()
+    const created = service.saveDraft({ definition: draft() })
+    service.publish({ agentId: created.agentId })
+    service.saveDraft({
+      definition: {
+        ...draft(),
+        id: created.agentId,
+        pathPolicy: { write: ['tests/**'] },
+        delegation: {
+          enabled: true,
+          allowedAgents: [BUILTIN_REVIEWER_ID],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 2,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'shared',
+          mergeReview: 'user',
+        },
+      },
+    })
+    expect(
+      service
+        .diff({ agentId: created.agentId, from: 1, to: 'draft' })
+        .fields.map((field) => field.path),
+    ).toEqual(['pathPolicy', 'delegation'])
   })
 
   it('rejects import without front matter or with an invalid body', () => {
