@@ -5,6 +5,7 @@ import {
   type AgentRuntime,
   type FakeScript,
   type ToolDefinition,
+  type ToolRegistry,
 } from '@cairn/core'
 import {
   createEndpoint,
@@ -12,7 +13,10 @@ import {
   MainForHost,
   RpcError,
   type AgentDefinition,
+  type ApprovalDecision,
+  type HostApprovalRequest,
   type McpToolExposure,
+  type PermissionRule,
   type RpcChannel,
   type SkillCatalogEntry,
   type UnsequencedEvent,
@@ -45,6 +49,20 @@ const lookup: ToolDefinition<object> = {
   trust: 'builtin',
   inputSchema: { type: 'object', properties: {} },
   execute: () => Promise.resolve({ content: text('found') }),
+}
+
+const writeFile: ToolDefinition<{ path: string }> = {
+  name: 'write_file',
+  description: 'Write a file',
+  category: 'write',
+  source: { kind: 'builtin' },
+  trust: 'builtin',
+  inputSchema: {
+    type: 'object',
+    properties: { path: { type: 'string' } },
+    required: ['path'],
+  },
+  execute: () => Promise.resolve({ content: text('wrote') }),
 }
 
 function agent(id: string, patch: Partial<AgentDefinition> = {}): AgentDefinition {
@@ -110,6 +128,12 @@ interface SetupOptions {
   readonly skills?: readonly SkillCatalogEntry[]
   readonly mcpTools?: readonly McpToolExposure[]
   readonly noTargetsHandler?: boolean
+  readonly approval?: (request: HostApprovalRequest) => {
+    decision: ApprovalDecision
+    feedback?: string
+    rule?: PermissionRule
+  }
+  readonly permissionRules?: readonly PermissionRule[]
 }
 
 function setup(options: SetupOptions = {}) {
@@ -165,6 +189,7 @@ function setup(options: SetupOptions = {}) {
                 id: agentId,
                 name: definition.name['en-US'] ?? agentId,
                 description: definition.description['en-US'] ?? '',
+                permissions: definition.permissions,
               },
             ]
           : []
@@ -188,6 +213,10 @@ function setup(options: SetupOptions = {}) {
       workspace: 'shared' as const,
     }
   })
+  if (options.approval) {
+    const approval = options.approval
+    main.handle('host.approval.request', (request) => approval(request))
+  }
   return {
     main,
     events,
@@ -200,6 +229,7 @@ function setup(options: SetupOptions = {}) {
       main.request('host.init', {
         ...baseInit,
         agentDefinition: options.definition ?? parentDefinition(),
+        ...(options.permissionRules ? { permissionRules: [...options.permissionRules] } : {}),
       }),
     waitFor: async (type: string, count = 1) => {
       await vi.waitFor(() =>
@@ -508,5 +538,168 @@ describe('host delegation (M4-02)', () => {
     // 子运行的模型上下文里没有 delegate（深度已达上限）
     expect(h.runtimeTools['reviewer']?.map((tool) => tool.name)).not.toContain('delegate')
     expect(h.createdRuntimes).toEqual(['fake-1', 'reviewer'])
+  })
+})
+
+describe('host delegation permissions (M4-03)', () => {
+  const registerTools = (registry: ToolRegistry) => {
+    registry.register(lookup)
+    registry.register(writeFile)
+  }
+
+  it('委派给只读 Agent 不需要额外审批', async () => {
+    const requests: HostApprovalRequest[] = []
+    const h = setup({
+      approval: (request) => {
+        requests.push(request)
+        return { decision: 'allow_once' }
+      },
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: { turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }] },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+    expect(requests).toEqual([])
+  })
+
+  it('委派给写入类 Agent 需要审批，子运行的审批带父运行归属', async () => {
+    const requests: HostApprovalRequest[] = []
+    const h = setup({
+      targets: [{ id: reviewer.id, definition: agent('builtin.reviewer', { permissions: 'ask' }) }],
+      permissionRules: presetRules('auto'),
+      approval: (request) => {
+        requests.push(request)
+        return { decision: 'allow_once' }
+      },
+      host: { registerTools },
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'write_file', input: { path: 'a.ts' } },
+              { kind: 'reply', text: '{"summary":"ok"}' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    const delegation = requests.find((request) => request.tool.name === 'delegate')
+    expect(delegation).toMatchObject({
+      runId: 'r1',
+      agent: { id: 'default', version: 1 },
+      reasonCode: 'permission.delegation_target_requires_approval',
+    })
+    const childRunId = h.events.find(
+      (event) => event.type === 'run.created' && event.runId !== 'r1',
+    )?.runId
+    const write = requests.find((request) => request.tool.name === 'write_file')
+    expect(write).toMatchObject({
+      runId: childRunId,
+      parentRunId: 'r1',
+      agent: { id: 'builtin.reviewer', version: 1 },
+    })
+  })
+
+  it('只读父运行限制写入子 Agent，即使子 Agent 允许写入', async () => {
+    const requests: HostApprovalRequest[] = []
+    const h = setup({
+      targets: [
+        { id: reviewer.id, definition: agent('builtin.reviewer', { permissions: 'auto' }) },
+      ],
+      permissionRules: presetRules('read-only'),
+      approval: (request) => {
+        requests.push(request)
+        return { decision: 'allow_once' }
+      },
+      host: { registerTools },
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'write_file', input: { path: 'a.ts' } },
+              { kind: 'reply', text: '{"summary":"ok"}' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+
+    expect(requests.map((request) => request.tool.name)).toEqual(['delegate'])
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.denied' },
+    })
+  })
+
+  it('嵌套委派继承整条祖先链的权限上限', async () => {
+    const nestedReviewer = agent('builtin.reviewer', {
+      permissions: 'read-only',
+      delegation: { ...delegation, allowedAgents: ['builtin.coder'], maxDepth: 2 },
+    })
+    const coder = agent('builtin.coder', { permissions: 'auto' })
+    const requests: HostApprovalRequest[] = []
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...delegation, allowedAgents: ['builtin.reviewer'], maxDepth: 2 },
+      }),
+      targets: [
+        { id: nestedReviewer.id, definition: nestedReviewer },
+        { id: coder.id, definition: coder },
+      ],
+      permissionRules: presetRules('auto'),
+      approval: (request) => {
+        requests.push(request)
+        return { decision: 'allow_once' }
+      },
+      host: { registerTools },
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [delegateStep('builtin.coder'), { kind: 'reply', text: '{"summary":"child"}' }],
+          },
+        ],
+      },
+      grandchildScript: {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'write_file', input: { path: 'a.ts' } },
+              { kind: 'reply', text: '{"summary":"grandchild"}' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed', 2)
+
+    expect(requests.map((request) => request.tool.name)).toEqual(['delegate'])
+    const grandchild = h.events.find(
+      (event) =>
+        event.type === 'run.created' &&
+        (event.payload as { agent: { id: string } }).agent.id === 'builtin.coder',
+    )?.runId
+    expect(
+      h.events.find((event) => event.type === 'tool.failed' && event.runId === grandchild)?.payload,
+    ).toMatchObject({ error: { code: 'tool.denied' } })
   })
 })

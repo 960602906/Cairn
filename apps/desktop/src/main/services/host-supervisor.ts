@@ -37,6 +37,7 @@ import {
   type HostModelConfig,
   type ModelRef,
   type PermissionRule,
+  type PermissionMode,
   type ShellPreference,
   type SkillCatalogEntry,
   type McpToolExposure,
@@ -94,6 +95,7 @@ export interface HostDelegateTargetInfo {
   readonly id: string
   readonly name: string
   readonly description: string
+  readonly permissions: PermissionMode
 }
 
 export type HostState = 'starting' | 'running' | 'stopping' | 'stopped' | 'crashed'

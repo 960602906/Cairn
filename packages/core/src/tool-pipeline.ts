@@ -71,6 +71,52 @@ export interface PermissionGate {
   decide(request: PermissionRequest): Promise<PermissionDecision>
 }
 
+/**
+ * 两个判定的交集（M4-03）：子运行的权限不能超过父运行。`deny` 优先，其次 `ask`；同为 `ask` 时保留
+ * 两边的理由与规则 id，界面可以显示“父运行 / 子 Agent 各自为什么要求审批”。
+ */
+export function combinePermissionDecisions(
+  parent: PermissionDecision,
+  child: PermissionDecision,
+): PermissionDecision {
+  if (parent.decision === 'deny') return parent
+  if (child.decision === 'deny') return child
+  if (parent.decision === 'allow' && child.decision === 'allow') return { decision: 'allow' }
+  const askOf = (decision: PermissionDecision) =>
+    decision.decision === 'ask'
+      ? (decision as { reasonCode: string; matchedRuleIds?: readonly string[] })
+      : undefined
+  const parentAsk = askOf(parent)
+  const childAsk = askOf(child)
+  if (!parentAsk) return child
+  if (!childAsk) return parent
+  return {
+    decision: 'ask',
+    reasonCode: parentAsk.reasonCode,
+    matchedRuleIds: [
+      ...new Set([...(parentAsk.matchedRuleIds ?? []), ...(childAsk.matchedRuleIds ?? [])]),
+    ],
+  }
+}
+
+/**
+ * 把两个权限门组合成更严格的一个（M4-03）：嵌套委派时用当前运行的生效权限门作为下一层的上限。
+ */
+export function combinePermissionGates(
+  parent: PermissionGate,
+  child: PermissionGate,
+): PermissionGate {
+  return {
+    async decide(request) {
+      const [parentDecision, childDecision] = await Promise.all([
+        parent.decide(request),
+        child.decide(request),
+      ])
+      return combinePermissionDecisions(parentDecision, childDecision)
+    },
+  }
+}
+
 export interface ApprovalRequest {
   readonly approvalId: string
   readonly toolCallId: string
@@ -147,6 +193,11 @@ export interface ToolPipelineOptions {
   /** 当前 Agent 是否可以使用该工具（`tools.allow`），默认都可以。 */
   readonly isAvailable?: (definition: ToolDefinition) => boolean
   readonly permissions: PermissionGate
+  /**
+   * 额外的权限上限（M4-03）：子运行的每一次工具调用还要通过父运行的判定，两者取更严格的结果。
+   * 省略时只用自己的 `permissions`。
+   */
+  readonly restriction?: PermissionGate
   readonly approvals: ApprovalGate
   readonly checkpoints: ToolCheckpoints
   /** 改动记录；省略时写类工具的改动不留记录。 */
@@ -380,11 +431,19 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       const permission = await guard(signal, () =>
         options.permissions.decide({ toolCallId: call.id, definition, input, targets }),
       )
-      if (permission.decision === 'deny') {
-        return denied(permission.reason ?? `Tool call denied (${permission.reasonCode}).`)
+      const restriction = options.restriction
+        ? await guard(signal, () =>
+            options.restriction!.decide({ toolCallId: call.id, definition, input, targets }),
+          )
+        : undefined
+      const effective = restriction
+        ? combinePermissionDecisions(restriction, permission)
+        : permission
+      if (effective.decision === 'deny') {
+        return denied(effective.reason ?? `Tool call denied (${effective.reasonCode}).`)
       }
       // 6. 审批
-      if (permission.decision === 'ask') {
+      if (effective.decision === 'ask') {
         const preview = definition.describeForApproval
           ? await guard(signal, () => definition.describeForApproval!(input, ctx))
           : undefined
@@ -396,8 +455,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
             targets,
             kind: 'tool',
             ...(preview ? { preview } : {}),
-            reasonCode: permission.reasonCode,
-            matchedRuleIds: permission.matchedRuleIds ?? [],
+            reasonCode: effective.reasonCode,
+            matchedRuleIds: effective.matchedRuleIds ?? [],
             signal,
           },
           observer,

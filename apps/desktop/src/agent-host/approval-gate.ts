@@ -7,12 +7,27 @@
  * - 用户选择“本会话 / 本项目始终允许”时，主进程保存生成的规则并在结果中给出，交给 `onRule` 立即生效。
  */
 import type { ApprovalGate, ApprovalResponse } from '@cairn/core'
-import type { HostForMain, MainForHost, PermissionRule, RpcEndpoint } from '@cairn/protocol'
+import type {
+  AgentDefinitionRef,
+  HostForMain,
+  MainForHost,
+  PermissionRule,
+  RpcEndpoint,
+} from '@cairn/protocol'
+
+/** 审批的归属（M4-03）：哪个运行、哪个 Agent 发起的调用。 */
+export interface HostApprovalAttribution {
+  readonly runId: string
+  readonly parentRunId?: string
+  readonly agent: AgentDefinitionRef
+}
 
 export interface HostApprovalGateOptions {
   readonly endpoint: Pick<RpcEndpoint<typeof HostForMain, typeof MainForHost>, 'request' | 'emit'>
   /** 审批生成的规则（本会话 / 本项目始终允许）。 */
   readonly onRule: (rule: PermissionRule) => void
+  /** 这个流水线所属的运行与 Agent；每次请求时读取。 */
+  readonly attribution: () => HostApprovalAttribution
 }
 
 export function createHostApprovalGate(options: HostApprovalGateOptions): ApprovalGate {
@@ -23,11 +38,15 @@ export function createHostApprovalGate(options: HostApprovalGateOptions): Approv
       const cancel = () => endpoint.emit('host.approval.cancelled', { approvalId })
       signal.addEventListener('abort', cancel, { once: true })
       try {
+        const attribution = options.attribution()
         const response = await endpoint.request(
           'host.approval.request',
           {
             approvalId,
             toolCallId: request.toolCallId,
+            runId: attribution.runId,
+            ...(attribution.parentRunId ? { parentRunId: attribution.parentRunId } : {}),
+            agent: attribution.agent,
             tool: { name: request.definition.name, category: request.definition.category },
             input: request.input,
             targets: {

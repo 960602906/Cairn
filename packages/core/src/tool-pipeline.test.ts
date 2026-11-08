@@ -5,6 +5,8 @@ import { TOOL_OUTPUT_MAX_TOKENS } from './context-budget.js'
 import type { Logger } from './logger.js'
 import { RunEngine } from './run-engine.js'
 import {
+  combinePermissionDecisions,
+  combinePermissionGates,
   createToolPipeline,
   truncateOutput,
   type ApprovalGate,
@@ -468,6 +470,166 @@ describe('ToolPipeline：取消', () => {
         .status,
     ).toBe('cancelled')
     expect(h.request).not.toHaveBeenCalled()
+  })
+})
+
+describe('combinePermissionDecisions（M4-03）', () => {
+  it('两边都允许才允许', () => {
+    expect(combinePermissionDecisions({ decision: 'allow' }, { decision: 'allow' })).toEqual({
+      decision: 'allow',
+    })
+  })
+
+  it('deny 优先于任何结果', () => {
+    const parentDeny = {
+      decision: 'deny' as const,
+      reasonCode: 'parent.deny',
+      reason: 'Parent is read-only.',
+    }
+    const childDeny = { decision: 'deny' as const, reasonCode: 'child.deny' }
+    expect(combinePermissionDecisions(parentDeny, { decision: 'allow' })).toBe(parentDeny)
+    expect(combinePermissionDecisions({ decision: 'allow' }, childDeny)).toBe(childDeny)
+    expect(combinePermissionDecisions(parentDeny, childDeny)).toBe(parentDeny)
+  })
+
+  it('只有一方 ask 时保留 ask', () => {
+    expect(
+      combinePermissionDecisions(
+        { decision: 'ask', reasonCode: 'parent.ask' },
+        { decision: 'allow' },
+      ),
+    ).toEqual({ decision: 'ask', reasonCode: 'parent.ask' })
+    expect(
+      combinePermissionDecisions(
+        { decision: 'allow' },
+        { decision: 'ask', reasonCode: 'child.ask' },
+      ),
+    ).toEqual({ decision: 'ask', reasonCode: 'child.ask' })
+  })
+
+  it('两边都 ask 时合并规则 id 并去掉重复', () => {
+    expect(
+      combinePermissionDecisions(
+        { decision: 'ask', reasonCode: 'parent.ask', matchedRuleIds: ['p1', 'shared'] },
+        { decision: 'ask', reasonCode: 'child.ask', matchedRuleIds: ['shared', 'c1'] },
+      ),
+    ).toEqual({
+      decision: 'ask',
+      reasonCode: 'parent.ask',
+      matchedRuleIds: ['p1', 'shared', 'c1'],
+    })
+    expect(
+      combinePermissionDecisions(
+        { decision: 'ask', reasonCode: 'parent.ask' },
+        { decision: 'ask', reasonCode: 'child.ask' },
+      ),
+    ).toEqual({ decision: 'ask', reasonCode: 'parent.ask', matchedRuleIds: [] })
+  })
+
+  it('组合两个权限门时取更严格的一方', async () => {
+    const request = {
+      toolCallId: 'c1',
+      definition: tool(),
+      input: { path: 'a.ts' },
+      targets: {},
+    }
+    const gate = combinePermissionGates(
+      { decide: async () => ({ decision: 'allow' }) },
+      { decide: async () => ({ decision: 'deny', reasonCode: 'child.deny' }) },
+    )
+    await expect(gate.decide(request)).resolves.toEqual({
+      decision: 'deny',
+      reasonCode: 'child.deny',
+    })
+  })
+})
+
+describe('ToolPipeline：父运行权限上限（M4-03）', () => {
+  const parentGate = (decision: PermissionDecision) => ({
+    decide: vi.fn<PermissionGate['decide']>(async () => decision),
+  })
+
+  it('父运行的 deny 覆盖子 Agent 的 allow', async () => {
+    const restriction = parentGate({
+      decision: 'deny',
+      reasonCode: 'parent.deny',
+      reason: 'Parent is read-only.',
+    })
+    const h = setup([tool()], { restriction })
+    expect(
+      await createToolPipeline(h.options).run(call({ path: 'a.ts' }), signal(), h.observer),
+    ).toMatchObject({
+      status: 'denied',
+      content: text('Parent is read-only.'),
+      error: { code: 'tool.denied' },
+    })
+    expect(h.request).not.toHaveBeenCalled()
+    expect(restriction.decide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCallId: 'c1',
+        input: { path: 'a.ts' },
+        definition: expect.objectContaining({ name: 'write_file' }),
+      }),
+    )
+  })
+
+  it('父运行的 ask 与子 Agent 的 allow 取 ask', async () => {
+    const restriction = parentGate({
+      decision: 'ask',
+      reasonCode: 'parent.ask',
+      matchedRuleIds: ['p1'],
+    })
+    const h = setup([tool()], { restriction })
+    expect(
+      (await createToolPipeline(h.options).run(call({ path: 'a.ts' }), signal(), h.observer))
+        .status,
+    ).toBe('ok')
+    expect(h.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasonCode: 'parent.ask',
+        matchedRuleIds: ['p1'],
+      }),
+    )
+  })
+
+  it('子 Agent 的 ask 不会被父运行的 allow 放宽', async () => {
+    const restriction = parentGate({ decision: 'allow' })
+    const h = setup(
+      [tool()],
+      { restriction },
+      { decision: 'ask', reasonCode: 'child.ask', matchedRuleIds: ['c1'] },
+    )
+    h.request.mockResolvedValueOnce({ decision: 'deny' })
+    expect(
+      (await createToolPipeline(h.options).run(call({ path: 'a.ts' }), signal(), h.observer))
+        .status,
+    ).toBe('denied')
+    expect(h.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasonCode: 'child.ask',
+        matchedRuleIds: ['c1'],
+      }),
+    )
+  })
+
+  it('两边都 ask 时把两边的规则 id 一起交给审批', async () => {
+    const restriction = parentGate({
+      decision: 'ask',
+      reasonCode: 'parent.ask',
+      matchedRuleIds: ['p1'],
+    })
+    const h = setup(
+      [tool()],
+      { restriction },
+      { decision: 'ask', reasonCode: 'child.ask', matchedRuleIds: ['c1'] },
+    )
+    await createToolPipeline(h.options).run(call({ path: 'a.ts' }), signal(), h.observer)
+    expect(h.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasonCode: 'parent.ask',
+        matchedRuleIds: ['p1', 'c1'],
+      }),
+    )
   })
 })
 

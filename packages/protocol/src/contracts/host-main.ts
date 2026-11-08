@@ -18,7 +18,7 @@ import { AgentDefinition } from '../agents.js'
 import { FileChangeInput } from '../changes.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
 import { ActivePlan, PromptMode } from '../plan.js'
-import { PermissionRule, ToolCategory } from '../permissions.js'
+import { PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { SkillCatalogEntry } from '../skills.js'
@@ -51,6 +51,11 @@ export type HostModelConfig = z.infer<typeof HostModelConfig>
 export const HostApprovalRequest = z.object({
   approvalId: Id,
   toolCallId: Id,
+  /** 发起这次调用的运行（M4-03）：子运行的审批不会归到父运行名下。 */
+  runId: Id,
+  parentRunId: Id.optional(),
+  /** 发起调用的 Agent 定义（M4-03）。 */
+  agent: AgentDefinitionRef,
   tool: z.object({ name: z.string().min(1), category: ToolCategory }),
   /** 规范化后的参数（JSON）。 */
   input: z.unknown(),
@@ -288,6 +293,8 @@ export const MainForHost = defineSide({
             id: Id,
             name: z.string().min(1),
             description: z.string(),
+            /** 目标 Agent 的权限模式（M4-03）：宿主据此决定委派前是否需要审批。 */
+            permissions: PermissionMode,
           }),
         ),
       }),

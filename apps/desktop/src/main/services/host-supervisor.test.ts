@@ -237,14 +237,26 @@ describe('委派目标解析（M4-02）', () => {
     const host = fakeHost()
     const { supervisor } = setup(host, {
       resolveDelegateTargets: () => [
-        { id: 'builtin.reviewer', name: 'Reviewer', description: 'Reviews' },
+        {
+          id: 'builtin.reviewer',
+          name: 'Reviewer',
+          description: 'Reviews',
+          permissions: 'read-only' as const,
+        },
       ],
     })
     await supervisor.startHost(init)
     await expect(
       host.endpoint!.request('host.delegate.targets', { agents: ['builtin.reviewer'] }),
     ).resolves.toEqual({
-      targets: [{ id: 'builtin.reviewer', name: 'Reviewer', description: 'Reviews' }],
+      targets: [
+        {
+          id: 'builtin.reviewer',
+          name: 'Reviewer',
+          description: 'Reviews',
+          permissions: 'read-only',
+        },
+      ],
     })
   })
 })
@@ -337,6 +349,8 @@ describe('host.approval.request（M1-11a）', () => {
   const request = {
     approvalId: 'a1',
     toolCallId: 'c1',
+    runId: 'r1',
+    agent: { id: 'builtin.coder', version: 1 },
     tool: { name: 'run_command', category: 'execute' as const },
     input: { command: 'npm test' },
     targets: { command: 'npm test' },

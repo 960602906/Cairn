@@ -333,6 +333,8 @@ describe('agent host', () => {
         {
           approvalId: expect.any(String),
           toolCallId: expect.any(String),
+          runId: 'r1',
+          agent: { id: 'default', version: 1 },
           tool: { name: 'echo_cmd', category: 'execute' },
           input: { command: 'npm test' },
           targets: { command: 'npm test' },

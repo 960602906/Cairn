@@ -190,6 +190,9 @@ describe('validateDelegation', () => {
       },
     })
     expect(taskBriefSize(big.brief)).toBe(TASK_BRIEF_TOTAL_MAX_CHARS + 1)
+    expect(
+      taskBriefSize({ goal: 'g', deliverable: 'd', files: ['a.ts'], constraints: ['x'] }),
+    ).toBe(7)
     expect(validateDelegation({ ...baseValidation, input: big }).issues).toContainEqual(
       expect.objectContaining({ code: 'delegation.brief_too_large' }),
     )
@@ -223,6 +226,24 @@ describe('validateDelegation', () => {
           parentRemaining: { ...remaining, maxCostPerTurn: 0.5, maxTurnDurationMs: 3 },
         }).issues,
       ).toContainEqual(expect.objectContaining({ code: 'delegation.budget_exceeded' }))
+    }
+  })
+
+  it('父运行任一剩余额度为 0 时不能继续分派（M4-03）', () => {
+    for (const key of [
+      'maxStepsPerTurn',
+      'maxTokensPerTurn',
+      'maxCostPerTurn',
+      'maxTurnDurationMs',
+    ] as const) {
+      const result = validateDelegation({
+        ...baseValidation,
+        parentRemaining: { [key]: 0 },
+      })
+      expect(result.ok).toBe(false)
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ code: 'delegation.budget_exceeded', severity: 'error' }),
+      )
     }
   })
 
@@ -502,6 +523,7 @@ describe('runDelegation', () => {
         task: 'review the diff',
         workspace: 'shared',
         workspacePath: '/w',
+        budget: { maxStepsPerTurn: 4, maxTokensPerTurn: 500 },
       },
     })
     expect(events.find((event) => event.type === 'run.child.completed')).toMatchObject({
@@ -624,6 +646,59 @@ describe('runDelegation', () => {
     expect(created).toBeDefined()
     expect(result.status).toBe('aborted')
     expect(parent.state).not.toBe('failed')
+  })
+
+  it('父运行没有剩余预算时状态为 limit_reached 并停止其他子运行（M4-03）', async () => {
+    const { supervisor, parent, events, session } = await parentRun(
+      new FakeRuntime({ turns: [] }),
+      { maxTokensPerTurn: 0 },
+    )
+    const sibling = await supervisor.createRun({
+      sessionId: 's1',
+      runId: 'sibling',
+      parentRunId: 'parent',
+      agent: { id: 'builtin.reviewer', version: 1 },
+      workspace,
+      mode: 'interactive',
+      context: childContext(
+        new FakeRuntime({
+          delayMs: 30,
+          turns: [{ steps: [{ kind: 'reply', text: 'slow' }] }],
+        }),
+      ),
+    })
+    const siblingDone = sibling.send({ messageId: 'm2', content: [{ type: 'text', text: 'go' }] })
+    const child = new FakeRuntime({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'reply',
+              text: '{"summary":"done"}',
+              usage: { inputTokens: 1, outputTokens: 1 },
+            },
+          ],
+        },
+      ],
+    })
+    const result = await runDelegation({
+      sessionId: 's1',
+      supervisor,
+      parent,
+      session,
+      target: { definition: definition(), context: childContext(child), workspace },
+      input: delegate(),
+      parentRemaining: {},
+      systemPrompt: 'child prompt',
+    })
+    await siblingDone
+    expect(result.status).toBe('limit_reached')
+    expect(
+      events.filter((event) => event.runId === 'sibling').map((event) => event.type),
+    ).toContain('turn.aborted')
+    expect(events.find((event) => event.type === 'run.child.completed')).toMatchObject({
+      payload: { status: 'limit_reached' },
+    })
   })
 
   it('needs_input 透传问题', async () => {

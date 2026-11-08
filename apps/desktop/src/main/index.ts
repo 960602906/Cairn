@@ -309,7 +309,7 @@ const supervisor = createHostSupervisor({
       if (!published) return []
       const name = published.name['zh-CN'] ?? published.name['en-US'] ?? id
       const description = published.description['zh-CN'] ?? published.description['en-US'] ?? ''
-      return [{ id, name, description }]
+      return [{ id, name, description, permissions: published.permissions }]
     }),
   callMcpTool: (_sessionId, serverId, toolName, input, maxOutputTokens) =>
     mcp.call(serverId, toolName, input, maxOutputTokens),

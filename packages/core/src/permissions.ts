@@ -25,6 +25,8 @@ export const PermissionReasonCode = {
   CategoryDefault: 'permission.category_default',
   /** 第三方工具默认需要审批（ADR-0017）。 */
   ThirdPartyTool: 'permission.third_party_tool',
+  /** 委派给可写入的 Agent 默认需要审批（M4-03）。 */
+  DelegationTarget: 'permission.delegation_target_requires_approval',
 } as const
 
 /** 强制拦截的结果。 */
