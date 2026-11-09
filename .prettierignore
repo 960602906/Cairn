@@ -2,8 +2,11 @@ pnpm-lock.yaml
 dist/
 out/
 coverage/
+coverage-scripts-*/
 test-results/
+test-results-packaged/
 playwright-report/
+playwright-report-packaged/
 # 现有文档不经 Prettier 格式化，避免无关改动
 *.md
 # 本地设计过程稿与截图，不参与格式化

@@ -1,0 +1,79 @@
+name: Release
+
+# M5-02 只负责可重复的 NSIS 构建与产物校验。签名与公开发布在 M5-08 接入；
+# 这里绝不发布到 GitHub Releases 或更新源。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-installer:
+    name: Windows x64 installer (unsigned)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+      ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check app version (single source)
+        run: pnpm check:version
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build desktop app
+        run: pnpm build
+
+      - name: Build NSIS installer
+        run: pnpm package:nsis
+
+      - name: Verify installer
+        run: pnpm package:verify -- --nsis
+
+      - name: Smoke test packaged application
+        run: pnpm smoke:packaged
+
+      - name: Smoke test installed application
+        run: pnpm smoke:installed
+
+      - name: Upload unsigned installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairn-windows-x64-unsigned
+          path: |
+            apps/desktop/dist/Cairn-*-x64-setup.exe
+            apps/desktop/dist/Cairn-*-x64-setup.exe.blockmap
+            apps/desktop/dist/Cairn-*-x64-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload installer report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-report
+          path: |
+            apps/desktop/playwright-report-packaged/
+            apps/desktop/test-results-packaged/
+          retention-days: 14

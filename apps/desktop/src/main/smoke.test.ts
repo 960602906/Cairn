@@ -27,6 +27,8 @@ function deps(overrides: Partial<SmokeDeps> = {}) {
     checkCredentials: () => Promise.resolve('stored'),
     credentialsRequired: true,
     checkSearch: () => Promise.resolve('ripgrep 15.0.0'),
+    checkNative: () => Promise.resolve('job-object'),
+    checkSkills: () => Promise.resolve(['example']),
     expectedText: 'Cairn',
     userData: '/data',
     report,
@@ -91,6 +93,8 @@ describe('runSmokeChecks', () => {
       turnCompleted: true,
       credentials: 'stored',
       search: 'ripgrep 15.0.0',
+      native: 'job-object',
+      skills: ['example'],
       userData: '/data',
     })
     expect(reported(report)).toEqual(result)
@@ -156,7 +160,29 @@ describe('runSmokeChecks', () => {
       ok: false,
       credentials: 'stored',
       search: null,
+      native: null,
+      skills: null,
       error: 'spawn rg ENOENT',
+    })
+  })
+
+  it('fails when koffi or a bundled skill cannot be loaded', async () => {
+    const { all } = deps({ checkNative: () => Promise.reject(new Error('no koffi binary')) })
+    expect(await runSmokeChecks(all)).toMatchObject({
+      ok: false,
+      search: 'ripgrep 15.0.0',
+      native: null,
+      error: 'no koffi binary',
+    })
+
+    const { all: missingSkill } = deps({
+      checkSkills: () => Promise.reject(new Error('built-in skill example not found')),
+    })
+    expect(await runSmokeChecks(missingSkill)).toMatchObject({
+      ok: false,
+      native: 'job-object',
+      skills: null,
+      error: 'built-in skill example not found',
     })
   })
 

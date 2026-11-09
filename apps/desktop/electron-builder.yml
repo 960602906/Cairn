@@ -1,0 +1,70 @@
+appId: com.cairn.desktop
+productName: Cairn
+copyright: Copyright © 2026 Cairn contributors
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+  - '!**/*.test.*'
+  # 这些排除项只针对 staging 根目录。写成 `**/src/**` 会把依赖包的运行时源码
+  # （例如 koffi 的 `src/koffi/index.js`）一起删掉，导致安装后加载原生模块失败。
+  - '!src/**'
+  - '!e2e/**'
+  - '!spikes/**'
+
+asar: true
+asarUnpack:
+  - out/bin/**/*
+  - node_modules/koffi/**/*
+  - node_modules/@koromix/**/*
+  - node_modules/better-sqlite3/**/*
+
+extraResources:
+  - from: resources/skills
+    to: skills
+
+# 运行时依赖由 staging 的 package.json 提供。所依赖的原生模块基于 Node-API 预编译，
+# 不再调用 node-gyp，避免构建机需要 Visual Studio/C++ 工具链。
+npmRebuild: false
+
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # 界面入口使用本地 file:// 资源；关闭该 fuse 会让 Chromium 拒绝加载 asar 内的页面。
+  # asar 完整性与 onlyLoadAppFromAsar 仍然开启，见 ADR-0035。
+  grantFileProtocolExtraPrivileges: true
+
+win:
+  icon: build/icons/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker
+  # 保留图标、版本资源与清单编辑，只跳过代码签名。正式签名在 M5-08 的 release workflow 中开启。
+  signExecutable: false
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  artifactName: Cairn-${version}-${arch}-setup.${ext}
+
+# M5-06 会替换为真实的公开只读更新源；此处只声明发布器，普通打包使用 --publish never。
+publish:
+  provider: generic
+  url: https://updates.invalid/cairn/

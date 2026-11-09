@@ -88,6 +88,10 @@ export interface SmokeResult {
   readonly credentials: CredentialCheck | null
   /** `search` 检查通过时为 ripgrep 的版本（`rg --version` 的第一行）；没有执行到时为 null。 */
   readonly search: string | null
+  /** 原生进程树机制：Windows 上应加载 koffi 并创建 Job Object，其他平台为 `unsupported`。 */
+  readonly native: string | null
+  /** 随应用打包的内置技能名；没有执行到时为 null。 */
+  readonly skills: readonly string[] | null
   readonly userData: string
   readonly error?: string
 }
@@ -108,6 +112,10 @@ export interface SmokeDeps {
   readonly credentialsRequired: boolean
   /** 用打包的 ripgrep 执行一次 `search`，返回 ripgrep 版本；找不到、无法运行或结果不对时抛出。 */
   readonly checkSearch: () => Promise<string>
+  /** 加载 koffi 并创建 Job Object（M5-02），返回实际机制；不支持时返回 `unsupported`。 */
+  readonly checkNative: () => Promise<string>
+  /** 列出内置技能，返回技能名；没有加载到随应用分发的技能时抛出。 */
+  readonly checkSkills: () => Promise<readonly string[]>
   /** 界面应显示的文本（应用名称）。 */
   readonly expectedText: string
   readonly userData: string
@@ -143,6 +151,8 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
   let turnCompleted = false
   let credentials: CredentialCheck | null = null
   let search: string | null = null
+  let native: string | null = null
+  let skills: readonly string[] | null = null
   let error: string | undefined
   try {
     await withTimeout(deps.waitForLoad(), timeoutMs, 'window load')
@@ -156,6 +166,8 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
       throw new Error('system encryption (safeStorage) is unavailable')
     }
     search = await withTimeout(deps.checkSearch(), timeoutMs, 'search with bundled ripgrep')
+    native = await withTimeout(deps.checkNative(), timeoutMs, 'native process tree')
+    skills = await withTimeout(deps.checkSkills(), timeoutMs, 'bundled skills')
   } catch (e) {
     error = e instanceof Error ? e.message : String(e)
   }
@@ -165,6 +177,8 @@ export async function runSmokeChecks(deps: SmokeDeps): Promise<SmokeResult> {
     turnCompleted,
     credentials,
     search,
+    native,
+    skills,
     userData: deps.userData,
     ...(error === undefined ? {} : { error }),
   }
