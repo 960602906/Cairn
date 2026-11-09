@@ -128,7 +128,8 @@ describe('file service', () => {
     await ctx.service.reveal({ projectId: 'p1' })
     await ctx.service.reveal({ projectId: 'p1', path: 'a.txt' })
     expect(ctx.reveal).toHaveBeenNthCalledWith(1, expect.any(String))
-    expect(ctx.reveal).toHaveBeenNthCalledWith(2, path.join(ctx.root, 'a.txt'))
+    // 服务端先 realpath 项目根；Windows CI 的临时目录可能是 8.3 短路径（RUNNER~1）。
+    expect(ctx.reveal).toHaveBeenNthCalledWith(2, await fsp.realpath(path.join(ctx.root, 'a.txt')))
   })
 
   it('rejects oversized and malformed relative paths', async () => {
