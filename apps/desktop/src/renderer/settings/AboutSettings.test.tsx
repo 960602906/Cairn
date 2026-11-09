@@ -24,6 +24,7 @@ const info: AppInfo = {
   copyright: 'Copyright © 2026 Cairn contributors',
   packaged: false,
   databaseSchemaVersion: 17,
+  git: { source: 'system', version: '2.56.0.windows.4' },
 }
 
 function setup(value: AppInfo | (() => Promise<AppInfo>)) {
@@ -57,8 +58,29 @@ describe('AboutSettings', () => {
     expect(screen.getByText('45.2.1')).toBeDefined()
     expect(screen.getByText('24.11.0')).toBeDefined()
     expect(screen.getByText('17')).toBeDefined()
+    expect(screen.getByText('本机 Git · 2.56.0.windows.4')).toBeDefined()
     expect(screen.getByText('开发模式')).toBeDefined()
     expect(screen.getByText(/Copyright/)).toBeDefined()
+  })
+
+  it('shows the bundled Git runtime and unavailable fallbacks', async () => {
+    setup({
+      ...info,
+      git: { source: 'bundled', version: '2.56.0.windows.4' },
+    })
+    await waitFor(() => expect(screen.getByText('0.1.0')).toBeDefined())
+    expect(screen.getByText('随包 MinGit · 2.56.0.windows.4')).toBeDefined()
+
+    cleanup()
+    setup({ ...info, git: { source: 'unavailable', reason: 'not_found' } })
+    await waitFor(() => expect(screen.getByText('0.1.0')).toBeDefined())
+    expect(screen.getByText('不可用')).toBeDefined()
+
+    cleanup()
+    setup({ ...info, git: undefined })
+    await waitFor(() => expect(screen.getByText('0.1.0')).toBeDefined())
+    expect(screen.getByText('Git（检查点）')).toBeDefined()
+    expect(screen.getAllByText('未知').length).toBe(1)
   })
 
   it('uses translated fallbacks for unknown build values', async () => {

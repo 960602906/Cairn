@@ -24,6 +24,18 @@ export const BuildInfo = z.object({
 })
 export type BuildInfo = z.infer<typeof BuildInfo>
 
+/**
+ * 检查点使用的 Git 来源（M5-03，ADR-0008）：本机、随包 MinGit 或不可用。
+ * 只包含来源与版本，不包含可执行文件路径。
+ */
+export const GitRuntimeInfo = z.object({
+  source: z.enum(['system', 'bundled', 'unavailable']),
+  version: z.string().optional(),
+  /** 不可用原因（`source` 为 `unavailable` 时）。 */
+  reason: z.enum(['not_found', 'too_old', 'unrecognized']).optional(),
+})
+export type GitRuntimeInfo = z.infer<typeof GitRuntimeInfo>
+
 export const AppInfo = BuildInfo.extend({
   /** 产品名（`Cairn`）。 */
   name: z.string().min(1),
@@ -34,5 +46,7 @@ export const AppInfo = BuildInfo.extend({
   packaged: z.boolean(),
   /** 当前应用支持的数据库 schema 版本。 */
   databaseSchemaVersion: z.number().int().nonnegative(),
+  /** 检查点使用的 Git（M5-03）；启动时探测失败时不带该字段。 */
+  git: GitRuntimeInfo.optional(),
 })
 export type AppInfo = z.infer<typeof AppInfo>

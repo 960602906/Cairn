@@ -77,6 +77,7 @@ import { createSettingsService } from './services/settings-service.js'
 import { createShellInfo } from './services/shell-info.js'
 import { createProviderService } from './services/provider-service.js'
 import { createAppInfoCommands } from './services/app-info-service.js'
+import { createGitLocator, gitRuntimeInfo } from './services/git-locator.js'
 import { hostEnvironment } from '../shared/host-trace.js'
 import { checkBundledSearch } from './smoke-search.js'
 import {
@@ -93,6 +94,25 @@ const paths = resolveAppPaths({
   env: process.env,
 })
 for (const dir of requiredDirectories(paths)) mkdirSync(dir, { recursive: true })
+
+/**
+ * 检查点使用的 Git（M5-03）：本机优先，其次随包 MinGit。整个进程只探测一次，
+ * 检查点、改动集、隔离工作区与宿主共用同一结果。
+ */
+const gitLocation = await createGitLocator({
+  bundledDir: app.isPackaged
+    ? join(process.resourcesPath, 'git')
+    : join(import.meta.dirname, '../../resources/git'),
+  env: process.env,
+}).locate()
+/** 交给 `openShadowRepo` 与工作区服务的 Git 参数；不可用时为空（回退到 PATH 中的 `git`）。 */
+const gitOptions: { gitBinary?: string; gitEnv?: Readonly<Record<string, string>> } =
+  gitLocation.available
+    ? {
+        gitBinary: gitLocation.binary,
+        ...(gitLocation.env ? { gitEnv: gitLocation.env } : {}),
+      }
+    : {}
 
 const rendererFile = join(import.meta.dirname, '../renderer/index.html')
 /** 随应用打包的 ripgrep：构建时复制到 `out/bin/`（electron.vite.config.ts）。 */
@@ -133,6 +153,7 @@ const appInfo = readAppInfo({
     nodeVersion: process.versions.node,
     databaseSchemaVersion: MIGRATIONS.at(-1)?.version ?? 0,
     packaged: app.isPackaged,
+    git: gitRuntimeInfo(gitLocation),
   },
   onError: reportError,
 })
@@ -183,11 +204,16 @@ const checkpoints = createCheckpointService({
   storage,
   events,
   location: (sessionId) => checkpointLocation(paths.checkpoints, storage, sessionId),
-  open: openShadowRepo,
+  // 主进程的预览/恢复与宿主使用同一个 Git 定位结果（M5-03）。
+  open: (options) => openShadowRepo({ ...options, ...gitOptions }),
   isBusy: (sessionId) => sessions.isBusy(sessionId) || changes.isReverting(sessionId),
 })
 /** 隔离工作区（M4-08）：写入类子运行的独立副本，启动时清扫上次留下的目录。 */
-const workspaces = createWorkspaceService({ root: paths.worktrees, onError: reportError })
+const workspaces = createWorkspaceService({
+  root: paths.worktrees,
+  onError: reportError,
+  ...gitOptions,
+})
 void workspaces.sweep().catch(reportError)
 /** 改动集（M4-09）：隔离工作区里的改动与主工作区合并，合并前先建检查点。 */
 const changeSets = createChangeSetService({
@@ -197,7 +223,12 @@ const changeSets = createChangeSetService({
   workspaces,
   checkpoints: { create: (sessionId) => checkpoints.create({ sessionId }) },
   git: createGitRunner({
-    env: isolatedGitEnv(process.env, join(paths.worktrees, 'no-global-config')),
+    ...(gitLocation.available ? { binary: gitLocation.binary } : {}),
+    env: isolatedGitEnv(
+      process.env,
+      join(paths.worktrees, 'no-global-config'),
+      gitLocation.available ? gitLocation.env : undefined,
+    ),
   }),
   isBusy: (sessionId) =>
     sessions.isBusy(sessionId) ||
@@ -346,6 +377,14 @@ const supervisor = createHostSupervisor({
   resolveShell: () => settings.shell(),
   // 检查点（M1-12b）：每个项目一个影子仓库，会话各用自己的引用
   resolveCheckpoints: (sessionId) => checkpointLocation(paths.checkpoints, storage, sessionId),
+  // 检查点使用的 Git（M5-03）：宿主按同一个定位结果打开影子仓库
+  resolveGit: () =>
+    gitLocation.available
+      ? {
+          binary: gitLocation.binary,
+          ...(gitLocation.env ? { env: gitLocation.env } : {}),
+        }
+      : undefined,
   requestApproval: (sessionId, runId, request) => approvals.request(sessionId, runId, request),
   cancelApproval: (sessionId, approvalId) => approvals.cancel(sessionId, approvalId),
   recordChange: (sessionId, runId, input) => changes.record(sessionId, runId, input),

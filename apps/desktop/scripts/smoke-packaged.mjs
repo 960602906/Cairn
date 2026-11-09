@@ -4,6 +4,7 @@
  * IPC、Agent 宿主、SQLite、ripgrep、技能与 koffi Job Object 检查。任何失败都阻止打包通过。
  */
 import { spawn } from 'node:child_process'
+import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   checkPackagedResult,
@@ -13,6 +14,7 @@ import {
   smokeEnvironment,
   temporaryUserData,
 } from './packaged-app.mjs'
+import { verifyBundledGit } from './bundled-git.mjs'
 
 /**
  * @param {{
@@ -24,6 +26,7 @@ import {
  *   locateApp?: typeof packagedApp;
  *   createUserData?: typeof temporaryUserData;
  *   checkResult?: typeof checkPackagedResult;
+ *   verifyGit?: typeof verifyBundledGit;
  * }} [options]
  * @returns {Promise<string[]>}
  */
@@ -36,8 +39,19 @@ export async function smokePackaged({
   locateApp = packagedApp,
   createUserData = temporaryUserData,
   checkResult = checkPackagedResult,
+  verifyGit = verifyBundledGit,
 } = {}) {
   const app = locateApp(outputDir === undefined ? {} : { outputDir })
+  /** @type {string[]} */
+  const gitProblems = []
+  try {
+    const git = verifyGit(path.join(app.directory, 'resources/git'))
+    log(`bundled git: ${git.version}`)
+  } catch (error) {
+    gitProblems.push(
+      `bundled MinGit failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
   const userData = createUserData()
   try {
     return await new Promise((resolve) => {
@@ -64,15 +78,16 @@ export async function smokePackaged({
       child.on('exit', (code, signal) => {
         clearTimeout(timer)
         if (output.trim() !== '') log(output.trimEnd())
-        resolve(
-          checkResult({
+        resolve([
+          ...gitProblems,
+          ...checkResult({
             output,
             exitCode: code,
             signal,
             userData: userData.path,
             platform,
           }),
-        )
+        ])
       })
     })
   } finally {

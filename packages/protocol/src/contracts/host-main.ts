@@ -157,6 +157,16 @@ export const HostForMain = defineSide({
           })
           .optional(),
         /**
+         * 检查点使用的 Git（M5-03）。省略时宿主使用 PATH 中的 `git`；随包 MinGit 还要带上
+         * `GIT_EXEC_PATH`、`GIT_TEMPLATE_DIR` 与包含同目录 DLL 的 `PATH`。
+         */
+        git: z
+          .object({
+            binary: z.string().min(1),
+            env: z.record(z.string(), z.string()).optional(),
+          })
+          .optional(),
+        /**
          * 这一轮可用的 MCP 工具（M3-09）。宿主只拿到定义；调用经 `host.mcp.call` 交给主进程，
          * 由主进程的连接管理器执行。
          */

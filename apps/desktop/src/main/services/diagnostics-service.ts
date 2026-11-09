@@ -314,6 +314,7 @@ export class DiagnosticsService {
       buildTime: build.buildTime,
       databaseSchemaVersion: build.databaseSchemaVersion,
       packaged: build.packaged,
+      git: build.git,
       platform: process.platform,
       arch: process.arch,
       osRelease: os.release(),

@@ -281,6 +281,9 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             ref: init.checkpoints.ref,
             workTree: init.workspacePath,
             open: options.openCheckpoints,
+            ...(init.git
+              ? { gitBinary: init.git.binary, ...(init.git.env ? { gitEnv: init.git.env } : {}) }
+              : {}),
             onError,
           })
         : NO_CHECKPOINTS
@@ -682,6 +685,12 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
                         ref: created.checkpoint.ref,
                         workTree: created.path,
                         open: options.openCheckpoints,
+                        ...(init.git
+                          ? {
+                              gitBinary: init.git.binary,
+                              ...(init.git.env ? { gitEnv: init.git.env } : {}),
+                            }
+                          : {}),
                         extraExcludes: ['.git'],
                         onError,
                       })

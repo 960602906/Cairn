@@ -69,6 +69,7 @@ export type HostInit = Omit<
   | 'modelConfig'
   | 'permissionRules'
   | 'checkpoints'
+  | 'git'
   | 'instructions'
   | 'shell'
   | 'mcpTools'
@@ -79,6 +80,12 @@ export type HostInit = Omit<
 export interface HostCheckpointLocation {
   readonly gitDir: string
   readonly ref: string
+}
+
+/** 检查点使用的 Git（M5-03）：可执行文件与随包 MinGit 的受控环境变量。 */
+export interface HostGit {
+  readonly binary: string
+  readonly env?: Readonly<Record<string, string>>
 }
 
 /** `host.delegate` 解析出的目标（M4-02）：凭据只留在宿主内存。 */
@@ -155,6 +162,8 @@ export interface HostSupervisorOptions {
   readonly resolveShell?: () => ShellPreference | undefined
   /** 会话的检查点位置（M1-12b）；省略或返回 undefined 时宿主不创建检查点。 */
   readonly resolveCheckpoints?: (sessionId: string) => HostCheckpointLocation | undefined
+  /** 检查点使用的 Git（M5-03）；省略时不传，宿主用 PATH 中的 `git`。 */
+  readonly resolveGit?: () => HostGit | undefined
   /**
    * 记录宿主报告的文件改动（M1-08b，改动服务）。会话与运行由这个宿主确定。
    * 省略时宿主的 `changes.record` 报 `run.unsupported`。
@@ -508,6 +517,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         const modelConfig = options.resolveModelConfig?.(init.model)
         const permissionRules = options.resolvePermissionRules?.(sessionId, init.agent)
         const checkpoints = options.resolveCheckpoints?.(sessionId)
+        const git = options.resolveGit?.()
         const instructions = options.resolveInstructions?.()
         const shell = options.resolveShell?.()
         const mcpTools = options.resolveMcpTools?.(sessionId, init.agent)
@@ -522,6 +532,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
             ...(modelConfig ? { modelConfig } : {}),
             ...(permissionRules ? { permissionRules } : {}),
             ...(checkpoints ? { checkpoints } : {}),
+            ...(git ? { git: { binary: git.binary, ...(git.env ? { env: git.env } : {}) } } : {}),
             ...(instructions ? { instructions } : {}),
             ...(shell ? { shell } : {}),
             ...(mcpTools && mcpTools.length > 0 ? { mcpTools: [...mcpTools] } : {}),

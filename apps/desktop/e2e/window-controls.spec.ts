@@ -79,6 +79,8 @@ test('Windows / Linux 自绘窗口按钮可以点击', async ({ launch }) => {
         app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMaximized()),
       )
       .toBe(true)
+    // 主进程已最大化后，渲染进程还要等 maximize 事件才换成“还原窗口”。
+    await expect(window.getByRole('button', { name: '还原窗口' })).toBeVisible()
     expect(await hitTest(window, ['最小化窗口', '还原窗口', '关闭窗口'])).toEqual([
       '最小化窗口',
       '还原窗口',

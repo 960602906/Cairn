@@ -86,6 +86,17 @@ jobs:
 
       # Windows 是首发平台：解包产物必须可验证、可启动，并通过真实打包程序的 e2e（M5-02）。
       # NSIS 安装包只在 release workflow 构建，普通 PR 不下载/执行安装器。
+      - name: Cache MinGit archive
+        if: matrix.os == 'windows-latest'
+        uses: actions/cache@v4
+        with:
+          path: .cache/mingit
+          key: mingit-2.56.0.4-${{ runner.os }}
+
+      - name: Fetch bundled MinGit
+        if: matrix.os == 'windows-latest'
+        run: pnpm fetch:mingit
+
       - name: Package desktop app
         if: matrix.os == 'windows-latest'
         run: pnpm package:dir

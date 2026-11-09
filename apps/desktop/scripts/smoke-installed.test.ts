@@ -266,6 +266,7 @@ describe('smokeInstalled', () => {
 
 const SMOKE_RESULT =
   'CAIRN_SMOKE_RESULT {"ok":true,"turnCompleted":true,"search":"hit","skills":["example"],"native":"job-object"}\n'
+const verifyGit = () => ({ version: 'git version 2.56.0', files: 1, bytes: 1 })
 
 function createInstallation(installDir: string): ReturnType<typeof installedArtifacts> {
   const artifacts = installedArtifacts({ installDir })
@@ -365,6 +366,7 @@ describe('smokeInstalled workflow', () => {
       desktopRoot: root,
       platform: 'win32',
       spawnProcess: spawnProcess as never,
+      verifyGit,
       log,
     })
 
@@ -444,6 +446,7 @@ describe('smokeInstalled workflow', () => {
         uninstall: 'timeout',
         ripgrep: 'fail',
       }) as never,
+      verifyGit,
       log: vi.fn(),
     })
 
@@ -474,6 +477,7 @@ describe('smokeInstalled workflow', () => {
       desktopRoot: root,
       platform: 'win32',
       spawnProcess: workflowSpawn({ installer, uninstall: 'error' }) as never,
+      verifyGit,
       log: vi.fn(),
     })
 
@@ -495,11 +499,33 @@ describe('smokeInstalled workflow', () => {
         desktopRoot: root,
         platform: 'win32',
         spawnProcess: workflowSpawn({ installer }) as never,
+        verifyGit,
       })
       expect(write).toHaveBeenCalledWith(expect.stringContaining('installed: uninstalling'))
     } finally {
       write.mockRestore()
     }
+  })
+
+  it('reports a broken bundled MinGit', async () => {
+    vi.useFakeTimers()
+    const { root, installer } = fixture()
+    const promise = smokeInstalled({
+      installer,
+      desktopRoot: root,
+      platform: 'win32',
+      spawnProcess: workflowSpawn({ installer, uninstall: 'timeout' }) as never,
+      verifyGit: () => {
+        throw new Error('bad git')
+      },
+      log: vi.fn(),
+    })
+
+    await vi.runAllTimersAsync()
+
+    await expect(promise).resolves.toEqual(
+      expect.arrayContaining(['installed bundled MinGit failed: bad git']),
+    )
   })
 })
 

@@ -4,6 +4,7 @@
     "caniuse-lite@1.0.30001820": "开发依赖（electron-vite → @babel/core → browserslist），浏览器兼容性数据，只在构建时使用，不随应用分发。CC-BY-4.0 为宽松的署名许可。",
     "@fontsource/jetbrains-mono@5.3.0": "生产依赖（M2-01），JetBrains Mono 字体文件，随界面打包用于代码区。SIL OFL-1.1 允许随软件分发与嵌入，只要求保留版权声明与许可证、不单独出售字体；许可证文本由 THIRD_PARTY_NOTICES 收录。",
     "argparse@2.0.1": "开发依赖（electron-builder → app-builder-lib/builder-util → js-yaml），只在构建时解析 YAML 配置，不随应用分发。Python-2.0 为宽松许可，允许使用、修改与再分发。",
-    "truncate-utf8-bytes@1.0.2": "开发依赖（electron-builder → builder-util → sanitize-filename），只在构建时截断文件名，不随应用分发。WTFPL 允许任意使用与再分发。"
+    "truncate-utf8-bytes@1.0.2": "开发依赖（electron-builder → builder-util → sanitize-filename），只在构建时截断文件名，不随应用分发。WTFPL 允许任意使用与再分发。",
+    "MinGit@2.56.0.4": "随应用分发的外部二进制（M5-03，ADR-0008），检查点使用的 Git 2.56.0.4（Git for Windows）。GPL-2.0-only 是强著佐权许可；这里以独立程序聚合分发，不链接 Cairn 代码，随包附带 GPLv2 全文与源码获取地址（scripts/licenses/mingit/LICENSE），并在 THIRD_PARTY_NOTICES 中列出。"
   }
 }

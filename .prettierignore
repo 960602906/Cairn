@@ -14,6 +14,8 @@ design/
 # 预研项目自带 npm 锁文件
 spikes/**/package-lock.json
 # M5 预研运行产物与下载缓存
+apps/desktop/resources/git/
+.cache/
 spikes/m5/work/
 spikes/m5/out/
 spikes/m5/downloads/

@@ -51,10 +51,16 @@ export interface GitRunner {
   run(args: readonly string[], options?: GitRunOptions): Promise<GitResult>
 }
 
-/** 与用户 Git 环境隔离的环境变量。 */
+/**
+ * 与用户 Git 环境隔离的环境变量。
+ *
+ * `extra` 用于随包 MinGit：它需要显式的 `GIT_EXEC_PATH`、`GIT_TEMPLATE_DIR` 与包含同目录 DLL 的
+ * `PATH`。这些值由主进程的 Git 定位器给出，不接受用户环境中的同名变量。
+ */
 export function isolatedGitEnv(
   base: Readonly<Record<string, string | undefined>>,
   emptyConfigFile: string,
+  extra?: Readonly<Record<string, string>>,
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(base)) {
@@ -62,6 +68,7 @@ export function isolatedGitEnv(
   }
   return {
     ...env,
+    ...extra,
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: emptyConfigFile,
     GIT_LITERAL_PATHSPECS: '1',

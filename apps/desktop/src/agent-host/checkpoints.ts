@@ -26,6 +26,9 @@ export interface HostCheckpointsOptions {
   readonly ref: string
   readonly workTree: string
   readonly open: OpenShadowRepo
+  /** 检查点使用的 Git（M5-03）；省略时用 PATH 中的 `git`。 */
+  readonly gitBinary?: string
+  readonly gitEnv?: Readonly<Record<string, string>>
   /** 额外的排除规则（如隔离工作区中的 `.git` 文件）。 */
   readonly extraExcludes?: readonly string[]
   /** 后台创建首个检查点失败、Git 不可用等情况的记录。 */
@@ -53,6 +56,8 @@ export function createHostCheckpoints(options: HostCheckpointsOptions): HostChec
         gitDir: options.gitDir,
         workTree: options.workTree,
         ref: options.ref,
+        ...(options.gitBinary !== undefined ? { gitBinary: options.gitBinary } : {}),
+        ...(options.gitEnv !== undefined ? { gitEnv: options.gitEnv } : {}),
         ...(options.extraExcludes !== undefined ? { extraExcludes: options.extraExcludes } : {}),
       })
       .then(

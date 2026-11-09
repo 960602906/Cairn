@@ -2,6 +2,8 @@ node_modules/
 dist/
 out/
 .package/
+.cache/
+apps/desktop/resources/git/
 coverage/
 coverage-scripts-*/
 test-results/

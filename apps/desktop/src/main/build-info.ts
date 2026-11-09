@@ -7,7 +7,7 @@
  * - Electron / Node / 数据库 schema 版本以运行时为准，文件中的值只作缺省。
  */
 import { readFileSync } from 'node:fs'
-import { BuildInfo, type AppInfo, type BuildChannel } from '@cairn/protocol'
+import { BuildInfo, type AppInfo, type BuildChannel, type GitRuntimeInfo } from '@cairn/protocol'
 import { APP_IDENTITY } from './app-identity.js'
 
 export interface AppInfoRuntime {
@@ -17,6 +17,8 @@ export interface AppInfoRuntime {
   readonly nodeVersion: string
   readonly databaseSchemaVersion: number
   readonly packaged: boolean
+  /** 检查点使用的 Git（M5-03）；探测失败时不带该字段。 */
+  readonly git?: GitRuntimeInfo
 }
 
 export interface ReadAppInfoOptions {
@@ -80,5 +82,6 @@ export function readAppInfo({
     copyright: APP_IDENTITY.copyright,
     packaged: runtime.packaged,
     databaseSchemaVersion: runtime.databaseSchemaVersion,
+    ...(runtime.git ? { git: runtime.git } : {}),
   }
 }
