@@ -40,3 +40,16 @@
 - 检查点占用磁盘空间，需要清理策略。
 - 被排除的目录（如 `node_modules`）中的改动无法回退，需在界面上说明。
 - M4 的隔离工作区以检查点提交为基线创建 `git worktree`，见 ADR-0031；检查点仍只保存工作区快照，不负责子运行的改动集合并。
+
+## M5 变更（草案，M5-03 定稿）
+
+M5-00 已实测官方 MinGit 2.56.0.4 64 位 zip：
+
+- 固定来源：`git-for-windows` 的 `MinGit-2.56.0.4-64-bit.zip`；官方 SHA256 为 `e3bf78351fe777fba47ddee5950082f8a98bb0f02604fdc7ba3ee2cb68ffa877`。预研下载使用 npmmirror 镜像，内容以固定 SHA256 为准。
+- 压缩包 39,846,926 字节；完整解压 96,237,338 字节；裁剪后 27,488,263 字节、225 个文件。
+- 裁剪保留 `cmd/`、`ucrt64/bin`、`ucrt64/libexec/git-core`、模板与许可证；删除文档、man、locale、gitweb、perl、MSYS 运行时、Git Credential Manager、Avalonia、Skia、Git LFS 与 HTTP 传输等检查点不需要的部分。
+- 裁剪后 `init`、`config`、`add`、`commit`、`status`、`rev-parse`、`cat-file`、`diff`、`checkout` 全部通过；`checkout` 能恢复修改前内容。
+- 正式实现必须设置 `GIT_EXEC_PATH`、`GIT_TEMPLATE_DIR` 与受控 `PATH`，并用真实检查点流程验收；`git --version` 通过不算完成。
+- MinGit 为 GPLv2，按 ADR-0014 登记，附许可证全文、版本、来源 URL 与源码获取方式；不提交二进制到仓库。
+
+本变更在 M5-03 根据正式脚本、安装包体积与干净 VM 结果定稿。

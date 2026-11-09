@@ -1,0 +1,28 @@
+appId: com.cairn.desktop
+productName: Cairn
+copyright: Copyright © 2026 Cairn
+directories:
+  output: ../../spikes/m5/out/s2
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - out/bin/**/*
+  - node_modules/koffi/**/*
+  - node_modules/@koromix/**/*
+  - node_modules/better-sqlite3/**/*
+extraResources:
+  - from: resources/skills
+    to: skills
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false

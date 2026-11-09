@@ -1,0 +1,20 @@
+{
+  "name": "@cairn/spike-m5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "s1": "node src/s1-sandbox.mjs",
+    "s2": "node src/s2-package.mjs",
+    "s3": "node src/s3-update-source.mjs",
+    "s4": "node src/s4-mingit.mjs",
+    "check:package": "node src/check-package.mjs"
+  },
+  "dependencies": {
+    "koffi": "3.3.6"
+  },
+  "devDependencies": {
+    "@electron/asar": "3.4.1",
+    "electron-builder": "26.18.0",
+    "electron-updater": "6.8.11"
+  }
+}

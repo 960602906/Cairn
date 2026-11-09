@@ -41,3 +41,6 @@
 | [0031](0031-isolated-workspaces.md) | 隔离工作区与改动集合并 | 已接受（M4-08 / M4-09） |
 | [0032](0032-activity-center.md) | 活动中心与跨会话审批聚合 | 已接受（M4-06） |
 | [0033](0033-run-inspector-and-snapshots.md) | 运行检查器与上下文快照 | 已接受（M4-04） |
+| [0034](0034-windows-command-sandbox.md) | Windows 命令沙箱 | 提议（M5-00 草案） |
+| [0035](0035-windows-packaging.md) | Windows 打包与分发 | 提议（M5-00 草案） |
+| [0036](0036-auto-update-signing-and-rollback.md) | 自动更新、代码签名与回滚 | 提议（M5-00 草案） |
