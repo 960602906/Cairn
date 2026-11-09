@@ -26,6 +26,7 @@ import {
   type ChangeCommands,
   type ChangeSetCommands,
   type CheckpointCommands,
+  type CommandCommands,
   type InspectCommands,
   type RendererGateway,
   type SessionCommands,
@@ -110,8 +111,10 @@ let trials: TrialCommands
 let diagnostics: DiagnosticsCommands
 let inspect: InspectCommands
 let activity: ActivityCommands
+let backgroundCommands: CommandCommands
 const approvalListeners = new Set<(sessionId: string) => void>()
 const activityListeners = new Set<() => void>()
+const commandListeners = new Set<(commandId: string) => void>()
 
 const INSPECT_RESULT: RunInspectResult = {
   tree: {
@@ -230,6 +233,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     setEnabled: vi.fn(),
   }
   approvalListeners.clear()
+  commandListeners.clear()
   const agentDetail = {
     agentId: 'user.x',
     source: 'user' as const,
@@ -315,6 +319,19 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
       return () => activityListeners.delete(listener)
     }),
   }
+  backgroundCommands = {
+    list: vi.fn(() => ({ commands: [] })),
+    output: vi.fn(() => {
+      throw new Error('not used')
+    }),
+    stop: vi.fn(() => {
+      throw new Error('not used')
+    }),
+    subscribe: vi.fn((listener: (commandId: string) => void) => {
+      commandListeners.add(listener)
+      return () => commandListeners.delete(listener)
+    }),
+  }
   gateway = createRendererGateway({
     events: { ...service, ...eventsOverride },
     commands,
@@ -334,6 +351,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     diagnostics,
     inspect,
     activity,
+    backgroundCommands,
     mcpStatus: () => () => undefined,
   })
   return connectRenderer()
@@ -399,11 +417,39 @@ describe('coalesceDeltas', () => {
       at(out('stdout', 'b'), 5),
       at(out('stderr', 'c'), 6),
       at(out('stderr', 'd', 't2'), 7),
+      at(
+        {
+          ...base,
+          sessionId: 's1',
+          type: 'command.output.delta',
+          payload: { commandId: 'c1', stream: 'stdout', text: 'a' },
+        } as UnsequencedEvent,
+        8,
+      ),
+      at(
+        {
+          ...base,
+          sessionId: 's1',
+          type: 'command.output.delta',
+          payload: { commandId: 'c1', stream: 'stdout', text: 'b' },
+        } as UnsequencedEvent,
+        9,
+      ),
+      at(
+        {
+          ...base,
+          sessionId: 's1',
+          type: 'command.output.delta',
+          payload: { commandId: 'c1', stream: 'stderr', text: 'c' },
+        } as UnsequencedEvent,
+        10,
+      ),
     ])
-    expect(seqs(merged)).toEqual([1, 2, 3, 5, 6, 7])
+    expect(seqs(merged)).toEqual([1, 2, 3, 5, 6, 7, 9, 10])
     // 非增量事件从不合并
     expect(seqs(coalesceDeltas([at(user('s1', 'a'), 1), at(user('s1', 'b'), 2)]))).toEqual([1, 2])
     expect((merged[3]!.payload as { text: string }).text).toBe('ab')
+    expect((merged[6]!.payload as { text: string }).text).toBe('ab')
   })
 })
 
@@ -741,6 +787,38 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(approvalListeners.size).toBe(0)
   })
 
+  it('serves background command requests and change pushes (M4-14)', async () => {
+    const { client } = setup()
+    const command = {
+      commandId: 'cmd1',
+      sessionId: 's1',
+      runId: 'r1',
+      command: 'npm run dev',
+      cwd: '/work',
+      startedAt: 1,
+      status: 'running' as const,
+    }
+    vi.mocked(backgroundCommands.list).mockReturnValue({ commands: [command] })
+    vi.mocked(backgroundCommands.output).mockReturnValue({
+      command,
+      chunks: [{ stream: 'stdout', text: 'ready' }],
+      omittedChars: 0,
+    })
+    vi.mocked(backgroundCommands.stop).mockReturnValue({ ...command, status: 'stopping' })
+    await expect(client.request('command.list', {})).resolves.toEqual({ commands: [command] })
+    await expect(client.request('command.output', { commandId: 'cmd1' })).resolves.toMatchObject({
+      chunks: [{ stream: 'stdout', text: 'ready' }],
+    })
+    await expect(client.request('command.stop', { commandId: 'cmd1' })).resolves.toMatchObject({
+      status: 'stopping',
+    })
+    const changed: string[] = []
+    client.on('command.changed', ({ commandId }) => changed.push(commandId))
+    commandListeners.forEach((listener) => listener('cmd1'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(changed).toEqual(['cmd1'])
+  })
+
   it('delegates project requests to the project service', async () => {
     const { client } = setup()
     await expect(client.request('project.list', {})).resolves.toEqual({ projects: [PROJECT] })
@@ -925,6 +1003,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       diagnostics,
       inspect: {} as unknown as InspectCommands,
       activity: { subscribe: () => () => undefined } as unknown as ActivityCommands,
+      backgroundCommands,
       mcpStatus: () => () => undefined,
       onProtocolError,
     })

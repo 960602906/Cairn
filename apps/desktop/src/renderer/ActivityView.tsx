@@ -4,7 +4,16 @@
  * 数据只来自主进程的 `activity.list` 快照，并随 `activity.changed` 重新读取；界面不维护第二份
  * 审批或运行状态。待审批可以就地决定，需要看 diff 的审批通过“查看”回到对应会话。
  */
-import { CheckCircle2, Clock3, FileDiff, Play, RefreshCw, ShieldAlert } from 'lucide-react'
+import {
+  CheckCircle2,
+  Clock3,
+  FileDiff,
+  Play,
+  RefreshCw,
+  ShieldAlert,
+  Square,
+  Terminal,
+} from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -13,6 +22,7 @@ import type {
   ActivityRunning,
   AgentDefinitionRef,
   AgentSummary,
+  BackgroundCommand,
 } from '@cairn/protocol'
 import { translateError, type TFunction } from '@cairn/i18n'
 import { agentName } from './agents/AgentsPage.js'
@@ -266,6 +276,105 @@ function CompletedRow({
   )
 }
 
+function CommandRow({ command }: { readonly command: BackgroundCommand }) {
+  const { t, i18n } = useTranslation('session')
+  const output = useSessionStore((state) => state.commandOutputs[command.commandId])
+  const loadCommandOutput = useSessionStore((state) => state.loadCommandOutput)
+  const stopCommand = useSessionStore((state) => state.stopCommand)
+  const [expanded, setExpanded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const running = command.status === 'running' || command.status === 'stopping'
+
+  useEffect(() => {
+    if (!expanded) return
+    void loadCommandOutput(command.commandId)
+    if (!running) return
+    const timer = setInterval(() => void loadCommandOutput(command.commandId), 1_000)
+    return () => clearInterval(timer)
+  }, [command.commandId, expanded, loadCommandOutput, running])
+
+  const stop = async () => {
+    setBusy(true)
+    await stopCommand(command.commandId)
+    setBusy(false)
+  }
+
+  return (
+    <article
+      aria-label={t('activity.commandItem', { command: command.command })}
+      className="flex flex-col gap-2 rounded-card bg-raise p-3 shadow-1"
+    >
+      <div className="flex items-start gap-2">
+        <Terminal aria-hidden className="mt-0.5 size-4 shrink-0 text-accent" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <code className="min-w-0 break-all text-ui text-fg">{command.command}</code>
+            <span
+              className={cn(
+                'rounded-[5px] px-1.5 py-0.5 text-[11px]',
+                running ? 'bg-accent-soft text-accent' : 'bg-sunk text-fg2',
+              )}
+            >
+              {t(`activity.commandStatus.${command.status}`)}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-note text-faint">
+            <span className="break-all font-mono">{command.cwd}</span>
+            <time dateTime={new Date(command.startedAt).toISOString()}>
+              {t('activity.startedAt', { time: timeText(command.startedAt, i18n.language) })}
+            </time>
+            {command.exitCode !== undefined && command.exitCode !== null && (
+              <span>{t('activity.exitCode', { code: command.exitCode })}</span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="flex h-7 items-center rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          {expanded ? t('activity.hideOutput') : t('activity.showOutput')}
+        </button>
+        {running && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void stop()}
+            className="flex h-7 items-center gap-1 rounded-item bg-sunk px-2 text-note text-danger outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-45"
+          >
+            <Square aria-hidden className="size-3" />
+            {t('activity.stopCommand')}
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <pre className="max-h-64 overflow-auto rounded-item bg-sunk p-2 font-mono text-[11px] text-fg2">
+          {output === undefined
+            ? t('activity.outputLoading')
+            : output.chunks.length === 0
+              ? t('activity.outputEmpty')
+              : output.chunks.map((chunk, index) => (
+                  <span
+                    key={index}
+                    className={chunk.stream === 'stderr' ? 'text-danger' : undefined}
+                  >
+                    {chunk.text}
+                  </span>
+                ))}
+          {output !== undefined && output.omittedChars > 0 && (
+            <span className="text-faint">
+              {'\n'}
+              {t('activity.outputOmitted', { chars: output.omittedChars })}
+            </span>
+          )}
+        </pre>
+      )}
+    </article>
+  )
+}
+
 export function ActivityView({
   leading,
   onOpenSession,
@@ -278,13 +387,16 @@ export function ActivityView({
   const loading = useSessionStore((state) => state.activityLoading)
   const error = useSessionStore((state) => state.activityError)
   const refreshActivity = useSessionStore((state) => state.refreshActivity)
+  const commands = useSessionStore((state) => state.commands)
+  const refreshCommands = useSessionStore((state) => state.refreshCommands)
   const resolveActivity = useSessionStore((state) => state.resolveActivity)
   const agents = useSessionStore((state) => state.agents) ?? []
   const [busy, setBusy] = useState<string | undefined>()
 
   useEffect(() => {
     void refreshActivity()
-  }, [refreshActivity])
+    void refreshCommands()
+  }, [refreshActivity, refreshCommands])
 
   const decide = async (
     decision: 'allow_once' | 'allow_session' | 'deny',
@@ -299,7 +411,9 @@ export function ActivityView({
   const approvals = activity?.approvals ?? []
   const running = activity?.running ?? []
   const completed = activity?.completed ?? []
-  const empty = activity !== undefined && approvals.length + running.length + completed.length === 0
+  const empty =
+    activity !== undefined &&
+    approvals.length + running.length + completed.length + commands.length === 0
   return (
     <>
       <div className="drag flex h-10 shrink-0 items-center gap-1.5 pl-3">{leading}</div>
@@ -397,6 +511,20 @@ export function ActivityView({
                       agents={agents}
                       onOpen={onOpenSession}
                     />
+                  ))
+                )}
+              </Section>
+
+              <Section
+                title={t('activity.commandsSection')}
+                label={t('activity.commandsSection')}
+                count={commands.length}
+              >
+                {commands.length === 0 ? (
+                  <p className="text-note text-faint">{t('activity.noneCommands')}</p>
+                ) : (
+                  commands.map((command) => (
+                    <CommandRow key={command.commandId} command={command} />
                   ))
                 )}
               </Section>

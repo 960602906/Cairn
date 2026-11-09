@@ -1604,4 +1604,39 @@ describe('activity center', () => {
     expect(store.getState().activityLoading).toBe(false)
     expect(store.getState().activityError?.code).toBe('activity.failed')
   })
+
+  it('loads background commands, their output and refreshes on pushes', async () => {
+    const command = {
+      commandId: 'cmd1',
+      sessionId: 's1',
+      runId: 'r1',
+      command: 'npm run dev',
+      cwd: '/work',
+      startedAt: 10,
+      status: 'running' as const,
+    }
+    const output = {
+      command,
+      chunks: [{ stream: 'stdout' as const, text: 'ready\n' }],
+      omittedChars: 0,
+    }
+    const { api, calls, emitChannel } = fakeApi({
+      'command.list': () => ({ commands: [command] }),
+      'command.output': () => output,
+      'command.stop': () => ({ ...command, status: 'stopping' }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshCommands()
+    expect(store.getState().commands).toEqual([command])
+    expect(store.getState().commandsLoading).toBe(false)
+    await expect(store.getState().loadCommandOutput('cmd1')).resolves.toEqual(output)
+    expect(store.getState().commandOutputs.cmd1).toEqual(output)
+    await expect(store.getState().stopCommand('cmd1')).resolves.toBe(true)
+    expect(calls.filter(([method]) => method === 'command.list')).toHaveLength(2)
+
+    emitChannel('command.changed', { commandId: 'cmd1' })
+    await vi.waitFor(() =>
+      expect(calls.filter(([method]) => method === 'command.output')).toHaveLength(3),
+    )
+  })
 })

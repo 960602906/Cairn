@@ -34,6 +34,7 @@ import {
   RpcError,
   type ErrorInfo,
   type HostModelConfig,
+  type BackgroundCommand,
   type IsolatedWorkspaceInfo,
   type ModelRef,
   type PermissionRule,
@@ -249,6 +250,11 @@ export interface HostSupervisorOptions {
     changeSetId: string
     files: { path: string; added: number; removed: number }[]
   }>
+  /** 启动后台命令（M4-14）：会话由连接确定，命令在主进程存活到停止或应用退出。 */
+  readonly startCommand?: (
+    sessionId: string,
+    input: { runId: string; command: string; cwd: string; timeoutSeconds?: number },
+  ) => Promise<BackgroundCommand>
   /** 执行宿主的 `host.mcp.call`（M3-09）。省略时报 `run.unsupported`。 */
   readonly callMcpTool?: (
     sessionId: string,
@@ -429,6 +435,16 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
       endpoint.handle('host.changeset.create', async (input) => {
         if (!options.createChangeSet) throw new RpcError('run.unsupported')
         return options.createChangeSet(sessionId, input)
+      })
+
+      endpoint.handle('host.command.start', async (input) => {
+        if (!options.startCommand) throw new RpcError('run.unsupported')
+        return options.startCommand(sessionId, {
+          runId: input.runId,
+          command: input.command,
+          cwd: input.cwd,
+          ...(input.timeoutSeconds === undefined ? {} : { timeoutSeconds: input.timeoutSeconds }),
+        })
       })
 
       endpoint.handle('host.snapshot', (snapshot) => {

@@ -85,7 +85,7 @@ import {
   type SkillCatalogEntry,
 } from '@cairn/protocol'
 import { SKILL_PIN_MAX_CHARS } from '@cairn/skills'
-import { createLoadSkillTool, createPathResolver } from '@cairn/tools'
+import { createLoadSkillTool, createPathResolver, createStartCommandTool } from '@cairn/tools'
 import { createHostApprovalGate } from './approval-gate.js'
 import { createHostCheckpoints, type OpenShadowRepo } from './checkpoints.js'
 import { createHostChangeRecorder } from './change-recorder.js'
@@ -345,6 +345,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     const readOnlyRoots: string[] = []
     if (hasBuiltinTools) {
       registry.register(
+        createStartCommandTool({
+          start: (input) => {
+            return endpoint.request('host.command.start', {
+              ...input,
+              runId: run?.runId ?? init.runId,
+            })
+          },
+        }),
+      )
+      registry.register(
         createLoadSkillTool(() =>
           skillCatalog.map((skill) => ({
             name: skill.name,
@@ -432,6 +442,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       const environment =
         (await options.registerTools?.(childRegistry, workspace.path, init.shell ?? 'auto')) ?? {}
       registerMcpToolsInto(childRegistry, resolved.mcpTools)
+      childRegistry.register(
+        createStartCommandTool({
+          start: (input) => {
+            return endpoint.request('host.command.start', {
+              ...input,
+              runId: handleRef.current?.runId ?? parentRunId,
+            })
+          },
+        }),
+      )
       const skills = [...resolved.skills]
       const roots = skills.map((skill) => skill.root)
       if (childRegistry.list().length > 0) {

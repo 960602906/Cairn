@@ -48,6 +48,7 @@ describe('openSqliteStorage', () => {
         '0012_change-sets',
         '0013_change-set-baseline-time',
         '0014_session-kind',
+        '0015_background-commands',
       ],
     })
     storage.close()
@@ -62,6 +63,7 @@ describe('openSqliteStorage', () => {
       'agent_runs',
       'agent_versions',
       'agents',
+      'background_commands',
       'change_set_files',
       'change_sets',
       'events',
@@ -128,6 +130,7 @@ describe('openSqliteStorage', () => {
       '0012_change-sets',
       '0013_change-set-baseline-time',
       '0014_session-kind',
+      '0015_background-commands',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

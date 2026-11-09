@@ -19,6 +19,7 @@ import type {
 } from '@cairn/protocol'
 import type { McpAuthKind, McpServerKind, PermissionEffect, ToolCategory } from '@cairn/protocol'
 import type { AgentSource } from '@cairn/protocol'
+import type { BackgroundCommand, BackgroundCommandOutput } from '@cairn/protocol'
 
 export const StorageErrorCode = {
   /** 记录不存在。 */
@@ -571,6 +572,20 @@ export interface ChangeSetStore {
 
 // ---------- 汇总 ----------
 
+export interface BackgroundCommandStore {
+  create(record: BackgroundCommand): BackgroundCommand
+  get(commandId: string): BackgroundCommand | undefined
+  list(): BackgroundCommand[]
+  finish(
+    commandId: string,
+    status: BackgroundCommand['status'],
+    exitCode: number | null,
+    endedAt: number,
+  ): BackgroundCommand
+  saveOutput(commandId: string, output: BackgroundCommandOutput): void
+  output(commandId: string): BackgroundCommandOutput | undefined
+}
+
 export interface Storage {
   readonly projects: ProjectStore
   readonly sessions: SessionStore
@@ -584,6 +599,7 @@ export interface Storage {
   readonly agents: AgentStore
   readonly runSnapshots: RunSnapshotStore
   readonly changeSets: ChangeSetStore
+  readonly commands: BackgroundCommandStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   close(): void

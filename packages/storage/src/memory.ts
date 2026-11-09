@@ -6,6 +6,8 @@ import {
   type FileChangeStatus,
   type PersistedEvent,
   type ProviderConfig,
+  type BackgroundCommand,
+  type BackgroundCommandOutput,
 } from '@cairn/protocol'
 import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
 import {
@@ -56,6 +58,8 @@ interface State {
   changeSets: Map<string, ChangeSetRecord>
   /** 按 changeSetId → 路径 → 文件记录。 */
   changeSetFiles: Map<string, Map<string, ChangeSetFileRecord>>
+  commands: Map<string, BackgroundCommand>
+  commandOutputs: Map<string, BackgroundCommandOutput>
 }
 
 const prefKey = (scope: string, source: string, name: string) => `${scope}\0${source}\0${name}`
@@ -77,6 +81,8 @@ function cloneState(state: State): State {
     runSnapshots: new Map(state.runSnapshots),
     changeSets: new Map(state.changeSets),
     changeSetFiles: new Map([...state.changeSetFiles].map(([id, files]) => [id, new Map(files)])),
+    commands: new Map(state.commands),
+    commandOutputs: new Map(state.commandOutputs),
   }
 }
 
@@ -102,6 +108,8 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     runSnapshots: new Map(),
     changeSets: new Map(),
     changeSetFiles: new Map(),
+    commands: new Map(),
+    commandOutputs: new Map(),
   }
   let closed = false
 
@@ -763,6 +771,40 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         const next: ChangeSetFileRecord = { ...record, status }
         files.set(path, next)
         return copy(next)
+      },
+    },
+
+    commands: {
+      create(record) {
+        requireSession(record.sessionId)
+        if (live().commands.has(record.commandId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { commandId: record.commandId })
+        }
+        live().commands.set(record.commandId, copy(record))
+        return copy(record)
+      },
+      get(commandId) {
+        const record = live().commands.get(commandId)
+        return record && copy(record)
+      },
+      list() {
+        return [...live().commands.values()].sort((a, b) => b.startedAt - a.startedAt).map(copy)
+      },
+      finish(commandId, status, exitCode, endedAt) {
+        const record = live().commands.get(commandId)
+        if (!record) throw new StorageError(StorageErrorCode.NotFound, { commandId })
+        const next = { ...record, status, exitCode, endedAt }
+        live().commands.set(commandId, next)
+        return copy(next)
+      },
+      saveOutput(commandId, output) {
+        if (!live().commands.has(commandId))
+          throw new StorageError(StorageErrorCode.NotFound, { commandId })
+        live().commandOutputs.set(commandId, copy(output))
+      },
+      output(commandId) {
+        const result = live().commandOutputs.get(commandId)
+        return result && copy(result)
       },
     },
 

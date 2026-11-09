@@ -80,6 +80,10 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   'tool.requested': { toolCallId: 'c1', name: 'read_file', input: { path: 'a.ts' } },
   'tool.started': { toolCallId: 'c1' },
   'tool.output.delta': { toolCallId: 'c1', stream: 'stdout', text: 'ok\n' },
+  'command.started': { commandId: 'cmd1', command: 'echo ok', cwd: '/work' },
+  'command.output.delta': { commandId: 'cmd1', stream: 'stdout', text: 'ok\n' },
+  'command.exited': { commandId: 'cmd1', status: 'exited', exitCode: 0 },
+  'command.stopped': { commandId: 'cmd1' },
   'tool.completed': {
     toolCallId: 'c1',
     output: text,
@@ -170,7 +174,7 @@ describe('事件类型登记', () => {
     for (const type of EVENT_TYPES) {
       expect(isLiveEventType(type)).toBe(type.endsWith('.delta'))
     }
-    expect(LIVE_EVENT_TYPES).toHaveLength(3)
+    expect(LIVE_EVENT_TYPES).toHaveLength(4)
   })
 })
 

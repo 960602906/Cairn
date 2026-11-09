@@ -8,6 +8,7 @@ import { readFileTool } from './read-file.js'
 import { createRunCommandTool, type RunCommandToolOptions } from './run-command.js'
 import { createSearchTool, type SearchToolOptions } from './search.js'
 import { createEditFileTool, createWriteFileTool } from './write-tools.js'
+import { createStartCommandTool } from './start-command.js'
 
 export * from './paths.js'
 export * from './read-file.js'
@@ -16,6 +17,7 @@ export * from './ripgrep.js'
 export * from './search.js'
 export * from './write-tools.js'
 export * from './run-command.js'
+export * from './start-command.js'
 export * from './load-skill.js'
 
 /** 注册读类内置工具（M1-07）：`read_file`、`list_dir`、`search`。 */
@@ -34,4 +36,11 @@ export function registerWriteTools(registry: ToolRegistry): void {
 /** 注册执行类内置工具（M1-09c）：`run_command`。 */
 export function registerExecuteTools(registry: ToolRegistry, options: RunCommandToolOptions): void {
   registry.register(createRunCommandTool(options))
+}
+
+export function registerBackgroundCommandTool(
+  registry: ToolRegistry,
+  options: Parameters<typeof createStartCommandTool>[0],
+): void {
+  registry.register(createStartCommandTool(options))
 }

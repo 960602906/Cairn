@@ -43,6 +43,8 @@ import {
   type DiagnosticsSummary,
   type ContentPart,
   type ApprovalDecision,
+  type BackgroundCommand,
+  type BackgroundCommandOutput,
   type MainForRenderer,
   type CheckpointRestorePlan,
   type ChangeSetConflictResolution,
@@ -142,6 +144,11 @@ export interface SessionState {
   readonly activityLoading: boolean
   /** 活动中心最近一次读取失败。 */
   readonly activityError: ErrorInfo | undefined
+  /** 后台命令（M4-14）：跨会话的活动进程与已结束记录。 */
+  readonly commands: readonly BackgroundCommand[]
+  readonly commandsLoading: boolean
+  /** 已读取的后台命令输出，键为 commandId。 */
+  readonly commandOutputs: Readonly<Record<string, BackgroundCommandOutput>>
   /** Agent 编辑器的试运行会话（M4-12）；关闭面板后清空。 */
   readonly trial: TrialState | undefined
 }
@@ -312,6 +319,12 @@ export interface SessionActions {
   inspectRun(sessionId: string, runId?: string): Promise<RunInspectResult | undefined>
   /** 重新读取活动中心快照（M4-07）。 */
   refreshActivity(): Promise<void>
+  /** 重新读取后台命令列表（M4-14）。 */
+  refreshCommands(): Promise<void>
+  /** 读取一个后台命令的开头与结尾输出。 */
+  loadCommandOutput(commandId: string): Promise<BackgroundCommandOutput | undefined>
+  /** 停止一个后台命令；成功后刷新列表与输出。 */
+  stopCommand(commandId: string): Promise<boolean>
   /** 在活动中心就地决定一个审批；成功后刷新快照。 */
   resolveActivity(
     approvalId: string,
@@ -649,6 +662,9 @@ export function createSessionStore(api: MainApi): SessionStore {
       activity: undefined,
       activityLoading: false,
       activityError: undefined,
+      commands: [],
+      commandsLoading: false,
+      commandOutputs: {},
       trial: undefined,
 
       async refreshSessions() {
@@ -1137,6 +1153,31 @@ export function createSessionStore(api: MainApi): SessionStore {
         }
       },
 
+      async refreshCommands() {
+        set({ commandsLoading: true })
+        const result = await run(() => api.request('command.list', {}))
+        set({ commandsLoading: false })
+        if (result?.commands) set({ commands: result.commands })
+      },
+
+      async loadCommandOutput(commandId) {
+        const result = await run(() => api.request('command.output', { commandId }))
+        if (result) {
+          set((state) => ({
+            commandOutputs: { ...state.commandOutputs, [commandId]: result },
+          }))
+        }
+        return result
+      },
+
+      async stopCommand(commandId) {
+        const stopped = await run(() => api.request('command.stop', { commandId }))
+        if (!stopped) return false
+        await get().refreshCommands()
+        await get().loadCommandOutput(commandId)
+        return true
+      },
+
       async resolveActivity(approvalId, decision, feedback) {
         const done = await run(() =>
           api.request(
@@ -1305,6 +1346,12 @@ export function createSessionStore(api: MainApi): SessionStore {
   })
   const offActivity = api.on('activity.changed', () => {
     void store.getState().refreshActivity()
+  })
+  const _offCommands = api.on('command.changed', ({ commandId }) => {
+    void store.getState().refreshCommands()
+    if (store.getState().commandOutputs[commandId] !== undefined) {
+      void store.getState().loadCommandOutput(commandId)
+    }
   })
 
   return store

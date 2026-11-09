@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
-import type { ActivityListResult, AgentSummary } from '@cairn/protocol'
+import type { ActivityListResult, AgentSummary, BackgroundCommand } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
 import { ActivityView } from './ActivityView.js'
 import type { SessionStore } from './session-store.js'
@@ -72,6 +72,16 @@ const snapshot: ActivityListResult = {
   counts: { approvals: 2, running: 1 },
 }
 
+const backgroundCommand: BackgroundCommand = {
+  commandId: 'cmd1',
+  sessionId: 's1',
+  runId: 'r1',
+  command: 'npm run dev',
+  cwd: '/work/demo',
+  startedAt: 1_700_000_000_000,
+  status: 'running',
+}
+
 function setup(
   overrides: {
     activity?: ActivityListResult | undefined
@@ -79,9 +89,15 @@ function setup(
     error?: { code: string } | undefined
     agents?: readonly AgentSummary[]
     resolveActivity?: (approvalId: string, decision: string) => Promise<boolean>
+    commands?: readonly BackgroundCommand[]
+    commandOutputs?: Record<string, unknown>
+    stopCommand?: () => Promise<boolean>
   } = {},
 ) {
   const refreshActivity = vi.fn(async () => {})
+  const refreshCommands = vi.fn(async () => {})
+  const loadCommandOutput = vi.fn(async () => undefined)
+  const stopCommand = vi.fn(overrides.stopCommand ?? (async () => true))
   const resolveActivity = vi.fn(overrides.resolveActivity ?? (async () => true))
   const onOpenSession = vi.fn()
   const store = createStore<Record<string, unknown>>(() => ({
@@ -90,6 +106,11 @@ function setup(
     activityError: overrides.error,
     agents: overrides.agents,
     refreshActivity,
+    refreshCommands,
+    loadCommandOutput,
+    stopCommand,
+    commands: overrides.commands ?? [],
+    commandOutputs: overrides.commandOutputs ?? {},
     resolveActivity,
   })) as unknown as SessionStore
   render(
@@ -99,7 +120,14 @@ function setup(
       </SessionStoreProvider>
     </I18nextProvider>,
   )
-  return { refreshActivity, resolveActivity, onOpenSession }
+  return {
+    refreshActivity,
+    refreshCommands,
+    loadCommandOutput,
+    stopCommand,
+    resolveActivity,
+    onOpenSession,
+  }
 }
 
 afterEach(cleanup)
@@ -129,6 +157,76 @@ describe('ActivityView', () => {
     const item = screen.getByRole('article', { name: '最近完成：重构工具' })
     await user.click(within(item).getByRole('button', { name: '查看改动' }))
     expect(onOpenSession).toHaveBeenCalledWith('s3', 'cs1')
+  })
+
+  it('shows background tasks, streams their output and stops them', async () => {
+    const user = userEvent.setup()
+    const { loadCommandOutput, stopCommand } = setup({
+      commands: [backgroundCommand],
+      commandOutputs: {
+        cmd1: {
+          command: backgroundCommand,
+          chunks: [{ stream: 'stdout', text: 'ready\n' }],
+          omittedChars: 12,
+        },
+      },
+    })
+    const item = screen.getByRole('article', { name: '后台任务：npm run dev' })
+    expect(within(item).getByText('运行中')).toBeTruthy()
+    expect(within(item).getByText('/work/demo')).toBeTruthy()
+    await user.click(within(item).getByRole('button', { name: '查看输出' }))
+    await waitFor(() => expect(loadCommandOutput).toHaveBeenCalledWith('cmd1'))
+    expect(within(item).getByText(/ready/)).toBeTruthy()
+    expect(within(item).getByText(/中间省略了 12 个字符/)).toBeTruthy()
+    await user.click(within(item).getByRole('button', { name: '停止' }))
+    expect(stopCommand).toHaveBeenCalledWith('cmd1')
+  })
+
+  it('renders loading, empty, stderr and finished command states', async () => {
+    const user = userEvent.setup()
+    const finished: BackgroundCommand = {
+      ...backgroundCommand,
+      commandId: 'done',
+      status: 'exited',
+      exitCode: 7,
+      endedAt: 20,
+    }
+    const stopping: BackgroundCommand = {
+      ...backgroundCommand,
+      commandId: 'stopping',
+      status: 'stopping',
+    }
+    const empty: BackgroundCommand = {
+      ...backgroundCommand,
+      commandId: 'empty',
+      status: 'exited',
+      exitCode: 0,
+    }
+    setup({
+      commands: [finished, stopping, empty],
+      commandOutputs: {
+        done: {
+          command: finished,
+          chunks: [{ stream: 'stderr', text: 'failed\n' }],
+          omittedChars: 0,
+        },
+        empty: { command: empty, chunks: [], omittedChars: 0 },
+      },
+    })
+    const done = screen.getAllByRole('article', { name: '后台任务：npm run dev' })[0]!
+    expect(within(done).getByText('退出码 7')).toBeTruthy()
+    await user.click(within(done).getByRole('button', { name: '查看输出' }))
+    expect(within(done).getByText(/failed/)).toBeTruthy()
+    expect(within(done).queryByRole('button', { name: '停止' })).toBeNull()
+
+    const stoppingRow = screen.getAllByRole('article', { name: '后台任务：npm run dev' })[1]!
+    expect(within(stoppingRow).getByText('正在停止')).toBeTruthy()
+    await user.click(within(stoppingRow).getByRole('button', { name: '查看输出' }))
+    expect(within(stoppingRow).getByText('正在读取输出…')).toBeTruthy()
+
+    const emptyRow = screen.getAllByRole('article', { name: '后台任务：npm run dev' })[2]!
+    await user.click(within(emptyRow).getByRole('button', { name: '查看输出' }))
+    expect(within(emptyRow).getByText('还没有输出。')).toBeTruthy()
   })
 
   it('decides approvals in place and hides session-wide allow for no_checkpoint', async () => {
@@ -221,6 +319,20 @@ describe('ActivityView', () => {
             turnId: undefined,
             status: 'failed',
             summary: '测试失败',
+          },
+          {
+            ...snapshot.completed[0]!,
+            runId: 'r5',
+            sessionTitle: '中止的会话',
+            status: 'aborted',
+            summary: '已中止',
+          },
+          {
+            ...snapshot.completed[0]!,
+            runId: 'r6',
+            sessionTitle: '限额的会话',
+            status: 'limit_reached',
+            summary: '达到限额',
           },
         ],
         counts: { approvals: 1, running: 0 },

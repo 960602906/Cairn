@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { FileChangeSummary, FileContent } from '../changes.js'
 import { ActivityDecision, ActivityListResult } from '../activity.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
+import { BackgroundCommand, BackgroundCommandOutput } from '../commands.js'
 import {
   DiagnosticsExportInput,
   DiagnosticsExportResult,
@@ -825,6 +826,18 @@ export const MainForRenderer = defineSide({
       params: z.object({ path: z.string().min(1) }),
       result: z.object({ shown: z.boolean() }),
     },
+    'command.list': {
+      params: z.object({}),
+      result: z.object({ commands: z.array(BackgroundCommand) }),
+    },
+    'command.output': {
+      params: z.object({ commandId: Id }),
+      result: BackgroundCommandOutput,
+    },
+    'command.stop': {
+      params: z.object({ commandId: Id }),
+      result: BackgroundCommand,
+    },
   },
   events: {
     /** 实时事件推送；增量事件在主进程合并后按帧率批量推送（架构 §22）。 */
@@ -840,6 +853,7 @@ export const MainForRenderer = defineSide({
     'activity.changed': z.object({}),
     /** 点击系统通知后打开对应会话（M4-06）；界面负责切到会话页。 */
     'activity.open': z.object({ sessionId: Id }),
+    'command.changed': z.object({ commandId: Id }),
   },
 })
 

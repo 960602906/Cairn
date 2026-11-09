@@ -5,7 +5,7 @@ import type { Migration } from '../migrate.js'
  *
  * 计划中本迁移编号为 `0013-session-kind`，但 `0013` 已被 M4-10 的改动集基线时间占用；
  * 迁移编号必须单调递增，因此这里使用 `0014`。`0014-background-commands`（M4-14，可选）
- * 若实施需顺延到 `0015`。
+ * 已顺延到 `0015`。
  */
 export const sessionKind: Migration = {
   version: 14,

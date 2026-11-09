@@ -28,6 +28,7 @@ import {
 } from './common.js'
 import { FileChangeKind } from './changes.js'
 import { CheckpointReason } from './checkpoints.js'
+import { BackgroundCommandStatus } from './commands.js'
 
 /** 事件信封的 schema 版本（架构 §7.1 `EventEnvelope.v`）。 */
 export const EVENT_SCHEMA_VERSION = 1 as const
@@ -316,6 +317,18 @@ const payloadSchemas = {
     omittedToolCallIds: z.array(Id).optional(),
   }),
   'model.fallback': z.object({ from: ModelRef, to: ModelRef, error: ErrorInfo }),
+  'command.started': z.object({ commandId: Id, command: z.string(), cwd: z.string() }),
+  'command.output.delta': z.object({
+    commandId: Id,
+    stream: z.enum(['stdout', 'stderr']),
+    text: z.string(),
+  }),
+  'command.exited': z.object({
+    commandId: Id,
+    status: BackgroundCommandStatus,
+    exitCode: z.number().int().nullable(),
+  }),
+  'command.stopped': z.object({ commandId: Id }),
   /**
    * 模型请求失败且可以重试（网络、限流、5xx），等待 `delayMs` 后重新请求（M1-14a，架构 §21）。
    * `attempt` 从 1 起，不超过 `maxRetries`；重试耗尽后本轮以 `turn.failed` 结束。
@@ -356,6 +369,7 @@ export const LIVE_EVENT_TYPES = [
   'message.assistant.delta',
   'message.reasoning.delta',
   'tool.output.delta',
+  'command.output.delta',
 ] as const satisfies readonly EventType[]
 
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number]
