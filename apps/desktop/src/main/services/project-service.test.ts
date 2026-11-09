@@ -70,6 +70,13 @@ describe('project service', () => {
     expect(service.update({ projectId: 'p1', enableProjectSkills: true }).enableProjectSkills).toBe(
       true,
     )
+    expect(service.update({ projectId: 'p1', pinned: true })).toMatchObject({
+      isPinned: true,
+      pinnedAt: expect.any(Number),
+    })
+    expect(service.update({ projectId: 'p1', archived: true })).toMatchObject({
+      archivedAt: expect.any(Number),
+    })
     expect(service.remove({ projectId: 'p1' })).toEqual({})
     expect(service.list().projects).toEqual([])
     expect(storage.sessions.get('s1')?.projectId).toBe('p1')
@@ -102,5 +109,19 @@ describe('project service', () => {
     const root = process.platform === 'win32' ? 'C:\\' : '/'
     const { service } = setup([root])
     expect((await service.open()).project).toMatchObject({ name: root, path: root })
+  })
+
+  it('uses a generated id and keeps a project unchanged for an empty patch', async () => {
+    const storage = createMemoryStorage()
+    const service = createProjectService({
+      storage,
+      pickDirectory: async () => ABS,
+    })
+    const opened = await service.open()
+    expect(opened.project?.projectId).toMatch(/[0-9a-f-]{36}/)
+    expect(service.update({ projectId: opened.project!.projectId })).toMatchObject({
+      name: 'demo',
+      path: ABS,
+    })
   })
 })

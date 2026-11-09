@@ -22,6 +22,7 @@ it('exports the public API', () => {
     'change-set-baseline-time',
     'session-kind',
     'background-commands',
+    'project-pinning',
   ])
   expect(storage.StorageErrorCode.SeqConflict).toBe('storage.seq_conflict')
   const error = new storage.StorageError(storage.StorageErrorCode.NotFound)

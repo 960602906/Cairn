@@ -14,6 +14,7 @@ import { changeSets } from './0012-change-sets.js'
 import { changeSetBaselineTime } from './0013-change-set-baseline-time.js'
 import { sessionKind } from './0014-session-kind.js'
 import { backgroundCommands } from './0015-background-commands.js'
+import { projectPinning } from './0016-project-pinning.js'
 
 /** 应用的全部迁移，按编号排列。新增迁移时追加到末尾。 */
 export const MIGRATIONS: readonly Migration[] = [
@@ -32,4 +33,5 @@ export const MIGRATIONS: readonly Migration[] = [
   changeSetBaselineTime,
   sessionKind,
   backgroundCommands,
+  projectPinning,
 ]

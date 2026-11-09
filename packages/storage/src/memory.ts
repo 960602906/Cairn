@@ -178,13 +178,20 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         if (!current || current.removedAt !== undefined) {
           throw new StorageError(StorageErrorCode.NotFound, { projectId })
         }
+        const { pinnedAt: currentPinnedAt, archivedAt: currentArchivedAt, ...base } = current
+        const pinnedAt =
+          patch.pinned === undefined ? currentPinnedAt : patch.pinned ? now() : undefined
+        const archivedAt =
+          patch.archived === undefined ? currentArchivedAt : patch.archived ? now() : undefined
         const next: ProjectRecord = {
-          ...current,
+          ...base,
           ...(patch.name !== undefined ? { name: patch.name } : {}),
           ...(patch.readAgentsMd !== undefined ? { readAgentsMd: patch.readAgentsMd } : {}),
           ...(patch.enableProjectSkills !== undefined
             ? { enableProjectSkills: patch.enableProjectSkills }
             : {}),
+          ...(pinnedAt === undefined ? {} : { pinnedAt }),
+          ...(archivedAt === undefined ? {} : { archivedAt }),
         }
         live().projects.set(projectId, next)
         return copy(next)

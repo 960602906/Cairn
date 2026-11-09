@@ -54,6 +54,7 @@ import { createMcpService } from './services/mcp-service.js'
 import { createAgentService } from './services/agent-service.js'
 import { DiagnosticsService } from './services/diagnostics-service.js'
 import { createProjectService } from './services/project-service.js'
+import { createFileService } from './services/file-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
@@ -462,10 +463,15 @@ const projects = createProjectService({
     return result.canceled ? undefined : result.filePaths[0]
   },
 })
+const files = createFileService({
+  storage,
+  revealPath: (target) => shell.showItemInFolder(target),
+})
 const gateway = createRendererGateway({
   events,
   commands: sessions,
   projects,
+  files,
   settings: {
     get: () => settings.get(),
     // 切换权限模式后，运行中的宿主改用新的预设

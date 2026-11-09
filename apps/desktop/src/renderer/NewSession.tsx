@@ -16,9 +16,12 @@ const field =
 const labelText = 'mb-1.5 block text-note font-medium text-fg2'
 
 export function NewSession({
+  initialProjectPath,
   onDone,
   onSettings,
 }: {
+  /** 从某个工作空间的“新建会话”进入时预先选中的项目路径。 */
+  readonly initialProjectPath?: string | undefined
   readonly onDone: () => void
   /** 打开设置页的“模型供应商”（没有配置供应商时的引导）。 */
   readonly onSettings?: () => void
@@ -32,13 +35,23 @@ export function NewSession({
   const hasSessions = useSessionStore((s) => s.sessions.length > 0)
   // 设置还没读到时不提示（旧版主进程或测试替身可能不返回供应商列表）
   const noProvider = useSessionStore((s) => s.settings?.providers?.length === 0)
-  const [projectPath, setProjectPath] = useState(projects[0]?.path ?? '')
+  const [projectPath, setProjectPath] = useState(initialProjectPath ?? projects[0]?.path ?? '')
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     void refreshProjects()
   }, [refreshProjects])
+
+  useEffect(() => {
+    if (initialProjectPath !== undefined) setProjectPath(initialProjectPath)
+  }, [initialProjectPath])
+
+  // 项目列表比表单晚到时补上默认目录；已经填写的内容不覆盖。
+  useEffect(() => {
+    if (initialProjectPath !== undefined) return
+    setProjectPath((current) => (current === '' ? (projects[0]?.path ?? '') : current))
+  }, [initialProjectPath, projects])
 
   const chooseFolder = async () => {
     const project = await openProject()

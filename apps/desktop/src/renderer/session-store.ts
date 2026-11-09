@@ -194,7 +194,13 @@ export interface SessionActions {
   /** 修改项目名称或开关（M3-02）；失败时返回 undefined。 */
   updateProject(
     projectId: string,
-    patch: { name?: string; readAgentsMd?: boolean; enableProjectSkills?: boolean },
+    patch: {
+      name?: string
+      readAgentsMd?: boolean
+      enableProjectSkills?: boolean
+      pinned?: boolean
+      archived?: boolean
+    },
   ): Promise<ProjectSummary | undefined>
   /** 从列表移除项目（M3-02），不删除目录和会话；成功时返回 true。 */
   removeProject(projectId: string): Promise<boolean>

@@ -69,6 +69,12 @@ describe('background command contracts', () => {
         enableProjectSkills: true,
       }).success,
     ).toBe(true)
+    expect(
+      requests['project.update'].params.safeParse({ projectId: 'p1', pinned: true }).success,
+    ).toBe(true)
+    expect(
+      requests['project.update'].params.safeParse({ projectId: 'p1', archived: false }).success,
+    ).toBe(true)
     expect(requests['skill.get'].params.safeParse({ name: 'x', source: 'project' }).success).toBe(
       false,
     )

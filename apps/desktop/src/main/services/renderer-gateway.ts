@@ -27,6 +27,7 @@ import type { z } from 'zod'
 import type { CredentialCommands } from './credential-store.js'
 import type { SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
+import type { FileCommands } from './file-service.js'
 import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
 import type { HubCommands } from './hub-service.js'
@@ -137,6 +138,8 @@ export interface RendererGatewayOptions {
   readonly commands: SessionCommands
   /** 项目（M1-16a）：列表与用系统对话框打开。 */
   readonly projects: ProjectCommands
+  /** 文件树：列出、新建、重命名、删除与在系统文件管理器中定位。 */
+  readonly files: FileCommands
   readonly settings: SettingsCommands
   /** 凭据命令（M1-03b）：界面只能写入、删除与查询是否已配置。 */
   readonly credentials: CredentialCommands
@@ -249,7 +252,7 @@ interface Subscription {
 type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
-  const { events, commands, projects, settings, credentials, providers } = options
+  const { events, commands, projects, files, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
   const { hub } = options
   const { agents, trials, diagnostics, activity, changeSets } = options
@@ -326,6 +329,11 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('project.open', () => projects.open())
       endpoint.handle('project.update', (params) => projects.update(params))
       endpoint.handle('project.remove', (params) => projects.remove(params))
+      endpoint.handle('fs.list', (params) => files.list(params))
+      endpoint.handle('fs.create', (params) => files.create(params))
+      endpoint.handle('fs.rename', (params) => files.rename(params))
+      endpoint.handle('fs.delete', (params) => files.delete(params))
+      endpoint.handle('fs.reveal', (params) => files.reveal(params))
       endpoint.handle('session.prompt', (params) => commands.prompt(params))
       endpoint.handle('plan.approve', (params) => commands.approvePlan(params))
       endpoint.handle('plan.replan', (params) => commands.replan(params))

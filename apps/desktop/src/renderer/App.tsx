@@ -11,9 +11,11 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
+import type { ProjectSummary } from '@cairn/protocol'
 import { ActivityView } from './ActivityView.js'
 import { ChatPanel, TopBar } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
+import { FileTreeDialog } from './FileTreeDialog.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
 import { AppRail } from './layout/AppRail.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
@@ -58,6 +60,8 @@ function Workspace() {
   const [pendingChangeSet, setPendingChangeSet] = useState<
     { sessionId: string; changeSetId: string } | undefined
   >()
+  const [fileTreeProject, setFileTreeProject] = useState<ProjectSummary | undefined>()
+  const [newChatProjectPath, setNewChatProjectPath] = useState<string | undefined>()
   const refreshActivity = useSessionStore((s) => s.refreshActivity)
   const refreshAgents = useSessionStore((s) => s.refreshAgents)
   const onActivityOpen = useSessionStore((s) => s.onActivityOpen)
@@ -168,6 +172,7 @@ function Workspace() {
   const newChat = useCallback(() => {
     setSettings(undefined)
     setActivity(false)
+    setNewChatProjectPath(undefined)
     setComposing(true)
   }, [])
 
@@ -185,6 +190,21 @@ function Workspace() {
       if (narrow) setSessionsOpen(false)
       setComposing(false)
       setActivity(false)
+    },
+    onConfigureProject: () => {
+      setSessionsOpen(false)
+      setSettings('projects')
+    },
+    onBrowseProjectInFileTree: (project: ProjectSummary) => {
+      if (narrow) setSessionsOpen(false)
+      setFileTreeProject(project)
+    },
+    onNewConversationProject: (project: ProjectSummary) => {
+      if (narrow) setSessionsOpen(false)
+      setSettings(undefined)
+      setActivity(false)
+      setNewChatProjectPath(project.path)
+      setComposing(true)
     },
   } as const
 
@@ -235,7 +255,6 @@ function Workspace() {
     return (
       <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        <WindowControls />
         {rail}
         <SettingsNav
           open
@@ -251,6 +270,7 @@ function Workspace() {
         </main>
         {drawer}
         {search}
+        <WindowControls />
       </div>
     )
   }
@@ -259,7 +279,6 @@ function Workspace() {
     return (
       <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        <WindowControls />
         {rail}
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
@@ -267,6 +286,7 @@ function Workspace() {
         </main>
         {drawer}
         {search}
+        <WindowControls />
       </div>
     )
   }
@@ -275,7 +295,6 @@ function Workspace() {
     <div className={SHELL} style={chromeStyle}>
       {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
       <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-      <WindowControls />
       {rail}
       {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
@@ -286,6 +305,7 @@ function Workspace() {
               <span className="text-note text-muted">{t('list.new')}</span>
             </TopBar>
             <NewSession
+              initialProjectPath={newChatProjectPath}
               onDone={() => setComposing(false)}
               onSettings={() => setSettings('providers')}
             />
@@ -304,6 +324,14 @@ function Workspace() {
       </main>
       {drawer}
       {search}
+      <FileTreeDialog
+        project={fileTreeProject}
+        open={fileTreeProject !== undefined}
+        onOpenChange={(next) => {
+          if (!next) setFileTreeProject(undefined)
+        }}
+      />
+      <WindowControls />
     </div>
   )
 }

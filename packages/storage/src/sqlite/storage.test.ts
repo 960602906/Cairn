@@ -49,6 +49,7 @@ describe('openSqliteStorage', () => {
         '0013_change-set-baseline-time',
         '0014_session-kind',
         '0015_background-commands',
+        '0016_project-pinning',
       ],
     })
     storage.close()
@@ -131,6 +132,7 @@ describe('openSqliteStorage', () => {
       '0013_change-set-baseline-time',
       '0014_session-kind',
       '0015_background-commands',
+      '0016_project-pinning',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()
