@@ -96,8 +96,27 @@ export const ProjectSummary = z.object({
   readAgentsMd: z.boolean().optional(),
   /** 是否启用项目内 Skills（M3-07 起生效）。省略表示关闭。 */
   enableProjectSkills: z.boolean().optional(),
+  /** 是否置顶（目录功能同步）。省略表示未置顶。 */
+  isPinned: z.boolean().optional(),
+  /** 置顶时间；未置顶时不出现。 */
+  pinnedAt: Timestamp.optional(),
+  /** 归档时间；未归档时不出现。 */
+  archivedAt: Timestamp.optional(),
 })
 export type ProjectSummary = z.infer<typeof ProjectSummary>
+
+/** 文件树节点类型（目录功能同步）。 */
+export const FileTreeEntryKind = z.enum(['file', 'dir'])
+export type FileTreeEntryKind = z.infer<typeof FileTreeEntryKind>
+
+/** 文件树的一行；`path` 是相对项目根目录的路径，使用 `/` 分隔。 */
+export const FileTreeEntry = z.object({
+  path: z.string().min(1),
+  name: z.string().min(1),
+  kind: FileTreeEntryKind,
+  hidden: z.boolean(),
+})
+export type FileTreeEntry = z.infer<typeof FileTreeEntry>
 
 /** 会话标题的长度上限（字符，M2-02）。 */
 export const SESSION_TITLE_MAX_LENGTH = 200
@@ -236,12 +255,16 @@ export const MainForRenderer = defineSide({
           name: z.string().max(PROJECT_NAME_MAX_LENGTH).optional(),
           readAgentsMd: z.boolean().optional(),
           enableProjectSkills: z.boolean().optional(),
+          pinned: z.boolean().optional(),
+          archived: z.boolean().optional(),
         })
         .refine(
           (patch) =>
             patch.name !== undefined ||
             patch.readAgentsMd !== undefined ||
-            patch.enableProjectSkills !== undefined,
+            patch.enableProjectSkills !== undefined ||
+            patch.pinned !== undefined ||
+            patch.archived !== undefined,
         ),
       result: ProjectSummary,
     },
@@ -251,6 +274,53 @@ export const MainForRenderer = defineSide({
      */
     'project.remove': {
       params: z.object({ projectId: Id }),
+      result: z.object({}),
+    },
+    /**
+     * 列出项目内一个目录的直接子项（文件树）。`path` 省略表示项目根目录；
+     * `showHidden` 省略时隐藏以 `.` 开头的条目（`.git` 始终跳过）。
+     */
+    'fs.list': {
+      params: z.object({
+        projectId: Id,
+        path: z.string().max(4096).optional(),
+        showHidden: z.boolean().optional(),
+        limit: z.number().int().min(1).max(1000).optional(),
+      }),
+      result: z.object({
+        entries: z.array(FileTreeEntry),
+        truncated: z.boolean(),
+      }),
+    },
+    /** 新建文件或目录；父目录必须已经存在，目标已存在时报 `fs.conflict`。 */
+    'fs.create': {
+      params: z.object({
+        projectId: Id,
+        path: z.string().min(1).max(4096),
+        kind: FileTreeEntryKind,
+      }),
+      result: z.object({ path: z.string() }),
+    },
+    /** 重命名或移动；目标已存在时报 `fs.conflict`。 */
+    'fs.rename': {
+      params: z.object({
+        projectId: Id,
+        from: z.string().min(1).max(4096),
+        to: z.string().min(1).max(4096),
+      }),
+      result: z.object({ path: z.string() }),
+    },
+    /** 递归删除文件或目录；项目根目录不能删除。 */
+    'fs.delete': {
+      params: z.object({ projectId: Id, path: z.string().min(1).max(4096) }),
+      result: z.object({}),
+    },
+    /** 在系统文件管理器中定位项目或某个条目。 */
+    'fs.reveal': {
+      params: z.object({
+        projectId: Id,
+        path: z.string().max(4096).optional(),
+      }),
       result: z.object({}),
     },
     'session.list': {

@@ -38,6 +38,8 @@ export interface ProjectCommands {
     name?: string | undefined
     readAgentsMd?: boolean | undefined
     enableProjectSkills?: boolean | undefined
+    pinned?: boolean | undefined
+    archived?: boolean | undefined
   }): ProjectSummary
   remove(input: { projectId: string }): Record<string, never>
 }
@@ -57,6 +59,8 @@ function summarize(storage: Pick<Storage, 'sessions'>, project: ProjectRecord): 
     ...(lastUsedAt > 0 ? { lastUsedAt } : {}),
     readAgentsMd: project.readAgentsMd,
     enableProjectSkills: project.enableProjectSkills,
+    ...(project.pinnedAt === undefined ? {} : { isPinned: true, pinnedAt: project.pinnedAt }),
+    ...(project.archivedAt === undefined ? {} : { archivedAt: project.archivedAt }),
   }
 }
 
@@ -95,7 +99,13 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
 
     update(input) {
       listed(input.projectId)
-      const patch: { name?: string; readAgentsMd?: boolean; enableProjectSkills?: boolean } = {}
+      const patch: {
+        name?: string
+        readAgentsMd?: boolean
+        enableProjectSkills?: boolean
+        pinned?: boolean
+        archived?: boolean
+      } = {}
       if (input.name !== undefined) {
         const name = input.name.trim()
         if (name === '' || name.length > PROJECT_NAME_MAX_LENGTH) {
@@ -106,10 +116,14 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
       if (input.readAgentsMd !== undefined) patch.readAgentsMd = input.readAgentsMd
       if (input.enableProjectSkills !== undefined)
         patch.enableProjectSkills = input.enableProjectSkills
+      if (input.pinned !== undefined) patch.pinned = input.pinned
+      if (input.archived !== undefined) patch.archived = input.archived
       const project =
         patch.name !== undefined ||
         patch.readAgentsMd !== undefined ||
-        patch.enableProjectSkills !== undefined
+        patch.enableProjectSkills !== undefined ||
+        patch.pinned !== undefined ||
+        patch.archived !== undefined
           ? storage.projects.update(input.projectId, patch)
           : listed(input.projectId)
       return summarize(storage, project)

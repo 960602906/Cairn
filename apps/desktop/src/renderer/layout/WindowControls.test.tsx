@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -51,6 +51,19 @@ describe('WindowControls', () => {
     expect(api.minimize).toHaveBeenCalledOnce()
     expect(api.toggleMaximize).toHaveBeenCalledOnce()
     expect(api.close).toHaveBeenCalledOnce()
+  })
+
+  it('surfaces a rejected window action instead of failing silently', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const api = controls({
+      minimize: vi.fn(async () => {
+        throw new Error('No handler registered')
+      }),
+    })
+    renderControls(api)
+    await userEvent.click(screen.getByRole('button', { name: '最小化窗口' }))
+    await waitFor(() => expect(error).toHaveBeenCalledWith('[window-controls]', expect.any(Error)))
+    error.mockRestore()
   })
 
   it('starts in the restore state when the window is maximized', async () => {

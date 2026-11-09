@@ -32,13 +32,14 @@ const SESSIONS = [
 function setup(
   sessions: SessionSummary[] = SESSIONS,
   settings: Partial<Settings> = { providers: [] },
+  projects: ProjectSummary[] = PROJECTS,
 ) {
   const request = vi.fn(async (method: string) => {
     switch (method) {
       case 'session.list':
         return { sessions }
       case 'project.list':
-        return { projects: PROJECTS }
+        return { projects }
       case 'settings.get':
         return { locale: 'zh-CN', ...settings }
       case 'settings.shell':
@@ -149,6 +150,22 @@ describe('NewSession empty states (M2-12)', () => {
     expect(await screen.findByRole('heading', { level: 2, name: '开始新的对话' })).toBeTruthy()
     await waitFor(() =>
       expect(screen.queryByRole('region', { name: '还没有配置模型供应商' })).toBeNull(),
+    )
+  })
+
+  it('prefills the project chosen from a workspace row', async () => {
+    setup([], { providers: [] }, [
+      { projectId: 'p1', name: 'API 服务', path: '/work/api', createdAt: 1 },
+      { projectId: 'p2', name: 'Web', path: '/work/web', createdAt: 2 },
+    ])
+    const input = await screen.findByPlaceholderText('填写项目所在文件夹的完整路径')
+    expect((input as HTMLInputElement).value).toBe('/work/api')
+    const pencils = await screen.findAllByRole('button', { name: '新建会话' })
+    await userEvent.click(pencils[1]!)
+    await waitFor(() =>
+      expect(
+        (screen.getByPlaceholderText('填写项目所在文件夹的完整路径') as HTMLInputElement).value,
+      ).toBe('/work/web'),
     )
   })
 })

@@ -67,6 +67,10 @@ export interface ProjectRecord {
   readonly readAgentsMd: boolean
   /** 是否启用项目内 Skills（M3-02 只保存，M3-07 起生效）。新建的项目默认关闭。 */
   readonly enableProjectSkills: boolean
+  /** 置顶时间；未置顶时不出现。 */
+  readonly pinnedAt?: number
+  /** 归档时间；未归档时不出现。 */
+  readonly archivedAt?: number
   /** 从列表移除的时间（M3-02）。还在列表中时不出现。 */
   readonly removedAt?: number
 }
@@ -75,6 +79,8 @@ export interface UpdateProjectInput {
   readonly name?: string
   readonly readAgentsMd?: boolean
   readonly enableProjectSkills?: boolean
+  readonly pinned?: boolean
+  readonly archived?: boolean
 }
 
 export interface CreateProjectInput {

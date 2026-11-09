@@ -71,6 +71,8 @@ interface ProjectRow {
   created_at: number
   read_agents_md: number
   enable_project_skills: number
+  pinned_at: number | null
+  archived_at: number | null
   removed_at: number | null
 }
 
@@ -346,6 +348,8 @@ const toProject = (row: ProjectRow): ProjectRecord => ({
   createdAt: row.created_at,
   readAgentsMd: row.read_agents_md === 1,
   enableProjectSkills: row.enable_project_skills === 1,
+  ...(row.pinned_at === null ? {} : { pinnedAt: row.pinned_at }),
+  ...(row.archived_at === null ? {} : { archivedAt: row.archived_at }),
   ...(row.removed_at === null ? {} : { removedAt: row.removed_at }),
 })
 
@@ -444,7 +448,9 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       `UPDATE projects SET
          name = coalesce(@name, name),
          read_agents_md = coalesce(@readAgentsMd, read_agents_md),
-         enable_project_skills = coalesce(@enableSkills, enable_project_skills)
+         enable_project_skills = coalesce(@enableSkills, enable_project_skills),
+         pinned_at = CASE WHEN @pinChanged = 1 THEN @pinnedAt ELSE pinned_at END,
+         archived_at = CASE WHEN @archiveChanged = 1 THEN @archivedAt ELSE archived_at END
        WHERE project_id = @projectId AND removed_at IS NULL`,
     ),
     removeProject: db.prepare(
@@ -993,12 +999,17 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       },
       list: () => q.projects.all().map(toProject),
       update(projectId, patch) {
+        const at = now()
         const info = q.updateProject.run({
           projectId,
           name: patch.name ?? null,
           readAgentsMd: patch.readAgentsMd === undefined ? null : patch.readAgentsMd ? 1 : 0,
           enableSkills:
             patch.enableProjectSkills === undefined ? null : patch.enableProjectSkills ? 1 : 0,
+          pinChanged: patch.pinned === undefined ? 0 : 1,
+          pinnedAt: patch.pinned ? at : null,
+          archiveChanged: patch.archived === undefined ? 0 : 1,
+          archivedAt: patch.archived ? at : null,
         })
         if (info.changes === 0) throw new StorageError(StorageErrorCode.NotFound, { projectId })
         return toProject(q.projectById.get(projectId)!)

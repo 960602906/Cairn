@@ -205,6 +205,20 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.projects.list().map((p) => p.projectId)).toEqual(['p1'])
         expectStorageError(() => storage.projects.restore('missing'), StorageErrorCode.NotFound)
       })
+
+      it('pins and archives a project, then clears both timestamps', () => {
+        storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work/demo' })
+        clock = 400
+        expect(storage.projects.update('p1', { pinned: true })).toMatchObject({
+          pinnedAt: 400,
+        })
+        clock = 500
+        const archived = storage.projects.update('p1', { archived: true })
+        expect(archived).toMatchObject({ pinnedAt: 400, archivedAt: 500 })
+        const cleared = storage.projects.update('p1', { pinned: false, archived: false })
+        expect(cleared.pinnedAt).toBeUndefined()
+        expect(cleared.archivedAt).toBeUndefined()
+      })
     })
 
     describe('sessions', () => {

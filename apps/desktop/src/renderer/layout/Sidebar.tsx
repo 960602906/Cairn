@@ -6,9 +6,11 @@
  */
 import { Laptop, PanelLeftClose, Plus, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { ProjectSummary } from '@cairn/protocol'
 import { SessionList } from '../SessionList.js'
 import { useSessionStore } from '../store-context.js'
 import { cn, IconButton, Kbd } from '../ui/index.js'
+import { WorkspaceList } from '../WorkspaceList.js'
 import { newChatShortcut, searchShortcut } from './shortcuts.js'
 
 export function Sidebar({
@@ -17,6 +19,9 @@ export function Sidebar({
   onClose,
   onSearch,
   onSelect,
+  onConfigureProject,
+  onBrowseProjectInFileTree,
+  onNewConversationProject,
 }: {
   readonly open?: boolean
   readonly onNewChat: () => void
@@ -25,6 +30,9 @@ export function Sidebar({
   /** 打开“搜索对话”（M2-12）。 */
   readonly onSearch: () => void
   readonly onSelect: () => void
+  readonly onConfigureProject?: (project: ProjectSummary) => void
+  readonly onBrowseProjectInFileTree?: (project: ProjectSummary) => void
+  readonly onNewConversationProject?: (project: ProjectSummary) => void
 }) {
   const { t } = useTranslation('session')
   const count = useSessionStore((s) => s.sessions.length)
@@ -74,6 +82,14 @@ export function Sidebar({
             <span className="flex-1 text-left">{t('list.new')}</span>
             <Kbd aria-hidden>{newChatShortcut()}</Kbd>
           </button>
+        </div>
+
+        <div className="shrink-0 px-2">
+          <WorkspaceList
+            onConfigure={(project) => onConfigureProject?.(project)}
+            onBrowseInFileTree={(project) => onBrowseProjectInFileTree?.(project)}
+            onNewConversation={(project) => onNewConversationProject?.(project)}
+          />
         </div>
 
         <nav aria-label={t('list.title')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
