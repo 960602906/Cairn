@@ -742,6 +742,7 @@ export async function runDelegation(input: RunDelegationInput): Promise<Delegate
   } finally {
     off()
     session.leave()
+    child.completeChild()
   }
 }
 

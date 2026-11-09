@@ -129,12 +129,241 @@ describe('RunSupervisor：创建与事件', () => {
     })
   })
 
-  it('达到 maxRuns 时抛出 TooManyRuns', async () => {
-    const { supervisor } = setup(fake({ turns: [] }), { maxRuns: 1 })
-    await supervisor.createRun(init)
-    await expect(supervisor.createRun(init)).rejects.toMatchObject({
+  it('达到 maxRuns 时根运行按 FIFO 排队，名额释放后创建（M4-13）', async () => {
+    const { supervisor, events } = setup(fake({ turns: [] }), { maxRuns: 1 })
+    const first = await supervisor.createRun({ ...init, runId: 'r1' })
+    const order: string[] = []
+    const second = supervisor.createRun({ ...init, runId: 'r2' }).then((run) => {
+      order.push(run.runId)
+      return run
+    })
+    const third = supervisor.createRun({ ...init, runId: 'r3' }).then((run) => {
+      order.push(run.runId)
+      return run
+    })
+    await Promise.resolve()
+    expect(order).toEqual([])
+    expect(supervisor.listRuns().map((run) => run.runId)).toEqual(['r1'])
+    // 排队中的 runId 仍然视为重复
+    await expect(supervisor.createRun({ ...init, runId: 'r2' })).rejects.toMatchObject({
+      code: RunSupervisorErrorCode.DuplicateRun,
+    })
+
+    await first.dispose()
+    const r2 = await second
+    expect(order).toEqual(['r2'])
+    await r2.dispose()
+    await third
+    expect(order).toEqual(['r2', 'r3'])
+    expect(events.filter((e) => e.type === 'run.created').map((e) => e.runId)).toEqual([
+      'r1',
+      'r2',
+      'r3',
+    ])
+    // 重复释放不会再次补位
+    await first.dispose()
+  })
+
+  it('排队超过 maxQueuedRuns 时抛出 TooManyRuns', async () => {
+    const { supervisor } = setup(fake({ turns: [] }), { maxRuns: 1, maxQueuedRuns: 1 })
+    const first = await supervisor.createRun({ ...init, runId: 'r1' })
+    const queued = supervisor.createRun({ ...init, runId: 'r2' })
+    await expect(supervisor.createRun({ ...init, runId: 'r3' })).rejects.toMatchObject({
       code: RunSupervisorErrorCode.TooManyRuns,
     })
+    await first.dispose()
+    await (await queued).dispose()
+  })
+
+  it('子运行不排队：占用溢出名额，超过溢出上限才失败', async () => {
+    const { supervisor } = setup(fake({ turns: [] }), {
+      maxRuns: 1,
+      maxOverflowRuns: 1,
+    })
+    const parent = await supervisor.createRun({ ...init, runId: 'r1' })
+    const child = await supervisor.createRun({ ...init, runId: 'c1', parentRunId: 'r1' })
+    expect(child.parentRunId).toBe(parent.runId)
+    await expect(
+      supervisor.createRun({ ...init, runId: 'c2', parentRunId: 'r1' }),
+    ).rejects.toMatchObject({ code: RunSupervisorErrorCode.TooManyRuns })
+  })
+
+  it('子运行名额耗尽时父运行仍能向队列让出名额', async () => {
+    const { supervisor } = setup(fake({ turns: [] }), { maxRuns: 1, maxOverflowRuns: 1 })
+    const parent = await supervisor.createRun({ ...init, runId: 'r1' })
+    const queued = supervisor.createRun({ ...init, runId: 'r2' })
+    const child = await supervisor.createRun({ ...init, runId: 'c1', parentRunId: 'r1' })
+    expect(child.runId).toBe('c1')
+    child.completeChild()
+    await parent.dispose()
+    const next = await queued
+    expect(next.runId).toBe('r2')
+  })
+
+  it('completeChild 归还子运行名额但保留运行', async () => {
+    const { supervisor } = setup(fake({ turns: [] }), {
+      maxRuns: 1,
+      maxOverflowRuns: 1,
+    })
+    const parent = await supervisor.createRun({ ...init, runId: 'r1' })
+    const child = await supervisor.createRun({ ...init, runId: 'c1', parentRunId: 'r1' })
+    expect(parent.runId).toBe('r1')
+    await expect(
+      supervisor.createRun({ ...init, runId: 'c2', parentRunId: 'r1' }),
+    ).rejects.toMatchObject({ code: RunSupervisorErrorCode.TooManyRuns })
+
+    child.completeChild()
+    // 运行还在管理器中，只是不再占名额
+    expect(supervisor.getRun('c1')).toBe(child)
+    expect(supervisor.listChildren('r1')).toEqual([child])
+    child.completeChild()
+    const next = await supervisor.createRun({ ...init, runId: 'c2', parentRunId: 'r1' })
+    expect(next.runId).toBe('c2')
+    expect(supervisor.listChildren('r1').map((run) => run.runId)).toEqual(['c1', 'c2'])
+  })
+
+  it('dispose 拒绝排队中的运行与之后的创建', async () => {
+    const { supervisor } = setup(fake({ turns: [] }), { maxRuns: 1 })
+    await supervisor.createRun({ ...init, runId: 'r1' })
+    const queued = supervisor.createRun({ ...init, runId: 'r2' })
+    await supervisor.dispose()
+    await expect(queued).rejects.toMatchObject({ code: RunEngineErrorCode.Disposed })
+    await expect(supervisor.createRun({ ...init, runId: 'r3' })).rejects.toMatchObject({
+      code: RunEngineErrorCode.Disposed,
+    })
+  })
+
+  it('排队的运行创建失败时释放名额，继续给下一个', async () => {
+    let failNext = false
+    const runtime = fake({ turns: [] })
+    const { supervisor } = setup(runtime, {
+      maxRuns: 1,
+      createRunContext: () => {
+        if (failNext) {
+          failNext = false
+          throw new Error('boom')
+        }
+        return { runtime, model, limits }
+      },
+    })
+    const held = await supervisor.createRun({ ...init, runId: 'r1' })
+    const failing = supervisor.createRun({ ...init, runId: 'r2' })
+    const after = supervisor.createRun({ ...init, runId: 'r3' })
+    failNext = true
+    await held.dispose()
+    await expect(failing).rejects.toThrow('boom')
+    expect(supervisor.getRun('r2')).toBeUndefined()
+    expect((await after).runId).toBe('r3')
+  })
+
+  it('异步创建中保留 runId；失败后可重试，且不会抢占先到的排队者', async () => {
+    let resumeCreation!: () => void
+    let block = true
+    const runtime = fake({ turns: [] })
+    const { supervisor } = setup(runtime, {
+      maxRuns: 1,
+      createRunContext: async () => {
+        if (block) {
+          await new Promise<void>((resolve) => (resumeCreation = resolve))
+          block = false
+          throw new Error('creation failed')
+        }
+        return { runtime, model, limits }
+      },
+    })
+    const failed = supervisor.createRun({ ...init, runId: 'r1' })
+    const queued = supervisor.createRun({ ...init, runId: 'r2' })
+    await expect(supervisor.createRun({ ...init, runId: 'r1' })).rejects.toMatchObject({
+      code: RunSupervisorErrorCode.DuplicateRun,
+    })
+    resumeCreation()
+    await expect(failed).rejects.toThrow('creation failed')
+    const next = await queued
+    expect(next.runId).toBe('r2')
+    const retried = supervisor.createRun({ ...init, runId: 'r1' })
+    await Promise.resolve()
+    expect(supervisor.getRun('r1')).toBeUndefined()
+    await next.dispose()
+    expect((await retried).runId).toBe('r1')
+  })
+
+  it('宿主信号中止时排队中的创建与后续创建都拒绝', async () => {
+    const { supervisor, controller } = setup(fake({ turns: [] }), { maxRuns: 1 })
+    await supervisor.createRun({ ...init, runId: 'r1' })
+    const queued = supervisor.createRun({ ...init, runId: 'r2' })
+    controller.abort()
+    await expect(queued).rejects.toMatchObject({ code: RunEngineErrorCode.Disposed })
+    await expect(supervisor.createRun({ ...init, runId: 'r3' })).rejects.toMatchObject({
+      code: RunEngineErrorCode.Disposed,
+    })
+    await supervisor.dispose()
+  })
+
+  it('关闭期间完成的异步创建会释放运行时且不留下运行', async () => {
+    let resume!: () => void
+    const disposed = vi.fn()
+    const runtime: AgentRuntime = {
+      id: 'delayed',
+      createSession: async (sessionInit) => {
+        await new Promise<void>((resolve) => (resume = resolve))
+        const session = await fake({ turns: [] }).createSession(sessionInit)
+        return {
+          ...session,
+          onEvent: session.onEvent.bind(session),
+          prompt: session.prompt.bind(session),
+          ...(session.retry ? { retry: session.retry.bind(session) } : {}),
+          abort: session.abort.bind(session),
+          steer: session.steer.bind(session),
+          exportHistory: session.exportHistory.bind(session),
+          dispose: async () => {
+            disposed()
+            await session.dispose()
+          },
+        }
+      },
+    }
+    const { supervisor } = setup(runtime)
+    const creating = supervisor.createRun({ ...init, runId: 'r1' })
+    await supervisor.dispose()
+    resume()
+    await expect(creating).rejects.toMatchObject({ code: RunEngineErrorCode.Disposed })
+    expect(disposed).toHaveBeenCalledOnce()
+    expect(supervisor.listRuns()).toEqual([])
+  })
+
+  it('关闭期间正在创建上下文的运行不再创建运行时', async () => {
+    let resume!: () => void
+    const createSession = vi.fn()
+    const runtime = fake({ turns: [] })
+    const { supervisor } = setup(runtime, {
+      createRunContext: async () => {
+        await new Promise<void>((resolve) => (resume = resolve))
+        return {
+          runtime: { id: 'spy', createSession },
+          model,
+        }
+      },
+    })
+    const creating = supervisor.createRun({ ...init, runId: 'r1' })
+    await supervisor.dispose()
+    resume()
+    await expect(creating).rejects.toMatchObject({ code: RunEngineErrorCode.Disposed })
+    expect(createSession).not.toHaveBeenCalled()
+  })
+
+  it('宿主信号已中止时拒绝创建，不注册运行', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const supervisor = createRunSupervisor({
+      runtime: fake({ turns: [] }),
+      model,
+      signal: controller.signal,
+    })
+    await expect(supervisor.createRun(init)).rejects.toMatchObject({
+      code: RunEngineErrorCode.Disposed,
+    })
+    expect(supervisor.listRuns()).toEqual([])
+    await supervisor.dispose()
   })
 
   it('listRuns 与 listChildren', async () => {

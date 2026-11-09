@@ -96,6 +96,12 @@ export const AgentHostErrorCode = {
   AlreadyInitialized: 'host.already_initialized',
 } as const
 
+/**
+ * 同一会话的并发运行上限（M4-13）：一个根运行加委派的子运行。
+ * 超出时新的根运行排队；子运行由委派策略约束，不排队（见 `RunSupervisorOptions.maxRuns`）。
+ */
+export const DEFAULT_MAX_RUNS = 8
+
 /** `host.init` 带来的凭据（M1-03b）。 */
 export interface HostCredential {
   readonly apiKey: string
@@ -161,6 +167,10 @@ export interface AgentHostOptions {
   readonly log?: Logger
   /** 模型请求的重试策略（M1-14a），默认 `DEFAULT_RETRY_POLICY`。 */
   readonly retry?: RetryPolicy
+  /** 同一会话的并发运行上限（M4-13），默认 `DEFAULT_MAX_RUNS`。 */
+  readonly maxRuns?: number
+  /** 名额已满时子运行可临时占用的溢出名额（M4-13），默认 8。 */
+  readonly maxOverflowRuns?: number
   /** 记录异常（如排队的输入执行失败）。 */
   readonly onError?: (error: unknown) => void
 }
@@ -807,6 +817,10 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     supervisor = createRunSupervisor({
       runtime,
       model,
+      maxRuns: options.maxRuns ?? DEFAULT_MAX_RUNS,
+      ...(options.maxOverflowRuns !== undefined
+        ? { maxOverflowRuns: options.maxOverflowRuns }
+        : {}),
       limits: init.limits,
       systemPrompt,
       prepareTurn: async () => {

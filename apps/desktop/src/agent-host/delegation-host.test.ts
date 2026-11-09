@@ -397,6 +397,33 @@ describe('host delegation (M4-02)', () => {
     expect(delegate?.description).toContain('builtin.reviewer')
   })
 
+  it('委派结束后归还运行名额，连续委派不会被上限挡住（M4-13）', async () => {
+    const h = setup({
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              delegateStep('builtin.reviewer'),
+              delegateStep('builtin.reviewer'),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"status":"completed","summary":"ok"}' }] }],
+      },
+      host: { maxRuns: 1, maxOverflowRuns: 1 },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+
+    expect(h.events.filter((event) => event.type === 'run.delegated')).toHaveLength(2)
+    expect(h.events.filter((event) => event.type === 'run.child.completed')).toHaveLength(2)
+    expect(toolCompletedText(h.events)).toContain('ok')
+  })
+
   it('父子运行分别上报带运行归属的上下文快照（M4-04）', async () => {
     const snapshots: RunSnapshotInput[] = []
     const h = setup({

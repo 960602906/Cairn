@@ -24,6 +24,7 @@ import {
   type ModelCallSnapshot,
   RunEngine,
   RunEngineError,
+  RunEngineErrorCode,
   type RetryPolicy,
   type ToolExecutor,
   type TurnPreparation,
@@ -112,6 +113,8 @@ export interface AgentRunHandle {
   emitEvent<T extends EventType>(type: T, payload: EventPayload<T>): void
   /** 订阅此后发出的事件（创建时的 run.created 请用 RunSupervisor.onEvent 接收）。 */
   onEvent(listener: (event: RunEvent) => void): Unsubscribe
+  /** 委派子运行完成后释放其占用的名额，同时保留可查询的运行树记录。重复调用无效果。 */
+  completeChild(): void
   dispose(reason?: string): Promise<void>
 }
 
@@ -178,9 +181,27 @@ export interface RunSupervisorOptions {
   readonly signal: AbortSignalLike
   readonly now?: () => number
   readonly createId?: () => string
-  /** 允许的最大并发运行数（可选，超出时抛出 TooManyRuns）。 */
+  /**
+   * 同时存在的运行上限（M4-13）。达到上限时新的根运行排队等待，而不是失败。
+   * 省略时不限制。
+   */
   readonly maxRuns?: number
+  /** 排队等待运行名额的上限，默认 32；队列满了才抛出 TooManyRuns。 */
+  readonly maxQueuedRuns?: number
+  /**
+   * 名额已满时，子运行（带 parentRunId）允许临时超出的数量，默认 8。
+   *
+   * 子运行不能排队：父运行在等待子运行期间无法释放自己的名额，父子互相等待会死锁。
+   * 子运行的数量由委派策略（并发、深度、每轮数量）约束，这里只防止策略配置错误导致无上限增长。
+   */
+  readonly maxOverflowRuns?: number
 }
+
+/** `maxQueuedRuns` 的默认值。 */
+export const DEFAULT_MAX_QUEUED_RUNS = 32
+
+/** `maxOverflowRuns` 的默认值。 */
+export const DEFAULT_MAX_OVERFLOW_RUNS = 8
 
 export interface ComputeChildLimitsInput {
   readonly childAgentLimits?: Partial<RunLimits> | undefined
@@ -260,6 +281,7 @@ class RunHandle implements AgentRunHandle {
   readonly #getChildren: (parentRunId: string) => readonly RunHandle[]
   readonly #listeners: Set<(event: RunEvent) => void>
   readonly #onDisposed: () => void
+  readonly #onCompleteChild: () => void
   /** 排队输入的执行链。 */
   #queue: Promise<void> = Promise.resolve()
 
@@ -270,6 +292,7 @@ class RunHandle implements AgentRunHandle {
     parentRunId: string | undefined,
     getChildren: (parentRunId: string) => readonly RunHandle[],
     onDisposed: () => void,
+    onCompleteChild: () => void,
   ) {
     this.runId = engine.runId
     this.parentRunId = parentRunId
@@ -278,6 +301,7 @@ class RunHandle implements AgentRunHandle {
     this.#listeners = listeners
     this.#getChildren = getChildren
     this.#onDisposed = onDisposed
+    this.#onCompleteChild = onCompleteChild
   }
 
   get state(): RunState {
@@ -349,6 +373,10 @@ class RunHandle implements AgentRunHandle {
     }
   }
 
+  completeChild(): void {
+    this.#onCompleteChild()
+  }
+
   async dispose(reason?: string): Promise<void> {
     const children = this.#getChildren(this.runId)
     await Promise.all(children.map((child) => child.dispose(reason)))
@@ -364,6 +392,48 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
   const listeners = new Set<(event: RunEvent) => void>()
   let counter = 0
   const createId = options.createId ?? (() => `run-${++counter}`)
+  const maxRuns = options.maxRuns
+  const maxQueuedRuns = options.maxQueuedRuns ?? DEFAULT_MAX_QUEUED_RUNS
+  const maxOverflowRuns = options.maxOverflowRuns ?? DEFAULT_MAX_OVERFLOW_RUNS
+  /** 占用运行名额的运行：创建中或创建后到释放前。 */
+  const active = new Set<string>()
+  /** 创建中的 id 在异步创建完成前也必须保持唯一。 */
+  const creating = new Set<string>()
+  /** 已完成的子运行按 id 保留在 runs 中，但不再占用并发名额或参与取消树。 */
+  const completedChildren = new Set<string>()
+  /** 等待名额的根运行；Map 保持插入顺序，即到达顺序。 */
+  const waiting = new Map<string, { resolve: () => void; reject: (error: unknown) => void }>()
+  let closed = false
+  const onShutdown = () => {
+    for (const waiter of waiting.values()) {
+      waiter.reject(new RunEngineError(RunEngineErrorCode.Disposed))
+    }
+    waiting.clear()
+  }
+  options.signal.addEventListener('abort', onShutdown)
+  if (options.signal.aborted) onShutdown()
+
+  /** 释放名额并按排队顺序补位。 */
+  const release = (runId: string): void => {
+    if (!active.delete(runId)) return
+    pump()
+  }
+
+  function pump(): void {
+    if (closed || maxRuns === undefined) return
+    while (active.size < maxRuns) {
+      const next = waiting.entries().next()
+      if (next.done) return
+      const [runId, waiter] = next.value
+      waiting.delete(runId)
+      if (options.signal.aborted) {
+        waiter.reject(new RunEngineError(RunEngineErrorCode.Disposed))
+        continue
+      }
+      active.add(runId)
+      waiter.resolve()
+    }
+  }
 
   const getChildren = (parentRunId: string): readonly RunHandle[] => {
     const result: RunHandle[] = []
@@ -373,114 +443,168 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
     return result
   }
 
+  const getActiveChildren = (parentRunId: string): readonly RunHandle[] =>
+    getChildren(parentRunId).filter((run) => !completedChildren.has(run.runId))
+
+  async function createHandle(init: CreateRunInput, runId: string): Promise<RunHandle> {
+    const runListeners = new Set<(event: RunEvent) => void>()
+    const ctx =
+      init.context ?? (options.createRunContext ? await options.createRunContext(init) : {})
+    if (closed || options.signal.aborted) throw new RunEngineError(RunEngineErrorCode.Disposed)
+    const runtime = ctx.runtime ?? options.runtime
+    const model = ctx.model ?? options.model
+    if (!runtime || !model) {
+      throw new RunEngineError(
+        RunSupervisorErrorCode.Unsupported,
+        'runtime and model are required for run creation',
+      )
+    }
+
+    const baseLimits = ctx.limits ?? options.limits ?? {}
+    const limits = { ...baseLimits, ...init.limitsOverride } as RunLimits
+
+    const engine = await RunEngine.create({
+      sessionId: init.sessionId,
+      runId,
+      ...(init.parentRunId ? { parentRunId: init.parentRunId } : {}),
+      agent: init.agent,
+      mode: init.mode,
+      limits,
+      runtime,
+      model,
+      ...(ctx.systemPrompt !== undefined
+        ? { systemPrompt: ctx.systemPrompt }
+        : options.systemPrompt !== undefined
+          ? { systemPrompt: options.systemPrompt }
+          : {}),
+      ...(ctx.prepareTurn
+        ? { prepareTurn: ctx.prepareTurn }
+        : options.prepareTurn
+          ? { prepareTurn: options.prepareTurn }
+          : {}),
+      ...(ctx.summarize
+        ? { summarize: ctx.summarize }
+        : options.summarize
+          ? { summarize: options.summarize }
+          : {}),
+      ...(ctx.sessionBrief
+        ? { sessionBrief: ctx.sessionBrief }
+        : options.sessionBrief
+          ? { sessionBrief: options.sessionBrief }
+          : {}),
+      ...(ctx.onModelCall
+        ? { onModelCall: ctx.onModelCall }
+        : options.onModelCall
+          ? { onModelCall: options.onModelCall }
+          : {}),
+      ...(ctx.onModelCallError
+        ? { onModelCallError: ctx.onModelCallError }
+        : options.onModelCallError
+          ? { onModelCallError: options.onModelCallError }
+          : {}),
+      ...(ctx.tools ? { tools: ctx.tools } : options.tools ? { tools: options.tools } : {}),
+      ...(ctx.executeTool
+        ? { executeTool: ctx.executeTool }
+        : options.executeTool
+          ? { executeTool: options.executeTool }
+          : {}),
+      ...(ctx.toolPipeline
+        ? { toolPipeline: ctx.toolPipeline }
+        : options.toolPipeline
+          ? { toolPipeline: options.toolPipeline }
+          : {}),
+      ...(ctx.checkpoints
+        ? { checkpoints: ctx.checkpoints }
+        : options.checkpoints
+          ? { checkpoints: options.checkpoints }
+          : {}),
+      ...(ctx.onCheckpointError
+        ? { onCheckpointError: ctx.onCheckpointError }
+        : options.onCheckpointError
+          ? { onCheckpointError: options.onCheckpointError }
+          : {}),
+      ...(ctx.retry ? { retry: ctx.retry } : options.retry ? { retry: options.retry } : {}),
+      ...(init.restoreFrom
+        ? { restore: { history: init.restoreFrom.history, state: init.restoreFrom.state } }
+        : {}),
+      signal: options.signal,
+      ...(options.now ? { now: options.now } : {}),
+      ...(options.createId ? { createId: options.createId } : {}),
+      emit: (event) => {
+        for (const l of listeners) l(event)
+        for (const l of runListeners) l(event)
+      },
+    })
+
+    if (closed || options.signal.aborted) {
+      await engine.dispose('shutdown')
+      throw new RunEngineError(RunEngineErrorCode.Disposed)
+    }
+    const handle = new RunHandle(
+      engine,
+      init.workspace,
+      runListeners,
+      init.parentRunId,
+      getActiveChildren,
+      () => {
+        runs.delete(runId)
+        completedChildren.delete(runId)
+        release(runId)
+      },
+      () => {
+        if (init.parentRunId !== undefined) {
+          completedChildren.add(runId)
+          release(runId)
+        }
+      },
+    )
+    runs.set(runId, handle)
+    return handle
+  }
+
   return {
     async createRun(init) {
-      if (options.maxRuns !== undefined && runs.size >= options.maxRuns) {
-        throw new RunEngineError(RunSupervisorErrorCode.TooManyRuns)
-      }
+      if (closed || options.signal.aborted) throw new RunEngineError(RunEngineErrorCode.Disposed)
       const runId = init.restoreFrom?.runId ?? init.runId ?? createId()
-      if (runs.has(runId)) {
+      if (runs.has(runId) || creating.has(runId)) {
         throw new RunEngineError(RunSupervisorErrorCode.DuplicateRun, `run ${runId} already exists`)
       }
+      creating.add(runId)
 
-      const runListeners = new Set<(event: RunEvent) => void>()
-      const ctx =
-        init.context ?? (options.createRunContext ? await options.createRunContext(init) : {})
-      const runtime = ctx.runtime ?? options.runtime
-      const model = ctx.model ?? options.model
-      if (!runtime || !model) {
-        throw new RunEngineError(
-          RunSupervisorErrorCode.Unsupported,
-          'runtime and model are required for run creation',
-        )
+      try {
+        if (maxRuns !== undefined && (active.size >= maxRuns || waiting.size > 0)) {
+          if (init.parentRunId !== undefined) {
+            if (active.size >= maxRuns + maxOverflowRuns) {
+              throw new RunEngineError(
+                RunSupervisorErrorCode.TooManyRuns,
+                `run ${runId} exceeds the child run capacity`,
+              )
+            }
+            // 子运行直接占用一个名额：父运行正等着它，排队会父子互相等待。
+            active.add(runId)
+          } else {
+            if (waiting.size >= maxQueuedRuns) {
+              throw new RunEngineError(
+                RunSupervisorErrorCode.TooManyRuns,
+                `run ${runId} exceeds the run queue capacity`,
+              )
+            }
+            // 名额由 pump 授予，届时 active 已包含 runId。
+            await new Promise<void>((resolve, reject) => waiting.set(runId, { resolve, reject }))
+          }
+        } else {
+          active.add(runId)
+        }
+
+        if (closed || options.signal.aborted) throw new RunEngineError(RunEngineErrorCode.Disposed)
+        const handle = await createHandle(init, runId)
+        return handle
+      } catch (error) {
+        release(runId)
+        throw error
+      } finally {
+        creating.delete(runId)
       }
-
-      const baseLimits = ctx.limits ?? options.limits ?? {}
-      const limits = { ...baseLimits, ...init.limitsOverride } as RunLimits
-
-      const engine = await RunEngine.create({
-        sessionId: init.sessionId,
-        runId,
-        ...(init.parentRunId ? { parentRunId: init.parentRunId } : {}),
-        agent: init.agent,
-        mode: init.mode,
-        limits,
-        runtime,
-        model,
-        ...(ctx.systemPrompt !== undefined
-          ? { systemPrompt: ctx.systemPrompt }
-          : options.systemPrompt !== undefined
-            ? { systemPrompt: options.systemPrompt }
-            : {}),
-        ...(ctx.prepareTurn
-          ? { prepareTurn: ctx.prepareTurn }
-          : options.prepareTurn
-            ? { prepareTurn: options.prepareTurn }
-            : {}),
-        ...(ctx.summarize
-          ? { summarize: ctx.summarize }
-          : options.summarize
-            ? { summarize: options.summarize }
-            : {}),
-        ...(ctx.sessionBrief
-          ? { sessionBrief: ctx.sessionBrief }
-          : options.sessionBrief
-            ? { sessionBrief: options.sessionBrief }
-            : {}),
-        ...(ctx.onModelCall
-          ? { onModelCall: ctx.onModelCall }
-          : options.onModelCall
-            ? { onModelCall: options.onModelCall }
-            : {}),
-        ...(ctx.onModelCallError
-          ? { onModelCallError: ctx.onModelCallError }
-          : options.onModelCallError
-            ? { onModelCallError: options.onModelCallError }
-            : {}),
-        ...(ctx.tools ? { tools: ctx.tools } : options.tools ? { tools: options.tools } : {}),
-        ...(ctx.executeTool
-          ? { executeTool: ctx.executeTool }
-          : options.executeTool
-            ? { executeTool: options.executeTool }
-            : {}),
-        ...(ctx.toolPipeline
-          ? { toolPipeline: ctx.toolPipeline }
-          : options.toolPipeline
-            ? { toolPipeline: options.toolPipeline }
-            : {}),
-        ...(ctx.checkpoints
-          ? { checkpoints: ctx.checkpoints }
-          : options.checkpoints
-            ? { checkpoints: options.checkpoints }
-            : {}),
-        ...(ctx.onCheckpointError
-          ? { onCheckpointError: ctx.onCheckpointError }
-          : options.onCheckpointError
-            ? { onCheckpointError: options.onCheckpointError }
-            : {}),
-        ...(ctx.retry ? { retry: ctx.retry } : options.retry ? { retry: options.retry } : {}),
-        ...(init.restoreFrom
-          ? { restore: { history: init.restoreFrom.history, state: init.restoreFrom.state } }
-          : {}),
-        signal: options.signal,
-        ...(options.now ? { now: options.now } : {}),
-        ...(options.createId ? { createId: options.createId } : {}),
-        emit: (event) => {
-          for (const l of listeners) l(event)
-          for (const l of runListeners) l(event)
-        },
-      })
-
-      const handle = new RunHandle(
-        engine,
-        init.workspace,
-        runListeners,
-        init.parentRunId,
-        getChildren,
-        () => runs.delete(runId),
-      )
-      runs.set(runId, handle)
-      return handle
     },
 
     getRun: (runId) => runs.get(runId),
@@ -499,7 +623,11 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
     },
 
     async dispose() {
+      closed = true
+      onShutdown()
       await Promise.all([...runs.values()].map((run) => run.dispose('shutdown')))
+      // 创建中但尚无 RunHandle 的名额由各自的 createRun finally 清理。
+      options.signal.removeEventListener('abort', onShutdown)
       listeners.clear()
     },
   }
