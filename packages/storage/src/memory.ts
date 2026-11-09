@@ -817,6 +817,10 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
 
     transaction,
 
+    backup() {
+      throw new Error('memory storage does not support backup')
+    },
+
     close() {
       closed = true
     },

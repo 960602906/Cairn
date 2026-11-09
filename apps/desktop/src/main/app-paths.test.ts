@@ -16,6 +16,7 @@ describe('resolveAppPaths', () => {
       worktrees: join(root, 'worktrees'),
       settings: join(root, 'settings.json'),
       credentials: join(root, 'credentials.json'),
+      updateBackups: join(root, 'backups'),
       logs: join(root, 'logs'),
       session: join(root, 'session'),
     })
@@ -46,6 +47,7 @@ describe('requiredDirectories', () => {
       paths.blobs,
       paths.checkpoints,
       paths.worktrees,
+      paths.updateBackups,
       paths.logs,
     ])
   })

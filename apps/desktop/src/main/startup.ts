@@ -75,6 +75,7 @@ import { createTitleService } from './services/title-service.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
 import { createSandboxService } from './services/sandbox-service.js'
+import { createUpdateService } from './services/update-service.js'
 import { createShellInfo } from './services/shell-info.js'
 import { createProviderService } from './services/provider-service.js'
 import { createAppInfoCommands } from './services/app-info-service.js'
@@ -325,6 +326,8 @@ const agents = createAgentService({
   mcp,
   models: { has: (model) => settings.hasModel(model) },
 })
+/** 自动更新服务在会话管理器之后创建；诊断服务只持有闭包，不会在赋值前调用。 */
+const updateRef: { current?: ReturnType<typeof createUpdateService> } = {}
 /** 诊断包（M3-13）：读取日志与事件摘要，统一脱敏后打包；不包含任何凭据。 */
 const diagnostics = new DiagnosticsService({
   getAppInfo: () => appInfo,
@@ -341,6 +344,7 @@ const diagnostics = new DiagnosticsService({
   getMainLogs: () => readLogFile(join(paths.logs, 'main.log')),
   getHostLogs: () => readLogFile(join(paths.logs, 'host.log')),
   getSandbox: () => sandbox.diagnostics(),
+  getUpdate: () => updateRef.current?.diagnostics(),
   showSaveDialog: async (defaultName) => {
     // 端到端测试：指定目录时跳过系统保存对话框（不弹出原生窗口）
     const override = process.env['CAIRN_DIAGNOSTICS_DIR']?.trim()
@@ -515,6 +519,35 @@ const sessions = createSessionManager({
 })
 const trials = createTrialService({ storage, events, agents, sessions })
 sessions.recoverInterrupted()
+/**
+ * 自动更新（M5-06，ADR-0036）：公开只读 HTTPS 静态源；开发模式默认关闭。
+ * `CAIRN_UPDATE_*` 由构建/测试注入；安装前要求没有运行中任务并备份数据。
+ */
+const updates = (updateRef.current = createUpdateService({
+  currentVersion: appInfo.version,
+  buildChannel: appInfo.channel,
+  packaged: app.isPackaged,
+  settings: {
+    get: () => settings.get(),
+    update: (patch) => settings.update(patch),
+  },
+  backup: {
+    root: paths.updateBackups,
+    databaseFile: paths.database,
+    settingsFile: paths.settings,
+    credentialsFile: paths.credentials,
+    backupDatabase: (destination) => storage.backup(destination),
+  },
+  dataDir: paths.root,
+  isBusy: () => ({
+    runningSessions: sessions.activeSessions().length + sessions.queuedSessions().length,
+    pendingApprovals: approvals.list().length,
+    restoringCheckpoints: checkpoints.activeRestores(),
+  }),
+  // 仅用于本地打包/端到端验证；正式安装版不需要也不应设置。
+  allowDevelopment: process.env['CAIRN_UPDATE_ALLOW_DEV'] === '1',
+  onError: reportError,
+}))
 /** 会话要点（M3-04）：每轮结束后用辅助模型增量更新，失败只写日志。 */
 const briefs = createBriefService({
   events,
@@ -562,6 +595,13 @@ const gateway = createRendererGateway({
         nativeTheme.themeSource = nativeThemeSource(patch.theme)
         applyWindowChrome()
       }
+      if (
+        patch.updateAutoCheck !== undefined ||
+        patch.updateChannel !== undefined ||
+        patch.updateSkippedVersion !== undefined
+      ) {
+        updates.applySettings(patch)
+      }
       return next
     },
     shell: createShellInfo(),
@@ -595,6 +635,14 @@ const gateway = createRendererGateway({
   trials,
   diagnostics,
   sandbox: { status: () => sandbox.diagnostics() },
+  update: {
+    status: () => updates.status(),
+    check: (params) => updates.check({ force: params.force === true }),
+    download: () => updates.download(),
+    install: () => updates.install(),
+    cancel: () => updates.cancel(),
+    subscribe: (listener) => updates.subscribe(listener),
+  },
   inspect: {
     inspect: (params) =>
       inspect.inspect({
@@ -778,6 +826,7 @@ app.on('before-quit', (event) => {
   compaction.stop()
   activityNotifier.close()
   gateway.close()
+  updates.stop()
   void mcp.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
   void Promise.race([Promise.all([sessions.shutdown(), commandService.shutdown()]), timeout])
@@ -864,6 +913,7 @@ void app.whenReady().then(() => {
   followThemeSetting()
   registerWindowControls()
   void mcp.initialize()
+  updates.start()
   const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {

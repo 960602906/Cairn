@@ -500,6 +500,56 @@ describe('model settings', () => {
     expect(settings.get()).not.toHaveProperty('activityNotifications')
   })
 
+  it('stores update preferences, check time and skipped version (M5-06)', () => {
+    const { settings } = setup()
+    expect(settings.get()).not.toHaveProperty('updateAutoCheck')
+    expect(settings.get()).not.toHaveProperty('updateChannel')
+    expect(settings.get()).not.toHaveProperty('updateLastCheckedAt')
+    expect(settings.get()).not.toHaveProperty('updateSkippedVersion')
+
+    expect(
+      settings.update({
+        updateAutoCheck: false,
+        updateChannel: 'beta',
+        updateLastCheckedAt: 1234,
+        updateSkippedVersion: '0.1.1',
+      }),
+    ).toMatchObject({
+      updateAutoCheck: false,
+      updateChannel: 'beta',
+      updateLastCheckedAt: 1234,
+      updateSkippedVersion: '0.1.1',
+    })
+    expect(read()).toEqual({
+      updateAutoCheck: false,
+      updateChannel: 'beta',
+      updateLastCheckedAt: 1234,
+      updateSkippedVersion: '0.1.1',
+    })
+    expect(settings.update({ updateAutoCheck: true })).not.toHaveProperty('updateAutoCheck')
+    expect(settings.update({ updateSkippedVersion: null })).not.toHaveProperty(
+      'updateSkippedVersion',
+    )
+    expect(read()).toEqual({ updateChannel: 'beta', updateLastCheckedAt: 1234 })
+
+    writeFileSync(
+      file,
+      JSON.stringify({
+        updateChannel: 'nightly',
+        updateLastCheckedAt: -1,
+        updateSkippedVersion: 7,
+      }),
+    )
+    const reloaded = createSettingsService({
+      storage: createMemoryStorage(),
+      file,
+      systemLocales: () => ['zh-CN'],
+    })
+    expect(reloaded.get()).not.toHaveProperty('updateChannel')
+    expect(reloaded.get()).not.toHaveProperty('updateLastCheckedAt')
+    expect(reloaded.get()).not.toHaveProperty('updateSkippedVersion')
+  })
+
   it('saves, clears and drops the auxiliary model the same way as the default (M3-01)', () => {
     const { settings } = setup()
     const auxiliary = { providerId: 'ollama', modelId: 'qwen3' }

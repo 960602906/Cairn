@@ -4,6 +4,7 @@
 import { z } from 'zod'
 import { AppInfo } from './app-info.js'
 import { SandboxStatus } from './sandbox.js'
+import { UpdateDiagnostics } from './update.js'
 
 export const DiagnosticsExportInput = z.object({
   sessionId: z.string().optional(),
@@ -38,6 +39,8 @@ export const DiagnosticsSummary = z.object({
   }),
   /** 命令沙箱配置与能力探测（M5-05）；不包含路径、用户名或凭据。 */
   sandbox: SandboxStatus.optional(),
+  /** 自动更新状态与备份摘要（M5-06）；不包含路径、用户名或凭据。 */
+  update: UpdateDiagnostics.optional(),
   session: DiagnosticsSessionSummary.optional(),
   exportItems: z.array(z.string()),
 })

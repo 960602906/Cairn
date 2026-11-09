@@ -155,7 +155,31 @@ describe('DiagnosticsService zip generation and export', () => {
     getHostLogs: async () => 'Host running for C:/Users/alice/project',
     userHomeDir: 'C:\\Users\\alice',
   }
-  const fakeDeps = { ...baseDeps, getSandbox: async () => fakeSandbox }
+  const fakeUpdate = {
+    status: {
+      phase: 'downloaded' as const,
+      currentVersion: '0.1.0',
+      channel: 'beta' as const,
+      enabled: true,
+      autoCheck: true,
+      source: 'https://updates.example/cairn/',
+      availableVersion: '0.1.1',
+      signatureVerified: false,
+      requiresRestart: true,
+    },
+    backups: [
+      {
+        path: 'C:\\Users\\alice\\AppData\\Roaming\\Cairn\\backups\\update-1',
+        createdAt: 1,
+        files: ['cairn.db'],
+      },
+    ],
+  }
+  const fakeDeps = {
+    ...baseDeps,
+    getSandbox: async () => fakeSandbox,
+    getUpdate: async () => fakeUpdate,
+  }
 
   it('builds summary correctly', async () => {
     const service = new DiagnosticsService(fakeDeps)
@@ -168,6 +192,8 @@ describe('DiagnosticsService zip generation and export', () => {
     expect(sum.exportItems).toContain('session/events.json')
     expect(sum.sandbox).toEqual(fakeSandbox)
     expect(sum.exportItems).toContain('sandbox.json')
+    expect(sum.update).toEqual(fakeUpdate)
+    expect(sum.exportItems).toContain('update.json')
   })
 
   it('omits the sandbox entry when the collector is unavailable', async () => {
@@ -175,6 +201,8 @@ describe('DiagnosticsService zip generation and export', () => {
     const sum = await service.summary({})
     expect(sum.sandbox).toBeUndefined()
     expect(sum.exportItems).not.toContain('sandbox.json')
+    expect(sum.update).toBeUndefined()
+    expect(sum.exportItems).not.toContain('update.json')
   })
 
   it('generates valid zip buffer free of real home paths and API keys', async () => {
@@ -191,12 +219,19 @@ describe('DiagnosticsService zip generation and export', () => {
     expect(fileNames).toContain('logs/host.log')
     expect(fileNames).toContain('session/events.json')
     expect(fileNames).toContain('sandbox.json')
+    expect(fileNames).toContain('update.json')
     const sandbox = JSON.parse(new TextDecoder().decode(unzipped['sandbox.json'])) as {
       mechanism: string
       capability: { networkIsolated: boolean }
     }
     expect(sandbox.mechanism).toBe('restricted-token')
     expect(sandbox.capability.networkIsolated).toBe(false)
+    const update = JSON.parse(new TextDecoder().decode(unzipped['update.json'])) as {
+      status: { phase: string; availableVersion: string }
+      backups: { files: string[] }[]
+    }
+    expect(update.status).toMatchObject({ phase: 'downloaded', availableVersion: '0.1.1' })
+    expect(update.backups[0]!.files).toEqual(['cairn.db'])
     const build = JSON.parse(new TextDecoder().decode(unzipped['build-info.json'])) as {
       channel: string
       commit: string

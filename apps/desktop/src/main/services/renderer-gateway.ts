@@ -19,6 +19,7 @@ import {
   MainForRenderer,
   type McpStatusEvent,
   RendererForMain,
+  type UpdateStatus,
   type EventEnvelope,
   type RpcChannel,
   type RpcError,
@@ -127,6 +128,16 @@ export interface SandboxCommands {
   readonly status: Handler<'sandbox.status'>
 }
 
+/** 自动更新（M5-06）：状态、检查、下载、安装、取消与状态推送。 */
+export interface UpdateCommands {
+  readonly status: Handler<'update.status'>
+  readonly check: Handler<'update.check'>
+  readonly download: Handler<'update.download'>
+  readonly install: Handler<'update.install'>
+  readonly cancel: Handler<'update.cancel'>
+  readonly subscribe: (listener: (status: UpdateStatus) => void) => () => void
+}
+
 /** 由设置服务实现的设置命令。 */
 export interface SettingsCommands {
   readonly get: () => z.input<Requests['settings.get']['result']>
@@ -177,6 +188,8 @@ export interface RendererGatewayOptions {
   readonly diagnostics: DiagnosticsCommands
   /** 命令沙箱（M5-05）：当前配置与能力探测。 */
   readonly sandbox: SandboxCommands
+  /** 自动更新（M5-06）。 */
+  readonly update: UpdateCommands
   /** 运行检查器（M4-04）：运行树、上下文快照与生效设置。 */
   readonly inspect: InspectCommands
   /** 活动中心（M4-06）：跨会话快照与就地审批。 */
@@ -267,6 +280,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   const { hub } = options
   const { agents, trials, diagnostics, activity, changeSets } = options
   const { sandbox } = options
+  const { update } = options
   const backgroundCommands = options.backgroundCommands
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
@@ -276,6 +290,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
     commandChanged: (commandId: string) => void
     openActivitySession: (sessionId: string) => void
     mcpStatus: (event: z.output<typeof McpStatusEvent>) => void
+    updateStatus: (status: UpdateStatus) => void
     close: () => void
   }>()
 
@@ -293,6 +308,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   })
   const unsubscribeCommands = backgroundCommands.subscribe((commandId) => {
     for (const connection of connections) connection.commandChanged(commandId)
+  })
+  const unsubscribeUpdate = update.subscribe((status) => {
+    for (const connection of connections) connection.updateStatus(status)
   })
 
   return {
@@ -427,6 +445,11 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('diagnostics.export', (params) => diagnostics.export(params))
       endpoint.handle('diagnostics.showInFolder', (params) => diagnostics.showInFolder(params))
       endpoint.handle('sandbox.status', (params) => sandbox.status(params))
+      endpoint.handle('update.status', (params) => update.status(params))
+      endpoint.handle('update.check', (params) => update.check(params))
+      endpoint.handle('update.download', (params) => update.download(params))
+      endpoint.handle('update.install', (params) => update.install(params))
+      endpoint.handle('update.cancel', (params) => update.cancel(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布
@@ -487,6 +510,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           if (closed) return
           endpoint.emit('mcp.status', event)
         },
+        updateStatus(status: UpdateStatus) {
+          if (closed) return
+          endpoint.emit('update.status', status)
+        },
         close() {
           if (closed) return
           closed = true
@@ -516,6 +543,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       unsubscribeActivity()
       unsubscribeMcp()
       unsubscribeCommands()
+      unsubscribeUpdate()
       for (const connection of [...connections]) connection.close()
     },
   }

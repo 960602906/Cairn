@@ -1,6 +1,6 @@
 # ADR-0036 自动更新、代码签名与回滚
 
-- 状态：提议（M5-00 草案；M5-06/08 定稿）
+- 状态：已接受（M5-00 起草，M5-06 实现更新服务；签名与发布流水线由 M5-08 完成）
 - 日期：2026-11-10
 - 相关决策：ADR-0006、ADR-0010、ADR-0035
 - 预研证据：[M5-00 预研报告](../plan/m5-spikes.md) §5、§7
@@ -52,6 +52,17 @@ M5 需要让已安装的 `0.1.0` beta 能收到 `0.1.1`，同时满足：
 - **自建鉴权更新服务**：需要服务端、账号与凭据管理，M5 不需要，否决。
 - **关闭签名校验以简化开发**：不可接受；unsigned beta 也必须明确提示，stable 必须签名。
 - **自动回滚旧版本**：数据库迁移通常不可逆，`electron-updater` 不提供降级；改用备份与人工恢复。
+
+## 实施结果（M5-06，2026-11-10）
+
+- `apps/desktop/src/main/services/update-service.ts`：可注入的更新状态机，覆盖检查、下载、校验、安装、取消与状态推送；更新源、通道、发布者配置失败关闭；禁止降级；`stagingPercentage` 只接受 0 或 100；下载前检查磁盘余量；取消或迟到结果清理临时包；安装前要求没有运行中会话、待审批或检查点恢复。
+- `update-signature.ts`：注入严格 Authenticode 验证器。PowerShell 通过 `CAIRN_UPDATE_FILE` 环境变量读取文件，Node 侧校验 `Valid`、签名者、可信时间戳、完整 DN 与读取路径；执行失败、stderr、空输出、无法解析或字段缺失都拒绝并删除临时包。
+- `update-backup.ts`：安装前创建 `<userData>/backups/update-<from>-to-<to>-<timestamp>`，包含数据库快照、`settings.json` 与凭据元数据（只含引用、类型与更新时间，不含密文），保留最近两份。
+- 接线：协议新增 `update.status|check|download|install|cancel` 与 `update.status` 推送；设置增加自动检查、通道、上次检查时间与跳过版本；诊断 zip 增加 `update.json`；`app-paths` 增加 `backups` 目录；启动时延迟检查、退出时停止定时器。
+- 真实本地 HTTPS 静态源 e2e（Windows）完成 `0.1.0 → 0.1.1` 检查与完整下载，并在会话等待审批时阻止安装。该用例发现并修复了打包后 ESM 下 `electron-updater` 的 `autoUpdater` 只经默认导出暴露的问题。
+- 验证：`pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm check:i18n`、`pnpm check:licenses`、`pnpm check:version` 通过；全量 `pnpm test:coverage` 四项覆盖率均不低于 95%；桌面端 `pnpm build`、更新 e2e、打包与已安装应用冒烟通过。
+- 与计划的差异：M5-06 只实现服务与 RPC，更新设置/提示界面和重启确认留给 M5-07；灰度只支持 0 或 100，不做随机抽样；差分下载沿用 `electron-updater` 默认能力，本次 e2e 走完整下载，未把差分当作已验证证据。
+- 未验证/留给后续：真实 OV/EV 签名安装包与真实安装重启由 M5-08/M5-10 验证；真实断网、代理、磁盘不足与下载中断由单元测试的注入错误覆盖，未做真实网络/配额演练；干净 VM、标准用户、Windows 10、中文用户名与长路径由 M5-10 覆盖。
 
 ## 后果
 

@@ -62,6 +62,8 @@ export interface CheckpointService {
   create(params: { sessionId: string }): Promise<{ checkpointId: string }>
   /** 会话所属项目是否正在恢复检查点（期间不接受新的输入，也不能撤销改动）。 */
   isRestoring(sessionId: string): boolean
+  /** 当前正在预览或恢复的项目数（M5-06：自动更新安装前检查）。 */
+  activeRestores(): number
 }
 
 /** `@cairn/checkpoint` 的错误交给界面时保留错误码与参数。 */
@@ -277,6 +279,9 @@ export function createCheckpointService(options: CheckpointServiceOptions): Chec
     isRestoring(sessionId) {
       const session = storage.sessions.get(sessionId)
       return session !== undefined && working.has(session.projectId)
+    },
+    activeRestores() {
+      return working.size
     },
   }
 }

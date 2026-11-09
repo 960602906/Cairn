@@ -56,6 +56,7 @@ import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } fr
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
 import { TrialStarted, TrialSummary } from '../trial.js'
+import { UpdateChannel, UpdateStatus } from '../update.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
 export const SessionStatus = z.enum([
@@ -187,6 +188,18 @@ export const Settings = z.object({
   sandboxNetwork: SandboxNetwork.optional(),
   /** 沙箱不可用时的行为（M5-04）。没有设置时不出现，按失败关闭。 */
   sandboxUnavailable: SandboxUnavailableBehavior.optional(),
+  /**
+   * 是否自动检查更新（M5-06）。没有设置时不出现，按开。
+   */
+  updateAutoCheck: z.boolean().optional(),
+  /**
+   * 更新通道（M5-06）。没有设置时不出现，使用构建通道；构建注入 `CAIRN_UPDATE_CHANNEL` 时以构建为准。
+   */
+  updateChannel: UpdateChannel.optional(),
+  /** 上次检查更新的时间（M5-06）；没有检查过时不出现。 */
+  updateLastCheckedAt: Timestamp.optional(),
+  /** 用户选择跳过的版本（M5-06）；没有跳过时不出现。 */
+  updateSkippedVersion: z.string().min(1).max(64).optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -211,6 +224,13 @@ export const SettingsPatch = z.object({
   sandboxProfile: SandboxDefaultProfile.optional(),
   sandboxNetwork: SandboxNetwork.optional(),
   sandboxUnavailable: SandboxUnavailableBehavior.optional(),
+  /** false 关闭自动检查；true 恢复默认（保存时省略）。 */
+  updateAutoCheck: z.boolean().optional(),
+  updateChannel: UpdateChannel.optional(),
+  /** 检查完成后由更新服务写入。 */
+  updateLastCheckedAt: Timestamp.optional(),
+  /** null 清除跳过的版本。 */
+  updateSkippedVersion: z.string().min(1).max(64).nullable().optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 
@@ -250,6 +270,37 @@ export const MainForRenderer = defineSide({
     'sandbox.status': {
       params: z.object({}),
       result: SandboxStatus,
+    },
+    /** 自动更新的当前状态（M5-06）。 */
+    'update.status': {
+      params: z.object({}),
+      result: UpdateStatus,
+    },
+    /**
+     * 检查更新（M5-06）：`force` 为 true 时忽略用户跳过的版本与自动检查开关。
+     * 更新被禁用时返回 `phase: 'disabled'`，不抛错。
+     */
+    'update.check': {
+      params: z.object({ force: z.boolean().optional() }),
+      result: UpdateStatus,
+    },
+    /** 下载可用更新（M5-06）：校验失败会删除临时包并返回错误状态。 */
+    'update.download': {
+      params: z.object({}),
+      result: UpdateStatus,
+    },
+    /**
+     * 安装已下载的更新并重启（M5-06）。有运行中会话、待审批或检查点恢复时拒绝；
+     * 安装前备份数据库、设置与凭据元数据。
+     */
+    'update.install': {
+      params: z.object({}),
+      result: UpdateStatus,
+    },
+    /** 取消正在进行的下载（M5-06）；其他状态下不改变状态。 */
+    'update.cancel': {
+      params: z.object({}),
+      result: UpdateStatus,
     },
     'session.create': {
       /** `model` 省略时使用设置中的默认模型；给出时必须是已配置的模型。 */
@@ -989,6 +1040,8 @@ export const MainForRenderer = defineSide({
     'approval.changed': z.object({ sessionId: Id }),
     /** MCP 服务的连接状态变化（M3-09）。 */
     'mcp.status': McpStatusEvent,
+    /** 自动更新状态变化（M5-06）；界面据此刷新更新设置与提示。 */
+    'update.status': UpdateStatus,
     /** 活动中心快照有变化（M4-06）；界面重新读取 `activity.list`。 */
     'activity.changed': z.object({}),
     /** 点击系统通知后打开对应会话（M4-06）；界面负责切到会话页。 */

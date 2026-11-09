@@ -8,6 +8,7 @@ import {
   type RunInspectResult,
   type RpcChannel,
   type SandboxStatus,
+  type UpdateStatus,
   type UnsequencedEvent,
 } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
@@ -32,6 +33,7 @@ import {
   type RendererGateway,
   type SandboxCommands,
   type SessionCommands,
+  type UpdateCommands,
   type PermissionCommands,
   type ProviderCommands,
   type SettingsCommands,
@@ -112,12 +114,14 @@ let agents: AgentCommands
 let trials: TrialCommands
 let diagnostics: DiagnosticsCommands
 let sandbox: SandboxCommands
+let update: UpdateCommands
 let inspect: InspectCommands
 let activity: ActivityCommands
 let backgroundCommands: CommandCommands
 const approvalListeners = new Set<(sessionId: string) => void>()
 const activityListeners = new Set<() => void>()
 const commandListeners = new Set<(commandId: string) => void>()
+const updateListeners = new Set<(status: UpdateStatus) => void>()
 
 const INSPECT_RESULT: RunInspectResult = {
   tree: {
@@ -360,6 +364,27 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   sandbox = {
     status: vi.fn(() => sandboxStatus),
   }
+  const updateStatus: UpdateStatus = {
+    phase: 'idle',
+    currentVersion: '0.1.0',
+    channel: 'beta',
+    enabled: true,
+    autoCheck: true,
+    source: 'https://updates.example/cairn/',
+    signatureVerified: false,
+    requiresRestart: false,
+  }
+  update = {
+    status: vi.fn(() => updateStatus),
+    check: vi.fn(async () => updateStatus),
+    download: vi.fn(async () => updateStatus),
+    install: vi.fn(async () => updateStatus),
+    cancel: vi.fn(async () => updateStatus),
+    subscribe: vi.fn((listener: (status: UpdateStatus) => void) => {
+      updateListeners.add(listener)
+      return () => updateListeners.delete(listener)
+    }),
+  }
   inspect = {
     inspect: vi.fn(() => INSPECT_RESULT),
   }
@@ -414,6 +439,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     trials,
     diagnostics,
     sandbox,
+    update,
     inspect,
     activity,
     backgroundCommands,
@@ -972,6 +998,27 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(sandbox.status).toHaveBeenCalledWith({})
   })
 
+  it('delegates update commands and pushes status changes (M5-06)', async () => {
+    const { client } = setup()
+    const pushed: UpdateStatus[] = []
+    client.on('update.status', (status) => pushed.push(status))
+
+    const status = await client.request('update.status', {})
+    expect(status.phase).toBe('idle')
+    await expect(client.request('update.check', { force: true })).resolves.toMatchObject({
+      phase: 'idle',
+    })
+    await expect(client.request('update.download', {})).resolves.toMatchObject({ phase: 'idle' })
+    await expect(client.request('update.install', {})).resolves.toMatchObject({ phase: 'idle' })
+    await expect(client.request('update.cancel', {})).resolves.toMatchObject({ phase: 'idle' })
+    expect(update.check).toHaveBeenCalledWith({ force: true })
+
+    const changed = { ...status, phase: 'available' as const, availableVersion: '0.1.1' }
+    for (const listener of updateListeners) listener(changed)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(pushed).toEqual([changed])
+  })
+
   it('delegates provider requests to the provider service (M2-10)', async () => {
     const { client } = setup()
     const provider = {
@@ -1098,6 +1145,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       trials,
       diagnostics,
       sandbox,
+      update,
       inspect: {} as unknown as InspectCommands,
       activity: { subscribe: () => () => undefined } as unknown as ActivityCommands,
       backgroundCommands,

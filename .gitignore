@@ -11,6 +11,7 @@ test-results-packaged/
 playwright-report/
 playwright-report-packaged/
 *.tsbuildinfo
+dev-app-update.yml
 .vite/
 .impeccable/
 .DS_Store

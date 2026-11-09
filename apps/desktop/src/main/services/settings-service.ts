@@ -31,6 +31,7 @@ import {
   Settings,
   ShellPreference,
   Theme,
+  UpdateChannel,
   type HostModelConfig,
   type ProviderConfig,
   type SettingsPatch as ProtocolSettingsPatch,
@@ -165,6 +166,21 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
     return parsed.success ? parsed.data : undefined
   }
 
+  const storedUpdateChannel = (): UpdateChannel | undefined => {
+    const parsed = UpdateChannel.safeParse(stored['updateChannel'])
+    return parsed.success ? parsed.data : undefined
+  }
+
+  const storedUpdateLastCheckedAt = (): number | undefined => {
+    const value = stored['updateLastCheckedAt']
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined
+  }
+
+  const storedUpdateSkippedVersion = (): string | undefined => {
+    const parsed = Settings.shape.updateSkippedVersion.safeParse(stored['updateSkippedVersion'])
+    return parsed.success ? parsed.data : undefined
+  }
+
   const current = (): Settings => {
     const providers = storage.providers.list()
     const defaultModel = storedModel('defaultModel', providers)
@@ -176,6 +192,9 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
     const sandboxProfile = storedSandboxProfile()
     const sandboxNetwork = storedSandboxNetwork()
     const sandboxUnavailable = storedSandboxUnavailable()
+    const updateChannel = storedUpdateChannel()
+    const updateLastCheckedAt = storedUpdateLastCheckedAt()
+    const updateSkippedVersion = storedUpdateSkippedVersion()
     return {
       locale: resolveLocale(stored['locale'], systemLocales()),
       providers,
@@ -188,8 +207,12 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       ...(sandboxProfile ? { sandboxProfile } : {}),
       ...(sandboxNetwork ? { sandboxNetwork } : {}),
       ...(sandboxUnavailable ? { sandboxUnavailable } : {}),
+      ...(updateChannel ? { updateChannel } : {}),
+      ...(updateLastCheckedAt !== undefined ? { updateLastCheckedAt } : {}),
+      ...(updateSkippedVersion ? { updateSkippedVersion } : {}),
       ...(stored['sessionBrief'] === false ? { sessionBrief: false } : {}),
       ...(stored['activityNotifications'] === false ? { activityNotifications: false } : {}),
+      ...(stored['updateAutoCheck'] === false ? { updateAutoCheck: false } : {}),
     }
   }
 
@@ -225,6 +248,17 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       if (patch.sandboxNetwork !== undefined) next['sandboxNetwork'] = patch.sandboxNetwork
       if (patch.sandboxUnavailable !== undefined) {
         next['sandboxUnavailable'] = patch.sandboxUnavailable
+      }
+      if (patch.updateAutoCheck !== undefined) {
+        // 开是默认值，不写入文件
+        next['updateAutoCheck'] = patch.updateAutoCheck ? undefined : false
+      }
+      if (patch.updateChannel !== undefined) next['updateChannel'] = patch.updateChannel
+      if (patch.updateLastCheckedAt !== undefined) {
+        next['updateLastCheckedAt'] = patch.updateLastCheckedAt
+      }
+      if (patch.updateSkippedVersion !== undefined) {
+        next['updateSkippedVersion'] = patch.updateSkippedVersion ?? undefined
       }
       if (patch.sessionBrief !== undefined) {
         // 开是默认值，不写入文件

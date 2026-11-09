@@ -146,6 +146,19 @@ describe('openSqliteStorage', () => {
     storage.close()
   })
 
+  it('writes a consistent database snapshot with VACUUM INTO (M5-06)', () => {
+    const storage = openSqliteStorage({ file })
+    storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work/demo' })
+    const backupFile = path.join(path.dirname(file), 'update-backup.db')
+    storage.backup(backupFile)
+    storage.close()
+
+    const restored = new Database(backupFile, { readonly: true })
+    const row = restored.prepare('SELECT name FROM projects WHERE project_id = ?').get('p1')
+    expect(row).toEqual({ name: 'Demo' })
+    restored.close()
+  })
+
   it('refuses to be used after close', () => {
     const storage = openSqliteStorage({ file })
     storage.close()

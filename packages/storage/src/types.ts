@@ -608,6 +608,11 @@ export interface Storage {
   readonly commands: BackgroundCommandStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
+  /**
+   * 把数据库的一致快照写入新文件（SQLite `VACUUM INTO`）。目标文件必须不存在；
+   * 用于自动更新前的数据备份（M5-06，ADR-0036）。
+   */
+  backup(file: string): void
   close(): void
 }
 

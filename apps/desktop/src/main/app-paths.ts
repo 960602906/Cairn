@@ -23,6 +23,8 @@ export interface AppPaths {
   readonly settings: string
   /** 加密保存的凭据（M1-03，ADR-0010）。 */
   readonly credentials: string
+  /** 自动更新前的数据备份（M5-06，ADR-0036）；默认保留最近两份。 */
+  readonly updateBackups: string
   readonly logs: string
   /** Chromium 的缓存、Cookie 等（Electron 的 `sessionData`），与应用数据分开。 */
   readonly session: string
@@ -49,6 +51,7 @@ export function resolveAppPaths({ appData, dev, env = {} }: ResolveAppPathsOptio
     worktrees: join(root, 'worktrees'),
     settings: join(root, 'settings.json'),
     credentials: join(root, 'credentials.json'),
+    updateBackups: join(root, 'backups'),
     logs: join(root, 'logs'),
     session: join(root, 'session'),
   }
@@ -56,5 +59,13 @@ export function resolveAppPaths({ appData, dev, env = {} }: ResolveAppPathsOptio
 
 /** 启动时需要存在的目录。 */
 export function requiredDirectories(paths: AppPaths): readonly string[] {
-  return [paths.root, paths.data, paths.blobs, paths.checkpoints, paths.worktrees, paths.logs]
+  return [
+    paths.root,
+    paths.data,
+    paths.blobs,
+    paths.checkpoints,
+    paths.worktrees,
+    paths.updateBackups,
+    paths.logs,
+  ]
 }
