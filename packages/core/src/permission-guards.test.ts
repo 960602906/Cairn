@@ -9,7 +9,10 @@ import {
   DEFAULT_PERMISSION_GUARDS,
   GuardReasonCode,
   isSensitivePath,
+  sandboxGuard,
+  SandboxGuardReasonCode,
   tokenize,
+  type SandboxGuardState,
 } from './permission-guards.js'
 import { decidePermission, presetRules } from './permissions.js'
 import type { ToolCategory, ToolDefinition, ToolTargets } from './tools.js'
@@ -40,6 +43,8 @@ describe('危险命令：直接拒绝', () => {
     'find . -type f | xargs rm -rf /',
     'echo $(rm -rf /)',
     'echo `rm -rf ~`',
+    'env rm -rf /',
+    'nohup rm -rf /',
     // PowerShell
     'Remove-Item -Recurse -Force C:\\',
     'Remove-Item C:\\ -Recurse',
@@ -314,6 +319,83 @@ describe('与权限引擎一起使用', () => {
     expect(decide(read, { paths: ['README.md'] }, []).decision).toBe('allow')
     expect(decide(read, { paths: ['id_ed25519'] }, []).decision).toBe('ask')
     expect(decide(read, {}, []).decision).toBe('allow')
+  })
+})
+
+describe('命令沙箱守卫（M5-04）', () => {
+  const def = (name: string, category: ToolCategory): ToolDefinition => ({
+    name,
+    description: name,
+    inputSchema: { type: 'object' },
+    category,
+    source: { kind: 'builtin' },
+    trust: 'builtin',
+    execute: () => Promise.resolve({ content: [] }),
+  })
+  const run = def('run_command', 'execute')
+  const start = def('start_command', 'execute')
+  const read = def('read_file', 'read')
+  const allowAll: PermissionRule[] = [
+    { id: 'all', scope: 'session', effect: 'allow', match: {}, source: 'user' },
+  ]
+  const decide = (
+    definition: ToolDefinition,
+    state: SandboxGuardState,
+    rules: readonly PermissionRule[] = presetRules('auto'),
+  ) =>
+    decidePermission(
+      { toolCallId: 'c', definition, input: {}, targets: { command: 'echo ok' } },
+      rules,
+      { guards: [sandboxGuard(() => state)] },
+    )
+  const available = {
+    supported: true,
+    available: true,
+    unavailable: 'deny' as const,
+    profile: 'workspace-write' as const,
+  }
+
+  it('lets sandboxed commands and non-command tools through', () => {
+    expect(decide(run, available).decision).toBe('allow')
+    expect(decide(start, available).decision).toBe('allow')
+    expect(decide(read, { ...available, profile: 'danger-full-access' }).decision).toBe('allow')
+  })
+
+  it('does not intercept platforms without the sandbox (M6 scope)', () => {
+    expect(decide(run, { ...available, supported: false, available: false }).decision).toBe('allow')
+  })
+
+  it('requires per-command approval for danger-full-access, even with an allow rule', () => {
+    for (const rules of [allowAll, presetRules('auto')]) {
+      expect(decide(run, { ...available, profile: 'danger-full-access' }, rules)).toMatchObject({
+        decision: 'ask',
+        reasonCode: SandboxGuardReasonCode.FullAccess,
+        matchedRuleIds: [],
+      })
+      expect(decide(start, { ...available, profile: 'danger-full-access' }, rules)).toMatchObject({
+        decision: 'ask',
+        reasonCode: SandboxGuardReasonCode.FullAccess,
+      })
+    }
+  })
+
+  it('fails closed when the sandbox is unavailable and the setting denies', () => {
+    expect(
+      decide(run, { ...available, available: false, unavailable: 'deny' }, allowAll),
+    ).toMatchObject({
+      decision: 'deny',
+      reasonCode: SandboxGuardReasonCode.Unavailable,
+      reason: expect.stringContaining('not started'),
+    })
+  })
+
+  it('asks per command when the setting allows running without the sandbox', () => {
+    const decision = decide(start, { ...available, available: false, unavailable: 'ask' }, allowAll)
+    expect(decision).toMatchObject({
+      decision: 'ask',
+      reasonCode: SandboxGuardReasonCode.Unavailable,
+      matchedRuleIds: [],
+    })
   })
 })
 

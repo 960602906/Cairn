@@ -21,6 +21,7 @@ import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../ev
 import { RunSnapshotInput } from '../inspect.js'
 import { ActivePlan, PromptMode } from '../plan.js'
 import { PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
+import { SandboxCapability, SandboxPolicy, SandboxUnavailableBehavior } from '../sandbox.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { SkillCatalogEntry } from '../skills.js'
@@ -164,6 +165,19 @@ export const HostForMain = defineSide({
           .object({
             binary: z.string().min(1),
             env: z.record(z.string(), z.string()).optional(),
+          })
+          .optional(),
+        /**
+         * 命令沙箱（M5-04，ADR-0034）：本会话的策略、能力探测结果与不可用时的行为。省略时（旧主进程）
+         * 宿主不启用命令沙箱，保持现有执行语义。沙箱只覆盖 `run_command` 与 `start_command` 启动的进程树。
+         */
+        sandbox: z
+          .object({
+            policy: SandboxPolicy,
+            capability: SandboxCapability,
+            unavailable: SandboxUnavailableBehavior,
+            /** 实验性 AppContainer 配置名（稳定哈希，不含项目路径与用户名）；默认档位不使用。 */
+            appContainerName: z.string().min(1).optional(),
           })
           .optional(),
         /**
@@ -374,6 +388,8 @@ export const MainForHost = defineSide({
         command: z.string().min(1).max(20_000),
         cwd: z.string().min(1),
         timeoutSeconds: z.number().int().min(1).max(86_400).optional(),
+        /** 这次后台命令使用的沙箱策略（M5-04）；省略时主进程按设置解析。 */
+        sandbox: SandboxPolicy.optional(),
       }),
       result: BackgroundCommand,
     },

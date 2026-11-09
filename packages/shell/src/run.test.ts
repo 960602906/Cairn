@@ -12,15 +12,20 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   createProcessTree,
+  DEFAULT_COMMAND_TIMEOUT_MS,
   defaultShellProbe,
   isPackagedPath,
   runCommand,
+  SandboxError,
   ShellError,
   windowsCandidates,
   type RunCommandOptions,
+  type SandboxExecution,
+  type SandboxPolicy,
+  type SandboxRunner,
   type ShellInfo,
 } from './index.js'
 
@@ -386,5 +391,163 @@ describe('启动失败', () => {
     await expect(
       runCommand(shell, 'echo', { cwd: path.join(work, 'no-such-dir') }),
     ).rejects.toMatchObject({ code: 'shell.spawn_failed' })
+  })
+})
+
+describe('命令沙箱接入（M5-04）', () => {
+  const policy: SandboxPolicy = { profile: 'workspace-write', network: 'none' }
+  const execution: SandboxExecution = {
+    profile: 'workspace-write',
+    network: 'none',
+    mechanism: 'restricted-token',
+    enforced: true,
+    networkIsolated: false,
+  }
+  const sandbox = (overrides: Partial<Awaited<ReturnType<SandboxRunner['run']>>> = {}) => {
+    const run = vi.fn<SandboxRunner['run']>(async (_policy, input) => {
+      input.onStdout?.('out')
+      input.onStderr?.('err')
+      return {
+        exitCode: 3,
+        aborted: false,
+        timedOut: false,
+        durationMs: 5,
+        execution,
+        ...overrides,
+      }
+    })
+    const runner: SandboxRunner = {
+      capability: {
+        available: true,
+        supported: true,
+        mechanism: 'restricted-token',
+        networkIsolated: false,
+        checks: {
+          restrictedToken: true,
+          lowIntegrity: true,
+          jobObject: true,
+          appContainer: false,
+        },
+      },
+      executionFor: () => execution,
+      run,
+    }
+    return { runner, run }
+  }
+  const shell: ShellInfo = isWindows
+    ? { kind: 'cmd', exe: windowsCandidates(process.env).cmd[0]! }
+    : { kind: 'bash', exe: '/bin/bash' }
+
+  it('runs through the sandbox runner and keeps the output contract', async () => {
+    const fake = sandbox()
+    const progress: string[] = []
+    const result = await runCommand(shell, 'echo hi', {
+      cwd: work,
+      sandbox: { runner: fake.runner, policy },
+      onStdout: (text) => progress.push(text),
+    })
+    expect(result).toMatchObject({
+      exitCode: 3,
+      signal: null,
+      stdout: 'out',
+      stderr: 'err',
+      aborted: false,
+      timedOut: false,
+      sandbox: execution,
+    })
+    expect(progress).toEqual(['out'])
+    expect(fake.run).toHaveBeenCalledWith(
+      policy,
+      expect.objectContaining({
+        cwd: work,
+        timeoutMs: DEFAULT_COMMAND_TIMEOUT_MS,
+        env: expect.any(Object),
+      }),
+    )
+  })
+
+  it('streams without collecting output when asked', async () => {
+    const fake = sandbox()
+    const progress: string[] = []
+    const result = await runCommand(shell, 'echo hi', {
+      cwd: work,
+      collectOutput: false,
+      timeoutMs: 0,
+      sandbox: { runner: fake.runner, policy },
+      onStdout: (text) => progress.push(text),
+    })
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe('')
+    expect(progress).toEqual(['out'])
+    expect(fake.run).toHaveBeenCalledWith(policy, expect.objectContaining({ timeoutMs: 0 }))
+  })
+
+  it('forwards a live abort signal to the runner', async () => {
+    const fake = sandbox()
+    const controller = new AbortController()
+    await runCommand(shell, 'echo hi', {
+      cwd: work,
+      signal: controller.signal,
+      sandbox: { runner: fake.runner, policy },
+    })
+    expect(fake.run).toHaveBeenCalledWith(
+      policy,
+      expect.objectContaining({ signal: controller.signal }),
+    )
+  })
+
+  it('writes an over-long PowerShell command to the system temp directory', async () => {
+    const fake = sandbox()
+    const result = await runCommand(
+      { kind: 'powershell', exe: 'powershell.exe' },
+      `Write-Output '${'x'.repeat(20_000)}'`,
+      { cwd: work, sandbox: { runner: fake.runner, policy } },
+    )
+    expect(result.exitCode).toBe(3)
+    const input = fake.run.mock.calls[0]![1]
+    expect(input.invocation.tempScript?.path.startsWith(tmpdir())).toBe(true)
+  })
+
+  it('returns cancellation without starting the runner', async () => {
+    const fake = sandbox()
+    const result = await runCommand(shell, 'echo hi', {
+      cwd: work,
+      signal: AbortSignal.abort(),
+      sandbox: { runner: fake.runner, policy },
+    })
+    expect(result).toMatchObject({
+      aborted: true,
+      exitCode: null,
+      durationMs: 0,
+      sandbox: { mechanism: 'none', enforced: false, reason: 'sandbox.cancelled' },
+    })
+    expect(fake.run).not.toHaveBeenCalled()
+  })
+
+  it('propagates sandbox failures', async () => {
+    const fake = sandbox()
+    fake.run.mockRejectedValueOnce(new SandboxError('sandbox.setup_failed', 'no token'))
+    await expect(
+      runCommand(shell, 'echo hi', { cwd: work, sandbox: { runner: fake.runner, policy } }),
+    ).rejects.toMatchObject({ code: 'sandbox.setup_failed' })
+  })
+
+  it('leaves danger-full-access outside the sandbox and records it', async () => {
+    const fake = sandbox()
+    const result = await runCommand(shell, 'echo hi', {
+      cwd: work,
+      timeoutMs: 0,
+      sandbox: { runner: fake.runner, policy: { profile: 'danger-full-access', network: 'none' } },
+    })
+    expect(fake.run).not.toHaveBeenCalled()
+    expect(result.stdout.toLowerCase()).toContain('hi')
+    expect(result.sandbox).toEqual({
+      profile: 'danger-full-access',
+      network: 'none',
+      mechanism: 'none',
+      enforced: false,
+      networkIsolated: false,
+      reason: 'sandbox.full_access',
+    })
   })
 })

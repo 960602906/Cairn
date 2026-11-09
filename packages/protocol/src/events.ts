@@ -29,6 +29,7 @@ import {
 import { FileChangeKind } from './changes.js'
 import { CheckpointReason } from './checkpoints.js'
 import { BackgroundCommandStatus } from './commands.js'
+import { SandboxExecution } from './sandbox.js'
 
 /** 事件信封的 schema 版本（架构 §7.1 `EventEnvelope.v`）。 */
 export const EVENT_SCHEMA_VERSION = 1 as const
@@ -55,6 +56,8 @@ export const ToolDisplay = z.discriminatedUnion('kind', [
     durationMs: DurationMs,
     shell: z.string(),
     cwd: z.string(),
+    /** 实际使用的沙箱（M5-04）；旧数据没有这个字段时按“未知/未启用”展示。 */
+    sandbox: SandboxExecution.optional(),
     chunks: z.array(ToolOutputChunk),
     omittedChars: z.number().int().nonnegative(),
     omittedAt: z.number().int().nonnegative().optional(),
@@ -194,7 +197,7 @@ const payloadSchemas = {
 
   // ---------- 工具 ----------
   'tool.requested': z.object({ toolCallId: Id, name: Id, input: z.unknown() }),
-  'tool.started': z.object({ toolCallId: Id }),
+  'tool.started': z.object({ toolCallId: Id, sandbox: SandboxExecution.optional() }),
   /** 实时：工具输出增量（如命令的标准输出）。 */
   'tool.output.delta': z.object({
     toolCallId: Id,
@@ -317,7 +320,12 @@ const payloadSchemas = {
     omittedToolCallIds: z.array(Id).optional(),
   }),
   'model.fallback': z.object({ from: ModelRef, to: ModelRef, error: ErrorInfo }),
-  'command.started': z.object({ commandId: Id, command: z.string(), cwd: z.string() }),
+  'command.started': z.object({
+    commandId: Id,
+    command: z.string(),
+    cwd: z.string(),
+    sandbox: SandboxExecution.optional(),
+  }),
   'command.output.delta': z.object({
     commandId: Id,
     stream: z.enum(['stdout', 'stderr']),

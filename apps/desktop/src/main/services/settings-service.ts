@@ -25,6 +25,9 @@ import {
   ModelRef,
   PermissionMode,
   RpcError,
+  SandboxDefaultProfile,
+  SandboxNetwork,
+  SandboxUnavailableBehavior,
   Settings,
   ShellPreference,
   Theme,
@@ -147,6 +150,21 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
     return parsed.success ? parsed.data : undefined
   }
 
+  const storedSandboxProfile = (): SandboxDefaultProfile | undefined => {
+    const parsed = SandboxDefaultProfile.safeParse(stored['sandboxProfile'])
+    return parsed.success ? parsed.data : undefined
+  }
+
+  const storedSandboxNetwork = (): SandboxNetwork | undefined => {
+    const parsed = SandboxNetwork.safeParse(stored['sandboxNetwork'])
+    return parsed.success ? parsed.data : undefined
+  }
+
+  const storedSandboxUnavailable = (): SandboxUnavailableBehavior | undefined => {
+    const parsed = SandboxUnavailableBehavior.safeParse(stored['sandboxUnavailable'])
+    return parsed.success ? parsed.data : undefined
+  }
+
   const current = (): Settings => {
     const providers = storage.providers.list()
     const defaultModel = storedModel('defaultModel', providers)
@@ -155,6 +173,9 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
     const instructions = storedInstructions()
     const theme = storedTheme()
     const shell = storedShell()
+    const sandboxProfile = storedSandboxProfile()
+    const sandboxNetwork = storedSandboxNetwork()
+    const sandboxUnavailable = storedSandboxUnavailable()
     return {
       locale: resolveLocale(stored['locale'], systemLocales()),
       providers,
@@ -164,6 +185,9 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       ...(instructions ? { instructions } : {}),
       ...(theme ? { theme } : {}),
       ...(shell ? { shell } : {}),
+      ...(sandboxProfile ? { sandboxProfile } : {}),
+      ...(sandboxNetwork ? { sandboxNetwork } : {}),
+      ...(sandboxUnavailable ? { sandboxUnavailable } : {}),
       ...(stored['sessionBrief'] === false ? { sessionBrief: false } : {}),
       ...(stored['activityNotifications'] === false ? { activityNotifications: false } : {}),
     }
@@ -196,6 +220,12 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       if (patch.permissionMode !== undefined) next['permissionMode'] = patch.permissionMode
       if (patch.theme !== undefined) next['theme'] = patch.theme
       if (patch.shell !== undefined) next['shell'] = patch.shell
+      // `danger-full-access` 不在 SettingsPatch 的类型中，不能保存为默认值
+      if (patch.sandboxProfile !== undefined) next['sandboxProfile'] = patch.sandboxProfile
+      if (patch.sandboxNetwork !== undefined) next['sandboxNetwork'] = patch.sandboxNetwork
+      if (patch.sandboxUnavailable !== undefined) {
+        next['sandboxUnavailable'] = patch.sandboxUnavailable
+      }
       if (patch.sessionBrief !== undefined) {
         // 开是默认值，不写入文件
         next['sessionBrief'] = patch.sessionBrief ? undefined : false

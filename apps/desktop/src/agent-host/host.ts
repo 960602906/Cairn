@@ -47,6 +47,7 @@ import {
   planModeGuard,
   planToolVisible,
   registerPlanTools,
+  sandboxGuard,
   type AgentRunHandle,
   type AgentRuntime,
   type DelegationChain,
@@ -59,6 +60,7 @@ import {
   type ResolvedModel,
   type RunContext,
   type RunSupervisor,
+  type SandboxGuardState,
   type ToolCheckpoints,
   ToolError,
   ToolErrorCode,
@@ -81,8 +83,13 @@ import {
   type PermissionRule,
   type RpcChannel,
   type RpcEndpoint,
+  type SandboxCapability,
+  type SandboxExecution,
+  type SandboxPolicy,
+  type SandboxUnavailableBehavior,
   type ShellPreference,
   type SkillCatalogEntry,
+  sandboxExecution,
 } from '@cairn/protocol'
 import { SKILL_PIN_MAX_CHARS } from '@cairn/skills'
 import { createLoadSkillTool, createPathResolver, createStartCommandTool } from '@cairn/tools'
@@ -158,6 +165,7 @@ export interface AgentHostOptions {
     registry: ToolRegistry,
     workspacePath: string,
     shell: ShellPreference,
+    sandbox?: HostSandboxConfig,
   ) => void | ToolEnvironment | Promise<void | ToolEnvironment>
   /** 操作系统（`process.platform` 的值），写入系统提示词；默认当前进程的。 */
   readonly platform?: string
@@ -179,6 +187,26 @@ export interface AgentHostOptions {
 export interface ToolEnvironment {
   /** `run_command` 使用的 shell（`describeShell`）。 */
   readonly shell?: string
+}
+
+/** `host.init` 下发的命令沙箱配置（M5-04）：策略、能力与不可用时的行为。 */
+export interface HostSandboxConfig {
+  readonly policy: SandboxPolicy
+  readonly capability: SandboxCapability
+  readonly unavailable: SandboxUnavailableBehavior
+  readonly appContainerName?: string | undefined
+}
+
+/**
+ * 只读 Agent 强制只读沙箱（M5-04）：根运行与委派子运行共用同一规则，
+ * 不能靠权限预设或父运行的写入档位放宽。
+ */
+function sandboxFor(
+  sandbox: HostSandboxConfig | undefined,
+  definition: AgentDefinition | undefined,
+): HostSandboxConfig | undefined {
+  if (!sandbox || definition?.permissions !== 'read-only') return sandbox
+  return { ...sandbox, policy: { ...sandbox.policy, profile: 'read-only' } }
 }
 
 /** 固定加载的正文过长时截断，其余仍可由 `load_skill` 读取。 */
@@ -225,6 +253,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let run: AgentRunHandle | undefined
   let initializing = false
   let permissionRules: readonly PermissionRule[] = presetRules('ask')
+  /**
+   * 命令沙箱状态（M5-04）：`host.init` 之前按“平台不支持”处理，不拦截测试中的直接调用；
+   * 初始化后按实际能力与策略判定。
+   */
+  let sandboxState: SandboxGuardState = {
+    supported: false,
+    available: true,
+    unavailable: 'deny',
+    profile: 'workspace-write',
+  }
   /** 当前这一轮是不是计划模式（M3-05）。轮次结束后清掉，权限拦截读它。 */
   let planTurn = false
   /** 正在执行的已批准计划。下一次 `host.prompt` 会换掉或清掉。 */
@@ -260,6 +298,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       ...DEFAULT_PERMISSION_GUARDS,
       planModeGuard(() => planTurn),
       delegationApprovalGuard,
+      sandboxGuard(() => sandboxState),
       (request) => rootPathGuard(request),
     ],
     ...(options.caseInsensitive !== undefined ? { caseInsensitive: options.caseInsensitive } : {}),
@@ -274,6 +313,22 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     if (initializing || run) throw new RpcError(AgentHostErrorCode.AlreadyInitialized)
     initializing = true
     if (init.permissionRules) permissionRules = init.permissionRules
+    /**
+     * 计划模式与只读 Agent 强制只读沙箱（M5-04）：权限预设已经拒绝写入类调用，这里是第二层，
+     * 不能靠用户把预设改成“自动”而放宽。
+     */
+    const effectiveSandbox = sandboxFor(init.sandbox, init.agentDefinition)
+    if (effectiveSandbox) {
+      sandboxState = {
+        supported: effectiveSandbox.capability.supported,
+        available: effectiveSandbox.capability.available,
+        unavailable: effectiveSandbox.unavailable,
+        profile: effectiveSandbox.policy.profile,
+      }
+    }
+    const sandboxExecutionInfo: SandboxExecution | undefined = effectiveSandbox
+      ? sandboxExecution(effectiveSandbox.policy, effectiveSandbox.capability)
+      : undefined
     const checkpoints =
       init.checkpoints && options.openCheckpoints
         ? createHostCheckpoints({
@@ -294,7 +349,14 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     )
     const registry = createToolRegistry()
     const toolEnvironment =
-      (await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
+      (effectiveSandbox
+        ? await options.registerTools?.(
+            registry,
+            init.workspacePath,
+            init.shell ?? 'auto',
+            effectiveSandbox,
+          )
+        : await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
     const hasBuiltinTools = registry.list().length > 0
     /** Agent 定义（M3-11）：决定这一份运行的指令、工具选择与上下文策略。 */
     agentDefinition = init.agentDefinition
@@ -355,6 +417,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
               runId: run?.runId ?? init.runId,
             })
           },
+          ...(effectiveSandbox ? { sandbox: effectiveSandbox.policy } : {}),
+          ...(sandboxExecutionInfo ? { execution: sandboxExecutionInfo } : {}),
         }),
       )
       registry.register(
@@ -436,6 +500,10 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       workspace: DelegatedWorkspace,
     ): Promise<RunContext> {
       const definition = resolved.definition
+      const childSandbox = sandboxFor(effectiveSandbox, definition)
+      const childSandboxExecution = childSandbox
+        ? sandboxExecution(childSandbox.policy, childSandbox.capability)
+        : undefined
       const child = await options.createRuntime(
         resolved.model,
         resolved.credential,
@@ -443,7 +511,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       )
       const childRegistry = createToolRegistry()
       const environment =
-        (await options.registerTools?.(childRegistry, workspace.path, init.shell ?? 'auto')) ?? {}
+        (childSandbox
+          ? await options.registerTools?.(
+              childRegistry,
+              workspace.path,
+              init.shell ?? 'auto',
+              childSandbox,
+            )
+          : await options.registerTools?.(childRegistry, workspace.path, init.shell ?? 'auto')) ??
+        {}
       registerMcpToolsInto(childRegistry, resolved.mcpTools)
       childRegistry.register(
         createStartCommandTool({
@@ -453,6 +529,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
               runId: handleRef.current?.runId ?? parentRunId,
             })
           },
+          ...(childSandbox ? { sandbox: childSandbox.policy } : {}),
+          ...(childSandboxExecution ? { execution: childSandboxExecution } : {}),
         }),
       )
       const skills = [...resolved.skills]

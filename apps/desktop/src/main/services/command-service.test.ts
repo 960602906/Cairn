@@ -4,8 +4,14 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { BackgroundCommandOutput, EventEnvelope, UnsequencedEvent } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
-import type { RunCommandOptions, RunCommandResult } from '@cairn/shell'
-import { createCommandService } from './command-service.js'
+import {
+  unsandboxedExecution,
+  type RunCommandOptions,
+  type RunCommandResult,
+  type SandboxPolicy,
+  type SandboxRunner,
+} from '@cairn/shell'
+import { createCommandService, type CommandSandbox } from './command-service.js'
 
 const dirs: string[] = []
 const tempDir = () => {
@@ -38,6 +44,7 @@ function setup(
     allowed?: boolean
     now?: () => number
     publishError?: boolean
+    sandbox?: () => Promise<CommandSandbox | undefined>
   } = {},
 ) {
   const storage = createMemoryStorage({ now: () => 10 })
@@ -59,6 +66,7 @@ function setup(
     now: options.now ?? (() => 10),
     id: () => `cmd${++nextId}`,
     onError,
+    ...(options.sandbox ? { sandbox: options.sandbox } : {}),
   })
   return { storage, publish, onError, service }
 }
@@ -133,6 +141,125 @@ describe('command service', () => {
     await start(failure.service)
     await vi.waitFor(() => expect(failure.storage.commands.get('cmd1')?.status).toBe('failed'))
     expect(failure.onError).toHaveBeenCalledWith(new Error('spawn failed'))
+  })
+
+  it('runs background commands in the resolved sandbox and reports the execution (M5-04)', async () => {
+    let options!: RunCommandOptions
+    const policy: SandboxPolicy = { profile: 'workspace-write', network: 'none' }
+    const runner: SandboxRunner = {
+      capability: {
+        available: true,
+        supported: true,
+        mechanism: 'restricted-token',
+        networkIsolated: false,
+        checks: {
+          restrictedToken: true,
+          lowIntegrity: true,
+          jobObject: true,
+          appContainer: false,
+        },
+      },
+      executionFor: (input) => ({
+        profile: input.profile,
+        network: input.network,
+        mechanism: 'restricted-token',
+        enforced: true,
+        networkIsolated: false,
+      }),
+      run: async () => {
+        throw new Error('not used')
+      },
+    }
+    const { publish, service } = setup({
+      sandbox: async () => ({ runner, policy }),
+      execute: (_shell, _command, opts) => {
+        options = opts
+        return new Promise(() => {})
+      },
+    })
+    await start(service)
+    expect(options.sandbox).toEqual({ runner, policy })
+    expect(publish.mock.calls[0]![0][0]).toMatchObject({
+      type: 'command.started',
+      payload: {
+        sandbox: {
+          profile: 'workspace-write',
+          network: 'none',
+          mechanism: 'restricted-token',
+          enforced: true,
+        },
+      },
+    })
+  })
+
+  it('lets the caller override the sandbox policy and notes full access', async () => {
+    let options!: RunCommandOptions
+    const runner: SandboxRunner = {
+      capability: {
+        available: true,
+        supported: true,
+        mechanism: 'restricted-token',
+        networkIsolated: false,
+        checks: {
+          restrictedToken: true,
+          lowIntegrity: true,
+          jobObject: true,
+          appContainer: false,
+        },
+      },
+      executionFor: (input) =>
+        input.profile === 'danger-full-access'
+          ? unsandboxedExecution(input)
+          : { ...input, mechanism: 'restricted-token', enforced: true, networkIsolated: false },
+      run: async () => {
+        throw new Error('not used')
+      },
+    }
+    const { publish, service } = setup({
+      sandbox: async () => ({ runner, policy: { profile: 'workspace-write', network: 'none' } }),
+      execute: (_shell, _command, opts) => {
+        options = opts
+        return new Promise(() => {})
+      },
+    })
+    await service.start({
+      sessionId: 's1',
+      runId: 'r1',
+      command: 'echo ok',
+      cwd: '/work',
+      sandbox: { profile: 'danger-full-access', network: 'none' },
+    })
+    expect(options.sandbox?.policy.profile).toBe('danger-full-access')
+    expect(publish.mock.calls[0]![0][0]).toMatchObject({
+      type: 'command.started',
+      payload: {
+        sandbox: { mechanism: 'none', enforced: false, reason: 'sandbox.full_access' },
+      },
+    })
+  })
+
+  it('records an unsandboxed execution when no runner is available', async () => {
+    const { publish, service } = setup({
+      sandbox: async () => undefined,
+      execute: async () => result(),
+    })
+    await service.start({
+      sessionId: 's1',
+      runId: 'r1',
+      command: 'echo ok',
+      cwd: '/work',
+      sandbox: { profile: 'workspace-write', network: 'none' },
+    })
+    expect(publish.mock.calls[0]![0][0]).toMatchObject({
+      type: 'command.started',
+      payload: {
+        sandbox: {
+          mechanism: 'none',
+          enforced: false,
+          reason: 'sandbox.unavailable',
+        },
+      },
+    })
   })
 
   it('validates the workspace, session and capacity', async () => {

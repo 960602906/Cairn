@@ -15,7 +15,7 @@
  * `$(…)` 与反引号中的命令也会检查。这是防误操作的安全网，不是安全边界（ADR-0007、架构 §10.5）：脚本、
  * 变量拼接等间接执行无法识别。
  */
-import type { AgentPathPolicy } from '@cairn/protocol'
+import type { AgentPathPolicy, SandboxProfile } from '@cairn/protocol'
 import { normalizeCommand, parseCommand } from './command-match.js'
 import { matchGlob } from './glob.js'
 import { PermissionReasonCode, type GuardResult, type PermissionGuard } from './permissions.js'
@@ -363,6 +363,69 @@ export const DEFAULT_PERMISSION_GUARDS: readonly PermissionGuard[] = [
   dangerousCommandGuard,
   sensitivePathGuard,
 ]
+
+export const SandboxGuardReasonCode = {
+  /** `danger-full-access`：本次将在沙箱外运行，必须逐次审批。 */
+  FullAccess: 'sandbox.full_access_requires_approval',
+  /** 沙箱不可用：按设置失败关闭或经审批在沙箱外运行。 */
+  Unavailable: 'sandbox.unavailable',
+} as const
+
+export interface SandboxGuardState {
+  /** 当前平台是否支持 M5 的命令沙箱；不支持时不拦截（M6 之前保持现有语义）。 */
+  readonly supported: boolean
+  readonly available: boolean
+  readonly unavailable: 'deny' | 'ask'
+  readonly profile: SandboxProfile
+}
+
+const SANDBOX_COMMAND_TOOLS: ReadonlySet<string> = new Set(['run_command', 'start_command'])
+
+const SANDBOX_UNAVAILABLE_REASON =
+  'The command sandbox is unavailable on this system, so the command was not started. ' +
+  'Enable the fallback in settings to review running without the sandbox, or fix the sandbox ' +
+  'capability reported in diagnostics.'
+
+const SANDBOX_ESCAPE_REASON =
+  'This command will run outside the command sandbox, with the same permissions as the app. ' +
+  'Only commands that need access outside the workspace should use this option.'
+
+/**
+ * 命令沙箱的审批/拒绝（M5-04）：只作用于 `run_command` 与 `start_command`。
+ *
+ * - `danger-full-access`：强制逐次审批，不能被“始终允许”规则静默放行；
+ * - 沙箱不可用且设置为失败关闭：直接拒绝，命令不会启动；
+ * - 沙箱不可用且设置为审批：每次审批（“本次不使用沙箱”），审批后以应用用户权限执行。
+ */
+export function sandboxGuard(state: () => SandboxGuardState): PermissionGuard {
+  return (request) => {
+    const current = state()
+    if (!current.supported || !SANDBOX_COMMAND_TOOLS.has(request.definition.name)) {
+      return undefined
+    }
+    if (current.profile === 'danger-full-access') {
+      return {
+        effect: 'ask',
+        reasonCode: SandboxGuardReasonCode.FullAccess,
+        overridable: false,
+        reason: SANDBOX_ESCAPE_REASON,
+      }
+    }
+    if (current.available) return undefined
+    return current.unavailable === 'deny'
+      ? {
+          effect: 'deny',
+          reasonCode: SandboxGuardReasonCode.Unavailable,
+          reason: SANDBOX_UNAVAILABLE_REASON,
+        }
+      : {
+          effect: 'ask',
+          reasonCode: SandboxGuardReasonCode.Unavailable,
+          overridable: false,
+          reason: SANDBOX_ESCAPE_REASON,
+        }
+  }
+}
 
 /**
  * Agent 级写入路径守卫（M4-11）：`pathPolicy.write` 给出时，写类工具只能修改匹配的路径。

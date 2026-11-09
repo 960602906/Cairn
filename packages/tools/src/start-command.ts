@@ -1,5 +1,6 @@
 import { ToolError, type ToolDefinition } from '@cairn/core'
-import type { BackgroundCommand } from '@cairn/protocol'
+import type { BackgroundCommand, SandboxExecution } from '@cairn/protocol'
+import type { SandboxPolicy } from '@cairn/shell'
 import { resolveOrThrow } from './paths.js'
 
 export interface StartCommandInput {
@@ -15,7 +16,13 @@ export function createStartCommandTool(options: {
     readonly command: string
     readonly cwd: string
     readonly timeoutSeconds?: number
+    /** 这次后台命令的沙箱策略（M5-04）；主进程按它决定执行机制。 */
+    readonly sandbox?: SandboxPolicy
   }) => Promise<BackgroundCommand>
+  /** 由宿主解析的沙箱策略，传给主进程；省略时按现有语义执行。 */
+  readonly sandbox?: SandboxPolicy
+  /** `tool.started` 中显示的沙箱（能力与策略已解析）；省略时不显示。 */
+  readonly execution?: SandboxExecution
 }): ToolDefinition<StartCommandInput> {
   return {
     name: 'start_command',
@@ -41,6 +48,7 @@ export function createStartCommandTool(options: {
     category: 'execute',
     source: { kind: 'builtin' },
     trust: 'builtin',
+    ...(options.execution ? { sandbox: options.execution } : {}),
     normalize: async (input, ctx) => {
       if (input.cwd !== undefined) await resolveOrThrow(ctx, input.cwd)
       return { input, targets: { command: input.command } }
@@ -65,6 +73,7 @@ export function createStartCommandTool(options: {
           command: input.command,
           cwd,
           ...(input.timeoutSeconds === undefined ? {} : { timeoutSeconds: input.timeoutSeconds }),
+          ...(options.sandbox ? { sandbox: options.sandbox } : {}),
         })
         return {
           content: [

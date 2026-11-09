@@ -1,6 +1,6 @@
 # ADR-0034 Windows 命令沙箱
 
-- 状态：提议（M5-00 草案；M5-04/05 定稿）
+- 状态：已接受（M5-00 起草，M5-04 实施；M5-05 接入界面与诊断）
 - 日期：2026-11-10
 - 相关决策：ADR-0007、ADR-0012、ADR-0035、ADR-0036
 - 预研证据：[M5-00 预研报告](../plan/m5-spikes.md) §3；[`spikes/m5`](../../spikes/m5/README.md)
@@ -29,6 +29,17 @@
 - **显式升级。** `danger-full-access` 必须逐次或按会话审批，不能持久化为默认；计划模式与只读 Agent 强制只读沙箱，不能靠权限预设放宽。
 - **只读档位。** `read-only` 通过 ACL/令牌限制工作区写入，临时目录仍可写；具体实现由 M5-04 定稿。
 - **能力探测用于诊断。** 启动时探测创建受限令牌、设置完整性、Job Object 与网络状态，结果写入诊断包，不包含项目内容、用户名或凭据。
+
+## 实施记录（M5-04）
+
+- **默认机制是受限令牌。** M5-00 的结论是 AppContainer 下用户目录中的 Node、pnpm、Git 等工具链无法启动，因此默认路径使用 `CreateRestrictedToken`（禁用最大权限与 LUA）+ 低完整性 + Job Object；AppContainer 代码、能力探测与清理保留为实验档位，只由 `CAIRN_SANDBOX_MECHANISM=appcontainer` 开启，不因“探测可用”自动启用。
+- **只读档位用完整性标签实现。** `workspace-write` 把工作区目录设为低完整性（`icacls /setintegritylevel (OI)(CI)L`），低完整性进程可写；`read-only` 设为中完整性（`M`），低完整性进程无法写入。没有删除或重写工作区 ACL，避免破坏用户既有权限；专用临时目录始终为低完整性。
+- **网络如实标注。** 受限令牌不能隔离网络，`SandboxExecution.networkIsolated` 始终为 false，界面、设置、事件与诊断必须写“网络未隔离”。AppContainer 才按 `none` / `internet` / `private` 授予 `S-1-15-3-1` / `S-1-15-3-3`。
+- **失败关闭是唯一默认。** 能力不可用、执行器创建失败或任一准备步骤失败都会拒绝启动命令，并在事件里写 `mechanism: none` 与原因；只有用户把设置改为 `ask` 并逐次审批后，命令才以应用用户权限运行。
+- **`danger-full-access` 每次审批。** 该档位不能被持久化为默认值，且权限守卫把它实现为不可覆盖（`overridable: false`）的逐次审批，用户不能通过“始终允许”静默放行。
+- **计划模式与只读 Agent。** 计划模式已由 `planModeGuard` 拒绝全部执行与写入类工具，因此不需要为单轮切换可变沙箱策略；只读 Agent 在 `host.init` 被强制为 `read-only` 策略，不依赖用户权限预设。
+- **保护范围与命名。** 沙箱只覆盖 `run_command` 与 `start_command` 的进程树；AppContainer 名称由安装标识的 SHA-256 摘要生成，不含项目路径、用户名或凭据。
+- **未完成部分。** 真实标准用户、Windows 10、干净 VM 与中文用户名的验证留给 M5-10；设置页、审批文案、终端标记与诊断包字段由 M5-05 接入。本地真实命令矩阵通过不等于这些环境已验证。
 
 ## 备选方案
 

@@ -4,6 +4,19 @@ import { createBuiltinTools } from './builtin-tools.js'
 
 const shell = { kind: 'bash' as const, exe: '/bin/bash' }
 
+const capability = {
+  available: true,
+  supported: true,
+  mechanism: 'restricted-token' as const,
+  networkIsolated: false,
+  checks: {
+    restrictedToken: true,
+    lowIntegrity: true,
+    jobObject: true,
+    appContainer: false,
+  },
+}
+
 describe('createBuiltinTools', () => {
   it('registers the built-in tools and selects the shell once', async () => {
     const selectShell = vi.fn(async () => shell)
@@ -46,5 +59,67 @@ describe('createBuiltinTools', () => {
     await expect(register(createToolRegistry())).rejects.toThrow('no shell')
     await register(createToolRegistry())
     expect(selectShell).toHaveBeenCalledTimes(2)
+  })
+
+  it('declares the sandbox on run_command when the capability is available (M5-04)', async () => {
+    const register = createBuiltinTools({ binDir: '/bin', selectShell: async () => shell })
+    const registry = createToolRegistry()
+    await register(registry, '/w', 'auto', {
+      policy: { profile: 'workspace-write', network: 'none' },
+      capability,
+      unavailable: 'deny',
+    })
+    expect(registry.get('run_command')?.sandbox).toEqual({
+      profile: 'workspace-write',
+      network: 'none',
+      mechanism: 'restricted-token',
+      enforced: true,
+      networkIsolated: false,
+    })
+  })
+
+  it('keeps the experimental AppContainer execution when the host selected it', async () => {
+    const register = createBuiltinTools({ binDir: '/bin', selectShell: async () => shell })
+    const registry = createToolRegistry()
+    await register(registry, '/w', 'auto', {
+      policy: { profile: 'read-only', network: 'internet' },
+      capability: {
+        ...capability,
+        mechanism: 'appcontainer',
+        networkIsolated: true,
+        checks: { ...capability.checks, appContainer: true },
+      },
+      unavailable: 'deny',
+      appContainerName: 'com.cairn.sandbox.test',
+    })
+    expect(registry.get('run_command')?.sandbox).toMatchObject({
+      profile: 'read-only',
+      network: 'internet',
+      mechanism: 'appcontainer',
+      networkIsolated: true,
+    })
+  })
+
+  it('marks commands as unsandboxed when the sandbox is unavailable', async () => {
+    const register = createBuiltinTools({ binDir: '/bin', selectShell: async () => shell })
+    const registry = createToolRegistry()
+    await register(registry, '/w', 'auto', {
+      policy: { profile: 'workspace-write', network: 'none' },
+      capability: {
+        ...capability,
+        available: false,
+        mechanism: 'none',
+        reason: 'sandbox.restricted_token_unavailable',
+      },
+      unavailable: 'deny',
+    })
+    expect(registry.get('run_command')?.sandbox).toEqual({
+      profile: 'workspace-write',
+      network: 'none',
+      mechanism: 'none',
+      enforced: false,
+      networkIsolated: false,
+      reason: 'sandbox.restricted_token_unavailable',
+    })
   })
 })

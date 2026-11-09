@@ -146,6 +146,23 @@ describe('ToolPipeline：成功路径', () => {
     expect(outcome).toEqual({ status: 'ok', content: text('ok'), truncated: false, display })
   })
 
+  it('把工具声明的沙箱随 started 报告（M5-04）', async () => {
+    const sandbox = {
+      profile: 'workspace-write' as const,
+      network: 'none' as const,
+      mechanism: 'restricted-token' as const,
+      enforced: true,
+      networkIsolated: false,
+    }
+    const h = setup([tool({ sandbox })])
+    const started: unknown[] = []
+    await createToolPipeline(h.options).run(call({ path: 'a.ts' }), signal(), {
+      ...h.observer,
+      started: (value) => started.push(value),
+    })
+    expect(started).toEqual([sandbox])
+  })
+
   it('7. 执行命令前创建检查点并发出 checkpoint.created；不可用时直接执行', async () => {
     const h = setup([tool({ name: 'run_command', category: 'execute' })])
     const pipeline = createToolPipeline(h.options)
