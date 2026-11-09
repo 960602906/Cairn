@@ -99,6 +99,13 @@ export interface ActivityCommands {
   readonly subscribe: (listener: () => void) => () => void
 }
 
+export interface CommandCommands {
+  readonly list: Handler<'command.list'>
+  readonly output: Handler<'command.output'>
+  readonly stop: Handler<'command.stop'>
+  readonly subscribe: (listener: (commandId: string) => void) => () => void
+}
+
 /** 由供应商服务实现的连接测试与模型列表（M2-10）。 */
 export interface ProviderCommands {
   readonly test: Handler<'provider.test'>
@@ -158,6 +165,8 @@ export interface RendererGatewayOptions {
   readonly inspect: InspectCommands
   /** 活动中心（M4-06）：跨会话快照与就地审批。 */
   readonly activity: ActivityCommands
+  /** 后台命令（M4-14）：列表、输出与停止。 */
+  readonly backgroundCommands: CommandCommands
   /** MCP 状态变化的订阅（M3-09）。 */
   readonly mcpStatus: (listener: (event: z.output<typeof McpStatusEvent>) => void) => () => void
   /** 增量事件的推送间隔，默认 33 ms（约 30 次/秒）。 */
@@ -200,7 +209,10 @@ export function coalesceDeltas(events: readonly EventEnvelope[]): EventEnvelope[
 }
 
 type TextDelta = EventEnvelope<
-  'message.assistant.delta' | 'message.reasoning.delta' | 'tool.output.delta'
+  | 'message.assistant.delta'
+  | 'message.reasoning.delta'
+  | 'tool.output.delta'
+  | 'command.output.delta'
 >
 
 function canMerge(prev: EventEnvelope, next: EventEnvelope): prev is TextDelta {
@@ -212,6 +224,12 @@ function canMerge(prev: EventEnvelope, next: EventEnvelope): prev is TextDelta {
     const n = next as typeof prev
     return (
       prev.payload.toolCallId === n.payload.toolCallId && prev.payload.stream === n.payload.stream
+    )
+  }
+  if (prev.type === 'command.output.delta') {
+    const n = next as typeof prev
+    return (
+      prev.payload.commandId === n.payload.commandId && prev.payload.stream === n.payload.stream
     )
   }
   return false
@@ -231,11 +249,13 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   const { events, commands, projects, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
   const { agents, trials, diagnostics, activity, changeSets } = options
+  const backgroundCommands = options.backgroundCommands
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
     approvalsChanged: (sessionId: string) => void
     activityChanged: () => void
+    commandChanged: (commandId: string) => void
     openActivitySession: (sessionId: string) => void
     mcpStatus: (event: z.output<typeof McpStatusEvent>) => void
     close: () => void
@@ -252,6 +272,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   })
   const unsubscribeMcp = options.mcpStatus((event) => {
     for (const connection of connections) connection.mcpStatus(event)
+  })
+  const unsubscribeCommands = backgroundCommands.subscribe((commandId) => {
+    for (const connection of connections) connection.commandChanged(commandId)
   })
 
   return {
@@ -337,6 +360,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('approval.resolve', (params) => approvals.resolve(params))
       endpoint.handle('activity.list', (params) => activity.list(params))
       endpoint.handle('activity.resolve', (params) => activity.resolve(params))
+      endpoint.handle('command.list', (params) => backgroundCommands.list(params))
+      endpoint.handle('command.output', (params) => backgroundCommands.output(params))
+      endpoint.handle('command.stop', (params) => backgroundCommands.stop(params))
       endpoint.handle('skill.list', (params) => skills.list(params))
       endpoint.handle('skill.get', (params) => skills.get(params))
       endpoint.handle('skill.pickSource', (params) => skills.pickSource(params))
@@ -421,6 +447,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           if (closed) return
           endpoint.emit('activity.changed', {})
         },
+        commandChanged(commandId: string) {
+          if (closed) return
+          endpoint.emit('command.changed', { commandId })
+        },
         openActivitySession(sessionId: string) {
           if (closed) return
           endpoint.emit('activity.open', { sessionId })
@@ -457,6 +487,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       unsubscribeApprovals()
       unsubscribeActivity()
       unsubscribeMcp()
+      unsubscribeCommands()
       for (const connection of [...connections]) connection.close()
     },
   }

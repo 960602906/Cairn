@@ -8,6 +8,8 @@ import {
   type ChangeSetFileKind,
   type ChangeSetFileStatus,
   type ChangeSetStatus,
+  type BackgroundCommand,
+  type BackgroundCommandOutput,
   type FileChangeKind,
   type FileChangeStatus,
   type PermissionRule,
@@ -933,6 +935,40 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     return toPermissionRule(q.ruleById.get(rule.id)!)
   })
 
+  const backgroundCommand = (commandId: string): BackgroundCommand | undefined => {
+    const row = db
+      .prepare<
+        [string],
+        {
+          command_id: string
+          session_id: string
+          run_id: string
+          command: string
+          cwd: string
+          started_at: number
+          ended_at: number | null
+          exit_code: number | null
+          status: BackgroundCommand['status']
+        }
+      >(
+        `SELECT command_id, session_id, run_id, command, cwd, started_at, ended_at, exit_code, status
+      FROM background_commands WHERE command_id = ?`,
+      )
+      .get(commandId)
+    if (!row) return undefined
+    return {
+      commandId: row.command_id,
+      sessionId: row.session_id,
+      runId: row.run_id,
+      command: row.command,
+      cwd: row.cwd,
+      startedAt: row.started_at,
+      status: row.status,
+      ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
+      ...(row.exit_code === null && row.ended_at === null ? {} : { exitCode: row.exit_code }),
+    }
+  }
+
   return {
     migration,
 
@@ -1290,6 +1326,58 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         }
         q.setChangeSetFileStatus.run({ changeSetId, path, status })
         return toChangeSetFile(q.changeSetFile.get(changeSetId, path)!)
+      },
+    },
+
+    commands: {
+      create(record) {
+        if (!db.prepare('SELECT 1 FROM sessions WHERE session_id = ?').get(record.sessionId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { sessionId: record.sessionId })
+        }
+        if (
+          db.prepare('SELECT 1 FROM background_commands WHERE command_id = ?').get(record.commandId)
+        ) {
+          throw new StorageError(StorageErrorCode.Conflict, { commandId: record.commandId })
+        }
+        db.prepare(
+          `INSERT INTO background_commands
+          (command_id, session_id, run_id, command, cwd, started_at, ended_at, exit_code, status)
+          VALUES (@commandId, @sessionId, @runId, @command, @cwd, @startedAt, @endedAt, @exitCode, @status)`,
+        ).run({ ...record, endedAt: record.endedAt ?? null, exitCode: record.exitCode ?? null })
+        return record
+      },
+      get: backgroundCommand,
+      list() {
+        const ids = db
+          .prepare<[], { command_id: string }>(
+            'SELECT command_id FROM background_commands ORDER BY started_at DESC, rowid DESC',
+          )
+          .all()
+        return ids.map(({ command_id }) => backgroundCommand(command_id)!)
+      },
+      finish(commandId, status, exitCode, endedAt) {
+        const result = db
+          .prepare(
+            `UPDATE background_commands SET status = ?, exit_code = ?, ended_at = ?
+          WHERE command_id = ?`,
+          )
+          .run(status, exitCode, endedAt, commandId)
+        if (result.changes === 0) throw new StorageError(StorageErrorCode.NotFound, { commandId })
+        return backgroundCommand(commandId)!
+      },
+      saveOutput(commandId, output) {
+        const result = db
+          .prepare('UPDATE background_commands SET output = ? WHERE command_id = ?')
+          .run(JSON.stringify(output), commandId)
+        if (result.changes === 0) throw new StorageError(StorageErrorCode.NotFound, { commandId })
+      },
+      output(commandId) {
+        const row = db
+          .prepare<[string], { output: string | null }>(
+            'SELECT output FROM background_commands WHERE command_id = ?',
+          )
+          .get(commandId)
+        return row?.output ? (JSON.parse(row.output) as BackgroundCommandOutput) : undefined
       },
     },
 

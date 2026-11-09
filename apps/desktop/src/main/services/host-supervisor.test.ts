@@ -321,6 +321,48 @@ describe('host.changeset.create（M4-09）', () => {
   })
 })
 
+describe('host.command.start（M4-14）', () => {
+  it('starts a command for the connected session', async () => {
+    const host = fakeHost()
+    const startCommand = vi.fn(
+      async (_sessionId: string, input: { runId: string; command: string; cwd: string }) => ({
+        commandId: 'cmd-1',
+        sessionId: 's1',
+        runId: input.runId,
+        command: input.command,
+        cwd: input.cwd,
+        startedAt: 1,
+        status: 'running' as const,
+      }),
+    )
+    const { supervisor } = setup(host, { startCommand })
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.command.start', {
+        runId: 'r1',
+        command: 'npm run dev',
+        cwd: '/work',
+        timeoutSeconds: 60,
+      }),
+    ).resolves.toMatchObject({ commandId: 'cmd-1', sessionId: 's1' })
+    expect(startCommand).toHaveBeenCalledWith('s1', {
+      runId: 'r1',
+      command: 'npm run dev',
+      cwd: '/work',
+      timeoutSeconds: 60,
+    })
+  })
+
+  it('reports run.unsupported without the service', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host)
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint!.request('host.command.start', { runId: 'r1', command: 'x', cwd: '/work' }),
+    ).rejects.toMatchObject({ code: 'run.unsupported' })
+  })
+})
+
 describe('MCP 工具（M3-09）', () => {
   const tool = {
     name: 'mcp_fixture_echo',

@@ -61,6 +61,75 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     }
 
+    describe('background commands', () => {
+      it('persists lifecycle and bounded output without exposing mutable records', () => {
+        seed()
+        const record = {
+          commandId: 'cmd1',
+          sessionId: 's1',
+          runId: 'r1',
+          command: 'echo ok',
+          cwd: '/work/demo',
+          startedAt: 100,
+          status: 'running' as const,
+        }
+        expect(storage.commands.create(record)).toEqual(record)
+        expectStorageError(() => storage.commands.create(record), StorageErrorCode.Conflict)
+        expect(storage.commands.list()).toEqual([record])
+        const stopped = storage.commands.finish('cmd1', 'stopped', null, 120)
+        expect(stopped).toEqual({ ...record, status: 'stopped', exitCode: null, endedAt: 120 })
+        const output = {
+          command: stopped,
+          chunks: [{ stream: 'stdout' as const, text: 'ok' }],
+          omittedChars: 0,
+        }
+        storage.commands.saveOutput('cmd1', output)
+        output.chunks[0]!.text = 'changed'
+        expect(storage.commands.output('cmd1')?.chunks[0]?.text).toBe('ok')
+        expect(storage.commands.output('missing')).toBeUndefined()
+        expectStorageError(
+          () => storage.commands.finish('missing', 'failed', null, 120),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.commands.saveOutput('missing', output),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('rolls back creation in a failed transaction', () => {
+        seed()
+        expect(() =>
+          storage.transaction(() => {
+            storage.commands.create({
+              commandId: 'cmd1',
+              sessionId: 's1',
+              runId: 'r1',
+              command: 'echo',
+              cwd: '/work/demo',
+              startedAt: 100,
+              status: 'running',
+            })
+            throw new Error('rollback')
+          }),
+        ).toThrow('rollback')
+        expect(storage.commands.list()).toEqual([])
+        expectStorageError(
+          () =>
+            storage.commands.create({
+              commandId: 'cmd2',
+              sessionId: 'missing',
+              runId: 'r1',
+              command: 'echo',
+              cwd: '/work/demo',
+              startedAt: 100,
+              status: 'running',
+            }),
+          StorageErrorCode.NotFound,
+        )
+      })
+    })
+
     describe('projects', () => {
       it('creates and reads projects', () => {
         const created = storage.projects.create({

@@ -429,6 +429,50 @@ describe('agent host', () => {
       })
     })
 
+    it('starts background commands through the main process (M4-14)', async () => {
+      const h = setup(
+        {
+          turns: [
+            {
+              steps: [
+                {
+                  kind: 'tool',
+                  name: 'start_command',
+                  input: { command: 'npm run dev', timeoutSeconds: 60 },
+                },
+                { kind: 'reply', text: 'started' },
+              ],
+            },
+          ],
+        },
+        { registerTools },
+      )
+      const starts: unknown[] = []
+      h.main.handle('host.command.start', (input) => {
+        starts.push(input)
+        return {
+          commandId: 'cmd1',
+          sessionId: 's1',
+          runId: input.runId,
+          command: input.command,
+          cwd: '/work',
+          startedAt: 1,
+          status: 'running',
+        }
+      })
+      await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('start') })
+      await h.waitFor('turn.completed')
+      expect(starts).toEqual([
+        { runId: 'r1', command: 'npm run dev', cwd: '/work', timeoutSeconds: 60 },
+      ])
+      expect(h.events.find((event) => event.type === 'tool.completed')?.payload).toMatchObject({
+        output: text(
+          'Started background command cmd1 in /work. It keeps running after this tool returns.',
+        ),
+      })
+    })
+
     it('limits tool results by the model context window (M1-13a)', async () => {
       const budget: ToolDefinition<object> = {
         name: 'budget',

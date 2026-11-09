@@ -16,6 +16,7 @@ import {
 } from '../common.js'
 import { AgentDefinition } from '../agents.js'
 import { FileChangeInput } from '../changes.js'
+import { BackgroundCommand } from '../commands.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
 import { RunSnapshotInput } from '../inspect.js'
 import { ActivePlan, PromptMode } from '../plan.js'
@@ -356,6 +357,15 @@ export const MainForHost = defineSide({
           }),
         ),
       }),
+    },
+    'host.command.start': {
+      params: z.object({
+        runId: Id,
+        command: z.string().min(1).max(20_000),
+        cwd: z.string().min(1),
+        timeoutSeconds: z.number().int().min(1).max(86_400).optional(),
+      }),
+      result: BackgroundCommand,
     },
     /**
      * 记录一次模型调用前的上下文快照（M4-04，ADR-0033）。会话由连接确定；主进程脱敏、截断后

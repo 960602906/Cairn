@@ -4,7 +4,7 @@
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createGitRunner, isolatedGitEnv, openShadowRepo } from '@cairn/checkpoint'
 import { BUILTIN_CODER_ID, redact } from '@cairn/core'
@@ -38,6 +38,7 @@ import { createActivityNotifier } from './services/activity-notifier.js'
 import { createActivityService } from './services/activity-service.js'
 import { createChangeService } from './services/change-service.js'
 import { createChangeSetService } from './services/change-set-service.js'
+import { createCommandService } from './services/command-service.js'
 import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
@@ -177,6 +178,25 @@ const changeSets = createChangeSetService({
     sessions.isBusy(sessionId) ||
     changes.isReverting(sessionId) ||
     checkpoints.isRestoring(sessionId),
+  onError: reportError,
+})
+/** 后台命令（M4-14）：生命周期跨工具调用，应用退出时结束整个进程树。 */
+const commandService = createCommandService({
+  storage,
+  events,
+  shell: () => settings.shell() ?? 'auto',
+  isAllowedCwd: async (sessionId, cwd) => {
+    const session = storage.sessions.get(sessionId)
+    if (!session) return false
+    const same = (a: string, b: string) =>
+      process.platform === 'win32'
+        ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
+        : resolve(a) === resolve(b)
+    if (same(cwd, session.workspacePath)) return true
+    return (await workspaces.list()).some(
+      (workspace) => workspace.sessionId === sessionId && same(cwd, workspace.path),
+    )
+  },
   onError: reportError,
 })
 /** 权限规则（M1-10c）：权限模式的预设与保存的规则，启动宿主时经 `host.init` 下发。 */
@@ -373,7 +393,11 @@ const supervisor = createHostSupervisor({
       checkpoint: workspace.checkpoint,
     }
   },
-  cleanupWorkspace: (runId) => workspaces.cleanup(runId),
+  cleanupWorkspace: async (runId) => {
+    await commandService.stopRun(runId)
+    return workspaces.cleanup(runId)
+  },
+  startCommand: (sessionId, input) => commandService.start({ sessionId, ...input }),
   createChangeSet: (sessionId, input) =>
     changeSets.create({
       sessionId,
@@ -470,6 +494,7 @@ const gateway = createRendererGateway({
   changeSets,
   approvals,
   activity,
+  backgroundCommands: commandService,
   skills,
   mcp,
   agents,
@@ -598,7 +623,7 @@ app.on('before-quit', (event) => {
   gateway.close()
   void mcp.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
-  void Promise.race([sessions.shutdown(), timeout])
+  void Promise.race([Promise.all([sessions.shutdown(), commandService.shutdown()]), timeout])
     .catch(reportError)
     .finally(() => {
       storage.close()

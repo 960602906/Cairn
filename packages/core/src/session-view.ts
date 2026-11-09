@@ -361,6 +361,7 @@ export function reduceSession(view: SessionView, event: EventEnvelope): SessionV
 /** 合并一条增量事件；返回 `undefined` 表示忽略。 */
 function applyLive(view: SessionView, event: LiveEvent): SessionView | undefined {
   if (event.type === 'tool.output.delta') return applyToolOutput(view, event)
+  if (event.type === 'command.output.delta') return undefined
   const { messageId, text } = event.payload
   if (view.messages.some((m) => m.messageId === messageId)) return undefined
   const prev = view.live[messageId]
