@@ -10,6 +10,11 @@ playwright-report/
 design/
 # 预研项目自带 npm 锁文件
 spikes/**/package-lock.json
+# M5 预研运行产物与下载缓存
+spikes/m5/work/
+spikes/m5/out/
+spikes/m5/downloads/
+spikes/m5/result-*.json
 # 录制文件与黄金文件由脚本生成，按原样比对
 spikes/pi-contract/cassettes/
 spikes/pi-contract/golden/
