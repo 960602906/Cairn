@@ -7,7 +7,13 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import {
+  createSession,
+  projectDir,
+  runStatus,
+  sendPrompt,
+  setAgentOnSession,
+} from './session.js'
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(
@@ -62,7 +68,7 @@ test('在隔离工作区写入后按文件接受，并撤销合并检查点', as
       tools: { allow: ['*'] },
       permissions: 'auto',
     })
-    await createAgent(window, {
+    const lead = await createAgent(window, {
       ...baseDraft,
       name: { 'zh-CN': '改动集协调员', 'en-US': 'Change set lead' },
       description: { 'zh-CN': '委派写文件', 'en-US': 'Delegates writes' },
@@ -137,9 +143,7 @@ test('在隔离工作区写入后按文件接受，并撤销合并检查点', as
     writeFileSync(file, 'base\n')
 
     await createSession(window, dir, '改动集审阅')
-    await window.getByRole('button', { name: /^Agent：/ }).click()
-    const agents = window.getByRole('listbox', { name: '选择 Agent' })
-    await agents.getByRole('option', { name: /改动集协调员/ }).click()
+    await setAgentOnSession(window, '改动集审阅', { id: lead.agentId, version: lead.version })
 
     await sendPrompt(window, '委派写文件')
     const approval = window.getByRole('region', { name: '待审批' })

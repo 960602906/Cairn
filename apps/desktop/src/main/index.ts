@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createGitRunner, isolatedGitEnv, openShadowRepo } from '@cairn/checkpoint'
 import { BUILTIN_CODER_ID, redact } from '@cairn/core'
-import type { McpStatusEvent } from '@cairn/protocol'
+import type { McpStatusEvent, Theme } from '@cairn/protocol'
 import { bundledRipgrepPath } from '@cairn/tools'
 import { openSqliteStorage } from '@cairn/storage'
 import {
@@ -468,7 +468,7 @@ const gateway = createRendererGateway({
     update: (patch) => {
       const next = settings.update(patch)
       if (patch.permissionMode !== undefined) sessions.refreshPermissions()
-      if (patch.theme !== undefined) nativeTheme.themeSource = patch.theme
+      if (patch.theme !== undefined) nativeTheme.themeSource = nativeThemeSource(patch.theme)
       return next
     },
     shell: createShellInfo(),
@@ -574,8 +574,29 @@ app.on('web-contents-created', (_event, contents) => {
 /** 以 `--ozone-platform=headless` 运行（冒烟测试）。 */
 const headless = (): boolean => app.commandLine.getSwitchValue('ozone-platform') === 'headless'
 
+/** 把四套配色映射成 Electron 只认识的 system / light / dark（标题栏与滚动条跟随明暗）。 */
+function nativeThemeSource(theme: Theme): 'system' | 'light' | 'dark' {
+  switch (theme) {
+    case 'bluestone':
+    case 'obsidian':
+    case 'slate':
+      return 'dark'
+    case 'tundra':
+    case 'paper':
+      return 'light'
+    case 'graphite':
+      return 'dark'
+    case 'light':
+      return 'light'
+    case 'dark':
+      return 'dark'
+    default:
+      return 'system'
+  }
+}
+
 function followThemeSetting(): void {
-  nativeTheme.themeSource = settings.get().theme ?? 'system'
+  nativeTheme.themeSource = nativeThemeSource(settings.get().theme ?? 'slate')
   nativeTheme.on('updated', () => {
     if (!usesTitleBarOverlay(process.platform, headless())) return
     const overlay = titleBarOverlay(nativeTheme.shouldUseDarkColors)

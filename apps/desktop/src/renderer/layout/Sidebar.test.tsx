@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
@@ -10,14 +10,13 @@ import { Sidebar } from './Sidebar.js'
 
 const i18n = createI18n('zh-CN')
 
-function renderSidebar(
-  open: boolean,
-  options: {
-    onActivity?: () => void
-    activityActive?: boolean
-    activityBadge?: number
-  } = {},
-) {
+function renderSidebar(open: boolean, overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) {
+  const handlers = {
+    onNewChat: vi.fn(),
+    onClose: vi.fn(),
+    onSearch: vi.fn(),
+    onSelect: vi.fn(),
+  }
   const store = createStore<Record<string, unknown>>(() => ({
     sessions: [],
     projects: [],
@@ -29,26 +28,21 @@ function renderSidebar(
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreProvider store={store}>
-        <Sidebar
-          open={open}
-          onNewChat={vi.fn()}
-          onCollapse={vi.fn()}
-          onSearch={vi.fn()}
-          onSelect={vi.fn()}
-          onSettings={vi.fn()}
-          {...options}
-        />
+        <Sidebar open={open} {...handlers} {...overrides} />
       </SessionStoreProvider>
     </I18nextProvider>,
   )
-  return screen.getByRole('complementary', { hidden: true })
+  return {
+    sidebar: screen.getByRole('complementary', { hidden: true }),
+    handlers,
+  }
 }
 
 afterEach(cleanup)
 
 describe('Sidebar', () => {
   it('keeps the width and opacity transition while open', () => {
-    const sidebar = renderSidebar(true)
+    const { sidebar } = renderSidebar(true)
     expect(sidebar.getAttribute('aria-hidden')).toBe('false')
     expect(sidebar.hasAttribute('inert')).toBe(false)
     expect(sidebar.className).toContain('transition-[width,opacity]')
@@ -58,7 +52,7 @@ describe('Sidebar', () => {
   })
 
   it('collapses to zero width, hides from assistive tech, and is inert', () => {
-    const sidebar = renderSidebar(false)
+    const { sidebar } = renderSidebar(false)
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
     expect(sidebar.hasAttribute('inert')).toBe(true)
     expect(sidebar.className).toContain('w-0')
@@ -67,21 +61,25 @@ describe('Sidebar', () => {
     expect(sidebar.firstElementChild?.className).toContain('-translate-x-3')
   })
 
-  it('shows the activity entry, active state, and pending approval badge', () => {
-    const onActivity = vi.fn()
-    renderSidebar(true, { onActivity, activityActive: true, activityBadge: 2 })
-    const entry = screen.getByRole('button', { name: '活动，2 个待审批' })
-    expect(entry.getAttribute('aria-current')).toBe('page')
-    expect(entry.textContent).toContain('2')
-    expect(screen.queryByRole('button', { name: '活动' })).toBeNull()
+  it('shows the session title, count, search and new-chat entries', () => {
+    renderSidebar(true)
+    expect(screen.getByText('会话')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '搜索对话' })).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /新对话/ })).toHaveLength(2)
+    expect(screen.getByText('本机工作区')).toBeTruthy()
+    expect(screen.getByText('本地 · 自动保存')).toBeTruthy()
   })
 
-  it('caps the badge and hides the activity entry without a handler', () => {
-    renderSidebar(true, { onActivity: vi.fn(), activityBadge: 120 })
-    expect(screen.getByRole('button', { name: '活动，120 个待审批' }).textContent).toContain('99+')
-    cleanup()
-
-    renderSidebar(true)
-    expect(screen.queryByRole('button', { name: /^活动/ })).toBeNull()
+  it('wires the new-chat, collapse and search actions', () => {
+    const { handlers } = renderSidebar(true)
+    const newChat = screen
+      .getAllByRole('button', { name: /新对话/ })
+      .find((button) => button.textContent?.includes('新对话'))
+    fireEvent.click(newChat!)
+    fireEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
+    fireEvent.click(screen.getByRole('button', { name: '搜索对话' }))
+    expect(handlers.onNewChat).toHaveBeenCalledTimes(1)
+    expect(handlers.onClose).toHaveBeenCalledTimes(1)
+    expect(handlers.onSearch).toHaveBeenCalledTimes(1)
   })
 })

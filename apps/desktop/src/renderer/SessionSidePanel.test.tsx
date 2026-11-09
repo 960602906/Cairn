@@ -211,7 +211,7 @@ describe('SessionSidePanel', () => {
     const panel = screen.getByRole('complementary', { name: '会话信息' })
     expect(panel.className).toContain('transition-[width,transform,opacity]')
     expect(panel.className).toContain('duration-200')
-    expect(panel.className).toContain('w-[304px]')
+    expect(panel.className).toContain('w-[348px]')
     expect(panel.className).toContain('translate-x-0')
     expect(panel.className).toContain('opacity-100')
     expect(panel.getAttribute('aria-hidden')).toBe('false')

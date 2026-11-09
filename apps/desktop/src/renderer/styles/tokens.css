@@ -1,168 +1,405 @@
 /*
- * 设计令牌（视觉规范 §3，ADR-0024）。由 docs/design/visual-style.md 的表格生成，改动时两处同步。
- * 浅色写在 :root，深色写在 [data-theme='dark']；主题由 theme.ts 设置到 <html data-theme>。
+ * 设计令牌（视觉规范 §3，ADR-0024）。
+ *
+ * 默认主题是「青石」：近黑表面 + 青绿，对应 2026 UI 重构的 01 叠层方案。
+ * 另外四套内置配色由 theme.ts 写到 <html data-theme>：
+ *   bluestone 青石 —— 深色，近黑 + 青绿（默认）
+ *   obsidian 黑曜 —— 深色，近黑 + 信号橙
+ *   paper    纸面 —— 浅色，暖纸 + 朱砂，编辑感
+ *   tundra   苔原 —— 浅色，冷灰绿 + 苔绿，轻盈
+ *   slate    板岩 —— 深色，冷蓝黑 + 鸢尾
+ *
  * 组件只能引用这些变量（或 index.css 中映射出的 Tailwind 工具类），不能写死颜色。
+ * 新增令牌时每套主题都要给出值，否则会回落到 :root（青石）。
  */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+
   /* 基础 */
-  --chrome: #f1f2f4;
-  --paper: #ffffff;
-  --raise: #ffffff;
-  --sunk: #f5f5f7;
-  --sunk2: #efeff2;
-  --hover: rgba(20, 22, 30, 0.045);
-  --press: rgba(20, 22, 30, 0.08);
-  --hair: rgba(20, 22, 30, 0.08);
-  --hair2: rgba(20, 22, 30, 0.13);
+  --chrome: #08090a;
+  --chrome-glow: #191c20;
+  --paper: #0e0f11;
+  --raise: #15171a;
+  --sunk: #1a1c20;
+  --sunk2: #212429;
+  --hover: rgba(255, 255, 255, 0.05);
+  --press: rgba(255, 255, 255, 0.095);
+  --hair: rgba(255, 255, 255, 0.075);
+  --hair2: rgba(255, 255, 255, 0.16);
 
   /* 文字 */
-  --fg: #17181c;
-  --fg2: #45474f;
-  --muted: #696c76;
-  --faint: #7a7d87;
+  --fg: #ecebe6;
+  --fg2: #c2bfb8;
+  --muted: #a09d95;
+  --faint: #8a8780;
 
   /* 操作与状态 */
-  --ink: #17181c;
-  --ink-fg: #fafafa;
-  --accent: #2f62e8;
-  --accent-soft: rgba(47, 98, 232, 0.09);
-  --ok: #167a4f;
-  --ok-soft: rgba(22, 122, 79, 0.09);
-  --warn: #9a5b00;
-  --warn-soft: rgba(154, 91, 0, 0.1);
-  --danger: #c23832;
-  --danger-soft: rgba(194, 56, 50, 0.09);
+  --ink: #ff6a3d;
+  --ink-fg: #1a0d07;
+  --accent: #ff6a3d;
+  --accent-soft: rgba(255, 106, 61, 0.13);
+  --brand-accent: #ff6a3d;
+  --ok: #6fcf97;
+  --ok-soft: rgba(111, 207, 151, 0.13);
+  --warn: #f0bb7f;
+  --warn-soft: rgba(240, 187, 127, 0.14);
+  --danger: #f2786f;
+  --danger-soft: rgba(242, 120, 111, 0.14);
 
   /* 代码区 */
-  --code-bg: #fbfbfc;
-  --code-head: #f5f5f7;
-  --gutter: #b8bac1;
-  --gutter-bg: #f7f7f9;
-  --line-hl: rgba(47, 98, 232, 0.06);
-  --add-bg: #ecf8f1;
-  --add-gut: #dcf2e6;
-  --add-word: #c3ead4;
-  --add-fg: #16794b;
-  --del-bg: #fdf0ef;
-  --del-gut: #fae0de;
-  --del-word: #f6c9c6;
-  --del-fg: #c23a34;
-  --hunk-bg: #f1f4fd;
-  --hunk-fg: #5a72c4;
-  --tk-k: #a2329b;
-  --tk-f: #2b5fd6;
-  --tk-s: #0d7a5c;
-  --tk-n: #b45a00;
-  --tk-c: #9da0a8;
-  --tk-p: #8a8d96;
-  --tk-t: #0c7487;
-  --tk-pr: #6b47c4;
-  --tk-v: #17181c;
-  --term-bg: #16171b;
-  --term-fg: #d8d9de;
-  --term-dim: #6d6f78;
-  --term-ok: #5ad19a;
-  --term-acc: #8aa6ff;
+  --code-bg: #0b0c0e;
+  --code-head: #16181b;
+  --gutter: #6c6963;
+  --gutter-bg: #0d0e10;
+  --line-hl: rgba(255, 106, 61, 0.07);
+  --add-bg: rgba(111, 207, 151, 0.1);
+  --add-gut: rgba(111, 207, 151, 0.18);
+  --add-word: rgba(111, 207, 151, 0.24);
+  --add-fg: #7fd6a2;
+  --del-bg: rgba(242, 120, 111, 0.1);
+  --del-gut: rgba(242, 120, 111, 0.18);
+  --del-word: rgba(242, 120, 111, 0.24);
+  --del-fg: #f2786f;
+  --hunk-bg: rgba(139, 166, 232, 0.1);
+  --hunk-fg: #8ba6e8;
+  --tk-k: #e58fda;
+  --tk-f: #8fb0ff;
+  --tk-s: #86d6ad;
+  --tk-n: #f4b96f;
+  --tk-c: #7e7b75;
+  --tk-p: #a09d95;
+  --tk-t: #6fd2df;
+  --tk-pr: #c2a7ff;
+  --tk-v: #e6e6ea;
+
+  /* 终端 */
+  --term-bg: #0a0b0d;
+  --term-fg: #d9dcd2;
+  --term-dim: #8b8882;
+  --term-ok: #7fe0b2;
+  --term-acc: #ff9a72;
   --term-line: rgba(255, 255, 255, 0.07);
-  /* 终端 ANSI 调色板与标准错误（终端两套主题都是深色，深色主题不再覆盖） */
   --term-err: #eda7a3;
   --term-c0: #45474f;
   --term-c1: #f2716b;
-  --term-c2: #5ad19a;
+  --term-c2: #7fe0b2;
   --term-c3: #eeac52;
-  --term-c4: #8aa6ff;
+  --term-c4: #a9bdff;
   --term-c5: #e58fda;
   --term-c6: #6fd2df;
   --term-c7: #d8d9de;
   --term-c8: #6d6f78;
   --term-c9: #ff8f89;
-  --term-c10: #7fe0b2;
+  --term-c10: #a4edc8;
   --term-c11: #f4c77f;
-  --term-c12: #a9bdff;
+  --term-c12: #c2d0ff;
   --term-c13: #f0aee8;
   --term-c14: #96e2eb;
   --term-c15: #f4f4f6;
 
   /* 阴影 */
-  --sh-1: 0 0 0 0.5px rgba(20, 22, 30, 0.08), 0 1px 2px rgba(20, 22, 30, 0.05);
+  --sh-1: 0 0 0 0.5px rgba(255, 255, 255, 0.075), 0 1px 2px rgba(0, 0, 0, 0.32);
   --sh-2:
-    0 0 0 0.5px rgba(20, 22, 30, 0.07), 0 2px 4px rgba(20, 22, 30, 0.04),
-    0 12px 32px -8px rgba(20, 22, 30, 0.12);
+    0 0 0 0.5px rgba(255, 255, 255, 0.09), 0 2px 4px rgba(0, 0, 0, 0.22),
+    0 14px 36px -10px rgba(0, 0, 0, 0.6);
   --sh-3:
-    0 0 0 0.5px rgba(20, 22, 30, 0.08), 0 8px 16px rgba(20, 22, 30, 0.06),
-    0 32px 80px -12px rgba(20, 22, 30, 0.28);
+    0 0 0 0.5px rgba(255, 255, 255, 0.11), 0 8px 18px rgba(0, 0, 0, 0.32),
+    0 36px 90px -14px rgba(0, 0, 0, 0.8);
 }
 
-[data-theme='dark'] {
+/* 青石 —— 近黑 + 青绿（默认，也是没有 data-theme 时的回退） */
+:root,
+[data-theme='bluestone'] {
   color-scheme: dark;
-  /* 基础 */
-  --chrome: #141416;
-  --paper: #1b1b1e;
-  --raise: #232327;
-  --sunk: #202023;
-  --sunk2: #26262a;
+
+  --chrome: #0b0d0f;
+  --chrome-glow: #142024;
+  --paper: #101317;
+  --raise: #14191d;
+  --sunk: #171c20;
+  --sunk2: #1d2429;
   --hover: rgba(255, 255, 255, 0.05);
-  --press: rgba(255, 255, 255, 0.09);
-  --hair: rgba(255, 255, 255, 0.07);
-  --hair2: rgba(255, 255, 255, 0.12);
+  --press: rgba(255, 255, 255, 0.095);
+  --hair: rgba(255, 255, 255, 0.075);
+  --hair2: rgba(255, 255, 255, 0.16);
 
-  /* 文字 */
-  --fg: #ececef;
-  --fg2: #bfc0c6;
-  --muted: #8f9199;
-  --faint: #75777f;
+  --fg: #e9eef3;
+  --fg2: #c3ccd5;
+  --muted: #8a96a3;
+  --faint: #7b8794;
 
-  /* 操作与状态 */
-  --ink: #ececef;
-  --ink-fg: #17171a;
-  --accent: #7b9cff;
-  --accent-soft: rgba(123, 156, 255, 0.12);
-  --ok: #4cc790;
-  --ok-soft: rgba(76, 199, 144, 0.12);
-  --warn: #eeac52;
-  --warn-soft: rgba(238, 172, 82, 0.12);
-  --danger: #f2716b;
-  --danger-soft: rgba(242, 113, 107, 0.13);
+  --ink: #2dd4bf;
+  --ink-fg: #03211e;
+  --accent: #2dd4bf;
+  --accent-soft: rgba(45, 212, 191, 0.12);
+  --brand-accent: #2dd4bf;
+  --ok: #4ade80;
+  --ok-soft: rgba(74, 222, 128, 0.12);
+  --warn: #f0bb7f;
+  --warn-soft: rgba(240, 187, 127, 0.14);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.14);
 
-  /* 代码区 */
-  --code-bg: #161619;
-  --code-head: #1e1e22;
-  --gutter: #4e5058;
-  --gutter-bg: #19191c;
-  --line-hl: rgba(123, 156, 255, 0.07);
-  --add-bg: #15271f;
-  --add-gut: #183325;
-  --add-word: #1f5139;
-  --add-fg: #6fdaa6;
-  --del-bg: #2c191a;
-  --del-gut: #3a1d1f;
-  --del-word: #64292b;
-  --del-fg: #ff8f89;
-  --hunk-bg: #1c2136;
-  --hunk-fg: #8ea6f2;
+  --code-bg: #080b0d;
+  --code-head: #11161a;
+  --gutter: #75827c;
+  --gutter-bg: #0b0f12;
+  --line-hl: rgba(45, 212, 191, 0.07);
+  --add-bg: rgba(74, 222, 128, 0.1);
+  --add-gut: rgba(74, 222, 128, 0.18);
+  --add-word: rgba(74, 222, 128, 0.24);
+  --add-fg: #7fd6a2;
+  --del-bg: rgba(248, 113, 113, 0.1);
+  --del-gut: rgba(248, 113, 113, 0.18);
+  --del-word: rgba(248, 113, 113, 0.24);
+  --del-fg: #f2786f;
+  --hunk-bg: rgba(139, 166, 232, 0.1);
+  --hunk-fg: #8ba6e8;
   --tk-k: #e58fda;
-  --tk-f: #86aaff;
+  --tk-f: #8fb0ff;
   --tk-s: #86d6ad;
   --tk-n: #f4b96f;
-  --tk-c: #686a73;
-  --tk-p: #8b8d96;
+  --tk-c: #7e8a84;
+  --tk-p: #8a96a3;
   --tk-t: #6fd2df;
   --tk-pr: #c2a7ff;
   --tk-v: #e6e6ea;
-  --term-bg: #0f0f11;
-  --term-fg: #d8d9de;
-  --term-dim: #61636b;
-  --term-ok: #5ad19a;
-  --term-acc: #8aa6ff;
-  --term-line: rgba(255, 255, 255, 0.06);
 
-  /* 阴影 */
-  --sh-1: 0 0 0 0.5px rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --term-bg: #080b0d;
+  --term-fg: #d7e2dc;
+  --term-dim: #718577;
+  --term-ok: #7fe0b2;
+  --term-acc: #2dd4bf;
+  --term-line: rgba(255, 255, 255, 0.07);
+  --term-err: #eda7a3;
+
+  --sh-1: 0 0 0 0.5px rgba(255, 255, 255, 0.075), 0 1px 2px rgba(0, 0, 0, 0.32);
   --sh-2:
-    0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 2px 4px rgba(0, 0, 0, 0.2),
-    0 12px 32px -8px rgba(0, 0, 0, 0.5);
+    0 0 0 0.5px rgba(255, 255, 255, 0.09), 0 2px 4px rgba(0, 0, 0, 0.22),
+    0 14px 36px -10px rgba(0, 0, 0, 0.6);
   --sh-3:
-    0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 8px 16px rgba(0, 0, 0, 0.3),
-    0 32px 80px -12px rgba(0, 0, 0, 0.7);
+    0 0 0 0.5px rgba(255, 255, 255, 0.11), 0 8px 18px rgba(0, 0, 0, 0.32),
+    0 36px 90px -14px rgba(0, 0, 0, 0.8);
+}
+
+/* 纸面 —— 暖纸 + 朱砂 */
+[data-theme='paper'] {
+  color-scheme: light;
+
+  --chrome: #e6dccb;
+  --chrome-glow: #f8f1e2;
+  --paper: #fbf7ee;
+  --raise: #fffdf7;
+  --sunk: #f3ecdd;
+  --sunk2: #e9dfcc;
+  --hover: rgba(27, 24, 16, 0.045);
+  --press: rgba(27, 24, 16, 0.085);
+  --hair: rgba(27, 24, 16, 0.1);
+  --hair2: rgba(27, 24, 16, 0.22);
+
+  --fg: #1b1810;
+  --fg2: #3c362a;
+  --muted: #56503f;
+  --faint: #6d6453;
+
+  --ink: #a63b25;
+  --ink-fg: #fdf7ec;
+  --accent: #a63b25;
+  --accent-soft: rgba(166, 59, 37, 0.09);
+  --brand-accent: #a63b25;
+  --ok: #3f6b4a;
+  --ok-soft: rgba(63, 107, 74, 0.1);
+  --warn: #a05a00;
+  --warn-soft: rgba(160, 90, 0, 0.1);
+  --danger: #a03a2c;
+  --danger-soft: rgba(160, 58, 44, 0.1);
+
+  --code-bg: #fdfaf3;
+  --code-head: #f4edde;
+  --gutter: #a9a08d;
+  --gutter-bg: #f8f2e6;
+  --line-hl: rgba(166, 59, 37, 0.06);
+  --add-bg: #eaf2e9;
+  --add-gut: #d7e8d8;
+  --add-word: #c2e2c8;
+  --add-fg: #2f6b45;
+  --del-bg: #f8ebe6;
+  --del-gut: #f0d8d0;
+  --del-word: #ecd0c6;
+  --del-fg: #9a3b25;
+  --hunk-bg: #f1eee4;
+  --hunk-fg: #7a6a4a;
+  --tk-k: #8c3d6f;
+  --tk-f: #3b5a8c;
+  --tk-s: #2f6b45;
+  --tk-n: #a05a00;
+  --tk-c: #857d6c;
+  --tk-p: #6d6455;
+  --tk-t: #2b6a76;
+  --tk-pr: #6b4a8c;
+  --tk-v: #191714;
+
+  --term-bg: #1c1a16;
+  --term-fg: #ded9cd;
+  --term-dim: #9a9283;
+  --term-ok: #8fd8a9;
+  --term-acc: #f0b37a;
+  --term-line: rgba(255, 255, 255, 0.07);
+  --term-err: #eda7a3;
+
+  --sh-1: 0 0 0 0.5px rgba(35, 30, 20, 0.1), 0 1px 2px rgba(35, 30, 20, 0.05);
+  --sh-2:
+    0 0 0 0.5px rgba(35, 30, 20, 0.09), 0 2px 4px rgba(35, 30, 20, 0.04),
+    0 12px 32px -8px rgba(35, 30, 20, 0.16);
+  --sh-3:
+    0 0 0 0.5px rgba(35, 30, 20, 0.1), 0 8px 16px rgba(35, 30, 20, 0.06),
+    0 32px 80px -12px rgba(35, 30, 20, 0.3);
+}
+
+/* 苔原 —— 冷灰绿 + 苔绿 */
+[data-theme='tundra'] {
+  color-scheme: light;
+
+  --chrome: #e7ebe5;
+  --chrome-glow: #f8fbf5;
+  --paper: #ffffff;
+  --raise: #ffffff;
+  --sunk: #f3f6f1;
+  --sunk2: #e7ece4;
+  --hover: rgba(27, 33, 27, 0.045);
+  --press: rgba(27, 33, 27, 0.085);
+  --hair: rgba(27, 33, 27, 0.075);
+  --hair2: rgba(27, 33, 27, 0.145);
+
+  --fg: #1b211b;
+  --fg2: #414a41;
+  --muted: #4f5a50;
+  --faint: #667066;
+
+  --ink: #2f6b4b;
+  --ink-fg: #ffffff;
+  --accent: #2f6b4b;
+  --accent-soft: rgba(47, 107, 75, 0.1);
+  --brand-accent: #2f6b4b;
+  --ok: #2f7a53;
+  --ok-soft: rgba(47, 122, 83, 0.1);
+  --warn: #9a5b00;
+  --warn-soft: rgba(154, 91, 0, 0.1);
+  --danger: #b4483f;
+  --danger-soft: rgba(180, 72, 63, 0.1);
+
+  --code-bg: #fbfcfa;
+  --code-head: #f4f7f2;
+  --gutter: #a5ada4;
+  --gutter-bg: #f7f9f5;
+  --line-hl: rgba(47, 107, 75, 0.06);
+  --add-bg: #edf5ee;
+  --add-gut: #dcecdf;
+  --add-word: #c9e6d1;
+  --add-fg: #2a7148;
+  --del-bg: #fbefed;
+  --del-gut: #f7ded9;
+  --del-word: #f2cfc9;
+  --del-fg: #b4483f;
+  --hunk-bg: #eef2f9;
+  --hunk-fg: #4f6a9c;
+  --tk-k: #8c3d84;
+  --tk-f: #31589e;
+  --tk-s: #2b6b50;
+  --tk-n: #a05a00;
+  --tk-c: #8a9288;
+  --tk-p: #737c72;
+  --tk-t: #256b7b;
+  --tk-pr: #5f4aa6;
+  --tk-v: #1b211b;
+
+  --term-bg: #141613;
+  --term-fg: #d9dcd2;
+  --term-dim: #8b8e86;
+  --term-ok: #7fe0b2;
+  --term-acc: #a9bdff;
+  --term-line: rgba(255, 255, 255, 0.07);
+  --term-err: #eda7a3;
+
+  --sh-1: 0 0 0 0.5px rgba(24, 40, 28, 0.09), 0 1px 2px rgba(24, 40, 28, 0.05);
+  --sh-2:
+    0 0 0 0.5px rgba(24, 40, 28, 0.08), 0 2px 4px rgba(24, 40, 28, 0.04),
+    0 12px 32px -8px rgba(24, 40, 28, 0.14);
+  --sh-3:
+    0 0 0 0.5px rgba(24, 40, 28, 0.09), 0 8px 16px rgba(24, 40, 28, 0.06),
+    0 32px 80px -12px rgba(24, 40, 28, 0.3);
+}
+
+/* 板岩 —— 冷蓝黑 + 鸢尾 */
+[data-theme='slate'] {
+  color-scheme: dark;
+
+  --chrome: #0a0c10;
+  --chrome-glow: #141a2a;
+  --paper: #0f1217;
+  --raise: #151a21;
+  --sunk: #171c23;
+  --sunk2: #1e242d;
+  --hover: rgba(255, 255, 255, 0.05);
+  --press: rgba(255, 255, 255, 0.095);
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair2: rgba(255, 255, 255, 0.14);
+
+  --fg: #edf0f6;
+  --fg2: #c5cbd7;
+  --muted: #98a2b1;
+  --faint: #8f99a8;
+
+  --ink: #8b93ff;
+  --ink-fg: #0a0f1e;
+  --accent: #8b93ff;
+  --accent-soft: rgba(139, 147, 255, 0.14);
+  --brand-accent: #8b93ff;
+  --ok: #5ee2a0;
+  --ok-soft: rgba(94, 226, 160, 0.12);
+  --warn: #f0a36b;
+  --warn-soft: rgba(240, 163, 107, 0.14);
+  --danger: #ff8095;
+  --danger-soft: rgba(255, 128, 149, 0.14);
+
+  --code-bg: #0a0d12;
+  --code-head: #121720;
+  --gutter: #6d7890;
+  --gutter-bg: #0c1017;
+  --line-hl: rgba(139, 147, 255, 0.08);
+  --add-bg: rgba(94, 226, 160, 0.1);
+  --add-gut: rgba(94, 226, 160, 0.18);
+  --add-word: rgba(94, 226, 160, 0.24);
+  --add-fg: #7fe0b2;
+  --del-bg: rgba(255, 128, 149, 0.1);
+  --del-gut: rgba(255, 128, 149, 0.18);
+  --del-word: rgba(255, 128, 149, 0.24);
+  --del-fg: #ff8095;
+  --hunk-bg: rgba(139, 166, 232, 0.1);
+  --hunk-fg: #a9b6ff;
+  --tk-k: #d7a2ff;
+  --tk-f: #8fb0ff;
+  --tk-s: #7fe0c0;
+  --tk-n: #f4b96f;
+  --tk-c: #6f778f;
+  --tk-p: #98a0b6;
+  --tk-t: #7fd8ff;
+  --tk-pr: #c2b0ff;
+  --tk-v: #e6e9f5;
+
+  --term-bg: #080b10;
+  --term-fg: #d5dbe6;
+  --term-dim: #7c8798;
+  --term-ok: #7fe0b2;
+  --term-acc: #a9b6ff;
+  --term-line: rgba(255, 255, 255, 0.07);
+  --term-err: #f0a3a3;
+
+  --sh-1: 0 0 0 0.5px rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.32);
+  --sh-2:
+    0 0 0 0.5px rgba(255, 255, 255, 0.09), 0 2px 4px rgba(0, 0, 0, 0.22),
+    0 14px 36px -10px rgba(0, 0, 0, 0.6);
+  --sh-3:
+    0 0 0 0.5px rgba(255, 255, 255, 0.11), 0 8px 18px rgba(0, 0, 0, 0.32),
+    0 36px 90px -14px rgba(0, 0, 0, 0.8);
 }

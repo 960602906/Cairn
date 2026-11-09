@@ -42,7 +42,10 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     await expect(providers).toContainText('正常')
     await window.keyboard.press('Escape')
 
-    await window.getByRole('button', { name: '新对话' }).click()
+    await window
+      .getByRole('navigation', { name: '全局导航' })
+      .getByRole('button', { name: '新对话' })
+      .click()
     await window.getByRole('button', { name: '选择文件夹…' }).click()
     await expect(window.getByLabel('项目目录')).toHaveValue(dir)
     const recent = window.getByRole('region', { name: '最近的项目' })

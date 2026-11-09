@@ -2,7 +2,7 @@
  * 右侧会话信息栏：文件改动、会话要点与完整计划。
  * 计划卡片在对话里只显示摘要，点击后切到这里查看详情并审批。
  */
-import { Activity, ChevronRight, FileDiff, ListChecks, NotebookText, X } from 'lucide-react'
+import { ChevronRight, FileDiff, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
@@ -19,10 +19,10 @@ import { cn, IconButton, SegmentedControl } from './ui/index.js'
 export type SessionPanel = 'diff' | 'brief' | 'plan' | 'inspector'
 
 const PANELS = [
-  { id: 'diff', label: 'sidePanel.diff', Icon: FileDiff },
-  { id: 'brief', label: 'sidePanel.brief', Icon: NotebookText },
-  { id: 'plan', label: 'sidePanel.plan', Icon: ListChecks },
-  { id: 'inspector', label: 'sidePanel.inspector', Icon: Activity },
+  { id: 'diff', label: 'sidePanel.diff' },
+  { id: 'brief', label: 'sidePanel.briefShort' },
+  { id: 'plan', label: 'sidePanel.plan' },
+  { id: 'inspector', label: 'sidePanel.inspectorShort' },
 ] as const
 
 const EMPTY_CHANGE_SETS: readonly ChangeSetSummary[] = []
@@ -114,6 +114,8 @@ export function SessionSidePanel({
   onSelectChangeSet,
   onPanelChange,
   open = true,
+  placement = 'side',
+  docked = false,
   onClose,
   onLocateTurn,
 }: {
@@ -127,11 +129,16 @@ export function SessionSidePanel({
   readonly onPanelChange: (panel: SessionPanel) => void
   /** 由顶栏按钮控制；窄窗口为浮层，宽窗口占用布局宽度。 */
   readonly open?: boolean
+  /** 叠层布局把工作台放在对话下方；`side` 保持原有的右侧浮层/侧栏。 */
+  readonly placement?: 'side' | 'bottom'
+  /** 宽屏时占用布局宽度；窄屏时作为右侧浮层。 */
+  readonly docked?: boolean
   readonly onClose?: () => void
   /** 从运行树定位到对话轮次。 */
   readonly onLocateTurn?: ((runId: string, turnId: string) => void) | undefined
 }) {
   const { t } = useTranslation('session')
+  const bottom = placement === 'bottom'
   const plans = view?.plans ?? []
   const plan = plans.find((item) => item.planId === selectedPlanId) ?? plans.at(-1)
   const changeSets = useSessionStore((state) => state.changeSets?.[sessionId] ?? EMPTY_CHANGE_SETS)
@@ -162,43 +169,57 @@ export function SessionSidePanel({
       aria-hidden={!open}
       inert={!open}
       className={cn(
-        'absolute inset-y-0 right-0 z-20 flex shrink-0 flex-col overflow-hidden bg-paper shadow-2',
-        'transition-[width,transform,opacity] duration-200 ease-out motion-reduce:transition-none',
-        'min-[1200px]:static min-[1200px]:z-auto min-[1200px]:shadow-none',
-        open
-          ? 'w-[304px] translate-x-0 opacity-100'
-          : 'pointer-events-none w-0 translate-x-full opacity-0 min-[1200px]:translate-x-0',
+        'flex shrink-0 flex-col overflow-hidden bg-chrome',
+        bottom
+          ? 'relative h-full min-h-0 w-full border-t-[0.5px] border-hair'
+          : cn(
+              'w-[348px]',
+              docked
+                ? 'static z-auto border-l-[0.5px] border-hair'
+                : 'absolute inset-y-0 right-0 z-20 shadow-3',
+              'transition-[width,transform,opacity] duration-200 ease-out motion-reduce:transition-none',
+              open ? 'translate-x-0 opacity-100' : 'pointer-events-none w-0 translate-x-full opacity-0',
+            ),
       )}
     >
-      <div className="flex h-full w-[304px] shrink-0 flex-col border-l-[0.5px] border-hair">
-        <div className="flex h-12 shrink-0 items-center border-b-[0.5px] border-hair px-2">
-          <div role="tablist" className="flex min-w-0 flex-1 items-center gap-0.5">
-            {PANELS.map(({ id, label, Icon }) => (
+      <div
+        className={cn(
+          'flex h-full shrink-0 flex-col',
+          bottom ? 'w-full bg-paper' : 'w-[348px] bg-chrome',
+        )}
+      >
+        <div className="flex h-11 shrink-0 items-center gap-1 border-b-[0.5px] border-hair pr-2 pl-3">
+          <span className="mr-1 shrink-0 text-note font-semibold tracking-[-0.01em] text-fg">
+            {t('sidePanel.title')}
+          </span>
+          <div role="tablist" className="flex min-w-0 flex-1 items-stretch gap-0.5 self-stretch">
+            {PANELS.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
                 role="tab"
+                aria-label={t(
+                  id === 'brief'
+                    ? 'sidePanel.brief'
+                    : id === 'inspector'
+                      ? 'sidePanel.inspector'
+                      : label,
+                )}
                 aria-selected={panel === id}
                 onClick={() => onPanelChange(id)}
                 className={cn(
-                  'flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-item px-1.5 text-note transition-colors',
+                  'flex min-w-0 items-center border-b-2 px-2 text-[11.5px] transition-colors',
                   panel === id
-                    ? 'bg-raise font-medium text-fg shadow-hair2'
-                    : 'text-muted hover:bg-hover hover:text-fg',
+                    ? 'border-accent font-medium text-fg'
+                    : 'border-transparent text-muted hover:text-fg',
                 )}
               >
-                <Icon aria-hidden className="size-3.5 shrink-0" />
                 <span className="truncate">{t(label)}</span>
               </button>
             ))}
           </div>
           {onClose && (
-            <IconButton
-              label={t('sidePanel.close')}
-              size="icon-sm"
-              className="ml-1"
-              onClick={onClose}
-            >
+            <IconButton label={t('sidePanel.close')} size="icon-sm" onClick={onClose}>
               <X />
             </IconButton>
           )}

@@ -4,11 +4,11 @@
  */
 import { useEffect } from 'react'
 import { useSessionStore } from './store-context.js'
-import { applyTheme, type ThemeEnvironment } from './theme.js'
+import { applyTheme, DEFAULT_THEME, type ThemeEnvironment } from './theme.js'
 
 export function ThemeSync({ env }: { readonly env?: ThemeEnvironment }) {
   const loadSettings = useSessionStore((s) => s.loadSettings)
-  const theme = useSessionStore((s) => s.settings?.theme ?? 'system')
+  const theme = useSessionStore((s) => s.settings?.theme ?? DEFAULT_THEME)
 
   useEffect(() => {
     void loadSettings()

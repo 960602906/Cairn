@@ -46,7 +46,7 @@ export const liveMessage = (window: Page) =>
 
 /** 新建会话，等待它成为当前会话。 */
 export async function createSession(window: Page, projectPath: string, title: string) {
-  await window.getByRole('button', { name: '新对话' }).click()
+  await window.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '新对话' }).click()
   await window.getByLabel('项目目录').fill(projectPath)
   await window.getByLabel('标题（可选）').fill(title)
   await window.getByRole('button', { name: '创建' }).click()
@@ -55,8 +55,47 @@ export async function createSession(window: Page, projectPath: string, title: st
 
 /** 在会话列表中选中会话。 */
 export async function openSession(window: Page, title: string) {
-  await window.getByRole('navigation').getByRole('button', { name: title }).click()
+  await window.getByRole('navigation', { name: '会话' }).getByRole('button', { name: title }).click()
   await expect(window.getByRole('heading', { level: 2, name: title })).toBeVisible()
+}
+
+/**
+ * 给已有会话指定 Agent（`session.setAgent`）。Agent 选择器已从界面移除，
+ * 委派、改动集等仍需要自定义 Agent 的用例直接用 RPC 指定。
+ */
+export async function setAgentOnSession(
+  window: Page,
+  title: string,
+  agent: { readonly id: string; readonly version: number },
+): Promise<string> {
+  const result = await window.evaluate(
+    async ([sessionTitle, ref]) => {
+      const cairn = (
+        globalThis as unknown as {
+          cairn: {
+            request(
+              method: string,
+              params: object,
+            ): Promise<{ ok: boolean; result?: unknown; error?: unknown }>
+          }
+        }
+      ).cairn
+      const listed = await cairn.request('session.list', {})
+      if (!listed.ok) return { error: listed.error }
+      const sessions = (listed.result as { sessions: { sessionId: string; title: string }[] })
+        .sessions
+      const session = sessions.find((item) => item.title === sessionTitle)
+      if (!session) return { error: 'session not found' }
+      const applied = await cairn.request('session.setAgent', {
+        sessionId: session.sessionId,
+        agent: ref,
+      })
+      return applied.ok ? { sessionId: session.sessionId } : { error: applied.error }
+    },
+    [title, agent] as const,
+  )
+  if ('error' in result) throw new Error(`session.setAgent: ${JSON.stringify(result.error)}`)
+  return result.sessionId
 }
 
 /** 用 Enter 发送一条输入。 */

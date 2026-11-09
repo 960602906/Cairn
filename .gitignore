@@ -6,5 +6,6 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 .vite/
+.impeccable/
 .DS_Store
 Thumbs.db

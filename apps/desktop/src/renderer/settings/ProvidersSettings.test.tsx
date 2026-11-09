@@ -157,6 +157,73 @@ describe('ProvidersSettings', () => {
     expect(await screen.findByText('••••••••1234')).toBeTruthy()
   })
 
+  it('adds a second provider without replacing the first', async () => {
+    const { updates, settings } = setup({})
+    await open()
+
+    await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
+    let card = editor('新供应商')
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+
+    await userEvent.click(screen.getByRole('button', { name: '添加供应商' }))
+    card = editor('新供应商')
+    // 同类型再加一个时默认名称不重复，列表里能区分
+    expect((within(card).getByLabelText('名称') as HTMLInputElement).value).toBe('DeepSeek 2')
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates).toHaveLength(2))
+
+    expect(settings().providers.map((provider) => provider.id)).toEqual([
+      'deepseek',
+      'deepseek-2',
+    ])
+    expect(settings().providers).toHaveLength(2)
+    const list = screen.getByRole('list', { name: '已配置的供应商' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(list).getByText('DeepSeek 2')).toBeTruthy()
+  })
+
+  it('keeps three providers and clears only the references owned by a deleted one', async () => {
+    const third: ProviderConfig = {
+      ...gateway,
+      id: 'gw-2',
+      displayName: '公司网关 2',
+      credentialRef: 'gw-2',
+      models: [{ ...gateway.models[0]!, id: 'claude-y' }],
+    }
+    const { updates } = setup({
+      providers: [deepseek, gateway, third],
+      defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
+      auxiliaryModel: { providerId: 'gw', modelId: 'claude-x' },
+    })
+    await open()
+    const list = () => screen.getByRole('list', { name: '已配置的供应商' })
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(3)
+
+    // 删除中间的供应商：其它两家保留，辅助模型被清空，默认模型不受影响。
+    await userEvent.click(within(list()).getAllByRole('button')[1]!)
+    const middle = editor('公司网关')
+    await userEvent.click(within(middle).getByRole('button', { name: '删除' }))
+    const firstDialog = await screen.findByRole('dialog', { name: '删除 公司网关？' })
+    await userEvent.click(within(firstDialog).getByRole('button', { name: '删除供应商' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).toEqual({
+      providers: [deepseek, third],
+      auxiliaryModel: null,
+    })
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(2)
+
+    // 删除默认模型所属的供应商：默认模型一起清空，剩下的供应商仍在。
+    await userEvent.click(within(list()).getAllByRole('button')[0]!)
+    const first = editor('DeepSeek')
+    await userEvent.click(within(first).getByRole('button', { name: '删除' }))
+    const secondDialog = await screen.findByRole('dialog', { name: '删除 DeepSeek？' })
+    await userEvent.click(within(secondDialog).getByRole('button', { name: '删除供应商' }))
+    await waitFor(() => expect(updates).toHaveLength(2))
+    expect(updates[1]).toEqual({ providers: [third], defaultModel: null })
+    expect(within(list()).getAllByRole('listitem')).toHaveLength(1)
+  })
+
   it('lists providers with source, default, key and test status', async () => {
     setup({
       providers: [

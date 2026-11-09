@@ -59,12 +59,15 @@ const GROUPS: readonly {
 
 export function SettingsNav({
   open = true,
+  collapsible = true,
   section,
   onSelect,
   onBack,
   onCollapse,
 }: {
   readonly open?: boolean
+  /** 叠层布局里导航常驻，不再显示收起按钮。 */
+  readonly collapsible?: boolean
   readonly section: SettingsSection
   readonly onSelect: (section: SettingsSection) => void
   readonly onBack: () => void
@@ -87,16 +90,20 @@ export function SettingsNav({
           open ? 'translate-x-0' : '-translate-x-3'
         }`}
       >
-        <div className="drag flex h-10 shrink-0 items-center justify-end px-2">
-          <IconButton
-            label={ts('sidebar.collapse')}
-            size="icon-sm"
-            className="no-drag"
-            onClick={onCollapse}
-          >
-            <PanelLeft />
-          </IconButton>
-        </div>
+        {collapsible ? (
+          <div className="drag flex h-10 shrink-0 items-center justify-end px-2">
+            <IconButton
+              label={ts('sidebar.collapse')}
+              size="icon-sm"
+              className="no-drag"
+              onClick={onCollapse}
+            >
+              <PanelLeft />
+            </IconButton>
+          </div>
+        ) : (
+          <div className="drag h-3 shrink-0" />
+        )}
         <div className="drag flex h-9 shrink-0 items-center gap-2 px-2.5 pb-1">
           <CairnMark size={22} className="text-fg" />
           <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg">

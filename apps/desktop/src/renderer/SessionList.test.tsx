@@ -85,9 +85,9 @@ describe('SessionList', () => {
     })
     const items = await screen.findAllByRole('listitem')
     expect(items.map((li) => sessionButton(li).textContent)).toEqual([
-      '未命名会话运行中',
-      '修复登录已崩溃',
-      '审批等待审批',
+      expect.stringMatching(/^未命名会话.+运行中$/),
+      expect.stringMatching(/^修复登录.+已崩溃$/),
+      expect.stringMatching(/^审批.+等待审批$/),
     ])
     expect(screen.getByRole('region', { name: '项目 work' })).toBeTruthy()
     expect(screen.getByRole('region', { name: '项目 other' })).toBeTruthy()
@@ -107,7 +107,7 @@ describe('SessionList', () => {
       }),
     })
     const group = await screen.findByRole('region', { name: '项目 work' })
-    const toggle = within(group).getByRole('button', { name: 'work' })
+    const toggle = within(group).getByRole('button', { name: /^work/ })
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('folder-open')
     expect(within(group).getAllByRole('listitem')).toHaveLength(2)
@@ -153,7 +153,7 @@ describe('SessionList', () => {
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith('session.rename', { sessionId: 's1', title: '新标题' }),
     )
-    expect(await screen.findByRole('button', { name: '新标题' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: /^新标题/ })).toBeTruthy()
   })
 
   it('deletes a session after confirming', async () => {
@@ -192,7 +192,7 @@ describe('SessionList', () => {
       },
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),
     })
-    await userEvent.click(await screen.findByRole('button', { name: /新对话/ }))
+    await userEvent.click((await screen.findAllByRole('button', { name: '新对话' }))[0]!)
     const create = screen.getByRole('button', { name: '创建' }) as HTMLButtonElement
     expect(create.disabled).toBe(true)
     await userEvent.type(screen.getByLabelText('项目目录'), '  /work/demo  ')
@@ -235,12 +235,12 @@ describe('SessionList', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('collapses and expands the sidebar', async () => {
+  it('collapses and expands the sidebar from the icon rail', async () => {
     setup({ 'session.list': () => ({ sessions: [summary('s0', '已有')] }) })
     await userEvent.click(await screen.findByRole('button', { name: '收起侧栏' }))
-    expect(screen.queryByRole('navigation')).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: '展开侧栏' }))
-    expect(screen.getByRole('navigation')).toBeTruthy()
+    expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '会话' }))
+    expect(screen.getByRole('navigation', { name: '会话' })).toBeTruthy()
   })
 })
 

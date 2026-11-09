@@ -41,7 +41,7 @@ import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
 import { Button, cn, IconButton, Shimmer } from './ui/index.js'
 import { AgentAvatar } from './agents/AgentAvatar.js'
-import { agentName } from './agents/AgentsPage.js'
+import { agentName } from './agents/model.js'
 
 /** 本轮结束后，最后一条助手消息下面的操作：复制本轮回复；右侧灰字是模型名与本轮 token 数（不显示金额）。 */
 function TurnActions({
@@ -310,7 +310,7 @@ function Message({
         {marks}
         {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
-        <div className="max-w-[78%] rounded-input bg-sunk2 px-4 py-2.5 text-fg">
+        <div className="max-w-[78%] rounded-[10px] border border-hair border-l-[2px] border-l-accent bg-raise px-3.5 py-2.5 text-fg shadow-1">
           <UserContent parts={message.content} />
         </div>
         {restores && (

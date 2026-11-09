@@ -59,7 +59,10 @@ test('项目里的 AGENTS.md 进入模型请求，顶栏显示标记', async ({ 
   try {
     const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     expect(await configure(window, mock.baseUrl)).toMatchObject({ ok: true })
-    await window.getByRole('button', { name: '新对话' }).click()
+    await window
+      .getByRole('navigation', { name: '全局导航' })
+      .getByRole('button', { name: '新对话' })
+      .click()
     await window.getByLabel('项目目录').fill(dir)
     await window.getByLabel('标题（可选）').fill('项目说明')
     await window.getByRole('button', { name: '创建' }).click()
