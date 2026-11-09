@@ -1,6 +1,6 @@
 # ADR-0032 活动中心与跨会话审批聚合
 
-- 状态：已接受（M4-00 起草；M4-06 定稿）
+- 状态：已接受（M4-00 起草；M4-06 定稿；M4-15 联合验收）
 - 日期：2026-11-08
 - 详细设计：[Agent 管理界面](../design/agent-management-ui.md) §9；[多 Agent 协作](../design/multi-agent.md)
 - 相关决策：ADR-0005、ADR-0009、ADR-0010、ADR-0013、ADR-0020

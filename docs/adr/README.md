@@ -38,6 +38,6 @@
 | [0028](0028-plan-mode.md) | 计划模式：结构化计划、只读轮次与两个工具 | 已接受 |
 | [0029](0029-custom-agents.md) | 自定义 Agent 存储、版本与运行隔离 | 已接受 |
 | [0030](0030-multi-run-delegation.md) | 同一宿主内的多运行、父子运行与委派边界 | 已接受 |
-| [0031](0031-isolated-workspaces.md) | 隔离工作区与改动集合并 | 提议（M4 定稿中） |
+| [0031](0031-isolated-workspaces.md) | 隔离工作区与改动集合并 | 已接受（M4-08 / M4-09） |
 | [0032](0032-activity-center.md) | 活动中心与跨会话审批聚合 | 已接受（M4-06） |
 | [0033](0033-run-inspector-and-snapshots.md) | 运行检查器与上下文快照 | 已接受（M4-04） |
