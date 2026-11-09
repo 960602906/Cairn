@@ -94,11 +94,7 @@ export function AppRail({
             <Plus />
           </RailButton>
         )}
-        <RailButton
-          label={t('rail.sessions')}
-          active={sessionsActive}
-          onClick={onSessions}
-        >
+        <RailButton label={t('rail.sessions')} active={sessionsActive} onClick={onSessions}>
           <MessagesSquare />
         </RailButton>
         <RailButton

@@ -32,7 +32,10 @@ export const THEME_CHOICES = [
 
 /** 设置页色板预览用的三个代表色（与 tokens.css 的四套主题保持一致）。 */
 export const THEME_SWATCHES: Readonly<
-  Record<ResolvedTheme, { readonly canvas: string; readonly paper: string; readonly accent: string }>
+  Record<
+    ResolvedTheme,
+    { readonly canvas: string; readonly paper: string; readonly accent: string }
+  >
 > = {
   bluestone: { canvas: '#0b0d0f', paper: '#101317', accent: '#2dd4bf' },
   obsidian: { canvas: '#08090a', paper: '#15171a', accent: '#ff6a3d' },

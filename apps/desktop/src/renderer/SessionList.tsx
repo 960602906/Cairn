@@ -53,11 +53,7 @@ export function groupSessions(
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
 /** 会话列表右侧的时间：今天显示时:分，昨天显示“昨天”，更早显示月-日。 */
-export function formatSessionTime(
-  updatedAt: number,
-  yesterday: string,
-  now = Date.now(),
-): string {
+export function formatSessionTime(updatedAt: number, yesterday: string, now = Date.now()): string {
   const date = new Date(updatedAt)
   if (Number.isNaN(date.getTime())) return ''
   const today = new Date(now)

@@ -183,9 +183,7 @@ export function GeneralSettings() {
                 <span className="block text-ui font-medium text-fg">
                   {t('general.theme.system')}
                 </span>
-                <span className="block text-note text-muted">
-                  {t('general.theme.system.hint')}
-                </span>
+                <span className="block text-note text-muted">{t('general.theme.system.hint')}</span>
               </span>
               {theme === 'system' && <Check className="size-4 shrink-0 text-accent" />}
             </button>
@@ -193,8 +191,7 @@ export function GeneralSettings() {
               const swatch = THEME_SWATCHES[value]
               const active = theme === value
               // 选项是奇数个时，最后一张占满整行，避免留下半格空位。
-              const wide =
-                THEME_CHOICES.length % 2 === 1 && index === THEME_CHOICES.length - 1
+              const wide = THEME_CHOICES.length % 2 === 1 && index === THEME_CHOICES.length - 1
               return (
                 <button
                   key={value}
@@ -204,7 +201,8 @@ export function GeneralSettings() {
                   onClick={() => void updateSettings({ theme: value })}
                   className={cn(
                     'flex items-center gap-3 rounded-card bg-paper px-3 py-2.5 text-left shadow-hair transition-colors hover:bg-hover',
-                    active && 'bg-accent-soft shadow-[0_0_0_1.5px_var(--accent)] hover:bg-accent-soft',
+                    active &&
+                      'bg-accent-soft shadow-[0_0_0_1.5px_var(--accent)] hover:bg-accent-soft',
                     wide && 'min-[980px]:col-span-2',
                   )}
                 >

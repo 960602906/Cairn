@@ -7,13 +7,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import {
-  createSession,
-  projectDir,
-  runStatus,
-  sendPrompt,
-  setAgentOnSession,
-} from './session.js'
+import { createSession, projectDir, runStatus, sendPrompt, setAgentOnSession } from './session.js'
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(

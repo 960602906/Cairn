@@ -46,7 +46,10 @@ export const liveMessage = (window: Page) =>
 
 /** 新建会话，等待它成为当前会话。 */
 export async function createSession(window: Page, projectPath: string, title: string) {
-  await window.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '新对话' }).click()
+  await window
+    .getByRole('navigation', { name: '全局导航' })
+    .getByRole('button', { name: '新对话' })
+    .click()
   await window.getByLabel('项目目录').fill(projectPath)
   await window.getByLabel('标题（可选）').fill(title)
   await window.getByRole('button', { name: '创建' }).click()
@@ -55,7 +58,10 @@ export async function createSession(window: Page, projectPath: string, title: st
 
 /** 在会话列表中选中会话。 */
 export async function openSession(window: Page, title: string) {
-  await window.getByRole('navigation', { name: '会话' }).getByRole('button', { name: title }).click()
+  await window
+    .getByRole('navigation', { name: '会话' })
+    .getByRole('button', { name: title })
+    .click()
   await expect(window.getByRole('heading', { level: 2, name: title })).toBeVisible()
 }
 

@@ -173,10 +173,7 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(card).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(updates).toHaveLength(2))
 
-    expect(settings().providers.map((provider) => provider.id)).toEqual([
-      'deepseek',
-      'deepseek-2',
-    ])
+    expect(settings().providers.map((provider) => provider.id)).toEqual(['deepseek', 'deepseek-2'])
     expect(settings().providers).toHaveLength(2)
     const list = screen.getByRole('list', { name: '已配置的供应商' })
     expect(within(list).getAllByRole('listitem')).toHaveLength(2)

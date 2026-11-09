@@ -145,11 +145,9 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
     await request(window, 'agent.saveDraft', {
       definition: { ...current.draft, id: duplicated.agentId, instructions: INSTRUCTIONS },
     })
-    const published = await request<{ published?: { version: number } }>(
-      window,
-      'agent.publish',
-      { agentId: duplicated.agentId },
-    )
+    const published = await request<{ published?: { version: number } }>(window, 'agent.publish', {
+      agentId: duplicated.agentId,
+    })
 
     const project = projectDir(userData)
     await createSession(window, project, 'M3 全流程')

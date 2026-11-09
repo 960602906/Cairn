@@ -9,15 +9,17 @@ import { AppRail } from './AppRail.js'
 
 const i18n = createI18n('zh-CN')
 
-function renderRail(options: {
-  sessionsActive?: boolean
-  activityActive?: boolean
-  activityBadge?: number
-  onSessions?: () => void
-  onSearch?: () => void
-  onActivity?: () => void
-  onSettings?: () => void
-} = {}) {
+function renderRail(
+  options: {
+    sessionsActive?: boolean
+    activityActive?: boolean
+    activityBadge?: number
+    onSessions?: () => void
+    onSearch?: () => void
+    onActivity?: () => void
+    onSettings?: () => void
+  } = {},
+) {
   const handlers = {
     onSessions: options.onSessions ?? vi.fn(),
     onSearch: options.onSearch ?? vi.fn(),

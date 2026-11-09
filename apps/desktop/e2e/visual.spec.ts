@@ -25,14 +25,15 @@ const SIZES = [
   { width: 880, height: 800 },
 ] as const
 
-async function resize(app: ElectronApplication, page: Page, size: { width: number; height: number }) {
-  await app.evaluate(
-    ({ BrowserWindow }, next) => {
-      const window = BrowserWindow.getAllWindows()[0]
-      window?.setContentSize(next.width, next.height)
-    },
-    size,
-  )
+async function resize(
+  app: ElectronApplication,
+  page: Page,
+  size: { width: number; height: number },
+) {
+  await app.evaluate(({ BrowserWindow }, next) => {
+    const window = BrowserWindow.getAllWindows()[0]
+    window?.setContentSize(next.width, next.height)
+  }, size)
   await page.waitForFunction(
     (next) => {
       const view = globalThis as unknown as { innerWidth: number; innerHeight: number }

@@ -103,9 +103,9 @@ describe('SettingsPage', () => {
     await openSettings()
     const theme = screen.getByRole('radiogroup', { name: '主题' })
     await waitFor(() =>
-      expect(
-        within(theme).getByRole('radio', { name: /^黑曜/ }).getAttribute('aria-checked'),
-      ).toBe('true'),
+      expect(within(theme).getByRole('radio', { name: /^黑曜/ }).getAttribute('aria-checked')).toBe(
+        'true',
+      ),
     )
     await userEvent.click(within(theme).getByRole('radio', { name: /^苔原/ }))
     expect(updates).toContainEqual({ theme: 'tundra' })

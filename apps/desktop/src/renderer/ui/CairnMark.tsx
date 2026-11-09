@@ -47,13 +47,7 @@ export function CairnMark({
 }) {
   return (
     <Svg size={size} className={className} {...(label === undefined ? {} : { label })}>
-      <path
-        d={HALO_C}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={3}
-        strokeLinecap="round"
-      />
+      <path d={HALO_C} fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
       <circle cx={19.6} cy={12} r={1.9} fill="currentColor" />
     </Svg>
   )
@@ -71,13 +65,7 @@ export function CairnAppMark({
 }) {
   return (
     <Svg size={size} className={className} {...(label === undefined ? {} : { label })}>
-      <path
-        d={HALO_C}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={3}
-        strokeLinecap="round"
-      />
+      <path d={HALO_C} fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
       <circle cx={19.6} cy={12} r={1.9} fill="currentColor" />
     </Svg>
   )
