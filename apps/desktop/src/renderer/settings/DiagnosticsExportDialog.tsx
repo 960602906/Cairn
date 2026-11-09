@@ -133,6 +133,22 @@ export function DiagnosticsExportDialog({
                         })}
                       </span>
                     </li>
+                    {summary?.build && (
+                      <li className="flex items-center gap-2">
+                        <span className="size-1.5 rounded-full bg-accent" />
+                        <span>
+                          {t('diagnostics.items.build')}:{' '}
+                          {t('diagnostics.items.buildValue', {
+                            channel: t(`diagnostics.channel.${summary.build.channel}`),
+                            commit:
+                              summary.build.commit === 'unknown'
+                                ? t('diagnostics.unknownCommit')
+                                : summary.build.commit.slice(0, 7),
+                            schema: summary.build.databaseSchemaVersion,
+                          })}
+                        </span>
+                      </li>
+                    )}
                     <li className="flex items-center gap-2">
                       <span className="size-1.5 rounded-full bg-accent" />
                       <span>

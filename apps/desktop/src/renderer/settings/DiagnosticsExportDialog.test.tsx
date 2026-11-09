@@ -16,6 +16,20 @@ const i18n = createI18n('zh-CN')
 const mockSummary: DiagnosticsSummary = {
   appVersion: '1.2.3',
   electronVersion: '30.0.0',
+  build: {
+    schemaVersion: 1,
+    version: '1.2.3',
+    channel: 'beta',
+    commit: 'abcdef1234567890',
+    buildTime: '2026-11-10T00:00:00.000Z',
+    electronVersion: '30.0.0',
+    nodeVersion: '24.0.0',
+    name: 'Cairn',
+    appId: 'com.cairn.desktop',
+    copyright: 'Copyright © 2026 Cairn contributors',
+    packaged: false,
+    databaseSchemaVersion: 12,
+  },
   platform: 'win32',
   arch: 'x64',
   logs: {
@@ -75,6 +89,7 @@ describe('DiagnosticsExportDialog component', () => {
     await waitFor(() => {
       expect(screen.getByText(/调试会话/i)).toBeDefined()
       expect(screen.getByText(/1.2.3/i)).toBeDefined()
+      expect(screen.getByText(/abcdef1/i)).toBeDefined()
     })
 
     // Toggle include content

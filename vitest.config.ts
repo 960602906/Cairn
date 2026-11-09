@@ -23,6 +23,7 @@ export default defineConfig({
         '**/*.d.ts',
         // Electron 进程入口只做启动引导，由冒烟测试（apps/desktop/scripts/smoke.js）覆盖
         'apps/desktop/src/main/index.ts',
+        'apps/desktop/src/main/startup.ts',
         'apps/desktop/src/preload/index.ts',
         'apps/desktop/src/agent-host/index.ts',
         'apps/desktop/src/renderer/main.tsx',

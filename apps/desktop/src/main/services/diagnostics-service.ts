@@ -12,6 +12,7 @@ import path from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import type { z } from 'zod'
 import type {
+  AppInfo,
   DiagnosticsExportInput,
   DiagnosticsExportResult,
   DiagnosticsSummary,
@@ -31,8 +32,8 @@ export interface DiagnosticsCommands {
 }
 
 export interface DiagnosticsDeps {
-  readonly getAppVersion: () => string
-  readonly getElectronVersion: () => string
+  /** 关于页、诊断清单与诊断包共用的构建信息（M5-01）。 */
+  readonly getAppInfo: () => AppInfo
   readonly getSettings: () => Promise<Record<string, unknown>>
   readonly getMcpServers: () => Promise<readonly Record<string, unknown>[]>
   readonly getSession: (
@@ -239,8 +240,9 @@ export class DiagnosticsService {
   constructor(private readonly deps: DiagnosticsDeps) {}
 
   async summary(input?: DiagnosticsExportInput): Promise<DiagnosticsSummary> {
-    const appVersion = this.deps.getAppVersion()
-    const electronVersion = this.deps.getElectronVersion()
+    const build = this.deps.getAppInfo()
+    const appVersion = build.version
+    const electronVersion = build.electronVersion
     const settings = await this.deps.getSettings()
     const mcpServers = await this.deps.getMcpServers()
     const mainLogs = await this.deps.getMainLogs()
@@ -262,6 +264,7 @@ export class DiagnosticsService {
     const exportItems = [
       'manifest.json',
       'app-version.json',
+      'build-info.json',
       'settings-summary.json',
       'logs/main.log',
       'logs/host.log',
@@ -273,6 +276,7 @@ export class DiagnosticsService {
     return {
       appVersion,
       electronVersion,
+      build,
       platform: process.platform,
       arch: process.arch,
       logs: {
@@ -293,8 +297,9 @@ export class DiagnosticsService {
     const home = this.deps.userHomeDir ?? os.homedir()
     const secrets = this.deps.getKnownSecrets?.() ?? []
     const clean = (text: string) => redactSecrets(sanitizeText(text, home), secrets)
-    const appVersion = this.deps.getAppVersion()
-    const electronVersion = this.deps.getElectronVersion()
+    const build = this.deps.getAppInfo()
+    const appVersion = build.version
+    const electronVersion = build.electronVersion
     const settings = await this.deps.getSettings()
     const mcpServers = await this.deps.getMcpServers()
     const mainLogs = await this.deps.getMainLogs()
@@ -304,6 +309,11 @@ export class DiagnosticsService {
       appVersion,
       electronVersion,
       nodeVersion: process.versions.node,
+      channel: build.channel,
+      commit: build.commit,
+      buildTime: build.buildTime,
+      databaseSchemaVersion: build.databaseSchemaVersion,
+      packaged: build.packaged,
       platform: process.platform,
       arch: process.arch,
       osRelease: os.release(),
@@ -327,6 +337,7 @@ export class DiagnosticsService {
         ),
       ),
       'app-version.json': strToU8(JSON.stringify(versionInfo, null, 2)),
+      'build-info.json': strToU8(clean(JSON.stringify(build, null, 2))),
       'settings-summary.json': strToU8(clean(JSON.stringify(settingsSummary, null, 2))),
       'logs/main.log': strToU8(clean(mainLogs)),
       'logs/host.log': strToU8(clean(hostLogs)),

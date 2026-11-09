@@ -1,15 +1,22 @@
 {
   "name": "@cairn/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "productName": "Cairn",
+  "description": "Local-first desktop AI coding agent",
+  "author": "Cairn contributors",
+  "copyright": "Copyright © 2026 Cairn contributors",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build && node ../../scripts/third-party-notices.js out/THIRD_PARTY_NOTICES.txt",
+    "build": "electron-vite build && node ../../scripts/build-info.mjs && node ../../scripts/third-party-notices.js out/THIRD_PARTY_NOTICES.txt",
     "start": "electron-vite preview",
     "smoke": "node scripts/smoke.js",
     "e2e": "playwright test -c e2e/playwright.config.ts"
+  },
+  "build": {
+    "appId": "com.cairn.desktop"
   },
   "dependencies": {
     "@cairn/checkpoint": "workspace:*",
