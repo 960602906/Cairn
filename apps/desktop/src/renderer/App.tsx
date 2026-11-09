@@ -28,6 +28,7 @@ import type { SessionStore } from './session-store.js'
 import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
 import { ThemeSync } from './ThemeSync.js'
+import { UpdateNotice } from './UpdateNotice.js'
 import { CairnAppMark, TooltipProvider } from './ui/index.js'
 
 export interface AppProps {
@@ -64,12 +65,14 @@ function Workspace() {
   const [newChatProjectPath, setNewChatProjectPath] = useState<string | undefined>()
   const refreshActivity = useSessionStore((s) => s.refreshActivity)
   const refreshAgents = useSessionStore((s) => s.refreshAgents)
+  const loadUpdateStatus = useSessionStore((s) => s.loadUpdateStatus)
   const onActivityOpen = useSessionStore((s) => s.onActivityOpen)
   const selectSession = useSessionStore((s) => s.selectSession)
   const activityBadge = useSessionStore((s) => s.activity?.counts?.approvals ?? 0)
   const chromeStyle = windowControlsStyle()
   // 还没有会话时直接显示新对话表单；已选中的会话（即使不在列表中）仍显示会话
   const showNew = useSessionStore((s) => s.sessions.length === 0 && s.activeSessionId === undefined)
+  const updateNotice = <UpdateNotice onOpenSettings={() => setSettings('update')} />
 
   // 进入窄窗口时把会话列收成抽屉；窗口变宽后恢复常驻列。
   useEffect(() => {
@@ -114,6 +117,11 @@ function Workspace() {
   useEffect(() => {
     void refreshActivity()
   }, [refreshActivity])
+
+  // 启动后读取一次更新状态；之后的检查与下载结果经 update.status 推送。
+  useEffect(() => {
+    void loadUpdateStatus()
+  }, [loadUpdateStatus])
 
   // Agent 管理页已移除，但委派卡片与检查器仍需要 Agent 名称，启动时读一次列表。
   useEffect(() => {
@@ -304,6 +312,7 @@ function Workspace() {
             <TopBar>
               <span className="text-note text-muted">{t('list.new')}</span>
             </TopBar>
+            {updateNotice}
             <NewSession
               initialProjectPath={newChatProjectPath}
               onDone={() => setComposing(false)}
@@ -312,6 +321,7 @@ function Workspace() {
           </>
         ) : (
           <ChatPanel
+            notice={updateNotice}
             {...(pendingChangeSet === undefined
               ? {}
               : {

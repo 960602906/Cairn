@@ -39,6 +39,7 @@ import {
   type ActivityDecision,
   type ActivityListResult,
   type AppInfo,
+  type AppLicenses,
   type DiagnosticsExportInput,
   type DiagnosticsExportResult,
   type DiagnosticsSummary,
@@ -83,6 +84,7 @@ import {
   type ToolCategory,
   type TrialStarted,
   type TrialSummary,
+  type UpdateStatus,
 } from '@cairn/protocol'
 import type { z } from 'zod'
 import { createStore, type StoreApi } from 'zustand/vanilla'
@@ -136,6 +138,8 @@ export interface SessionState {
   readonly settings: Settings | undefined
   /** 应用版本与构建信息（M5-01）；关于页读取之前为 undefined。 */
   readonly appInfo: AppInfo | undefined
+  /** 自动更新状态（M5-07）；更新设置与提示读取之前为 undefined。 */
+  readonly updateStatus: UpdateStatus | undefined
   /** 最近一次失败的错误；界面显示后可以清除。 */
   readonly error: ErrorInfo | undefined
   /** 已保存的 Agent（M3-12）：内置编程助手加上用户与导入的 Agent。 */
@@ -356,6 +360,22 @@ export interface SessionActions {
   loadSettings(): Promise<Settings | undefined>
   /** 读取应用版本与构建信息（M5-01）。 */
   loadAppInfo(): Promise<AppInfo | undefined>
+  /** 读取自动更新状态（M5-07）；状态变化也会经 `update.status` 推送。 */
+  loadUpdateStatus(): Promise<UpdateStatus | undefined>
+  /** 检查更新（M5-07）。手动检查用 `force` 忽略跳过的版本。 */
+  checkUpdate(force?: boolean): Promise<UpdateStatus | undefined>
+  /** 下载已发现的更新（M5-07）。 */
+  downloadUpdate(): Promise<UpdateStatus | undefined>
+  /** 安装已下载的更新并重启（M5-07）；有运行中任务时主进程拒绝。 */
+  installUpdate(): Promise<UpdateStatus | undefined>
+  /** 取消正在进行的下载（M5-07）。 */
+  cancelUpdate(): Promise<UpdateStatus | undefined>
+  /** 跳过指定版本（M5-07）：写入设置并刷新更新状态。 */
+  skipUpdateVersion(version: string): Promise<boolean>
+  /** 清除跳过的版本（M5-07）。 */
+  restoreSkippedUpdate(): Promise<boolean>
+  /** 随包的第三方许可声明（M5-07）；读取失败时返回 undefined。 */
+  licenses(): Promise<AppLicenses | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
   /** 保存 Key；成功时返回 true。 */
@@ -678,6 +698,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       projects: [],
       settings: undefined,
       appInfo: undefined,
+      updateStatus: undefined,
       error: undefined,
       agents: [],
       recentAgents: readRecentAgents(),
@@ -1247,6 +1268,54 @@ export function createSessionStore(api: MainApi): SessionStore {
         return result
       },
 
+      async loadUpdateStatus() {
+        const result = await run(() => api.request('update.status', {}))
+        if (result) set({ updateStatus: result })
+        return result
+      },
+
+      async checkUpdate(force) {
+        const result = await run(() =>
+          api.request('update.check', force === true ? { force: true } : {}),
+        )
+        if (result) set({ updateStatus: result })
+        return result
+      },
+
+      async downloadUpdate() {
+        const result = await run(() => api.request('update.download', {}))
+        if (result) set({ updateStatus: result })
+        return result
+      },
+
+      async installUpdate() {
+        const result = await run(() => api.request('update.install', {}))
+        if (result) set({ updateStatus: result })
+        return result
+      },
+
+      async cancelUpdate() {
+        const result = await run(() => api.request('update.cancel', {}))
+        if (result) set({ updateStatus: result })
+        return result
+      },
+
+      async skipUpdateVersion(version) {
+        const saved = await get().updateSettings({ updateSkippedVersion: version })
+        if (!saved) return false
+        await get().loadUpdateStatus()
+        return true
+      },
+
+      async restoreSkippedUpdate() {
+        const saved = await get().updateSettings({ updateSkippedVersion: null })
+        if (!saved) return false
+        await get().loadUpdateStatus()
+        return true
+      },
+
+      licenses: () => run(() => api.request('app.licenses', {})),
+
       async updateSettings(patch) {
         const result = await run(() => api.request('settings.update', patch))
         if (result) set({ settings: result })
@@ -1393,6 +1462,9 @@ export function createSessionStore(api: MainApi): SessionStore {
   })
   const offActivity = api.on('activity.changed', () => {
     void store.getState().refreshActivity()
+  })
+  const _offUpdate = api.on('update.status', (status) => {
+    store.setState({ updateStatus: status })
   })
   const _offCommands = api.on('command.changed', ({ commandId }) => {
     void store.getState().refreshCommands()

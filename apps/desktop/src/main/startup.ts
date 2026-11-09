@@ -79,6 +79,7 @@ import { createUpdateService } from './services/update-service.js'
 import { createShellInfo } from './services/shell-info.js'
 import { createProviderService } from './services/provider-service.js'
 import { createAppInfoCommands } from './services/app-info-service.js'
+import { readLicenseNotices } from './services/licenses-service.js'
 import { createGitLocator, gitRuntimeInfo } from './services/git-locator.js'
 import { hostEnvironment } from '../shared/host-trace.js'
 import { checkBundledSearch } from './smoke-search.js'
@@ -580,7 +581,11 @@ const files = createFileService({
   revealPath: (target) => shell.showItemInFolder(target),
 })
 const gateway = createRendererGateway({
-  appInfo: createAppInfoCommands(() => appInfo),
+  appInfo: createAppInfoCommands(
+    () => appInfo,
+    // 构建脚本把第三方声明写到 out/ 根目录，与 out/main 同级；在 asar 内也能直接读取。
+    () => readLicenseNotices(join(import.meta.dirname, '..', 'THIRD_PARTY_NOTICES.txt')),
+  ),
   events,
   commands: sessions,
   projects,

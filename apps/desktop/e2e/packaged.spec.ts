@@ -95,6 +95,20 @@ test('已打包应用启动、读取构建信息并创建项目会话', async ()
       },
     })
 
+    const licenses = (await page.evaluate(async () => {
+      const cairn = (
+        globalThis as unknown as {
+          cairn: { request(m: string, p: object): Promise<unknown> }
+        }
+      ).cairn
+      return cairn.request('app.licenses', {})
+    })) as {
+      ok: boolean
+      result: { available: boolean; text: string; truncated: boolean }
+    }
+    expect(licenses).toMatchObject({ ok: true, result: { available: true, truncated: false } })
+    expect(licenses.result.text).toContain('Cairn includes the following third-party software.')
+
     const created = (await page.evaluate(
       async ({ workspace: directory }) => {
         const cairn = (

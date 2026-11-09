@@ -923,6 +923,120 @@ describe('settings', () => {
   })
 })
 
+describe('updates (M5-07)', () => {
+  const idle = {
+    phase: 'idle' as const,
+    currentVersion: '0.1.0',
+    channel: 'beta' as const,
+    channelPinned: false,
+    enabled: true,
+    autoCheck: true,
+    signatureVerified: false,
+    requiresRestart: false,
+  }
+
+  it('loads status and applies every update action result', async () => {
+    const available = { ...idle, phase: 'available' as const, availableVersion: '0.1.1' }
+    const downloading = {
+      ...available,
+      phase: 'downloading' as const,
+      progress: { percent: 10, transferred: 10, total: 100 },
+    }
+    const downloaded = {
+      ...available,
+      phase: 'downloaded' as const,
+      requiresRestart: true,
+    }
+    const { api, calls } = fakeApi({
+      'update.status': () => idle,
+      'update.check': () => available,
+      'update.download': () => downloading,
+      'update.install': () => downloaded,
+      'update.cancel': () => available,
+    })
+    const store = createSessionStore(api)
+
+    await expect(store.getState().loadUpdateStatus()).resolves.toEqual(idle)
+    expect(store.getState().updateStatus).toEqual(idle)
+
+    await expect(store.getState().checkUpdate()).resolves.toEqual(available)
+    await expect(store.getState().checkUpdate(true)).resolves.toEqual(available)
+    await expect(store.getState().downloadUpdate()).resolves.toEqual(downloading)
+    await expect(store.getState().installUpdate()).resolves.toEqual(downloaded)
+    await expect(store.getState().cancelUpdate()).resolves.toEqual(available)
+    expect(calls).toEqual([
+      ['update.status', {}],
+      ['update.check', {}],
+      ['update.check', { force: true }],
+      ['update.download', {}],
+      ['update.install', {}],
+      ['update.cancel', {}],
+    ])
+  })
+
+  it('applies pushed status events', () => {
+    const { api, emitChannel } = fakeApi()
+    const store = createSessionStore(api)
+    const next = { ...idle, phase: 'available' as const, availableVersion: '0.1.1' }
+    emitChannel('update.status', next)
+    expect(store.getState().updateStatus).toEqual(next)
+  })
+
+  it('skips and restores a version through settings', async () => {
+    const skipped = {
+      ...idle,
+      phase: 'skipped' as const,
+      availableVersion: '0.1.1',
+      skippedVersion: '0.1.1',
+    }
+    const { api, calls } = fakeApi({
+      'settings.update': (patch: object) => ({ ...patch }),
+      'update.status': () => skipped,
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().skipUpdateVersion('0.1.1')).resolves.toBe(true)
+    await expect(store.getState().restoreSkippedUpdate()).resolves.toBe(true)
+    expect(calls).toEqual([
+      ['settings.update', { updateSkippedVersion: '0.1.1' }],
+      ['update.status', {}],
+      ['settings.update', { updateSkippedVersion: null }],
+      ['update.status', {}],
+    ])
+    expect(store.getState().updateStatus).toEqual(skipped)
+  })
+
+  it('reports settings failures and keeps the previous status', async () => {
+    const { api } = fakeApi({
+      'settings.update': () => {
+        throw new RpcError('settings.write_failed')
+      },
+    })
+    const store = createSessionStore(api)
+    store.setState({ updateStatus: idle })
+    await expect(store.getState().skipUpdateVersion('0.1.1')).resolves.toBe(false)
+    expect(store.getState().updateStatus).toEqual(idle)
+    expect(store.getState().error).toEqual({ code: 'settings.write_failed' })
+    await expect(store.getState().restoreSkippedUpdate()).resolves.toBe(false)
+    expect(store.getState().error).toEqual({ code: 'settings.write_failed' })
+  })
+
+  it('loads license notices and records failures', async () => {
+    let fail = false
+    const notices = { available: true, text: 'MIT', truncated: false }
+    const { api } = fakeApi({
+      'app.licenses': () => {
+        if (fail) throw new RpcError('storage.not_found')
+        return notices
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().licenses()).resolves.toEqual(notices)
+    fail = true
+    await expect(store.getState().licenses()).resolves.toBeUndefined()
+    expect(store.getState().error).toEqual({ code: 'storage.not_found' })
+  })
+})
+
 describe('projects and model settings', () => {
   const project = (projectId: string) => ({
     projectId,

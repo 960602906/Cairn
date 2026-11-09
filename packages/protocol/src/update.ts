@@ -91,6 +91,8 @@ export const UpdateStatus = z.object({
   phase: UpdatePhase,
   currentVersion: z.string().min(1),
   channel: UpdateChannel,
+  /** 通道由构建（`CAIRN_UPDATE_CHANNEL`）固定时，设置里的选择不会生效。 */
+  channelPinned: z.boolean(),
   enabled: z.boolean(),
   autoCheck: z.boolean(),
   /** 公开只读更新源（不含查询串、用户名或密码）。 */

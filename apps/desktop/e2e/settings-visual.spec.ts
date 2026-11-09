@@ -1,5 +1,5 @@
 /**
- * 设置页视觉验收：四种窗口尺寸 × 七个分类，全部不能出现横向滚动；同时检查分类搜索与
+ * 设置页视觉验收：四种窗口尺寸 × 八个分类，全部不能出现横向滚动；同时检查分类搜索与
  * Windows 窗口标题区底色是否跟随主题。
  */
 import { mkdirSync } from 'node:fs'
@@ -20,6 +20,7 @@ const SIZES = [
 const SECTIONS = [
   ['general', '通用与外观'],
   ['projects', '项目'],
+  ['update', '更新'],
   ['providers', '模型供应商'],
   ['skills', '技能'],
   ['mcp', 'MCP 服务'],
@@ -100,7 +101,7 @@ test('设置页在四种窗口尺寸下都不溢出', async ({ launch }) => {
   await expect(nav.getByRole('button', { name: /^技能/ })).toHaveCount(0)
 })
 
-test('浅色主题在窄窗口下七个分类都不溢出', async ({ launch }) => {
+test('浅色主题在窄窗口下八个分类都不溢出', async ({ launch }) => {
   const app = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
   const window = app.window
 

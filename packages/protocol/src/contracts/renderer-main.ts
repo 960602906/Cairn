@@ -3,7 +3,7 @@
  * 渲染进程只调用主进程的请求、接收主进程的事件；渲染进程自身不提供接口。
  */
 import { z } from 'zod'
-import { AppInfo } from '../app-info.js'
+import { AppInfo, AppLicenses } from '../app-info.js'
 import { FileChangeSummary, FileContent } from '../changes.js'
 import { ActivityDecision, ActivityListResult } from '../activity.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
@@ -265,6 +265,11 @@ export const MainForRenderer = defineSide({
     'app.info': {
       params: z.object({}),
       result: AppInfo,
+    },
+    /** 随包的第三方许可声明（M5-07）：关于页的许可入口按需读取。 */
+    'app.licenses': {
+      params: z.object({}),
+      result: AppLicenses,
     },
     /** 命令沙箱的当前配置与能力（M5-05）：设置页与诊断入口使用。 */
     'sandbox.status': {

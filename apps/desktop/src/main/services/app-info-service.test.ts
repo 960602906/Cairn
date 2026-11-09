@@ -22,4 +22,18 @@ describe('app info commands', () => {
     const commands = createAppInfoCommands(() => info)
     expect(commands.info()).toBe(info)
   })
+
+  it('returns the bundled license notices', () => {
+    const licenses = { available: true, text: 'MIT', truncated: false }
+    const commands = createAppInfoCommands(
+      () => info,
+      () => licenses,
+    )
+    expect(commands.licenses()).toBe(licenses)
+  })
+
+  it('reports missing notices by default', () => {
+    const commands = createAppInfoCommands(() => info)
+    expect(commands.licenses()).toEqual({ available: false, text: '', truncated: false })
+  })
 })

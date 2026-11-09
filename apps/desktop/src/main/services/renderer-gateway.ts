@@ -353,6 +353,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       }
 
       endpoint.handle('app.info', () => appInfo.info())
+      endpoint.handle('app.licenses', () => appInfo.licenses())
       endpoint.handle('session.create', (params) => commands.create(params))
       endpoint.handle('session.list', (params) => commands.list(params))
       endpoint.handle('project.list', () => projects.list())
