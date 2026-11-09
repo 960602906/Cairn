@@ -25,7 +25,12 @@ import {
   utilityProcess,
 } from 'electron'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
-import { titleBarOverlay, usesTitleBarOverlay, windowChromeOptions } from './window-chrome.js'
+import {
+  resolveChromeTheme,
+  titleBarOverlay,
+  usesTitleBarOverlay,
+  windowChromeOptions,
+} from './window-chrome.js'
 import {
   hardenWebContents,
   restrictPermissions,
@@ -468,7 +473,10 @@ const gateway = createRendererGateway({
     update: (patch) => {
       const next = settings.update(patch)
       if (patch.permissionMode !== undefined) sessions.refreshPermissions()
-      if (patch.theme !== undefined) nativeTheme.themeSource = nativeThemeSource(patch.theme)
+      if (patch.theme !== undefined) {
+        nativeTheme.themeSource = nativeThemeSource(patch.theme)
+        applyTitleBarOverlay()
+      }
       return next
     },
     shell: createShellInfo(),
@@ -597,19 +605,24 @@ function nativeThemeSource(theme: Theme): 'system' | 'light' | 'dark' {
 
 function followThemeSetting(): void {
   nativeTheme.themeSource = nativeThemeSource(settings.get().theme ?? 'slate')
-  nativeTheme.on('updated', () => {
-    if (!usesTitleBarOverlay(process.platform, headless())) return
-    const overlay = titleBarOverlay(nativeTheme.shouldUseDarkColors)
-    for (const window of BrowserWindow.getAllWindows()) window.setTitleBarOverlay(overlay)
-  })
+  nativeTheme.on('updated', applyTitleBarOverlay)
+}
+
+/** 系统按钮覆盖层跟随实际主题的纸面颜色，避免右上角出现一块单独的白底。 */
+function applyTitleBarOverlay(): void {
+  if (!usesTitleBarOverlay(process.platform, headless())) return
+  const theme = resolveChromeTheme(settings.get().theme, nativeTheme.shouldUseDarkColors)
+  const overlay = titleBarOverlay(theme)
+  for (const window of BrowserWindow.getAllWindows()) window.setTitleBarOverlay(overlay)
 }
 
 function createWindow(): BrowserWindow {
+  const theme = resolveChromeTheme(settings.get().theme, nativeTheme.shouldUseDarkColors)
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
-    ...windowChromeOptions(process.platform, nativeTheme.shouldUseDarkColors, headless()),
+    ...windowChromeOptions(process.platform, theme, headless()),
     webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs')),
   })
   const connection = gateway.connect(
