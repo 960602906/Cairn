@@ -13,7 +13,13 @@
     "build": "electron-vite build && node ../../scripts/build-info.mjs && node ../../scripts/third-party-notices.js out/THIRD_PARTY_NOTICES.txt",
     "start": "electron-vite preview",
     "smoke": "node scripts/smoke.js",
-    "e2e": "playwright test -c e2e/playwright.config.ts"
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "package:dir": "node scripts/packaging.mjs --dir",
+    "package:nsis": "node scripts/packaging.mjs --nsis",
+    "package:verify": "node scripts/verify-package.mjs",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
+    "smoke:installed": "node scripts/smoke-installed.mjs",
+    "e2e:packaged": "playwright test -c e2e/packaged.config.ts"
   },
   "build": {
     "appId": "com.cairn.desktop"
@@ -29,7 +35,6 @@
     "@cairn/skills": "workspace:*",
     "@cairn/storage": "workspace:*",
     "@cairn/tools": "workspace:*",
-    "yaml": "2.9.1",
     "@fontsource/jetbrains-mono": "5.3.0",
     "@shikijs/core": "4.6.0",
     "@shikijs/engine-javascript": "4.6.0",
@@ -50,10 +55,13 @@
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
     "tailwind-merge": "3.7.0",
+    "yaml": "2.9.1",
     "zod": "4.6.6",
     "zustand": "5.0.16"
   },
   "devDependencies": {
+    "@electron/asar": "4.3.1",
+    "@electron/fuses": "2.1.3",
     "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "4.3.4",
     "@testing-library/dom": "10.4.2",
@@ -64,7 +72,9 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
     "electron": "45.2.1",
+    "electron-builder": "26.18.0",
     "electron-vite": "6.0.0",
+    "es-module-lexer": "2.3.2",
     "jsdom": "30.1.3",
     "tailwindcss": "4.3.4",
     "vite": "8.3.5"

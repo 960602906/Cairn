@@ -12,6 +12,7 @@ import { pathToFileURL } from 'node:url'
 import { createGitRunner, isolatedGitEnv, openShadowRepo } from '@cairn/checkpoint'
 import { BUILTIN_CODER_ID, redact } from '@cairn/core'
 import type { McpStatusEvent, Theme } from '@cairn/protocol'
+import { createJobObject, loadKernel32 } from '@cairn/shell'
 import { bundledRipgrepPath } from '@cairn/tools'
 import { MIGRATIONS, openSqliteStorage } from '@cairn/storage'
 import {
@@ -29,6 +30,7 @@ import {
 } from 'electron'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
 import { readAppInfo } from './build-info.js'
+import { resolveBuiltinSkillsDir } from './builtin-skills.js'
 import { resolveChromeTheme, windowChromeOptions } from './window-chrome.js'
 import { WINDOW_CONTROLS_CHANNEL } from '../shared/window-controls.js'
 import {
@@ -241,7 +243,11 @@ const activity = createActivityService({
 /** 技能（M3-07）：内置示例、用户安装目录，以及项目开关打开后的项目内技能。 */
 const skills = createSkillService({
   storage,
-  builtinDir: join(import.meta.dirname, '../../resources/skills'),
+  builtinDir: resolveBuiltinSkillsDir({
+    packaged: app.isPackaged,
+    moduleDir: import.meta.dirname,
+    resourcesPath: process.resourcesPath,
+  }),
   userDir: join(paths.root, 'skills'),
   /** 选择安装来源（M3-08）：文件夹或 zip（e2e 中替换 `dialog.showOpenDialog`）。 */
   pickSource: async (kind) => {
@@ -758,11 +764,30 @@ function startSmoke(window: BrowserWindow): void {
     credentialsRequired: process.platform !== 'linux',
     checkSearch: () =>
       checkBundledSearch(ripgrepPath, join(app.getPath('userData'), 'smoke-workspace')),
+    checkNative: smokeNativeProcessTree,
+    checkSkills: async () => {
+      const names = skills
+        .list({})
+        .skills.filter((skill) => skill.source === 'builtin')
+        .map((skill) => skill.name)
+      if (!names.includes('example')) throw new Error('built-in skill example not found')
+      return names
+    },
     expectedText: 'Cairn',
     userData: app.getPath('userData'),
     report: (line) => process.stdout.write(`${line}\n`),
     exit: (code) => app.exit(code),
   })
+}
+
+/** 验证 koffi 原生模块与 Job Object 在打包后仍可加载（M5-02）。 */
+async function smokeNativeProcessTree(): Promise<string> {
+  if (process.platform !== 'win32') return 'unsupported'
+  const { kernel32, layout } = await loadKernel32()
+  const job = createJobObject(kernel32, layout)
+  if (!job) throw new Error('koffi loaded but the Job Object could not be created')
+  job.close()
+  return 'job-object'
 }
 
 /** 用真实的系统加密保存、解析并删除一个测试 Key（冒烟检查，数据目录是临时目录）。 */

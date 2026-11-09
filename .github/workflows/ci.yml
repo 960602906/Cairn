@@ -22,7 +22,7 @@ jobs:
         # Windows 是首发平台，必须通过（架构 §18）。
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       # GitHub Releases 的 Electron 资产偶发 504；镜像对两端平台都可用。
       ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
@@ -84,6 +84,26 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a pnpm e2e; else pnpm e2e; fi
 
+      # Windows 是首发平台：解包产物必须可验证、可启动，并通过真实打包程序的 e2e（M5-02）。
+      # NSIS 安装包只在 release workflow 构建，普通 PR 不下载/执行安装器。
+      - name: Package desktop app
+        if: matrix.os == 'windows-latest'
+        run: pnpm package:dir
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Verify packaged application
+        if: matrix.os == 'windows-latest'
+        run: pnpm package:verify
+
+      - name: Smoke test packaged application
+        if: matrix.os == 'windows-latest'
+        run: pnpm smoke:packaged
+
+      - name: E2E test packaged application
+        if: matrix.os == 'windows-latest'
+        run: pnpm e2e:packaged
+
       - name: Upload E2E report
         if: failure()
         uses: actions/upload-artifact@v4
@@ -92,6 +112,8 @@ jobs:
           path: |
             apps/desktop/playwright-report/
             apps/desktop/test-results/
+            apps/desktop/playwright-report-packaged/
+            apps/desktop/test-results-packaged/
           retention-days: 14
 
   licenses:

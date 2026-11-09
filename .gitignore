@@ -1,9 +1,13 @@
 node_modules/
 dist/
 out/
+.package/
 coverage/
+coverage-scripts-*/
 test-results/
+test-results-packaged/
 playwright-report/
+playwright-report-packaged/
 *.tsbuildinfo
 .vite/
 .impeccable/

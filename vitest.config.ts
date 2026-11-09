@@ -7,6 +7,7 @@ export default defineConfig({
     include: [
       'packages/*/src/**/*.test.ts',
       'apps/*/src/**/*.test.{ts,tsx}',
+      'apps/*/scripts/**/*.test.ts',
       'tooling/**/*.test.ts',
       'scripts/**/*.test.ts',
     ],
@@ -15,6 +16,11 @@ export default defineConfig({
       include: [
         'packages/*/src/**/*.{ts,tsx}',
         'apps/*/src/**/*.{ts,tsx}',
+        'apps/desktop/scripts/packaged-app.mjs',
+        'apps/desktop/scripts/packaging.mjs',
+        'apps/desktop/scripts/smoke-packaged.mjs',
+        'apps/desktop/scripts/smoke-installed.mjs',
+        'apps/desktop/scripts/verify-package.mjs',
         'scripts/**/*.js',
         'tooling/**/*.js',
       ],
