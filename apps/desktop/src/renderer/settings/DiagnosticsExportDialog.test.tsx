@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import type { DiagnosticsSummary } from '@cairn/protocol'
 import { DiagnosticsExportDialog } from './DiagnosticsExportDialog.js'
 import { SessionStoreContext } from '../store-context.js'
 import { createSessionStore } from '../session-store.js'
 import type { MainApi } from '../api.js'
+
+afterEach(cleanup)
 
 const i18n = createI18n('zh-CN')
 
@@ -101,5 +103,30 @@ describe('DiagnosticsExportDialog component', () => {
     const showBtn = screen.getByRole('button', { name: /在文件夹中显示/i })
     fireEvent.click(showBtn)
     expect(shownPath).toBe('C:\\exports\\cairn-diag.zip')
+  })
+
+  it('stays on the summary view when the export is cancelled', async () => {
+    const fakeApi = {
+      request: async (method: string) => {
+        if (method === 'diagnostics.summary') return mockSummary
+        if (method === 'diagnostics.export') return { cancelled: true }
+        return undefined
+      },
+      on: () => () => {},
+    }
+    const store = createSessionStore(fakeApi as unknown as MainApi)
+    render(
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreContext.Provider value={store}>
+          <DiagnosticsExportDialog open={true} onOpenChange={() => {}} />
+        </SessionStoreContext.Provider>
+      </I18nextProvider>,
+    )
+    await waitFor(() => expect(screen.getByText(/1.2.3/i)).toBeDefined())
+    fireEvent.click(screen.getByRole('button', { name: '导出诊断包' }))
+    await waitFor(() => {
+      expect(screen.queryByText('诊断包导出成功')).toBeNull()
+      expect(screen.getByRole('button', { name: '导出诊断包' })).toBeTruthy()
+    })
   })
 })

@@ -20,23 +20,18 @@ import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { newChatShortcut } from './layout/shortcuts.js'
 import { useMediaQuery } from './layout/use-media-query.js'
+import { TITLE_BAR_INSET } from './layout/WindowControls.js'
 import { CairnMark, cn, IconButton } from './ui/index.js'
-
-/** 顶栏右侧给 Windows / Linux 叠在窗口右上角的系统按钮让出位置（Window Controls Overlay 的 CSS 变量）。 */
-const TITLE_BAR_INSET = {
-  paddingRight:
-    'max(12px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) - 8px + 12px))',
-} as const
 
 /** 纸面顶栏（48px）：左侧是项目 / 会话面包屑，右侧是模型与工作台开关。 */
 export function TopBar({ children }: { readonly children?: ReactNode }) {
   return (
     <header
-      className="drag relative flex h-12 shrink-0 items-center gap-1.5 pr-3 pl-5"
+      className="drag relative flex h-12 shrink-0 items-center gap-1.5 bg-chrome pr-3 pl-5"
       style={TITLE_BAR_INSET}
     >
       {children}
-      {/* 线条放在顶栏之外：Windows 的系统按钮覆盖层会盖住标题区内的像素。 */}
+      {/* 线条放在顶栏之外，避免被窗口按钮或拖拽区裁切。 */}
       <span
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-full block h-[0.5px] bg-hair"

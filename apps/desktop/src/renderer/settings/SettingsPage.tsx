@@ -1,21 +1,20 @@
 /**
  * 设置页框架（M2-09，视觉规范 §8）：与对话页相同的窗口结构。左侧分类导航（顶部“返回对话 Esc”，铺在窗口
- * 底色上），右侧纸面，内容居中、最大宽度 760px。
+ * 底色上），右侧纸面，内容居中、最大宽度 920px；窄窗口收窄内边距。
  *
  * 分类按组列出：通用与外观（M2-09）、项目（M3-02）、模型供应商（M2-10）、技能（M3-08）、
  * MCP 服务（M3-10）、权限与审批（M2-11）。Esc 返回对话（有对话框或菜单打开时不处理）。
  */
 import {
-  Cpu,
   ChevronLeft,
+  Cpu,
   FolderOpen,
-  PanelLeft,
-  Server,
-  Settings2,
-  Shield,
-  Sparkles,
+  Palette,
+  PanelLeftClose,
+  Search,
+  ShieldCheck,
 } from 'lucide-react'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, type ReactNode, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { CairnMark, IconButton, Kbd } from '../ui/index.js'
@@ -24,7 +23,9 @@ import { McpSettings } from './McpSettings.js'
 import { PermissionsSettings } from './PermissionsSettings.js'
 import { ProjectsSettings } from './ProjectsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
+import { McpGlyph, SkillGlyph } from './SettingIcons.js'
 import { SkillsSettings } from './SkillsSettings.js'
+import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
   'general' | 'projects' | 'providers' | 'skills' | 'mcp' | 'permissions'
@@ -42,7 +43,7 @@ const GROUPS: readonly {
   {
     group: 'general',
     sections: [
-      { id: 'general', icon: <Settings2 /> },
+      { id: 'general', icon: <Palette /> },
       { id: 'projects', icon: <FolderOpen /> },
     ],
   },
@@ -50,11 +51,11 @@ const GROUPS: readonly {
   {
     group: 'capabilities',
     sections: [
-      { id: 'skills', icon: <Sparkles /> },
-      { id: 'mcp', icon: <Server /> },
+      { id: 'skills', icon: <SkillGlyph /> },
+      { id: 'mcp', icon: <McpGlyph /> },
     ],
   },
-  { group: 'security', sections: [{ id: 'permissions', icon: <Shield /> }] },
+  { group: 'security', sections: [{ id: 'permissions', icon: <ShieldCheck /> }] },
 ]
 
 export function SettingsNav({
@@ -77,6 +78,17 @@ export function SettingsNav({
   const { t: ts } = useTranslation('session')
   const { t: tc } = useTranslation()
   const providerCount = useSessionStore((s) => s.settings?.providers.length ?? 0)
+  const [query, setQuery] = useState('')
+  const normalized = query.trim().toLocaleLowerCase()
+  const matches = (id: SettingsSection) =>
+    [t(`section.${id}.title`), t(`section.${id}.description`), t(`page.keywords.${id}`)]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(normalized)
+  const visibleGroups = GROUPS.map(({ group, sections }) => ({
+    group,
+    sections: normalized === '' ? sections : sections.filter(({ id }) => matches(id)),
+  })).filter(({ sections }) => sections.length > 0)
   return (
     <aside
       aria-hidden={!open}
@@ -98,7 +110,7 @@ export function SettingsNav({
               className="no-drag"
               onClick={onCollapse}
             >
-              <PanelLeft />
+              <PanelLeftClose />
             </IconButton>
           </div>
         ) : (
@@ -120,9 +132,21 @@ export function SettingsNav({
             <span className="flex-1 text-left">{t('page.back')}</span>
             <Kbd aria-hidden>{t('page.backKey')}</Kbd>
           </button>
+          <label className="relative mt-2 block">
+            <span className="sr-only">{t('page.search')}</span>
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+              placeholder={t('page.search')}
+              aria-label={t('page.search')}
+              className="h-8 w-full rounded-item bg-sunk/60 pr-2.5 pl-8 text-[12.5px] text-fg shadow-hair outline-none transition-colors placeholder:text-faint hover:bg-sunk focus:bg-paper focus:shadow-[inset_0_0_0_0.5px_var(--hair2),0_0_0_3px_var(--accent-soft)]"
+            />
+          </label>
         </div>
         <nav aria-label={t('page.nav')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {GROUPS.map(({ group, sections }) => (
+          {visibleGroups.map(({ group, sections }) => (
             <div key={group} role="group" aria-labelledby={`settings-group-${group}`}>
               <div
                 id={`settings-group-${group}`}
@@ -138,9 +162,9 @@ export function SettingsNav({
                     type="button"
                     aria-current={current ? 'page' : undefined}
                     onClick={() => onSelect(id)}
-                    className={`flex h-8 w-full items-center gap-2.5 rounded-item px-2.5 text-left text-ui transition-colors [&_svg]:size-4 [&_svg]:text-muted ${
+                    className={`flex h-9 w-full items-center gap-2.5 rounded-item px-2.5 text-left text-ui transition-colors [&_svg]:size-4 [&_svg]:text-muted ${
                       current ? 'bg-raise font-medium text-fg shadow-1' : 'text-fg2 hover:bg-hover'
-                    }`}
+                    } ${current ? '[&_svg]:text-accent' : ''}`}
                   >
                     {icon}
                     <span className="flex-1">{t(`section.${id}.title`)}</span>
@@ -154,6 +178,11 @@ export function SettingsNav({
               })}
             </div>
           ))}
+          {visibleGroups.length === 0 && (
+            <p className="px-2.5 py-6 text-center text-note text-muted">
+              {t('page.searchNoResults')}
+            </p>
+          )}
         </nav>
         <p className="px-4.5 pb-3 text-[11.5px] text-muted">{t('page.local')}</p>
       </div>
@@ -185,9 +214,14 @@ export function SettingsContent({
 
   return (
     <>
-      <div className="drag flex h-10 shrink-0 items-center gap-1.5 pl-3">{leading}</div>
+      <div
+        className="drag flex h-12 shrink-0 items-center gap-1.5 bg-chrome pl-3"
+        style={TITLE_BAR_INSET}
+      >
+        {leading}
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[840px] flex-col gap-6 px-8 pt-6 pb-16">
+        <div className="mx-auto flex max-w-[920px] flex-col gap-6 px-8 pt-6 pb-16 max-[640px]:px-4">
           {section === 'general' && <GeneralSettings />}
           {section === 'projects' && <ProjectsSettings />}
           {section === 'providers' && <ProvidersSettings />}
@@ -202,16 +236,28 @@ export function SettingsContent({
 
 /** 设置页的标题与说明。 */
 export function SettingsHeader({
+  icon,
   title,
   description,
 }: {
+  readonly icon?: ReactNode
   readonly title: string
   readonly description: string
 }) {
   return (
-    <header>
-      <h2 className="text-page tracking-[-0.01em] text-fg">{title}</h2>
-      <p className="mt-1 text-ui leading-relaxed text-muted">{description}</p>
+    <header className="flex items-start gap-4 pt-1">
+      {icon && (
+        <span
+          aria-hidden
+          className="mt-0.5 grid size-10 shrink-0 place-items-center rounded-[12px] bg-accent-soft text-accent shadow-hair [&_svg]:size-5"
+        >
+          {icon}
+        </span>
+      )}
+      <div className="min-w-0">
+        <h2 className="text-page tracking-[-0.01em] text-fg">{title}</h2>
+        <p className="mt-1 max-w-[62ch] text-ui leading-relaxed text-muted">{description}</p>
+      </div>
     </header>
   )
 }

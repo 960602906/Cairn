@@ -286,6 +286,7 @@ export function PermissionsSettings() {
   return (
     <>
       <SettingsHeader
+        icon={<ShieldCheck />}
         title={t('section.permissions.title')}
         description={t('section.permissions.description')}
       />

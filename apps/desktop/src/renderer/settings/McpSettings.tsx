@@ -5,7 +5,7 @@
  * - 保存后立即连接，返回的详情带着当前工具列表；连接状态变化由 `mcp.status` 推动刷新。
  * - 工具默认 `network` / `ask`，用户可以按工具修改类别与默认效果。
  */
-import { Plus, Server, TriangleAlert, Trash2 } from 'lucide-react'
+import { Cloud, Plus, TriangleAlert, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -31,8 +31,10 @@ import {
   IconButton,
   Switch,
 } from '../ui/index.js'
-import { Field, inputClass, SettingsCard } from './Field.js'
+import { Field, inputClass, SettingsCard, SettingsEmpty } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
+import { McpGlyph } from './SettingIcons.js'
+import { McpMarketDialog } from './McpMarketDialog.js'
 
 const CATEGORIES: readonly ToolCategory[] = ['read', 'write', 'execute', 'network']
 const EFFECTS: readonly PermissionEffect[] = ['allow', 'ask', 'deny']
@@ -270,6 +272,7 @@ export function McpSettings() {
   const [detail, setDetail] = useState<McpServerDetail | undefined>()
   const [logs, setLogs] = useState<readonly McpLogEntry[]>([])
   const [deleting, setDeleting] = useState<McpServerSummary | undefined>()
+  const [marketOpen, setMarketOpen] = useState(false)
 
   const load = useCallback(async () => {
     const result = await listMcpServers()
@@ -383,19 +386,30 @@ export function McpSettings() {
 
   return (
     <>
-      <div className="flex items-start justify-between gap-4">
-        <SettingsHeader title={t('section.mcp.title')} description={t('section.mcp.description')} />
-        <Button onClick={() => setForm(emptyForm())}>
-          <Plus />
-          {t('mcp.add')}
-        </Button>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <SettingsHeader
+          icon={<McpGlyph />}
+          title={t('section.mcp.title')}
+          description={t('section.mcp.description')}
+        />
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => setMarketOpen(true)}>
+            <Cloud />
+            {t('mcp.market.button')}
+          </Button>
+          <Button onClick={() => setForm(emptyForm())}>
+            <Plus />
+            {t('mcp.add')}
+          </Button>
+        </div>
       </div>
 
       {servers.length === 0 ? (
-        <SettingsCard className="items-start">
-          <Server className="size-4 text-muted" />
-          <p className="text-ui text-muted">{t('mcp.empty')}</p>
-        </SettingsCard>
+        <SettingsEmpty
+          icon={<McpGlyph />}
+          title={t('mcp.emptyTitle')}
+          description={t('mcp.empty')}
+        />
       ) : (
         <ul aria-label={t('mcp.list')} className="flex flex-col gap-3">
           {servers.map((server) => (
@@ -611,6 +625,13 @@ export function McpSettings() {
           </DialogContent>
         )}
       </Dialog>
+      <McpMarketDialog
+        open={marketOpen}
+        onOpenChange={setMarketOpen}
+        onInstalled={(serverId) => {
+          void load().then(() => openDetail(serverId))
+        }}
+      />
 
       <Dialog
         open={detail !== undefined}

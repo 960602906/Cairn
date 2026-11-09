@@ -8,7 +8,7 @@
  * ⌘N / Ctrl+N 新对话；⌘K / Ctrl+K 搜索；⌘, / Ctrl+, 设置；Esc 关闭抽屉/返回对话。
  * 主题跟随设置（M2-01，`ThemeSync`）。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import { ActivityView } from './ActivityView.js'
@@ -19,6 +19,7 @@ import { AppRail } from './layout/AppRail.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
+import { WindowControls } from './layout/WindowControls.js'
 import { NewSession } from './NewSession.js'
 import { SessionSearch } from './SessionSearch.js'
 import type { SessionStore } from './session-store.js'
@@ -37,6 +38,14 @@ const NARROW_QUERY = '(max-width: 899px)'
 
 const SHELL = 'flex h-full min-w-0 bg-chrome text-fg'
 
+/** Windows / Linux 自绘按钮占住右上角，标题区右侧留出同样宽度。 */
+function windowControlsStyle(): CSSProperties | undefined {
+  const platform = window.cairn?.windowControls?.platform
+  return platform !== undefined && platform !== 'darwin'
+    ? ({ '--window-controls-inset': '150px' } as CSSProperties)
+    : undefined
+}
+
 function Workspace() {
   const { t } = useTranslation('session')
   const narrow = useMediaQuery(NARROW_QUERY)
@@ -54,6 +63,7 @@ function Workspace() {
   const onActivityOpen = useSessionStore((s) => s.onActivityOpen)
   const selectSession = useSessionStore((s) => s.selectSession)
   const activityBadge = useSessionStore((s) => s.activity?.counts?.approvals ?? 0)
+  const chromeStyle = windowControlsStyle()
   // 还没有会话时直接显示新对话表单；已选中的会话（即使不在列表中）仍显示会话
   const showNew = useSessionStore((s) => s.sessions.length === 0 && s.activeSessionId === undefined)
 
@@ -223,8 +233,9 @@ function Workspace() {
 
   if (settings) {
     return (
-      <div className={SHELL}>
+      <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
+        <WindowControls />
         {rail}
         <SettingsNav
           open
@@ -246,8 +257,9 @@ function Workspace() {
 
   if (activity) {
     return (
-      <div className={SHELL}>
+      <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
+        <WindowControls />
         {rail}
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
@@ -260,9 +272,10 @@ function Workspace() {
   }
 
   return (
-    <div className={SHELL}>
+    <div className={SHELL} style={chromeStyle}>
       {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
       <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
+      <WindowControls />
       {rail}
       {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">

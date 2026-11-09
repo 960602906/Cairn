@@ -11,7 +11,7 @@ import {
 const goodProbe: RendererProbe = {
   text: 'Cairn',
   nodeGlobals: [],
-  api: { on: 'function', ready: 'function', request: 'function' },
+  api: { on: 'function', ready: 'function', request: 'function', windowControls: 'object' },
   csp: "default-src 'self'; script-src 'self'",
   evalBlocked: true,
   ipcError: null,

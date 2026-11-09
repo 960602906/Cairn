@@ -10,6 +10,10 @@
   "language.zh-CN": "简体中文",
   "language.en-US": "English",
   "language.label": "语言",
+  "window.minimize": "最小化窗口",
+  "window.maximize": "最大化窗口",
+  "window.restore": "还原窗口",
+  "window.close": "关闭窗口",
   "error.title": "操作没有完成",
   "errorBanner.diagnostics": "导出诊断包"
 }

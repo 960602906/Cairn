@@ -28,6 +28,7 @@ import { translateError, type TFunction } from '@cairn/i18n'
 import { agentName } from './agents/model.js'
 import { useSessionStore } from './store-context.js'
 import { cn, IconButton } from './ui/index.js'
+import { TITLE_BAR_INSET } from './layout/WindowControls.js'
 
 function displayAgent(
   agent: AgentDefinitionRef,
@@ -416,7 +417,12 @@ export function ActivityView({
     approvals.length + running.length + completed.length + commands.length === 0
   return (
     <>
-      <div className="drag flex h-10 shrink-0 items-center gap-1.5 pl-3">{leading}</div>
+      <div
+        className="drag flex h-12 shrink-0 items-center gap-1.5 bg-chrome pl-3"
+        style={TITLE_BAR_INSET}
+      >
+        {leading}
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[860px] flex-col gap-5 px-7 py-6">
           <header className="flex items-start gap-3">

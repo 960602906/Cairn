@@ -17,7 +17,7 @@ import {
   DialogTitle,
   Switch,
 } from '../ui/index.js'
-import { SettingsCard } from './Field.js'
+import { SettingsCard, SettingsEmpty, ToggleRow } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
 
 function formatWhen(locale: string, ms: number): string {
@@ -53,58 +53,63 @@ function ProjectCard({ project }: { readonly project: ProjectSummary }) {
   return (
     <li>
       <SettingsCard aria-label={project.name}>
-        <input
-          aria-label={t('projects.name')}
-          className="h-9 w-full min-w-0 rounded-[9px] bg-paper px-2.5 text-[15px] font-medium text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)] outline-none focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)]"
-          value={name}
-          maxLength={PROJECT_NAME_MAX_LENGTH}
-          onChange={(event) => setName(event.target.value)}
-          onBlur={saveName}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur()
-          }}
-        />
-        <p
-          title={project.path}
-          className="truncate font-mono text-[12px] [font-variant-ligatures:none] text-muted"
-        >
-          {project.path}
-        </p>
-        <p className="text-note text-muted">
-          {t('projects.meta', {
-            count: project.sessionCount ?? 0,
-            when: formatWhen(i18n.language, when),
-          })}
-        </p>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[13px] text-fg">{t('projects.readAgentsMd')}</p>
-            <p className="mt-0.5 text-note text-muted">{t('projects.readAgentsMd.hint')}</p>
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-[10px] bg-sunk text-fg2 shadow-hair"
+          >
+            <FolderOpen className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <input
+              aria-label={t('projects.name')}
+              className="-mx-1.5 h-8 w-full min-w-0 rounded-[7px] bg-transparent px-1.5 text-[15px] font-semibold text-fg outline-none transition-colors hover:bg-paper focus:bg-paper focus:shadow-[inset_0_0_0_0.5px_var(--hair2),0_0_0_3px_var(--accent-soft)]"
+              value={name}
+              maxLength={PROJECT_NAME_MAX_LENGTH}
+              onChange={(event) => setName(event.target.value)}
+              onBlur={saveName}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur()
+              }}
+            />
+            <p
+              title={project.path}
+              className="mt-0.5 truncate font-mono text-[12px] [font-variant-ligatures:none] text-muted"
+            >
+              {project.path}
+            </p>
+            <p className="mt-1 text-note text-faint">
+              {t('projects.meta', {
+                count: project.sessionCount ?? 0,
+                when: formatWhen(i18n.language, when),
+              })}
+            </p>
           </div>
-          <Switch
-            checked={readAgentsMd}
-            aria-label={t('projects.readAgentsMd')}
-            onCheckedChange={(checked) =>
-              void updateProject(project.projectId, { readAgentsMd: checked })
-            }
-          />
         </div>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[13px] text-fg">{t('projects.skills')}</p>
-            <p className="mt-0.5 text-note text-muted">{t('projects.skills.hint')}</p>
-          </div>
-          <Switch
-            checked={skills}
-            aria-label={t('projects.skills')}
-            onCheckedChange={(checked) =>
-              void updateProject(project.projectId, { enableProjectSkills: checked })
-            }
-          />
+        <div className="flex flex-col gap-4 border-t-[0.5px] border-hair pt-4">
+          <ToggleRow title={t('projects.readAgentsMd')} hint={t('projects.readAgentsMd.hint')}>
+            <Switch
+              checked={readAgentsMd}
+              aria-label={t('projects.readAgentsMd')}
+              onCheckedChange={(checked) =>
+                void updateProject(project.projectId, { readAgentsMd: checked })
+              }
+            />
+          </ToggleRow>
+          <ToggleRow title={t('projects.skills')} hint={t('projects.skills.hint')}>
+            <Switch
+              checked={skills}
+              aria-label={t('projects.skills')}
+              onCheckedChange={(checked) =>
+                void updateProject(project.projectId, { enableProjectSkills: checked })
+              }
+            />
+          </ToggleRow>
         </div>
         <div>
           <Button
             variant="ghost"
+            size="sm"
             className="text-danger hover:bg-danger-soft hover:text-danger"
             onClick={() => setConfirming(true)}
           >
@@ -147,14 +152,16 @@ export function ProjectsSettings() {
   return (
     <>
       <SettingsHeader
+        icon={<FolderOpen />}
         title={t('section.projects.title')}
         description={t('section.projects.description')}
       />
       {projects.length === 0 ? (
-        <SettingsCard className="items-start">
-          <FolderOpen className="size-4 text-muted" />
-          <p className="text-ui text-muted">{t('projects.empty')}</p>
-        </SettingsCard>
+        <SettingsEmpty
+          icon={<FolderOpen />}
+          title={t('projects.emptyTitle')}
+          description={t('projects.empty')}
+        />
       ) : (
         <ul aria-label={t('projects.list')} className="flex flex-col gap-3">
           {projects.map((project) => (
