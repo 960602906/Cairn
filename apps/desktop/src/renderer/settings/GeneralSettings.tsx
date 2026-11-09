@@ -15,6 +15,7 @@ import { useSessionStore } from '../store-context.js'
 import { THEME_CHOICES, THEME_SWATCHES } from '../theme.js'
 import { Button, cn, SegmentedControl, Switch } from '../ui/index.js'
 import { Field, inputClass, SettingsGroup, ToggleRow } from './Field.js'
+import { SandboxSettings } from './SandboxSettings.js'
 import { SettingsHeader } from './SettingsPage.js'
 
 function ShellField() {
@@ -266,6 +267,7 @@ export function GeneralSettings() {
         </ToggleRow>
         <InstructionsField />
       </SettingsGroup>
+      <SandboxSettings />
       <SettingsGroup
         icon={<Download />}
         title={t('general.diagnostics.title')}

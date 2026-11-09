@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import { I18nextProvider } from 'react-i18next'
-import { RpcError, type Settings, type SettingsPatch } from '@cairn/protocol'
+import { RpcError, type SandboxStatus, type Settings, type SettingsPatch } from '@cairn/protocol'
 import type { MainApi } from '../api.js'
 import { App } from '../App.js'
 import { createSessionStore } from '../session-store.js'
@@ -18,9 +18,24 @@ afterEach(() => {
 
 type ShellResult = { detected: string; options: ('auto' | 'cmd')[] } | Error
 
+const SANDBOX_STATUS: SandboxStatus = {
+  platform: 'win32',
+  mechanism: 'restricted-token',
+  policy: { profile: 'workspace-write', network: 'none' },
+  unavailable: 'deny',
+  capability: {
+    available: true,
+    supported: true,
+    mechanism: 'restricted-token',
+    networkIsolated: false,
+    checks: { restrictedToken: true, lowIntegrity: true, jobObject: true, appContainer: false },
+  },
+}
+
 function setup(
   initial: Partial<Settings> = {},
   shell: ShellResult = { detected: 'bash', options: ['auto'] },
+  sandbox: SandboxStatus | 'error' = SANDBOX_STATUS,
 ) {
   let settings: Settings = { locale: 'zh-CN', providers: [], ...initial }
   const updates: SettingsPatch[] = []
@@ -42,6 +57,10 @@ function setup(
     if (method === 'settings.shell') {
       if (shell instanceof Error) throw shell
       return shell
+    }
+    if (method === 'sandbox.status') {
+      if (sandbox === 'error') throw new RpcError('sandbox.status_failed')
+      return sandbox
     }
     if (method === 'session.list') return { sessions: [] }
     if (method === 'project.list') return { projects: [] }
@@ -251,6 +270,72 @@ describe('SettingsPage', () => {
     expect(updates).toContainEqual({ sessionBrief: false })
     await userEvent.click(toggle)
     expect(updates).toContainEqual({ sessionBrief: true })
+  })
+
+  it('edits the sandbox profile, network and unavailable behavior', async () => {
+    const { updates } = setup({
+      sandboxProfile: 'workspace-write',
+      sandboxNetwork: 'none',
+      sandboxUnavailable: 'deny',
+    })
+    await openSettings()
+
+    const profile = await screen.findByRole('radiogroup', { name: '默认档位' })
+    await userEvent.click(within(profile).getByRole('radio', { name: '只读' }))
+    expect(updates).toContainEqual({ sandboxProfile: 'read-only' })
+    expect(screen.getByText(/工作区不可写/)).toBeTruthy()
+
+    const network = screen.getByRole('radiogroup', { name: '网络策略' })
+    await userEvent.click(within(network).getByRole('radio', { name: '公网' }))
+    expect(updates).toContainEqual({ sandboxNetwork: 'internet' })
+    expect(screen.getByText(/受限令牌机制不能隔离网络/)).toBeTruthy()
+
+    const unavailable = screen.getByRole('radiogroup', { name: '沙箱不可用时' })
+    await userEvent.click(within(unavailable).getByRole('radio', { name: '每次询问' }))
+    expect(updates).toContainEqual({ sandboxUnavailable: 'ask' })
+  })
+
+  it('shows the probed sandbox capability without claiming network isolation', async () => {
+    setup()
+    await openSettings()
+    const panel = await screen.findByTestId('sandbox-capability')
+    expect(panel.getAttribute('data-sandbox-available')).toBe('true')
+    expect(within(panel).getByText(/可用 · 受限令牌/)).toBeTruthy()
+    expect(within(panel).getByText(/网络：网络未隔离/)).toBeTruthy()
+    expect(within(panel).getByText('AppContainer')).toBeTruthy()
+  })
+
+  it('reports a failed capability probe and points at the diagnostic bundle', async () => {
+    setup({}, undefined, 'error')
+    await openSettings()
+    const panel = await screen.findByTestId('sandbox-capability')
+    expect(within(panel).getByText('无法读取沙箱能力，请导出诊断包。')).toBeTruthy()
+    expect(within(panel).getByText(/能力探测结果会写入诊断包/)).toBeTruthy()
+  })
+
+  it('shows an unavailable sandbox reason', async () => {
+    setup({}, undefined, {
+      ...SANDBOX_STATUS,
+      mechanism: 'appcontainer',
+      capability: {
+        ...SANDBOX_STATUS.capability,
+        available: false,
+        reason: 'sandbox.platform_unsupported',
+      },
+    })
+    await openSettings()
+    const panel = await screen.findByTestId('sandbox-capability')
+    expect(panel.getAttribute('data-sandbox-available')).toBe('false')
+    expect(within(panel).getByText('不可用 · 当前平台不支持')).toBeTruthy()
+    expect(within(panel).getByText('网络：网络未隔离')).toBeTruthy()
+    expect(screen.getByText('由 AppContainer 能力执行。')).toBeTruthy()
+  })
+
+  it('explains when the preferred mechanism fell back', async () => {
+    setup({}, undefined, { ...SANDBOX_STATUS, mechanism: 'appcontainer' })
+    await openSettings()
+    const panel = await screen.findByTestId('sandbox-capability')
+    expect(within(panel).getByText(/所选机制 AppContainer 不可用，已回退到 受限令牌/)).toBeTruthy()
   })
 
   it('keeps the category list visible in a narrow window', async () => {

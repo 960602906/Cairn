@@ -19,6 +19,7 @@ import type { ContentPart } from '@cairn/protocol'
 import { CodeCard } from './CodeCard.js'
 import { formatDuration } from './format.js'
 import { languageForPath } from './languages.js'
+import { SandboxBadge } from './SandboxBadge.js'
 import { TerminalCard, type TerminalCardProps } from './TerminalCard.js'
 import { parseReadFileOutput, parseRunCommandOutput } from './tool-results.js'
 import { cn, Shimmer, Spinner } from './ui/index.js'
@@ -106,6 +107,7 @@ export function terminalData(
       omittedChars: live?.omittedChars ?? 0,
       omittedAt: 0,
       running: true,
+      sandbox: tool.sandbox,
     }
   }
   if (tool?.status !== 'completed') return undefined
@@ -123,6 +125,7 @@ export function terminalData(
     durationMs: display.durationMs,
     shell: display.shell,
     cwd: display.cwd,
+    sandbox: display.sandbox ?? tool.sandbox,
   }
 }
 
@@ -219,6 +222,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
               label
             )}
           </span>
+          {terminal?.sandbox && <SandboxBadge execution={terminal.sandbox} compact />}
           <span
             className={cn(
               'tabular shrink-0 text-note',

@@ -69,7 +69,7 @@ export function networkCapabilities(network: SandboxNetwork): readonly string[] 
 export function appContainerName(identity: string): string {
   const safe = identity.toLowerCase().replace(/[^a-z0-9]/g, '')
   if (safe.length === 0) {
-    throw new SandboxError(SandboxErrorCode.SetupFailed, 'Empty sandbox identity.')
+    throw new SandboxError(SandboxErrorCode.AppContainerFailed, 'Empty sandbox identity.')
   }
   return `com.cairn.sandbox.${safe.slice(0, 50)}`
 }

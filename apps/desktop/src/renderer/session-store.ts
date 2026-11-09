@@ -71,6 +71,7 @@ import {
   type ProjectSummary,
   type ProviderConfig,
   type RunInspectResult,
+  type SandboxStatus,
   type SessionSummary,
   type Settings,
   type SettingsPatch,
@@ -326,6 +327,8 @@ export interface SessionActions {
   clearTrials(agentId: string): Promise<number | undefined>
   /** 获取诊断包导出前清单（M3-13）。 */
   diagnosticsSummary(input?: DiagnosticsExportInput): Promise<DiagnosticsSummary | undefined>
+  /** 命令沙箱的当前配置与能力（M5-05）。 */
+  sandboxStatus(): Promise<SandboxStatus | undefined>
   /** 导出脱敏诊断包 zip（M3-13）。 */
   exportDiagnostics(input?: DiagnosticsExportInput): Promise<DiagnosticsExportResult | undefined>
   /** 在文件夹中显示诊断包文件（M3-13）。 */
@@ -1118,6 +1121,8 @@ export function createSessionStore(api: MainApi): SessionStore {
         ),
 
       diagnosticsSummary: (input) => run(() => api.request('diagnostics.summary', input ?? {})),
+
+      sandboxStatus: () => run(() => api.request('sandbox.status', {})),
 
       exportDiagnostics: (input) => run(() => api.request('diagnostics.export', input ?? {})),
 

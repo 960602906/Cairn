@@ -81,6 +81,8 @@
   "approval.reason.permission.dangerous_command": "可能有风险的命令（如删除、推送、提权）",
   "approval.reason.permission.sensitive_path": "涉及敏感文件（如密钥、.env）",
   "approval.reason.checkpoint.failed": "检查点创建失败",
+  "approval.reason.sandbox.full_access_requires_approval": "这条命令将在沙箱外运行，必须逐次确认",
+  "approval.reason.sandbox.unavailable": "命令沙箱不可用，需要确认是否在沙箱外运行",
   "approval.reason.unknown": "需要审批",
   "tool.status.requested": "等待执行",
   "tool.status.running": "执行中",

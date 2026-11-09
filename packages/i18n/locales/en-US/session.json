@@ -81,6 +81,8 @@
   "approval.reason.permission.dangerous_command": "Potentially risky command (such as delete, push or elevation)",
   "approval.reason.permission.sensitive_path": "Touches a sensitive file (such as keys or .env)",
   "approval.reason.checkpoint.failed": "The checkpoint could not be created",
+  "approval.reason.sandbox.full_access_requires_approval": "This command will run outside the sandbox and must be confirmed each time",
+  "approval.reason.sandbox.unavailable": "The command sandbox is unavailable; confirm running without it",
   "approval.reason.unknown": "Approval needed",
   "tool.status.requested": "Pending",
   "tool.status.running": "Running",

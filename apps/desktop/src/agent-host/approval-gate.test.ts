@@ -100,4 +100,33 @@ describe('createHostApprovalGate', () => {
       targets: { command: 'x' },
     })
   })
+
+  it('passes the sandbox expectation and non-overridable flag to the renderer (M5-05)', async () => {
+    const sandbox = {
+      profile: 'read-only' as const,
+      network: 'none' as const,
+      mechanism: 'restricted-token' as const,
+      enforced: true,
+      networkIsolated: false,
+    }
+    const endpoint = {
+      request: vi.fn(async () => ({ decision: 'allow_once' as const })),
+      emit: vi.fn(),
+    }
+    const gate = createHostApprovalGate({
+      endpoint: endpoint as never,
+      onRule: vi.fn(),
+      attribution: () => attribution,
+    })
+    await gate.request(
+      request(new AbortController().signal, {
+        definition: { ...definition, sandbox } as ToolDefinition,
+        overridable: false,
+      }),
+    )
+    expect((endpoint.request.mock.calls[0] as unknown[])[1]).toMatchObject({
+      sandbox,
+      overridable: false,
+    })
+  })
 })

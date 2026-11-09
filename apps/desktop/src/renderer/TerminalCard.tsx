@@ -20,7 +20,9 @@ import {
   type AnsiSegment,
   type ToolOutputChunk,
 } from '@cairn/core'
+import type { SandboxExecution } from '@cairn/protocol'
 import { CopyButton } from './CopyButton.js'
+import { SandboxBadge } from './SandboxBadge.js'
 import { summarizeTests } from './test-summary.js'
 import { formatDuration } from './format.js'
 import { cn, Spinner } from './ui/index.js'
@@ -47,6 +49,8 @@ export interface TerminalCardProps {
   readonly durationMs?: number | undefined
   readonly shell?: string | undefined
   readonly cwd?: string | undefined
+  /** 命令实际使用的沙箱（M5-05）；旧数据没有时不显示。 */
+  readonly sandbox?: SandboxExecution | undefined
   readonly className?: string
 }
 
@@ -168,6 +172,7 @@ export function TerminalCard({
   durationMs,
   shell,
   cwd,
+  sandbox,
   className,
 }: TerminalCardProps) {
   const { t } = useTranslation('session')
@@ -201,7 +206,7 @@ export function TerminalCard({
     setScrollTop(el.scrollTop)
   }
 
-  const footer = Boolean(shell || cwd)
+  const footer = Boolean(sandbox || shell || cwd)
   const empty = rows.length === 0
 
   return (
@@ -259,8 +264,15 @@ export function TerminalCard({
           </div>
         )}
       </div>
-      {(tests || footer) && (
+      {(sandbox || tests || footer) && (
         <div className="flex h-8 items-center gap-3 border-t-[0.5px] border-term-line px-3.5 text-note text-term-dim">
+          {sandbox && (
+            <SandboxBadge
+              execution={sandbox}
+              compact
+              className={sandbox.enforced ? 'text-term-dim' : 'text-term-c1'}
+            />
+          )}
           {tests && (
             <span className="tabular flex shrink-0 items-center gap-2">
               <span className="text-term-ok">

@@ -21,7 +21,12 @@ import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../ev
 import { RunSnapshotInput } from '../inspect.js'
 import { ActivePlan, PromptMode } from '../plan.js'
 import { PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
-import { SandboxCapability, SandboxPolicy, SandboxUnavailableBehavior } from '../sandbox.js'
+import {
+  SandboxCapability,
+  SandboxExecution,
+  SandboxPolicy,
+  SandboxUnavailableBehavior,
+} from '../sandbox.js'
 import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { SkillCatalogEntry } from '../skills.js'
@@ -84,6 +89,10 @@ export const HostApprovalRequest = z.object({
     command: z.string().optional(),
   }),
   kind: z.enum(['tool', 'no_checkpoint']),
+  /** 这次调用的沙箱预期（M5-05）：审批界面显示档位、网络与实际机制。 */
+  sandbox: SandboxExecution.optional(),
+  /** 为 false 时不能通过“始终允许”取消这次询问（如沙箱升级/不可用回退）。 */
+  overridable: z.boolean().optional(),
   preview: z
     .object({
       summary: z.string(),

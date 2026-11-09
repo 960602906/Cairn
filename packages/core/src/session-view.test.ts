@@ -889,6 +889,53 @@ describe('reduceSession：工具调用（M1-05c）', () => {
     expect(v.tools['c1']?.display).toEqual(display)
   })
 
+  it('tool.started 的沙箱进入视图，完成时优先采用 display 的沙箱（M5-05）', () => {
+    const started = {
+      profile: 'workspace-write' as const,
+      network: 'none' as const,
+      mechanism: 'restricted-token' as const,
+      enforced: true,
+      networkIsolated: false,
+    }
+    const completed = { ...started, profile: 'read-only' as const }
+    const display = {
+      kind: 'terminal' as const,
+      exitCode: 0,
+      timedOut: false,
+      aborted: false,
+      durationMs: 3,
+      shell: 'bash',
+      cwd: '/w',
+      chunks: [],
+      omittedChars: 0,
+      sandbox: completed,
+    }
+    const { view: v0, ev } = midTurn()
+    const running = reduceSessionEvents(v0, [
+      ev('tool.requested', { toolCallId: 'c1', name: 'run_command', input: {} }, t),
+      ev('tool.started', { toolCallId: 'c1', sandbox: started }, t),
+    ])
+    expect(running.tools['c1']?.sandbox).toEqual(started)
+
+    const done = reduceSession(
+      running,
+      ev('tool.completed', { toolCallId: 'c1', output: text('x'), durationMs: 3, display }, t),
+    )
+    expect(done.tools['c1']?.sandbox).toEqual(completed)
+
+    const { sandbox: _sandbox, ...fallbackDisplay } = display
+    const noDisplaySandbox = reduceSessionEvents(v0, [
+      ev('tool.requested', { toolCallId: 'c2', name: 'run_command', input: {} }, t),
+      ev('tool.started', { toolCallId: 'c2', sandbox: started }, t),
+      ev(
+        'tool.completed',
+        { toolCallId: 'c2', output: text('x'), durationMs: 3, display: fallbackDisplay },
+        t,
+      ),
+    ])
+    expect(noDisplaySandbox.tools['c2']?.sandbox).toEqual(started)
+  })
+
   it('只用持久化事件与加上增量归约，结果相同', () => {
     const { view: v0, ev } = midTurn()
     const events = [

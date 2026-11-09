@@ -201,6 +201,49 @@ describe('ApprovalList', () => {
     expect(screen.getByRole('article')).toBeTruthy()
   })
 
+  it('shows the sandbox context and hides “always allow” when it is not overridable', async () => {
+    const { request, open } = setup([
+      approval('a1', {
+        sandbox: {
+          profile: 'danger-full-access',
+          network: 'none',
+          mechanism: 'none',
+          enforced: false,
+          networkIsolated: false,
+          reason: 'sandbox.full_access',
+        },
+        overridable: false,
+      }),
+    ])
+    await open()
+    const article = await screen.findByRole('article', { name: '需要审批：run_command' })
+    const panel = within(article).getByTestId('approval-sandbox')
+    expect(within(panel).getByTestId('sandbox-badge').textContent).toBe(
+      '未沙箱化：这条命令不使用沙箱',
+    )
+    expect(within(panel).getByText(/这条命令将在命令沙箱之外运行/)).toBeTruthy()
+    expect(
+      within(within(article).getByRole('list', { name: '选项' }))
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['1运行一次Enter', '3不运行，告诉 Agent 换个做法Esc'])
+
+    // 不可覆盖时数字键 2 不能保存“始终允许”的规则
+    await userEvent.keyboard('2')
+    expect(screen.getByRole('article')).toBeTruthy()
+    expect(request).not.toHaveBeenCalledWith(
+      'approval.resolve',
+      expect.objectContaining({ decision: 'allow_project' }),
+    )
+
+    await userEvent.click(option(article, /^运行一次$/))
+    expect(request).toHaveBeenCalledWith('approval.resolve', {
+      sessionId: 's1',
+      approvalId: 'a1',
+      decision: 'allow_once',
+    })
+  })
+
   describe('keyboard', () => {
     const decided = (
       request: ReturnType<typeof setup>['request'],

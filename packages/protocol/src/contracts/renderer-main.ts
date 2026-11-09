@@ -46,7 +46,12 @@ import {
   McpToolSummary,
 } from '../mcp.js'
 import { PermissionEffect, PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
-import { SandboxDefaultProfile, SandboxNetwork, SandboxUnavailableBehavior } from '../sandbox.js'
+import {
+  SandboxDefaultProfile,
+  SandboxNetwork,
+  SandboxStatus,
+  SandboxUnavailableBehavior,
+} from '../sandbox.js'
 import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
@@ -240,6 +245,11 @@ export const MainForRenderer = defineSide({
     'app.info': {
       params: z.object({}),
       result: AppInfo,
+    },
+    /** 命令沙箱的当前配置与能力（M5-05）：设置页与诊断入口使用。 */
+    'sandbox.status': {
+      params: z.object({}),
+      result: SandboxStatus,
     },
     'session.create': {
       /** `model` 省略时使用设置中的默认模型；给出时必须是已配置的模型。 */

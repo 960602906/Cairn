@@ -286,16 +286,16 @@ export function createNativeApi(koffi: {
       const derivedResult = Number(api.DeriveAppContainerSidFromAppContainerName(name, derived))
       if (derivedResult >>> 0 !== 0) {
         throw new SandboxError(
-          SandboxErrorCode.SetupFailed,
+          SandboxErrorCode.AppContainerFailed,
           `DeriveAppContainerSidFromAppContainerName failed (HRESULT 0x${(derivedResult >>> 0).toString(16)}).`,
         )
       }
       return derived[0] as Handle
     }
     if (result >>> 0 === 0 && out[0]) return out[0] as Handle
-    if (result >>> 0 === 0) fail(SandboxErrorCode.SetupFailed, 'CreateAppContainerProfile')
+    if (result >>> 0 === 0) fail(SandboxErrorCode.AppContainerFailed, 'CreateAppContainerProfile')
     throw new SandboxError(
-      SandboxErrorCode.SetupFailed,
+      SandboxErrorCode.AppContainerFailed,
       `CreateAppContainerProfile failed (HRESULT 0x${(result >>> 0).toString(16)}).`,
     )
   }
@@ -546,7 +546,7 @@ export function createNativeApi(koffi: {
       const result = Number(api.DeriveAppContainerSidFromAppContainerName(name, out))
       if (result >>> 0 !== 0) {
         throw new SandboxError(
-          SandboxErrorCode.SetupFailed,
+          SandboxErrorCode.AppContainerFailed,
           `DeriveAppContainerSidFromAppContainerName failed (HRESULT 0x${(result >>> 0).toString(16)}).`,
         )
       }

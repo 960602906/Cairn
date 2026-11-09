@@ -17,6 +17,7 @@ import type {
   DiagnosticsExportResult,
   DiagnosticsSummary,
   MainForRenderer,
+  SandboxStatus,
 } from '@cairn/protocol'
 
 type Requests = (typeof MainForRenderer)['requests']
@@ -41,6 +42,8 @@ export interface DiagnosticsDeps {
   ) => Promise<{ title: string; events: readonly Record<string, unknown>[] } | undefined>
   readonly getMainLogs: () => string | Promise<string>
   readonly getHostLogs: () => string | Promise<string>
+  /** 命令沙箱配置与能力探测（M5-05）；不包含项目内容、用户名或凭据。 */
+  readonly getSandbox?: () => SandboxStatus | undefined | Promise<SandboxStatus | undefined>
   readonly showSaveDialog?: (defaultName: string) => Promise<string | undefined>
   readonly showItemInFolder?: (filePath: string) => void
   readonly userHomeDir?: string
@@ -247,6 +250,7 @@ export class DiagnosticsService {
     const mcpServers = await this.deps.getMcpServers()
     const mainLogs = await this.deps.getMainLogs()
     const hostLogs = await this.deps.getHostLogs()
+    const sandbox = await this.deps.getSandbox?.()
 
     let sessionSummary: DiagnosticsSummary['session'] = undefined
     if (input?.sessionId) {
@@ -266,6 +270,7 @@ export class DiagnosticsService {
       'app-version.json',
       'build-info.json',
       'settings-summary.json',
+      ...(sandbox ? ['sandbox.json'] : []),
       'logs/main.log',
       'logs/host.log',
     ]
@@ -288,6 +293,7 @@ export class DiagnosticsService {
         mcpServersCount: mcpServers.length,
         hasAuxiliaryModel: Boolean(settings?.auxiliaryModel),
       },
+      ...(sandbox ? { sandbox } : {}),
       session: sessionSummary,
       exportItems,
     }
@@ -304,6 +310,7 @@ export class DiagnosticsService {
     const mcpServers = await this.deps.getMcpServers()
     const mainLogs = await this.deps.getMainLogs()
     const hostLogs = await this.deps.getHostLogs()
+    const sandbox = await this.deps.getSandbox?.()
 
     const versionInfo = {
       appVersion,
@@ -342,6 +349,7 @@ export class DiagnosticsService {
       'settings-summary.json': strToU8(clean(JSON.stringify(settingsSummary, null, 2))),
       'logs/main.log': strToU8(clean(mainLogs)),
       'logs/host.log': strToU8(clean(hostLogs)),
+      ...(sandbox ? { 'sandbox.json': strToU8(clean(JSON.stringify(sandbox, null, 2))) } : {}),
     }
 
     if (input?.sessionId) {

@@ -29,6 +29,7 @@ export function DiagnosticsExportDialog({
   sessionId,
 }: DiagnosticsExportDialogProps) {
   const { t } = useTranslation('settings')
+  const { t: tc } = useTranslation('common')
   const diagnosticsSummary = useSessionStore((s) => s.diagnosticsSummary)
   const exportDiagnostics = useSessionStore((s) => s.exportDiagnostics)
   const showDiagnosticsInFolder = useSessionStore((s) => s.showDiagnosticsInFolder)
@@ -159,6 +160,23 @@ export function DiagnosticsExportDialog({
                         })}
                       </span>
                     </li>
+                    {summary?.sandbox && (
+                      <li className="flex items-center gap-2">
+                        <span className="size-1.5 rounded-full bg-accent" />
+                        <span>
+                          {t('diagnostics.items.sandbox')}:{' '}
+                          {t('diagnostics.items.sandboxValue', {
+                            profile: tc(`sandbox.profile.${summary.sandbox.policy.profile}`),
+                            mechanism: tc(
+                              `sandbox.mechanism.${summary.sandbox.capability.mechanism}`,
+                            ),
+                            network: summary.sandbox.capability.networkIsolated
+                              ? tc(`sandbox.network.${summary.sandbox.policy.network}`)
+                              : tc('sandbox.network.notIsolated'),
+                          })}
+                        </span>
+                      </li>
+                    )}
                     {summary?.session && (
                       <li className="flex items-center gap-2">
                         <span className="size-1.5 rounded-full bg-accent" />

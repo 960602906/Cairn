@@ -7,6 +7,7 @@ import {
   type EventEnvelope,
   type RunInspectResult,
   type RpcChannel,
+  type SandboxStatus,
   type UnsequencedEvent,
 } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
@@ -29,6 +30,7 @@ import {
   type CommandCommands,
   type InspectCommands,
   type RendererGateway,
+  type SandboxCommands,
   type SessionCommands,
   type PermissionCommands,
   type ProviderCommands,
@@ -109,6 +111,7 @@ let skills: SkillCommands
 let agents: AgentCommands
 let trials: TrialCommands
 let diagnostics: DiagnosticsCommands
+let sandbox: SandboxCommands
 let inspect: InspectCommands
 let activity: ActivityCommands
 let backgroundCommands: CommandCommands
@@ -341,6 +344,22 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     export: vi.fn(() => ({ cancelled: true })),
     showInFolder: vi.fn(() => ({ shown: true })),
   }
+  const sandboxStatus: SandboxStatus = {
+    platform: 'win32',
+    mechanism: 'restricted-token',
+    policy: { profile: 'workspace-write', network: 'none' },
+    unavailable: 'deny',
+    capability: {
+      available: true,
+      supported: true,
+      mechanism: 'restricted-token',
+      networkIsolated: false,
+      checks: { restrictedToken: true, lowIntegrity: true, jobObject: true, appContainer: false },
+    },
+  }
+  sandbox = {
+    status: vi.fn(() => sandboxStatus),
+  }
   inspect = {
     inspect: vi.fn(() => INSPECT_RESULT),
   }
@@ -394,6 +413,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     agents,
     trials,
     diagnostics,
+    sandbox,
     inspect,
     activity,
     backgroundCommands,
@@ -933,6 +953,25 @@ describe('createRendererGateway: commands and lifecycle', () => {
     })
   })
 
+  it('delegates sandbox.status to the sandbox service (M5-05)', async () => {
+    const { client } = setup()
+    const status = await client.request('sandbox.status', {})
+    expect(status).toEqual({
+      platform: 'win32',
+      mechanism: 'restricted-token',
+      policy: { profile: 'workspace-write', network: 'none' },
+      unavailable: 'deny',
+      capability: {
+        available: true,
+        supported: true,
+        mechanism: 'restricted-token',
+        networkIsolated: false,
+        checks: { restrictedToken: true, lowIntegrity: true, jobObject: true, appContainer: false },
+      },
+    })
+    expect(sandbox.status).toHaveBeenCalledWith({})
+  })
+
   it('delegates provider requests to the provider service (M2-10)', async () => {
     const { client } = setup()
     const provider = {
@@ -1058,6 +1097,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       agents,
       trials,
       diagnostics,
+      sandbox,
       inspect: {} as unknown as InspectCommands,
       activity: { subscribe: () => () => undefined } as unknown as ActivityCommands,
       backgroundCommands,
