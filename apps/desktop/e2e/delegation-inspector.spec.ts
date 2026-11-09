@@ -5,7 +5,7 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, projectDir, runStatus, sendPrompt, setAgentOnSession } from './session.js'
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(
@@ -93,7 +93,7 @@ test('并行子运行的委派卡片与运行树', async ({ launch, userData }) 
       tools: { allow: ['read'] },
       permissions: 'read-only',
     })
-    await createAgent(window, {
+    const lead = await createAgent(window, {
       ...baseDraft,
       name: { 'zh-CN': '委派协调员', 'en-US': 'Delegation lead' },
       description: { 'zh-CN': '并行委派', 'en-US': 'Delegates in parallel' },
@@ -137,9 +137,7 @@ test('并行子运行的委派卡片与运行树', async ({ launch, userData }) 
     await configureModel(window, mock.baseUrl)
     const project = projectDir(userData)
     await createSession(window, project, '委派会话')
-    await window.getByRole('button', { name: /^Agent：/ }).click()
-    const agents = window.getByRole('listbox', { name: '选择 Agent' })
-    await agents.getByRole('option', { name: /委派协调员/ }).click()
+    await setAgentOnSession(window, '委派会话', { id: lead.agentId, version: lead.version })
 
     await sendPrompt(window, '并行检查')
     await expect(window.getByRole('article', { name: /委派任务：检查登录流程/ })).toBeVisible({

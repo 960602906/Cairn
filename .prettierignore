@@ -6,6 +6,8 @@ test-results/
 playwright-report/
 # 现有文档不经 Prettier 格式化，避免无关改动
 *.md
+# 本地设计过程稿与截图，不参与格式化
+design/
 # 预研项目自带 npm 锁文件
 spikes/**/package-lock.json
 # 录制文件与黄金文件由脚本生成，按原样比对

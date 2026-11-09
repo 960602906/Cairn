@@ -37,7 +37,6 @@ import type {
   RunState,
   SessionStatus,
 } from '@cairn/protocol'
-import { AgentPicker } from './agents/AgentPicker.js'
 import { formatCompactTokens } from './format.js'
 import { useSessionStore } from './store-context.js'
 import {
@@ -450,7 +449,7 @@ export function Composer({
         onClick={(e) => {
           if (e.target === e.currentTarget) textarea.current?.focus()
         }}
-        className="rounded-input bg-raise px-3.5 pt-3.5 pb-2.5 shadow-2"
+        className="rounded-[14px] border border-hair2 bg-raise px-3.5 pt-3 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60"
       >
         <textarea
           ref={textarea}
@@ -463,7 +462,6 @@ export function Composer({
           className="block max-h-[200px] min-h-6 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
         />
         <div className="mt-2 flex items-center gap-1">
-          <AgentPicker sessionId={sessionId} agent={agent} disabled={active} />
           <PermissionMenu />
           <button
             type="button"
@@ -494,7 +492,7 @@ export function Composer({
                 disabled={stopping || aborting}
                 onClick={() => void stop()}
                 className={cn(
-                  'flex size-8 shrink-0 items-center justify-center rounded-full bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-45',
+                  'flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-45',
                 )}
               >
                 <Square className="size-3 fill-current" />
@@ -505,7 +503,7 @@ export function Composer({
                 aria-label={t('input.send')}
                 title={t('input.send')}
                 disabled={!canSend}
-                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-25"
+                className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-25"
               >
                 <ArrowUp className="size-4" />
               </button>

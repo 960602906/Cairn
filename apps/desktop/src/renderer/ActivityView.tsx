@@ -25,7 +25,7 @@ import type {
   BackgroundCommand,
 } from '@cairn/protocol'
 import { translateError, type TFunction } from '@cairn/i18n'
-import { agentName } from './agents/AgentsPage.js'
+import { agentName } from './agents/model.js'
 import { useSessionStore } from './store-context.js'
 import { cn, IconButton } from './ui/index.js'
 

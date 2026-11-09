@@ -76,7 +76,7 @@ function restrictedImports(pkg, extra = {}) {
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/out/**', '**/coverage/**'],
+    ignores: ['**/node_modules/**', '**/dist/**', '**/out/**', '**/coverage/**', 'design/**/*.cjs'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

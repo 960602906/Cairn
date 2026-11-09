@@ -134,6 +134,19 @@ export function newDraft(template: ProviderTemplate = PROVIDER_TEMPLATES[0]!): P
   }
 }
 
+/**
+ * 新建草稿，并避开已存在的显示名：第二个 DeepSeek 默认叫“DeepSeek 2”，
+ * 列表里不会出现两行一模一样的名字。
+ */
+export function newDraftFor(providers: readonly ProviderConfig[]): ProviderDraft {
+  const base = PROVIDER_TEMPLATES[0]!
+  const taken = new Set(providers.map((provider) => provider.displayName.trim()))
+  let name = base.displayName
+  let n = 2
+  while (taken.has(name)) name = `${base.displayName} ${n++}`
+  return { ...newDraft(base), displayName: name }
+}
+
 /** 草稿中需要改正的字段。 */
 export interface DraftProblems {
   readonly displayName?: true

@@ -66,7 +66,7 @@ describe('createSettingsService', () => {
     ).toBe('read-only')
   })
 
-  it('saves the theme; omitted when missing or invalid (M2-01)', () => {
+  it('saves the theme, migrates legacy values, and ignores invalid ones', () => {
     writeFileSync(file, JSON.stringify({ theme: 'sepia' }))
     const settings = createSettingsService({
       storage: createMemoryStorage(),
@@ -74,19 +74,45 @@ describe('createSettingsService', () => {
       systemLocales: () => ['zh-CN'],
     })
     expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
-    expect(settings.update({ theme: 'dark' })).toEqual({
+    expect(settings.update({ theme: 'obsidian' })).toEqual({
       locale: 'zh-CN',
       providers: [],
-      theme: 'dark',
+      theme: 'obsidian',
     })
-    expect(read()).toEqual({ theme: 'dark' })
+    expect(read()).toEqual({ theme: 'obsidian' })
     expect(
       createSettingsService({
         storage: createMemoryStorage(),
         file,
         systemLocales: () => ['zh-CN'],
       }).get().theme,
-    ).toBe('dark')
+    ).toBe('obsidian')
+
+    // 旧版本保存的浅色 / 深色 / 石墨分别归到苔原 / 黑曜 / 黑曜
+    writeFileSync(file, JSON.stringify({ theme: 'light' }))
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).get().theme,
+    ).toBe('tundra')
+    writeFileSync(file, JSON.stringify({ theme: 'dark' }))
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).get().theme,
+    ).toBe('obsidian')
+    writeFileSync(file, JSON.stringify({ theme: 'graphite' }))
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).get().theme,
+    ).toBe('obsidian')
   })
 
   it('saves the shell preference; omitted when missing or invalid (M2-09)', () => {

@@ -19,7 +19,7 @@ import type {
   RunUsage,
 } from '@cairn/protocol'
 import { isAgentDraftRef } from '@cairn/protocol'
-import { agentName } from './agents/AgentsPage.js'
+import { agentName } from './agents/model.js'
 import { formatCompactTokens as compactTokens, formatDuration } from './format.js'
 import { inspectionKey } from './session-store.js'
 import { useSessionStore as useStore } from './store-context.js'

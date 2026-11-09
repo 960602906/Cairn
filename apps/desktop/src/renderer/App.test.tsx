@@ -101,15 +101,6 @@ describe('App', () => {
     await waitFor(() => expect(screen.queryByRole('navigation', { name: '设置分类' })).toBeNull())
   })
 
-  it('opens the Agents page and starts a new chat from there', async () => {
-    render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Agents' }))
-    expect(await screen.findByRole('heading', { name: 'Agents' })).toBeDefined()
-
-    fireEvent.keyDown(window, { key: 'n', ctrlKey: true })
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agents' })).toBeNull())
-  })
-
   it('opens the activity center and returns to a new chat', async () => {
     const { store } = makeActivityStore()
     render(<App i18n={createI18n('zh-CN')} store={store} />)

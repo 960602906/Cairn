@@ -49,7 +49,10 @@ test('新会话第一轮结束后自动得到标题', async ({ launch, userData 
     const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     await configure(window, mock.baseUrl)
 
-    await window.getByRole('button', { name: '新对话' }).click()
+    await window
+      .getByRole('navigation', { name: '全局导航' })
+      .getByRole('button', { name: '新对话' })
+      .click()
     await window.getByLabel('项目目录').fill(projectDir(userData))
     await window.getByRole('button', { name: '创建' }).click()
     await expect(window.getByRole('heading', { level: 2, name: '未命名会话' })).toBeVisible()
@@ -62,7 +65,7 @@ test('新会话第一轮结束后自动得到标题', async ({ launch, userData 
     await expect(runStatus(window)).toHaveText('空闲')
     await expect(window.getByRole('heading', { level: 2, name: '整理日志' })).toBeVisible()
     await expect(
-      window.getByRole('navigation').getByRole('button', { name: '整理日志' }),
+      window.getByRole('navigation', { name: '会话' }).getByRole('button', { name: '整理日志' }),
     ).toBeVisible()
 
     const titled = mock.requests.filter((request) =>

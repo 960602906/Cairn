@@ -50,7 +50,7 @@ import {
   formatTokens,
   initials,
   logoColor,
-  newDraft,
+  newDraftFor,
   problemsOf,
   profileFrom,
   slugId,
@@ -658,7 +658,10 @@ function ProviderEditor({
   const nameId = useId()
   const urlId = useId()
 
-  const initial = useMemo(() => (saved ? draftOf(saved) : newDraft()), [saved])
+  const initial = useMemo(
+    () => (saved ? draftOf(saved) : newDraftFor(providers)),
+    [saved, providers],
+  )
   const [draft, setDraft] = useState<ProviderDraft>(initial)
   const [secret, setSecret] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
@@ -815,7 +818,15 @@ function ProviderEditor({
 
   const remove = async () => {
     if (!saved) return
-    const result = await updateSettings({ providers: providers.filter((p) => p.id !== saved.id) })
+    const remaining = providers.filter((p) => p.id !== saved.id)
+    // 删除供应商时一并清掉指向它的默认模型与辅助模型，避免设置里留下失效引用。
+    const clearsDefault = settings?.defaultModel?.providerId === saved.id
+    const clearsAuxiliary = settings?.auxiliaryModel?.providerId === saved.id
+    const result = await updateSettings({
+      providers: remaining,
+      ...(clearsDefault ? { defaultModel: null } : {}),
+      ...(clearsAuxiliary ? { auxiliaryModel: null } : {}),
+    })
     if (result) onSaved(undefined)
   }
 

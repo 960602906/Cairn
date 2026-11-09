@@ -1,11 +1,39 @@
-/** Cairn 品牌图形：三块叠石，来源与应用图标一致（build/icons/glyph.svg）。 */
+/**
+ * Cairn 品牌图形（第 8 轮识别系统）。
+ *
+ * 「环石 C」：一圈开口的环，缺口里放一颗小石。既是字母 C，也像石标。
+ * 产品内与应用图标使用同一枚记号，避免两个符号打架。
+ */
+import type { ReactNode } from 'react'
 import { cn } from './cn.js'
 
-const STONES = [
-  'M12 75.5C12 67.5 29 62.5 50 62.5S88 66.5 88 74.5C88 82.5 71 87.5 50 87.5S12 83.5 12 75.5Z',
-  'M24 51.5C24 44.5 35.5 39.5 50 39.5S76 43.5 76 50.5C76 57 64.5 60.5 50 60.5S24 58 24 51.5Z',
-  'M38 29C38 22.5 44 18 52 18S66 22 66 28C66 34 60 37.5 52 37.5S38 35 38 29Z',
-] as const
+/** 24×24 栅格的环石 C：开口朝右，缺口里一颗石。 */
+const HALO_C = 'M17.2 7.4A6.8 6.8 0 1 0 17.2 16.6'
+
+function Svg({
+  size,
+  label,
+  className,
+  children,
+}: {
+  readonly size: number
+  readonly label?: string
+  readonly className?: string | undefined
+  readonly children: ReactNode
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      focusable="false"
+      className={cn('shrink-0', className)}
+      {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}
+    >
+      {children}
+    </svg>
+  )
+}
 
 export function CairnMark({
   size = 24,
@@ -18,21 +46,27 @@ export function CairnMark({
   readonly className?: string
 }) {
   return (
-    <svg
-      viewBox="0 0 100 100"
-      width={size}
-      height={size}
-      focusable="false"
-      className={cn('shrink-0 fill-current', className)}
-      {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}
-    >
-      <path d={STONES[0]} />
-      <g transform="rotate(-5 50 51)">
-        <path d={STONES[1]} />
-      </g>
-      <g transform="rotate(7 52 28)">
-        <path d={STONES[2]} />
-      </g>
-    </svg>
+    <Svg size={size} className={className} {...(label === undefined ? {} : { label })}>
+      <path d={HALO_C} fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
+      <circle cx={19.6} cy={12} r={1.9} fill="currentColor" />
+    </Svg>
+  )
+}
+
+/** 应用图标：环石 C。 */
+export function CairnAppMark({
+  size = 24,
+  label,
+  className,
+}: {
+  readonly size?: number
+  readonly label?: string
+  readonly className?: string
+}) {
+  return (
+    <Svg size={size} className={className} {...(label === undefined ? {} : { label })}>
+      <path d={HALO_C} fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
+      <circle cx={19.6} cy={12} r={1.9} fill="currentColor" />
+    </Svg>
   )
 }

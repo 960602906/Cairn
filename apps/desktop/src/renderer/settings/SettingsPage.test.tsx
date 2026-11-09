@@ -99,16 +99,16 @@ describe('SettingsPage', () => {
   })
 
   it('saves the theme and the language', async () => {
-    const { updates, i18n } = setup({ theme: 'dark' })
+    const { updates, i18n } = setup({ theme: 'obsidian' })
     await openSettings()
     const theme = screen.getByRole('radiogroup', { name: '主题' })
     await waitFor(() =>
-      expect(within(theme).getByRole('radio', { name: '深色' }).getAttribute('aria-checked')).toBe(
+      expect(within(theme).getByRole('radio', { name: /^黑曜/ }).getAttribute('aria-checked')).toBe(
         'true',
       ),
     )
-    await userEvent.click(within(theme).getByRole('radio', { name: '浅色' }))
-    expect(updates).toContainEqual({ theme: 'light' })
+    await userEvent.click(within(theme).getByRole('radio', { name: /^苔原/ }))
+    expect(updates).toContainEqual({ theme: 'tundra' })
 
     const language = screen.getByRole('radiogroup', { name: '界面语言' })
     await userEvent.click(within(language).getByRole('radio', { name: 'English' }))
@@ -186,42 +186,29 @@ describe('SettingsPage', () => {
     expect(updates).toContainEqual({ sessionBrief: true })
   })
 
-  it('collapses the category list in a narrow window', async () => {
+  it('keeps the category list visible in a narrow window', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('max-width'),
       addEventListener: () => {},
       removeEventListener: () => {},
     }))
     setup()
-    await userEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))
     await openSettings()
-    expect(screen.queryByRole('navigation', { name: '设置分类' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: '展开侧栏' }))
     const nav = screen.getByRole('navigation', { name: '设置分类' })
-    await userEvent.click(within(nav).getByRole('button', { name: '通用与外观' }))
-    expect(screen.queryByRole('navigation', { name: '设置分类' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: '展开侧栏' }))
-    await userEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
-    expect(screen.queryByRole('navigation', { name: '设置分类' })).toBeNull()
+    expect(nav).toBeTruthy()
+    expect(within(nav).getByRole('button', { name: '通用与外观' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '收起侧栏' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '展开侧栏' })).toBeNull()
   })
 
-  it('animates the category list while it opens and collapses', async () => {
+  it('keeps the category list static when it cannot collapse', async () => {
     setup()
     await openSettings()
     const nav = screen.getByRole('navigation', { name: '设置分类' })
     const aside = nav.closest('aside')!
-    expect(aside.className).toContain('transition-[width,opacity]')
-    expect(aside.className).toContain('duration-200')
     expect(aside.className).toContain('w-[252px]')
     expect(aside.className).toContain('opacity-100')
     expect(aside.getAttribute('aria-hidden')).toBe('false')
-
-    await userEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
-    expect(aside.className).toContain('w-0')
-    expect(aside.className).toContain('opacity-0')
-    expect(aside.className).toContain('pointer-events-none')
-    expect(aside.firstElementChild?.className).toContain('-translate-x-3')
-    expect(aside.getAttribute('aria-hidden')).toBe('true')
-    expect(aside.hasAttribute('inert')).toBe(true)
+    expect(screen.queryByRole('button', { name: '收起侧栏' })).toBeNull()
   })
 })

@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  agentPickerShortcut,
-  isAgentPickerKey,
   isMacPlatform,
   isNewChatKey,
   isSearchKey,
@@ -18,43 +16,6 @@ const key = (init: Partial<KeyboardEvent>) => ({
   shiftKey: false,
   altKey: false,
   ...init,
-})
-
-describe('agentPickerShortcut', () => {
-  it('returns ⌘. on mac and Ctrl . on windows/other', () => {
-    expect(agentPickerShortcut('MacIntel')).toBe('⌘.')
-    expect(agentPickerShortcut('Win32')).toBe('Ctrl .')
-    expect(agentPickerShortcut('Linux')).toBe('Ctrl .')
-  })
-})
-
-describe('isAgentPickerKey', () => {
-  it('detects ⌘. on Mac and Ctrl+. on Windows', () => {
-    expect(
-      isAgentPickerKey(
-        { key: '.', ctrlKey: false, metaKey: true, shiftKey: false, altKey: false },
-        'MacIntel',
-      ),
-    ).toBe(true)
-    expect(
-      isAgentPickerKey(
-        { key: '.', ctrlKey: true, metaKey: false, shiftKey: false, altKey: false },
-        'Win32',
-      ),
-    ).toBe(true)
-    expect(
-      isAgentPickerKey(
-        { key: 'k', ctrlKey: true, metaKey: false, shiftKey: false, altKey: false },
-        'Win32',
-      ),
-    ).toBe(false)
-    expect(
-      isAgentPickerKey(
-        { key: '.', ctrlKey: true, metaKey: false, shiftKey: true, altKey: false },
-        'Win32',
-      ),
-    ).toBe(false)
-  })
 })
 
 describe('shortcuts', () => {

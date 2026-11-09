@@ -19,11 +19,15 @@ function fakeMedia(matches: boolean) {
 }
 
 describe('resolveTheme', () => {
-  it('uses the system preference only for system', () => {
-    expect(resolveTheme('system', true)).toBe('dark')
-    expect(resolveTheme('system', false)).toBe('light')
-    expect(resolveTheme('light', true)).toBe('light')
-    expect(resolveTheme('dark', false)).toBe('dark')
+  it('maps system and the legacy values onto the four palettes', () => {
+    expect(resolveTheme('system', true)).toBe('slate')
+    expect(resolveTheme('system', false)).toBe('paper')
+    expect(resolveTheme('light', true)).toBe('tundra')
+    expect(resolveTheme('dark', false)).toBe('obsidian')
+    expect(resolveTheme('graphite', false)).toBe('obsidian')
+    expect(resolveTheme('obsidian', false)).toBe('obsidian')
+    expect(resolveTheme('paper', true)).toBe('paper')
+    expect(resolveTheme('slate', false)).toBe('slate')
   })
 })
 
@@ -32,10 +36,10 @@ describe('applyTheme', () => {
     const root = { setAttribute: vi.fn() }
     const matchMedia = vi.fn()
     const onResolved = vi.fn()
-    applyTheme('dark', { root, matchMedia }, onResolved)()
-    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'dark')
+    applyTheme('obsidian', { root, matchMedia }, onResolved)()
+    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'obsidian')
     expect(matchMedia).not.toHaveBeenCalled()
-    expect(onResolved).toHaveBeenCalledWith('dark')
+    expect(onResolved).toHaveBeenCalledWith('obsidian', true)
   })
 
   it('follows system changes until disposed', () => {
@@ -45,16 +49,16 @@ describe('applyTheme', () => {
       root,
       matchMedia: () => fake.media as unknown as MediaQueryList,
     })
-    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'light')
+    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'paper')
     fake.set(true)
-    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark')
+    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'slate')
     dispose()
     expect(fake.listeners.size).toBe(0)
   })
 
-  it('treats system as light without matchMedia', () => {
+  it('treats system as the light paper palette without matchMedia', () => {
     const root = { setAttribute: vi.fn() }
     applyTheme('system', { root })()
-    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'light')
+    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'paper')
   })
 })

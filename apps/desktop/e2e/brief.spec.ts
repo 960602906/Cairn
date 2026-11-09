@@ -50,7 +50,10 @@ test('抽屉显示会话要点，编辑后的文字不会被自动更新盖掉',
     const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     await configure(window, mock.baseUrl)
 
-    await window.getByRole('button', { name: '新对话' }).click()
+    await window
+      .getByRole('navigation', { name: '全局导航' })
+      .getByRole('button', { name: '新对话' })
+      .click()
     await window.getByLabel('项目目录').fill(projectDir(userData))
     await window.getByLabel('标题（可选）').fill('要点')
     await window.getByRole('button', { name: '创建' }).click()

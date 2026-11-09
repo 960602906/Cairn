@@ -77,7 +77,7 @@ describe('searchSessions', () => {
 describe('SessionSearch', () => {
   it('opens from the sidebar, filters and opens a session with the keyboard', async () => {
     const { store } = setup()
-    await userEvent.click(await screen.findByRole('button', { name: /^搜索/ }))
+    await userEvent.click(await screen.findByRole('button', { name: '搜索对话' }))
     const dialog = await screen.findByRole('dialog', { name: '搜索对话' })
     const options = () => within(dialog).getAllByRole('option')
     await waitFor(() => expect(options()).toHaveLength(3))

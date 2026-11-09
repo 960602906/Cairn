@@ -135,7 +135,11 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
 
   const storedTheme = (): Theme | undefined => {
     const parsed = Theme.safeParse(stored['theme'])
-    return parsed.success ? parsed.data : undefined
+    if (!parsed.success) return undefined
+    // 旧版本的浅色 / 深色（以及旧“石墨”）分别归到苔原 / 黑曜
+    if (parsed.data === 'light') return 'tundra'
+    if (parsed.data === 'dark' || parsed.data === 'graphite') return 'obsidian'
+    return parsed.data
   }
 
   const storedShell = (): ShellPreference | undefined => {

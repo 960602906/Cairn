@@ -8,16 +8,15 @@
  */
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download } from 'lucide-react'
+import { Check, Download, Monitor } from 'lucide-react'
 import { DiagnosticsExportDialog } from './DiagnosticsExportDialog.js'
 import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
-import { INSTRUCTIONS_MAX_LENGTH, type ShellPreference, type Theme } from '@cairn/protocol'
+import { INSTRUCTIONS_MAX_LENGTH, type ShellPreference } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
+import { THEME_CHOICES, THEME_SWATCHES } from '../theme.js'
 import { Button, cn, SegmentedControl, Switch } from '../ui/index.js'
 import { Field, inputClass, SettingsCard } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
-
-const THEMES: readonly Theme[] = ['system', 'light', 'dark']
 
 function ShellField() {
   const { t } = useTranslation('settings')
@@ -139,7 +138,7 @@ export function GeneralSettings() {
   const [exportOpen, setExportOpen] = useState(false)
   const { t, i18n } = useTranslation('settings')
   const { t: tc } = useTranslation()
-  const theme = useSessionStore((s) => s.settings?.theme ?? 'system')
+  const theme = useSessionStore((s) => s.settings?.theme ?? 'slate')
   const sessionBrief = useSessionStore((s) => s.settings?.sessionBrief !== false)
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const loadSettings = useSessionStore((s) => s.loadSettings)
@@ -162,12 +161,78 @@ export function GeneralSettings() {
       />
       <SettingsCard>
         <Field label={t('general.theme.label')}>
-          <SegmentedControl
-            label={t('general.theme.label')}
-            value={theme}
-            options={THEMES.map((value) => ({ value, label: t(`general.theme.${value}`) }))}
-            onChange={(next) => void updateSettings({ theme: next })}
-          />
+          <div
+            role="radiogroup"
+            aria-label={t('general.theme.label')}
+            className="grid grid-cols-1 gap-2 min-[980px]:grid-cols-2"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={theme === 'system'}
+              onClick={() => void updateSettings({ theme: 'system' })}
+              className={cn(
+                'flex items-center gap-3 rounded-card bg-paper px-3 py-2.5 text-left shadow-hair transition-colors min-[980px]:col-span-2',
+                theme === 'system' && 'bg-accent-soft shadow-[0_0_0_1.5px_var(--accent)]',
+              )}
+            >
+              <span className="grid size-9 shrink-0 place-items-center rounded-item bg-sunk2 text-muted">
+                <Monitor className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-ui font-medium text-fg">
+                  {t('general.theme.system')}
+                </span>
+                <span className="block text-note text-muted">{t('general.theme.system.hint')}</span>
+              </span>
+              {theme === 'system' && <Check className="size-4 shrink-0 text-accent" />}
+            </button>
+            {THEME_CHOICES.map(({ value, label }, index) => {
+              const swatch = THEME_SWATCHES[value]
+              const active = theme === value
+              // 选项是奇数个时，最后一张占满整行，避免留下半格空位。
+              const wide = THEME_CHOICES.length % 2 === 1 && index === THEME_CHOICES.length - 1
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => void updateSettings({ theme: value })}
+                  className={cn(
+                    'flex items-center gap-3 rounded-card bg-paper px-3 py-2.5 text-left shadow-hair transition-colors hover:bg-hover',
+                    active &&
+                      'bg-accent-soft shadow-[0_0_0_1.5px_var(--accent)] hover:bg-accent-soft',
+                    wide && 'min-[980px]:col-span-2',
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="flex size-10 shrink-0 flex-col justify-end gap-1 rounded-[8px] p-1.5 shadow-hair"
+                    style={{ background: swatch.canvas }}
+                  >
+                    <span
+                      className="h-1.5 w-full rounded-[2px]"
+                      style={{ background: swatch.paper }}
+                    />
+                    <span
+                      className="h-1.5 w-2/3 rounded-[2px]"
+                      style={{ background: swatch.accent }}
+                    />
+                    <span
+                      className="h-1.5 w-1/2 rounded-[2px]"
+                      style={{ background: swatch.paper, opacity: 0.55 }}
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-ui font-medium text-fg">{t(label)}</span>
+                    <span className="block text-note text-muted">{t(`${label}.hint`)}</span>
+                  </span>
+                  {active && <Check className="size-4 shrink-0 text-accent" />}
+                </button>
+              )
+            })}
+          </div>
         </Field>
         <Field label={t('general.language.label')}>
           <SegmentedControl

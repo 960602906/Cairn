@@ -6,13 +6,15 @@ import { CairnMark } from './CairnMark.js'
 afterEach(cleanup)
 
 describe('CairnMark', () => {
-  it('renders three stones at the requested size and follows the current colour', () => {
+  it('renders the halo C at the requested size', () => {
     const { container } = render(<CairnMark size={48} className="text-accent" />)
     const svg = container.querySelector('svg')!
     expect(svg.getAttribute('width')).toBe('48')
     expect(svg.getAttribute('height')).toBe('48')
-    expect(svg.querySelectorAll('path')).toHaveLength(3)
-    expect(svg.classList.contains('fill-current')).toBe(true)
+    expect(svg.getAttribute('viewBox')).toBe('0 0 24 24')
+    expect(svg.querySelectorAll('path')).toHaveLength(1)
+    expect(svg.querySelectorAll('circle')).toHaveLength(1)
+    expect(svg.querySelector('path')!.getAttribute('stroke')).toBe('currentColor')
     expect(svg.classList.contains('text-accent')).toBe(true)
   })
 

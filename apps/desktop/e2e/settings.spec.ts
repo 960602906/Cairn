@@ -14,9 +14,9 @@ test('设置页：主题、默认 Shell 与全局指令', async ({ launch, userD
 
   await window
     .getByRole('radiogroup', { name: '主题' })
-    .getByRole('radio', { name: '深色' })
+    .getByRole('radio', { name: /^板岩/ })
     .click()
-  await expect(window.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(window.locator('html')).toHaveAttribute('data-theme', 'slate')
 
   if (process.platform === 'win32') {
     await expect(
@@ -42,5 +42,5 @@ test('设置页：主题、默认 Shell 与全局指令', async ({ launch, userD
     string,
     unknown
   >
-  expect(saved).toMatchObject({ theme: 'dark', instructions: '回复用中文' })
+  expect(saved).toMatchObject({ theme: 'slate', instructions: '回复用中文' })
 })

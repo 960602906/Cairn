@@ -15,7 +15,14 @@ import { fileURLToPath } from 'node:url'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { chatRequests, createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import {
+  chatRequests,
+  createSession,
+  projectDir,
+  runStatus,
+  sendPrompt,
+  setAgentOnSession,
+} from './session.js'
 
 const INSTRUCTIONS = 'You are the M3 full-flow agent. Keep answers short.'
 const REPLY = 'm3 flow reply'
@@ -138,18 +145,23 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
     await request(window, 'agent.saveDraft', {
       definition: { ...current.draft, id: duplicated.agentId, instructions: INSTRUCTIONS },
     })
-    await request(window, 'agent.publish', { agentId: duplicated.agentId })
+    const published = await request<{ published?: { version: number } }>(window, 'agent.publish', {
+      agentId: duplicated.agentId,
+    })
 
     const project = projectDir(userData)
     await createSession(window, project, 'M3 全流程')
 
-    // 输入框的 Agent 选择器：选中刚发布的 Agent
+    // Agent 选择器已移除；直接给会话指定刚发布的 Agent
     await window.reload()
-    await window.getByRole('navigation').getByRole('button', { name: 'M3 全流程' }).click()
-    await window.getByRole('button', { name: /^Agent：/ }).click()
-    const listbox = window.getByRole('listbox', { name: '选择 Agent' })
-    await expect(listbox).toBeVisible()
-    await listbox.getByRole('option', { name: /M3 全流程助手/ }).click()
+    await window
+      .getByRole('navigation', { name: '会话' })
+      .getByRole('button', { name: 'M3 全流程' })
+      .click()
+    await setAgentOnSession(window, 'M3 全流程', {
+      id: duplicated.agentId,
+      version: published.published?.version ?? 1,
+    })
 
     // 第一轮：写文件 → 审批 → 撤销本轮
     await sendPrompt(window, '写一个文件')

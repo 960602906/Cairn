@@ -108,8 +108,24 @@ export const INSTRUCTIONS_MAX_LENGTH = 10_000
 export const Locale = z.enum(['zh-CN', 'en-US'])
 export type Locale = z.infer<typeof Locale>
 
-/** 界面主题（M2-01，视觉规范 §3）：跟随系统、浅色或深色。 */
-export const Theme = z.enum(['system', 'light', 'dark'])
+/**
+ * 界面主题（视觉规范 §3）。五套内置配色 + 跟随系统：
+ * - `bluestone` 青石（深色，青绿，默认）
+ * - `obsidian` 黑曜（深色，信号橙）、`slate` 板岩（深色，鸢尾）
+ * - `paper` 纸面（浅色，酒红）、`tundra` 苔原（浅色，苔绿）
+ * 旧版本保存的 `light` / `dark` / `graphite` 仍然可读，读取时分别归到 `tundra` / `obsidian` / `obsidian`。
+ */
+export const Theme = z.enum([
+  'system',
+  'bluestone',
+  'obsidian',
+  'tundra',
+  'paper',
+  'slate',
+  'light',
+  'dark',
+  'graphite',
+])
 export type Theme = z.infer<typeof Theme>
 
 /**

@@ -41,16 +41,3 @@ export function isSearchKey(
   const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
   return mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k'
 }
-
-/** 输入框中打开 Agent 选择器的快捷键提示（M3-12）。 */
-export const agentPickerShortcut = (platform?: string): string =>
-  isMacPlatform(platform) ? '⌘.' : 'Ctrl .'
-
-/** 按键是否为打开 Agent 选择器（⌘. / Ctrl+.）。 */
-export function isAgentPickerKey(
-  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
-  platform?: string,
-): boolean {
-  const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
-  return mod && !event.shiftKey && !event.altKey && event.key === '.'
-}

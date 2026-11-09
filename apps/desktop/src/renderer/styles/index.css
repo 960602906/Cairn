@@ -7,8 +7,19 @@
 @import '@fontsource/jetbrains-mono/latin-600.css';
 @import './tokens.css';
 
-/* 深色变体跟随 <html data-theme="dark">，不直接跟随系统（“跟随系统”由 theme.ts 解析） */
-@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+/* 深色变体跟随所有深色主题（黑曜 / 板岩），不直接跟随系统（“跟随系统”由 theme.ts 解析） */
+@custom-variant dark (&:where(
+  [data-theme='bluestone'],
+  [data-theme='bluestone'] *,
+  [data-theme='obsidian'],
+  [data-theme='obsidian'] *,
+  [data-theme='graphite'],
+  [data-theme='graphite'] *,
+  [data-theme='slate'],
+  [data-theme='slate'] *,
+  [data-theme='dark'],
+  [data-theme='dark'] *
+));
 
 @theme inline {
   /* 只用令牌里的颜色：去掉 Tailwind 自带调色板 */
@@ -36,6 +47,7 @@
   --color-ink-fg: var(--ink-fg);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-brand-accent: var(--brand-accent);
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
   --color-warn: var(--warn);
@@ -75,13 +87,14 @@
   --shadow-hair: 0 0 0 0.5px var(--hair);
   --shadow-hair2: 0 0 0 0.5px var(--hair2);
 
-  /* 圆角（§5） */
+  /* 圆角（§5）：叠层方案更克制，按钮 8、卡片 10、纸面与输入框 12 */
   --radius-item: 8px;
-  --radius-card: 12px;
-  --radius-approval: 14px;
-  --radius-dialog: 18px;
-  --radius-input: 20px;
-  --radius-paper: 10px;
+  --radius-card: 10px;
+  --radius-approval: 12px;
+  --radius-dialog: 14px;
+  --radius-input: 12px;
+  --radius-paper: 12px;
+  --radius-sheet: 12px;
 
   /* 字体（§4） */
   --font-sans:
@@ -96,9 +109,9 @@
   --text-dialog--font-weight: 600;
   --text-heading: 16px;
   --text-heading--font-weight: 600;
-  --text-body: 15px;
-  --text-body--line-height: 1.78;
-  --text-ui: 13.5px;
+  --text-body: 14px;
+  --text-body--line-height: 1.75;
+  --text-ui: 13px;
   --text-code: 13px;
   --text-code--line-height: 22px;
   --text-term: 12.5px;
@@ -132,10 +145,13 @@
 
   body {
     margin: 0;
-    background: var(--chrome);
+    background:
+      radial-gradient(1100px 560px at 14% -8%, var(--chrome-glow) 0%, rgba(0, 0, 0, 0) 62%),
+      radial-gradient(900px 520px at 96% 106%, var(--chrome-glow) 0%, rgba(0, 0, 0, 0) 56%),
+      var(--chrome);
     color: var(--fg);
     font-family: var(--font-sans);
-    font-size: 13.5px;
+    font-size: 13px;
     -webkit-font-smoothing: antialiased;
   }
 

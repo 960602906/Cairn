@@ -7,6 +7,7 @@
 import type {
   AgentDefinition,
   AgentDraftFields,
+  AgentSummary,
   AgentValidationIssue,
   AgentValidationResult,
   DelegationPolicy,
@@ -152,6 +153,11 @@ export function localized(text: LocalizedText, language: string, fallback = 'Age
   const other = language.startsWith('zh') ? text['en-US'] : text['zh-CN']
   const value = primary?.trim() || other?.trim()
   return value || fallback
+}
+
+/** 会话事件里只带了 Agent 引用时，用列表中的名称显示；找不到时退回 id。 */
+export function agentName(agent: AgentSummary, language: string): string {
+  return localized(agent.name, language, agent.agentId)
 }
 
 /** 草稿与已发布版本是否不同（用于列表上的“有未发布修改”）。 */
