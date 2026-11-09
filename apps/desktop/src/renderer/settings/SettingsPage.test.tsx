@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
+import { I18nextProvider } from 'react-i18next'
 import { RpcError, type Settings, type SettingsPatch } from '@cairn/protocol'
 import type { MainApi } from '../api.js'
 import { App } from '../App.js'
 import { createSessionStore } from '../session-store.js'
+import { SessionStoreProvider } from '../store-context.js'
+import { SettingsNav } from './SettingsPage.js'
 
 afterEach(() => {
   cleanup()
@@ -46,10 +49,12 @@ function setup(
   })
   const api = { ready: async () => {}, request, on: () => () => {} } as unknown as MainApi
   const i18n = createI18n('zh-CN')
-  render(<App i18n={i18n} store={createSessionStore(api)} />)
+  const store = createSessionStore(api)
+  render(<App i18n={i18n} store={store} />)
   return {
     updates,
     i18n,
+    store,
     fail: () => {
       failing = true
     },
@@ -117,6 +122,27 @@ describe('SettingsPage', () => {
     expect(await screen.findByRole('heading', { name: 'General & appearance' })).toBeTruthy()
   })
 
+  it('offers the system theme, reports instruction save failures and opens diagnostics', async () => {
+    const { updates, fail } = setup()
+    await openSettings()
+    const theme = screen.getByRole('radiogroup', { name: '主题' })
+    await userEvent.click(within(theme).getByRole('radio', { name: /^跟随系统/ }))
+    expect(updates).toContainEqual({ theme: 'system' })
+
+    fail()
+    const instructions = screen.getByRole('textbox', { name: '全局指令' })
+    await userEvent.type(instructions, '先给结论')
+    await userEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('设置保存失败')
+
+    const exports = screen.getAllByRole('button', { name: '导出诊断包' })
+    await userEvent.click(exports.at(-1)!)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '导出诊断包' })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
   it('keeps the new language and shows an error when saving fails', async () => {
     const { fail } = setup()
     await openSettings()
@@ -175,6 +201,22 @@ describe('SettingsPage', () => {
     await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(''))
   })
 
+  it('syncs instructions from outside only when there is no local draft', async () => {
+    const { store } = setup()
+    await openSettings()
+    const box = screen.getByRole('textbox', { name: '全局指令' })
+    await act(async () => {
+      await store.getState().updateSettings({ instructions: '外部更新' })
+    })
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe('外部更新'))
+
+    await userEvent.type(box, '（本地）')
+    await act(async () => {
+      await store.getState().updateSettings({ instructions: '再次外部更新' })
+    })
+    expect((box as HTMLTextAreaElement).value).toBe('外部更新（本地）')
+  })
+
   it('turns automatic session briefs off and back on', async () => {
     const { updates } = setup()
     await openSettings()
@@ -210,5 +252,71 @@ describe('SettingsPage', () => {
     expect(aside.className).toContain('opacity-100')
     expect(aside.getAttribute('aria-hidden')).toBe('false')
     expect(screen.queryByRole('button', { name: '收起侧栏' })).toBeNull()
+  })
+
+  it('renders collapsed and collapsible navigation states', async () => {
+    const i18n = createI18n('zh-CN')
+    const api = {
+      ready: async () => {},
+      request: async () => ({ locale: 'zh-CN', providers: [] }),
+      on: () => () => {},
+    } as unknown as MainApi
+    const store = createSessionStore(api)
+    const onCollapse = vi.fn()
+    const nav = (open: boolean, collapsible: boolean) => (
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreProvider store={store}>
+          <SettingsNav
+            open={open}
+            collapsible={collapsible}
+            section="general"
+            onSelect={() => {}}
+            onBack={() => {}}
+            onCollapse={onCollapse}
+          />
+        </SessionStoreProvider>
+      </I18nextProvider>
+    )
+    const { container, rerender } = render(nav(false, false))
+    const hidden = container.querySelector('aside')!
+    expect(hidden.getAttribute('aria-hidden')).toBe('true')
+    expect(hidden.className).toContain('w-0')
+    expect(screen.queryByRole('button', { name: '收起侧栏' })).toBeNull()
+
+    rerender(nav(true, true))
+    const shown = container.querySelector('aside')!
+    expect(shown.getAttribute('aria-hidden')).toBe('false')
+    expect(shown.className).toContain('w-[252px]')
+    await userEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
+    expect(onCollapse).toHaveBeenCalledTimes(1)
+  })
+
+  it('filters the category list by title, description and keywords', async () => {
+    setup({
+      providers: [
+        { id: 'p', kind: 'openai', displayName: 'P', baseUrl: 'https://p.example', models: [] },
+      ],
+    })
+    await openSettings()
+    const nav = screen.getByRole('navigation', { name: '设置分类' })
+    const search = screen.getByRole('searchbox', { name: '搜索设置' })
+    expect(within(nav).getByText('1')).toBeTruthy()
+
+    await userEvent.type(search, 'shell')
+    expect(within(nav).getByRole('button', { name: '通用与外观' })).toBeTruthy()
+    expect(within(nav).queryByRole('button', { name: 'MCP 服务' })).toBeNull()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, '审批')
+    expect(within(nav).getByRole('button', { name: '权限与审批' })).toBeTruthy()
+    expect(within(nav).queryByRole('button', { name: /^模型供应商/ })).toBeNull()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, '不存在的设置')
+    expect(within(nav).getByText('没有匹配的设置')).toBeTruthy()
+    expect(within(nav).queryAllByRole('button')).toHaveLength(0)
+
+    await userEvent.clear(search)
+    expect(within(nav).getByRole('button', { name: 'MCP 服务' })).toBeTruthy()
   })
 })

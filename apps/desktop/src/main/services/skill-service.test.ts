@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RpcError } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
 import { createSkillService, skillReadPath } from './skill-service.js'
@@ -44,6 +44,7 @@ describe('skillReadPath', () => {
 describe('skill service', () => {
   const roots: string[] = []
   afterEach(() => {
+    vi.unstubAllGlobals()
     for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
   })
 
@@ -234,6 +235,25 @@ describe('skill service', () => {
     } catch (error) {
       expect(error).toMatchObject({ code: 'skills.duplicate' })
     }
+  })
+
+  it('downloads a marketplace zip and rejects non-ClawHub hosts', async () => {
+    const { skills, user } = setup()
+    const zip = zipSync({ 'market/SKILL.md': strToU8(markdown('market')) })
+    const fetchMock = vi.fn(async () => new Response(zip, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await skills.installFromUrl({
+      url: 'https://clawhub.ai/api/v1/download?slug=market',
+    })
+    expect(result.installed).toBe(true)
+    expect(result.skill.name).toBe('market')
+    expect(fs.existsSync(path.join(user, 'market', 'SKILL.md'))).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await expect(
+      skills.installFromUrl({ url: 'https://example.com/market.zip' }),
+    ).rejects.toMatchObject({ code: 'skills.invalid' })
   })
 
   it('rejects a zip that escapes the skill folder', () => {

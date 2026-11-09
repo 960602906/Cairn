@@ -1,15 +1,12 @@
 /**
- * 设置页“模型供应商”（M2-10，视觉规范 §8）。
+ * 设置页“模型供应商”（M2-10）。交互参考 LiveAgent：
  *
- * - 列表：图标、名称、来源（官方 / 第三方中转）、接口格式与模型数（没保存 Key 时提示）、默认、连接状态
- *   （本次打开设置页后测试的结果）。点击一行在下面编辑；“添加供应商”新建草稿（默认 DeepSeek 官方）。
- * - 编辑区：接口格式（三选一卡片）、来源与服务（选官方自动填写地址和兼容参数；中转选“兼容哪家”套用它的
- *   兼容参数）、名称、Base URL、API Key（显示末 4 位和“已保存到系统钥匙串”，可以更换）、测试连接、模型列表
- *   （开关、默认、上下文长度、能力；拉取模型列表或手动添加）、高级选项（兼容参数，只对 OpenAI 格式）。
- * - 改动在“保存”时一起提交：配置经 `settings.update`，新填的 Key 经 `credentials.set`。测试连接与拉取模型
- *   用当前的草稿和新填的 Key，不需要先保存。
- * - 顶部选择辅助模型（M3-01）；没有选择时，标题等短任务使用会话的主模型。
- * - 不显示单价与任何金额（规范 §10）。
+ * - 顶部按接口格式分标签（Anthropic / OpenAI / Gemini），标签右侧“添加供应商”。
+ * - 每个标签下是供应商卡片；点名称或编辑按钮打开弹窗，删除也在卡片上。
+ * - 添加时只选接口格式；地址与 Key 在编辑弹窗里填写，不再区分“官方 / 中转”。
+ * - 弹窗里：名称、服务、Base URL、Key、测试连接；模型列表（搜索、拉取、手动添加、
+ *   批量启停、逐个开关）与右侧模型详情（上下文、输出上限、能力、默认模型）双栏。
+ * - 高级兼容参数收在编辑弹窗底部的折叠区，不再让用户先理解“来源/兼容哪家”。
  */
 import { findTemplate } from '@cairn/core'
 import type {
@@ -22,7 +19,19 @@ import type {
   RemoteModel,
   ThinkingFormat,
 } from '@cairn/protocol'
-import { Check, ChevronRight, Plus, RefreshCw, Trash2, TriangleAlert, X } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Cpu,
+  Plus,
+  RefreshCw,
+  Search,
+  SquarePen,
+  Trash2,
+  TriangleAlert,
+  X,
+} from 'lucide-react'
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { translateError } from '@cairn/i18n'
 import { useTranslation } from 'react-i18next'
@@ -43,23 +52,21 @@ import {
   Spinner,
   Switch,
 } from '../ui/index.js'
-import { Field, inputClass, SettingsCard } from './Field.js'
+import { inputClass, SettingsCard } from './Field.js'
+import { DeepseekIcon, ProviderBrandIcon } from './ProviderBrandIcon.js'
 import {
   configOf,
   draftOf,
   formatTokens,
-  initials,
-  logoColor,
-  newDraftFor,
+  genericDraftFor,
   problemsOf,
   profileFrom,
   slugId,
-  sourceOf,
   templatesOf,
   testModelOf,
   uniqueProviderId,
+  uniqueDisplayName,
   type ProviderDraft,
-  type ProviderSource,
 } from './providers-model.js'
 import { SettingsHeader } from './SettingsPage.js'
 
@@ -80,7 +87,6 @@ const THINKING_FORMATS: readonly ThinkingFormat[] = [
   'zai',
 ]
 
-/** 错误码的说明（errors 命名空间）。 */
 function useErrorText() {
   const { i18n } = useTranslation()
   return (error: ErrorInfo) => translateError(i18n, error)
@@ -88,20 +94,30 @@ function useErrorText() {
 
 function Logo({
   name,
+  kind,
   template,
   size = 32,
 }: {
   readonly name: string
+  readonly kind: ProviderKind
   readonly template?: string | undefined
   readonly size?: number
 }) {
   return (
     <span
       aria-hidden
-      className="inline-grid shrink-0 place-items-center rounded-[9px] text-[11px] font-bold text-white"
-      style={{ width: size, height: size, background: logoColor(template) }}
+      title={name}
+      className="inline-grid shrink-0 place-items-center rounded-[9px] bg-paper text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)]"
+      style={{
+        width: size,
+        height: size,
+      }}
     >
-      {initials(name)}
+      {template === 'deepseek' ? (
+        <DeepseekIcon className="w-[68%]" />
+      ) : (
+        <ProviderBrandIcon kind={kind} className="size-[58%]" />
+      )}
     </span>
   )
 }
@@ -139,108 +155,192 @@ function Status({ tone, children }: { tone: 'ok' | 'danger' | 'idle'; children: 
   )
 }
 
-function ProviderRow({
+function Labeled({
+  label,
+  labelFor,
+  hint,
+  className,
+  children,
+}: {
+  readonly label: string
+  readonly labelFor?: string
+  readonly hint?: ReactNode
+  readonly className?: string
+  readonly children: ReactNode
+}) {
+  const text = <span className="text-[12.5px] font-medium text-fg2">{label}</span>
+  return (
+    <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
+      {labelFor ? (
+        <label htmlFor={labelFor} className="contents">
+          {text}
+        </label>
+      ) : (
+        text
+      )}
+      {children}
+      {hint && <p className="text-note leading-relaxed text-muted">{hint}</p>}
+    </div>
+  )
+}
+
+function DeleteProvider({
+  name,
+  compact = false,
+  onConfirm,
+}: {
+  readonly name: string
+  readonly compact?: boolean
+  readonly onConfirm: () => void
+}) {
+  const { t } = useTranslation('settings')
+  const { t: tc } = useTranslation()
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        {compact ? (
+          <IconButton
+            label={t('providers.delete.button')}
+            size="icon-sm"
+            className="text-muted hover:bg-danger-soft hover:text-danger"
+          >
+            <Trash2 />
+          </IconButton>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-danger hover:bg-danger-soft hover:text-danger"
+          >
+            <Trash2 />
+            {t('providers.delete.button')}
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent tone="danger" icon={<Trash2 />}>
+        <DialogTitle>{t('providers.delete.title', { name })}</DialogTitle>
+        <DialogDescription>{t('providers.delete.description')}</DialogDescription>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button>{tc('action.cancel')}</Button>
+          </DialogClose>
+          <DialogClose asChild>
+            <Button variant="danger" onClick={onConfirm}>
+              {t('providers.delete.confirm')}
+            </Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ProviderCard({
   provider,
-  selected,
   isDefault,
   keyStatus,
   result,
-  onSelect,
+  onEdit,
+  onDelete,
 }: {
   readonly provider: ProviderConfig
-  readonly selected: boolean
   readonly isDefault: boolean
   readonly keyStatus: KeyStatus | undefined
   readonly result: TestResult | undefined
-  readonly onSelect: () => void
+  readonly onEdit: () => void
+  readonly onDelete: () => void
 }) {
   const { t } = useTranslation('settings')
-  const source = sourceOf(provider)
+  const enabled = provider.models.filter((model) => model.enabled !== false).length
   const missingKey = provider.credentialRef !== undefined && keyStatus?.configured === false
-  const status = result ? (
-    result.ok ? (
-      <Status tone="ok">{t('providers.status.ok')}</Status>
-    ) : (
-      <Status tone="danger">{t('providers.status.failed')}</Status>
-    )
-  ) : missingKey ? (
-    <Status tone="idle">{t('providers.status.noKey')}</Status>
-  ) : (
-    <Status tone="idle">{t('providers.status.untested')}</Status>
-  )
   return (
-    <li>
-      <button
-        type="button"
-        aria-current={selected ? 'true' : undefined}
-        onClick={onSelect}
-        className={cn(
-          'flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors',
-          selected ? 'bg-accent-soft' : 'hover:bg-hover',
-        )}
-      >
-        <Logo name={provider.displayName} template={provider.template} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14px] font-medium text-fg">
-            {provider.displayName}
-          </span>
-          <span className="flex items-center gap-1.5 text-note text-muted">
-            <Tag tone={source === 'official' ? 'accent' : 'warn'}>
-              {t(`providers.source.${source}`)}
-            </Tag>
-            <span className="truncate">
-              {t('providers.summary', {
-                kind: t(`providers.kind.${provider.kind}.name`),
-                count: provider.models.length,
-              })}
-              {missingKey && ` · ${t('providers.noKey')}`}
-            </span>
-          </span>
+    <li className="group flex items-center gap-3 rounded-card bg-raise px-4 py-3 shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)] transition-colors hover:bg-sunk">
+      <Logo
+        name={provider.displayName}
+        kind={provider.kind}
+        template={provider.template}
+        size={34}
+      />
+      <button type="button" onClick={onEdit} className="min-w-0 flex-1 text-left">
+        <span className="block truncate text-[14px] font-medium text-fg">
+          {provider.displayName}
         </span>
-        <span className="flex shrink-0 items-center gap-3.5 text-note text-muted">
-          {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
-          {status}
+        <span className="mt-0.5 block truncate font-mono text-[11.5px] text-muted">
+          {provider.baseUrl || t('providers.card.noUrl')}
+          <span className="font-sans">
+            {' · '}
+            {t('providers.card.modelCount', {
+              count: provider.models.length,
+              enabled,
+            })}
+          </span>
         </span>
       </button>
+      <span className="flex shrink-0 items-center gap-2.5 text-note text-muted">
+        {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
+        {missingKey && <Tag tone="warn">{t('providers.noKey')}</Tag>}
+        {result ? (
+          result.ok ? (
+            <Status tone="ok">{t('providers.status.ok')}</Status>
+          ) : (
+            <Status tone="danger">{t('providers.status.failed')}</Status>
+          )
+        ) : (
+          !missingKey && <Status tone="idle">{t('providers.status.untested')}</Status>
+        )}
+      </span>
+      <span className="flex shrink-0 items-center gap-0.5">
+        <IconButton label={t('providers.edit')} size="icon-sm" onClick={onEdit}>
+          <SquarePen />
+        </IconButton>
+        <DeleteProvider compact name={provider.displayName} onConfirm={onDelete} />
+      </span>
     </li>
   )
 }
 
-function KindCards({
+function KindTabs({
   value,
+  counts,
   onChange,
 }: {
   readonly value: ProviderKind
+  readonly counts: Readonly<Record<ProviderKind, number>>
   readonly onChange: (kind: ProviderKind) => void
 }) {
   const { t } = useTranslation('settings')
   return (
     <div
-      role="radiogroup"
+      role="tablist"
       aria-label={t('providers.field.kind')}
-      className="grid grid-cols-3 gap-2 max-[640px]:grid-cols-1"
+      className="flex min-w-0 flex-wrap items-center gap-1 rounded-item bg-sunk2 p-0.5"
     >
-      {KINDS.map((kind) => (
-        <button
-          key={kind}
-          type="button"
-          role="radio"
-          aria-checked={kind === value}
-          onClick={() => onChange(kind)}
-          className={cn(
-            'flex flex-col gap-0.5 rounded-[10px] bg-paper px-3 py-2.5 text-left shadow-[inset_0_0_0_0.5px_var(--hair2)] transition-colors',
-            kind === value && 'bg-accent-soft shadow-[inset_0_0_0_1.5px_var(--accent)]',
-          )}
-        >
-          <span className="text-ui font-medium text-fg">{t(`providers.kind.${kind}.name`)}</span>
-          <span className="text-[11.5px] text-muted">{t(`providers.kind.${kind}.api`)}</span>
-        </button>
-      ))}
+      {KINDS.map((kind) => {
+        const selected = kind === value
+        return (
+          <button
+            key={kind}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(kind)}
+            className={cn(
+              'inline-flex h-8 items-center gap-2 rounded-[7px] px-3 text-[12.5px] text-muted transition-colors hover:text-fg',
+              selected && 'bg-raise font-medium text-fg shadow-1',
+            )}
+          >
+            <span aria-hidden className="flex size-4 items-center justify-center text-fg">
+              <ProviderBrandIcon kind={kind} className="size-3.5" />
+            </span>
+            {t(`providers.kind.${kind}.name`)}
+            <span className="tabular text-[11px] text-faint">{counts[kind]}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-/** API Key：已保存时显示末 4 位和“已保存到系统钥匙串”，可以更换；否则是输入框。 */
 function KeyField({
   status,
   secret,
@@ -255,7 +355,7 @@ function KeyField({
   const unavailable = status?.available === false
   if (status?.configured && secret === undefined) {
     return (
-      <Field label={t('providers.field.key')}>
+      <Labeled label={t('providers.field.key')}>
         <div className={cn(inputClass, 'flex items-center gap-2 pr-1 font-mono text-[13px]')}>
           <span className="flex-1 truncate">
             {status.last4 ? t('providers.key.masked', { last4: status.last4 }) : '••••••••'}
@@ -267,11 +367,11 @@ function KeyField({
             {t('providers.key.replace')}
           </Button>
         </div>
-      </Field>
+      </Labeled>
     )
   }
   return (
-    <Field
+    <Labeled
       label={t('providers.field.key')}
       labelFor={id}
       hint={unavailable ? t('providers.key.unavailable') : t('providers.key.hint')}
@@ -294,7 +394,7 @@ function KeyField({
           </Button>
         )}
       </div>
-    </Field>
+    </Labeled>
   )
 }
 
@@ -353,72 +453,264 @@ function TestBar({
   )
 }
 
-function ModelRow({
+function CreateProviderDialog({
+  open,
+  kind,
+  onKind,
+  onCreate,
+  onClose,
+}: {
+  readonly open: boolean
+  readonly kind: ProviderKind
+  readonly onKind: (kind: ProviderKind) => void
+  readonly onCreate: (kind: ProviderKind) => void
+  readonly onClose: () => void
+}) {
+  const { t } = useTranslation('settings')
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="w-[min(600px,calc(100vw-32px))]">
+        <DialogTitle>{t('providers.add.pickKind')}</DialogTitle>
+        <DialogDescription>{t('providers.add.pickKindHint')}</DialogDescription>
+        <div className="mt-5 flex flex-col gap-4">
+          <div role="radiogroup" aria-label={t('providers.field.kind')} className="grid gap-2">
+            {KINDS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={value === kind}
+                onClick={() => onKind(value)}
+                onDoubleClick={() => onCreate(value)}
+                className={cn(
+                  'flex items-center gap-3 rounded-[10px] bg-sunk px-3 py-2.5 text-left transition-colors hover:bg-hover',
+                  value === kind && 'bg-accent-soft shadow-[inset_0_0_0_1.5px_var(--accent)]',
+                )}
+              >
+                <span
+                  aria-hidden
+                  className="inline-grid size-7 shrink-0 place-items-center rounded-[8px] bg-paper text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)]"
+                >
+                  <ProviderBrandIcon kind={value} className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-medium text-fg">
+                    {t(`providers.kind.${value}.name`)}
+                  </span>
+                  <span className="block text-[11.5px] text-muted">
+                    {t(`providers.kind.${value}.api`)}
+                  </span>
+                </span>
+                <ChevronRight className="size-4 shrink-0 text-faint" />
+              </button>
+            ))}
+          </div>
+          <Button variant="primary" onClick={() => onCreate(kind)}>
+            {t('providers.add.next')}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function NumberField({
+  label,
+  value,
+  onCommit,
+}: {
+  readonly label: string
+  readonly value: number
+  readonly onCommit: (value: number) => void
+}) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  const commit = () => {
+    const next = Number(text)
+    if (Number.isInteger(next) && next > 0) onCommit(next)
+    else setText(String(value))
+  }
+  return (
+    <Labeled label={label}>
+      <input
+        aria-label={label}
+        inputMode="numeric"
+        value={text}
+        onChange={(event) => setText(event.target.value.replace(/[^\d]/g, ''))}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit()
+          }
+        }}
+        className={cn(inputClass, 'font-mono text-[12.5px]')}
+      />
+    </Labeled>
+  )
+}
+
+function CapabilityRow({
+  label,
+  checked,
+  onChange,
+}: {
+  readonly label: string
+  readonly checked: boolean
+  readonly onChange: (checked: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <span className="text-[12.5px] text-fg2">{label}</span>
+      <Switch checked={checked} aria-label={label} onCheckedChange={onChange} />
+    </div>
+  )
+}
+
+function ModelDetail({
   model,
   isDefault,
-  onToggle,
+  onChange,
   onDefault,
   onRemove,
 }: {
-  readonly model: ModelProfile
+  readonly model: ModelProfile | undefined
   readonly isDefault: boolean
-  readonly onToggle: (enabled: boolean) => void
+  readonly onChange: (patch: Partial<ModelProfile>) => void
   readonly onDefault: () => void
   readonly onRemove: () => void
 }) {
   const { t } = useTranslation('settings')
-  const enabled = model.enabled !== false
-  const name = model.displayName ?? model.id
-  const meta = [
-    t('providers.model.context', { size: formatTokens(model.contextWindow) }),
-    ...(model.supportsReasoning ? [t('providers.model.reasoning')] : []),
-    ...(model.supportsTools ? [] : [t('providers.model.noTools')]),
-  ].join(' · ')
+  if (!model) {
+    return (
+      <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 text-center">
+        <span className="text-[13px] font-medium text-fg2">{t('providers.model.detail')}</span>
+        <p className="max-w-56 text-note leading-relaxed text-muted">
+          {t('providers.model.detailHint')}
+        </p>
+      </div>
+    )
+  }
   return (
-    <li className="group flex min-h-10 items-center gap-2.5 px-3 py-1.5 text-[13px] [&+&]:shadow-[0_-0.5px_0_var(--hair)]">
-      <Switch
-        checked={enabled}
-        disabled={isDefault}
-        aria-label={t('providers.model.enable', { name })}
-        onCheckedChange={onToggle}
-      />
-      <span className="min-w-0">
-        <code className="block truncate font-mono text-[12.5px] [font-variant-ligatures:none] text-fg">
-          {model.id}
-        </code>
-        {model.displayName && model.displayName !== model.id && (
-          <span className="block truncate text-[11.5px] text-muted">{model.displayName}</span>
-        )}
-      </span>
-      {isDefault ? (
-        <Tag tone="ok">{t('providers.default')}</Tag>
-      ) : (
-        enabled && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-note opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-            onClick={onDefault}
-          >
-            {t('providers.model.setDefault')}
-          </Button>
-        )
+    <div className="flex flex-col gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <h4 className="truncate text-[13.5px] font-medium text-fg">
+            {model.displayName ?? model.id}
+          </h4>
+          {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
+        </div>
+        <p className="truncate font-mono text-[11.5px] text-muted">{model.id}</p>
+      </div>
+      <Labeled label={t('providers.model.displayName')}>
+        <input
+          aria-label={t('providers.model.displayName')}
+          value={model.displayName ?? ''}
+          placeholder={model.id}
+          onChange={(event) => onChange({ displayName: event.target.value })}
+          className={inputClass}
+        />
+      </Labeled>
+      <div className="grid grid-cols-2 gap-2.5">
+        <NumberField
+          label={t('providers.model.contextLength')}
+          value={model.contextWindow}
+          onCommit={(contextWindow) => onChange({ contextWindow })}
+        />
+        <NumberField
+          label={t('providers.model.maxOutput')}
+          value={model.maxOutputTokens}
+          onCommit={(maxOutputTokens) => onChange({ maxOutputTokens })}
+        />
+      </div>
+      <div className="rounded-[10px] bg-paper px-3 py-1 shadow-[inset_0_0_0_0.5px_var(--hair2)]">
+        <CapabilityRow
+          label={t('providers.model.tools')}
+          checked={model.supportsTools}
+          onChange={(supportsTools) => onChange({ supportsTools })}
+        />
+        <CapabilityRow
+          label={t('providers.model.parallel')}
+          checked={model.supportsParallelToolCalls}
+          onChange={(supportsParallelToolCalls) => onChange({ supportsParallelToolCalls })}
+        />
+        <CapabilityRow
+          label={t('providers.model.reasoning')}
+          checked={model.supportsReasoning}
+          onChange={(supportsReasoning) => onChange({ supportsReasoning })}
+        />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={isDefault}
+          onClick={onDefault}
+          className="justify-start"
+        >
+          <Check />
+          {isDefault ? t('providers.model.isDefault') : t('providers.model.setDefault')}
+        </Button>
+        <span className="flex-1" />
+        <IconButton
+          label={t('providers.model.remove', { name: model.displayName ?? model.id })}
+          size="icon-sm"
+          disabled={isDefault}
+          onClick={onRemove}
+        >
+          <Trash2 />
+        </IconButton>
+      </div>
+      {isDefault && (
+        <p className="text-note leading-relaxed text-muted">{t('providers.model.defaultHint')}</p>
       )}
-      <span className="flex-1" />
-      <span className="shrink-0 text-[11.5px] whitespace-nowrap text-muted">{meta}</span>
-      <IconButton
-        label={t('providers.model.remove', { name })}
-        size="icon-sm"
-        disabled={isDefault}
-        onClick={onRemove}
-      >
-        <X />
-      </IconButton>
-    </li>
+    </div>
   )
 }
 
-/** 拉取到的模型中还没添加的，逐个添加或全部添加。 */
+function ManualModel({
+  onAdd,
+  defaultContext,
+}: {
+  readonly onAdd: (model: RemoteModel) => void
+  readonly defaultContext: number
+}) {
+  const { t } = useTranslation('settings')
+  const [id, setId] = useState('')
+  const [context, setContext] = useState(String(defaultContext))
+  const contextValue = Number(context)
+  const valid = id.trim() !== '' && Number.isInteger(contextValue) && contextValue > 0
+  return (
+    <div className="flex items-center gap-2 px-2 pt-2">
+      <input
+        aria-label={t('providers.manual.id')}
+        placeholder={t('providers.manual.id')}
+        value={id}
+        spellCheck={false}
+        onChange={(e) => setId(e.target.value)}
+        className={cn(inputClass, 'h-8 flex-1 font-mono text-[12.5px]')}
+      />
+      <input
+        aria-label={t('providers.manual.context')}
+        inputMode="numeric"
+        value={context}
+        onChange={(e) => setContext(e.target.value.replace(/[^\d]/g, ''))}
+        className={cn(inputClass, 'h-8 w-24 font-mono text-[12.5px]')}
+      />
+      <Button
+        size="sm"
+        disabled={!valid}
+        onClick={() => {
+          onAdd({ id: id.trim(), contextWindow: contextValue })
+          setId('')
+        }}
+      >
+        {t('providers.manual.add')}
+      </Button>
+    </div>
+  )
+}
+
 function RemoteModels({
   models,
   onAdd,
@@ -430,7 +722,7 @@ function RemoteModels({
 }) {
   const { t } = useTranslation('settings')
   return (
-    <div className="mt-2 rounded-[10px] bg-sunk p-2">
+    <div className="border-b bg-sunk/70 px-2 py-2">
       <div className="flex items-center gap-2 px-1 pb-1.5 text-note text-muted">
         <span className="flex-1">{t('providers.fetch.found', { count: models.length })}</span>
         {models.length > 1 && (
@@ -445,7 +737,7 @@ function RemoteModels({
       {models.length > 0 && (
         <ul
           aria-label={t('providers.fetch.list')}
-          className="max-h-56 overflow-y-auto rounded-[8px] bg-paper shadow-hair2"
+          className="max-h-44 overflow-y-auto rounded-[8px] bg-paper shadow-hair2"
         >
           {models.map((m) => (
             <li
@@ -477,49 +769,6 @@ function RemoteModels({
   )
 }
 
-function ManualModel({
-  onAdd,
-  defaultContext,
-}: {
-  readonly onAdd: (model: RemoteModel) => void
-  readonly defaultContext: number
-}) {
-  const { t } = useTranslation('settings')
-  const [id, setId] = useState('')
-  const [context, setContext] = useState(String(defaultContext))
-  const contextValue = Number(context)
-  const valid = id.trim() !== '' && Number.isInteger(contextValue) && contextValue > 0
-  return (
-    <div className="mt-2 flex items-center gap-2">
-      <input
-        aria-label={t('providers.manual.id')}
-        placeholder={t('providers.manual.id')}
-        value={id}
-        spellCheck={false}
-        onChange={(e) => setId(e.target.value)}
-        className={cn(inputClass, 'h-8 flex-1 font-mono text-[12.5px]')}
-      />
-      <input
-        aria-label={t('providers.manual.context')}
-        inputMode="numeric"
-        value={context}
-        onChange={(e) => setContext(e.target.value.replace(/[^\d]/g, ''))}
-        className={cn(inputClass, 'h-8 w-28 font-mono text-[12.5px]')}
-      />
-      <Button
-        size="sm"
-        disabled={!valid}
-        onClick={() => {
-          onAdd({ id: id.trim(), contextWindow: contextValue })
-          setId('')
-        }}
-      >
-        {t('providers.manual.add')}
-      </Button>
-    </div>
-  )
-}
-
 function CompatOptions({
   compat,
   onChange,
@@ -534,13 +783,12 @@ function CompatOptions({
     else next[key] = value
     onChange(next as ModelCompat)
   }
-  const selectClass = cn(inputClass, 'h-8 w-56 text-[13px]')
   return (
-    <div className="flex flex-col gap-3">
-      <Field label={t('providers.compat.thinkingFormat')}>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Labeled label={t('providers.compat.thinkingFormat')}>
         <select
           aria-label={t('providers.compat.thinkingFormat')}
-          className={selectClass}
+          className={cn(inputClass, 'h-8 text-[13px]')}
           value={compat?.thinkingFormat ?? ''}
           onChange={(e) =>
             set('thinkingFormat', (e.target.value || undefined) as ThinkingFormat | undefined)
@@ -553,11 +801,11 @@ function CompatOptions({
             </option>
           ))}
         </select>
-      </Field>
-      <Field label={t('providers.compat.maxTokensField')}>
+      </Labeled>
+      <Labeled label={t('providers.compat.maxTokensField')}>
         <select
           aria-label={t('providers.compat.maxTokensField')}
-          className={selectClass}
+          className={cn(inputClass, 'h-8 text-[13px]')}
           value={compat?.maxTokensField ?? ''}
           onChange={(e) =>
             set('maxTokensField', (e.target.value || undefined) as ModelCompat['maxTokensField'])
@@ -570,7 +818,7 @@ function CompatOptions({
             </option>
           ))}
         </select>
-      </Field>
+      </Labeled>
       {(
         [
           'requiresReasoningContentOnAssistantMessages',
@@ -578,7 +826,7 @@ function CompatOptions({
           'supportsUsageInStreaming',
         ] as const
       ).map((key) => (
-        <Field key={key} label={t(`providers.compat.${key}`)}>
+        <Labeled key={key} label={t(`providers.compat.${key}`)}>
           <SegmentedControl
             label={t(`providers.compat.${key}`)}
             value={compat?.[key] === undefined ? 'auto' : compat[key] ? 'yes' : 'no'}
@@ -589,48 +837,15 @@ function CompatOptions({
             ]}
             onChange={(v) => set(key, v === 'auto' ? undefined : v === 'yes')}
           />
-        </Field>
+        </Labeled>
       ))}
     </div>
   )
 }
 
-function DeleteProvider({
-  name,
-  onConfirm,
-}: {
-  readonly name: string
-  readonly onConfirm: () => void
-}) {
-  const { t } = useTranslation('settings')
-  const { t: tc } = useTranslation()
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="ghost" className="text-danger hover:bg-danger-soft hover:text-danger">
-          {t('providers.delete.button')}
-        </Button>
-      </DialogTrigger>
-      <DialogContent tone="danger" icon={<Trash2 />}>
-        <DialogTitle>{t('providers.delete.title', { name })}</DialogTitle>
-        <DialogDescription>{t('providers.delete.description')}</DialogDescription>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button>{tc('action.cancel')}</Button>
-          </DialogClose>
-          <DialogClose asChild>
-            <Button variant="danger" onClick={onConfirm}>
-              {t('providers.delete.confirm')}
-            </Button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function ProviderEditor({
   saved,
+  initialDraft,
   providers,
   keyStatus,
   result,
@@ -638,8 +853,8 @@ function ProviderEditor({
   onSaved,
   onCancel,
 }: {
-  /** 正在编辑的已保存供应商；新建时为 undefined。 */
   readonly saved: ProviderConfig | undefined
+  readonly initialDraft: ProviderDraft
   readonly providers: readonly ProviderConfig[]
   readonly keyStatus: KeyStatus | undefined
   readonly result: TestResult | undefined
@@ -655,13 +870,11 @@ function ProviderEditor({
   const saveCredential = useSessionStore((s) => s.saveCredential)
   const testProvider = useSessionStore((s) => s.testProvider)
   const fetchModels = useSessionStore((s) => s.fetchModels)
+  const credentialStatus = useSessionStore((s) => s.credentialStatus)
   const nameId = useId()
   const urlId = useId()
 
-  const initial = useMemo(
-    () => (saved ? draftOf(saved) : newDraftFor(providers)),
-    [saved, providers],
-  )
+  const initial = useMemo(() => (saved ? draftOf(saved) : initialDraft), [saved, initialDraft])
   const [draft, setDraft] = useState<ProviderDraft>(initial)
   const [secret, setSecret] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
@@ -672,14 +885,14 @@ function ProviderEditor({
   >()
   const [manual, setManual] = useState(false)
   const [advanced, setAdvanced] = useState(false)
+  const [search, setSearch] = useState('')
+  const [selectedModelId, setSelectedModelId] = useState<string | undefined>(initial.models[0]?.id)
   const [defaultModelId, setDefaultModelId] = useState<string | undefined>(() =>
     saved && settings?.defaultModel?.providerId === saved.id
       ? settings.defaultModel.modelId
       : undefined,
   )
 
-  // 新供应商：查询它将使用的凭据引用，得到系统加密是否可用（也可能已有保存过的 Key）
-  const credentialStatus = useSessionStore((s) => s.credentialStatus)
   const [newKeyStatus, setNewKeyStatus] = useState<KeyStatus | undefined>()
   const id = saved?.id ?? uniqueProviderId(draft.template ?? slugId(draft.displayName), providers)
   useEffect(() => {
@@ -692,6 +905,7 @@ function ProviderEditor({
       cancelled = true
     }
   }, [saved, id, credentialStatus])
+
   const problems = problemsOf(draft)
   const valid = Object.keys(problems).length === 0
   const typedSecret = secret?.trim() ? secret.trim() : undefined
@@ -704,45 +918,38 @@ function ProviderEditor({
     JSON.stringify(draft) !== JSON.stringify(initial) ||
     typedSecret !== undefined ||
     defaultModelId !== savedDefault
-  const source: ProviderSource = sourceOf(draft)
   const templates = templatesOf(draft.kind)
   const template = draft.template ? findTemplate(draft.template) : undefined
+  const enabledCount = draft.models.filter((model) => model.enabled !== false).length
+  const selectedModel = draft.models.find((model) => model.id === selectedModelId)
+  const filteredModels = draft.models.filter((model) => {
+    const query = search.trim().toLowerCase()
+    if (!query) return true
+    return (
+      model.id.toLowerCase().includes(query) ||
+      (model.displayName ?? '').toLowerCase().includes(query)
+    )
+  })
+  const allVisibleEnabled =
+    filteredModels.length > 0 && filteredModels.every((model) => model.enabled !== false)
+
+  useEffect(() => {
+    if (draft.models.some((model) => model.id === selectedModelId)) return
+    setSelectedModelId(draft.models[0]?.id)
+  }, [draft.models, selectedModelId])
 
   const update = (patch: Partial<ProviderDraft>) => {
     setDraft((d) => ({ ...d, ...patch }))
     onResult(undefined)
   }
 
-  /** 选择服务（模板）：套用兼容参数；官方时填写地址；新建时换成它的模型。 */
-  const applyTemplate = (templateId: string | undefined, nextSource: ProviderSource) => {
+  /** 兼容预设：只套用兼容参数，不改地址、名称和已有模型。 */
+  const applyCompatPreset = (templateId: string | undefined) => {
     const next = templateId ? findTemplate(templateId) : undefined
     update({
       template: next?.id,
       compat: next?.compat ? { ...next.compat } : undefined,
-      ...(nextSource === 'official' && next ? { baseUrl: next.baseUrl } : {}),
-      ...(nextSource === 'relay' && next && draft.baseUrl === next.baseUrl ? { baseUrl: '' } : {}),
-      ...(saved === undefined && next
-        ? {
-            models: next.models.map((m) => ({ ...m })),
-            ...(draft.displayName === template?.displayName || draft.displayName === ''
-              ? { displayName: next.displayName }
-              : {}),
-          }
-        : {}),
     })
-  }
-
-  const changeKind = (kind: ProviderKind) => {
-    if (kind === draft.kind) return
-    const first = templatesOf(kind)[0]
-    // 新建时换成这种格式的第一个服务的模型
-    setDraft((d) => ({
-      ...d,
-      kind,
-      ...(saved === undefined && first ? { models: first.models.map((m) => ({ ...m })) } : {}),
-    }))
-    // 官方：换成这种格式的第一个服务；中转：通用（没有兼容参数）
-    applyTemplate(source === 'official' ? first?.id : undefined, source)
   }
 
   const config = (): ProviderConfig => configOf(draft, id, saved?.credentialRef ?? id)
@@ -778,6 +985,7 @@ function ProviderEditor({
     const have = new Set(draft.models.map((m) => m.id))
     const added = models.filter((m) => !have.has(m.id)).map((m) => profileFrom(m, draft.template))
     update({ models: [...draft.models, ...added] })
+    if (added[0] && selectedModelId === undefined) setSelectedModelId(added[0].id)
     if (remote && 'models' in remote) {
       const ids = new Set(added.map((m) => m.id))
       setRemote({ models: remote.models.filter((m) => !ids.has(m.id)) })
@@ -787,9 +995,26 @@ function ProviderEditor({
   const setModel = (modelId: string, patch: Partial<ModelProfile>) =>
     update({ models: draft.models.map((m) => (m.id === modelId ? { ...m, ...patch } : m)) })
 
+  const removeModel = (modelId: string) => {
+    update({ models: draft.models.filter((m) => m.id !== modelId) })
+    if (selectedModelId === modelId) {
+      setSelectedModelId(draft.models.find((m) => m.id !== modelId)?.id)
+    }
+  }
+
+  const toggleVisible = (enabled: boolean) => {
+    const ids = new Set(filteredModels.map((model) => model.id))
+    update({
+      models: draft.models.map((model) =>
+        ids.has(model.id) && model.id !== defaultModelId
+          ? { ...model, enabled: enabled ? undefined : false }
+          : model,
+      ),
+    })
+  }
+
   const save = async () => {
     const next = config()
-    // 启用开关：显式写 false，启用时去掉字段
     const cleaned: ProviderConfig = {
       ...next,
       models: next.models.map(({ enabled, ...m }) => (enabled === false ? { ...m, enabled } : m)),
@@ -819,7 +1044,6 @@ function ProviderEditor({
   const remove = async () => {
     if (!saved) return
     const remaining = providers.filter((p) => p.id !== saved.id)
-    // 删除供应商时一并清掉指向它的默认模型与辅助模型，避免设置里留下失效引用。
     const clearsDefault = settings?.defaultModel?.providerId === saved.id
     const clearsAuxiliary = settings?.auxiliaryModel?.providerId === saved.id
     const result = await updateSettings({
@@ -830,214 +1054,302 @@ function ProviderEditor({
     if (result) onSaved(undefined)
   }
 
-  const enabledCount = draft.models.filter((m) => m.enabled !== false).length
-
   return (
-    <SettingsCard aria-label={saved ? saved.displayName : t('providers.new')}>
-      <div className="flex items-center gap-3">
-        <Logo name={draft.displayName || '?'} template={draft.template} />
-        <h3 className="min-w-0 flex-1 truncate text-heading text-fg">
-          {saved ? draft.displayName || saved.displayName : t('providers.new')}
-        </h3>
-        {saved && <DeleteProvider name={saved.displayName} onConfirm={() => void remove()} />}
-      </div>
-
-      <Field label={t('providers.field.kind')}>
-        <KindCards value={draft.kind} onChange={changeKind} />
-      </Field>
-
-      <Field
-        label={t('providers.field.source')}
-        hint={
-          source === 'official'
-            ? t('providers.source.officialHint')
-            : t('providers.source.relayHint')
-        }
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl
-            label={t('providers.field.source')}
-            value={source}
-            options={[
-              { value: 'official', label: t('providers.source.official') },
-              { value: 'relay', label: t('providers.source.relay') },
-            ]}
-            onChange={(next) => applyTemplate(draft.template ?? templates[0]?.id, next)}
+    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className="flex max-h-[calc(100dvh-48px)] w-[min(1040px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0">
+        <header className="flex shrink-0 items-start gap-3 px-6 pt-5 pb-4">
+          <Logo
+            name={draft.displayName || '?'}
+            kind={draft.kind}
+            template={draft.template}
+            size={36}
           />
-          <select
-            aria-label={t('providers.field.service')}
-            className={cn(inputClass, 'h-7 w-auto min-w-40 text-[12.5px]')}
-            value={draft.template && template?.kind === draft.kind ? draft.template : ''}
-            onChange={(e) =>
-              applyTemplate(e.target.value || undefined, e.target.value ? source : 'relay')
-            }
-          >
-            {source === 'relay' && <option value="">{t('providers.source.generic')}</option>}
-            {templates.map((tpl) => (
-              <option key={tpl.id} value={tpl.id}>
-                {source === 'relay'
-                  ? t('providers.source.compatibleWith', { name: tpl.displayName })
-                  : tpl.displayName}
-              </option>
-            ))}
-          </select>
-        </div>
-      </Field>
-
-      <Field label={t('providers.field.name')} labelFor={nameId}>
-        <input
-          id={nameId}
-          className={inputClass}
-          value={draft.displayName}
-          aria-invalid={problems.displayName ? true : undefined}
-          onChange={(e) => update({ displayName: e.target.value })}
-        />
-      </Field>
-
-      <Field
-        label={t('providers.field.baseUrl')}
-        labelFor={urlId}
-        hint={
-          problems.baseUrl && draft.baseUrl.trim() !== '' ? (
-            <span className="text-danger">{t('providers.baseUrl.invalid')}</span>
-          ) : source === 'relay' ? (
-            t(`providers.baseUrl.hint.${draft.kind}`)
-          ) : undefined
-        }
-      >
-        <input
-          id={urlId}
-          className={cn(inputClass, 'font-mono text-[13px]')}
-          value={draft.baseUrl}
-          spellCheck={false}
-          placeholder={t('providers.baseUrl.placeholder')}
-          aria-invalid={problems.baseUrl && draft.baseUrl.trim() !== '' ? true : undefined}
-          onChange={(e) => update({ baseUrl: e.target.value })}
-        />
-      </Field>
-
-      <KeyField
-        status={saved ? keyStatus : newKeyStatus}
-        secret={secret}
-        onSecret={(s) => {
-          setSecret(s)
-          onResult(undefined)
-        }}
-      />
-
-      <TestBar
-        result={result}
-        testing={testing}
-        disabled={!valid || enabledCount === 0}
-        onTest={() => void test()}
-      />
-
-      <Field label={t('providers.field.models')}>
-        {draft.models.length === 0 ? (
-          <p className="pt-1 text-note text-muted">{t('providers.model.empty')}</p>
-        ) : (
-          <ul
-            aria-label={t('providers.field.models')}
-            className="rounded-[10px] shadow-[inset_0_0_0_0.5px_var(--hair2)]"
-          >
-            {draft.models.map((m) => (
-              <ModelRow
-                key={m.id}
-                model={m}
-                isDefault={m.id === defaultModelId}
-                onToggle={(enabled) => setModel(m.id, { enabled })}
-                onDefault={() => setDefaultModelId(m.id)}
-                onRemove={() => update({ models: draft.models.filter((x) => x.id !== m.id) })}
-              />
-            ))}
-          </ul>
-        )}
-        <div className="mt-2 flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!valid || fetching}
-            onClick={() => void fetchList()}
-          >
-            {fetching ? <Spinner /> : <RefreshCw />}
-            {t('providers.fetch.button')}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setManual((v) => !v)}>
-            <Plus />
-            {t('providers.manual.button')}
-          </Button>
-        </div>
-        {remote !== undefined &&
-          ('models' in remote ? (
-            <RemoteModels
-              models={remote.models}
-              onAdd={addModels}
-              onClose={() => setRemote(undefined)}
-            />
-          ) : (
-            <p
-              role="alert"
-              className="mt-2 rounded-[8px] bg-danger-soft px-2.5 py-1.5 text-note text-danger"
-            >
-              {t('providers.fetch.failed', { reason: errorText(remote.error) })}
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="truncate text-[16px]">
+              {saved ? t('providers.editProvider') : t('providers.new')}
+            </DialogTitle>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-note text-muted">
+              <span>
+                {t(`providers.kind.${draft.kind}.name`)} · {t('providers.compatible')}
+              </span>
+              {draft.displayName && <span className="truncate">· {draft.displayName}</span>}
             </p>
-          ))}
-        {manual && (
-          <ManualModel
-            defaultContext={(template?.modelDefaults ?? { contextWindow: 128_000 }).contextWindow}
-            onAdd={(m) => addModels([m])}
-          />
-        )}
-      </Field>
+          </div>
+          {saved && <DeleteProvider name={saved.displayName} onConfirm={() => void remove()} />}
+          <IconButton label={tc('action.close')} size="icon-sm" onClick={onCancel}>
+            <X />
+          </IconButton>
+        </header>
 
-      <div>
-        <button
-          type="button"
-          aria-expanded={advanced}
-          onClick={() => setAdvanced((v) => !v)}
-          className="flex items-center gap-2 text-[13px] text-muted hover:text-fg [&_svg]:size-3.5"
-        >
-          <ChevronRight className={cn('transition-transform', advanced && 'rotate-90')} />
-          {t('providers.advanced.title')}
-        </button>
-        {advanced && (
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Labeled label={t('providers.field.name')} labelFor={nameId}>
+              <input
+                id={nameId}
+                className={inputClass}
+                value={draft.displayName}
+                aria-invalid={problems.displayName ? true : undefined}
+                onChange={(e) => update({ displayName: e.target.value })}
+              />
+            </Labeled>
+            <Labeled
+              label={t('providers.field.baseUrl')}
+              labelFor={urlId}
+              className="sm:col-span-2"
+              hint={
+                problems.baseUrl && draft.baseUrl.trim() !== '' ? (
+                  <span className="text-danger">{t('providers.baseUrl.invalid')}</span>
+                ) : (
+                  t(`providers.baseUrl.hint.${draft.kind}`)
+                )
+              }
+            >
+              <input
+                id={urlId}
+                className={cn(inputClass, 'font-mono text-[13px]')}
+                value={draft.baseUrl}
+                spellCheck={false}
+                placeholder={t('providers.baseUrl.placeholder')}
+                aria-invalid={problems.baseUrl && draft.baseUrl.trim() !== '' ? true : undefined}
+                onChange={(e) => update({ baseUrl: e.target.value })}
+              />
+            </Labeled>
+            <div className="sm:col-span-2">
+              <KeyField
+                status={saved ? keyStatus : newKeyStatus}
+                secret={secret}
+                onSecret={(s) => {
+                  setSecret(s)
+                  onResult(undefined)
+                }}
+              />
+            </div>
+          </div>
+
           <div className="mt-3">
-            {draft.kind === 'openai' ? (
-              <CompatOptions compat={draft.compat} onChange={(compat) => update({ compat })} />
-            ) : (
-              <p className="text-note text-muted">{t('providers.advanced.none')}</p>
+            <TestBar
+              result={result}
+              testing={testing}
+              disabled={!valid || enabledCount === 0}
+              onTest={() => void test()}
+            />
+          </div>
+
+          <section
+            aria-label={t('providers.field.models')}
+            className="mt-5 grid items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_340px]"
+          >
+            <div className="flex min-h-[340px] flex-col overflow-hidden rounded-card bg-paper shadow-[inset_0_0_0_0.5px_var(--hair2)]">
+              <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />
+                  <input
+                    aria-label={t('providers.model.search')}
+                    placeholder={t('providers.model.search')}
+                    value={search}
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => setSearch(event.target.value)}
+                    className={cn(inputClass, 'h-8 pl-8 text-[12.5px]')}
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  disabled={!valid || fetching}
+                  onClick={() => void fetchList()}
+                >
+                  {fetching ? <Spinner /> : <RefreshCw />}
+                  {t('providers.fetch.button')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setManual((v) => !v)}
+                >
+                  <Plus />
+                  {t('providers.manual.button')}
+                </Button>
+              </div>
+
+              {remote !== undefined &&
+                ('models' in remote ? (
+                  <RemoteModels
+                    models={remote.models}
+                    onAdd={addModels}
+                    onClose={() => setRemote(undefined)}
+                  />
+                ) : (
+                  <p
+                    role="alert"
+                    className="border-b bg-danger-soft px-3 py-1.5 text-note text-danger"
+                  >
+                    {t('providers.fetch.failed', { reason: errorText(remote.error) })}
+                  </p>
+                ))}
+
+              {manual && (
+                <ManualModel
+                  defaultContext={
+                    (template?.modelDefaults ?? { contextWindow: 128_000 }).contextWindow
+                  }
+                  onAdd={(m) => addModels([m])}
+                />
+              )}
+
+              <div className="flex items-center gap-2 border-b bg-sunk/50 px-3 py-1.5">
+                <Switch
+                  checked={allVisibleEnabled}
+                  aria-label={t('providers.model.enableAll')}
+                  onCheckedChange={toggleVisible}
+                />
+                <span className="text-note text-muted">
+                  {t('providers.model.enabledCount', {
+                    enabled: enabledCount,
+                    total: draft.models.length,
+                  })}
+                </span>
+                <span className="flex-1" />
+                {search.trim() !== '' && (
+                  <span className="text-note text-faint">
+                    {t('providers.model.matched', { count: filteredModels.length })}
+                  </span>
+                )}
+              </div>
+
+              {draft.models.length === 0 ? (
+                <p className="flex flex-1 items-center justify-center px-4 text-center text-note text-muted">
+                  {t('providers.model.empty')}
+                </p>
+              ) : filteredModels.length === 0 ? (
+                <p className="flex flex-1 items-center justify-center px-4 text-center text-note text-muted">
+                  {t('providers.model.noMatch')}
+                </p>
+              ) : (
+                <ul className="min-h-0 flex-1 overflow-y-auto">
+                  {filteredModels.map((model) => {
+                    const enabled = model.enabled !== false
+                    const isDefault = model.id === defaultModelId
+                    const name = model.displayName ?? model.id
+                    return (
+                      <li
+                        key={model.id}
+                        className={cn(
+                          'flex items-center gap-2 px-2.5 py-1.5 text-[13px] transition-colors [&+&]:shadow-[0_-0.5px_0_var(--hair)]',
+                          model.id === selectedModel?.id ? 'bg-accent-soft' : 'hover:bg-sunk',
+                        )}
+                      >
+                        <Switch
+                          checked={enabled}
+                          disabled={isDefault}
+                          aria-label={t('providers.model.enable', { name })}
+                          onCheckedChange={(next) =>
+                            setModel(model.id, { enabled: next ? undefined : false })
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSelectedModelId(model.id)}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <code className="block truncate font-mono text-[12.5px] text-fg [font-variant-ligatures:none]">
+                            {model.id}
+                          </code>
+                          {model.displayName && model.displayName !== model.id && (
+                            <span className="block truncate text-[11px] text-muted">
+                              {model.displayName}
+                            </span>
+                          )}
+                        </button>
+                        {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
+                        <span className="shrink-0 text-[11px] whitespace-nowrap text-muted">
+                          {formatTokens(model.contextWindow)}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <aside
+              aria-label={t('providers.model.detail')}
+              className="rounded-card bg-sunk px-4 py-3.5 shadow-[inset_0_0_0_0.5px_var(--hair2)]"
+            >
+              <ModelDetail
+                model={selectedModel}
+                isDefault={selectedModel !== undefined && selectedModel.id === defaultModelId}
+                onChange={(patch) => selectedModel && setModel(selectedModel.id, patch)}
+                onDefault={() => selectedModel && setDefaultModelId(selectedModel.id)}
+                onRemove={() => selectedModel && removeModel(selectedModel.id)}
+              />
+            </aside>
+          </section>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              aria-expanded={advanced}
+              onClick={() => setAdvanced((v) => !v)}
+              className="flex items-center gap-2 text-[13px] text-muted hover:text-fg [&_svg]:size-3.5"
+            >
+              <ChevronDown className={cn('transition-transform', advanced && 'rotate-180')} />
+              {t('providers.advanced.title')}
+            </button>
+            {advanced && (
+              <div className="mt-3">
+                {draft.kind === 'openai' ? (
+                  <div className="flex flex-col gap-3">
+                    <Labeled
+                      label={t('providers.compat.preset')}
+                      hint={t('providers.compat.presetHint')}
+                      className="max-w-72"
+                    >
+                      <select
+                        aria-label={t('providers.compat.preset')}
+                        className={inputClass}
+                        value={template ? template.id : ''}
+                        onChange={(e) => applyCompatPreset(e.target.value || undefined)}
+                      >
+                        <option value="">{t('providers.compat.auto')}</option>
+                        {templates.map((tpl) => (
+                          <option key={tpl.id} value={tpl.id}>
+                            {tpl.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </Labeled>
+                    <CompatOptions
+                      compat={draft.compat}
+                      onChange={(compat) => update({ compat })}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-note text-muted">{t('providers.advanced.none')}</p>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
 
-      <div className="flex items-center justify-end gap-2 pt-3.5 shadow-[0_-0.5px_0_var(--hair)]">
-        <Button
-          disabled={busy || (!dirty && saved !== undefined)}
-          onClick={() => {
-            if (saved) {
-              setDraft(initial)
-              setSecret(undefined)
-              setDefaultModelId(savedDefault)
-              setRemote(undefined)
-            } else {
-              onCancel()
-            }
-          }}
-        >
-          {tc('action.cancel')}
-        </Button>
-        <Button variant="primary" disabled={busy || !valid || !dirty} onClick={() => void save()}>
-          {t('providers.save')}
-        </Button>
-      </div>
-    </SettingsCard>
+        <footer className="flex shrink-0 items-center justify-end gap-2 border-t px-6 py-3">
+          <Button disabled={busy} onClick={onCancel}>
+            {tc('action.cancel')}
+          </Button>
+          <Button variant="primary" disabled={busy || !valid || !dirty} onClick={() => void save()}>
+            {t('providers.save')}
+          </Button>
+        </footer>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 const modelKey = (model: ModelRef) => JSON.stringify([model.providerId, model.modelId])
 
-/** 辅助模型（M3-01）：没有选择时，标题等短任务使用会话的主模型。 */
+/** 辅助模型（M3-01）：只列启用的模型；没有选择时短任务使用会话的主模型。 */
 function AuxiliaryModel({ providers }: { readonly providers: readonly ProviderConfig[] }) {
   const { t } = useTranslation('settings')
   const id = useId()
@@ -1045,19 +1357,21 @@ function AuxiliaryModel({ providers }: { readonly providers: readonly ProviderCo
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const current = settings?.auxiliaryModel
   const options = providers.flatMap((provider) =>
-    provider.models.map((model) => ({
-      key: modelKey({ providerId: provider.id, modelId: model.id }),
-      label: t('providers.auxiliary.option', {
-        provider: provider.displayName,
-        model: model.displayName ?? model.id,
-      }),
-    })),
+    provider.models
+      .filter((model) => model.enabled !== false)
+      .map((model) => ({
+        key: modelKey({ providerId: provider.id, modelId: model.id }),
+        label: t('providers.auxiliary.option', {
+          provider: provider.displayName,
+          model: model.displayName ?? model.id,
+        }),
+      })),
   )
   const value =
     current && options.some((option) => option.key === modelKey(current)) ? modelKey(current) : ''
   return (
     <SettingsCard>
-      <Field
+      <Labeled
         label={t('providers.auxiliary.label')}
         labelFor={id}
         hint={t('providers.auxiliary.hint')}
@@ -1081,7 +1395,7 @@ function AuxiliaryModel({ providers }: { readonly providers: readonly ProviderCo
             </option>
           ))}
         </select>
-      </Field>
+      </Labeled>
     </SettingsCard>
   )
 }
@@ -1090,9 +1404,14 @@ export function ProvidersSettings() {
   const { t } = useTranslation('settings')
   const settings = useSessionStore((s) => s.settings)
   const loadSettings = useSessionStore((s) => s.loadSettings)
+  const updateSettings = useSessionStore((s) => s.updateSettings)
   const credentialStatus = useSessionStore((s) => s.credentialStatus)
   const providers = settings?.providers ?? []
-  const [selected, setSelected] = useState<string | 'new' | undefined>(undefined)
+  const [activeKind, setActiveKind] = useState<ProviderKind | undefined>()
+  const [picker, setPicker] = useState<ProviderKind | undefined>()
+  const [editor, setEditor] = useState<
+    { readonly saved: ProviderConfig | undefined; readonly draft: ProviderDraft } | undefined
+  >()
   const [results, setResults] = useState<Readonly<Record<string, TestResult>>>({})
   const [keys, setKeys] = useState<Readonly<Record<string, KeyStatus>>>({})
   const [keysVersion, setKeysVersion] = useState(0)
@@ -1101,7 +1420,6 @@ export function ProvidersSettings() {
     if (!settings) void loadSettings()
   }, [settings, loadSettings])
 
-  // 每个需要 Key 的供应商查询一次状态（保存后重新查询）
   const refList = providers
     .flatMap((p) => (p.credentialRef ? [p.credentialRef] : []))
     .join('\u0000')
@@ -1120,66 +1438,98 @@ export function ProvidersSettings() {
     }
   }, [refList, credentialStatus, keysVersion])
 
-  const current =
-    selected === 'new'
-      ? undefined
-      : (providers.find((p) => p.id === selected) ??
-        (selected === undefined ? providers[0] : undefined))
-  const editing = selected === 'new' || current !== undefined
-  const resultKey = selected === 'new' ? '\u0000new' : current?.id
+  const kind = activeKind ?? providers[0]?.kind ?? 'openai'
+  const counts = useMemo<Record<ProviderKind, number>>(
+    () => ({
+      anthropic: providers.filter((p) => p.kind === 'anthropic').length,
+      openai: providers.filter((p) => p.kind === 'openai').length,
+      gemini: providers.filter((p) => p.kind === 'gemini').length,
+    }),
+    [providers],
+  )
+  const visible = providers.filter((provider) => provider.kind === kind)
+
+  const resultKey = editor?.saved?.id ?? (editor ? '\u0000new' : undefined)
+
+  const openAdd = () => setPicker(kind)
+
+  const createProvider = (nextKind: ProviderKind) => {
+    const draft = genericDraftFor(
+      nextKind,
+      uniqueDisplayName(t('providers.add.genericName'), providers),
+      providers,
+    )
+    setActiveKind(nextKind)
+    setPicker(undefined)
+    setEditor({ saved: undefined, draft })
+  }
+
+  const openEdit = (provider: ProviderConfig) =>
+    setEditor({ saved: provider, draft: draftOf(provider) })
+
+  const removeProvider = async (provider: ProviderConfig) => {
+    const remaining = providers.filter((p) => p.id !== provider.id)
+    const clearsDefault = settings?.defaultModel?.providerId === provider.id
+    const clearsAuxiliary = settings?.auxiliaryModel?.providerId === provider.id
+    await updateSettings({
+      providers: remaining,
+      ...(clearsDefault ? { defaultModel: null } : {}),
+      ...(clearsAuxiliary ? { auxiliaryModel: null } : {}),
+    })
+  }
 
   return (
     <>
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-0 flex-1">
-          <SettingsHeader
-            title={t('section.providers.title')}
-            description={t('section.providers.description')}
-          />
-        </div>
-        <Button variant="primary" onClick={() => setSelected('new')}>
+      <SettingsHeader
+        icon={<Cpu />}
+        title={t('section.providers.title')}
+        description={t('section.providers.description')}
+      />
+
+      <AuxiliaryModel providers={providers} />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <KindTabs value={kind} counts={counts} onChange={setActiveKind} />
+        <Button variant="primary" onClick={openAdd}>
           <Plus />
           {t('providers.add')}
         </Button>
       </div>
 
-      <AuxiliaryModel providers={providers} />
-
-      {providers.length === 0 && selected !== 'new' ? (
-        <SettingsCard className="items-start">
-          <p className="text-ui text-muted">{t('providers.empty')}</p>
-          <Button onClick={() => setSelected('new')}>
+      {visible.length === 0 ? (
+        <SettingsCard className="items-center gap-3 py-10 text-center">
+          <span className="text-muted">
+            <Plus className="size-5" />
+          </span>
+          <p className="text-ui text-muted">{t('providers.emptyTab')}</p>
+          <Button onClick={openAdd}>
             <Plus />
             {t('providers.add')}
           </Button>
         </SettingsCard>
       ) : (
-        providers.length > 0 && (
-          <ul
-            aria-label={t('providers.list')}
-            className="overflow-hidden rounded-card bg-raise shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)] [&>li+li]:shadow-[0_-0.5px_0_var(--hair)]"
-          >
-            {providers.map((p) => (
-              <ProviderRow
-                key={p.id}
-                provider={p}
-                selected={selected !== 'new' && current?.id === p.id}
-                isDefault={settings?.defaultModel?.providerId === p.id}
-                keyStatus={p.credentialRef ? keys[p.credentialRef] : undefined}
-                result={results[p.id]}
-                onSelect={() => setSelected(p.id)}
-              />
-            ))}
-          </ul>
-        )
+        <ul aria-label={t('providers.list')} className="flex flex-col gap-2">
+          {visible.map((provider) => (
+            <ProviderCard
+              key={provider.id}
+              provider={provider}
+              isDefault={settings?.defaultModel?.providerId === provider.id}
+              keyStatus={provider.credentialRef ? keys[provider.credentialRef] : undefined}
+              result={results[provider.id]}
+              onEdit={() => openEdit(provider)}
+              onDelete={() => void removeProvider(provider)}
+            />
+          ))}
+        </ul>
       )}
 
-      {editing && (
+      {editor && (
         <ProviderEditor
-          key={selected === 'new' ? '\u0000new' : current?.id}
-          saved={current}
+          key={editor.saved?.id ?? '\u0000new'}
+          saved={editor.saved}
+          initialDraft={editor.draft}
           providers={providers}
-          keyStatus={current?.credentialRef ? keys[current.credentialRef] : undefined}
+          keyStatus={editor.saved?.credentialRef ? keys[editor.saved.credentialRef] : undefined}
           result={resultKey ? results[resultKey] : undefined}
           onResult={(result) =>
             setResults((all) => {
@@ -1197,12 +1547,21 @@ export function ProvidersSettings() {
               const { ['\u0000new']: _, ...rest } = all
               return { ...rest, [providerId]: pending }
             })
-            setSelected(providerId)
+            setEditor(undefined)
             setKeysVersion((v) => v + 1)
+            if (providerId) setActiveKind(editor.draft.kind)
           }}
-          onCancel={() => setSelected(undefined)}
+          onCancel={() => setEditor(undefined)}
         />
       )}
+
+      <CreateProviderDialog
+        open={picker !== undefined}
+        kind={picker ?? kind}
+        onKind={(next) => setPicker(next)}
+        onCreate={createProvider}
+        onClose={() => setPicker(undefined)}
+      />
     </>
   )
 }

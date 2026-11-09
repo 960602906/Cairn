@@ -10,6 +10,10 @@
   "language.zh-CN": "简体中文",
   "language.en-US": "English",
   "language.label": "Language",
+  "window.minimize": "Minimize window",
+  "window.maximize": "Maximize window",
+  "window.restore": "Restore window",
+  "window.close": "Close window",
   "error.title": "Something went wrong",
   "errorBanner.diagnostics": "Export Diagnostics"
 }

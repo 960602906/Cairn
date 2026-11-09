@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import {
   RpcError,
+  type HubMcpCard,
   type McpLogEntry,
   type McpServerDetail,
   type McpServerInput,
@@ -67,6 +68,8 @@ interface SetupOptions {
   /** 覆盖详情，用来测远程配置、空工具列表等分支。 */
   readonly detail?: Partial<McpServerDetail>
   readonly logsFor?: (serverId: string) => McpLogEntry[]
+  readonly hubItems?: HubMcpCard[]
+  readonly failHub?: boolean
   /** 挂起 `mcp.add`，用来验证保存时的重复点击。 */
   readonly addGate?: Promise<void>
 }
@@ -164,6 +167,10 @@ function setup(options: SetupOptions = {}) {
         if (options.failLogs) throw new RpcError('mcp.not_found')
         const { serverId } = params as { serverId: string }
         return { logs: options.logsFor?.(serverId) ?? defaultLogs }
+      }
+      case 'hub.mcp': {
+        if (options.failHub) throw new RpcError('hub.failed')
+        return { items: options.hubItems ?? [] }
       }
       default:
         return {}
@@ -265,6 +272,195 @@ describe('McpSettings', () => {
         token: TOKEN,
       }),
     )
+  })
+
+  it('removes environment rows and requires a header name for header auth', async () => {
+    const { request } = setup({ servers: [] })
+    await openMcp()
+    await userEvent.click(await screen.findByRole('button', { name: '添加服务' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.type(within(dialog).getByLabelText('名称'), 'Remote')
+    await userEvent.selectOptions(within(dialog).getByLabelText('类型'), 'http')
+    await userEvent.type(within(dialog).getByLabelText('地址'), 'https://example.com/mcp')
+    await userEvent.selectOptions(within(dialog).getByLabelText('认证方式'), 'header')
+    const save = within(dialog).getByRole('button', { name: '保存' }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    await userEvent.type(within(dialog).getByLabelText('请求头名称'), 'X-Key')
+    expect(save.disabled).toBe(false)
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '添加变量' }))
+    const names = within(dialog).getAllByLabelText('名称')
+    await userEvent.type(names[1]!, 'TEMP')
+    expect(within(dialog).queryByText('没有环境变量。')).toBeNull()
+    await userEvent.click(within(dialog).getByRole('button', { name: '删除变量 TEMP' }))
+    expect(within(dialog).getByText('没有环境变量。')).toBeTruthy()
+    await userEvent.click(save)
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('mcp.add', {
+        name: 'Remote',
+        kind: 'http',
+        enabled: true,
+        url: 'https://example.com/mcp',
+        auth: 'header',
+        headerName: 'X-Key',
+      }),
+    )
+  })
+
+  it('browses the MCP market and installs a remote server', async () => {
+    const card = (patch: Partial<HubMcpCard>): HubMcpCard => ({
+      id: 'acme/http',
+      name: 'acme/http',
+      title: 'HTTP Server',
+      description: 'Remote tools.',
+      transport: 'http',
+      url: 'https://mcp.example.com/mcp',
+      homepage: 'https://example.com',
+      requiresAuth: false,
+      ...patch,
+    })
+    const { request } = setup({
+      servers: [],
+      hubItems: [
+        card({}),
+        card({ id: 'acme/auth', name: 'acme/auth', title: 'Auth Server', requiresAuth: true }),
+        card({ id: 'acme/stdio', name: 'acme/stdio', title: 'Local Server', transport: 'stdio' }),
+      ],
+    })
+    await openMcp()
+    await userEvent.click(screen.getByRole('button', { name: '市场' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('HTTP Server')).toBeTruthy()
+    expect(within(dialog).getByText('需要鉴权')).toBeTruthy()
+
+    const installButtons = within(dialog).getAllByRole('button', { name: '一键添加' })
+    expect(installButtons).toHaveLength(3)
+    expect(installButtons[1]).toHaveProperty('disabled', true)
+    expect(installButtons[2]).toHaveProperty('disabled', true)
+    await userEvent.click(installButtons[0]!)
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('mcp.add', {
+        name: 'HTTP Server',
+        kind: 'http',
+        url: 'https://mcp.example.com/mcp',
+        enabled: true,
+      }),
+    )
+    // 添加成功后自动打开详情，列表里也能看到这个服务。
+    expect(await screen.findByRole('heading', { name: 'HTTP Server' })).toBeTruthy()
+  })
+
+  it('searches the MCP market and reports an unavailable registry', async () => {
+    const { request } = setup({ servers: [], hubItems: [] })
+    await openMcp()
+    await userEvent.click(screen.getByRole('button', { name: '市场' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('没有找到匹配的服务。')).toBeTruthy()
+    await userEvent.type(within(dialog).getByRole('searchbox', { name: '搜索 MCP 服务' }), 'github')
+    await userEvent.click(within(dialog).getByRole('button', { name: '搜索' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('hub.mcp', { query: 'github' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+    cleanup()
+
+    setup({ servers: [], failHub: true })
+    await openMcp()
+    await userEvent.click(screen.getByRole('button', { name: '市场' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('市场暂时不可用')
+  })
+
+  it('renders market cards without links or descriptions and keeps the dialog on add failure', async () => {
+    const card: HubMcpCard = {
+      id: 'acme/no-link',
+      name: 'acme/no-link',
+      title: 'No Link',
+      description: '',
+      transport: 'http',
+      url: 'https://mcp.example.com/no-link',
+      requiresAuth: false,
+    }
+    const { request } = setup({ servers: [], hubItems: [card], failAdd: true })
+    await openMcp()
+    await userEvent.click(screen.getByRole('button', { name: '市场' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('No Link')).toBeTruthy()
+    expect(within(dialog).getByText('这个服务还没有简介。')).toBeTruthy()
+    expect(within(dialog).queryByRole('link')).toBeNull()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '一键添加' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('mcp.add', {
+        name: 'No Link',
+        kind: 'http',
+        url: 'https://mcp.example.com/no-link',
+        enabled: true,
+      }),
+    )
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByText('No Link')).toBeTruthy()
+  })
+
+  it('shows the adding state and blocks other market installs while pending', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const card = (id: string, title: string): HubMcpCard => ({
+      id,
+      name: id,
+      title,
+      description: `${title} tools.`,
+      transport: 'http',
+      url: `https://mcp.example.com/${id}`,
+      requiresAuth: false,
+    })
+    setup({
+      servers: [],
+      addGate: gate,
+      hubItems: [card('first', 'First'), card('second', 'Second')],
+    })
+    await openMcp()
+    await userEvent.click(screen.getByRole('button', { name: '市场' }))
+    const dialog = await screen.findByRole('dialog')
+    const add = await within(dialog).findAllByRole('button', { name: '一键添加' })
+    await userEvent.click(add[0]!)
+    const pending = await within(dialog).findByRole('button', { name: '正在添加…' })
+    expect(pending).toHaveProperty('disabled', true)
+    expect(add[1]).toHaveProperty('disabled', true)
+    release()
+    expect(await screen.findByRole('heading', { name: 'First' })).toBeTruthy()
+  })
+
+  it('reports a failed market search after results are already visible', async () => {
+    const options = {
+      servers: [],
+      hubItems: [
+        {
+          id: 'acme/http',
+          name: 'acme/http',
+          title: 'HTTP Server',
+          description: 'Remote tools.',
+          transport: 'http' as const,
+          url: 'https://mcp.example.com/mcp',
+          requiresAuth: false,
+        },
+      ],
+      failHub: false,
+    }
+    setup(options)
+    await openMcp()
+    await userEvent.click(screen.getByRole('button', { name: '市场' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('HTTP Server')).toBeTruthy()
+
+    options.failHub = true
+    await userEvent.type(
+      within(dialog).getByRole('searchbox', { name: '搜索 MCP 服务' }),
+      'missing',
+    )
+    await userEvent.click(within(dialog).getByRole('button', { name: '搜索' }))
+    expect(await within(dialog).findByText(/市场暂时不可用/)).toBeTruthy()
+    expect(within(dialog).getByText('HTTP Server')).toBeTruthy()
   })
 
   it('shows tools and logs, and updates per-tool permissions', async () => {

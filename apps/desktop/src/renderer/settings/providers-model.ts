@@ -140,11 +140,40 @@ export function newDraft(template: ProviderTemplate = PROVIDER_TEMPLATES[0]!): P
  */
 export function newDraftFor(providers: readonly ProviderConfig[]): ProviderDraft {
   const base = PROVIDER_TEMPLATES[0]!
+  return { ...newDraft(base), displayName: uniqueDisplayName(base.displayName, providers) }
+}
+
+/** 显示名去重：`DeepSeek`、`DeepSeek 2`…… */
+export function uniqueDisplayName(base: string, providers: readonly ProviderConfig[]): string {
   const taken = new Set(providers.map((provider) => provider.displayName.trim()))
-  let name = base.displayName
+  let name = base
   let n = 2
-  while (taken.has(name)) name = `${base.displayName} ${n++}`
-  return { ...newDraft(base), displayName: name }
+  while (taken.has(name)) name = `${base} ${n++}`
+  return name
+}
+
+/** 用指定服务模板新建草稿。 */
+export function newDraftForTemplate(
+  template: ProviderTemplate,
+  providers: readonly ProviderConfig[],
+): ProviderDraft {
+  return { ...newDraft(template), displayName: uniqueDisplayName(template.displayName, providers) }
+}
+
+/** 自定义/中转草稿：不套用官方模板，地址与兼容参数自己填。 */
+export function genericDraftFor(
+  kind: ProviderKind,
+  displayName: string,
+  providers: readonly ProviderConfig[],
+): ProviderDraft {
+  return {
+    kind,
+    displayName: uniqueDisplayName(displayName, providers),
+    baseUrl: '',
+    template: undefined,
+    compat: undefined,
+    models: [],
+  }
 }
 
 /** 草稿中需要改正的字段。 */

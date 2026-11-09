@@ -25,12 +25,8 @@ import {
   utilityProcess,
 } from 'electron'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
-import {
-  resolveChromeTheme,
-  titleBarOverlay,
-  usesTitleBarOverlay,
-  windowChromeOptions,
-} from './window-chrome.js'
+import { resolveChromeTheme, windowChromeOptions } from './window-chrome.js'
+import { WINDOW_CONTROLS_CHANNEL } from '../shared/window-controls.js'
 import {
   hardenWebContents,
   restrictPermissions,
@@ -53,6 +49,7 @@ import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { loadProjectAgentsMd } from './services/agents-md.js'
 import { createSkillService } from './services/skill-service.js'
+import { createHubService } from './services/hub-service.js'
 import { createMcpService } from './services/mcp-service.js'
 import { createAgentService } from './services/agent-service.js'
 import { DiagnosticsService } from './services/diagnostics-service.js'
@@ -238,6 +235,8 @@ const skills = createSkillService({
     return result.canceled ? undefined : result.filePaths[0]
   },
 })
+/** 资源市场（M5）：只读目录，安装复用上面的技能与 MCP 服务。 */
+const hub = createHubService()
 /** MCP 服务（M3-09）：配置、连接与工具调用都在主进程。 */
 const mcpStatusListeners = new Set<(event: McpStatusEvent) => void>()
 const mcp = createMcpService({
@@ -475,7 +474,7 @@ const gateway = createRendererGateway({
       if (patch.permissionMode !== undefined) sessions.refreshPermissions()
       if (patch.theme !== undefined) {
         nativeTheme.themeSource = nativeThemeSource(patch.theme)
-        applyTitleBarOverlay()
+        applyWindowChrome()
       }
       return next
     },
@@ -499,6 +498,7 @@ const gateway = createRendererGateway({
   },
   changes,
   checkpoints,
+  hub,
   changeSets,
   approvals,
   activity,
@@ -580,8 +580,6 @@ app.on('web-contents-created', (_event, contents) => {
 
 /** 系统主题跟随设置（M2-02）：界面的 prefers-color-scheme 与系统按钮的颜色都随之变化。 */
 /** 以 `--ozone-platform=headless` 运行（冒烟测试）。 */
-const headless = (): boolean => app.commandLine.getSwitchValue('ozone-platform') === 'headless'
-
 /** 把四套配色映射成 Electron 只认识的 system / light / dark（标题栏与滚动条跟随明暗）。 */
 function nativeThemeSource(theme: Theme): 'system' | 'light' | 'dark' {
   switch (theme) {
@@ -605,15 +603,38 @@ function nativeThemeSource(theme: Theme): 'system' | 'light' | 'dark' {
 
 function followThemeSetting(): void {
   nativeTheme.themeSource = nativeThemeSource(settings.get().theme ?? 'slate')
-  nativeTheme.on('updated', applyTitleBarOverlay)
+  nativeTheme.on('updated', applyWindowChrome)
 }
 
-/** 系统按钮覆盖层跟随实际主题的纸面颜色，避免右上角出现一块单独的白底。 */
-function applyTitleBarOverlay(): void {
-  if (!usesTitleBarOverlay(process.platform, headless())) return
+/** 窗口底色跟随实际主题；页面加载前也不闪旧颜色。 */
+function applyWindowChrome(): void {
   const theme = resolveChromeTheme(settings.get().theme, nativeTheme.shouldUseDarkColors)
-  const overlay = titleBarOverlay(theme)
-  for (const window of BrowserWindow.getAllWindows()) window.setTitleBarOverlay(overlay)
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.setBackgroundColor(windowChromeOptions(process.platform, theme).backgroundColor)
+  }
+}
+
+/** Windows / Linux 自绘按钮的主进程动作：只接受无参数的最小化、最大化与关闭。 */
+function registerWindowControls(): void {
+  const fromEvent = (event: Electron.IpcMainInvokeEvent): BrowserWindow | undefined =>
+    BrowserWindow.fromWebContents(event.sender) ?? undefined
+  ipcMain.handle(WINDOW_CONTROLS_CHANNEL.minimize, (event) => {
+    fromEvent(event)?.minimize()
+  })
+  ipcMain.handle(WINDOW_CONTROLS_CHANNEL.toggleMaximize, (event) => {
+    const window = fromEvent(event)
+    if (!window) return false
+    if (window.isMaximized()) window.unmaximize()
+    else window.maximize()
+    return window.isMaximized()
+  })
+  ipcMain.handle(WINDOW_CONTROLS_CHANNEL.close, (event) => {
+    fromEvent(event)?.close()
+  })
+  ipcMain.handle(
+    WINDOW_CONTROLS_CHANNEL.isMaximized,
+    (event) => fromEvent(event)?.isMaximized() ?? false,
+  )
 }
 
 function createWindow(): BrowserWindow {
@@ -622,7 +643,7 @@ function createWindow(): BrowserWindow {
     width: 1200,
     height: 800,
     show: false,
-    ...windowChromeOptions(process.platform, theme, headless()),
+    ...windowChromeOptions(process.platform, theme),
     webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs')),
   })
   const connection = gateway.connect(
@@ -634,6 +655,12 @@ function createWindow(): BrowserWindow {
     }),
   )
   window.once('closed', () => connection.close())
+  window.on('maximize', () =>
+    window.webContents.send(WINDOW_CONTROLS_CHANNEL.maximizedChanged, true),
+  )
+  window.on('unmaximize', () =>
+    window.webContents.send(WINDOW_CONTROLS_CHANNEL.maximizedChanged, false),
+  )
   window.once('ready-to-show', () => window.show())
   if (devServerUrl) void window.loadURL(devServerUrl)
   else void window.loadFile(rendererFile)
@@ -720,6 +747,7 @@ async function smokeCredentials(): Promise<CredentialCheck> {
 void app.whenReady().then(() => {
   restrictPermissions(session.defaultSession)
   followThemeSetting()
+  registerWindowControls()
   void mcp.initialize()
   const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)

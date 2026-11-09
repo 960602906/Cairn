@@ -65,7 +65,7 @@ describe('Sidebar', () => {
     renderSidebar(true)
     expect(screen.getByText('会话')).toBeTruthy()
     expect(screen.getByRole('button', { name: '搜索对话' })).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: /新对话/ })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /新对话/ })).toHaveLength(1)
     expect(screen.getByText('本机工作区')).toBeTruthy()
     expect(screen.getByText('本地 · 自动保存')).toBeTruthy()
   })

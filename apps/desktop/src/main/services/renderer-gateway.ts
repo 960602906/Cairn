@@ -29,6 +29,7 @@ import type { SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
+import type { HubCommands } from './hub-service.js'
 import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
 import type { TrialCommands } from './trial-service.js'
@@ -153,6 +154,8 @@ export interface RendererGatewayOptions {
   readonly approvals: ApprovalCommands
   /** 技能（M3-07）：列表、安装、卸载与启用；选择来源（M3-08）。 */
   readonly skills: SkillCommands
+  /** 资源市场目录（M5）：ClawHub 技能与 MCP Registry。 */
+  readonly hub: HubCommands
   /** MCP 服务（M3-09）：配置、连接、工具与日志。 */
   readonly mcp: McpCommands
   /** Agent 定义（M3-11）：草稿、发布、版本、导入导出与生效配置。 */
@@ -248,6 +251,7 @@ type Timer = ReturnType<typeof setTimeout>
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { events, commands, projects, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
+  const { hub } = options
   const { agents, trials, diagnostics, activity, changeSets } = options
   const backgroundCommands = options.backgroundCommands
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
@@ -367,8 +371,11 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('skill.get', (params) => skills.get(params))
       endpoint.handle('skill.pickSource', (params) => skills.pickSource(params))
       endpoint.handle('skill.install', (params) => skills.install(params))
+      endpoint.handle('skill.installUrl', (params) => skills.installFromUrl(params))
       endpoint.handle('skill.uninstall', (params) => skills.uninstall(params))
       endpoint.handle('skill.setEnabled', (params) => skills.setEnabled(params))
+      endpoint.handle('hub.skills', (params) => hub.skills(params))
+      endpoint.handle('hub.mcp', (params) => hub.mcp(params))
       endpoint.handle('mcp.list', (params) => mcp.list(params))
       endpoint.handle('mcp.get', (params) => mcp.get(params))
       endpoint.handle('mcp.add', (params) => mcp.add(params))

@@ -35,6 +35,7 @@ import {
 } from '../change-sets.js'
 import { PLAN_FEEDBACK_MAX, PlanStep, PromptMode } from '../plan.js'
 import { SkillDetail, SkillInstallSource, SkillSource, SkillSummary } from '../skills.js'
+import { HubMcpCard, HubSkillCard } from '../hub.js'
 import {
   McpLogEntry,
   McpServerDetail,
@@ -695,6 +696,30 @@ export const MainForRenderer = defineSide({
             (input.enabled !== undefined || input.pinned !== undefined),
         ),
       result: SkillSummary,
+    },
+    /**
+     * 资源市场（M5）：技能来自 ClawHub，只返回卡片；安装用 `skill.installUrl`。
+     * `query` 为空时按下载量列出；有查询词时走搜索接口。
+     */
+    'hub.skills': {
+      params: z.object({
+        query: z.string().max(200).optional(),
+        limit: z.number().int().min(1).max(48).optional(),
+      }),
+      result: z.object({ items: z.array(HubSkillCard) }),
+    },
+    /** 从市场下载 zip 并安装到用户技能目录。只允许 ClawHub 的 https 地址。 */
+    'skill.installUrl': {
+      params: z.object({ url: z.string().url().max(4096) }),
+      result: z.object({ installed: z.boolean(), skill: SkillDetail }),
+    },
+    /** MCP 市场：官方 MCP Registry 中可远程接入（streamable-http）或本地启动的条目。 */
+    'hub.mcp': {
+      params: z.object({
+        query: z.string().max(200).optional(),
+        limit: z.number().int().min(1).max(48).optional(),
+      }),
+      result: z.object({ items: z.array(HubMcpCard) }),
     },
     /** 已配置的 MCP 服务（M3-09）：不含环境变量值与令牌。 */
     'mcp.list': {

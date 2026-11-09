@@ -4,7 +4,7 @@
  * 从上到下：标题与计数、新对话 / 收起、搜索框、按项目分组的会话列表、底部工作区信息。
  * 搜索、活动与设置入口由 `AppRail` 承担；这里只保留会话相关操作。
  */
-import { Laptop, PanelLeft, Plus, Search } from 'lucide-react'
+import { Laptop, PanelLeftClose, Plus, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { SessionList } from '../SessionList.js'
 import { useSessionStore } from '../store-context.js'
@@ -49,11 +49,8 @@ export function Sidebar({
           </span>
           <span className="tabular text-[10px] text-faint">{count}</span>
           <div className="no-drag ml-auto flex items-center gap-0.5">
-            <IconButton label={t('list.new')} size="icon-sm" onClick={onNewChat}>
-              <Plus />
-            </IconButton>
             <IconButton label={t('sidebar.collapse')} size="icon-sm" onClick={onClose}>
-              <PanelLeft />
+              <PanelLeftClose />
             </IconButton>
           </div>
         </div>

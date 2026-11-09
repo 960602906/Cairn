@@ -53,6 +53,8 @@ import {
   type ErrorInfo,
   type EventEnvelope,
   type FileChangeSummary,
+  type HubMcpCard,
+  type HubSkillCard,
   type FileContent,
   type McpLogEntry,
   type McpServerDetail,
@@ -217,6 +219,12 @@ export interface SessionActions {
     source: SkillInstallSource,
     confirm?: boolean,
   ): Promise<{ installed: boolean; skill: SkillDetail } | undefined>
+  /** 从市场下载并安装技能（M5）；失败时返回 undefined。 */
+  installSkillFromUrl(url: string): Promise<{ installed: boolean; skill: SkillDetail } | undefined>
+  /** 技能市场目录（ClawHub）；查询为空时按下载量列出。 */
+  searchHubSkills(query?: string): Promise<HubSkillCard[] | undefined>
+  /** MCP 市场目录（官方 Registry）。 */
+  searchHubMcp(query?: string): Promise<HubMcpCard[] | undefined>
   /** 卸载用户安装的技能；成功时返回 true。 */
   uninstallSkill(name: string): Promise<boolean>
   /** 启用、停用或改“始终加载”；返回更新后的摘要。 */
@@ -1005,6 +1013,22 @@ export function createSessionStore(api: MainApi): SessionStore {
         run(() =>
           api.request('skill.install', confirm === undefined ? { source } : { source, confirm }),
         ),
+
+      installSkillFromUrl: (url) => run(() => api.request('skill.installUrl', { url })),
+
+      searchHubSkills: async (query) =>
+        (
+          await run(() =>
+            api.request('hub.skills', query === undefined || query === '' ? {} : { query }),
+          )
+        )?.items,
+
+      searchHubMcp: async (query) =>
+        (
+          await run(() =>
+            api.request('hub.mcp', query === undefined || query === '' ? {} : { query }),
+          )
+        )?.items,
 
       uninstallSkill: async (name) =>
         (await run(() => api.request('skill.uninstall', { name }))) !== undefined,

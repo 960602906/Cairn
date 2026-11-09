@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import {
+  type HubSkillCard,
   RpcError,
   type ProjectSummary,
   type SkillDetail,
@@ -59,6 +60,11 @@ interface SetupOptions {
   readonly failBaseList?: boolean
   readonly failProjectList?: boolean
   readonly detailUndefined?: readonly string[]
+  readonly hubItems?: readonly HubSkillCard[]
+  readonly failHub?: boolean
+  readonly failInstallUrl?: boolean
+  readonly failPreviewInstall?: boolean
+  readonly failUninstall?: boolean
 }
 
 function setup(options: SetupOptions = {}) {
@@ -118,6 +124,7 @@ function setup(options: SetupOptions = {}) {
           skills = [incoming, ...skills]
           return { installed: true, skill: detailOf(incoming, 'Marker body.') }
         }
+        if (options.failPreviewInstall) throw new RpcError('skills.install_failed')
         return { installed: false, skill: detailOf(incoming, 'Marker body.') }
       }
       case 'skill.get': {
@@ -153,12 +160,32 @@ function setup(options: SetupOptions = {}) {
       }
       case 'skill.uninstall': {
         const { name } = params as { name: string }
+        if (options.failUninstall) throw new RpcError('skills.failed')
         if (!skills.some((item) => item.name === name)) {
           throw new RpcError('skills.not_found', { name })
         }
         skills = skills.filter((item) => item.name !== name)
         return {}
       }
+      case 'hub.skills':
+        if (options.failHub) throw new RpcError('hub.failed')
+        return {
+          items: options.hubItems ?? [
+            {
+              slug: 'pdf-tools',
+              displayName: 'PDF Tools',
+              summary: 'Read and annotate PDF files.',
+              ownerHandle: 'acme',
+              version: '2.0.0',
+              downloads: 42,
+              stars: 7,
+              downloadUrl: 'https://clawhub.ai/api/v1/download?slug=pdf-tools',
+            },
+          ],
+        }
+      case 'skill.installUrl':
+        if (options.failInstallUrl) throw new RpcError('skills.install_failed')
+        return { installed: true, skill: detailOf(incoming) }
       default:
         return {}
     }
@@ -181,6 +208,24 @@ async function openSkills() {
 }
 
 describe('SkillsSettings', () => {
+  it('browses the market and installs a skill', async () => {
+    const { request } = setup()
+    await openSkills()
+    await userEvent.click(screen.getByRole('tab', { name: '市场' }))
+
+    const market = await screen.findByRole('list', { name: '技能市场' })
+    expect(within(market).getByText('PDF Tools')).toBeTruthy()
+    expect(within(market).getByText('@acme · v2.0.0')).toBeTruthy()
+    await userEvent.click(within(market).getByRole('button', { name: '下载并安装' }))
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('skill.installUrl', {
+        url: 'https://clawhub.ai/api/v1/download?slug=pdf-tools',
+      }),
+    )
+    expect(screen.getByRole('tab', { name: '已安装' }).getAttribute('aria-selected')).toBe('true')
+  })
+
   it('lists built-in and installed skills, and saves the switches', async () => {
     const { request } = setup()
     await openSkills()
@@ -400,5 +445,100 @@ describe('SkillsSettings', () => {
     await openSkills()
     const list = await screen.findByRole('list', { name: '技能' })
     expect(within(list).getByText('demo')).toBeTruthy()
+  })
+
+  it('searches the market and handles fallback cards, failures and empty results', async () => {
+    const options = {
+      skills: [] as SkillSummary[],
+      hubItems: [
+        {
+          slug: 'bare',
+          displayName: 'Bare Skill',
+          summary: '',
+          downloads: 0,
+          stars: 0,
+        },
+      ] as HubSkillCard[],
+      failHub: false,
+    }
+    const { request } = setup(options)
+    await openSkills()
+    await userEvent.click(screen.getByRole('tab', { name: '市场' }))
+    const market = await screen.findByRole('list', { name: '技能市场' })
+    expect(within(market).getByText('ClawHub')).toBeTruthy()
+    expect(within(market).getByText('这个技能还没有简介。')).toBeTruthy()
+    expect(within(market).queryByRole('link')).toBeNull()
+    expect(within(market).getByRole('button', { name: '下载并安装' })).toHaveProperty(
+      'disabled',
+      true,
+    )
+
+    options.failHub = true
+    const search = screen.getByRole('searchbox', { name: '搜索技能' })
+    await userEvent.type(search, 'git')
+    await userEvent.click(within(search.closest('form')!).getByRole('button', { name: '搜索' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('hub.skills', { query: 'git' }))
+    expect(await screen.findByText(/市场暂时不可用/)).toBeTruthy()
+    cleanup()
+
+    setup({ skills: [], hubItems: [] })
+    await openSkills()
+    await userEvent.click(screen.getByRole('tab', { name: '市场' }))
+    expect(await screen.findByText('没有找到匹配的技能。')).toBeTruthy()
+  })
+
+  it('keeps the market open when install fails, and keeps skills after failed actions', async () => {
+    const options = {
+      skills: [skill({ name: 'removable', description: 'Removable.' })],
+      pick: { kind: 'directory' as const, path: '/tmp/broken' },
+      hubItems: [
+        {
+          slug: 'broken',
+          displayName: 'Broken Skill',
+          summary: 'Will fail.',
+          ownerHandle: 'acme',
+          version: '1.0.0',
+          downloads: 1,
+          stars: 0,
+          webUrl: 'https://clawhub.ai/acme/skills/broken',
+          downloadUrl: 'https://clawhub.ai/api/v1/download?slug=broken',
+        },
+      ],
+      failInstallUrl: true,
+      failPreviewInstall: true,
+      failUninstall: true,
+    }
+    const { request } = setup(options)
+    await openSkills()
+    await userEvent.click(screen.getByRole('tab', { name: '市场' }))
+    const market = await screen.findByRole('list', { name: '技能市场' })
+    expect(within(market).getByRole('link')).toBeTruthy()
+    await userEvent.click(within(market).getByRole('button', { name: '下载并安装' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('skill.installUrl', {
+        url: 'https://clawhub.ai/api/v1/download?slug=broken',
+      }),
+    )
+    expect(screen.getByRole('list', { name: '技能市场' })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('tab', { name: '已安装' }))
+    const list = await screen.findByRole('list', { name: '技能' })
+    await userEvent.click(within(list).getByRole('button', { name: '卸载 removable' }))
+    const confirm = await screen.findByRole('dialog')
+    await userEvent.click(within(confirm).getByRole('button', { name: '卸载技能' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('skill.uninstall', { name: 'removable' }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(within(list).getByText('removable')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: '安装技能' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '从文件夹安装' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('skill.install', {
+        source: { kind: 'directory', path: '/tmp/broken' },
+      }),
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

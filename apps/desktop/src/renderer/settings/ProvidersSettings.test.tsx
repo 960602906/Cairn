@@ -45,7 +45,6 @@ type Handler = (params: never) => unknown
 
 function setup(initial: Partial<Settings> = {}, handlers: Record<string, Handler> = {}) {
   let settings: Settings = { locale: 'zh-CN', providers: [], ...initial }
-  // 只有已配置的供应商保存过 Key
   const keys = new Map<string, string>(
     (
       [
@@ -109,34 +108,48 @@ const open = async () => {
   return screen.findByRole('heading', { name: '模型供应商' })
 }
 
-const editor = (name: string) => screen.getByRole('region', { name })
+const list = () => screen.getByRole('list', { name: '已配置的供应商' })
+const providerButtons = () => within(list()).getAllByRole('listitem')
+
+async function createProvider(format: 'Anthropic' | 'OpenAI' | 'Gemini') {
+  await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
+  const picker = screen.getByRole('dialog', { name: '选择接口格式' })
+  await userEvent.click(within(picker).getByRole('radio', { name: new RegExp(`^${format}`) }))
+  await userEvent.click(within(picker).getByRole('button', { name: '下一步' }))
+  return screen.getByRole('dialog', { name: '新供应商' })
+}
+
+async function editProvider(name: RegExp) {
+  await userEvent.click(screen.getByRole('button', { name }))
+  return screen.getByRole('dialog', { name: '编辑供应商' })
+}
 
 describe('ProvidersSettings', () => {
-  it('opens from settings and adds the first provider with its key', async () => {
+  it('adds the first provider from the service picker with its key', async () => {
     const { request, updates } = setup(
       {},
       { 'provider.test': () => ({ ok: true, latencyMs: 312 }) },
     )
     await open()
-    expect(screen.getByText(/还没有配置模型供应商/)).toBeTruthy()
-    const nav = screen.getByRole('navigation', { name: '设置分类' })
-    expect(
-      within(nav).getByRole('button', { name: '模型供应商' }).getAttribute('aria-current'),
-    ).toBe('page')
+    expect(screen.getByText('这个接口格式还没有供应商。')).toBeTruthy()
 
-    await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
-    const card = editor('新供应商')
-    expect((within(card).getByLabelText('Base URL') as HTMLInputElement).value).toBe(
-      'https://api.deepseek.com',
+    const card = await createProvider('OpenAI')
+    expect((within(card).getByLabelText('Base URL') as HTMLInputElement).value).toBe('')
+    expect(within(card).getByText('OpenAI · 兼容')).toBeTruthy()
+    await userEvent.clear(within(card).getByLabelText('名称'))
+    await userEvent.type(within(card).getByLabelText('名称'), 'DeepSeek')
+    await userEvent.type(within(card).getByLabelText('Base URL'), 'https://api.deepseek.com')
+    await userEvent.click(within(card).getByRole('button', { name: '手动添加' }))
+    await userEvent.type(
+      within(card).getByLabelText('模型名称，例如 deepseek-chat'),
+      'deepseek-flash',
     )
-    expect(within(card).getByRole('radio', { name: '官方' }).getAttribute('aria-checked')).toBe(
-      'true',
-    )
+    await userEvent.click(within(card).getByRole('button', { name: '添加' }))
     await userEvent.type(within(card).getByLabelText('API Key'), ' sk-new-key-1234 ')
     await userEvent.click(within(card).getByRole('button', { name: '测试连接' }))
     expect(await within(card).findByText(/312 ms/)).toBeTruthy()
     expect(request).toHaveBeenCalledWith('provider.test', {
-      provider: expect.objectContaining({ id: 'deepseek', template: 'deepseek' }),
+      provider: expect.objectContaining({ id: 'deepseek' }),
       modelId: 'deepseek-flash',
       secret: 'sk-new-key-1234',
     })
@@ -151,36 +164,25 @@ describe('ProvidersSettings', () => {
       ref: 'deepseek',
       secret: 'sk-new-key-1234',
     })
-    // 保存后选中新的供应商，测试结果跟着它
-    const list = await screen.findByRole('list', { name: '已配置的供应商' })
-    expect(within(list).getByText('正常')).toBeTruthy()
-    expect(await screen.findByText('••••••••1234')).toBeTruthy()
+    expect(within(list()).getByText('正常')).toBeTruthy()
+    const savedCard = await editProvider(/^DeepSeek/)
+    expect(await within(savedCard).findByText('••••••••1234')).toBeTruthy()
   })
 
   it('adds a second provider without replacing the first', async () => {
-    const { updates, settings } = setup({})
+    const { updates, settings } = setup({ providers: [deepseek] })
     await open()
-
-    await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
-    let card = editor('新供应商')
+    const card = await createProvider('OpenAI')
+    expect((within(card).getByLabelText('名称') as HTMLInputElement).value).toBe('自定义供应商')
+    await userEvent.type(within(card).getByLabelText('Base URL'), 'https://relay.example.com/v1')
     await userEvent.click(within(card).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(updates).toHaveLength(1))
-
-    await userEvent.click(screen.getByRole('button', { name: '添加供应商' }))
-    card = editor('新供应商')
-    // 同类型再加一个时默认名称不重复，列表里能区分
-    expect((within(card).getByLabelText('名称') as HTMLInputElement).value).toBe('DeepSeek 2')
-    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
-    await waitFor(() => expect(updates).toHaveLength(2))
-
-    expect(settings().providers.map((provider) => provider.id)).toEqual(['deepseek', 'deepseek-2'])
-    expect(settings().providers).toHaveLength(2)
-    const list = screen.getByRole('list', { name: '已配置的供应商' })
-    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
-    expect(within(list).getByText('DeepSeek 2')).toBeTruthy()
+    expect(settings().providers.map((provider) => provider.id)).toEqual(['deepseek', 'custom'])
+    expect(providerButtons()).toHaveLength(2)
+    expect(within(list()).getByText('自定义供应商')).toBeTruthy()
   })
 
-  it('keeps three providers and clears only the references owned by a deleted one', async () => {
+  it('deletes providers per format and clears only the references they own', async () => {
     const third: ProviderConfig = {
       ...gateway,
       id: 'gw-2',
@@ -194,85 +196,58 @@ describe('ProvidersSettings', () => {
       auxiliaryModel: { providerId: 'gw', modelId: 'claude-x' },
     })
     await open()
-    const list = () => screen.getByRole('list', { name: '已配置的供应商' })
-    expect(within(list()).getAllByRole('listitem')).toHaveLength(3)
+    await userEvent.click(screen.getByRole('tab', { name: /Anthropic/ }))
+    expect(providerButtons()).toHaveLength(2)
 
-    // 删除中间的供应商：其它两家保留，辅助模型被清空，默认模型不受影响。
-    await userEvent.click(within(list()).getAllByRole('button')[1]!)
-    const middle = editor('公司网关')
-    await userEvent.click(within(middle).getByRole('button', { name: '删除' }))
+    const gwRow = providerButtons().find((row) => within(row).queryByText('公司网关'))!
+    await userEvent.click(within(gwRow).getByRole('button', { name: '删除' }))
     const firstDialog = await screen.findByRole('dialog', { name: '删除 公司网关？' })
     await userEvent.click(within(firstDialog).getByRole('button', { name: '删除供应商' }))
     await waitFor(() => expect(updates).toHaveLength(1))
-    expect(updates[0]).toEqual({
-      providers: [deepseek, third],
-      auxiliaryModel: null,
-    })
-    expect(within(list()).getAllByRole('listitem')).toHaveLength(2)
+    expect(updates[0]).toEqual({ providers: [deepseek, third], auxiliaryModel: null })
+    expect(providerButtons()).toHaveLength(1)
 
-    // 删除默认模型所属的供应商：默认模型一起清空，剩下的供应商仍在。
-    await userEvent.click(within(list()).getAllByRole('button')[0]!)
-    const first = editor('DeepSeek')
-    await userEvent.click(within(first).getByRole('button', { name: '删除' }))
+    await userEvent.click(screen.getByRole('tab', { name: /OpenAI/ }))
+    const dsRow = providerButtons()[0]!
+    await userEvent.click(within(dsRow).getByRole('button', { name: '删除' }))
     const secondDialog = await screen.findByRole('dialog', { name: '删除 DeepSeek？' })
     await userEvent.click(within(secondDialog).getByRole('button', { name: '删除供应商' }))
     await waitFor(() => expect(updates).toHaveLength(2))
     expect(updates[1]).toEqual({ providers: [third], defaultModel: null })
-    expect(within(list()).getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.getByText('这个接口格式还没有供应商。')).toBeTruthy()
   })
 
-  it('lists providers with source, default, key and test status', async () => {
-    setup({
-      providers: [
-        deepseek,
-        gateway,
-        { ...gateway, id: 'nokey', credentialRef: 'nokey', displayName: 'X' },
-      ],
-      defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
-    })
-    await open()
-    const list = screen.getByRole('list', { name: '已配置的供应商' })
-    const rows = within(list).getAllByRole('button')
-    expect(rows[0]!.textContent).toMatch(/DeepSeek官方OpenAI 格式 · 2 个模型默认未测试/)
-    expect(rows[1]!.textContent).toMatch(/公司网关第三方中转Anthropic 格式 · 1 个模型/)
-    await waitFor(() => expect(rows[2]!.textContent).toMatch(/未保存 Key.*未配置/))
-    expect(await screen.findByText('••••••••3f9a')).toBeTruthy()
-    expect(screen.getByText('已保存到系统钥匙串')).toBeTruthy()
-
-    // 短 Key 不显示末 4 位
-    await userEvent.click(rows[1]!)
-    const card = editor('公司网关')
-    expect(await within(card).findByText('••••••••')).toBeTruthy()
-    expect(within(card).getByText('128k 上下文 · 不支持工具')).toBeTruthy()
-    expect(within(card).getByText('不需要带 /v1。')).toBeTruthy()
-  })
-
-  it('edits models, the default and the key, and reverts with cancel', async () => {
+  it('edits a model, changes the default and replaces the key', async () => {
     const { updates, request } = setup({
       providers: [deepseek],
       defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
     })
     await open()
-    const card = editor('DeepSeek')
+    const card = await editProvider(/^DeepSeek/)
     const save = within(card).getByRole('button', { name: '保存' }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
 
-    // 默认模型不能停用或删除
     expect(
       (within(card).getByRole('switch', { name: '启用 DeepSeek V4.1 Flash' }) as HTMLButtonElement)
         .disabled,
     ).toBe(true)
     await userEvent.click(within(card).getByRole('switch', { name: '启用 deepseek-v4-pro' }))
     expect(save.disabled).toBe(false)
-    await userEvent.click(within(card).getByRole('button', { name: '取消' }))
-    expect(save.disabled).toBe(true)
 
-    await userEvent.click(within(card).getByRole('button', { name: '设为默认' }))
-    await userEvent.click(within(card).getByRole('switch', { name: '启用 DeepSeek V4.1 Flash' }))
+    await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
+    const detail = within(card).getByRole('complementary', { name: '模型设置' })
+    await userEvent.click(within(detail).getByRole('button', { name: '设为默认' }))
+    const context = within(detail).getByLabelText('上下文长度') as HTMLInputElement
+    await userEvent.clear(context)
+    await userEvent.type(context, '200000')
+    await userEvent.tab()
+    await userEvent.click(within(detail).getByRole('switch', { name: '支持工具调用' }))
+
     await userEvent.click(within(card).getByRole('button', { name: '更换' }))
     await userEvent.click(within(card).getByRole('button', { name: '保留原来的' }))
     await userEvent.click(within(card).getByRole('button', { name: '更换' }))
     await userEvent.type(within(card).getByLabelText('API Key'), 'sk-replaced-9999')
+    await userEvent.click(within(card).getByRole('switch', { name: '启用 DeepSeek V4.1 Flash' }))
     await userEvent.clear(within(card).getByLabelText('名称'))
     await userEvent.type(within(card).getByLabelText('名称'), 'DS')
     await userEvent.click(save)
@@ -284,7 +259,11 @@ describe('ProvidersSettings', () => {
           displayName: 'DS',
           models: [
             expect.objectContaining({ id: 'deepseek-flash', enabled: false }),
-            expect.not.objectContaining({ enabled: expect.anything() }),
+            expect.objectContaining({
+              id: 'deepseek-v4-pro',
+              contextWindow: 200_000,
+              supportsTools: false,
+            }),
           ],
         }),
       ],
@@ -294,47 +273,64 @@ describe('ProvidersSettings', () => {
       ref: 'deepseek',
       secret: 'sk-replaced-9999',
     })
+    expect((within(list()).getByText('DS') as HTMLElement).textContent).toBe('DS')
   })
 
-  it('switches to a relay, changes the format and validates the address', async () => {
+  it('creates a custom relay from any format and validates the address', async () => {
     setup({ providers: [deepseek] })
     await open()
-    await userEvent.click(screen.getByRole('button', { name: '添加供应商' }))
-    const card = editor('新供应商')
-    await userEvent.click(within(card).getByRole('radio', { name: '第三方中转' }))
+    const card = await createProvider('Gemini')
+    expect(within(card).getByText('Gemini · 兼容')).toBeTruthy()
     const url = within(card).getByLabelText('Base URL') as HTMLInputElement
     expect(url.value).toBe('')
-    const service = within(card).getByLabelText('服务') as HTMLSelectElement
-    expect(service.value).toBe('deepseek')
-    expect(within(card).getByRole('option', { name: '兼容 DeepSeek' })).toBeTruthy()
     const save = within(card).getByRole('button', { name: '保存' }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
     await userEvent.type(url, 'ftp://x')
     expect(within(card).getByText(/地址需要以 http/)).toBeTruthy()
     await userEvent.clear(url)
-    await userEvent.type(url, 'http://127.0.0.1:3425/v1')
+    await userEvent.type(url, 'http://127.0.0.1:3425/v1beta')
     expect(save.disabled).toBe(false)
 
-    await userEvent.selectOptions(service, '')
     await userEvent.click(within(card).getByRole('button', { name: /高级/ }))
-    expect((within(card).getByLabelText('思考参数格式') as HTMLSelectElement).value).toBe('')
+    expect(within(card).getByText('这种接口格式没有需要调整的兼容参数。')).toBeTruthy()
+    await userEvent.click(within(card).getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog', { name: '新供应商' })).toBeNull()
+  })
+
+  it('creates a provider by double-clicking an interface format', async () => {
+    setup()
+    await open()
+    await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
+    const picker = screen.getByRole('dialog', { name: '选择接口格式' })
+    await userEvent.dblClick(within(picker).getByRole('radio', { name: /^OpenAI/ }))
+    expect(screen.getByRole('dialog', { name: '新供应商' })).toBeTruthy()
+  })
+
+  it('advances the compatibility parameters for OpenAI relays', async () => {
+    const { updates } = setup({ providers: [deepseek] })
+    await open()
+    const card = await editProvider(/^DeepSeek/)
+    await userEvent.click(within(card).getByRole('button', { name: /高级/ }))
+    expect((within(card).getByLabelText('思考参数格式') as HTMLSelectElement).value).toBe(
+      'deepseek',
+    )
     await userEvent.selectOptions(within(card).getByLabelText('思考参数格式'), 'qwen')
     await userEvent.selectOptions(within(card).getByLabelText('输出上限字段'), 'max_tokens')
     const reasoning = within(card).getByRole('radiogroup', { name: '回传推理内容' })
     await userEvent.click(within(reasoning).getByRole('radio', { name: '是' }))
-    await userEvent.click(within(reasoning).getByRole('radio', { name: '否' }))
-    await userEvent.click(within(reasoning).getByRole('radio', { name: '自动' }))
-    await userEvent.selectOptions(within(card).getByLabelText('输出上限字段'), '')
-
-    await userEvent.click(within(card).getByRole('radio', { name: /Anthropic/ }))
-    expect(within(card).getByText('这种接口格式没有需要调整的兼容参数。')).toBeTruthy()
-    expect(within(card).getByText('claude-sonnet-5-5')).toBeTruthy()
-    expect(url.value).toBe('http://127.0.0.1:3425/v1')
-    await userEvent.click(within(card).getByRole('radio', { name: '官方' }))
-    expect(url.value).toBe('https://api.anthropic.com')
-
-    await userEvent.click(within(card).getByRole('button', { name: '取消' }))
-    expect(screen.queryByRole('region', { name: '新供应商' })).toBeNull()
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).toMatchObject({
+      providers: [
+        expect.objectContaining({
+          compat: {
+            thinkingFormat: 'qwen',
+            maxTokensField: 'max_tokens',
+            requiresReasoningContentOnAssistantMessages: true,
+          },
+        }),
+      ],
+    })
   })
 
   it('fetches the model list, or falls back to adding models manually', async () => {
@@ -357,7 +353,7 @@ describe('ProvidersSettings', () => {
       },
     )
     await open()
-    const card = editor('公司网关')
+    const card = await editProvider(/^公司网关/)
     await userEvent.click(within(card).getByRole('button', { name: '拉取模型列表' }))
     expect(request).toHaveBeenCalledWith('provider.models', {
       provider: expect.objectContaining({ id: 'gw' }),
@@ -370,14 +366,19 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(card).getByRole('button', { name: '全部添加' }))
     expect(within(card).getByText('找到 0 个未添加的模型')).toBeTruthy()
     await userEvent.click(within(card).getByRole('button', { name: '收起' }))
-    await userEvent.click(within(card).getByRole('button', { name: '删除 claude-w' }))
+    await userEvent.click(within(card).getByRole('button', { name: /claude-w/ }))
+    await userEvent.click(
+      within(within(card).getByRole('complementary', { name: '模型设置' })).getByRole('button', {
+        name: '删除 claude-w',
+      }),
+    )
     expect(within(card).queryByText('claude-w')).toBeNull()
 
     fail = true
     await userEvent.click(within(card).getByRole('button', { name: '拉取模型列表' }))
     expect((await within(card).findByRole('alert')).textContent).toContain('可以手动添加模型')
     const id = within(card).getByLabelText('模型名称，例如 deepseek-chat')
-    const context = within(card).getByLabelText('上下文长度') as HTMLInputElement
+    const context = within(card).getAllByLabelText('上下文长度')[0] as HTMLInputElement
     expect(context.value).toBe('128000')
     await userEvent.type(id, 'my-model')
     await userEvent.clear(context)
@@ -385,12 +386,9 @@ describe('ProvidersSettings', () => {
     expect(context.value).toBe('64000')
     await userEvent.click(within(card).getByRole('button', { name: '添加' }))
     expect(within(card).getByText('my-model')).toBeTruthy()
-    expect(within(card).getAllByText('64k 上下文').length).toBeGreaterThan(0)
-    await userEvent.click(within(card).getByRole('button', { name: '手动添加' }))
-    expect(within(card).queryByLabelText('上下文长度')).toBeNull()
   })
 
-  it('shows a failed connection test and deletes a provider after confirming', async () => {
+  it('shows a failed connection test and deletes the provider', async () => {
     const { updates } = setup(
       { providers: [deepseek, gateway] },
       {
@@ -402,28 +400,31 @@ describe('ProvidersSettings', () => {
       },
     )
     await open()
-    const card = editor('DeepSeek')
+    const card = await editProvider(/^DeepSeek/)
     await userEvent.click(within(card).getByRole('button', { name: '测试连接' }))
     expect((await within(card).findByRole('status')).textContent).toContain(
       '连接失败 · 模型服务拒绝了 Key',
     )
-    expect(
-      within(screen.getByRole('list', { name: '已配置的供应商' })).getByText('连接失败'),
-    ).toBeTruthy()
-    // 改动后测试结果失效
-    await userEvent.type(within(card).getByLabelText('名称'), '!')
-    expect(within(card).getByText('还没有测试连接。')).toBeTruthy()
+    await userEvent.click(within(card).getByRole('button', { name: '取消' }))
+    expect(within(list()).getByText('连接失败')).toBeTruthy()
+    const reopened = await editProvider(/^DeepSeek/)
+    await userEvent.type(within(reopened).getByLabelText('名称'), '!')
+    expect(within(reopened).getByText('还没有测试连接。')).toBeTruthy()
 
-    await userEvent.click(within(card).getByRole('button', { name: '删除' }))
+    await userEvent.click(within(reopened).getByRole('button', { name: '删除' }))
     const dialog = await screen.findByRole('dialog', { name: '删除 DeepSeek？' })
     await userEvent.click(within(dialog).getByRole('button', { name: '删除供应商' }))
     await waitFor(() => expect(updates).toEqual([{ providers: [gateway] }]))
-    expect(await screen.findByRole('region', { name: '公司网关' })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: '编辑供应商' })).toBeNull()
   })
 
-  it('sets the auxiliary model and clears it back to the main model (M3-01)', async () => {
+  it('only offers enabled models as the auxiliary model', async () => {
+    const withDisabled: ProviderConfig = {
+      ...gateway,
+      models: [...gateway.models, { id: 'claude-hidden', ...cap, enabled: false }],
+    }
     const { updates } = setup({
-      providers: [deepseek, gateway],
+      providers: [deepseek, withDisabled],
       defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
       auxiliaryModel: { providerId: 'gw', modelId: 'claude-x' },
     })
@@ -432,21 +433,20 @@ describe('ProvidersSettings', () => {
     expect(select.value).toBe(JSON.stringify(['gw', 'claude-x']))
     expect(screen.getByRole('option', { name: '与主模型相同' })).toBeTruthy()
     expect(screen.getByRole('option', { name: 'DeepSeek · DeepSeek V4.1 Flash' })).toBeTruthy()
+    expect(screen.queryByRole('option', { name: /claude-hidden/ })).toBeNull()
 
     await userEvent.selectOptions(select, JSON.stringify(['deepseek', 'deepseek-v4-pro']))
     await waitFor(() => expect(updates).toHaveLength(1))
     expect(updates[0]).toEqual({
       auxiliaryModel: { providerId: 'deepseek', modelId: 'deepseek-v4-pro' },
     })
-    expect(select.value).toBe(JSON.stringify(['deepseek', 'deepseek-v4-pro']))
 
     await userEvent.selectOptions(select, '')
     await waitFor(() => expect(updates).toHaveLength(2))
     expect(updates[1]).toEqual({ auxiliaryModel: null })
-    expect(select.value).toBe('')
   })
 
-  it('handles an empty provider, template switches and a missing model list', async () => {
+  it('handles an empty provider and missing model list', async () => {
     const empty: ProviderConfig = {
       id: 'empty',
       kind: 'openai',
@@ -454,58 +454,83 @@ describe('ProvidersSettings', () => {
       baseUrl: 'https://empty.example.com',
       models: [],
     }
-    const { updates } = setup(
-      {
-        providers: [deepseek, gateway, empty],
-        defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
-      },
+    setup(
+      { providers: [deepseek, empty] },
       { 'provider.models': () => undefined, 'provider.test': () => ({ ok: true, latencyMs: 5 }) },
     )
     await open()
-
-    await userEvent.click(screen.getByRole('button', { name: /Empty/ }))
-    const card = editor('Empty')
+    const card = await editProvider(/^Empty/)
     expect(within(card).getByText(/还没有模型/)).toBeTruthy()
     expect(
       (within(card).getByRole('button', { name: '测试连接' }) as HTMLButtonElement).disabled,
     ).toBe(true)
     await userEvent.click(within(card).getByRole('button', { name: '拉取模型列表' }))
     expect(within(card).queryByRole('list', { name: '拉取到的模型' })).toBeNull()
-    await userEvent.selectOptions(within(card).getByLabelText('服务'), 'deepseek')
     await userEvent.click(within(card).getByRole('button', { name: /高级/ }))
     await userEvent.selectOptions(within(card).getByLabelText('思考参数格式'), 'qwen')
-    await userEvent.selectOptions(within(card).getByLabelText('思考参数格式'), '')
-    expect((within(card).getByLabelText('思考参数格式') as HTMLSelectElement).value).toBe('')
+    expect((within(card).getByLabelText('思考参数格式') as HTMLSelectElement).value).toBe('qwen')
+  })
 
-    await userEvent.click(screen.getByRole('button', { name: /公司网关/ }))
-    const relay = editor('公司网关')
-    await userEvent.click(within(relay).getByRole('radio', { name: /Anthropic/ }))
-    expect(
-      within(relay)
-        .getByRole('radio', { name: /Anthropic/ })
-        .getAttribute('aria-checked'),
-    ).toBe('true')
-    await userEvent.click(within(relay).getByRole('radio', { name: /OpenAI/ }))
-    expect(
-      within(relay)
-        .getByRole('radio', { name: /OpenAI/ })
-        .getAttribute('aria-checked'),
-    ).toBe('true')
-    await userEvent.type(within(relay).getByLabelText('名称'), ' 2')
-    await userEvent.click(within(relay).getByRole('button', { name: '保存' }))
-    await waitFor(() => expect(updates).toHaveLength(1))
-    expect(updates[0]).not.toHaveProperty('defaultModel')
+  it('shows a missing URL, filters models and applies a compatibility preset', async () => {
+    const noUrl: ProviderConfig = {
+      id: 'nourl',
+      kind: 'openai',
+      displayName: 'No URL',
+      baseUrl: '',
+      models: [{ id: 'local-model', ...cap }],
+    }
+    setup({ providers: [deepseek, noUrl] })
+    await open()
+    expect(within(list()).getByText('未填写地址')).toBeTruthy()
 
-    await userEvent.click(screen.getByRole('button', { name: /DeepSeek/ }))
-    const main = editor('DeepSeek')
-    await userEvent.click(within(main).getByRole('button', { name: '测试连接' }))
-    expect(await within(main).findByText(/5 ms/)).toBeTruthy()
-    await userEvent.click(within(main).getByRole('radio', { name: /Anthropic/ }))
-    expect(
-      within(main)
-        .getByRole('radio', { name: /Anthropic/ })
-        .getAttribute('aria-checked'),
-    ).toBe('true')
+    let card = await editProvider(/^No URL/)
+    const search = within(card).getByLabelText('搜索模型')
+    await userEvent.type(search, 'not-here')
+    expect(within(card).getByText('没有匹配的模型。')).toBeTruthy()
+    await userEvent.clear(search)
+    expect(within(card).getAllByText('local-model').length).toBeGreaterThan(0)
+    await userEvent.click(within(card).getByRole('button', { name: '取消' }))
+
+    card = await editProvider(/^DeepSeek/)
+    await userEvent.click(within(card).getByRole('button', { name: /高级/ }))
+    const preset = within(card).getByLabelText('兼容服务（可选）') as HTMLSelectElement
+    await userEvent.selectOptions(preset, 'openai')
+    expect(preset.value).toBe('openai')
+  })
+
+  it('closes dialogs with Escape and edits model names and capabilities', async () => {
+    setup({ providers: [deepseek, gateway] })
+    await open()
+    await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
+    expect(screen.getByRole('dialog', { name: '选择接口格式' })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '选择接口格式' })).toBeNull())
+
+    const card = await editProvider(/^DeepSeek/)
+    await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
+    const detail = within(card).getByRole('complementary', { name: '模型设置' })
+    await userEvent.type(within(detail).getByLabelText('显示名称'), 'Pro')
+    await userEvent.click(within(detail).getByRole('switch', { name: '并行工具调用' }))
+    await userEvent.click(within(detail).getByRole('switch', { name: '支持思考' }))
+    expect(within(card).getAllByText('Pro').length).toBeGreaterThan(0)
+    const context = within(detail).getByLabelText('上下文长度') as HTMLInputElement
+    await userEvent.clear(context)
+    await userEvent.type(context, '0{Enter}')
+    expect(context.value).toBe('1000000')
+    await userEvent.clear(context)
+    await userEvent.type(context, '200000{Enter}')
+    expect(context.value).toBe('200000')
+
+    await userEvent.click(screen.getByRole('button', { name: '取消' }))
+    await userEvent.click(screen.getByRole('tab', { name: /Anthropic/ }))
+    const gatewayCard = await editProvider(/^公司网关/)
+    await userEvent.click(within(gatewayCard).getByRole('button', { name: '手动添加' }))
+    await userEvent.type(
+      within(gatewayCard).getByLabelText('模型名称，例如 deepseek-chat'),
+      'manual-by-enter',
+    )
+    await userEvent.click(within(gatewayCard).getByRole('button', { name: '添加' }))
+    expect(within(gatewayCard).getByText('manual-by-enter')).toBeTruthy()
   })
 
   it('disables the key input when system encryption is unavailable', async () => {
@@ -514,13 +539,13 @@ describe('ProvidersSettings', () => {
       { 'credentials.status': () => ({ configured: false, available: false }) },
     )
     await open()
-    const card = editor('DeepSeek')
+    const card = await editProvider(/^DeepSeek/)
     const key = (await within(card).findByLabelText('API Key')) as HTMLInputElement
     await waitFor(() => expect(key.disabled).toBe(true))
     expect(within(card).getByText('系统加密不可用，无法保存 Key。')).toBeTruthy()
   })
 
-  it('keeps the editor open when saving or deleting fails, and ignores a missing key status', async () => {
+  it('keeps the editor open when saving fails and when the key status is missing', async () => {
     setup(
       { providers: [deepseek] },
       {
@@ -529,15 +554,10 @@ describe('ProvidersSettings', () => {
       },
     )
     await open()
-    const card = editor('DeepSeek')
+    const card = await editProvider(/^DeepSeek/)
     await userEvent.type(within(card).getByLabelText('名称'), '!')
     await userEvent.click(within(card).getByRole('button', { name: '保存' }))
-    expect(await within(card).findByLabelText('API Key')).toBeTruthy()
-    expect(within(card).getByRole('button', { name: '保存' })).toBeTruthy()
-
-    await userEvent.click(within(card).getByRole('button', { name: '删除' }))
-    const dialog = await screen.findByRole('dialog')
-    await userEvent.click(within(dialog).getByRole('button', { name: '删除供应商' }))
-    expect(await screen.findByRole('region', { name: 'DeepSeek' })).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('dialog', { name: '编辑供应商' })).toBeTruthy())
+    expect(within(card).getByLabelText('API Key')).toBeTruthy()
   })
 })

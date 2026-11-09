@@ -4,4 +4,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { exposeRendererApi } from './expose.js'
 
-exposeRendererApi({ contextBridge, ipcRenderer })
+exposeRendererApi({ contextBridge, ipcRenderer, platform: process.platform })

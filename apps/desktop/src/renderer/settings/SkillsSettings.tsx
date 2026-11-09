@@ -6,14 +6,30 @@
  * - 项目内技能只为开启了“启用项目内技能”的项目读取，合并到列表里；内置与已安装的技能只读一次。
  * - 脚本不会自动执行：预览与详情都会标出，执行时仍走审批。
  */
-import { ChevronDown, FileCode2, Plus, Sparkles, TriangleAlert } from 'lucide-react'
+import {
+  ChevronDown,
+  Cloud,
+  Download,
+  ExternalLink,
+  FileCode2,
+  Plus,
+  Search,
+  TriangleAlert,
+} from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SkillDetail, SkillFileInfo, SkillInstallSource, SkillSummary } from '@cairn/protocol'
+import type {
+  HubSkillCard,
+  SkillDetail,
+  SkillFileInfo,
+  SkillInstallSource,
+  SkillSummary,
+} from '@cairn/protocol'
 import { Markdown } from '../Markdown.js'
 import { useSessionStore } from '../store-context.js'
 import {
   Button,
+  cn,
   Dialog,
   DialogClose,
   DialogContent,
@@ -24,10 +40,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Spinner,
   Switch,
 } from '../ui/index.js'
-import { SettingsCard } from './Field.js'
+import { inputClass, SettingsCard, SettingsEmpty } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
+import { SkillGlyph } from './SettingIcons.js'
 
 type PickKind = SkillInstallSource['kind']
 
@@ -182,6 +200,8 @@ export function SkillsSettings() {
   const getSkill = useSessionStore((s) => s.getSkill)
   const pickSkillSource = useSessionStore((s) => s.pickSkillSource)
   const installSkill = useSessionStore((s) => s.installSkill)
+  const installSkillFromUrl = useSessionStore((s) => s.installSkillFromUrl)
+  const searchHubSkills = useSessionStore((s) => s.searchHubSkills)
   const uninstallSkill = useSessionStore((s) => s.uninstallSkill)
 
   const [skills, setSkills] = useState<readonly SkillSummary[]>([])
@@ -191,6 +211,12 @@ export function SkillsSettings() {
   >()
   const [installing, setInstalling] = useState(false)
   const [uninstalling, setUninstalling] = useState<SkillSummary | undefined>()
+  const [view, setView] = useState<'installed' | 'market'>('installed')
+  const [hubQuery, setHubQuery] = useState('')
+  const [hubItems, setHubItems] = useState<readonly HubSkillCard[] | undefined>()
+  const [hubLoading, setHubLoading] = useState(false)
+  const [hubFailed, setHubFailed] = useState(false)
+  const [installingSlug, setInstallingSlug] = useState<string | undefined>()
 
   const sourceLabel = (skill: SkillSummary) => {
     if (skill.source === 'builtin') return t('skills.source.builtin')
@@ -264,52 +290,230 @@ export function SkillsSettings() {
     if (await uninstallSkill(name)) await load()
   }
 
+  const searchMarket = async (query = hubQuery) => {
+    setHubLoading(true)
+    setHubFailed(false)
+    const items = await searchHubSkills(query.trim())
+    setHubLoading(false)
+    if (!items) {
+      setHubFailed(true)
+      return
+    }
+    setHubItems(items)
+  }
+
+  const installFromMarket = async (card: HubSkillCard) => {
+    if (!card.downloadUrl || installingSlug) return
+    setInstallingSlug(card.slug)
+    const result = await installSkillFromUrl(card.downloadUrl)
+    setInstallingSlug(undefined)
+    if (result) {
+      await load()
+      setView('installed')
+    }
+  }
+
+  useEffect(() => {
+    if (view !== 'market' || hubItems !== undefined) return
+    let cancelled = false
+    setHubLoading(true)
+    void searchHubSkills('').then((items) => {
+      if (cancelled) return
+      setHubLoading(false)
+      if (!items) setHubFailed(true)
+      else setHubItems(items)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [view, hubItems, searchHubSkills])
+
   return (
     <>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <SettingsHeader
+          icon={<SkillGlyph />}
           title={t('section.skills.title')}
           description={t('section.skills.description')}
         />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button>
-              <Plus />
-              {t('skills.install')}
-              <ChevronDown />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => void pick('directory')}>
-              <FileCode2 />
-              {t('skills.install.directory')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void pick('zip')}>
-              <FileCode2 />
-              {t('skills.install.zip')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {view === 'installed' && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                <Plus />
+                {t('skills.install')}
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => void pick('directory')}>
+                <FileCode2 />
+                {t('skills.install.directory')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void pick('zip')}>
+                <FileCode2 />
+                {t('skills.install.zip')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
-      {skills.length === 0 ? (
-        <SettingsCard className="items-start">
-          <Sparkles className="size-4 text-muted" />
-          <p className="text-ui text-muted">{t('skills.empty')}</p>
-        </SettingsCard>
-      ) : (
-        <ul aria-label={t('skills.list')} className="flex flex-col gap-3">
-          {skills.map((skill) => (
-            <SkillCard
-              key={keyOf(skill)}
-              skill={skill}
-              source={sourceLabel(skill)}
-              onChanged={load}
-              onOpen={(item) => void openDetail(item)}
-              onUninstall={setUninstalling}
+      <div
+        role="tablist"
+        aria-label={t('section.skills.title')}
+        className="flex items-center gap-1 border-b-[0.5px] border-hair pb-2"
+      >
+        {(
+          [
+            ['installed', t('skills.tab.installed')],
+            ['market', t('skills.tab.market')],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={view === value}
+            onClick={() => setView(value)}
+            className={cn(
+              'h-8 rounded-item px-3 text-ui transition-colors',
+              view === value
+                ? 'bg-raise font-medium text-fg shadow-1'
+                : 'text-muted hover:bg-hover hover:text-fg',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'market' && (
+        <div className="flex flex-col gap-3">
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void searchMarket()
+            }}
+          >
+            <label className="relative min-w-0 flex-1">
+              <span className="sr-only">{t('skills.market.search')}</span>
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />
+              <input
+                type="search"
+                value={hubQuery}
+                onChange={(event) => setHubQuery(event.currentTarget.value)}
+                placeholder={t('skills.market.searchPlaceholder')}
+                aria-label={t('skills.market.search')}
+                className={cn(inputClass, 'pl-8')}
+              />
+            </label>
+            <Button type="submit" disabled={hubLoading}>
+              {hubLoading ? <Spinner /> : <Search />}
+              {t('skills.market.searchAction')}
+            </Button>
+          </form>
+          <div className="flex items-center gap-2 text-note text-muted">
+            <Cloud className="size-3.5" />
+            <span>{t('skills.market.hint')}</span>
+          </div>
+          {hubFailed && (
+            <SettingsCard className="items-start">
+              <p role="alert" className="text-ui text-danger">
+                {t('skills.market.failed')}
+              </p>
+            </SettingsCard>
+          )}
+          {hubItems !== undefined && hubItems.length === 0 && !hubLoading && (
+            <SettingsCard className="items-start">
+              <p className="text-ui text-muted">{t('skills.market.empty')}</p>
+            </SettingsCard>
+          )}
+          {hubItems !== undefined && hubItems.length > 0 && (
+            <ul
+              aria-label={t('skills.market.list')}
+              className="grid grid-cols-1 gap-2 min-[1120px]:grid-cols-2"
+            >
+              {hubItems.map((card) => (
+                <li key={card.slug}>
+                  <SettingsCard className="h-full gap-3">
+                    <div className="flex items-start gap-3">
+                      <span
+                        aria-hidden
+                        className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[9px] bg-sunk text-fg2"
+                      >
+                        <SkillGlyph className="size-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-ui font-medium text-fg">{card.displayName}</p>
+                        <p className="truncate text-[11.5px] text-faint">
+                          {card.ownerHandle ? `@${card.ownerHandle}` : 'ClawHub'}
+                          {card.version ? ` · v${card.version}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="line-clamp-2 min-h-9 text-note leading-relaxed text-muted">
+                      {card.summary || t('skills.market.noSummary')}
+                    </p>
+                    <div className="mt-auto flex items-center gap-2">
+                      <span className="tabular text-[11.5px] text-faint">
+                        {t('skills.market.downloads', { count: card.downloads })}
+                      </span>
+                      <span className="flex-1" />
+                      {card.webUrl && (
+                        <a
+                          href={card.webUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex size-8 items-center justify-center rounded-item text-muted transition-colors hover:bg-hover hover:text-fg"
+                          aria-label={t('skills.market.open', { name: card.displayName })}
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </a>
+                      )}
+                      <Button
+                        size="sm"
+                        disabled={!card.downloadUrl || installingSlug !== undefined}
+                        onClick={() => void installFromMarket(card)}
+                      >
+                        {installingSlug === card.slug ? <Spinner /> : <Download />}
+                        {installingSlug === card.slug
+                          ? t('skills.market.installing')
+                          : t('skills.market.install')}
+                      </Button>
+                    </div>
+                  </SettingsCard>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {view === 'installed' && (
+        <>
+          {skills.length === 0 ? (
+            <SettingsEmpty
+              icon={<SkillGlyph />}
+              title={t('skills.emptyTitle')}
+              description={t('skills.empty')}
             />
-          ))}
-        </ul>
+          ) : (
+            <ul aria-label={t('skills.list')} className="flex flex-col gap-3">
+              {skills.map((skill) => (
+                <SkillCard
+                  key={keyOf(skill)}
+                  skill={skill}
+                  source={sourceLabel(skill)}
+                  onChanged={load}
+                  onOpen={(item) => void openDetail(item)}
+                  onUninstall={setUninstalling}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       <Dialog

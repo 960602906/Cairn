@@ -128,8 +128,8 @@ export function DiagnosticsExportDialog({
                       <span>
                         {t('diagnostics.items.settings')}:{' '}
                         {t('diagnostics.items.settingsValue', {
-                          providers: summary?.settings.providersCount ?? 0,
-                          servers: summary?.settings.mcpServersCount ?? 0,
+                          providers: summary?.settings?.providersCount ?? 0,
+                          servers: summary?.settings?.mcpServersCount ?? 0,
                         })}
                       </span>
                     </li>
@@ -138,8 +138,8 @@ export function DiagnosticsExportDialog({
                       <span>
                         {t('diagnostics.items.logs')}:{' '}
                         {t('diagnostics.items.logsValue', {
-                          main: summary?.logs.mainLogLines ?? 0,
-                          host: summary?.logs.hostLogLines ?? 0,
+                          main: summary?.logs?.mainLogLines ?? 0,
+                          host: summary?.logs?.hostLogLines ?? 0,
                         })}
                       </span>
                     </li>

@@ -2,33 +2,55 @@ import { describe, expect, it, vi } from 'vitest'
 import { PROTOCOL_VERSION, type RpcBridge } from '@cairn/protocol'
 import { API_KEY, RPC_CHANNEL } from '../shared/ipc.js'
 import { createIpcChannel, exposeRendererApi, type IpcRendererLike } from './expose.js'
+import { WINDOW_CONTROLS_CHANNEL } from '../shared/window-controls.js'
 
 function fakeIpc() {
   const sent: unknown[] = []
   const listeners = new Set<(event: unknown, message: unknown) => void>()
+  const windowListeners = new Map<string, Set<(event: unknown, message: unknown) => void>>()
+  const invoked: string[] = []
   const ipc: IpcRendererLike = {
     send: (channel, message) => {
       expect(channel).toBe(RPC_CHANNEL)
       sent.push(message)
     },
-    on: (channel, listener) => {
-      expect(channel).toBe(RPC_CHANNEL)
-      listeners.add(listener)
+    invoke: async (channel) => {
+      expect(Object.values(WINDOW_CONTROLS_CHANNEL)).toContain(channel)
+      invoked.push(channel)
+      return (
+        channel !== WINDOW_CONTROLS_CHANNEL.minimize && channel !== WINDOW_CONTROLS_CHANNEL.close
+      )
     },
-    removeListener: (_channel, listener) => listeners.delete(listener),
+    on: (channel, listener) => {
+      if (channel === RPC_CHANNEL) {
+        listeners.add(listener)
+        return
+      }
+      const set = windowListeners.get(channel) ?? new Set()
+      set.add(listener)
+      windowListeners.set(channel, set)
+    },
+    removeListener: (channel, listener) => {
+      if (channel === RPC_CHANNEL) listeners.delete(listener)
+      else windowListeners.get(channel)?.delete(listener)
+    },
   }
   const deliver = (message: unknown) => listeners.forEach((l) => l({}, message))
-  return { ipc, sent, listeners, deliver }
+  const deliverWindow = (channel: string, value: unknown) =>
+    windowListeners.get(channel)?.forEach((listener) => listener({}, value))
+  return { ipc, sent, listeners, deliver, invoked, deliverWindow, windowListeners }
 }
 
 function expose() {
-  const { ipc, sent, listeners, deliver } = fakeIpc()
+  const fake = fakeIpc()
+  const { ipc } = fake
   const exposed = new Map<string, RpcBridge>()
   const api = exposeRendererApi({
     contextBridge: { exposeInMainWorld: (key, value) => exposed.set(key, value) },
     ipcRenderer: ipc,
+    platform: 'win32',
   })
-  return { api, exposed, sent, listeners, deliver }
+  return { api, exposed, ...fake }
 }
 
 describe('exposeRendererApi', () => {
@@ -36,7 +58,8 @@ describe('exposeRendererApi', () => {
     const { api, exposed } = expose()
     expect([...exposed.keys()]).toEqual([API_KEY])
     expect(exposed.get(API_KEY)).toBe(api)
-    expect(Object.keys(api).sort()).toEqual(['on', 'ready', 'request'])
+    expect(Object.keys(api).sort()).toEqual(['on', 'ready', 'request', 'windowControls'])
+    expect(api.windowControls.platform).toBe('win32')
     expect(api).not.toHaveProperty('send')
     expect(api).not.toHaveProperty('ipcRenderer')
   })
@@ -76,5 +99,28 @@ describe('exposeRendererApi', () => {
     expect(listeners.size).toBe(1)
     off()
     expect(listeners.size).toBe(0)
+  })
+
+  it('routes window controls through fixed channels only', async () => {
+    const { api, invoked, deliverWindow, windowListeners } = expose()
+    await api.windowControls.minimize()
+    expect(await api.windowControls.toggleMaximize()).toBe(true)
+    await api.windowControls.close()
+    expect(await api.windowControls.isMaximized()).toBe(true)
+    expect(invoked).toEqual([
+      WINDOW_CONTROLS_CHANNEL.minimize,
+      WINDOW_CONTROLS_CHANNEL.toggleMaximize,
+      WINDOW_CONTROLS_CHANNEL.close,
+      WINDOW_CONTROLS_CHANNEL.isMaximized,
+    ])
+
+    const listener = vi.fn()
+    const off = api.windowControls.onMaximizedChange(listener)
+    deliverWindow(WINDOW_CONTROLS_CHANNEL.maximizedChanged, true)
+    deliverWindow(WINDOW_CONTROLS_CHANNEL.maximizedChanged, 'ignored')
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledWith(true)
+    off()
+    expect(windowListeners.get(WINDOW_CONTROLS_CHANNEL.maximizedChanged)?.size ?? 0).toBe(0)
   })
 })

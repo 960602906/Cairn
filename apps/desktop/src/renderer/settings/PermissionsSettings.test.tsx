@@ -37,7 +37,7 @@ const manual: PermissionRuleEntry = {
 function setup(
   initial: Partial<Settings> = {},
   rules: PermissionRuleEntry[] = [],
-  options: { failList?: boolean } = {},
+  options: { failList?: boolean; failDelete?: boolean; failAdd?: boolean } = {},
 ) {
   let settings: Settings = { locale: 'zh-CN', providers: [], ...initial }
   let stored = [...rules]
@@ -58,12 +58,14 @@ function setup(
         if (options.failList) throw new Error('list failed')
         return { rules: stored }
       case 'permissions.add': {
+        if (options.failAdd) return undefined
         const { rule, projectId } = params as { rule: PermissionRule; projectId?: string }
         const entry = { rule, ...(projectId ? { projectId } : {}), createdAt: 3 }
         stored = [...stored, entry]
         return entry
       }
       case 'permissions.delete': {
+        if (options.failDelete) return undefined
         const { ruleId } = params as { ruleId: string }
         stored = stored.filter((e) => e.rule.id !== ruleId)
         return {}
@@ -206,5 +208,29 @@ describe('PermissionsSettings', () => {
     setup({}, [], { failList: true })
     await open()
     expect(await screen.findByText(/还没有规则/)).toBeTruthy()
+  })
+
+  it('keeps rules and the form when add or delete fails', async () => {
+    const { request } = setup({}, [manual], { failDelete: true })
+    await open()
+    await waitFor(() => expect(within(rules()).getAllByRole('listitem')).toHaveLength(1))
+    await userEvent.click(
+      screen.getByRole('button', { name: '删除规则：run_command: git commit *' }),
+    )
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('permissions.delete', { ruleId: 'u1' }),
+    )
+    expect(within(rules()).getAllByRole('listitem')).toHaveLength(1)
+    cleanup()
+
+    const add = setup({}, [], { failAdd: true })
+    await open()
+    await userEvent.click(screen.getByRole('button', { name: '添加规则' }))
+    const form = screen.getByRole('region', { name: '添加规则' })
+    await userEvent.click(within(form).getByRole('button', { name: '添加' }))
+    await waitFor(() =>
+      expect(add.request).toHaveBeenCalledWith('permissions.add', expect.anything()),
+    )
+    expect(screen.getByRole('region', { name: '添加规则' })).toBeTruthy()
   })
 })

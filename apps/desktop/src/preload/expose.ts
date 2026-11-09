@@ -12,12 +12,15 @@ import {
   exposeEndpoint,
   type RpcBridge,
   type RpcChannel,
+  type WindowControlsApi,
 } from '@cairn/protocol'
 import { API_KEY, RPC_CHANNEL } from '../shared/ipc.js'
+import { WINDOW_CONTROLS_CHANNEL } from '../shared/window-controls.js'
 
 /** 用到的 `ipcRenderer` 接口。 */
 export interface IpcRendererLike {
   send(channel: string, message: unknown): void
+  invoke(channel: string, ...args: unknown[]): Promise<unknown>
   on(channel: string, listener: (event: unknown, message: unknown) => void): unknown
   removeListener(channel: string, listener: (event: unknown, message: unknown) => void): unknown
 }
@@ -41,12 +44,35 @@ export function createIpcChannel(ipc: IpcRendererLike): RpcChannel {
 export function exposeRendererApi(deps: {
   readonly contextBridge: ContextBridgeLike
   readonly ipcRenderer: IpcRendererLike
-}): RpcBridge {
+  readonly platform: string
+}): RpcBridge & { readonly windowControls: WindowControlsApi } {
   const endpoint = createEndpoint(createIpcChannel(deps.ipcRenderer), {
     local: RendererForMain,
     remote: MainForRenderer,
   })
   const api = exposeEndpoint(endpoint)
-  deps.contextBridge.exposeInMainWorld(API_KEY, api)
-  return api
+  const windowControls: WindowControlsApi = {
+    platform: deps.platform,
+    minimize: async () => {
+      await deps.ipcRenderer.invoke(WINDOW_CONTROLS_CHANNEL.minimize)
+    },
+    toggleMaximize: async () =>
+      (await deps.ipcRenderer.invoke(WINDOW_CONTROLS_CHANNEL.toggleMaximize)) === true,
+    close: async () => {
+      await deps.ipcRenderer.invoke(WINDOW_CONTROLS_CHANNEL.close)
+    },
+    isMaximized: async () =>
+      (await deps.ipcRenderer.invoke(WINDOW_CONTROLS_CHANNEL.isMaximized)) === true,
+    onMaximizedChange: (listener) => {
+      const handler = (_event: unknown, value: unknown) => {
+        if (typeof value === 'boolean') listener(value)
+      }
+      deps.ipcRenderer.on(WINDOW_CONTROLS_CHANNEL.maximizedChanged, handler)
+      return () =>
+        deps.ipcRenderer.removeListener(WINDOW_CONTROLS_CHANNEL.maximizedChanged, handler)
+    },
+  }
+  const exposed = { ...api, windowControls }
+  deps.contextBridge.exposeInMainWorld(API_KEY, exposed)
+  return exposed
 }

@@ -10,6 +10,7 @@
  * 不依赖 Electron。安装只写用户目录，不改项目文件。
  */
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { estimateTokens } from '@cairn/core'
 import {
@@ -69,6 +70,8 @@ export interface SkillCommands {
     installed: boolean
     skill: SkillDetail
   }
+  /** 从市场下载 zip 后走同一条安装路径（M5）。只接受 ClawHub 的 https 地址。 */
+  installFromUrl(input: { url: string }): Promise<{ installed: boolean; skill: SkillDetail }>
   uninstall(input: { name: string }): Record<string, never>
   setEnabled(input: {
     name: string
@@ -269,6 +272,38 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
         throw new RpcError(SkillServiceErrorCode.Duplicate, { name: skill.name })
       }
       return { installed: input.confirm === true, skill: installedDetail(skill) }
+    },
+
+    async installFromUrl({ url }) {
+      const parsed = new URL(url)
+      if (parsed.protocol !== 'https:' || parsed.hostname !== 'clawhub.ai') {
+        throw new RpcError(SkillServiceErrorCode.Invalid, { url })
+      }
+      const response = await fetch(parsed, {
+        headers: { Accept: 'application/zip, application/octet-stream' },
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!response.ok) {
+        throw new RpcError(SkillServiceErrorCode.Invalid, { status: response.status })
+      }
+      const bytes = Buffer.from(await response.arrayBuffer())
+      if (bytes.byteLength > 25 * 1024 * 1024) {
+        throw new RpcError(SkillServiceErrorCode.TooLarge)
+      }
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-skill-'))
+      const zip = path.join(dir, 'skill.zip')
+      try {
+        fs.writeFileSync(zip, bytes)
+        let skill: SkillPackage
+        try {
+          skill = installSkill({ kind: 'zip', path: zip }, options.userDir)
+        } catch (error) {
+          rethrow(error)
+        }
+        return { installed: true, skill: installedDetail(skill) }
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
     },
 
     uninstall({ name }) {

@@ -2,7 +2,7 @@
  * 启动冒烟检查（M0-12）。设置 `CAIRN_SMOKE=1` 启动应用时，主进程在窗口加载后检查：
  * - 界面已渲染（根节点文本包含应用名称）；
  * - 界面中没有 Node 能力（`require`、`process`、`module`、`Buffer` 等均不存在）；
- * - preload 只暴露了 `window.cairn` 的 `on`、`ready`、`request` 三个函数；
+ * - preload 只暴露了 `window.cairn` 的桥接函数，以及固定通道的窗口按钮 API；
  * - 页面带有 CSP，且 CSP 生效（`new Function` 被拒绝）；
  * - 界面经 `window.cairn` 调用 `session.list` 成功（IPC 网关、会话管理器与数据库已接通）；
  * - 新建会话并发送一条输入，agent 宿主（utilityProcess + 专用端口 + FakeRuntime）完成一轮对话；
@@ -57,7 +57,12 @@ export const RENDERER_PROBE_SCRIPT = `(async () => {
   }
 })()`
 
-const EXPECTED_API = { on: 'function', ready: 'function', request: 'function' }
+const EXPECTED_API = {
+  on: 'function',
+  ready: 'function',
+  request: 'function',
+  windowControls: 'object',
+}
 
 /** 检查界面的探测结果，返回发现的问题。 */
 export function checkRendererProbe(probe: RendererProbe, expectedText: string): string[] {
