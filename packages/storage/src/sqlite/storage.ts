@@ -1394,6 +1394,11 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
 
     transaction: <T>(fn: () => T): T => db.transaction(fn)(),
 
+    backup(file) {
+      // VACUUM INTO 只接受字面量文件名；转义单引号，避免路径里的引号改变 SQL。
+      db.exec(`VACUUM INTO '${file.replaceAll("'", "''")}'`)
+    },
+
     close() {
       db.close()
     },

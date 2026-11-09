@@ -28,6 +28,8 @@ export interface LaunchOptions {
   /** 首次启动时写入设置的界面语言，默认 `zh-CN`。 */
   readonly locale?: TestLocale
   readonly env?: Readonly<Record<string, string>>
+  /** 追加的 Electron/Chromium 启动参数（例如本地自签名更新源）。 */
+  readonly args?: readonly string[]
 }
 
 export interface RunningApp {
@@ -55,7 +57,7 @@ export async function launchApp(
   }
   const app = await _electron.launch({
     executablePath: electronPath,
-    args: [APP_DIR, ...PLATFORM_ARGS],
+    args: [APP_DIR, ...PLATFORM_ARGS, ...(options.args ?? [])],
     env: { ...env, ...options.env, CAIRN_USER_DATA_DIR: userData },
   })
   const window = await app.firstWindow()

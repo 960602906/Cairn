@@ -18,6 +18,7 @@ import type {
   DiagnosticsSummary,
   MainForRenderer,
   SandboxStatus,
+  UpdateDiagnostics,
 } from '@cairn/protocol'
 
 type Requests = (typeof MainForRenderer)['requests']
@@ -44,6 +45,8 @@ export interface DiagnosticsDeps {
   readonly getHostLogs: () => string | Promise<string>
   /** 命令沙箱配置与能力探测（M5-05）；不包含项目内容、用户名或凭据。 */
   readonly getSandbox?: () => SandboxStatus | undefined | Promise<SandboxStatus | undefined>
+  /** 自动更新状态与备份摘要（M5-06）；不包含更新源凭据。 */
+  readonly getUpdate?: () => UpdateDiagnostics | undefined | Promise<UpdateDiagnostics | undefined>
   readonly showSaveDialog?: (defaultName: string) => Promise<string | undefined>
   readonly showItemInFolder?: (filePath: string) => void
   readonly userHomeDir?: string
@@ -251,6 +254,7 @@ export class DiagnosticsService {
     const mainLogs = await this.deps.getMainLogs()
     const hostLogs = await this.deps.getHostLogs()
     const sandbox = await this.deps.getSandbox?.()
+    const update = await this.deps.getUpdate?.()
 
     let sessionSummary: DiagnosticsSummary['session'] = undefined
     if (input?.sessionId) {
@@ -271,6 +275,7 @@ export class DiagnosticsService {
       'build-info.json',
       'settings-summary.json',
       ...(sandbox ? ['sandbox.json'] : []),
+      ...(update ? ['update.json'] : []),
       'logs/main.log',
       'logs/host.log',
     ]
@@ -294,6 +299,7 @@ export class DiagnosticsService {
         hasAuxiliaryModel: Boolean(settings?.auxiliaryModel),
       },
       ...(sandbox ? { sandbox } : {}),
+      ...(update ? { update } : {}),
       session: sessionSummary,
       exportItems,
     }
@@ -311,6 +317,7 @@ export class DiagnosticsService {
     const mainLogs = await this.deps.getMainLogs()
     const hostLogs = await this.deps.getHostLogs()
     const sandbox = await this.deps.getSandbox?.()
+    const update = await this.deps.getUpdate?.()
 
     const versionInfo = {
       appVersion,
@@ -350,6 +357,7 @@ export class DiagnosticsService {
       'logs/main.log': strToU8(clean(mainLogs)),
       'logs/host.log': strToU8(clean(hostLogs)),
       ...(sandbox ? { 'sandbox.json': strToU8(clean(JSON.stringify(sandbox, null, 2))) } : {}),
+      ...(update ? { 'update.json': strToU8(clean(JSON.stringify(update, null, 2))) } : {}),
     }
 
     if (input?.sessionId) {
