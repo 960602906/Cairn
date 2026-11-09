@@ -38,7 +38,10 @@ function locate(options: Partial<GitLocatorOptions> = {}) {
 
 describe('bundledGitLayout', () => {
   it('prefers the ucrt64 layout and falls back to mingw64', () => {
-    const ucrt = bundledGitLayout(bundledDir, (file) => file.startsWith(path.resolve(bundledDir)))
+    const ucrt = bundledGitLayout(
+      bundledDir,
+      (file) => file === bundledBinary || file === path.join(bundledDir, 'ucrt64/libexec/git-core'),
+    )
     expect(ucrt).toEqual({
       binary: bundledBinary,
       execPath: path.join(bundledDir, 'ucrt64/libexec/git-core'),
@@ -48,11 +51,9 @@ describe('bundledGitLayout', () => {
 
     const mingwDir = 'C:/app/resources/git-mingw'
     const mingwBinary = path.join(mingwDir, 'mingw64/bin/git.exe')
+    const mingwExec = path.join(mingwDir, 'mingw64/libexec/git-core')
     expect(
-      bundledGitLayout(
-        mingwDir,
-        (file) => file.startsWith(path.resolve(mingwDir)) && file.includes('mingw64'),
-      ),
+      bundledGitLayout(mingwDir, (file) => file === mingwBinary || file === mingwExec),
     ).toMatchObject({ binary: mingwBinary })
   })
 
