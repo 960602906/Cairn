@@ -883,6 +883,7 @@ describe('createUpdateService: installing', () => {
       currentVersion: '0.1.0',
       buildChannel: 'beta',
       packaged: true,
+      platform: 'win32',
       settings: {
         get: () => ({}),
         update: () => ({}),
@@ -1056,6 +1057,7 @@ describe('createUpdateService: settings and scheduling', () => {
       currentVersion: '0.1.0',
       buildChannel: 'beta',
       packaged: true,
+      platform: 'win32',
       env: {},
       sourceUrl: 'https://updates.example/cairn/',
       settings: harness.settings,
