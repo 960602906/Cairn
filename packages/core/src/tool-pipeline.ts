@@ -71,6 +71,8 @@ export type PermissionDecision =
       readonly matchedRuleIds?: readonly string[]
       /** deny 时交给模型的说明（英文）。 */
       readonly reason?: string
+      /** 为 false 时不能用“始终允许”规则取消这次询问（M5-05）。 */
+      readonly overridable?: boolean
     }
 
 export interface PermissionGate {
@@ -89,9 +91,7 @@ export function combinePermissionDecisions(
   if (child.decision === 'deny') return child
   if (parent.decision === 'allow' && child.decision === 'allow') return { decision: 'allow' }
   const askOf = (decision: PermissionDecision) =>
-    decision.decision === 'ask'
-      ? (decision as { reasonCode: string; matchedRuleIds?: readonly string[] })
-      : undefined
+    decision.decision === 'ask' ? decision : undefined
   const parentAsk = askOf(parent)
   const childAsk = askOf(child)
   if (!parentAsk) return child
@@ -102,6 +102,9 @@ export function combinePermissionDecisions(
     matchedRuleIds: [
       ...new Set([...(parentAsk.matchedRuleIds ?? []), ...(childAsk.matchedRuleIds ?? [])]),
     ],
+    ...(parentAsk.overridable === false || childAsk.overridable === false
+      ? { overridable: false }
+      : {}),
   }
 }
 
@@ -135,6 +138,8 @@ export interface ApprovalRequest {
   readonly reasonCode: string
   /** 与判定结果相同的规则 id（M1-11a，审批界面显示）。 */
   readonly matchedRuleIds: readonly string[]
+  /** 为 false 时审批界面不能提供“始终允许”（M5-05）。 */
+  readonly overridable?: boolean
   readonly signal: AbortSignalLike
 }
 
@@ -463,6 +468,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
             ...(preview ? { preview } : {}),
             reasonCode: effective.reasonCode,
             matchedRuleIds: effective.matchedRuleIds ?? [],
+            ...(effective.overridable === false ? { overridable: false } : {}),
             signal,
           },
           observer,

@@ -122,6 +122,11 @@ export interface PermissionCommands {
   readonly delete: Handler<'permissions.delete'>
 }
 
+/** 命令沙箱状态（M5-05）：设置页显示当前配置与能力探测。 */
+export interface SandboxCommands {
+  readonly status: Handler<'sandbox.status'>
+}
+
 /** 由设置服务实现的设置命令。 */
 export interface SettingsCommands {
   readonly get: () => z.input<Requests['settings.get']['result']>
@@ -170,6 +175,8 @@ export interface RendererGatewayOptions {
   readonly trials: TrialCommands
   /** 诊断包（M3-13）：导出前清单、生成 zip 与在文件夹中显示。 */
   readonly diagnostics: DiagnosticsCommands
+  /** 命令沙箱（M5-05）：当前配置与能力探测。 */
+  readonly sandbox: SandboxCommands
   /** 运行检查器（M4-04）：运行树、上下文快照与生效设置。 */
   readonly inspect: InspectCommands
   /** 活动中心（M4-06）：跨会话快照与就地审批。 */
@@ -259,6 +266,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
   const { hub } = options
   const { agents, trials, diagnostics, activity, changeSets } = options
+  const { sandbox } = options
   const backgroundCommands = options.backgroundCommands
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
@@ -418,6 +426,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('diagnostics.summary', (params) => diagnostics.summary(params))
       endpoint.handle('diagnostics.export', (params) => diagnostics.export(params))
       endpoint.handle('diagnostics.showInFolder', (params) => diagnostics.showInFolder(params))
+      endpoint.handle('sandbox.status', (params) => sandbox.status(params))
 
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布

@@ -44,6 +44,8 @@ export const SandboxErrorCode = {
   Unavailable: 'sandbox.unavailable',
   /** 准备沙箱失败（受限令牌、完整性标签、临时目录、ACL 等）。 */
   SetupFailed: 'sandbox.setup_failed',
+  /** AppContainer 配置创建、派生或清理失败。 */
+  AppContainerFailed: 'sandbox.appcontainer_failed',
   /** 沙箱进程无法启动。 */
   SpawnFailed: 'sandbox.spawn_failed',
 } as const

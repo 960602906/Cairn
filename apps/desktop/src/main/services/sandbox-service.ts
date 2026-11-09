@@ -24,6 +24,7 @@ import {
   DEFAULT_SANDBOX_UNAVAILABLE,
   sandboxExecution,
   type SandboxExecution,
+  type SandboxStatus,
   type Settings,
 } from '@cairn/protocol'
 
@@ -36,13 +37,7 @@ export interface SandboxHostInit {
   readonly appContainerName?: string
 }
 
-export interface SandboxDiagnostics {
-  readonly platform: 'win32' | 'other'
-  readonly mechanism: SandboxMechanismPreference
-  readonly policy: SandboxPolicy
-  readonly unavailable: SandboxUnavailableBehavior
-  readonly capability: SandboxCapability
-}
+export type SandboxDiagnostics = SandboxStatus
 
 export interface SandboxServiceOptions {
   readonly platform?: NodeJS.Platform

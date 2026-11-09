@@ -170,4 +170,37 @@ describe('TerminalCard：底部汇总', () => {
     const c = card({ chunks: [out('test result: ok. 3 passed; 0 failed\n')], running: true })
     expect(within(c).queryByText('3 通过')).toBeNull()
   })
+
+  it('显示沙箱档位与网络状态；未沙箱化时用错误色', () => {
+    const c = card({
+      exitCode: 0,
+      shell: 'bash',
+      sandbox: {
+        profile: 'read-only',
+        network: 'none',
+        mechanism: 'restricted-token',
+        enforced: true,
+        networkIsolated: false,
+      },
+    })
+    const badge = within(c).getByTestId('sandbox-badge')
+    expect(badge.textContent).toBe('沙箱：只读 · 网络未隔离')
+    expect(badge.className).toContain('text-term-dim')
+    cleanup()
+
+    const unsafe = card({
+      exitCode: 0,
+      sandbox: {
+        profile: 'danger-full-access',
+        network: 'none',
+        mechanism: 'none',
+        enforced: false,
+        networkIsolated: false,
+        reason: 'sandbox.full_access',
+      },
+    })
+    const unsafeBadge = within(unsafe).getByTestId('sandbox-badge')
+    expect(unsafeBadge.textContent).toBe('未沙箱化：这条命令不使用沙箱')
+    expect(unsafeBadge.className).toContain('text-term-c1')
+  })
 })

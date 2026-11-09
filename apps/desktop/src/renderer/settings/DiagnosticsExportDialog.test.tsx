@@ -41,6 +41,19 @@ const mockSummary: DiagnosticsSummary = {
     mcpServersCount: 1,
     hasAuxiliaryModel: true,
   },
+  sandbox: {
+    platform: 'win32',
+    mechanism: 'restricted-token',
+    policy: { profile: 'workspace-write', network: 'none' },
+    unavailable: 'deny',
+    capability: {
+      available: true,
+      supported: true,
+      mechanism: 'restricted-token',
+      networkIsolated: false,
+      checks: { restrictedToken: true, lowIntegrity: true, jobObject: true, appContainer: false },
+    },
+  },
   session: {
     sessionId: 'session-123',
     title: '调试会话',
@@ -90,6 +103,7 @@ describe('DiagnosticsExportDialog component', () => {
       expect(screen.getByText(/调试会话/i)).toBeDefined()
       expect(screen.getByText(/1.2.3/i)).toBeDefined()
       expect(screen.getByText(/abcdef1/i)).toBeDefined()
+      expect(screen.getByText(/命令沙箱: 工作区可写 · 受限令牌 · 网络未隔离/)).toBeDefined()
     })
 
     // Toggle include content
@@ -123,7 +137,7 @@ describe('DiagnosticsExportDialog component', () => {
   it('stays on the summary view when the export is cancelled', async () => {
     const fakeApi = {
       request: async (method: string) => {
-        if (method === 'diagnostics.summary') return mockSummary
+        if (method === 'diagnostics.summary') return { ...mockSummary, sandbox: undefined }
         if (method === 'diagnostics.export') return { cancelled: true }
         return undefined
       },

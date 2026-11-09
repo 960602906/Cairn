@@ -77,6 +77,19 @@ export type SandboxCapability = z.infer<typeof SandboxCapability>
 export const SandboxUnavailableBehavior = z.enum(['deny', 'ask'])
 export type SandboxUnavailableBehavior = z.infer<typeof SandboxUnavailableBehavior>
 
+/**
+ * 沙箱的当前配置与能力（M5-05）：设置页与诊断包共用。`mechanism` 是用户选择的机制，
+ * `capability.mechanism` 是实际可用的机制；两者不同表示已回退（例如 AppContainer 不可用）。
+ */
+export const SandboxStatus = z.object({
+  platform: z.enum(['win32', 'other']),
+  mechanism: z.enum(['restricted-token', 'appcontainer']),
+  policy: SandboxPolicy,
+  unavailable: SandboxUnavailableBehavior,
+  capability: SandboxCapability,
+})
+export type SandboxStatus = z.infer<typeof SandboxStatus>
+
 /** 默认策略：工作区可写，不授予网络能力（受限令牌下网络并未隔离，见 ADR-0034）。 */
 export const DEFAULT_SANDBOX_POLICY: SandboxPolicy = Object.freeze({
   profile: 'workspace-write',

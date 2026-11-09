@@ -366,6 +366,27 @@ describe('ToolPipeline：各阶段的失败', () => {
     ])
   })
 
+  it('把不可覆盖的询问原样交给审批（M5-05）', async () => {
+    const h = setup(
+      [tool()],
+      {},
+      {
+        decision: 'ask',
+        reasonCode: 'permission.sandbox.requires_approval',
+        matchedRuleIds: [],
+        overridable: false,
+      },
+    )
+    h.request.mockResolvedValueOnce({ decision: 'allow_once' })
+    const outcome = await createToolPipeline(h.options).run(
+      call({ path: 'a.ts' }),
+      signal(),
+      h.observer,
+    )
+    expect(outcome.status).toBe('ok')
+    expect(h.request).toHaveBeenCalledWith(expect.objectContaining({ overridable: false }))
+  })
+
   it('7. 检查点失败时请用户确认；不继续则拒绝，继续则执行', async () => {
     const h = setup([tool({ category: 'execute' })])
     h.checkpoint.mockRejectedValue(new Error('disk full'))
@@ -541,6 +562,21 @@ describe('combinePermissionDecisions（M4-03）', () => {
         { decision: 'ask', reasonCode: 'child.ask' },
       ),
     ).toEqual({ decision: 'ask', reasonCode: 'parent.ask', matchedRuleIds: [] })
+  })
+
+  it('任一侧不可覆盖时组合结果也不可覆盖（M5-05）', () => {
+    expect(
+      combinePermissionDecisions(
+        { decision: 'ask', reasonCode: 'parent.ask', overridable: false },
+        { decision: 'ask', reasonCode: 'child.ask' },
+      ),
+    ).toEqual({ decision: 'ask', reasonCode: 'parent.ask', matchedRuleIds: [], overridable: false })
+    expect(
+      combinePermissionDecisions(
+        { decision: 'ask', reasonCode: 'parent.ask' },
+        { decision: 'ask', reasonCode: 'child.ask', overridable: false },
+      ),
+    ).toEqual({ decision: 'ask', reasonCode: 'parent.ask', matchedRuleIds: [], overridable: false })
   })
 
   it('组合两个权限门时取更严格的一方', async () => {

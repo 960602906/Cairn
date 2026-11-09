@@ -156,6 +156,7 @@ export function decidePermission(
       reasonCode: guard.reasonCode,
       matchedRuleIds: [],
       ...(final === 'deny' ? { reason: guard.reason ?? DENY_REASON } : {}),
+      ...(final === 'ask' && !overridable ? { overridable: false } : {}),
     }
   }
   const matchedRuleIds = matched.filter((r) => r.effect === final).map((r) => r.id)

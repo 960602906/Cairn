@@ -19,6 +19,8 @@ import {
   type PendingApproval,
 } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
+import { SandboxBadge } from './SandboxBadge.js'
+import { sandboxLabels } from './sandbox-labels.js'
 import { cn, Kbd } from './ui/index.js'
 
 const NONE: readonly PendingApproval[] = []
@@ -93,6 +95,7 @@ export function ApprovalCard({
     | undefined
 }) {
   const { t } = useTranslation('session')
+  const { t: tc } = useTranslation('common')
   const resolveActiveApproval = useSessionStore((s) => s.resolveApproval)
   const resolveApproval = onResolve ?? resolveActiveApproval
   const [feedback, setFeedback] = useState('')
@@ -102,6 +105,9 @@ export function ApprovalCard({
   const { preview, tool } = approval
   const kind = wording(approval)
   const noCheckpoint = approval.kind === 'no_checkpoint'
+  const overridable = approval.overridable !== false
+  const sandbox = approval.sandbox
+  const sandboxInfo = sandbox ? sandboxLabels(tc, sandbox) : undefined
   const paths = approval.targets.paths ?? []
 
   const decide = async (decision: ApprovalDecision, note = '') => {
@@ -134,7 +140,7 @@ export function ApprovalCard({
       const action =
         event.key === '1' || event.key === 'Enter'
           ? () => void k.decide('allow_once')
-          : event.key === '2' && !noCheckpoint
+          : event.key === '2' && !noCheckpoint && overridable
             ? () => void k.decide('allow_project')
             : event.key === '3'
               ? k.openDeny
@@ -145,7 +151,7 @@ export function ApprovalCard({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [active, noCheckpoint])
+  }, [active, noCheckpoint, overridable])
 
   const title = noCheckpoint ? t('approval.ask.noCheckpoint') : t(`approval.ask.${kind}`)
   const verb = kind === 'command' ? 'run' : 'allow'
@@ -200,6 +206,19 @@ export function ApprovalCard({
       {preview?.summary && preview.command === undefined && (
         <div className="mb-1 text-ui text-fg2">{preview.summary}</div>
       )}
+      {sandbox && sandboxInfo && (
+        <div
+          data-testid="approval-sandbox"
+          className="mb-3 flex flex-col gap-1.5 rounded-item bg-sunk px-3 py-2"
+        >
+          <SandboxBadge execution={sandbox} />
+          {sandboxInfo.warning && (
+            <p className={cn('text-note', sandbox.enforced ? 'text-muted' : 'text-danger')}>
+              {sandboxInfo.warning}
+            </p>
+          )}
+        </div>
+      )}
       <div className="mb-3 text-note text-muted">
         {t('approval.reasonLabel')}: {reason}
       </div>
@@ -212,7 +231,7 @@ export function ApprovalCard({
         >
           {noCheckpoint ? t('approval.option.continueOnce') : t(`approval.option.${verb}Once`)}
         </Option>
-        {!noCheckpoint && (
+        {!noCheckpoint && overridable && (
           <Option index={2} disabled={busy} onSelect={() => void decide('allow_project')}>
             {t(`approval.option.${verb}Always`)}
             <span className="ml-1.5 text-note text-muted">{t('approval.scope.project')}</span>

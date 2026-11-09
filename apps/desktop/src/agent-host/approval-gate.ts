@@ -56,6 +56,8 @@ export function createHostApprovalGate(options: HostApprovalGateOptions): Approv
                 : {}),
             },
             kind: request.kind,
+            ...(request.definition.sandbox ? { sandbox: request.definition.sandbox } : {}),
+            ...(request.overridable === false ? { overridable: false } : {}),
             ...(request.preview ? { preview: { ...request.preview } } : {}),
             reasonCode: request.reasonCode,
             matchedRuleIds: [...request.matchedRuleIds],

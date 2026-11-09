@@ -32,6 +32,7 @@ import {
   type RunLimits,
   type RunMode,
   type RunState,
+  type SandboxExecution,
   type CheckpointReason,
   type PlanDocument,
   type PlanStepStatus,
@@ -106,6 +107,8 @@ export interface ToolCallView {
   readonly output: readonly ContentPart[] | undefined
   /** 只给界面显示的结果（`tool.completed.display`，M2-06）。 */
   readonly display: ToolDisplay | undefined
+  /** 命令实际使用的沙箱（M5-04/M5-05）：来自 `tool.started`，旧事件为 undefined。 */
+  readonly sandbox: SandboxExecution | undefined
   readonly truncated: boolean
   readonly error: ErrorInfo | undefined
   readonly cancelReason: EventPayload<'tool.cancelled'>['reason'] | undefined
@@ -834,6 +837,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         requestedAt: event.ts,
         output: undefined,
         display: undefined,
+        sandbox: undefined,
         truncated: false,
         error: undefined,
         cancelReason: undefined,
@@ -843,7 +847,9 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
     }
     case 'tool.started':
       return updateTool(view, event.payload.toolCallId, (tool) =>
-        tool.status === 'running' ? tool : { ...tool, status: 'running' },
+        tool.status === 'running'
+          ? tool
+          : { ...tool, status: 'running', sandbox: event.payload.sandbox ?? tool.sandbox },
       )
     case 'tool.completed': {
       const { toolCallId, output, truncated, durationMs, display } = event.payload
@@ -852,6 +858,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         status: 'completed',
         output,
         display,
+        sandbox: display?.sandbox ?? tool.sandbox,
         truncated: truncated ?? false,
         durationMs,
       }))

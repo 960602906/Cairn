@@ -21,6 +21,7 @@ const tool = (over: Partial<ToolCallView> = {}): ToolCallView => ({
   requestedAt: 0,
   output: undefined,
   display: undefined,
+  sandbox: undefined,
   truncated: false,
   error: undefined,
   cancelReason: undefined,
@@ -65,6 +66,24 @@ describe('ToolStep：run_command', () => {
     expect(terminal()).toBeTruthy()
     expect(screen.getByRole('log').textContent).toContain('line 2')
     expect(document.querySelector('pre')).toBeNull()
+  })
+
+  it('执行中的终端卡片显示这条命令的沙箱', () => {
+    step({
+      tool: tool({
+        status: 'running',
+        sandbox: {
+          profile: 'workspace-write',
+          network: 'none',
+          mechanism: 'restricted-token',
+          enforced: true,
+          networkIsolated: false,
+        },
+      }),
+      live: live('line 1\n'),
+    })
+    const badge = within(terminal()!).getByTestId('sandbox-badge')
+    expect(badge.textContent).toBe('沙箱：工作区可写 · 网络未隔离')
   })
 
   it('成功后默认收起，点开显示带颜色的 display', async () => {
@@ -179,6 +198,15 @@ describe('ToolStep：其他工具', () => {
 })
 
 describe('terminalData', () => {
+  const sandbox = {
+    profile: 'workspace-write' as const,
+    network: 'none' as const,
+    mechanism: 'restricted-token' as const,
+    enforced: true,
+    networkIsolated: false,
+  }
+  const other = { ...sandbox, profile: 'read-only' as const }
+
   it('还没开始执行时没有数据；命令不是字符串时用参数摘要', () => {
     expect(terminalData({ command: 'x' }, undefined, undefined)).toBeUndefined()
     expect(terminalData({}, tool({ status: 'requested' }), undefined)).toBeUndefined()
@@ -193,5 +221,21 @@ describe('terminalData', () => {
       omittedAt: 4,
       shell: 'bash',
     })
+  })
+
+  it('运行中取工具事件的沙箱，完成后优先用显示的沙箱', () => {
+    expect(
+      terminalData({ command: 'x' }, tool({ status: 'running', sandbox }), undefined),
+    ).toMatchObject({ sandbox })
+    expect(
+      terminalData(
+        { command: 'x' },
+        tool({ display: display({ sandbox: other }), sandbox }),
+        undefined,
+      ),
+    ).toMatchObject({ sandbox: other })
+    expect(
+      terminalData({ command: 'x' }, tool({ display: display(), sandbox }), undefined),
+    ).toMatchObject({ sandbox })
   })
 })

@@ -218,6 +218,7 @@ describe('强制拦截', () => {
       decision: 'ask',
       reasonCode: 'permission.dangerous_command',
       matchedRuleIds: [],
+      overridable: false,
     })
     expect(decidePermission(req(tools.read, { paths: ['id_rsa'] }), allowAll, { guards })).toEqual({
       decision: 'deny',
@@ -250,6 +251,32 @@ describe('强制拦截', () => {
     expect(decidePermission(req(tools.read), [], { guards: [bare] })).toMatchObject({
       reason: expect.any(String) as unknown as string,
     })
+  })
+
+  it('拦截结果可以声明不可覆盖，供沙箱审批使用（M5-05）', () => {
+    const sandboxGuard: PermissionGuard = () => ({
+      effect: 'ask',
+      reasonCode: 'permission.sandbox.requires_approval',
+      overridable: false,
+    })
+    const allowAll = [rule('allow', {})]
+    expect(
+      decidePermission(req(tools.run, { command: 'npm test' }), allowAll, {
+        guards: [sandboxGuard],
+      }),
+    ).toEqual({
+      decision: 'ask',
+      reasonCode: 'permission.sandbox.requires_approval',
+      matchedRuleIds: [],
+      overridable: false,
+    })
+    // 明确写明命令的允许规则也不能绕过不可覆盖的拦截
+    const commandAllow = [rule('allow', { tool: 'run_command', command: ['npm test'] })]
+    expect(
+      decidePermission(req(tools.run, { command: 'npm test' }), commandAllow, {
+        guards: [sandboxGuard],
+      }),
+    ).toMatchObject({ decision: 'ask', overridable: false })
   })
 })
 

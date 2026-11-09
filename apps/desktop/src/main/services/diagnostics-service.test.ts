@@ -115,7 +115,20 @@ describe('diagnostics sanitization', () => {
 })
 
 describe('DiagnosticsService zip generation and export', () => {
-  const fakeDeps = {
+  const fakeSandbox = {
+    platform: 'win32' as const,
+    mechanism: 'restricted-token' as const,
+    policy: { profile: 'workspace-write' as const, network: 'none' as const },
+    unavailable: 'deny' as const,
+    capability: {
+      available: true,
+      supported: true,
+      mechanism: 'restricted-token' as const,
+      networkIsolated: false,
+      checks: { restrictedToken: true, lowIntegrity: true, jobObject: true, appContainer: false },
+    },
+  }
+  const baseDeps = {
     getAppInfo: () => fakeAppInfo,
     getSettings: async () => ({
       providers: [
@@ -142,6 +155,7 @@ describe('DiagnosticsService zip generation and export', () => {
     getHostLogs: async () => 'Host running for C:/Users/alice/project',
     userHomeDir: 'C:\\Users\\alice',
   }
+  const fakeDeps = { ...baseDeps, getSandbox: async () => fakeSandbox }
 
   it('builds summary correctly', async () => {
     const service = new DiagnosticsService(fakeDeps)
@@ -152,6 +166,15 @@ describe('DiagnosticsService zip generation and export', () => {
     expect(sum.exportItems).toContain('manifest.json')
     expect(sum.exportItems).toContain('build-info.json')
     expect(sum.exportItems).toContain('session/events.json')
+    expect(sum.sandbox).toEqual(fakeSandbox)
+    expect(sum.exportItems).toContain('sandbox.json')
+  })
+
+  it('omits the sandbox entry when the collector is unavailable', async () => {
+    const service = new DiagnosticsService(baseDeps)
+    const sum = await service.summary({})
+    expect(sum.sandbox).toBeUndefined()
+    expect(sum.exportItems).not.toContain('sandbox.json')
   })
 
   it('generates valid zip buffer free of real home paths and API keys', async () => {
@@ -167,6 +190,13 @@ describe('DiagnosticsService zip generation and export', () => {
     expect(fileNames).toContain('logs/main.log')
     expect(fileNames).toContain('logs/host.log')
     expect(fileNames).toContain('session/events.json')
+    expect(fileNames).toContain('sandbox.json')
+    const sandbox = JSON.parse(new TextDecoder().decode(unzipped['sandbox.json'])) as {
+      mechanism: string
+      capability: { networkIsolated: boolean }
+    }
+    expect(sandbox.mechanism).toBe('restricted-token')
+    expect(sandbox.capability.networkIsolated).toBe(false)
     const build = JSON.parse(new TextDecoder().decode(unzipped['build-info.json'])) as {
       channel: string
       commit: string

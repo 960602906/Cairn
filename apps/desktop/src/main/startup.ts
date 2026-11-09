@@ -340,6 +340,7 @@ const diagnostics = new DiagnosticsService({
   },
   getMainLogs: () => readLogFile(join(paths.logs, 'main.log')),
   getHostLogs: () => readLogFile(join(paths.logs, 'host.log')),
+  getSandbox: () => sandbox.diagnostics(),
   showSaveDialog: async (defaultName) => {
     // 端到端测试：指定目录时跳过系统保存对话框（不弹出原生窗口）
     const override = process.env['CAIRN_DIAGNOSTICS_DIR']?.trim()
@@ -593,6 +594,7 @@ const gateway = createRendererGateway({
   agents,
   trials,
   diagnostics,
+  sandbox: { status: () => sandbox.diagnostics() },
   inspect: {
     inspect: (params) =>
       inspect.inspect({
