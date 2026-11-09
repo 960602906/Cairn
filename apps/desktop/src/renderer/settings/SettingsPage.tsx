@@ -12,6 +12,7 @@ import {
   Info,
   Palette,
   PanelLeftClose,
+  RefreshCw,
   Search,
   ShieldCheck,
 } from 'lucide-react'
@@ -27,10 +28,11 @@ import { ProjectsSettings } from './ProjectsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
 import { McpGlyph, SkillGlyph } from './SettingIcons.js'
 import { SkillsSettings } from './SkillsSettings.js'
+import { UpdateSettings } from './UpdateSettings.js'
 import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
-  'general' | 'projects' | 'providers' | 'skills' | 'mcp' | 'permissions' | 'about'
+  'general' | 'projects' | 'update' | 'providers' | 'skills' | 'mcp' | 'permissions' | 'about'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -47,6 +49,7 @@ const GROUPS: readonly {
     sections: [
       { id: 'general', icon: <Palette /> },
       { id: 'projects', icon: <FolderOpen /> },
+      { id: 'update', icon: <RefreshCw /> },
       { id: 'about', icon: <Info /> },
     ],
   },
@@ -227,6 +230,7 @@ export function SettingsContent({
         <div className="mx-auto flex max-w-[920px] flex-col gap-6 px-8 pt-6 pb-16 max-[640px]:px-4">
           {section === 'general' && <GeneralSettings />}
           {section === 'projects' && <ProjectsSettings />}
+          {section === 'update' && <UpdateSettings />}
           {section === 'providers' && <ProvidersSettings />}
           {section === 'skills' && <SkillsSettings />}
           {section === 'mcp' && <McpSettings />}

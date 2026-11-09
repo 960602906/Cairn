@@ -4,12 +4,14 @@
  * 数据只来自主进程的 `app.info`；不显示用户目录、凭据或项目内容。读取失败时由 store 的统一错误条
  * 提示，页面保持可用的“未知”占位。
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info } from 'lucide-react'
+import { Info, ScrollText } from 'lucide-react'
 import type { AppInfo } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
+import { Button } from '../ui/index.js'
 import { Field, SettingsGroup } from './Field.js'
+import { LicensesDialog } from './LicensesDialog.js'
 import { SettingsHeader } from './SettingsPage.js'
 
 function shortCommit(commit: string): string | undefined {
@@ -34,10 +36,17 @@ export function AboutSettings() {
   const { t, i18n } = useTranslation('settings')
   const info = useSessionStore((s) => s.appInfo)
   const loadAppInfo = useSessionStore((s) => s.loadAppInfo)
+  const update = useSessionStore((s) => s.updateStatus)
+  const loadUpdateStatus = useSessionStore((s) => s.loadUpdateStatus)
+  const [licensesOpen, setLicensesOpen] = useState(false)
 
   useEffect(() => {
     if (!info) void loadAppInfo()
   }, [info, loadAppInfo])
+
+  useEffect(() => {
+    if (!update) void loadUpdateStatus()
+  }, [update, loadUpdateStatus])
 
   return (
     <>
@@ -57,10 +66,27 @@ export function AboutSettings() {
           <p className="text-ui text-muted">{t('about.loading')}</p>
         )}
       </SettingsGroup>
+      <SettingsGroup
+        icon={<ScrollText />}
+        title={t('about.update.title')}
+        description={t('about.update.description')}
+      >
+        <Field label={t('about.update.source')}>
+          <Mono>{update?.source ?? t('about.unknown')}</Mono>
+        </Field>
+        <Field label={t('about.licenses.label')}>
+          <Button size="sm" variant="secondary" onClick={() => setLicensesOpen(true)}>
+            <ScrollText aria-hidden />
+            {t('about.licenses.open')}
+          </Button>
+        </Field>
+        <p className="text-note leading-relaxed text-muted">{t('about.licenses.hint')}</p>
+      </SettingsGroup>
       <SettingsGroup title={t('about.localData.title')}>
         <p className="text-ui leading-relaxed text-fg2">{t('about.localData.description')}</p>
         {info && <p className="text-note text-muted">{info.copyright}</p>}
       </SettingsGroup>
+      <LicensesDialog open={licensesOpen} onOpenChange={setLicensesOpen} />
     </>
   )
 }

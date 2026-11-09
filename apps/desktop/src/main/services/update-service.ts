@@ -243,20 +243,23 @@ function errorCode(error: unknown): string {
 }
 
 function isNetworkError(code: string, message: string): boolean {
+  const markers = [
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'EPROTO',
+    'ERR_PROXY_CONNECTION_FAILED',
+    'ERR_TUNNEL_CONNECTION_FAILED',
+    'ERR_NAME_NOT_RESOLVED',
+    'ERR_INTERNET_DISCONNECTED',
+    'ERR_CONNECTION_',
+    'ERR_CERT_',
+  ]
   return (
-    [
-      'ENOTFOUND',
-      'EAI_AGAIN',
-      'ECONNREFUSED',
-      'ECONNRESET',
-      'ETIMEDOUT',
-      'EPROTO',
-      'ERR_PROXY_CONNECTION_FAILED',
-      'ERR_TUNNEL_CONNECTION_FAILED',
-      'ERR_NAME_NOT_RESOLVED',
-      'ERR_INTERNET_DISCONNECTED',
-      'ERR_CERT_',
-    ].some((item) => code.startsWith(item)) || /proxy|offline|network|timed out/i.test(message)
+    markers.some((item) => code.startsWith(item) || message.includes(item)) ||
+    /proxy|offline|network|timed out/i.test(message)
   )
 }
 
@@ -538,6 +541,7 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       phase,
       currentVersion: options.currentVersion,
       channel: config.channel,
+      channelPinned: pinnedChannel !== undefined,
       enabled: config.enabled,
       autoCheck: config.autoCheck,
       ...(config.source ? { source: config.source } : {}),

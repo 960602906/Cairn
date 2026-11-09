@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
@@ -29,8 +30,24 @@ const info: AppInfo = {
 
 function setup(value: AppInfo | (() => Promise<AppInfo>)) {
   const request = vi.fn(async (method: string) => {
-    if (method !== 'app.info') return undefined
-    return typeof value === 'function' ? value() : value
+    if (method === 'app.info') return typeof value === 'function' ? value() : value
+    if (method === 'update.status') {
+      return {
+        phase: 'idle',
+        currentVersion: '0.1.0',
+        channel: 'beta',
+        channelPinned: false,
+        enabled: true,
+        autoCheck: true,
+        source: 'https://updates.example/cairn/',
+        signatureVerified: false,
+        requiresRestart: false,
+      }
+    }
+    if (method === 'app.licenses') {
+      return { available: true, text: 'MIT — demo', truncated: false }
+    }
+    return undefined
   })
   const store = createSessionStore({
     request,
@@ -109,5 +126,12 @@ describe('AboutSettings', () => {
     })
     await waitFor(() => expect(store.getState().error).toBeDefined())
     expect(screen.getByText('正在读取构建信息…')).toBeDefined()
+  })
+
+  it('shows the update source and opens the third-party notices', async () => {
+    setup(info)
+    expect(await screen.findByText('https://updates.example/cairn/')).toBeDefined()
+    await userEvent.click(screen.getByRole('button', { name: '查看许可' }))
+    expect(await screen.findByText('MIT — demo')).toBeDefined()
   })
 })

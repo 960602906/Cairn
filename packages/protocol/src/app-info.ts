@@ -50,3 +50,16 @@ export const AppInfo = BuildInfo.extend({
   git: GitRuntimeInfo.optional(),
 })
 export type AppInfo = z.infer<typeof AppInfo>
+
+/**
+ * 第三方许可声明（M5-07）：`app.licenses` 读取随包的 `THIRD_PARTY_NOTICES.txt`。
+ *
+ * 文本只包含依赖与许可证声明；超长时截断并置 `truncated`，界面提示读取完整文件。
+ */
+export const AppLicenses = z.object({
+  /** 安装包或构建产物里是否存在声明文件。 */
+  available: z.boolean(),
+  text: z.string(),
+  truncated: z.boolean(),
+})
+export type AppLicenses = z.infer<typeof AppLicenses>

@@ -368,6 +368,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     phase: 'idle',
     currentVersion: '0.1.0',
     channel: 'beta',
+    channelPinned: false,
     enabled: true,
     autoCheck: true,
     source: 'https://updates.example/cairn/',
@@ -410,7 +411,10 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     }),
   }
   gateway = createRendererGateway({
-    appInfo: { info: () => APP_INFO },
+    appInfo: {
+      info: () => APP_INFO,
+      licenses: () => ({ available: false, text: '', truncated: false }),
+    },
     events: { ...service, ...eventsOverride },
     commands,
     projects,
@@ -1019,6 +1023,16 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(pushed).toEqual([changed])
   })
 
+  it('serves app info and the bundled license notices (M5-07)', async () => {
+    const { client } = setup()
+    await expect(client.request('app.info', {})).resolves.toMatchObject({ version: '0.1.0' })
+    await expect(client.request('app.licenses', {})).resolves.toEqual({
+      available: false,
+      text: '',
+      truncated: false,
+    })
+  })
+
   it('delegates provider requests to the provider service (M2-10)', async () => {
     const { client } = setup()
     const provider = {
@@ -1116,7 +1130,10 @@ describe('createRendererGateway: commands and lifecycle', () => {
     setup()
     const onProtocolError = vi.fn()
     const g = createRendererGateway({
-      appInfo: { info: () => APP_INFO },
+      appInfo: {
+        info: () => APP_INFO,
+        licenses: () => ({ available: false, text: '', truncated: false }),
+      },
       events: service,
       commands,
       projects,

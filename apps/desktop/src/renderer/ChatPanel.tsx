@@ -44,12 +44,15 @@ export function ChatPanel({
   initialChangeSetId,
   initialChangeSetSessionId,
   onInitialChangeSetOpened,
+  notice,
 }: {
   /** 从活动中心等入口打开会话时要直接显示的改动集。 */
   readonly initialChangeSetId?: string | undefined
   /** 请求打开改动集的会话；当前会话不同时不打开。 */
   readonly initialChangeSetSessionId?: string | undefined
   readonly onInitialChangeSetOpened?: (() => void) | undefined
+  /** 会话标题栏下方的非模态提示（M5-07 的更新提示）。 */
+  readonly notice?: ReactNode
 }) {
   const { t } = useTranslation('session')
   const sessionId = useSessionStore((s) => s.activeSessionId)
@@ -108,6 +111,7 @@ export function ChatPanel({
     return (
       <>
         <TopBar />
+        {notice}
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-ui text-muted">
           <CairnMark size={48} className="text-faint" />
           <p>{t('chat.empty')}</p>
@@ -183,6 +187,7 @@ export function ChatPanel({
           </IconButton>
         </div>
       </TopBar>
+      {notice}
       <div className="relative flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">

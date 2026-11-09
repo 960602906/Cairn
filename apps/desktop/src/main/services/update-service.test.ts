@@ -254,6 +254,12 @@ describe('version helpers', () => {
     )
     expect(classifyUpdateError(new Error('download cancelled'), 'x').code).toBe('update.cancelled')
     expect(classifyUpdateError({ code: 'ECONNREFUSED' }, 'x').code).toBe('update.network')
+    expect(classifyUpdateError(new Error('net::ERR_CONNECTION_REFUSED'), 'x').code).toBe(
+      'update.network',
+    )
+    expect(classifyUpdateError(new Error('net::ERR_NAME_NOT_RESOLVED'), 'x').code).toBe(
+      'update.network',
+    )
     expect(classifyUpdateError(new Error('proxy failure'), 'x').code).toBe('update.network')
     expect(classifyUpdateError(new Error('boom'), 'update.check_failed')).toMatchObject({
       code: 'update.check_failed',
@@ -354,9 +360,15 @@ describe('createUpdateService: configuration', () => {
     expect(service.status()).toMatchObject({
       enabled: true,
       channel: 'beta',
+      channelPinned: true,
       source: 'https://updates.example/cairn/',
       autoCheck: true,
     })
+  })
+
+  it('marks the channel as not pinned when settings choose it', () => {
+    const { service } = setup({ settings: { updateChannel: 'beta' } })
+    expect(service.status()).toMatchObject({ channel: 'beta', channelPinned: false })
   })
 
   it('reads the source from the environment and keeps the persisted check time', () => {
