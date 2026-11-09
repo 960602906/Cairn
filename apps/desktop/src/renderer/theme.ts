@@ -38,10 +38,10 @@ export const THEME_SWATCHES: Readonly<
   >
 > = {
   bluestone: { canvas: '#0b0d0f', paper: '#101317', accent: '#2dd4bf' },
-  obsidian: { canvas: '#08090a', paper: '#15171a', accent: '#ff6a3d' },
+  obsidian: { canvas: '#08090a', paper: '#0e0f11', accent: '#ff6a3d' },
   paper: { canvas: '#e6dccb', paper: '#fbf7ee', accent: '#a63b25' },
   tundra: { canvas: '#e7ebe5', paper: '#ffffff', accent: '#2f6b4b' },
-  slate: { canvas: '#0a0c10', paper: '#151a21', accent: '#8b93ff' },
+  slate: { canvas: '#0a0c10', paper: '#0f1217', accent: '#8b93ff' },
 }
 
 export interface ThemeEnvironment {

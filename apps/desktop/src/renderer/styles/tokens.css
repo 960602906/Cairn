@@ -182,6 +182,72 @@
     0 36px 90px -14px rgba(0, 0, 0, 0.8);
 }
 
+/* 黑曜 —— 近黑 + 信号橙 */
+[data-theme='obsidian'] {
+  color-scheme: dark;
+
+  --chrome: #08090a;
+  --chrome-glow: #191c20;
+  --paper: #0e0f11;
+  --raise: #15171a;
+  --sunk: #1a1c20;
+  --sunk2: #212429;
+  --hover: rgba(255, 255, 255, 0.05);
+  --press: rgba(255, 255, 255, 0.095);
+  --hair: rgba(255, 255, 255, 0.075);
+  --hair2: rgba(255, 255, 255, 0.16);
+
+  --fg: #ecebe6;
+  --fg2: #c2bfb8;
+  --muted: #a09d95;
+  --faint: #8a8780;
+
+  --ink: #ff6a3d;
+  --ink-fg: #1a0d07;
+  --accent: #ff6a3d;
+  --accent-soft: rgba(255, 106, 61, 0.13);
+  --brand-accent: #ff6a3d;
+  --ok: #6fcf97;
+  --ok-soft: rgba(111, 207, 151, 0.13);
+  --warn: #f0bb7f;
+  --warn-soft: rgba(240, 187, 127, 0.14);
+  --danger: #f2786f;
+  --danger-soft: rgba(242, 120, 111, 0.14);
+
+  --code-bg: #0b0c0e;
+  --code-head: #16181b;
+  --gutter: #6c6963;
+  --gutter-bg: #0d0e10;
+  --line-hl: rgba(255, 106, 61, 0.07);
+  --add-bg: rgba(111, 207, 151, 0.1);
+  --add-gut: rgba(111, 207, 151, 0.18);
+  --add-word: rgba(111, 207, 151, 0.24);
+  --add-fg: #7fd6a2;
+  --del-bg: rgba(242, 120, 111, 0.1);
+  --del-gut: rgba(242, 120, 111, 0.18);
+  --del-word: rgba(242, 120, 111, 0.24);
+  --del-fg: #f2786f;
+  --hunk-bg: rgba(139, 166, 232, 0.1);
+  --hunk-fg: #8ba6e8;
+  --tk-k: #e58fda;
+  --tk-f: #8fb0ff;
+  --tk-s: #86d6ad;
+  --tk-n: #f4b96f;
+  --tk-c: #7e7b75;
+  --tk-p: #a09d95;
+  --tk-t: #6fd2df;
+  --tk-pr: #c2a7ff;
+  --tk-v: #e6e6ea;
+
+  --term-bg: #0a0b0d;
+  --term-fg: #d9dcd2;
+  --term-dim: #8b8882;
+  --term-ok: #7fe0b2;
+  --term-acc: #ff9a72;
+  --term-line: rgba(255, 255, 255, 0.07);
+  --term-err: #eda7a3;
+}
+
 /* 纸面 —— 暖纸 + 朱砂 */
 [data-theme='paper'] {
   color-scheme: light;

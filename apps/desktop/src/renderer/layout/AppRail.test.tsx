@@ -64,4 +64,10 @@ describe('AppRail', () => {
     const activity = screen.getByRole('button', { name: '活动，120 个待审批' })
     expect(activity.textContent).toContain('99+')
   })
+
+  it('keeps the settings entry outside the window drag region', () => {
+    renderRail()
+    const settings = screen.getByRole('button', { name: '设置' })
+    expect(settings.closest('.no-drag')).not.toBeNull()
+  })
 })

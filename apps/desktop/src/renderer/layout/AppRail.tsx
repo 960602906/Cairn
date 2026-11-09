@@ -123,7 +123,7 @@ export function AppRail({
         </RailButton>
       </div>
 
-      <div className="mt-auto flex flex-col items-center gap-1">
+      <div className="no-drag mt-auto flex flex-col items-center gap-1">
         <RailButton
           label={t('sidebar.settings')}
           onClick={onSettings}
