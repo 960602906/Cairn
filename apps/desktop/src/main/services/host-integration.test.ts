@@ -3,8 +3,8 @@
  * 宿主进程以内存通道模拟，不启动 Electron。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { rebuildHistory, type FakeScript } from '@cairn/core'
-import type { PersistedEvent, RpcChannel } from '@cairn/protocol'
+import { presetRules, rebuildHistory, type FakeScript } from '@cairn/core'
+import type { AgentDefinition, PersistedEvent, RpcChannel } from '@cairn/protocol'
 import { createMemoryStorage, type Storage } from '@cairn/storage'
 import { createAgentHost } from '../../agent-host/host.js'
 import { createFakeHostRuntime } from '../../agent-host/fake-model.js'
@@ -30,6 +30,8 @@ function channelPair(): [RpcChannel, RpcChannel] {
 
 const SCRIPT: FakeScript = { turns: [], chunkSize: 1, delayMs: 10 }
 
+/** 按模型 id 选择脚本；委派测试用它让父子运行得到不同的脚本。 */
+let scripts: Record<string, FakeScript> = {}
 let storage: Storage
 let service: SessionEventService
 let manager: SessionManager
@@ -49,7 +51,7 @@ function spawn(): HostProcess {
   }
   createAgentHost({
     channel: hostSide,
-    createRuntime: (model) => createFakeHostRuntime(model, SCRIPT),
+    createRuntime: (model) => createFakeHostRuntime(model, scripts[model.modelId] ?? SCRIPT),
     exit,
     createId: () => `h${++ids}`,
   })
@@ -63,12 +65,117 @@ function spawn(): HostProcess {
   return proc
 }
 
-/** `restart` 为 true 时保留数据库（模拟应用重启）。 */
-function setup(restart = false) {
+/** 委派测试用的 Agent 定义（M4-13）。 */
+const reviewerDefinition: AgentDefinition = {
+  id: 'builtin.reviewer',
+  version: 1,
+  source: 'builtin',
+  status: 'published',
+  name: { 'en-US': 'Reviewer' },
+  description: { 'en-US': 'Reviews changes' },
+  instructions: 'Review the change.',
+  model: { mode: 'inherit' },
+  tools: { allow: ['*'] },
+  skills: { allow: [] },
+  permissions: 'read-only',
+  limits: { maxStepsPerTurn: 8, maxTurnDurationMs: 60_000, maxConsecutiveToolErrors: 3 },
+  context: { includeProjectInstructions: false, compaction: 'auto' },
+  memory: { scopes: [], write: 'never' },
+  createdAt: 0,
+  updatedAt: 0,
+  schemaVersion: 1,
+}
+
+const delegatingDefinition: AgentDefinition = {
+  ...reviewerDefinition,
+  id: 'default',
+  name: { 'en-US': 'Default' },
+  description: { 'en-US': 'Default agent' },
+  instructions: '',
+  delegation: {
+    enabled: true,
+    allowedAgents: ['builtin.reviewer'],
+    maxDepth: 1,
+    maxChildrenPerTurn: 2,
+    maxParallel: 2,
+    childBudgetShare: 0.5,
+    defaultWorkspace: 'shared',
+    mergeReview: 'user',
+  },
+}
+
+const delegateCall = (task: string) => ({
+  name: 'delegate',
+  input: { agent: 'builtin.reviewer', task, brief: { goal: 'review', deliverable: 'summary' } },
+})
+
+/** 父运行一轮里并行派出两个只读子运行。 */
+const delegationScript = (delayMs: number, text = 'done'): FakeScript => ({
+  delayMs,
+  chunkSize: 2,
+  turns: [
+    {
+      steps: [
+        { kind: 'tools', calls: [delegateCall('first'), delegateCall('second')] },
+        { kind: 'reply', text },
+      ],
+    },
+  ],
+})
+
+const childScript = (delayMs: number): FakeScript => ({
+  delayMs,
+  chunkSize: 2,
+  turns: [
+    {
+      steps: [
+        {
+          kind: 'reply',
+          text: '{"status":"completed","summary":"ok"}',
+          usage: { inputTokens: 3, outputTokens: 2 },
+        },
+      ],
+    },
+  ],
+})
+
+/** `restart` 为 true 时保留数据库（模拟应用重启）。`delegation` 打开时注册委派目标。 */
+function setup(restart = false, options: { delegation?: boolean } = {}) {
   if (!restart) storage = createMemoryStorage()
+  scripts = {}
   service = createSessionEventService({ storage })
   inits.length = 0
-  const real = createHostSupervisor({ spawn, events: service })
+  const delegation = options.delegation === true
+  const real = createHostSupervisor({
+    spawn,
+    events: service,
+    ...(delegation
+      ? {
+          resolveAgentDefinition: (agent: { id: string }) =>
+            agent.id === delegatingDefinition.id ? delegatingDefinition : undefined,
+          resolveDelegateTargets: (_sessionId: string, agentIds: readonly string[]) =>
+            agentIds
+              .filter((agentId) => agentId === reviewerDefinition.id)
+              .map((agentId) => ({
+                id: agentId,
+                name: 'Reviewer',
+                description: 'Reviews changes',
+                permissions: 'read-only' as const,
+              })),
+          resolveDelegation: (_sessionId: string, agentId: string) =>
+            agentId === reviewerDefinition.id
+              ? {
+                  definition: reviewerDefinition,
+                  model: { providerId: 'fake', modelId: 'child' },
+                  permissionRules: presetRules('read-only'),
+                  skills: [],
+                  mcpTools: [],
+                  workspace: 'shared' as const,
+                }
+              : undefined,
+        }
+      : {}),
+  })
   const supervisor: HostSupervisor = {
     startHost: (init) => {
       inits.push(structuredClone(init))
@@ -171,5 +278,106 @@ describe('session manager with a real host', () => {
         .map((e) => e.payload),
     ).toContainEqual({ from: 'thinking', to: 'interrupted', reason: 'host_lost' })
     expect(manager.list({}).sessions[0]?.status).toBe('idle')
+  })
+})
+
+describe('multi-session concurrency (M4-13)', () => {
+  const threeSessions = () =>
+    ['/a', '/b', '/c'].map((projectPath) => manager.create({ projectPath }).sessionId)
+
+  const promptAll = (sessionIds: readonly string[]) => {
+    for (const sessionId of sessionIds) manager.prompt({ sessionId, content: text('go') })
+  }
+
+  /** 只算根运行的轮次事件：子运行也写同一个会话日志。 */
+  const rootCount = (sessionId: string, type: string) => {
+    const rootRunId = inits.find((init) => init.sessionId === sessionId)?.runId
+    return stored(sessionId).filter((event) => event.type === type && event.runId === rootRunId)
+      .length
+  }
+
+  it('runs three sessions with two delegated children each without mixing runs', async () => {
+    setup(false, { delegation: true })
+    scripts = { fake: delegationScript(2), child: childScript(2) }
+    const sessionIds = threeSessions()
+    promptAll(sessionIds)
+
+    for (const sessionId of sessionIds) {
+      await vi.waitFor(() => expect(rootCount(sessionId, 'turn.completed')).toBe(1))
+    }
+
+    const runIdsBySession = new Map<string, ReadonlySet<string>>()
+    for (const sessionId of sessionIds) {
+      const events = stored(sessionId)
+      const rootRunId = inits.find((init) => init.sessionId === sessionId)?.runId
+      expect(rootRunId).toBeDefined()
+      const created = events.filter((event) => event.type === 'run.created')
+      expect(created).toHaveLength(3)
+      expect(created.filter((event) => event.runId !== rootRunId)).toHaveLength(2)
+      for (const child of created.filter((event) => event.runId !== rootRunId)) {
+        expect(child.parentRunId).toBe(rootRunId)
+      }
+      expect(count(sessionId, 'run.delegated')).toBe(2)
+      expect(count(sessionId, 'run.child.completed')).toBe(2)
+      expect(count(sessionId, 'session.crashed')).toBe(0)
+      runIdsBySession.set(sessionId, new Set(created.map((event) => event.runId)))
+    }
+
+    // 三个会话的运行 id 互不相交：事件严格按会话隔离
+    const sets = [...runIdsBySession.values()]
+    for (let i = 0; i < sets.length; i++) {
+      for (let j = i + 1; j < sets.length; j++) {
+        expect([...sets[i]!].filter((runId) => sets[j]!.has(runId))).toEqual([])
+      }
+    }
+  })
+
+  it('cancelling one session only aborts its own runs', async () => {
+    setup(false, { delegation: true })
+    scripts = {
+      fake: delegationScript(10, 'x'.repeat(40)),
+      child: childScript(20),
+    }
+    const sessionIds = threeSessions()
+    promptAll(sessionIds)
+    for (const sessionId of sessionIds) {
+      await vi.waitFor(() => expect(count(sessionId, 'run.delegated')).toBe(2))
+    }
+
+    const [first, second, third] = sessionIds as [string, string, string]
+    await manager.abort({ sessionId: second })
+    await vi.waitFor(() => expect(rootCount(second, 'turn.aborted')).toBe(1))
+
+    for (const sessionId of [first, third]) {
+      await vi.waitFor(() => expect(rootCount(sessionId, 'turn.completed')).toBe(1))
+      expect(rootCount(sessionId, 'turn.aborted')).toBe(0)
+    }
+    expect(rootCount(second, 'turn.completed')).toBe(0)
+    // 被中止会话的子运行也一起中止，但不影响其他会话
+    expect(count(second, 'run.child.completed')).toBe(2)
+  })
+
+  it('a crashed host only marks its own session', async () => {
+    setup(false, { delegation: true })
+    scripts = {
+      fake: delegationScript(10, 'x'.repeat(40)),
+      child: childScript(20),
+    }
+    const sessionIds = threeSessions()
+    promptAll(sessionIds)
+    for (const sessionId of sessionIds) {
+      await vi.waitFor(() => expect(count(sessionId, 'run.delegated')).toBe(2))
+    }
+
+    const [first, second, third] = sessionIds as [string, string, string]
+    procs[1]?.kill()
+    await vi.waitFor(() => expect(count(second, 'session.crashed')).toBe(1))
+
+    for (const sessionId of [first, third]) {
+      await vi.waitFor(() => expect(rootCount(sessionId, 'turn.completed')).toBe(1))
+      expect(count(sessionId, 'session.crashed')).toBe(0)
+    }
+    expect(rootCount(second, 'turn.completed')).toBe(0)
+    expect(manager.activeSessions()).not.toContain(second)
   })
 })

@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:perf": "vitest run packages/checkpoint/src/shadow-repo.perf.test.ts",
+    "test:perf": "vitest run packages/checkpoint/src/shadow-repo.perf.test.ts apps/desktop/src/main/services/session-concurrency.perf.test.ts",
     "spike:m4": "vitest run --config spikes/m4/vitest.config.mts",
     "test:watch": "vitest",
     "contract:record": "vitest run packages/runtime-pi/src/contract-record.test.ts",
