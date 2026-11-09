@@ -66,7 +66,7 @@ test('启动后台命令、查看输出并停止', async ({ launch, userData }) 
     await expect(task).toBeVisible()
     await expect(task.getByText('运行中')).toBeVisible()
     await task.getByRole('button', { name: '查看输出' }).click()
-    await expect(task.getByText(/bg-tick/)).toBeVisible()
+    await expect(task.locator('pre')).toContainText('bg-tick')
     await task.getByRole('button', { name: '停止' }).click()
     await expect(task.getByText('已停止')).toBeVisible()
   } finally {

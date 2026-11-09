@@ -1,6 +1,6 @@
 # ADR-0033 运行检查器与上下文快照
 
-- 状态：已接受（M4-04）
+- 状态：已接受（M4-04 定稿；M4-15 联合验收）
 - 日期：2026-11-08
 - 详细设计：[Agent 管理界面](../design/agent-management-ui.md) §8.1、§8.2；[Agent 运行时](../design/agent-runtime.md) §12、§13、§15
 - 相关决策：ADR-0005、ADR-0009、ADR-0010、ADR-0020、ADR-0030
