@@ -140,6 +140,53 @@ describe('createSettingsService', () => {
     ).toBe('cmd')
   })
 
+  it('saves the sandbox settings; danger-full-access cannot be persisted (M5-04)', () => {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        sandboxProfile: 'danger-full-access',
+        sandboxNetwork: 'everywhere',
+        sandboxUnavailable: 'allow',
+      }),
+    )
+    const settings = createSettingsService({
+      storage: createMemoryStorage(),
+      file,
+      systemLocales: () => ['zh-CN'],
+    })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+
+    expect(
+      settings.update({
+        sandboxProfile: 'read-only',
+        sandboxNetwork: 'private',
+        sandboxUnavailable: 'ask',
+      }),
+    ).toEqual({
+      locale: 'zh-CN',
+      providers: [],
+      sandboxProfile: 'read-only',
+      sandboxNetwork: 'private',
+      sandboxUnavailable: 'ask',
+    })
+    expect(read()).toEqual({
+      sandboxProfile: 'read-only',
+      sandboxNetwork: 'private',
+      sandboxUnavailable: 'ask',
+    })
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).get(),
+    ).toMatchObject({
+      sandboxProfile: 'read-only',
+      sandboxNetwork: 'private',
+      sandboxUnavailable: 'ask',
+    })
+  })
+
   it('saves the custom instructions; blank or null clears them (M1-13b)', () => {
     writeFileSync(file, JSON.stringify({ instructions: 42 }))
     const settings = createSettingsService({

@@ -46,6 +46,7 @@ import {
   McpToolSummary,
 } from '../mcp.js'
 import { PermissionEffect, PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
+import { SandboxDefaultProfile, SandboxNetwork, SandboxUnavailableBehavior } from '../sandbox.js'
 import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
@@ -172,6 +173,15 @@ export const Settings = z.object({
   shell: ShellPreference.optional(),
   sessionBrief: z.boolean().optional(),
   activityNotifications: z.boolean().optional(),
+  /**
+   * 默认沙箱档位（M5-04）：只允许 `read-only` 与 `workspace-write`；`danger-full-access` 不能保存为默认值。
+   * 没有设置时不出现，按 `workspace-write`。
+   */
+  sandboxProfile: SandboxDefaultProfile.optional(),
+  /** 网络策略（M5-04）。没有设置时不出现，按 `none`。 */
+  sandboxNetwork: SandboxNetwork.optional(),
+  /** 沙箱不可用时的行为（M5-04）。没有设置时不出现，按失败关闭。 */
+  sandboxUnavailable: SandboxUnavailableBehavior.optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -193,6 +203,9 @@ export const SettingsPatch = z.object({
   sessionBrief: z.boolean().optional(),
   /** false 关闭活动中心通知；true 重新打开（保存时省略，与没设置一样）。 */
   activityNotifications: z.boolean().optional(),
+  sandboxProfile: SandboxDefaultProfile.optional(),
+  sandboxNetwork: SandboxNetwork.optional(),
+  sandboxUnavailable: SandboxUnavailableBehavior.optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 

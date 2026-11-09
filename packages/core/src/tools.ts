@@ -8,7 +8,13 @@
  * - 工具只能通过 `ToolContext` 访问工作区、检查点等外部资源（架构 §9.1）。路径校验（M1-06）、
  *   检查点（M1-12）在这里只定义接口。
  */
-import type { ContentPart, FileChangeKind, FileHunk, ToolDisplay } from '@cairn/protocol'
+import type {
+  ContentPart,
+  FileChangeKind,
+  FileHunk,
+  SandboxExecution,
+  ToolDisplay,
+} from '@cairn/protocol'
 import { z } from 'zod'
 import type { Logger } from './logger.js'
 import type { AbortSignalLike, RuntimeToolEffect, RuntimeToolSpec } from './runtime.js'
@@ -155,6 +161,8 @@ export interface ToolDefinition<I = unknown> {
   execute(input: I, ctx: ToolContext): Promise<ToolOutput>
   /** 审批前生成预览，例如写文件前读取原文并计算 diff（Runtime §7）。 */
   describeForApproval?(input: I, ctx: ToolContext): Promise<ApprovalPreview>
+  /** 执行类工具实际使用的沙箱（M5-04）；写入 `tool.started`，只覆盖命令进程树。 */
+  readonly sandbox?: SandboxExecution
 }
 
 export const ToolErrorCode = {

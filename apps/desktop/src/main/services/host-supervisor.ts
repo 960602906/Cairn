@@ -41,6 +41,9 @@ import {
   type PermissionMode,
   type RunAgentRef,
   type RunSnapshotInput,
+  type SandboxCapability,
+  type SandboxPolicy,
+  type SandboxUnavailableBehavior,
   type ShellPreference,
   type SkillCatalogEntry,
   type McpToolExposure,
@@ -74,7 +77,16 @@ export type HostInit = Omit<
   | 'shell'
   | 'mcpTools'
   | 'agentDefinition'
+  | 'sandbox'
 >
+
+/** 命令沙箱的初始化配置（M5-04）；由沙箱服务解析，随 `host.init` 下发。 */
+export interface HostSandboxInit {
+  readonly policy: SandboxPolicy
+  readonly capability: SandboxCapability
+  readonly unavailable: SandboxUnavailableBehavior
+  readonly appContainerName?: string
+}
 
 /** 会话的检查点位置（M1-12b）：项目的影子仓库目录与会话的引用。 */
 export interface HostCheckpointLocation {
@@ -164,6 +176,8 @@ export interface HostSupervisorOptions {
   readonly resolveCheckpoints?: (sessionId: string) => HostCheckpointLocation | undefined
   /** 检查点使用的 Git（M5-03）；省略时不传，宿主用 PATH 中的 `git`。 */
   readonly resolveGit?: () => HostGit | undefined
+  /** 命令沙箱（M5-04）；省略时不传，宿主按平台不支持处理。 */
+  readonly resolveSandbox?: () => Promise<HostSandboxInit | undefined> | HostSandboxInit | undefined
   /**
    * 记录宿主报告的文件改动（M1-08b，改动服务）。会话与运行由这个宿主确定。
    * 省略时宿主的 `changes.record` 报 `run.unsupported`。
@@ -520,6 +534,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         const git = options.resolveGit?.()
         const instructions = options.resolveInstructions?.()
         const shell = options.resolveShell?.()
+        const sandbox = await options.resolveSandbox?.()
         const mcpTools = options.resolveMcpTools?.(sessionId, init.agent)
         const agentDefinition = options.resolveAgentDefinition?.(init.agent)
         const credential = await options.resolveCredential?.(init.model)
@@ -535,6 +550,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
             ...(git ? { git: { binary: git.binary, ...(git.env ? { env: git.env } : {}) } } : {}),
             ...(instructions ? { instructions } : {}),
             ...(shell ? { shell } : {}),
+            ...(sandbox ? { sandbox } : {}),
             ...(mcpTools && mcpTools.length > 0 ? { mcpTools: [...mcpTools] } : {}),
           },
           { timeoutMs: startTimeoutMs },

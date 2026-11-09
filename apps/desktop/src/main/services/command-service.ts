@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { BackgroundCommand, BackgroundCommandOutput, UnsequencedEvent } from '@cairn/protocol'
-import { runCommand, selectShell, type ShellInfo, type ShellPreference } from '@cairn/shell'
+import {
+  runCommand,
+  selectShell,
+  unsandboxedExecution,
+  type SandboxPolicy,
+  type SandboxRunner,
+  type ShellInfo,
+  type ShellPreference,
+} from '@cairn/shell'
 import { OutputChunkBuffer } from '@cairn/tools'
 import type { Storage } from '@cairn/storage'
 import type { SessionEventService } from './event-service.js'
@@ -16,9 +24,19 @@ export interface CommandServiceOptions {
   readonly isAllowedCwd?: (sessionId: string, cwd: string) => boolean | Promise<boolean>
   readonly select?: (preference: ShellPreference) => Promise<ShellInfo>
   readonly execute?: typeof runCommand
+  /**
+   * 后台命令的沙箱（M5-04）：按设置解析策略与执行器。沙箱不可用时执行器仍会失败关闭，
+   * 不会静默回退到无沙箱执行。
+   */
+  readonly sandbox?: () => Promise<CommandSandbox | undefined>
   readonly now?: () => number
   readonly id?: () => string
   readonly onError?: (error: unknown) => void
+}
+
+export interface CommandSandbox {
+  readonly runner: SandboxRunner
+  readonly policy: SandboxPolicy
 }
 
 export function createCommandService(options: CommandServiceOptions) {
@@ -87,6 +105,7 @@ export function createCommandService(options: CommandServiceOptions) {
       command: string
       cwd: string
       timeoutSeconds?: number
+      sandbox?: SandboxPolicy
     }): Promise<BackgroundCommand> {
       if (closing || active.size >= MAX_RUNNING)
         throw new Error('Background command capacity reached')
@@ -103,6 +122,22 @@ export function createCommandService(options: CommandServiceOptions) {
       )
       if (closing || active.size >= MAX_RUNNING)
         throw new Error('Background command service is closing or full')
+      const sandbox = await options.sandbox?.()
+      const policy = input.sandbox ?? sandbox?.policy
+      /**
+       * 事件里必须给出实际执行方式：没有执行器时命令要么已经过“本次不使用沙箱”审批，要么设置允许
+       * 降级，不能因为缺字段让界面误以为沙箱生效。
+       */
+      const execution = policy
+        ? sandbox
+          ? sandbox.runner.executionFor(policy)
+          : unsandboxedExecution(
+              policy,
+              policy.profile === 'danger-full-access'
+                ? 'sandbox.full_access'
+                : 'sandbox.unavailable',
+            )
+        : undefined
       const command: BackgroundCommand = {
         commandId: (options.id ?? randomUUID)(),
         sessionId: input.sessionId,
@@ -131,6 +166,7 @@ export function createCommandService(options: CommandServiceOptions) {
         collectOutput: false,
         onStdout: write('stdout'),
         onStderr: write('stderr'),
+        ...(policy && sandbox ? { sandbox: { runner: sandbox.runner, policy } } : {}),
       })
         .then((result) => {
           const status = result.timedOut ? 'timed_out' : result.aborted ? 'stopped' : 'exited'
@@ -175,6 +211,7 @@ export function createCommandService(options: CommandServiceOptions) {
           commandId: command.commandId,
           command: command.command,
           cwd: command.cwd,
+          ...(execution ? { sandbox: execution } : {}),
         })
       } catch (error) {
         options.onError?.(error)

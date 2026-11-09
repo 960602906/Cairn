@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   BUILTIN_TESTER,
+  BUILTIN_EXPLORER,
   FakeRuntime,
   presetRules,
   type FakeScript,
@@ -18,7 +19,7 @@ import {
   type UnsequencedEvent,
 } from '@cairn/protocol'
 import { createFakeHostRuntime, DEFAULT_FAKE_SCRIPT, fakeModel } from './fake-model.js'
-import { createAgentHost, type AgentHostOptions } from './host.js'
+import { createAgentHost, type AgentHostOptions, type HostSandboxConfig } from './host.js'
 
 function channelPair(): [RpcChannel, RpcChannel] {
   const listeners: [Set<(m: unknown) => void>, Set<(m: unknown) => void>] = [new Set(), new Set()]
@@ -365,6 +366,222 @@ describe('agent host', () => {
     expect(await h.host.permissions.decide(request('src/a.ts') as never)).toMatchObject({
       decision: 'deny',
       reasonCode: 'permission.agent_path_denied',
+    })
+  })
+
+  describe('command sandbox (M5-04)', () => {
+    const capability = {
+      available: true,
+      supported: true,
+      mechanism: 'restricted-token' as const,
+      networkIsolated: false,
+      checks: {
+        restrictedToken: true,
+        lowIntegrity: true,
+        jobObject: true,
+        appContainer: false,
+      },
+    }
+    const sandbox = {
+      policy: { profile: 'workspace-write' as const, network: 'none' as const },
+      capability,
+      unavailable: 'deny' as const,
+    }
+    const commandTool: ToolDefinition<{ command: string }> = {
+      name: 'echo_cmd',
+      description: 'Echo a command',
+      category: 'execute',
+      source: { kind: 'builtin' },
+      trust: 'builtin',
+      inputSchema: {
+        type: 'object',
+        properties: { command: { type: 'string' } },
+        required: ['command'],
+      },
+      normalize: (input) => Promise.resolve({ input, targets: { command: input.command } }),
+      execute: (input) => Promise.resolve({ content: text(`ran ${input.command}`) }),
+    }
+    const call = { kind: 'tool' as const, name: 'echo_cmd', input: { command: 'npm test' } }
+    const request = {
+      definition: {
+        ...commandTool,
+        name: 'run_command',
+        execute: () => Promise.resolve({ content: [] }),
+      },
+      input: { command: 'npm test' },
+      targets: { command: 'npm test' },
+      toolCallId: 'call1',
+    }
+
+    it('passes the sandbox to tool registration and reports the execution when a tool starts', async () => {
+      const seen: (HostSandboxConfig | undefined)[] = []
+      const registerTools = (
+        registry: ToolRegistry,
+        _workspace: string,
+        _shell: string,
+        config?: HostSandboxConfig,
+      ) => {
+        seen.push(config)
+        registry.register({
+          ...commandTool,
+          ...(config
+            ? {
+                sandbox: {
+                  profile: config.policy.profile,
+                  network: config.policy.network,
+                  mechanism: config.capability.mechanism,
+                  enforced: config.capability.available,
+                  networkIsolated: config.capability.networkIsolated,
+                },
+              }
+            : {}),
+        })
+      }
+      const h = setup(
+        { turns: [{ steps: [call, { kind: 'reply', text: 'done' }] }] },
+        {
+          registerTools,
+        },
+      )
+      await h.main.request('host.init', {
+        ...init,
+        sandbox,
+        permissionRules: presetRules('auto'),
+      })
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await h.waitFor('turn.completed')
+      expect(seen).toEqual([sandbox])
+      expect(h.events.find((event) => event.type === 'tool.started')?.payload).toMatchObject({
+        sandbox: {
+          profile: 'workspace-write',
+          network: 'none',
+          mechanism: 'restricted-token',
+          enforced: true,
+          networkIsolated: false,
+        },
+      })
+    })
+
+    it('forces the read-only profile for read-only Agents', async () => {
+      const seen: (HostSandboxConfig | undefined)[] = []
+      const h = setup(
+        { turns: [] },
+        {
+          registerTools: (
+            _registry: ToolRegistry,
+            _workspace: string,
+            _shell: string,
+            config?: HostSandboxConfig,
+          ) => {
+            seen.push(config)
+          },
+        },
+      )
+      await h.main.request('host.init', {
+        ...init,
+        agentDefinition: BUILTIN_EXPLORER,
+        sandbox,
+      })
+      expect(seen[0]).toMatchObject({ policy: { profile: 'read-only', network: 'none' } })
+    })
+
+    it('passes the sandbox policy to start_command and reports the execution (M5-04)', async () => {
+      const h = setup(
+        {
+          turns: [
+            {
+              steps: [
+                { kind: 'tool', name: 'start_command', input: { command: 'server' } },
+                { kind: 'reply', text: 'done' },
+              ],
+            },
+          ],
+        },
+        { registerTools: (registry) => registry.register(echoTool) },
+      )
+      const requests: unknown[] = []
+      h.main.handle('host.command.start', (input) => {
+        requests.push(input)
+        return {
+          commandId: 'cmd1',
+          sessionId: 's1',
+          runId: 'r1',
+          command: 'server',
+          cwd: '/work',
+          startedAt: 1,
+          status: 'running',
+        }
+      })
+      await h.main.request('host.init', {
+        ...init,
+        sandbox,
+        permissionRules: presetRules('auto'),
+      })
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await h.waitFor('turn.completed')
+      expect(requests[0]).toMatchObject({ command: 'server', runId: 'r1', sandbox: sandbox.policy })
+      expect(
+        h.events.find((event) => event.type === 'tool.started' && event.payload.sandbox),
+      ).toMatchObject({
+        payload: { sandbox: { mechanism: 'restricted-token', enforced: true } },
+      })
+    })
+
+    it('denies or asks when the sandbox is unavailable, and requires approval for full access', async () => {
+      const denied = setup()
+      await denied.main.request('host.init', {
+        ...init,
+        sandbox: {
+          ...sandbox,
+          capability: { ...capability, available: false, mechanism: 'none' },
+        },
+        permissionRules: presetRules('auto'),
+      })
+      expect(await denied.host.permissions.decide(request as never)).toMatchObject({
+        decision: 'deny',
+        reasonCode: 'sandbox.unavailable',
+      })
+
+      const asked = setup()
+      await asked.main.request('host.init', {
+        ...init,
+        sandbox: {
+          ...sandbox,
+          capability: { ...capability, available: false, mechanism: 'none' },
+          unavailable: 'ask',
+        },
+        permissionRules: presetRules('auto'),
+      })
+      expect(await asked.host.permissions.decide(request as never)).toMatchObject({
+        decision: 'ask',
+        reasonCode: 'sandbox.unavailable',
+      })
+
+      const fullAccess = setup()
+      await fullAccess.main.request('host.init', {
+        ...init,
+        sandbox: { ...sandbox, policy: { profile: 'danger-full-access', network: 'none' } },
+        permissionRules: [
+          { id: 'all', scope: 'session', effect: 'allow', match: {}, source: 'user' },
+        ],
+      })
+      expect(await fullAccess.host.permissions.decide(request as never)).toMatchObject({
+        decision: 'ask',
+        reasonCode: 'sandbox.full_access_requires_approval',
+      })
+
+      const unsupported = setup()
+      await unsupported.main.request('host.init', {
+        ...init,
+        sandbox: {
+          ...sandbox,
+          capability: { ...capability, supported: false, available: false, mechanism: 'none' },
+        },
+        permissionRules: presetRules('auto'),
+      })
+      expect(await unsupported.host.permissions.decide(request as never)).toMatchObject({
+        decision: 'allow',
+      })
     })
   })
 

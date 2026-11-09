@@ -10,7 +10,7 @@
  *
  * 危险命令识别与审批在 M1-10、M1-11。
  */
-import type { ToolDisplay, ToolOutputChunk } from '@cairn/protocol'
+import type { SandboxExecution, ToolDisplay, ToolOutputChunk } from '@cairn/protocol'
 import {
   AnsiStripper,
   estimateTokens,
@@ -22,9 +22,12 @@ import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   describeShell,
   runCommand,
+  SandboxError,
   ShellError,
   type RunCommandOptions,
   type RunCommandResult,
+  type SandboxPolicy,
+  type SandboxRunner,
   type ShellInfo,
 } from '@cairn/shell'
 import { resolveOrThrow } from './paths.js'
@@ -49,6 +52,19 @@ export interface RunCommandToolOptions {
   readonly env?: NodeJS.ProcessEnv
   /** 测试用：替换执行函数。 */
   readonly run?: typeof runCommand
+  /**
+   * 命令沙箱（M5-04）：`run_command` 把解析后的策略交给执行器；实际机制与网络状态写入终端卡片。
+   * 省略时按现有语义直接执行（非 Windows 或未启用沙箱）。
+   */
+  readonly sandbox?: {
+    readonly policy: SandboxPolicy
+    readonly runner: SandboxRunner
+  }
+  /**
+   * 没有执行器时的沙箱描述（M5-04）：沙箱不可用、经审批在沙箱外运行时，`tool.started` 与终端卡片仍需
+   * 如实显示“未沙箱化”及原因。有执行器时以执行器按策略解析的结果为准。
+   */
+  readonly execution?: SandboxExecution
 }
 
 export const RUN_COMMAND_MAX_OUTPUT_CHARS = READ_FILE_MAX_OUTPUT_CHARS
@@ -268,6 +284,9 @@ export function createRunCommandTool(
   const budget = options.maxOutputChars ?? RUN_COMMAND_MAX_OUTPUT_CHARS
   const idleHintMs = options.idleHintMs ?? RUN_COMMAND_IDLE_HINT_MS
   const run = options.run ?? runCommand
+  const declaredSandbox = options.sandbox
+    ? options.sandbox.runner.executionFor(options.sandbox.policy)
+    : options.execution
   return {
     name: 'run_command',
     description:
@@ -297,6 +316,7 @@ export function createRunCommandTool(
     category: 'execute',
     source: { kind: 'builtin' },
     trust: 'builtin',
+    ...(declaredSandbox ? { sandbox: declaredSandbox } : {}),
 
     normalize: async (input) => ({ input, targets: { command: input.command } }),
 
@@ -327,12 +347,15 @@ export function createRunCommandTool(
         onStderr: onOutput(stderr, 'stderr'),
         ...(options.env ? { env: options.env } : {}),
         ...(options.tempDir ? { tempDir: options.tempDir } : {}),
+        ...(options.sandbox ? { sandbox: options.sandbox } : {}),
       }
       let result: RunCommandResult
       try {
         result = await run(options.shell, input.command, runOptions)
       } catch (error) {
         if (error instanceof ShellError)
+          throw new ToolError(error.code, error.message, { ...error.params })
+        if (error instanceof SandboxError)
           throw new ToolError(error.code, error.message, { ...error.params })
         throw error
       }
@@ -357,6 +380,7 @@ export function createRunCommandTool(
         durationMs: Math.max(0, Math.round(result.durationMs)),
         shell: shellName,
         cwd: root.absolute,
+        ...(result.sandbox ? { sandbox: result.sandbox } : {}),
         ...raw.display(),
       }
       return { content: [{ type: 'text', text }], display }

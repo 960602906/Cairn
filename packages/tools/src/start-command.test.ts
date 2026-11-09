@@ -1,5 +1,6 @@
-import { ToolError } from '@cairn/core'
+import { createToolRegistry, ToolError } from '@cairn/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { registerBackgroundCommandTool } from './index.js'
 import { createStartCommandTool } from './start-command.js'
 import { createFixture, runTool, toolContext, type Fixture } from './testing/fixture.js'
 
@@ -20,6 +21,12 @@ const command = {
 }
 
 describe('start_command', () => {
+  it('registers the tool through the execute helper', () => {
+    const registry = createToolRegistry()
+    registerBackgroundCommandTool(registry, { start: async () => command })
+    expect(registry.get('start_command')?.category).toBe('execute')
+  })
+
   it('starts in the workspace root and returns the command id', async () => {
     const start = vi.fn(async () => command)
     const result = await runTool(
@@ -53,6 +60,22 @@ describe('start_command', () => {
       summary: `Start a background command in ${fx.root}; it keeps running until stopped or the app exits`,
       command: 'server',
     })
+  })
+
+  it('passes the sandbox policy and declares the execution (M5-04)', async () => {
+    const start = vi.fn(async () => command)
+    const sandbox = { profile: 'read-only' as const, network: 'none' as const }
+    const execution = {
+      profile: 'read-only' as const,
+      network: 'none' as const,
+      mechanism: 'restricted-token' as const,
+      enforced: true,
+      networkIsolated: false,
+    }
+    const tool = createStartCommandTool({ start, sandbox, execution })
+    expect(tool.sandbox).toEqual(execution)
+    await runTool(tool, { command: 'server' }, toolContext(fx.root))
+    expect(start).toHaveBeenCalledWith({ command: 'server', cwd: fx.root, sandbox })
   })
 
   it('rejects paths outside the workspace and reports start failures', async () => {

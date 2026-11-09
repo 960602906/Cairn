@@ -23,7 +23,7 @@ import {
   type SkillCatalogEntry,
   type UnsequencedEvent,
 } from '@cairn/protocol'
-import { createAgentHost, type AgentHostOptions } from './host.js'
+import { createAgentHost, type AgentHostOptions, type HostSandboxConfig } from './host.js'
 import { fakeModel } from './fake-model.js'
 
 function channelPair(): [RpcChannel, RpcChannel] {
@@ -168,6 +168,8 @@ interface SetupOptions {
   }>
   /** 不注册 `host.changeset.create`（模拟旧主进程）。 */
   readonly noChangeSetHandler?: boolean
+  /** `host.init.sandbox`（M5-04）。 */
+  readonly sandbox?: HostSandboxConfig
 }
 
 function setup(options: SetupOptions = {}) {
@@ -178,6 +180,7 @@ function setup(options: SetupOptions = {}) {
   const systemPrompts: Record<string, string> = {}
   const createdRuntimes: string[] = []
   const workspacePaths: string[] = []
+  const sandboxConfigs: (HostSandboxConfig | undefined)[] = []
   const workspaceRuns: string[] = []
   const workspaceCreateInputs: {
     projectPath: string
@@ -222,10 +225,11 @@ function setup(options: SetupOptions = {}) {
     now: () => 7,
     onError,
     ...options.host,
-    registerTools: (registry, workspacePath, shell) => {
+    registerTools: (registry, workspacePath, shell, sandbox) => {
       workspacePaths.push(workspacePath)
+      sandboxConfigs.push(sandbox)
       return registerTools
-        ? registerTools(registry, workspacePath, shell)
+        ? registerTools(registry, workspacePath, shell, sandbox)
         : registry.register(lookup)
     },
   })
@@ -321,6 +325,7 @@ function setup(options: SetupOptions = {}) {
     systemPrompts,
     createdRuntimes,
     workspacePaths,
+    sandboxConfigs,
     workspaceRuns,
     workspaceCreateInputs,
     cleanupCalls,
@@ -332,6 +337,7 @@ function setup(options: SetupOptions = {}) {
         agentDefinition: options.definition ?? parentDefinition(),
         ...(options.permissionRules ? { permissionRules: [...options.permissionRules] } : {}),
         ...(options.checkpoints ? { checkpoints: options.checkpoints } : {}),
+        ...(options.sandbox ? { sandbox: options.sandbox } : {}),
       }),
     waitFor: async (type: string, count = 1) => {
       await vi.waitFor(() =>
@@ -1468,5 +1474,47 @@ describe('host delegation permissions (M4-03)', () => {
     expect(
       h.events.find((event) => event.type === 'tool.failed' && event.runId === grandchild)?.payload,
     ).toMatchObject({ error: { code: 'tool.denied' } })
+  })
+
+  it('按 Agent 权限向父运行与子运行下发命令沙箱（M5-04）', async () => {
+    const sandbox: HostSandboxConfig = {
+      policy: { profile: 'workspace-write', network: 'none' },
+      capability: {
+        available: true,
+        supported: true,
+        mechanism: 'restricted-token',
+        networkIsolated: false,
+        checks: {
+          restrictedToken: true,
+          lowIntegrity: true,
+          jobObject: true,
+          appContainer: false,
+        },
+      },
+      unavailable: 'deny',
+    }
+    const h = setup({
+      sandbox,
+      definition: parentDefinition({ permissions: 'ask' }),
+      permissionRules: presetRules('auto'),
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'ok' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [{ kind: 'reply', text: '{"status":"completed","summary":"ok","output":{}}' }],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+    expect(h.sandboxConfigs).toHaveLength(2)
+    expect(h.sandboxConfigs).toEqual([
+      sandbox,
+      { ...sandbox, policy: { ...sandbox.policy, profile: 'read-only' } },
+    ])
   })
 })

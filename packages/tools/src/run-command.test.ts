@@ -5,9 +5,13 @@ import { createToolRegistry, estimateTokens, ToolError, type ToolContext } from 
 import type { runCommand } from '@cairn/shell'
 import {
   selectShell,
+  SandboxError,
   ShellError,
   type RunCommandOptions,
   type RunCommandResult,
+  type SandboxExecution,
+  type SandboxPolicy,
+  type SandboxRunner,
   type ShellInfo,
 } from '@cairn/shell'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -328,6 +332,70 @@ describe('run_command', () => {
     expect(error).toMatchObject({ code: 'shell.spawn_failed', params: { shell: 'x' } })
     const boom = new Error('boom')
     await expect(exec({ run: () => Promise.reject(boom) }, { command: 'x' })).rejects.toBe(boom)
+  })
+})
+
+describe('命令沙箱（M5-04）', () => {
+  const policy: SandboxPolicy = { profile: 'workspace-write', network: 'none' }
+  const execution: SandboxExecution = {
+    profile: 'workspace-write',
+    network: 'none',
+    mechanism: 'restricted-token',
+    enforced: true,
+    networkIsolated: false,
+  }
+  const runner: SandboxRunner = {
+    capability: {
+      available: true,
+      supported: true,
+      mechanism: 'restricted-token',
+      networkIsolated: false,
+      checks: {
+        restrictedToken: true,
+        lowIntegrity: true,
+        jobObject: true,
+        appContainer: false,
+      },
+    },
+    executionFor: () => execution,
+    run: async () => {
+      throw new Error('not used')
+    },
+  }
+
+  it('passes the sandbox to the runner and records the actual execution', async () => {
+    const seen: { options?: RunCommandOptions } = {}
+    const definition = tool({
+      sandbox: { policy, runner },
+      run: fakeRun({ stdout: ['ok\n'] }, { sandbox: execution }, seen),
+    })
+    expect(definition.sandbox).toEqual(execution)
+    const output = await definition.execute({ command: 'x' }, toolContext(fx.root))
+    expect(seen.options?.sandbox).toEqual({ policy, runner })
+    expect(output.display).toMatchObject({ kind: 'terminal', sandbox: execution })
+  })
+
+  it('declares an unsandboxed execution when no runner is available', async () => {
+    const execution = {
+      profile: 'workspace-write',
+      network: 'none',
+      mechanism: 'none',
+      enforced: false,
+      networkIsolated: false,
+      reason: 'sandbox.unavailable',
+    } satisfies SandboxExecution
+    const definition = tool({ run: fakeRun({}), execution })
+    expect(definition.sandbox).toEqual(execution)
+    const output = await definition.execute({ command: 'x' }, toolContext(fx.root))
+    expect(output.display).not.toHaveProperty('sandbox')
+  })
+
+  it('maps sandbox setup failures to tool errors', async () => {
+    const failing: typeof runCommand = () =>
+      Promise.reject(new SandboxError('sandbox.setup_failed', 'no token', { win32: '5' }))
+    const error = await exec({ run: failing }, { command: 'x' }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ToolError)
+    expect(error).toMatchObject({ code: 'sandbox.setup_failed', params: { win32: '5' } })
   })
 })
 

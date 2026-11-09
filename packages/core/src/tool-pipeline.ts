@@ -18,7 +18,13 @@
  * （M1-06）通过接口注入。流水线只给出结果，`tool.*` 事件由 RunEngine 按结果发出；审批事件由流水线
  * 经 `emit` 发出。
  */
-import type { ContentPart, ErrorInfo, EventPayload, ToolDisplay } from '@cairn/protocol'
+import type {
+  ContentPart,
+  ErrorInfo,
+  EventPayload,
+  SandboxExecution,
+  ToolDisplay,
+} from '@cairn/protocol'
 import { TOOL_OUTPUT_MAX_TOKENS, truncateMiddle } from './context-budget.js'
 import type { Logger } from './logger.js'
 import type { ApprovalDecision } from './run-supervisor.js'
@@ -146,7 +152,7 @@ export interface ApprovalGate {
 /** 流水线对单次调用的回调（RunEngine 提供）。 */
 export interface ToolCallObserver {
   /** 进入执行阶段，对应 `tool.started`。 */
-  started(): void
+  started(sandbox?: SandboxExecution): void
   /** 工具的流式输出，对应 `tool.output.delta`。 */
   output(text: string, stream: 'stdout' | 'stderr'): void
   /** 开始与结束等待审批（运行状态在 `tooling` 与 `awaiting_approval` 之间切换）。 */
@@ -499,7 +505,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       const release = await acquireSlot(signal)
       let output: ToolOutput
       try {
-        observer.started()
+        observer.started(definition.sandbox)
         output = await guard(signal, () => definition.execute(input, ctx))
       } finally {
         release()

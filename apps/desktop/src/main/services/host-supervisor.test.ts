@@ -677,6 +677,39 @@ describe('startHost', () => {
     expect(none.inits).toEqual([init])
   })
 
+  it('passes the resolved command sandbox in host.init (M5-04)', async () => {
+    const host = fakeHost()
+    const sandbox = {
+      policy: { profile: 'workspace-write' as const, network: 'none' as const },
+      capability: {
+        available: true,
+        supported: true,
+        mechanism: 'restricted-token' as const,
+        networkIsolated: false,
+        checks: {
+          restrictedToken: true,
+          lowIntegrity: true,
+          jobObject: true,
+          appContainer: false,
+        },
+      },
+      unavailable: 'deny' as const,
+    }
+    const resolveSandbox = vi.fn(async () => sandbox)
+    const { supervisor } = setup(host, { resolveSandbox })
+    await supervisor.startHost(init)
+    expect(resolveSandbox).toHaveBeenCalledTimes(1)
+    expect(host.inits).toEqual([{ ...init, sandbox }])
+
+    const none = fakeHost()
+    await setup(none, { resolveSandbox: () => undefined }).supervisor.startHost(init)
+    expect(none.inits).toEqual([init])
+
+    const sync = fakeHost()
+    await setup(sync, { resolveSandbox: () => sandbox }).supervisor.startHost(init)
+    expect(sync.inits).toEqual([{ ...init, sandbox }])
+  })
+
   it('passes the custom instructions in host.init (M1-13b)', async () => {
     const host = fakeHost()
     const { supervisor } = setup(host, { resolveInstructions: () => 'Use pnpm.' })

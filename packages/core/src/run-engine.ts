@@ -855,10 +855,10 @@ export class RunEngine {
     const startedAt = this.#now()
     const pipeline = this.#o.toolPipeline
     let started = false
-    const start = () => {
+    const start = (sandbox?: Parameters<ToolCallObserver['started']>[0]) => {
       if (started) return
       started = true
-      this.#emit('tool.started', { toolCallId: call.id })
+      this.#emit('tool.started', { toolCallId: call.id, ...(sandbox ? { sandbox } : {}) })
     }
     let outcome: ToolOutcome
     if (pipeline) {

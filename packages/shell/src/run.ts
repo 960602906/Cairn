@@ -18,6 +18,12 @@ import {
   type ProcessTreeMechanism,
 } from './process-tree.js'
 import type { ShellInfo } from './select.js'
+import {
+  unsandboxedExecution,
+  type SandboxExecution,
+  type SandboxPolicy,
+  type SandboxRunner,
+} from './sandbox/types.js'
 
 export const ShellErrorCode = {
   /** shell 进程无法启动（可执行文件不存在、工作目录不存在等）。 */
@@ -64,6 +70,13 @@ export interface RunCommandOptions {
   readonly maxCommandLineChars?: InvocationOptions['maxCommandLineChars']
   /** 进程树的结束方式，默认 `createProcessTree()`。 */
   readonly processTree?: ProcessTreeFactory
+  /** 命令沙箱（M5-04）：给出时除 `danger-full-access` 外都经沙箱执行。 */
+  readonly sandbox?: RunCommandSandbox
+}
+
+export interface RunCommandSandbox {
+  readonly runner: SandboxRunner
+  readonly policy: SandboxPolicy
 }
 
 export interface RunCommandResult {
@@ -77,6 +90,8 @@ export interface RunCommandResult {
   readonly durationMs: number
   /** 结束进程树的方式；没有启动时为 undefined。 */
   readonly processTree?: ProcessTreeMechanism
+  /** 实际使用的沙箱；没有配置沙箱时为 undefined。 */
+  readonly sandbox?: SandboxExecution
 }
 
 export async function runCommand(
@@ -84,7 +99,7 @@ export async function runCommand(
   command: string,
   options: RunCommandOptions,
 ): Promise<RunCommandResult> {
-  if (options.signal?.aborted) return notStarted()
+  if (options.signal?.aborted) return notStarted(options.sandbox?.policy)
   const invocation = buildInvocation(shell, command, {
     tempScriptPath: () =>
       nodePath.join(options.tempDir ?? tmpdir(), `cairn-command-${randomUUID()}.ps1`),
@@ -92,19 +107,51 @@ export async function runCommand(
       ? {}
       : { maxCommandLineChars: options.maxCommandLineChars }),
   })
-  const tree = await (options.processTree ?? createProcessTree)()
   const temp = invocation.tempScript
   if (temp) await fs.writeFile(temp.path, temp.content)
   try {
     // 先清洗，再加上调用本身需要的变量（cmd 的 CAIRN_SHELL_COMMAND）
     const env = { ...sanitizeEnv(options.env ?? process.env), ...invocation.env }
-    return await spawnAndCollect(invocation, env, tree, options)
+    const sandbox = options.sandbox
+    if (sandbox && sandbox.policy.profile !== 'danger-full-access') {
+      const out: string[] = []
+      const err: string[] = []
+      const keep = options.collectOutput ?? true
+      const result = await sandbox.runner.run(sandbox.policy, {
+        invocation,
+        cwd: options.cwd,
+        env,
+        timeoutMs: options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
+        ...(options.signal ? { signal: options.signal } : {}),
+        onStdout: (text) => {
+          if (keep) out.push(text)
+          options.onStdout?.(text)
+        },
+        onStderr: (text) => {
+          if (keep) err.push(text)
+          options.onStderr?.(text)
+        },
+      })
+      return {
+        exitCode: result.exitCode,
+        signal: null,
+        stdout: out.join(''),
+        stderr: err.join(''),
+        aborted: result.aborted,
+        timedOut: result.timedOut,
+        durationMs: result.durationMs,
+        sandbox: result.execution,
+      }
+    }
+    const tree = await (options.processTree ?? createProcessTree)()
+    const result = await spawnAndCollect(invocation, env, tree, options)
+    return sandbox ? { ...result, sandbox: unsandboxedExecution(sandbox.policy) } : result
   } finally {
     if (temp) await fs.rm(temp.path, { force: true })
   }
 }
 
-const notStarted = (): RunCommandResult => ({
+const notStarted = (sandbox?: SandboxPolicy): RunCommandResult => ({
   exitCode: null,
   signal: null,
   stdout: '',
@@ -112,6 +159,7 @@ const notStarted = (): RunCommandResult => ({
   aborted: true,
   timedOut: false,
   durationMs: 0,
+  ...(sandbox ? { sandbox: unsandboxedExecution(sandbox, 'sandbox.cancelled') } : {}),
 })
 
 function spawnAndCollect(
@@ -125,7 +173,7 @@ function spawnAndCollect(
   return new Promise((resolve, reject) => {
     if (options.signal?.aborted) {
       tree.dispose()
-      resolve(notStarted())
+      resolve(notStarted(options.sandbox?.policy))
       return
     }
     const fail = (error: unknown) =>

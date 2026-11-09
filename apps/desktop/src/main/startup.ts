@@ -74,6 +74,7 @@ import { createCompactService } from './services/compact-service.js'
 import { createTitleService } from './services/title-service.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
+import { createSandboxService } from './services/sandbox-service.js'
 import { createShellInfo } from './services/shell-info.js'
 import { createProviderService } from './services/provider-service.js'
 import { createAppInfoCommands } from './services/app-info-service.js'
@@ -189,6 +190,16 @@ const settings = createSettingsService({
   },
   onError: reportError,
 })
+/**
+ * 命令沙箱（M5-04）：启动时探测能力；默认工作区可写、无网络、不可用时失败关闭。
+ * 沙箱只覆盖 `run_command` / `start_command` 启动的进程树。
+ */
+const sandbox = createSandboxService({
+  settings: () => settings.get(),
+  identity: `${app.getName()}|${app.getPath('userData')}`,
+  onError: reportError,
+})
+void sandbox.capability().catch(reportError)
 const events = createSessionEventService({ storage, onListenerError: reportError })
 const inspect = createInspectService({ storage, events })
 const blobs = createBlobStore(paths.blobs)
@@ -254,6 +265,7 @@ const commandService = createCommandService({
     )
   },
   onError: reportError,
+  sandbox: () => sandbox.forCommands(),
 })
 /** 权限规则（M1-10c）：权限模式的预设与保存的规则，启动宿主时经 `host.init` 下发。 */
 const permissions = createPermissionService({ storage, mode: () => settings.permissionMode() })
@@ -375,6 +387,8 @@ const supervisor = createHostSupervisor({
   resolveInstructions: () => settings.instructions(),
   // 默认 Shell（M2-09）：同样在下次启动宿主时生效
   resolveShell: () => settings.shell(),
+  // 命令沙箱（M5-04）：宿主用同一个策略与能力探测结果注册命令工具
+  resolveSandbox: () => sandbox.hostInit(),
   // 检查点（M1-12b）：每个项目一个影子仓库，会话各用自己的引用
   resolveCheckpoints: (sessionId) => checkpointLocation(paths.checkpoints, storage, sessionId),
   // 检查点使用的 Git（M5-03）：宿主按同一个定位结果打开影子仓库
