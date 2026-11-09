@@ -231,7 +231,8 @@ test('M4 全流程：并行委派、隔离写入、审批、改动集、检查�
     await expect(review.getByText('已恢复到合并前的检查点。')).toBeVisible({ timeout: 15_000 })
     expect(existsSync(testFile)).toBe(false)
 
-    await window.getByRole('main').getByRole('button', { name: '检查器' }).click()
+    const sidePanel = window.getByRole('complementary', { name: '会话信息' })
+    await sidePanel.getByRole('tab', { name: '检查器' }).click()
     const timeline = window.getByRole('tabpanel', { name: '时间线' })
     await expect(timeline.getByRole('list', { name: '运行树' })).toBeVisible()
     await expect(timeline.getByText('全流程协调员').first()).toBeVisible()
