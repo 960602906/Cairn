@@ -24,6 +24,7 @@ function fakeChild(): FakeChild {
 }
 
 const app = { directory: 'C:/cairn', executable: 'C:/cairn/Cairn.exe' }
+const verifyGit = () => ({ version: 'git version 2.56.0', files: 1, bytes: 1 })
 
 function options(child: FakeChild, overrides: Record<string, unknown> = {}) {
   const cleanup = vi.fn()
@@ -36,6 +37,7 @@ function options(child: FakeChild, overrides: Record<string, unknown> = {}) {
     checkResult,
     log,
     locateApp: () => app,
+    verifyGit,
     createUserData: () => ({ path: 'C:/temp/cairn', cleanup }),
     timeoutMs: 1_000,
     platform: 'win32' as const,
@@ -74,6 +76,19 @@ describe('smokePackaged', () => {
       platform: 'win32',
     })
     expect(base.cleanup).toHaveBeenCalledOnce()
+  })
+
+  it('reports a broken bundled MinGit', async () => {
+    const child = fakeChild()
+    const promise = smokePackaged(
+      options(child, {
+        verifyGit: () => {
+          throw new Error('bad git')
+        },
+      }),
+    )
+    child.emit('exit', 0, null)
+    await expect(promise).resolves.toEqual(['bundled MinGit failed: bad git'])
   })
 
   it('passes platform-specific flags and the smoke environment', async () => {

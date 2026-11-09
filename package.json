@@ -33,6 +33,8 @@
     "check:licenses": "node scripts/check-licenses.js",
     "check:i18n": "node scripts/check-i18n.js",
     "check:version": "node scripts/sync-version.mjs --check",
+    "fetch:mingit": "node scripts/fetch-mingit.mjs",
+    "check:mingit": "node scripts/fetch-mingit.mjs --check",
     "sync:version": "node scripts/sync-version.mjs",
     "build:info": "node scripts/build-info.mjs"
   },
@@ -41,6 +43,7 @@
     "@types/node": "24.19.2",
     "@vitest/coverage-v8": "5.0.5",
     "eslint": "10.13.0",
+    "fflate": "0.8.3",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.0",

@@ -24,6 +24,7 @@ const fakeAppInfo = {
   copyright: 'Copyright © 2026 Cairn contributors',
   packaged: false,
   databaseSchemaVersion: 12,
+  git: { source: 'bundled' as const, version: '2.56.0.windows.4' },
 }
 
 describe('diagnostics sanitization', () => {
@@ -170,12 +171,19 @@ describe('DiagnosticsService zip generation and export', () => {
       channel: string
       commit: string
       databaseSchemaVersion: number
+      git?: { source: string; version?: string }
     }
     expect(build).toMatchObject({
       channel: 'beta',
       commit: 'abcdef1234567890',
       databaseSchemaVersion: 12,
     })
+    expect(build.git).toEqual({ source: 'bundled', version: '2.56.0.windows.4' })
+
+    const versionInfo = JSON.parse(new TextDecoder().decode(unzipped['app-version.json'])) as {
+      git?: { source: string; version?: string }
+    }
+    expect(versionInfo.git).toEqual({ source: 'bundled', version: '2.56.0.windows.4' })
 
     // Assert every file in the zip is sanitized
     for (const [name, content] of Object.entries(unzipped)) {

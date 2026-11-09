@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -123,8 +123,14 @@ describe('bundled binaries', () => {
   it('登记的二进制许可证允许，且带有许可证全文', () => {
     const binaries = loadBundledBinaries(root)
     expect(binaries.map((b) => b.name)).toContain('ripgrep')
+    expect(binaries.map((b) => b.name)).toContain('MinGit')
+    const exceptions = JSON.parse(
+      readFileSync(path.join(root, 'scripts/license-exceptions.json'), 'utf8'),
+    ).exceptions as Record<string, string>
     for (const b of binaries) {
-      expect(isExpressionAllowed(b.license, PERMISSIVE)).toBe(true)
+      const allowed =
+        isExpressionAllowed(b.license, PERMISSIVE) || Boolean(exceptions[`${b.name}@${b.version}`])
+      expect(allowed, `${b.name}@${b.version} must be permissive or registered`).toBe(true)
       expect(existsSync(path.join(root, b.licenseDir, 'LICENSE'))).toBe(true)
     }
   })

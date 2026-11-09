@@ -65,6 +65,8 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   )
   write(executable, 'exe')
   write(path.join(resources, 'skills/example/SKILL.md'), '# Example\n')
+  write(path.join(resources, 'git/LICENSE.txt'), 'GPLv2\n')
+  write(path.join(resources, 'git/ucrt64/bin/git.exe'), 'git')
 
   const asarFiles: Record<string, string> = {
     'out/main/index.js': '',
@@ -125,6 +127,16 @@ function successfulRunner(): typeof spawnSync {
         output: [],
         pid: 1,
         stdout: 'ripgrep 15.0.0 (rev 3a612f88b8)\n',
+        stderr: '',
+      }
+    }
+    if (/git\.exe$/i.test(command)) {
+      return {
+        status: 0,
+        signal: null,
+        output: [],
+        pid: 1,
+        stdout: 'git version 2.56.0.windows.4\n',
         stderr: '',
       }
     }
@@ -302,6 +314,77 @@ describe('verifyPackage', () => {
     )
   })
 
+  it('requires a trimmed, runnable bundled MinGit', async () => {
+    const missing = await fixture()
+    rmSync(path.join(missing.resources, 'git'), { recursive: true, force: true })
+    const missingProblems = await verifyPackage({
+      desktopRoot: missing.desktopRoot,
+      outputDir: missing.outputDir,
+      platform: 'win32',
+      runner: successfulRunner(),
+      readFuses: async () => [],
+    })
+    expect(missingProblems).toEqual(
+      expect.arrayContaining([
+        `missing resources/git license: ${path.join(missing.resources, 'git/LICENSE.txt')}`,
+        `missing bundled MinGit: ${path.join(missing.resources, 'git/ucrt64/bin/git.exe')}`,
+      ]),
+    )
+
+    const untrimmed = await fixture()
+    for (const forbidden of ['git-remote-http.exe', 'git-remote-https.exe', 'scalar.exe']) {
+      write(path.join(untrimmed.resources, 'git/ucrt64/bin', forbidden), '')
+    }
+    const untrimmedProblems = await verifyPackage({
+      desktopRoot: untrimmed.desktopRoot,
+      outputDir: untrimmed.outputDir,
+      platform: 'win32',
+      runner: successfulRunner(),
+      readFuses: async () => [],
+    })
+    expect(untrimmedProblems).toEqual(
+      expect.arrayContaining([
+        'bundled MinGit should not contain git-remote-http.exe',
+        'bundled MinGit should not contain git-remote-https.exe',
+        'bundled MinGit should not contain scalar.exe',
+      ]),
+    )
+
+    const broken = await fixture()
+    const brokenRunner = vi.fn((command: string) => {
+      if (/rg\.exe$/i.test(command)) return { status: 0, stdout: 'ripgrep 15.0.0\n' }
+      if (/git\.exe$/i.test(command)) {
+        return { status: 1, stdout: '', stderr: 'git failed' }
+      }
+      return { status: 0, stdout: '', stderr: '' }
+    }) as unknown as typeof spawnSync
+    const brokenProblems = await verifyPackage({
+      desktopRoot: broken.desktopRoot,
+      outputDir: broken.outputDir,
+      platform: 'win32',
+      runner: brokenRunner,
+      readFuses: async () => [],
+    })
+    expect(brokenProblems).toContain('bundled MinGit cannot run: git failed')
+
+    const outdated = await fixture()
+    const outdatedRunner = vi.fn((command: string) => {
+      if (/rg\.exe$/i.test(command)) return { status: 0, stdout: 'ripgrep 15.0.0\n' }
+      if (/git\.exe$/i.test(command)) return { status: 0, stdout: 'git version 2.44.0\n' }
+      return { status: 0, stdout: '', stderr: '' }
+    }) as unknown as typeof spawnSync
+    const outdatedProblems = await verifyPackage({
+      desktopRoot: outdated.desktopRoot,
+      outputDir: outdated.outputDir,
+      platform: 'win32',
+      runner: outdatedRunner,
+      readFuses: async () => [],
+    })
+    expect(outdatedProblems).toEqual(
+      expect.arrayContaining([expect.stringContaining('bundled MinGit cannot run:')]),
+    )
+  })
+
   it('checks manifest version, scripts and development dependencies', async () => {
     const app = await fixture({
       manifestVersion: '9.9.9',
@@ -407,6 +490,16 @@ describe('verifyPackage', () => {
           stderr: 'rg failed',
         }
       }
+      if (/git\.exe$/i.test(command)) {
+        return {
+          status: 0,
+          signal: null,
+          output: [],
+          pid: 1,
+          stdout: 'git version 2.56.0.windows.4\n',
+          stderr: '',
+        }
+      }
       return {
         status: 1,
         signal: null,
@@ -432,7 +525,11 @@ describe('verifyPackage', () => {
     )
 
     const silentRunner = vi.fn((command: string) =>
-      /rg\.exe$/i.test(command) ? { status: 0, stdout: 'ripgrep 15.0.0\n' } : { status: 1 },
+      /rg\.exe$/i.test(command)
+        ? { status: 0, stdout: 'ripgrep 15.0.0\n' }
+        : /git\.exe$/i.test(command)
+          ? { status: 0, stdout: 'git version 2.56.0.windows.4\n' }
+          : { status: 1 },
     ) as unknown as typeof spawnSync
     const silent = await verifyPackage({
       desktopRoot: app.desktopRoot,

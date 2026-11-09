@@ -69,6 +69,10 @@ function BuildRows({ info, locale }: { readonly info: AppInfo; readonly locale: 
   const { t } = useTranslation('settings')
   const commit = shortCommit(info.commit)
   const buildTime = formatBuildTime(info.buildTime, locale)
+  const git = info.git
+  const gitLabel = git
+    ? `${t(`about.git.${git.source}`)}${git.version ? ` · ${git.version}` : ''}`
+    : t('about.unknown')
   return (
     <div className="flex flex-col gap-4">
       <Field label={t('about.version')}>
@@ -91,6 +95,9 @@ function BuildRows({ info, locale }: { readonly info: AppInfo; readonly locale: 
       </Field>
       <Field label={t('about.database')}>
         <Mono>{String(info.databaseSchemaVersion)}</Mono>
+      </Field>
+      <Field label={t('about.git')}>
+        <span className="text-ui text-fg">{gitLabel}</span>
       </Field>
       <Field label={t('about.mode')}>
         <span className="text-ui text-fg">

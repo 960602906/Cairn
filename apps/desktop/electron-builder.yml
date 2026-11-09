@@ -27,6 +27,9 @@ asarUnpack:
 extraResources:
   - from: resources/skills
     to: skills
+  # 随包 MinGit（M5-03）：由 `pnpm fetch:mingit` 生成，不提交到仓库。
+  - from: resources/git
+    to: git
 
 # 运行时依赖由 staging 的 package.json 提供。所依赖的原生模块基于 Node-API 预编译，
 # 不再调用 node-gyp，避免构建机需要 Visual Studio/C++ 工具链。

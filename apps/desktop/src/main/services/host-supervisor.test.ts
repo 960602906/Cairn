@@ -656,6 +656,27 @@ describe('startHost', () => {
     expect(host.inits).toEqual([{ ...init, checkpoints }])
   })
 
+  it('passes the located Git runtime in host.init (M5-03)', async () => {
+    const host = fakeHost()
+    const git = {
+      binary: 'C:/Cairn/resources/git/ucrt64/bin/git.exe',
+      env: { GIT_EXEC_PATH: 'C:/Cairn/resources/git/ucrt64/libexec/git-core' },
+    }
+    const resolveGit = vi.fn(() => git)
+    const { supervisor } = setup(host, { resolveGit })
+    await supervisor.startHost(init)
+    expect(resolveGit).toHaveBeenCalledTimes(1)
+    expect(host.inits).toEqual([{ ...init, git: { binary: git.binary, env: git.env } }])
+
+    const withoutEnv = fakeHost()
+    await setup(withoutEnv, { resolveGit: () => ({ binary: 'git' }) }).supervisor.startHost(init)
+    expect(withoutEnv.inits).toEqual([{ ...init, git: { binary: 'git' } }])
+
+    const none = fakeHost()
+    await setup(none, { resolveGit: () => undefined }).supervisor.startHost(init)
+    expect(none.inits).toEqual([init])
+  })
+
   it('passes the custom instructions in host.init (M1-13b)', async () => {
     const host = fakeHost()
     const { supervisor } = setup(host, { resolveInstructions: () => 'Use pnpm.' })

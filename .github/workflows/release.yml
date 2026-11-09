@@ -45,6 +45,15 @@ jobs:
       - name: Build desktop app
         run: pnpm build
 
+      - name: Cache MinGit archive
+        uses: actions/cache@v4
+        with:
+          path: .cache/mingit
+          key: mingit-2.56.0.4-${{ runner.os }}
+
+      - name: Fetch bundled MinGit
+        run: pnpm fetch:mingit
+
       - name: Build NSIS installer
         run: pnpm package:nsis
 

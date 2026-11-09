@@ -242,9 +242,12 @@ export async function verifyPackage({
     { file: app.executable, label: 'main executable' },
     { file: appAsar, label: 'app.asar' },
     { file: path.join(resourcesDir, 'skills/example/SKILL.md'), label: 'resources/skills' },
+    { file: path.join(resourcesDir, 'git/LICENSE.txt'), label: 'resources/git license' },
   ]) {
     if (!existsSync(file)) problems.push(`missing ${label}: ${file}`)
   }
+  const bundledGit = path.join(resourcesDir, 'git/ucrt64/bin/git.exe')
+  if (!existsSync(bundledGit)) problems.push(`missing bundled MinGit: ${bundledGit}`)
   if (!existsSync(appAsar)) return problems
 
   const entries = new Set(listPackage(appAsar, { isPack: false }).map(normalized))
@@ -328,6 +331,23 @@ export async function verifyPackage({
     })
     if (result.status !== 0 || !String(result.stdout).startsWith('ripgrep ')) {
       problems.push(`bundled ripgrep cannot run: ${String(result.stderr).trim()}`)
+    }
+  }
+
+  // 随包 MinGit（M5-03）：必须能启动，且裁剪掉凭据管理器与 HTTP 传输（ADR-0008）。
+  if (existsSync(bundledGit)) {
+    const result = runner(bundledGit, ['--version'], {
+      encoding: 'utf8',
+      timeout: 15_000,
+      windowsHide: true,
+    })
+    if (result.status !== 0 || !String(result.stdout).includes('git version 2.56')) {
+      problems.push(`bundled MinGit cannot run: ${String(result.stderr).trim()}`)
+    }
+    for (const forbidden of ['git-remote-http.exe', 'git-remote-https.exe', 'scalar.exe']) {
+      if (existsSync(path.join(resourcesDir, 'git/ucrt64/bin', forbidden))) {
+        problems.push(`bundled MinGit should not contain ${forbidden}`)
+      }
     }
   }
 

@@ -61,6 +61,8 @@ export interface ShadowRepoOptions {
   readonly workTree: string
   /** Git 可执行文件，默认 PATH 中的 `git`。 */
   readonly gitBinary?: string
+  /** 随包 MinGit 的受控环境变量（`GIT_EXEC_PATH`、`GIT_TEMPLATE_DIR`、`PATH`）。 */
+  readonly gitEnv?: Readonly<Record<string, string>>
   /** 继承的环境变量，默认 `process.env`（其中的 `GIT_*` 会被去掉）。 */
   readonly env?: Readonly<Record<string, string | undefined>>
   readonly maxFileBytes?: number
@@ -140,7 +142,11 @@ export async function openShadowRepo(options: ShadowRepoOptions): Promise<Shadow
     createGitRunner({
       ...(options.gitBinary !== undefined ? { binary: options.gitBinary } : {}),
       // 不存在的文件：Git 视为空的用户级配置
-      env: isolatedGitEnv(options.env ?? process.env, path.join(gitDir, 'no-global-config')),
+      env: isolatedGitEnv(
+        options.env ?? process.env,
+        path.join(gitDir, 'no-global-config'),
+        options.gitEnv,
+      ),
     })
 
   const detection = await detectGit(git)

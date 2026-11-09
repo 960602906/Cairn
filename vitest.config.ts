@@ -16,12 +16,14 @@ export default defineConfig({
       include: [
         'packages/*/src/**/*.{ts,tsx}',
         'apps/*/src/**/*.{ts,tsx}',
+        'apps/desktop/scripts/bundled-git.mjs',
         'apps/desktop/scripts/packaged-app.mjs',
         'apps/desktop/scripts/packaging.mjs',
         'apps/desktop/scripts/smoke-packaged.mjs',
         'apps/desktop/scripts/smoke-installed.mjs',
         'apps/desktop/scripts/verify-package.mjs',
         'scripts/**/*.js',
+        'scripts/**/*.mjs',
         'tooling/**/*.js',
       ],
       exclude: [

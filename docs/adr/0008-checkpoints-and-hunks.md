@@ -41,15 +41,53 @@
 - 被排除的目录（如 `node_modules`）中的改动无法回退，需在界面上说明。
 - M4 的隔离工作区以检查点提交为基线创建 `git worktree`，见 ADR-0031；检查点仍只保存工作区快照，不负责子运行的改动集合并。
 
-## M5 变更（草案，M5-03 定稿）
+## M5 变更（M5-03 已定稿，2026-11-10）
 
-M5-00 已实测官方 MinGit 2.56.0.4 64 位 zip：
+**来源固定**：`git-for-windows` 的 `MinGit-2.56.0.4-64-bit.zip`，tag
+`v2.56.0.windows.4`，官方 SHA256
+`e3bf78351fe777fba47ddee5950082f8a98bb0f02604fdc7ba3ee2cb68ffa877`。
+`scripts/fetch-mingit.mjs` 先请求 GitHub Releases，失败时回退 npmmirror 镜像，两者都以
+上述 SHA256 为准；下载缓存在 `.cache/mingit/`（不提交）。
 
-- 固定来源：`git-for-windows` 的 `MinGit-2.56.0.4-64-bit.zip`；官方 SHA256 为 `e3bf78351fe777fba47ddee5950082f8a98bb0f02604fdc7ba3ee2cb68ffa877`。预研下载使用 npmmirror 镜像，内容以固定 SHA256 为准。
-- 压缩包 39,846,926 字节；完整解压 96,237,338 字节；裁剪后 27,488,263 字节、225 个文件。
-- 裁剪保留 `cmd/`、`ucrt64/bin`、`ucrt64/libexec/git-core`、模板与许可证；删除文档、man、locale、gitweb、perl、MSYS 运行时、Git Credential Manager、Avalonia、Skia、Git LFS 与 HTTP 传输等检查点不需要的部分。
-- 裁剪后 `init`、`config`、`add`、`commit`、`status`、`rev-parse`、`cat-file`、`diff`、`checkout` 全部通过；`checkout` 能恢复修改前内容。
-- 正式实现必须设置 `GIT_EXEC_PATH`、`GIT_TEMPLATE_DIR` 与受控 `PATH`，并用真实检查点流程验收；`git --version` 通过不算完成。
-- MinGit 为 GPLv2，按 ADR-0014 登记，附许可证全文、版本、来源 URL 与源码获取方式；不提交二进制到仓库。
+**裁剪结果**：压缩包 39,846,926 字节（38.0 MiB），完整解压 96,237,338 字节；正式脚本
+裁剪后为 **64 个文件、23,915,125 字节（22.8 MiB）**。保留 `LICENSE.txt`、`cmd/`、
+`ucrt64/bin`（或 `mingw64/bin`）、`ucrt64/libexec/git-core` 与
+`share/git-core/templates`。删除文档、locale、perl、MSYS 开发工具、`scalar`、
+Git Credential Manager、`git-remote-http(s)` 与 HTTP 传输助手、Git LFS，以及
+Avalonia / Skia / HarfBuzz / .NET 界面依赖。
 
-本变更在 M5-03 根据正式脚本、安装包体积与干净 VM 结果定稿。
+**运行时注入**：主进程的 `createGitLocator` 只探测一次并缓存，顺序为本机 Git（≥ 2.32）
+→ 随包 MinGit；`CAIRN_GIT_BINARY` 强制指定可执行文件，`CAIRN_GIT_DISABLE_BUNDLED=1`
+关闭随包兜底。随包路径由 `bundledGitEnv` 给出受控的 `GIT_EXEC_PATH`、
+`GIT_TEMPLATE_DIR` 与只前置其 `bin` 的 `PATH`，不接受用户环境中的同名变量。定位结果经
+`host.init.git = { binary, env }` 传给宿主，检查点、改动集、隔离工作区与宿主共用同一
+结果；不可用时保持“检查点降级、写文件类改动仍可撤销”的既有行为。
+
+**启动顺序**：主进程在创建窗口/宿主之前定位 Git，并把来源与版本写入 `AppInfo.git`
+（`system` / `bundled` / `unavailable`，不含路径）。关于页、诊断包的
+`app-version.json` 与 `build-info.json` 都显示或记录该摘要。
+
+**体积增量**（M5-03 本地未签名构建，与 M5-02 同机对比）：随包目录 23,915,125 字节
+（64 个文件，22.8 MiB）；`win-unpacked` 从 401,726,853 增至 425,674,879 字节
+（+23,948,026，+22.8 MiB）；NSIS 安装包从 126,295,216 增至 134,380,471 字节
+（+8,085,255，+7.7 MiB），blockmap 140,795 字节。安装包因压缩小于随包目录的原始体积；
+构建时间与资源时间戳会让每次产物的字节数略有不同，以生成的 `.sha256` 为准。
+
+**验收证据**：
+
+- `apps/desktop/src/agent-host/bundled-git.test.ts` 用随包二进制与受控环境变量，在不含
+  系统 Git 的 `PATH` 下真实完成 `openShadowRepo` → `checkpoint` → `preview` →
+  `restore`，版本为 `2.56.x`。
+- `scripts/fetch-mingit.test.ts` 覆盖固定 SHA、镜像回退、裁剪白/黑名单、临时目录真实 Git
+  冒烟，以及失败时不替换现有产物。
+- `verify-package` / `smoke:packaged` / `smoke:installed` 校验安装包内
+  `resources/git/LICENSE.txt`、`ucrt64/bin/git.exe` 与 `git version 2.56`，并禁止
+  `git-remote-http(s).exe` 与 `scalar.exe`。
+- 许可证：`scripts/bundled-binaries.json` 登记 MinGit 2.56.0.4（GPL-2.0-only），
+  `scripts/licenses/mingit/LICENSE` 收录 GPLv2 全文与源码获取地址，
+  `scripts/license-exceptions.json` 记录独立程序聚合分发的理由；CI 的许可证检查与
+  第三方声明自动包含。
+
+**未完成/留给 M5-10**：干净 Windows VM、无 Git 的标准用户账户、中文用户名与长路径上的
+安装/升级/卸载仍需实测；本任务只证明“随包 Git 在自动化与本地打包中可用”。安装包体积
+增量在 M5-03 的打包验证中记录，最终分发体积以 M5-08 的签名产物为准。

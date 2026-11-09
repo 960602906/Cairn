@@ -70,6 +70,8 @@ export interface WorkspaceServiceOptions {
   /** `<appData>/Cairn/worktrees`。 */
   readonly root: string
   readonly gitBinary?: string
+  /** 随包 MinGit 的受控环境变量（M5-03）。 */
+  readonly gitEnv?: Readonly<Record<string, string>>
   readonly env?: Readonly<Record<string, string | undefined>>
   /** 同时存在的隔离工作区上限，默认 8。 */
   readonly maxConcurrent?: number
@@ -192,7 +194,11 @@ export function createWorkspaceService(options: WorkspaceServiceOptions): Worksp
   const dependencyDirs = options.dependencyDirs ?? DEFAULT_DEPENDENCY_DIRS
   const now = options.now ?? Date.now
   const onError = (error: unknown) => options.onError?.(error)
-  const baseEnv = isolatedGitEnv(options.env ?? process.env, path.join(root, 'no-global-config'))
+  const baseEnv = isolatedGitEnv(
+    options.env ?? process.env,
+    path.join(root, 'no-global-config'),
+    options.gitEnv,
+  )
   const runnerFor = (indexFile?: string): GitRunner =>
     options.git
       ? options.git(indexFile)

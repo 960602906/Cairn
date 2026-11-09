@@ -22,6 +22,7 @@ import {
   PACKAGED_SMOKE_TIMEOUT_MS,
   smokeEnvironment,
 } from './packaged-app.mjs'
+import { verifyBundledGit } from './bundled-git.mjs'
 
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
 export const DEFAULT_OUTPUT_DIR = path.join(DESKTOP_ROOT, 'dist')
@@ -242,6 +243,7 @@ async function waitFor(file, predicate, timeoutMs = 15_000) {
  *   desktopRoot?: string;
  *   platform?: NodeJS.Platform;
  *   spawnProcess?: typeof spawn;
+ *   verifyGit?: typeof verifyBundledGit;
  *   log?: (line: string) => void;
  * }} [options]
  * @returns {Promise<string[]>}
@@ -251,6 +253,7 @@ export async function smokeInstalled({
   desktopRoot = DESKTOP_ROOT,
   platform = process.platform,
   spawnProcess = spawn,
+  verifyGit = verifyBundledGit,
   log = (line) => process.stdout.write(`${line}\n`),
 } = {}) {
   if (platform !== 'win32') {
@@ -293,6 +296,16 @@ export async function smokeInstalled({
         registryOutput: queryUninstallRegistry({ installDir }),
       }),
     )
+
+    // 随包 MinGit（M5-03）：安装目录里的裁剪产物必须能真实执行 Git 操作。
+    try {
+      const git = verifyGit(path.join(artifacts.resources, 'git'))
+      log(`installed: bundled git ${git.version}`)
+    } catch (error) {
+      problems.push(
+        `installed bundled MinGit failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
 
     const workspace = path.join(workRoot, 'workspace')
     mkdirSync(workspace, { recursive: true })

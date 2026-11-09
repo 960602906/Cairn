@@ -9,6 +9,15 @@
       "homepage": "https://github.com/BurntSushi/ripgrep",
       "source": "@vscode/ripgrep (prebuilt binaries from microsoft/ripgrep-prebuilt)",
       "licenseDir": "scripts/licenses/ripgrep"
+    },
+    {
+      "name": "MinGit",
+      "version": "2.56.0.4",
+      "license": "GPL-2.0-only",
+      "author": "Git for Windows contributors",
+      "homepage": "https://github.com/git-for-windows/git",
+      "source": "MinGit-2.56.0.4-64-bit.zip (official Git for Windows release, trimmed subset)",
+      "licenseDir": "scripts/licenses/mingit"
     }
   ]
 }
