@@ -1,0 +1,91 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { I18nextProvider } from 'react-i18next'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createI18n } from '@cairn/i18n'
+import type { AppInfo } from '@cairn/protocol'
+import { AboutSettings } from './AboutSettings.js'
+import { SessionStoreContext } from '../store-context.js'
+import { createSessionStore } from '../session-store.js'
+import type { MainApi } from '../api.js'
+
+afterEach(cleanup)
+
+const info: AppInfo = {
+  schemaVersion: 1,
+  version: '0.1.0',
+  channel: 'beta',
+  commit: 'abcdef1234567890',
+  buildTime: '2026-11-10T08:30:00.000Z',
+  electronVersion: '45.2.1',
+  nodeVersion: '24.11.0',
+  name: 'Cairn',
+  appId: 'com.cairn.desktop',
+  copyright: 'Copyright © 2026 Cairn contributors',
+  packaged: false,
+  databaseSchemaVersion: 17,
+}
+
+function setup(value: AppInfo | (() => Promise<AppInfo>)) {
+  const request = vi.fn(async (method: string) => {
+    if (method !== 'app.info') return undefined
+    return typeof value === 'function' ? value() : value
+  })
+  const store = createSessionStore({
+    request,
+    on: () => () => {},
+    ready: async () => {},
+  } as unknown as MainApi)
+  render(
+    <I18nextProvider i18n={createI18n('zh-CN')}>
+      <SessionStoreContext.Provider value={store}>
+        <AboutSettings />
+      </SessionStoreContext.Provider>
+    </I18nextProvider>,
+  )
+  return { store, request }
+}
+
+describe('AboutSettings', () => {
+  it('shows version, channel, commit and toolchain information', async () => {
+    const { request } = setup(info)
+    expect(screen.getByText('正在读取构建信息…')).toBeDefined()
+    await waitFor(() => expect(screen.getByText('0.1.0')).toBeDefined())
+    expect(request).toHaveBeenCalledWith('app.info', {})
+    expect(screen.getByText('Beta 测试版')).toBeDefined()
+    expect(screen.getByText('abcdef1')).toBeDefined()
+    expect(screen.getByText('45.2.1')).toBeDefined()
+    expect(screen.getByText('24.11.0')).toBeDefined()
+    expect(screen.getByText('17')).toBeDefined()
+    expect(screen.getByText('开发模式')).toBeDefined()
+    expect(screen.getByText(/Copyright/)).toBeDefined()
+  })
+
+  it('uses translated fallbacks for unknown build values', async () => {
+    setup({
+      ...info,
+      commit: 'unknown',
+      buildTime: '',
+      electronVersion: '',
+      nodeVersion: '',
+      packaged: true,
+    })
+    await waitFor(() => expect(screen.getByText('0.1.0')).toBeDefined())
+    expect(screen.getAllByText('未知').length).toBe(4)
+    expect(screen.getByText('安装版')).toBeDefined()
+  })
+
+  it('treats an invalid build time and commit as unknown', async () => {
+    setup({ ...info, commit: 'not-a-commit', buildTime: 'not-a-date' })
+    await waitFor(() => expect(screen.getByText('0.1.0')).toBeDefined())
+    expect(screen.getAllByText('未知').length).toBe(2)
+  })
+
+  it('keeps the loading state when the request fails', async () => {
+    const { store } = setup(async () => {
+      throw new Error('offline')
+    })
+    await waitFor(() => expect(store.getState().error).toBeDefined())
+    expect(screen.getByText('正在读取构建信息…')).toBeDefined()
+  })
+})

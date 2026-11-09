@@ -1,5 +1,6 @@
 {
   "name": "cairn",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.28.0",
@@ -24,7 +25,10 @@
     "format:check": "prettier --check .",
     "clean": "tsc -b --clean",
     "check:licenses": "node scripts/check-licenses.js",
-    "check:i18n": "node scripts/check-i18n.js"
+    "check:i18n": "node scripts/check-i18n.js",
+    "check:version": "node scripts/sync-version.mjs --check",
+    "sync:version": "node scripts/sync-version.mjs",
+    "build:info": "node scripts/build-info.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

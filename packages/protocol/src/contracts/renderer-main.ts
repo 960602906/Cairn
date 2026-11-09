@@ -3,6 +3,7 @@
  * 渲染进程只调用主进程的请求、接收主进程的事件；渲染进程自身不提供接口。
  */
 import { z } from 'zod'
+import { AppInfo } from '../app-info.js'
 import { FileChangeSummary, FileContent } from '../changes.js'
 import { ActivityDecision, ActivityListResult } from '../activity.js'
 import { CheckpointId, CheckpointRestorePlan, CheckpointSummary } from '../checkpoints.js'
@@ -222,6 +223,11 @@ const Seq = z.number().int().nonnegative()
 
 export const MainForRenderer = defineSide({
   requests: {
+    /** 应用版本、通道与构建信息（M5-01）。 */
+    'app.info': {
+      params: z.object({}),
+      result: AppInfo,
+    },
     'session.create': {
       /** `model` 省略时使用设置中的默认模型；给出时必须是已配置的模型。 */
       params: z.object({

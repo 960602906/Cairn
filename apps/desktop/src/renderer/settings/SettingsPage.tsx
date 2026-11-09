@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   Cpu,
   FolderOpen,
+  Info,
   Palette,
   PanelLeftClose,
   Search,
@@ -19,6 +20,7 @@ import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { CairnMark, IconButton, Kbd } from '../ui/index.js'
 import { GeneralSettings } from './GeneralSettings.js'
+import { AboutSettings } from './AboutSettings.js'
 import { McpSettings } from './McpSettings.js'
 import { PermissionsSettings } from './PermissionsSettings.js'
 import { ProjectsSettings } from './ProjectsSettings.js'
@@ -28,7 +30,7 @@ import { SkillsSettings } from './SkillsSettings.js'
 import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
-  'general' | 'projects' | 'providers' | 'skills' | 'mcp' | 'permissions'
+  'general' | 'projects' | 'providers' | 'skills' | 'mcp' | 'permissions' | 'about'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -45,6 +47,7 @@ const GROUPS: readonly {
     sections: [
       { id: 'general', icon: <Palette /> },
       { id: 'projects', icon: <FolderOpen /> },
+      { id: 'about', icon: <Info /> },
     ],
   },
   { group: 'models', sections: [{ id: 'providers', icon: <Cpu /> }] },
@@ -228,6 +231,7 @@ export function SettingsContent({
           {section === 'skills' && <SkillsSettings />}
           {section === 'mcp' && <McpSettings />}
           {section === 'permissions' && <PermissionsSettings />}
+          {section === 'about' && <AboutSettings />}
         </div>
       </div>
     </>

@@ -2,6 +2,7 @@
  * 诊断包协议（M3-13，架构 §20、§21）：脱敏导出清单与结果。
  */
 import { z } from 'zod'
+import { AppInfo } from './app-info.js'
 
 export const DiagnosticsExportInput = z.object({
   sessionId: z.string().optional(),
@@ -21,6 +22,8 @@ export type DiagnosticsSessionSummary = z.infer<typeof DiagnosticsSessionSummary
 export const DiagnosticsSummary = z.object({
   appVersion: z.string(),
   electronVersion: z.string(),
+  /** 版本、通道、提交与数据库 schema 版本（M5-01）。 */
+  build: AppInfo,
   platform: z.string(),
   arch: z.string(),
   logs: z.object({

@@ -34,6 +34,7 @@ import type { HubCommands } from './hub-service.js'
 import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
 import type { TrialCommands } from './trial-service.js'
+import type { AppInfoCommands } from './app-info-service.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -134,6 +135,8 @@ export interface SettingsCommands {
 export const DEFAULT_FRAME_MS = 33
 
 export interface RendererGatewayOptions {
+  /** 应用版本与构建信息（M5-01）。 */
+  readonly appInfo: AppInfoCommands
   readonly events: Pick<SessionEventService, 'readAfter' | 'subscribe'>
   readonly commands: SessionCommands
   /** 项目（M1-16a）：列表与用系统对话框打开。 */
@@ -252,7 +255,7 @@ interface Subscription {
 type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
-  const { events, commands, projects, files, settings, credentials, providers } = options
+  const { appInfo, events, commands, projects, files, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
   const { hub } = options
   const { agents, trials, diagnostics, activity, changeSets } = options
@@ -323,6 +326,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
         if (frame === undefined) frame = later(flush, frameMs)
       }
 
+      endpoint.handle('app.info', () => appInfo.info())
       endpoint.handle('session.create', (params) => commands.create(params))
       endpoint.handle('session.list', (params) => commands.list(params))
       endpoint.handle('project.list', () => projects.list())

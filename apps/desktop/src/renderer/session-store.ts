@@ -38,6 +38,7 @@ import {
   type AgentVersionSummary,
   type ActivityDecision,
   type ActivityListResult,
+  type AppInfo,
   type DiagnosticsExportInput,
   type DiagnosticsExportResult,
   type DiagnosticsSummary,
@@ -132,6 +133,8 @@ export interface SessionState {
   readonly projects: readonly ProjectSummary[]
   /** 最近读取或保存的设置；读取之前为 undefined。 */
   readonly settings: Settings | undefined
+  /** 应用版本与构建信息（M5-01）；关于页读取之前为 undefined。 */
+  readonly appInfo: AppInfo | undefined
   /** 最近一次失败的错误；界面显示后可以清除。 */
   readonly error: ErrorInfo | undefined
   /** 已保存的 Agent（M3-12）：内置编程助手加上用户与导入的 Agent。 */
@@ -348,6 +351,8 @@ export interface SessionActions {
   /** 订阅“打开活动对应会话”的请求（通知点击或活动页跳转）。 */
   onActivityOpen(listener: (input: { sessionId: string }) => void): () => void
   loadSettings(): Promise<Settings | undefined>
+  /** 读取应用版本与构建信息（M5-01）。 */
+  loadAppInfo(): Promise<AppInfo | undefined>
   /** 保存设置，返回保存后的全部设置；失败时返回 undefined。 */
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
   /** 保存 Key；成功时返回 true。 */
@@ -669,6 +674,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       changeSetErrors: {},
       projects: [],
       settings: undefined,
+      appInfo: undefined,
       error: undefined,
       agents: [],
       recentAgents: readRecentAgents(),
@@ -1227,6 +1233,12 @@ export function createSessionStore(api: MainApi): SessionStore {
       async loadSettings() {
         const result = await run(() => api.request('settings.get', {}))
         if (result) set({ settings: result })
+        return result
+      },
+
+      async loadAppInfo() {
+        const result = await run(() => api.request('app.info', {}))
+        if (result) set({ appInfo: result })
         return result
       },
 

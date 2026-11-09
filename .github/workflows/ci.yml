@@ -39,6 +39,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Check app version (single source)
+        run: pnpm check:version
+
       - name: Typecheck
         run: pnpm typecheck
 

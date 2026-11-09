@@ -3,6 +3,7 @@
  *
  * 四个入口：
  * - `main`：主进程，`src/main/index.ts`；
+ * - `startup`：单实例锁内的启动模块，`src/main/startup.ts`（与 `index.ts` 同目录，保持 `import.meta.dirname`）；
  * - `agent-host`：agent 宿主（utilityProcess），`src/agent-host/index.ts`，与主进程同属 Node 环境，
  *   作为 main 构建的第二个入口输出到 `out/main/agent-host.js`；
  * - `preload`：`src/preload/index.ts`，在沙箱中运行，输出 CommonJS（`out/preload/index.cjs`）；
@@ -86,6 +87,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(root, 'src/main/index.ts'),
+          startup: resolve(root, 'src/main/startup.ts'),
           'agent-host': resolve(root, 'src/agent-host/index.ts'),
         },
       },

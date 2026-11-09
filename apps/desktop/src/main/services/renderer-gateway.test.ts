@@ -134,6 +134,21 @@ const ACTIVITY_RESULT = {
   counts: { approvals: 0, running: 0 },
 }
 
+const APP_INFO = {
+  schemaVersion: 1 as const,
+  version: '0.1.0',
+  channel: 'beta' as const,
+  commit: 'unknown',
+  buildTime: '',
+  electronVersion: '45.2.1',
+  nodeVersion: '24.11.0',
+  name: 'Cairn',
+  appId: 'com.cairn.desktop',
+  copyright: 'Copyright © 2026 Cairn contributors',
+  packaged: false,
+  databaseSchemaVersion: 17,
+}
+
 function setup(eventsOverride?: Partial<SessionEventService>) {
   const storage = createMemoryStorage({ now: () => 1 })
   storage.projects.create({ projectId: 'p1', name: 'demo', path: '/work' })
@@ -316,6 +331,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     summary: vi.fn(() => ({
       appVersion: '0.0.0',
       electronVersion: '0.0.0',
+      build: APP_INFO,
       platform: process.platform,
       arch: process.arch,
       logs: { mainLogLines: 0, hostLogLines: 0 },
@@ -350,6 +366,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     }),
   }
   gateway = createRendererGateway({
+    appInfo: { info: () => APP_INFO },
     events: { ...service, ...eventsOverride },
     commands,
     projects,
@@ -1013,6 +1030,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
     setup()
     const onProtocolError = vi.fn()
     const g = createRendererGateway({
+      appInfo: { info: () => APP_INFO },
       events: service,
       commands,
       projects,

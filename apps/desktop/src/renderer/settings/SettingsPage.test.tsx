@@ -45,6 +45,31 @@ function setup(
     }
     if (method === 'session.list') return { sessions: [] }
     if (method === 'project.list') return { projects: [] }
+    if (method === 'diagnostics.summary') {
+      return {
+        appVersion: '0.1.0',
+        electronVersion: '45.2.1',
+        build: {
+          schemaVersion: 1,
+          version: '0.1.0',
+          channel: 'beta',
+          commit: 'unknown',
+          buildTime: '',
+          electronVersion: '45.2.1',
+          nodeVersion: '24.11.0',
+          name: 'Cairn',
+          appId: 'com.cairn.desktop',
+          copyright: 'Copyright © 2026 Cairn contributors',
+          packaged: false,
+          databaseSchemaVersion: 17,
+        },
+        platform: 'win32',
+        arch: 'x64',
+        logs: { mainLogLines: 0, hostLogLines: 0 },
+        settings: { providersCount: 0, mcpServersCount: 0, hasAuxiliaryModel: false },
+        exportItems: ['manifest.json', 'build-info.json'],
+      }
+    }
     return {}
   })
   const api = { ready: async () => {}, request, on: () => () => {} } as unknown as MainApi

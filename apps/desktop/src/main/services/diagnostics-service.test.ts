@@ -11,6 +11,21 @@ import {
   summarizeSettings,
 } from './diagnostics-service.js'
 
+const fakeAppInfo = {
+  schemaVersion: 1 as const,
+  version: '1.2.3',
+  channel: 'beta' as const,
+  commit: 'abcdef1234567890',
+  buildTime: '2026-11-10T00:00:00.000Z',
+  electronVersion: '30.0.0',
+  nodeVersion: '24.0.0',
+  name: 'Cairn',
+  appId: 'com.cairn.desktop',
+  copyright: 'Copyright © 2026 Cairn contributors',
+  packaged: false,
+  databaseSchemaVersion: 12,
+}
+
 describe('diagnostics sanitization', () => {
   it('redacts user home directory in backslash and forwardslash forms', () => {
     const home = 'C:\\Users\\alice'
@@ -100,8 +115,7 @@ describe('diagnostics sanitization', () => {
 
 describe('DiagnosticsService zip generation and export', () => {
   const fakeDeps = {
-    getAppVersion: () => '1.2.3',
-    getElectronVersion: () => '30.0.0',
+    getAppInfo: () => fakeAppInfo,
     getSettings: async () => ({
       providers: [
         {
@@ -132,8 +146,10 @@ describe('DiagnosticsService zip generation and export', () => {
     const service = new DiagnosticsService(fakeDeps)
     const sum = await service.summary({ sessionId: 'session-123' })
     expect(sum.appVersion).toBe('1.2.3')
+    expect(sum.build).toEqual(fakeAppInfo)
     expect(sum.session?.sessionId).toBe('session-123')
     expect(sum.exportItems).toContain('manifest.json')
+    expect(sum.exportItems).toContain('build-info.json')
     expect(sum.exportItems).toContain('session/events.json')
   })
 
@@ -145,10 +161,21 @@ describe('DiagnosticsService zip generation and export', () => {
     const fileNames = Object.keys(unzipped)
     expect(fileNames).toContain('manifest.json')
     expect(fileNames).toContain('app-version.json')
+    expect(fileNames).toContain('build-info.json')
     expect(fileNames).toContain('settings-summary.json')
     expect(fileNames).toContain('logs/main.log')
     expect(fileNames).toContain('logs/host.log')
     expect(fileNames).toContain('session/events.json')
+    const build = JSON.parse(new TextDecoder().decode(unzipped['build-info.json'])) as {
+      channel: string
+      commit: string
+      databaseSchemaVersion: number
+    }
+    expect(build).toMatchObject({
+      channel: 'beta',
+      commit: 'abcdef1234567890',
+      databaseSchemaVersion: 12,
+    })
 
     // Assert every file in the zip is sanitized
     for (const [name, content] of Object.entries(unzipped)) {
@@ -285,8 +312,7 @@ describe('diagnostics edge branches', () => {
 
   it('summarizes without a session and tolerates empty logs', async () => {
     const service = new DiagnosticsService({
-      getAppVersion: () => '1.0.0',
-      getElectronVersion: () => '30.0.0',
+      getAppInfo: () => fakeAppInfo,
       getSettings: async () => ({}),
       getMcpServers: async () => [],
       getSession: async () => undefined,
@@ -305,8 +331,7 @@ describe('diagnostics edge branches', () => {
 
   it('omits session files when the session is missing and applies known secrets', async () => {
     const service = new DiagnosticsService({
-      getAppVersion: () => '1.0.0',
-      getElectronVersion: () => '30.0.0',
+      getAppInfo: () => fakeAppInfo,
       getSettings: async () => ({}),
       getMcpServers: async () => [],
       getSession: async () => undefined,
@@ -321,8 +346,7 @@ describe('diagnostics edge branches', () => {
 
   it('includes sensitive session content when explicitly requested', async () => {
     const service = new DiagnosticsService({
-      getAppVersion: () => '1.0.0',
-      getElectronVersion: () => '30.0.0',
+      getAppInfo: () => fakeAppInfo,
       getSettings: async () => ({}),
       getMcpServers: async () => [],
       getSession: async () => ({
@@ -350,8 +374,7 @@ describe('diagnostics edge branches', () => {
 
   it('returns cancelled when the save dialog is dismissed and handles missing reveal support', async () => {
     const service = new DiagnosticsService({
-      getAppVersion: () => '1.0.0',
-      getElectronVersion: () => '30.0.0',
+      getAppInfo: () => fakeAppInfo,
       getSettings: async () => ({}),
       getMcpServers: async () => [],
       getSession: async () => undefined,
