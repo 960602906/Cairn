@@ -70,8 +70,6 @@ describe('SessionList', () => {
     expect(screen.queryByText('还没有会话')).toBeNull()
     expect(screen.getByPlaceholderText('有什么可以帮你？')).toBeTruthy()
     expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true)
-    // 没有会话时不能取消
-    expect(screen.queryByRole('button', { name: '取消' })).toBeNull()
   })
 
   it('shows the session empty state when a workspace exists', async () => {
@@ -263,7 +261,7 @@ describe('SessionList', () => {
     expect(screen.getByRole('heading', { level: 2, name: '演示' })).toBeTruthy()
   })
 
-  it('opens the composer with Ctrl+N and cancels back to the conversation', async () => {
+  it('opens the composer with Ctrl+N and returns by selecting a session', async () => {
     const { store } = setup({
       'session.list': () => ({ sessions: [summary('s0', '已有')] }),
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),
@@ -274,7 +272,8 @@ describe('SessionList', () => {
     expect(screen.queryByPlaceholderText('有什么可以帮你？')).toBeNull()
     await userEvent.keyboard('{Control>}n{/Control}')
     expect(screen.getByPlaceholderText('有什么可以帮你？')).toBeTruthy()
-    await userEvent.click(screen.getByRole('button', { name: '取消' }))
+    const currentItems = await screen.findAllByRole('listitem')
+    await userEvent.click(sessionButton(currentItems[0]!))
     await waitFor(() => expect(screen.queryByPlaceholderText('有什么可以帮你？')).toBeNull())
   })
 

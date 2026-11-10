@@ -1093,6 +1093,149 @@ describe('Composer (M2-04)', () => {
       await screen.findByRole('img', { name: '上下文已用 95%（95,000 / 100,000 tokens）' }),
     ).toBeTruthy()
   })
+
+  it('opens the slash command panel and filters commands', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/')
+    const list = await screen.findByRole('listbox', { name: '输入指令' })
+    expect(within(list).getAllByRole('option')).toHaveLength(3)
+    await userEvent.type(input(), 'mo')
+    const options = within(list).getAllByRole('option')
+    expect(options).toHaveLength(1)
+    expect(options[0]?.textContent).toContain('/model')
+  })
+
+  it('runs /plan from the command panel', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    const toggle = screen.getByRole('button', { name: '计划模式' })
+    await userEvent.type(input(), '/plan{Enter}')
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(input().value).toBe('')
+    expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
+  })
+
+  it('runs /compact from the command panel', async () => {
+    const { request, open } = setup({
+      history: HISTORY,
+      handlers: { 'session.compact': () => ({ compacted: true }) },
+    })
+    await open()
+    await userEvent.type(input(), '/compact{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.compact', { sessionId: 's1' }),
+    )
+    expect((await screen.findByText(/已压缩当前会话/)).textContent).toContain('/compact')
+    expect(input().value).toBe('')
+  })
+
+  it('reports when there is nothing to compact', async () => {
+    const { request, open } = setup({
+      history: HISTORY,
+      handlers: { 'session.compact': () => ({ compacted: false }) },
+    })
+    await open()
+    await userEvent.type(input(), '/compact{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.compact', { sessionId: 's1' }),
+    )
+    expect((await screen.findByText(/没有可压缩的内容/)).textContent).toContain('/compact')
+    expect(input().value).toBe('')
+  })
+
+  it('opens the model picker from the command panel', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/model{Enter}')
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getByRole('menuitem', { name: /强/ })).toBeTruthy()
+    expect(input().value).toBe('')
+  })
+
+  it('sends an unmatched slash draft as a normal message', async () => {
+    const { request, open } = setup({ history: HISTORY })
+    await open()
+    await userEvent.type(input(), '/foo{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: [{ type: 'text', text: '/foo' }],
+      }),
+    )
+  })
+
+  it('completes a command with Tab and closes the panel with Escape', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/mo')
+    await userEvent.keyboard('{Tab}')
+    expect(input().value).toBe('/model')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull())
+    expect(input().value).toBe('/model')
+  })
+
+  it('moves the highlight with arrow keys', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    const toggle = screen.getByRole('button', { name: '计划模式' })
+    await userEvent.type(input(), '/')
+    await userEvent.keyboard('{ArrowDown}{Enter}')
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('runs the highlighted command from the send button', async () => {
+    const { request, open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    const toggle = screen.getByRole('button', { name: '计划模式' })
+    await userEvent.type(input(), '/plan')
+    await userEvent.click(sendButton())
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
+  })
+
+  it('reopens the panel after the draft leaves the slash form', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/pl')
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
+    await userEvent.clear(input())
+    await userEvent.type(input(), '/')
+    expect(await screen.findByRole('listbox', { name: '输入指令' })).toBeTruthy()
+  })
+
+  it('does not run or send on Enter while composing', async () => {
+    const { request, open } = setup({ history: HISTORY })
+    await open()
+    await userEvent.type(input(), '/plan')
+    fireEvent.keyDown(input(), { key: 'Enter', isComposing: true })
+    expect(input().value).toBe('/plan')
+    expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
+    expect(request).not.toHaveBeenCalledWith('session.compact', expect.anything())
+  })
 })
 
 describe('file changes (M2-07)', () => {
