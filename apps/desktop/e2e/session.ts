@@ -36,6 +36,12 @@ export function projectDir(userData: string): string {
 
 export const runStatus = (window: Page) => window.getByRole('status')
 
+/** 右侧工作台：1440px 以上是 complementary，窄窗口打开时是模态 dialog。 */
+export const sessionPanel = (window: Page) =>
+  window
+    .getByRole('complementary', { name: '会话信息' })
+    .or(window.getByRole('dialog', { name: '会话信息' }))
+
 /**
  * 展开最近一次工具步骤（时间线默认折叠，成功时只显示一行摘要），返回该步骤区域。
  * 展开后 `run_command` 的终端卡片才在 DOM 里。

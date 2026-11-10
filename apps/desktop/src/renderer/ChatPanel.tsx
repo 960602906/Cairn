@@ -1,7 +1,7 @@
 /**
  * 当前会话（01 枢纽）：48px 顶栏 + 对话列 + 右侧常驻工作台。
  *
- * 宽屏（≥1280px）工作台占布局宽度；更窄时改为右侧浮层，由顶栏按钮开合，避免把正文挤到
+ * 宽屏（≥1440px）工作台占布局宽度；更窄时改为右侧浮层，由顶栏按钮开合，避免把正文挤到
  * 500px 以下。正文最大 840px，输入框最大 880px。会话切换、订阅恢复、审批与检查器行为沿用
  * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
@@ -75,7 +75,6 @@ export function ChatPanel({
   const [panel, setPanel] = useState<SessionPanel>('diff')
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | undefined>()
-  const [locatedTurnId, setLocatedTurnId] = useState<string | undefined>()
   /** 宽屏工作台常驻；窄屏默认收起，按需浮出。 */
   const docked = useMediaQuery(PANEL_DOCK_QUERY)
   const [panelPreference, setPanelPreference] = useState<boolean>()
@@ -112,7 +111,6 @@ export function ChatPanel({
   useEffect(() => {
     setSelectedPlanId(undefined)
     setSelectedChangeSetId(undefined)
-    setLocatedTurnId(undefined)
     setPanel('diff')
   }, [sessionId])
 
@@ -127,9 +125,9 @@ export function ChatPanel({
 
   const locateTurn = (runId: string, turnId: string) => {
     void runId
-    setLocatedTurnId(turnId)
     setPanel('inspector')
-    setPanelPreference(true)
+    // 浮层会锁住对话区的焦点；先收起浮层，等遮罩和 inert 解除后再定位。
+    setPanelPreference(docked)
     requestAnimationFrame(() => {
       const target = scroller.current?.querySelector<HTMLElement>(
         `[data-turn="${CSS.escape(turnId)}"]`,
@@ -251,7 +249,6 @@ export function ChatPanel({
             >
               <MessageStream
                 view={view}
-                locatedTurnId={locatedTurnId}
                 onOpenChanges={(changeSetId) => {
                   setSelectedChangeSetId(changeSetId)
                   setPanel('diff')

@@ -5,7 +5,14 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
+import {
+  createSession,
+  expectMessages,
+  projectDir,
+  runStatus,
+  sendPrompt,
+  sessionPanel,
+} from './session.js'
 
 const REPLY = 'reply from configured provider'
 const BRIEF = '目标：修复登录'
@@ -61,7 +68,7 @@ test('抽屉显示会话要点，编辑后的文字不会被自动更新盖掉',
 
     const panelToggle = window.getByRole('button', { name: '会话信息', exact: true })
     if ((await panelToggle.getAttribute('aria-expanded')) === 'false') await panelToggle.click()
-    const drawer = window.getByRole('complementary', { name: '会话信息' })
+    const drawer = sessionPanel(window)
     await drawer.getByRole('tab', { name: '会话要点' }).click()
     await expect(drawer).toContainText(BRIEF)
 
@@ -69,6 +76,8 @@ test('抽屉显示会话要点，编辑后的文字不会被自动更新盖掉',
     await drawer.getByRole('textbox', { name: '编辑' }).fill('用户改成：不要动 API')
     await drawer.getByRole('button', { name: '保存' }).click()
     await expect(drawer).toContainText('用户改成：不要动 API')
+    await window.keyboard.press('Escape')
+    await expect(drawer).toBeHidden()
 
     await sendPrompt(window, '另外测试用 Vitest')
     await expect(runStatus(window)).toHaveText('空闲')
@@ -80,7 +89,11 @@ test('抽屉显示会话要点，编辑后的文字不会被自动更新盖掉',
           ).length,
       )
       .toBeGreaterThan(1)
+    await window.getByRole('button', { name: '会话信息', exact: true }).click()
+    await expect(drawer).toBeVisible()
     await expect(drawer).toContainText('用户改成：不要动 API')
+    await window.keyboard.press('Escape')
+    await expect(drawer).toBeHidden()
     await expect(window.getByRole('list', { name: '消息' })).not.toContainText(BRIEF)
   } finally {
     await mock.close()

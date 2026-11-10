@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, projectDir, runStatus, sendPrompt, sessionPanel } from './session.js'
 
 const REPLY = 'inspector reply'
 const ARTIFACTS_DIR =
@@ -78,6 +78,7 @@ test('查看运行树、上下文、用量与设置', async ({ launch, userData 
     const turnId = await window.locator('[data-turn]').first().getAttribute('data-turn')
     expect(turnId).not.toBeNull()
     await expect(window.locator(`[data-turn="${turnId}"]`)).toBeFocused()
+    await expect(sessionPanel(window)).toBeHidden()
 
     mkdirSync(ARTIFACTS_DIR, { recursive: true })
     await setTheme(window, 'light')
@@ -86,6 +87,8 @@ test('查看运行树、上下文、用量与设置', async ({ launch, userData 
     await window.screenshot({ path: path.join(ARTIFACTS_DIR, 'inspector-dark.png') })
     await setTheme(window, 'light')
 
+    await window.getByRole('button', { name: '会话信息', exact: true }).click()
+    await expect(sessionPanel(window)).toBeVisible()
     await window.getByRole('tab', { name: '上下文' }).click()
     await expect(window.getByText('系统提示词各部分')).toBeVisible()
     await expect(window.getByRole('list', { name: '上下文 token 明细' })).toBeVisible()

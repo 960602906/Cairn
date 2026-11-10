@@ -4,19 +4,33 @@
  */
 import { existsSync } from 'node:fs'
 import path from 'node:path'
+import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { converse } from './session.js'
+import { configureProvider, expectMessages, runStatus, sendPrompt } from './session.js'
 
 test('首次启动自动创建默认项目并可直接对话', async ({ launch, userData }) => {
-  const { window } = await launch()
+  const reply = 'reply from default project'
+  const mock = await startMockModel({ reply })
+  try {
+    const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
 
-  await expect(window.getByRole('region', { name: '工作空间' })).toContainText('默认项目')
-  await expect(
-    window
-      .getByRole('group', { name: '当前工作区' })
-      .getByRole('button', { name: '工作空间：默认项目' }),
-  ).toBeVisible()
-  expect(existsSync(path.join(userData, 'default-project'))).toBe(true)
+    await expect(window.getByRole('region', { name: '工作空间' })).toContainText('默认项目')
+    await expect(
+      window
+        .getByRole('group', { name: '当前工作区' })
+        .getByRole('button', { name: '工作空间：默认项目' }),
+    ).toBeVisible()
+    expect(existsSync(path.join(userData, 'default-project'))).toBe(true)
 
-  await converse(window, '默认项目里直接开始')
+    await configureProvider(window, mock.baseUrl, 'fake-key')
+    await window.reload()
+    await sendPrompt(window, '默认项目里直接开始')
+    await expectMessages(window, [
+      ['你', '默认项目里直接开始'],
+      ['助手', reply],
+    ])
+    await expect(runStatus(window)).toHaveText('空闲')
+  } finally {
+    await mock.close()
+  }
 })
