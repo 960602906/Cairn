@@ -3,6 +3,8 @@
  *
  * - 文本框自动增高（最多约 8 行）。Enter 发送，Shift+Enter 换行；输入法组字时的 Enter 不发送。
  *   运行中不能发送（主进程会报 `run.busy`），发送按钮换成停止按钮。发送时立即清空，失败时恢复。
+ * - 草稿以 `/` 开头时弹出命令面板：`/compact`、`/plan`、`/model`。↑↓ 选择，Enter 执行，
+ *   Tab 补全，Esc 关闭；没有匹配时按普通消息发送。
  * - 下方左边是权限模式（只读 / 询问 / 自动，全局设置），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、
  *   上下文占用圆环（悬停显示百分比与 token 数）与发送 / 停止按钮。
  */
@@ -28,6 +30,12 @@ import {
 import { useTranslation } from 'react-i18next'
 import type { RunView } from '@cairn/core'
 import type { AgentDefinitionRef, ModelRef, PermissionMode, SessionStatus } from '@cairn/protocol'
+import {
+  COMPOSER_COMMANDS,
+  composerCommandQuery,
+  filterComposerCommands,
+  type ComposerCommandDefinition,
+} from './composer-commands.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
 import {
@@ -52,6 +60,13 @@ export interface ComposerProps {
   readonly projectPath: string | undefined
   /** 上下文占用的 token 数（最近一次用量）。 */
   readonly contextTokens: number | undefined
+}
+
+type CommandNotice = {
+  readonly id: number
+  readonly key: string
+  readonly tone: 'ok' | 'muted'
+  readonly command?: string
 }
 
 /** 文本框最高（px），超过后滚动。 */
@@ -109,11 +124,18 @@ function ModelMenu({
   sessionId,
   model,
   fixed,
+  disabled,
+  open,
+  onOpenChange,
 }: {
   readonly sessionId: string
   readonly model: ModelRef | undefined
   /** Agent 固定了模型（M3-12）：显示当前模型并禁用。 */
   readonly fixed: boolean
+  /** 没有可选模型时禁用。 */
+  readonly disabled: boolean
+  readonly open: boolean
+  readonly onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation('session')
   const providers = useSessionStore((s) => s.settings?.providers) ?? []
@@ -133,9 +155,9 @@ function ModelMenu({
     ? `${current.provider} · ${current.name}`
     : (model?.modelId ?? t('composer.model.none'))
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
-        disabled={options.length === 0 || fixed}
+        disabled={disabled}
         aria-label={t('composer.model.label', { model: label })}
         title={fixed ? t('composer.model.fixedByAgent') : undefined}
         className="flex h-7 max-w-[240px] items-center gap-1 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover disabled:opacity-60 [&_svg]:size-3.5"
@@ -231,16 +253,43 @@ export function Composer({
   const compactSession = useSessionStore((s) => s.compactSession)
   const abort = useSessionStore((s) => s.abort)
   const agents = useSessionStore((s) => s.agents) ?? []
+  const providers = useSessionStore((s) => s.settings?.providers) ?? []
   const fixedAgentModel =
     agent !== undefined && agents.find((item) => item.agentId === agent.id)?.modelMode === 'fixed'
   const [text, setText] = useState('')
   const [planMode, setPlanMode] = useState(false)
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [commandIndex, setCommandIndex] = useState(0)
+  const [dismissedDraft, setDismissedDraft] = useState<string | null>(null)
+  const [commandNotice, setCommandNotice] = useState<CommandNotice | null>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const root = useRef<HTMLDivElement>(null)
+  const noticeId = useRef(0)
   const active = status === 'running' || status === 'waiting_approval'
   const stopping = run?.state === 'aborting'
   const canSend = !active && !sending && text.trim() !== ''
+  const fixedModel = agent !== undefined && run?.agent.id === agent.id && fixedAgentModel
+  const enabledModelCount = providers
+    .flatMap((provider) => provider.models)
+    .filter((item) => item.enabled !== false).length
+  const modelMenuDisabled = fixedModel || enabledModelCount === 0
+  const commandQuery = composerCommandQuery(text)
+  const commandPanelOpen = commandQuery !== null && dismissedDraft !== text && !sending
+  const commands = COMPOSER_COMMANDS.map((command) => ({
+    ...command,
+    description: t(command.descriptionKey),
+  }))
+  const filteredCommands =
+    commandQuery === null ? [] : filterComposerCommands(commands, commandQuery)
+  const activeCommandIndex =
+    filteredCommands.length === 0 ? -1 : Math.min(commandIndex, filteredCommands.length - 1)
+
+  const showNotice = (key: string, tone: CommandNotice['tone'], command?: string) => {
+    noticeId.current += 1
+    setCommandNotice({ id: noticeId.current, key, tone, ...(command ? { command } : {}) })
+  }
 
   // 自动增高
   useLayoutEffect(() => {
@@ -250,6 +299,16 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
   }, [text])
 
+  const compactNow = async (): Promise<boolean | undefined> => {
+    setSending(true)
+    const compacted = await compactSession()
+    setSending(false)
+    if (compacted === true) showNotice('composer.command.compacted', 'ok', 'compact')
+    else if (compacted === false)
+      showNotice('composer.command.nothingToCompact', 'muted', 'compact')
+    return compacted
+  }
+
   const send = async () => {
     if (!canSend) return
     const draft = text
@@ -258,10 +317,29 @@ export function Composer({
     // /compact 立刻压缩，不作为用户消息发给模型。
     const sent =
       draft.trim() === '/compact'
-        ? await compactSession()
+        ? (await compactNow()) !== undefined
         : await sendPrompt(draft, planMode ? 'plan' : 'normal')
     setSending(false)
     if (!sent) setText((current) => (current === '' ? draft : current))
+  }
+
+  const runCommand = async (command: ComposerCommandDefinition) => {
+    if (sending) return
+    // 没有可选模型时保留草稿，避免静默吞掉输入。
+    if (command.id === 'model' && modelMenuDisabled) return
+    const draft = `/${command.name}`
+    setDismissedDraft(null)
+    setText('')
+    if (command.id === 'plan') {
+      setPlanMode((on) => !on)
+    } else if (command.id === 'model') {
+      setModelMenuOpen(true)
+    } else {
+      const compacted = await compactNow()
+      if (compacted === undefined) setText((current) => (current === '' ? draft : current))
+    }
+    // /model 把焦点交给下拉菜单，关闭时再由 onOpenChange 还回来。
+    if (command.id !== 'model') textarea.current?.focus()
   }
 
   const stop = async () => {
@@ -306,85 +384,225 @@ export function Composer({
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    // 面板打开时点发送键等同于执行当前高亮的命令，而不是把 `/plan` 当消息发出去。
+    const command = commandPanelOpen ? filteredCommands[activeCommandIndex] : undefined
+    if (command !== undefined) {
+      void runCommand(command)
+      return
+    }
     void send()
   }
 
+  useEffect(() => {
+    setCommandIndex(0)
+    // 离开 `/` 草稿后忘掉这次关闭，下一次重新输入 `/` 时面板还会打开。
+    if (commandQuery === null) setDismissedDraft(null)
+  }, [commandQuery])
+
+  // 点击输入框以外的地方关闭命令面板，避免它一直挂在对话上方。
+  useEffect(() => {
+    if (!commandPanelOpen) return
+    const onPointerDown = (event: globalThis.PointerEvent) => {
+      if (!(event.target instanceof Node)) return
+      if (root.current?.contains(event.target) === true) return
+      setDismissedDraft(text)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [commandPanelOpen, text])
+
+  // 命令结果只停留几秒，避免长期占用输入框上方的空间。
+  useEffect(() => {
+    if (commandNotice === null) return
+    const timer = setTimeout(() => setCommandNotice(null), 3_500)
+    return () => clearTimeout(timer)
+  }, [commandNotice])
+
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    // 输入法组字时的 Enter 属于候选词确认，不执行命令、也不发送。
+    if (event.key === 'Enter' && event.nativeEvent.isComposing) return
+    if (commandPanelOpen) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (filteredCommands.length === 0) return
+        event.preventDefault()
+        setCommandIndex((current) => {
+          const base = Math.min(current, filteredCommands.length - 1)
+          const next = event.key === 'ArrowDown' ? base + 1 : base - 1
+          return (next + filteredCommands.length) % filteredCommands.length
+        })
+        return
+      }
+      if (event.key === 'Tab' && !event.shiftKey) {
+        const command = filteredCommands[activeCommandIndex]
+        if (command === undefined) return
+        event.preventDefault()
+        setText(`/${command.name}`)
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDismissedDraft(text)
+        return
+      }
+      if (event.key === 'Enter' && !event.shiftKey) {
+        const command = filteredCommands[activeCommandIndex]
+        if (command !== undefined) {
+          event.preventDefault()
+          void runCommand(command)
+          return
+        }
+        // 没有匹配时按普通消息发送。
+      }
+    }
+    if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     void send()
   }
 
   return (
-    <div>
+    <div ref={root}>
       <WorkspaceGitBar projectPath={projectPath} />
-      <form
-        onSubmit={submit}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) textarea.current?.focus()
-        }}
-        className="rounded-[14px] border border-hair2 bg-raise px-3.5 pt-3 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60"
-      >
-        <textarea
-          ref={textarea}
-          rows={1}
-          aria-label={t('input.label')}
-          placeholder={planMode ? t('composer.plan.placeholder') : t('input.placeholder')}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={keyDown}
-          className="block max-h-[200px] min-h-6 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
-        />
-        <div className="mt-2 flex items-center gap-1">
-          <PermissionMenu />
-          <button
-            type="button"
-            aria-pressed={planMode}
-            aria-label={t('composer.plan.label')}
-            title={t('composer.plan.hint')}
-            onClick={() => setPlanMode((on) => !on)}
-            className={cn(
-              'flex h-7 items-center gap-1 rounded-item px-2 text-ui',
-              planMode ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-hover',
-            )}
+      <div className="relative">
+        {commandPanelOpen && (
+          <div
+            id="composer-command-list"
+            role="listbox"
+            aria-label={t('composer.command.label')}
+            className="absolute inset-x-0 bottom-full z-50 mb-2 max-h-64 overflow-y-auto rounded-card bg-raise p-1 text-ui text-fg shadow-2"
           >
-            <ListChecks className="size-3.5" />
-            {t('composer.plan.toggle')}
-          </button>
-          <div className="ml-auto flex min-w-0 items-center gap-1">
-            <ModelMenu
-              sessionId={sessionId}
-              model={model}
-              fixed={agent !== undefined && run?.agent.id === agent.id && fixedAgentModel}
-            />
-            <ContextRing model={model} tokens={contextTokens ?? 0} />
-            {active ? (
-              <button
-                type="button"
-                aria-label={tc('action.stop')}
-                title={tc('action.stop')}
-                disabled={stopping || aborting}
-                onClick={() => void stop()}
-                className={cn(
-                  'flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-45',
-                )}
-              >
-                <Square className="size-3 fill-current" />
-              </button>
+            {filteredCommands.length === 0 ? (
+              <p className="px-2 py-2 text-note text-muted">{t('composer.command.empty')}</p>
             ) : (
-              <button
-                type="submit"
-                aria-label={t('input.send')}
-                title={t('input.send')}
-                disabled={!canSend}
-                className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-25"
-              >
-                <ArrowUp className="size-4" />
-              </button>
+              filteredCommands.map((command, index) => {
+                const selected = index === activeCommandIndex
+                return (
+                  <div
+                    key={command.id}
+                    id={`composer-command-${command.id}`}
+                    role="option"
+                    aria-selected={selected}
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      void runCommand(command)
+                    }}
+                    onMouseEnter={() => setCommandIndex(index)}
+                    className={cn(
+                      'flex cursor-default select-none items-start gap-2 rounded-[7px] px-2 py-1.5',
+                      selected && 'bg-hover',
+                    )}
+                  >
+                    <span className="shrink-0 font-mono text-note text-fg">
+                      {'/'}
+                      {command.name}
+                    </span>
+                    <span className="min-w-0 text-note text-muted">{command.description}</span>
+                  </div>
+                )
+              })
             )}
+            <p className="mt-1 border-t border-hair px-2 pt-1.5 text-[11px] text-faint">
+              {t('composer.command.hint')}
+            </p>
           </div>
-        </div>
-      </form>
+        )}
+        <form
+          onSubmit={submit}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) textarea.current?.focus()
+          }}
+          className="rounded-[14px] border border-hair2 bg-raise px-3.5 pt-3 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60"
+        >
+          {commandNotice && (
+            <p
+              role="status"
+              className={cn(
+                'px-1 pb-1 text-note',
+                commandNotice.tone === 'ok' ? 'text-ok' : 'text-muted',
+              )}
+            >
+              {commandNotice.command && (
+                <span className="mr-1 font-mono text-fg2">/{commandNotice.command}</span>
+              )}
+              {t(commandNotice.key)}
+            </p>
+          )}
+          <textarea
+            ref={textarea}
+            rows={1}
+            aria-label={t('input.label')}
+            aria-expanded={commandPanelOpen}
+            aria-controls={commandPanelOpen ? 'composer-command-list' : undefined}
+            aria-activedescendant={
+              commandPanelOpen && activeCommandIndex >= 0
+                ? `composer-command-${filteredCommands[activeCommandIndex]?.id}`
+                : undefined
+            }
+            placeholder={planMode ? t('composer.plan.placeholder') : t('input.placeholder')}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value)
+              setCommandNotice(null)
+            }}
+            onKeyDown={keyDown}
+            className="block max-h-[200px] min-h-6 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
+          />
+          <div className="mt-2 flex items-center gap-1">
+            <PermissionMenu />
+            <button
+              type="button"
+              aria-pressed={planMode}
+              aria-label={t('composer.plan.label')}
+              title={t('composer.plan.hint')}
+              onClick={() => setPlanMode((on) => !on)}
+              className={cn(
+                'flex h-7 items-center gap-1 rounded-item px-2 text-ui',
+                planMode ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-hover',
+              )}
+            >
+              <ListChecks className="size-3.5" />
+              {t('composer.plan.toggle')}
+            </button>
+            <div className="ml-auto flex min-w-0 items-center gap-1">
+              <ModelMenu
+                sessionId={sessionId}
+                model={model}
+                fixed={fixedModel}
+                disabled={modelMenuDisabled}
+                open={modelMenuOpen}
+                onOpenChange={(next) => {
+                  setModelMenuOpen(next)
+                  if (!next) textarea.current?.focus()
+                }}
+              />
+              <ContextRing model={model} tokens={contextTokens ?? 0} />
+              {active ? (
+                <button
+                  type="button"
+                  aria-label={tc('action.stop')}
+                  title={tc('action.stop')}
+                  disabled={stopping || aborting}
+                  onClick={() => void stop()}
+                  className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-45',
+                  )}
+                >
+                  <Square className="size-3 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  aria-label={t('input.send')}
+                  title={t('input.send')}
+                  disabled={!canSend}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-25"
+                >
+                  <ArrowUp className="size-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

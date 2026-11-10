@@ -1592,6 +1592,27 @@ describe('inactive and failing commands', () => {
     await expect(store.getState().resolveApproval('a1', 'allow_once')).resolves.toBe(false)
   })
 
+  it('reports compacted, nothing-to-compact, and failure separately', async () => {
+    const compactedApi = fakeApi({ 'session.compact': () => ({ compacted: true }) }).api
+    const compacted = createSessionStore(compactedApi)
+    compacted.setState({ activeSessionId: 's1' })
+    await expect(compacted.getState().compactSession()).resolves.toBe(true)
+
+    const emptyApi = fakeApi({ 'session.compact': () => ({ compacted: false }) }).api
+    const empty = createSessionStore(emptyApi)
+    empty.setState({ activeSessionId: 's1' })
+    await expect(empty.getState().compactSession()).resolves.toBe(false)
+
+    const failingApi = fakeApi({
+      'session.compact': () => {
+        throw new RpcError('run.busy')
+      },
+    }).api
+    const failing = createSessionStore(failingApi)
+    failing.setState({ activeSessionId: 's1' })
+    await expect(failing.getState().compactSession()).resolves.toBeUndefined()
+  })
+
   it('clears awaiting and returns false when requests fail', async () => {
     const { api } = fakeApi({
       'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),

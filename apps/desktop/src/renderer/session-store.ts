@@ -184,8 +184,11 @@ export interface SessionActions {
   replan(planId: string, feedback: string): Promise<boolean>
   /** 放弃待审计划，不开始新的一轮。 */
   abandonPlan(planId: string): Promise<boolean>
-  /** 立刻压缩当前会话（M3-03）。失败时返回 false，调用方可以恢复草稿。 */
-  compactSession(): Promise<boolean>
+  /**
+   * 立刻压缩当前会话（M3-03）。
+   * `true` 表示产生了压缩，`false` 表示没有可压缩的内容，`undefined` 表示请求失败。
+   */
+  compactSession(): Promise<boolean | undefined>
   /** 保存用户编辑的会话要点（M3-04）。失败时返回 false。 */
   updateBrief(sessionId: string, content: string): Promise<boolean>
   /** 停止当前会话正在进行的一轮。 */
@@ -921,7 +924,7 @@ export function createSessionStore(api: MainApi): SessionStore {
         const sessionId = get().activeSessionId
         if (sessionId === undefined) return false
         const result = await run(() => api.request('session.compact', { sessionId }))
-        return result !== undefined
+        return result?.compacted
       },
 
       async updateBrief(sessionId, content) {
