@@ -154,9 +154,7 @@ export function ChatPanel({
   const model = view?.info?.model ?? run?.model ?? summary?.model ?? defaultModel
   const turnId = run?.turn?.turnId
   const turnChanges =
-    turnId === undefined || changes === undefined
-      ? undefined
-      : totals(turnEntries(changes, turnId))
+    turnId === undefined || changes === undefined ? undefined : totals(turnEntries(changes, turnId))
   return (
     <section aria-labelledby="chat-title" className="flex min-h-0 flex-1 flex-col bg-paper">
       {/* 读屏与端到端测试的运行状态；视觉上不占位，状态变化经 role=status 播报。 */}

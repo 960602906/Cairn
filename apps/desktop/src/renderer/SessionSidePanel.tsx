@@ -171,9 +171,11 @@ export function SessionSidePanel({
     const previous =
       document.activeElement instanceof HTMLElement ? document.activeElement : undefined
     const focusable = () =>
-      [...panel.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+      [
+        ...panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((element) => element.getAttribute('aria-hidden') !== 'true')
     focusable()[0]?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Tab') return

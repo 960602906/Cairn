@@ -94,9 +94,7 @@ export interface ModelChoice {
 }
 
 /** 把设置里的供应商列表摊平成可选模型；停用的模型不列出。 */
-export function enabledModelChoices(
-  providers: readonly ProviderConfig[],
-): readonly ModelChoice[] {
+export function enabledModelChoices(providers: readonly ProviderConfig[]): readonly ModelChoice[] {
   return providers.flatMap((provider) =>
     provider.models
       .filter((model) => model.enabled !== false)
@@ -126,8 +124,7 @@ export function modelLabels(
   const provider = providers.find((item) => item.id === model.providerId)
   const configured = provider?.models.find((item) => item.id === model.modelId)
   const short = configured?.displayName ?? configured?.id ?? model.modelId
-  const full =
-    provider === undefined ? model.modelId : `${provider.displayName} · ${short}`
+  const full = provider === undefined ? model.modelId : `${provider.displayName} · ${short}`
   return { short, full }
 }
 
@@ -401,8 +398,7 @@ export function Composer({
     if (!canStop) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('[role="dialog"]:not([aria-hidden="true"]), [role="menu"]'))
-        return
+      if (document.querySelector('[role="dialog"]:not([aria-hidden="true"]), [role="menu"]')) return
       event.preventDefault()
       void stopRef.current()
     }
@@ -597,10 +593,10 @@ export function Composer({
               type="button"
               aria-pressed={planMode}
               aria-label={t('composer.plan.label')}
-                title={t('composer.plan.hint', { shortcut: planShortcut() })}
+              title={t('composer.plan.hint', { shortcut: planShortcut() })}
               onClick={() => setPlanMode((on) => !on)}
               className={cn(
-                  'flex h-7 items-center gap-1 rounded-item px-2 text-ui outline-none focus-visible:ring-1 focus-visible:ring-accent',
+                'flex h-7 items-center gap-1 rounded-item px-2 text-ui outline-none focus-visible:ring-1 focus-visible:ring-accent',
                 planMode ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-hover',
               )}
             >

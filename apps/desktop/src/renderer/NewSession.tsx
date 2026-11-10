@@ -220,7 +220,9 @@ export function NewSession({
                 type="button"
                 aria-label={t('input.send')}
                 title={t('input.send')}
-                disabled={busy || projectPath.trim() === '' || text.trim() === '' || model === undefined}
+                disabled={
+                  busy || projectPath.trim() === '' || text.trim() === '' || model === undefined
+                }
                 onClick={() => void send()}
                 className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
               >

@@ -242,9 +242,7 @@ describe('ChatPanel', () => {
     })
     await open()
 
-    await userEvent.click(
-      await screen.findByRole('button', { name: '本轮 1 个文件 +3 −1' }),
-    )
+    await userEvent.click(await screen.findByRole('button', { name: '本轮 1 个文件 +3 −1' }))
     expect(screen.getByRole('dialog', { name: '会话信息' })).toBeTruthy()
   })
 

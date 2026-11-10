@@ -52,10 +52,5 @@ export function isPlanModeKey(
   platform?: string,
 ): boolean {
   const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
-  return (
-    mod &&
-    event.shiftKey &&
-    !event.altKey &&
-    event.key.toLowerCase() === 'p'
-  )
+  return mod && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'p'
 }

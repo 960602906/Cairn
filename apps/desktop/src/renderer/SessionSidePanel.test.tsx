@@ -243,9 +243,7 @@ describe('SessionSidePanel', () => {
     await user.click(trigger)
     const panel = screen.getByRole('dialog', { name: '会话信息' })
     await user.click(within(panel).getByRole('button', { name: '关闭会话信息' }))
-    await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: '会话信息' })).toBeNull(),
-    )
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '会话信息' })).toBeNull())
     expect(document.activeElement).toBe(trigger)
   })
 
