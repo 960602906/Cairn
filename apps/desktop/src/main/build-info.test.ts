@@ -164,4 +164,46 @@ describe('build info parsing', () => {
     })
     expect(info.channel).toBe('stable')
   })
+
+  it('keeps the channel baked into the build when the environment does not override it', () => {
+    const info = readAppInfo({
+      file: 'build-info.json',
+      runtime: { ...runtime, version: '1.0.0' },
+      readFile: () => buildFile({ version: '1.0.0', channel: 'beta' }),
+    })
+    expect(info.channel).toBe('beta')
+  })
+
+  it('exposes the update configuration baked into the build', () => {
+    const info = readAppInfo({
+      file: 'build-info.json',
+      runtime,
+      readFile: () =>
+        buildFile({
+          update: { source: 'https://updates.example/cairn/', publisher: 'CN=Cairn, O=Cairn' },
+        }),
+    })
+    expect(info.update).toEqual({
+      source: 'https://updates.example/cairn/',
+      publisher: 'CN=Cairn, O=Cairn',
+    })
+  })
+
+  it('drops an invalid update configuration without leaking it', () => {
+    for (const update of [
+      { source: 'http://updates.example/cairn/' },
+      { source: 'https://updates.example/cairn/', publisher: '' },
+      { source: 'https://user:{{PASSWORD_lq5r7c7o}}@updates.example/cairn/' },
+    ]) {
+      const onError = vi.fn()
+      const info = readAppInfo({
+        file: 'build-info.json',
+        runtime,
+        readFile: () => buildFile({ update }),
+        onError,
+      })
+      expect(onError).toHaveBeenCalledTimes(1)
+      expect(info.update).toBeUndefined()
+    }
+  })
 })

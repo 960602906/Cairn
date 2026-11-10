@@ -9,6 +9,7 @@ import {
   readElectronVersion,
   readGitCommit,
   resolveChannel,
+  resolveUpdateConfig,
   writeBuildInfo,
 } from './build-info.mjs'
 
@@ -94,6 +95,104 @@ describe('build info collection', () => {
     })
     expect(info.commit).toBe('unknown')
     expect(info.channel).toBe('stable')
+  })
+})
+
+describe('update configuration injection', () => {
+  it('normalizes the source directory and keeps the publisher DN', () => {
+    expect(resolveUpdateConfig({})).toBeUndefined()
+    expect(resolveUpdateConfig({ CAIRN_UPDATE_URL: '   ' })).toBeUndefined()
+    expect(
+      resolveUpdateConfig({
+        CAIRN_UPDATE_URL: 'https://updates.example/cairn',
+        CAIRN_UPDATE_PUBLISHER: ' CN=Cairn, O=Cairn  ',
+      }),
+    ).toEqual({ source: 'https://updates.example/cairn/', publisher: 'CN=Cairn, O=Cairn' })
+    expect(resolveUpdateConfig({ CAIRN_UPDATE_URL: 'https://updates.example/' })).toEqual({
+      source: 'https://updates.example/',
+    })
+  })
+
+  it('rejects credentials, plain HTTP, query strings and fragments', () => {
+    for (const url of [
+      'http://updates.example/cairn/',
+      'https://user:token@updates.example/cairn/',
+      'https://updates.example/cairn/?token=secret',
+      'https://updates.example/cairn/#fragment',
+      'not a url',
+    ]) {
+      expect(() => resolveUpdateConfig({ CAIRN_UPDATE_URL: url })).toThrow(/CAIRN_UPDATE_URL/)
+    }
+  })
+
+  it('rejects an oversized or multi-line publisher', () => {
+    expect(() =>
+      resolveUpdateConfig({
+        CAIRN_UPDATE_URL: 'https://updates.example/',
+        CAIRN_UPDATE_PUBLISHER: 'x'.repeat(513),
+      }),
+    ).toThrow(/at most 512/)
+    expect(() =>
+      resolveUpdateConfig({
+        CAIRN_UPDATE_URL: 'https://updates.example/',
+        CAIRN_UPDATE_PUBLISHER: 'CN=Cairn\nCN=Other',
+      }),
+    ).toThrow(/single line/)
+  })
+
+  it('bakes the update configuration into build-info.json', () => {
+    const root = workspace()
+    const outDir = path.join(root, 'apps/desktop/out')
+    writeBuildInfo({
+      root,
+      outDir,
+      env: {
+        CAIRN_UPDATE_URL: 'https://updates.example/cairn',
+        CAIRN_UPDATE_PUBLISHER: 'CN=Cairn, O=Cairn',
+      },
+      now: new Date('2026-11-10T08:30:00.000Z'),
+    })
+    expect(JSON.parse(readFileSync(path.join(outDir, 'build-info.json'), 'utf8'))).toMatchObject({
+      channel: 'beta',
+      update: { source: 'https://updates.example/cairn/', publisher: 'CN=Cairn, O=Cairn' },
+    })
+  })
+
+  it('requires a publisher for stable builds with an update source', () => {
+    expect(() =>
+      collectBuildInfo({
+        root: workspace('1.0.0'),
+        channel: 'stable',
+        commit: 'abcdef1234567890',
+        now: new Date('2026-11-10T00:00:00.000Z'),
+        electronVersion: '',
+        nodeVersion: 'v24.11.0',
+        update: { source: 'https://updates.example/cairn/' },
+      }),
+    ).toThrow(/CAIRN_UPDATE_PUBLISHER/)
+    expect(
+      collectBuildInfo({
+        root: workspace('1.0.0'),
+        channel: 'stable',
+        commit: 'abcdef1234567890',
+        now: new Date('2026-11-10T00:00:00.000Z'),
+        electronVersion: '',
+        nodeVersion: 'v24.11.0',
+        update: { source: 'https://updates.example/cairn/', publisher: 'CN=Cairn' },
+      }).update,
+    ).toEqual({ source: 'https://updates.example/cairn/', publisher: 'CN=Cairn' })
+  })
+
+  it('allows unsigned beta builds with an update source', () => {
+    const info = collectBuildInfo({
+      root: workspace('0.1.0'),
+      commit: 'abcdef1234567890',
+      now: new Date('2026-11-10T00:00:00.000Z'),
+      electronVersion: '',
+      nodeVersion: 'v24.11.0',
+      update: { source: 'https://updates.example/cairn/' },
+    })
+    expect(info.update).toEqual({ source: 'https://updates.example/cairn/' })
   })
 })
 

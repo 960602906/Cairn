@@ -23,6 +23,9 @@
       "path": "../../packages/protocol"
     },
     {
+      "path": "../../packages/release-tools"
+    },
+    {
       "path": "../../packages/core"
     },
     {

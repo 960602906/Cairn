@@ -21,6 +21,32 @@ export const BuildInfo = z.object({
   buildTime: z.string().regex(/^$|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z?$/),
   electronVersion: z.string().regex(/^[0-9A-Za-z.+-]*$/),
   nodeVersion: z.string().regex(/^[0-9A-Za-z.+-]*$/),
+  /**
+   * 发布构建注入的更新配置（M5-08）。开发构建与普通 CI 不带该字段。
+   *
+   * 更新源是公开只读地址，publisher 是证书完整 DN；两者都不是凭据，但不得包含
+   * 用户名、password、查询串或片段。运行时仍允许 `CAIRN_UPDATE_*` 覆盖，便于本地测试。
+   */
+  update: z
+    .object({
+      source: z
+        .string()
+        .url()
+        .refine(
+          (value) =>
+            value.startsWith('https://') &&
+            !/^https:\/\/[^/?#]*@/i.test(value) &&
+            !/[?#]/.test(value),
+          'update source must be an https URL without credentials, query or fragment',
+        ),
+      publisher: z
+        .string()
+        .min(1)
+        .max(512)
+        .refine((value) => !/[\r\n]/.test(value), 'publisher must be a single line')
+        .optional(),
+    })
+    .optional(),
 })
 export type BuildInfo = z.infer<typeof BuildInfo>
 

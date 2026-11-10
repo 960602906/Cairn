@@ -468,6 +468,50 @@ describe('electron-builder invocation', () => {
     })
   })
 
+  it('passes signing configuration to electron-builder without exposing the certificate', () => {
+    const directory = temporaryDirectory()
+    const certificate = 'base64-pfx-fixture'
+    const password = 'pfx-fixture-passphrase'
+    const runner = vi.fn<typeof spawnSync>(() => ({
+      status: 0,
+      signal: null,
+      output: [],
+      pid: 1,
+      stdout: null,
+      stderr: null,
+    }))
+    runElectronBuilder({
+      target: 'nsis',
+      stageDir: directory,
+      outputDir: path.join(directory, 'dist'),
+      runner,
+      platform: 'win32',
+      env: {},
+      signing: {
+        mode: 'pfx',
+        publisher: 'CN=Cairn, O=Cairn',
+        timestampUrl: 'https://timestamp.digicert.com',
+        certificate,
+        password,
+      },
+    })
+    const [, args, options] = runner.mock.calls[0]!
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--config.win.signExecutable=true',
+        '--config.win.signtoolOptions.publisherName=CN=Cairn, O=Cairn',
+        '--config.win.signtoolOptions.signingHashAlgorithms=sha256',
+        '--config.win.signtoolOptions.rfc3161TimeStampServer=https://timestamp.digicert.com',
+      ]),
+    )
+    expect(args.some((argument) => argument.includes(certificate))).toBe(false)
+    expect(args.some((argument) => argument.includes(password))).toBe(false)
+    expect(options?.env).toMatchObject({
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+      WIN_CSC_LINK: certificate,
+    })
+  })
+
   it('rejects non-Windows packaging and reports builder failures', () => {
     expect(() => runElectronBuilder({ target: 'dir', platform: 'linux' })).toThrow(
       'M5-02 packaging supports Windows x64 only (ADR-0035)',

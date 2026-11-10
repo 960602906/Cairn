@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/protocol" },
+    { "path": "packages/release-tools" },
     { "path": "packages/core" },
     { "path": "packages/storage" },
     { "path": "packages/runtime-pi" },

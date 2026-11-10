@@ -527,6 +527,9 @@ sessions.recoverInterrupted()
 const updates = (updateRef.current = createUpdateService({
   currentVersion: appInfo.version,
   buildChannel: appInfo.channel,
+  // 发布构建由 `scripts/build-info.mjs` 注入；开发/测试可用 `CAIRN_UPDATE_*` 覆盖。
+  sourceUrl: appInfo.update?.source,
+  publisherName: appInfo.update?.publisher,
   packaged: app.isPackaged,
   settings: {
     get: () => settings.get(),
