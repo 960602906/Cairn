@@ -4,7 +4,8 @@
  * - 每个用例一个临时数据目录（`CAIRN_USER_DATA_DIR`），用例结束后关闭所有应用实例并删除，不污染开发
  *   与正式数据。同一用例中多次 `launch()` 共用这个目录，用于验证重启后恢复。
  * - 启动前写入 `settings.json` 固定界面语言（默认 `zh-CN`），断言的文案不受系统语言影响；已有设置文件
- *   （重启时）不覆盖。
+ *   （重启时）不覆盖。除首次运行用例外，设置默认写入 `onboardingSeen: true`，避免欢迎对话框挡住
+ *   其它用例；`onboardingSeen: false` 用于模拟干净安装。
  * - Linux 上需要显示器（CI 用 `xvfb-run`）：`--ozone-platform=headless` 下窗口只有 1×1，Playwright 判定
  *   元素不可见。另加 `--disable-gpu`、`--no-sandbox`（CI 的 Linux 环境不支持 Chromium 沙箱），只用于测试，
  *   应用本身的沙箱设置不受影响。
@@ -27,6 +28,10 @@ export type TestLocale = 'zh-CN' | 'en-US'
 export interface LaunchOptions {
   /** 首次启动时写入设置的界面语言，默认 `zh-CN`。 */
   readonly locale?: TestLocale
+  /** 首次启动时是否已经看过欢迎说明，默认 `true`；`false` 模拟干净安装。 */
+  readonly onboardingSeen?: boolean
+  /** 首次启动时写入的界面主题；省略时使用应用默认值。 */
+  readonly theme?: 'system' | 'bluestone' | 'obsidian' | 'tundra' | 'paper' | 'slate'
   readonly env?: Readonly<Record<string, string>>
   /** 追加的 Electron/Chromium 启动参数（例如本地自签名更新源）。 */
   readonly args?: readonly string[]
@@ -47,7 +52,14 @@ export async function launchApp(
 ): Promise<RunningApp> {
   const settings = path.join(userData, 'settings.json')
   if (!existsSync(settings)) {
-    writeFileSync(settings, `${JSON.stringify({ locale: options.locale ?? 'zh-CN' })}\n`)
+    writeFileSync(
+      settings,
+      `${JSON.stringify({
+        locale: options.locale ?? 'zh-CN',
+        onboardingSeen: options.onboardingSeen === false ? false : true,
+        ...(options.theme === undefined ? {} : { theme: options.theme }),
+      })}\n`,
+    )
   }
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {

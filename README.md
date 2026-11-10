@@ -4,12 +4,16 @@
 
 A Codex-like coding agent desktop app: **our own agent platform + a pluggable agent engine** (pi preferred). The platform owns run orchestration, tools and permissions, approvals, checkpoints, storage and the UI; the engine only runs the model loop behind the `AgentRuntime` interface. Built with Electron and React, with support for multiple LLM providers.
 
-> M0～M4 已完成，M5 发布正在规划（见 [docs/plan/m5.md](docs/plan/m5.md)）。 / M0–M4 are done; M5 (release) is being planned.
+> M0～M4 已完成，M5 发布硬化执行中（见 [docs/plan/m5.md](docs/plan/m5.md)）。 / M0–M4 are done; M5 release hardening is in progress.
 
 ## 文档 / Docs
 
 - [架构设计 / Architecture](docs/architecture.md)
 - [架构决策记录 / ADRs](docs/adr/README.md)
+- [安装、升级与卸载 / Install, upgrade and uninstall](docs/dev/install.md)
+- [故障排查 / Troubleshooting](docs/dev/troubleshooting.md)
+- [隐私说明 / Privacy notice](PRIVACY.md)
+- [Beta 许可 / Beta license](LICENSE)
 - 详细设计 / Detailed design
   - [Agent Runtime](docs/design/agent-runtime.md)（已确认）
   - [Agent 管理界面](docs/design/agent-management-ui.md)（已确认）
@@ -20,7 +24,7 @@ A Codex-like coding agent desktop app: **our own agent platform + a pluggable ag
   - [M2 可审阅](docs/plan/m2.md)
   - [M3 日常可用](docs/plan/m3.md)
   - [M4 多 Agent 协作](docs/plan/m4.md)
-  - [M5 发布（规划中）](docs/plan/m5.md)
+  - [M5 发布](docs/plan/m5.md)
 
 ## 开发 / Development
 

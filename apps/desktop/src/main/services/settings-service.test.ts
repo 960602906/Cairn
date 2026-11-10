@@ -27,7 +27,7 @@ describe('createSettingsService', () => {
         systemLocales: () => ['zh-Hans-CN'],
         onError,
       }).get(),
-    ).toEqual({ locale: 'zh-CN', providers: [] })
+    ).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
     expect(
       createSettingsService({
         storage: createMemoryStorage(),
@@ -35,7 +35,7 @@ describe('createSettingsService', () => {
         systemLocales: () => ['fr-FR'],
         onError,
       }).get(),
-    ).toEqual({ locale: 'en-US', providers: [] })
+    ).toEqual({ locale: 'en-US', providers: [], onboardingSeen: false })
     expect(onError).not.toHaveBeenCalled()
     expect(existsSync(file)).toBe(false)
   })
@@ -47,11 +47,12 @@ describe('createSettingsService', () => {
       file,
       systemLocales: () => ['zh-CN'],
     })
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
     expect(settings.permissionMode()).toBe('ask')
     expect(settings.update({ permissionMode: 'read-only' })).toEqual({
       locale: 'zh-CN',
       providers: [],
+      onboardingSeen: false,
       permissionMode: 'read-only',
     })
     expect(settings.permissionMode()).toBe('read-only')
@@ -73,10 +74,11 @@ describe('createSettingsService', () => {
       file,
       systemLocales: () => ['zh-CN'],
     })
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
     expect(settings.update({ theme: 'obsidian' })).toEqual({
       locale: 'zh-CN',
       providers: [],
+      onboardingSeen: false,
       theme: 'obsidian',
     })
     expect(read()).toEqual({ theme: 'obsidian' })
@@ -122,11 +124,12 @@ describe('createSettingsService', () => {
       file,
       systemLocales: () => ['zh-CN'],
     })
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
     expect(settings.shell()).toBeUndefined()
     expect(settings.update({ shell: 'cmd' })).toEqual({
       locale: 'zh-CN',
       providers: [],
+      onboardingSeen: false,
       shell: 'cmd',
     })
     expect(settings.shell()).toBe('cmd')
@@ -154,7 +157,7 @@ describe('createSettingsService', () => {
       file,
       systemLocales: () => ['zh-CN'],
     })
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
 
     expect(
       settings.update({
@@ -165,6 +168,7 @@ describe('createSettingsService', () => {
     ).toEqual({
       locale: 'zh-CN',
       providers: [],
+      onboardingSeen: false,
       sandboxProfile: 'read-only',
       sandboxNetwork: 'private',
       sandboxUnavailable: 'ask',
@@ -194,11 +198,12 @@ describe('createSettingsService', () => {
       file,
       systemLocales: () => ['zh-CN'],
     })
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
     expect(settings.instructions()).toBeUndefined()
     expect(settings.update({ instructions: 'Use pnpm.' })).toEqual({
       locale: 'zh-CN',
       providers: [],
+      onboardingSeen: false,
       instructions: 'Use pnpm.',
     })
     expect(settings.instructions()).toBe('Use pnpm.')
@@ -214,7 +219,7 @@ describe('createSettingsService', () => {
     expect(read()).toEqual({})
     settings.update({ instructions: 'again' })
     settings.update({ instructions: null })
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
   })
 
   it('saves updates and reads them back on the next start', () => {
@@ -223,8 +228,12 @@ describe('createSettingsService', () => {
       file,
       systemLocales: () => ['zh-CN'],
     })
-    expect(settings.update({ locale: 'en-US' })).toEqual({ locale: 'en-US', providers: [] })
-    expect(settings.get()).toEqual({ locale: 'en-US', providers: [] })
+    expect(settings.update({ locale: 'en-US' })).toEqual({
+      locale: 'en-US',
+      providers: [],
+      onboardingSeen: false,
+    })
+    expect(settings.get()).toEqual({ locale: 'en-US', providers: [], onboardingSeen: false })
     expect(read()).toEqual({ locale: 'en-US' })
     expect(existsSync(`${file}.tmp`)).toBe(false)
     expect(
@@ -233,7 +242,7 @@ describe('createSettingsService', () => {
         file,
         systemLocales: () => ['zh-CN'],
       }).get(),
-    ).toEqual({ locale: 'en-US', providers: [] })
+    ).toEqual({ locale: 'en-US', providers: [], onboardingSeen: false })
   })
 
   it('keeps unknown fields written by other versions', () => {
@@ -243,7 +252,7 @@ describe('createSettingsService', () => {
       file,
       systemLocales: () => ['en-US'],
     })
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
     settings.update({ locale: 'en-US' })
     expect(read()).toEqual({ locale: 'en-US', fontSize: 14 })
   })
@@ -255,8 +264,16 @@ describe('createSettingsService', () => {
       file,
       systemLocales: () => ['zh-CN'],
     })
-    expect(settings.update({})).toEqual({ locale: 'en-US', providers: [] })
-    expect(settings.update({ locale: undefined })).toEqual({ locale: 'en-US', providers: [] })
+    expect(settings.update({})).toEqual({
+      locale: 'en-US',
+      providers: [],
+      onboardingSeen: false,
+    })
+    expect(settings.update({ locale: undefined })).toEqual({
+      locale: 'en-US',
+      providers: [],
+      onboardingSeen: false,
+    })
     expect(read()).toEqual({ locale: 'en-US' })
   })
 
@@ -273,7 +290,7 @@ describe('createSettingsService', () => {
       systemLocales: () => ['zh-CN'],
       onError,
     })
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
     expect(onError).toHaveBeenCalledOnce()
     settings.update({ locale: 'en-US' })
     expect(read()).toEqual({ locale: 'en-US' })
@@ -287,7 +304,7 @@ describe('createSettingsService', () => {
         file,
         systemLocales: () => ['zh-TW'],
       }).get(),
-    ).toEqual({ locale: 'zh-CN', providers: [] })
+    ).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
   })
 
   it('reports unreadable files and still starts', () => {
@@ -301,7 +318,7 @@ describe('createSettingsService', () => {
         systemLocales: () => [],
         onError,
       }).get(),
-    ).toEqual({ locale: 'en-US', providers: [] })
+    ).toEqual({ locale: 'en-US', providers: [], onboardingSeen: false })
     expect(onError).toHaveBeenCalledOnce()
   })
 
@@ -322,7 +339,39 @@ describe('createSettingsService', () => {
     expect(thrown).toBeInstanceOf(RpcError)
     expect((thrown as RpcError).toInfo()).toEqual({ code: 'settings.write_failed' })
     expect(onError).toHaveBeenCalledOnce()
-    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [] })
+    expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
+  })
+
+  it('records that the first-run welcome was seen and can reset it (M5-09)', () => {
+    const settings = createSettingsService({
+      storage: createMemoryStorage(),
+      file,
+      systemLocales: () => ['zh-CN'],
+    })
+    expect(settings.get().onboardingSeen).toBe(false)
+    expect(settings.update({ onboardingSeen: true }).onboardingSeen).toBe(true)
+    expect(read()).toEqual({ onboardingSeen: true })
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).get().onboardingSeen,
+    ).toBe(true)
+
+    expect(settings.update({ onboardingSeen: false }).onboardingSeen).toBe(false)
+    expect(read()).toEqual({})
+  })
+
+  it('treats a non-boolean stored onboarding value as not seen', () => {
+    writeFileSync(file, JSON.stringify({ onboardingSeen: 'yes' }))
+    expect(
+      createSettingsService({
+        storage: createMemoryStorage(),
+        file,
+        systemLocales: () => ['zh-CN'],
+      }).get().onboardingSeen,
+    ).toBe(false)
   })
 })
 
@@ -362,6 +411,7 @@ describe('model settings', () => {
     expect(settings.update({ providers: [deepseek, ollama], defaultModel: ref })).toEqual({
       locale: 'zh-CN',
       providers: [deepseek, ollama],
+      onboardingSeen: false,
       defaultModel: ref,
     })
     expect(storage.providers.list()).toEqual([deepseek, ollama])

@@ -3,7 +3,7 @@
  * 验证安装包布局、preload/IPC、SQLite 与项目/会话创建。数据目录始终是临时目录。
  */
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -55,7 +55,10 @@ test('已打包应用启动、读取构建信息并创建项目会话', async ()
   const userData = mkdtempSync(path.join(tmpdir(), 'cairn-packaged-e2e-'))
   const workspace = path.join(userData, 'workspace')
   mkdirSync(workspace, { recursive: true })
-  writeFileSync(path.join(userData, 'settings.json'), `${JSON.stringify({ locale: 'zh-CN' })}\n`)
+  writeFileSync(
+    path.join(userData, 'settings.json'),
+    `${JSON.stringify({ locale: 'zh-CN', onboardingSeen: false })}\n`,
+  )
   const port = await freePort()
   let browser: Browser | undefined
   const child = spawn(APP.executable, [`--remote-debugging-port=${port}`, ...packagedArguments()], {
@@ -71,7 +74,19 @@ test('已打包应用启动、读取构建信息并创建项目会话', async ()
     if (!context) throw new Error('packaged application exposed no browser context')
     const page = context.pages()[0] ?? (await context.waitForEvent('page'))
     await page.waitForLoadState('domcontentloaded')
+    // 干净安装先显示欢迎说明；模态打开时主界面在 aria-hidden 之内，先关闭再断言主界面。
+    await expect(page.getByRole('heading', { name: '欢迎使用 Cairn' })).toBeVisible()
+    await page.getByRole('button', { name: '稍后' }).click()
+    await expect(page.getByRole('heading', { name: '欢迎使用 Cairn' })).toHaveCount(0)
     await expect(page.getByRole('heading', { level: 1, name: 'Cairn' })).toBeVisible()
+    await expect
+      .poll(() => {
+        const saved = JSON.parse(
+          readFileSync(path.join(userData, 'settings.json'), 'utf8'),
+        ) as Record<string, unknown>
+        return saved['onboardingSeen']
+      })
+      .toBe(true)
 
     const info = (await page.evaluate(async () => {
       const cairn = (

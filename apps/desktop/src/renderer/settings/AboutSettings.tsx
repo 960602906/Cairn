@@ -6,10 +6,13 @@
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info, ScrollText } from 'lucide-react'
+import { Download, Info, ScrollText, ShieldCheck } from 'lucide-react'
 import type { AppInfo } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
+import { GplSourceDialog, PrivacyDialog } from '../onboarding/LegalDialogs.js'
+import { WelcomeDialog } from '../onboarding/WelcomeDialog.js'
 import { Button } from '../ui/index.js'
+import { DiagnosticsExportDialog } from './DiagnosticsExportDialog.js'
 import { Field, SettingsGroup } from './Field.js'
 import { LicensesDialog } from './LicensesDialog.js'
 import { SettingsHeader } from './SettingsPage.js'
@@ -39,6 +42,10 @@ export function AboutSettings() {
   const update = useSessionStore((s) => s.updateStatus)
   const loadUpdateStatus = useSessionStore((s) => s.loadUpdateStatus)
   const [licensesOpen, setLicensesOpen] = useState(false)
+  const [welcomeOpen, setWelcomeOpen] = useState(false)
+  const [privacyOpen, setPrivacyOpen] = useState(false)
+  const [gplOpen, setGplOpen] = useState(false)
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
 
   useEffect(() => {
     if (!info) void loadAppInfo()
@@ -82,11 +89,45 @@ export function AboutSettings() {
         </Field>
         <p className="text-note leading-relaxed text-muted">{t('about.licenses.hint')}</p>
       </SettingsGroup>
+      <SettingsGroup
+        icon={<ShieldCheck />}
+        title={t('about.legal.title')}
+        description={t('about.legal.description')}
+      >
+        <Field label={t('about.legal.welcome')}>
+          <Button size="sm" variant="secondary" onClick={() => setWelcomeOpen(true)}>
+            <ShieldCheck aria-hidden />
+            {t('about.legal.welcomeOpen')}
+          </Button>
+        </Field>
+        <Field label={t('about.legal.privacy')}>
+          <Button size="sm" variant="secondary" onClick={() => setPrivacyOpen(true)}>
+            <ScrollText aria-hidden />
+            {t('about.legal.privacyOpen')}
+          </Button>
+        </Field>
+        <Field label={t('about.legal.gpl')}>
+          <Button size="sm" variant="secondary" onClick={() => setGplOpen(true)}>
+            <ScrollText aria-hidden />
+            {t('about.legal.gplOpen')}
+          </Button>
+        </Field>
+        <Field label={t('about.legal.diagnostics')}>
+          <Button size="sm" variant="secondary" onClick={() => setDiagnosticsOpen(true)}>
+            <Download aria-hidden />
+            {t('about.legal.diagnosticsOpen')}
+          </Button>
+        </Field>
+      </SettingsGroup>
       <SettingsGroup title={t('about.localData.title')}>
         <p className="text-ui leading-relaxed text-fg2">{t('about.localData.description')}</p>
         {info && <p className="text-note text-muted">{info.copyright}</p>}
       </SettingsGroup>
       <LicensesDialog open={licensesOpen} onOpenChange={setLicensesOpen} />
+      <WelcomeDialog open={welcomeOpen} onOpenChange={setWelcomeOpen} review />
+      <PrivacyDialog open={privacyOpen} onOpenChange={setPrivacyOpen} />
+      <GplSourceDialog open={gplOpen} onOpenChange={setGplOpen} />
+      <DiagnosticsExportDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />
     </>
   )
 }
