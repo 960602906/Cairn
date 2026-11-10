@@ -24,6 +24,7 @@ import { createRequire, isBuiltin } from 'node:module'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { init as initLexer, parse as parseImports } from 'es-module-lexer'
+import { readSigningConfig, signingBuilderArgs, signingEnvironment } from '@cairn/release-tools'
 import { verifyPackage } from './verify-package.mjs'
 
 const THIS_DIR = import.meta.dirname
@@ -314,6 +315,7 @@ export function electronBuilderCli(desktopRoot = DESKTOP_ROOT) {
  *   runner?: typeof spawnSync;
  *   env?: NodeJS.ProcessEnv;
  *   platform?: NodeJS.Platform;
+ *   signing?: ReturnType<typeof readSigningConfig>;
  * }} options
  */
 export function runElectronBuilder({
@@ -324,6 +326,7 @@ export function runElectronBuilder({
   runner = spawnSync,
   env = process.env,
   platform = process.platform,
+  signing = readSigningConfig(env),
 }) {
   if (platform !== 'win32') {
     throw new Error('M5-02 packaging supports Windows x64 only (ADR-0035)')
@@ -339,14 +342,13 @@ export function runElectronBuilder({
     '--publish',
     'never',
   ]
+  args.push(...signingBuilderArgs(signing))
   if (target === 'dir') args.push('--dir')
   else args.push('--win', 'nsis')
   const result = runner(process.execPath, args, {
     cwd: desktopRoot,
-    env: {
-      ...env,
-      CSC_IDENTITY_AUTO_DISCOVERY: env['CSC_IDENTITY_AUTO_DISCOVERY'] ?? 'false',
-    },
+    // 签名材料只经环境变量进入子进程，不出现在命令行与构建日志里。
+    env: signingEnvironment(signing, env),
     stdio: 'inherit',
     windowsHide: true,
   })

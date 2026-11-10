@@ -33,12 +33,17 @@
     "check:licenses": "node scripts/check-licenses.js",
     "check:i18n": "node scripts/check-i18n.js",
     "check:version": "node scripts/sync-version.mjs --check",
+    "release:check-tag": "node scripts/check-release-tag.mjs",
+    "release:artifacts": "node scripts/release-artifacts.mjs",
+    "release:publish": "node scripts/publish-release.mjs",
+    "sign:verify": "node scripts/windows-signing.mjs",
     "fetch:mingit": "node scripts/fetch-mingit.mjs",
     "check:mingit": "node scripts/fetch-mingit.mjs --check",
     "sync:version": "node scripts/sync-version.mjs",
     "build:info": "node scripts/build-info.mjs"
   },
   "devDependencies": {
+    "@cairn/release-tools": "workspace:*",
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.2",
     "@vitest/coverage-v8": "5.0.5",

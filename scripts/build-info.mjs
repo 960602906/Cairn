@@ -29,6 +29,43 @@ export function resolveChannel(raw, version) {
 }
 
 /**
+ * 归一化发布构建注入的更新配置（M5-08）。
+ *
+ * - 只接受 HTTPS 地址；拒绝用户名/密码、查询串与片段，避免把令牌或临时参数写进构建产物；
+ * - 路径补尾部斜杠，`electron-updater` 的 generic provider 按目录拼接文件名；
+ * - publisher 是证书完整 DN，允许为空（unsigned beta），但 stable 构建在 `collectBuildInfo`
+ *   中要求非空，失败关闭。
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @returns {{ source: string; publisher?: string } | undefined}
+ */
+export function resolveUpdateConfig(env) {
+  const raw = env['CAIRN_UPDATE_URL']?.trim() ?? ''
+  if (raw === '') return undefined
+  let url
+  try {
+    url = new URL(raw)
+  } catch {
+    throw new Error('CAIRN_UPDATE_URL must be an absolute https URL')
+  }
+  // 凭据可能只出现在原始文本里，`URL` 解析后再检查会漏掉大小写与百分号编码差异。
+  if (url.protocol !== 'https:' || /^https:\/\/[^/?#]*@/i.test(raw)) {
+    throw new Error('CAIRN_UPDATE_URL must be an https URL without credentials')
+  }
+  if (url.search !== '' || url.hash !== '') {
+    throw new Error('CAIRN_UPDATE_URL must not contain a query string or fragment')
+  }
+  if (!url.pathname.endsWith('/')) url.pathname = `${url.pathname}/`
+  const publisher = env['CAIRN_UPDATE_PUBLISHER']?.trim() ?? ''
+  if (publisher.length > 512) {
+    throw new Error('CAIRN_UPDATE_PUBLISHER must be at most 512 characters')
+  }
+  if (/[\r\n]/.test(publisher)) {
+    throw new Error('CAIRN_UPDATE_PUBLISHER must be a single line')
+  }
+  return publisher === '' ? { source: url.toString() } : { source: url.toString(), publisher }
+}
+
+/**
  * 读取构建提交：优先 CI 提供的 `GITHUB_SHA`，其次 `git rev-parse`；都不可用时返回 `unknown`。
  * @param {string} cwd
  * @param {Readonly<Record<string, string | undefined>>} env
@@ -74,18 +111,38 @@ export function readElectronVersion(root) {
  *   now: Date;
  *   electronVersion: string;
  *   nodeVersion: string;
+ *   update?: { source: string; publisher?: string } | undefined;
  * }} input
  */
-export function collectBuildInfo({ root, channel, commit, now, electronVersion, nodeVersion }) {
+export function collectBuildInfo({
+  root,
+  channel,
+  commit,
+  now,
+  electronVersion,
+  nodeVersion,
+  update,
+}) {
   const version = readVersion(path.join(root, 'package.json'))
+  const resolvedChannel = resolveChannel(channel, version)
+  if (
+    resolvedChannel === 'stable' &&
+    update?.source !== undefined &&
+    update.publisher === undefined
+  ) {
+    throw new Error(
+      'stable builds with an update source require CAIRN_UPDATE_PUBLISHER (full certificate DN)',
+    )
+  }
   return {
     schemaVersion: BUILD_INFO_SCHEMA_VERSION,
     version,
-    channel: resolveChannel(channel, version),
+    channel: resolvedChannel,
     commit: /^[0-9a-f]{7,40}$/i.test(commit) ? commit.toLowerCase() : 'unknown',
     buildTime: now.toISOString(),
     electronVersion: electronVersion.trim(),
     nodeVersion: nodeVersion.trim().replace(/^v/, ''),
+    ...(update === undefined ? {} : { update }),
   }
 }
 
@@ -119,6 +176,7 @@ export function writeBuildInfo({
     now,
     electronVersion: readElectronVersion(root),
     nodeVersion: process.version,
+    update: resolveUpdateConfig(env),
   })
   mkdirSync(outDir, { recursive: true })
   writeFileSync(path.join(outDir, 'build-info.json'), `${JSON.stringify(info, null, 2)}\n`)

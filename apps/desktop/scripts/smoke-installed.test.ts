@@ -382,6 +382,37 @@ describe('smokeInstalled workflow', () => {
     )
   })
 
+  it('verifies signatures of the installed app and uninstaller when requested', async () => {
+    const { root, installer } = fixture()
+    const verifySignatures = vi.fn(() => ['uninstaller is not signed'])
+    const problems = await smokeInstalled({
+      installer,
+      desktopRoot: root,
+      platform: 'win32',
+      spawnProcess: workflowSpawn({ installer }) as never,
+      verifyGit,
+      verifySignatures: verifySignatures as never,
+      env: {
+        CAIRN_VERIFY_SIGNATURES: '1',
+        CAIRN_SIGN_MODE: 'pfx',
+        CAIRN_UPDATE_PUBLISHER: 'CN=Cairn, O=Cairn',
+        WINDOWS_CERTIFICATE: 'base64-pfx',
+        WINDOWS_CERTIFICATE_PASSWORD: 'pfx-fixture-passphrase',
+      },
+      log: vi.fn(),
+    })
+    expect(problems.filter((problem) => !problem.startsWith('uninstall registry entry'))).toEqual([
+      'uninstaller is not signed',
+    ])
+    expect(verifySignatures).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: '0.1.0',
+        config: expect.objectContaining({ mode: 'pfx', publisher: 'CN=Cairn, O=Cairn' }),
+        installedDir: expect.stringContaining('app'),
+      }),
+    )
+  })
+
   it('reports an installer that never exits', async () => {
     vi.useFakeTimers()
     const { root, installer } = fixture()

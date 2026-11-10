@@ -76,6 +76,30 @@ M5 需要让已安装的 `0.1.0` beta 能收到 `0.1.1`，同时满足：
 - 与计划的差异：关于页的通道沿用“构建信息”一行，不重复展示；第三方许可在应用内展示而不是打开外部文件；真实安装重启仍不在 e2e 中执行。
 - 未验证/留给后续：真实签名包的安装与重启由 M5-08/M5-10 验证；`electron-updater` 的真实代理行为与差分下载仍只按 M5-06 的边界声明。
 
+## 实施结果（M5-08，2026-11-10）
+
+- 签名：`packages/release-tools`（`signing.mjs`，CLI 入口 `scripts/windows-signing.mjs`）实现
+  `none` / `pfx` / `azure` 三种模式。PFX 只经
+  `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 进入 electron-builder 子进程；云签名只读
+  Trusted Signing 配置与 `AZURE_*` 凭据。签名参数统一使用 SHA-256 与 RFC 3161，并要求
+  `publisherName` 是完整证书 DN。打包后同时用 `signtool verify /pa /all /v` 与
+  `Get-AuthenticodeSignature` 校验 `Valid`、主题逐字相等与时间戳；安装后的主程序与卸载程序
+  由 `smoke:installed` 在签名模式下复验。日志对 PFX 与密码做防御性脱敏。
+- 构建注入：`BuildInfo.update` 只接受 HTTPS、无凭据、无查询串与片段的更新源；构建脚本在 stable
+  缺少 `CAIRN_UPDATE_PUBLISHER` 时拒绝生成构建信息，主进程运行时再次校验并安静降级。
+- 发布产物与门禁：`release-artifacts` 校验安装包、blockmap、`latest.yml` 的版本/路径/哈希/大小与
+  `build-info` 的版本/通道/提交，生成 `latest.yml`/`beta.yml`、`SHA256SUMS`、第三方声明、依赖清单、
+  发布说明与 `provenance.json`。stable 未签名、产物缺失或元数据不一致都会失败；unsigned beta 的发布
+  说明强制标注 SmartScreen 风险。
+- 上传与追溯：`publish-release` 支持 GitHub Release 与 rclone 静态源，上传后从公开 URL 重新下载并
+  核对 SHA-256；`check-release-tag` 保证标签与版本一致且 stable 不使用 prerelease 标签。
+  `.github/workflows/release.yml` 在发布前执行完整质量门禁，并尝试生成 artifact attestation；
+  仓库套餐不支持时保留 `provenance.json`、提交 SHA 与 90 天构建日志。
+- 回滚边界：发布文档记录“更新源回滚只阻止继续升级、不降级已安装客户端”，并要求保留上一版安装包、
+  blockmap 与通道元数据；紧急撤包目标为 10 分钟内替换通道文件并刷新 CDN。
+- 未验证：真实 PFX/Azure 签名、真实 `signtool`、artifact attestation 与 tag push 自动发布需要在配置
+  secrets 的 Windows runner 上执行；本机只验证了 `none` 分支、参数构造与全部失败门禁。
+
 ## 后果
 
 - 证书申请是外部阻塞；未取得证书时只能发布 unsigned beta，SmartScreen 可能警告，且 OV 证书也不保证立即消除警告。

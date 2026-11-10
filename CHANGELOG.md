@@ -8,6 +8,11 @@
 ### Added
 
 - M5 发布硬化：应用身份、单实例、构建信息与关于页（M5-01）。
+- 代码签名与发布流水线：PFX/Azure 签名、RFC 3161 时间戳、`signtool` 与
+  Authenticode 双重校验、`latest.yml`/`beta.yml`、`SHA256SUMS`、依赖清单、
+  构建来源证明与公开下载复验（M5-08）。
+- 发布运行手册：证书轮换、更新源配置、dry-run、紧急撤包与恢复步骤
+  （`docs/dev/release.md`）。
 
 ## [0.1.0] - 2026-11-10
 

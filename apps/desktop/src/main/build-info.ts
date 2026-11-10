@@ -69,10 +69,11 @@ export function readAppInfo({
   }
 
   const version = runtime.version
+  const update = build?.update
   return {
     schemaVersion: 1,
     version,
-    channel: resolveChannel(env['CAIRN_CHANNEL'], version),
+    channel: resolveChannel(env['CAIRN_CHANNEL'] ?? build?.channel, version),
     commit: build?.commit ?? 'unknown',
     buildTime: build?.buildTime ?? '',
     electronVersion: runtime.electronVersion || build?.electronVersion || '',
@@ -83,5 +84,6 @@ export function readAppInfo({
     packaged: runtime.packaged,
     databaseSchemaVersion: runtime.databaseSchemaVersion,
     ...(runtime.git ? { git: runtime.git } : {}),
+    ...(update ? { update } : {}),
   }
 }

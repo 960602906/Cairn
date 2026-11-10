@@ -23,6 +23,7 @@ import {
   smokeEnvironment,
 } from './packaged-app.mjs'
 import { verifyBundledGit } from './bundled-git.mjs'
+import { readSigningConfig, verifyReleaseSignatures } from '@cairn/release-tools'
 
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
 export const DEFAULT_OUTPUT_DIR = path.join(DESKTOP_ROOT, 'dist')
@@ -244,6 +245,8 @@ async function waitFor(file, predicate, timeoutMs = 15_000) {
  *   platform?: NodeJS.Platform;
  *   spawnProcess?: typeof spawn;
  *   verifyGit?: typeof verifyBundledGit;
+ *   verifySignatures?: typeof verifyReleaseSignatures;
+ *   env?: Readonly<Record<string, string | undefined>>;
  *   log?: (line: string) => void;
  * }} [options]
  * @returns {Promise<string[]>}
@@ -254,6 +257,8 @@ export async function smokeInstalled({
   platform = process.platform,
   spawnProcess = spawn,
   verifyGit = verifyBundledGit,
+  verifySignatures = verifyReleaseSignatures,
+  env = process.env,
   log = (line) => process.stdout.write(`${line}\n`),
 } = {}) {
   if (platform !== 'win32') {
@@ -296,6 +301,20 @@ export async function smokeInstalled({
         registryOutput: queryUninstallRegistry({ installDir }),
       }),
     )
+
+    // 发布构建在安装后校验主程序与卸载程序；普通 CI 不设置该变量，避免依赖 Windows SDK。
+    if (env['CAIRN_VERIFY_SIGNATURES'] === '1') {
+      log('installed: verifying Authenticode signatures')
+      problems.push(
+        ...verifySignatures({
+          distDir: path.dirname(installerFile),
+          version,
+          installedDir: installDir,
+          config: readSigningConfig(env),
+          platform,
+        }),
+      )
+    }
 
     // 随包 MinGit（M5-03）：安装目录里的裁剪产物必须能真实执行 Git 操作。
     try {

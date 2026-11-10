@@ -15,6 +15,7 @@ export default defineConfig({
       provider: 'v8',
       include: [
         'packages/*/src/**/*.{ts,tsx}',
+        'packages/release-tools/src/**/*.mjs',
         'apps/*/src/**/*.{ts,tsx}',
         'apps/desktop/scripts/bundled-git.mjs',
         'apps/desktop/scripts/packaged-app.mjs',

@@ -21,6 +21,7 @@ const ALLOWED_CAIRN_DEPS = {
   'packages/checkpoint': [],
   'packages/skills': [],
   'packages/mcp': [],
+  'packages/release-tools': [],
   'apps/desktop': [
     'protocol',
     'core',
@@ -32,6 +33,7 @@ const ALLOWED_CAIRN_DEPS = {
     'checkpoint',
     'skills',
     'mcp',
+    'release-tools',
   ],
 }
 
