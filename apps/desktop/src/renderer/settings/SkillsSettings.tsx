@@ -1,5 +1,5 @@
 /**
- * 设置页“技能”（M3-08，capabilities 组）：列出内置、已安装和已开启项目的技能。
+ * 设置页“技能”（M3-08，capabilities 组）：列出内置、本机 `.agents`、已安装和已开启项目的技能。
  *
  * - 每份技能显示来源、描述、约占用多少 token，可以启用、改“始终加载”、查看详情；用户安装的技能可以卸载。
  * - 安装时先用系统对话框选择文件夹或 zip（`skill.pickSource`），主进程只读取并返回预览，确认后才写盘。
@@ -7,13 +7,17 @@
  * - 脚本不会自动执行：预览与详情都会标出，执行时仍走审批。
  */
 import {
+  ChevronRight,
   ChevronDown,
   Cloud,
   Download,
   ExternalLink,
   FileCode2,
+  ListChecks,
+  Pin,
   Plus,
   Search,
+  Trash2,
   TriangleAlert,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
@@ -30,6 +34,7 @@ import { projectDisplayName } from '../project-name.js'
 import { useSessionStore } from '../store-context.js'
 import {
   Button,
+  Checkbox,
   cn,
   Dialog,
   DialogClose,
@@ -41,10 +46,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  IconButton,
   Spinner,
   Switch,
 } from '../ui/index.js'
 import { inputClass, SettingsCard, SettingsEmpty } from './Field.js'
+import { ListFilter } from './ListFilter.js'
 import { SettingsHeader } from './SettingsPage.js'
 import { SkillGlyph } from './SettingIcons.js'
 
@@ -92,12 +99,18 @@ function FileList({
 function SkillCard({
   skill,
   source,
+  selectionMode = false,
+  selected = false,
+  onSelect,
   onChanged,
   onOpen,
   onUninstall,
 }: {
   readonly skill: SkillSummary
   readonly source: string
+  readonly selectionMode?: boolean
+  readonly selected?: boolean
+  readonly onSelect?: (selected: boolean) => void
   readonly onChanged: () => Promise<void>
   readonly onOpen: (skill: SkillSummary) => void
   readonly onUninstall: (skill: SkillSummary) => void
@@ -119,74 +132,93 @@ function SkillCard({
   }
   return (
     <li>
-      <SettingsCard aria-label={skill.name}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[15px] font-medium text-fg">{skill.name}</p>
-              <span className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+      <SettingsCard
+        aria-label={skill.name}
+        className={cn(
+          'cursor-pointer gap-2 px-4 py-3',
+          selected && 'shadow-[0_0_0_1.5px_var(--accent)]',
+        )}
+        onClick={() => (selectionMode ? onSelect?.(!selected) : onOpen(skill))}
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          {selectionMode && (
+            <span className="flex" onClick={(event) => event.stopPropagation()}>
+              <Checkbox
+                checked={selected}
+                aria-label={t('skills.selectAria', { name: skill.name })}
+                onChange={(event) => onSelect?.(event.currentTarget.checked)}
+              />
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="truncate text-[14px] font-medium text-fg">{skill.name}</p>
+              <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11px] text-muted">
                 {source}
               </span>
               {skill.shadowed && (
                 <span
                   title={t('skills.shadowed.hint')}
-                  className="rounded-full bg-danger-soft px-2 py-0.5 text-[11.5px] text-danger"
+                  className="shrink-0 rounded-full bg-danger-soft px-2 py-0.5 text-[11px] text-danger"
                 >
                   {t('skills.shadowed')}
                 </span>
               )}
               {skill.hasScripts && (
-                <span className="rounded-full bg-sunk2 px-2 py-0.5 text-[11.5px] text-fg2">
+                <span className="shrink-0 rounded-full bg-sunk2 px-2 py-0.5 text-[11px] text-fg2">
                   {t('skills.hasScripts')}
                 </span>
               )}
             </div>
-            <p className="mt-1 text-[13px] text-muted">{skill.description}</p>
-            <p className="mt-1 tabular text-note text-faint">{t('skills.tokens', { tokens })}</p>
+            <div className="mt-0.5 flex min-w-0 items-center gap-2">
+              <p className="truncate text-[12.5px] text-muted" title={skill.description}>
+                {skill.description}
+              </p>
+              <span className="shrink-0 tabular text-[11.5px] text-faint">
+                {t('skills.tokens', { tokens })}
+              </span>
+            </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={t('skills.detailAria', { name: skill.name })}
-            onClick={() => onOpen(skill)}
-          >
-            {t('skills.detail')}
-          </Button>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[13px] text-fg">{t('skills.enabled')}</p>
-            <p className="mt-0.5 text-note text-muted">{t('skills.enabled.hint')}</p>
-          </div>
-          <Switch
-            checked={skill.enabled}
-            aria-label={t('skills.enabledAria', { name: skill.name })}
-            onCheckedChange={(enabled) => toggle({ enabled })}
-          />
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[13px] text-fg">{t('skills.pinned')}</p>
-            <p className="mt-0.5 text-note text-muted">{t('skills.pinned.hint')}</p>
-          </div>
-          <Switch
-            checked={skill.pinned}
-            aria-label={t('skills.pinnedAria', { name: skill.name })}
-            onCheckedChange={(pinned) => toggle({ pinned })}
-          />
-        </div>
-        {skill.source === 'user' && (
-          <div>
-            <Button
-              variant="ghost"
-              className="text-danger hover:bg-danger-soft hover:text-danger"
-              aria-label={t('skills.uninstallAria', { name: skill.name })}
-              onClick={() => onUninstall(skill)}
+          {!selectionMode && (
+            <div
+              className="flex shrink-0 items-center gap-1.5"
+              onClick={(event) => event.stopPropagation()}
             >
-              {t('skills.uninstall')}
-            </Button>
-          </div>
-        )}
+              <span className="flex items-center gap-1 text-faint" title={t('skills.pinned.hint')}>
+                <Pin aria-hidden className="size-3.5" />
+                <Switch
+                  checked={skill.pinned}
+                  aria-label={t('skills.pinnedAria', { name: skill.name })}
+                  title={t('skills.pinned')}
+                  onCheckedChange={(pinned) => toggle({ pinned })}
+                />
+              </span>
+              <Switch
+                checked={skill.enabled}
+                aria-label={t('skills.enabledAria', { name: skill.name })}
+                title={t('skills.enabled')}
+                onCheckedChange={(enabled) => toggle({ enabled })}
+              />
+              <IconButton
+                label={t('skills.detailAria', { name: skill.name })}
+                size="icon-sm"
+                onClick={() => onOpen(skill)}
+              >
+                <ChevronRight />
+              </IconButton>
+              {skill.source === 'user' && (
+                <IconButton
+                  label={t('skills.uninstallAria', { name: skill.name })}
+                  size="icon-sm"
+                  className="hover:bg-danger-soft hover:text-danger"
+                  onClick={() => onUninstall(skill)}
+                >
+                  <Trash2 />
+                </IconButton>
+              )}
+            </div>
+          )}
+        </div>
       </SettingsCard>
     </li>
   )
@@ -204,6 +236,7 @@ export function SkillsSettings() {
   const installSkillFromUrl = useSessionStore((s) => s.installSkillFromUrl)
   const searchHubSkills = useSessionStore((s) => s.searchHubSkills)
   const uninstallSkill = useSessionStore((s) => s.uninstallSkill)
+  const setSkillEnabled = useSessionStore((s) => s.setSkillEnabled)
 
   const [skills, setSkills] = useState<readonly SkillSummary[]>([])
   const [detail, setDetail] = useState<{ skill: SkillSummary; data?: SkillDetail } | undefined>()
@@ -211,7 +244,11 @@ export function SkillsSettings() {
     { source: SkillInstallSource; skill: SkillDetail } | undefined
   >()
   const [installing, setInstalling] = useState(false)
-  const [uninstalling, setUninstalling] = useState<SkillSummary | undefined>()
+  const [uninstalling, setUninstalling] = useState<readonly SkillSummary[]>([])
+  const [query, setQuery] = useState('')
+  const [batchMode, setBatchMode] = useState(false)
+  const [selected, setSelected] = useState<readonly string[]>([])
+  const [busy, setBusy] = useState(false)
   const [view, setView] = useState<'installed' | 'market'>('installed')
   const [hubQuery, setHubQuery] = useState('')
   const [hubItems, setHubItems] = useState<readonly HubSkillCard[] | undefined>()
@@ -221,6 +258,7 @@ export function SkillsSettings() {
 
   const sourceLabel = (skill: SkillSummary) => {
     if (skill.source === 'builtin') return t('skills.source.builtin')
+    if (skill.source === 'agents') return t('skills.source.agents')
     if (skill.source === 'user') return t('skills.source.user')
     const name = projectDisplayName(
       projects.find((project) => project.projectId === skill.projectId),
@@ -229,6 +267,21 @@ export function SkillsSettings() {
     )
     return t('skills.source.project', { name })
   }
+
+  const normalized = query.trim().toLocaleLowerCase()
+  const visible =
+    normalized === ''
+      ? skills
+      : skills.filter((skill) =>
+          [skill.name, skill.description, sourceLabel(skill)]
+            .join(' ')
+            .toLocaleLowerCase()
+            .includes(normalized),
+        )
+  const selectedSkills = visible.filter((skill) => selected.includes(keyOf(skill)))
+  const selectedRemovable = selectedSkills.filter((skill) => skill.source === 'user')
+  const allVisibleSelected =
+    visible.length > 0 && visible.every((skill) => selected.includes(keyOf(skill)))
 
   const load = useCallback(async () => {
     const base = await listSkills()
@@ -286,10 +339,35 @@ export function SkillsSettings() {
   }
 
   const confirmUninstall = async () => {
-    if (!uninstalling) return
-    const name = uninstalling.name
-    setUninstalling(undefined)
-    if (await uninstallSkill(name)) await load()
+    if (uninstalling.length === 0) return
+    const names = uninstalling.map((skill) => skill.name)
+    setUninstalling([])
+    await Promise.all(names.map((name) => uninstallSkill(name)))
+    await load()
+  }
+
+  const applyBatch = async (patch: { enabled?: boolean; pinned?: boolean }) => {
+    if (busy || selectedSkills.length === 0) return
+    setBusy(true)
+    await Promise.all(
+      selectedSkills.map((skill) =>
+        setSkillEnabled({
+          name: skill.name,
+          source: skill.source,
+          ...(skill.projectId !== undefined ? { projectId: skill.projectId } : {}),
+          ...patch,
+        }),
+      ),
+    )
+    setBusy(false)
+    setSelected([])
+    setBatchMode(false)
+    await load()
+  }
+
+  const toggleBatch = () => {
+    setBatchMode(!batchMode)
+    setSelected([])
   }
 
   const searchMarket = async (query = hubQuery) => {
@@ -495,22 +573,117 @@ export function SkillsSettings() {
 
       {view === 'installed' && (
         <>
+          {skills.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <ListFilter
+                value={query}
+                onChange={(value) => {
+                  setQuery(value)
+                  setSelected([])
+                }}
+                label={t('skills.search')}
+                placeholder={t('skills.searchPlaceholder')}
+              />
+              <Button
+                variant={batchMode ? 'secondary' : 'ghost'}
+                aria-pressed={batchMode}
+                onClick={toggleBatch}
+              >
+                <ListChecks />
+                {batchMode ? t('skills.batch.exit') : t('skills.batch.toggle')}
+              </Button>
+            </div>
+          )}
+          {batchMode && (
+            <div className="flex flex-wrap items-center gap-2 rounded-card bg-sunk px-3 py-2">
+              <Checkbox
+                checked={allVisibleSelected}
+                indeterminate={selected.length > 0 && !allVisibleSelected}
+                aria-label={t('skills.batch.selectAll')}
+                onChange={(event) =>
+                  setSelected(event.currentTarget.checked ? visible.map(keyOf) : [])
+                }
+              />
+              <span className="text-note text-muted">
+                {t('skills.batch.selected', { count: selected.length })}
+              </span>
+              <span className="flex-1" />
+              <Button
+                size="sm"
+                disabled={selectedSkills.length === 0 || busy}
+                onClick={() => void applyBatch({ enabled: true })}
+              >
+                {t('skills.batch.enable')}
+              </Button>
+              <Button
+                size="sm"
+                disabled={selectedSkills.length === 0 || busy}
+                onClick={() => void applyBatch({ enabled: false })}
+              >
+                {t('skills.batch.disable')}
+              </Button>
+              <Button
+                size="sm"
+                disabled={selectedSkills.length === 0 || busy}
+                onClick={() => void applyBatch({ pinned: true })}
+              >
+                {t('skills.batch.pin')}
+              </Button>
+              <Button
+                size="sm"
+                disabled={selectedSkills.length === 0 || busy}
+                onClick={() => void applyBatch({ pinned: false })}
+              >
+                {t('skills.batch.unpin')}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-danger hover:bg-danger-soft hover:text-danger"
+                disabled={selectedRemovable.length === 0 || busy}
+                onClick={() => setUninstalling(selectedRemovable)}
+              >
+                {t('skills.batch.uninstall')}
+              </Button>
+              {selectedSkills.length > selectedRemovable.length && (
+                <p className="w-full text-[11.5px] text-muted">
+                  {t('skills.batch.removableHint', {
+                    removable: selectedRemovable.length,
+                    total: selectedSkills.length,
+                  })}
+                </p>
+              )}
+            </div>
+          )}
           {skills.length === 0 ? (
             <SettingsEmpty
               icon={<SkillGlyph />}
               title={t('skills.emptyTitle')}
               description={t('skills.empty')}
             />
+          ) : visible.length === 0 ? (
+            <SettingsCard className="items-center gap-2 py-8 text-center">
+              <p className="text-note text-muted">{t('skills.searchEmpty')}</p>
+            </SettingsCard>
           ) : (
             <ul aria-label={t('skills.list')} className="flex flex-col gap-3">
-              {skills.map((skill) => (
+              {visible.map((skill) => (
                 <SkillCard
                   key={keyOf(skill)}
                   skill={skill}
                   source={sourceLabel(skill)}
+                  selectionMode={batchMode}
+                  selected={selected.includes(keyOf(skill))}
+                  onSelect={(next) =>
+                    setSelected((current) =>
+                      next
+                        ? [...current.filter((key) => key !== keyOf(skill)), keyOf(skill)]
+                        : current.filter((key) => key !== keyOf(skill)),
+                    )
+                  }
                   onChanged={load}
                   onOpen={(item) => void openDetail(item)}
-                  onUninstall={setUninstalling}
+                  onUninstall={(item) => setUninstalling([item])}
                 />
               ))}
             </ul>
@@ -533,6 +706,22 @@ export function SkillsSettings() {
                 sha: detail.skill.sha256.slice(0, 8),
               })}
             </DialogDescription>
+            {detail.skill.source === 'user' && (
+              <div className="mt-3">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-danger hover:bg-danger-soft hover:text-danger"
+                  onClick={() => {
+                    setUninstalling([detail.skill])
+                    setDetail(undefined)
+                  }}
+                >
+                  <Trash2 />
+                  {t('skills.uninstall')}
+                </Button>
+              </div>
+            )}
             <div className="mt-4 max-h-[45vh] overflow-y-auto rounded-card bg-paper px-4 py-3 text-[13.5px] text-fg2 shadow-hair2">
               {detail.data ? (
                 <Markdown text={detail.data.body} />
@@ -602,15 +791,23 @@ export function SkillsSettings() {
       </Dialog>
 
       <Dialog
-        open={uninstalling !== undefined}
+        open={uninstalling.length > 0}
         onOpenChange={(open) => {
-          if (!open) setUninstalling(undefined)
+          if (!open) setUninstalling([])
         }}
       >
-        {uninstalling && (
+        {uninstalling.length > 0 && (
           <DialogContent tone="danger" icon={<TriangleAlert />}>
-            <DialogTitle>{t('skills.uninstall.title', { name: uninstalling.name })}</DialogTitle>
-            <DialogDescription>{t('skills.uninstall.description')}</DialogDescription>
+            <DialogTitle>
+              {uninstalling.length === 1 && uninstalling[0]
+                ? t('skills.uninstall.title', { name: uninstalling[0].name })
+                : t('skills.batch.uninstallTitle', { count: uninstalling.length })}
+            </DialogTitle>
+            <DialogDescription>
+              {uninstalling.length === 1
+                ? t('skills.uninstall.description')
+                : t('skills.batch.uninstallDescription')}
+            </DialogDescription>
             <DialogFooter>
               <DialogClose asChild>
                 <Button size="lg">{tc('action.cancel')}</Button>

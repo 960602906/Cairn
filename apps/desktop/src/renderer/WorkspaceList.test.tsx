@@ -41,7 +41,9 @@ function setup(
     onSelectSession?: () => void
   } = {},
 ) {
-  const updateProject = vi.fn(async () => undefined)
+  const updateProject = vi.fn(async (_projectId: string, patch: Partial<ProjectSummary> = {}) =>
+    project(patch),
+  )
   const removeProject = vi.fn(async () => true)
   const refreshProjects = vi.fn(async () => undefined)
   const openProject = vi.fn(async () => options.openedProject)
@@ -56,13 +58,11 @@ function setup(
     selectSession,
     ...(options.withRefresh === false ? {} : { refreshProjects }),
   })) as unknown as SessionStore
-  const onConfigure = vi.fn()
   const onBrowseInFileTree = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreProvider store={store}>
         <WorkspaceList
-          onConfigure={onConfigure}
           onBrowseInFileTree={onBrowseInFileTree}
           onNewConversation={options.onNewConversation}
           onSelectSession={options.onSelectSession}
@@ -76,7 +76,6 @@ function setup(
     refreshProjects,
     openProject,
     selectSession,
-    onConfigure,
     onBrowseInFileTree,
   }
 }
@@ -105,8 +104,8 @@ describe('WorkspaceList', () => {
     expect(ordered.map((item) => item.projectId)).toEqual(['a', 'b'])
   })
 
-  it('renders rows and wires pin, configure, archive and browse actions', async () => {
-    const { updateProject, onConfigure, onBrowseInFileTree } = setup([project()])
+  it('renders rows and wires pin, rename, archive and browse actions', async () => {
+    const { updateProject, onBrowseInFileTree } = setup([project()])
     const section = screen.getByRole('region', { name: '工作空间' })
     expect(within(section).getByText('demo')).toBeTruthy()
     expect(screen.getByRole('button', { name: '工作空间操作' })).toBeTruthy()
@@ -116,8 +115,15 @@ describe('WorkspaceList', () => {
     expect(updateProject).toHaveBeenCalledWith('p1', { pinned: true })
 
     await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
-    await userEvent.click(screen.getByRole('menuitem', { name: '配置' }))
-    expect(onConfigure).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    const rename = screen.getByRole('dialog')
+    expect(within(rename).getByText('重命名工作空间')).toBeTruthy()
+    const name = within(rename).getByLabelText('名称')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'renamed')
+    await userEvent.click(within(rename).getByRole('button', { name: '保存' }))
+    expect(updateProject).toHaveBeenCalledWith('p1', { name: 'renamed' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
     await userEvent.click(screen.getByRole('menuitem', { name: '归档' }))
@@ -141,6 +147,7 @@ describe('WorkspaceList', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
     expect(screen.getByRole('menuitem', { name: '置顶工作空间' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '重命名' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '归档' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '移除工作空间' })).toBeNull()
 

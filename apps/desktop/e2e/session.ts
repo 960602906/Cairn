@@ -10,7 +10,7 @@ import { expect } from './app.js'
 export type ExpectedMessage = readonly [author: '你' | '助手', text: string]
 
 /**
- * 辅助模型的请求（标题、会话要点、压缩摘要）不是对话。断言模型请求时先去掉它们。
+ * 标题、会话要点、压缩摘要的请求不是对话。断言模型请求时先去掉它们。
  */
 const AUXILIARY_PROMPTS = [
   'You name a conversation.',

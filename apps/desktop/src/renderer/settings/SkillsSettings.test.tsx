@@ -258,6 +258,119 @@ describe('SkillsSettings', () => {
     await waitFor(() => expect(within(demoCard).getByText('约 0 tokens')).toBeTruthy())
   })
 
+  it('filters installed skills and applies pinned state in batch', async () => {
+    const { request } = setup({
+      skills: [
+        skill({ name: 'alpha', description: 'Alpha skill.', source: 'builtin' }),
+        skill({ name: 'beta', description: 'Beta skill.' }),
+        skill({ name: 'gamma', description: 'Gamma skill.', source: 'agents' }),
+      ],
+    })
+    await openSkills()
+    const list = await screen.findByRole('list', { name: '技能' })
+    const search = screen.getByRole('searchbox', { name: '搜索技能' })
+
+    await userEvent.type(search, 'beta')
+    await waitFor(() => expect(within(list).queryByText('alpha')).toBeNull())
+    expect(within(list).getByText('beta')).toBeTruthy()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, '内置')
+    await waitFor(() => expect(within(list).getByText('alpha')).toBeTruthy())
+    expect(within(list).queryByText('beta')).toBeNull()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'missing')
+    expect(await screen.findByText('没有匹配的技能。')).toBeTruthy()
+
+    await userEvent.clear(search)
+    const restored = await screen.findByRole('list', { name: '技能' })
+    await waitFor(() => expect(within(restored).getByText('alpha')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: '批量' }))
+    await userEvent.click(within(restored).getByRole('checkbox', { name: '选择 alpha' }))
+    await userEvent.click(within(restored).getByRole('checkbox', { name: '选择 gamma' }))
+    expect(screen.getByText('已选 2 个')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: '始终加载' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('skill.setEnabled', {
+        name: 'alpha',
+        source: 'builtin',
+        pinned: true,
+      }),
+    )
+    expect(request).toHaveBeenCalledWith('skill.setEnabled', {
+      name: 'gamma',
+      source: 'agents',
+      pinned: true,
+    })
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: '选择 alpha' })).toBeNull())
+  })
+
+  it('uninstalls several installed skills from batch mode', async () => {
+    const { request } = setup({
+      skills: [
+        skill({ name: 'one' }),
+        skill({ name: 'two' }),
+        skill({ name: 'keep', source: 'builtin' }),
+      ],
+    })
+    await openSkills()
+    const list = await screen.findByRole('list', { name: '技能' })
+    await userEvent.click(screen.getByRole('button', { name: '批量' }))
+    await userEvent.click(within(list).getByRole('checkbox', { name: '选择 one' }))
+    await userEvent.click(within(list).getByRole('checkbox', { name: '选择 two' }))
+    await userEvent.click(within(list).getByRole('checkbox', { name: '选择 keep' }))
+    expect(
+      screen.getByText('内置、.agents 与项目技能不能卸载；已选 3 项中有 2 项可卸载。'),
+    ).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '卸载' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '卸载选中的 2 个技能？' })).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '卸载技能' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('skill.uninstall', { name: 'one' }))
+    expect(request).toHaveBeenCalledWith('skill.uninstall', { name: 'two' })
+    await waitFor(() => expect(within(list).queryByText('one')).toBeNull())
+  })
+
+  it('uninstalls an installed skill from its detail dialog', async () => {
+    setup()
+    await openSkills()
+    const list = await screen.findByRole('list', { name: '技能' })
+    await userEvent.click(within(list).getByRole('button', { name: '查看 demo 的详情' }))
+    let dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByText('Demo body.')).toBeTruthy())
+
+    await userEvent.click(within(dialog).getByRole('button', { name: '卸载' }))
+    dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '卸载“demo”？' })).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '卸载技能' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(within(list).queryByText('demo')).toBeNull())
+  })
+
+  it('enables batch uninstall only when an installed skill is selected', async () => {
+    setup({
+      skills: [skill({ name: 'one' }), skill({ name: 'keep', source: 'builtin' })],
+    })
+    await openSkills()
+    const list = await screen.findByRole('list', { name: '技能' })
+    await userEvent.click(screen.getByRole('button', { name: '批量' }))
+    const uninstall = screen.getByRole('button', { name: '卸载' })
+    expect(uninstall).toHaveProperty('disabled', true)
+
+    await userEvent.click(within(list).getByText('keep'))
+    expect(uninstall).toHaveProperty('disabled', true)
+    expect(
+      screen.getByText('内置、.agents 与项目技能不能卸载；已选 1 项中有 0 项可卸载。'),
+    ).toBeTruthy()
+
+    await userEvent.click(within(list).getByText('one'))
+    expect(uninstall).toHaveProperty('disabled', false)
+  })
+
   it('merges skills from projects with the project switch on', async () => {
     const local = skill({
       name: 'local',
@@ -320,6 +433,27 @@ describe('SkillsSettings', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('opens details by clicking the card and labels machine-level .agents skills', async () => {
+    setup({
+      skills: [
+        skill({
+          name: 'machine',
+          description: 'Machine skill.',
+          source: 'agents',
+        }),
+      ],
+    })
+    await openSkills()
+    const list = await screen.findByRole('list', { name: '技能' })
+    expect(within(list).getByText('.agents')).toBeTruthy()
+
+    await userEvent.click(within(list).getByText('machine'))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByText('machine body.')).toBeTruthy())
+    expect(within(dialog).getByText(/本机|\.agents/)).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: '卸载' })).toBeNull()
   })
 
   it('uninstalls an installed skill after a danger confirmation', async () => {

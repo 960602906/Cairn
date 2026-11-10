@@ -85,7 +85,7 @@ function setup(
         platform: 'win32',
         arch: 'x64',
         logs: { mainLogLines: 0, hostLogLines: 0 },
-        settings: { providersCount: 0, mcpServersCount: 0, hasAuxiliaryModel: false },
+        settings: { providersCount: 0, mcpServersCount: 0 },
         exportItems: ['manifest.json', 'build-info.json'],
       }
     }
@@ -142,6 +142,17 @@ describe('SettingsPage', () => {
     await openSettings()
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('heading', { name: '通用与外观' })).toBeNull()
+  })
+
+  it('drops the project category and keeps update and about at the bottom', async () => {
+    setup()
+    await openSettings()
+    const nav = screen.getByRole('navigation', { name: '设置分类' })
+    expect(within(nav).queryByRole('button', { name: '项目' })).toBeNull()
+    const titles = within(nav)
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(titles.slice(-2)).toEqual(['更新', '关于 Cairn'])
   })
 
   it('opens with Ctrl+, and leaves Esc to an open dialog', async () => {

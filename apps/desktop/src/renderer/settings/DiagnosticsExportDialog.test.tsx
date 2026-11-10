@@ -39,7 +39,6 @@ const mockSummary: DiagnosticsSummary = {
   settings: {
     providersCount: 2,
     mcpServersCount: 1,
-    hasAuxiliaryModel: true,
   },
   sandbox: {
     platform: 'win32',

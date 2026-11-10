@@ -141,7 +141,6 @@ describe('translateError', () => {
       'mcp.tool_not_found',
       'settings.write_failed',
       'settings.invalid_default_model',
-      'settings.invalid_auxiliary_model',
       'session.unknown_model',
       'credentials.unavailable',
       'credentials.invalid_ref',

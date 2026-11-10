@@ -309,6 +309,8 @@ const skills = createSkillService({
     moduleDir: import.meta.dirname,
     resourcesPath: process.resourcesPath,
   }),
+  /** 本机 `.agents/skills`；e2e 用环境变量指向空目录，避免受开发机影响。 */
+  agentsDir: process.env.CAIRN_AGENTS_SKILLS_DIR ?? join(homedir(), '.agents', 'skills'),
   userDir: join(paths.root, 'skills'),
   /** 选择安装来源（M3-08）：文件夹或 zip（e2e 中替换 `dialog.showOpenDialog`）。 */
   pickSource: async (kind) => {
@@ -568,14 +570,14 @@ const updates = (updateRef.current = createUpdateService({
   allowDevelopment: process.env['CAIRN_UPDATE_ALLOW_DEV'] === '1',
   onError: reportError,
 }))
-/** 会话要点（M3-04）：每轮结束后用辅助模型增量更新，失败只写日志。 */
+/** 会话要点（M3-04）：每轮结束后用会话模型增量更新，失败只写日志。 */
 const briefs = createBriefService({
   events,
   settings,
   credentials,
   onError: reportError,
 })
-/** 自动标题（M3-01）：第一轮结束后用辅助模型生成，失败只写日志。 */
+/** 自动标题（M3-01）：第一轮结束后用会话模型生成，失败只写日志。 */
 const titles = createTitleService({
   events,
   storage,

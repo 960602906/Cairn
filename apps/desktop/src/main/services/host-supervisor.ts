@@ -150,7 +150,7 @@ export interface HostSupervisorOptions {
   readonly events: Pick<SessionEventService, 'publish'> &
     Partial<Pick<SessionEventService, 'readAfter'>>
   /**
-   * 压缩时总结更早的对话（M3-03）。由主进程调用辅助模型。没有可用模型时返回 undefined，
+   * 压缩时总结更早的对话（M3-03）。由主进程用会话模型调用。没有可用模型时返回 undefined，
    * 宿主改为丢掉最早的工具输出。
    */
   readonly summarize?: (sessionId: string, transcript: string) => Promise<string | undefined>

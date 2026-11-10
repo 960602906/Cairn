@@ -35,7 +35,6 @@ export const DiagnosticsSummary = z.object({
   settings: z.object({
     providersCount: z.number(),
     mcpServersCount: z.number(),
-    hasAuxiliaryModel: z.boolean(),
   }),
   /** 命令沙箱配置与能力探测（M5-05）；不包含路径、用户名或凭据。 */
   sandbox: SandboxStatus.optional(),

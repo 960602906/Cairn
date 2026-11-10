@@ -67,6 +67,7 @@ export async function launchApp(
       env[key] = value
     }
   }
+  env.CAIRN_AGENTS_SKILLS_DIR ??= path.join(userData, 'agents-skills')
   const app = await _electron.launch({
     executablePath: electronPath,
     args: [APP_DIR, ...PLATFORM_ARGS, ...(options.args ?? [])],

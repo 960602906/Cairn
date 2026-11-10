@@ -1,7 +1,7 @@
 /**
  * 工作空间列表（目录功能同步）：工作空间行下直接列出各自的会话，行与菜单负责项目管理。
  *
- * 菜单顺序与 LiveAgent 一致：置顶、配置、归档、在文件树浏览、在资源管理器浏览、
+ * 菜单顺序与 LiveAgent 一致：置顶、重命名、归档、在文件树浏览、在资源管理器浏览、
  * 最后是危险操作“移除工作空间”。归档项目收进独立分组，仍可取消归档。
  */
 import {
@@ -12,16 +12,16 @@ import {
   FolderOpen,
   FolderTree,
   MoreHorizontal,
+  Pencil,
   Pin,
   PinOff,
   Plus,
-  Settings,
   SquarePen,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ProjectSummary, SessionSummary } from '@cairn/protocol'
+import { PROJECT_NAME_MAX_LENGTH, type ProjectSummary, type SessionSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
 import { projectDisplayName } from './project-name.js'
 import { SessionItem } from './SessionList.js'
@@ -64,7 +64,6 @@ function WorkspaceRow({
   sessions,
   activeSessionId,
   onSelectSession,
-  onConfigure,
   onBrowseInFileTree,
   onNewConversation,
 }: {
@@ -73,7 +72,6 @@ function WorkspaceRow({
   readonly sessions: readonly SessionSummary[]
   readonly activeSessionId: string | undefined
   readonly onSelectSession: (sessionId: string) => void
-  readonly onConfigure: (project: ProjectSummary) => void
   readonly onBrowseInFileTree: (project: ProjectSummary) => void
   readonly onNewConversation?: ((project: ProjectSummary) => void) | undefined
 }) {
@@ -86,6 +84,10 @@ function WorkspaceRow({
   const [confirming, setConfirming] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [showAll, setShowAll] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [nameDraft, setNameDraft] = useState(displayName)
+  const [savingName, setSavingName] = useState(false)
+  const [renameFailed, setRenameFailed] = useState(false)
   const archived = project.archivedAt !== undefined
   const pinned = project.isPinned === true
   const visible = showAll ? sessions : sessions.slice(0, WORKSPACE_SESSION_PREVIEW)
@@ -93,6 +95,30 @@ function WorkspaceRow({
 
   const browseExplorer = () => {
     void getMainApi()?.request('fs.reveal', { projectId: project.projectId })
+  }
+
+  const openRename = () => {
+    setNameDraft(displayName)
+    setRenameFailed(false)
+    setRenaming(true)
+  }
+
+  const rename = async (event: FormEvent) => {
+    event.preventDefault()
+    const next = nameDraft.trim()
+    if (savingName || next === '' || next === project.name) {
+      if (next === project.name || next === '') setRenaming(false)
+      return
+    }
+    setSavingName(true)
+    setRenameFailed(false)
+    const saved = await updateProject(project.projectId, { name: next })
+    setSavingName(false)
+    if (saved) {
+      setRenaming(false)
+      return
+    }
+    setRenameFailed(true)
   }
 
   return (
@@ -191,10 +217,12 @@ function WorkspaceRow({
               {pinned ? <PinOff /> : <Pin />}
               {t(pinned ? 'workspace.unpin' : 'workspace.pin')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onConfigure(project)}>
-              <Settings />
-              {t('workspace.configure')}
-            </DropdownMenuItem>
+            {!isDefault && (
+              <DropdownMenuItem onSelect={openRename}>
+                <Pencil />
+                {t('workspace.rename')}
+              </DropdownMenuItem>
+            )}
             {!isDefault && (
               <DropdownMenuItem
                 onSelect={() => void updateProject(project.projectId, { archived: !archived })}
@@ -224,6 +252,44 @@ function WorkspaceRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <Dialog open={renaming} onOpenChange={setRenaming}>
+        <DialogContent className="w-[min(420px,calc(100vw-32px))]">
+          <DialogTitle>{t('workspace.rename.title')}</DialogTitle>
+          <DialogDescription>{t('workspace.rename.description')}</DialogDescription>
+          <form onSubmit={(event) => void rename(event)}>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-note font-medium text-fg2">
+                {t('workspace.rename.name')}
+              </span>
+              <input
+                autoFocus
+                value={nameDraft}
+                maxLength={PROJECT_NAME_MAX_LENGTH}
+                onChange={(event) => setNameDraft(event.target.value)}
+                className="h-9 w-full rounded-item bg-raise px-3 text-ui text-fg shadow-hair2 outline-none placeholder:text-faint focus:shadow-[0_0_0_1.5px_var(--accent)]"
+              />
+            </label>
+            {renameFailed && (
+              <p role="alert" className="mt-3 text-note text-danger">
+                {t('workspace.rename.failed')}
+              </p>
+            )}
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button size="lg">{tc('action.cancel')}</Button>
+              </DialogClose>
+              <Button
+                type="submit"
+                size="lg"
+                variant="primary"
+                disabled={savingName || nameDraft.trim() === ''}
+              >
+                {t('workspace.rename.save')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       {!isDefault && (
         <Dialog open={confirming} onOpenChange={setConfirming}>
           <DialogContent tone="danger">
@@ -252,12 +318,10 @@ function WorkspaceRow({
 }
 
 export function WorkspaceList({
-  onConfigure,
   onBrowseInFileTree,
   onNewConversation,
   onSelectSession,
 }: {
-  readonly onConfigure: (project: ProjectSummary) => void
   readonly onBrowseInFileTree: (project: ProjectSummary) => void
   readonly onNewConversation?: ((project: ProjectSummary) => void) | undefined
   /** 选中会话后收起窄窗口里的抽屉。 */
@@ -325,7 +389,6 @@ export function WorkspaceList({
                   void selectSession?.(sessionId)
                   onSelectSession?.()
                 }}
-                onConfigure={onConfigure}
                 onBrowseInFileTree={onBrowseInFileTree}
                 onNewConversation={onNewConversation}
               />

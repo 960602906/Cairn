@@ -5,7 +5,7 @@
  * - 保存后立即连接，返回的详情带着当前工具列表；连接状态变化由 `mcp.status` 推动刷新。
  * - 工具默认 `network` / `ask`，用户可以按工具修改类别与默认效果。
  */
-import { Cloud, Plus, TriangleAlert, Trash2 } from 'lucide-react'
+import { ChevronRight, Cloud, ListChecks, Plus, TriangleAlert, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -22,6 +22,8 @@ import type {
 import { useSessionStore } from '../store-context.js'
 import {
   Button,
+  Checkbox,
+  cn,
   Dialog,
   DialogClose,
   DialogContent,
@@ -32,6 +34,7 @@ import {
   Switch,
 } from '../ui/index.js'
 import { Field, inputClass, SettingsCard, SettingsEmpty } from './Field.js'
+import { ListFilter } from './ListFilter.js'
 import { SettingsHeader } from './SettingsPage.js'
 import { McpGlyph } from './SettingIcons.js'
 import { McpMarketDialog } from './McpMarketDialog.js'
@@ -140,58 +143,83 @@ const statusClass = (status: McpServerSummary['status']) => {
 
 function ServerCard({
   server,
+  selectionMode = false,
+  selected = false,
+  onSelect,
   onOpen,
   onToggle,
 }: {
   readonly server: McpServerSummary
+  readonly selectionMode?: boolean
+  readonly selected?: boolean
+  readonly onSelect?: (selected: boolean) => void
   readonly onOpen: (serverId: string) => void
   readonly onToggle: (server: McpServerSummary, enabled: boolean) => void
 }) {
   const { t } = useTranslation('settings')
   return (
     <li>
-      <SettingsCard aria-label={server.name}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[15px] font-medium text-fg">{server.name}</p>
-              <span className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+      <SettingsCard
+        aria-label={server.name}
+        className={cn(
+          'cursor-pointer gap-2 px-4 py-3',
+          selected && 'shadow-[0_0_0_1.5px_var(--accent)]',
+        )}
+        onClick={() => (selectionMode ? onSelect?.(!selected) : onOpen(server.serverId))}
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          {selectionMode && (
+            <span className="flex" onClick={(event) => event.stopPropagation()}>
+              <Checkbox
+                checked={selected}
+                aria-label={t('mcp.selectAria', { name: server.name })}
+                onChange={(event) => onSelect?.(event.currentTarget.checked)}
+              />
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="truncate text-[14px] font-medium text-fg">{server.name}</p>
+              <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11px] text-muted">
                 {t(`mcp.kind.${server.kind}`)}
               </span>
               <span
-                className={`rounded-full px-2 py-0.5 text-[11.5px] ${statusClass(server.status)}`}
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${statusClass(server.status)}`}
               >
                 {t(`mcp.status.${server.status}`)}
               </span>
             </div>
-            <p className="mt-1 tabular text-note text-faint">
-              {t('mcp.summary', { count: server.toolCount })}
-            </p>
-            {server.error && (
-              <p className="mt-1 text-note text-danger">
-                {t('mcp.error', { code: server.error.code, message: server.error.message })}
-              </p>
-            )}
+            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[12px]">
+              <span className="shrink-0 tabular text-faint">
+                {t('mcp.summary', { count: server.toolCount })}
+              </span>
+              {server.error && (
+                <span className="min-w-0 truncate text-danger">
+                  {t('mcp.error', { code: server.error.code, message: server.error.message })}
+                </span>
+              )}
+            </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={t('mcp.detailAria', { name: server.name })}
-            onClick={() => onOpen(server.serverId)}
-          >
-            {t('mcp.detail')}
-          </Button>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[13px] text-fg">{t('mcp.enabled')}</p>
-            <p className="mt-0.5 text-note text-muted">{t('mcp.enabled.hint')}</p>
-          </div>
-          <Switch
-            checked={server.enabled}
-            aria-label={t('mcp.enabledAria', { name: server.name })}
-            onCheckedChange={(enabled) => onToggle(server, enabled)}
-          />
+          {!selectionMode && (
+            <div
+              className="flex shrink-0 items-center gap-1.5"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Switch
+                checked={server.enabled}
+                aria-label={t('mcp.enabledAria', { name: server.name })}
+                title={t('mcp.enabled')}
+                onCheckedChange={(enabled) => onToggle(server, enabled)}
+              />
+              <IconButton
+                label={t('mcp.detailAria', { name: server.name })}
+                size="icon-sm"
+                onClick={() => onOpen(server.serverId)}
+              >
+                <ChevronRight />
+              </IconButton>
+            </div>
+          )}
         </div>
       </SettingsCard>
     </li>
@@ -271,8 +299,32 @@ export function McpSettings() {
   const [saving, setSaving] = useState(false)
   const [detail, setDetail] = useState<McpServerDetail | undefined>()
   const [logs, setLogs] = useState<readonly McpLogEntry[]>([])
-  const [deleting, setDeleting] = useState<McpServerSummary | undefined>()
+  const [deleting, setDeleting] = useState<readonly McpServerSummary[]>([])
+  const [query, setQuery] = useState('')
+  const [batchMode, setBatchMode] = useState(false)
+  const [selected, setSelected] = useState<readonly string[]>([])
+  const [busy, setBusy] = useState(false)
   const [marketOpen, setMarketOpen] = useState(false)
+
+  const normalized = query.trim().toLocaleLowerCase()
+  const visible =
+    normalized === ''
+      ? servers
+      : servers.filter((server) =>
+          [
+            server.name,
+            t(`mcp.kind.${server.kind}`),
+            t(`mcp.status.${server.status}`),
+            t('mcp.summary', { count: server.toolCount }),
+            server.error ? `${server.error.code} ${server.error.message}` : '',
+          ]
+            .join(' ')
+            .toLocaleLowerCase()
+            .includes(normalized),
+        )
+  const selectedServers = visible.filter((server) => selected.includes(server.serverId))
+  const allVisibleSelected =
+    visible.length > 0 && visible.every((server) => selected.includes(server.serverId))
 
   const load = useCallback(async () => {
     const result = await listMcpServers()
@@ -346,13 +398,37 @@ export function McpSettings() {
     })
   }
 
-  const confirmDelete = async (target: McpServerSummary) => {
-    const serverId = target.serverId
-    setDeleting(undefined)
-    if (await removeMcpServer(serverId)) {
-      if (detail?.serverId === serverId) setDetail(undefined)
-      await load()
+  const confirmDelete = async () => {
+    if (deleting.length === 0) return
+    const targets = deleting
+    setDeleting([])
+    const removed = await Promise.all(
+      targets.map(async (target) => ({
+        serverId: target.serverId,
+        ok: await removeMcpServer(target.serverId),
+      })),
+    )
+    if (removed.some((target) => target.ok && target.serverId === detail?.serverId)) {
+      setDetail(undefined)
     }
+    await load()
+  }
+
+  const applyBatch = async (enabled: boolean) => {
+    if (busy || selectedServers.length === 0) return
+    setBusy(true)
+    await Promise.all(
+      selectedServers.map((server) => setMcpServerEnabled(server.serverId, enabled)),
+    )
+    setBusy(false)
+    setSelected([])
+    setBatchMode(false)
+    await load()
+  }
+
+  const toggleBatch = () => {
+    setBatchMode(!batchMode)
+    setSelected([])
   }
 
   const patchForm = (patch: Partial<FormState>) => {
@@ -404,18 +480,95 @@ export function McpSettings() {
         </div>
       </div>
 
+      {servers.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <ListFilter
+            value={query}
+            onChange={(value) => {
+              setQuery(value)
+              setSelected([])
+            }}
+            label={t('mcp.search')}
+            placeholder={t('mcp.searchPlaceholder')}
+          />
+          <Button
+            variant={batchMode ? 'secondary' : 'ghost'}
+            aria-pressed={batchMode}
+            onClick={toggleBatch}
+          >
+            <ListChecks />
+            {batchMode ? t('mcp.batch.exit') : t('mcp.batch.toggle')}
+          </Button>
+        </div>
+      )}
+
+      {batchMode && (
+        <div className="flex flex-wrap items-center gap-2 rounded-card bg-sunk px-3 py-2">
+          <Checkbox
+            checked={allVisibleSelected}
+            indeterminate={selected.length > 0 && !allVisibleSelected}
+            aria-label={t('mcp.batch.selectAll')}
+            onChange={(event) =>
+              setSelected(
+                event.currentTarget.checked ? visible.map((server) => server.serverId) : [],
+              )
+            }
+          />
+          <span className="text-note text-muted">
+            {t('mcp.batch.selected', { count: selected.length })}
+          </span>
+          <span className="flex-1" />
+          <Button
+            size="sm"
+            disabled={selectedServers.length === 0 || busy}
+            onClick={() => void applyBatch(true)}
+          >
+            {t('mcp.batch.enable')}
+          </Button>
+          <Button
+            size="sm"
+            disabled={selectedServers.length === 0 || busy}
+            onClick={() => void applyBatch(false)}
+          >
+            {t('mcp.batch.disable')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-danger hover:bg-danger-soft hover:text-danger"
+            disabled={selectedServers.length === 0 || busy}
+            onClick={() => setDeleting(selectedServers)}
+          >
+            {t('mcp.batch.remove')}
+          </Button>
+        </div>
+      )}
+
       {servers.length === 0 ? (
         <SettingsEmpty
           icon={<McpGlyph />}
           title={t('mcp.emptyTitle')}
           description={t('mcp.empty')}
         />
+      ) : visible.length === 0 ? (
+        <SettingsCard className="items-center gap-2 py-8 text-center">
+          <p className="text-note text-muted">{t('mcp.searchEmpty')}</p>
+        </SettingsCard>
       ) : (
         <ul aria-label={t('mcp.list')} className="flex flex-col gap-3">
-          {servers.map((server) => (
+          {visible.map((server) => (
             <ServerCard
               key={server.serverId}
               server={server}
+              selectionMode={batchMode}
+              selected={selected.includes(server.serverId)}
+              onSelect={(next) =>
+                setSelected((current) =>
+                  next
+                    ? [...current.filter((id) => id !== server.serverId), server.serverId]
+                    : current.filter((id) => id !== server.serverId),
+                )
+              }
               onOpen={openDetail}
               onToggle={(item, enabled) => void toggle(item, enabled)}
             />
@@ -670,7 +823,7 @@ export function McpSettings() {
                 size="sm"
                 variant="ghost"
                 className="text-danger hover:bg-danger-soft hover:text-danger"
-                onClick={() => setDeleting(detail)}
+                onClick={() => setDeleting([detail])}
               >
                 {t('mcp.delete')}
               </Button>
@@ -732,20 +885,24 @@ export function McpSettings() {
       </Dialog>
 
       <Dialog
-        open={deleting !== undefined}
+        open={deleting.length > 0}
         onOpenChange={(open) => {
-          if (!open) setDeleting(undefined)
+          if (!open) setDeleting([])
         }}
       >
-        {deleting && (
+        {deleting.length > 0 && (
           <DialogContent tone="danger" icon={<TriangleAlert />}>
-            <DialogTitle>{t('mcp.delete.title', { name: deleting.name })}</DialogTitle>
+            <DialogTitle>
+              {deleting.length === 1 && deleting[0]
+                ? t('mcp.delete.title', { name: deleting[0].name })
+                : t('mcp.batch.removeTitle', { count: deleting.length })}
+            </DialogTitle>
             <DialogDescription>{t('mcp.delete.description')}</DialogDescription>
             <DialogFooter>
               <DialogClose asChild>
                 <Button size="lg">{tc('action.cancel')}</Button>
               </DialogClose>
-              <Button size="lg" variant="danger" onClick={() => void confirmDelete(deleting)}>
+              <Button size="lg" variant="danger" onClick={() => void confirmDelete()}>
                 {t('mcp.delete.confirm')}
               </Button>
             </DialogFooter>

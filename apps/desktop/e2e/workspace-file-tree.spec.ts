@@ -1,5 +1,5 @@
 /**
- * 工作空间菜单与文件树（目录功能同步）：置顶、配置、归档、在文件树浏览、
+ * 工作空间菜单与文件树（目录功能同步）：置顶、重命名、归档、在文件树浏览、
  * 新建/重命名/删除文件，以及移除工作空间。
  */
 import { writeFileSync } from 'node:fs'
@@ -38,15 +38,18 @@ test('工作空间菜单与文件树的新增、重命名、删除和移除', as
 
   await row.hover()
   await row.getByRole('button', { name: '工作空间操作' }).click()
-  await window.getByRole('menuitem', { name: '配置' }).click()
-  await expect(window.getByRole('heading', { name: '项目' })).toBeVisible()
-  await window.getByRole('button', { name: /返回/ }).click()
+  await window.getByRole('menuitem', { name: '重命名' }).click()
+  const rename = window.getByRole('dialog')
+  await expect(rename.getByRole('heading', { name: '重命名工作空间' })).toBeVisible()
+  await rename.getByLabel('名称').fill('project-renamed')
+  await rename.getByRole('button', { name: '保存' }).click()
+  await expect(workspaces).toContainText('project-renamed')
 
   await row.hover()
   await row.getByRole('button', { name: '工作空间操作' }).click()
   await window.getByRole('menuitem', { name: '在文件树浏览' }).click()
   const dialog = window.getByRole('dialog')
-  await expect(dialog.getByRole('heading', { name: 'project' })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'project-renamed' })).toBeVisible()
   await expect(dialog.getByText('notes.txt')).toBeVisible()
 
   await dialog.getByRole('button', { name: '新建文件夹', exact: true }).click()

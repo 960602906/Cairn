@@ -11,8 +11,7 @@
  * - 自定义说明（M1-13b）保存在 `settings.json`；空字符串、只有空白或 null 清除。启动宿主时经 `host.init`
  *   下发，已在运行的宿主不受影响。shell 偏好（M2-09）同样在启动宿主时下发。
  * - 默认模型必须是已配置的模型，否则报 `settings.invalid_default_model`；更新提供方后默认模型
- *   不再存在时一并清除。文件中的默认模型无效时视为没有设置。辅助模型（M3-01）规则相同，
- *   无效时报 `settings.invalid_auxiliary_model`。
+ *   不再存在时一并清除。文件中的默认模型无效时视为没有设置。
  * - 首次运行说明是否看过（M5-09）保存为 `onboardingSeen`：没有设置或不是 `true` 时返回
  *   `false`，界面显示一次欢迎页；关闭后写入 `true`，写 `false` 会清除保存值。
  * - 先写临时文件再改名替换，写入中途退出不会留下半个文件。写入失败报 `settings.write_failed`，
@@ -44,8 +43,6 @@ export const SettingsErrorCode = {
   WriteFailed: 'settings.write_failed',
   /** 默认模型不在已配置的提供方与模型中。 */
   InvalidDefaultModel: 'settings.invalid_default_model',
-  /** 辅助模型不在已配置的提供方与模型中（M3-01）。 */
-  InvalidAuxiliaryModel: 'settings.invalid_auxiliary_model',
   /** 会话的模型不在提供方配置中（提供方还在，模型被删除了）。 */
   UnknownModel: 'session.unknown_model',
 } as const
@@ -60,7 +57,7 @@ export interface SettingsServiceOptions {
   readonly onError?: (error: unknown) => void
 }
 
-/** 要更新的设置项；值为 undefined 的项不改动，`defaultModel` 与 `auxiliaryModel` 为 null 时清除。 */
+/** 要更新的设置项；值为 undefined 的项不改动，`defaultModel` 为 null 时清除。 */
 export type SettingsPatch = {
   readonly [K in keyof ProtocolSettingsPatch]?: ProtocolSettingsPatch[K]
 }
@@ -121,11 +118,8 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
   let stored = readStored(file, options.onError)
 
   /** 文件中的模型引用；格式无效或不在配置中时为 undefined。 */
-  const storedModel = (
-    key: 'defaultModel' | 'auxiliaryModel',
-    providers: readonly ProviderConfig[],
-  ): ModelRef | undefined => {
-    const parsed = ModelRef.safeParse(stored[key])
+  const storedDefaultModel = (providers: readonly ProviderConfig[]): ModelRef | undefined => {
+    const parsed = ModelRef.safeParse(stored['defaultModel'])
     return parsed.success && modelIn(providers, parsed.data) ? parsed.data : undefined
   }
 
@@ -185,8 +179,7 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
 
   const current = (): Settings => {
     const providers = storage.providers.list()
-    const defaultModel = storedModel('defaultModel', providers)
-    const auxiliaryModel = storedModel('auxiliaryModel', providers)
+    const defaultModel = storedDefaultModel(providers)
     const permissionMode = storedMode()
     const instructions = storedInstructions()
     const theme = storedTheme()
@@ -201,7 +194,6 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       locale: resolveLocale(stored['locale'], systemLocales()),
       providers,
       ...(defaultModel ? { defaultModel } : {}),
-      ...(auxiliaryModel ? { auxiliaryModel } : {}),
       ...(permissionMode ? { permissionMode } : {}),
       ...(instructions ? { instructions } : {}),
       ...(theme ? { theme } : {}),
@@ -236,13 +228,10 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
         }
       }
       requireModel(patch.defaultModel, SettingsErrorCode.InvalidDefaultModel)
-      requireModel(patch.auxiliaryModel, SettingsErrorCode.InvalidAuxiliaryModel)
 
       const next: Record<string, unknown> = { ...stored }
       if (patch.locale !== undefined) next['locale'] = patch.locale
       if (patch.defaultModel !== undefined) next['defaultModel'] = patch.defaultModel ?? undefined
-      if (patch.auxiliaryModel !== undefined)
-        next['auxiliaryModel'] = patch.auxiliaryModel ?? undefined
       if (patch.permissionMode !== undefined) next['permissionMode'] = patch.permissionMode
       if (patch.theme !== undefined) next['theme'] = patch.theme
       if (patch.shell !== undefined) next['shell'] = patch.shell
@@ -279,10 +268,10 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
         // 只有空白时视为清除
         next['instructions'] = patch.instructions?.trim() ? patch.instructions : undefined
       }
-      // 模型所在的提供方或模型被删除时一并清除
-      for (const key of ['defaultModel', 'auxiliaryModel'] as const) {
-        const kept = ModelRef.safeParse(next[key])
-        if (kept.success && !modelIn(providers, kept.data)) next[key] = undefined
+      // 默认模型所在的提供方或模型被删除时一并清除
+      const keptDefault = ModelRef.safeParse(next['defaultModel'])
+      if (keptDefault.success && !modelIn(providers, keptDefault.data)) {
+        next['defaultModel'] = undefined
       }
       const nextStored = JSON.parse(JSON.stringify(next)) as Stored
 

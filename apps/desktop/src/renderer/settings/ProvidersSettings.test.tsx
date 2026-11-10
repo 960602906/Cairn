@@ -66,10 +66,8 @@ function setup(initial: Partial<Settings> = {}, handlers: Record<string, Handler
           ...settings,
           ...(patch.providers ? { providers: patch.providers } : {}),
           ...(patch.defaultModel ? { defaultModel: patch.defaultModel } : {}),
-          ...(patch.auxiliaryModel ? { auxiliaryModel: patch.auxiliaryModel } : {}),
         }
         if (patch.defaultModel === null) delete next.defaultModel
-        if (patch.auxiliaryModel === null) delete next.auxiliaryModel
         settings = next
         return settings
       }
@@ -193,7 +191,6 @@ describe('ProvidersSettings', () => {
     const { updates } = setup({
       providers: [deepseek, gateway, third],
       defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
-      auxiliaryModel: { providerId: 'gw', modelId: 'claude-x' },
     })
     await open()
     await userEvent.click(screen.getByRole('tab', { name: /Anthropic/ }))
@@ -204,7 +201,7 @@ describe('ProvidersSettings', () => {
     const firstDialog = await screen.findByRole('dialog', { name: '删除 公司网关？' })
     await userEvent.click(within(firstDialog).getByRole('button', { name: '删除供应商' }))
     await waitFor(() => expect(updates).toHaveLength(1))
-    expect(updates[0]).toEqual({ providers: [deepseek, third], auxiliaryModel: null })
+    expect(updates[0]).toEqual({ providers: [deepseek, third] })
     expect(providerButtons()).toHaveLength(1)
 
     await userEvent.click(screen.getByRole('tab', { name: /OpenAI/ }))
@@ -416,34 +413,6 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: '删除供应商' }))
     await waitFor(() => expect(updates).toEqual([{ providers: [gateway] }]))
     expect(screen.queryByRole('dialog', { name: '编辑供应商' })).toBeNull()
-  })
-
-  it('only offers enabled models as the auxiliary model', async () => {
-    const withDisabled: ProviderConfig = {
-      ...gateway,
-      models: [...gateway.models, { id: 'claude-hidden', ...cap, enabled: false }],
-    }
-    const { updates } = setup({
-      providers: [deepseek, withDisabled],
-      defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
-      auxiliaryModel: { providerId: 'gw', modelId: 'claude-x' },
-    })
-    await open()
-    const select = screen.getByLabelText('辅助模型') as HTMLSelectElement
-    expect(select.value).toBe(JSON.stringify(['gw', 'claude-x']))
-    expect(screen.getByRole('option', { name: '与主模型相同' })).toBeTruthy()
-    expect(screen.getByRole('option', { name: 'DeepSeek · DeepSeek V4.1 Flash' })).toBeTruthy()
-    expect(screen.queryByRole('option', { name: /claude-hidden/ })).toBeNull()
-
-    await userEvent.selectOptions(select, JSON.stringify(['deepseek', 'deepseek-v4-pro']))
-    await waitFor(() => expect(updates).toHaveLength(1))
-    expect(updates[0]).toEqual({
-      auxiliaryModel: { providerId: 'deepseek', modelId: 'deepseek-v4-pro' },
-    })
-
-    await userEvent.selectOptions(select, '')
-    await waitFor(() => expect(updates).toHaveLength(2))
-    expect(updates[1]).toEqual({ auxiliaryModel: null })
   })
 
   it('handles an empty provider and missing model list', async () => {
