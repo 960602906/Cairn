@@ -22,7 +22,7 @@ import type { UpdateStatus } from '@cairn/protocol'
 import { startMockModel } from '../scripts/mock-model.js'
 import { startUpdateSource } from './update-source.js'
 import { startPackagedApp } from './packaged-app.js'
-import { createSession, sendPrompt } from './session.js'
+import { chatRequests, createSession, sendPrompt } from './session.js'
 
 const REPLY = '发布验收完成'
 const API_KEY = 'acceptance-key-value'
@@ -207,6 +207,15 @@ test('已打包应用完成首次运行到诊断包的全流程验收', async ()
     await card.getByRole('button', { name: '运行一次' }).click()
     await expect(page.getByText(REPLY)).toBeVisible()
     await expect(page.getByRole('status')).toHaveText('空闲')
+
+    // 工具必须真的执行成功：退出码为 0，且 `Get-Content` 回显了写入的内容。
+    // 失败时把工具结果与沙箱状态一并放进断言消息，便于在 CI 日志里直接定位。
+    const latest = chatRequests(mock.requests).at(-1)
+    const toolResult = JSON.stringify(
+      ((latest?.messages ?? []) as { role: string }[]).filter((message) => message.role === 'tool'),
+    )
+    expect(toolResult, `sandbox.status: ${JSON.stringify(sandbox)}`).toContain('Exit code: 0')
+    expect(toolResult).toContain('ok')
     expect(readFileSync(path.join(workspace, '验收.txt'), 'utf8').trim()).toBe('ok')
 
     // 5. PATH 中没有 Git，检查点仍由随包 MinGit 建立；撤销本轮恢复工作区。

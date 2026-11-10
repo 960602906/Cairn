@@ -24,16 +24,15 @@ export const ACCEPTANCE_DIRECTORIES = {
 
 /**
  * 只保留系统目录的 `PATH`：没有 Git、Node 或其他开发工具。
+ *
+ * 这里刻意使用 Windows 分隔符而不是 `path.join`：该脚本只面向 Windows
+ * 安装验收，测试也会在 Linux CI 上运行，`path.join` 会把 `\` 变成 `/`。
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {string}
  */
 export function systemOnlyPath(env = process.env) {
   const root = env['SystemRoot'] ?? 'C:\\Windows'
-  return [
-    path.join(root, 'System32'),
-    root,
-    path.join(root, 'System32', 'WindowsPowerShell', 'v1.0'),
-  ].join(path.delimiter)
+  return [`${root}\\System32`, root, `${root}\\System32\\WindowsPowerShell\\v1.0`].join(';')
 }
 
 /**
