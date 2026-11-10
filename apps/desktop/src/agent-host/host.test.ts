@@ -450,7 +450,9 @@ describe('agent host', () => {
       })
       await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
       await h.waitFor('turn.completed')
-      expect(seen).toEqual([sandbox])
+      expect(seen).toHaveLength(1)
+      expect(seen[0]).toMatchObject(sandbox)
+      expect(seen[0]?.onUnusable).toBeTypeOf('function')
       expect(h.events.find((event) => event.type === 'tool.started')?.payload).toMatchObject({
         sandbox: {
           profile: 'workspace-write',
@@ -581,6 +583,32 @@ describe('agent host', () => {
       })
       expect(await unsupported.host.permissions.decide(request as never)).toMatchObject({
         decision: 'allow',
+      })
+    })
+
+    it('treats the sandbox as unavailable after a reported start failure', async () => {
+      let onUnusable: (() => void) | undefined
+      const h = setup(
+        { turns: [] },
+        {
+          registerTools: (_registry, _workspace, _shell, config) => {
+            onUnusable = config?.onUnusable
+          },
+        },
+      )
+      await h.main.request('host.init', {
+        ...init,
+        sandbox,
+        permissionRules: presetRules('auto'),
+      })
+      expect(await h.host.permissions.decide(request as never)).toMatchObject({ decision: 'allow' })
+
+      onUnusable?.()
+
+      // 子进程起不来之后，同一会话里的后续命令按“沙箱不可用”设置处理，而不是继续撞 0xC0000142
+      expect(await h.host.permissions.decide(request as never)).toMatchObject({
+        decision: 'deny',
+        reasonCode: 'sandbox.unavailable',
       })
     })
   })

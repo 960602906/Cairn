@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { SandboxError } from './types.js'
 import {
+  CREATE_BREAKAWAY_FROM_JOB,
   CREATE_NO_WINDOW,
   CREATE_SUSPENDED,
   STARTUPINFO_SIZE,
@@ -252,7 +253,9 @@ describe('createNativeApi', () => {
     expect(args[0]).toBe(300n)
     expect((args[2] as Buffer).toString('utf16le')).toBe('cmd.exe /c echo hi\0')
     expect(args[5]).toBe(1)
-    expect(args[6]).toBe(CREATE_SUSPENDED | CREATE_NO_WINDOW | 0x0000_0400)
+    expect(args[6]).toBe(
+      CREATE_SUSPENDED | CREATE_NO_WINDOW | 0x0000_0400 | CREATE_BREAKAWAY_FROM_JOB,
+    )
     expect(args[7]).toBe(env)
     expect(args[8]).toBe('C:\\work')
     const startup = args[9] as Buffer
@@ -265,7 +268,7 @@ describe('createNativeApi', () => {
   })
 
   it('reports a failed restricted-token spawn', () => {
-    const { api } = fakeKoffi({
+    const { api, called } = fakeKoffi({
       handlers: { CreateProcessAsUserW: (() => 0) as Handler, GetLastError: (() => 87) as Handler },
     })
     expect(() =>
@@ -279,6 +282,42 @@ describe('createNativeApi', () => {
         stderr: 3n,
       }),
     ).toThrow(/CreateProcessAsUserW failed \(Win32 87\)/)
+    // 只有宿主作业禁止脱离时才重试一次；其他错误不重试
+    expect(called('CreateProcessAsUserW')).toHaveLength(1)
+  })
+
+  it('retries without breaking away when the host job forbids it', () => {
+    let attempts = 0
+    const { api, called } = fakeKoffi({
+      handlers: {
+        CreateProcessAsUserW: ((...args: unknown[]) => {
+          attempts += 1
+          if (attempts === 1) return 0
+          const info = args[10] as Buffer
+          info.writeBigUInt64LE(0xa1n, 0)
+          info.writeBigUInt64LE(0xb2n, 8)
+          info.writeUInt32LE(4321, 16)
+          return 1
+        }) as Handler,
+        GetLastError: (() => 5) as Handler,
+      },
+    })
+    expect(
+      api.spawn({
+        token: 300n,
+        commandLine: 'cmd.exe /c echo hi',
+        cwd: 'C:\\work',
+        env: Buffer.alloc(0),
+        stdin: 1n,
+        stdout: 2n,
+        stderr: 3n,
+      }),
+    ).toEqual({ pid: 4321, process: 0xa1n, thread: 0xb2n })
+    const calls = called('CreateProcessAsUserW')
+    expect(calls).toHaveLength(2)
+    const base = CREATE_SUSPENDED | CREATE_NO_WINDOW | 0x0000_0400
+    expect(calls[0]!.args[6]).toBe(base | CREATE_BREAKAWAY_FROM_JOB)
+    expect(calls[1]!.args[6]).toBe(base)
   })
 
   it('starts an AppContainer process with network capabilities', () => {

@@ -52,14 +52,122 @@ export interface SandboxRunnerOptions {
   readonly pollIntervalMs?: number
   /** 结束后等待进程真正退出的上限，默认 5 秒（测试可缩短）。 */
   readonly terminateGraceMs?: number
+  /** 命令结束后多久把工作区恢复中完整性，默认 5 秒（`0` 表示立即；测试可缩短）。 */
+  readonly restoreIdleMs?: number
   /** 已经探测过的能力（避免重复探测）。 */
   readonly capability?: SandboxCapability
 }
 
 const DEFAULT_POLL_MS = 20
 const TERMINATE_GRACE_MS = 5_000
+const DEFAULT_RESTORE_IDLE_MS = 5_000
+/** 恢复间隔的上限：至少要能盖住一次重新打标签前的空闲时间，但不能让标签整天留在用户目录上。 */
+const MAX_RESTORE_IDLE_MS = 120_000
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/**
+ * 工作区完整性标签的租约。
+ *
+ * `workspace-write` 必须把工作区降到低完整性，低完整性进程才能写进去；但标签会留在用户目录上——
+ * 其中的可执行文件也随之变成低完整性，连普通临时目录都写不了（随包 Git 会因此 `git init` 失败）。
+ * 因此命令结束后恢复中完整性，并用引用计数加串行队列处理并发命令：最后一个命令结束时才恢复。
+ */
+interface WorkspaceLabelLease {
+  count: number
+  chain: Promise<void>
+  /** 已知的当前标签；大工作区上 `icacls` 要遍历整棵树（约 20 秒），不能每条命令都做。 */
+  level: 'unknown' | 'low' | 'medium'
+  /** 最近一次打标签的耗时，用来决定空闲多久再恢复。 */
+  costMs: number
+  restore?: NodeJS.Timeout | undefined
+}
+
+const workspaceLabels = new Map<string, WorkspaceLabelLease>()
+
+function labelLease(directory: string): WorkspaceLabelLease {
+  const key = nodePath.resolve(directory)
+  let lease = workspaceLabels.get(key)
+  if (!lease) {
+    lease = { count: 0, chain: Promise.resolve(), level: 'unknown', costMs: 0 }
+    workspaceLabels.set(key, lease)
+  }
+  return lease
+}
+
+/**
+ * 空闲多久再恢复中完整性。
+ *
+ * 恢复后下一条命令又要重新打标签，而大工作区上 `icacls` 一次要 20 秒：若 5 秒空闲就恢复，
+ * 每条命令都会重付这 20 秒。因此空闲时间至少是上次打标签耗时的 4 倍，把这项开销摊薄。
+ */
+const restoreDelayMs = (idleMs: number, costMs: number): number =>
+  Math.max(idleMs, Math.min(costMs * 4, MAX_RESTORE_IDLE_MS))
+
+/** icacls 调用串行执行，避免并发命令互相覆盖标签。 */
+function enqueue(lease: WorkspaceLabelLease, action: () => Promise<void>): Promise<void> {
+  const next = lease.chain.catch(() => undefined).then(action)
+  lease.chain = next.catch(() => undefined)
+  return next
+}
+
+async function acquireLowWorkspace(
+  integrity: IntegrityController,
+  directory: string,
+): Promise<void> {
+  const lease = labelLease(directory)
+  lease.count += 1
+  // 还有命令要用低完整性：取消待执行的恢复，标签保持不动
+  if (lease.restore) {
+    clearTimeout(lease.restore)
+    lease.restore = undefined
+  }
+  try {
+    // 始终排进队列：可能有一次恢复正在执行，必须等它结束再看真实标签，否则子进程会在恢复过程中写入
+    await enqueue(lease, async () => {
+      if (lease.level === 'low') return
+      const started = performance.now()
+      await integrity.setLevel(directory, 'low')
+      lease.costMs = performance.now() - started
+      lease.level = 'low'
+    })
+  } catch (error) {
+    lease.count -= 1
+    throw error
+  }
+}
+
+function releaseLowWorkspace(
+  integrity: IntegrityController,
+  directory: string,
+  idleMs: number,
+): void {
+  const lease = labelLease(directory)
+  lease.count = Math.max(0, lease.count - 1)
+  if (lease.count > 0 || lease.level !== 'low') return
+  if (idleMs <= 0) {
+    restoreMedium(integrity, directory, lease)
+    return
+  }
+  lease.restore = setTimeout(() => {
+    lease.restore = undefined
+    restoreMedium(integrity, directory, lease)
+  }, restoreDelayMs(idleMs, lease.costMs))
+  lease.restore.unref?.()
+}
+
+/** 没有命令再用沙箱时把工作区恢复中完整性，避免标签留在用户目录上。 */
+function restoreMedium(
+  integrity: IntegrityController,
+  directory: string,
+  lease: WorkspaceLabelLease,
+): void {
+  void enqueue(lease, async () => {
+    if (lease.count > 0 || lease.level !== 'low') return
+    await integrity.setLevel(directory, 'medium')
+    lease.level = 'medium'
+  }).catch(() => undefined)
+}
 
 export async function createSandboxRunner(
   options: SandboxRunnerOptions = {},
@@ -115,6 +223,7 @@ export async function createSandboxRunner(
         tempRoot: options.tempRoot ?? tmpdir(),
         pollIntervalMs: options.pollIntervalMs ?? DEFAULT_POLL_MS,
         terminateGraceMs: options.terminateGraceMs ?? TERMINATE_GRACE_MS,
+        restoreIdleMs: options.restoreIdleMs ?? DEFAULT_RESTORE_IDLE_MS,
         appContainer: options.appContainer,
         execution,
         policy,
@@ -132,6 +241,7 @@ interface RunContext {
   readonly tempRoot: string
   readonly pollIntervalMs: number
   readonly terminateGraceMs: number
+  readonly restoreIdleMs: number
   readonly appContainer?: { name: string } | undefined
   readonly execution: SandboxExecution
   readonly policy: SandboxPolicy
@@ -196,6 +306,8 @@ async function runSandboxed(context: RunContext): Promise<SandboxRunResult> {
   let aborted = false
   let timedOut = false
   let exited = false
+  /** 是否把工作区降到了低完整性（只在受限令牌档位、工作区可写时）。 */
+  let workspaceLowered = false
   let exitCode: number | null
   let signalListener: (() => void) | undefined
 
@@ -252,7 +364,13 @@ async function runSandboxed(context: RunContext): Promise<SandboxRunResult> {
       }
       job = jobInstance
     } else {
-      await context.integrity.setLevel(input.cwd, policy.profile === 'read-only' ? 'medium' : 'low')
+      if (policy.profile === 'read-only') {
+        await context.integrity.setLevel(input.cwd, 'medium')
+      } else {
+        // 低完整性标签只在命令运行期间保留；结束（含失败、超时）后恢复中完整性
+        await acquireLowWorkspace(context.integrity, input.cwd)
+        workspaceLowered = true
+      }
       token = api.createRestrictedToken('low')
       stdout = api.openInheritableFile(stdoutPath, 'write')
       stderr = api.openInheritableFile(stderrPath, 'write')
@@ -353,6 +471,9 @@ async function runSandboxed(context: RunContext): Promise<SandboxRunResult> {
     }
     for (const handle of [thread, token, appContainerSid, stdin, stdout, stderr]) {
       if (handle !== undefined) api.closeHandle(handle)
+    }
+    if (workspaceLowered) {
+      releaseLowWorkspace(context.integrity, input.cwd, context.restoreIdleMs)
     }
     await fsp
       .rm(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 })

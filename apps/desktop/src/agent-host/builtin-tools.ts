@@ -10,6 +10,7 @@ import {
   createSandboxRunner,
   describeShell,
   selectShell,
+  unsandboxedExecution,
   type SandboxCapability,
   type SandboxPolicy,
   type SandboxRunner,
@@ -42,6 +43,11 @@ export interface BuiltinSandboxConfig {
   readonly capability: SandboxCapability
   readonly unavailable: SandboxUnavailableBehavior
   readonly appContainerName?: string | undefined
+  /**
+   * 沙箱里的子进程起不来（`sandbox.child_start_failed`）时调用一次（M5-04）：
+   * 宿主据此把“沙箱不可用”状态同步给权限守卫，后续命令按设置拒绝或经审批在沙箱外运行。
+   */
+  readonly onUnusable?: (() => void) | undefined
 }
 
 export function createBuiltinTools(
@@ -54,6 +60,8 @@ export function createBuiltinTools(
 ) => Promise<{ shell: string }> {
   let shell: Promise<ShellInfo> | undefined
   let runner: Promise<SandboxRunner> | undefined
+  /** 沙箱在当前宿主进程里是否已经证明起不来；一旦为 true 就不再尝试，按“沙箱不可用”处理。 */
+  let sandboxBroken = false
   return async (registry, _workspacePath, preference = 'auto', sandbox) => {
     const select = options.selectShell ?? ((p: ShellPreference) => selectShell({ preference: p }))
     shell ??= select(preference).catch((error: unknown) => {
@@ -82,10 +90,28 @@ export function createBuiltinTools(
       })
       executeSandbox = { policy: sandbox.policy, runner: await runner }
     }
+    const policy = sandbox?.policy
+    const markUnusable = () => {
+      if (sandboxBroken) return
+      sandboxBroken = true
+      runner = undefined
+      sandbox?.onUnusable?.()
+    }
     registerExecuteTools(registry, {
       shell: selected,
-      ...(executeSandbox ? { sandbox: executeSandbox } : {}),
-      ...(execution ? { execution } : {}),
+      // 降级后不再把执行器交给 run_command：命令以应用用户权限运行，卡片标注“未沙箱化”
+      ...(executeSandbox
+        ? { sandbox: () => (sandboxBroken ? undefined : executeSandbox) }
+        : {}),
+      ...(execution || policy
+        ? {
+            execution: () =>
+              sandboxBroken && policy
+                ? unsandboxedExecution(policy, 'sandbox.unavailable')
+                : execution,
+          }
+        : {}),
+      ...(sandbox?.capability.available ? { onSandboxStartFailure: markUnusable } : {}),
     })
     // 写入系统提示词（M1-13b）
     return { shell: describeShell(selected) }

@@ -532,6 +532,38 @@ describe('命令沙箱接入（M5-04）', () => {
     ).rejects.toMatchObject({ code: 'sandbox.setup_failed' })
   })
 
+  it('reports a sandboxed child that fails DLL initialization instead of its exit code', async () => {
+    const fake = sandbox()
+    // 0xC0000142（STATUS_DLL_INIT_FAILED）在 Win32 侧是有符号的 -1073741502
+    fake.run.mockImplementationOnce(async () => ({
+      exitCode: -1073741502,
+      aborted: false,
+      timedOut: false,
+      durationMs: 20_441,
+      execution,
+    }))
+    const error = await runCommand(shell, 'echo hi', {
+      cwd: work,
+      sandbox: { runner: fake.runner, policy },
+    }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ShellError)
+    expect(error).toMatchObject({
+      code: 'sandbox.child_start_failed',
+      params: { shell: shell.exe, exitCode: '-1073741502' },
+    })
+  })
+
+  it('keeps the exit code when the sandboxed command produced output', async () => {
+    const fake = sandbox()
+    fake.run.mockImplementationOnce(async (_policy, input) => {
+      input.onStdout?.('boom')
+      return { exitCode: 3221225794, aborted: false, timedOut: false, durationMs: 5, execution }
+    })
+    expect(
+      await runCommand(shell, 'echo hi', { cwd: work, sandbox: { runner: fake.runner, policy } }),
+    ).toMatchObject({ exitCode: 3221225794, stdout: 'boom' })
+  })
+
   it('leaves danger-full-access outside the sandbox and records it', async () => {
     const fake = sandbox()
     const result = await runCommand(shell, 'echo hi', {

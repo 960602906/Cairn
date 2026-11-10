@@ -211,6 +211,7 @@ describe('translateError', () => {
       'sandbox.setup_failed',
       'sandbox.spawn_failed',
       'sandbox.appcontainer_failed',
+      'sandbox.child_start_failed',
       'checkpoint.git_unavailable',
       'checkpoint.not_found',
       'checkpoint.failed',

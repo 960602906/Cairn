@@ -12,6 +12,7 @@
   "sandbox.setup_failed": "The command sandbox could not be prepared, so the command was not started",
   "sandbox.appcontainer_failed": "The AppContainer sandbox profile failed, so the command was not started",
   "sandbox.spawn_failed": "The sandboxed process could not be started",
+  "sandbox.child_start_failed": "The sandboxed process exited before running anything (DLL initialization failed). If the command itself is valid, this environment is blocking processes spawned by the sandbox: restart the app as a standard user from a normal terminal, check security software, or set the sandbox to ask before running without it.",
   "tool.failed": "The tool failed",
   "tool.denied": "The tool call was denied",
   "model.unknown_error": "The model request failed",

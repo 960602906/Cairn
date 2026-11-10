@@ -24,6 +24,7 @@ import {
   runCommand,
   SandboxError,
   ShellError,
+  ShellErrorCode,
   type RunCommandOptions,
   type RunCommandResult,
   type SandboxPolicy,
@@ -38,6 +39,16 @@ export interface RunCommandInput {
   /** 超时（秒），默认 120。 */
   readonly timeoutSeconds?: number
 }
+
+/** 沙箱来源：对象固定使用；函数在每次执行时解析（沙箱起不来后宿主可降级为不使用沙箱）。 */
+export type RunCommandSandboxSource =
+  | { readonly policy: SandboxPolicy; readonly runner: SandboxRunner }
+  | (() => { readonly policy: SandboxPolicy; readonly runner: SandboxRunner } | undefined)
+
+/** 没有执行器时的沙箱描述；同样支持函数，随降级状态变化。 */
+export type RunCommandExecutionSource =
+  | SandboxExecution
+  | (() => SandboxExecution | undefined)
 
 export interface RunCommandToolOptions {
   /** 使用的 shell（宿主按设置用 `selectShell` 选出）。 */
@@ -56,15 +67,17 @@ export interface RunCommandToolOptions {
    * 命令沙箱（M5-04）：`run_command` 把解析后的策略交给执行器；实际机制与网络状态写入终端卡片。
    * 省略时按现有语义直接执行（非 Windows 或未启用沙箱）。
    */
-  readonly sandbox?: {
-    readonly policy: SandboxPolicy
-    readonly runner: SandboxRunner
-  }
+  readonly sandbox?: RunCommandSandboxSource
   /**
    * 没有执行器时的沙箱描述（M5-04）：沙箱不可用、经审批在沙箱外运行时，`tool.started` 与终端卡片仍需
    * 如实显示“未沙箱化”及原因。有执行器时以执行器按策略解析的结果为准。
    */
-  readonly execution?: SandboxExecution
+  readonly execution?: RunCommandExecutionSource
+  /**
+   * 沙箱里的子进程在加载阶段就退出（`sandbox.child_start_failed`）时调用一次（M5-04）：
+   * 宿主据此把沙箱标记为不可用，后续命令按设置失败关闭或经审批在沙箱外运行。
+   */
+  readonly onSandboxStartFailure?: () => void
 }
 
 export const RUN_COMMAND_MAX_OUTPUT_CHARS = READ_FILE_MAX_OUTPUT_CHARS
@@ -284,10 +297,15 @@ export function createRunCommandTool(
   const budget = options.maxOutputChars ?? RUN_COMMAND_MAX_OUTPUT_CHARS
   const idleHintMs = options.idleHintMs ?? RUN_COMMAND_IDLE_HINT_MS
   const run = options.run ?? runCommand
-  const declaredSandbox = options.sandbox
-    ? options.sandbox.runner.executionFor(options.sandbox.policy)
-    : options.execution
-  return {
+  const resolveSandbox = () =>
+    typeof options.sandbox === 'function' ? options.sandbox() : options.sandbox
+  const resolveExecution = () =>
+    typeof options.execution === 'function' ? options.execution() : options.execution
+  const declaredSandbox = (): SandboxExecution | undefined => {
+    const sandbox = resolveSandbox()
+    return sandbox ? sandbox.runner.executionFor(sandbox.policy) : resolveExecution()
+  }
+  const definition: ToolDefinition<RunCommandInput> = {
     name: 'run_command',
     description:
       `Run a shell command in the workspace root and return its exit code and output. The shell is ${shellName}; ` +
@@ -316,8 +334,6 @@ export function createRunCommandTool(
     category: 'execute',
     source: { kind: 'builtin' },
     trust: 'builtin',
-    ...(declaredSandbox ? { sandbox: declaredSandbox } : {}),
-
     normalize: async (input) => ({ input, targets: { command: input.command } }),
 
     async describeForApproval(input) {
@@ -338,6 +354,7 @@ export function createRunCommandTool(
         raw.push(stream, text)
         ctx.progress(text, stream)
       }
+      const sandbox = resolveSandbox()
       const runOptions: RunCommandOptions = {
         cwd: root.absolute,
         signal: ctx.signal,
@@ -347,14 +364,17 @@ export function createRunCommandTool(
         onStderr: onOutput(stderr, 'stderr'),
         ...(options.env ? { env: options.env } : {}),
         ...(options.tempDir ? { tempDir: options.tempDir } : {}),
-        ...(options.sandbox ? { sandbox: options.sandbox } : {}),
+        ...(sandbox ? { sandbox } : {}),
       }
       let result: RunCommandResult
       try {
         result = await run(options.shell, input.command, runOptions)
       } catch (error) {
-        if (error instanceof ShellError)
+        if (error instanceof ShellError) {
+          // 沙箱起不来：通知宿主降级，下一次调用按“沙箱不可用”的设置处理
+          if (error.code === ShellErrorCode.ChildInitFailed) options.onSandboxStartFailure?.()
           throw new ToolError(error.code, error.message, { ...error.params })
+        }
         if (error instanceof SandboxError)
           throw new ToolError(error.code, error.message, { ...error.params })
         throw error
@@ -386,4 +406,13 @@ export function createRunCommandTool(
       return { content: [{ type: 'text', text }], display }
     },
   }
+  // `sandbox` 是派生属性：沙箱起不来之后宿主会把来源切换成“无执行器”，
+  // `tool.started` 读到的必须是那时真实生效的描述。
+  if (options.sandbox || options.execution) {
+    Object.defineProperty(definition, 'sandbox', {
+      enumerable: true,
+      get: declaredSandbox,
+    })
+  }
+  return definition
 }

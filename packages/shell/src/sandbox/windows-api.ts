@@ -21,9 +21,12 @@ const EXTENDED_STARTUPINFO_PRESENT = 0x0008_0000
 export const CREATE_SUSPENDED = 0x0000_0004
 export const CREATE_NO_WINDOW = 0x0800_0000
 export const CREATE_UNICODE_ENVIRONMENT = 0x0000_0400
+/** 子进程不加入调用方所在的作业对象（宿主的作业不允许时创建失败）。 */
+export const CREATE_BREAKAWAY_FROM_JOB = 0x0100_0000
 const STARTF_USESTDHANDLES = 0x0000_0100
 const WAIT_OBJECT_0 = 0
 const ERROR_INSUFFICIENT_BUFFER = 122
+const ERROR_ACCESS_DENIED = 5
 const ERROR_ALREADY_EXISTS_HRESULT = 0x8007_00b7
 const GENERIC_READ = 0x8000_0000
 const GENERIC_WRITE = 0x4000_0000
@@ -336,20 +339,30 @@ export function createNativeApi(koffi: {
     const info = startupInfo(options.stdin, options.stdout, options.stderr)
     const processInfo = Buffer.alloc(24)
     const flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT
-    const ok = api.CreateProcessAsUserW(
-      options.token,
-      null,
-      commandLine,
-      null,
-      null,
-      1,
-      flags,
-      options.env,
-      options.cwd,
-      info,
-      processInfo,
-    )
-    if (!ok) fail(SandboxErrorCode.SpawnFailed, 'CreateProcessAsUserW', lastError())
+    const create = (extraFlags: number) =>
+      api.CreateProcessAsUserW(
+        options.token,
+        null,
+        commandLine,
+        null,
+        null,
+        1,
+        flags | extraFlags,
+        options.env,
+        options.cwd,
+        info,
+        processInfo,
+      )
+    // 宿主可能是 Electron 的实用进程（Chromium 会把它放进作业对象）：子进程默认继承整个作业及其限制，
+    // 在部分机器上会让子进程以 DLL 初始化失败（0xC0000142）退出。先尝试脱离宿主作业——之后仍由本模块
+    // 自己的作业对象接管，超时与结束语义不变；宿主作业不允许脱离（ERROR_ACCESS_DENIED）时按原样启动。
+    let ok = create(CREATE_BREAKAWAY_FROM_JOB)
+    let error = ok ? 0 : lastError()
+    if (!ok && error === ERROR_ACCESS_DENIED) {
+      ok = create(0)
+      error = ok ? 0 : lastError()
+    }
+    if (!ok) fail(SandboxErrorCode.SpawnFailed, 'CreateProcessAsUserW', error)
     return {
       pid: processInfo.readUInt32LE(16),
       process: processInfo.readBigUInt64LE(0),

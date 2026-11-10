@@ -12,6 +12,7 @@
   "sandbox.setup_failed": "命令沙箱准备失败，命令没有启动",
   "sandbox.appcontainer_failed": "AppContainer 沙箱配置失败，命令没有启动",
   "sandbox.spawn_failed": "沙箱进程无法启动",
+  "sandbox.child_start_failed": "沙箱里的子进程还没开始执行就退出了（DLL 初始化失败），命令没有真正运行。若命令本身没问题，多半是当前环境限制了沙箱派生子进程：请用普通用户、从系统终端重新启动应用，或检查安全软件；仍无法启动时在设置里改为每次审批后不使用沙箱。",
   "tool.failed": "工具执行失败",
   "tool.denied": "工具调用被拒绝",
   "model.unknown_error": "模型请求失败",

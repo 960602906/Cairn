@@ -397,6 +397,49 @@ describe('命令沙箱（M5-04）', () => {
     expect(error).toBeInstanceOf(ToolError)
     expect(error).toMatchObject({ code: 'sandbox.setup_failed', params: { win32: '5' } })
   })
+
+  it('drops the sandbox after a start failure and runs the next command unsandboxed', async () => {
+    const unsandboxed = {
+      profile: 'workspace-write',
+      network: 'none',
+      mechanism: 'none',
+      enforced: false,
+      networkIsolated: false,
+      reason: 'sandbox.unavailable',
+    } satisfies SandboxExecution
+    const seen: { sandbox?: RunCommandOptions['sandbox'] }[] = []
+    let broken = false
+    const run = (async (_shell, _command, options) => {
+      seen.push({ ...(options.sandbox ? { sandbox: options.sandbox } : {}) })
+      if (!broken) {
+        throw new ShellError('sandbox.child_start_failed', 'dll init failed', {
+          shell: 'cmd.exe',
+          exitCode: '3221225794',
+        })
+      }
+      return result({})
+    }) as typeof runCommand
+    const definition = tool({
+      sandbox: () => (broken ? undefined : { policy, runner }),
+      execution: () => (broken ? unsandboxed : undefined),
+      onSandboxStartFailure: () => {
+        broken = true
+      },
+      run,
+    })
+
+    expect(definition.sandbox).toEqual(execution)
+    const error = await definition
+      .execute({ command: 'x' }, toolContext(fx.root))
+      .catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ToolError)
+    expect(error).toMatchObject({ code: 'sandbox.child_start_failed' })
+    // 子进程起不来之后，描述与执行都切换为“未沙箱化”
+    expect(definition.sandbox).toEqual(unsandboxed)
+    await definition.execute({ command: 'x' }, toolContext(fx.root))
+    expect(seen).toHaveLength(2)
+    expect(seen[1]?.sandbox).toBeUndefined()
+  })
 })
 
 describe('真实执行（当前平台选出的 shell）', async () => {

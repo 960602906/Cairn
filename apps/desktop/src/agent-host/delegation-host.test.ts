@@ -1512,9 +1512,12 @@ describe('host delegation permissions (M4-03)', () => {
     await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
     await h.waitFor('turn.completed')
     expect(h.sandboxConfigs).toHaveLength(2)
-    expect(h.sandboxConfigs).toEqual([
-      sandbox,
-      { ...sandbox, policy: { ...sandbox.policy, profile: 'read-only' } },
-    ])
+    expect(h.sandboxConfigs[0]).toMatchObject(sandbox)
+    expect(h.sandboxConfigs[1]).toMatchObject({
+      ...sandbox,
+      policy: { ...sandbox.policy, profile: 'read-only' },
+    })
+    // 父运行与子运行都要能上报“沙箱起不来”，宿主据此降级
+    for (const config of h.sandboxConfigs) expect(config?.onUnusable).toBeTypeOf('function')
   })
 })

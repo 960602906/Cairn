@@ -206,6 +206,72 @@ const run = (
   )
 
 describe('createSandboxRunner', () => {
+  it('lowers the workspace only while the command runs', async () => {
+    const test = harness({ exited: true })
+    const levels: { directory: string; level: string }[] = []
+    const runner = await createSandboxRunner({
+      platform: 'win32',
+      api: test.api,
+      integrity: {
+        setLevel: async (directory, level) => {
+          levels.push({ directory, level })
+        },
+      },
+      acl: acl().controller,
+      jobFactory: async () => fakeJob().job,
+      tempRoot: test.root,
+      pollIntervalMs: 1,
+      restoreIdleMs: 0,
+      mechanism: 'restricted-token',
+    })
+    await runner.run(policy('workspace-write', 'none'), {
+      invocation,
+      cwd: test.workspace,
+      env: { PATH: 'C:\\bin' },
+      timeoutMs: 5_000,
+    })
+    // 恢复在后台执行（大工作区上 icacls 很慢，不能挡住命令返回）
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // 低完整性标签只在命令运行期间保留，结束后恢复中完整性
+    expect(levels.filter((entry) => entry.directory === test.workspace)).toEqual([
+      { directory: test.workspace, level: 'low' },
+      { directory: test.workspace, level: 'medium' },
+    ])
+  })
+
+  it('waits longer than the label cost before restoring', async () => {
+    const test = harness({ exited: true })
+    const levels: { directory: string; level: string }[] = []
+    const runner = await createSandboxRunner({
+      platform: 'win32',
+      api: test.api,
+      integrity: {
+        setLevel: async (directory, level) => {
+          levels.push({ directory, level })
+          // 模拟大工作区上的 icacls：打标签本身很慢
+          if (level === 'low') await new Promise((resolve) => setTimeout(resolve, 40))
+        },
+      },
+      acl: acl().controller,
+      jobFactory: async () => fakeJob().job,
+      tempRoot: test.root,
+      pollIntervalMs: 1,
+      restoreIdleMs: 1,
+      mechanism: 'restricted-token',
+    })
+    await runner.run(policy('workspace-write', 'none'), {
+      invocation,
+      cwd: test.workspace,
+      env: { PATH: 'C:\\bin' },
+      timeoutMs: 5_000,
+    })
+    const workspaceLevels = () =>
+      levels.filter((entry) => entry.directory === test.workspace).map((entry) => entry.level)
+    // 打标签用了约 40ms：空闲 1ms 就恢复会让下一条命令重付这项开销，恢复要按耗时放大
+    expect(workspaceLevels()).toEqual(['low'])
+    await expect.poll(workspaceLevels, { timeout: 5_000 }).toEqual(['low', 'medium'])
+  })
+
   it('runs a workspace-write command and streams split UTF-8 output', async () => {
     const test = harness({
       exitCode: 7,
@@ -255,6 +321,7 @@ describe('createSandboxRunner', () => {
       jobFactory: async () => fakeJob().job,
       tempRoot: write.root,
       pollIntervalMs: 1,
+      restoreIdleMs: 0,
     })
     await runner.run(policy('workspace-write'), {
       invocation,
@@ -262,10 +329,12 @@ describe('createSandboxRunner', () => {
       env: {},
       timeoutMs: 1_000,
     })
-    expect(writeIntegrity.calls.at(-1)).toEqual({
-      directory: write.workspace,
-      level: 'low',
-    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // 运行期间低完整性，结束后恢复中完整性（标签不留在用户工作区上）
+    expect(writeIntegrity.calls.filter((call) => call.directory === write.workspace)).toEqual([
+      { directory: write.workspace, level: 'low' },
+      { directory: write.workspace, level: 'medium' },
+    ])
     const read = harness()
     const readIntegrity = integrity()
     const readRunner = await createSandboxRunner({

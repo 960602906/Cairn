@@ -195,6 +195,11 @@ export interface HostSandboxConfig {
   readonly capability: SandboxCapability
   readonly unavailable: SandboxUnavailableBehavior
   readonly appContainerName?: string | undefined
+  /**
+   * 沙箱里的子进程起不来时调用（M5-04）：把沙箱标记为不可用，让权限守卫按设置拒绝或要求
+   * 审批后在沙箱外运行，而不是让每条命令都以 `0xC0000142` 失败。
+   */
+  readonly onUnusable?: (() => void) | undefined
 }
 
 /**
@@ -326,6 +331,17 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         profile: effectiveSandbox.policy.profile,
       }
     }
+    /**
+     * 沙箱在实际执行中起不来（子进程加载阶段就退出）：把能力改成不可用，权限守卫随即按设置
+     * 拒绝或要求审批后在沙箱外运行（M5-04）。只改这一次运行内的状态，不改设置。
+     */
+    const withUnusableFallback = (config: HostSandboxConfig): HostSandboxConfig => ({
+      ...config,
+      onUnusable: () => {
+        if (!sandboxState.available) return
+        sandboxState = { ...sandboxState, available: false }
+      },
+    })
     const sandboxExecutionInfo: SandboxExecution | undefined = effectiveSandbox
       ? sandboxExecution(effectiveSandbox.policy, effectiveSandbox.capability)
       : undefined
@@ -354,7 +370,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             registry,
             init.workspacePath,
             init.shell ?? 'auto',
-            effectiveSandbox,
+            withUnusableFallback(effectiveSandbox),
           )
         : await options.registerTools?.(registry, init.workspacePath, init.shell ?? 'auto')) ?? {}
     const hasBuiltinTools = registry.list().length > 0
@@ -516,7 +532,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
               childRegistry,
               workspace.path,
               init.shell ?? 'auto',
-              childSandbox,
+              withUnusableFallback(childSandbox),
             )
           : await options.registerTools?.(childRegistry, workspace.path, init.shell ?? 'auto')) ??
         {}

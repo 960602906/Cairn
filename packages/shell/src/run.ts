@@ -28,7 +28,26 @@ import {
 export const ShellErrorCode = {
   /** shell 进程无法启动（可执行文件不存在、工作目录不存在等）。 */
   SpawnFailed: 'shell.spawn_failed',
+  /**
+   * 沙箱里的子进程在产出任何输出之前就以加载器错误退出（如 `0xC0000142` DLL 初始化失败）：
+   * 说明沙箱环境起不来这个进程，不是命令本身的结果。
+   */
+  ChildInitFailed: 'sandbox.child_start_failed',
 } as const
+
+/**
+ * 子进程在加载阶段就退出的 NTSTATUS 退出码：DLL 初始化失败、找不到 DLL、找不到入口点、映像格式错误。
+ * 这些退出码出现在没有任何输出时，按“沙箱无法启动子进程”处理，而不是当成命令结果返回。
+ */
+const CHILD_INIT_FAILURE_CODES: ReadonlySet<number> = new Set([
+  0xc0000142, // STATUS_DLL_INIT_FAILED
+  0xc0000135, // STATUS_DLL_NOT_FOUND
+  0xc0000139, // STATUS_ENTRYPOINT_NOT_FOUND
+  0xc000007b, // STATUS_INVALID_IMAGE_FORMAT
+])
+
+export const isChildInitFailureCode = (exitCode: number | null): boolean =>
+  exitCode !== null && CHILD_INIT_FAILURE_CODES.has(exitCode >>> 0)
 
 /** 默认超时（毫秒）。 */
 export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000
@@ -117,6 +136,7 @@ export async function runCommand(
       const out: string[] = []
       const err: string[] = []
       const keep = options.collectOutput ?? true
+      let sawOutput = false
       const result = await sandbox.runner.run(sandbox.policy, {
         invocation,
         cwd: options.cwd,
@@ -124,14 +144,31 @@ export async function runCommand(
         timeoutMs: options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
         ...(options.signal ? { signal: options.signal } : {}),
         onStdout: (text) => {
+          if (text !== '') sawOutput = true
           if (keep) out.push(text)
           options.onStdout?.(text)
         },
         onStderr: (text) => {
+          if (text !== '') sawOutput = true
           if (keep) err.push(text)
           options.onStderr?.(text)
         },
       })
+      const exitCode = result.exitCode
+      // 命令什么都没做就死在加载阶段：如实报告沙箱起不来，而不是把一个 NTSTATUS 当成退出码交给模型
+      if (
+        exitCode !== null &&
+        !result.timedOut &&
+        !result.aborted &&
+        !sawOutput &&
+        isChildInitFailureCode(exitCode)
+      ) {
+        throw new ShellError(
+          ShellErrorCode.ChildInitFailed,
+          `The sandbox could not start the process (exit code 0x${(exitCode >>> 0).toString(16)}).`,
+          { shell: invocation.file, exitCode: String(exitCode) },
+        )
+      }
       return {
         exitCode: result.exitCode,
         signal: null,
