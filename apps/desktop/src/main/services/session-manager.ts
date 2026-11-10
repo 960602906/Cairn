@@ -131,6 +131,11 @@ export interface SessionManager extends SessionCommands {
    * 给出 `sessionIds` 时只通知这些会话。失败交给 `onError`。
    */
   refreshPermissions(sessionIds?: readonly string[]): void
+  /**
+   * 宿主启动时拿到的工具清单过期了（M3-09：MCP 服务连上、断开或停用）。空闲的宿主马上停止，
+   * 忙着的等这一轮结束再停；下一次输入重新启动宿主，拿到新的清单。
+   */
+  refreshTools(): void
   /** 应用退出时调用：清空队列、停止所有宿主并等待退出。之后的输入报 `run.disposed`。 */
   shutdown(): Promise<void>
 }
@@ -157,6 +162,8 @@ interface Slot {
   /** 启动期间用户停止了排队的输入。 */
   cancelled: boolean
   idleTimer: ReturnType<typeof setTimeout> | undefined
+  /** 工具清单已过期：空闲后立即停止宿主，不等空闲超时。 */
+  stale?: boolean
   /** 宿主退出（或启动失败）后 resolve。 */
   readonly gone: Promise<void>
 }
@@ -252,6 +259,13 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     if (isBusy(sessionId, slot)) {
       if (slot.idleTimer !== undefined) clearTimeout(slot.idleTimer)
       slot.idleTimer = undefined
+      return
+    }
+    if (slot.stale) {
+      slot.stale = false
+      if (slot.idleTimer !== undefined) clearTimeout(slot.idleTimer)
+      slot.idleTimer = undefined
+      void slot.handle.stop()
       return
     }
     if (slot.idleTimer !== undefined) return
@@ -724,6 +738,13 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       for (const [sessionId, slot] of slots) {
         if (sessionIds && !sessionIds.includes(sessionId)) continue
         slot.handle?.refreshPermissions().catch(onError)
+      }
+    },
+
+    refreshTools() {
+      for (const [sessionId, slot] of slots) {
+        slot.stale = true
+        updateIdle(sessionId, slot)
       }
     },
 

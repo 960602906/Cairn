@@ -398,3 +398,95 @@ describe('contentToText', () => {
     ).toBe('\n[image unknown]\n[audio unknown]\n[resource unknown]')
   })
 })
+
+describe('McpManager 关闭失败与过期的连接', () => {
+  it('每次连接失败或超时都关闭那个客户端', async () => {
+    const clients: McpClient[] = []
+    const manager = new McpManager({
+      createClient: () => {
+        const client = fakeClient({
+          connect: vi.fn(async () => {
+            throw new Error('spawn failed')
+          }),
+        })
+        clients.push(client)
+        return client
+      },
+      sleep: async () => undefined,
+    })
+    const state = await manager.add(spec)
+    expect(state.status).toBe('error')
+    expect(clients).toHaveLength(3)
+    for (const client of clients) expect(client.close).toHaveBeenCalled()
+  })
+
+  it('列工具失败时也关闭客户端', async () => {
+    const client = fakeClient({
+      listTools: vi.fn(async () => {
+        throw new Error('bad list')
+      }),
+      close: vi.fn(async () => {
+        throw new Error('already closed')
+      }),
+    })
+    const manager = new McpManager({
+      createClient: () => client,
+      sleep: async () => undefined,
+      reconnect: { attempts: 1, initialDelayMs: 1, factor: 1, maxDelayMs: 1 },
+    })
+    expect((await manager.add(spec)).status).toBe('error')
+    expect(client.close).toHaveBeenCalled()
+  })
+
+  it('连接期间删除服务：连上后立刻关闭，不报告“已连接”', async () => {
+    let finish: () => void = () => undefined
+    const client = fakeClient({
+      connect: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve
+          }),
+      ),
+    })
+    const statuses: string[] = []
+    const manager = new McpManager({
+      createClient: () => client,
+      onStatus: (state) => statuses.push(state.status),
+      sleep: async () => undefined,
+    })
+    const adding = manager.add(spec)
+    await Promise.resolve()
+    manager.remove('srv-1')
+    finish()
+    await adding
+    expect(statuses).not.toContain('connected')
+    expect(client.close).toHaveBeenCalled()
+    expect(manager.list()).toEqual([])
+  })
+
+  it('连接期间被同名的新配置替换：旧连接关闭', async () => {
+    let finish: () => void = () => undefined
+    const first = fakeClient({
+      connect: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve
+          }),
+      ),
+    })
+    const second = fakeClient()
+    const queue = [first, second]
+    const manager = new McpManager({
+      createClient: () => queue.shift()!,
+      sleep: async () => undefined,
+    })
+    const adding = manager.add(spec)
+    await Promise.resolve()
+    const replaced = await manager.add(spec)
+    finish()
+    await adding
+    expect(replaced.status).toBe('connected')
+    expect(first.close).toHaveBeenCalled()
+    expect(manager.get('srv-1')?.status).toBe('connected')
+  })
+})

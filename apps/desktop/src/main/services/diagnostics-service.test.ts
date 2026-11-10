@@ -90,23 +90,30 @@ describe('diagnostics sanitization', () => {
       {
         seq: 1,
         ts: 1000,
-        type: 'message.created',
-        message: { role: 'user', content: 'Secret project details in C:\\Users\\alice\\app' },
+        type: 'message.user',
+        payload: {
+          messageId: 'm1',
+          content: [{ type: 'text', text: 'Secret project details in C:\\Users\\alice\\app' }],
+        },
       },
       {
         seq: 2,
         ts: 2000,
-        type: 'tool.executed',
-        name: 'exec',
-        status: 'ok',
-        input: { command: 'cat /secret.txt' },
+        type: 'tool.requested',
+        payload: { toolCallId: 'c1', name: 'run_command', input: { command: 'cat /secret.txt' } },
       },
     ]
 
     const clean = summarizeSessionEvents(events, false, 'C:\\Users\\alice')
     expect(JSON.stringify(clean)).not.toContain('Secret project details')
     expect(JSON.stringify(clean)).not.toContain('cat /secret.txt')
-    expect(clean[0]?.type).toBe('message.created')
+    expect(clean[0]).toEqual({
+      seq: 1,
+      ts: 1000,
+      type: 'message.user',
+      payload: { messageId: 'm1', contentParts: 1 },
+    })
+    expect(clean[1]).toMatchObject({ payload: { toolCallId: 'c1', name: 'run_command' } })
 
     const full = summarizeSessionEvents(events, true, 'C:\\Users\\alice')
     expect(JSON.stringify(full)).not.toContain('C:\\Users\\alice')
@@ -339,7 +346,7 @@ describe('diagnostics edge branches', () => {
     ])
   })
 
-  it('keeps optional event fields and tool metadata in the default summary', () => {
+  it('keeps envelope fields and safe payload fields in the default summary', () => {
     const clean = summarizeSessionEvents(
       [
         {
@@ -348,40 +355,60 @@ describe('diagnostics edge branches', () => {
           type: 'turn.failed',
           turnId: 't1',
           runId: 'r1',
-          error: { code: 'boom' },
-          usage: { inputTokens: 1, outputTokens: 2 },
-          model: { providerId: 'p', modelId: 'm' },
+          parentRunId: 'r0',
+          payload: { error: { code: 'boom', message: 'C:\\Users\\alice\\x' }, retryable: false },
         },
         {
           seq: 2,
           ts: 2,
-          type: 'tool.started',
-          name: 'exec',
-          status: 'running',
+          type: 'step.completed',
+          payload: {
+            model: { providerId: 'p', modelId: 'm' },
+            finishReason: 'stop',
+            durationMs: 5,
+            usage: { inputTokens: 1, outputTokens: 2 },
+          },
         },
         {
           seq: 3,
           ts: 3,
-          type: 'message.created',
-          message: { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+          type: 'message.assistant.delta',
+          payload: { messageId: 'm1', text: 'hello' },
         },
+        {
+          seq: 4,
+          ts: 4,
+          type: 'tool.completed',
+          payload: { toolCallId: 'c1', output: [{ type: 'text', text: 'secret' }], durationMs: 1 },
+        },
+        { seq: 5, ts: 5, type: 'session.archived', payload: {} },
+        { seq: 6, ts: 6, type: 'odd', payload: ['not', 'an', 'object'] },
       ],
       false,
       'C:\\Users\\alice',
     )
-    expect(clean[0]).toMatchObject({
-      turnId: 't1',
+    expect(clean[0]).toEqual({
+      seq: 1,
+      ts: 1,
+      type: 'turn.failed',
       runId: 'r1',
-      error: { code: 'boom' },
-      usage: { inputTokens: 1, outputTokens: 2 },
-      model: { providerId: 'p', modelId: 'm' },
+      parentRunId: 'r0',
+      turnId: 't1',
+      payload: { error: { code: 'boom', message: '~\\x' }, retryable: false },
     })
-    expect(clean[1]).toMatchObject({ toolName: 'exec', status: 'running' })
-    expect(clean[2]).toMatchObject({
-      role: 'user',
-      contentLength: undefined,
-      contentSummary: '[CONTENT_OMITTED_BY_DEFAULT]',
+    expect(clean[1]).toMatchObject({
+      payload: {
+        model: { providerId: 'p', modelId: 'm' },
+        finishReason: 'stop',
+        durationMs: 5,
+        usage: { inputTokens: 1, outputTokens: 2 },
+      },
     })
+    expect(clean[2]).toMatchObject({ payload: { messageId: 'm1', textLength: 5 } })
+    expect(clean[3]).toMatchObject({ payload: { toolCallId: 'c1', outputParts: 1 } })
+    expect(JSON.stringify(clean)).not.toContain('secret')
+    expect(clean[4]).toEqual({ seq: 5, ts: 5, type: 'session.archived' })
+    expect(clean[5]).toEqual({ seq: 6, ts: 6, type: 'odd' })
   })
 
   it('summarizes without a session and tolerates empty logs', async () => {

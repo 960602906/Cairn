@@ -329,12 +329,15 @@ const skills = createSkillService({
 const hub = createHubService()
 /** MCP 服务（M3-09）：配置、连接与工具调用都在主进程。 */
 const mcpStatusListeners = new Set<(event: McpStatusEvent) => void>()
+/** MCP 工具清单或工具权限变了：让空闲的宿主重启（会话管理器创建后接上）。 */
+let refreshIdleHosts: () => void = () => undefined
 const mcp = createMcpService({
   storage,
   credentials,
   onStatus: (event) => {
     for (const listener of [...mcpStatusListeners]) listener(event)
   },
+  onToolsChanged: () => refreshIdleHosts(),
   onError: reportError,
 })
 /** Agent 定义（M3-11）：内置编程助手 + 用户/导入的 Agent，草稿与已发布版本分开。 */
@@ -403,10 +406,13 @@ const supervisor = createHostSupervisor({
     return ref === undefined ? undefined : credentials.resolve(ref)
   },
   resolveModelConfig: (model) => settings.hostModelConfig(model),
-  resolvePermissionRules: (sessionId, agent) =>
-    trials
-      ? trials.permissionRulesFor(sessionId, agent, permissions.rulesForSession(sessionId))
-      : agents.permissionRulesFor(agent, permissions.rulesForSession(sessionId)),
+  // MCP 工具在设置页单独选的效果也是规则，和其他规则一起取最严格的
+  resolvePermissionRules: (sessionId, agent) => {
+    const rules = [...permissions.rulesForSession(sessionId), ...mcp.permissionRules()]
+    return trials
+      ? trials.permissionRulesFor(sessionId, agent, rules)
+      : agents.permissionRulesFor(agent, rules)
+  },
   // 自定义说明（M1-13b）：加入系统提示词；修改后在下次启动宿主时生效
   resolveInstructions: () => settings.instructions(),
   // 默认 Shell（M2-09）：同样在下次启动宿主时生效
@@ -536,6 +542,7 @@ const sessions = createSessionManager({
   },
   onError: reportError,
 })
+refreshIdleHosts = () => sessions.refreshTools()
 const trials = createTrialService({ storage, events, agents, sessions })
 sessions.recoverInterrupted()
 /**

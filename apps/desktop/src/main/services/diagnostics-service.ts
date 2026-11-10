@@ -130,13 +130,44 @@ interface DiagnosticSessionEvent {
   readonly type?: string
   readonly turnId?: string
   readonly runId?: string
-  readonly error?: unknown
-  readonly usage?: unknown
-  readonly model?: unknown
-  readonly message?: { readonly role?: string; readonly content?: unknown }
-  readonly toolName?: string
-  readonly name?: string
-  readonly status?: string
+  readonly parentRunId?: string
+  /** 真实事件的内容都在 `payload` 里（`EventEnvelope`）。 */
+  readonly payload?: unknown
+}
+
+/**
+ * 默认摘要只保留这些 `payload` 字段：状态、耗时、用量、模型、错误与工具名。
+ * 用白名单：消息正文、工具输入输出、文件内容等新字段默认都不会进入诊断包。
+ */
+const SAFE_PAYLOAD_KEYS = [
+  'error',
+  'usage',
+  'model',
+  'durationMs',
+  'reason',
+  'from',
+  'to',
+  'retryable',
+  'finishReason',
+  'limit',
+  'value',
+  'toolCallId',
+  'name',
+  'messageId',
+  'truncated',
+  'incomplete',
+  'stream',
+] as const
+
+/** 去掉正文时记下大小，方便判断上下文是不是太长。 */
+function contentSize(payload: Record<string, unknown>): Record<string, number> {
+  const size: Record<string, number> = {}
+  if (typeof payload['text'] === 'string') size['textLength'] = payload['text'].length
+  for (const key of ['content', 'output'] as const) {
+    const value = payload[key]
+    if (Array.isArray(value)) size[`${key}Parts`] = value.length
+  }
+  return size
 }
 
 /** 生成脱敏的设置摘要。 */
@@ -199,28 +230,25 @@ export function summarizeSessionEvents(
       return sanitizeValue(ev, userHomeDir) as Record<string, unknown>
     }
 
-    // 默认脱敏摘要：保留事件类型、时间戳、序列号与错误状态
+    // 默认脱敏摘要：信封字段 + 白名单里的 payload 字段，不含正文
     const clean: Record<string, unknown> = {
       seq: ev.seq,
       ts: ev.ts,
       type: ev.type,
     }
-
-    if (ev.turnId !== undefined) clean.turnId = ev.turnId
-    if (ev.runId !== undefined) clean.runId = ev.runId
-    if (ev.error !== undefined) clean.error = ev.error
-    if (ev.usage !== undefined) clean.usage = ev.usage
-    if (ev.model !== undefined) clean.model = ev.model
-
-    if (ev.type === 'message.created') {
-      clean.role = ev.message?.role
-      clean.contentLength =
-        typeof ev.message?.content === 'string' ? ev.message.content.length : undefined
-      clean.contentSummary = '[CONTENT_OMITTED_BY_DEFAULT]'
-    } else if (ev.type?.startsWith('tool.')) {
-      clean.toolName = ev.toolName ?? ev.name
-      clean.status = ev.status
+    if (ev.runId !== undefined) clean['runId'] = ev.runId
+    if (ev.parentRunId !== undefined) clean['parentRunId'] = ev.parentRunId
+    if (ev.turnId !== undefined) clean['turnId'] = ev.turnId
+    const payload =
+      typeof ev.payload === 'object' && ev.payload !== null && !Array.isArray(ev.payload)
+        ? (ev.payload as Record<string, unknown>)
+        : {}
+    const kept: Record<string, unknown> = {}
+    for (const key of SAFE_PAYLOAD_KEYS) {
+      if (payload[key] !== undefined) kept[key] = payload[key]
     }
+    Object.assign(kept, contentSize(payload))
+    if (Object.keys(kept).length > 0) clean['payload'] = kept
 
     return sanitizeValue(clean, userHomeDir) as Record<string, unknown>
   })

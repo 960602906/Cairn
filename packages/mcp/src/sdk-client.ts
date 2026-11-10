@@ -46,12 +46,30 @@ export function contentToText(content: unknown): string {
   return parts.join('\n')
 }
 
+/**
+ * Windows 上 `npx`、`uvx` 这类命令其实是 `.cmd` / `.bat` 脚本，不经过 shell 无法直接启动
+ * （Node 会报 ENOENT 或 EINVAL）。不是 `.exe` / `.com` 的命令改由 `cmd.exe /d /c` 启动；
+ * 结束时按进程树结束，`cmd.exe` 下的子进程一起退出。
+ */
+export function stdioCommand(
+  command: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+  comspec: string | undefined = process.env['ComSpec'],
+): { command: string; args: string[] } {
+  if (platform !== 'win32' || /\.(exe|com)$/i.test(command)) {
+    return { command, args: [...args] }
+  }
+  return { command: comspec || 'cmd.exe', args: ['/d', '/c', command, ...args] }
+}
+
 export function createSdkClient(spec: McpServerSpec): McpClient {
   const client = new Client({ name: 'cairn', version: '0.0.0' })
   let closed = false
   let closeListener: (() => void) | undefined
   let logListener: ((line: string) => void) | undefined
-  let stdioPid: number | null = null
+  /** 启动过的 stdio 传输；连接失败或超时也要按它的 pid 结束子进程。 */
+  let stdio: StdioClientTransport | undefined
   const connectTimeout = spec.connectTimeoutMs ?? 15_000
   const callTimeout = spec.callTimeoutMs ?? 60_000
 
@@ -59,13 +77,15 @@ export function createSdkClient(spec: McpServerSpec): McpClient {
     async connect() {
       let transport: StdioClientTransport | StreamableHTTPClientTransport
       if (spec.transport.kind === 'stdio') {
+        const launch = stdioCommand(spec.transport.command, spec.transport.args ?? [])
         transport = new StdioClientTransport({
-          command: spec.transport.command,
-          ...(spec.transport.args ? { args: [...spec.transport.args] } : {}),
+          command: launch.command,
+          ...(launch.args.length > 0 ? { args: launch.args } : {}),
           ...(spec.transport.cwd ? { cwd: spec.transport.cwd } : {}),
           ...(spec.transport.env ? { env: { ...spec.transport.env } } : {}),
           stderr: 'pipe',
         })
+        stdio = transport
         transport.stderr?.on('data', (chunk: unknown) => {
           const text = String(chunk).trim()
           if (text) logListener?.(text)
@@ -81,8 +101,6 @@ export function createSdkClient(spec: McpServerSpec): McpClient {
         if (!closed) closeListener?.()
       }
       await client.connect(transport, { timeout: connectTimeout })
-      /* v8 ignore next -- HTTP 传输没有 pid；成功连接的 stdio 分支由集成测试覆盖 */
-      stdioPid = transport instanceof StdioClientTransport ? transport.pid : null
     },
 
     async listTools() {
@@ -113,9 +131,10 @@ export function createSdkClient(spec: McpServerSpec): McpClient {
 
     async close() {
       closed = true
-      await client.close()
-      terminateProcessTree(stdioPid)
-      stdioPid = null
+      const pid = stdio?.pid ?? null
+      stdio = undefined
+      await client.close().catch(() => undefined)
+      terminateProcessTree(pid)
     },
 
     onClose(listener) {

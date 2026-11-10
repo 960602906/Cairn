@@ -15,7 +15,7 @@ import type {
 } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
 import { createSessionEventService } from './event-service.js'
-import { createAgentService, type AgentServiceOptions } from './agent-service.js'
+import { agentPresetRules, createAgentService, type AgentServiceOptions } from './agent-service.js'
 
 let clock = 1_000
 let counter = 0
@@ -630,6 +630,23 @@ describe('agent-service runtime helpers', () => {
       run({ id: created.agentId, draftHash: 'draft-hash' }),
     ])
     expect(service.versions({ agentId: created.agentId }).versions[0]?.usedBySessions).toBe(1)
+  })
+})
+
+describe('agentPresetRules', () => {
+  it('only keeps deny rules: an agent can tighten the global mode but never loosen it', () => {
+    expect(agentPresetRules('auto')).toEqual([])
+    expect(agentPresetRules('ask')).toEqual([])
+    const readOnly = agentPresetRules('read-only')
+    expect(readOnly.length).toBeGreaterThan(0)
+    expect(readOnly.every((rule) => rule.effect === 'deny')).toBe(true)
+  })
+
+  it('an auto agent adds no allow rules on top of the app rules', () => {
+    const { service } = setup()
+    const created = service.saveDraft({ definition: draft({ permissions: 'auto' }) })
+    service.publish({ agentId: created.agentId })
+    expect(service.permissionRulesFor({ id: created.agentId, version: 1 }, [rule])).toEqual([rule])
   })
 })
 

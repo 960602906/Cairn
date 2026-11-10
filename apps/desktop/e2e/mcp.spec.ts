@@ -73,8 +73,18 @@ test('添加 MCP 服务后，mock 模型调用其工具并得到审批后的结�
       command: process.execPath,
       args: [fixture],
     })
-    expect(added.status).toBe('connected')
-    expect(added.tools.map((tool) => tool.name)).toContain('mcp_fixture_echo')
+    // 添加不等连接结果（立即返回“连接中”），这里等它连上
+    await expect
+      .poll(
+        async () =>
+          (
+            await request<{ status: string; tools: { name: string }[] }>(window, 'mcp.get', {
+              serverId: added.serverId,
+            })
+          ).tools.map((tool) => tool.name),
+        { timeout: 20_000 },
+      )
+      .toContain('mcp_fixture_echo')
 
     await createSession(window, projectDir(userData), 'MCP')
     await sendPrompt(window, '用 MCP 的 echo 工具')

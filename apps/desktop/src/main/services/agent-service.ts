@@ -41,6 +41,7 @@ import {
   type LocalizedText,
   type McpToolExposure,
   type ModelRef,
+  type PermissionMode,
   type PermissionRule,
   type RunAgentRef,
   type SkillCatalogEntry,
@@ -139,6 +140,14 @@ const draftHash = (fields: AgentDraftFields): string =>
   createHash('sha256')
     .update(JSON.stringify(canonicalJson(fields)))
     .digest('hex')
+
+/**
+ * Agent 的权限预设只能收紧，不能放宽设置里的全局权限模式：只保留“拒绝”这类规则。
+ * 否则一个“自动”的 Agent（包括从文件导入的）会在全局为“询问”时直接放行写入、执行和 MCP 调用。
+ */
+export function agentPresetRules(mode: PermissionMode): PermissionRule[] {
+  return presetRules(mode).filter((rule) => rule.effect !== 'allow')
+}
 
 export function createAgentService(options: AgentServiceOptions): AgentService {
   const { storage, events } = options
@@ -695,7 +704,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
         systemPrompt,
         tools,
         skills: selectedSkills,
-        permissionRules: presetRules(fields.permissions),
+        permissionRules: agentPresetRules(fields.permissions),
         budget: {
           contextWindow: 128_000,
           reserveOutputTokens: fields.context.reserveOutputTokens ?? 4_096,
@@ -737,7 +746,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     permissionRulesFor(ref, rules) {
       const definition = definitionForRun(ref)
       if (!definition) return [...rules]
-      return [...presetRules(definition.permissions), ...rules]
+      return [...agentPresetRules(definition.permissions), ...rules]
     },
   }
 }

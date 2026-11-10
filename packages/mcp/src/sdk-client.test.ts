@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSdkClient } from './index.js'
+import { createSdkClient, stdioCommand } from './index.js'
 
 const unreachable = 'http://127.0.0.1:1/mcp'
 
@@ -45,5 +45,34 @@ describe('createSdkClient（stdio 传输）', () => {
     await expect(client.connect()).rejects.toBeTruthy()
     await client.close().catch(() => undefined)
     expect(logs).toEqual([])
+  })
+})
+
+describe('stdioCommand', () => {
+  it('Windows 上 npx 这类脚本经 cmd.exe 启动，.exe 直接启动', () => {
+    expect(stdioCommand('npx', ['-y', 'pkg'], 'win32', 'C:\\Windows\\cmd.exe')).toEqual({
+      command: 'C:\\Windows\\cmd.exe',
+      args: ['/d', '/c', 'npx', '-y', 'pkg'],
+    })
+    expect(stdioCommand('uvx', [], 'win32', undefined)).toEqual({
+      command: 'cmd.exe',
+      args: ['/d', '/c', 'uvx'],
+    })
+    expect(stdioCommand('C:\\tools\\server.EXE', ['a'], 'win32', 'cmd.exe')).toEqual({
+      command: 'C:\\tools\\server.EXE',
+      args: ['a'],
+    })
+  })
+
+  it('其他平台原样启动', () => {
+    expect(stdioCommand('npx', ['-y', 'pkg'], 'linux')).toEqual({
+      command: 'npx',
+      args: ['-y', 'pkg'],
+    })
+    expect(stdioCommand('npx', [])).toEqual(
+      process.platform === 'win32'
+        ? { command: process.env['ComSpec'] || 'cmd.exe', args: ['/d', '/c', 'npx'] }
+        : { command: 'npx', args: [] },
+    )
   })
 })
