@@ -71,8 +71,6 @@ function Workspace() {
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const onActivityOpen = useSessionStore((s) => s.onActivityOpen)
   const selectSession = useSessionStore((s) => s.selectSession)
-  const activeSessionId = useSessionStore((s) => s.activeSessionId)
-  const sessions = useSessionStore((s) => s.sessions)
   const activityBadge = useSessionStore((s) => s.activity?.counts?.approvals ?? 0)
   const chromeStyle = windowControlsStyle()
   // 没有选中的会话时直接显示新对话页（标志、问候与底部输入框）；选中后（即使不在列表中）显示会话
@@ -152,14 +150,6 @@ function Workspace() {
     // 返回对话时恢复会话列；窄窗口仍保持抽屉关闭。
     if (!narrow) setSessionsOpen(true)
   }, [narrow])
-
-  /** 离开新对话页：没有选中的会话时回到最近一个会话，避免停在空白页。 */
-  const leaveNewSession = useCallback(() => {
-    setComposing(false)
-    if (activeSessionId === undefined && sessions[0] !== undefined) {
-      void selectSession(sessions[0].sessionId)
-    }
-  }, [activeSessionId, selectSession, sessions])
 
   const openActivity = useCallback(() => {
     setSettings(undefined)
@@ -333,7 +323,6 @@ function Workspace() {
             <NewSession
               initialProjectPath={newChatProjectPath}
               onDone={() => setComposing(false)}
-              onCancel={leaveNewSession}
               onSettings={() => setSettings('providers')}
             />
           </>

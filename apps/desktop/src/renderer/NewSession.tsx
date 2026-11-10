@@ -47,26 +47,21 @@ function titleFromPrompt(text: string): string {
 export function NewSession({
   initialProjectPath,
   onDone,
-  onCancel,
   onSettings,
 }: {
   /** 从某个工作空间的“新建会话”进入时预先选中的项目路径。 */
   readonly initialProjectPath?: string | undefined
   /** 会话创建并发出第一条消息后离开新对话页。 */
   readonly onDone: () => void
-  /** 点“取消”离开新对话页；没有选中的会话时可以回到最近的会话。 */
-  readonly onCancel?: (() => void) | undefined
   /** 打开设置页的“模型供应商”（没有配置供应商时的引导）。 */
   readonly onSettings?: () => void
 }) {
   const { t } = useTranslation('session')
-  const { t: tc } = useTranslation()
   const createSession = useSessionStore((s) => s.createSession)
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const projects = useSessionStore((s) => s.projects)
   const refreshProjects = useSessionStore((s) => s.refreshProjects)
   const openProject = useSessionStore((s) => s.openProject)
-  const hasSessions = useSessionStore((s) => s.sessions.length > 0)
   // 设置还没读到时不提示（旧版主进程或测试替身可能不返回供应商列表）
   const noProvider = useSessionStore((s) => s.settings?.providers?.length === 0)
   const [projectPath, setProjectPath] = useState(initialProjectPath ?? projects[0]?.path ?? '')
@@ -192,14 +187,6 @@ export function NewSession({
             </button>
           </div>
         </div>
-
-        {hasSessions && (
-          <div className="mt-1 flex justify-center">
-            <Button variant="ghost" size="sm" onClick={onCancel ?? onDone}>
-              {tc('action.cancel')}
-            </Button>
-          </div>
-        )}
       </div>
     </div>
   )
