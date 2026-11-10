@@ -5,7 +5,7 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'reply from configured provider'
 const BRIEF = '目标：修复登录'
@@ -50,14 +50,7 @@ test('抽屉显示会话要点，编辑后的文字不会被自动更新盖掉',
     const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     await configure(window, mock.baseUrl)
 
-    await window
-      .getByRole('navigation', { name: '全局导航' })
-      .getByRole('button', { name: '新对话' })
-      .click()
-    await window.getByLabel('项目目录').fill(projectDir(userData))
-    await window.getByLabel('标题（可选）').fill('要点')
-    await window.getByRole('button', { name: '创建' }).click()
-    await expect(window.getByRole('heading', { level: 2, name: '要点' })).toBeVisible()
+    await createSession(window, projectDir(userData), '要点')
 
     await sendPrompt(window, '目标是修复登录，不要改 API')
     await expectMessages(window, [

@@ -47,21 +47,15 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     await expect(providers).toContainText('正常')
     await window.keyboard.press('Escape')
 
-    await window
-      .getByRole('navigation', { name: '全局导航' })
-      .getByRole('button', { name: '新对话' })
-      .click()
-    await window.getByRole('button', { name: '选择文件夹…' }).click()
-    await expect(window.getByLabel('项目目录')).toHaveValue(dir)
-    const recent = window.getByRole('region', { name: '最近的项目' })
-    const selected = recent.getByRole('button', { name: /project/ })
-    await expect(selected).toHaveAttribute('aria-pressed', 'true')
-    await expect(selected).toContainText(dir)
-    await window.getByLabel('标题（可选）').fill('模板配置')
-    await window.getByRole('button', { name: '创建' }).click()
-    await expect(window.getByRole('heading', { level: 2, name: '模板配置' })).toBeVisible()
+    // 关闭设置后回到新对话首页；输入框左下角是工作空间选择器，系统对话框已固定返回项目目录
+    await window.getByRole('button', { name: '选择工作空间' }).click()
+    await window.getByRole('menuitem', { name: '选择文件夹…' }).click()
+    await expect(window.getByRole('button', { name: '工作空间：project' })).toBeVisible()
+    const workspace = window.getByRole('group', { name: '当前工作区' })
+    await expect(workspace.getByLabel(`当前目录：${dir}`)).toBeVisible()
 
     await sendPrompt(window, '你好')
+    await expect(window.getByRole('heading', { level: 2, name: '你好' })).toBeVisible()
     await expectMessages(window, [
       ['你', '你好'],
       ['助手', REPLY],

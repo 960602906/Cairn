@@ -64,12 +64,25 @@ describe('groupSessions', () => {
 })
 
 describe('SessionList', () => {
-  it('shows an empty state and the new chat form', async () => {
+  it('does not repeat the session empty state when there are no workspaces', async () => {
     setup({ 'session.list': () => ({ sessions: [] }) })
-    expect(await screen.findByText('还没有会话')).toBeTruthy()
-    expect(screen.getByRole('heading', { level: 2, name: '开始新的对话' })).toBeTruthy()
+    expect(await screen.findByText('还没有工作空间')).toBeTruthy()
+    expect(screen.queryByText('还没有会话')).toBeNull()
+    expect(screen.getByPlaceholderText('有什么可以帮你？')).toBeTruthy()
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true)
     // 没有会话时不能取消
     expect(screen.queryByRole('button', { name: '取消' })).toBeNull()
+  })
+
+  it('shows the session empty state when a workspace exists', async () => {
+    setup({
+      'project.list': () => ({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work/demo', createdAt: 1 }],
+      }),
+      'session.list': () => ({ sessions: [] }),
+    })
+    expect(await screen.findByText('还没有会话')).toBeTruthy()
+    expect(screen.queryByText('还没有工作空间')).toBeNull()
   })
 
   it('lists sessions grouped by project with their status and selects one on click', async () => {
@@ -110,16 +123,38 @@ describe('SessionList', () => {
     const toggle = within(group).getByRole('button', { name: /^work/ })
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('folder-open')
+    expect(group.querySelector('h3 svg.lucide-chevron-right')?.getAttribute('class')).toContain(
+      'rotate-90',
+    )
     expect(within(group).getAllByRole('listitem')).toHaveLength(2)
 
     await userEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('lucide-folder')
     expect(group.querySelector('h3 svg')?.getAttribute('class')).not.toContain('folder-open')
+    expect(group.querySelector('h3 svg.lucide-chevron-right')?.getAttribute('class')).not.toContain(
+      'rotate-90',
+    )
     expect(within(group).queryByRole('listitem')).toBeNull()
 
     await userEvent.click(toggle)
     expect(within(group).getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('previews long project groups and expands the remaining sessions', async () => {
+    setup({
+      'session.list': () => ({
+        sessions: Array.from({ length: 10 }, (_, index) => summary(`s${index}`, `会话 ${index}`)),
+      }),
+    })
+    const group = await screen.findByRole('region', { name: '项目 work' })
+    expect(within(group).getAllByRole('listitem')).toHaveLength(8)
+
+    await userEvent.click(within(group).getByRole('button', { name: '展开剩余 2 个' }))
+    expect(within(group).getAllByRole('listitem')).toHaveLength(10)
+
+    await userEvent.click(within(group).getByRole('button', { name: '收起' }))
+    expect(within(group).getAllByRole('listitem')).toHaveLength(8)
   })
 
   it('renames a session in place; Esc cancels and unchanged titles are not saved', async () => {
@@ -182,54 +217,67 @@ describe('SessionList', () => {
     expect(request).toHaveBeenCalledWith('session.archive', { sessionId: 's1' })
   })
 
-  it('creates a session from the form', async () => {
+  it('creates a session from the first message', async () => {
     const sessions: SessionSummary[] = [summary('s0', '已有')]
     const { request, store } = setup({
       'session.list': () => ({ sessions }),
+      'project.list': () => ({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+      }),
       'session.create': ({ title }: { title?: string }) => {
         sessions.unshift(summary('s1', title ?? ''))
         return { sessionId: 's1' }
       },
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),
     })
-    await userEvent.click((await screen.findAllByRole('button', { name: '新对话' }))[0]!)
-    const create = screen.getByRole('button', { name: '创建' }) as HTMLButtonElement
-    expect(create.disabled).toBe(true)
-    await userEvent.type(screen.getByLabelText('项目目录'), '  /work/demo  ')
-    await userEvent.type(screen.getByLabelText('标题（可选）'), '演示')
-    await userEvent.click(create)
+    await screen.findAllByRole('listitem')
+    await userEvent.keyboard('{Control>}n{/Control}')
+    const send = screen.getByRole('button', { name: '发送' }) as HTMLButtonElement
+    expect(send.disabled).toBe(true)
+    await userEvent.type(screen.getByPlaceholderText('有什么可以帮你？'), ' 演示 ')
+    await userEvent.click(send)
 
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
     expect(request).toHaveBeenCalledWith('session.create', {
-      projectPath: '/work/demo',
+      projectPath: '/work',
       title: '演示',
     })
-    expect(screen.queryByLabelText('项目目录')).toBeNull()
+    expect(request).toHaveBeenCalledWith('session.prompt', {
+      sessionId: 's1',
+      content: [{ type: 'text', text: '演示' }],
+    })
+    expect(screen.queryByPlaceholderText('有什么可以帮你？')).toBeNull()
     expect(screen.getByRole('heading', { level: 2, name: '演示' })).toBeTruthy()
   })
 
-  it('opens the form with Ctrl+N and cancels back to the conversation', async () => {
+  it('opens the composer with Ctrl+N and cancels back to the conversation', async () => {
     setup({ 'session.list': () => ({ sessions: [summary('s0', '已有')] }) })
     await screen.findAllByRole('listitem')
-    expect(screen.queryByLabelText('项目目录')).toBeNull()
+    expect(screen.queryByPlaceholderText('有什么可以帮你？')).toBeNull()
     await userEvent.keyboard('{Control>}n{/Control}')
-    expect(screen.getByLabelText('项目目录')).toBeTruthy()
+    expect(screen.getByPlaceholderText('有什么可以帮你？')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '取消' }))
-    expect(screen.queryByLabelText('项目目录')).toBeNull()
+    expect(screen.queryByPlaceholderText('有什么可以帮你？')).toBeNull()
   })
 
-  it('keeps the form open and shows the error when creating fails', async () => {
+  it('keeps the composer open and shows the error when creating fails', async () => {
     const { request } = setup({
       'session.list': () => ({ sessions: [] }),
+      'project.list': () => ({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+      }),
       'session.create': () => {
         throw new RpcError('rpc.invalid_params')
       },
     })
-    await userEvent.type(await screen.findByLabelText('项目目录'), 'relative')
-    await userEvent.click(screen.getByRole('button', { name: '创建' }))
+    await userEvent.type(await screen.findByPlaceholderText('有什么可以帮你？'), '修复')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
     expect((await screen.findByRole('alert')).textContent).toContain('请求参数无效')
-    expect(request).toHaveBeenCalledWith('session.create', { projectPath: 'relative' })
-    expect(screen.getByLabelText('项目目录')).toBeTruthy()
+    expect(request).toHaveBeenCalledWith('session.create', {
+      projectPath: '/work',
+      title: '修复',
+    })
+    expect(screen.getByPlaceholderText('有什么可以帮你？')).toBeTruthy()
 
     await userEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '关闭' }))
     expect(screen.queryByRole('alert')).toBeNull()
@@ -239,7 +287,7 @@ describe('SessionList', () => {
     setup({ 'session.list': () => ({ sessions: [summary('s0', '已有')] }) })
     await userEvent.click(await screen.findByRole('button', { name: '收起侧栏' }))
     expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull()
-    await userEvent.click(screen.getByRole('button', { name: '会话' }))
+    await userEvent.click(screen.getByRole('button', { name: '展开侧栏' }))
     expect(screen.getByRole('navigation', { name: '会话' })).toBeTruthy()
   })
 })
@@ -251,7 +299,7 @@ describe('App without the preload API', () => {
     expect(screen.queryByRole('navigation')).toBeNull()
   })
 
-  it('fills the project folder from the folder dialog or a recent project', async () => {
+  it('chooses the workspace from the composer or the folder dialog', async () => {
     const recent = { projectId: 'p1', name: 'api', path: '/work/api', createdAt: 1 }
     const opened = { projectId: 'p2', name: 'web', path: '/work/web', createdAt: 2 }
     const results = [{ project: opened }, {}]
@@ -262,38 +310,32 @@ describe('App without the preload API', () => {
       'session.create': () => ({ sessionId: 's9' }),
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),
     })
-    const path = (await screen.findByLabelText('项目目录')) as HTMLInputElement
-    const recentSection = () => screen.getByRole('region', { name: '最近的项目' })
-    const recentButton = (name: string) =>
-      within(recentSection()).getByRole('button', { name: new RegExp(name) })
-    await userEvent.click(recentButton('api'))
-    expect(path.value).toBe('/work/api')
-    expect(recentButton('api').getAttribute('aria-pressed')).toBe('true')
+    const workspace = () => screen.getByRole('button', { name: /^工作空间：/ })
+    await waitFor(() => expect(workspace().getAttribute('aria-label')).toBe('工作空间：api'))
 
-    await userEvent.click(screen.getByRole('button', { name: '选择文件夹…' }))
-    await waitFor(() => expect(path.value).toBe('/work/web'))
-    // 新打开的项目排在最前面
-    expect(
-      within(recentSection())
-        .getAllByRole('button')
-        .map((button) => button.textContent),
-    ).toEqual(['web/work/web', 'api/work/api'])
-    expect(recentButton('web').getAttribute('aria-pressed')).toBe('true')
+    await userEvent.click(workspace())
+    await userEvent.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
+    await waitFor(() => expect(workspace().getAttribute('aria-label')).toBe('工作空间：web'))
 
     // 取消对话框时不改动
-    await userEvent.click(screen.getByRole('button', { name: '选择文件夹…' }))
+    await userEvent.click(workspace())
+    await userEvent.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
     await waitFor(() =>
       expect(request.mock.calls.filter(([m]) => m === 'project.open')).toHaveLength(2),
     )
-    expect(path.value).toBe('/work/web')
-    await userEvent.click(recentButton('api'))
-    expect(path.value).toBe('/work/api')
-    await userEvent.click(recentButton('web'))
-    expect(path.value).toBe('/work/web')
+    expect(workspace().getAttribute('aria-label')).toBe('工作空间：web')
 
-    await userEvent.click(screen.getByRole('button', { name: '创建' }))
+    await userEvent.click(workspace())
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'api' }))
+    expect(workspace().getAttribute('aria-label')).toBe('工作空间：api')
+
+    await userEvent.type(screen.getByPlaceholderText('有什么可以帮你？'), '你好')
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
     await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('session.create', { projectPath: '/work/web' }),
+      expect(request).toHaveBeenCalledWith('session.create', {
+        projectPath: '/work/api',
+        title: '你好',
+      }),
     )
   })
 })

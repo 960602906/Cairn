@@ -1,8 +1,6 @@
 /**
  * 输入框（M2-04，视觉规范 §6）：悬浮在纸面底部的卡片。
  *
- * - 上方是运行状态条：运行中显示转圈、“运行中 · 思考中”、本轮已用时间与“按 Esc 停止”；空闲时状态只给读屏。
- *   页面上唯一的 `role="status"` 区域在这里（只放状态文字，已用时间不放进去，避免读屏每秒播报）。
  * - 文本框自动增高（最多约 8 行）。Enter 发送，Shift+Enter 换行；输入法组字时的 Enter 不发送。
  *   运行中不能发送（主进程会报 `run.busy`），发送按钮换成停止按钮。发送时立即清空，失败时恢复。
  * - 下方左边是权限模式（只读 / 询问 / 自动，全局设置），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、
@@ -14,7 +12,6 @@ import {
   ChevronDown,
   Eye,
   ListChecks,
-  Search,
   ShieldCheck,
   Square,
   Zap,
@@ -30,15 +27,9 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RunView } from '@cairn/core'
-import type {
-  AgentDefinitionRef,
-  ModelRef,
-  PermissionMode,
-  RunState,
-  SessionStatus,
-} from '@cairn/protocol'
-import { formatCompactTokens } from './format.js'
+import type { AgentDefinitionRef, ModelRef, PermissionMode, SessionStatus } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
+import { WorkspaceGitBar } from './WorkspaceGitBar.js'
 import {
   cn,
   DropdownMenu,
@@ -46,8 +37,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-  Kbd,
-  Spinner,
   Tooltip,
 } from './ui/index.js'
 
@@ -59,14 +48,11 @@ export interface ComposerProps {
   readonly agent?: AgentDefinitionRef | undefined
   /** 会话的模型（下一轮使用）；没有记录时用默认模型。 */
   readonly model: ModelRef | undefined
+  /** 会话的项目目录；输入框上方显示当前目录与分支。 */
+  readonly projectPath: string | undefined
   /** 上下文占用的 token 数（最近一次用量）。 */
   readonly contextTokens: number | undefined
-  /** 打开运行检查器。 */
-  readonly onInspect: () => void
 }
-
-/** 运行中时进一步说明的运行状态。 */
-const RUN_DETAILS: ReadonlySet<RunState> = new Set(['thinking', 'tooling', 'aborting'])
 
 /** 文本框最高（px），超过后滚动。 */
 const MAX_TEXTAREA_HEIGHT = 200
@@ -77,118 +63,6 @@ const PERMISSION_ICONS = { 'read-only': Eye, ask: ShieldCheck, auto: Zap } as co
 
 const sameModel = (a: ModelRef | undefined, b: ModelRef) =>
   a?.providerId === b.providerId && a.modelId === b.modelId
-
-/** 已用时间：m:ss（超过一小时为 h:mm:ss）。 */
-export function formatElapsed(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const s = String(total % 60).padStart(2, '0')
-  const m = Math.floor(total / 60) % 60
-  const h = Math.floor(total / 3600)
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
-}
-
-/** 运行中每秒刷新的当前时间。 */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    setNow(Date.now())
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [active])
-  return now
-}
-
-function RunBar({
-  status,
-  run,
-  onInspect,
-}: {
-  readonly status: SessionStatus
-  readonly run: RunView | undefined
-  readonly onInspect: () => void
-}) {
-  const { t } = useTranslation('session')
-  const active = status === 'running' || status === 'waiting_approval'
-  // 已发送、这一轮还没开始时从发送时刻算起
-  const [sentAt, setSentAt] = useState(() => Date.now())
-  const turn = run?.turn?.status === 'running' ? run.turn : undefined
-  useEffect(() => {
-    if (active && !turn) setSentAt(Date.now())
-  }, [active, turn])
-  const now = useNow(active)
-  const detail = status === 'running' && run && RUN_DETAILS.has(run.state) ? run.state : undefined
-  const text = `${t(`status.${status}`)}${detail ? ` · ${t(`run.${detail}`)}` : ''}`
-  if (!active && run === undefined) {
-    return (
-      <p role="status" className="sr-only">
-        {text}
-      </p>
-    )
-  }
-  const elapsed = now - (turn?.startedAt ?? sentAt)
-  const steps = turn?.stepCount ?? 0
-  const maxSteps = run?.limits.maxStepsPerTurn
-  const tokens = run ? run.usage.inputTokens + run.usage.outputTokens : 0
-  const maxTokens = run?.limits.maxTokensPerTurn
-  const maxDuration = run?.limits.maxTurnDurationMs
-  const stepWarn = maxSteps !== undefined && steps / maxSteps >= 0.8
-  const tokenWarn = maxTokens !== undefined && tokens / maxTokens >= 0.8
-  const durationWarn = maxDuration !== undefined && elapsed / maxDuration >= 0.8
-  return (
-    <div className="mb-2 flex min-w-0 items-center gap-2 px-3 text-note text-muted">
-      {active ? <Spinner /> : <span aria-hidden className="size-1.5 rounded-full bg-faint" />}
-      <p role="status" className="text-fg2">
-        {text}
-      </p>
-      {active && (
-        <span
-          aria-hidden
-          className={cn('tabular shrink-0', durationWarn && 'font-medium text-warn')}
-          data-tone={durationWarn ? 'warn' : 'normal'}
-        >
-          · {formatElapsed(elapsed)}
-        </span>
-      )}
-      {active && steps > 0 && (
-        <span
-          aria-hidden
-          className={cn('tabular shrink-0', stepWarn && 'font-medium text-warn')}
-          data-tone={stepWarn ? 'warn' : 'normal'}
-        >
-          ·{' '}
-          {maxSteps === undefined
-            ? t('runBar.stepUnlimited', { count: steps })
-            : t('runBar.step', { count: steps, max: maxSteps })}
-        </span>
-      )}
-      {tokens > 0 && (
-        <span
-          aria-hidden
-          className={cn('tabular shrink-0', tokenWarn && 'font-medium text-warn')}
-          data-tone={tokenWarn ? 'warn' : 'normal'}
-        >
-          · {t('runBar.tokens', { count: formatCompactTokens(tokens) })}
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={onInspect}
-        className="ml-auto flex h-6 shrink-0 items-center gap-1 rounded-[5px] px-1.5 text-note text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
-      >
-        <Search aria-hidden className="size-3.5" />
-        {t('runBar.inspector')}
-      </button>
-      {status === 'running' && (
-        <span className="flex shrink-0 items-center gap-1">
-          {t('composer.escToStop.before')}
-          <Kbd>{t('composer.escKey')}</Kbd>
-          {t('composer.escToStop.after')}
-        </span>
-      )}
-    </div>
-  )
-}
 
 function PermissionMenu() {
   const { t } = useTranslation('session')
@@ -348,8 +222,8 @@ export function Composer({
   run,
   agent,
   model,
+  projectPath,
   contextTokens,
-  onInspect,
 }: ComposerProps) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -443,7 +317,7 @@ export function Composer({
 
   return (
     <div>
-      <RunBar status={status} run={run} onInspect={onInspect} />
+      <WorkspaceGitBar projectPath={projectPath} />
       <form
         onSubmit={submit}
         onClick={(e) => {

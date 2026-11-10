@@ -12,7 +12,6 @@ const i18n = createI18n('zh-CN')
 
 function renderSidebar(open: boolean, overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) {
   const handlers = {
-    onNewChat: vi.fn(),
     onClose: vi.fn(),
     onSearch: vi.fn(),
     onSelect: vi.fn(),
@@ -61,24 +60,16 @@ describe('Sidebar', () => {
     expect(sidebar.firstElementChild?.className).toContain('-translate-x-3')
   })
 
-  it('shows the session title, count, search and new-chat entries', () => {
+  it('shows the session title, count and search entry', () => {
     renderSidebar(true)
     expect(screen.getByText('会话')).toBeTruthy()
     expect(screen.getByRole('button', { name: '搜索对话' })).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: /新对话/ })).toHaveLength(1)
-    expect(screen.getByText('本机工作区')).toBeTruthy()
-    expect(screen.getByText('本地 · 自动保存')).toBeTruthy()
   })
 
-  it('wires the new-chat, collapse and search actions', () => {
+  it('wires the collapse and search actions', () => {
     const { handlers } = renderSidebar(true)
-    const newChat = screen
-      .getAllByRole('button', { name: /新对话/ })
-      .find((button) => button.textContent?.includes('新对话'))
-    fireEvent.click(newChat!)
     fireEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
     fireEvent.click(screen.getByRole('button', { name: '搜索对话' }))
-    expect(handlers.onNewChat).toHaveBeenCalledTimes(1)
     expect(handlers.onClose).toHaveBeenCalledTimes(1)
     expect(handlers.onSearch).toHaveBeenCalledTimes(1)
   })

@@ -158,6 +158,14 @@ function Workspace() {
     setActivity(true)
   }, [])
 
+  /** 会话栏收起或进入其他页面后，从图标栏恢复会话列表。 */
+  const openSessions = useCallback(() => {
+    setSettings(undefined)
+    setActivity(false)
+    setComposing(false)
+    setSessionsOpen(true)
+  }, [])
+
   const openSessionFromActivity = useCallback(
     (sessionId: string, changeSetId?: string) => {
       setActivity(false)
@@ -168,26 +176,6 @@ function Workspace() {
     },
     [narrow, selectSession],
   )
-
-  /** 图标栏的“会话”：从其他页面回来时打开列表，已经在对话页时切换开合。 */
-  const toggleSessions = useCallback(() => {
-    const elsewhere = settings !== undefined || activity
-    if (elsewhere) {
-      setSettings(undefined)
-      setActivity(false)
-      setComposing(false)
-      setSessionsOpen(true)
-      return
-    }
-    setSessionsOpen((current) => !current)
-  }, [activity, settings])
-
-  const newChat = useCallback(() => {
-    setSettings(undefined)
-    setActivity(false)
-    setNewChatProjectPath(undefined)
-    setComposing(true)
-  }, [])
 
   const configureModels = useCallback(() => {
     setSettings('providers')
@@ -212,10 +200,6 @@ function Workspace() {
   )
 
   const sidebarProps = {
-    onNewChat: () => {
-      if (narrow) setSessionsOpen(false)
-      newChat()
-    },
     onClose: () => setSessionsOpen(false),
     onSearch: () => {
       setSessionsOpen(false)
@@ -243,17 +227,17 @@ function Workspace() {
     },
   } as const
 
-  const rail = (
+  const rail = (showSessions: boolean) => (
     <AppRail
-      onNewChat={newChat}
-      onSessions={toggleSessions}
+      onSessions={openSessions}
+      sessionsOpen={sessionsOpen}
+      showSessions={showSessions}
       onSearch={() => setSearching(true)}
       onActivity={openActivity}
       onSettings={() => {
         setSessionsOpen(false)
         setSettings('general')
       }}
-      sessionsActive={settings === undefined && !activity}
       activityActive={activity}
       activityBadge={activityBadge}
     />
@@ -290,7 +274,7 @@ function Workspace() {
     return (
       <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        {rail}
+        {rail(false)}
         <SettingsNav
           open
           collapsible={false}
@@ -315,7 +299,7 @@ function Workspace() {
     return (
       <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        {rail}
+        {rail(false)}
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
           <ActivityView onOpenSession={openSessionFromActivity} />
@@ -332,15 +316,13 @@ function Workspace() {
     <div className={SHELL} style={chromeStyle}>
       {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
       <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-      {rail}
+      {rail(true)}
       {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
         <ErrorBanner />
         {composing || showNew ? (
           <>
-            <TopBar>
-              <span className="text-note text-muted">{t('list.new')}</span>
-            </TopBar>
+            <TopBar />
             {updateNotice}
             <NewSession
               initialProjectPath={newChatProjectPath}

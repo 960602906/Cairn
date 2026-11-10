@@ -60,6 +60,8 @@ import { createMcpService } from './services/mcp-service.js'
 import { createAgentService } from './services/agent-service.js'
 import { DiagnosticsService } from './services/diagnostics-service.js'
 import { createProjectService } from './services/project-service.js'
+import { cloneGitRepository } from './services/git-clone.js'
+import { checkoutGitBranch, readGitInfo } from './services/git-info.js'
 import { createFileService } from './services/file-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
@@ -116,6 +118,20 @@ const gitOptions: { gitBinary?: string; gitEnv?: Readonly<Record<string, string>
         ...(gitLocation.env ? { gitEnv: gitLocation.env } : {}),
       }
     : {}
+
+/** 克隆仓库沿用用户的 Git 环境（凭据助手、SSH），只去掉继承的 `GIT_*` 并禁止交互提示。 */
+function cloneGitEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && !/^GIT_/i.test(key)) env[key] = value
+  }
+  return {
+    ...env,
+    ...gitOptions.gitEnv,
+    GIT_TERMINAL_PROMPT: '0',
+    LC_ALL: 'C',
+  }
+}
 
 const rendererFile = join(import.meta.dirname, '../renderer/index.html')
 /** 随应用打包的 ripgrep：构建时复制到 `out/bin/`（electron.vite.config.ts）。 */
@@ -568,6 +584,10 @@ const titles = createTitleService({
   onError: reportError,
 })
 /** 项目（M1-16a）：系统的选择文件夹对话框（e2e 中替换 `dialog.showOpenDialog`）。 */
+const projectGit = createGitRunner({
+  ...(gitOptions.gitBinary === undefined ? {} : { binary: gitOptions.gitBinary }),
+  env: cloneGitEnvironment(),
+})
 const projects = createProjectService({
   storage,
   pickDirectory: async () => {
@@ -578,6 +598,9 @@ const projects = createProjectService({
       : await dialog.showOpenDialog(options)
     return result.canceled ? undefined : result.filePaths[0]
   },
+  cloneRepository: (input) => cloneGitRepository(projectGit, input),
+  readGitInfo: (path) => readGitInfo(projectGit, path),
+  checkoutGitBranch: (path, branch) => checkoutGitBranch(projectGit, path, branch),
 })
 const files = createFileService({
   storage,

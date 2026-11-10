@@ -59,9 +59,13 @@ export async function rpc<T>(window: Page, method: string, params: object): Prom
     async ([name, payload]) => {
       const cairn = (
         globalThis as unknown as {
-          cairn: { request(method: string, params: object): Promise<unknown> }
+          cairn: {
+            ready(): Promise<unknown>
+            request(method: string, params: object): Promise<unknown>
+          }
         }
       ).cairn
+      await cairn.ready()
       return cairn.request(name as string, payload as object)
     },
     [method, params] as const,
@@ -126,16 +130,26 @@ const messageItems = (window: Page) =>
 export const liveMessage = (window: Page) =>
   messageItems(window).and(window.locator('[aria-busy="true"]'))
 
-/** 新建会话，等待它成为当前会话。 */
-export async function createSession(window: Page, projectPath: string, title: string) {
-  await window
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '新对话' })
-    .click()
-  await window.getByLabel('项目目录').fill(projectPath)
-  await window.getByLabel('标题（可选）').fill(title)
-  await window.getByRole('button', { name: '创建' }).click()
-  await expect(window.getByRole('heading', { level: 2, name: title })).toBeVisible()
+/**
+ * 新建会话，等待它成为当前会话。
+ *
+ * 新对话首页的标题来自第一条输入，不能预先指定标题，所以这里用同一个 `session.create`
+ * 请求创建项目与会话，刷新界面后在侧栏打开。需要验证新对话首页本身的用例见
+ * `git-bar.spec.ts` 与 `project-setup.spec.ts`。
+ */
+export async function createSession(
+  window: Page,
+  projectPath: string,
+  title: string,
+): Promise<string> {
+  const created = await rpc<{ sessionId: string }>(window, 'session.create', {
+    projectPath,
+    ...(title === '' ? {} : { title }),
+  })
+  await window.reload()
+  await window.waitForLoadState('domcontentloaded')
+  await openSession(window, title === '' ? '未命名会话' : title)
+  return created.sessionId
 }
 
 /** 在会话列表中选中会话。 */

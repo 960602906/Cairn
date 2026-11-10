@@ -336,6 +336,47 @@ export const MainForRenderer = defineSide({
       result: z.object({ project: ProjectSummary.optional() }),
     },
     /**
+     * 项目目录的 Git 状态（输入框上方的当前目录 / 分支）：不是 Git 仓库、Git 不可用或
+     * 处于游离 HEAD 时没有 `branch`。
+     */
+    'project.gitInfo': {
+      params: z.object({ path: z.string().min(1).max(4096) }),
+      result: z.object({
+        branch: z.string().max(255).optional(),
+        /** 本地分支，按名称排序；切换分支的候选。 */
+        branches: z.array(z.string().max(255)).optional(),
+      }),
+    },
+    /**
+     * 切换项目目录的 Git 分支（输入框上方的分支选择器）。分支必须是本地分支；
+     * 工作区有未提交改动时由 Git 决定是否允许切换。
+     */
+    'project.gitCheckout': {
+      params: z.object({
+        path: z.string().min(1).max(4096),
+        branch: z.string().min(1).max(255),
+      }),
+      result: z.object({ branch: z.string().max(255).optional() }),
+    },
+    /** 只打开系统的选择文件夹对话框并返回路径，不登记项目（新建工作空间时选择克隆位置）。 */
+    'project.pickDirectory': {
+      params: z.object({}),
+      result: z.object({ path: z.string().optional() }),
+    },
+    /**
+     * 克隆 Git 仓库并作为工作空间打开（新建工作空间）：父目录必须是已存在的绝对路径，
+     * 名称不能包含路径分隔符，目标目录不能已存在。省略名称时从仓库地址推导。
+     */
+    'project.clone': {
+      params: z.object({
+        remoteUrl: z.string().min(1).max(4096),
+        parentPath: z.string().min(1).max(4096),
+        name: z.string().min(1).max(PROJECT_NAME_MAX_LENGTH).optional(),
+        branch: z.string().max(255).optional(),
+      }),
+      result: z.object({ project: ProjectSummary }),
+    },
+    /**
      * 修改项目（M3-02）：名称、是否读取 `AGENTS.md`、是否启用项目内 Skills。至少给出一项。
      * 名称去掉首尾空白后不能为空。项目不在列表中时报 `project.not_found`。
      */

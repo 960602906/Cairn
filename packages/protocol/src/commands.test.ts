@@ -75,6 +75,27 @@ describe('background command contracts', () => {
     expect(
       requests['project.update'].params.safeParse({ projectId: 'p1', archived: false }).success,
     ).toBe(true)
+    expect(
+      requests['project.clone'].params.safeParse({
+        remoteUrl: 'https://example.com/owner/repo.git',
+        parentPath: '/work',
+      }).success,
+    ).toBe(true)
+    expect(
+      requests['project.clone'].params.safeParse({
+        remoteUrl: '',
+        parentPath: '/work',
+      }).success,
+    ).toBe(false)
+    expect(requests['project.pickDirectory'].params.parse({})).toEqual({})
+    expect(requests['project.gitInfo'].params.safeParse({ path: '/work' }).success).toBe(true)
+    expect(requests['project.gitInfo'].params.safeParse({ path: '' }).success).toBe(false)
+    expect(
+      requests['project.gitCheckout'].params.safeParse({ path: '/work', branch: 'dev' }).success,
+    ).toBe(true)
+    expect(
+      requests['project.gitCheckout'].params.safeParse({ path: '/work', branch: '' }).success,
+    ).toBe(false)
     expect(requests['skill.get'].params.safeParse({ name: 'x', source: 'project' }).success).toBe(
       false,
     )

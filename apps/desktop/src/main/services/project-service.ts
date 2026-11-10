@@ -4,8 +4,10 @@
  * - **列表**（`project.list`）：还在列表中的项目，按打开时间倒序，带会话数和最近使用。
  * - **打开**（`project.open`）：用注入的 `pickDirectory` 选择目录。已打开过的返回原有记录
  *   （从列表移除过的会恢复）；否则以目录名为名称新建。用户取消时没有 `project`。
+ * - **克隆**（`project.clone`）：把远端仓库克隆到指定父目录，再按打开目录的同一规则登记。
  * - **修改**（`project.update`）：名称、是否读取 `AGENTS.md`、是否启用项目内 Skills。
  * - **移除**（`project.remove`）：只从列表去掉，不删除目录和会话。
+ * - **Git 摘要 / 切换分支**（`project.gitInfo` / `project.gitCheckout`）：输入框上方的目录与分支。
  *
  * 不依赖 Electron；对话框由入口注入（e2e 中替换为固定目录）。
  */
@@ -13,6 +15,8 @@ import { randomUUID } from 'node:crypto'
 import { basename, isAbsolute } from 'node:path'
 import { PROJECT_NAME_MAX_LENGTH, RpcError, type ProjectSummary } from '@cairn/protocol'
 import type { ProjectRecord, Storage } from '@cairn/storage'
+import { workspaceNameFromRemoteUrl, type CloneRepositoryInput } from './git-clone.js'
+import type { ProjectGitInfo } from './git-info.js'
 
 export const ProjectServiceErrorCode = {
   /** 对话框返回的不是绝对路径。 */
@@ -21,18 +25,37 @@ export const ProjectServiceErrorCode = {
   NotFound: 'project.not_found',
   /** 名称是空的，或超过长度上限。 */
   InvalidName: 'project.invalid_name',
+  /** 主进程没有接入 Git 克隆能力。 */
+  CloneUnavailable: 'project.clone_unavailable',
+  /** 主进程没有接入 Git 能力。 */
+  GitUnavailable: 'project.git_unavailable',
 } as const
 
 export interface ProjectServiceOptions {
   readonly storage: Pick<Storage, 'projects' | 'sessions'>
   /** 选择目录；取消时返回 undefined。 */
   readonly pickDirectory: () => Promise<string | undefined>
+  /** 克隆仓库并返回目标目录；省略时 `project.clone` 报错。 */
+  readonly cloneRepository?: (input: CloneRepositoryInput) => Promise<string>
+  /** 读取项目目录的 Git 摘要；省略时 `project.gitInfo` 只返回空对象。 */
+  readonly readGitInfo?: (path: string) => Promise<ProjectGitInfo>
+  /** 切换项目目录的 Git 分支；省略时 `project.gitCheckout` 报错。 */
+  readonly checkoutGitBranch?: (path: string, branch: string) => Promise<ProjectGitInfo>
   readonly createId?: () => string
 }
 
 export interface ProjectCommands {
   list(): { projects: ProjectSummary[] }
   open(): Promise<{ project?: ProjectSummary }>
+  pickDirectory(): Promise<{ path?: string }>
+  clone(input: {
+    remoteUrl: string
+    parentPath: string
+    name?: string | undefined
+    branch?: string | undefined
+  }): Promise<{ project: ProjectSummary }>
+  gitInfo(input: { path: string }): Promise<ProjectGitInfo>
+  gitCheckout(input: { path: string; branch: string }): Promise<ProjectGitInfo>
   update(input: {
     projectId: string
     name?: string | undefined
@@ -67,6 +90,18 @@ function summarize(storage: Pick<Storage, 'sessions'>, project: ProjectRecord): 
 export function createProjectService(options: ProjectServiceOptions): ProjectCommands {
   const { storage } = options
   const createId = options.createId ?? randomUUID
+  const register = (path: string): ProjectRecord => {
+    const existing = storage.projects.getByPath(path)
+    return existing
+      ? existing.removedAt !== undefined
+        ? storage.projects.restore(existing.projectId)
+        : existing
+      : storage.projects.create({
+          projectId: createId(),
+          name: basename(path) || path,
+          path,
+        })
+  }
   const listed = (projectId: string): ProjectRecord => {
     const project = storage.projects.get(projectId)
     if (!project || project.removedAt !== undefined) {
@@ -84,17 +119,45 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
       const path = await options.pickDirectory()
       if (path === undefined) return {}
       if (!isAbsolute(path)) throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
-      const existing = storage.projects.getByPath(path)
-      const project = existing
-        ? existing.removedAt !== undefined
-          ? storage.projects.restore(existing.projectId)
-          : existing
-        : storage.projects.create({
-            projectId: createId(),
-            name: basename(path) || path,
-            path,
-          })
+      const project = register(path)
       return { project: summarize(storage, project) }
+    },
+
+    async pickDirectory() {
+      const path = await options.pickDirectory()
+      return path === undefined ? {} : { path }
+    },
+
+    async clone(input) {
+      if (!options.cloneRepository) {
+        throw new RpcError(ProjectServiceErrorCode.CloneUnavailable)
+      }
+      const name = input.name?.trim() || workspaceNameFromRemoteUrl(input.remoteUrl)
+      const path = await options.cloneRepository({
+        remoteUrl: input.remoteUrl,
+        parentPath: input.parentPath,
+        name,
+        ...(input.branch === undefined ? {} : { branch: input.branch }),
+      })
+      if (!isAbsolute(path)) throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
+      return { project: summarize(storage, register(path)) }
+    },
+
+    async gitInfo({ path }) {
+      if (!isAbsolute(path)) {
+        throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
+      }
+      return options.readGitInfo ? options.readGitInfo(path) : {}
+    },
+
+    async gitCheckout({ path, branch }) {
+      if (!isAbsolute(path)) {
+        throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
+      }
+      if (!options.checkoutGitBranch) {
+        throw new RpcError(ProjectServiceErrorCode.GitUnavailable)
+      }
+      return options.checkoutGitBranch(path, branch)
     },
 
     update(input) {

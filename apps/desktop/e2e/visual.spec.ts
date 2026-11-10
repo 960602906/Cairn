@@ -123,7 +123,7 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   // 880：会话列变成抽屉，由图标栏开合。
   await resize(app.app, window, { width: 880, height: 800 })
   await expect(sessions(window)).toHaveCount(0)
-  await rail(window).getByRole('button', { name: '会话' }).click()
+  await rail(window).getByRole('button', { name: '展开侧栏' }).click()
   await expect(sessions(window)).toBeVisible()
   await noHorizontalOverflow(window)
   await window.screenshot({ path: path.join(ARTIFACTS, 'sessions-drawer-880x800.png') })

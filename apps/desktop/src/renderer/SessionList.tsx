@@ -3,7 +3,15 @@
  * 每一项显示运行状态（运行中转圈、等待审批与失败用彩色圆点，并有读屏文字），悬停时出现“会话操作”菜单：
  * 重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
-import { Folder, FolderOpen, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
+import {
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'
@@ -31,6 +39,9 @@ export interface SessionGroup {
   readonly name: string
   readonly sessions: readonly SessionSummary[]
 }
+
+/** 每个项目默认只展示最近这么多条，避免会话太多把侧栏撑满。 */
+const SESSION_GROUP_PREVIEW = 8
 
 /** 按项目分组，保持会话的原有顺序（最近更新在前），组的顺序取组内第一个会话的位置。 */
 export function groupSessions(
@@ -236,6 +247,7 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
   const refreshSessions = useSessionStore((s) => s.refreshSessions)
   const selectSession = useSessionStore((s) => s.selectSession)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
+  const [showAll, setShowAll] = useState<ReadonlySet<string>>(() => new Set())
 
   // 项目名默认就是目录名（project-service），项目列表还没读取时用路径最后一段
   useEffect(() => {
@@ -243,55 +255,101 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
   }, [refreshSessions])
 
   if (sessions.length === 0) {
+    // 没有工作空间时，工作空间区的空状态已经说明了原因，不再重复“还没有会话”。
+    if (projects.length === 0) return null
     return <p className="px-2.5 py-2 text-note text-faint">{t('list.empty')}</p>
   }
   return (
     <div className="flex flex-col gap-3">
-      {groupSessions(sessions, projects).map((group) => (
-        <section key={group.projectPath} aria-label={t('list.group', { name: group.name })}>
-          <h3>
-            <button
-              type="button"
-              title={group.projectPath}
-              aria-expanded={!collapsed.has(group.projectPath)}
-              onClick={() =>
-                setCollapsed((current) => {
-                  const next = new Set(current)
-                  if (next.has(group.projectPath)) next.delete(group.projectPath)
-                  else next.add(group.projectPath)
-                  return next
-                })
-              }
-              className="flex w-full items-center gap-1.5 rounded-[6px] px-2 py-1 text-left text-[10.5px] font-medium tracking-[0.03em] text-muted transition-colors hover:bg-hover hover:text-fg2"
-            >
-              {collapsed.has(group.projectPath) ? (
-                <Folder aria-hidden className="size-3.5 shrink-0 text-faint" />
-              ) : (
-                <FolderOpen aria-hidden className="size-3.5 shrink-0 text-faint" />
-              )}
-              <span className="truncate">{group.name}</span>
-              <span className="tabular ml-auto text-[9.5px] font-normal text-faint">
-                {group.sessions.length}
-              </span>
-            </button>
-          </h3>
-          {!collapsed.has(group.projectPath) && (
-            <ul className="mt-0.5 flex flex-col gap-px">
-              {group.sessions.map((s) => (
-                <SessionItem
-                  key={s.sessionId}
-                  session={s}
-                  active={s.sessionId === activeSessionId}
-                  onSelect={() => {
-                    void selectSession(s.sessionId)
-                    onSelect?.()
-                  }}
+      {groupSessions(sessions, projects).map((group) => {
+        const isCollapsed = collapsed.has(group.projectPath)
+        const activeIndex = group.sessions.findIndex((s) => s.sessionId === activeSessionId)
+        const expanded =
+          showAll.has(group.projectPath) ||
+          (activeIndex >= 0 && activeIndex >= SESSION_GROUP_PREVIEW)
+        const visible = expanded ? group.sessions : group.sessions.slice(0, SESSION_GROUP_PREVIEW)
+        const remaining = group.sessions.length - visible.length
+        return (
+          <section key={group.projectPath} aria-label={t('list.group', { name: group.name })}>
+            <h3>
+              <button
+                type="button"
+                title={group.projectPath}
+                aria-expanded={!isCollapsed}
+                onClick={() =>
+                  setCollapsed((current) => {
+                    const next = new Set(current)
+                    if (next.has(group.projectPath)) next.delete(group.projectPath)
+                    else next.add(group.projectPath)
+                    return next
+                  })
+                }
+                className="flex w-full items-center gap-1.5 rounded-[6px] px-2 py-1 text-left text-[10.5px] font-medium tracking-[0.03em] text-muted transition-colors hover:bg-hover hover:text-fg2"
+              >
+                {isCollapsed ? (
+                  <Folder aria-hidden className="size-3.5 shrink-0 text-faint" />
+                ) : (
+                  <FolderOpen aria-hidden className="size-3.5 shrink-0 text-faint" />
+                )}
+                <span className="truncate">{group.name}</span>
+                <ChevronRight
+                  aria-hidden
+                  className={cn(
+                    'ml-auto size-3 shrink-0 text-faint transition-transform duration-200',
+                    !isCollapsed && 'rotate-90',
+                  )}
                 />
-              ))}
-            </ul>
-          )}
-        </section>
-      ))}
+                <span className="tabular text-[9.5px] font-normal text-faint">
+                  {group.sessions.length}
+                </span>
+              </button>
+            </h3>
+            {!isCollapsed && (
+              <>
+                <ul className="mt-0.5 flex flex-col gap-px">
+                  {visible.map((s) => (
+                    <SessionItem
+                      key={s.sessionId}
+                      session={s}
+                      active={s.sessionId === activeSessionId}
+                      onSelect={() => {
+                        void selectSession(s.sessionId)
+                        onSelect?.()
+                      }}
+                    />
+                  ))}
+                </ul>
+                {remaining > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll((current) => new Set(current).add(group.projectPath))}
+                    className="mt-0.5 flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[10.5px] text-faint transition-colors hover:bg-hover hover:text-fg2"
+                  >
+                    {t('list.showMore', { count: remaining })}
+                  </button>
+                )}
+                {remaining === 0 &&
+                  showAll.has(group.projectPath) &&
+                  group.sessions.length > SESSION_GROUP_PREVIEW && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowAll((current) => {
+                          const next = new Set(current)
+                          next.delete(group.projectPath)
+                          return next
+                        })
+                      }
+                      className="mt-0.5 flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[10.5px] text-faint transition-colors hover:bg-hover hover:text-fg2"
+                    >
+                      {t('list.showLess')}
+                    </button>
+                  )}
+              </>
+            )}
+          </section>
+        )
+      })}
     </div>
   )
 }

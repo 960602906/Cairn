@@ -5,7 +5,7 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'reply from configured provider'
 
@@ -49,12 +49,7 @@ test('新会话第一轮结束后自动得到标题', async ({ launch, userData 
     const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     await configure(window, mock.baseUrl)
 
-    await window
-      .getByRole('navigation', { name: '全局导航' })
-      .getByRole('button', { name: '新对话' })
-      .click()
-    await window.getByLabel('项目目录').fill(projectDir(userData))
-    await window.getByRole('button', { name: '创建' }).click()
+    await createSession(window, projectDir(userData), '')
     await expect(window.getByRole('heading', { level: 2, name: '未命名会话' })).toBeVisible()
 
     await sendPrompt(window, '帮我整理今天的日志')
