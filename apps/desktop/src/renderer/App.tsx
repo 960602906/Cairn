@@ -23,6 +23,7 @@ import { Sidebar } from './layout/Sidebar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
 import { WindowControls } from './layout/WindowControls.js'
 import { NewSession } from './NewSession.js'
+import { WelcomeDialog } from './onboarding/WelcomeDialog.js'
 import { SessionSearch } from './SessionSearch.js'
 import type { SessionStore } from './session-store.js'
 import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
@@ -66,6 +67,8 @@ function Workspace() {
   const refreshActivity = useSessionStore((s) => s.refreshActivity)
   const refreshAgents = useSessionStore((s) => s.refreshAgents)
   const loadUpdateStatus = useSessionStore((s) => s.loadUpdateStatus)
+  const userSettings = useSessionStore((s) => s.settings)
+  const updateSettings = useSessionStore((s) => s.updateSettings)
   const onActivityOpen = useSessionStore((s) => s.onActivityOpen)
   const selectSession = useSessionStore((s) => s.selectSession)
   const activityBadge = useSessionStore((s) => s.activity?.counts?.approvals ?? 0)
@@ -73,6 +76,8 @@ function Workspace() {
   // 还没有会话时直接显示新对话表单；已选中的会话（即使不在列表中）仍显示会话
   const showNew = useSessionStore((s) => s.sessions.length === 0 && s.activeSessionId === undefined)
   const updateNotice = <UpdateNotice onOpenSettings={() => setSettings('update')} />
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false)
+  const showWelcome = userSettings?.onboardingSeen === false && !welcomeDismissed
 
   // 进入窄窗口时把会话列收成抽屉；窗口变宽后恢复常驻列。
   useEffect(() => {
@@ -184,6 +189,28 @@ function Workspace() {
     setComposing(true)
   }, [])
 
+  const configureModels = useCallback(() => {
+    setSettings('providers')
+    setActivity(false)
+    setComposing(false)
+    setSessionsOpen(false)
+  }, [])
+
+  const closeWelcome = useCallback(() => {
+    setWelcomeDismissed(true)
+    void updateSettings({ onboardingSeen: true })
+  }, [updateSettings])
+
+  const welcome = (
+    <WelcomeDialog
+      open={showWelcome}
+      onOpenChange={(next) => {
+        if (!next) closeWelcome()
+      }}
+      onConfigure={configureModels}
+    />
+  )
+
   const sidebarProps = {
     onNewChat: () => {
       if (narrow) setSessionsOpen(false)
@@ -278,6 +305,7 @@ function Workspace() {
         </main>
         {drawer}
         {search}
+        {welcome}
         <WindowControls />
       </div>
     )
@@ -294,6 +322,7 @@ function Workspace() {
         </main>
         {drawer}
         {search}
+        {welcome}
         <WindowControls />
       </div>
     )
@@ -334,6 +363,7 @@ function Workspace() {
       </main>
       {drawer}
       {search}
+      {welcome}
       <FileTreeDialog
         project={fileTreeProject}
         open={fileTreeProject !== undefined}

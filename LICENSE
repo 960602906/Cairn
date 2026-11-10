@@ -1,0 +1,86 @@
+Cairn Beta License / Cairn Beta 许可协议
+Version 2026-11-10
+
+Copyright © 2026 Cairn contributors. All rights reserved. 版权所有。
+
+This is a proprietary beta license, not an open-source license. Cairn may replace this
+license when the project moves to an open-source model in M6.
+
+本文件是专有 beta 许可，不是开源许可。项目在 M6 转向开源时会替换本协议。
+
+1. Grant / 授权
+
+Subject to this agreement, you may install and use one copy of the Cairn beta software
+on computers that you own or control, for evaluation, testing, personal use or internal
+business use. You may make a reasonable number of backup copies.
+
+在遵守本协议的前提下，你可以在自己拥有或控制的计算机上安装并使用一份 Cairn beta
+软件，用于评估、测试、个人使用或内部业务使用；可以制作合理数量的备份副本。
+
+2. Restrictions / 限制
+
+You may not redistribute, sublicense, sell, rent, lease or host the software as a service
+for third parties. You may not reverse engineer, decompile or disassemble the software
+except to the extent permitted by applicable law. You may not remove copyright, license or
+attribution notices. You may not use the software to violate applicable law or the rights
+of others.
+
+你不得再分发、转授权、出售、出租、租赁本软件，或将其作为服务提供给第三方；不得对本
+软件进行反向工程、反编译或反汇编，但适用法律明确允许的除外；不得移除版权、许可或署
+名声明；不得使用本软件违反适用法律或他人权利。
+
+3. Third-party components / 第三方组件
+
+Cairn includes third-party software under its own licenses. The bundled third-party
+notices are provided in THIRD_PARTY_NOTICES.txt. MinGit (Git for Windows) is distributed
+as a separate program under GPL-2.0-only; the full license text and source-code
+instructions are provided in the notices and at:
+
+  https://github.com/git-for-windows/git/releases/tag/v2.56.0.windows.4
+
+Cairn 包含按各自许可证分发的第三方软件，完整声明见 THIRD_PARTY_NOTICES.txt。随包的
+MinGit（Git for Windows）作为独立程序按 GPL-2.0-only 分发；许可证全文与源码获取方式见
+第三方声明以及上面的地址。
+
+4. Beta software / Beta 性质
+
+This is pre-release software. Features may change or be removed, data formats may change,
+and the software may contain defects. Do not rely on it as the only copy of important data.
+
+这是预发布软件。功能可能变化或移除，数据格式可能变化，软件可能包含缺陷。请勿把它作为
+重要数据的唯一副本。
+
+5. No warranty / 不提供担保
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING WITHOUT LIMITATION THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, TITLE AND NON-INFRINGEMENT. YOUR USE OF THE SOFTWARE IS AT YOUR OWN RISK.
+
+本软件按“现状”提供，不附带任何明示或默示担保，包括但不限于适销性、特定用途适用性、
+所有权和不侵权的担保。使用风险由你自行承担。
+
+6. Limitation of liability / 责任限制
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ARE NOT LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY OR CONSEQUENTIAL DAMAGES,
+OR FOR LOSS OF DATA, PROFITS OR BUSINESS, ARISING FROM OR RELATED TO THE SOFTWARE OR THIS
+AGREEMENT, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. NOTHING IN THIS AGREEMENT
+LIMITS LIABILITY THAT CANNOT BE LIMITED BY APPLICABLE LAW.
+
+在适用法律允许的最大范围内，版权持有人和贡献者不对因本软件或本协议产生的任何间接、
+附带、特殊、惩罚性或后果性损害，以及数据、利润或业务损失承担责任，即使已被告知可能
+发生此类损害。本协议不限制适用法律禁止限制的责任。
+
+7. Termination / 终止
+
+This license terminates automatically if you breach it. On termination you must stop using
+the software and delete all copies you control. Sections 3 through 6 survive termination.
+
+如果你违反本协议，本许可自动终止。终止后你必须停止使用本软件并删除你控制的全部副本。
+第 3 至第 6 条在终止后继续有效。
+
+8. Contact / 联系
+
+For licensing questions, use the distribution channel through which you received Cairn.
+
+许可相关问题请通过你获取 Cairn 的分发渠道联系发布者。

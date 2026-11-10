@@ -111,6 +111,21 @@ const openSettings = async () => {
 }
 
 describe('SettingsPage', () => {
+  it('shows the first-run welcome and records it when configuring models', async () => {
+    const { updates } = setup({ onboardingSeen: false })
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '欢迎使用 Cairn' })).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '配置模型' }))
+    expect(await screen.findByRole('heading', { name: '模型供应商' })).toBeTruthy()
+    expect(updates).toContainEqual({ onboardingSeen: true })
+  })
+
+  it('does not show the welcome again for returning users', async () => {
+    setup({ onboardingSeen: true })
+    await screen.findByRole('navigation', { name: '会话' })
+    expect(screen.queryByRole('heading', { name: '欢迎使用 Cairn' })).toBeNull()
+  })
+
   it('opens from the sidebar and goes back with the button or Esc', async () => {
     setup()
     await openSettings()

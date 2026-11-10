@@ -167,6 +167,8 @@ export type Theme = z.infer<typeof Theme>
  * - `shell`：命令执行使用的 shell（M2-09）；没有设置时不出现，按 `auto`。
  * - `sessionBrief`：是否在每轮结束后自动更新会话要点（M3-04）。没有设置时不出现，按开。
  * - `activityNotifications`：是否发送活动中心系统通知（M4-06）。没有设置时不出现，按开。
+ * - `onboardingSeen`：是否已经看过首次运行说明（M5-09）。没有设置时按 `false` 返回，
+ *   界面据此显示一次欢迎页；关闭后保存为 `true`。
  */
 export const Settings = z.object({
   locale: Locale,
@@ -200,6 +202,8 @@ export const Settings = z.object({
   updateLastCheckedAt: Timestamp.optional(),
   /** 用户选择跳过的版本（M5-06）；没有跳过时不出现。 */
   updateSkippedVersion: z.string().min(1).max(64).optional(),
+  /** 是否已经看过首次运行说明（M5-09）。省略按 false；关闭欢迎页后保存为 true。 */
+  onboardingSeen: z.boolean().optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -231,6 +235,8 @@ export const SettingsPatch = z.object({
   updateLastCheckedAt: Timestamp.optional(),
   /** null 清除跳过的版本。 */
   updateSkippedVersion: z.string().min(1).max(64).nullable().optional(),
+  /** true 表示已经看过首次运行说明；false 恢复为显示欢迎页。 */
+  onboardingSeen: z.boolean().optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -133,5 +133,37 @@ describe('AboutSettings', () => {
     expect(await screen.findByText('https://updates.example/cairn/')).toBeDefined()
     await userEvent.click(screen.getByRole('button', { name: '查看许可' }))
     expect(await screen.findByText('MIT — demo')).toBeDefined()
+  })
+
+  it('opens the first-run notice, privacy notice, GPL source and diagnostics export', async () => {
+    setup(info)
+    await waitFor(() => expect(screen.getByText('0.1.0')).toBeDefined())
+
+    await userEvent.click(screen.getByRole('button', { name: '重新查看' }))
+    let dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '欢迎使用 Cairn' })).toBeDefined()
+    await userEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(screen.getByRole('button', { name: '查看隐私说明' }))
+    dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '隐私说明' })).toBeDefined()
+    await userEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(screen.getByRole('button', { name: '获取方式' }))
+    dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: 'GPL 源码获取方式' })).toBeDefined()
+    expect(within(dialog).getByRole('link', { name: '打开源码页面' }).getAttribute('href')).toBe(
+      'https://github.com/git-for-windows/git/releases/tag/v2.56.0.windows.4',
+    )
+    await userEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await userEvent.click(screen.getByRole('button', { name: '导出诊断包' }))
+    dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '导出诊断包' })).toBeDefined()
+    await userEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
