@@ -54,7 +54,7 @@ describe('stdioCommand', () => {
       command: 'C:\\Windows\\cmd.exe',
       args: ['/d', '/c', 'npx', '-y', 'pkg'],
     })
-    expect(stdioCommand('uvx', [], 'win32', undefined)).toEqual({
+    expect(stdioCommand('uvx', [], 'win32', '')).toEqual({
       command: 'cmd.exe',
       args: ['/d', '/c', 'uvx'],
     })
