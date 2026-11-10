@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import fsp from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -13,7 +13,8 @@ import {
 const roots: string[] = []
 
 async function parent() {
-  const root = await mkdtemp(path.join(tmpdir(), 'cairn-clone-test-'))
+  // Windows CI 的 TEMP 可能是 8.3 短路径；实现会 realpath，断言也用同一形式。
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'cairn-clone-test-')))
   roots.push(root)
   return root
 }
