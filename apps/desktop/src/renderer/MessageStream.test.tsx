@@ -198,6 +198,10 @@ describe('MessageStream 渲染', () => {
       activeSessionId: undefined,
       awaitingTurn: {},
       approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      inspectRun: vi.fn(),
       settings: { providers: [] },
       sendPrompt,
     })) as unknown as SessionStore
@@ -270,6 +274,86 @@ describe('MessageStream 渲染', () => {
       </I18nextProvider>,
     )
     expect(screen.getByRole('listitem').className).not.toContain('ring-1')
+  })
+
+  it('draws a location ring only on the matching turn', () => {
+    const stream = view([
+      ev(1, 'session.created', {
+        projectId: 'p1',
+        projectPath: '/w',
+        workspacePath: '/w',
+        title: 'x',
+      }),
+      ev(2, 'run.created', {
+        agent: { id: 'a', version: 1 },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      ev(3, 'message.user', { messageId: 'u1', content: text('1') }),
+      ev(4, 'message.user', { messageId: 'u2', content: text('2') }, 't2'),
+    ])
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      settings: { providers: [] },
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={stream} locatedTurnId="t1" />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    const items = screen.getAllByRole('listitem')
+    expect(items.find((item) => item.getAttribute('data-turn') === 't1')?.className).toContain(
+      'ring-1',
+    )
+    expect(items.find((item) => item.getAttribute('data-turn') === 't2')?.className).not.toContain(
+      'ring-1',
+    )
+  })
+
+  it('renders delegations that are not assigned to a turn', () => {
+    const unassigned = {
+      ...rich,
+      delegations: [
+        {
+          childRunId: 'child1',
+          parentRunId: 'r1',
+          agent: { id: 'a', version: 1 },
+          task: '补测试',
+          workspace: 'isolated',
+          workspacePath: '/w',
+          budget: undefined,
+          turnId: undefined,
+          createdAt: 1,
+          completed: undefined,
+        },
+      ],
+    } as unknown as SessionView
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      inspectRun: vi.fn(),
+      settings: { providers: [] },
+      agents: [],
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={unassigned} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(screen.getByText('补测试')).toBeTruthy()
   })
 })
 

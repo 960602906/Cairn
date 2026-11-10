@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -150,10 +150,12 @@ const wrap = (
     changeSets = [],
     details = {},
     loading = false,
+    missingChangeSets = false,
   }: {
     readonly changeSets?: readonly (typeof changeSetSummary)[]
     readonly details?: Readonly<Record<string, typeof changeSetDetail>>
     readonly loading?: boolean
+    readonly missingChangeSets?: boolean
   } = {},
 ) => {
   const store = createStore<Record<string, unknown>>(() => ({
@@ -161,7 +163,7 @@ const wrap = (
     awaitingTurn: {},
     views: { s1: view },
     changes: { s1: changes },
-    changeSets: { s1: changeSets },
+    ...(missingChangeSets ? {} : { changeSets: { s1: changeSets } }),
     changeSetsLoading: { s1: loading },
     changeSetDetails: details,
     changeSetLoading: {},
@@ -215,6 +217,26 @@ describe('SessionSidePanel', () => {
     expect(document.activeElement).toBe(focusable.at(-1))
     await user.tab()
     expect(document.activeElement).toBe(focusable[0])
+  })
+
+  it('supports Tab in both directions from the middle of the focus loop', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    const focusable = [
+      ...panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+
+    focusable[1]?.focus()
+    await user.tab()
+    expect(document.activeElement).toBe(focusable[2])
+    await user.tab({ shift: true })
+    expect(document.activeElement).toBe(focusable[1])
+
+    fireEvent.keyDown(panel, { key: 'a' })
+    expect(document.activeElement).toBe(focusable[1])
   })
 
   it('returns focus to the trigger after closing the overlay', async () => {
@@ -337,6 +359,39 @@ describe('SessionSidePanel', () => {
     expect(within(list).getByText('2 个冲突')).toBeTruthy()
   })
 
+  it('ignores delegations without a change set and tolerates a missing change-set map', async () => {
+    const user = userEvent.setup()
+    wrap(
+      <Harness
+        delegations={[
+          { ...delegation, completed: undefined },
+          { ...delegation, completed: { ...delegation.completed!, changeSetId: undefined } },
+        ]}
+      />,
+      { missingChangeSets: true },
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('radio', { name: '改动集' }))
+    expect(within(panel).getByText(/还没有改动集/)).toBeTruthy()
+  })
+
+  it('renders the empty change-set list without a session view', async () => {
+    const user = userEvent.setup()
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={undefined}
+        panel="diff"
+        selectedPlanId={undefined}
+        onPanelChange={() => {}}
+      />,
+      { missingChangeSets: true },
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('radio', { name: '改动集' }))
+    expect(within(panel).getByText(/还没有改动集/)).toBeTruthy()
+  })
+
   it('opens a change set selected outside the list with its delegation', () => {
     wrap(<Harness selectedChangeSetId="cs1" delegations={[delegation]} />, {
       details: { cs1: changeSetDetail },
@@ -355,6 +410,41 @@ describe('SessionSidePanel', () => {
     expect(within(panel).getByText('还没有计划。')).toBeTruthy()
     await user.click(within(panel).getByRole('button', { name: '关闭会话信息' }))
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('supports the bottom placement and inspector without change-set navigation', () => {
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={undefined}
+        panel="inspector"
+        selectedPlanId={undefined}
+        onPanelChange={() => {}}
+        placement="bottom"
+        docked
+      />,
+    )
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    expect(panel.className).toContain('w-full')
+    expect(panel.className).toContain('border-t-[0.5px]')
+    expect(within(panel).getByText('没有运行记录。')).toBeTruthy()
+  })
+
+  it('opens a change set without a back callback', () => {
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={view}
+        panel="diff"
+        selectedPlanId={undefined}
+        selectedChangeSetId="cs1"
+        onPanelChange={() => {}}
+      />,
+      { details: { cs1: changeSetDetail } },
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getByRole('region', { name: '改动集审阅' })).toBeTruthy()
+    expect(within(panel).queryByRole('button', { name: '返回改动集列表' })).toBeNull()
   })
 
   it('collapses to zero width and removes itself from the accessible tree', () => {

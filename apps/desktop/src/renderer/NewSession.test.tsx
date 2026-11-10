@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
 import type { MainApi } from './api.js'
 import { App } from './App.js'
+import { greetingPeriod, NewSession } from './NewSession.js'
 import { createSessionStore } from './session-store.js'
-import { greetingPeriod } from './NewSession.js'
+import { SessionStoreProvider } from './store-context.js'
 
 afterEach(cleanup)
 
@@ -31,7 +33,7 @@ const providers = [
   },
 ]
 
-function setup(settings: object = {}) {
+function setup(settings: object = {}, sessionCreate: unknown = { sessionId: 's1' }) {
   let current = {
     locale: 'zh-CN',
     providers,
@@ -53,7 +55,7 @@ function setup(settings: object = {}) {
         projects: [{ projectId: 'p1', name: 'work', path: '/work', createdAt: 1 }],
       }
     }
-    if (method === 'session.create') return { sessionId: 's1' }
+    if (method === 'session.create') return sessionCreate
     if (method === 'session.subscribe') return { events: [], lastSeq: 0 }
     return {}
   })
@@ -139,5 +141,73 @@ describe('NewSession controls', () => {
     await user.type(input, '做点事')
     const send = screen.getByRole('button', { name: '发送' }) as HTMLButtonElement
     expect(send.disabled).toBe(true)
+  })
+
+  it('sends with Enter but leaves Shift+Enter to the textarea', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
+
+    await user.type(input, '开始做{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: [{ type: 'text', text: '开始做' }],
+      }),
+    )
+  })
+
+  it('stays on the page when session creation fails', async () => {
+    const { request } = setup({}, null)
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.type(input, '做点事')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.create', {
+        projectPath: '/work',
+        title: '做点事',
+      }),
+    )
+    expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('does not create a session for an empty draft and keeps an initial project path', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'settings.get') {
+        return { locale: 'zh-CN', providers, defaultModel: { providerId: 'fake', modelId: 'fast' } }
+      }
+      if (method === 'project.list') return { projects: [] }
+      return {}
+    })
+    const store = createSessionStore({
+      ready: () => Promise.resolve(),
+      request,
+      on: () => () => {},
+    } as unknown as MainApi)
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <NewSession initialProjectPath="/preset" onDone={() => {}} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    expect(await screen.findByRole('button', { name: '工作空间：preset' })).toBeTruthy()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+  })
+
+  it('updates the selected project after choosing a folder', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.click(screen.getByRole('button', { name: '工作空间：work' }))
+    await user.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('project.open', {}))
   })
 })

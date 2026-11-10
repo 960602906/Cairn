@@ -114,6 +114,23 @@ const showPanel = async () => {
 }
 
 describe('ChatPanel', () => {
+  it('renders nothing without an active session', () => {
+    const store = createSessionStore({
+      ready: () => Promise.resolve(),
+      request: async () => ({}),
+      on: () => () => {},
+    } as unknown as MainApi)
+    store.setState({ activeSessionId: undefined })
+    const { container } = render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <ChatPanel />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(container.firstElementChild).toBeNull()
+  })
+
   it('opens the change set review from an entry request (M4-10)', async () => {
     const request = vi.fn(async () => ({}))
     const api = {
@@ -183,6 +200,70 @@ describe('ChatPanel', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(toggle)
+  })
+
+  it('leaves Escape to an open menu before closing the overlay', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    const toggle = screen.getByRole('button', { name: '会话信息' })
+    await userEvent.click(toggle)
+
+    const menu = document.createElement('div')
+    menu.setAttribute('role', 'menu')
+    document.body.append(menu)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    menu.remove()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('ignores an initial change set for another session', async () => {
+    const request = vi.fn(async () => ({}))
+    const store = createSessionStore({
+      ready: () => Promise.resolve(),
+      request,
+      on: () => () => {},
+    } as unknown as MainApi)
+    store.setState({
+      activeSessionId: 's1',
+      sessions: [summary('修复登录')],
+      views: { s1: createSessionView('s1') },
+      awaitingTurn: {},
+      changes: {},
+      changeSets: {},
+      changeSetDetails: {},
+      changeSetLoading: {},
+      changeSetErrors: {},
+    })
+    const opened = vi.fn()
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <ChatPanel
+            initialChangeSetId="cs1"
+            initialChangeSetSessionId="s2"
+            onInitialChangeSetOpened={opened}
+          />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(screen.queryByRole('region', { name: '改动集审阅' })).toBeNull()
+    expect(opened).not.toHaveBeenCalled()
+  })
+
+  it('announces waiting approval instead of running while the turn is awaiting', async () => {
+    const history = [
+      ...HISTORY,
+      state(9, 'completed', 'thinking'),
+      state(10, 'thinking', 'tooling'),
+      state(11, 'tooling', 'awaiting_approval'),
+    ]
+    const { open, store } = setup({ history })
+    await open()
+    act(() => store.setState({ awaitingTurn: { s1: true } }))
+    expect(screen.getByRole('status').textContent).toBe('等待审批')
   })
 
   it('resets the panel preference when crossing the 1440px dock breakpoint', async () => {
@@ -1265,6 +1346,35 @@ describe('Composer (M2-04)', () => {
     await userEvent.type(input(), '/')
     await userEvent.keyboard('{ArrowDown}{Enter}')
     expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('keeps an unmatched command draft and focuses the composer from its background', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/zzz')
+    await userEvent.keyboard('{ArrowDown}{ArrowUp}{Tab}')
+    expect(input().value).toBe('/zzz')
+
+    await userEvent.clear(input())
+    await userEvent.type(input(), '/p')
+    await userEvent.keyboard('{ArrowUp}')
+    const form = document.querySelector('form')
+    expect(form).toBeTruthy()
+    fireEvent.click(form!)
+    expect(document.activeElement).toBe(input())
+  })
+
+  it('does not open the model picker when no model is available', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers: [] }) },
+    })
+    await open()
+    await userEvent.type(input(), '/model{Enter}')
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('runs the highlighted command from the send button', async () => {

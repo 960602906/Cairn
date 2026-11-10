@@ -1,14 +1,29 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import { App } from './App.js'
 import { createSessionStore } from './session-store.js'
 import type { MainApi } from './api.js'
 import type { ActivityListResult } from '@cairn/protocol'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  delete (window as typeof window & { cairn?: unknown }).cairn
+})
+
+function stubMedia(narrow: boolean) {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    get matches() {
+      return query.includes('max-width') ? narrow : false
+    },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }))
+}
 
 function makeStore() {
   const fakeApi = {
@@ -86,7 +101,7 @@ describe('App', () => {
 
   it('opens settings from the sidebar and returns to the chat', async () => {
     render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
-    fireEvent.click(await screen.findByRole('button', { name: /设置/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /^设置$/ }))
     expect(await screen.findByRole('navigation', { name: '设置分类' })).toBeDefined()
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('navigation', { name: '设置分类' })).toBeNull())
@@ -110,6 +125,161 @@ describe('App', () => {
 
     fireEvent.keyDown(window, { key: 'n', ctrlKey: true })
     await waitFor(() => expect(screen.queryByRole('heading', { name: '活动' })).toBeNull())
+  })
+
+  it('opens search with Ctrl+K and closes settings without restoring the narrow drawer', async () => {
+    stubMedia(true)
+    render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    expect(await screen.findByPlaceholderText('按标题或项目名搜索')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByPlaceholderText('按标题或项目名搜索')).toBeNull())
+
+    fireEvent.click(await screen.findByRole('button', { name: /^设置$/ }))
+    expect(await screen.findByRole('navigation', { name: '设置分类' })).toBeDefined()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: '设置分类' })).toBeNull())
+    expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull()
+  })
+
+  it('closes the narrow drawer with Escape unless another dialog is open', async () => {
+    stubMedia(true)
+    render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
+    fireEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))
+    expect(await screen.findByRole('navigation', { name: '会话' })).toBeTruthy()
+
+    fireEvent.keyDown(window, { key: 'x' })
+    expect(screen.getByRole('navigation', { name: '会话' })).toBeTruthy()
+
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.append(dialog)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.getByRole('navigation', { name: '会话' })).toBeTruthy()
+    dialog.remove()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull())
+  })
+
+  it('starts a new chat from the rail and closes the narrow drawer', async () => {
+    stubMedia(true)
+    render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
+    fireEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))
+    expect(await screen.findByRole('navigation', { name: '会话' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '新对话' }))
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull())
+    expect(screen.getByPlaceholderText('有什么可以帮你？')).toBeTruthy()
+  })
+
+  it('applies platform window-control insets and dismisses onboarding', async () => {
+    Object.defineProperty(window, 'cairn', {
+      configurable: true,
+      value: {
+        windowControls: {
+          platform: 'win32',
+          minimize: vi.fn(async () => undefined),
+          toggleMaximize: vi.fn(async () => true),
+          close: vi.fn(async () => undefined),
+          isMaximized: vi.fn(async () => false),
+          onMaximizedChange: vi.fn(() => () => undefined),
+        },
+      },
+    })
+    const listeners: ((data: unknown) => void)[] = []
+    const fakeApi = {
+      ready: () => Promise.resolve(),
+      request: async (method: string) => {
+        if (method === 'session.list') return { sessions: [] }
+        if (method === 'agent.list') return { agents: [] }
+        if (method === 'settings.get')
+          return {
+            providers: [],
+            theme: 'system',
+            language: 'zh-CN',
+            onboardingSeen: false,
+          }
+        if (method === 'settings.shell') return { detected: 'bash', options: ['auto'] }
+        if (method === 'activity.list')
+          return { approvals: [], running: [], completed: [], counts: { approvals: 0, running: 0 } }
+        if (method === 'settings.update') {
+          listeners.forEach((listener) => listener({}))
+          return {}
+        }
+        return {}
+      },
+      on: () => () => {},
+    }
+    const store = createSessionStore(fakeApi as unknown as MainApi)
+    const { container } = render(<App i18n={createI18n('zh-CN')} store={store} />)
+    expect(
+      (container.firstElementChild as HTMLElement).style.getPropertyValue(
+        '--window-controls-inset',
+      ),
+    ).toBe('150px')
+
+    fireEvent.click(await screen.findByRole('button', { name: '稍后' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: '稍后' })).toBeNull())
+  })
+
+  it('opens the activity session without a change set on narrow windows', async () => {
+    stubMedia(true)
+    const activity: ActivityListResult = {
+      ...emptyActivity,
+      completed: [
+        {
+          sessionId: 's1',
+          sessionTitle: '修复登录',
+          runId: 'r1',
+          turnId: 't1',
+          agent: { id: 'builtin.coder', version: 1 },
+          status: 'completed',
+          summary: '完成',
+          completedAt: 10,
+        },
+      ],
+    }
+    const { store } = makeActivityStore(activity, [
+      {
+        sessionId: 's1',
+        title: '修复登录',
+        projectPath: '/work',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ])
+    render(<App i18n={createI18n('zh-CN')} store={store} />)
+    fireEvent.click(await screen.findByRole('button', { name: '活动' }))
+    fireEvent.click(await screen.findByRole('button', { name: '查看' }))
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
+    expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull()
+  })
+
+  it('closes the narrow drawer when selecting a session or opening an activity item', async () => {
+    stubMedia(true)
+    const { store, emit } = makeActivityStore(emptyActivity, [
+      {
+        sessionId: 's1',
+        title: '修复登录',
+        projectPath: '/work',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ])
+    render(<App i18n={createI18n('zh-CN')} store={store} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))
+    const item = await screen.findByRole('listitem')
+    fireEvent.click(within(item).getAllByRole('button')[0]!)
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
+    expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull()
+
+    fireEvent.click(await screen.findByRole('button', { name: '活动' }))
+    emit('activity.open', { sessionId: 's1' })
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '活动' })).toBeNull())
+    expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull()
   })
 
   it('shows the approval badge and opens the session requested by a notification', async () => {
