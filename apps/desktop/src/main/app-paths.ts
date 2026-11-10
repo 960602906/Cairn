@@ -10,6 +10,8 @@ import { join, resolve } from 'node:path'
 export const APP_DIR_NAME = 'Cairn'
 export const DEV_APP_DIR_NAME = 'Cairn-dev'
 export const USER_DATA_DIR_ENV = 'CAIRN_USER_DATA_DIR'
+/** 默认项目目录名（首次启动没有可用项目时自动创建）。 */
+export const DEFAULT_PROJECT_DIRNAME = 'default-project'
 
 export interface AppPaths {
   /** 应用数据根目录，同时作为 Electron 的 `userData`。 */
@@ -21,6 +23,8 @@ export interface AppPaths {
   /** 隔离工作区（M4-08）：`<root>/worktrees/<sessionId>/<runId>`。 */
   readonly worktrees: string
   readonly settings: string
+  /** 默认项目目录；没有可用项目时创建并登记为项目。 */
+  readonly defaultProject: string
   /** 加密保存的凭据（M1-03，ADR-0010）。 */
   readonly credentials: string
   /** 自动更新前的数据备份（M5-06，ADR-0036）；默认保留最近两份。 */
@@ -50,6 +54,7 @@ export function resolveAppPaths({ appData, dev, env = {} }: ResolveAppPathsOptio
     checkpoints: join(root, 'checkpoints'),
     worktrees: join(root, 'worktrees'),
     settings: join(root, 'settings.json'),
+    defaultProject: join(root, DEFAULT_PROJECT_DIRNAME),
     credentials: join(root, 'credentials.json'),
     updateBackups: join(root, 'backups'),
     logs: join(root, 'logs'),

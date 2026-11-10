@@ -1033,6 +1033,8 @@ export function createSessionStore(api: MainApi): SessionStore {
         set((state) => ({
           projects: state.projects.filter((item) => item.projectId !== projectId),
         }))
+        // 移除最后一个项目时主进程会补种默认项目，重新读取才能立刻显示。
+        await get().refreshProjects()
         return true
       },
 

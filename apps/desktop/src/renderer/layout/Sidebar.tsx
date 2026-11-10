@@ -73,15 +73,13 @@ export function Sidebar({
           </button>
         </div>
 
-        <div className="shrink-0 px-2">
+        <nav aria-label={t('list.title')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           <WorkspaceList
             onConfigure={(project) => onConfigureProject?.(project)}
             onBrowseInFileTree={(project) => onBrowseProjectInFileTree?.(project)}
             onNewConversation={(project) => onNewConversationProject?.(project)}
+            onSelectSession={onSelect}
           />
-        </div>
-
-        <nav aria-label={t('list.title')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           <SessionList onSelect={onSelect} />
         </nav>
       </div>

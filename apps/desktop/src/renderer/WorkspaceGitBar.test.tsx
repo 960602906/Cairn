@@ -36,10 +36,13 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function view(projectPath: string | undefined) {
+function view(
+  projectPath: string | undefined,
+  props: Partial<Parameters<typeof WorkspaceGitBar>[0]> = {},
+) {
   return (
     <I18nextProvider i18n={i18n}>
-      <WorkspaceGitBar projectPath={projectPath} />
+      <WorkspaceGitBar projectPath={projectPath} {...props} />
     </I18nextProvider>
   )
 }
@@ -193,5 +196,39 @@ describe('WorkspaceGitBar', () => {
 
     expect((await screen.findByRole('alert')).textContent).toContain('切换分支失败')
     expect(screen.getByLabelText('当前分支：main')).toBeTruthy()
+  })
+
+  it('switches the workspace and opens a folder from the directory menu', async () => {
+    const onSelectProject = vi.fn()
+    const onOpenFolder = vi.fn()
+    render(
+      view('/work/demo', {
+        projects: [
+          { projectId: 'p1', name: 'demo', path: '/work/demo', createdAt: 1 },
+          { projectId: 'p2', name: 'other', path: '/work/other', createdAt: 2 },
+        ],
+        onSelectProject,
+        onOpenFolder,
+      }),
+    )
+
+    await userEvent.click(screen.getByLabelText('工作空间：demo'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'other' }))
+    expect(onSelectProject).toHaveBeenCalledWith('/work/other')
+
+    await userEvent.click(screen.getByLabelText('工作空间：demo'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
+    expect(onOpenFolder).toHaveBeenCalledOnce()
+  })
+
+  it('offers the folder dialog before a workspace is chosen', async () => {
+    const onSelectProject = vi.fn()
+    const onOpenFolder = vi.fn()
+    render(view(undefined, { projects: [], onSelectProject, onOpenFolder }))
+
+    await userEvent.click(screen.getByRole('button', { name: '选择工作空间' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
+    expect(onOpenFolder).toHaveBeenCalledOnce()
+    expect(onSelectProject).not.toHaveBeenCalled()
   })
 })

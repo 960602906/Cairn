@@ -187,6 +187,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     clone: vi.fn(async () => ({ project: PROJECT })),
     update: vi.fn(() => PROJECT),
     remove: vi.fn(() => ({})),
+    ensureDefault: vi.fn(() => undefined),
   }
   settings = {
     get: vi.fn(() => ({ locale: 'zh-CN' as const, providers: [] })),

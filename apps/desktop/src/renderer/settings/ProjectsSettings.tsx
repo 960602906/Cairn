@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderOpen, TriangleAlert } from 'lucide-react'
 import { PROJECT_NAME_MAX_LENGTH, type ProjectSummary } from '@cairn/protocol'
+import { projectDisplayName } from '../project-name.js'
 import { useSessionStore } from '../store-context.js'
 import {
   Button,
@@ -29,6 +30,8 @@ function ProjectCard({ project }: { readonly project: ProjectSummary }) {
   const { t: tc } = useTranslation()
   const updateProject = useSessionStore((s) => s.updateProject)
   const removeProject = useSessionStore((s) => s.removeProject)
+  const isDefault = project.isDefault === true
+  const displayName = projectDisplayName(project, tc('project.defaultName'))
   const [name, setName] = useState(project.name)
   const [confirming, setConfirming] = useState(false)
   const readAgentsMd = project.readAgentsMd !== false
@@ -36,6 +39,7 @@ function ProjectCard({ project }: { readonly project: ProjectSummary }) {
   const when = project.lastUsedAt ?? project.createdAt
 
   const saveName = () => {
+    if (isDefault) return
     const next = name.trim()
     if (next === project.name) {
       setName(project.name)
@@ -52,7 +56,7 @@ function ProjectCard({ project }: { readonly project: ProjectSummary }) {
 
   return (
     <li>
-      <SettingsCard aria-label={project.name}>
+      <SettingsCard aria-label={displayName}>
         <div className="flex items-start gap-3">
           <span
             aria-hidden
@@ -64,13 +68,20 @@ function ProjectCard({ project }: { readonly project: ProjectSummary }) {
             <input
               aria-label={t('projects.name')}
               className="-mx-1.5 h-8 w-full min-w-0 rounded-[7px] bg-transparent px-1.5 text-[15px] font-semibold text-fg outline-none transition-colors hover:bg-paper focus:bg-paper focus:shadow-[inset_0_0_0_0.5px_var(--hair2),0_0_0_3px_var(--accent-soft)]"
-              value={name}
+              value={isDefault ? displayName : name}
+              readOnly={isDefault}
               maxLength={PROJECT_NAME_MAX_LENGTH}
-              onChange={(event) => setName(event.target.value)}
-              onBlur={saveName}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') event.currentTarget.blur()
+              onChange={(event) => {
+                if (!isDefault) setName(event.target.value)
               }}
+              onBlur={isDefault ? undefined : saveName}
+              onKeyDown={
+                isDefault
+                  ? undefined
+                  : (event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur()
+                    }
+              }
             />
             <p
               title={project.path}
@@ -106,37 +117,41 @@ function ProjectCard({ project }: { readonly project: ProjectSummary }) {
             />
           </ToggleRow>
         </div>
-        <div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-danger hover:bg-danger-soft hover:text-danger"
-            onClick={() => setConfirming(true)}
-          >
-            {t('projects.remove')}
-          </Button>
-        </div>
-        <Dialog open={confirming} onOpenChange={setConfirming}>
-          <DialogContent tone="danger" icon={<TriangleAlert />}>
-            <DialogTitle>{t('projects.remove.title', { name: project.name })}</DialogTitle>
-            <DialogDescription>{t('projects.remove.description')}</DialogDescription>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button size="lg">{tc('action.cancel')}</Button>
-              </DialogClose>
+        {!isDefault && (
+          <>
+            <div>
               <Button
-                size="lg"
-                variant="danger"
-                onClick={() => {
-                  setConfirming(false)
-                  void removeProject(project.projectId)
-                }}
+                variant="ghost"
+                size="sm"
+                className="text-danger hover:bg-danger-soft hover:text-danger"
+                onClick={() => setConfirming(true)}
               >
-                {t('projects.remove.confirm')}
+                {t('projects.remove')}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </div>
+            <Dialog open={confirming} onOpenChange={setConfirming}>
+              <DialogContent tone="danger" icon={<TriangleAlert />}>
+                <DialogTitle>{t('projects.remove.title', { name: displayName })}</DialogTitle>
+                <DialogDescription>{t('projects.remove.description')}</DialogDescription>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button size="lg">{tc('action.cancel')}</Button>
+                  </DialogClose>
+                  <Button
+                    size="lg"
+                    variant="danger"
+                    onClick={() => {
+                      setConfirming(false)
+                      void removeProject(project.projectId)
+                    }}
+                  >
+                    {t('projects.remove.confirm')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
+        )}
       </SettingsCard>
     </li>
   )

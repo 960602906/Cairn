@@ -590,6 +590,8 @@ const projectGit = createGitRunner({
 })
 const projects = createProjectService({
   storage,
+  defaultProjectPath: paths.defaultProject,
+  onError: reportError,
   pickDirectory: async () => {
     const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const options: Electron.OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
@@ -602,6 +604,7 @@ const projects = createProjectService({
   readGitInfo: (path) => readGitInfo(projectGit, path),
   checkoutGitBranch: (path, branch) => checkoutGitBranch(projectGit, path, branch),
 })
+projects.ensureDefault()
 const files = createFileService({
   storage,
   revealPath: (target) => shell.showItemInFolder(target),

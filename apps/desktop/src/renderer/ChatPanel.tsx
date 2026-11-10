@@ -14,14 +14,13 @@ import { ApprovalList } from './ApprovalCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { MessageStream } from './MessageStream.js'
-import { lastSegment } from './paths.js'
+import { projectNameForPath } from './project-name.js'
 import { SessionSidePanel, type SessionPanel } from './SessionSidePanel.js'
 import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
-import { newChatShortcut } from './layout/shortcuts.js'
 import { useMediaQuery } from './layout/use-media-query.js'
 import { TITLE_BAR_INSET } from './layout/WindowControls.js'
-import { CairnMark, cn, IconButton } from './ui/index.js'
+import { cn, IconButton } from './ui/index.js'
 
 /** 纸面顶栏（48px）：左侧是项目 / 会话面包屑，右侧是模型与工作台开关。 */
 export function TopBar({ children }: { readonly children?: ReactNode }) {
@@ -55,6 +54,7 @@ export function ChatPanel({
   readonly notice?: ReactNode
 }) {
   const { t } = useTranslation('session')
+  const { t: tc } = useTranslation()
   const sessionId = useSessionStore((s) => s.activeSessionId)
   const view = useSessionStore((s) =>
     s.activeSessionId === undefined ? undefined : s.views[s.activeSessionId],
@@ -107,27 +107,14 @@ export function ChatPanel({
     })
   }
 
-  if (sessionId === undefined) {
-    return (
-      <>
-        <TopBar />
-        {notice}
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-ui text-muted">
-          <CairnMark size={48} className="text-faint" />
-          <p>{t('chat.empty')}</p>
-          <p className="text-note text-faint">
-            {t('chat.emptyHint', { shortcut: newChatShortcut() })}
-          </p>
-        </div>
-      </>
-    )
-  }
+  // 没有选中的会话时由 App 显示新对话页，这里不再渲染占位内容。
+  if (sessionId === undefined) return null
 
   const title = view?.info?.title ?? summary?.title ?? ''
   const status = awaiting ? 'running' : view ? sessionStatus(view) : (summary?.status ?? 'idle')
   const run = view && rootRun(view)
   const path = view?.info?.projectPath ?? summary?.projectPath
-  const project = path && (projects.find((p) => p.path === path)?.name ?? lastSegment(path))
+  const project = projectNameForPath(path, projects, tc('project.defaultName'))
   const model = view?.info?.model ?? summary?.model ?? defaultModel
   return (
     <section aria-labelledby="chat-title" className="flex min-h-0 flex-1 flex-col bg-paper">

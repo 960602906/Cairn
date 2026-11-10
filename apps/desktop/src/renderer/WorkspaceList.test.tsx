@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
-import type { ProjectSummary } from '@cairn/protocol'
+import { DEFAULT_PROJECT_ID, type ProjectSummary, type SessionSummary } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
@@ -22,23 +22,38 @@ const project = (patch: Partial<ProjectSummary> = {}): ProjectSummary => ({
   ...patch,
 })
 
+const session = (sessionId: string, title: string, projectPath = '/work/demo'): SessionSummary => ({
+  sessionId,
+  title,
+  projectPath,
+  status: 'idle',
+  createdAt: 1,
+  updatedAt: 1,
+})
+
 function setup(
   projects: ProjectSummary[],
   options: {
     withRefresh?: boolean
     onNewConversation?: (project: ProjectSummary) => void
     openedProject?: ProjectSummary | undefined
+    sessions?: SessionSummary[]
+    onSelectSession?: () => void
   } = {},
 ) {
   const updateProject = vi.fn(async () => undefined)
   const removeProject = vi.fn(async () => true)
   const refreshProjects = vi.fn(async () => undefined)
   const openProject = vi.fn(async () => options.openedProject)
+  const selectSession = vi.fn(async () => undefined)
   const store = createStore<Record<string, unknown>>(() => ({
     projects,
+    sessions: options.sessions ?? [],
+    activeSessionId: undefined,
     updateProject,
     removeProject,
     openProject,
+    selectSession,
     ...(options.withRefresh === false ? {} : { refreshProjects }),
   })) as unknown as SessionStore
   const onConfigure = vi.fn()
@@ -50,6 +65,7 @@ function setup(
           onConfigure={onConfigure}
           onBrowseInFileTree={onBrowseInFileTree}
           onNewConversation={options.onNewConversation}
+          onSelectSession={options.onSelectSession}
         />
       </SessionStoreProvider>
     </I18nextProvider>,
@@ -59,6 +75,7 @@ function setup(
     removeProject,
     refreshProjects,
     openProject,
+    selectSession,
     onConfigure,
     onBrowseInFileTree,
   }
@@ -111,6 +128,26 @@ describe('WorkspaceList', () => {
     expect(onBrowseInFileTree).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1' }))
   })
 
+  it('shows the localized default name and hides archive and remove actions', async () => {
+    const { updateProject } = setup([
+      project({
+        projectId: DEFAULT_PROJECT_ID,
+        name: 'Default Project',
+        path: '/app/default-project',
+        isDefault: true,
+      }),
+    ])
+    expect(screen.getByText('默认项目')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
+    expect(screen.getByRole('menuitem', { name: '置顶工作空间' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '归档' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '移除工作空间' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('menuitem', { name: '置顶工作空间' }))
+    expect(updateProject).toHaveBeenCalledWith(DEFAULT_PROJECT_ID, { pinned: true })
+  })
+
   it('shows archived state and removes a workspace after confirmation', async () => {
     const { removeProject } = setup([project({ archivedAt: 3 })])
     expect(screen.getByText('已归档')).toBeTruthy()
@@ -158,6 +195,39 @@ describe('WorkspaceList', () => {
     expect(screen.queryByText('demo')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: '展开工作空间' }))
     expect(screen.getByText('demo')).toBeTruthy()
+  })
+
+  it('nests a workspace session list and toggles it with the row', async () => {
+    setup([project()], {
+      sessions: [session('s1', '第一项'), session('s2', '第二项')],
+    })
+    expect(screen.getByText('第一项')).toBeTruthy()
+    expect(screen.getByText('第二项')).toBeTruthy()
+
+    const toggle = screen.getByRole('button', { name: 'demo 的会话' })
+    await userEvent.click(toggle)
+    expect(screen.queryByText('第一项')).toBeNull()
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    await userEvent.click(toggle)
+    expect(screen.getByText('第一项')).toBeTruthy()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('previews long workspace session lists and selects a session', async () => {
+    const onSelectSession = vi.fn()
+    const { selectSession } = setup([project()], {
+      sessions: Array.from({ length: 10 }, (_, index) => session(`s${index}`, `会话 ${index}`)),
+      onSelectSession,
+    })
+    expect(screen.getAllByRole('listitem')).toHaveLength(9)
+
+    await userEvent.click(screen.getByRole('button', { name: '展开剩余 2 个' }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(11)
+
+    await userEvent.click(screen.getByRole('button', { name: /^会话 3/ }))
+    expect(selectSession).toHaveBeenCalledWith('s3')
+    expect(onSelectSession).toHaveBeenCalledOnce()
   })
 
   it('opens the create dialog and adds a local folder', async () => {

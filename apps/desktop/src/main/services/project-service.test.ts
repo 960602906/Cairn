@@ -1,5 +1,9 @@
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProjectService } from './project-service.js'
 
 const ABS = process.platform === 'win32' ? 'C:\\work\\demo' : '/work/demo'
@@ -16,6 +20,8 @@ function setup(
     }) => Promise<string>
     readGitInfo?: (path: string) => Promise<{ branch?: string; branches?: string[] }>
     checkoutGitBranch?: (path: string, branch: string) => Promise<{ branch?: string }>
+    defaultProjectPath?: string
+    onError?: (error: unknown) => void
   } = {},
 ) {
   let clock = 0
@@ -27,10 +33,26 @@ function setup(
     ...(options.cloneRepository ? { cloneRepository: options.cloneRepository } : {}),
     ...(options.readGitInfo ? { readGitInfo: options.readGitInfo } : {}),
     ...(options.checkoutGitBranch ? { checkoutGitBranch: options.checkoutGitBranch } : {}),
+    ...(options.defaultProjectPath ? { defaultProjectPath: options.defaultProjectPath } : {}),
+    ...(options.onError ? { onError: options.onError } : {}),
     createId: () => `p${++id}`,
   })
   return { storage, service }
 }
+
+const tempDirectories: string[] = []
+
+function tempDirectory(): string {
+  const directory = mkdtempSync(join(tmpdir(), 'cairn-default-project-'))
+  tempDirectories.push(directory)
+  return directory
+}
+
+afterEach(() => {
+  for (const directory of tempDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
 
 describe('project service', () => {
   it('opens a directory as a project, reusing an existing record', async () => {
@@ -216,5 +238,109 @@ describe('project service', () => {
       name: 'demo',
       path: ABS,
     })
+  })
+})
+
+describe('default project', () => {
+  it('creates a managed default project when no active project exists', () => {
+    const path = join(tempDirectory(), 'default-project')
+    const { service } = setup([], { defaultProjectPath: path })
+
+    const created = service.ensureDefault()
+    expect(created).toMatchObject({
+      projectId: DEFAULT_PROJECT_ID,
+      name: DEFAULT_PROJECT_NAME,
+      path,
+      isDefault: true,
+    })
+    expect(existsSync(path)).toBe(true)
+    expect(service.ensureDefault()).toBeUndefined()
+    expect(service.list().projects).toEqual([created])
+  })
+
+  it('keeps normal projects and restores the default after removing the last one', async () => {
+    const path = join(tempDirectory(), 'default-project')
+    const { service } = setup([ABS], { defaultProjectPath: path })
+    await service.open()
+
+    expect(service.ensureDefault()).toBeUndefined()
+    expect(service.list().projects.map((project) => project.projectId)).toEqual(['p1'])
+
+    service.remove({ projectId: 'p1' })
+    expect(service.list().projects).toEqual([
+      expect.objectContaining({
+        projectId: DEFAULT_PROJECT_ID,
+        path,
+        isDefault: true,
+      }),
+    ])
+  })
+
+  it('seeds when only archived projects remain and restores an archived default record', async () => {
+    const path = join(tempDirectory(), 'default-project')
+    const { storage, service } = setup([ABS], { defaultProjectPath: path })
+    await service.open()
+    service.update({ projectId: 'p1', archived: true })
+
+    const created = service.ensureDefault()
+    expect(created).toMatchObject({
+      projectId: DEFAULT_PROJECT_ID,
+      isDefault: true,
+    })
+
+    // 旧版本或直接操作数据库时可能留下已归档的默认项目记录。
+    storage.projects.update(DEFAULT_PROJECT_ID, { archived: true })
+    expect(service.ensureDefault()).toMatchObject({
+      projectId: DEFAULT_PROJECT_ID,
+      isDefault: true,
+    })
+    expect(service.list().projects.find((project) => project.isDefault)?.archivedAt).toBeUndefined()
+  })
+
+  it('rejects removing, renaming or archiving the default project but allows pinning and toggles', () => {
+    const path = join(tempDirectory(), 'default-project')
+    const { service } = setup([], { defaultProjectPath: path })
+    service.ensureDefault()
+
+    expect(() => service.remove({ projectId: DEFAULT_PROJECT_ID })).toThrow(
+      expect.objectContaining({ code: 'project.default_immutable' }),
+    )
+    expect(() => service.update({ projectId: DEFAULT_PROJECT_ID, name: 'Renamed' })).toThrow(
+      expect.objectContaining({ code: 'project.default_immutable' }),
+    )
+    expect(() => service.update({ projectId: DEFAULT_PROJECT_ID, archived: true })).toThrow(
+      expect.objectContaining({ code: 'project.default_immutable' }),
+    )
+    expect(service.update({ projectId: DEFAULT_PROJECT_ID, pinned: true })).toMatchObject({
+      isPinned: true,
+      isDefault: true,
+    })
+    expect(service.update({ projectId: DEFAULT_PROJECT_ID, readAgentsMd: false })).toMatchObject({
+      readAgentsMd: false,
+      isDefault: true,
+    })
+    expect(service.list().projects).toHaveLength(1)
+  })
+
+  it('treats an existing record at the default path as the default project', async () => {
+    const path = join(tempDirectory(), 'default-project')
+    const { service } = setup([path], { defaultProjectPath: path })
+    const opened = await service.open()
+    expect(opened.project).toMatchObject({ projectId: 'p1', path, isDefault: true })
+
+    expect(() => service.remove({ projectId: 'p1' })).toThrow(
+      expect.objectContaining({ code: 'project.default_immutable' }),
+    )
+  })
+
+  it('reports directory creation failures without blocking the service', () => {
+    const path = join(tempDirectory(), 'not-a-directory')
+    writeFileSync(path, 'file')
+    const onError = vi.fn()
+    const { service } = setup([], { defaultProjectPath: path, onError })
+
+    expect(service.ensureDefault()).toBeUndefined()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(service.list().projects).toEqual([])
   })
 })

@@ -1,5 +1,6 @@
 /**
- * 侧栏的会话列表（M0-15b；M2-02 按视觉规范重做）：按项目分组，项目按最近更新的会话排在前面。
+ * 侧栏里不属于任何已打开工作空间的会话（工作空间行已经列出各自的会话，这里只做兜底）。
+ * 按项目分组，项目按最近更新的会话排在前面。
  * 每一项显示运行状态（运行中转圈、等待审批与失败用彩色圆点，并有读屏文字），悬停时出现“会话操作”菜单：
  * 重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
@@ -130,7 +131,7 @@ function RenameInput({
   )
 }
 
-function SessionItem({
+export function SessionItem({
   session,
   active,
   onSelect,
@@ -259,9 +260,13 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
     if (projects.length === 0) return null
     return <p className="px-2.5 py-2 text-note text-faint">{t('list.empty')}</p>
   }
+  // 工作空间行下面已经列出各自工作空间的会话，这里只补上不属于任何已打开工作空间的会话。
+  const projectPaths = new Set(projects.map((project) => project.path))
+  const orphans = sessions.filter((session) => !projectPaths.has(session.projectPath))
+  if (orphans.length === 0) return null
   return (
     <div className="flex flex-col gap-3">
-      {groupSessions(sessions, projects).map((group) => {
+      {groupSessions(orphans, projects).map((group) => {
         const isCollapsed = collapsed.has(group.projectPath)
         const activeIndex = group.sessions.findIndex((s) => s.sessionId === activeSessionId)
         const expanded =

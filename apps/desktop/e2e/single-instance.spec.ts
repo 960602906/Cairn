@@ -12,7 +12,7 @@ const SMOKE_PREFIX = 'CAIRN_SMOKE_RESULT'
 
 test('第二个实例只聚焦主窗口，不启动界面或数据库', async ({ launch, userData }) => {
   const first = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
-  await expect(first.window.getByText('还没有工作空间')).toBeVisible()
+  await expect(first.window.getByRole('region', { name: '工作空间' })).toContainText('默认项目')
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -49,5 +49,5 @@ test('第二个实例只聚焦主窗口，不启动界面或数据库', async ({
   expect(
     await first.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
   ).toBe(1)
-  await expect(first.window.getByText('还没有工作空间')).toBeVisible()
+  await expect(first.window.getByRole('region', { name: '工作空间' })).toContainText('默认项目')
 })

@@ -85,6 +85,19 @@ describe('SessionList', () => {
     expect(screen.queryByText('还没有工作空间')).toBeNull()
   })
 
+  it('does not repeat sessions that already sit under a workspace', async () => {
+    setup({
+      'project.list': () => ({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+      }),
+      'session.list': () => ({ sessions: [summary('s1', '工作空间里的会话')] }),
+    })
+    expect(await screen.findByText('工作空间里的会话')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'demo 的会话' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: '项目 work' })).toBeNull()
+    expect(screen.queryByRole('region', { name: '项目 demo' })).toBeNull()
+  })
+
   it('lists sessions grouped by project with their status and selects one on click', async () => {
     const { request, store } = setup({
       'session.list': () => ({
@@ -251,13 +264,18 @@ describe('SessionList', () => {
   })
 
   it('opens the composer with Ctrl+N and cancels back to the conversation', async () => {
-    setup({ 'session.list': () => ({ sessions: [summary('s0', '已有')] }) })
-    await screen.findAllByRole('listitem')
+    const { store } = setup({
+      'session.list': () => ({ sessions: [summary('s0', '已有')] }),
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+    })
+    const items = await screen.findAllByRole('listitem')
+    await userEvent.click(sessionButton(items[0]!))
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s0'))
     expect(screen.queryByPlaceholderText('有什么可以帮你？')).toBeNull()
     await userEvent.keyboard('{Control>}n{/Control}')
     expect(screen.getByPlaceholderText('有什么可以帮你？')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '取消' }))
-    expect(screen.queryByPlaceholderText('有什么可以帮你？')).toBeNull()
+    await waitFor(() => expect(screen.queryByPlaceholderText('有什么可以帮你？')).toBeNull())
   })
 
   it('keeps the composer open and shows the error when creating fails', async () => {

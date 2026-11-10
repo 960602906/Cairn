@@ -150,10 +150,10 @@ describe('ChatPanel', () => {
     expect(opened).toHaveBeenCalled()
   })
 
-  it('asks to pick a session when none is selected', async () => {
+  it('shows the new chat page until a session is picked', async () => {
     setup()
-    expect(await screen.findByText('选择或新建一个会话开始对话')).toBeTruthy()
-    expect(screen.queryByLabelText('输入消息')).toBeNull()
+    expect(await screen.findByPlaceholderText('有什么可以帮你？')).toBeTruthy()
+    expect(screen.queryByText('选择或新建一个会话开始对话')).toBeNull()
   })
 
   it('opens and closes the session panel from the header on narrow windows', async () => {
