@@ -109,14 +109,14 @@
   --text-dialog--font-weight: 600;
   --text-heading: 16px;
   --text-heading--font-weight: 600;
-  --text-body: 14px;
+  --text-body: 15px;
   --text-body--line-height: 1.75;
-  --text-ui: 13px;
+  --text-ui: 13.5px;
   --text-code: 13px;
   --text-code--line-height: 22px;
   --text-term: 12.5px;
   --text-term--line-height: 21px;
-  --text-note: 12px;
+  --text-note: 12.5px;
 
   /* 动效（§5） */
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);

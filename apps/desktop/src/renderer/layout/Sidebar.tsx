@@ -51,7 +51,7 @@ export function Sidebar({
           <span className="text-[13px] font-semibold tracking-[-0.01em] text-fg">
             {t('list.title')}
           </span>
-          <span className="tabular text-[10px] text-faint">{count}</span>
+          <span className="tabular text-[11px] text-faint">{count}</span>
           <div className="no-drag ml-auto flex items-center gap-0.5">
             <IconButton label={t('sidebar.collapse')} size="icon-sm" onClick={onClose}>
               <PanelLeftClose />

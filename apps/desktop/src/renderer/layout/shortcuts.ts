@@ -41,3 +41,21 @@ export function isSearchKey(
   const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
   return mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k'
 }
+
+/** “切换计划模式”的快捷键提示（⌘⇧P / Ctrl+Shift+P）。 */
+export const planShortcut = (platform?: string): string =>
+  isMacPlatform(platform) ? '⌘⇧P' : 'Ctrl Shift P'
+
+/** 按键是否为“切换计划模式”（⌘⇧P / Ctrl+Shift+P）。 */
+export function isPlanModeKey(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
+  platform?: string,
+): boolean {
+  const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
+  return (
+    mod &&
+    event.shiftKey &&
+    !event.altKey &&
+    event.key.toLowerCase() === 'p'
+  )
+}

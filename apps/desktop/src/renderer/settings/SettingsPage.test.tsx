@@ -144,15 +144,24 @@ describe('SettingsPage', () => {
     expect(screen.queryByRole('heading', { name: '通用与外观' })).toBeNull()
   })
 
-  it('drops the project category and keeps update and about at the bottom', async () => {
+  it('groups categories into general, models & capabilities, and security', async () => {
     setup()
     await openSettings()
     const nav = screen.getByRole('navigation', { name: '设置分类' })
     expect(within(nav).queryByRole('button', { name: '项目' })).toBeNull()
-    const titles = within(nav)
-      .getAllByRole('button')
-      .map((button) => button.textContent)
-    expect(titles.slice(-2)).toEqual(['更新', '关于 Cairn'])
+    const groups = within(nav).getAllByRole('group')
+    expect(groups.map((group) => group.getAttribute('aria-labelledby'))).toEqual([
+      'settings-group-general',
+      'settings-group-modelCapabilities',
+      'settings-group-security',
+    ])
+    const titles = (group: HTMLElement) =>
+      within(group)
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+    expect(titles(groups[0]!)).toEqual(['通用与外观', '更新', '关于 Cairn'])
+    expect(titles(groups[1]!)).toEqual(['模型供应商', '技能', 'MCP 服务'])
+    expect(titles(groups[2]!)).toEqual(['权限与审批'])
   })
 
   it('opens with Ctrl+, and leaves Esc to an open dialog', async () => {

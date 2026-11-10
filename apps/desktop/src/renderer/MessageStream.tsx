@@ -303,14 +303,16 @@ function Message({
         tabIndex={-1}
         className={cn(
           'flex scroll-mt-4 flex-col items-end rounded-item outline-none',
-          locatedTurnId === message.turnId && 'ring-1 ring-accent/40',
+          locatedTurnId !== undefined &&
+            locatedTurnId === message.turnId &&
+            'ring-1 ring-accent/40',
         )}
         data-turn={message.turnId}
       >
         {marks}
         {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
-        <div className="max-w-[78%] rounded-[10px] border border-hair border-l-[2px] border-l-accent bg-raise px-3.5 py-2.5 text-fg shadow-1">
+        <div className="max-w-[78%] rounded-[10px] bg-sunk2 px-3.5 py-2.5 text-fg shadow-1">
           <UserContent parts={message.content} />
         </div>
         {restores && (

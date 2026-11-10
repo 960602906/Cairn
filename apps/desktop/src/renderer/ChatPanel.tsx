@@ -5,7 +5,7 @@
  * 500px 以下。正文最大 840px，输入框最大 880px。会话切换、订阅恢复、审批与检查器行为沿用
  * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
-import { PanelRight } from 'lucide-react'
+import { FileDiff, PanelRight } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rootRun, sessionStatus } from '@cairn/core'
@@ -13,6 +13,7 @@ import { isAgentDraftRef } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
+import { totals, turnEntries } from './file-changes.js'
 import { MessageStream } from './MessageStream.js'
 import { projectNameForPath } from './project-name.js'
 import { SessionSidePanel, type SessionPanel } from './SessionSidePanel.js'
@@ -21,6 +22,9 @@ import { useSessionStore } from './store-context.js'
 import { useMediaQuery } from './layout/use-media-query.js'
 import { TITLE_BAR_INSET } from './layout/WindowControls.js'
 import { cn, IconButton } from './ui/index.js'
+
+/** 工作台从浮层切到常驻列的宽度；1280/1366 下仍保持浮层，避免把正文挤到 600px 以下。 */
+const PANEL_DOCK_QUERY = '(min-width: 1440px)'
 
 /** 纸面顶栏（48px）：左侧是项目 / 会话面包屑，右侧是模型与工作台开关。 */
 export function TopBar({ children }: { readonly children?: ReactNode }) {
@@ -65,17 +69,45 @@ export function ChatPanel({
     (s) => s.activeSessionId !== undefined && s.awaitingTurn[s.activeSessionId] === true,
   )
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
+  const changes = useSessionStore((s) =>
+    s.activeSessionId === undefined ? undefined : s.changes[s.activeSessionId],
+  )
   const [panel, setPanel] = useState<SessionPanel>('diff')
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | undefined>()
   const [locatedTurnId, setLocatedTurnId] = useState<string | undefined>()
   /** 宽屏工作台常驻；窄屏默认收起，按需浮出。 */
-  const docked = useMediaQuery('(min-width: 1280px)')
+  const docked = useMediaQuery(PANEL_DOCK_QUERY)
   const [panelPreference, setPanelPreference] = useState<boolean>()
   const panelOpen = panelPreference ?? docked
+  const overlayOpen = !docked && panelOpen
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   useStickToBottom(scroller, content, sessionId ?? '')
+  const run = view ? rootRun(view) : undefined
+
+  // 跨断点时恢复默认：宽屏常驻，窄屏收起，避免缩窗后浮层突然盖住对话。
+  useEffect(() => {
+    setPanelPreference(undefined)
+  }, [docked])
+
+  useEffect(() => {
+    if (!overlayOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      // 菜单、命令面板或其他对话框先处理 Esc；工作台自己不算阻塞。
+      if (
+        document.querySelector(
+          '[role="menu"], [role="listbox"], [role="dialog"]:not([data-side-panel-dialog]):not([aria-hidden="true"])',
+        )
+      )
+        return
+      event.preventDefault()
+      setPanelPreference(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [overlayOpen])
 
   useEffect(() => {
     setSelectedPlanId(undefined)
@@ -111,11 +143,20 @@ export function ChatPanel({
   if (sessionId === undefined) return null
 
   const title = view?.info?.title ?? summary?.title ?? ''
-  const status = awaiting ? 'running' : view ? sessionStatus(view) : (summary?.status ?? 'idle')
-  const run = view && rootRun(view)
+  const viewStatus = view ? sessionStatus(view) : undefined
+  const status = awaiting
+    ? viewStatus === 'waiting_approval'
+      ? 'waiting_approval'
+      : 'running'
+    : (viewStatus ?? summary?.status ?? 'idle')
   const path = view?.info?.projectPath ?? summary?.projectPath
   const project = projectNameForPath(path, projects, tc('project.defaultName'))
-  const model = view?.info?.model ?? summary?.model ?? defaultModel
+  const model = view?.info?.model ?? run?.model ?? summary?.model ?? defaultModel
+  const turnId = run?.turn?.turnId
+  const turnChanges =
+    turnId === undefined || changes === undefined
+      ? undefined
+      : totals(turnEntries(changes, turnId))
   return (
     <section aria-labelledby="chat-title" className="flex min-h-0 flex-1 flex-col bg-paper">
       {/* 读屏与端到端测试的运行状态；视觉上不占位，状态变化经 role=status 播报。 */}
@@ -151,12 +192,32 @@ export function ChatPanel({
           <span
             title={t('chat.agentsMd.loaded', { lines: view.agentsMd.lines })}
             aria-label={t('chat.agentsMd.loaded', { lines: view.agentsMd.lines })}
-            className="shrink-0 rounded-[5px] bg-sunk px-1.5 py-0.5 text-[10.5px] text-muted"
+            className="shrink-0 rounded-[5px] bg-sunk px-1.5 py-0.5 text-[11.5px] text-muted"
           >
             {t('chat.agentsMd.mark')}
           </span>
         )}
         <div className="no-drag ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
+          {turnChanges !== undefined && turnChanges.files > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedChangeSetId(undefined)
+                setPanel('diff')
+                setPanelPreference(true)
+              }}
+              className="hidden h-7 items-center gap-1.5 rounded-item px-2 text-note text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent min-[1200px]:flex"
+            >
+              <FileDiff aria-hidden className="size-3.5" />
+              <span className="tabular">
+                {t('chat.turnChanges', {
+                  count: turnChanges.files,
+                  added: turnChanges.added,
+                  removed: turnChanges.removed,
+                })}
+              </span>
+            </button>
+          )}
           <IconButton
             label={t('sidePanel.label')}
             size="icon-sm"
@@ -170,7 +231,19 @@ export function ChatPanel({
       </TopBar>
       {notice}
       <div className="relative flex min-h-0 flex-1">
-        <div className="relative flex min-w-0 flex-1 flex-col">
+        {overlayOpen && (
+          <div
+            aria-hidden
+            data-testid="session-panel-overlay"
+            className="absolute inset-0 z-10 bg-black/40 backdrop-blur-[1px]"
+            onClick={() => setPanelPreference(false)}
+          />
+        )}
+        <div
+          aria-hidden={overlayOpen}
+          inert={overlayOpen}
+          className="relative flex min-w-0 flex-1 flex-col"
+        >
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
             <div
               ref={content}

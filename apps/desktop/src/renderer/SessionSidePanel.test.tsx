@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -71,7 +71,7 @@ const delegation: DelegationView = {
 }
 
 function Harness({
-  open = true,
+  open: initialOpen = true,
   selectedChangeSetId: initialChangeSetId,
   showPlan = true,
   delegations = [],
@@ -83,6 +83,7 @@ function Harness({
   readonly delegations?: readonly DelegationView[]
   readonly onClose?: (() => void) | undefined
 }) {
+  const [open, setOpen] = useState(initialOpen)
   const [panel, setPanel] = useState<SessionPanel>('diff')
   const [selectedChangeSetId, setSelectedChangeSetId] = useState(initialChangeSetId)
   return (
@@ -95,7 +96,14 @@ function Harness({
       onSelectChangeSet={setSelectedChangeSetId}
       onPanelChange={setPanel}
       open={open}
-      {...(onClose === undefined ? {} : { onClose })}
+      {...(onClose === undefined
+        ? {}
+        : {
+            onClose: () => {
+              setOpen(false)
+              onClose()
+            },
+          })}
     />
   )
 }
@@ -191,10 +199,60 @@ const wrap = (
 afterEach(cleanup)
 
 describe('SessionSidePanel', () => {
+  it('is a modal dialog in overlay mode with a Tab loop', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness onClose={vi.fn()} />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(panel.getAttribute('aria-modal')).toBe('true')
+
+    const focusable = [
+      ...panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+    focusable[0]?.focus()
+    await user.tab({ shift: true })
+    expect(document.activeElement).toBe(focusable.at(-1))
+    await user.tab()
+    expect(document.activeElement).toBe(focusable[0])
+  })
+
+  it('returns focus to the trigger after closing the overlay', async () => {
+    const user = userEvent.setup()
+    function FocusHarness() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            打开面板
+          </button>
+          <SessionSidePanel
+            sessionId="s1"
+            view={view}
+            panel="diff"
+            selectedPlanId={plan.planId}
+            onPanelChange={() => {}}
+            open={open}
+            onClose={() => setOpen(false)}
+          />
+        </>
+      )
+    }
+    wrap(<FocusHarness />)
+    const trigger = screen.getByRole('button', { name: '打开面板' })
+    await user.click(trigger)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '关闭会话信息' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '会话信息' })).toBeNull(),
+    )
+    expect(document.activeElement).toBe(trigger)
+  })
+
   it('switches between diff, session brief, and the full plan', async () => {
     const user = userEvent.setup()
     wrap(<Harness />)
-    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
 
     expect(within(panel).getByRole('region', { name: '本会话的改动' })).toBeTruthy()
     await user.click(within(panel).getByRole('tab', { name: '会话要点' }))
@@ -208,7 +266,7 @@ describe('SessionSidePanel', () => {
 
   it('animates the width, opacity, and slide while open', () => {
     wrap(<Harness />)
-    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
     expect(panel.className).toContain('transition-[width,transform,opacity]')
     expect(panel.className).toContain('duration-200')
     expect(panel.className).toContain('w-[348px]')
@@ -220,7 +278,7 @@ describe('SessionSidePanel', () => {
   it('opens the inspector as the fourth side panel tab', async () => {
     const user = userEvent.setup()
     wrap(<Harness />)
-    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
     await user.click(within(panel).getByRole('tab', { name: '检查器' }))
     expect(within(panel).getByRole('tab', { name: '检查器' }).getAttribute('aria-selected')).toBe(
       'true',
@@ -234,7 +292,7 @@ describe('SessionSidePanel', () => {
       changeSets: [changeSetSummary],
       details: { cs1: changeSetDetail },
     })
-    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
     const list = within(panel).getByRole('list', { name: '改动集列表' })
     expect(within(list).getByText('1 个文件')).toBeTruthy()
     expect(within(list).getByText('补全登录测试')).toBeTruthy()
@@ -249,13 +307,13 @@ describe('SessionSidePanel', () => {
   it('shows loading and empty change set states', async () => {
     const user = userEvent.setup()
     wrap(<Harness />, { loading: true })
-    let panel = screen.getByRole('complementary', { name: '会话信息' })
+    let panel = screen.getByRole('dialog', { name: '会话信息' })
     await user.click(within(panel).getByRole('radio', { name: '改动集' }))
     expect(within(panel).getByRole('status').textContent).toContain('正在读取改动集')
     cleanup()
 
     wrap(<Harness />)
-    panel = screen.getByRole('complementary', { name: '会话信息' })
+    panel = screen.getByRole('dialog', { name: '会话信息' })
     await user.click(within(panel).getByRole('radio', { name: '改动集' }))
     expect(within(panel).getByText(/还没有改动集/)).toBeTruthy()
   })
@@ -273,7 +331,7 @@ describe('SessionSidePanel', () => {
         changeSetSummary,
       ],
     })
-    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
     const list = within(panel).getByRole('list', { name: '改动集列表' })
     expect(within(list).getByText('已合并')).toBeTruthy()
     expect(within(list).getByText('已拒绝')).toBeTruthy()
@@ -285,7 +343,7 @@ describe('SessionSidePanel', () => {
     wrap(<Harness selectedChangeSetId="cs1" delegations={[delegation]} />, {
       details: { cs1: changeSetDetail },
     })
-    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
     expect(within(panel).getByRole('region', { name: '改动集审阅' })).toBeTruthy()
     expect(within(panel).getByText('补全登录测试')).toBeTruthy()
   })
@@ -294,7 +352,7 @@ describe('SessionSidePanel', () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
     wrap(<Harness showPlan={false} onClose={onClose} />)
-    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
     await user.click(within(panel).getByRole('tab', { name: '计划' }))
     expect(within(panel).getByText('还没有计划。')).toBeTruthy()
     await user.click(within(panel).getByRole('button', { name: '关闭会话信息' }))
@@ -303,7 +361,7 @@ describe('SessionSidePanel', () => {
 
   it('collapses to zero width and removes itself from the accessible tree', () => {
     wrap(<Harness open={false} />)
-    const panel = screen.getByRole('complementary', { hidden: true })
+    const panel = screen.getByRole('dialog', { hidden: true })
     expect(panel.className).toContain('w-0')
     expect(panel.className).toContain('opacity-0')
     expect(panel.className).toContain('pointer-events-none')

@@ -3,11 +3,11 @@
  *
  * 图标栏常驻（窗口最窄 880px 时仍然保留），本身不承载会话列表，宽度固定 60px。
  */
-import { Activity, PanelLeftOpen, Search, Settings } from 'lucide-react'
+import { Activity, PanelLeftOpen, Search, Settings, SquarePen } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CairnMark, cn, Kbd, Tooltip } from '../ui/index.js'
-import { searchShortcut, settingsShortcut } from './shortcuts.js'
+import { newChatShortcut, searchShortcut, settingsShortcut } from './shortcuts.js'
 
 function RailButton({
   label,
@@ -51,6 +51,7 @@ function RailButton({
 }
 
 export function AppRail({
+  onNewChat,
   onSessions,
   sessionsOpen = true,
   showSessions = true,
@@ -60,6 +61,7 @@ export function AppRail({
   activityActive = false,
   activityBadge = 0,
 }: {
+  readonly onNewChat: () => void
   readonly onSessions: () => void
   /** 会话栏已展开时不显示入口；收起后提供恢复入口。 */
   readonly sessionsOpen?: boolean
@@ -85,6 +87,18 @@ export function AppRail({
         <CairnMark size={24} />
       </span>
       <div className="no-drag flex flex-col items-center gap-1">
+        <RailButton
+          label={t('list.new')}
+          onClick={onNewChat}
+          hint={
+            <span className="flex items-center gap-1.5">
+              {t('list.new')}
+              <Kbd>{newChatShortcut()}</Kbd>
+            </span>
+          }
+        >
+          <SquarePen />
+        </RailButton>
         {showSessions && !sessionsOpen && (
           <RailButton label={t('sidebar.expand')} onClick={onSessions}>
             <PanelLeftOpen />

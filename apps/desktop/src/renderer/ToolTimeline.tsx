@@ -212,7 +212,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
           type="button"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="group/step flex w-full items-center gap-2.5 rounded-item py-1 text-left text-ui text-fg2 outline-none hover:text-fg"
+          className="group/step flex w-full items-center gap-2.5 rounded-item py-1 text-left text-ui text-fg2 outline-none hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
         >
           <Node status={status} />
           <span className="flex min-w-0 flex-1 items-center gap-1.5">

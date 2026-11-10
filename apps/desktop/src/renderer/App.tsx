@@ -79,6 +79,16 @@ function Workspace() {
   const [welcomeDismissed, setWelcomeDismissed] = useState(false)
   const showWelcome = userSettings?.onboardingSeen === false && !welcomeDismissed
 
+  /** 图标栏与 Ctrl+N 共用：离开设置/活动，清掉项目预设，进入新会话页。 */
+  const startNewChat = useCallback(() => {
+    setSettings(undefined)
+    setActivity(false)
+    setComposing(true)
+    setNewChatProjectPath(undefined)
+    setPendingChangeSet(undefined)
+    if (narrow) setSessionsOpen(false)
+  }, [narrow])
+
   // 进入窄窗口时把会话列收成抽屉；窗口变宽后恢复常驻列。
   useEffect(() => {
     setSessionsOpen(!narrow)
@@ -88,7 +98,12 @@ function Workspace() {
     if (!narrow || !sessionsOpen) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], [role="listbox"]',
+        )
+      )
+        return
       setSessionsOpen(false)
     }
     window.addEventListener('keydown', onKeyDown)
@@ -110,14 +125,11 @@ function Workspace() {
       }
       if (!isNewChatKey(event)) return
       event.preventDefault()
-      setSettings(undefined)
-      setActivity(false)
-      if (narrow) setSessionsOpen(false)
-      setComposing(true)
+      startNewChat()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [narrow])
+  }, [startNewChat])
 
   useEffect(() => {
     void refreshActivity()
@@ -225,6 +237,7 @@ function Workspace() {
 
   const rail = (showSessions: boolean) => (
     <AppRail
+      onNewChat={startNewChat}
       onSessions={openSessions}
       sessionsOpen={sessionsOpen}
       showSessions={showSessions}

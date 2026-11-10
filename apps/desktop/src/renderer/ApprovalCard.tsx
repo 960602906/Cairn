@@ -129,7 +129,8 @@ export function ApprovalCard({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return
       if (event.ctrlKey || event.metaKey || event.altKey) return
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return
+      if (document.querySelector('[role="dialog"]:not([aria-hidden="true"]), [role="menu"]'))
+        return
       const k = keys.current
       if (event.key === 'Escape') {
         event.preventDefault()

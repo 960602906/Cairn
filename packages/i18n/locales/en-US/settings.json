@@ -53,6 +53,7 @@
   "page.backKey": "Esc",
   "group.models": "Models",
   "group.capabilities": "Capabilities",
+  "group.modelCapabilities": "Models & capabilities",
   "section.providers.title": "Model providers",
   "section.providers.description": "Connect official APIs or third-party relays. Keys are encrypted on this computer and never uploaded.",
   "section.skills.title": "Skills",

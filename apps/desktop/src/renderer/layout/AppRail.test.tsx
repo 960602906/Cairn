@@ -15,6 +15,7 @@ function renderRail(
     showSessions?: boolean
     activityActive?: boolean
     activityBadge?: number
+    onNewChat?: () => void
     onSessions?: () => void
     onSearch?: () => void
     onActivity?: () => void
@@ -22,6 +23,7 @@ function renderRail(
   } = {},
 ) {
   const handlers = {
+    onNewChat: options.onNewChat ?? vi.fn(),
     onSessions: options.onSessions ?? vi.fn(),
     onSearch: options.onSearch ?? vi.fn(),
     onActivity: options.onActivity ?? vi.fn(),
@@ -57,6 +59,13 @@ describe('AppRail', () => {
       await user.click(screen.getByRole('button', { name }))
       expect(handler).toHaveBeenCalledTimes(1)
     }
+  })
+
+  it('offers a new chat entry with the shortcut hint', async () => {
+    const user = userEvent.setup()
+    const handlers = renderRail()
+    await user.click(screen.getByRole('button', { name: '新对话' }))
+    expect(handlers.onNewChat).toHaveBeenCalledTimes(1)
   })
 
   it('marks the active entry and caps the approval badge', () => {

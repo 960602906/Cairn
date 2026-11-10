@@ -4,9 +4,18 @@
  *
  * 还没有配置模型供应商时，在输入框下方提示先去设置添加；还没有工作空间时可以打开本地文件夹。
  */
-import { ArrowUp, Cpu } from 'lucide-react'
+import { ArrowUp, Cpu, ListChecks } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { ModelRef } from '@cairn/protocol'
+import {
+  enabledModelChoices,
+  ModelPicker,
+  PermissionMenu,
+  resolveDefaultModel,
+  sameModel,
+} from './Composer.js'
+import { planShortcut } from './layout/shortcuts.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
 import { Button, CairnMark } from './ui/index.js'
@@ -58,17 +67,25 @@ export function NewSession({
 }) {
   const { t } = useTranslation('session')
   const createSession = useSessionStore((s) => s.createSession)
+  const setSessionModel = useSessionStore((s) => s.setSessionModel)
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const projects = useSessionStore((s) => s.projects)
   const refreshProjects = useSessionStore((s) => s.refreshProjects)
   const openProject = useSessionStore((s) => s.openProject)
+  const providers = useSessionStore((s) => s.settings?.providers) ?? []
+  const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
   // 设置还没读到时不提示（旧版主进程或测试替身可能不返回供应商列表）
   const noProvider = useSessionStore((s) => s.settings?.providers?.length === 0)
+  const hasModel = enabledModelChoices(providers).length > 0
   const [projectPath, setProjectPath] = useState(initialProjectPath ?? projects[0]?.path ?? '')
+  const [selectedModel, setSelectedModel] = useState<ModelRef | undefined>()
+  const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [planMode, setPlanMode] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const period = useGreetingPeriod()
+  const model = selectedModel ?? resolveDefaultModel(providers, defaultModel)
 
   useEffect(() => {
     void refreshProjects()
@@ -103,14 +120,16 @@ export function NewSession({
   const send = async () => {
     const path = projectPath.trim()
     const draft = text.trim()
-    if (path === '' || draft === '' || busy) return
+    if (path === '' || draft === '' || busy || model === undefined) return
     setBusy(true)
     const sessionId = await createSession(path, titleFromPrompt(draft) || undefined)
     if (sessionId === undefined) {
       setBusy(false)
       return
     }
-    await sendPrompt(draft)
+    // 新会话先按模型创建，再切换用户选的模型，最后才发出第一轮。
+    if (!sameModel(model, defaultModel)) await setSessionModel(sessionId, model)
+    await sendPrompt(draft, planMode ? 'plan' : 'normal')
     setBusy(false)
     onDone()
   }
@@ -168,23 +187,46 @@ export function NewSession({
             ref={textarea}
             rows={2}
             aria-label={t('input.label')}
-            placeholder={t('new.placeholder')}
+            placeholder={planMode ? t('composer.plan.placeholder') : t('new.placeholder')}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={keyDown}
             className="block max-h-[200px] min-h-12 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
           />
           <div className="mt-2 flex items-center gap-1">
+            <PermissionMenu />
             <button
               type="button"
-              aria-label={t('input.send')}
-              title={t('input.send')}
-              disabled={busy || projectPath.trim() === '' || text.trim() === ''}
-              onClick={() => void send()}
-              className="ml-auto flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-25"
+              aria-pressed={planMode}
+              aria-label={t('composer.plan.label')}
+              title={t('composer.plan.hint', { shortcut: planShortcut() })}
+              onClick={() => setPlanMode((on) => !on)}
+              className="flex h-7 items-center gap-1 rounded-item px-2 text-ui text-muted outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent aria-pressed:bg-accent-soft aria-pressed:text-accent"
             >
-              <ArrowUp className="size-4" />
+              <ListChecks className="size-3.5" />
+              {t('composer.plan.toggle')}
             </button>
+            <div className="ml-auto flex min-w-0 items-center gap-1">
+              <ModelPicker
+                providers={providers}
+                model={model}
+                fixed={false}
+                disabled={!hasModel}
+                open={modelMenuOpen}
+                onOpenChange={setModelMenuOpen}
+                onSelect={setSelectedModel}
+              />
+              <button
+                type="button"
+                aria-label={t('input.send')}
+                title={t('input.send')}
+                disabled={busy || projectPath.trim() === '' || text.trim() === '' || model === undefined}
+                onClick={() => void send()}
+                className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
+              >
+                <ArrowUp className="size-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
