@@ -18,7 +18,6 @@ export function Sidebar({
   onClose,
   onSearch,
   onSelect,
-  onConfigureProject,
   onBrowseProjectInFileTree,
   onNewConversationProject,
 }: {
@@ -28,7 +27,6 @@ export function Sidebar({
   /** 打开“搜索对话”（M2-12）。 */
   readonly onSearch: () => void
   readonly onSelect: () => void
-  readonly onConfigureProject?: (project: ProjectSummary) => void
   readonly onBrowseProjectInFileTree?: (project: ProjectSummary) => void
   readonly onNewConversationProject?: (project: ProjectSummary) => void
 }) {
@@ -75,7 +73,6 @@ export function Sidebar({
 
         <nav aria-label={t('list.title')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           <WorkspaceList
-            onConfigure={(project) => onConfigureProject?.(project)}
             onBrowseInFileTree={(project) => onBrowseProjectInFileTree?.(project)}
             onNewConversation={(project) => onNewConversationProject?.(project)}
             onSelectSession={onSelect}

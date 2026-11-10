@@ -6,7 +6,6 @@ import { createTitleService, type CompleteFn } from './title-service.js'
 import { TITLE_SYSTEM_PROMPT } from './title.js'
 
 const sessionModel = { providerId: 'local', modelId: 'main' }
-const auxiliary = { providerId: 'local', modelId: 'aux' }
 
 const configOf = (model: ModelRef): HostModelConfig => ({
   kind: 'openai',
@@ -22,7 +21,6 @@ const configOf = (model: ModelRef): HostModelConfig => ({
 })
 
 function setup(options?: {
-  readonly auxiliary?: ModelRef
   readonly configured?: (model: ModelRef) => boolean
   readonly apiKey?: string
 }) {
@@ -54,7 +52,6 @@ function setup(options?: {
       get: () => ({
         locale: 'zh-CN',
         providers: [],
-        ...(options?.auxiliary ? { auxiliaryModel: options.auxiliary } : {}),
       }),
       hostModelConfig: (model) =>
         options?.configured && !options.configured(model) ? undefined : configOf(model),
@@ -169,14 +166,6 @@ describe('createTitleService', () => {
     await Promise.resolve()
     expect(requests).toHaveLength(1)
     expect(storage.sessions.get('s1')?.title).toBe('整理日志')
-    service.stop()
-  })
-
-  it('uses the auxiliary model and its key when one is configured', async () => {
-    const { events, requests, service } = setup({ auxiliary, apiKey: 'sk-aux' })
-    publish(events, [opened(), ...turn('t1')])
-    await vi.waitFor(() => expect(requests).toHaveLength(1))
-    expect(requests[0]).toMatchObject({ model: auxiliary, apiKey: 'sk-aux' })
     service.stop()
   })
 
@@ -310,7 +299,7 @@ describe('createTitleService', () => {
     service.stop()
   })
 
-  it('skips quietly when there is nothing to call, and logs a broken auxiliary model', async () => {
+  it('skips quietly when there is nothing to call', async () => {
     const fake = setup({ configured: () => false })
     publish(fake.events, [opened(), ...turn('t1')])
     await Promise.resolve()
@@ -323,15 +312,6 @@ describe('createTitleService', () => {
     await Promise.resolve()
     expect(none.onError).not.toHaveBeenCalled()
     none.service.stop()
-
-    const broken = setup({ auxiliary, configured: () => false })
-    publish(broken.events, [opened(), ...turn('t1')])
-    await vi.waitFor(() => expect(broken.onError).toHaveBeenCalledOnce())
-    expect((broken.onError.mock.calls[0]?.[0] as Error).message).toBe(
-      'title: model is not configured',
-    )
-    expect(broken.requests).toHaveLength(0)
-    broken.service.stop()
   })
 
   it('ignores turns after stop and stops quietly when stopped mid-completion', async () => {

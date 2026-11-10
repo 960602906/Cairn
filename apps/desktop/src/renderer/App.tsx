@@ -220,10 +220,6 @@ function Workspace() {
       setComposing(false)
       setActivity(false)
     },
-    onConfigureProject: () => {
-      setSessionsOpen(false)
-      setSettings('projects')
-    },
     onBrowseProjectInFileTree: (project: ProjectSummary) => {
       if (narrow) setSessionsOpen(false)
       setFileTreeProject(project)

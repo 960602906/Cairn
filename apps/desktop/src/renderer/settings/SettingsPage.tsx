@@ -2,13 +2,14 @@
  * 设置页框架（M2-09，视觉规范 §8）：与对话页相同的窗口结构。左侧分类导航（顶部“返回对话 Esc”，铺在窗口
  * 底色上），右侧纸面，内容居中、最大宽度 920px；窄窗口收窄内边距。
  *
- * 分类按组列出：通用与外观（M2-09）、项目（M3-02）、模型供应商（M2-10）、技能（M3-08）、
- * MCP 服务（M3-10）、权限与审批（M2-11）。Esc 返回对话（有对话框或菜单打开时不处理）。
+ * 分类按组列出：常规（通用与外观，M2-09）、模型（模型供应商，M2-10）、
+ * 能力（技能 M3-08、MCP 服务 M3-10）、安全（权限与审批 M2-11），以及底部的
+ * 其他（更新、关于 Cairn）。项目操作在会话栏里，不再占用设置分类。
+ * Esc 返回对话（有对话框或菜单打开时不处理）。
  */
 import {
   ChevronLeft,
   Cpu,
-  FolderOpen,
   Info,
   Palette,
   PanelLeftClose,
@@ -24,7 +25,6 @@ import { GeneralSettings } from './GeneralSettings.js'
 import { AboutSettings } from './AboutSettings.js'
 import { McpSettings } from './McpSettings.js'
 import { PermissionsSettings } from './PermissionsSettings.js'
-import { ProjectsSettings } from './ProjectsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
 import { McpGlyph, SkillGlyph } from './SettingIcons.js'
 import { SkillsSettings } from './SkillsSettings.js'
@@ -32,7 +32,7 @@ import { UpdateSettings } from './UpdateSettings.js'
 import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
-  'general' | 'projects' | 'update' | 'providers' | 'skills' | 'mcp' | 'permissions' | 'about'
+  'general' | 'update' | 'providers' | 'skills' | 'mcp' | 'permissions' | 'about'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -41,18 +41,10 @@ interface SectionEntry {
 
 /** 分类分组：组名与其中的分类，按显示顺序。 */
 const GROUPS: readonly {
-  readonly group: 'general' | 'models' | 'capabilities' | 'security'
+  readonly group: 'general' | 'models' | 'capabilities' | 'security' | 'other'
   readonly sections: readonly SectionEntry[]
 }[] = [
-  {
-    group: 'general',
-    sections: [
-      { id: 'general', icon: <Palette /> },
-      { id: 'projects', icon: <FolderOpen /> },
-      { id: 'update', icon: <RefreshCw /> },
-      { id: 'about', icon: <Info /> },
-    ],
-  },
+  { group: 'general', sections: [{ id: 'general', icon: <Palette /> }] },
   { group: 'models', sections: [{ id: 'providers', icon: <Cpu /> }] },
   {
     group: 'capabilities',
@@ -62,6 +54,13 @@ const GROUPS: readonly {
     ],
   },
   { group: 'security', sections: [{ id: 'permissions', icon: <ShieldCheck /> }] },
+  {
+    group: 'other',
+    sections: [
+      { id: 'update', icon: <RefreshCw /> },
+      { id: 'about', icon: <Info /> },
+    ],
+  },
 ]
 
 export function SettingsNav({
@@ -229,7 +228,6 @@ export function SettingsContent({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[920px] flex-col gap-6 px-8 pt-6 pb-16 max-[640px]:px-4">
           {section === 'general' && <GeneralSettings />}
-          {section === 'projects' && <ProjectsSettings />}
           {section === 'update' && <UpdateSettings />}
           {section === 'providers' && <ProvidersSettings />}
           {section === 'skills' && <SkillsSettings />}

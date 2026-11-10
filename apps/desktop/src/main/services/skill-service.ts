@@ -2,9 +2,11 @@
  * 技能（M3-07，Runtime §21.2，ADR-0017）。
  *
  * - 内置：随应用放在 `builtinDir`，每个子目录一份。
+ * - 本机：家目录的 `.agents/skills/`（`agentsDir`），按通行约定默认读取，只读。
  * - 用户安装：`userDir`，由 `skill.install` 从文件夹或 zip 写入。
  * - 项目内：`.agents/skills/` 与 `.cairn/skills/`，项目设置开启后才扫描。同名时项目内优先于已安装，
- *   已安装优先于内置；`.cairn/skills` 优先于 `.agents/skills`。停用的技能不再挡住低优先级的同名技能。
+ *   已安装优先于本机 `.agents`，本机 `.agents` 优先于内置；`.cairn/skills` 优先于项目的 `.agents/skills`。
+ *   停用的技能不再挡住低优先级的同名技能。
  * - 启用和“始终加载”记在存储里。没有记录时为启用、不固定。
  *
  * 不依赖 Electron。安装只写用户目录，不改项目文件。
@@ -47,14 +49,16 @@ export const SkillServiceErrorCode = {
 } as const
 
 const PROJECT_ROOTS = [
-  { dir: path.join('.agents', 'skills'), priority: 3 },
-  { dir: path.join('.cairn', 'skills'), priority: 4 },
+  { dir: path.join('.agents', 'skills'), priority: 4 },
+  { dir: path.join('.cairn', 'skills'), priority: 5 },
 ] as const
 
 export interface SkillServiceOptions {
   readonly storage: Pick<Storage, 'projects' | 'sessions' | 'skillPrefs'>
   /** 内置技能根目录。不存在时当作没有内置技能。 */
   readonly builtinDir: string
+  /** 本机技能目录（家目录下的 `.agents/skills`）。不存在时当作没有本机技能。 */
+  readonly agentsDir: string
   /** 用户安装的技能目录（应用数据目录下的 `skills/`）。 */
   readonly userDir: string
   /** 让用户选择技能来源（M3-08）；取消时返回 undefined。没提供时 `pickSource` 视为取消。 */
@@ -197,7 +201,8 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
       }
     }
     pushRoot(options.builtinDir, 'builtin', 1, undefined)
-    pushRoot(options.userDir, 'user', 2, undefined)
+    pushRoot(options.agentsDir, 'agents', 2, undefined)
+    pushRoot(options.userDir, 'user', 3, undefined)
     if (projectId !== undefined) {
       const project = storage.projects.get(projectId)
       if (!project) throw new RpcError('project.not_found', { projectId })
@@ -330,6 +335,7 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
         scanSkillRoot(root).skills.some((found) => found.skill.name === name)
       if (
         named(options.builtinDir) ||
+        named(options.agentsDir) ||
         storage.projects
           .list()
           .some((project) => PROJECT_ROOTS.some((root) => named(path.join(project.path, root.dir))))

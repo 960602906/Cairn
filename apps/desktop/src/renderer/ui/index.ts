@@ -1,6 +1,7 @@
 /** 基础组件（M2-01）：shadcn/ui 的做法，源码放在仓库中，底层用 Radix UI，样式只引用设计令牌。 */
 export { Button, IconButton, buttonVariants, type ButtonProps } from './button.js'
 export { CairnAppMark, CairnMark } from './CairnMark.js'
+export { Checkbox } from './checkbox.js'
 export { cn } from './cn.js'
 export {
   Dialog,

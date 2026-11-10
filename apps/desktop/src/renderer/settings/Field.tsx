@@ -1,5 +1,5 @@
 /** 设置页的卡片与表单行（M2-09、M2-10，视觉规范 §8）。 */
-import type { ReactNode } from 'react'
+import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { cn } from '../ui/index.js'
 
 /** 设置页的卡片：浮起的白底，0.5px 描边。 */
@@ -7,11 +7,7 @@ export function SettingsCard({
   className,
   children,
   ...rest
-}: {
-  readonly className?: string
-  readonly children: ReactNode
-  readonly 'aria-label'?: string
-}) {
+}: Omit<ComponentPropsWithoutRef<'section'>, 'children'> & { readonly children: ReactNode }) {
   return (
     <section
       className={cn(

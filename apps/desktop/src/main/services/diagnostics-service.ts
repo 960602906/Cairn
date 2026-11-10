@@ -112,7 +112,6 @@ interface DiagnosticProvider {
 interface DiagnosticSettings {
   readonly providers?: readonly DiagnosticProvider[]
   readonly defaultModel?: unknown
-  readonly auxiliaryModel?: unknown
   readonly theme?: string
 }
 
@@ -167,7 +166,6 @@ export function summarizeSettings(
 
   return {
     defaultModel: settings?.defaultModel,
-    auxiliaryModel: settings?.auxiliaryModel,
     providers,
     mcpServers: servers,
     theme: settings?.theme ?? 'system',
@@ -296,7 +294,6 @@ export class DiagnosticsService {
       settings: {
         providersCount: ((settings as DiagnosticSettings | undefined)?.providers ?? []).length,
         mcpServersCount: mcpServers.length,
-        hasAuxiliaryModel: Boolean(settings?.auxiliaryModel),
       },
       ...(sandbox ? { sandbox } : {}),
       ...(update ? { update } : {}),

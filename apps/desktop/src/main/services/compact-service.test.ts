@@ -6,7 +6,6 @@ import { createCompactService, type CompleteFn } from './compact-service.js'
 import { createSessionEventService } from './event-service.js'
 
 const sessionModel = { providerId: 'local', modelId: 'main' }
-const auxiliary = { providerId: 'local', modelId: 'aux' }
 
 const configOf = (model: ModelRef): HostModelConfig => ({
   kind: 'openai',
@@ -22,7 +21,6 @@ const configOf = (model: ModelRef): HostModelConfig => ({
 })
 
 function setup(options?: {
-  readonly auxiliary?: ModelRef
   readonly configured?: boolean
   readonly failResult?: boolean
   readonly throwError?: boolean
@@ -75,7 +73,6 @@ function setup(options?: {
       get: () => ({
         locale: 'zh-CN',
         providers: [],
-        ...(options?.auxiliary ? { auxiliaryModel: options.auxiliary } : {}),
       }),
       hostModelConfig: (model) => (options?.configured === false ? undefined : configOf(model)),
       credentialRef: () => undefined,
@@ -100,21 +97,11 @@ describe('compact service', () => {
     })
   })
 
-  it('uses the auxiliary model when one is configured', async () => {
-    const { service, requests } = setup({ auxiliary })
-    await service.summarize('s1', 'transcript')
-    expect(requests[0]?.model).toEqual(auxiliary)
-  })
-
-  it('skips quietly when the session model has no provider, and logs a configured auxiliary that cannot resolve', async () => {
+  it('skips quietly when the session model has no provider', async () => {
     const quiet = setup({ configured: false })
     await expect(quiet.service.summarize('s1', 'transcript')).resolves.toBeUndefined()
     expect(quiet.onError).not.toHaveBeenCalled()
     expect(quiet.requests).toHaveLength(0)
-
-    const logged = setup({ configured: false, auxiliary })
-    await expect(logged.service.summarize('s1', 'transcript')).resolves.toBeUndefined()
-    expect(logged.onError).toHaveBeenCalledOnce()
   })
 
   it('returns undefined when the model writes nothing', async () => {

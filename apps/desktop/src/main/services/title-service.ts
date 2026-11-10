@@ -1,6 +1,6 @@
 /**
- * 自动标题（M3-01）。会话第一轮成功结束后，如果标题仍为空且用户没有改过，用辅助模型
- * （没有配置时用会话的主模型）根据第一条用户消息和回复生成不超过 30 个字符的标题。
+ * 自动标题（M3-01）。会话第一轮成功结束后，如果标题仍为空且用户没有改过，用会话的主模型
+ * 根据第一条用户消息和回复生成不超过 30 个字符的标题。
  *
  * 失败只交给 `onError`（主进程写日志），不产生界面上的错误。用量记为 `usage.reported`
  * （`auxiliary`），计入会话 token 统计，不计入上下文圆环。
@@ -73,8 +73,7 @@ export function createTitleService(options: TitleServiceOptions): TitleService {
     if (stopped || pending.has(sessionId)) return
     const input = autoTitleInput(options.events.readAfter(sessionId, 0))
     if (!input) return
-    const auxiliary = options.settings.get().auxiliaryModel
-    const model = auxiliary ?? input.model
+    const model = input.model
     if (!model) return
     pending.add(sessionId)
     try {
@@ -82,8 +81,6 @@ export function createTitleService(options: TitleServiceOptions): TitleService {
       if (stopped) return
       if (!resolved) {
         // 会话模型没有提供方配置（开发用的 FakeRuntime）时安静跳过。
-        // 辅助模型配了却解析不到才记日志。
-        if (auxiliary) fail(new Error('title: model is not configured'))
         return
       }
       const result = await complete({

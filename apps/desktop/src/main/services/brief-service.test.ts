@@ -6,7 +6,6 @@ import { createBriefService, type CompleteFn } from './brief-service.js'
 import { createSessionEventService } from './event-service.js'
 
 const sessionModel = { providerId: 'local', modelId: 'main' }
-const auxiliary = { providerId: 'local', modelId: 'aux' }
 
 const configOf = (model: ModelRef): HostModelConfig => ({
   kind: 'openai',
@@ -22,7 +21,6 @@ const configOf = (model: ModelRef): HostModelConfig => ({
 })
 
 function setup(options?: {
-  readonly auxiliary?: ModelRef
   readonly sessionBrief?: boolean
   readonly configured?: (model: ModelRef) => boolean
   readonly failResult?: boolean
@@ -61,7 +59,6 @@ function setup(options?: {
       get: () => ({
         locale: 'zh-CN',
         providers: [],
-        ...(options?.auxiliary ? { auxiliaryModel: options.auxiliary } : {}),
         ...(options?.sessionBrief === false ? { sessionBrief: false } : {}),
       }),
       hostModelConfig: (model) =>
@@ -199,17 +196,12 @@ describe('createBriefService', () => {
     service.stop()
   })
 
-  it('stays quiet when the session model has no provider, and logs a configured auxiliary that cannot resolve', async () => {
+  it('stays quiet when the session model has no provider', async () => {
     const quiet = setup({ configured: () => false })
     publish(quiet.events, [opened(), ...turn('t1')])
     await Promise.resolve()
     expect(quiet.onError).not.toHaveBeenCalled()
     quiet.service.stop()
-
-    const noisy = setup({ auxiliary, configured: () => false })
-    publish(noisy.events, [opened(), ...turn('t1')])
-    await vi.waitFor(() => expect(noisy.onError).toHaveBeenCalled())
-    noisy.service.stop()
   })
 
   it('skips a turn without a user message', async () => {

@@ -13,7 +13,6 @@ import type {
   ErrorInfo,
   ModelCompat,
   ModelProfile,
-  ModelRef,
   ProviderConfig,
   ProviderKind,
   RemoteModel,
@@ -1045,11 +1044,9 @@ function ProviderEditor({
     if (!saved) return
     const remaining = providers.filter((p) => p.id !== saved.id)
     const clearsDefault = settings?.defaultModel?.providerId === saved.id
-    const clearsAuxiliary = settings?.auxiliaryModel?.providerId === saved.id
     const result = await updateSettings({
       providers: remaining,
       ...(clearsDefault ? { defaultModel: null } : {}),
-      ...(clearsAuxiliary ? { auxiliaryModel: null } : {}),
     })
     if (result) onSaved(undefined)
   }
@@ -1347,59 +1344,6 @@ function ProviderEditor({
   )
 }
 
-const modelKey = (model: ModelRef) => JSON.stringify([model.providerId, model.modelId])
-
-/** 辅助模型（M3-01）：只列启用的模型；没有选择时短任务使用会话的主模型。 */
-function AuxiliaryModel({ providers }: { readonly providers: readonly ProviderConfig[] }) {
-  const { t } = useTranslation('settings')
-  const id = useId()
-  const settings = useSessionStore((s) => s.settings)
-  const updateSettings = useSessionStore((s) => s.updateSettings)
-  const current = settings?.auxiliaryModel
-  const options = providers.flatMap((provider) =>
-    provider.models
-      .filter((model) => model.enabled !== false)
-      .map((model) => ({
-        key: modelKey({ providerId: provider.id, modelId: model.id }),
-        label: t('providers.auxiliary.option', {
-          provider: provider.displayName,
-          model: model.displayName ?? model.id,
-        }),
-      })),
-  )
-  const value =
-    current && options.some((option) => option.key === modelKey(current)) ? modelKey(current) : ''
-  return (
-    <SettingsCard>
-      <Labeled
-        label={t('providers.auxiliary.label')}
-        labelFor={id}
-        hint={t('providers.auxiliary.hint')}
-      >
-        <select
-          id={id}
-          className={inputClass}
-          value={value}
-          onChange={(event) => {
-            const picked = options.find((option) => option.key === event.target.value)
-            const model = picked ? (JSON.parse(picked.key) as [string, string]) : undefined
-            void updateSettings({
-              auxiliaryModel: model ? { providerId: model[0], modelId: model[1] } : null,
-            })
-          }}
-        >
-          <option value="">{t('providers.auxiliary.same')}</option>
-          {options.map((option) => (
-            <option key={option.key} value={option.key}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </Labeled>
-    </SettingsCard>
-  )
-}
-
 export function ProvidersSettings() {
   const { t } = useTranslation('settings')
   const settings = useSessionStore((s) => s.settings)
@@ -1470,11 +1414,9 @@ export function ProvidersSettings() {
   const removeProvider = async (provider: ProviderConfig) => {
     const remaining = providers.filter((p) => p.id !== provider.id)
     const clearsDefault = settings?.defaultModel?.providerId === provider.id
-    const clearsAuxiliary = settings?.auxiliaryModel?.providerId === provider.id
     await updateSettings({
       providers: remaining,
       ...(clearsDefault ? { defaultModel: null } : {}),
-      ...(clearsAuxiliary ? { auxiliaryModel: null } : {}),
     })
   }
 
@@ -1485,8 +1427,6 @@ export function ProvidersSettings() {
         title={t('section.providers.title')}
         description={t('section.providers.description')}
       />
-
-      <AuxiliaryModel providers={providers} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <KindTabs value={kind} counts={counts} onChange={setActiveKind} />

@@ -216,6 +216,68 @@ describe('McpSettings', () => {
     await waitFor(() => expect(within(list).getByText('已停用')).toBeTruthy())
   })
 
+  it('filters servers and applies enablement in batch', async () => {
+    const { request } = setup({
+      servers: [
+        server({ serverId: 'm1', name: 'Alpha' }),
+        server({ serverId: 'm2', name: 'Beta', status: 'disabled', enabled: false }),
+        server({ serverId: 'm3', name: 'Gamma', kind: 'http' }),
+      ],
+    })
+    await openMcp()
+    const list = await screen.findByRole('list', { name: 'MCP 服务' })
+    const search = screen.getByRole('searchbox', { name: '搜索服务' })
+
+    await userEvent.type(search, 'beta')
+    await waitFor(() => expect(within(list).queryByText('Alpha')).toBeNull())
+    expect(within(list).getByText('Beta')).toBeTruthy()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, '远程')
+    await waitFor(() => expect(within(list).getByText('Gamma')).toBeTruthy())
+    expect(within(list).queryByText('Alpha')).toBeNull()
+
+    await userEvent.clear(search)
+    await userEvent.type(search, 'missing')
+    expect(await screen.findByText('没有匹配的服务。')).toBeTruthy()
+
+    await userEvent.clear(search)
+    const restored = await screen.findByRole('list', { name: 'MCP 服务' })
+    await waitFor(() => expect(within(restored).getByText('Alpha')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: '批量' }))
+    await userEvent.click(within(restored).getByRole('checkbox', { name: '选择 Alpha' }))
+    await userEvent.click(within(restored).getByRole('checkbox', { name: '选择 Beta' }))
+    await userEvent.click(screen.getByRole('button', { name: '启用' }))
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('mcp.setEnabled', { serverId: 'm1', enabled: true }),
+    )
+    expect(request).toHaveBeenCalledWith('mcp.setEnabled', { serverId: 'm2', enabled: true })
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: '选择 Alpha' })).toBeNull())
+  })
+
+  it('deletes several servers from batch mode', async () => {
+    const { request } = setup({
+      servers: [
+        server({ serverId: 'm1', name: 'Alpha' }),
+        server({ serverId: 'm2', name: 'Beta' }),
+      ],
+    })
+    await openMcp()
+    const list = await screen.findByRole('list', { name: 'MCP 服务' })
+    await userEvent.click(screen.getByRole('button', { name: '批量' }))
+    await userEvent.click(within(list).getByRole('checkbox', { name: '选择 Alpha' }))
+    await userEvent.click(within(list).getByRole('checkbox', { name: '选择 Beta' }))
+    await userEvent.click(screen.getByRole('button', { name: '删除' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('heading', { name: '删除选中的 2 个服务？' })).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '删除服务' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('mcp.remove', { serverId: 'm1' }))
+    expect(request).toHaveBeenCalledWith('mcp.remove', { serverId: 'm2' })
+    expect(await screen.findByText(/还没有 MCP 服务/)).toBeTruthy()
+  })
+
   it('adds a stdio server with arguments and environment variables', async () => {
     const { request } = setup({ servers: [] })
     await openMcp()

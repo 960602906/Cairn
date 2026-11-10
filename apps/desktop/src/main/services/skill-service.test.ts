@@ -52,9 +52,11 @@ describe('skill service', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-skill-svc-'))
     roots.push(root)
     const builtin = path.join(root, 'builtin')
+    const agents = path.join(root, 'agents')
     const user = path.join(root, 'user')
     const projectPath = path.join(root, 'project')
     fs.mkdirSync(builtin)
+    fs.mkdirSync(agents)
     fs.mkdirSync(user)
     writeSkill(builtin, 'example')
     writeSkill(builtin, 'shared', { 'notes.md': 'builtin' })
@@ -76,10 +78,11 @@ describe('skill service', () => {
     const skills = createSkillService({
       storage,
       builtinDir: builtin,
+      agentsDir: agents,
       userDir: user,
       ...(pickSource ? { pickSource } : {}),
     })
-    return { storage, skills, builtin, user, projectPath, project }
+    return { storage, skills, builtin, agents, user, projectPath, project }
   }
 
   it('lists builtin skills, and project skills unless the project switch is off', () => {
@@ -145,6 +148,41 @@ describe('skill service', () => {
       'guide.md',
     ])
     expect(copies.filter((skill) => skill.shadowed)).toHaveLength(1)
+  })
+
+  it('reads the machine-level .agents skills and ranks them below installed ones', () => {
+    const { skills, agents, user, storage } = setup()
+    writeSkill(agents, 'machine')
+    expect(skills.list({}).skills.find((skill) => skill.name === 'machine')).toMatchObject({
+      source: 'agents',
+      shadowed: false,
+      enabled: true,
+    })
+
+    writeSkill(agents, 'shared')
+    writeSkill(user, 'shared', { 'notes.md': 'user' })
+    const copies = skills.list({}).skills.filter((skill) => skill.name === 'shared')
+    expect(copies.find((skill) => skill.source === 'user')).toMatchObject({ shadowed: false })
+    expect(copies.find((skill) => skill.source === 'agents')).toMatchObject({ shadowed: true })
+    expect(copies.find((skill) => skill.source === 'builtin')).toMatchObject({ shadowed: true })
+
+    skills.setEnabled({ name: 'shared', source: 'user', enabled: false })
+    const after = skills.list({}).skills.filter((skill) => skill.name === 'shared')
+    expect(after.find((skill) => skill.source === 'agents')).toMatchObject({ shadowed: false })
+    expect(after.find((skill) => skill.source === 'builtin')).toMatchObject({ shadowed: true })
+
+    // 项目内同名技能优先级仍高于本机 .agents
+    writeSkill(path.join(storage.projects.get('p1')!.path, '.agents', 'skills'), 'shared')
+    storage.projects.update('p1', { enableProjectSkills: true })
+    const withProject = skills
+      .list({ projectId: 'p1' })
+      .skills.filter((skill) => skill.name === 'shared')
+    expect(withProject.find((skill) => skill.source === 'project')).toMatchObject({
+      shadowed: false,
+    })
+    expect(withProject.find((skill) => skill.source === 'agents')).toMatchObject({
+      shadowed: true,
+    })
   })
 
   it('gets a skill and pins it', () => {
@@ -278,8 +316,8 @@ describe('skill service', () => {
     expect(fs.existsSync(path.join(path.dirname(user), 'outside.txt'))).toBe(false)
   })
 
-  it('uninstalls a user skill and refuses builtin and project skills', () => {
-    const { skills, user, storage } = setup()
+  it('uninstalls a user skill and refuses builtin, machine and project skills', () => {
+    const { skills, agents, user, storage } = setup()
     writeSkill(user, 'shared')
     skills.setEnabled({ name: 'shared', source: 'user', pinned: true })
     expect(skills.uninstall({ name: 'shared' })).toEqual({})
@@ -293,6 +331,12 @@ describe('skill service', () => {
       expect(error).toMatchObject({ code: 'skills.not_uninstallable' })
     }
     storage.projects.update('p1', { enableProjectSkills: true })
+    writeSkill(agents, 'machine')
+    try {
+      skills.uninstall({ name: 'machine' })
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'skills.not_uninstallable' })
+    }
     try {
       skills.uninstall({ name: 'local' })
     } catch (error) {

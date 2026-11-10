@@ -1,6 +1,6 @@
 /**
- * 上下文压缩的摘要（M3-03）。宿主在调用模型前把更早的对话发来，这里用辅助模型
- * （没有配置时用会话的主模型）写成一段摘要。
+ * 上下文压缩的摘要（M3-03）。宿主在调用模型前把更早的对话发来，这里用会话的主模型
+ * 写成一段摘要。
  *
  * 和自动标题一样：失败只写日志，用量记为 `usage.reported`（`auxiliary`），不更新上下文圆环。
  * 会话模型没有提供方配置时（开发用的 FakeRuntime）不调用、不记日志。
@@ -77,16 +77,12 @@ export function createCompactService(options: CompactServiceOptions): CompactSer
     async summarize(sessionId, transcript) {
       if (stopped || transcript.trim() === '') return undefined
       const recorded = options.events.readAfter(sessionId, 0)
-      const auxiliary = options.settings.get().auxiliaryModel
-      const model = auxiliary ?? sessionModel(recorded)
+      const model = sessionModel(recorded)
       if (!model) return undefined
       try {
         const resolved = await resolve(model)
         if (stopped) return undefined
-        if (!resolved) {
-          if (auxiliary) fail(new Error('compact: model is not configured'))
-          return undefined
-        }
+        if (!resolved) return undefined
         const result = await complete({
           model: resolved,
           systemPrompt: COMPACTION_SYSTEM_PROMPT,

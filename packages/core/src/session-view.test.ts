@@ -230,7 +230,7 @@ describe('reduceSession：一轮完整对话', () => {
     expect(view.contextTokens).toBe(13)
   })
 
-  it('辅助模型用量计入统计但不改上下文圆环（M3-01）', () => {
+  it('后台补全用量计入统计但不改上下文圆环（M3-01）', () => {
     const auxiliary = {
       v: 1 as const,
       sessionId: SID,

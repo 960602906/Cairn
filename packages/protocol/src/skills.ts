@@ -5,7 +5,11 @@
 import { z } from 'zod'
 import { Id } from './common.js'
 
-export const SkillSource = z.enum(['builtin', 'user', 'project'])
+/**
+ * 技能来源。`agents` 是本机 `~/.agents/skills` 的通行约定目录，只读、随本机共享；
+ * `user` 是应用内安装；`project` 是项目里的 `.agents/skills` 或 `.cairn/skills`。
+ */
+export const SkillSource = z.enum(['builtin', 'agents', 'user', 'project'])
 export type SkillSource = z.infer<typeof SkillSource>
 
 /** 附带文件。`SKILL.md` 本身不在这里。 */

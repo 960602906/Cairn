@@ -1,5 +1,5 @@
 /**
- * 会话要点（M3-04）。每一轮成功结束后，用辅助模型（没有配置时用会话的主模型）增量更新要点。
+ * 会话要点（M3-04）。每一轮成功结束后，用会话的主模型增量更新要点。
  *
  * 只收录用户明确说过的目标、约束和偏好。用户编辑过的版本优先：模型的新文字只能追加在后面。
  * 与当前要点相同时不发 `session.brief.updated`。失败只交给 `onError`，不产生界面上的错误。
@@ -76,8 +76,7 @@ export function createBriefService(options: BriefServiceOptions): BriefService {
     const recorded = options.events.readAfter(sessionId, 0)
     const input = briefUpdateInput(recorded)
     if (!input) return
-    const auxiliary = options.settings.get().auxiliaryModel
-    const model = auxiliary ?? input.model
+    const model = input.model
     if (!model) return
     pending.add(sessionId)
     try {
@@ -85,8 +84,6 @@ export function createBriefService(options: BriefServiceOptions): BriefService {
       if (stopped) return
       if (!resolved) {
         // 会话模型没有提供方配置（开发用的 FakeRuntime）时安静跳过。
-        // 辅助模型配了却解析不到才记日志。
-        if (auxiliary) fail(new Error('brief: model is not configured'))
         return
       }
       const result = await complete({

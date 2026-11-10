@@ -347,7 +347,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
       platform: process.platform,
       arch: process.arch,
       logs: { mainLogLines: 0, hostLogLines: 0 },
-      settings: { providersCount: 0, mcpServersCount: 0, hasAuxiliaryModel: false },
+      settings: { providersCount: 0, mcpServersCount: 0 },
       exportItems: ['manifest.json'],
     })),
     export: vi.fn(() => ({ cancelled: true })),
