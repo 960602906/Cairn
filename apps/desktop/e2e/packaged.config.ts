@@ -8,8 +8,8 @@ const ci = Boolean(process.env['CI'])
 
 export default defineConfig({
   testDir: '.',
-  // 打包应用只有这两个用例：安装形态冒烟（M5-02）与发布验收全流程（M5-10）。
-  testMatch: ['packaged.spec.ts', 'acceptance.spec.ts'],
+  // 打包应用的用例：安装形态冒烟（M5-02）、发布验收全流程（M5-10）与沙箱写入（M5-10）。
+  testMatch: ['packaged.spec.ts', 'acceptance.spec.ts', 'packaged-sandbox.spec.ts'],
   outputDir: '../test-results-packaged',
   globalSetup: './packaged-global-setup.ts',
   workers: 1,

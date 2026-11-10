@@ -16,13 +16,19 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { unzipSync } from 'fflate'
-import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import type { UpdateStatus } from '@cairn/protocol'
 import { startMockModel } from '../scripts/mock-model.js'
 import { startUpdateSource } from './update-source.js'
 import { startPackagedApp } from './packaged-app.js'
-import { chatRequests, createSession, sendPrompt } from './session.js'
+import {
+  chatRequests,
+  configureProvider,
+  createSession,
+  expandToolStep,
+  rpc as request,
+  sendPrompt,
+} from './session.js'
 
 const REPLY = '发布验收完成'
 const API_KEY = 'acceptance-key-value'
@@ -31,28 +37,6 @@ const WORKSPACE_SEGMENTS = [
   '跨境 冷链 订单 管理 系统',
   '一个用于验收长路径的项目文件夹',
 ] as const
-
-interface Reply<T> {
-  readonly ok: boolean
-  readonly result?: T
-  readonly error?: unknown
-}
-
-async function request<T>(page: Page, method: string, params: object): Promise<T> {
-  const reply = (await page.evaluate(
-    async ([name, payload]) => {
-      const cairn = (
-        globalThis as unknown as {
-          cairn: { request(method: string, params: object): Promise<unknown> }
-        }
-      ).cairn
-      return cairn.request(name as string, payload as object)
-    },
-    [method, params] as const,
-  )) as Reply<T>
-  if (!reply.ok) throw new Error(`${method}: ${JSON.stringify(reply.error)}`)
-  return reply.result as T
-}
 
 /** 只用系统目录的 PATH：没有 Git、没有 Node，也没有开发机上的其他工具。 */
 function systemOnlyPath(): string {
@@ -147,45 +131,7 @@ test('已打包应用完成首次运行到诊断包的全流程验收', async ()
     expect(info.commit).toMatch(/^[0-9a-f]{7,40}$/)
 
     // 3. 配置模型与凭据后重新加载界面（设置由主进程持久化）。
-    await page.evaluate(
-      async ({ url, key }) => {
-        const cairn = (
-          globalThis as unknown as {
-            cairn: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
-          }
-        ).cairn
-        await cairn.ready()
-        const stored = await cairn.request('credentials.set', {
-          ref: 'acceptance-key',
-          secret: key,
-        })
-        if (!(stored as { ok: boolean }).ok) throw new Error('credentials.set failed')
-        const updated = await cairn.request('settings.update', {
-          providers: [
-            {
-              id: 'acceptance',
-              kind: 'openai',
-              displayName: 'Acceptance',
-              baseUrl: url,
-              credentialRef: 'acceptance-key',
-              models: [
-                {
-                  id: 'acceptance-model',
-                  contextWindow: 32_000,
-                  maxOutputTokens: 1_000,
-                  supportsTools: true,
-                  supportsParallelToolCalls: false,
-                  supportsReasoning: false,
-                },
-              ],
-            },
-          ],
-          defaultModel: { providerId: 'acceptance', modelId: 'acceptance-model' },
-        })
-        if (!(updated as { ok: boolean }).ok) throw new Error('settings.update failed')
-      },
-      { url: mock.baseUrl, key: API_KEY },
-    )
+    await configureProvider(page, mock.baseUrl, API_KEY)
     await page.reload()
     await page.waitForLoadState('domcontentloaded')
     await expect(page.getByRole('heading', { name: '欢迎使用 Cairn' })).toHaveCount(0)
@@ -209,14 +155,20 @@ test('已打包应用完成首次运行到诊断包的全流程验收', async ()
     await expect(page.getByRole('status')).toHaveText('空闲')
 
     // 工具必须真的执行成功：退出码为 0，且 `Get-Content` 回显了写入的内容。
-    // 失败时把工具结果与沙箱状态一并放进断言消息，便于在 CI 日志里直接定位。
+    // 失败时把终端卡片、工具结果与沙箱状态一并放进断言消息，便于在 CI 日志里直接定位。
+    const step = await expandToolStep(page, 'run_command')
+    const terminal = step.getByRole('figure', { name: /^终端：/ })
+    await expect(terminal).toBeVisible()
+    const terminalText = await terminal.innerText()
     const latest = chatRequests(mock.requests).at(-1)
     const toolResult = JSON.stringify(
       ((latest?.messages ?? []) as { role: string }[]).filter((message) => message.role === 'tool'),
     )
-    expect(toolResult, `sandbox.status: ${JSON.stringify(sandbox)}`).toContain('Exit code: 0')
-    expect(toolResult).toContain('ok')
-    expect(readFileSync(path.join(workspace, '验收.txt'), 'utf8').trim()).toBe('ok')
+    const report = `sandbox.status: ${JSON.stringify(sandbox)}\n终端卡片:\n${terminalText}\n工具结果: ${toolResult}`
+    expect(terminalText, report).toContain('工作目录')
+    expect(toolResult, report).toContain('Exit code: 0')
+    expect(toolResult, report).toContain('ok')
+    expect(readFileSync(path.join(workspace, '验收.txt'), 'utf8').trim(), report).toBe('ok')
 
     // 5. PATH 中没有 Git，检查点仍由随包 MinGit 建立；撤销本轮恢复工作区。
     const sessionId = await page.evaluate(async () => {
