@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useTranslation } from 'react-i18next'
 import type { FileTreeEntry, ProjectSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
+import { projectDisplayName } from './project-name.js'
 import {
   Button,
   cn,
@@ -301,7 +302,7 @@ export function FileTreeDialog({
         <header className="flex shrink-0 items-center gap-3 border-b-[0.5px] border-hair px-4 py-3">
           <FolderOpen aria-hidden className="size-4 text-muted" />
           <DialogTitle className="min-w-0 flex-1 truncate text-ui">
-            {project?.name ?? t('fileTree.title')}
+            {projectDisplayName(project, tc('project.defaultName'), t('fileTree.title'))}
           </DialogTitle>
           <button
             type="button"
@@ -391,7 +392,9 @@ export function FileTreeDialog({
           <DialogTitle>
             {t(draft?.kind === 'dir' ? 'fileTree.newFolder' : 'fileTree.newFile')}
           </DialogTitle>
-          <DialogDescription>{draft?.parent || project?.name}</DialogDescription>
+          <DialogDescription>
+            {draft?.parent || projectDisplayName(project, tc('project.defaultName'))}
+          </DialogDescription>
           <input
             autoFocus
             aria-label={t('fileTree.name')}

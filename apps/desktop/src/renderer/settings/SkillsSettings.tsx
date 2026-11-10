@@ -26,6 +26,7 @@ import type {
   SkillSummary,
 } from '@cairn/protocol'
 import { Markdown } from '../Markdown.js'
+import { projectDisplayName } from '../project-name.js'
 import { useSessionStore } from '../store-context.js'
 import {
   Button,
@@ -221,10 +222,11 @@ export function SkillsSettings() {
   const sourceLabel = (skill: SkillSummary) => {
     if (skill.source === 'builtin') return t('skills.source.builtin')
     if (skill.source === 'user') return t('skills.source.user')
-    const name =
-      projects.find((project) => project.projectId === skill.projectId)?.name ??
-      skill.projectId ??
-      ''
+    const name = projectDisplayName(
+      projects.find((project) => project.projectId === skill.projectId),
+      tc('project.defaultName'),
+      skill.projectId ?? '',
+    )
     return t('skills.source.project', { name })
   }
 

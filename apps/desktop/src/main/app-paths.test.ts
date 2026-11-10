@@ -15,6 +15,7 @@ describe('resolveAppPaths', () => {
       checkpoints: join(root, 'checkpoints'),
       worktrees: join(root, 'worktrees'),
       settings: join(root, 'settings.json'),
+      defaultProject: join(root, 'default-project'),
       credentials: join(root, 'credentials.json'),
       updateBackups: join(root, 'backups'),
       logs: join(root, 'logs'),

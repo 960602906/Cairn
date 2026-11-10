@@ -1,5 +1,6 @@
 {
   "app.name": "Cairn",
+  "project.defaultName": "默认项目",
   "action.ok": "确定",
   "action.cancel": "取消",
   "action.retry": "重试",

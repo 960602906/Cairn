@@ -1,5 +1,6 @@
 {
   "app.name": "Cairn",
+  "project.defaultName": "Default Project",
   "action.ok": "OK",
   "action.cancel": "Cancel",
   "action.retry": "Retry",

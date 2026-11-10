@@ -47,6 +47,7 @@
   "project.invalid_path": "The selected folder is not valid: {{path}}",
   "project.not_found": "That project is not in the list",
   "project.invalid_name": "The project name cannot be empty",
+  "project.default_immutable": "The default project cannot be removed, renamed, or archived",
   "project.invalid_remote": "The repository URL is not valid",
   "project.clone_target_exists": "The target folder already exists: {{path}}",
   "project.clone_unavailable": "This version cannot clone repositories",

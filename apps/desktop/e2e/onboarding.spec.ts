@@ -69,7 +69,7 @@ test('稍后关闭欢迎说明后仍可浏览已有界面', async ({ launch, use
   await expect(dialog.getByRole('heading', { name: '欢迎使用 Cairn' })).toBeVisible()
   await dialog.getByRole('button', { name: '稍后' }).click()
   await expect(dialog).toHaveCount(0)
-  await expect(window.getByText('还没有工作空间')).toBeVisible()
+  await expect(window.getByRole('region', { name: '工作空间' })).toContainText('默认项目')
   await expect.poll(() => onboardingSeen(userData)).toBe(true)
 })
 

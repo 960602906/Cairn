@@ -158,6 +158,7 @@ describe('translateError', () => {
       'project.clone_failed',
       'project.invalid_branch',
       'project.checkout_failed',
+      'project.default_immutable',
       'tool.not_found',
       'tool.invalid_input',
       'tool.execution_failed',

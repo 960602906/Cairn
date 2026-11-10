@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
-import type { ProjectSummary, Settings } from '@cairn/protocol'
+import { DEFAULT_PROJECT_ID, type ProjectSummary, type Settings } from '@cairn/protocol'
 import type { MainApi } from '../api.js'
 import { App } from '../App.js'
 import { createSessionStore } from '../session-store.js'
@@ -118,5 +118,28 @@ describe('ProjectsSettings', () => {
     await userEvent.type(name, '新名字')
     await userEvent.tab()
     expect(name.value).toBe('示例')
+  })
+
+  it('locks the default project name and hides removal while keeping the switches', async () => {
+    const { request } = setup([
+      project({
+        projectId: DEFAULT_PROJECT_ID,
+        name: 'Default Project',
+        path: '/app/default-project',
+        isDefault: true,
+      }),
+    ])
+    await openProjects()
+    const card = screen.getByRole('list', { name: '已打开的项目' })
+    const name = within(card).getByLabelText('项目名称') as HTMLInputElement
+    expect(name.value).toBe('默认项目')
+    expect(name.readOnly).toBe(true)
+    expect(within(card).queryByRole('button', { name: '从列表移除' })).toBeNull()
+
+    await userEvent.click(within(card).getByRole('switch', { name: '读取 AGENTS.md' }))
+    expect(request).toHaveBeenCalledWith('project.update', {
+      projectId: DEFAULT_PROJECT_ID,
+      readAgentsMd: false,
+    })
   })
 })

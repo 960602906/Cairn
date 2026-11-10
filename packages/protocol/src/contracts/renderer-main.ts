@@ -85,6 +85,12 @@ export type SessionSummary = z.infer<typeof SessionSummary>
 /** 项目名称的长度上限（字符，M3-02）。 */
 export const PROJECT_NAME_MAX_LENGTH = 200
 
+/** 首次启动时自动创建、不可移除的默认项目（稳定 id）。 */
+export const DEFAULT_PROJECT_ID = 'default-project'
+
+/** 默认项目的兜底名称；界面按当前语言显示本地化名称。 */
+export const DEFAULT_PROJECT_NAME = 'Default Project'
+
 /**
  * 已打开过的项目（M1-16a，M3-02 补上会话数、最近使用和两个开关）。
  * 后加的字段都是可选的：省略 `readAgentsMd` 表示读取，省略 `enableProjectSkills` 表示开启（项目内技能默认读取），
@@ -110,6 +116,8 @@ export const ProjectSummary = z.object({
   pinnedAt: Timestamp.optional(),
   /** 归档时间；未归档时不出现。 */
   archivedAt: Timestamp.optional(),
+  /** 是否为首次启动自动创建的默认项目；省略表示不是。 */
+  isDefault: z.boolean().optional(),
 })
 export type ProjectSummary = z.infer<typeof ProjectSummary>
 

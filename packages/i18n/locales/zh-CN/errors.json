@@ -47,6 +47,7 @@
   "project.invalid_path": "所选的不是有效的文件夹：{{path}}",
   "project.not_found": "项目不在列表中",
   "project.invalid_name": "项目名称不能为空",
+  "project.default_immutable": "默认项目不能移除、改名或归档",
   "project.invalid_remote": "远端仓库地址无效",
   "project.clone_target_exists": "目标文件夹已存在：{{path}}",
   "project.clone_unavailable": "当前版本不支持克隆仓库",

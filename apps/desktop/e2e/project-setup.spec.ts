@@ -47,12 +47,11 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     await expect(providers).toContainText('正常')
     await window.keyboard.press('Escape')
 
-    // 关闭设置后回到新对话首页；输入框左下角是工作空间选择器，系统对话框已固定返回项目目录
-    await window.getByRole('button', { name: '选择工作空间' }).click()
+    // 关闭设置后回到新对话首页；默认项目已经选中，仍可切换系统对话框返回的项目目录
+    await window.getByRole('button', { name: '工作空间：默认项目' }).click()
     await window.getByRole('menuitem', { name: '选择文件夹…' }).click()
-    await expect(window.getByRole('button', { name: '工作空间：project' })).toBeVisible()
     const workspace = window.getByRole('group', { name: '当前工作区' })
-    await expect(workspace.getByLabel(`当前目录：${dir}`)).toBeVisible()
+    await expect(workspace.getByRole('button', { name: '工作空间：project' })).toBeVisible()
 
     await sendPrompt(window, '你好')
     await expect(window.getByRole('heading', { level: 2, name: '你好' })).toBeVisible()

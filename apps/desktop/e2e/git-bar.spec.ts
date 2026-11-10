@@ -24,12 +24,12 @@ test('新对话输入框上方显示目录与分支，焦点回来后刷新分�
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folder] })) as never
   }, dir)
 
-  // 还没有会话时主区直接就是新对话输入框
-  await window.getByRole('button', { name: '选择工作空间' }).click()
+  // 还没有会话时主区直接就是新对话输入框；默认项目已选中，这里切换到测试目录
+  await window.getByRole('button', { name: '工作空间：默认项目' }).click()
   await window.getByRole('menuitem', { name: '选择文件夹…' }).click()
 
   const workspace = window.getByRole('group', { name: '当前工作区' })
-  await expect(workspace.getByLabel(`当前目录：${dir}`)).toBeVisible()
+  await expect(workspace.getByRole('button', { name: '工作空间：project' })).toBeVisible()
   await expect(workspace.getByText('project', { exact: true })).toBeVisible()
   await expect(workspace.getByLabel('当前分支：feature/git-bar')).toBeVisible()
 

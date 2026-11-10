@@ -14,6 +14,7 @@ import type { PermissionMode, PermissionRule, PermissionRuleEntry } from '@cairn
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { projectDisplayName } from '../project-name.js'
 import { useSessionStore } from '../store-context.js'
 import { Button, cn, IconButton, SegmentedControl } from '../ui/index.js'
 import { Field, inputClass, SettingsCard } from './Field.js'
@@ -254,6 +255,7 @@ function RuleForm({
 
 export function PermissionsSettings() {
   const { t } = useTranslation('settings')
+  const { t: tc } = useTranslation()
   const mode = useSessionStore((s) => s.settings?.permissionMode) ?? DEFAULT_MODE
   const projects = useSessionStore((s) => s.projects)
   const permissionRules = useSessionStore((s) => s.permissionRules)
@@ -274,7 +276,11 @@ export function PermissionsSettings() {
   }, [permissionRules, refreshProjects])
 
   const projectName = (projectId: string) =>
-    projects.find((p) => p.projectId === projectId)?.name ?? t('permissions.scope.unknown')
+    projectDisplayName(
+      projects.find((p) => p.projectId === projectId),
+      tc('project.defaultName'),
+      t('permissions.scope.unknown'),
+    )
   const rows = ruleRows(presetRows(mode), entries ?? [])
 
   const remove = async (ruleId: string) => {

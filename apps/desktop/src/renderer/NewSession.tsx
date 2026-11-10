@@ -1,29 +1,43 @@
 /**
- * 新对话首页（对齐 LiveAgent）：纸面中央是应用标志与输入框，工作空间收进输入框左下角的
- * 小选择器里。发送时先用当前工作空间创建会话，再把这条输入作为第一轮发送。
+ * 新对话首页（对齐 LiveAgent）：上方是应用标志与随时段变化的问候，输入框像对话页一样贴在底部，
+ * 工作空间与分支显示在输入框上方。发送时先用当前工作空间创建会话，再把这条输入作为第一轮发送。
  *
  * 还没有配置模型供应商时，在输入框下方提示先去设置添加；还没有工作空间时可以打开本地文件夹。
  */
-import { ArrowUp, Check, ChevronDown, Cpu, Folder, FolderOpen } from 'lucide-react'
+import { ArrowUp, Cpu } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { lastSegment } from './paths.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
-import {
-  Button,
-  CairnMark,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from './ui/index.js'
+import { Button, CairnMark } from './ui/index.js'
 
 /** 文本框最高（px），超过后滚动。 */
 const MAX_TEXTAREA_HEIGHT = 200
 /** 用首行输入生成会话标题，避免侧栏里全是“未命名会话”。 */
 const MAX_TITLE_LENGTH = 60
+
+type GreetingPeriod = 'morning' | 'noon' | 'afternoon' | 'evening' | 'night'
+
+export function greetingPeriod(hour: number): GreetingPeriod {
+  if (hour >= 5 && hour < 12) return 'morning'
+  if (hour >= 12 && hour < 14) return 'noon'
+  if (hour >= 14 && hour < 18) return 'afternoon'
+  if (hour >= 18 && hour < 23) return 'evening'
+  return 'night'
+}
+
+function useGreetingPeriod(): GreetingPeriod {
+  const [period, setPeriod] = useState<GreetingPeriod>(() => greetingPeriod(new Date().getHours()))
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setPeriod(greetingPeriod(new Date().getHours()))
+    }, 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return period
+}
 
 function titleFromPrompt(text: string): string {
   const firstLine = text.trim().split(/\r?\n/, 1)[0] ?? ''
@@ -33,11 +47,15 @@ function titleFromPrompt(text: string): string {
 export function NewSession({
   initialProjectPath,
   onDone,
+  onCancel,
   onSettings,
 }: {
   /** 从某个工作空间的“新建会话”进入时预先选中的项目路径。 */
   readonly initialProjectPath?: string | undefined
+  /** 会话创建并发出第一条消息后离开新对话页。 */
   readonly onDone: () => void
+  /** 点“取消”离开新对话页；没有选中的会话时可以回到最近的会话。 */
+  readonly onCancel?: (() => void) | undefined
   /** 打开设置页的“模型供应商”（没有配置供应商时的引导）。 */
   readonly onSettings?: () => void
 }) {
@@ -55,6 +73,7 @@ export function NewSession({
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const period = useGreetingPeriod()
 
   useEffect(() => {
     void refreshProjects()
@@ -80,11 +99,6 @@ export function NewSession({
     if (initialProjectPath !== undefined) return
     setProjectPath((current) => (current === '' ? (projects[0]?.path ?? '') : current))
   }, [initialProjectPath, projects])
-
-  const currentProject = projects.find((project) => project.path === projectPath)
-  const workspaceLabel =
-    currentProject?.name ??
-    (projectPath === '' ? t('new.chooseWorkspace') : lastSegment(projectPath))
 
   const chooseFolder = async () => {
     const project = await openProject()
@@ -113,81 +127,23 @@ export function NewSession({
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-6 pt-10 pb-[8vh]">
-      <div className="relative mb-8 grid size-20 place-items-center">
-        <span aria-hidden className="absolute inset-0 rounded-full bg-accent-soft blur-2xl" />
-        <CairnMark size={72} className="relative text-fg" />
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6">
+        <div className="relative mb-7 grid size-20 place-items-center">
+          <span aria-hidden className="absolute inset-0 rounded-full bg-accent-soft blur-2xl" />
+          <CairnMark size={72} className="relative text-fg" />
+        </div>
+        <p className="text-center text-[26px] leading-[1.2] font-semibold tracking-[-0.02em] text-fg">
+          {t(`new.greeting.${period}`)}
+        </p>
+        <p className="mt-2 text-center text-note text-muted">{t('new.greetingSubtitle')}</p>
       </div>
 
-      <div className="w-full max-w-[720px]">
-        <WorkspaceGitBar projectPath={projectPath === '' ? undefined : projectPath} />
-        <div className="rounded-[16px] border border-hair2 bg-raise px-4 pt-3.5 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60">
-          <textarea
-            ref={textarea}
-            rows={2}
-            aria-label={t('input.label')}
-            placeholder={t('new.placeholder')}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={keyDown}
-            className="block max-h-[200px] min-h-12 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
-          />
-          <div className="mt-2 flex items-center gap-1">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={
-                    projectPath === ''
-                      ? t('new.chooseWorkspace')
-                      : t('new.workspaceLabel', { name: workspaceLabel })
-                  }
-                  className="flex h-7 max-w-[320px] min-w-0 items-center gap-1.5 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover [&_svg]:size-3.5"
-                >
-                  <Folder className="shrink-0 text-muted" />
-                  <span className="truncate">{workspaceLabel}</span>
-                  <ChevronDown className="shrink-0 text-faint" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                side="top"
-                className="max-h-80 w-72 overflow-y-auto"
-              >
-                {projects.map((project) => (
-                  <DropdownMenuItem
-                    key={project.projectId}
-                    onSelect={() => setProjectPath(project.path)}
-                  >
-                    <Folder className="shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                    {project.path === projectPath && <Check className="shrink-0 text-fg!" />}
-                  </DropdownMenuItem>
-                ))}
-                {projects.length > 0 && <DropdownMenuSeparator />}
-                <DropdownMenuItem onSelect={() => void chooseFolder()}>
-                  <FolderOpen className="shrink-0" />
-                  {t('new.openFolder')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <button
-              type="button"
-              aria-label={t('input.send')}
-              title={t('input.send')}
-              disabled={busy || projectPath.trim() === '' || text.trim() === ''}
-              onClick={() => void send()}
-              className="ml-auto flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-25"
-            >
-              <ArrowUp className="size-4" />
-            </button>
-          </div>
-        </div>
-
+      <div className="mx-auto w-full max-w-[880px] shrink-0 px-5 pb-4 min-[1200px]:px-8">
         {noProvider && (
           <section
             aria-label={t('new.noProvider.title')}
-            className="mt-4 flex items-start gap-3 rounded-card bg-sunk px-4 py-3 shadow-hair"
+            className="mb-3 flex items-start gap-3 rounded-card bg-sunk px-4 py-3 shadow-hair"
           >
             <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-raise text-fg2 shadow-1 [&_svg]:size-4">
               <Cpu />
@@ -206,9 +162,40 @@ export function NewSession({
           </section>
         )}
 
+        <WorkspaceGitBar
+          projectPath={projectPath === '' ? undefined : projectPath}
+          projects={projects}
+          onSelectProject={setProjectPath}
+          onOpenFolder={() => void chooseFolder()}
+        />
+        <div className="rounded-[16px] border border-hair2 bg-raise px-4 pt-3.5 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60">
+          <textarea
+            ref={textarea}
+            rows={2}
+            aria-label={t('input.label')}
+            placeholder={t('new.placeholder')}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={keyDown}
+            className="block max-h-[200px] min-h-12 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
+          />
+          <div className="mt-2 flex items-center gap-1">
+            <button
+              type="button"
+              aria-label={t('input.send')}
+              title={t('input.send')}
+              disabled={busy || projectPath.trim() === '' || text.trim() === ''}
+              onClick={() => void send()}
+              className="ml-auto flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-25"
+            >
+              <ArrowUp className="size-4" />
+            </button>
+          </div>
+        </div>
+
         {hasSessions && (
-          <div className="mt-3 flex justify-center">
-            <Button variant="ghost" size="sm" onClick={onDone}>
+          <div className="mt-1 flex justify-center">
+            <Button variant="ghost" size="sm" onClick={onCancel ?? onDone}>
               {tc('action.cancel')}
             </Button>
           </div>

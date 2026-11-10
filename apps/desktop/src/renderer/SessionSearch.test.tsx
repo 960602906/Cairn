@@ -137,6 +137,7 @@ describe('NewSession empty states (M2-12)', () => {
   it('guides to the provider settings and to choosing a folder', async () => {
     setup([], { providers: [] })
     const guide = await screen.findByRole('region', { name: '还没有配置模型供应商' })
+    expect(screen.getByText('今天想从哪里开始？')).toBeTruthy()
     await userEvent.click(within(guide).getByRole('button', { name: '去设置' }))
     expect(await screen.findByRole('heading', { name: '模型供应商' })).toBeTruthy()
   })

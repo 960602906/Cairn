@@ -7,13 +7,22 @@
  * - **克隆**（`project.clone`）：把远端仓库克隆到指定父目录，再按打开目录的同一规则登记。
  * - **修改**（`project.update`）：名称、是否读取 `AGENTS.md`、是否启用项目内 Skills。
  * - **移除**（`project.remove`）：只从列表去掉，不删除目录和会话。
+ * - **默认项目**（`ensureDefault`）：没有任何未归档项目时，在应用数据目录中创建并登记
+ *   `Default Project`；它不能移除、改名或归档，用户可以置顶和调整两个开关。
  * - **Git 摘要 / 切换分支**（`project.gitInfo` / `project.gitCheckout`）：输入框上方的目录与分支。
  *
  * 不依赖 Electron；对话框由入口注入（e2e 中替换为固定目录）。
  */
 import { randomUUID } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
 import { basename, isAbsolute } from 'node:path'
-import { PROJECT_NAME_MAX_LENGTH, RpcError, type ProjectSummary } from '@cairn/protocol'
+import {
+  DEFAULT_PROJECT_ID,
+  DEFAULT_PROJECT_NAME,
+  PROJECT_NAME_MAX_LENGTH,
+  RpcError,
+  type ProjectSummary,
+} from '@cairn/protocol'
 import type { ProjectRecord, Storage } from '@cairn/storage'
 import { workspaceNameFromRemoteUrl, type CloneRepositoryInput } from './git-clone.js'
 import type { ProjectGitInfo } from './git-info.js'
@@ -29,6 +38,8 @@ export const ProjectServiceErrorCode = {
   CloneUnavailable: 'project.clone_unavailable',
   /** 主进程没有接入 Git 能力。 */
   GitUnavailable: 'project.git_unavailable',
+  /** 默认项目不能移除、改名或归档。 */
+  DefaultImmutable: 'project.default_immutable',
 } as const
 
 export interface ProjectServiceOptions {
@@ -41,6 +52,10 @@ export interface ProjectServiceOptions {
   readonly readGitInfo?: (path: string) => Promise<ProjectGitInfo>
   /** 切换项目目录的 Git 分支；省略时 `project.gitCheckout` 报错。 */
   readonly checkoutGitBranch?: (path: string, branch: string) => Promise<ProjectGitInfo>
+  /** 默认项目目录；没有未归档项目时用它补种。省略时不提供默认项目。 */
+  readonly defaultProjectPath?: string
+  /** 默认目录创建失败等非致命错误。 */
+  readonly onError?: (error: unknown) => void
   readonly createId?: () => string
 }
 
@@ -65,14 +80,23 @@ export interface ProjectCommands {
     archived?: boolean | undefined
   }): ProjectSummary
   remove(input: { projectId: string }): Record<string, never>
+  /** 没有未归档项目时创建或恢复默认项目；已有可用项目时什么也不做。 */
+  ensureDefault(): ProjectSummary | undefined
 }
 
-function summarize(storage: Pick<Storage, 'sessions'>, project: ProjectRecord): ProjectSummary {
+function summarize(
+  storage: Pick<Storage, 'sessions'>,
+  project: ProjectRecord,
+  defaultProjectPath?: string,
+): ProjectSummary {
   const sessions = storage.sessions.list({
     projectId: project.projectId,
     includeArchived: true,
   })
   const lastUsedAt = sessions.reduce((max, session) => Math.max(max, session.updatedAt), 0)
+  const isDefault =
+    project.projectId === DEFAULT_PROJECT_ID ||
+    (defaultProjectPath !== undefined && project.path === defaultProjectPath)
   return {
     projectId: project.projectId,
     name: project.name,
@@ -84,12 +108,16 @@ function summarize(storage: Pick<Storage, 'sessions'>, project: ProjectRecord): 
     enableProjectSkills: project.enableProjectSkills,
     ...(project.pinnedAt === undefined ? {} : { isPinned: true, pinnedAt: project.pinnedAt }),
     ...(project.archivedAt === undefined ? {} : { archivedAt: project.archivedAt }),
+    ...(isDefault ? { isDefault: true } : {}),
   }
 }
 
 export function createProjectService(options: ProjectServiceOptions): ProjectCommands {
   const { storage } = options
   const createId = options.createId ?? randomUUID
+  const isDefaultProject = (project: ProjectRecord): boolean =>
+    project.projectId === DEFAULT_PROJECT_ID ||
+    (options.defaultProjectPath !== undefined && project.path === options.defaultProjectPath)
   const register = (path: string): ProjectRecord => {
     const existing = storage.projects.getByPath(path)
     return existing
@@ -109,18 +137,52 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
     }
     return project
   }
+  const ensureDefault = (): ProjectSummary | undefined => {
+    const path = options.defaultProjectPath
+    if (path === undefined || !isAbsolute(path)) return undefined
+    if (storage.projects.list().some((project) => project.archivedAt === undefined)) {
+      return undefined
+    }
+    try {
+      mkdirSync(path, { recursive: true })
+    } catch (error) {
+      options.onError?.(error)
+      return undefined
+    }
+    const existing = storage.projects.getByPath(path)
+    if (existing) {
+      let project = existing
+      if (project.removedAt !== undefined) project = storage.projects.restore(project.projectId)
+      if (project.archivedAt !== undefined) {
+        project = storage.projects.update(project.projectId, { archived: false })
+      }
+      return summarize(storage, project, path)
+    }
+    return summarize(
+      storage,
+      storage.projects.create({
+        projectId: DEFAULT_PROJECT_ID,
+        name: DEFAULT_PROJECT_NAME,
+        path,
+      }),
+      path,
+    )
+  }
 
   return {
     list: () => ({
-      projects: storage.projects.list().map((project) => summarize(storage, project)),
+      projects: storage.projects
+        .list()
+        .map((project) => summarize(storage, project, options.defaultProjectPath)),
     }),
+    ensureDefault,
 
     async open() {
       const path = await options.pickDirectory()
       if (path === undefined) return {}
       if (!isAbsolute(path)) throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
       const project = register(path)
-      return { project: summarize(storage, project) }
+      return { project: summarize(storage, project, options.defaultProjectPath) }
     },
 
     async pickDirectory() {
@@ -140,7 +202,7 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
         ...(input.branch === undefined ? {} : { branch: input.branch }),
       })
       if (!isAbsolute(path)) throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
-      return { project: summarize(storage, register(path)) }
+      return { project: summarize(storage, register(path), options.defaultProjectPath) }
     },
 
     async gitInfo({ path }) {
@@ -161,7 +223,12 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
     },
 
     update(input) {
-      listed(input.projectId)
+      const current = listed(input.projectId)
+      if (isDefaultProject(current) && (input.name !== undefined || input.archived !== undefined)) {
+        throw new RpcError(ProjectServiceErrorCode.DefaultImmutable, {
+          projectId: input.projectId,
+        })
+      }
       const patch: {
         name?: string
         readAgentsMd?: boolean
@@ -188,13 +255,17 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
         patch.pinned !== undefined ||
         patch.archived !== undefined
           ? storage.projects.update(input.projectId, patch)
-          : listed(input.projectId)
-      return summarize(storage, project)
+          : current
+      return summarize(storage, project, options.defaultProjectPath)
     },
 
     remove({ projectId }) {
-      listed(projectId)
+      const project = listed(projectId)
+      if (isDefaultProject(project)) {
+        throw new RpcError(ProjectServiceErrorCode.DefaultImmutable, { projectId })
+      }
       storage.projects.remove(projectId)
+      ensureDefault()
       return {}
     },
   }

@@ -1653,6 +1653,37 @@ describe('inactive and failing commands', () => {
     await store.getState().updateProject('p2', { name: 'Renamed' })
     expect(store.getState().projects.map((project) => project.name)).toEqual(['A', 'Renamed'])
   })
+
+  it('reloads projects after removal so the seeded default project appears immediately', async () => {
+    const a = {
+      projectId: 'p1',
+      name: 'A',
+      path: '/a',
+      createdAt: 1,
+      sessionCount: 0,
+    }
+    const fallback = {
+      projectId: 'default-project',
+      name: 'Default Project',
+      path: '/app/default-project',
+      createdAt: 2,
+      sessionCount: 0,
+      isDefault: true,
+    }
+    let removed = false
+    const { api } = fakeApi({
+      'project.list': () => ({ projects: removed ? [fallback] : [a] }),
+      'project.remove': () => {
+        removed = true
+        return {}
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshProjects()
+
+    await expect(store.getState().removeProject('p1')).resolves.toBe(true)
+    expect(store.getState().projects).toEqual([fallback])
+  })
 })
 
 describe('activity center', () => {

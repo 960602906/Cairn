@@ -8,6 +8,7 @@ import { Search } from 'lucide-react'
 import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { lastSegment } from './paths.js'
+import { projectDisplayName } from './project-name.js'
 import { useSessionStore } from './store-context.js'
 import { cn, Dialog, DialogContent, DialogTitle } from './ui/index.js'
 
@@ -25,12 +26,13 @@ export function searchSessions(
   projects: readonly ProjectSummary[],
   query: string,
   limit = SEARCH_LIMIT,
+  defaultProjectName?: string,
 ): SearchResult[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
   const results: SearchResult[] = []
   for (const session of sessions) {
-    const project =
-      projects.find((p) => p.path === session.projectPath)?.name ?? lastSegment(session.projectPath)
+    const match = projects.find((p) => p.path === session.projectPath)
+    const project = projectDisplayName(match, defaultProjectName, lastSegment(session.projectPath))
     const text = `${session.title} ${project}`.toLowerCase()
     if (terms.every((term) => text.includes(term))) results.push({ session, project })
     if (results.length >= limit) break
@@ -49,15 +51,17 @@ export function SessionSearch({
   readonly onSelect: () => void
 }) {
   const { t } = useTranslation('session')
+  const { t: tc } = useTranslation()
   const sessions = useSessionStore((s) => s.sessions)
   const projects = useSessionStore((s) => s.projects)
   const selectSession = useSessionStore((s) => s.selectSession)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const listId = useId()
+  const defaultProjectName = tc('project.defaultName')
   const results = useMemo(
-    () => searchSessions(sessions, projects, query),
-    [sessions, projects, query],
+    () => searchSessions(sessions, projects, query, SEARCH_LIMIT, defaultProjectName),
+    [sessions, projects, query, defaultProjectName],
   )
 
   // 每次打开都从空白开始
