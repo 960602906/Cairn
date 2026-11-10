@@ -19,6 +19,7 @@
     "package:verify": "node scripts/verify-package.mjs",
     "smoke:packaged": "node scripts/smoke-packaged.mjs",
     "smoke:installed": "node scripts/smoke-installed.mjs",
+    "acceptance:installed": "node scripts/acceptance-installed.mjs",
     "e2e:packaged": "playwright test -c e2e/packaged.config.ts"
   },
   "build": {

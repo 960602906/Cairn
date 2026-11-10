@@ -4,7 +4,7 @@
 
 A Codex-like coding agent desktop app: **our own agent platform + a pluggable agent engine** (pi preferred). The platform owns run orchestration, tools and permissions, approvals, checkpoints, storage and the UI; the engine only runs the model loop behind the `AgentRuntime` interface. Built with Electron and React, with support for multiple LLM providers.
 
-> M0～M4 已完成，M5 发布硬化执行中（见 [docs/plan/m5.md](docs/plan/m5.md)）。 / M0–M4 are done; M5 release hardening is in progress.
+> M0～M5 已实施，当前产出 **0.1.0 unsigned beta**（可安装分发；stable 仍被签名、法务与干净 VM 矩阵阻塞）。验收证据见 [M5 发布验收报告](docs/plan/m5-report.md)，任务分解见 [docs/plan/m5.md](docs/plan/m5.md)。 / M0–M5 are implemented as a **0.1.0 unsigned beta**; stable remains blocked on signing, legal review and a clean-VM matrix.
 
 ## 文档 / Docs
 
@@ -12,6 +12,7 @@ A Codex-like coding agent desktop app: **our own agent platform + a pluggable ag
 - [架构决策记录 / ADRs](docs/adr/README.md)
 - [安装、升级与卸载 / Install, upgrade and uninstall](docs/dev/install.md)
 - [故障排查 / Troubleshooting](docs/dev/troubleshooting.md)
+- [M5 发布验收报告 / M5 release acceptance report](docs/plan/m5-report.md)
 - [隐私说明 / Privacy notice](PRIVACY.md)
 - [Beta 许可 / Beta license](LICENSE)
 - 详细设计 / Detailed design
@@ -38,6 +39,10 @@ pnpm dev     # 启动桌面应用（开发模式，数据放在独立的 Cairn-d
 pnpm build   # 构建桌面应用
 pnpm smoke   # 用构建产物做启动冒烟测试
 pnpm e2e     # 用构建产物跑端到端测试（Playwright；Linux 无显示器时用 xvfb-run -a pnpm e2e）
+
+# 安装形态验收（Windows；需先构建安装包）
+pnpm package:dir; pnpm e2e:packaged        # 解包产物：安装形态冒烟 + 发布全流程
+pnpm package:nsis; pnpm acceptance:installed  # 真实 NSIS：安装/卸载/重装恢复
 ```
 
 ## 当前计划 / Plan

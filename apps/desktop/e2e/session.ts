@@ -36,6 +36,88 @@ export function projectDir(userData: string): string {
 
 export const runStatus = (window: Page) => window.getByRole('status')
 
+/**
+ * 展开最近一次工具步骤（时间线默认折叠，成功时只显示一行摘要），返回该步骤区域。
+ * 展开后 `run_command` 的终端卡片才在 DOM 里。
+ */
+export async function expandToolStep(window: Page, name: string) {
+  const step = window.getByRole('region', { name: `调用工具：${name}` }).last()
+  const collapsed = step.locator('button[aria-expanded="false"]')
+  if ((await collapsed.count()) > 0) await collapsed.first().click()
+  return step
+}
+
+interface RpcReply<T> {
+  readonly ok: boolean
+  readonly result?: T
+  readonly error?: unknown
+}
+
+/** 调用一个主进程 RPC 并返回结果；失败时抛出带方法名的错误。 */
+export async function rpc<T>(window: Page, method: string, params: object): Promise<T> {
+  const reply = (await window.evaluate(
+    async ([name, payload]) => {
+      const cairn = (
+        globalThis as unknown as {
+          cairn: { request(method: string, params: object): Promise<unknown> }
+        }
+      ).cairn
+      return cairn.request(name as string, payload as object)
+    },
+    [method, params] as const,
+  )) as RpcReply<T>
+  if (!reply.ok) throw new Error(`${method}: ${JSON.stringify(reply.error)}`)
+  return reply.result as T
+}
+
+/** 配置一个 OpenAI 兼容供应商与凭据，供模拟模型服务使用。 */
+export async function configureProvider(
+  window: Page,
+  baseUrl: string,
+  secret: string,
+  id = 'acceptance',
+): Promise<void> {
+  await window.evaluate(
+    async ({ url, key, providerId }) => {
+      const cairn = (
+        globalThis as unknown as {
+          cairn: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
+        }
+      ).cairn
+      await cairn.ready()
+      const stored = await cairn.request('credentials.set', {
+        ref: `${providerId}-key`,
+        secret: key,
+      })
+      if (!(stored as { ok: boolean }).ok) throw new Error('credentials.set failed')
+      const updated = await cairn.request('settings.update', {
+        providers: [
+          {
+            id: providerId,
+            kind: 'openai',
+            displayName: providerId,
+            baseUrl: url,
+            credentialRef: `${providerId}-key`,
+            models: [
+              {
+                id: 'acceptance-model',
+                contextWindow: 32_000,
+                maxOutputTokens: 1_000,
+                supportsTools: true,
+                supportsParallelToolCalls: false,
+                supportsReasoning: false,
+              },
+            ],
+          },
+        ],
+        defaultModel: { providerId, modelId: 'acceptance-model' },
+      })
+      if (!(updated as { ok: boolean }).ok) throw new Error('settings.update failed')
+    },
+    { url: baseUrl, key: secret, providerId: id },
+  )
+}
+
 const messageItems = (window: Page) =>
   // 只取直接子项：工具时间线等嵌套列表不算消息
   window.getByRole('list', { name: '消息' }).locator(':scope > li')

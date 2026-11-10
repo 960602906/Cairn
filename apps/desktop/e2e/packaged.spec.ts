@@ -2,54 +2,11 @@
  * 已打包应用（M5-02）：通过 Chromium CDP 启动 `dist/<platform>-unpacked` 中的真实程序，
  * 验证安装包布局、preload/IPC、SQLite 与项目/会话创建。数据目录始终是临时目录。
  */
-import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { chromium, expect, test, type Browser } from '@playwright/test'
-import { applicationEnvironment, packagedApp, packagedArguments } from '../scripts/packaged-app.mjs'
-
-const APP = packagedApp()
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address !== null ? address.port : 0
-      server.close((error) => (error ? reject(error) : resolve(port)))
-    })
-  })
-}
-
-async function waitForDevTools(port: number): Promise<void> {
-  const endpoint = `http://127.0.0.1:${port}/json/version`
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    try {
-      const response = await fetch(endpoint)
-      if (response.ok) return
-    } catch {
-      // 应用还在启动
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  throw new Error(`packaged application did not expose CDP on port ${port}`)
-}
-
-async function stopApp(child: ChildProcess, browser: Browser | undefined): Promise<void> {
-  await browser?.close().catch(() => {})
-  if (child.exitCode !== null || child.signalCode !== null) return
-  child.kill()
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, 10_000)
-    child.once('exit', () => {
-      clearTimeout(timer)
-      resolve()
-    })
-  })
-}
+import { expect, test } from '@playwright/test'
+import { startPackagedApp } from './packaged-app.js'
 
 test('已打包应用启动、读取构建信息并创建项目会话', async () => {
   const userData = mkdtempSync(path.join(tmpdir(), 'cairn-packaged-e2e-'))
@@ -59,21 +16,10 @@ test('已打包应用启动、读取构建信息并创建项目会话', async ()
     path.join(userData, 'settings.json'),
     `${JSON.stringify({ locale: 'zh-CN', onboardingSeen: false })}\n`,
   )
-  const port = await freePort()
-  let browser: Browser | undefined
-  const child = spawn(APP.executable, [`--remote-debugging-port=${port}`, ...packagedArguments()], {
-    cwd: APP.directory,
-    env: applicationEnvironment({ userData }),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  })
+  let running: Awaited<ReturnType<typeof startPackagedApp>> | undefined
   try {
-    await waitForDevTools(port)
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
-    const context = browser.contexts()[0]
-    if (!context) throw new Error('packaged application exposed no browser context')
-    const page = context.pages()[0] ?? (await context.waitForEvent('page'))
-    await page.waitForLoadState('domcontentloaded')
+    running = await startPackagedApp({ userData })
+    const { page } = running
     // 干净安装先显示欢迎说明；模态打开时主界面在 aria-hidden 之内，先关闭再断言主界面。
     await expect(page.getByRole('heading', { name: '欢迎使用 Cairn' })).toBeVisible()
     await page.getByRole('button', { name: '稍后' }).click()
@@ -156,7 +102,7 @@ test('已打包应用启动、读取构建信息并创建项目会话', async ()
       }),
     )
   } finally {
-    await stopApp(child, browser)
+    await running?.stop()
     rmSync(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 })

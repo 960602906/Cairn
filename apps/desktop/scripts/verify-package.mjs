@@ -243,8 +243,20 @@ export async function verifyPackage({
     { file: appAsar, label: 'app.asar' },
     { file: path.join(resourcesDir, 'skills/example/SKILL.md'), label: 'resources/skills' },
     { file: path.join(resourcesDir, 'git/LICENSE.txt'), label: 'resources/git license' },
+    { file: path.join(resourcesDir, 'app-update.yml'), label: 'app-update.yml' },
   ]) {
     if (!existsSync(file)) problems.push(`missing ${label}: ${file}`)
+  }
+  // electron-updater 下载更新时会读取该文件；`--publish never` 不会自动生成（M5-10）。
+  const updateConfig = path.join(resourcesDir, 'app-update.yml')
+  if (existsSync(updateConfig)) {
+    const content = readFileSync(updateConfig, 'utf8')
+    if (!/^provider:\s*generic$/m.test(content)) {
+      problems.push('app-update.yml does not use the generic provider')
+    }
+    if (!/^url:\s*https:\/\/\S+$/m.test(content)) {
+      problems.push('app-update.yml does not contain an https update URL')
+    }
   }
   const bundledGit = path.join(resourcesDir, 'git/ucrt64/bin/git.exe')
   if (!existsSync(bundledGit)) problems.push(`missing bundled MinGit: ${bundledGit}`)

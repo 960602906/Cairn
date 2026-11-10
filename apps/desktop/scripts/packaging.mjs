@@ -32,6 +32,8 @@ export const DESKTOP_ROOT = path.resolve(THIS_DIR, '..')
 export const DEFAULT_STAGE_DIR = path.join(DESKTOP_ROOT, '.package/app')
 export const DEFAULT_OUTPUT_DIR = path.join(DESKTOP_ROOT, 'dist')
 export const BUILDER_CONFIG = path.join(DESKTOP_ROOT, 'electron-builder.yml')
+/** `--publish never` 不生成 `app-update.yml`，由该钩子补写（M5-10）。 */
+export const AFTER_PACK_HOOK = path.join(DESKTOP_ROOT, 'scripts/after-pack.cjs')
 export const SCAN_DIRECTORIES = ['out/main', 'out/preload']
 
 /** 主进程导入但不来自 npm 的模块。 */
@@ -339,6 +341,8 @@ export function runElectronBuilder({
     BUILDER_CONFIG,
     '--config.directories.output',
     outputDir,
+    '--config.afterPack',
+    AFTER_PACK_HOOK,
     '--publish',
     'never',
   ]
