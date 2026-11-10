@@ -213,4 +213,8 @@ pnpm sign:verify -- --dist apps/desktop/dist --version 0.1.0
   公开下载校验；真实 `signtool`、真实证书、Azure Trusted Signing 与 artifact
   attestation 只能在配置了 secrets 的 Windows runner 上验证。
 - 未取得证书时只能声明 “unsigned beta”：SmartScreen 可能警告，且更新服务无法验证发布者。
-- 干净 VM 的安装、升级、卸载与回滚演练由 M5-10 完成；本手册不能替代真机证据。
+- 安装级自动化验收（M5-10）：`pnpm smoke:installed` 覆盖安装/卸载与数据保留；
+  `pnpm acceptance:installed` 覆盖中文长路径、仅系统 `PATH`（无 Git）与卸载→重装→设置恢复。
+  已打包应用全流程由 `pnpm e2e:packaged`（含 `acceptance.spec.ts`）覆盖。
+- 干净 VM、标准用户、Windows 10、SmartScreen 与真实 0.1.0→0.1.1 安装升级仍未执行；
+  状态与阻塞项见 [M5 发布验收报告](../plan/m5-report.md)。本手册不能替代真机证据。

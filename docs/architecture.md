@@ -591,7 +591,10 @@ interface CredentialProvider {
 | 密钥泄露 | 只在主进程解密；清洗子进程环境变量；日志自动脱敏 |
 | 提示注入（项目文件、命令输出中夹带指令） | 工具结果标注为数据；高风险操作始终经过权限引擎，不因模型"声称已获授权"而放行 |
 | 数据篡改 | 数据库和配置只由主进程写入；渲染进程无法直接调用存储 |
-| 缺少隔离 | 后续引入命令沙箱：Windows 受限令牌或 AppContainer，macOS sandbox-exec，Linux bubblewrap；在此之前审批与检查点是主要防线 |
+| 命令越界执行 | Windows 默认 `restricted-workspace`：受限令牌 + 低完整性 + 工作区 ACL + Job Object（ADR-0034）。工作区外、系统目录与其他用户目录写入被拒绝，默认不授予管理员能力；AppContainer 仅作实验档位 |
+| 误以为沙箱等于安全边界 | 受限令牌档不隔离网络，界面、审批、事件与诊断统一标注“网络未隔离”；沙箱不可用时失败关闭，除非用户显式升级并留下事件 |
+| 更新包被替换或降级 | 更新源必须公开只读 HTTPS；校验 SHA-512、大小与发布者签名，`allowDowngrade=false`；升级前备份数据库/设置/凭据元数据，`SchemaTooNew` 阻断降级（ADR-0036） |
+| 未签名分发被误认为已验证发布者 | beta 安装包明确标注 unsigned 与 SmartScreen 预期；stable 必须完成 Authenticode 签名与 `signtool verify`，发布说明不得承诺“无警告”（M5-08、M5-10） |
 
 ---
 
@@ -672,11 +675,30 @@ agent 循环设置最大步数和单轮最长时间，防止无限循环。
 
 ## 24. 构建、发布与更新
 
-- 构建：electron-vite；打包：electron-builder，Windows 产物为 NSIS 安装包。
-- 原生模块（如 better-sqlite3）需要针对 Electron 版本重新编译，纳入构建流程。
-- 代码签名：发布阶段处理，未签名的安装包会触发 Windows SmartScreen 警告。
-- 自动更新：electron-updater。仓库私有期间无法直接使用公开的 GitHub Releases 作为更新源，需要另外的更新服务器或带令牌的私有源，待 M5 决定。
-- 依赖许可证：CI 中检查，只允许 MIT、Apache-2.0、BSD、ISC 等宽松许可证（ADR-0014）。
+- **构建**：electron-vite 产出 `out/main`、`out/preload`、`out/renderer`、`out/bin` 与
+  `out/build-info.json`（版本、通道、提交 SHA、构建时间、Electron/Node 版本）。版本以根
+  `package.json` 为唯一来源，CI 用 `check:version` 校验。
+- **打包**：先 staging，再由 electron-builder 26.18.0 生成 Windows x64 按用户 NSIS
+  （`perMachine=false`，不要求管理员，可修改安装目录，保留用户数据）。工作区 `node_modules`、
+  测试、e2e、spikes、源码与 source map 不进入安装包（ADR-0035）。
+- **原生模块**：`better-sqlite3`、`koffi` 等按 Electron 版本准备，运行时外部依赖由 staging
+  `package.json` 白名单控制；`@vscode/ripgrep` 二进制复制到 `out/bin/rg.exe`。
+- **随包 MinGit**：固定 MinGit `2.56.0.4` 与 SHA-256，构建时下载、裁剪、校验；安装版优先使用
+  本机 Git，没有可用 Git 时用随包产物建立检查点。GPLv2 全文、源码地址与第三方声明随包分发
+  （`THIRD_PARTY_NOTICES.txt`、`license-exceptions.json`）。
+- **命令沙箱**：Windows 默认受限令牌档（ADR-0034）；设置页、审批卡片、终端标记与诊断包显示实际
+  档位；受限令牌明确标注网络未隔离。
+- **自动更新**：electron-updater 6.8.11 + generic 公开只读 HTTPS 源；检查 → 下载 → 校验
+  （SHA-512、大小、发布者签名）→ 重启安装。运行中任务、待审批与检查点恢复期间禁止静默重启；
+  不提供二进制降级，升级前备份，`SchemaTooNew` 阻断降级（ADR-0036）。
+- **代码签名与发布**：`.github/workflows/release.yml` 在标签构建时执行签名、产物哈希、
+  `latest.yml`/`beta.yml` 生成与发布；证书只来自 CI secrets。未取得证书时只能产出 unsigned beta，
+  stable 发布被门禁阻塞（M5-08）。
+- **验收**：单元/集成/组件测试 + 构建产物 e2e（55 项）+ 已打包应用 e2e（安装形态冒烟与发布
+  全流程）+ NSIS 安装/卸载/重装验收（`pnpm acceptance:installed`）+ Windows CI。干净 VM、标准
+  用户与 SmartScreen 的人工矩阵见 [M5 发布验收报告](plan/m5-report.md)。
+- **依赖许可证**：CI 中检查，只允许 MIT、Apache-2.0、BSD、ISC 等宽松许可证（ADR-0014）；
+  GPL 组件只以独立程序形式随包，不链接进 Cairn 代码。
 
 ---
 
@@ -723,10 +745,14 @@ Cairn/
 | **M2 可审阅** | 能力探测、设置页、工具卡片、diff 视图（整文件接受/撤销）、终端输出面板、检查点回退界面 | 两个模型可切换，所有改动可审阅、可撤销 |
 | **M3 日常可用** | 项目与会话管理、Agent 管理界面、计划模式、会话要点、规则管理界面、上下文压缩、`AGENTS.md` 支持、Skills、MCP、辅助模型、诊断包、按块撤销 | 可以长期在真实项目中使用，可自定义 Agent 并接入外部工具 |
 | **M4 进阶** | 多 Agent 委派（串行只读 → 并行只读 → 写入隔离）、运行树与检查器、活动中心、Agent 试运行；后台命令为收尾可选 | 多任务并行互不干扰：父子运行可追溯、可审批、可回退 |
-| **M5 发布** | 命令沙箱、自动更新、签名与 Windows 安装包（附带精简版 MinGit 供检查点使用，ADR-0008） | 可以分发给他人安装 |
+| **M5 发布** | 命令沙箱、自动更新、签名与 Windows 安装包（附带精简版 MinGit 供检查点使用，ADR-0008） | 可以分发给他人安装（0.1.0 unsigned beta 已达成；stable 待签名、法务与干净 VM 矩阵） |
 | **M6 跨平台与开源** | macOS、Linux 适配与打包，Linux 凭据存储处理，开源准备（许可证、贡献指南） | 三个平台可用，仓库可公开 |
 
 各阶段的任务分解见 [`docs/plan/`](plan/)：[M0 基础](plan/m0.md)、[M1 最小可用](plan/m1.md)、[M2 可审阅](plan/m2.md)、[M3 日常可用](plan/m3.md)、[M4 多 Agent 协作](plan/m4.md)、[M5 发布](plan/m5.md)。
+
+> M5 状态（2026-11-10）：M5-00～M5-10 已实施，产出 unsigned beta；stable 的阻塞项、已执行的
+> 自动化证据与未执行的干净 VM 矩阵见 [M5 发布验收报告](plan/m5-report.md) 与
+> [发布前置条件](plan/m5-release-prerequisites.md)。
 
 ---
 

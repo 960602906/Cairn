@@ -18,6 +18,7 @@
     "package:verify": "pnpm --filter @cairn/desktop package:verify",
     "smoke:packaged": "pnpm --filter @cairn/desktop smoke:packaged",
     "smoke:installed": "pnpm --filter @cairn/desktop smoke:installed",
+    "acceptance:installed": "pnpm --filter @cairn/desktop acceptance:installed",
     "e2e:packaged": "pnpm --filter @cairn/desktop e2e:packaged",
     "typecheck": "tsc -b",
     "lint": "eslint .",

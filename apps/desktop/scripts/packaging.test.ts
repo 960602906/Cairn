@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  AFTER_PACK_HOOK,
   createStagedManifest,
   electronBuilderCli,
   extractModuleSpecifiers,
@@ -441,6 +442,8 @@ describe('electron-builder invocation', () => {
     expect(args).toContain('--publish')
     expect(args).toContain('never')
     expect(args).toContain('--dir')
+    expect(args).toContain('--config.afterPack')
+    expect(args).toContain(AFTER_PACK_HOOK)
     expect(options?.env).toMatchObject({ CSC_IDENTITY_AUTO_DISCOVERY: 'true' })
   })
 

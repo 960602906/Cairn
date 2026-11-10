@@ -1,11 +1,12 @@
 import { EventEmitter } from 'node:events'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   checkInstalledLayout,
+  decodeConsoleOutput,
   installedArtifacts,
   installerArguments,
   installerPath,
@@ -184,13 +185,36 @@ describe('queryUninstallRegistry', () => {
       '/f',
       'Cairn',
     ])
-    expect(options).toMatchObject({ encoding: 'utf8', windowsHide: true })
+    expect(options).toMatchObject({ encoding: 'buffer', windowsHide: true })
     expect(queryUninstallRegistry({ installDir: 'C:\\Other', runner })).toBe('')
   })
 
   it('treats missing runner output as no match', () => {
     const runner = vi.fn(() => ({ status: 1, stdout: null, stderr: null }))
     expect(queryUninstallRegistry({ installDir: 'C:\\Temp', runner: runner as never })).toBe('')
+  })
+
+  it('decodes ANSI (GBK) output so Chinese install paths still match', () => {
+    const installDir = 'C:\\验收 安装'
+    const prefix = Buffer.from('InstallLocation    C:\\', 'utf8')
+    const chinese = Buffer.from([0xd1, 0xe9, 0xca, 0xd5]) // “验收”的 GBK 字节
+    const suffix = Buffer.from([0x20, 0xb0, 0xb2, 0xd7, 0xb0, 0x0d, 0x0a]) // “ 安装”的 GBK 字节
+    const runner = vi.fn(() => ({
+      status: 0,
+      stdout: Buffer.concat([prefix, chinese, suffix]),
+      stderr: null,
+    }))
+    expect(queryUninstallRegistry({ installDir, runner: runner as never })).toContain(installDir)
+  })
+})
+
+describe('decodeConsoleOutput', () => {
+  it('handles strings, UTF-8, GBK and empty values', () => {
+    expect(decodeConsoleOutput(undefined)).toBe('')
+    expect(decodeConsoleOutput(null)).toBe('')
+    expect(decodeConsoleOutput('plain')).toBe('plain')
+    expect(decodeConsoleOutput(Buffer.from('Cairn 0.1.0', 'utf8'))).toBe('Cairn 0.1.0')
+    expect(decodeConsoleOutput(Buffer.from([0xd1, 0xe9, 0xca, 0xd5]))).toBe('验收')
   })
 })
 
@@ -285,7 +309,7 @@ function createInstallation(installDir: string): ReturnType<typeof installedArti
 
 interface WorkflowOptions {
   installer: string
-  application?: 'pass' | 'timeout'
+  application?: 'pass' | 'timeout' | 'fail-second'
   uninstall?: 'pass' | 'timeout' | 'error'
   ripgrep?: 'pass' | 'fail'
 }
@@ -299,6 +323,7 @@ function workflowSpawn({
   const state: { installDir: string; artifacts?: ReturnType<typeof installedArtifacts> } = {
     installDir: '',
   }
+  let applicationRuns = 0
   return vi.fn(
     (file: string, args: readonly string[], options: { env: NodeJS.ProcessEnv }): FakeChild => {
       const child = fakeChild()
@@ -312,8 +337,14 @@ function workflowSpawn({
           child.emit('exit', ripgrep === 'pass' ? 0 : 1, null)
         })
       } else if (file === state.artifacts?.executable) {
+        applicationRuns += 1
+        const failing = application === 'fail-second' && applicationRuns > 1
         queueMicrotask(() => {
           if (application === 'timeout') return
+          if (failing) {
+            child.emit('exit', 1, null)
+            return
+          }
           const userData = options.env['CAIRN_USER_DATA_DIR']!
           for (const relative of ['data/cairn.db', 'data/blobs', 'checkpoints', 'logs']) {
             write(path.join(userData, relative))
@@ -370,9 +401,8 @@ describe('smokeInstalled workflow', () => {
       log,
     })
 
-    expect(problems.filter((problem) => !problem.startsWith('uninstall registry entry'))).toEqual(
-      [],
-    )
+    // 单测里 `reg.exe` 是真实进程，读不到假安装写入的卸载项；只过滤这一类问题。
+    expect(problems.filter((problem) => !problem.includes('uninstall registry entry'))).toEqual([])
     expect(log).toHaveBeenCalledWith(expect.stringContaining(`installing ${installer}`))
     expect(log).toHaveBeenCalledWith('installed: running application smoke checks')
     expect(log).toHaveBeenCalledWith(expect.stringContaining('CAIRN_SMOKE_RESULT'))
@@ -557,6 +587,64 @@ describe('smokeInstalled workflow', () => {
     await expect(promise).resolves.toEqual(
       expect.arrayContaining(['installed bundled MinGit failed: bad git']),
     )
+  })
+
+  it('reinstalls into the same Chinese directories and keeps user settings', async () => {
+    const { root, installer } = fixture()
+    const workRoot = temporaryDirectory()
+    const installDir = path.join(workRoot, '验收 安装', '普通 用户', '一个较长目录')
+    const userData = path.join(workRoot, '用户 数据', '验收数据')
+    const spawnProcess = workflowSpawn({ installer })
+    const log = vi.fn()
+
+    const problems = await smokeInstalled({
+      installer,
+      desktopRoot: root,
+      platform: 'win32',
+      spawnProcess: spawnProcess as never,
+      verifyGit,
+      log,
+      workRoot,
+      installDir,
+      userData,
+      reinstall: true,
+      appEnv: { PATH: 'C:\\Windows\\System32;C:\\Windows' },
+    })
+
+    expect(problems.filter((problem) => !problem.includes('uninstall registry entry'))).toEqual([])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('reinstalled: installing'))
+    expect(log).toHaveBeenCalledWith('reinstalled: uninstalling')
+    expect(JSON.parse(readFileSync(path.join(userData, 'settings.json'), 'utf8'))).toEqual({
+      locale: 'zh-CN',
+      onboardingSeen: true,
+    })
+    // 调用方提供的工作目录不会被清理，便于保留验收产物。
+    expect(existsSync(workRoot)).toBe(true)
+
+    const applicationCalls = spawnProcess.mock.calls.filter(
+      ([file]) => path.basename(String(file)) === 'Cairn.exe',
+    )
+    expect(applicationCalls).toHaveLength(2)
+    for (const call of applicationCalls) {
+      expect((call[2] as { env: NodeJS.ProcessEnv }).env['PATH']).toBe(
+        'C:\\Windows\\System32;C:\\Windows',
+      )
+    }
+  })
+
+  it('prefixes problems that only happen on the reinstall pass', async () => {
+    const { root, installer } = fixture()
+    const problems = await smokeInstalled({
+      installer,
+      desktopRoot: root,
+      platform: 'win32',
+      spawnProcess: workflowSpawn({ installer, application: 'fail-second' }) as never,
+      verifyGit,
+      log: vi.fn(),
+      reinstall: true,
+    })
+
+    expect(problems).toContain('reinstall: application exited with 1 (null)')
   })
 })
 

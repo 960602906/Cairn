@@ -67,6 +67,10 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   write(path.join(resources, 'skills/example/SKILL.md'), '# Example\n')
   write(path.join(resources, 'git/LICENSE.txt'), 'GPLv2\n')
   write(path.join(resources, 'git/ucrt64/bin/git.exe'), 'git')
+  write(
+    path.join(resources, 'app-update.yml'),
+    'provider: generic\nurl: https://updates.invalid/cairn/\n',
+  )
 
   const asarFiles: Record<string, string> = {
     'out/main/index.js': '',
@@ -239,6 +243,37 @@ describe('verifyPackage', () => {
         minimumInstallerBytes: 0,
       }),
     ).resolves.toEqual([])
+  })
+
+  it('requires an electron-updater config with an https generic source', async () => {
+    const missing = await fixture()
+    rmSync(path.join(missing.resources, 'app-update.yml'))
+    const missingProblems = await verifyPackage({
+      desktopRoot: missing.desktopRoot,
+      outputDir: missing.outputDir,
+      platform: 'win32',
+      runner: successfulRunner(),
+      readFuses: async () => [],
+    })
+    expect(missingProblems).toContain(
+      `missing app-update.yml: ${path.join(missing.resources, 'app-update.yml')}`,
+    )
+
+    const invalid = await fixture()
+    write(path.join(invalid.resources, 'app-update.yml'), 'provider: s3\nurl: http://insecure\n')
+    const invalidProblems = await verifyPackage({
+      desktopRoot: invalid.desktopRoot,
+      outputDir: invalid.outputDir,
+      platform: 'win32',
+      runner: successfulRunner(),
+      readFuses: async () => [],
+    })
+    expect(invalidProblems).toEqual(
+      expect.arrayContaining([
+        'app-update.yml does not use the generic provider',
+        'app-update.yml does not contain an https update URL',
+      ]),
+    )
   })
 
   it('returns the lookup error when no packaged application exists', async () => {

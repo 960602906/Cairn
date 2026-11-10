@@ -15,6 +15,15 @@
   （`docs/dev/release.md`）。
 - 首次运行欢迎说明、专有 beta 许可、隐私说明与安装/故障排查文档；关于页补齐隐私、
   GPL 源码获取方式、诊断包与第三方许可入口（M5-09）。
+- 发布验收：已打包应用全流程 e2e（首次运行、沙箱命令、无 Git 检查点、更新检查、许可、
+  诊断包与重启恢复），以及真实 NSIS 安装/卸载/重装恢复与中文长路径验收
+  （`pnpm e2e:packaged`、`pnpm acceptance:installed`），验收记录见
+  `docs/plan/m5-report.md`（M5-10）。
+
+### Fixed
+
+- 打包产物补齐 `electron-updater` 所需的 `resources/app-update.yml`，修复安装版下载更新时
+  `ENOENT` 失败；`package:verify` 会校验该文件为 generic + HTTPS（M5-10）。
 
 ## [0.1.0] - 2026-11-10
 
