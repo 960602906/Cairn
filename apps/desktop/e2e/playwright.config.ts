@@ -12,12 +12,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: '**/*.spec.ts',
   // 打包应用 e2e 需要先 `pnpm package:dir`，由 packaged.config.ts 单独运行（M5-02、M5-10）。
-  testIgnore: [
-    'packaged.spec.ts',
-    'acceptance.spec.ts',
-    'packaged-sandbox.spec.ts',
-    'sandbox-path-probe.spec.ts',
-  ],
+  testIgnore: ['packaged.spec.ts', 'acceptance.spec.ts', 'packaged-sandbox.spec.ts'],
   outputDir: '../test-results',
   globalSetup: './global-setup.ts',
   workers: 1,

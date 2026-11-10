@@ -122,6 +122,11 @@
 - **检查点 Git**：随包 MinGit 只在没有可用本机 Git 时兜底；安装版优先使用本机 Git。
 - **更新**：公开只读静态源与降级阻断已实现；真实签名包、真实安装重启与代理/断网演练未做。
 - **平台**：仅 Windows x64；macOS/Linux 属于 M6。
+- **CI 上的打包沙箱（未解决）**：在 GitHub Actions `windows-latest` 上，已打包应用的沙箱派生子进程
+  一律以 `3221225794`（`0xC0000142`，DLL 初始化失败）退出，`PowerShell 7.6.9`、Windows PowerShell 5.1
+  与 `cmd.exe` 表现相同；本机与开发态 `e2e` 的正常沙箱执行不受影响。因此
+  `packaged-sandbox.spec.ts` 与 `acceptance.spec.ts` 的 Windows CI 作业当前失败，发布验收的自动化
+  证据以本机结果为准（§3），该问题留待后续单独排查。
 
 ## 7. 发布阻塞项（stable）
 
