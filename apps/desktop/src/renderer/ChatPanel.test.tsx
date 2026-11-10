@@ -9,7 +9,6 @@ import { RpcError, type EventEnvelope, type SessionSummary } from '@cairn/protoc
 import type { MainApi } from './api.js'
 import { App } from './App.js'
 import { ChatPanel } from './ChatPanel.js'
-import { formatElapsed } from './Composer.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 
@@ -104,7 +103,6 @@ function setup({
 /** 消息流中的消息（列表的直接子项；工具时间线等嵌套列表不算）。 */
 const messages = () =>
   [...screen.getByRole('list', { name: '消息' }).children].map((li) => li.textContent)
-const runStatus = () => screen.getByRole('status').textContent
 const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
 /** 运行中发送按钮换成停止按钮，此时为 null。 */
 const sendButton = () => screen.queryByRole('button', { name: '发送' }) as HTMLButtonElement
@@ -275,7 +273,6 @@ describe('ChatPanel', () => {
     expect(request).toHaveBeenCalledWith('session.subscribe', { sessionId: 's1', afterSeq: 0 })
     expect(screen.getByRole('heading', { level: 2, name: '修复登录' })).toBeTruthy()
     expect(messages()).toEqual(['你你好', '助手你好！fake-1'])
-    expect(runStatus()).toBe('空闲')
     expect(stopButton()).toBeNull()
   })
 
@@ -316,19 +313,16 @@ describe('ChatPanel', () => {
     const [item] = await screen.findAllByRole('listitem')
     await userEvent.click(within(item!).getAllByRole('button')[0]!)
     expect(screen.getByRole('heading', { level: 2, name: '未命名会话' })).toBeTruthy()
-    expect(runStatus()).toBe('运行中')
     expect(messages()).toEqual([])
 
     await act(async () => replay({ events: [created('新标题')], lastSeq: 1 }))
     expect(store.getState().views.s1?.lastSeq).toBe(1)
     expect(screen.getByRole('heading', { level: 2, name: '新标题' })).toBeTruthy()
-    expect(runStatus()).toBe('空闲')
   })
 
   it('streams the live reply and replaces it with the completed message once', async () => {
     const { open, emit } = setup({ history: RUNNING })
     await open()
-    expect(runStatus()).toBe('运行中 · 思考中')
     expect(sendButton()).toBeNull()
     expect(stopButton()).toBeTruthy()
 
@@ -342,7 +336,6 @@ describe('ChatPanel', () => {
     expect(live.textContent).toBe('助手思考过程想想好的，')
 
     emit(state(15, 'thinking', 'tooling'))
-    expect(runStatus()).toBe('运行中 · 正在调用工具')
 
     const done = ev(
       17,
@@ -374,7 +367,6 @@ describe('ChatPanel', () => {
       '助手思考过程想想好的，\n你好！[图片]读取{}等待执行fake-1',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
-    expect(runStatus()).toBe('空闲')
     expect(stopButton()).toBeNull()
   })
 
@@ -412,7 +404,6 @@ describe('ChatPanel', () => {
     await open()
     await userEvent.type(input(), '你好{Enter}')
     // 排队或宿主启动中：还没有 turn.started
-    expect(runStatus()).toBe('运行中')
     expect(stopButton()).toBeTruthy()
     await userEvent.type(input(), '下一句')
     expect(sendButton()).toBeNull()
@@ -422,13 +413,10 @@ describe('ChatPanel', () => {
     expect(store.getState().sessions[0]?.status).toBe('running')
     // 中途的其他事件不清除等待
     emit(userMessage(9, 'm3', '你好'))
-    expect(runStatus()).toBe('运行中')
 
     emit(ev(10, 'turn.started', {}, 't2'), state(11, 'completed', 'thinking'))
-    expect(runStatus()).toBe('运行中 · 思考中')
     expect(store.getState().awaitingTurn).toEqual({})
     emit(ev(12, 'turn.completed', { durationMs: 10 }, 't2'), state(13, 'thinking', 'completed'))
-    expect(runStatus()).toBe('空闲')
     expect(stopButton()).toBeNull()
     expect(request.mock.calls.filter(([m]) => m === 'session.prompt')).toHaveLength(1)
   })
@@ -440,7 +428,6 @@ describe('ChatPanel', () => {
     await userEvent.click(stopButton()!)
     expect(request).toHaveBeenCalledWith('session.abort', { sessionId: 's1' })
     // 取消排队中的输入不会产生事件，由停止成功清除等待
-    expect(runStatus()).toBe('空闲')
     expect(stopButton()).toBeNull()
     expect(store.getState().sessions[0]?.status).toBe('idle')
   })
@@ -458,7 +445,6 @@ describe('ChatPanel', () => {
     await userEvent.type(input(), '你好{Enter}')
     await userEvent.click(stopButton()!)
     expect(await screen.findByRole('alert')).toBeTruthy()
-    expect(runStatus()).toBe('运行中')
     expect(store.getState().awaitingTurn).toEqual({ s1: true })
   })
 
@@ -478,7 +464,6 @@ describe('ChatPanel', () => {
     await act(async () => fail())
     expect(input().value).toBe('新的')
     // 发送失败后不再等待
-    expect(runStatus()).toBe('空闲')
     expect(sendButton()!.disabled).toBe(false)
   })
 
@@ -512,7 +497,6 @@ describe('ChatPanel', () => {
     expect(stopButton()!.disabled).toBe(false)
 
     emit(state(12, 'thinking', 'aborting'))
-    expect(runStatus()).toBe('运行中 · 正在停止')
     expect(stopButton()!.disabled).toBe(true)
 
     emit(
@@ -525,7 +509,6 @@ describe('ChatPanel', () => {
       ev(14, 'turn.aborted', { reason: 'user' }, 't2'),
       state(15, 'aborting', 'idle'),
     )
-    expect(runStatus()).toBe('空闲')
     expect(stopButton()).toBeNull()
     expect(screen.getByText('已停止')).toBeTruthy()
     // 已输出的部分保留，并注明未完成
@@ -540,7 +523,6 @@ describe('ChatPanel', () => {
         ev(13, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }, 't2'),
         state(14, 'thinking', 'failed'),
       ],
-      '失败',
       '已达到本轮最多 50 步，可以继续执行。',
     ],
     [
@@ -550,7 +532,6 @@ describe('ChatPanel', () => {
         ev(13, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }, 't2'),
         state(14, 'thinking', 'failed'),
       ],
-      '失败',
       '工具调用连续失败 5 次，本轮已停止，可以继续执行。',
     ],
     [
@@ -560,7 +541,6 @@ describe('ChatPanel', () => {
         ev(13, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }, 't2'),
         state(14, 'thinking', 'failed'),
       ],
-      '失败',
       '本轮已运行超过 10 分钟，可以继续执行。',
     ],
     [
@@ -569,13 +549,11 @@ describe('ChatPanel', () => {
         ev(12, 'turn.failed', { error: { code: 'model.unknown_error' }, retryable: false }, 't2'),
         state(13, 'thinking', 'failed'),
       ],
-      '失败',
       '本轮失败：模型请求失败',
     ],
     [
       '宿主崩溃',
       [ev(12, 'session.crashed', { error: { code: 'host.exited' } })],
-      '已崩溃',
       'Agent 进程意外退出，可以从最后保存的位置继续。',
     ],
     [
@@ -584,14 +562,12 @@ describe('ChatPanel', () => {
         ev(12, 'turn.aborted', { reason: 'shutdown' }, 't2'),
         ev(13, 'run.state.changed', { from: 'thinking', to: 'interrupted', reason: 'app_restart' }),
       ],
-      '已中断',
       '本轮已中断，可以继续对话。',
     ],
-  ])('explains how the last turn ended: %s', async (_name, events, status, note) => {
+  ])('explains how the last turn ended: %s', async (_name, events, note) => {
     const { open, emit } = setup({ history: RUNNING })
     await open()
     emit(...events)
-    expect(runStatus()).toBe(status)
     expect(screen.getByText(note)).toBeTruthy()
     expect(stopButton()).toBeNull()
     expect(sendButton()!.disabled).toBe(true)
@@ -650,13 +626,11 @@ describe('ChatPanel', () => {
     })
     await act(async () => void store.getState().selectSession('s1'))
     expect(screen.getByRole('heading', { level: 2, name: '未命名会话' })).toBeTruthy()
-    expect(runStatus()).toBe('空闲')
   })
 
   it('uses the current language', async () => {
     const { open } = setup({ history: RUNNING, locale: 'en-US' })
     await open()
-    expect(screen.getByRole('status').textContent).toBe('Running · Thinking')
     expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy()
     expect(screen.getByLabelText('Message').getAttribute('placeholder')).toBe(
       'Type a message. Enter to send, Shift+Enter for a new line',
@@ -1015,11 +989,9 @@ describe('Composer (M2-04)', () => {
     expect(await screen.findByRole('button', { name: '权限模式：自动' })).toBeTruthy()
   })
 
-  it('shows the elapsed time while running and stops with Esc', async () => {
+  it('stops with Esc while running', async () => {
     const { request, open } = setup({ history: RUNNING })
     await open()
-    expect(runStatus()).toBe('运行中 · 思考中')
-    expect(screen.getByText(/^· [\d:]+$/)).toBeTruthy()
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(request).toHaveBeenCalledWith('session.abort', { sessionId: 's1' }))
   })
@@ -1029,13 +1001,6 @@ describe('Composer (M2-04)', () => {
     await open()
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(request).not.toHaveBeenCalledWith('session.abort', expect.anything())
-  })
-
-  it('formats the elapsed time', () => {
-    expect(formatElapsed(0)).toBe('0:00')
-    expect(formatElapsed(65_400)).toBe('1:05')
-    expect(formatElapsed(3_725_000)).toBe('1:02:05')
-    expect(formatElapsed(-5)).toBe('0:00')
   })
 
   it('toggles plan mode and sends the next turn in plan mode', async () => {
@@ -1170,42 +1135,7 @@ describe('file changes (M2-07)', () => {
   })
 })
 
-describe('run status bar and inspector (M4-05)', () => {
-  const emptyInspection = {
-    tree: { sessionId: 's1', rootRunId: 'r1', generatedAt: 1, runs: [] },
-    snapshots: [],
-    settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
-  }
-  const limited = [
-    created('修复登录'),
-    ev(2, 'run.created', {
-      agent: { id: 'a', version: 1 },
-      model,
-      mode: 'interactive',
-      limits: { maxStepsPerTurn: 1, maxTokensPerTurn: 1600, maxTurnDurationMs: 1 },
-    }),
-    userMessage(3, 'm1', '你好'),
-    ev(4, 'turn.started', {}),
-    state(5, 'idle', 'thinking'),
-    ev(6, 'usage.reported', { model, usage: { inputTokens: 1200, outputTokens: 300 } }),
-    { ...ev(7, 'step.started', { model }), stepId: 'st1' } as EventEnvelope,
-  ]
-
-  it('shows step, elapsed and token with warning colors, then opens the inspector', async () => {
-    const { open, request } = setup({
-      history: limited,
-      handlers: { 'run.inspect': () => emptyInspection },
-    })
-    await open()
-    expect(screen.getByText(/第 1\/1 步/)).toBeTruthy()
-    expect(screen.getByText(/1\.5K token/)).toBeTruthy()
-    expect(document.querySelectorAll('[data-tone="warn"]').length).toBeGreaterThanOrEqual(2)
-    await userEvent.click(screen.getByRole('button', { name: '检查器' }))
-    expect(request).toHaveBeenCalledWith('run.inspect', { sessionId: 's1' })
-    expect(await screen.findByRole('tab', { name: '时间线' })).toBeTruthy()
-    expect(screen.getByText('没有运行记录。')).toBeTruthy()
-  })
-
+describe('delegation cards', () => {
   it('shows child tasks as delegation cards, hides child messages, and keeps child approvals there', async () => {
     const childApproval = {
       approvalId: 'a1',
@@ -1259,7 +1189,6 @@ describe('run status bar and inspector (M4-05)', () => {
       history: delegated,
       handlers: {
         'approval.pending': () => ({ approvals: [childApproval] }),
-        'run.inspect': () => emptyInspection,
       },
     })
     await open()

@@ -6,12 +6,14 @@
  */
 import {
   Archive,
+  ChevronDown,
   Folder,
   FolderOpen,
   FolderTree,
   MoreHorizontal,
   Pin,
   PinOff,
+  Plus,
   Settings,
   SquarePen,
   Trash2,
@@ -21,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import type { ProjectSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
 import { useSessionStore } from './store-context.js'
+import { WorkspaceCreateDialog } from './WorkspaceCreateDialog.js'
 import {
   Button,
   cn,
@@ -185,6 +188,8 @@ export function WorkspaceList({
   const projects = useSessionStore((s) => s.projects)
   const refreshProjects = useSessionStore((s) => s.refreshProjects)
   const ordered = sortWorkspaceProjects(projects)
+  const [collapsed, setCollapsed] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     if (typeof refreshProjects === 'function') void refreshProjects()
@@ -192,25 +197,48 @@ export function WorkspaceList({
 
   return (
     <section aria-label={t('workspace.section')} className="mb-2">
-      <div className="flex items-center gap-2 px-2 pb-1 text-[10.5px] font-semibold tracking-[0.08em] text-faint uppercase">
-        {t('workspace.section')}
-        <span className="tabular text-[10px] font-normal">{projects.length}</span>
+      <div className="flex items-center gap-1 px-2 pb-1">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          aria-label={t(collapsed ? 'workspace.expand' : 'workspace.collapse')}
+          onClick={() => setCollapsed((value) => !value)}
+          className="flex min-w-0 items-center gap-1 rounded-[6px] px-1 py-0.5 text-[10.5px] font-semibold tracking-[0.08em] text-faint uppercase hover:bg-hover hover:text-fg2"
+        >
+          <ChevronDown
+            aria-hidden
+            className={cn('size-3 shrink-0 transition-transform', collapsed && '-rotate-90')}
+          />
+          <span className="truncate">{t('workspace.section')}</span>
+          <span className="tabular text-[10px] font-normal">{projects.length}</span>
+        </button>
+        <button
+          type="button"
+          aria-label={t('workspace.create')}
+          title={t('workspace.create')}
+          onClick={() => setCreating(true)}
+          className="ml-auto inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] text-faint hover:bg-hover hover:text-fg [&_svg]:size-3.5"
+        >
+          <Plus />
+        </button>
       </div>
-      {ordered.length === 0 ? (
-        <p className="px-2.5 py-1.5 text-note text-faint">{t('workspace.empty')}</p>
-      ) : (
-        <ul className="flex flex-col gap-px">
-          {ordered.map((project) => (
-            <WorkspaceRow
-              key={project.projectId}
-              project={project}
-              onConfigure={onConfigure}
-              onBrowseInFileTree={onBrowseInFileTree}
-              onNewConversation={onNewConversation}
-            />
-          ))}
-        </ul>
-      )}
+      {!collapsed &&
+        (ordered.length === 0 ? (
+          <p className="px-2.5 py-1.5 text-note text-faint">{t('workspace.empty')}</p>
+        ) : (
+          <ul className="flex flex-col gap-px">
+            {ordered.map((project) => (
+              <WorkspaceRow
+                key={project.projectId}
+                project={project}
+                onConfigure={onConfigure}
+                onBrowseInFileTree={onBrowseInFileTree}
+                onNewConversation={onNewConversation}
+              />
+            ))}
+          </ul>
+        ))}
+      <WorkspaceCreateDialog open={creating} onOpenChange={setCreating} />
     </section>
   )
 }

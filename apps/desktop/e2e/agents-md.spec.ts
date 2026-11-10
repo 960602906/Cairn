@@ -7,7 +7,14 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { chatRequests, expectMessages, projectDir, runStatus, sendPrompt } from './session.js'
+import {
+  chatRequests,
+  createSession,
+  expectMessages,
+  projectDir,
+  runStatus,
+  sendPrompt,
+} from './session.js'
 
 const REPLY = 'reply from configured provider'
 const INSTRUCTIONS = 'Always mention the cairn marker when answering.'
@@ -59,14 +66,7 @@ test('项目里的 AGENTS.md 进入模型请求，顶栏显示标记', async ({ 
   try {
     const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
     expect(await configure(window, mock.baseUrl)).toMatchObject({ ok: true })
-    await window
-      .getByRole('navigation', { name: '全局导航' })
-      .getByRole('button', { name: '新对话' })
-      .click()
-    await window.getByLabel('项目目录').fill(dir)
-    await window.getByLabel('标题（可选）').fill('项目说明')
-    await window.getByRole('button', { name: '创建' }).click()
-    await expect(window.getByRole('heading', { level: 2, name: '项目说明' })).toBeVisible()
+    await createSession(window, dir, '项目说明')
 
     await sendPrompt(window, '你好')
     await expectMessages(window, [

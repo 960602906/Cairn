@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -27,15 +27,18 @@ function setup(
   options: {
     withRefresh?: boolean
     onNewConversation?: (project: ProjectSummary) => void
+    openedProject?: ProjectSummary | undefined
   } = {},
 ) {
   const updateProject = vi.fn(async () => undefined)
   const removeProject = vi.fn(async () => true)
   const refreshProjects = vi.fn(async () => undefined)
+  const openProject = vi.fn(async () => options.openedProject)
   const store = createStore<Record<string, unknown>>(() => ({
     projects,
     updateProject,
     removeProject,
+    openProject,
     ...(options.withRefresh === false ? {} : { refreshProjects }),
   })) as unknown as SessionStore
   const onConfigure = vi.fn()
@@ -51,7 +54,14 @@ function setup(
       </SessionStoreProvider>
     </I18nextProvider>,
   )
-  return { updateProject, removeProject, refreshProjects, onConfigure, onBrowseInFileTree }
+  return {
+    updateProject,
+    removeProject,
+    refreshProjects,
+    openProject,
+    onConfigure,
+    onBrowseInFileTree,
+  }
 }
 
 afterEach(() => {
@@ -139,6 +149,70 @@ describe('WorkspaceList', () => {
   it('shows the empty state when no projects exist', () => {
     setup([], { withRefresh: false })
     expect(screen.getByText('还没有工作空间')).toBeTruthy()
+  })
+
+  it('collapses and expands the workspace section', async () => {
+    setup([project()])
+    expect(screen.getByText('demo')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '收起工作空间' }))
+    expect(screen.queryByText('demo')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '展开工作空间' }))
+    expect(screen.getByText('demo')).toBeTruthy()
+  })
+
+  it('opens the create dialog and adds a local folder', async () => {
+    const opened = project({ projectId: 'p2', name: 'other', path: '/work/other' })
+    const { openProject } = setup([project()], { openedProject: opened })
+    await userEvent.click(screen.getByRole('button', { name: '新建工作空间' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('新建工作空间')).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: /打开本地文件夹/ })).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: /克隆 Git 仓库/ })).toBeTruthy()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /打开本地文件夹/ }))
+    expect(openProject).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('clones a repository from the create dialog', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'project.pickDirectory') return { ok: true, result: { path: '/parent' } }
+      if (method === 'project.clone') {
+        return {
+          ok: true,
+          result: {
+            project: project({ projectId: 'p2', name: 'repo', path: '/parent/repo' }),
+          },
+        }
+      }
+      return { ok: true, result: {} }
+    })
+    ;(window as { cairn?: unknown }).cairn = {
+      ready: async () => ({ ok: true, result: undefined }),
+      request,
+      on: () => () => undefined,
+    }
+    const { refreshProjects } = setup([project()])
+    await userEvent.click(screen.getByRole('button', { name: '新建工作空间' }))
+    await userEvent.click(screen.getByRole('button', { name: /克隆 Git 仓库/ }))
+    await userEvent.type(screen.getByLabelText('仓库地址'), 'https://github.com/owner/repo.git')
+    expect((screen.getByLabelText('工作空间名称') as HTMLInputElement).value).toBe('repo')
+    await userEvent.click(screen.getByRole('button', { name: '选择' }))
+    expect(await screen.findByDisplayValue('/parent')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '克隆' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        'project.clone',
+        {
+          remoteUrl: 'https://github.com/owner/repo.git',
+          parentPath: '/parent',
+          name: 'repo',
+        },
+        undefined,
+      ),
+    )
+    await waitFor(() => expect(refreshProjects).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('starts a new conversation from the row pencil and hides it for archived workspaces', async () => {

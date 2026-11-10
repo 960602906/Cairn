@@ -1,9 +1,9 @@
 /**
- * 全局图标栏：新对话、会话抽屉、搜索、活动、设置与工作区标识。
+ * 全局图标栏：展开会话、搜索、活动与设置。
  *
  * 图标栏常驻（窗口最窄 880px 时仍然保留），本身不承载会话列表，宽度固定 60px。
  */
-import { Activity, MessagesSquare, Plus, Search, Settings, User } from 'lucide-react'
+import { Activity, PanelLeftOpen, Search, Settings } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CairnMark, cn, Kbd, Tooltip } from '../ui/index.js'
@@ -15,7 +15,6 @@ function RailButton({
   onClick,
   badge = 0,
   hint,
-  primary = false,
   children,
 }: {
   readonly label: string
@@ -23,7 +22,6 @@ function RailButton({
   readonly onClick: () => void
   readonly badge?: number
   readonly hint?: ReactNode
-  readonly primary?: boolean
   readonly children: ReactNode
 }) {
   return (
@@ -35,11 +33,7 @@ function RailButton({
         onClick={onClick}
         className={cn(
           'relative flex size-9 items-center justify-center rounded-[9px] transition-colors [&_svg]:size-[18px]',
-          primary
-            ? 'bg-accent text-ink-fg hover:bg-accent'
-            : active
-              ? 'bg-sunk2 text-fg shadow-1'
-              : 'text-faint hover:bg-hover hover:text-fg2',
+          active ? 'bg-sunk2 text-fg shadow-1' : 'text-faint hover:bg-hover hover:text-fg2',
         )}
       >
         {children}
@@ -57,21 +51,23 @@ function RailButton({
 }
 
 export function AppRail({
-  onNewChat,
   onSessions,
+  sessionsOpen = true,
+  showSessions = true,
   onSearch,
   onActivity,
   onSettings,
-  sessionsActive = false,
   activityActive = false,
   activityBadge = 0,
 }: {
-  readonly onNewChat?: () => void
   readonly onSessions: () => void
+  /** 会话栏已展开时不显示入口；收起后提供恢复入口。 */
+  readonly sessionsOpen?: boolean
+  /** 设置页与活动页不展示会话列，也不提供展开入口。 */
+  readonly showSessions?: boolean
   readonly onSearch: () => void
   readonly onActivity: () => void
   readonly onSettings: () => void
-  readonly sessionsActive?: boolean
   readonly activityActive?: boolean
   readonly activityBadge?: number
 }) {
@@ -89,14 +85,11 @@ export function AppRail({
         <CairnMark size={24} />
       </span>
       <div className="no-drag flex flex-col items-center gap-1">
-        {onNewChat && (
-          <RailButton label={t('list.new')} onClick={onNewChat} primary>
-            <Plus />
+        {showSessions && !sessionsOpen && (
+          <RailButton label={t('sidebar.expand')} onClick={onSessions}>
+            <PanelLeftOpen />
           </RailButton>
         )}
-        <RailButton label={t('rail.sessions')} active={sessionsActive} onClick={onSessions}>
-          <MessagesSquare />
-        </RailButton>
         <RailButton
           label={t('search.open')}
           onClick={onSearch}
@@ -136,13 +129,6 @@ export function AppRail({
         >
           <Settings />
         </RailButton>
-        <span
-          aria-hidden
-          title={t('sidebar.workspaceName')}
-          className="mt-1 grid size-7 place-items-center rounded-[7px] bg-sunk2 text-fg2"
-        >
-          <User className="size-3.5" />
-        </span>
       </div>
     </nav>
   )

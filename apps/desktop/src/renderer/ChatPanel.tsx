@@ -5,7 +5,7 @@
  * 500px 以下。正文最大 840px，输入框最大 880px。会话切换、订阅恢复、审批与检查器行为沿用
  * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
-import { PanelRight, Sparkles } from 'lucide-react'
+import { PanelRight } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rootRun, sessionStatus } from '@cairn/core'
@@ -131,6 +131,10 @@ export function ChatPanel({
   const model = view?.info?.model ?? summary?.model ?? defaultModel
   return (
     <section aria-labelledby="chat-title" className="flex min-h-0 flex-1 flex-col bg-paper">
+      {/* 读屏与端到端测试的运行状态；视觉上不占位，状态变化经 role=status 播报。 */}
+      <span role="status" className="sr-only">
+        {t(`status.${status}`)}
+      </span>
       <TopBar>
         {project && (
           <>
@@ -165,17 +169,7 @@ export function ChatPanel({
             {t('chat.agentsMd.mark')}
           </span>
         )}
-        {status === 'running' || status === 'waiting_approval' ? (
-          <span className="ml-1 flex h-[21px] shrink-0 items-center gap-1.5 rounded-full bg-accent-soft px-2 text-[10.5px] font-medium text-accent">
-            <span aria-hidden className="size-1.5 rounded-full bg-accent" />
-            {t(`status.${status}`)}
-          </span>
-        ) : null}
         <div className="no-drag ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
-          <span className="hidden h-[24px] max-w-[220px] items-center gap-1.5 rounded-[6px] px-2 text-[10.5px] text-muted shadow-hair min-[1080px]:flex">
-            <Sparkles aria-hidden className="size-3 shrink-0 text-faint" />
-            <span className="truncate">{model?.modelId ?? t('composer.model.none')}</span>
-          </span>
           <IconButton
             label={t('sidePanel.label')}
             size="icon-sm"
@@ -223,11 +217,8 @@ export function ChatPanel({
               run={run}
               agent={run?.agent && !isAgentDraftRef(run.agent) ? run.agent : undefined}
               model={model}
+              projectPath={path}
               contextTokens={view?.contextTokens}
-              onInspect={() => {
-                setPanel('inspector')
-                setPanelPreference(true)
-              }}
             />
           </div>
         </div>

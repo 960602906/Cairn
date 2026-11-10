@@ -1,16 +1,32 @@
 import { createMemoryStorage } from '@cairn/storage'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createProjectService } from './project-service.js'
 
 const ABS = process.platform === 'win32' ? 'C:\\work\\demo' : '/work/demo'
+const CLONED = process.platform === 'win32' ? 'C:\\work\\repo' : '/work/repo'
 
-function setup(picked: (string | undefined)[]) {
+function setup(
+  picked: (string | undefined)[],
+  options: {
+    cloneRepository?: (input: {
+      remoteUrl: string
+      parentPath: string
+      name: string
+      branch?: string | undefined
+    }) => Promise<string>
+    readGitInfo?: (path: string) => Promise<{ branch?: string; branches?: string[] }>
+    checkoutGitBranch?: (path: string, branch: string) => Promise<{ branch?: string }>
+  } = {},
+) {
   let clock = 0
   const storage = createMemoryStorage({ now: () => ++clock })
   let id = 0
   const service = createProjectService({
     storage,
     pickDirectory: async () => picked.shift(),
+    ...(options.cloneRepository ? { cloneRepository: options.cloneRepository } : {}),
+    ...(options.readGitInfo ? { readGitInfo: options.readGitInfo } : {}),
+    ...(options.checkoutGitBranch ? { checkoutGitBranch: options.checkoutGitBranch } : {}),
     createId: () => `p${++id}`,
   })
   return { storage, service }
@@ -42,12 +58,89 @@ describe('project service', () => {
     expect(service.list().projects).toEqual([])
   })
 
+  it('returns a picked directory without opening it as a project', async () => {
+    const { service } = setup([ABS])
+    expect(await service.pickDirectory()).toEqual({ path: ABS })
+    expect(await service.pickDirectory()).toEqual({})
+    expect(service.list().projects).toEqual([])
+  })
+
+  it('clones a repository and registers it as a project', async () => {
+    const cloneRepository = vi.fn(async () => CLONED)
+    const { service } = setup([], { cloneRepository })
+    expect(
+      await service.clone({
+        remoteUrl: 'https://example.com/team/repo.git',
+        parentPath: process.platform === 'win32' ? 'C:\\work' : '/work',
+      }),
+    ).toMatchObject({
+      project: { projectId: 'p1', name: 'repo', path: CLONED },
+    })
+    expect(cloneRepository).toHaveBeenCalledWith({
+      remoteUrl: 'https://example.com/team/repo.git',
+      parentPath: process.platform === 'win32' ? 'C:\\work' : '/work',
+      name: 'repo',
+    })
+  })
+
+  it('forwards an explicit name and branch and rejects missing clone support', async () => {
+    const cloneRepository = vi.fn(async () => CLONED)
+    const { service } = setup([], { cloneRepository })
+    await service.clone({
+      remoteUrl: 'https://example.com/team/repo.git',
+      parentPath: process.platform === 'win32' ? 'C:\\work' : '/work',
+      name: 'custom',
+      branch: 'develop',
+    })
+    expect(cloneRepository).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'custom', branch: 'develop' }),
+    )
+
+    const unavailable = setup([]).service
+    await expect(
+      unavailable.clone({
+        remoteUrl: 'https://example.com/team/repo.git',
+        parentPath: process.platform === 'win32' ? 'C:\\work' : '/work',
+      }),
+    ).rejects.toMatchObject({ code: 'project.clone_unavailable' })
+  })
+
   it('rejects a relative path', async () => {
     const { service } = setup(['relative/dir'])
     await expect(service.open()).rejects.toMatchObject({
       code: 'project.invalid_path',
       params: { path: 'relative/dir' },
     })
+  })
+
+  it('reads Git info for an absolute project path and degrades without Git support', async () => {
+    const readGitInfo = vi.fn(async () => ({ branch: 'main', branches: ['main', 'dev'] }))
+    const { service } = setup([], { readGitInfo })
+    await expect(service.gitInfo({ path: ABS })).resolves.toEqual({
+      branch: 'main',
+      branches: ['main', 'dev'],
+    })
+    expect(readGitInfo).toHaveBeenCalledWith(ABS)
+    await expect(service.gitInfo({ path: 'relative/dir' })).rejects.toMatchObject({
+      code: 'project.invalid_path',
+      params: { path: 'relative/dir' },
+    })
+    await expect(setup([]).service.gitInfo({ path: ABS })).resolves.toEqual({})
+  })
+
+  it('switches the Git branch for an absolute project path', async () => {
+    const checkoutGitBranch = vi.fn(async () => ({ branch: 'dev' }))
+    const { service } = setup([], { checkoutGitBranch })
+    await expect(service.gitCheckout({ path: ABS, branch: 'dev' })).resolves.toEqual({
+      branch: 'dev',
+    })
+    expect(checkoutGitBranch).toHaveBeenCalledWith(ABS, 'dev')
+    await expect(
+      service.gitCheckout({ path: 'relative/dir', branch: 'dev' }),
+    ).rejects.toMatchObject({ code: 'project.invalid_path', params: { path: 'relative/dir' } })
+    await expect(setup([]).service.gitCheckout({ path: ABS, branch: 'dev' })).rejects.toMatchObject(
+      { code: 'project.git_unavailable' },
+    )
   })
 
   it('renames, toggles and removes a project, then restores it when opened again', async () => {

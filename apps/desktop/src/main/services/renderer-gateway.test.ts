@@ -181,6 +181,10 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
   projects = {
     list: vi.fn(() => ({ projects: [PROJECT] })),
     open: vi.fn(async () => ({ project: PROJECT })),
+    gitInfo: vi.fn(async () => ({ branch: 'main' })),
+    gitCheckout: vi.fn(async () => ({ branch: 'dev' })),
+    pickDirectory: vi.fn(async () => ({ path: '/work' })),
+    clone: vi.fn(async () => ({ project: PROJECT })),
     update: vi.fn(() => PROJECT),
     remove: vi.fn(() => ({})),
   }
@@ -918,11 +922,19 @@ describe('createRendererGateway: commands and lifecycle', () => {
     const { client } = setup()
     await expect(client.request('project.list', {})).resolves.toEqual({ projects: [PROJECT] })
     await expect(client.request('project.open', {})).resolves.toEqual({ project: PROJECT })
+    await expect(client.request('project.gitInfo', { path: '/work' })).resolves.toEqual({
+      branch: 'main',
+    })
+    await expect(
+      client.request('project.gitCheckout', { path: '/work', branch: 'dev' }),
+    ).resolves.toEqual({ branch: 'dev' })
     await expect(
       client.request('project.update', { projectId: 'p1', readAgentsMd: false }),
     ).resolves.toEqual(PROJECT)
     await expect(client.request('project.remove', { projectId: 'p1' })).resolves.toEqual({})
     expect(projects.open).toHaveBeenCalledOnce()
+    expect(projects.gitInfo).toHaveBeenCalledOnce()
+    expect(projects.gitCheckout).toHaveBeenCalledWith({ path: '/work', branch: 'dev' })
     expect(projects.update).toHaveBeenCalledOnce()
     expect(projects.remove).toHaveBeenCalledOnce()
   })

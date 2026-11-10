@@ -147,7 +147,7 @@ describe('NewSession empty states (M2-12)', () => {
         { id: 'p', kind: 'openai', displayName: 'P', baseUrl: 'https://p.example', models: [] },
       ],
     })
-    expect(await screen.findByRole('heading', { level: 2, name: '开始新的对话' })).toBeTruthy()
+    expect(await screen.findByPlaceholderText('有什么可以帮你？')).toBeTruthy()
     await waitFor(() =>
       expect(screen.queryByRole('region', { name: '还没有配置模型供应商' })).toBeNull(),
     )
@@ -158,14 +158,13 @@ describe('NewSession empty states (M2-12)', () => {
       { projectId: 'p1', name: 'API 服务', path: '/work/api', createdAt: 1 },
       { projectId: 'p2', name: 'Web', path: '/work/web', createdAt: 2 },
     ])
-    const input = await screen.findByPlaceholderText('填写项目所在文件夹的完整路径')
-    expect((input as HTMLInputElement).value).toBe('/work/api')
+    expect(
+      (await screen.findByRole('button', { name: '工作空间：API 服务' })).getAttribute(
+        'aria-label',
+      ),
+    ).toBe('工作空间：API 服务')
     const pencils = await screen.findAllByRole('button', { name: '新建会话' })
     await userEvent.click(pencils[1]!)
-    await waitFor(() =>
-      expect(
-        (screen.getByPlaceholderText('填写项目所在文件夹的完整路径') as HTMLInputElement).value,
-      ).toBe('/work/web'),
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: '工作空间：Web' })).toBeTruthy())
   })
 })
