@@ -53,6 +53,7 @@
   "page.backKey": "Esc",
   "group.models": "模型",
   "group.capabilities": "能力",
+  "group.modelCapabilities": "模型与能力",
   "section.providers.title": "模型供应商",
   "section.providers.description": "接入官方 API 或第三方中转。Key 加密保存在本机，不会上传。",
   "section.skills.title": "技能",

@@ -100,9 +100,7 @@ export function createBuiltinTools(
     registerExecuteTools(registry, {
       shell: selected,
       // 降级后不再把执行器交给 run_command：命令以应用用户权限运行，卡片标注“未沙箱化”
-      ...(executeSandbox
-        ? { sandbox: () => (sandboxBroken ? undefined : executeSandbox) }
-        : {}),
+      ...(executeSandbox ? { sandbox: () => (sandboxBroken ? undefined : executeSandbox) } : {}),
       ...(execution || policy
         ? {
             execution: () =>

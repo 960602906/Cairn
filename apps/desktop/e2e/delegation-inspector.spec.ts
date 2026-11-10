@@ -5,7 +5,14 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt, setAgentOnSession } from './session.js'
+import {
+  createSession,
+  projectDir,
+  runStatus,
+  sendPrompt,
+  sessionPanel,
+  setAgentOnSession,
+} from './session.js'
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(
@@ -156,7 +163,7 @@ test('并行子运行的委派卡片与运行树', async ({ launch, userData }) 
     await expect(panel.getByRole('list', { name: '运行树' })).toBeVisible()
     await expect(panel.getByText('只读检查员').first()).toBeVisible()
     await panel.getByRole('button', { name: '打开子运行' }).first().click()
-    const inspector = window.getByRole('complementary', { name: '会话信息' })
+    const inspector = sessionPanel(window)
     await expect(inspector.getByRole('button', { name: '返回父运行' })).toBeVisible()
     await inspector.getByRole('button', { name: '返回父运行' }).click()
     await expect(panel.getByRole('button', { name: '打开子运行' }).first()).toBeVisible()

@@ -7,7 +7,14 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt, setAgentOnSession } from './session.js'
+import {
+  createSession,
+  projectDir,
+  runStatus,
+  sendPrompt,
+  sessionPanel,
+  setAgentOnSession,
+} from './session.js'
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(
@@ -152,9 +159,7 @@ test('在隔离工作区写入后按文件接受，并撤销合并检查点', as
     expect(readFileSync(file, 'utf8')).toBe('base\n')
 
     await card.getByRole('button', { name: /查看改动/ }).click()
-    const review = window
-      .getByRole('complementary', { name: '会话信息' })
-      .getByRole('region', { name: '改动集审阅' })
+    const review = sessionPanel(window).getByRole('region', { name: '改动集审阅' })
     await expect(review).toBeVisible({ timeout: 15_000 })
     await expect(review.getByText('1 个文件')).toBeVisible()
     await review.getByRole('button', { name: /^notes\.txt/ }).click()

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   isMacPlatform,
   isNewChatKey,
+  isPlanModeKey,
   isSearchKey,
   isSettingsKey,
   newChatShortcut,
+  planShortcut,
   searchShortcut,
   settingsShortcut,
 } from './shortcuts.js'
@@ -46,5 +48,17 @@ describe('shortcuts', () => {
     expect(isSearchKey(key({ key: 'K', ctrlKey: true }), 'Win32')).toBe(true)
     expect(isSearchKey(key({ key: 'k', ctrlKey: true, altKey: true }), 'Win32')).toBe(false)
     expect(isSearchKey(key({ key: 'k' }), 'Win32')).toBe(false)
+  })
+
+  it('toggles plan mode with ⌘⇧P or Ctrl+Shift+P', () => {
+    expect(planShortcut('MacIntel')).toBe('⌘⇧P')
+    expect(planShortcut('Win32')).toBe('Ctrl Shift P')
+    expect(isPlanModeKey(key({ key: 'P', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(true)
+    expect(isPlanModeKey(key({ key: 'p', metaKey: true, shiftKey: true }), 'MacIntel')).toBe(true)
+    expect(isPlanModeKey(key({ key: 'p', ctrlKey: true }), 'Win32')).toBe(false)
+    expect(
+      isPlanModeKey(key({ key: 'p', ctrlKey: true, shiftKey: true, altKey: true }), 'Win32'),
+    ).toBe(false)
+    expect(isPlanModeKey(key({ key: 'p', metaKey: true, shiftKey: true }), 'Win32')).toBe(false)
   })
 })

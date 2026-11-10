@@ -171,7 +171,7 @@ export function SessionItem({
         aria-current={active ? 'true' : undefined}
         onClick={onSelect}
         className={cn(
-          'relative flex h-[33px] w-full items-center gap-2 rounded-[7px] pr-7 pl-2.5 text-left text-note text-fg2 transition-colors hover:bg-hover',
+          'relative flex h-[33px] w-full items-center gap-2 rounded-[7px] pr-7 pl-2.5 text-left text-note text-fg2 outline-none transition-colors hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent',
           active && 'bg-accent-soft font-medium text-fg hover:bg-accent-soft',
         )}
       >
@@ -184,7 +184,7 @@ export function SessionItem({
         <StatusMark status={session.status} />
         <span className="min-w-0 flex-1 truncate">{title}</span>
         {time !== '' && (
-          <span className="shrink-0 text-[10px] text-faint transition-opacity group-hover:opacity-0">
+          <span className="shrink-0 text-[11px] text-faint transition-opacity group-hover:opacity-0">
             {time}
           </span>
         )}
@@ -197,7 +197,7 @@ export function SessionItem({
           <button
             type="button"
             aria-label={t('item.actions')}
-            className="absolute top-[5px] right-1 inline-flex size-6 items-center justify-center rounded-[6px] text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-hover hover:text-fg focus-visible:opacity-100 data-[state=open]:opacity-100 [&_svg]:size-3.5"
+            className="absolute top-[5px] right-1 inline-flex size-6 items-center justify-center rounded-[6px] text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-hover hover:text-fg outline-none focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-accent data-[state=open]:opacity-100 [&_svg]:size-3.5"
           >
             <MoreHorizontal />
           </button>

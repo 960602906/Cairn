@@ -430,7 +430,7 @@ export function TurnRail({ view }: { readonly view: SessionView | undefined }) {
                 type="button"
                 aria-label={t('rail.jump', { turn: item.turn, text: item.user })}
                 onClick={() => scrollToTurn(item.turnId)}
-                className="group/rail flex h-[9px] w-7 items-center px-1.5 outline-none"
+                className="group/rail flex h-[9px] w-7 items-center rounded-[3px] px-1.5 outline-none focus-visible:ring-1 focus-visible:ring-accent"
               >
                 <span
                   aria-hidden

@@ -149,10 +149,13 @@ function releaseLowWorkspace(
     restoreMedium(integrity, directory, lease)
     return
   }
-  lease.restore = setTimeout(() => {
-    lease.restore = undefined
-    restoreMedium(integrity, directory, lease)
-  }, restoreDelayMs(idleMs, lease.costMs))
+  lease.restore = setTimeout(
+    () => {
+      lease.restore = undefined
+      restoreMedium(integrity, directory, lease)
+    },
+    restoreDelayMs(idleMs, lease.costMs),
+  )
   lease.restore.unref?.()
 }
 

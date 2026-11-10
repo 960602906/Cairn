@@ -424,7 +424,7 @@ export function ActivityView({
         {leading}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[860px] flex-col gap-5 px-7 py-6">
+        <div className="mx-auto flex w-full max-w-[920px] flex-col gap-5 px-7 py-6">
           <header className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
               <h2 className="text-page font-semibold text-fg">{t('activity.title')}</h2>

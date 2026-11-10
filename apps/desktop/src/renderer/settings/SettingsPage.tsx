@@ -2,9 +2,8 @@
  * 设置页框架（M2-09，视觉规范 §8）：与对话页相同的窗口结构。左侧分类导航（顶部“返回对话 Esc”，铺在窗口
  * 底色上），右侧纸面，内容居中、最大宽度 920px；窄窗口收窄内边距。
  *
- * 分类按组列出：常规（通用与外观，M2-09）、模型（模型供应商，M2-10）、
- * 能力（技能 M3-08、MCP 服务 M3-10）、安全（权限与审批 M2-11），以及底部的
- * 其他（更新、关于 Cairn）。项目操作在会话栏里，不再占用设置分类。
+ * 分类收敛为三组：常规（通用与外观、更新、关于）、模型与能力（模型供应商、技能、MCP 服务）
+ * 与安全（权限与审批）。项目操作在会话栏里，不再占用设置分类。
  * Esc 返回对话（有对话框或菜单打开时不处理）。
  */
 import {
@@ -41,26 +40,26 @@ interface SectionEntry {
 
 /** 分类分组：组名与其中的分类，按显示顺序。 */
 const GROUPS: readonly {
-  readonly group: 'general' | 'models' | 'capabilities' | 'security' | 'other'
+  readonly group: 'general' | 'modelCapabilities' | 'security'
   readonly sections: readonly SectionEntry[]
 }[] = [
-  { group: 'general', sections: [{ id: 'general', icon: <Palette /> }] },
-  { group: 'models', sections: [{ id: 'providers', icon: <Cpu /> }] },
   {
-    group: 'capabilities',
+    group: 'general',
     sections: [
+      { id: 'general', icon: <Palette /> },
+      { id: 'update', icon: <RefreshCw /> },
+      { id: 'about', icon: <Info /> },
+    ],
+  },
+  {
+    group: 'modelCapabilities',
+    sections: [
+      { id: 'providers', icon: <Cpu /> },
       { id: 'skills', icon: <SkillGlyph /> },
       { id: 'mcp', icon: <McpGlyph /> },
     ],
   },
   { group: 'security', sections: [{ id: 'permissions', icon: <ShieldCheck /> }] },
-  {
-    group: 'other',
-    sections: [
-      { id: 'update', icon: <RefreshCw /> },
-      { id: 'about', icon: <Info /> },
-    ],
-  },
 ]
 
 export function SettingsNav({
@@ -209,7 +208,12 @@ export function SettingsContent({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], [role="listbox"]',
+        )
+      )
+        return
       event.preventDefault()
       onBack()
     }

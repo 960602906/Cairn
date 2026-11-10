@@ -135,7 +135,7 @@ function WorkspaceRow({
           aria-label={t('workspace.toggleSessions', { name: displayName })}
           title={project.path}
           onClick={() => setCollapsed((value) => !value)}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-1.5 py-1 text-left outline-none"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-1.5 py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
           <ChevronRight
             aria-hidden
@@ -150,10 +150,10 @@ function WorkspaceRow({
             <Pin aria-label={t('workspace.unpin')} className="size-3 shrink-0 text-accent" />
           )}
           {archived && (
-            <span className="shrink-0 text-[10px] text-faint">{t('workspace.archived')}</span>
+            <span className="shrink-0 text-[11px] text-faint">{t('workspace.archived')}</span>
           )}
           {sessions.length > 0 && (
-            <span className="tabular shrink-0 text-[10px] text-faint">{sessions.length}</span>
+            <span className="tabular shrink-0 text-[11px] text-faint">{sessions.length}</span>
           )}
         </button>
       </div>
@@ -173,7 +173,7 @@ function WorkspaceRow({
             <button
               type="button"
               onClick={() => setShowAll(true)}
-              className="flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[10.5px] text-faint transition-colors hover:bg-hover hover:text-fg2"
+              className="flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[11px] text-faint outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
             >
               {t('list.showMore', { count: remaining })}
             </button>
@@ -182,7 +182,7 @@ function WorkspaceRow({
             <button
               type="button"
               onClick={() => setShowAll(false)}
-              className="flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[10.5px] text-faint transition-colors hover:bg-hover hover:text-fg2"
+              className="flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[11px] text-faint outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
             >
               {t('list.showLess')}
             </button>
@@ -355,7 +355,7 @@ export function WorkspaceList({
           aria-expanded={!collapsed}
           aria-label={t(collapsed ? 'workspace.expand' : 'workspace.collapse')}
           onClick={() => setCollapsed((value) => !value)}
-          className="flex min-w-0 items-center gap-1 rounded-[6px] px-1 py-0.5 text-[11.5px] font-semibold tracking-[0.02em] text-muted hover:bg-hover hover:text-fg2"
+          className="flex min-w-0 items-center gap-1 rounded-[6px] px-1 py-0.5 text-[11.5px] font-semibold tracking-[0.02em] text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
         >
           <ChevronDown
             aria-hidden

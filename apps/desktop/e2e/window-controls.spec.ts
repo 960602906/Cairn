@@ -124,6 +124,9 @@ test('关闭按钮关闭窗口', async ({ launch }) => {
   const { app, window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
 
   const closed = app.waitForEvent('close')
-  await window.getByRole('button', { name: '关闭窗口' }).click()
+  await window
+    .getByRole('button', { name: '关闭窗口' })
+    .evaluate((button) => (button as unknown as { click(): void }).click())
+    .catch(() => {})
   await closed
 })

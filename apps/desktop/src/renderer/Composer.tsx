@@ -29,13 +29,20 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RunView } from '@cairn/core'
-import type { AgentDefinitionRef, ModelRef, PermissionMode, SessionStatus } from '@cairn/protocol'
+import type {
+  AgentDefinitionRef,
+  ModelRef,
+  PermissionMode,
+  ProviderConfig,
+  SessionStatus,
+} from '@cairn/protocol'
 import {
   COMPOSER_COMMANDS,
   composerCommandQuery,
   filterComposerCommands,
   type ComposerCommandDefinition,
 } from './composer-commands.js'
+import { isPlanModeKey, planShortcut } from './layout/shortcuts.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
 import {
@@ -76,10 +83,52 @@ const DEFAULT_PERMISSION_MODE: PermissionMode = 'ask'
 const PERMISSION_MODES: readonly PermissionMode[] = ['read-only', 'ask', 'auto']
 const PERMISSION_ICONS = { 'read-only': Eye, ask: ShieldCheck, auto: Zap } as const
 
-const sameModel = (a: ModelRef | undefined, b: ModelRef) =>
-  a?.providerId === b.providerId && a.modelId === b.modelId
+export const sameModel = (a: ModelRef | undefined, b: ModelRef | undefined) =>
+  a !== undefined && b !== undefined && a.providerId === b.providerId && a.modelId === b.modelId
 
-function PermissionMenu() {
+/** 模型选择项：供应商名称用于分组，模型短名称用于按钮与菜单。 */
+export interface ModelChoice {
+  readonly ref: ModelRef
+  readonly provider: string
+  readonly name: string
+}
+
+/** 把设置里的供应商列表摊平成可选模型；停用的模型不列出。 */
+export function enabledModelChoices(providers: readonly ProviderConfig[]): readonly ModelChoice[] {
+  return providers.flatMap((provider) =>
+    provider.models
+      .filter((model) => model.enabled !== false)
+      .map((model) => ({
+        ref: { providerId: provider.id, modelId: model.id },
+        provider: provider.displayName,
+        name: model.displayName ?? model.id,
+      })),
+  )
+}
+
+/** 新会话的默认模型：优先设置里的默认模型，否则用第一个启用的模型。 */
+export function resolveDefaultModel(
+  providers: readonly ProviderConfig[],
+  preferred: ModelRef | undefined,
+): ModelRef | undefined {
+  const choices = enabledModelChoices(providers)
+  return (choices.find((choice) => sameModel(preferred, choice.ref)) ?? choices[0])?.ref
+}
+
+/** 当前模型的短名称与“供应商 · 模型”全名。 */
+export function modelLabels(
+  model: ModelRef | undefined,
+  providers: readonly ProviderConfig[],
+): { readonly short: string | undefined; readonly full: string | undefined } {
+  if (model === undefined) return { short: undefined, full: undefined }
+  const provider = providers.find((item) => item.id === model.providerId)
+  const configured = provider?.models.find((item) => item.id === model.modelId)
+  const short = configured?.displayName ?? configured?.id ?? model.modelId
+  const full = provider === undefined ? model.modelId : `${provider.displayName} · ${short}`
+  return { short, full }
+}
+
+export function PermissionMenu() {
   const { t } = useTranslation('session')
   const mode = useSessionStore((s) => s.settings?.permissionMode) ?? DEFAULT_PERMISSION_MODE
   const updateSettings = useSessionStore((s) => s.updateSettings)
@@ -88,7 +137,7 @@ function PermissionMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={t('composer.permission.label', { mode: t(`composer.permission.${mode}`) })}
-        className="flex h-7 items-center gap-1.5 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover [&_svg]:size-3.5"
+        className="flex h-7 items-center gap-1.5 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent [&_svg]:size-3.5"
       >
         <Icon className="text-muted" />
         {t(`composer.permission.${mode}`)}
@@ -120,15 +169,17 @@ function PermissionMenu() {
   )
 }
 
-function ModelMenu({
-  sessionId,
+export function ModelPicker({
+  providers,
   model,
   fixed,
   disabled,
   open,
   onOpenChange,
+  onSelect,
+  align = 'end',
 }: {
-  readonly sessionId: string
+  readonly providers: readonly ProviderConfig[]
   readonly model: ModelRef | undefined
   /** Agent 固定了模型（M3-12）：显示当前模型并禁用。 */
   readonly fixed: boolean
@@ -136,36 +187,26 @@ function ModelMenu({
   readonly disabled: boolean
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
+  readonly onSelect: (model: ModelRef) => void
+  readonly align?: 'start' | 'end'
 }) {
   const { t } = useTranslation('session')
-  const providers = useSessionStore((s) => s.settings?.providers) ?? []
-  const setSessionModel = useSessionStore((s) => s.setSessionModel)
-  const all = providers.flatMap((provider) =>
-    provider.models.map((m) => ({
-      ref: { providerId: provider.id, modelId: m.id },
-      provider: provider.displayName,
-      name: m.displayName ?? m.id,
-      enabled: m.enabled !== false,
-    })),
-  )
-  // 停用的模型不列出（M2-10）；会话正在用的仍显示它的名称
-  const options = all.filter((o) => o.enabled)
-  const current = all.find((o) => sameModel(model, o.ref))
-  const label = current
-    ? `${current.provider} · ${current.name}`
-    : (model?.modelId ?? t('composer.model.none'))
+  // 停用的模型不列出（M2-10）；会话正在用的仍显示它的名称。
+  const options = enabledModelChoices(providers)
+  const { full, short } = modelLabels(model, providers)
+  const label = full ?? short ?? t('composer.model.none')
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
         disabled={disabled}
         aria-label={t('composer.model.label', { model: label })}
         title={fixed ? t('composer.model.fixedByAgent') : undefined}
-        className="flex h-7 max-w-[240px] items-center gap-1 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover disabled:opacity-60 [&_svg]:size-3.5"
+        className="flex h-7 max-w-[240px] items-center gap-1 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-60 [&_svg]:size-3.5"
       >
         <span className="truncate">{label}</span>
         <ChevronDown className="shrink-0 text-faint" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="max-h-80 w-64 overflow-y-auto">
+      <DropdownMenuContent align={align} side="top" className="max-h-80 w-64 overflow-y-auto">
         <DropdownMenuLabel className="text-faint">{t('composer.model.title')}</DropdownMenuLabel>
         {options.map((option, index) => (
           <Fragment key={`${option.ref.providerId}/${option.ref.modelId}`}>
@@ -174,7 +215,7 @@ function ModelMenu({
             )}
             <DropdownMenuItem
               onSelect={() => {
-                if (!sameModel(model, option.ref)) void setSessionModel(sessionId, option.ref)
+                if (!sameModel(model, option.ref)) onSelect(option.ref)
               }}
             >
               <span className="min-w-0 flex-1 truncate">{option.name}</span>
@@ -216,7 +257,7 @@ function ContextRing({
         role="img"
         aria-label={label}
         tabIndex={0}
-        className="flex size-7 items-center justify-center rounded-item outline-none"
+        className="flex size-7 items-center justify-center rounded-item outline-none focus-visible:ring-1 focus-visible:ring-accent"
       >
         <svg viewBox="0 0 16 16" className="size-4 -rotate-90">
           <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2" className="stroke-hair2" />
@@ -250,6 +291,7 @@ export function Composer({
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
+  const setSessionModel = useSessionStore((s) => s.setSessionModel)
   const compactSession = useSessionStore((s) => s.compactSession)
   const abort = useSessionStore((s) => s.abort)
   const agents = useSessionStore((s) => s.agents) ?? []
@@ -356,7 +398,7 @@ export function Composer({
     if (!canStop) return
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return
+      if (document.querySelector('[role="dialog"]:not([aria-hidden="true"]), [role="menu"]')) return
       event.preventDefault()
       void stopRef.current()
     }
@@ -364,17 +406,16 @@ export function Composer({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [canStop])
 
-  // Shift+Tab 在正常 / 计划之间切换。对话框、菜单和其他输入框里不抢焦点。
+  // Ctrl+Shift+P / ⌘⇧P 在正常 / 计划之间切换；对话框与菜单打开时交给它们。
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Tab' || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
+      if (!isPlanModeKey(event) || event.defaultPrevented) return
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], [role="listbox"]',
+        )
+      )
         return
-      if (event.defaultPrevented) return
-      const target = event.target
-      if (!(target instanceof HTMLElement)) return
-      if (target.closest('[role="dialog"], [role="menu"]')) return
-      const field = target.closest('input, textarea, [contenteditable="true"]')
-      if (field && field !== textarea.current) return
       event.preventDefault()
       setPlanMode((on) => !on)
     }
@@ -552,10 +593,10 @@ export function Composer({
               type="button"
               aria-pressed={planMode}
               aria-label={t('composer.plan.label')}
-              title={t('composer.plan.hint')}
+              title={t('composer.plan.hint', { shortcut: planShortcut() })}
               onClick={() => setPlanMode((on) => !on)}
               className={cn(
-                'flex h-7 items-center gap-1 rounded-item px-2 text-ui',
+                'flex h-7 items-center gap-1 rounded-item px-2 text-ui outline-none focus-visible:ring-1 focus-visible:ring-accent',
                 planMode ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-hover',
               )}
             >
@@ -563,8 +604,8 @@ export function Composer({
               {t('composer.plan.toggle')}
             </button>
             <div className="ml-auto flex min-w-0 items-center gap-1">
-              <ModelMenu
-                sessionId={sessionId}
+              <ModelPicker
+                providers={providers}
                 model={model}
                 fixed={fixedModel}
                 disabled={modelMenuDisabled}
@@ -573,6 +614,7 @@ export function Composer({
                   setModelMenuOpen(next)
                   if (!next) textarea.current?.focus()
                 }}
+                onSelect={(next) => void setSessionModel(sessionId, next)}
               />
               <ContextRing model={model} tokens={contextTokens ?? 0} />
               {active ? (
@@ -583,7 +625,7 @@ export function Composer({
                   disabled={stopping || aborting}
                   onClick={() => void stop()}
                   className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-45',
+                    'flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-45',
                   )}
                 >
                   <Square className="size-3 fill-current" />
@@ -594,7 +636,7 @@ export function Composer({
                   aria-label={t('input.send')}
                   title={t('input.send')}
                   disabled={!canSend}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg transition-opacity hover:opacity-85 disabled:opacity-25"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
                 >
                   <ArrowUp className="size-4" />
                 </button>

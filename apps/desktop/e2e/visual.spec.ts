@@ -3,7 +3,7 @@
  *
  * - 默认主题是板岩；五套内置配色都必须真的写到 <html data-theme>。
  * - 60px 图标栏在所有目标尺寸下常驻；会话列 ≥900px 常驻，<900px 改为抽屉。
- * - 工作台 ≥1280px 占布局宽度，更窄时是右侧浮层。
+ * - 工作台 ≥1440px 占布局宽度，更窄时是右侧浮层。
  * - 页面不能出现横向滚动，输入框始终可见。
  * - 截图保存到 design/redesign-v8/live，便于人工复核。
  */
@@ -11,7 +11,7 @@ import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, projectDir, runStatus, sendPrompt, sessionPanel } from './session.js'
 
 const ARTIFACTS = path.resolve(import.meta.dirname, '../../../design/redesign-v8/live')
 mkdirSync(ARTIFACTS, { recursive: true })
@@ -73,7 +73,7 @@ const themeOf = (page: Page) =>
 
 const rail = (page: Page) => page.getByRole('navigation', { name: '全局导航' })
 const sessions = (page: Page) => page.getByRole('navigation', { name: '会话' })
-const panel = (page: Page) => page.getByRole('complementary', { name: '会话信息' })
+const panel = (page: Page) => sessionPanel(page)
 
 test('layouts hold at every target size and themes apply', async ({ launch, userData }) => {
   const app = await launch({ env: { CAIRN_RUNTIME: 'fake' } })

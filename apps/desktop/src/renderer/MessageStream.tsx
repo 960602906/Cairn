@@ -39,7 +39,7 @@ import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
-import { Button, cn, IconButton, Shimmer } from './ui/index.js'
+import { Button, IconButton, Shimmer } from './ui/index.js'
 import { AgentAvatar } from './agents/AgentAvatar.js'
 import { agentName } from './agents/model.js'
 
@@ -258,7 +258,6 @@ function Message({
   compacted,
   omitted,
   onOpenPlan,
-  locatedTurnId,
 }: {
   readonly message: MessageView
   readonly view: SessionView
@@ -278,7 +277,6 @@ function Message({
   /** 这条消息之前是“工具输出已省略”的提示。 */
   readonly omitted: boolean
   readonly onOpenPlan: (planId: string) => void
-  readonly locatedTurnId?: string | undefined
 }) {
   const { t } = useTranslation('session')
   const approvals = useSessionStore((s) => {
@@ -301,16 +299,13 @@ function Message({
     return (
       <li
         tabIndex={-1}
-        className={cn(
-          'flex scroll-mt-4 flex-col items-end rounded-item outline-none',
-          locatedTurnId === message.turnId && 'ring-1 ring-accent/40',
-        )}
+        className="flex scroll-mt-4 flex-col items-end rounded-item outline-none focus:outline-none focus-visible:outline-none"
         data-turn={message.turnId}
       >
         {marks}
         {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
-        <div className="max-w-[78%] rounded-[10px] border border-hair border-l-[2px] border-l-accent bg-raise px-3.5 py-2.5 text-fg shadow-1">
+        <div className="max-w-[78%] rounded-[10px] bg-sunk2 px-3.5 py-2.5 text-fg shadow-1">
           <UserContent parts={message.content} />
         </div>
         {restores && (
@@ -459,14 +454,12 @@ export function MessageStream({
   view,
   onOpenPlan,
   onOpenChanges,
-  locatedTurnId,
   sessionId,
   onContinue,
 }: {
   readonly view: SessionView | undefined
   readonly onOpenPlan?: ((planId: string) => void) | undefined
   readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
-  readonly locatedTurnId?: string | undefined
   /** 审批状态所属的会话；省略时使用当前选中的会话。 */
   readonly sessionId?: string | undefined
   /** 达到限额后“继续”的动作；省略时向当前选中的会话发送继续提示。 */
@@ -612,7 +605,6 @@ export function MessageStream({
                 compacted={markBetween(previous, message.seq, view.compaction)}
                 omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
                 onOpenPlan={openPlan}
-                locatedTurnId={locatedTurnId}
               />
               {lastOfTurn &&
                 message.turnId !== undefined &&

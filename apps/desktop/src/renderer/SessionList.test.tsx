@@ -27,6 +27,18 @@ const summary = (
 
 function setup(overrides: Record<string, (params: never) => unknown> = {}) {
   const handlers: Record<string, (params: never) => unknown> = {
+    'settings.get': () => ({
+      providers: [
+        {
+          id: 'fake',
+          kind: 'openai',
+          displayName: '测试供应商',
+          baseUrl: 'https://example.com',
+          models: [{ id: 'fast', displayName: '快' }],
+        },
+      ],
+      defaultModel: { providerId: 'fake', modelId: 'fast' },
+    }),
     'project.list': () => ({ projects: [] }),
     ...overrides,
   }

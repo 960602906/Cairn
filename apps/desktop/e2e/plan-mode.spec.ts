@@ -4,7 +4,7 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, projectDir, runStatus, sendPrompt, sessionPanel } from './session.js'
 
 const capabilities = {
   contextWindow: 32_000,
@@ -77,10 +77,10 @@ test('提出计划、批准后更新步骤进度', async ({ launch, userData }) 
     const summary = window.getByRole('button', { name: '查看完整计划：给 sum 加注释' })
     await expect(summary).toBeVisible()
     await summary.click()
-    const details = window
-      .getByRole('complementary', { name: '会话信息' })
-      .getByRole('article', { name: '计划' })
+    const details = sessionPanel(window).getByRole('article', { name: '计划' })
     await expect(details).toContainText('给 sum 加注释')
+    await window.keyboard.press('Escape')
+    await expect(sessionPanel(window)).toBeHidden()
     await approve.click()
     await expect(window.getByText('已完成')).toBeVisible({ timeout: 20_000 })
     await expect(window.getByText('说明：只加了一行注释')).toBeVisible()

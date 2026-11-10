@@ -46,9 +46,7 @@ export type RunCommandSandboxSource =
   | (() => { readonly policy: SandboxPolicy; readonly runner: SandboxRunner } | undefined)
 
 /** 没有执行器时的沙箱描述；同样支持函数，随降级状态变化。 */
-export type RunCommandExecutionSource =
-  | SandboxExecution
-  | (() => SandboxExecution | undefined)
+export type RunCommandExecutionSource = SandboxExecution | (() => SandboxExecution | undefined)
 
 export interface RunCommandToolOptions {
   /** 使用的 shell（宿主按设置用 `selectShell` 选出）。 */

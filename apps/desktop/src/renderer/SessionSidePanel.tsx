@@ -144,6 +144,7 @@ export function SessionSidePanel({
   const changeSets = useSessionStore((state) => state.changeSets?.[sessionId] ?? EMPTY_CHANGE_SETS)
   const [diffTab, setDiffTab] = useState<'changesets' | 'files'>('files')
   const autoSwitched = useRef(false)
+  const panelRef = useRef<HTMLElement>(null)
   useEffect(() => {
     autoSwitched.current = false
     setDiffTab('files')
@@ -162,12 +163,60 @@ export function SessionSidePanel({
     onSelectChangeSet?.(changeSetId)
     onPanelChange('diff')
   }
+  // 浮层模式是模态的：把焦点收进面板，Tab 在面板内循环，关闭后还给原控件。
+  useEffect(() => {
+    if (!open || docked) return
+    const panel = panelRef.current
+    if (!panel) return
+    const previous =
+      document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+    const focusable = () =>
+      [
+        ...panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+    focusable()[0]?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return
+      if (
+        document.querySelector(
+          '[role="menu"], [role="listbox"], [role="dialog"]:not([data-side-panel-dialog]):not([aria-hidden="true"])',
+        )
+      )
+        return
+      const items = focusable()
+      if (items.length === 0) {
+        event.preventDefault()
+        return
+      }
+      const index = items.indexOf(document.activeElement as HTMLElement)
+      const next = event.shiftKey
+        ? index <= 0
+          ? items.length - 1
+          : index - 1
+        : index === items.length - 1
+          ? 0
+          : index + 1
+      event.preventDefault()
+      items[next]?.focus()
+    }
+    panel.addEventListener('keydown', onKeyDown)
+    return () => {
+      panel.removeEventListener('keydown', onKeyDown)
+      previous?.focus()
+    }
+  }, [docked, open])
   return (
     <aside
+      ref={panelRef}
       id="session-side-panel"
+      role={docked ? 'complementary' : 'dialog'}
       aria-label={t('sidePanel.label')}
+      aria-modal={docked ? undefined : true}
       aria-hidden={!open}
       inert={!open}
+      data-side-panel-dialog={docked ? undefined : ''}
       className={cn(
         'flex shrink-0 flex-col overflow-hidden bg-chrome',
         bottom
@@ -210,7 +259,7 @@ export function SessionSidePanel({
                 aria-selected={panel === id}
                 onClick={() => onPanelChange(id)}
                 className={cn(
-                  'flex min-w-0 items-center border-b-2 px-2 text-[11.5px] transition-colors',
+                  'flex min-w-0 items-center border-b-2 px-2 text-[12px] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-accent',
                   panel === id
                     ? 'border-accent font-medium text-fg'
                     : 'border-transparent text-muted hover:text-fg',

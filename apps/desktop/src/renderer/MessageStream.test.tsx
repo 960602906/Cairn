@@ -198,6 +198,10 @@ describe('MessageStream 渲染', () => {
       activeSessionId: undefined,
       awaitingTurn: {},
       approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      inspectRun: vi.fn(),
       settings: { providers: [] },
       sendPrompt,
     })) as unknown as SessionStore
@@ -234,6 +238,82 @@ describe('MessageStream 渲染', () => {
       </I18nextProvider>,
     )
     expect(screen.getByRole('list', { name: '消息' })).toBeTruthy()
+  })
+
+  it('does not draw a location ring when both turn ids are undefined', () => {
+    const stream = view([
+      ev(1, 'session.created', {
+        projectId: 'p1',
+        projectPath: '/w',
+        workspacePath: '/w',
+        title: 'x',
+      }),
+      ev(2, 'run.created', {
+        agent: { id: 'a', version: 1 },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      {
+        ...ev(3, 'message.user', { messageId: 'u1', content: text('1') }),
+        turnId: undefined,
+      } as EventEnvelope,
+    ])
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      settings: { providers: [] },
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={stream} onOpenPlan={vi.fn()} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(screen.getByRole('listitem').className).not.toContain('ring-1')
+  })
+
+  it('renders delegations that are not assigned to a turn', () => {
+    const unassigned = {
+      ...rich,
+      delegations: [
+        {
+          childRunId: 'child1',
+          parentRunId: 'r1',
+          agent: { id: 'a', version: 1 },
+          task: '补测试',
+          workspace: 'isolated',
+          workspacePath: '/w',
+          budget: undefined,
+          turnId: undefined,
+          createdAt: 1,
+          completed: undefined,
+        },
+      ],
+    } as unknown as SessionView
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      inspectRun: vi.fn(),
+      settings: { providers: [] },
+      agents: [],
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={unassigned} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(screen.getByText('补测试')).toBeTruthy()
   })
 })
 

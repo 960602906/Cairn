@@ -200,6 +200,7 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
     await planSummary.click()
     await expect(window.getByText('已完成')).toBeVisible({ timeout: 20_000 })
     await expect(runStatus(window)).toHaveText('空闲', { timeout: 20_000 })
+    await window.keyboard.press('Escape')
     await planToggle.click()
 
     // 之后连续长对话触发压缩，分隔线可见

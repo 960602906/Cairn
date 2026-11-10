@@ -141,7 +141,7 @@ test('修复示例项目的 bug 并运行测试：审阅 diff、撤销单个文�
     const revert = window.getByRole('dialog', { name: '撤销对这个文件的改动？' })
     await revert.getByRole('button', { name: '撤销此文件' }).click()
     await expect(changes.getByRole('button', { name: /^NOTES\.md/ })).toHaveCount(0)
-    expect(existsSync(path.join(project, 'NOTES.md'))).toBe(false)
+    await expect.poll(() => existsSync(path.join(project, 'NOTES.md'))).toBe(false)
     expect(readFileSync(path.join(project, 'sum.mjs'), 'utf8')).toContain('let i = 0')
 
     // 切换模型（M2-04）：第二轮使用第二个模型
