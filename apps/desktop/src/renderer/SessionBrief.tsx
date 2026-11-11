@@ -2,11 +2,12 @@
  * 会话要点（M3-04）：右侧会话信息栏的一个标签页。显示 Markdown，可以编辑。
  * 保存走 `session.brief.update`，不是一轮对话。
  */
+import { NotebookText } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Markdown } from './Markdown.js'
 import { useSessionStore } from './store-context.js'
-import { Button } from './ui/index.js'
+import { Button, PanelEmpty } from './ui/index.js'
 
 export function SessionBriefPanel({ sessionId }: { readonly sessionId: string }) {
   const { t } = useTranslation('session')
@@ -25,7 +26,7 @@ export function SessionBriefPanel({ sessionId }: { readonly sessionId: string })
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-3">
         {editing ? (
           <textarea
             aria-label={t('brief.edit')}
@@ -36,10 +37,12 @@ export function SessionBriefPanel({ sessionId }: { readonly sessionId: string })
         ) : brief?.content ? (
           <Markdown text={brief.content} />
         ) : (
-          <p className="text-ui text-muted">{t('brief.empty')}</p>
+          <PanelEmpty icon={<NotebookText />} className="px-2">
+            {t('brief.empty')}
+          </PanelEmpty>
         )}
       </div>
-      <footer className="flex justify-end gap-2 border-t-[0.5px] border-hair px-3 py-3">
+      <footer className="flex justify-end gap-2 px-3 py-3">
         {editing ? (
           <>
             <Button variant="ghost" onClick={() => setEditing(false)}>

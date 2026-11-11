@@ -26,11 +26,11 @@ import { cn, IconButton } from './ui/index.js'
 /** 工作台从浮层切到常驻列的宽度；1280/1366 下仍保持浮层，避免把正文挤到 600px 以下。 */
 const PANEL_DOCK_QUERY = '(min-width: 1440px)'
 
-/** 纸面顶栏（48px）：左侧是项目 / 会话面包屑，右侧是模型与工作台开关。 */
+/** 纸面顶栏（48px）：和对话同一底色，左侧是项目 / 会话面包屑，右侧是会话信息栏开关。 */
 export function TopBar({ children }: { readonly children?: ReactNode }) {
   return (
     <header
-      className="drag relative flex h-12 shrink-0 items-center gap-1.5 bg-chrome pr-3 pl-5"
+      className="drag relative flex h-12 shrink-0 items-center gap-1.5 bg-paper pr-3 pl-5"
       style={TITLE_BAR_INSET}
     >
       {children}

@@ -1,8 +1,11 @@
 /**
- * 右侧会话信息栏：文件改动、会话要点与完整计划。
+ * 右侧会话信息栏：文件改动、会话要点、完整计划与运行检查。
  * 计划卡片在对话里只显示摘要，点击后切到这里查看详情并审批。
+ *
+ * 视觉上它是对话纸面的延伸：和对话同一底色，只用一条发丝线分开，标签是一排安静的胶囊，
+ * 不再有单独的标题栏和底色。常驻时由顶栏按钮开合，所以只在浮层模式下显示关闭按钮。
  */
-import { ChevronRight, FileDiff, X } from 'lucide-react'
+import { ChevronRight, FileDiff, ListTodo, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
@@ -14,7 +17,7 @@ import { Inspector } from './Inspector.js'
 import { PlanDetails } from './PlanCard.js'
 import { SessionBriefPanel } from './SessionBrief.js'
 import { useSessionStore } from './store-context.js'
-import { cn, IconButton, SegmentedControl } from './ui/index.js'
+import { cn, IconButton, PanelEmpty, SegmentedControl } from './ui/index.js'
 
 export type SessionPanel = 'diff' | 'brief' | 'plan' | 'inspector'
 
@@ -54,10 +57,10 @@ function ChangeSetList({
     )
   }
   if (changeSets.length === 0) {
-    return <p className="px-4 py-3 text-ui text-muted">{t('changeset.empty')}</p>
+    return <PanelEmpty icon={<FileDiff />}>{t('changeset.empty')}</PanelEmpty>
   }
   return (
-    <ul aria-label={t('changeset.list')} className="divide-y-[0.5px] divide-hair">
+    <ul aria-label={t('changeset.list')} className="flex flex-col gap-0.5 px-2 pb-2">
       {changeSets.map((changeSet) => {
         const delegation = delegations.get(changeSet.changeSetId)
         return (
@@ -65,7 +68,7 @@ function ChangeSetList({
             <button
               type="button"
               onClick={() => onSelect(changeSet.changeSetId)}
-              className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-hover"
+              className="flex w-full items-start gap-2 rounded-item px-2 py-2 text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
             >
               <FileDiff aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted" />
               <span className="min-w-0 flex-1">
@@ -142,6 +145,11 @@ export function SessionSidePanel({
   const plans = view?.plans ?? []
   const plan = plans.find((item) => item.planId === selectedPlanId) ?? plans.at(-1)
   const changeSets = useSessionStore((state) => state.changeSets?.[sessionId] ?? EMPTY_CHANGE_SETS)
+  const changeSetsLoading = useSessionStore(
+    (state) => state.changeSetsLoading?.[sessionId] === true,
+  )
+  // 改动集只在委派子运行后才有；没有时不显示这层切换，直接列出文件改动。
+  const hasChangeSets = changeSets.length > 0 || changeSetsLoading
   const [diffTab, setDiffTab] = useState<'changesets' | 'files'>('files')
   const autoSwitched = useRef(false)
   const panelRef = useRef<HTMLElement>(null)
@@ -218,7 +226,7 @@ export function SessionSidePanel({
       inert={!open}
       data-side-panel-dialog={docked ? undefined : ''}
       className={cn(
-        'flex shrink-0 flex-col overflow-hidden bg-chrome',
+        'flex shrink-0 flex-col overflow-hidden bg-paper',
         bottom
           ? 'relative h-full min-h-0 w-full border-t-[0.5px] border-hair'
           : cn(
@@ -233,17 +241,9 @@ export function SessionSidePanel({
             ),
       )}
     >
-      <div
-        className={cn(
-          'flex h-full shrink-0 flex-col',
-          bottom ? 'w-full bg-paper' : 'w-[348px] bg-chrome',
-        )}
-      >
-        <div className="flex h-11 shrink-0 items-center gap-1 border-b-[0.5px] border-hair pr-2 pl-3">
-          <span className="mr-1 shrink-0 text-note font-semibold tracking-[-0.01em] text-fg">
-            {t('sidePanel.title')}
-          </span>
-          <div role="tablist" className="flex min-w-0 flex-1 items-stretch gap-0.5 self-stretch">
+      <div className={cn('flex h-full shrink-0 flex-col', bottom ? 'w-full' : 'w-[348px]')}>
+        <div className="flex h-11 shrink-0 items-center gap-1 pr-2 pl-2.5">
+          <div role="tablist" className="flex min-w-0 flex-1 items-center gap-0.5">
             {PANELS.map(({ id, label }) => (
               <button
                 key={id}
@@ -259,17 +259,17 @@ export function SessionSidePanel({
                 aria-selected={panel === id}
                 onClick={() => onPanelChange(id)}
                 className={cn(
-                  'flex min-w-0 items-center border-b-2 px-2 text-[12px] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-accent',
+                  'flex h-7 min-w-0 items-center rounded-item px-2.5 text-note transition-colors outline-none focus-visible:ring-1 focus-visible:ring-accent',
                   panel === id
-                    ? 'border-accent font-medium text-fg'
-                    : 'border-transparent text-muted hover:text-fg',
+                    ? 'bg-sunk font-medium text-fg'
+                    : 'text-muted hover:bg-hover hover:text-fg2',
                 )}
               >
                 <span className="truncate">{t(label)}</span>
               </button>
             ))}
           </div>
-          {onClose && (
+          {onClose && !docked && (
             <IconButton label={t('sidePanel.close')} size="icon-sm" onClick={onClose}>
               <X />
             </IconButton>
@@ -288,19 +288,21 @@ export function SessionSidePanel({
               />
             ) : (
               <div className="flex h-full min-h-0 flex-col">
-                <div className="flex h-9 shrink-0 items-center justify-center border-b-[0.5px] border-hair">
-                  <SegmentedControl
-                    value={diffTab}
-                    label={t('changeset.view')}
-                    options={[
-                      { value: 'changesets', label: t('changeset.tab.changesets') },
-                      { value: 'files', label: t('changeset.tab.files') },
-                    ]}
-                    onChange={setDiffTab}
-                  />
-                </div>
+                {hasChangeSets && (
+                  <div className="flex shrink-0 items-center px-3 pt-1 pb-2">
+                    <SegmentedControl
+                      value={diffTab}
+                      label={t('changeset.view')}
+                      options={[
+                        { value: 'changesets', label: t('changeset.tab.changesets') },
+                        { value: 'files', label: t('changeset.tab.files') },
+                      ]}
+                      onChange={setDiffTab}
+                    />
+                  </div>
+                )}
                 <div className="min-h-0 flex-1 overflow-hidden">
-                  {diffTab === 'changesets' ? (
+                  {hasChangeSets && diffTab === 'changesets' ? (
                     <div className="h-full overflow-y-auto">
                       <ChangeSetList
                         sessionId={sessionId}
@@ -316,11 +318,11 @@ export function SessionSidePanel({
             ))}
           {panel === 'brief' && <SessionBriefPanel sessionId={sessionId} />}
           {panel === 'plan' && (
-            <div className="h-full overflow-y-auto p-3">
+            <div className="h-full overflow-y-auto">
               {plan ? (
                 <PlanDetails key={plan.planId} plan={plan} />
               ) : (
-                <p className="text-ui text-muted">{t('sidePanel.emptyPlan')}</p>
+                <PanelEmpty icon={<ListTodo />}>{t('sidePanel.emptyPlan')}</PanelEmpty>
               )}
             </div>
           )}

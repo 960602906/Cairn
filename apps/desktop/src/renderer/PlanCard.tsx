@@ -1,13 +1,24 @@
 /**
  * 计划卡片（M3-05）：对话里显示摘要与审批操作，右侧栏只展示完整内容。
  */
-import { Check, Copy, Download, Lightbulb, Maximize2 } from 'lucide-react'
+import {
+  Check,
+  ChevronRight,
+  Circle,
+  CircleCheck,
+  CircleDot,
+  CircleSlash,
+  Copy,
+  Download,
+  Lightbulb,
+  Maximize2,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sessionStatus, type PlanView } from '@cairn/core'
 import { PLAN_FEEDBACK_MAX } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
-import { Button, IconButton } from './ui/index.js'
+import { Button, cn, IconButton } from './ui/index.js'
 
 /** 下载与复制使用的完整计划文本。 */
 export function planDocument(plan: PlanView): string {
@@ -180,21 +191,62 @@ export function PlanSummaryCard({
   )
 }
 
-/** 右侧栏的完整计划：只展示内容，不重复审批操作。 */
+const STEP_ICON = {
+  done: CircleCheck,
+  in_progress: CircleDot,
+  skipped: CircleSlash,
+  pending: Circle,
+} as const
+
+/** 右侧栏的完整计划：只展示内容，不重复审批操作。铺在侧栏纸面上，不再套一层卡片。 */
 export function PlanDetails({ plan }: { readonly plan: PlanView }) {
   const { t } = useTranslation('session')
+  const label = 'text-[11.5px] font-medium tracking-[0.02em] text-faint'
   return (
-    <article
-      aria-label={t('plan.title')}
-      className="rounded-card border-[0.5px] border-hair bg-raise p-4"
-    >
-      <h3 className="text-heading text-fg">{plan.content.goal}</h3>
-      <section className="mt-3">
-        <h4 className="text-note text-muted">{t('plan.files')}</h4>
+    <article aria-label={t('plan.title')} className="flex flex-col gap-5 px-4 pt-2 pb-5">
+      <h3 className="text-heading leading-snug text-fg">{plan.content.goal}</h3>
+      <section>
+        <h4 className={label}>{t('plan.steps')}</h4>
+        <ol className="mt-2 flex flex-col gap-2.5">
+          {plan.steps.map((step) => {
+            const Icon = STEP_ICON[step.status]
+            return (
+              <li key={step.id} className="flex items-start gap-2.5 text-ui">
+                <Icon
+                  aria-hidden
+                  className={cn(
+                    'mt-[3px] size-3.5 shrink-0',
+                    step.status === 'done'
+                      ? 'text-ok'
+                      : step.status === 'in_progress'
+                        ? 'text-accent'
+                        : 'text-faint',
+                  )}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className={cn(step.status === 'done' ? 'text-fg2' : 'text-fg')}>
+                    {step.title}
+                  </p>
+                  {step.note && (
+                    <p className="mt-1 text-note text-muted">
+                      {t('plan.note', { note: step.note })}
+                    </p>
+                  )}
+                </div>
+                <span className="mt-px shrink-0 text-[11.5px] text-muted">
+                  {t(`plan.step.${step.status}`)}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      </section>
+      <section>
+        <h4 className={label}>{t('plan.files')}</h4>
         {plan.content.files.length === 0 ? (
-          <p className="mt-1 text-ui text-fg2">{t('plan.none')}</p>
+          <p className="mt-1.5 text-ui text-fg2">{t('plan.none')}</p>
         ) : (
-          <ul className="mt-1 font-mono text-[13px] text-fg">
+          <ul className="mt-1.5 flex flex-col gap-1 font-mono text-[12px] text-fg2">
             {plan.content.files.map((file) => (
               <li key={file} className="break-all">
                 {file}
@@ -203,48 +255,37 @@ export function PlanDetails({ plan }: { readonly plan: PlanView }) {
           </ul>
         )}
       </section>
-      <section className="mt-3">
-        <h4 className="text-note text-muted">{t('plan.steps')}</h4>
-        <ol className="mt-1 flex flex-col gap-2">
-          {plan.steps.map((step) => (
-            <li key={step.id} className="text-ui text-fg">
-              <p>
-                <span className="text-muted">{t(`plan.step.${step.status}`)}</span>
-                <span className="mx-1.5 text-faint">·</span>
-                {step.title}
-              </p>
-              {step.note && (
-                <p className="mt-1 text-note text-fg2">{t('plan.note', { note: step.note })}</p>
-              )}
-            </li>
-          ))}
-        </ol>
-      </section>
-      <p className="mt-3 text-ui text-fg2">
-        <span className="text-note text-muted">{t('plan.risks')}</span>
-        <span className="mt-1 block whitespace-pre-wrap">
+      <p className="text-ui text-fg2">
+        <span className={cn('block', label)}>{t('plan.risks')}</span>
+        <span className="mt-1.5 block whitespace-pre-wrap">
           {plan.content.risks.trim() || t('plan.none')}
         </span>
       </p>
-      <p className="mt-2 text-ui text-fg2">
-        <span className="text-note text-muted">{t('plan.verification')}</span>
-        <span className="mt-1 block whitespace-pre-wrap">
+      <p className="text-ui text-fg2">
+        <span className={cn('block', label)}>{t('plan.verification')}</span>
+        <span className="mt-1.5 block whitespace-pre-wrap">
           {plan.content.verification.trim() || t('plan.none')}
         </span>
       </p>
       {plan.content.markdown.trim() !== '' && (
-        <details className="mt-3">
-          <summary className="cursor-pointer text-note text-muted">{t('plan.markdown')}</summary>
-          <pre className="mt-1 whitespace-pre-wrap font-sans text-ui text-fg2">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-1 text-note text-muted hover:text-fg2 [&::-webkit-details-marker]:hidden">
+            <ChevronRight
+              aria-hidden
+              className="size-3.5 transition-transform group-open:rotate-90"
+            />
+            {t('plan.markdown')}
+          </summary>
+          <pre className="mt-2 whitespace-pre-wrap font-sans text-ui text-fg2">
             {plan.content.markdown}
           </pre>
         </details>
       )}
       {plan.status === 'approved' && (
-        <p className="mt-3 text-note text-muted">{t('plan.status.approved')}</p>
+        <p className="text-note text-muted">{t('plan.status.approved')}</p>
       )}
       {plan.status === 'rejected' && (
-        <p className="mt-3 text-note text-muted">
+        <p className="text-note text-muted">
           {plan.feedback ? t('plan.status.replanned') : t('plan.status.rejected')}
           {plan.feedback && (
             <span className="mt-1 block text-fg2">
