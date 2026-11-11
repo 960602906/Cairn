@@ -84,14 +84,15 @@ describe('SessionList', () => {
     expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('shows the session empty state when a workspace exists', async () => {
+  it('does not show a session empty state when a workspace exists', async () => {
     setup({
       'project.list': () => ({
         projects: [{ projectId: 'p1', name: 'demo', path: '/work/demo', createdAt: 1 }],
       }),
       'session.list': () => ({ sessions: [] }),
     })
-    expect(await screen.findByText('还没有会话')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'demo 的会话' })).toBeTruthy()
+    expect(screen.queryByText('还没有会话')).toBeNull()
     expect(screen.queryByText('还没有工作空间')).toBeNull()
   })
 

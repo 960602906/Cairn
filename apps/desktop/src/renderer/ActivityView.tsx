@@ -376,12 +376,13 @@ function CommandRow({ command }: { readonly command: BackgroundCommand }) {
   )
 }
 
-export function ActivityView({
-  leading,
+/** 活动内容本体；整页与右侧工作台共用，`compact` 只调整留白与标题层级。 */
+export function ActivityContent({
   onOpenSession,
+  compact = false,
 }: {
-  readonly leading?: ReactNode
   readonly onOpenSession: (sessionId: string, changeSetId?: string) => void
+  readonly compact?: boolean
 }) {
   const { t, i18n } = useTranslation('session')
   const activity = useSessionStore((state) => state.activity)
@@ -416,6 +417,154 @@ export function ActivityView({
     activity !== undefined &&
     approvals.length + running.length + completed.length + commands.length === 0
   return (
+    <div
+      className={cn(
+        'flex flex-col',
+        compact ? 'gap-3 px-3 py-3' : 'mx-auto w-full max-w-[920px] gap-5 px-7 py-6',
+      )}
+    >
+      <header className={compact ? 'flex items-start gap-2' : 'flex items-start gap-3'}>
+        <div className="min-w-0 flex-1">
+          <h2 className={cn('font-semibold text-fg', compact ? 'text-ui' : 'text-page')}>
+            {t('activity.title')}
+          </h2>
+          <p className={cn('text-note text-muted', compact ? 'mt-0.5' : 'mt-1')}>
+            {t('activity.summary', {
+              approvals: activity?.counts.approvals ?? 0,
+              running: activity?.counts.running ?? 0,
+              completed: completed.length,
+            })}
+          </p>
+        </div>
+        <IconButton
+          label={t('activity.refresh')}
+          size="icon-sm"
+          disabled={loading}
+          onClick={() => void refreshActivity()}
+        >
+          <RefreshCw className={cn(loading && 'animate-spin')} />
+        </IconButton>
+      </header>
+      <p className="sr-only" aria-live="polite">
+        {activity === undefined
+          ? ''
+          : t('activity.announce', {
+              approvals: activity.counts.approvals,
+              running: activity.counts.running,
+            })}
+      </p>
+
+      {error ? (
+        <div
+          role="alert"
+          className="flex flex-col items-start gap-2 rounded-card bg-raise p-4 text-ui shadow-1"
+        >
+          <p className="text-danger">{translateError(i18n, error)}</p>
+          <button
+            type="button"
+            onClick={() => void refreshActivity()}
+            className="flex h-7 items-center gap-1.5 rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            <RefreshCw aria-hidden className="size-3.5" />
+            {t('activity.retry')}
+          </button>
+        </div>
+      ) : activity === undefined || loading ? (
+        <p role="status" className="text-ui text-muted">
+          {t('activity.loading')}
+        </p>
+      ) : empty ? (
+        <div className="flex flex-col items-center gap-2 rounded-card bg-raise p-8 text-center shadow-1">
+          <Clock3 aria-hidden className="size-6 text-faint" />
+          <p className="text-ui font-medium text-fg2">{t('activity.empty')}</p>
+          <p className="text-note text-muted">{t('activity.emptyHint')}</p>
+        </div>
+      ) : (
+        <>
+          <Section
+            title={t('activity.approvals')}
+            label={t('activity.approvals')}
+            count={approvals.length}
+          >
+            {approvals.length === 0 ? (
+              <p className="text-note text-faint">{t('activity.noneApprovals')}</p>
+            ) : (
+              approvals.map((approval) => (
+                <ApprovalRow
+                  key={approval.approvalId}
+                  approval={approval}
+                  agents={agents}
+                  busy={busy === approval.approvalId}
+                  onDecide={(decision, item) => void decide(decision, item)}
+                  onOpen={onOpenSession}
+                />
+              ))
+            )}
+          </Section>
+
+          <Section
+            title={t('activity.runningSection')}
+            label={t('activity.runningSection')}
+            count={running.length}
+          >
+            {running.length === 0 ? (
+              <p className="text-note text-faint">{t('activity.noneRunning')}</p>
+            ) : (
+              running.map((item) => (
+                <RunningRow
+                  key={`${item.sessionId}:${item.runId}`}
+                  running={item}
+                  agents={agents}
+                  onOpen={onOpenSession}
+                />
+              ))
+            )}
+          </Section>
+
+          <Section
+            title={t('activity.commandsSection')}
+            label={t('activity.commandsSection')}
+            count={commands.length}
+          >
+            {commands.length === 0 ? (
+              <p className="text-note text-faint">{t('activity.noneCommands')}</p>
+            ) : (
+              commands.map((command) => <CommandRow key={command.commandId} command={command} />)
+            )}
+          </Section>
+
+          <Section
+            title={t('activity.completedSection')}
+            label={t('activity.completedSection')}
+            count={completed.length}
+          >
+            {completed.length === 0 ? (
+              <p className="text-note text-faint">{t('activity.noneCompleted')}</p>
+            ) : (
+              completed.map((item) => (
+                <CompletedRow
+                  key={`${item.sessionId}:${item.runId}:${item.turnId ?? ''}:${item.completedAt}`}
+                  completed={item}
+                  agents={agents}
+                  onOpen={onOpenSession}
+                />
+              ))
+            )}
+          </Section>
+        </>
+      )}
+    </div>
+  )
+}
+
+export function ActivityView({
+  leading,
+  onOpenSession,
+}: {
+  readonly leading?: ReactNode
+  readonly onOpenSession: (sessionId: string, changeSetId?: string) => void
+}) {
+  return (
     <>
       <div
         className="drag flex h-12 shrink-0 items-center gap-1.5 bg-paper pl-3"
@@ -424,138 +573,7 @@ export function ActivityView({
         {leading}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[920px] flex-col gap-5 px-7 py-6">
-          <header className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-page font-semibold text-fg">{t('activity.title')}</h2>
-              <p className="mt-1 text-note text-muted">
-                {t('activity.summary', {
-                  approvals: activity?.counts.approvals ?? 0,
-                  running: activity?.counts.running ?? 0,
-                  completed: completed.length,
-                })}
-              </p>
-            </div>
-            <IconButton
-              label={t('activity.refresh')}
-              size="icon-sm"
-              disabled={loading}
-              onClick={() => void refreshActivity()}
-            >
-              <RefreshCw className={cn(loading && 'animate-spin')} />
-            </IconButton>
-          </header>
-          <p className="sr-only" aria-live="polite">
-            {activity === undefined
-              ? ''
-              : t('activity.announce', {
-                  approvals: activity.counts.approvals,
-                  running: activity.counts.running,
-                })}
-          </p>
-
-          {error ? (
-            <div
-              role="alert"
-              className="flex flex-col items-start gap-2 rounded-card bg-raise p-4 text-ui shadow-1"
-            >
-              <p className="text-danger">{translateError(i18n, error)}</p>
-              <button
-                type="button"
-                onClick={() => void refreshActivity()}
-                className="flex h-7 items-center gap-1.5 rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
-              >
-                <RefreshCw aria-hidden className="size-3.5" />
-                {t('activity.retry')}
-              </button>
-            </div>
-          ) : activity === undefined || loading ? (
-            <p role="status" className="text-ui text-muted">
-              {t('activity.loading')}
-            </p>
-          ) : empty ? (
-            <div className="flex flex-col items-center gap-2 rounded-card bg-raise p-8 text-center shadow-1">
-              <Clock3 aria-hidden className="size-6 text-faint" />
-              <p className="text-ui font-medium text-fg2">{t('activity.empty')}</p>
-              <p className="text-note text-muted">{t('activity.emptyHint')}</p>
-            </div>
-          ) : (
-            <>
-              <Section
-                title={t('activity.approvals')}
-                label={t('activity.approvals')}
-                count={approvals.length}
-              >
-                {approvals.length === 0 ? (
-                  <p className="text-note text-faint">{t('activity.noneApprovals')}</p>
-                ) : (
-                  approvals.map((approval) => (
-                    <ApprovalRow
-                      key={approval.approvalId}
-                      approval={approval}
-                      agents={agents}
-                      busy={busy === approval.approvalId}
-                      onDecide={(decision, item) => void decide(decision, item)}
-                      onOpen={onOpenSession}
-                    />
-                  ))
-                )}
-              </Section>
-
-              <Section
-                title={t('activity.runningSection')}
-                label={t('activity.runningSection')}
-                count={running.length}
-              >
-                {running.length === 0 ? (
-                  <p className="text-note text-faint">{t('activity.noneRunning')}</p>
-                ) : (
-                  running.map((item) => (
-                    <RunningRow
-                      key={`${item.sessionId}:${item.runId}`}
-                      running={item}
-                      agents={agents}
-                      onOpen={onOpenSession}
-                    />
-                  ))
-                )}
-              </Section>
-
-              <Section
-                title={t('activity.commandsSection')}
-                label={t('activity.commandsSection')}
-                count={commands.length}
-              >
-                {commands.length === 0 ? (
-                  <p className="text-note text-faint">{t('activity.noneCommands')}</p>
-                ) : (
-                  commands.map((command) => (
-                    <CommandRow key={command.commandId} command={command} />
-                  ))
-                )}
-              </Section>
-
-              <Section
-                title={t('activity.completedSection')}
-                label={t('activity.completedSection')}
-                count={completed.length}
-              >
-                {completed.length === 0 ? (
-                  <p className="text-note text-faint">{t('activity.noneCompleted')}</p>
-                ) : (
-                  completed.map((item) => (
-                    <CompletedRow
-                      key={`${item.sessionId}:${item.runId}:${item.turnId ?? ''}:${item.completedAt}`}
-                      completed={item}
-                      agents={agents}
-                      onOpen={onOpenSession}
-                    />
-                  ))
-                )}
-              </Section>
-            </>
-          )}
-        </div>
+        <ActivityContent onOpenSession={onOpenSession} />
       </div>
     </>
   )

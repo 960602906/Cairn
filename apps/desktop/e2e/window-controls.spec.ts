@@ -4,7 +4,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { expect, test } from './app.js'
 
-const ARTIFACTS = path.resolve(import.meta.dirname, '../../../design/redesign-v8/window')
+const ARTIFACTS = path.resolve(import.meta.dirname, '../../../.cache/cairn-visual-check/window')
 mkdirSync(ARTIFACTS, { recursive: true })
 
 /** 三个按钮中心点命中的元素必须就是按钮本身，防止被拖拽区或遮罩吞掉点击。 */

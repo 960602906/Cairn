@@ -9,7 +9,12 @@ import { createI18n } from '@cairn/i18n'
 import type { ChangeSetSummary } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
 import { inspectionKey, type SessionStore } from './session-store.js'
-import { SessionSidePanel, type SessionPanel } from './SessionSidePanel.js'
+import {
+  SESSION_PANELS,
+  SessionSidePanel,
+  type SessionPanel,
+  type SessionPanelView,
+} from './SessionSidePanel.js'
 import { SessionStoreProvider } from './store-context.js'
 
 const i18n = createI18n('zh-CN')
@@ -73,28 +78,46 @@ const delegation: DelegationView = {
 function Harness({
   open: initialOpen = true,
   selectedChangeSetId: initialChangeSetId,
+  initialPanel = 'diff',
+  initialTabs = ['diff', 'brief', 'plan'],
   showPlan = true,
   delegations = [],
   onClose,
 }: {
   readonly open?: boolean
   readonly selectedChangeSetId?: string | undefined
+  readonly initialPanel?: SessionPanelView
+  readonly initialTabs?: readonly SessionPanel[]
   readonly showPlan?: boolean
   readonly delegations?: readonly DelegationView[]
   readonly onClose?: (() => void) | undefined
 }) {
   const [open, setOpen] = useState(initialOpen)
-  const [panel, setPanel] = useState<SessionPanel>('diff')
+  const [panel, setPanel] = useState<SessionPanelView>(initialPanel)
+  const [tabs, setTabs] = useState<readonly SessionPanel[]>(initialTabs)
   const [selectedChangeSetId, setSelectedChangeSetId] = useState(initialChangeSetId)
+  const openPanel = (next: SessionPanel) => {
+    setTabs((current) => (current.includes(next) ? current : [...current, next]))
+    setPanel(next)
+  }
   return (
     <SessionSidePanel
       sessionId="s1"
       view={showPlan ? { ...view, delegations } : { ...view, plans: [], delegations }}
+      status="idle"
       panel={panel}
       selectedPlanId={plan.planId}
       selectedChangeSetId={selectedChangeSetId}
       onSelectChangeSet={setSelectedChangeSetId}
-      onPanelChange={setPanel}
+      onOpenPanel={openPanel}
+      onActivateTab={setPanel}
+      onHome={() => setPanel('home')}
+      tabs={tabs}
+      onCloseTab={(id) => {
+        const remaining = tabs.filter((item) => item !== id)
+        setTabs(remaining)
+        if (panel === id) setPanel(remaining.at(-1) ?? 'home')
+      }}
       open={open}
       {...(onClose === undefined
         ? {}
@@ -172,6 +195,12 @@ const wrap = (
     applyChangeSet: vi.fn(async () => changeSetDetail),
     rejectChangeSet: vi.fn(async () => changeSetDetail),
     resolveChangeSetConflict: vi.fn(async () => changeSetDetail),
+    activity: undefined,
+    activityLoading: false,
+    activityError: undefined,
+    commands: [],
+    refreshActivity: vi.fn(async () => {}),
+    refreshCommands: vi.fn(async () => {}),
     restoreCheckpoint: vi.fn(async () => ({ checkpointId: 'c', files: [] })),
     approvePlan: vi.fn(),
     replan: vi.fn(),
@@ -251,9 +280,14 @@ describe('SessionSidePanel', () => {
           <SessionSidePanel
             sessionId="s1"
             view={view}
+            status="idle"
             panel="diff"
             selectedPlanId={plan.planId}
-            onPanelChange={() => {}}
+            onOpenPanel={() => {}}
+            onActivateTab={() => {}}
+            onHome={() => {}}
+            tabs={SESSION_PANELS}
+            onCloseTab={() => {}}
             open={open}
             onClose={() => setOpen(false)}
           />
@@ -284,6 +318,44 @@ describe('SessionSidePanel', () => {
     expect(within(panel).queryByRole('button', { name: '批准执行' })).toBeNull()
   })
 
+  it('starts on the home cards and returns to them from the fixed home tab', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness initialPanel="home" />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getByRole('tab', { name: '首页' }).getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    expect(within(panel).getByRole('button', { name: '打开文件树' })).toBeTruthy()
+    expect(within(panel).getByRole('button', { name: '打开检查' })).toBeTruthy()
+    // 对话里点开的内容不占首页。
+    expect(within(panel).queryByRole('button', { name: '打开改动' })).toBeNull()
+    expect(within(panel).queryByRole('button', { name: '打开概要' })).toBeNull()
+    expect(within(panel).queryByRole('button', { name: '打开计划' })).toBeNull()
+
+    await user.click(within(panel).getByRole('tab', { name: '首页' }))
+    expect(within(panel).getByRole('tab', { name: '首页' }).getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    expect(within(panel).getByRole('button', { name: '打开文件树' })).toBeTruthy()
+  })
+
+  it('keeps conversation panels out of the add menu and opens activity', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness initialPanel="home" initialTabs={[]} />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    expect(await screen.findByRole('menuitem', { name: '文件' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: '检查' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '改动' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '概要' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '计划' })).toBeNull()
+    await user.click(await screen.findByRole('menuitem', { name: '活动' }))
+    expect(within(panel).getByRole('tab', { name: '活动' }).getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    expect(within(panel).getByRole('heading', { name: '活动' })).toBeTruthy()
+  })
+
   it('animates the width, opacity, and slide while open', () => {
     wrap(<Harness />)
     const panel = screen.getByRole('dialog', { name: '会话信息' })
@@ -295,9 +367,9 @@ describe('SessionSidePanel', () => {
     expect(panel.getAttribute('aria-hidden')).toBe('false')
   })
 
-  it('opens the inspector as the fourth side panel tab', async () => {
+  it('opens the inspector as a side panel tab', async () => {
     const user = userEvent.setup()
-    wrap(<Harness />)
+    wrap(<Harness initialTabs={SESSION_PANELS} />)
     const panel = screen.getByRole('dialog', { name: '会话信息' })
     await user.click(within(panel).getByRole('tab', { name: '检查器' }))
     expect(within(panel).getByRole('tab', { name: '检查器' }).getAttribute('aria-selected')).toBe(
@@ -381,9 +453,14 @@ describe('SessionSidePanel', () => {
       <SessionSidePanel
         sessionId="s1"
         view={undefined}
+        status="idle"
         panel="diff"
         selectedPlanId={undefined}
-        onPanelChange={() => {}}
+        onOpenPanel={() => {}}
+        onActivateTab={() => {}}
+        onHome={() => {}}
+        tabs={SESSION_PANELS}
+        onCloseTab={() => {}}
       />,
       { missingChangeSets: true },
     )
@@ -416,27 +493,30 @@ describe('SessionSidePanel', () => {
   it('shows only the open tabs, closes one, and reopens another from the add menu', async () => {
     const user = userEvent.setup()
     const onCloseTab = vi.fn()
-    const onPanelChange = vi.fn()
+    const onOpenPanel = vi.fn()
     wrap(
       <SessionSidePanel
         sessionId="s1"
         view={view}
+        status="idle"
         panel="diff"
         selectedPlanId={undefined}
-        onPanelChange={onPanelChange}
+        onOpenPanel={onOpenPanel}
+        onActivateTab={() => {}}
+        onHome={() => {}}
         tabs={['diff', 'plan']}
         onCloseTab={onCloseTab}
       />,
     )
     const panel = screen.getByRole('dialog', { name: '会话信息' })
-    expect(within(panel).getAllByRole('tab')).toHaveLength(2)
+    expect(within(panel).getAllByRole('tab')).toHaveLength(3)
     expect(within(panel).queryByRole('tab', { name: '检查器' })).toBeNull()
     await user.click(within(panel).getByRole('button', { name: '关闭计划' }))
     expect(onCloseTab).toHaveBeenCalledWith('plan')
 
     await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
     await user.click(await screen.findByRole('menuitem', { name: '检查' }))
-    expect(onPanelChange).toHaveBeenCalledWith('inspector')
+    expect(onOpenPanel).toHaveBeenCalledWith('inspector')
   })
 
   it('hides the add menu when every tab is open', () => {
@@ -444,14 +524,18 @@ describe('SessionSidePanel', () => {
       <SessionSidePanel
         sessionId="s1"
         view={view}
+        status="idle"
         panel="diff"
         selectedPlanId={undefined}
-        onPanelChange={() => {}}
+        onOpenPanel={() => {}}
+        onActivateTab={() => {}}
+        onHome={() => {}}
+        tabs={SESSION_PANELS}
         onCloseTab={() => {}}
       />,
     )
     const panel = screen.getByRole('dialog', { name: '会话信息' })
-    expect(within(panel).getAllByRole('tab')).toHaveLength(4)
+    expect(within(panel).getAllByRole('tab')).toHaveLength(SESSION_PANELS.length + 1)
     expect(within(panel).queryByRole('button', { name: '打开其他面板' })).toBeNull()
   })
 
@@ -460,9 +544,14 @@ describe('SessionSidePanel', () => {
       <SessionSidePanel
         sessionId="s1"
         view={undefined}
+        status="idle"
         panel="inspector"
         selectedPlanId={undefined}
-        onPanelChange={() => {}}
+        onOpenPanel={() => {}}
+        onActivateTab={() => {}}
+        onHome={() => {}}
+        tabs={SESSION_PANELS}
+        onCloseTab={() => {}}
         placement="bottom"
         docked
       />,
@@ -478,10 +567,15 @@ describe('SessionSidePanel', () => {
       <SessionSidePanel
         sessionId="s1"
         view={view}
+        status="idle"
         panel="diff"
         selectedPlanId={undefined}
         selectedChangeSetId="cs1"
-        onPanelChange={() => {}}
+        onOpenPanel={() => {}}
+        onActivateTab={() => {}}
+        onHome={() => {}}
+        tabs={SESSION_PANELS}
+        onCloseTab={() => {}}
       />,
       { details: { cs1: changeSetDetail } },
     )

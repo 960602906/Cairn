@@ -8,15 +8,14 @@
  * ⌘N / Ctrl+N 新对话；⌘K / Ctrl+K 搜索；⌘, / Ctrl+, 设置；Esc 关闭抽屉/返回对话。
  * 主题跟随设置（M2-01，`ThemeSync`）。
  */
-import { PanelLeftOpen, SquarePen } from 'lucide-react'
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { PanelLeftOpen } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import type { ProjectSummary } from '@cairn/protocol'
 import { ActivityView } from './ActivityView.js'
-import { ChatPanel, TopBar } from './ChatPanel.js'
+import { ChatPanel, TopBar, type ChatPanelHandle } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
-import { FileTreeDialog } from './FileTreeDialog.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
@@ -25,6 +24,7 @@ import { WindowControls } from './layout/WindowControls.js'
 import { NewSession } from './NewSession.js'
 import { WelcomeDialog } from './onboarding/WelcomeDialog.js'
 import { SessionSearch } from './SessionSearch.js'
+import type { SessionPanelView } from './SessionSidePanel.js'
 import type { SessionStore } from './session-store.js'
 import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
@@ -57,13 +57,15 @@ function Workspace() {
   const [composing, setComposing] = useState(false)
   const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
   const [activity, setActivity] = useState(false)
+  const [sidePanel, setSidePanel] = useState<SessionPanelView>('home')
   const [searching, setSearching] = useState(false)
   /** 活动中心要求打开的改动集；`ChatPanel` 打开后清空。 */
   const [pendingChangeSet, setPendingChangeSet] = useState<
     { sessionId: string; changeSetId: string } | undefined
   >()
-  const [fileTreeProject, setFileTreeProject] = useState<ProjectSummary | undefined>()
   const [newChatProjectPath, setNewChatProjectPath] = useState<string | undefined>()
+  const chatRef = useRef<ChatPanelHandle>(null)
+  const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const refreshActivity = useSessionStore((s) => s.refreshActivity)
   const refreshAgents = useSessionStore((s) => s.refreshAgents)
   const loadUpdateStatus = useSessionStore((s) => s.loadUpdateStatus)
@@ -83,6 +85,7 @@ function Workspace() {
   const startNewChat = useCallback(() => {
     setSettings(undefined)
     setActivity(false)
+    setSidePanel('home')
     setComposing(true)
     setNewChatProjectPath(undefined)
     setPendingChangeSet(undefined)
@@ -152,9 +155,10 @@ function Workspace() {
         setActivity(false)
         setComposing(false)
         void selectSession(sessionId)
+        if (sidePanel === 'activity') chatRef.current?.closePanel()
         if (narrow) setSessionsOpen(false)
       }),
-    [narrow, onActivityOpen, selectSession],
+    [narrow, onActivityOpen, selectSession, sidePanel],
   )
 
   const closeSettings = useCallback(() => {
@@ -167,8 +171,14 @@ function Workspace() {
     setSettings(undefined)
     setComposing(false)
     if (narrow) setSessionsOpen(false)
+    // 已经打开会话时，活动作为工作台标签显示在右侧，不再整页替换对话。
+    if (activeSessionId !== undefined && !composing && chatRef.current) {
+      setActivity(false)
+      chatRef.current.openPanel('activity')
+      return
+    }
     setActivity(true)
-  }, [narrow])
+  }, [activeSessionId, composing, narrow])
 
   /** 左栏收起后，从顶栏按钮展开；不离开当前页面。 */
   const openSessions = useCallback(() => setSessionsOpen(true), [])
@@ -179,9 +189,10 @@ function Workspace() {
       setComposing(false)
       setPendingChangeSet(changeSetId === undefined ? undefined : { sessionId, changeSetId })
       void selectSession(sessionId)
+      if (changeSetId === undefined && sidePanel === 'activity') chatRef.current?.closePanel()
       if (narrow) setSessionsOpen(false)
     },
-    [narrow, selectSession],
+    [narrow, selectSession, sidePanel],
   )
 
   const configureModels = useCallback(() => {
@@ -217,17 +228,14 @@ function Workspace() {
       setComposing(false)
       setActivity(false)
     },
-    onBrowseProjectInFileTree: (project: ProjectSummary) => {
-      if (narrow) setSessionsOpen(false)
-      setFileTreeProject(project)
-    },
     onNewChat: startNewChat,
     onActivity: openActivity,
     onSettings: () => {
       setSessionsOpen(false)
       setSettings('general')
     },
-    activityActive: activity,
+    activityActive:
+      activity || (!composing && activeSessionId !== undefined && sidePanel === 'activity'),
     activityBadge,
     onNewConversationProject: (project: ProjectSummary) => {
       if (narrow) setSessionsOpen(false)
@@ -238,14 +246,11 @@ function Workspace() {
     },
   } as const
 
-  /** 左栏收起（或窄窗口）时，顶栏左侧提供展开与新对话入口。 */
+  /** 左栏收起（或窄窗口）时，顶栏左侧提供展开入口。 */
   const reveal = sessionsOpen ? null : (
     <div className="no-drag mr-1 flex shrink-0 items-center gap-0.5">
       <IconButton label={t('sidebar.expand')} size="icon-sm" onClick={openSessions}>
         <PanelLeftOpen />
-      </IconButton>
-      <IconButton label={t('list.new')} size="icon-sm" onClick={startNewChat}>
-        <SquarePen />
       </IconButton>
     </div>
   )
@@ -332,13 +337,15 @@ function Workspace() {
             <NewSession
               initialProjectPath={newChatProjectPath}
               onDone={() => setComposing(false)}
-              onSettings={() => setSettings('providers')}
             />
           </>
         ) : (
           <ChatPanel
+            chatRef={chatRef}
             leading={reveal}
             notice={updateNotice}
+            onPanelChange={setSidePanel}
+            onOpenActivitySession={openSessionFromActivity}
             {...(pendingChangeSet === undefined
               ? {}
               : {
@@ -352,13 +359,6 @@ function Workspace() {
       {drawer}
       {search}
       {welcome}
-      <FileTreeDialog
-        project={fileTreeProject}
-        open={fileTreeProject !== undefined}
-        onOpenChange={(next) => {
-          if (!next) setFileTreeProject(undefined)
-        }}
-      />
       <WindowControls />
     </div>
   )

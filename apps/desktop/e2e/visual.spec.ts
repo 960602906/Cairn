@@ -5,7 +5,7 @@
  * - 没有图标栏；252px 左栏 ≥900px 常驻，<900px 改为抽屉，由顶栏按钮展开。
  * - 工作台 ≥1440px 占布局宽度，更窄时是右侧浮层。
  * - 页面不能出现横向滚动，输入框始终可见。
- * - 截图保存到 design/redesign-v8/live，便于人工复核。
+ * - 截图保存到 .cache/cairn-visual-check/live，便于人工复核。
  */
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
@@ -13,7 +13,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, test } from './app.js'
 import { createSession, projectDir, runStatus, sendPrompt, sessionPanel } from './session.js'
 
-const ARTIFACTS = path.resolve(import.meta.dirname, '../../../design/redesign-v8/live')
+const ARTIFACTS = path.resolve(import.meta.dirname, '../../../.cache/cairn-visual-check/live')
 mkdirSync(ARTIFACTS, { recursive: true })
 
 const SIZES = [

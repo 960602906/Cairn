@@ -6,7 +6,15 @@
  * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
 import { FileDiff, PanelRight } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { activeExecutionPlan, rootRun, sessionStatus } from '@cairn/core'
 import { isAgentDraftRef } from '@cairn/protocol'
@@ -17,7 +25,7 @@ import { totals, turnEntries } from './file-changes.js'
 import { MessageStream } from './MessageStream.js'
 import { planInProgress, PlanProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
-import { SESSION_PANELS, SessionSidePanel, type SessionPanel } from './SessionSidePanel.js'
+import { SessionSidePanel, type SessionPanel, type SessionPanelView } from './SessionSidePanel.js'
 import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { useMediaQuery } from './layout/use-media-query.js'
@@ -26,6 +34,13 @@ import { cn, IconButton } from './ui/index.js'
 
 /** 工作台从浮层切到常驻列的宽度；1280/1366 下仍保持浮层，避免把正文挤到 600px 以下。 */
 const PANEL_DOCK_QUERY = '(min-width: 1440px)'
+
+export interface ChatPanelHandle {
+  /** 打开工作台里的某个标签；没有活动会话时调用方应先回退到弹窗。 */
+  openPanel(panel: SessionPanel): void
+  /** 收起工作台；从活动面板跳到某个会话时使用。 */
+  closePanel(): void
+}
 
 /** 纸面顶栏（48px）：和对话同一底色，左侧是项目 / 会话面包屑，右侧是会话信息栏开关。 */
 export function TopBar({ children }: { readonly children?: ReactNode }) {
@@ -50,6 +65,9 @@ export function ChatPanel({
   onInitialChangeSetOpened,
   notice,
   leading,
+  chatRef,
+  onPanelChange,
+  onOpenActivitySession,
 }: {
   /** 从活动中心等入口打开会话时要直接显示的改动集。 */
   readonly initialChangeSetId?: string | undefined
@@ -60,6 +78,12 @@ export function ChatPanel({
   readonly notice?: ReactNode
   /** 顶栏最左侧的内容：左栏收起时的展开与新对话按钮。 */
   readonly leading?: ReactNode
+  /** 让外层（例如项目菜单）打开工作台标签。 */
+  readonly chatRef?: Ref<ChatPanelHandle> | undefined
+  /** 当前工作台页面变化；左栏据此高亮「活动」等入口。 */
+  readonly onPanelChange?: ((panel: SessionPanelView) => void) | undefined
+  /** 活动面板里打开其他会话；由外层负责切换会话并定位改动集。 */
+  readonly onOpenActivitySession?: ((sessionId: string, changeSetId?: string) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -76,18 +100,9 @@ export function ChatPanel({
   const changes = useSessionStore((s) =>
     s.activeSessionId === undefined ? undefined : s.changes[s.activeSessionId],
   )
-  const [panel, setPanelState] = useState<SessionPanel>('diff')
-  /** 右侧已打开的标签（可逐个关闭，关掉最后一个即收起整栏）；跨会话保留。 */
-  const [tabs, setTabs] = useState<readonly SessionPanel[]>(SESSION_PANELS)
-  /** 切到某个面板；它的标签已被关掉时重新打开。 */
-  const setPanel = useCallback((next: SessionPanel) => {
-    setTabs((current) =>
-      current.includes(next)
-        ? current
-        : SESSION_PANELS.filter((id) => id === next || current.includes(id)),
-    )
-    setPanelState(next)
-  }, [])
+  const [panel, setPanelState] = useState<SessionPanelView>('home')
+  /** 右侧已打开的标签；空数组表示只看首页。 */
+  const [tabs, setTabs] = useState<readonly SessionPanel[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | undefined>()
   /** 宽屏工作台常驻；窄屏默认收起，按需浮出。 */
@@ -100,10 +115,40 @@ export function ChatPanel({
   useStickToBottom(scroller, content, sessionId ?? '')
   const run = view ? rootRun(view) : undefined
 
+  /** 点击已打开标签：只切换，不重置当前选中项。 */
+  const activateTab = useCallback((next: SessionPanel) => {
+    setTabs((current) => (current.includes(next) ? current : [...current, next]))
+    setPanelState(next)
+  }, [])
+
+  /** 从首页、对话卡片或「+」菜单打开：必要时补标签，并回到该面板的概览状态。 */
+  const openPanel = useCallback(
+    (next: SessionPanel, target?: { planId?: string; changeSetId?: string }) => {
+      if (next === 'diff') setSelectedChangeSetId(target?.changeSetId)
+      if (next === 'plan') setSelectedPlanId(target?.planId)
+      activateTab(next)
+      setPanelPreference(true)
+    },
+    [activateTab],
+  )
+
+  useImperativeHandle(
+    chatRef,
+    () => ({
+      openPanel: (next) => openPanel(next),
+      closePanel: () => setPanelPreference(false),
+    }),
+    [openPanel],
+  )
+
   // 跨断点时恢复默认：宽屏常驻，窄屏收起，避免缩窗后浮层突然盖住对话。
   useEffect(() => {
     setPanelPreference(undefined)
   }, [docked])
+
+  useEffect(() => {
+    onPanelChange?.(panelOpen ? panel : 'home')
+  }, [onPanelChange, panel, panelOpen])
 
   useEffect(() => {
     if (!overlayOpen) return
@@ -126,25 +171,29 @@ export function ChatPanel({
   useEffect(() => {
     setSelectedPlanId(undefined)
     setSelectedChangeSetId(undefined)
-    setPanel('diff')
+    setTabs([])
+    setPanelState('home')
   }, [sessionId])
 
   useEffect(() => {
     if (initialChangeSetId === undefined) return
     if (initialChangeSetSessionId !== undefined && initialChangeSetSessionId !== sessionId) return
-    setSelectedChangeSetId(initialChangeSetId)
-    setPanel('diff')
-    setPanelPreference(true)
+    openPanel('diff', { changeSetId: initialChangeSetId })
     onInitialChangeSetOpened?.()
-  }, [initialChangeSetId, initialChangeSetSessionId, onInitialChangeSetOpened, sessionId])
+  }, [
+    initialChangeSetId,
+    initialChangeSetSessionId,
+    onInitialChangeSetOpened,
+    openPanel,
+    sessionId,
+  ])
 
   const closeTab = (id: SessionPanel) => {
     const remaining = tabs.filter((item) => item !== id)
     if (remaining.length === 0) {
-      // 关掉最后一个标签就是收起整栏；下次打开时恢复全部标签。
-      setTabs(SESSION_PANELS)
-      setPanelState('diff')
-      setPanelPreference(false)
+      // 关掉最后一个标签回到首页，工作台本身保持打开。
+      setTabs([])
+      setPanelState('home')
       return
     }
     setTabs(remaining)
@@ -156,7 +205,7 @@ export function ChatPanel({
 
   const locateTurn = (runId: string, turnId: string) => {
     void runId
-    setPanel('inspector')
+    openPanel('inspector')
     // 浮层会锁住对话区的焦点；先收起浮层，等遮罩和 inert 解除后再定位。
     setPanelPreference(docked)
     requestAnimationFrame(() => {
@@ -231,11 +280,7 @@ export function ChatPanel({
           {turnChanges !== undefined && turnChanges.files > 0 && (
             <button
               type="button"
-              onClick={() => {
-                setSelectedChangeSetId(undefined)
-                setPanel('diff')
-                setPanelPreference(true)
-              }}
+              onClick={() => openPanel('diff')}
               className="hidden h-7 items-center gap-1.5 rounded-item px-2 text-note text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent min-[1200px]:flex"
             >
               <FileDiff aria-hidden className="size-3.5" />
@@ -283,16 +328,10 @@ export function ChatPanel({
             >
               <MessageStream
                 view={view}
-                onOpenChanges={(changeSetId) => {
-                  setSelectedChangeSetId(changeSetId)
-                  setPanel('diff')
-                  setPanelPreference(true)
-                }}
-                onOpenPlan={(planId) => {
-                  setSelectedPlanId(planId)
-                  setPanel('plan')
-                  setPanelPreference(true)
-                }}
+                onOpenChanges={(changeSetId) =>
+                  openPanel('diff', changeSetId === undefined ? {} : { changeSetId })
+                }
+                onOpenPlan={(planId) => openPanel('plan', { planId })}
               />
               <ApprovalList />
             </div>
@@ -303,11 +342,7 @@ export function ChatPanel({
               <PlanProgress
                 key={progressPlan.planId}
                 plan={progressPlan}
-                onOpen={() => {
-                  setSelectedPlanId(progressPlan.planId)
-                  setPanel('plan')
-                  setPanelPreference(true)
-                }}
+                onOpen={() => openPanel('plan', { planId: progressPlan.planId })}
               />
             )}
             <Composer
@@ -327,16 +362,20 @@ export function ChatPanel({
           placement="side"
           sessionId={sessionId}
           view={view}
+          status={status}
           panel={panel}
           selectedPlanId={selectedPlanId}
           selectedChangeSetId={selectedChangeSetId}
           onSelectChangeSet={setSelectedChangeSetId}
-          onPanelChange={setPanel}
+          onOpenPanel={openPanel}
+          onActivateTab={activateTab}
+          onHome={() => setPanelState('home')}
           tabs={tabs}
           onCloseTab={closeTab}
           open={panelOpen}
           onClose={() => setPanelPreference(false)}
           onLocateTurn={locateTurn}
+          {...(onOpenActivitySession === undefined ? {} : { onOpenActivitySession })}
         />
       </div>
     </section>

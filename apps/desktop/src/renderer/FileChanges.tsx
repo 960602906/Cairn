@@ -219,9 +219,12 @@ export function FileChangeList({
 export function TurnChanges({
   sessionId,
   turnId,
+  onOpen,
 }: {
   readonly sessionId: string
   readonly turnId: string
+  /** 打开右侧工作台的改动页面；省略时标题不可点。 */
+  readonly onOpen?: (() => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const changes = useSessionStore((s) => s.changes[sessionId])
@@ -233,12 +236,33 @@ export function TurnChanges({
       aria-label={t('changes.turn')}
       className="mt-3 overflow-hidden rounded-card bg-paper shadow-hair2"
     >
-      <header className="flex h-[38px] items-center gap-2 bg-code-head px-3 text-note">
-        <h4 className="font-semibold text-fg">{t('changes.turn')}</h4>
-        <span className="text-muted">{t('changes.files', { count: sum.files })}</span>
-        <span className="ml-auto">
-          <ChangeCounts added={sum.added} removed={sum.removed} />
-        </span>
+      <header className="flex h-[38px] items-center bg-code-head text-note">
+        {onOpen === undefined ? (
+          <div className="flex h-full w-full items-center gap-2 px-3">
+            <h4 className="font-semibold text-fg">{t('changes.turn')}</h4>
+            <span className="text-muted">{t('changes.files', { count: sum.files })}</span>
+            <span className="ml-auto">
+              <ChangeCounts added={sum.added} removed={sum.removed} />
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={t('changes.openPanel')}
+            className="group/turn flex h-full w-full items-center gap-2 px-3 text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            <span className="font-semibold text-fg">{t('changes.turn')}</span>
+            <span className="text-muted">{t('changes.files', { count: sum.files })}</span>
+            <span className="ml-auto">
+              <ChangeCounts added={sum.added} removed={sum.removed} />
+            </span>
+            <ChevronRight
+              aria-hidden
+              className="size-3.5 shrink-0 text-faint transition-transform group-hover/turn:translate-x-0.5"
+            />
+          </button>
+        )}
       </header>
       <FileChangeList sessionId={sessionId} entries={entries} />
     </section>

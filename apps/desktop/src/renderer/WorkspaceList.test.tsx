@@ -58,12 +58,10 @@ function setup(
     selectSession,
     ...(options.withRefresh === false ? {} : { refreshProjects }),
   })) as unknown as SessionStore
-  const onBrowseInFileTree = vi.fn()
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreProvider store={store}>
         <WorkspaceList
-          onBrowseInFileTree={onBrowseInFileTree}
           onNewConversation={options.onNewConversation}
           onSelectSession={options.onSelectSession}
         />
@@ -76,7 +74,6 @@ function setup(
     refreshProjects,
     openProject,
     selectSession,
-    onBrowseInFileTree,
   }
 }
 
@@ -105,7 +102,7 @@ describe('WorkspaceList', () => {
   })
 
   it('renders rows and wires pin, rename, archive and browse actions', async () => {
-    const { updateProject, onBrowseInFileTree } = setup([project()])
+    const { updateProject } = setup([project()])
     const section = screen.getByRole('region', { name: '工作空间' })
     expect(within(section).getByText('demo')).toBeTruthy()
     expect(screen.getByRole('button', { name: '工作空间操作' })).toBeTruthy()
@@ -130,8 +127,7 @@ describe('WorkspaceList', () => {
     expect(updateProject).toHaveBeenCalledWith('p1', { archived: true })
 
     await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
-    await userEvent.click(screen.getByRole('menuitem', { name: '在文件树浏览' }))
-    expect(onBrowseInFileTree).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1' }))
+    expect(screen.queryByRole('menuitem', { name: '在文件树浏览' })).toBeNull()
   })
 
   it('shows the localized default name and hides archive and remove actions', async () => {
@@ -212,6 +208,7 @@ describe('WorkspaceList', () => {
     expect(screen.getByText('第二项')).toBeTruthy()
 
     const toggle = screen.getByRole('button', { name: 'demo 的会话' })
+    expect(within(toggle).queryByText('2')).toBeNull()
     await userEvent.click(toggle)
     expect(screen.queryByText('第一项')).toBeNull()
     expect(toggle.getAttribute('aria-expanded')).toBe('false')

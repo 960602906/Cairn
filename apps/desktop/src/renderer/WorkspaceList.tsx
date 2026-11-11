@@ -1,8 +1,8 @@
 /**
  * 工作空间列表（目录功能同步）：工作空间行下直接列出各自的会话，行与菜单负责项目管理。
  *
- * 菜单顺序与 LiveAgent 一致：置顶、重命名、归档、在文件树浏览、在资源管理器浏览、
- * 最后是危险操作“移除工作空间”。归档项目收进独立分组，仍可取消归档。
+ * 菜单顺序与 LiveAgent 一致：置顶、重命名、归档、在资源管理器浏览，最后是危险操作
+ * “移除工作空间”。归档项目收进独立分组，仍可取消归档。
  */
 import {
   Archive,
@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Folder,
   FolderOpen,
-  FolderTree,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -64,7 +63,6 @@ function WorkspaceRow({
   sessions,
   activeSessionId,
   onSelectSession,
-  onBrowseInFileTree,
   onNewConversation,
 }: {
   readonly project: ProjectSummary
@@ -72,7 +70,6 @@ function WorkspaceRow({
   readonly sessions: readonly SessionSummary[]
   readonly activeSessionId: string | undefined
   readonly onSelectSession: (sessionId: string) => void
-  readonly onBrowseInFileTree: (project: ProjectSummary) => void
   readonly onNewConversation?: ((project: ProjectSummary) => void) | undefined
 }) {
   const { t } = useTranslation('session')
@@ -152,9 +149,6 @@ function WorkspaceRow({
           {archived && (
             <span className="shrink-0 text-[11px] text-faint">{t('workspace.archived')}</span>
           )}
-          {sessions.length > 0 && (
-            <span className="tabular shrink-0 text-[11px] text-faint">{sessions.length}</span>
-          )}
         </button>
       </div>
       {!collapsed && visible.length > 0 && (
@@ -232,10 +226,6 @@ function WorkspaceRow({
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => onBrowseInFileTree(project)}>
-              <FolderTree />
-              {t('workspace.browseFileTree')}
-            </DropdownMenuItem>
             <DropdownMenuItem onSelect={browseExplorer}>
               <FolderOpen />
               {t('workspace.browseExplorer')}
@@ -318,11 +308,9 @@ function WorkspaceRow({
 }
 
 export function WorkspaceList({
-  onBrowseInFileTree,
   onNewConversation,
   onSelectSession,
 }: {
-  readonly onBrowseInFileTree: (project: ProjectSummary) => void
   readonly onNewConversation?: ((project: ProjectSummary) => void) | undefined
   /** 选中会话后收起窄窗口里的抽屉。 */
   readonly onSelectSession?: (() => void) | undefined
@@ -389,7 +377,6 @@ export function WorkspaceList({
                   void selectSession?.(sessionId)
                   onSelectSession?.()
                 }}
-                onBrowseInFileTree={onBrowseInFileTree}
                 onNewConversation={onNewConversation}
               />
             ))}

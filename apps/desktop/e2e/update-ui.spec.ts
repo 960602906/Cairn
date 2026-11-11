@@ -1,6 +1,6 @@
 /**
  * 更新设置与状态界面（M5-07）：用本地静态源走真实的检查、下载与重启确认；
- * 有任务运行时重启被阻止；检查失败后可以重试。浅色/深色截图输出到 design/redesign-v8/update。
+ * 有任务运行时重启被阻止；检查失败后可以重试。浅色/深色截图输出到 .cache/cairn-visual-check/update。
  */
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
@@ -11,7 +11,7 @@ import { expect, test } from './app.js'
 import { createSession, projectDir, sendPrompt } from './session.js'
 import { freeLoopbackPort, startUpdateSource, useDevUpdateConfig } from './update-source.js'
 
-const ARTIFACTS = path.resolve(import.meta.dirname, '../../../design/redesign-v8/update')
+const ARTIFACTS = path.resolve(import.meta.dirname, '../../../.cache/cairn-visual-check/update')
 mkdirSync(ARTIFACTS, { recursive: true })
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {

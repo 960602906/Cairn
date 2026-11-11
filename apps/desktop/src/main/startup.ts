@@ -31,6 +31,7 @@ import {
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
 import { readAppInfo } from './build-info.js'
 import { resolveBuiltinSkillsDir } from './builtin-skills.js'
+import { configureElectronRuntime } from './electron-runtime.js'
 import { resolveChromeTheme, windowChromeOptions } from './window-chrome.js'
 import { WINDOW_CONTROLS_CHANNEL } from '../shared/window-controls.js'
 import {
@@ -92,6 +93,8 @@ import {
   type CredentialCheck,
   type RendererProbe,
 } from './smoke.js'
+
+configureElectronRuntime(process.env, app.commandLine)
 
 const paths = resolveAppPaths({
   appData: app.getPath('appData'),
