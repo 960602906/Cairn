@@ -6,7 +6,6 @@
  * Tab 在文件夹上时进入它继续选，Esc 关闭。插入的是纯文字 `@路径 `，发送时由 store 从草稿里解析，
  * 所以手打的引用和选出来的引用一样生效。
  */
-import { File, Folder } from 'lucide-react'
 import {
   useEffect,
   useLayoutEffect,
@@ -19,6 +18,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import type { FileSearchEntry } from '@cairn/protocol'
 import { activeMention, mentionText } from './composer-tokens.js'
+import { FileTypeIcon, FolderTypeIcon } from './file-icons.js'
 import { useSessionStore } from './store-context.js'
 import { cn } from './ui/index.js'
 
@@ -181,7 +181,6 @@ export function useMentionMenu({
           const slash = entry.path.lastIndexOf('/')
           const name = entry.path.slice(slash + 1)
           const parent = slash === -1 ? '' : entry.path.slice(0, slash)
-          const Icon = entry.kind === 'dir' ? Folder : File
           return (
             <div
               key={`${entry.kind}:${entry.path}`}
@@ -198,7 +197,7 @@ export function useMentionMenu({
                 position === active && 'bg-hover',
               )}
             >
-              <Icon className="size-3.5 shrink-0 text-muted" />
+              {entry.kind === 'dir' ? <FolderTypeIcon name={name} /> : <FileTypeIcon name={name} />}
               <span className="shrink-0 text-note text-fg">
                 {name}
                 {entry.kind === 'dir' ? '/' : ''}

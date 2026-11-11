@@ -20,4 +20,8 @@ describe('material icon urls', () => {
     expect(folderIconUrl('unknown-folder')).toBe('./folder.svg')
     expect(folderIconUrl('unknown-folder', true)).toBe('./folder-open.svg')
   })
+
+  it('falls back to the raw path when it has no name segment', () => {
+    expect(fileIconUrl('')).toBe('./file.svg')
+  })
 })

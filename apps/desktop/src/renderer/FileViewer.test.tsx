@@ -11,6 +11,7 @@ import { FileViewer } from './FileViewer.js'
 import { SessionStoreProvider } from './store-context.js'
 
 const i18n = createI18n('zh-CN')
+const REVEAL = i18n.t('session:fileTree.reveal')
 
 const project: ProjectSummary = {
   projectId: 'p1',
@@ -159,5 +160,51 @@ describe('FileViewer', () => {
     expect(wrap.getAttribute('aria-pressed')).toBe('false')
     await user.click(wrap)
     expect(wrap.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('reveals the file in the file manager', async () => {
+    const user = userEvent.setup()
+    const { handler } = setup({ kind: 'text', text: 'x\n' })
+    await screen.findByRole('region', { name: '文件预览：src/index.ts' })
+    await user.click(screen.getByRole('button', { name: REVEAL }))
+    await waitFor(() =>
+      expect(handler.mock.calls.find(([method]) => method === 'fs.reveal')?.[1]).toEqual({
+        projectId: 'p1',
+        path: 'src/index.ts',
+      }),
+    )
+  })
+
+  it('explains when the session has no workspace and does nothing on reveal', async () => {
+    const user = userEvent.setup()
+    const handler = installBridge(() => ({}))
+    const store = createStore<Record<string, unknown>>(() => ({ projects: [] }))
+    render(
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreProvider store={store as never}>
+          <FileViewer path="a.ts" view={undefined} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(await screen.findByText('没有关联的工作空间。')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: REVEAL }))
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('shows an error without the main process bridge', async () => {
+    const store = createStore<Record<string, unknown>>(() => ({ projects: [project] }))
+    render(
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreProvider store={store as never}>
+          <FileViewer path="a.ts" view={view} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(await screen.findAllByText('无法读取文件')).toHaveLength(2)
+  })
+
+  it('treats a non-RPC failure as an internal error', async () => {
+    setup(new Error('boom'))
+    expect(await screen.findByText('无法读取文件')).toBeTruthy()
   })
 })

@@ -153,6 +153,26 @@ describe('file service', () => {
     })
   })
 
+  it('maps stat and read failures while reading a file', async () => {
+    writeFileSync(path.join(ctx.root, 'a.txt'), 'a')
+    const denied = Object.assign(new Error('denied'), { code: 'EACCES' })
+    const gone = Object.assign(new Error('gone'), { code: 'ENOENT' })
+    const stat = vi.spyOn(fsp, 'stat').mockRejectedValueOnce(denied)
+    await expect(ctx.service.read({ projectId: 'p1', path: 'a.txt' })).rejects.toMatchObject({
+      code: 'fs.failed',
+    })
+    stat.mockRestore()
+    const readFile = vi.spyOn(fsp, 'readFile')
+    readFile.mockRejectedValueOnce(gone)
+    await expect(ctx.service.read({ projectId: 'p1', path: 'a.txt' })).rejects.toMatchObject({
+      code: 'fs.not_found',
+    })
+    readFile.mockRejectedValueOnce(denied)
+    await expect(ctx.service.read({ projectId: 'p1', path: 'a.txt' })).rejects.toMatchObject({
+      code: 'fs.failed',
+    })
+  })
+
   it('rejects reading directories, missing files and escaping paths', async () => {
     mkdirSync(path.join(ctx.root, 'docs'))
     await expect(ctx.service.read({ projectId: 'p1', path: 'docs' })).rejects.toMatchObject({

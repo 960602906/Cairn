@@ -7,7 +7,7 @@ import { RpcError, type SessionSummary } from '@cairn/protocol'
 import type { MainApi } from './api.js'
 import { App } from './App.js'
 import { createSessionStore } from './session-store.js'
-import { groupSessions } from './SessionList.js'
+import { formatSessionTime, groupSessions } from './SessionList.js'
 
 afterEach(cleanup)
 
@@ -369,5 +369,15 @@ describe('App without the preload API', () => {
         title: '你好',
       }),
     )
+  })
+})
+
+describe('formatSessionTime', () => {
+  const now = new Date(2026, 10, 11, 21, 30).getTime()
+  it('shows the time today, “yesterday” and month-day before that', () => {
+    expect(formatSessionTime(new Date(2026, 10, 11, 9, 5).getTime(), '昨天', now)).toBe('09:05')
+    expect(formatSessionTime(new Date(2026, 10, 10, 23, 0).getTime(), '昨天', now)).toBe('昨天')
+    expect(formatSessionTime(new Date(2026, 9, 3, 8, 0).getTime(), '昨天', now)).toBe('10-03')
+    expect(formatSessionTime(Number.NaN, '昨天', now)).toBe('')
   })
 })
