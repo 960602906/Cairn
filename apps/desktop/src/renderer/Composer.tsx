@@ -5,6 +5,8 @@
  *   运行中不能发送（主进程会报 `run.busy`），发送按钮换成停止按钮。发送时立即清空，失败时恢复。
  * - 草稿以 `/` 开头时弹出命令面板：`/compact`、`/plan`、`/model`。↑↓ 选择，Enter 执行，
  *   Tab 补全，Esc 关闭；没有匹配时按普通消息发送。
+ * - 文本框下面叠一层高亮（ComposerHighlight）：开头的指令、网址和代码片段有底色或下划线；
+ *   文本框自己的文字透明，只显示光标和选区。
  * - 下方左边是权限模式（只读 / 询问 / 自动，全局设置），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、
  *   上下文占用圆环（悬停显示百分比与 token 数）与发送 / 停止按钮。
  */
@@ -42,6 +44,7 @@ import {
   filterComposerCommands,
   type ComposerCommandDefinition,
 } from './composer-commands.js'
+import { ComposerHighlight } from './ComposerHighlight.js'
 import { isPlanModeKey, planShortcut } from './layout/shortcuts.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
@@ -75,6 +78,8 @@ type CommandNotice = {
   readonly tone: 'ok' | 'muted'
   readonly command?: string
 }
+
+const COMMAND_NAMES = COMPOSER_COMMANDS.map((command) => command.name)
 
 /** 文本框最高（px），超过后滚动。 */
 const MAX_TEXTAREA_HEIGHT = 200
@@ -567,26 +572,35 @@ export function Composer({
               {t(commandNotice.key)}
             </p>
           )}
-          <textarea
-            ref={textarea}
-            rows={1}
-            aria-label={t('input.label')}
-            aria-expanded={commandPanelOpen}
-            aria-controls={commandPanelOpen ? 'composer-command-list' : undefined}
-            aria-activedescendant={
-              commandPanelOpen && activeCommandIndex >= 0
-                ? `composer-command-${filteredCommands[activeCommandIndex]?.id}`
-                : undefined
-            }
-            placeholder={planMode ? t('composer.plan.placeholder') : t('input.placeholder')}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value)
-              setCommandNotice(null)
-            }}
-            onKeyDown={keyDown}
-            className="block max-h-[200px] min-h-6 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
-          />
+          <div className="relative">
+            <textarea
+              ref={textarea}
+              rows={1}
+              aria-label={t('input.label')}
+              aria-expanded={commandPanelOpen}
+              aria-controls={commandPanelOpen ? 'composer-command-list' : undefined}
+              aria-activedescendant={
+                commandPanelOpen && activeCommandIndex >= 0
+                  ? `composer-command-${filteredCommands[activeCommandIndex]?.id}`
+                  : undefined
+              }
+              placeholder={planMode ? t('composer.plan.placeholder') : t('input.placeholder')}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value)
+                setCommandNotice(null)
+              }}
+              onKeyDown={keyDown}
+              className="relative block max-h-[200px] min-h-6 w-full resize-none break-words bg-transparent px-1 text-body text-transparent caret-fg outline-none placeholder:text-faint"
+            />
+            {/* 放在文本框之后：它的布局副作用要等文本框的 ref 就绪 */}
+            <ComposerHighlight
+              text={text}
+              commands={COMMAND_NAMES}
+              textarea={textarea}
+              className="px-1 text-body text-fg break-words"
+            />
+          </div>
           <div className="mt-2 flex items-center gap-1">
             <PermissionMenu />
             <button
