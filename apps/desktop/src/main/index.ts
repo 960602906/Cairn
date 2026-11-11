@@ -9,6 +9,9 @@ import { redact } from '@cairn/core'
 import { app } from 'electron'
 import { resolveAppPaths } from './app-paths.js'
 import { appUserModelId } from './app-identity.js'
+import { configureElectronRuntime } from './electron-runtime.js'
+
+configureElectronRuntime(process.env, app.commandLine)
 
 const paths = resolveAppPaths({
   appData: app.getPath('appData'),
