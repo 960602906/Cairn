@@ -74,7 +74,7 @@ test('稍后关闭欢迎说明后仍可浏览已有界面', async ({ launch, use
 })
 
 test('欢迎说明在深色与浅色主题下都完整显示', async ({ launch, userData }) => {
-  for (const theme of ['bluestone', 'paper'] as const) {
+  for (const theme of ['dark', 'light'] as const) {
     const running = await launch({
       onboardingSeen: false,
       theme,

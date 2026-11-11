@@ -289,7 +289,7 @@ describe('SessionSidePanel', () => {
     const panel = screen.getByRole('dialog', { name: '会话信息' })
     expect(panel.className).toContain('transition-[width,transform,opacity]')
     expect(panel.className).toContain('duration-200')
-    expect(panel.className).toContain('w-[348px]')
+    expect(panel.style.width).toBe('348px')
     expect(panel.className).toContain('translate-x-0')
     expect(panel.className).toContain('opacity-100')
     expect(panel.getAttribute('aria-hidden')).toBe('false')
@@ -493,7 +493,7 @@ describe('SessionSidePanel', () => {
   it('collapses to zero width and removes itself from the accessible tree', () => {
     wrap(<Harness open={false} />)
     const panel = screen.getByRole('dialog', { hidden: true })
-    expect(panel.className).toContain('w-0')
+    expect(panel.style.width).toBe('0px')
     expect(panel.className).toContain('opacity-0')
     expect(panel.className).toContain('pointer-events-none')
     expect(panel.className).toContain('translate-x-full')

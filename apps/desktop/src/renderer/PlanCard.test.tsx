@@ -246,7 +246,7 @@ describe('PlanProgress', () => {
     expect(within(card).queryByRole('listitem')).toBeNull()
     // 收起后标题行显示当前步骤。
     expect(within(card).getByText('改实现')).toBeTruthy()
-    await user.click(within(card).getByRole('button', { name: '查看完整计划：读代码' }))
+    await user.click(within(card).getByRole('button', { name: '改实现' }))
     expect(onOpen).toHaveBeenCalledTimes(1)
     await user.click(within(card).getByRole('button', { name: '展开计划步骤' }))
     expect(within(card).getAllByRole('listitem')).toHaveLength(4)

@@ -145,11 +145,9 @@ export const Locale = z.enum(['zh-CN', 'en-US'])
 export type Locale = z.infer<typeof Locale>
 
 /**
- * 界面主题（视觉规范 §3）。五套内置配色 + 跟随系统：
- * - `bluestone` 青石（深色，青绿，默认）
- * - `obsidian` 黑曜（深色，信号橙）、`slate` 板岩（深色，鸢尾）
- * - `paper` 纸面（浅色，酒红）、`tundra` 苔原（浅色，苔绿）
- * 旧版本保存的 `light` / `dark` / `graphite` 仍然可读，读取时分别归到 `tundra` / `obsidian` / `obsidian`。
+ * 界面主题（视觉规范 §3）：`system` 跟随系统、`light` 浅色、`dark` 深色。
+ * 其余取值是旧版本保存过的配色名，仍然可读，读取时按明暗归到 `light` / `dark`
+ * （`paper`、`tundra` 是浅色，其余是深色）。新代码不要再写入它们。
  */
 export const Theme = z.enum([
   'system',

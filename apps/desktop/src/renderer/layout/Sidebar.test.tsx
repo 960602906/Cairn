@@ -46,7 +46,7 @@ describe('Sidebar', () => {
     expect(sidebar.hasAttribute('inert')).toBe(false)
     expect(sidebar.className).toContain('transition-[width,opacity]')
     expect(sidebar.className).toContain('duration-200')
-    expect(sidebar.className).toContain('w-[252px]')
+    expect(sidebar.style.width).toBe('252px')
     expect(sidebar.className).toContain('opacity-100')
   })
 
@@ -54,10 +54,11 @@ describe('Sidebar', () => {
     const { sidebar } = renderSidebar(false)
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
     expect(sidebar.hasAttribute('inert')).toBe(true)
-    expect(sidebar.className).toContain('w-0')
+    expect(sidebar.style.width).toBe('0px')
+    expect(screen.queryByRole('separator')).toBeNull()
     expect(sidebar.className).toContain('opacity-0')
     expect(sidebar.className).toContain('pointer-events-none')
-    expect(sidebar.firstElementChild?.className).toContain('-translate-x-3')
+    expect(sidebar.lastElementChild?.className).toContain('-translate-x-3')
   })
 
   it('shows the app name, the session list and the search entry', () => {

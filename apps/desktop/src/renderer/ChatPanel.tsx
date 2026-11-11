@@ -38,7 +38,7 @@ export function TopBar({ children }: { readonly children?: ReactNode }) {
       {/* 线条放在顶栏之外，避免被窗口按钮或拖拽区裁切。 */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-full block h-[0.5px] bg-hair"
+        className="pointer-events-none absolute inset-x-0 top-full z-[5] block h-[0.5px] bg-hair"
       />
     </header>
   )

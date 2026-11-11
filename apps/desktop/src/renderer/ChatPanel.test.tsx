@@ -241,7 +241,7 @@ describe('ChatPanel', () => {
     expect(within(card).getByText('1 / 2')).toBeTruthy()
 
     // 点目标在右侧打开完整计划。
-    await userEvent.click(within(card).getByRole('button', { name: '查看完整计划：整理设置页' }))
+    await userEvent.click(within(card).getByRole('button', { name: '整理设置页' }))
     expect(screen.getByRole('tab', { name: '计划' }).getAttribute('aria-selected')).toBe('true')
 
     // 步骤全部做完后卡片消失。
@@ -1072,10 +1072,13 @@ describe('tool calls and undo turn', () => {
       },
     })
     await open()
-    expect(screen.getAllByRole('separator').map((s) => s.getAttribute('aria-label'))).toEqual([
-      expect.stringMatching(/^第 1 轮前/),
-      expect.stringMatching(/^第 2 轮前/),
-    ])
+    // 侧栏的宽度分隔条也是 separator（可聚焦），这里只看检查点分隔线。
+    expect(
+      screen
+        .getAllByRole('separator')
+        .filter((s) => s.tabIndex !== 0)
+        .map((s) => s.getAttribute('aria-label')),
+    ).toEqual([expect.stringMatching(/^第 1 轮前/), expect.stringMatching(/^第 2 轮前/)])
     const rail = screen.getByRole('navigation', { name: '对话导航' })
     const first = within(rail).getByRole('button', { name: '跳到第 1 轮：跑测试' })
     const scrolled = vi.fn()

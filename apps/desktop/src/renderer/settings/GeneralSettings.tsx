@@ -7,12 +7,21 @@
  */
 import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Download, Languages, MessageSquareText, Monitor, Palette } from 'lucide-react'
+import {
+  Check,
+  Download,
+  Languages,
+  MessageSquareText,
+  Monitor,
+  Moon,
+  Palette,
+  Sun,
+} from 'lucide-react'
 import { DiagnosticsExportDialog } from './DiagnosticsExportDialog.js'
 import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
 import { INSTRUCTIONS_MAX_LENGTH, type ShellPreference } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
-import { THEME_CHOICES, THEME_SWATCHES } from '../theme.js'
+import { DEFAULT_THEME, THEME_CHOICES, themeChoice } from '../theme.js'
 import { Button, cn, SegmentedControl, Switch } from '../ui/index.js'
 import { Field, inputClass, SettingsGroup, ToggleRow } from './Field.js'
 import { SandboxSettings } from './SandboxSettings.js'
@@ -134,43 +143,21 @@ function InstructionsField() {
   )
 }
 
+const THEME_ICON = { system: Monitor, light: Sun, dark: Moon } as const
+
 function ThemeGrid() {
   const { t } = useTranslation('settings')
-  const theme = useSessionStore((s) => s.settings?.theme ?? 'slate')
+  const theme = useSessionStore((s) => themeChoice(s.settings?.theme ?? DEFAULT_THEME))
   const updateSettings = useSessionStore((s) => s.updateSettings)
   return (
     <div
       role="radiogroup"
       aria-label={t('general.theme.label')}
-      className="grid grid-cols-2 gap-2 min-[860px]:grid-cols-3"
+      className="grid grid-cols-1 gap-2 min-[700px]:grid-cols-3"
     >
-      <button
-        type="button"
-        role="radio"
-        aria-checked={theme === 'system'}
-        onClick={() => void updateSettings({ theme: 'system' })}
-        className={cn(
-          'flex items-center gap-2.5 rounded-card bg-paper px-3 py-2.5 text-left shadow-hair transition-colors hover:bg-hover',
-          theme === 'system' &&
-            'bg-accent-soft shadow-[0_0_0_1.5px_var(--accent)] hover:bg-accent-soft',
-        )}
-      >
-        <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-sunk2 text-muted">
-          <Monitor className="size-4" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-ui font-medium text-fg">
-            {t('general.theme.system')}
-          </span>
-          <span className="block truncate text-note text-muted">
-            {t('general.theme.system.hint')}
-          </span>
-        </span>
-        {theme === 'system' && <Check className="size-4 shrink-0 text-accent" />}
-      </button>
       {THEME_CHOICES.map(({ value, label }) => {
-        const swatch = THEME_SWATCHES[value]
         const active = theme === value
+        const Icon = THEME_ICON[value]
         return (
           <button
             key={value}
@@ -183,13 +170,8 @@ function ThemeGrid() {
               active && 'bg-accent-soft shadow-[0_0_0_1.5px_var(--accent)] hover:bg-accent-soft',
             )}
           >
-            <span
-              aria-hidden
-              className="flex size-8 shrink-0 flex-col justify-end gap-0.5 rounded-[7px] p-1 shadow-hair"
-              style={{ background: swatch.canvas }}
-            >
-              <span className="h-1 w-full rounded-[2px]" style={{ background: swatch.paper }} />
-              <span className="h-1 w-2/3 rounded-[2px]" style={{ background: swatch.accent }} />
+            <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-sunk2 text-muted">
+              <Icon className="size-4" />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-ui font-medium text-fg">{t(label)}</span>

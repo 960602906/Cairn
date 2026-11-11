@@ -73,7 +73,7 @@ test('设置页完成检查、下载，并显示重启确认', async ({ launch }
     await expect(window.getByText(/unsigned beta/)).toBeVisible()
     await expect(window.getByRole('button', { name: '重启安装' })).toBeEnabled()
 
-    await setTheme(window, '纸面', 'paper')
+    await setTheme(window, '浅色', 'light')
     await window.screenshot({ path: path.join(ARTIFACTS, 'update-settings-light.png') })
 
     await window.getByRole('button', { name: '重启安装' }).click()
@@ -84,7 +84,7 @@ test('设置页完成检查、下载，并显示重启确认', async ({ launch }
     await dialog.getByRole('button', { name: '稍后' }).click()
     await expect(dialog).toHaveCount(0)
 
-    await setTheme(window, '板岩', 'slate')
+    await setTheme(window, '深色', 'dark')
     await window.screenshot({ path: path.join(ARTIFACTS, 'update-settings-dark.png') })
   } finally {
     removeDevConfig()

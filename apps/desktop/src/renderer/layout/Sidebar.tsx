@@ -11,10 +11,13 @@ import type { ProjectSummary } from '@cairn/protocol'
 import { SessionList } from '../SessionList.js'
 import { CairnMark, cn, IconButton, Kbd } from '../ui/index.js'
 import { WorkspaceList } from '../WorkspaceList.js'
+import { ResizeHandle, useResizableWidth } from './resize.js'
 import { newChatShortcut, searchShortcut, settingsShortcut } from './shortcuts.js'
 
-/** 左栏宽度；设置导航沿用同一宽度，切换时主区不跳动。 */
+/** 左栏默认宽度；可以拖动右边缘调整。 */
 export const SIDEBAR_WIDTH = 252
+const SIDEBAR_MIN = 208
+const SIDEBAR_MAX = 420
 
 function NavRow({
   icon,
@@ -82,18 +85,31 @@ export function Sidebar({
   const { t: tc } = useTranslation()
   // macOS 的红绿灯压在左上角，标题行给它让出位置。
   const mac = window.cairn?.windowControls?.platform === 'darwin'
+  const { width, dragging, handleProps } = useResizableWidth({
+    storageKey: 'cairn.sidebarWidth',
+    initial: SIDEBAR_WIDTH,
+    min: SIDEBAR_MIN,
+    max: SIDEBAR_MAX,
+    edge: 'right',
+  })
   return (
     <aside
       aria-hidden={!open}
       inert={!open}
+      style={{ width: open ? width : 0 }}
       className={cn(
-        'h-full shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none',
-        open ? 'w-[252px] opacity-100' : 'pointer-events-none w-0 opacity-0',
+        'relative h-full shrink-0',
+        // 拖动时不要过渡，宽度要跟手。
+        !dragging &&
+          'transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none',
+        open ? 'opacity-100' : 'pointer-events-none overflow-hidden opacity-0',
       )}
     >
+      {open && <ResizeHandle label={t('sidebar.resize')} {...handleProps} />}
       <div
+        style={{ width }}
         className={cn(
-          'flex h-full w-[252px] flex-col bg-chrome transition-transform duration-200 ease-out motion-reduce:transition-none',
+          'flex h-full flex-col overflow-hidden bg-chrome transition-transform duration-200 ease-out motion-reduce:transition-none',
           open ? 'translate-x-0' : '-translate-x-3',
         )}
       >

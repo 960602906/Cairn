@@ -23,6 +23,8 @@
   "plan.progress.count": "{{done}} / {{total}}",
   "plan.progress.expand": "Show plan steps",
   "plan.progress.collapse": "Hide plan steps",
+  "sidebar.resize": "Resize sidebar",
+  "sidePanel.resize": "Resize session panel",
   "sidePanel.emptyPlan": "No plan yet.",
   "brief.open": "Session brief",
   "brief.title": "Session brief",

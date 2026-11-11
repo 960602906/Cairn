@@ -186,16 +186,16 @@ describe('SettingsPage', () => {
   })
 
   it('saves the theme and the language', async () => {
-    const { updates, i18n } = setup({ theme: 'obsidian' })
+    const { updates, i18n } = setup({ theme: 'obsidian' }) // 旧版本的配色名归到深色
     await openSettings()
     const theme = screen.getByRole('radiogroup', { name: '主题' })
     await waitFor(() =>
-      expect(within(theme).getByRole('radio', { name: /^黑曜/ }).getAttribute('aria-checked')).toBe(
+      expect(within(theme).getByRole('radio', { name: /^深色/ }).getAttribute('aria-checked')).toBe(
         'true',
       ),
     )
-    await userEvent.click(within(theme).getByRole('radio', { name: /^苔原/ }))
-    expect(updates).toContainEqual({ theme: 'tundra' })
+    await userEvent.click(within(theme).getByRole('radio', { name: /^浅色/ }))
+    expect(updates).toContainEqual({ theme: 'light' })
 
     const language = screen.getByRole('radiogroup', { name: '界面语言' })
     await userEvent.click(within(language).getByRole('radio', { name: 'English' }))

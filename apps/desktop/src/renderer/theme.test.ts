@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { applyTheme, resolveTheme } from './theme.js'
+import { applyTheme, isDarkTheme, resolveTheme, themeChoice } from './theme.js'
 
 function fakeMedia(matches: boolean) {
   const listeners = new Set<() => void>()
@@ -19,15 +19,22 @@ function fakeMedia(matches: boolean) {
 }
 
 describe('resolveTheme', () => {
-  it('maps system and the legacy values onto the four palettes', () => {
-    expect(resolveTheme('system', true)).toBe('slate')
-    expect(resolveTheme('system', false)).toBe('paper')
-    expect(resolveTheme('light', true)).toBe('tundra')
-    expect(resolveTheme('dark', false)).toBe('obsidian')
-    expect(resolveTheme('graphite', false)).toBe('obsidian')
-    expect(resolveTheme('obsidian', false)).toBe('obsidian')
-    expect(resolveTheme('paper', true)).toBe('paper')
-    expect(resolveTheme('slate', false)).toBe('slate')
+  it('maps system and the legacy palette names onto light and dark', () => {
+    expect(resolveTheme('system', true)).toBe('dark')
+    expect(resolveTheme('system', false)).toBe('light')
+    expect(resolveTheme('light', true)).toBe('light')
+    expect(resolveTheme('dark', false)).toBe('dark')
+    for (const legacy of ['graphite', 'obsidian', 'bluestone', 'slate'] as const) {
+      expect(resolveTheme(legacy, false)).toBe('dark')
+      expect(themeChoice(legacy)).toBe('dark')
+    }
+    for (const legacy of ['paper', 'tundra'] as const) {
+      expect(resolveTheme(legacy, true)).toBe('light')
+      expect(themeChoice(legacy)).toBe('light')
+    }
+    expect(themeChoice('system')).toBe('system')
+    expect(isDarkTheme('dark')).toBe(true)
+    expect(isDarkTheme('light')).toBe(false)
   })
 })
 
@@ -36,10 +43,10 @@ describe('applyTheme', () => {
     const root = { setAttribute: vi.fn() }
     const matchMedia = vi.fn()
     const onResolved = vi.fn()
-    applyTheme('obsidian', { root, matchMedia }, onResolved)()
-    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'obsidian')
+    applyTheme('dark', { root, matchMedia }, onResolved)()
+    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'dark')
     expect(matchMedia).not.toHaveBeenCalled()
-    expect(onResolved).toHaveBeenCalledWith('obsidian', true)
+    expect(onResolved).toHaveBeenCalledWith('dark', true)
   })
 
   it('follows system changes until disposed', () => {
@@ -49,16 +56,16 @@ describe('applyTheme', () => {
       root,
       matchMedia: () => fake.media as unknown as MediaQueryList,
     })
-    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'paper')
+    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'light')
     fake.set(true)
-    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'slate')
+    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark')
     dispose()
     expect(fake.listeners.size).toBe(0)
   })
 
-  it('treats system as the light paper palette without matchMedia', () => {
+  it('treats system as light without matchMedia', () => {
     const root = { setAttribute: vi.fn() }
     applyTheme('system', { root })()
-    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'paper')
+    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'light')
   })
 })

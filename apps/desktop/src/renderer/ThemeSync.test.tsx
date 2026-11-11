@@ -11,7 +11,7 @@ afterEach(cleanup)
 
 describe('ThemeSync', () => {
   it('loads settings and applies the saved theme, then follows updates', async () => {
-    let settings: Settings = { locale: 'zh-CN', providers: [], theme: 'paper' }
+    let settings: Settings = { locale: 'zh-CN', providers: [], theme: 'dark' }
     const request = vi.fn(async (method: string, params: unknown) => {
       if (method === 'settings.get') return settings
       if (method === 'settings.update') {
@@ -30,11 +30,9 @@ describe('ThemeSync', () => {
       </SessionStoreProvider>,
     )
     // 设置读到之前按默认的板岩
-    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'slate')
-    await vi.waitFor(() =>
-      expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'paper'),
-    )
-    await act(() => store.getState().updateSettings({ theme: 'slate' }))
-    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'slate')
+    expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'light')
+    await vi.waitFor(() => expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark'))
+    await act(() => store.getState().updateSettings({ theme: 'light' }))
+    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'light')
   })
 })

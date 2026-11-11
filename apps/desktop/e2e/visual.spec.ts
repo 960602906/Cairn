@@ -1,7 +1,7 @@
 /**
  * 视觉验收（三栏布局）：主题切换 + 六档窗口尺寸。
  *
- * - 默认主题是板岩；五套内置配色都必须真的写到 <html data-theme>。
+ * - 默认跟随系统；浅色、深色都必须真的写到 <html data-theme>。
  * - 没有图标栏；252px 左栏 ≥900px 常驻，<900px 改为抽屉，由顶栏按钮展开。
  * - 工作台 ≥1440px 占布局宽度，更窄时是右侧浮层。
  * - 页面不能出现横向滚动，输入框始终可见。
@@ -81,9 +81,9 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   await sendPrompt(window, '把「模型供应商」拆成独立入口，并统一表单控件的间距。')
   await expect(runStatus(window)).toHaveText('空闲')
 
-  // 第一次启动没有保存过主题，直接呈现板岩。
+  // 第一次启动没有保存过主题，跟随系统解析成浅色或深色。
   await resize(app.app, window, { width: 1440, height: 900 })
-  await expect.poll(() => themeOf(window)).toBe('slate')
+  await expect.poll(() => themeOf(window)).toMatch(/^(light|dark)$/)
   await expect(panel(window)).toBeVisible()
 
   for (const size of SIZES) {
@@ -138,7 +138,7 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   await window.keyboard.press('Escape')
   await expect(window.getByRole('heading', { name: '通用与外观' })).toHaveCount(0)
 
-  // 主题：五套内置配色逐个应用并截图。
+  // 主题：浅色、深色逐个应用并截图。
   await resize(app.app, window, { width: 1440, height: 900 })
   await window.getByRole('button', { name: /^设置/ }).click()
   await window
@@ -147,11 +147,8 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
     .click()
   const themes = window.getByRole('radiogroup', { name: '主题' })
   for (const [label, id] of [
-    ['青石', 'bluestone'],
-    ['黑曜', 'obsidian'],
-    ['纸面', 'paper'],
-    ['苔原', 'tundra'],
-    ['板岩', 'slate'],
+    ['深色', 'dark'],
+    ['浅色', 'light'],
   ] as const) {
     await themes.getByRole('radio', { name: new RegExp(`^${label}`) }).click()
     await expect.poll(() => themeOf(window)).toBe(id)

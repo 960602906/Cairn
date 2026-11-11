@@ -246,7 +246,7 @@ export function PlanProgress({
         <ListTodo aria-hidden className="size-3.5 shrink-0 text-muted" />
         <button
           type="button"
-          aria-label={t('plan.summary.open', { goal: plan.content.goal })}
+          title={t('plan.openSide')}
           onClick={onOpen}
           className="min-w-0 flex-1 truncate rounded-[5px] text-left text-note font-medium text-fg outline-none hover:underline focus-visible:ring-1 focus-visible:ring-accent"
         >

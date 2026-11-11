@@ -23,6 +23,8 @@
   "plan.progress.count": "{{done}} / {{total}}",
   "plan.progress.expand": "展开计划步骤",
   "plan.progress.collapse": "收起计划步骤",
+  "sidebar.resize": "调整侧栏宽度",
+  "sidePanel.resize": "调整会话信息栏宽度",
   "sidePanel.emptyPlan": "还没有计划。",
   "brief.open": "会话要点",
   "brief.title": "会话要点",

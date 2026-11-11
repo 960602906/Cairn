@@ -14,6 +14,7 @@ import { ChangeSetReview } from './ChangeSetReview.js'
 import { ChangeCounts } from './DiffCard.js'
 import { SessionChangesPanel } from './FileChanges.js'
 import { Inspector } from './Inspector.js'
+import { ResizeHandle, useResizableWidth } from './layout/resize.js'
 import { PlanDetails } from './PlanCard.js'
 import { SessionBriefPanel } from './SessionBrief.js'
 import { useSessionStore } from './store-context.js'
@@ -168,6 +169,13 @@ export function SessionSidePanel({
   const [diffTab, setDiffTab] = useState<'changesets' | 'files'>('files')
   const autoSwitched = useRef(false)
   const panelRef = useRef<HTMLElement>(null)
+  const { width, dragging, handleProps } = useResizableWidth({
+    storageKey: 'cairn.sessionPanelWidth',
+    initial: 348,
+    min: 300,
+    max: 720,
+    edge: 'left',
+  })
   useEffect(() => {
     autoSwitched.current = false
     setDiffTab('files')
@@ -240,23 +248,31 @@ export function SessionSidePanel({
       aria-hidden={!open}
       inert={!open}
       data-side-panel-dialog={docked ? undefined : ''}
+      style={bottom ? undefined : { width: open ? width : 0 }}
       className={cn(
-        'flex shrink-0 flex-col overflow-hidden bg-paper',
+        'flex shrink-0 flex-col bg-paper',
         bottom
-          ? 'relative h-full min-h-0 w-full border-t-[0.5px] border-hair'
+          ? 'relative h-full min-h-0 w-full overflow-hidden border-t-[0.5px] border-hair'
           : cn(
-              'w-[348px]',
               docked
-                ? 'static z-auto border-l-[0.5px] border-hair'
-                : 'absolute inset-y-0 right-0 z-20 shadow-3',
-              'transition-[width,transform,opacity] duration-200 ease-out motion-reduce:transition-none',
+                ? 'relative z-auto border-l-[0.5px] border-hair'
+                : 'absolute inset-y-0 right-0 z-20 max-w-full shadow-3',
+              !dragging &&
+                'transition-[width,transform,opacity] duration-200 ease-out motion-reduce:transition-none',
               open
                 ? 'translate-x-0 opacity-100'
-                : 'pointer-events-none w-0 translate-x-full opacity-0',
+                : 'pointer-events-none translate-x-full overflow-hidden opacity-0',
             ),
       )}
     >
-      <div className={cn('flex h-full shrink-0 flex-col', bottom ? 'w-full' : 'w-[348px]')}>
+      {open && !bottom && <ResizeHandle label={t('sidePanel.resize')} {...handleProps} />}
+      <div
+        style={bottom ? undefined : { width }}
+        className={cn(
+          'flex h-full max-w-full shrink-0 flex-col overflow-hidden',
+          bottom && 'w-full',
+        )}
+      >
         <div className="flex h-11 shrink-0 items-center gap-1 pr-2 pl-2.5">
           <div role="tablist" className="flex min-w-0 items-center gap-0.5">
             {PANELS.filter(({ id }) => tabs.includes(id)).map(({ id, label }) => {
