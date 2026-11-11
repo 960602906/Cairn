@@ -3,8 +3,10 @@
  *
  * - 文本框自动增高（最多约 8 行）。Enter 发送，Shift+Enter 换行；输入法组字时的 Enter 不发送。
  *   运行中不能发送（主进程会报 `run.busy`），发送按钮换成停止按钮。发送时立即清空，失败时恢复。
- * - 草稿以 `/` 开头时弹出命令面板：`/compact`、`/plan`、`/model`。↑↓ 选择，Enter 执行，
- *   Tab 补全，Esc 关闭；没有匹配时按普通消息发送。
+ * - 草稿以 `/` 开头时弹出指令面板（注册表在 composer-commands.ts）。↑↓ 选择，Enter 执行，
+ *   Tab 补全，Esc 关闭；没有匹配时按普通消息发送。写了空白之后面板收起，`/名称 参数` 在发送时执行，
+ *   例如 `/plan 任务描述` 以计划模式发送、`/model 名称` 直接切换模型、`/settings mcp` 打开对应分区。
+ *   运行中不能执行的指令在面板里置灰并说明原因。
  * - 文本框下面叠一层高亮（ComposerHighlight）：开头的指令、网址和代码片段有底色或下划线；
  *   文本框自己的文字透明，只显示光标和选区。
  * - 下方左边是权限模式（只读 / 询问 / 自动，全局设置），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、
@@ -30,7 +32,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { RunView } from '@cairn/core'
+import type { RunView, SessionView } from '@cairn/core'
 import type {
   AgentDefinitionRef,
   ModelRef,
@@ -42,10 +44,21 @@ import {
   COMPOSER_COMMANDS,
   composerCommandQuery,
   filterComposerCommands,
-  type ComposerCommandDefinition,
+  matchCommandArg,
+  parseComposerCommand,
+  SETTINGS_SECTIONS,
 } from './composer-commands.js'
+import {
+  RestoreDialog,
+  turnCheckpoints,
+  turnNumbers,
+  useCanRestore,
+  type RestoreTarget,
+} from './Checkpoints.js'
 import { ComposerHighlight } from './ComposerHighlight.js'
 import { isPlanModeKey, planShortcut } from './layout/shortcuts.js'
+import type { SessionPanel } from './SessionPanels.js'
+import type { SettingsSection } from './settings/SettingsPage.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
 import {
@@ -70,6 +83,12 @@ export interface ComposerProps {
   readonly projectPath: string | undefined
   /** 上下文占用的 token 数（最近一次用量）。 */
   readonly contextTokens: number | undefined
+  /** `/files`、`/diff` 等打开右侧面板；没有时这些指令不出现。 */
+  readonly onOpenPanel?: ((panel: SessionPanel) => void) | undefined
+  /** `/new`；没有时指令不出现。 */
+  readonly onNewChat?: (() => void) | undefined
+  /** `/settings [分区]`；没有时指令不出现。 */
+  readonly onOpenSettings?: ((section: SettingsSection) => void) | undefined
 }
 
 type CommandNotice = {
@@ -77,9 +96,8 @@ type CommandNotice = {
   readonly key: string
   readonly tone: 'ok' | 'muted'
   readonly command?: string
+  readonly params?: Readonly<Record<string, string>>
 }
-
-const COMMAND_NAMES = COMPOSER_COMMANDS.map((command) => command.name)
 
 /** 文本框最高（px），超过后滚动。 */
 const MAX_TEXTAREA_HEIGHT = 200
@@ -284,6 +302,20 @@ function ContextRing({
   )
 }
 
+/** `/undo` 的目标：最后一轮及其检查点；没有可撤销的轮次时为 undefined。 */
+export function lastTurnTarget(view: SessionView | undefined): RestoreTarget | undefined {
+  if (view === undefined) return undefined
+  const turns = turnNumbers(view)
+  let last: { turnId: string; turn: number } | undefined
+  for (const [turnId, turn] of turns)
+    if (last === undefined || turn > last.turn) last = { turnId, turn }
+  if (last === undefined) return undefined
+  const checkpoint = turnCheckpoints(view).get(last.turnId)
+  return checkpoint === undefined
+    ? undefined
+    : { checkpointId: checkpoint.checkpointId, turn: last.turn, later: false }
+}
+
 export function Composer({
   sessionId,
   status,
@@ -292,15 +324,22 @@ export function Composer({
   model,
   projectPath,
   contextTokens,
+  onOpenPanel,
+  onNewChat,
+  onOpenSettings,
 }: ComposerProps) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
+  const { t: ts } = useTranslation('settings')
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const setSessionModel = useSessionStore((s) => s.setSessionModel)
   const compactSession = useSessionStore((s) => s.compactSession)
   const abort = useSessionStore((s) => s.abort)
   const agents = useSessionStore((s) => s.agents) ?? []
   const providers = useSessionStore((s) => s.settings?.providers) ?? []
+  const view = useSessionStore((s) => s.views[sessionId])
+  const canRestore = useCanRestore(view)
+  const [restoreTarget, setRestoreTarget] = useState<RestoreTarget>()
   const fixedAgentModel =
     agent !== undefined && agents.find((item) => item.agentId === agent.id)?.modelMode === 'fixed'
   const [text, setText] = useState('')
@@ -316,26 +355,63 @@ export function Composer({
   const noticeId = useRef(0)
   const active = status === 'running' || status === 'waiting_approval'
   const stopping = run?.state === 'aborting'
-  const canSend = !active && !sending && text.trim() !== ''
   const fixedModel = agent !== undefined && run?.agent.id === agent.id && fixedAgentModel
   const enabledModelCount = providers
     .flatMap((provider) => provider.models)
     .filter((item) => item.enabled !== false).length
   const modelMenuDisabled = fixedModel || enabledModelCount === 0
-  const commandQuery = composerCommandQuery(text)
-  const commandPanelOpen = commandQuery !== null && dismissedDraft !== text && !sending
-  const commands = COMPOSER_COMMANDS.map((command) => ({
+  const undoTarget = lastTurnTarget(view)
+  const commands = COMPOSER_COMMANDS.filter((command) =>
+    command.panel !== undefined
+      ? onOpenPanel !== undefined
+      : command.id === 'new'
+        ? onNewChat !== undefined
+        : command.id === 'settings'
+          ? onOpenSettings !== undefined
+          : true,
+  ).map((command) => ({
     ...command,
     description: t(command.descriptionKey),
+    unavailable:
+      command.idleOnly === true && active
+        ? 'composer.command.unavailable.running'
+        : command.id === 'model' && modelMenuDisabled
+          ? 'composer.command.unavailable.model'
+          : command.id === 'undo' && (!canRestore || undoTarget === undefined)
+            ? 'composer.command.unavailable.undo'
+            : undefined,
   }))
+  const commandNames = commands.map((command) => command.name)
+  const parsedCommand = parseComposerCommand(text, commands)
+  const canSend =
+    !sending &&
+    text.trim() !== '' &&
+    (parsedCommand !== undefined
+      ? parsedCommand.command.unavailable === undefined &&
+        // `/plan 任务` 会发出一轮对话，和普通消息一样要等运行结束。
+        !(active && parsedCommand.command.id === 'plan' && parsedCommand.args !== '')
+      : !active)
+  const commandQuery = composerCommandQuery(text)
+  const commandPanelOpen = commandQuery !== null && dismissedDraft !== text && !sending
   const filteredCommands =
     commandQuery === null ? [] : filterComposerCommands(commands, commandQuery)
   const activeCommandIndex =
     filteredCommands.length === 0 ? -1 : Math.min(commandIndex, filteredCommands.length - 1)
 
-  const showNotice = (key: string, tone: CommandNotice['tone'], command?: string) => {
+  const showNotice = (
+    key: string,
+    tone: CommandNotice['tone'],
+    command?: string,
+    params?: Readonly<Record<string, string>>,
+  ) => {
     noticeId.current += 1
-    setCommandNotice({ id: noticeId.current, key, tone, ...(command ? { command } : {}) })
+    setCommandNotice({
+      id: noticeId.current,
+      key,
+      tone,
+      ...(command ? { command } : {}),
+      ...(params ? { params } : {}),
+    })
   }
 
   // 自动增高
@@ -359,34 +435,90 @@ export function Composer({
   const send = async () => {
     if (!canSend) return
     const draft = text
+    if (parsedCommand !== undefined) {
+      await runCommand(parsedCommand.command, parsedCommand.args)
+      return
+    }
     setText('')
     setSending(true)
-    // /compact 立刻压缩，不作为用户消息发给模型。
-    const sent =
-      draft.trim() === '/compact'
-        ? (await compactNow()) !== undefined
-        : await sendPrompt(draft, planMode ? 'plan' : 'normal')
+    const sent = await sendPrompt(draft, planMode ? 'plan' : 'normal')
     setSending(false)
     if (!sent) setText((current) => (current === '' ? draft : current))
   }
 
-  const runCommand = async (command: ComposerCommandDefinition) => {
+  type AvailableCommand = (typeof commands)[number]
+
+  const runCommand = async (command: AvailableCommand, args = '') => {
     if (sending) return
-    // 没有可选模型时保留草稿，避免静默吞掉输入。
-    if (command.id === 'model' && modelMenuDisabled) return
-    const draft = `/${command.name}`
+    if (command.unavailable !== undefined) {
+      // 保留草稿，说明为什么现在不能执行。
+      showNotice(command.unavailable, 'muted', command.name)
+      return
+    }
+    const draft = text
+    const restore = () => setText((current) => (current === '' ? draft : current))
     setDismissedDraft(null)
     setText('')
-    if (command.id === 'plan') {
-      setPlanMode((on) => !on)
-    } else if (command.id === 'model') {
-      setModelMenuOpen(true)
-    } else {
-      const compacted = await compactNow()
-      if (compacted === undefined) setText((current) => (current === '' ? draft : current))
+    // /model 把焦点交给下拉菜单，关闭时再由 onOpenChange 还回来；打开面板或设置时焦点跟过去。
+    let keepFocus = true
+    switch (command.id) {
+      case 'plan':
+        if (args === '') {
+          setPlanMode((on) => !on)
+        } else {
+          setSending(true)
+          const sent = await sendPrompt(args, 'plan')
+          setSending(false)
+          if (!sent) restore()
+        }
+        break
+      case 'model': {
+        const choice =
+          args === ''
+            ? undefined
+            : matchCommandArg(args, enabledModelChoices(providers), (item) => [
+                item.name,
+                item.ref.modelId,
+                `${item.provider}${item.name}`,
+              ])
+        if (choice === undefined) {
+          if (args !== '')
+            showNotice('composer.command.model.notFound', 'muted', 'model', { query: args })
+          setModelMenuOpen(true)
+          keepFocus = false
+        } else {
+          await setSessionModel(sessionId, choice.ref)
+          showNotice('composer.command.model.switched', 'ok', 'model', { name: choice.name })
+        }
+        break
+      }
+      case 'compact': {
+        const compacted = await compactNow()
+        if (compacted === undefined) restore()
+        break
+      }
+      case 'undo':
+        setRestoreTarget(undoTarget)
+        keepFocus = false
+        break
+      case 'new':
+        onNewChat?.()
+        keepFocus = false
+        break
+      case 'settings': {
+        const section =
+          args === ''
+            ? undefined
+            : matchCommandArg(args, SETTINGS_SECTIONS, (id) => [id, ts(`section.${id}.title`)])
+        onOpenSettings?.(section ?? 'general')
+        keepFocus = false
+        break
+      }
+      default:
+        if (command.panel !== undefined) onOpenPanel?.(command.panel)
+        keepFocus = false
     }
-    // /model 把焦点交给下拉菜单，关闭时再由 onOpenChange 还回来。
-    if (command.id !== 'model') textarea.current?.focus()
+    if (keepFocus) textarea.current?.focus()
   }
 
   const stop = async () => {
@@ -482,7 +614,7 @@ export function Composer({
         const command = filteredCommands[activeCommandIndex]
         if (command === undefined) return
         event.preventDefault()
-        setText(`/${command.name}`)
+        setText(command.args === 'none' ? `/${command.name}` : `/${command.name} `)
         return
       }
       if (event.key === 'Escape') {
@@ -527,6 +659,7 @@ export function Composer({
                     id={`composer-command-${command.id}`}
                     role="option"
                     aria-selected={selected}
+                    aria-disabled={command.unavailable !== undefined}
                     onMouseDown={(event) => {
                       event.preventDefault()
                       void runCommand(command)
@@ -537,11 +670,31 @@ export function Composer({
                       selected && 'bg-hover',
                     )}
                   >
-                    <span className="shrink-0 font-mono text-note text-fg">
+                    <span
+                      className={cn(
+                        'shrink-0 font-mono text-note',
+                        command.unavailable === undefined ? 'text-fg' : 'text-faint',
+                      )}
+                    >
                       {'/'}
                       {command.name}
+                      {command.args !== 'none' && (
+                        <span className="text-faint">
+                          {' '}
+                          {t(`composer.command.args.${command.args}`)}
+                        </span>
+                      )}
                     </span>
-                    <span className="min-w-0 text-note text-muted">{command.description}</span>
+                    <span
+                      className={cn(
+                        'min-w-0 text-note',
+                        command.unavailable === undefined ? 'text-muted' : 'text-faint',
+                      )}
+                    >
+                      {command.unavailable === undefined
+                        ? command.description
+                        : t(command.unavailable)}
+                    </span>
                   </div>
                 )
               })
@@ -569,7 +722,7 @@ export function Composer({
               {commandNotice.command && (
                 <span className="mr-1 font-mono text-fg2">/{commandNotice.command}</span>
               )}
-              {t(commandNotice.key)}
+              {t(commandNotice.key, commandNotice.params ?? {})}
             </p>
           )}
           <div className="relative">
@@ -596,7 +749,7 @@ export function Composer({
             {/* 放在文本框之后：它的布局副作用要等文本框的 ref 就绪 */}
             <ComposerHighlight
               text={text}
-              commands={COMMAND_NAMES}
+              commands={commandNames}
               textarea={textarea}
               className="px-1 text-body text-fg break-words"
             />
@@ -659,6 +812,14 @@ export function Composer({
           </div>
         </form>
       </div>
+      <RestoreDialog
+        sessionId={sessionId}
+        target={restoreTarget}
+        onClose={() => {
+          setRestoreTarget(undefined)
+          textarea.current?.focus()
+        }}
+      />
     </div>
   )
 }
