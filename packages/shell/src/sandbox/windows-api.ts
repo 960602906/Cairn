@@ -35,10 +35,21 @@ const CREATE_ALWAYS = 2
 const OPEN_EXISTING = 3
 const FILE_ATTRIBUTE_NORMAL = 0x0000_0080
 const SE_GROUP_ENABLED = 0x0000_0004
+const UOI_NAME = 2
+const WINSTA_ALL_ACCESS = 0x0000_037f
+const GENERIC_ALL = 0x1000_0000
+const SE_WINDOW_OBJECT = 7
+const LABEL_SECURITY_INFORMATION = 0x0000_0010
+const SDDL_REVISION_1 = 1
+/** 低完整性标签，只禁止“向上写”（与交互桌面 WinSta0 上的标签一致）。 */
+const LOW_LABEL_SDDL = 'S:(ML;;NW;;;LW)'
+/** 设为 `inherit` 时不建专用窗口站，子进程沿用宿主的（排查问题用）。 */
+export const SANDBOX_DESKTOP_ENV = 'CAIRN_SANDBOX_DESKTOP'
 /** `STARTUPINFO` 与 `STARTUPINFOEX` 的大小（x64）。 */
 export const STARTUPINFO_SIZE = 104
 export const STARTUPINFOEX_SIZE = 112
 /** `STARTUPINFO` 中 `dwFlags`、`hStdInput`、`hStdOutput`、`hStdError`、`lpAttributeList` 的偏移。 */
+const SI_DESKTOP = 16
 const SI_DW_FLAGS = 60
 const SI_H_STD_INPUT = 80
 const SI_H_STD_OUTPUT = 88
@@ -122,14 +133,17 @@ export async function loadSandboxNativeApi(
 }
 
 /** 用已加载的 koffi 创建绑定（测试可传入替身）。 */
-export function createNativeApi(koffi: {
-  load(name: string): KoffiLibrary
-  pointer(type: unknown): KoffiType
-  opaque(): KoffiType
-  out(type: unknown): KoffiType
-  address(value: unknown): bigint
-  decode(value: unknown, type: string, length?: number): string
-}): SandboxNativeApi {
+export function createNativeApi(
+  koffi: {
+    load(name: string): KoffiLibrary
+    pointer(type: unknown): KoffiType
+    opaque(): KoffiType
+    out(type: unknown): KoffiType
+    address(value: unknown): bigint
+    decode(value: unknown, type: string, length?: number): string
+  },
+  options: { readonly env?: NodeJS.ProcessEnv; readonly pid?: number } = {},
+): SandboxNativeApi {
   const kernel32 = koffi.load('kernel32.dll')
   const advapi32 = koffi.load('advapi32.dll')
   const userenv = koffi.load('userenv.dll')
@@ -258,6 +272,72 @@ export function createNativeApi(koffi: {
     ]),
   }
 
+  /** user32 只在需要专用窗口站时加载。 */
+  let user32Api:
+    | {
+        GetProcessWindowStation: () => Handle
+        SetProcessWindowStation: (station: Handle) => number
+        GetUserObjectInformationW: (...args: unknown[]) => number
+        CreateWindowStationW: (...args: unknown[]) => Handle
+        CreateDesktopW: (...args: unknown[]) => Handle
+        CloseWindowStation: (station: Handle) => number
+      }
+    | undefined
+  const user32 = () => {
+    if (user32Api) return user32Api
+    const lib = koffi.load('user32.dll')
+    user32Api = {
+      GetProcessWindowStation: fn<Handle>(lib, 'GetProcessWindowStation', handle, []),
+      SetProcessWindowStation: fn<number>(lib, 'SetProcessWindowStation', 'int', [handle]),
+      GetUserObjectInformationW: fn<number>(lib, 'GetUserObjectInformationW', 'int', [
+        handle,
+        'int',
+        'void *',
+        'uint32_t',
+        'void *',
+      ]),
+      CreateWindowStationW: fn<Handle>(lib, 'CreateWindowStationW', handle, [
+        'str16',
+        'uint32_t',
+        'uint32_t',
+        'void *',
+      ]),
+      CreateDesktopW: fn<Handle>(lib, 'CreateDesktopW', handle, [
+        'str16',
+        'void *',
+        'void *',
+        'uint32_t',
+        'uint32_t',
+        'void *',
+      ]),
+      CloseWindowStation: fn<number>(lib, 'CloseWindowStation', 'int', [handle]),
+    }
+    return user32Api
+  }
+  const security = {
+    ConvertStringSecurityDescriptorToSecurityDescriptorW: fn<number>(
+      advapi32,
+      'ConvertStringSecurityDescriptorToSecurityDescriptorW',
+      'int',
+      ['str16', 'uint32_t', outHandle, 'void *'],
+    ),
+    GetSecurityDescriptorSacl: fn<number>(advapi32, 'GetSecurityDescriptorSacl', 'int', [
+      handle,
+      'void *',
+      outHandle,
+      'void *',
+    ]),
+    SetSecurityInfo: fn<number>(advapi32, 'SetSecurityInfo', 'uint32_t', [
+      handle,
+      'int',
+      'uint32_t',
+      'void *',
+      'void *',
+      'void *',
+      handle,
+    ]),
+  }
+
   const lastError = () => Number(api.GetLastError()) as number
   const check = (value: unknown, what: string, code: string = SandboxErrorCode.SetupFailed) => {
     if (!value) fail(code, what, lastError())
@@ -334,9 +414,100 @@ export function createNativeApi(koffi: {
     return info
   }
 
+  const objectName = (object: Handle): string => {
+    const buffer = Buffer.alloc(512)
+    const needed = Buffer.alloc(4)
+    if (!user32().GetUserObjectInformationW(object, UOI_NAME, buffer, buffer.length, needed)) {
+      return ''
+    }
+    return buffer.toString('utf16le').split('\0')[0]!
+  }
+
+  /** 给窗口站或桌面加低完整性标签，让低完整性的沙箱进程能连上。 */
+  const setLowLabel = (object: Handle): boolean => {
+    const descriptor: unknown[] = [null]
+    if (
+      !security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        LOW_LABEL_SDDL,
+        SDDL_REVISION_1,
+        descriptor,
+        null,
+      )
+    ) {
+      return false
+    }
+    try {
+      const present = Buffer.alloc(4)
+      const defaulted = Buffer.alloc(4)
+      const sacl: unknown[] = [null]
+      if (!security.GetSecurityDescriptorSacl(descriptor[0], present, sacl, defaulted)) return false
+      return (
+        Number(
+          security.SetSecurityInfo(
+            object,
+            SE_WINDOW_OBJECT,
+            LABEL_SECURITY_INFORMATION,
+            null,
+            null,
+            null,
+            sacl[0],
+          ),
+        ) === 0
+      )
+    } finally {
+      api.LocalFree(descriptor[0])
+    }
+  }
+
+  /**
+   * 沙箱进程用的桌面（`STARTUPINFO.lpDesktop`）。
+   *
+   * 从资源管理器启动时宿主在交互窗口站 `WinSta0` 上，那里的窗口站与桌面本来就带低完整性标签，子进程直接
+   * 沿用。从服务、CI 或某些受限终端启动时，宿主所在的窗口站是创建者的完整性（常为中或高），低完整性的
+   * 沙箱进程连不上，user32 初始化失败，进程以 `0xC0000142` 退出。这时建一个专用窗口站与桌面、加低完整性
+   * 标签，让子进程在那里启动。句柄在宿主存活期间一直保留，桌面在最后一个句柄关闭时由系统销毁。
+   * 任何一步失败都退回沿用宿主的桌面（之后若子进程起不来，按 `sandbox.child_start_failed` 处理）。
+   */
+  let desktop: Buffer | null | undefined
+  const sandboxDesktop = (): Buffer | null => {
+    if (desktop !== undefined) return desktop
+    desktop = null
+    if ((options.env ?? process.env)[SANDBOX_DESKTOP_ENV] === 'inherit') return desktop
+    try {
+      const u = user32()
+      const current = u.GetProcessWindowStation()
+      const stationName = current ? objectName(current) : ''
+      // 读不到名称时不冒险改动，沿用宿主的桌面
+      if (!stationName || stationName.toLowerCase() === 'winsta0') return desktop
+      const name = `CairnSandbox-${options.pid ?? process.pid}`
+      const station = u.CreateWindowStationW(name, 0, WINSTA_ALL_ACCESS, null)
+      if (!station) return desktop
+      if (!setLowLabel(station) || !u.SetProcessWindowStation(station)) {
+        u.CloseWindowStation(station)
+        return desktop
+      }
+      let created: Handle
+      try {
+        created = u.CreateDesktopW('Default', null, null, 0, GENERIC_ALL, null)
+      } finally {
+        u.SetProcessWindowStation(current)
+      }
+      if (!created || !setLowLabel(created)) {
+        u.CloseWindowStation(station)
+        return desktop
+      }
+      desktop = Buffer.from(`${name}\\Default\0`, 'utf16le')
+    } catch {
+      desktop = null
+    }
+    return desktop
+  }
+
   const spawnWithToken = (options: NativeSpawnOptions): NativeProcessInfo => {
     const commandLine = Buffer.from(`${options.commandLine}\0`, 'utf16le')
     const info = startupInfo(options.stdin, options.stdout, options.stderr)
+    const target = sandboxDesktop()
+    if (target) info.writeBigUInt64LE(koffi.address(target), SI_DESKTOP)
     const processInfo = Buffer.alloc(24)
     const flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT
     const create = (extraFlags: number) =>

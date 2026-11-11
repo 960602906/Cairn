@@ -18,7 +18,15 @@ type Handler = (...args: never[]) => unknown
 
 interface FakeOptions {
   handlers?: Record<string, Handler>
+  env?: NodeJS.ProcessEnv
 }
+
+/** 让 `GetUserObjectInformationW` 返回指定的窗口站名称。 */
+const stationNamed = (name: string): Handler =>
+  ((_object: unknown, _index: unknown, buffer: Buffer) => {
+    buffer.write(`${name}\0`, 'utf16le')
+    return 1
+  }) as Handler
 
 function fakeKoffi(options: FakeOptions = {}) {
   const calls: { name: string; args: unknown[] }[] = []
@@ -107,6 +115,25 @@ function fakeKoffi(options: FakeOptions = {}) {
       return 0
     }) as Handler,
     DeleteAppContainerProfile: (() => 0) as Handler,
+    GetProcessWindowStation: (() => 0x50n) as Handler,
+    SetProcessWindowStation: (() => 1) as Handler,
+    GetUserObjectInformationW: stationNamed('WinSta0'),
+    CreateWindowStationW: (() => 0x51n) as Handler,
+    CreateDesktopW: (() => 0x52n) as Handler,
+    CloseWindowStation: (() => 1) as Handler,
+    ConvertStringSecurityDescriptorToSecurityDescriptorW: ((
+      _sddl: unknown,
+      _revision: unknown,
+      out: unknown[],
+    ) => {
+      out[0] = 0x53n
+      return 1
+    }) as Handler,
+    GetSecurityDescriptorSacl: ((_descriptor: unknown, _present: unknown, out: unknown[]) => {
+      out[0] = 0x54n
+      return 1
+    }) as Handler,
+    SetSecurityInfo: (() => 0) as Handler,
   }
   const handlers = { ...defaults, ...options.handlers }
   const koffi = {
@@ -127,7 +154,7 @@ function fakeKoffi(options: FakeOptions = {}) {
     address: () => 0x9000n,
     decode: () => 'S-1-5-21-1',
   }
-  const api = createNativeApi(koffi as never)
+  const api = createNativeApi(koffi as never, { env: options.env ?? {}, pid: 77 })
   const called = (name: string) => calls.filter((call) => call.name === name)
   return { api, calls, called, libs, state }
 }
@@ -525,5 +552,121 @@ describe('createNativeApi', () => {
     api.resumeThread(8n)
     expect(called('CloseHandle')[0]!.args).toEqual([9n])
     expect(called('ResumeThread')[0]!.args).toEqual([8n])
+  })
+})
+
+describe('沙箱进程的桌面', () => {
+  const spawnOnce = (target: ReturnType<typeof fakeKoffi>) => {
+    target.api.spawn({
+      token: 300n,
+      commandLine: 'cmd.exe /c echo hi',
+      cwd: 'C:\\work',
+      env: Buffer.alloc(0),
+      stdin: 1n,
+      stdout: 2n,
+      stderr: 3n,
+    })
+    const calls = target.called('CreateProcessAsUserW')
+    return calls.at(-1)!.args[9] as Buffer
+  }
+
+  it('交互窗口站 WinSta0 上沿用宿主的桌面', () => {
+    const target = fakeKoffi()
+    expect(spawnOnce(target).readBigUInt64LE(16)).toBe(0n)
+    expect(target.libs).toContain('user32.dll')
+    expect(target.called('CreateWindowStationW')).toHaveLength(0)
+  })
+
+  it('其他窗口站上建一个带低完整性标签的专用窗口站与桌面，并且只建一次', () => {
+    const target = fakeKoffi({
+      handlers: { GetUserObjectInformationW: stationNamed('Service-0x0-3e7$') },
+    })
+    expect(spawnOnce(target).readBigUInt64LE(16)).toBe(0x9000n)
+    expect(target.called('CreateWindowStationW')[0]!.args.slice(0, 3)).toEqual([
+      'CairnSandbox-77',
+      0,
+      0x37f,
+    ])
+    // 先切到新窗口站建桌面，再切回原来的
+    expect(target.called('SetProcessWindowStation').map((call) => call.args[0])).toEqual([
+      0x51n,
+      0x50n,
+    ])
+    expect(target.called('CreateDesktopW')[0]!.args[0]).toBe('Default')
+    expect(target.called('SetSecurityInfo').map((call) => call.args.slice(0, 3))).toEqual([
+      [0x51n, 7, 0x10],
+      [0x52n, 7, 0x10],
+    ])
+    expect(target.called('ConvertStringSecurityDescriptorToSecurityDescriptorW')[0]!.args[0]).toBe(
+      'S:(ML;;NW;;;LW)',
+    )
+    expect(target.called('LocalFree').length).toBeGreaterThanOrEqual(2)
+
+    spawnOnce(target)
+    expect(target.called('CreateWindowStationW')).toHaveLength(1)
+  })
+
+  it('设置为 inherit 时不碰窗口站', () => {
+    const target = fakeKoffi({
+      env: { CAIRN_SANDBOX_DESKTOP: 'inherit' },
+      handlers: { GetUserObjectInformationW: stationNamed('Service-0x0-3e7$') },
+    })
+    expect(spawnOnce(target).readBigUInt64LE(16)).toBe(0n)
+    expect(target.libs).not.toContain('user32.dll')
+  })
+
+  const service = stationNamed('Service-0x0-3e7$')
+  it.each([
+    ['读不到窗口站名称', { GetUserObjectInformationW: (() => 0) as Handler }, false],
+    ['拿不到窗口站句柄', { GetProcessWindowStation: (() => 0n) as Handler }, false],
+    [
+      '建不了窗口站',
+      { GetUserObjectInformationW: service, CreateWindowStationW: (() => 0n) as Handler },
+      false,
+    ],
+    [
+      '解析不了标签',
+      {
+        GetUserObjectInformationW: service,
+        ConvertStringSecurityDescriptorToSecurityDescriptorW: (() => 0) as Handler,
+      },
+      true,
+    ],
+    [
+      '取不到 SACL',
+      { GetUserObjectInformationW: service, GetSecurityDescriptorSacl: (() => 0) as Handler },
+      true,
+    ],
+    [
+      '加不上标签',
+      { GetUserObjectInformationW: service, SetSecurityInfo: (() => 5) as Handler },
+      true,
+    ],
+    [
+      '切不过去',
+      { GetUserObjectInformationW: service, SetProcessWindowStation: (() => 0) as Handler },
+      true,
+    ],
+    [
+      '建不了桌面',
+      { GetUserObjectInformationW: service, CreateDesktopW: (() => 0n) as Handler },
+      true,
+    ],
+    [
+      'user32 调用抛错',
+      {
+        GetProcessWindowStation: (() => {
+          throw new Error('boom')
+        }) as Handler,
+      },
+      false,
+    ],
+  ])('%s时沿用宿主的桌面', (_title, handlers, closes) => {
+    const target = fakeKoffi({ handlers })
+    expect(spawnOnce(target).readBigUInt64LE(16)).toBe(0n)
+    expect(target.called('CloseWindowStation')).toHaveLength(closes ? 1 : 0)
+    spawnOnce(target)
+    // 失败结果也只算一次
+    expect(target.called('GetProcessWindowStation')).toHaveLength(1)
   })
 })
