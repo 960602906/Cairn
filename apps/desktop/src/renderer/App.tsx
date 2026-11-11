@@ -346,6 +346,8 @@ function Workspace() {
             notice={updateNotice}
             onPanelChange={setSidePanel}
             onOpenActivitySession={openSessionFromActivity}
+            onNewChat={startNewChat}
+            onOpenSettings={setSettings}
             {...(pendingChangeSet === undefined
               ? {}
               : {

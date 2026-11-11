@@ -26,6 +26,7 @@ import { MessageStream } from './MessageStream.js'
 import { planInProgress, PlanProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
 import { SessionSidePanel, type SessionPanel, type SessionPanelView } from './SessionSidePanel.js'
+import type { SettingsSection } from './settings/SettingsPage.js'
 import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { useMediaQuery } from './layout/use-media-query.js'
@@ -68,6 +69,8 @@ export function ChatPanel({
   chatRef,
   onPanelChange,
   onOpenActivitySession,
+  onNewChat,
+  onOpenSettings,
 }: {
   /** 从活动中心等入口打开会话时要直接显示的改动集。 */
   readonly initialChangeSetId?: string | undefined
@@ -84,6 +87,10 @@ export function ChatPanel({
   readonly onPanelChange?: ((panel: SessionPanelView) => void) | undefined
   /** 活动面板里打开其他会话；由外层负责切换会话并定位改动集。 */
   readonly onOpenActivitySession?: ((sessionId: string, changeSetId?: string) => void) | undefined
+  /** 输入框 `/new`。 */
+  readonly onNewChat?: (() => void) | undefined
+  /** 输入框 `/settings [分区]`。 */
+  readonly onOpenSettings?: ((section: SettingsSection) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -354,6 +361,9 @@ export function ChatPanel({
               model={model}
               projectPath={path}
               contextTokens={view?.contextTokens}
+              onOpenPanel={(next) => openPanel(next)}
+              onNewChat={onNewChat}
+              onOpenSettings={onOpenSettings}
             />
           </div>
         </div>

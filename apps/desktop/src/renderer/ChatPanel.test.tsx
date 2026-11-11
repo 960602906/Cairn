@@ -973,6 +973,22 @@ describe('tool calls and undo turn', () => {
   }
   const dialog = (name: string) => screen.findByRole('dialog', { name })
 
+  it('opens the undo dialog for the last turn with /undo', async () => {
+    const { open, request } = setup({
+      history: finished(checkpoint(13)),
+      handlers: { 'checkpoint.preview': () => plan },
+    })
+    await open()
+    await userEvent.type(input(), '/undo{Enter}')
+    const confirm = await dialog('撤销第 1 轮的改动？')
+    expect(request).toHaveBeenCalledWith('checkpoint.preview', {
+      sessionId: 's1',
+      checkpointId: CHECKPOINT,
+    })
+    await userEvent.click(within(confirm).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
   it('shows the checkpoint divider and undoes the turn, then the restore', async () => {
     const { open, request, emit } = setup({
       history: finished(checkpoint(13)),
@@ -1347,7 +1363,25 @@ describe('Composer (M2-04)', () => {
     await open()
     await userEvent.type(input(), '/')
     const list = await screen.findByRole('listbox', { name: '输入指令' })
-    expect(within(list).getAllByRole('option')).toHaveLength(3)
+    expect(
+      within(list)
+        .getAllByRole('option')
+        .map((option) => option.id),
+    ).toEqual(
+      [
+        'plan',
+        'model',
+        'compact',
+        'undo',
+        'new',
+        'files',
+        'diff',
+        'brief',
+        'inspect',
+        'activity',
+        'settings',
+      ].map((id) => `composer-command-${id}`),
+    )
     await userEvent.type(input(), 'mo')
     const options = within(list).getAllByRole('option')
     expect(options).toHaveLength(1)
@@ -1445,10 +1479,16 @@ describe('Composer (M2-04)', () => {
     await open()
     await userEvent.type(input(), '/mo')
     await userEvent.keyboard('{Tab}')
-    expect(input().value).toBe('/model')
+    // 收参数的指令补全时带一个空格，面板随之收起，可以接着写参数。
+    expect(input().value).toBe('/model ')
+    await waitFor(() => expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull())
+    await userEvent.clear(input())
+    await userEvent.type(input(), '/comp')
+    await userEvent.keyboard('{Tab}')
+    expect(input().value).toBe('/compact')
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull())
-    expect(input().value).toBe('/model')
+    expect(input().value).toBe('/compact')
   })
 
   it('moves the highlight with arrow keys', async () => {
@@ -1459,8 +1499,94 @@ describe('Composer (M2-04)', () => {
     await open()
     const toggle = screen.getByRole('button', { name: '计划模式' })
     await userEvent.type(input(), '/')
-    await userEvent.keyboard('{ArrowDown}{Enter}')
+    await userEvent.keyboard('{ArrowDown}{ArrowUp}{Enter}')
     expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('runs commands with arguments typed after the name', async () => {
+    const { request, open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/plan 重构输入框{Enter}')
+    expect(request).toHaveBeenCalledWith(
+      'session.prompt',
+      expect.objectContaining({ sessionId: 's1', content: text('重构输入框'), mode: 'plan' }),
+    )
+    expect(screen.getByRole('button', { name: '计划模式' }).getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+
+    await userEvent.type(input(), '/model 强{Enter}')
+    expect(request).toHaveBeenCalledWith('session.setModel', {
+      sessionId: 's1',
+      model: { providerId: 'fake', modelId: 'fake-2' },
+    })
+    expect(await screen.findByText('已切换到 强')).toBeTruthy()
+
+    await userEvent.type(input(), '/model 不存在{Enter}')
+    expect(await screen.findByRole('menu')).toBeTruthy()
+    expect(screen.getByText(/没有找到“不存在”/)).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+  })
+
+  it('sends a no-argument command followed by text as a normal message', async () => {
+    const { request, open } = setup({ history: HISTORY })
+    await open()
+    await userEvent.type(input(), '/files 在哪{Enter}')
+    expect(request).toHaveBeenCalledWith('session.prompt', {
+      sessionId: 's1',
+      content: text('/files 在哪'),
+    })
+  })
+
+  it('opens panels, settings and a new chat from commands', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/files{Enter}')
+    expect(await screen.findByRole('tab', { name: /文件/, selected: true })).toBeTruthy()
+
+    await userEvent.type(input(), '/settings mcp{Enter}')
+    expect(await screen.findByRole('heading', { name: 'MCP 服务' })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'MCP 服务' })).toBeNull())
+
+    await userEvent.type(input(), '/settings 权限{Enter}')
+    expect(await screen.findByRole('heading', { name: '权限与审批' })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByLabelText('输入消息')).toBeTruthy())
+
+    await userEvent.type(input(), '/new{Enter}')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '修复登录' })).toBeNull())
+  })
+
+  it('greys out commands that cannot run now and keeps the draft', async () => {
+    const { open } = setup({ history: RUNNING })
+    await open()
+    await userEvent.type(input(), '/')
+    const list = await screen.findByRole('listbox', { name: '输入指令' })
+    const compact = within(list).getByRole('option', { name: /\/compact/ })
+    expect(compact.getAttribute('aria-disabled')).toBe('true')
+    expect(compact.textContent).toContain('运行中不可用')
+    expect(
+      within(list)
+        .getByRole('option', { name: /\/undo/ })
+        .getAttribute('aria-disabled'),
+    ).toBe('true')
+    expect(
+      within(list)
+        .getByRole('option', { name: /\/files/ })
+        .getAttribute('aria-disabled'),
+    ).toBe('false')
+    await userEvent.type(input(), 'compact{Enter}')
+    expect(input().value).toBe('/compact')
+    expect(
+      await screen.findByText('运行中不可用', { selector: '[role="status"] *, [role="status"]' }),
+    ).toBeTruthy()
   })
 
   it('keeps an unmatched command draft and focuses the composer from its background', async () => {
