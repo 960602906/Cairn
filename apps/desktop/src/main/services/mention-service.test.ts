@@ -190,21 +190,21 @@ describe('mention service', () => {
     write(ctx.root, 'src/a.ts', 'one\ntwo\nthree\n')
     write(ctx.root, 'src/b.ts', 'b')
     write(ctx.root, 'src/sub/c.ts', 'c')
-    write(ctx.root, 'my docs/x "q".md', 'q')
+    write(ctx.root, 'my docs/x &amp y.md', 'q')
     const result = await ctx.service.expand({
       sessionId: 's1',
       mentions: [
         { path: 'src/a.ts' },
         { path: 'src/a.ts', lines: { start: 2, end: 9 } },
         { path: 'src/' },
-        { path: 'my docs/x "q".md' },
+        { path: 'my docs/x &amp y.md' },
       ],
     })
     expect(result.mentions).toEqual([
       { path: 'src/a.ts', kind: 'file' },
       { path: 'src/a.ts', lines: { start: 2, end: 9 }, kind: 'file' },
       { path: 'src', kind: 'dir' },
-      { path: 'my docs/x "q".md', kind: 'file' },
+      { path: 'my docs/x &amp y.md', kind: 'file' },
     ])
     expect(result.context).toBe(
       [
@@ -216,7 +216,7 @@ describe('mention service', () => {
         '',
         '<directory path="src/">\nsub/\na.ts\nb.ts\n</directory>',
         '',
-        '<file path="my docs/x &quot;q&quot;.md">\nq\n</file>',
+        '<file path="my docs/x &amp;amp y.md">\nq\n</file>',
       ].join('\n'),
     )
   })
