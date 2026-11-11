@@ -1354,6 +1354,24 @@ describe('Composer (M2-04)', () => {
     expect(options[0]?.textContent).toContain('/model')
   })
 
+  it('highlights the command, urls and code behind the draft', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    const draft = '/plan 看 https://a.dev 和 `x`'
+    await userEvent.type(input(), draft)
+    const layer = document.querySelector('[data-composer-highlight]')
+    expect(layer?.textContent).toBe(draft)
+    expect(
+      [...(layer?.querySelectorAll('[data-token]') ?? [])].map((el) =>
+        el.getAttribute('data-token'),
+      ),
+    ).toEqual(['command', 'url', 'code'])
+    expect(input().value).toBe(draft)
+  })
+
   it('runs /plan from the command panel', async () => {
     const { open } = setup({
       history: withModel,
