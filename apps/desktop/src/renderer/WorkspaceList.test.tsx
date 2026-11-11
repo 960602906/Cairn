@@ -58,7 +58,7 @@ function setup(
     selectSession,
     ...(options.withRefresh === false ? {} : { refreshProjects }),
   })) as unknown as SessionStore
-  render(
+  const rendered = render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreProvider store={store}>
         <WorkspaceList
@@ -69,6 +69,7 @@ function setup(
     </I18nextProvider>,
   )
   return {
+    container: rendered.container,
     updateProject,
     removeProject,
     refreshProjects,
@@ -83,6 +84,15 @@ afterEach(() => {
 })
 
 describe('WorkspaceList', () => {
+  it('uses the material folder icon and its open variant', async () => {
+    const { container } = setup([project({ path: '/work/src' })])
+    const section = screen.getByRole('region', { name: '工作空间' })
+    expect(section.querySelector('img')?.getAttribute('src')).toBe('./folder-src-open.svg')
+
+    await userEvent.click(within(section).getByRole('button', { name: 'demo 的会话' }))
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src.svg')
+  })
+
   it('sorts pinned first, archived last, then by activity', () => {
     const ordered = sortWorkspaceProjects([
       project({ projectId: 'old', name: 'old', lastUsedAt: 1 }),

@@ -123,6 +123,52 @@ describe('file service', () => {
     })
   })
 
+  it('reads text files and decodes BOM/UTF-16', async () => {
+    mkdirSync(path.join(ctx.root, 'docs'))
+    writeFileSync(path.join(ctx.root, 'docs', 'readme.md'), 'hello\n')
+    writeFileSync(path.join(ctx.root, 'bom.txt'), Buffer.from([0xef, 0xbb, 0xbf, 0x61]))
+    writeFileSync(
+      path.join(ctx.root, 'utf16.txt'),
+      Buffer.from([0xff, 0xfe, 0x61, 0x00, 0x62, 0x00]),
+    )
+    expect(await ctx.service.read({ projectId: 'p1', path: 'docs/readme.md' })).toEqual({
+      content: { kind: 'text', text: 'hello\n' },
+    })
+    expect(await ctx.service.read({ projectId: 'p1', path: 'bom.txt' })).toEqual({
+      content: { kind: 'text', text: 'a' },
+    })
+    expect(await ctx.service.read({ projectId: 'p1', path: 'utf16.txt' })).toEqual({
+      content: { kind: 'text', text: 'ab' },
+    })
+  })
+
+  it('reports binary and oversized files by size', async () => {
+    writeFileSync(path.join(ctx.root, 'image.bin'), Buffer.from([0x00, 0x01, 0x02]))
+    writeFileSync(path.join(ctx.root, 'large.txt'), 'a'.repeat(1_000_001))
+    expect(await ctx.service.read({ projectId: 'p1', path: 'image.bin' })).toEqual({
+      content: { kind: 'binary', size: 3 },
+    })
+    expect(await ctx.service.read({ projectId: 'p1', path: 'large.txt' })).toEqual({
+      content: { kind: 'too_large', size: 1_000_001 },
+    })
+  })
+
+  it('rejects reading directories, missing files and escaping paths', async () => {
+    mkdirSync(path.join(ctx.root, 'docs'))
+    await expect(ctx.service.read({ projectId: 'p1', path: 'docs' })).rejects.toMatchObject({
+      code: 'fs.is_directory',
+    })
+    await expect(ctx.service.read({ projectId: 'p1', path: 'missing.txt' })).rejects.toMatchObject({
+      code: 'fs.not_found',
+    })
+    await expect(ctx.service.read({ projectId: 'p1', path: '../outside' })).rejects.toMatchObject({
+      code: 'fs.invalid_path',
+    })
+    await expect(ctx.service.read({ projectId: 'p1', path: '/absolute' })).rejects.toMatchObject({
+      code: 'fs.invalid_path',
+    })
+  })
+
   it('reveals the project root or an entry through the injected callback', async () => {
     writeFileSync(path.join(ctx.root, 'a.txt'), 'a')
     await ctx.service.reveal({ projectId: 'p1' })
@@ -183,6 +229,9 @@ describe('file service', () => {
     await expect(ctx.service.list({ projectId: 'p1', path: 'link' })).rejects.toMatchObject({
       code: 'fs.invalid_path',
     })
+    await expect(
+      ctx.service.read({ projectId: 'p1', path: 'link/secret.txt' }),
+    ).rejects.toMatchObject({ code: 'fs.invalid_path' })
     await expect(
       ctx.service.create({ projectId: 'p1', path: 'link/new.txt', kind: 'file' }),
     ).rejects.toMatchObject({ code: 'fs.invalid_path' })

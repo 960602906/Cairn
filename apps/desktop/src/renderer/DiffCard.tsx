@@ -1,7 +1,7 @@
 /**
  * diff 卡片（M2-07，视觉规范 §7.2）。
  *
- * - 标题栏与代码卡片相同：语言图标、路径、新文件 / 已删除标记、增删行数与 5 个比例方块；右侧是“合并 / 分栏”
+ * - 标题栏与代码卡片相同：文件类型图标、路径、新文件 / 已删除标记、增删行数与 5 个比例方块；右侧是“合并 / 分栏”
  *   切换与“撤销此文件”（传入 `onRevert` 时才有）。卡片窄于 `SPLIT_MIN_WIDTH` 时只用合并视图，不显示切换。
  * - 每个 hunk 先是标题行（`@@ -a,b +c,d @@` 加所在函数名）。悬停标题行出现“撤销此块”（M3-06）；
  *   已撤销的块变灰并标注。每行是旧行号、新行号、`+` / `−` 标记与内容；
@@ -13,7 +13,7 @@ import { Undo2, UnfoldVertical } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { FileChangeKind, FileChangeStatus } from '@cairn/protocol'
-import { LanguageIcon, splitPath } from './CodeCard.js'
+import { splitPath } from './CodeCard.js'
 import {
   fileDiff,
   formatHunkHeader,
@@ -23,6 +23,7 @@ import {
   type DiffSegment,
   type Range,
 } from './diff-model.js'
+import { FileTypeIcon } from './file-icons.js'
 import { useHighlight, type HighlightedLines, type HighlightToken } from './highlight.js'
 import type { LanguageInfo } from './languages.js'
 import { cn } from './ui/index.js'
@@ -443,7 +444,7 @@ export function DiffCard({
       className={cn('my-3 overflow-hidden rounded-card bg-code-bg shadow-hair2', className)}
     >
       <figcaption className="flex h-[38px] items-center gap-2 bg-code-head pr-1.5 pl-3 text-note">
-        <LanguageIcon language={language} />
+        <FileTypeIcon name={path} />
         <span className="min-w-0 truncate font-mono text-[12px]" title={path}>
           <span className="text-muted">{dir}</span>
           <span className="font-semibold text-fg">{name}</span>

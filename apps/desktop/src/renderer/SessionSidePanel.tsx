@@ -12,13 +12,18 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
 import type { SessionStatus } from '@cairn/protocol'
+import { FileTypeIcon } from './file-icons.js'
+import { FileViewer } from './FileViewer.js'
 import { ResizeHandle, useResizableWidth } from './layout/resize.js'
 import { SessionHome } from './SessionHome.js'
 import {
+  fileTabPath,
+  isFileTab,
   SESSION_PANEL_DEFINITIONS,
   SessionPanelContent,
   type SessionPanel,
   type SessionPanelView,
+  type SessionTab,
 } from './SessionPanels.js'
 import {
   cn,
@@ -29,7 +34,18 @@ import {
   IconButton,
 } from './ui/index.js'
 
-export { SESSION_PANELS, type SessionPanel, type SessionPanelView } from './SessionPanels.js'
+export {
+  fileTabId,
+  fileTabPath,
+  isFileTab,
+  SESSION_PANELS,
+  type FileTabId,
+  type SessionPanel,
+  type SessionPanelView,
+  type SessionTab,
+} from './SessionPanels.js'
+
+const baseName = (path: string) => path.split(/[\\/]/).pop() ?? path
 
 export function SessionSidePanel({
   sessionId,
@@ -41,6 +57,9 @@ export function SessionSidePanel({
   onSelectChangeSet,
   onOpenPanel,
   onActivateTab,
+  onOpenFile,
+  onFileRenamed,
+  onFileDeleted,
   onHome,
   tabs,
   onCloseTab,
@@ -62,11 +81,17 @@ export function SessionSidePanel({
   /** 打开或切换到某个面板；首页卡片和「+」菜单使用，会回到该面板的概览状态。 */
   readonly onOpenPanel: (panel: SessionPanel) => void
   /** 点击已打开的标签；保留当前选中项，不重置概览状态。 */
-  readonly onActivateTab: (panel: SessionPanel) => void
+  readonly onActivateTab: (tab: SessionTab) => void
+  /** 文件树里单击文件：追加或激活一个文件标签。 */
+  readonly onOpenFile?: ((path: string) => void) | undefined
+  /** 文件树重命名后同步已打开的文件标签。 */
+  readonly onFileRenamed?: ((from: string, to: string) => void) | undefined
+  /** 文件树删除后关闭受影响的文件标签。 */
+  readonly onFileDeleted?: ((path: string) => void) | undefined
   readonly onHome: () => void
   /** 已打开的标签；标签栏按这个顺序显示。 */
-  readonly tabs: readonly SessionPanel[]
-  readonly onCloseTab: (panel: SessionPanel) => void
+  readonly tabs: readonly SessionTab[]
+  readonly onCloseTab: (tab: SessionTab) => void
   /** 由顶栏按钮控制；窄窗口为浮层，宽窗口占用布局宽度。 */
   readonly open?: boolean
   /** 叠层布局把工作台放在对话下方；`side` 保持原有的右侧浮层/侧栏。 */
@@ -84,6 +109,7 @@ export function SessionSidePanel({
   const addablePanels = SESSION_PANEL_DEFINITIONS.filter((item) => item.addable)
   const availablePanels = addablePanels.filter(({ id }) => !tabs.includes(id))
   const panelRef = useRef<HTMLElement>(null)
+  const selectedTabRef = useRef<HTMLButtonElement>(null)
   const { width, dragging, handleProps } = useResizableWidth({
     storageKey: 'cairn.sessionPanelWidth',
     initial: 348,
@@ -135,6 +161,13 @@ export function SessionSidePanel({
       previous?.focus()
     }
   }, [docked, open])
+  // 文件标签追加在末尾时，把当前标签带进可见区域。
+  useEffect(() => {
+    const node = selectedTabRef.current
+    if (typeof node?.scrollIntoView === 'function') {
+      node.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+  }, [panel, tabs.length])
   return (
     <aside
       ref={panelRef}
@@ -191,8 +224,12 @@ export function SessionSidePanel({
             </button>
             {tabs.map((id) => {
               const definition = SESSION_PANEL_DEFINITIONS.find((item) => item.id === id)
-              const short = definition?.shortLabel ?? 'sidePanel.diff'
-              const full = definition?.label ?? 'sidePanel.diff'
+              const filePath = isFileTab(id) ? fileTabPath(id) : undefined
+              const name = filePath === undefined ? t(definition?.label ?? '') : baseName(filePath)
+              const short =
+                filePath === undefined ? t(definition?.shortLabel ?? '') : baseName(filePath)
+              const ariaLabel = filePath ?? name
+              const closeLabel = t('sidePanel.closeTab', { name })
               const selected = panel === id
               return (
                 <div
@@ -203,21 +240,24 @@ export function SessionSidePanel({
                   )}
                 >
                   <button
+                    ref={selected ? selectedTabRef : undefined}
                     type="button"
                     role="tab"
-                    aria-label={t(full)}
+                    aria-label={ariaLabel}
+                    title={filePath}
                     aria-selected={selected}
                     onClick={() => onActivateTab(id)}
                     className={cn(
-                      'flex h-7 min-w-0 items-center rounded-item pr-1 pl-2.5 text-note outline-none focus-visible:ring-1 focus-visible:ring-accent',
+                      'flex h-7 min-w-0 items-center gap-1 rounded-item pr-1 pl-2.5 text-note outline-none focus-visible:ring-1 focus-visible:ring-accent',
                       selected && 'font-medium',
                     )}
                   >
-                    <span className="max-w-[72px] truncate">{t(short)}</span>
+                    {filePath !== undefined && <FileTypeIcon name={baseName(filePath)} />}
+                    <span className="max-w-[72px] truncate">{short}</span>
                   </button>
                   <button
                     type="button"
-                    aria-label={t('sidePanel.closeTab', { name: t(full) })}
+                    aria-label={closeLabel}
                     onClick={() => onCloseTab(id)}
                     className={cn(
                       'mr-1 grid size-4 shrink-0 place-items-center rounded-[4px] text-faint outline-none transition-opacity hover:bg-press hover:text-fg focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-accent',
@@ -253,19 +293,24 @@ export function SessionSidePanel({
           )}
         </div>
         <div className="min-h-0 flex-1">
-          {panel === 'home' ? (
+          {panel === 'home' && (
             <SessionHome
               view={view}
               status={status}
               onOpenFiles={() => onOpenPanel('files')}
               onOpenInspector={() => onOpenPanel('inspector')}
             />
-          ) : (
+          )}
+          {panel !== 'home' && !isFileTab(panel) && panel !== 'files' && (
             <SessionPanelContent
               panel={panel}
               sessionId={sessionId}
               view={view}
               status={status}
+              active
+              {...(onOpenFile === undefined ? {} : { onOpenFile })}
+              {...(onFileRenamed === undefined ? {} : { onFileRenamed })}
+              {...(onFileDeleted === undefined ? {} : { onFileDeleted })}
               selectedPlanId={selectedPlanId}
               selectedChangeSetId={selectedChangeSetId}
               onOpenPanel={onOpenPanel}
@@ -273,6 +318,29 @@ export function SessionSidePanel({
               {...(onLocateTurn === undefined ? {} : { onLocateTurn })}
               {...(onOpenActivitySession === undefined ? {} : { onOpenActivitySession })}
             />
+          )}
+          {panel !== 'home' && isFileTab(panel) && (
+            <FileViewer path={fileTabPath(panel)} view={view} />
+          )}
+          {tabs.includes('files') && (
+            <div hidden={panel !== 'files'} className="h-full min-h-0">
+              <SessionPanelContent
+                panel="files"
+                sessionId={sessionId}
+                view={view}
+                status={status}
+                active={panel === 'files'}
+                {...(onOpenFile === undefined ? {} : { onOpenFile })}
+                {...(onFileRenamed === undefined ? {} : { onFileRenamed })}
+                {...(onFileDeleted === undefined ? {} : { onFileDeleted })}
+                selectedPlanId={selectedPlanId}
+                selectedChangeSetId={selectedChangeSetId}
+                onOpenPanel={onOpenPanel}
+                {...(onSelectChangeSet === undefined ? {} : { onSelectChangeSet })}
+                {...(onLocateTurn === undefined ? {} : { onLocateTurn })}
+                {...(onOpenActivitySession === undefined ? {} : { onOpenActivitySession })}
+              />
+            </div>
           )}
         </div>
       </div>

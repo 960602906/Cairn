@@ -5,12 +5,13 @@
  * 改动从对话里的「本轮变更」进入，计划从对话里的计划卡片进入，都不在首页重复出现。
  * 首页只读，文件树等多写操作都在对应的标签页里完成。
  */
-import { Activity, ChevronRight, File, Folder, FolderTree } from 'lucide-react'
+import { Activity, ChevronRight, FolderTree } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
 import type { FileTreeEntry, ProjectSummary, SessionStatus } from '@cairn/protocol'
 import { getMainApi } from './api.js'
+import { FileTypeIcon, FolderTypeIcon } from './file-icons.js'
 import { formatCompactTokens } from './format.js'
 import { lastSegment } from './paths.js'
 import { projectDisplayName } from './project-name.js'
@@ -163,9 +164,9 @@ export function SessionHome({
             entries.slice(0, TREE_PREVIEW_LIMIT).map((entry) => (
               <span key={entry.path} className="flex items-center gap-1.5 text-fg2">
                 {entry.kind === 'dir' ? (
-                  <Folder aria-hidden className="size-3.5 shrink-0 text-muted" />
+                  <FolderTypeIcon name={entry.name} />
                 ) : (
-                  <File aria-hidden className="size-3.5 shrink-0 text-muted" />
+                  <FileTypeIcon name={entry.name} />
                 )}
                 <span className="min-w-0 truncate">{entry.name}</span>
               </span>

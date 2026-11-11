@@ -18,12 +18,21 @@ const project: ProjectSummary = {
 
 type Entry = { path: string; name: string; kind: 'file' | 'dir'; hidden: boolean }
 
+const ENTRIES: Entry[] = [
+  { path: 'src', name: 'src', kind: 'dir', hidden: false },
+  { path: 'index.ts', name: 'index.ts', kind: 'file', hidden: false },
+  { path: 'package.json', name: 'package.json', kind: 'file', hidden: false },
+]
+
 function setup(
   initial: Entry[],
   options: {
     project?: ProjectSummary | undefined
     active?: boolean
     variant?: 'dialog' | 'panel'
+    onOpenFile?: (path: string) => void
+    onFileRenamed?: (from: string, to: string) => void
+    onFileDeleted?: (path: string) => void
   } = {},
 ) {
   let entries = [...initial]
@@ -77,16 +86,19 @@ function setup(
     on: () => () => undefined,
   }
   const selectedProject = 'project' in options ? options.project : project
-  render(
+  const rendered = render(
     <I18nextProvider i18n={i18n}>
       <FileTreeBrowser
         project={selectedProject}
         active={options.active ?? true}
         {...(options.variant ? { variant: options.variant } : {})}
+        onOpenFile={options.onOpenFile}
+        onFileRenamed={options.onFileRenamed}
+        onFileDeleted={options.onFileDeleted}
       />
     </I18nextProvider>,
   )
-  return { request }
+  return { container: rendered.container, request }
 }
 
 beforeEach(() => {
@@ -102,6 +114,55 @@ afterEach(() => {
 })
 
 describe('FileTreeBrowser', () => {
+  it('opens files on click, not folders, and renders type icons', async () => {
+    const onOpenFile = vi.fn()
+    const { container } = setup(ENTRIES, { variant: 'panel', onOpenFile })
+    await screen.findByText('index.ts')
+
+    const icons = [...container.querySelectorAll('img')]
+    expect(icons).toHaveLength(3)
+    expect(icons.map((icon) => icon.getAttribute('src'))).toEqual([
+      './folder-src.svg',
+      './typescript.svg',
+      './nodejs.svg',
+    ])
+
+    await userEvent.click(screen.getByText('index.ts'))
+    expect(onOpenFile).toHaveBeenCalledWith('index.ts')
+
+    await userEvent.click(screen.getByText('src'))
+    expect(onOpenFile).toHaveBeenCalledOnce()
+
+    const srcRow = screen.getByText('src').parentElement!
+    await userEvent.click(within(srcRow).getByRole('button', { name: '展开目录' }))
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src-open.svg')
+  })
+
+  it('syncs renamed and deleted files with open tabs', async () => {
+    const onOpenFile = vi.fn()
+    const onFileRenamed = vi.fn()
+    const onFileDeleted = vi.fn()
+    setup(ENTRIES, { variant: 'panel', onOpenFile, onFileRenamed, onFileDeleted })
+    const row = (await screen.findByText('index.ts')).parentElement!
+
+    await userEvent.click(within(row).getByRole('button', { name: '文件操作' }))
+    expect(onOpenFile).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    expect(onOpenFile).not.toHaveBeenCalled()
+    const renameInput = screen.getByLabelText('名称')
+    await userEvent.clear(renameInput)
+    await userEvent.type(renameInput, 'main.ts')
+    await userEvent.click(screen.getByRole('button', { name: '确定' }))
+    expect(onFileRenamed).toHaveBeenCalledWith('index.ts', 'main.ts')
+    const renamed = (await screen.findByText('main.ts')).parentElement!
+
+    await userEvent.click(within(renamed).getByRole('button', { name: '文件操作' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '删除' }))
+    expect(onOpenFile).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: '删除' }))
+    expect(onFileDeleted).toHaveBeenCalledWith('main.ts')
+  })
+
   it('loads, filters, creates, renames and deletes entries', async () => {
     const { request } = setup([
       { path: 'notes.txt', name: 'notes.txt', kind: 'file', hidden: false },
@@ -173,9 +234,6 @@ describe('FileTreeBrowser', () => {
     const srcRow = screen.getByText('src').parentElement!
     await userEvent.dblClick(srcRow)
     expect(await screen.findByText('app.ts')).toBeTruthy()
-    const appRow = screen.getByText('app.ts').parentElement!
-    await userEvent.dblClick(appRow)
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('C:\\work\\demo/src/app.ts')
 
     await userEvent.click(within(srcRow).getByRole('button', { name: '文件操作' }))
     await userEvent.click(screen.getByRole('menuitem', { name: '复制路径' }))

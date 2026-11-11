@@ -6,8 +6,6 @@
  */
 import {
   ChevronRight,
-  Folder,
-  FolderOpen,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -16,6 +14,7 @@ import {
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'
+import { FolderTypeIcon } from './file-icons.js'
 import { lastSegment } from './paths.js'
 import { useSessionStore } from './store-context.js'
 import {
@@ -289,11 +288,7 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
                 }
                 className="flex w-full items-center gap-1.5 rounded-[6px] px-2 py-1 text-left text-[10.5px] font-medium tracking-[0.03em] text-muted transition-colors hover:bg-hover hover:text-fg2"
               >
-                {isCollapsed ? (
-                  <Folder aria-hidden className="size-3.5 shrink-0 text-faint" />
-                ) : (
-                  <FolderOpen aria-hidden className="size-3.5 shrink-0 text-faint" />
-                )}
+                <FolderTypeIcon name={lastSegment(group.projectPath)} expanded={!isCollapsed} />
                 <span className="truncate">{group.name}</span>
                 <ChevronRight
                   aria-hidden

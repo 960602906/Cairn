@@ -128,7 +128,10 @@ describe('SessionList', () => {
     ])
     expect(screen.getByRole('region', { name: '项目 work' })).toBeTruthy()
     expect(screen.getByRole('region', { name: '项目 other' })).toBeTruthy()
-    expect(screen.getByRole('region', { name: '项目 work' }).querySelector('h3 svg')).not.toBeNull()
+    expect(
+      screen.getByRole('region', { name: '项目 work' }).querySelector('img')?.getAttribute('src'),
+    ).toBe('./folder-open.svg')
+    expect(screen.getByRole('region', { name: '项目 work' }).querySelector('h3 img')).not.toBeNull()
 
     await userEvent.click(sessionButton(items[1]!))
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s2'))
@@ -146,7 +149,7 @@ describe('SessionList', () => {
     const group = await screen.findByRole('region', { name: '项目 work' })
     const toggle = within(group).getByRole('button', { name: /^work/ })
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('folder-open')
+    expect(group.querySelector('h3 img')?.getAttribute('src')).toBe('./folder-open.svg')
     expect(group.querySelector('h3 svg.lucide-chevron-right')?.getAttribute('class')).toContain(
       'rotate-90',
     )
@@ -154,8 +157,7 @@ describe('SessionList', () => {
 
     await userEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('lucide-folder')
-    expect(group.querySelector('h3 svg')?.getAttribute('class')).not.toContain('folder-open')
+    expect(group.querySelector('h3 img')?.getAttribute('src')).toBe('./folder.svg')
     expect(group.querySelector('h3 svg.lucide-chevron-right')?.getAttribute('class')).not.toContain(
       'rotate-90',
     )

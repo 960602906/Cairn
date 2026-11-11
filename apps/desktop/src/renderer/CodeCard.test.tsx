@@ -63,7 +63,7 @@ describe('CodeCard', () => {
     expect(within(card).getByText('新文件')).toBeTruthy()
     expect(within(card).getByText('+3')).toBeTruthy()
     expect(within(card).getByText('−1')).toBeTruthy()
-    expect(within(card).getByText('TS')).toBeTruthy()
+    expect(card.querySelector('img')?.getAttribute('src')).toBe('./typescript.svg')
     expect(lineNumbers(card)).toEqual(['9', '10'])
   })
 

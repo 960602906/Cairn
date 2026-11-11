@@ -19,6 +19,14 @@ test('工作空间菜单与文件树的新增、重命名、删除和移除', as
   const workspaces = window.getByRole('region', { name: '工作空间' })
   await expect(workspaces).toContainText('project')
   const row = workspaces.locator('li').filter({ hasText: 'project' })
+  const workspaceIcon = row.locator('button').first().locator('img').first()
+  await expect
+    .poll(() =>
+      workspaceIcon.evaluate(
+        (image) => (image as unknown as { readonly naturalWidth: number }).naturalWidth,
+      ),
+    )
+    .toBeGreaterThan(0)
 
   await row.hover()
   await row.getByRole('button', { name: '工作空间操作' }).click()
@@ -56,6 +64,25 @@ test('工作空间菜单与文件树的新增、重命名、删除和移除', as
   await panel.getByRole('button', { name: '打开文件树' }).click()
   await expect(panel.getByRole('tab', { name: '文件树' })).toHaveAttribute('aria-selected', 'true')
   await expect(panel.getByText('notes.txt')).toBeVisible()
+  const notesRow = panel.getByRole('listitem').filter({ hasText: 'notes.txt' }).first()
+  await expect
+    .poll(() =>
+      notesRow
+        .locator('img')
+        .first()
+        .evaluate((image) => (image as unknown as { readonly naturalWidth: number }).naturalWidth),
+    )
+    .toBeGreaterThan(0)
+
+  // 单击文件在同一个工作台里打开只读预览；关闭后回到文件树。
+  await notesRow.getByText('notes.txt').click()
+  await expect(panel.getByRole('tab', { name: 'notes.txt' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await expect(panel.getByRole('region', { name: '文件预览：notes.txt' })).toContainText('notes')
+  await panel.getByRole('button', { name: '关闭notes.txt' }).click()
+  await expect(panel.getByRole('tab', { name: '文件树' })).toHaveAttribute('aria-selected', 'true')
 
   await panel.getByRole('button', { name: '新建文件夹', exact: true }).click()
   await window.getByLabel('名称').last().fill('folder')

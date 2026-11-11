@@ -101,7 +101,11 @@ describe('TurnChanges', () => {
     expect(within(card).getByText('2 个文件')).toBeTruthy()
     expect(card.querySelector('header')!.textContent).toContain('+4 −1')
     const rows = within(card).getAllByRole('button')
-    expect(rows.map((r) => r.textContent)).toEqual(['TSsrc/a.ts+2 −1', 'TSsrc/new.ts新文件+2 −0'])
+    expect(rows.map((r) => r.textContent)).toEqual(['src/a.ts+2 −1', 'src/new.ts新文件+2 −0'])
+    expect([...card.querySelectorAll('img')].map((icon) => icon.getAttribute('src'))).toEqual([
+      './typescript.svg',
+      './typescript.svg',
+    ])
     rerender(
       <I18nextProvider i18n={i18n}>
         <SessionStoreProvider store={setup().store}>
@@ -235,7 +239,7 @@ describe('SessionChangesPanel', () => {
       within(panel)
         .getAllByRole('button')
         .map((b) => b.textContent),
-    ).toEqual(['TSsrc/a.ts+2 −1', 'TSsrc/new.ts新文件+2 −0', 'MDold.md+1 −1'])
+    ).toEqual(['src/a.ts+2 −1', 'src/new.ts新文件+2 −0', 'old.md+1 −1'])
   })
 
   it('没有改动时显示空状态', () => {

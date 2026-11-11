@@ -1,7 +1,7 @@
 /**
  * 代码卡片（M2-06，视觉规范 §7.1）：Markdown 代码块与 `read_file` 的结果都用它。
  *
- * - 标题栏 38px：语言图标、路径（目录灰、文件名加粗）或语言名、“新文件”标记、增删行数；右侧换行与复制。
+ * - 标题栏 38px：文件类型图标、路径（目录灰、文件名加粗）或语言名、“新文件”标记、增删行数；右侧换行与复制。
  * - 正文：行号列 46px，不可选中，复制时不带行号；重点行用浅蓝底、左侧强调色竖线，行号变为强调色。
  * - 高亮在渲染后异步完成（Shiki，`highlight.ts`），之前先显示纯文本。
  */
@@ -9,6 +9,7 @@ import { WrapText } from 'lucide-react'
 import { useMemo, useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CopyButton } from './CopyButton.js'
+import { FileTypeIcon } from './file-icons.js'
 import { useHighlight, type HighlightToken } from './highlight.js'
 import type { LanguageInfo } from './languages.js'
 import { cn } from './ui/index.js'
@@ -104,7 +105,7 @@ export function CodeCard({
       className={cn('my-3 overflow-hidden rounded-card bg-code-bg shadow-hair2', className)}
     >
       <figcaption className="flex h-[38px] items-center gap-2 bg-code-head pr-1.5 pl-3 text-note">
-        <LanguageIcon language={language} />
+        {path ? <FileTypeIcon name={path} /> : <LanguageIcon language={language} />}
         {path ? (
           <span className="min-w-0 truncate font-mono text-[12px]" title={path}>
             <span className="text-muted">{dir}</span>

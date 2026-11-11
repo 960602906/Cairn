@@ -427,6 +427,18 @@ export const MainForRenderer = defineSide({
         truncated: z.boolean(),
       }),
     },
+    /**
+     * 读取项目内一个文件的内容（文件树预览）。按读取文件的规则解码：BOM、UTF-16、
+     * 含 NUL 的视为二进制；二进制与超过 `FILE_CONTENT_MAX_CHARS` 的文本只返回大小。
+     * 目标是目录时报 `fs.is_directory`。
+     */
+    'fs.read': {
+      params: z.object({
+        projectId: Id,
+        path: z.string().min(1).max(4096),
+      }),
+      result: z.object({ content: FileContent }),
+    },
     /** 新建文件或目录；父目录必须已经存在，目标已存在时报 `fs.conflict`。 */
     'fs.create': {
       params: z.object({
