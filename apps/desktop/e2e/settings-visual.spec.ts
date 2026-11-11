@@ -107,7 +107,7 @@ test('浅色主题在窄窗口下七个分类都不溢出', async ({ launch }) =
   await window.getByRole('button', { name: /^设置/ }).click()
   await window
     .getByRole('radiogroup', { name: '主题' })
-    .getByRole('radio', { name: /^纸面/ })
+    .getByRole('radio', { name: /^浅色/ })
     .click()
 
   const nav = window.getByRole('navigation', { name: '设置分类' })
@@ -118,7 +118,7 @@ test('浅色主题在窄窗口下七个分类都不溢出', async ({ launch }) =
     await noHorizontalOverflow(window)
     if (id === 'general' || id === 'skills' || id === 'mcp') {
       await window.screenshot({
-        path: path.join(ARTIFACTS, `section-${id}-paper-880x800.png`),
+        path: path.join(ARTIFACTS, `section-${id}-light-880x800.png`),
       })
     }
   }
@@ -156,9 +156,9 @@ test('窗口标题区底色跟随主题', async ({ launch }) => {
   await window.getByRole('button', { name: /^设置/ }).click()
   const themes = window.getByRole('radiogroup', { name: '主题' })
 
-  await themes.getByRole('radio', { name: /^黑曜/ }).click()
-  await expect.poll(background).toBe('#08090a')
+  await themes.getByRole('radio', { name: /^深色/ }).click()
+  await expect.poll(background).toBe('#161617')
 
-  await themes.getByRole('radio', { name: /^纸面/ }).click()
-  await expect.poll(background).toBe('#e6dccb')
+  await themes.getByRole('radio', { name: /^浅色/ }).click()
+  await expect.poll(background).toBe('#f5f5f6')
 })

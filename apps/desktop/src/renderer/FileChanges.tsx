@@ -28,6 +28,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTitle,
+  PanelEmpty,
 } from './ui/index.js'
 
 /** 可以撤销文件的会话状态：没有在运行或等待审批。 */
@@ -250,19 +251,18 @@ export function SessionChangesPanel({ sessionId }: { readonly sessionId: string 
   const changes = useSessionStore((s) => s.changes[sessionId])
   const entries = useMemo(() => (changes ? fileEntries(changes) : []), [changes])
   if (entries.length === 0) {
-    return <p className="px-4 py-3 text-ui text-muted">{t('changes.empty')}</p>
+    return <PanelEmpty icon={<FileDiffIcon />}>{t('changes.empty')}</PanelEmpty>
   }
   const sum = totals(entries)
   return (
     <section aria-label={t('changes.session')} className="flex h-full min-h-0 flex-col">
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b-[0.5px] border-hair px-3 text-note">
-        <FileDiffIcon aria-hidden className="size-3.5 text-muted" />
-        <h3 className="font-medium text-fg">{t('changes.session')}</h3>
+      <header className="flex h-8 shrink-0 items-center gap-2 px-4 text-note">
+        <h3 className="font-normal text-muted">{t('changes.session')}</h3>
         <span className="ml-auto shrink-0">
           <ChangeCounts added={sum.added} removed={sum.removed} />
         </span>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto border-t-[0.5px] border-hair pb-2">
         <FileChangeList sessionId={sessionId} entries={entries} />
       </div>
     </section>

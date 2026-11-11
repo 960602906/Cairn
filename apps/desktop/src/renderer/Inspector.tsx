@@ -23,7 +23,7 @@ import { agentName } from './agents/model.js'
 import { formatCompactTokens as compactTokens, formatDuration } from './format.js'
 import { inspectionKey } from './session-store.js'
 import { useSessionStore as useStore } from './store-context.js'
-import { cn, IconButton } from './ui/index.js'
+import { cn, IconButton, PanelEmpty } from './ui/index.js'
 
 export type InspectorTab = 'timeline' | 'context' | 'usage' | 'settings'
 
@@ -494,7 +494,7 @@ function RunNodeView({
   const children = childrenMap.get(node.runId) ?? []
   return (
     <li className="list-none">
-      <div className="rounded-item bg-sunk px-2 py-1.5">
+      <div>
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -551,14 +551,14 @@ function RunNodeView({
           <p className="mt-1 line-clamp-2 pl-[22px] text-note text-muted">{delegation.task}</p>
         )}
         {expanded && (
-          <div className="mt-2 flex flex-col gap-1.5 pl-3">
+          <div className="mt-1 ml-[9px] flex flex-col gap-0.5 border-l-[0.5px] border-hair2 pl-2">
             {node.turns.length === 0 ? (
               <p className="text-note text-faint">{t('inspector.timeline.noTurns')}</p>
             ) : (
               node.turns.map((turn, index) => {
                 const open = openTurn === turn.turnId
                 return (
-                  <div key={turn.turnId} className="rounded-[6px] bg-paper/60 px-2 py-1.5">
+                  <div key={turn.turnId}>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
@@ -591,7 +591,7 @@ function RunNodeView({
                       )}
                     </div>
                     {open && (
-                      <div className="mt-1.5 flex flex-col gap-1.5 pl-4">
+                      <div className="mt-1 mb-2 flex flex-col gap-2 pl-5">
                         {turn.steps.length === 0 ? (
                           <p className="text-note text-faint">{t('inspector.timeline.noSteps')}</p>
                         ) : (
@@ -751,7 +751,7 @@ export function Inspector({
       : result.tree.runs.find((run) => run.runId === selectedRunId)
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b-[0.5px] border-hair px-2">
+      <div className="flex shrink-0 items-center gap-1 px-3 pt-1 pb-2">
         {selectedRunId !== undefined && (
           <button
             type="button"
@@ -764,7 +764,7 @@ export function Inspector({
         <div
           role="tablist"
           aria-label={t('inspector.tabs')}
-          className="flex min-w-0 flex-1 gap-0.5"
+          className="flex min-w-0 flex-1 gap-0.5 rounded-item bg-sunk p-0.5"
         >
           {TABS.map(({ id, label, Icon }) => (
             <button
@@ -774,10 +774,8 @@ export function Inspector({
               aria-selected={tab === id}
               onClick={() => setTab(id)}
               className={cn(
-                'flex h-7 min-w-0 flex-1 items-center justify-center gap-1 rounded-[6px] px-1 text-[11.5px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent',
-                tab === id
-                  ? 'bg-sunk2 font-medium text-fg'
-                  : 'text-muted hover:bg-hover hover:text-fg2',
+                'flex h-6 min-w-0 flex-1 items-center justify-center gap-1 rounded-[6px] px-1 text-[11.5px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent',
+                tab === id ? 'bg-paper font-medium text-fg shadow-1' : 'text-muted hover:text-fg2',
               )}
             >
               <Icon aria-hidden className="size-3 shrink-0" />
@@ -808,12 +806,11 @@ export function Inspector({
             {t('inspector.loading')}
           </p>
         ) : result === undefined || result.tree.runs.length === 0 ? (
-          <div className="flex flex-col gap-1 p-3 text-ui text-muted">
-            <p>{t('inspector.empty')}</p>
-            <p className="text-note text-faint">{t('inspector.emptyHint')}</p>
-          </div>
+          <PanelEmpty icon={<Clock />} hint={t('inspector.emptyHint')}>
+            {t('inspector.empty')}
+          </PanelEmpty>
         ) : tab === 'timeline' ? (
-          <div className="p-3">
+          <div className="px-2 pb-3">
             <RunTimeline
               tree={result.tree}
               delegations={delegations}

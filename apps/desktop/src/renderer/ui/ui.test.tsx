@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
   IconButton,
   Kbd,
+  PanelEmpty,
   SegmentedControl,
   Shimmer,
   Spinner,
@@ -77,6 +78,21 @@ describe('Button', () => {
 })
 
 describe('small pieces', () => {
+  it('renders a panel empty state with and without icon and hint', () => {
+    const view = render(<PanelEmpty>还没有内容</PanelEmpty>)
+    expect(screen.getByText('还没有内容')).toBeTruthy()
+    expect(view.container.querySelector('[aria-hidden]')).toBeNull()
+    view.unmount()
+
+    render(
+      <PanelEmpty icon={<svg data-testid="empty-icon" />} hint="稍后再来" className="px-2">
+        还没有内容
+      </PanelEmpty>,
+    )
+    expect(screen.getByTestId('empty-icon')).toBeTruthy()
+    expect(screen.getByText('稍后再来')).toBeTruthy()
+  })
+
   it('renders Kbd, Spinner and Shimmer', () => {
     render(
       <>

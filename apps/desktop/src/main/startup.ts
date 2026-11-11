@@ -758,29 +758,13 @@ app.on('web-contents-created', (_event, contents) => {
 
 /** 系统主题跟随设置（M2-02）：界面的 prefers-color-scheme 与系统按钮的颜色都随之变化。 */
 /** 以 `--ozone-platform=headless` 运行（冒烟测试）。 */
-/** 把四套配色映射成 Electron 只认识的 system / light / dark（标题栏与滚动条跟随明暗）。 */
+/** 把主题设置映射成 Electron 的 system / light / dark（标题栏与滚动条跟随明暗）。 */
 function nativeThemeSource(theme: Theme): 'system' | 'light' | 'dark' {
-  switch (theme) {
-    case 'bluestone':
-    case 'obsidian':
-    case 'slate':
-      return 'dark'
-    case 'tundra':
-    case 'paper':
-      return 'light'
-    case 'graphite':
-      return 'dark'
-    case 'light':
-      return 'light'
-    case 'dark':
-      return 'dark'
-    default:
-      return 'system'
-  }
+  return theme === 'system' ? 'system' : resolveChromeTheme(theme, true)
 }
 
 function followThemeSetting(): void {
-  nativeTheme.themeSource = nativeThemeSource(settings.get().theme ?? 'slate')
+  nativeTheme.themeSource = nativeThemeSource(settings.get().theme ?? 'system')
   nativeTheme.on('updated', applyWindowChrome)
 }
 

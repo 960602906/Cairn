@@ -75,46 +75,35 @@ describe('createSettingsService', () => {
       systemLocales: () => ['zh-CN'],
     })
     expect(settings.get()).toEqual({ locale: 'zh-CN', providers: [], onboardingSeen: false })
-    expect(settings.update({ theme: 'obsidian' })).toEqual({
+    expect(settings.update({ theme: 'dark' })).toEqual({
       locale: 'zh-CN',
       providers: [],
       onboardingSeen: false,
-      theme: 'obsidian',
+      theme: 'dark',
     })
-    expect(read()).toEqual({ theme: 'obsidian' })
-    expect(
+    expect(read()).toEqual({ theme: 'dark' })
+    const reread = () =>
       createSettingsService({
         storage: createMemoryStorage(),
         file,
         systemLocales: () => ['zh-CN'],
-      }).get().theme,
-    ).toBe('obsidian')
+      }).get().theme
+    expect(reread()).toBe('dark')
 
-    // 旧版本保存的浅色 / 深色 / 石墨分别归到苔原 / 黑曜 / 黑曜
-    writeFileSync(file, JSON.stringify({ theme: 'light' }))
-    expect(
-      createSettingsService({
-        storage: createMemoryStorage(),
-        file,
-        systemLocales: () => ['zh-CN'],
-      }).get().theme,
-    ).toBe('tundra')
-    writeFileSync(file, JSON.stringify({ theme: 'dark' }))
-    expect(
-      createSettingsService({
-        storage: createMemoryStorage(),
-        file,
-        systemLocales: () => ['zh-CN'],
-      }).get().theme,
-    ).toBe('obsidian')
-    writeFileSync(file, JSON.stringify({ theme: 'graphite' }))
-    expect(
-      createSettingsService({
-        storage: createMemoryStorage(),
-        file,
-        systemLocales: () => ['zh-CN'],
-      }).get().theme,
-    ).toBe('obsidian')
+    // 旧版本保存的配色名按明暗归到浅色 / 深色
+    for (const [stored, expected] of [
+      ['system', 'system'],
+      ['light', 'light'],
+      ['paper', 'light'],
+      ['tundra', 'light'],
+      ['graphite', 'dark'],
+      ['obsidian', 'dark'],
+      ['bluestone', 'dark'],
+      ['slate', 'dark'],
+    ] as const) {
+      writeFileSync(file, JSON.stringify({ theme: stored }))
+      expect(reread()).toBe(expected)
+    }
   })
 
   it('saves the shell preference; omitted when missing or invalid (M2-09)', () => {

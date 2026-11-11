@@ -136,9 +136,9 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
   const storedTheme = (): Theme | undefined => {
     const parsed = Theme.safeParse(stored['theme'])
     if (!parsed.success) return undefined
-    // 旧版本的浅色 / 深色（以及旧“石墨”）分别归到苔原 / 黑曜
-    if (parsed.data === 'light') return 'tundra'
-    if (parsed.data === 'dark' || parsed.data === 'graphite') return 'obsidian'
+    // 旧版本的五套彩色配色（以及旧“石墨”）按明暗归到浅色 / 深色
+    if (parsed.data === 'paper' || parsed.data === 'tundra') return 'light'
+    if (parsed.data !== 'system' && parsed.data !== 'light') return 'dark'
     return parsed.data
   }
 

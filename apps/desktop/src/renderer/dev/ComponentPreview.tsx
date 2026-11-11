@@ -155,10 +155,8 @@ export function ComponentPreview({
                     onChange={setTheme}
                     options={[
                       { value: 'system', label: '跟随系统' },
-                      { value: 'obsidian', label: '黑曜' },
-                      { value: 'tundra', label: '苔原' },
-                      { value: 'paper', label: '纸面' },
-                      { value: 'slate', label: '板岩' },
+                      { value: 'light', label: '浅色' },
+                      { value: 'dark', label: '深色' },
                     ]}
                   />
                 </div>

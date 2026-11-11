@@ -127,6 +127,28 @@ describe('App', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: '活动' })).toBeNull())
   })
 
+  it('keeps the sidebar next to the activity center and offers expand and new chat when collapsed', async () => {
+    const { store } = makeActivityStore()
+    render(<App i18n={createI18n('zh-CN')} store={store} />)
+    expect(screen.queryByRole('navigation', { name: '全局导航' })).toBeNull()
+    const activity = await screen.findByRole('button', { name: '活动' })
+    fireEvent.click(activity)
+    expect(await screen.findByRole('heading', { name: '活动' })).toBeDefined()
+    // 活动中心显示在主区，左栏仍在，入口标成当前页。
+    expect(screen.getByRole('navigation', { name: '会话' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '活动' }).getAttribute('aria-current')).toBe('page')
+
+    // 收起左栏后，顶栏左侧出现展开与新对话；展开不会离开活动中心。
+    fireEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
+    fireEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))
+    expect(screen.getByRole('heading', { name: '活动' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '展开侧栏' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '收起侧栏' }))
+    fireEvent.click(await screen.findByRole('button', { name: '新对话' }))
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '活动' })).toBeNull())
+  })
+
   it('opens search with Ctrl+K and closes settings without restoring the narrow drawer', async () => {
     stubMedia(true)
     render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
@@ -135,6 +157,8 @@ describe('App', () => {
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByPlaceholderText('按标题或项目名搜索')).toBeNull())
 
+    // 窄窗口下设置入口在左栏抽屉里。
+    fireEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))
     fireEvent.click(await screen.findByRole('button', { name: /^设置$/ }))
     expect(await screen.findByRole('navigation', { name: '设置分类' })).toBeDefined()
     fireEvent.keyDown(window, { key: 'Escape' })
@@ -250,6 +274,7 @@ describe('App', () => {
       },
     ])
     render(<App i18n={createI18n('zh-CN')} store={store} />)
+    fireEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))
     fireEvent.click(await screen.findByRole('button', { name: '活动' }))
     fireEvent.click(await screen.findByRole('button', { name: '查看' }))
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
@@ -276,6 +301,7 @@ describe('App', () => {
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
     expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull()
 
+    fireEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))
     fireEvent.click(await screen.findByRole('button', { name: '活动' }))
     emit('activity.open', { sessionId: 's1' })
     await waitFor(() => expect(screen.queryByRole('heading', { name: '活动' })).toBeNull())

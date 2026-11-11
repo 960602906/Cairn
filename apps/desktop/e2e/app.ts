@@ -31,7 +31,7 @@ export interface LaunchOptions {
   /** 首次启动时是否已经看过欢迎说明，默认 `true`；`false` 模拟干净安装。 */
   readonly onboardingSeen?: boolean
   /** 首次启动时写入的界面主题；省略时使用应用默认值。 */
-  readonly theme?: 'system' | 'bluestone' | 'obsidian' | 'tundra' | 'paper' | 'slate'
+  readonly theme?: 'system' | 'light' | 'dark'
   readonly env?: Readonly<Record<string, string>>
   /** 追加的 Electron/Chromium 启动参数（例如本地自签名更新源）。 */
   readonly args?: readonly string[]

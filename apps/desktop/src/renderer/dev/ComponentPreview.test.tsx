@@ -9,11 +9,11 @@ afterEach(cleanup)
 describe('ComponentPreview', () => {
   it('renders the components and switches the theme', async () => {
     const root = { setAttribute: vi.fn() }
-    render(<ComponentPreview initialTheme="tundra" env={{ root }} />)
+    render(<ComponentPreview initialTheme="light" env={{ root }} />)
     expect(screen.getByRole('heading', { name: '组件预览' })).toBeTruthy()
-    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'tundra')
-    await userEvent.click(screen.getByRole('radio', { name: '黑曜' }))
-    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'obsidian')
+    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'light')
+    await userEvent.click(screen.getByRole('radio', { name: '深色' }))
+    expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark')
     await userEvent.click(screen.getByRole('switch', { name: '启用' }))
     expect(screen.getByRole('switch', { name: '启用' }).getAttribute('aria-checked')).toBe('false')
     expect(screen.getByRole('figure', { name: '代码：src/sum.mjs' })).toBeTruthy()

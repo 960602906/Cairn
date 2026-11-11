@@ -6,17 +6,18 @@
  * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
 import { FileDiff, PanelRight } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { rootRun, sessionStatus } from '@cairn/core'
+import { activeExecutionPlan, rootRun, sessionStatus } from '@cairn/core'
 import { isAgentDraftRef } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { totals, turnEntries } from './file-changes.js'
 import { MessageStream } from './MessageStream.js'
+import { planInProgress, PlanProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
-import { SessionSidePanel, type SessionPanel } from './SessionSidePanel.js'
+import { SESSION_PANELS, SessionSidePanel, type SessionPanel } from './SessionSidePanel.js'
 import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { useMediaQuery } from './layout/use-media-query.js'
@@ -26,18 +27,18 @@ import { cn, IconButton } from './ui/index.js'
 /** 工作台从浮层切到常驻列的宽度；1280/1366 下仍保持浮层，避免把正文挤到 600px 以下。 */
 const PANEL_DOCK_QUERY = '(min-width: 1440px)'
 
-/** 纸面顶栏（48px）：左侧是项目 / 会话面包屑，右侧是模型与工作台开关。 */
+/** 纸面顶栏（48px）：和对话同一底色，左侧是项目 / 会话面包屑，右侧是会话信息栏开关。 */
 export function TopBar({ children }: { readonly children?: ReactNode }) {
   return (
     <header
-      className="drag relative flex h-12 shrink-0 items-center gap-1.5 bg-chrome pr-3 pl-5"
+      className="drag relative flex h-12 shrink-0 items-center gap-1.5 bg-paper pr-3 pl-5"
       style={TITLE_BAR_INSET}
     >
       {children}
       {/* 线条放在顶栏之外，避免被窗口按钮或拖拽区裁切。 */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-full block h-[0.5px] bg-hair"
+        className="pointer-events-none absolute inset-x-0 top-full z-[5] block h-[0.5px] bg-hair"
       />
     </header>
   )
@@ -48,6 +49,7 @@ export function ChatPanel({
   initialChangeSetSessionId,
   onInitialChangeSetOpened,
   notice,
+  leading,
 }: {
   /** 从活动中心等入口打开会话时要直接显示的改动集。 */
   readonly initialChangeSetId?: string | undefined
@@ -56,6 +58,8 @@ export function ChatPanel({
   readonly onInitialChangeSetOpened?: (() => void) | undefined
   /** 会话标题栏下方的非模态提示（M5-07 的更新提示）。 */
   readonly notice?: ReactNode
+  /** 顶栏最左侧的内容：左栏收起时的展开与新对话按钮。 */
+  readonly leading?: ReactNode
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -72,7 +76,18 @@ export function ChatPanel({
   const changes = useSessionStore((s) =>
     s.activeSessionId === undefined ? undefined : s.changes[s.activeSessionId],
   )
-  const [panel, setPanel] = useState<SessionPanel>('diff')
+  const [panel, setPanelState] = useState<SessionPanel>('diff')
+  /** 右侧已打开的标签（可逐个关闭，关掉最后一个即收起整栏）；跨会话保留。 */
+  const [tabs, setTabs] = useState<readonly SessionPanel[]>(SESSION_PANELS)
+  /** 切到某个面板；它的标签已被关掉时重新打开。 */
+  const setPanel = useCallback((next: SessionPanel) => {
+    setTabs((current) =>
+      current.includes(next)
+        ? current
+        : SESSION_PANELS.filter((id) => id === next || current.includes(id)),
+    )
+    setPanelState(next)
+  }, [])
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | undefined>()
   /** 宽屏工作台常驻；窄屏默认收起，按需浮出。 */
@@ -123,6 +138,22 @@ export function ChatPanel({
     onInitialChangeSetOpened?.()
   }, [initialChangeSetId, initialChangeSetSessionId, onInitialChangeSetOpened, sessionId])
 
+  const closeTab = (id: SessionPanel) => {
+    const remaining = tabs.filter((item) => item !== id)
+    if (remaining.length === 0) {
+      // 关掉最后一个标签就是收起整栏；下次打开时恢复全部标签。
+      setTabs(SESSION_PANELS)
+      setPanelState('diff')
+      setPanelPreference(false)
+      return
+    }
+    setTabs(remaining)
+    if (panel === id) {
+      const index = tabs.indexOf(id)
+      setPanelState(remaining[Math.min(index, remaining.length - 1)]!)
+    }
+  }
+
   const locateTurn = (runId: string, turnId: string) => {
     void runId
     setPanel('inspector')
@@ -150,6 +181,8 @@ export function ChatPanel({
   const path = view?.info?.projectPath ?? summary?.projectPath
   const project = projectNameForPath(path, projects, tc('project.defaultName'))
   const model = view?.info?.model ?? run?.model ?? summary?.model ?? defaultModel
+  const executing = view ? activeExecutionPlan(view) : undefined
+  const progressPlan = executing && planInProgress(executing) ? executing : undefined
   const turnId = run?.turn?.turnId
   const turnChanges =
     turnId === undefined || changes === undefined ? undefined : totals(turnEntries(changes, turnId))
@@ -160,6 +193,7 @@ export function ChatPanel({
         {t(`status.${status}`)}
       </span>
       <TopBar>
+        {leading}
         {project && (
           <>
             <span
@@ -265,6 +299,17 @@ export function ChatPanel({
           </div>
           <TurnRail view={view} />
           <div className="mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
+            {progressPlan && (
+              <PlanProgress
+                key={progressPlan.planId}
+                plan={progressPlan}
+                onOpen={() => {
+                  setSelectedPlanId(progressPlan.planId)
+                  setPanel('plan')
+                  setPanelPreference(true)
+                }}
+              />
+            )}
             <Composer
               key={sessionId}
               sessionId={sessionId}
@@ -287,6 +332,8 @@ export function ChatPanel({
           selectedChangeSetId={selectedChangeSetId}
           onSelectChangeSet={setSelectedChangeSetId}
           onPanelChange={setPanel}
+          tabs={tabs}
+          onCloseTab={closeTab}
           open={panelOpen}
           onClose={() => setPanelPreference(false)}
           onLocateTurn={locateTurn}

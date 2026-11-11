@@ -7,19 +7,8 @@
 @import '@fontsource/jetbrains-mono/latin-600.css';
 @import './tokens.css';
 
-/* 深色变体跟随所有深色主题（黑曜 / 板岩），不直接跟随系统（“跟随系统”由 theme.ts 解析） */
-@custom-variant dark (&:where(
-  [data-theme='bluestone'],
-  [data-theme='bluestone'] *,
-  [data-theme='obsidian'],
-  [data-theme='obsidian'] *,
-  [data-theme='graphite'],
-  [data-theme='graphite'] *,
-  [data-theme='slate'],
-  [data-theme='slate'] *,
-  [data-theme='dark'],
-  [data-theme='dark'] *
-));
+/* 深色变体跟随 data-theme，不直接跟随系统（“跟随系统”由 theme.ts 解析） */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 @theme inline {
   /* 只用令牌里的颜色：去掉 Tailwind 自带调色板 */

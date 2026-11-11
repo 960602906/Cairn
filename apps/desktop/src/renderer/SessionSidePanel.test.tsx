@@ -289,7 +289,7 @@ describe('SessionSidePanel', () => {
     const panel = screen.getByRole('dialog', { name: '会话信息' })
     expect(panel.className).toContain('transition-[width,transform,opacity]')
     expect(panel.className).toContain('duration-200')
-    expect(panel.className).toContain('w-[348px]')
+    expect(panel.style.width).toBe('348px')
     expect(panel.className).toContain('translate-x-0')
     expect(panel.className).toContain('opacity-100')
     expect(panel.getAttribute('aria-hidden')).toBe('false')
@@ -334,8 +334,9 @@ describe('SessionSidePanel', () => {
 
     wrap(<Harness />)
     panel = screen.getByRole('dialog', { name: '会话信息' })
-    await user.click(within(panel).getByRole('radio', { name: '改动集' }))
-    expect(within(panel).getByText(/还没有改动集/)).toBeTruthy()
+    // 没有改动集时不显示「改动集 / 文件改动」切换，直接是文件改动。
+    expect(within(panel).queryByRole('radio', { name: '改动集' })).toBeNull()
+    expect(within(panel).getByRole('region', { name: '本会话的改动' })).toBeTruthy()
   })
 
   it('renders applied, rejected, and conflicting change set summaries', () => {
@@ -359,8 +360,7 @@ describe('SessionSidePanel', () => {
     expect(within(list).getByText('2 个冲突')).toBeTruthy()
   })
 
-  it('ignores delegations without a change set and tolerates a missing change-set map', async () => {
-    const user = userEvent.setup()
+  it('ignores delegations without a change set and tolerates a missing change-set map', () => {
     wrap(
       <Harness
         delegations={[
@@ -371,12 +371,12 @@ describe('SessionSidePanel', () => {
       { missingChangeSets: true },
     )
     const panel = screen.getByRole('dialog', { name: '会话信息' })
-    await user.click(within(panel).getByRole('radio', { name: '改动集' }))
-    expect(within(panel).getByText(/还没有改动集/)).toBeTruthy()
+    // 没有改动集时不显示「改动集 / 文件改动」切换，直接是文件改动。
+    expect(within(panel).queryByRole('radio', { name: '改动集' })).toBeNull()
+    expect(within(panel).getByRole('region', { name: '本会话的改动' })).toBeTruthy()
   })
 
-  it('renders the empty change-set list without a session view', async () => {
-    const user = userEvent.setup()
+  it('renders the empty change-set list without a session view', () => {
     wrap(
       <SessionSidePanel
         sessionId="s1"
@@ -388,8 +388,9 @@ describe('SessionSidePanel', () => {
       { missingChangeSets: true },
     )
     const panel = screen.getByRole('dialog', { name: '会话信息' })
-    await user.click(within(panel).getByRole('radio', { name: '改动集' }))
-    expect(within(panel).getByText(/还没有改动集/)).toBeTruthy()
+    // 没有改动集时不显示「改动集 / 文件改动」切换，直接是文件改动。
+    expect(within(panel).queryByRole('radio', { name: '改动集' })).toBeNull()
+    expect(within(panel).getByRole('region', { name: '本会话的改动' })).toBeTruthy()
   })
 
   it('opens a change set selected outside the list with its delegation', () => {
@@ -410,6 +411,48 @@ describe('SessionSidePanel', () => {
     expect(within(panel).getByText('还没有计划。')).toBeTruthy()
     await user.click(within(panel).getByRole('button', { name: '关闭会话信息' }))
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('shows only the open tabs, closes one, and reopens another from the add menu', async () => {
+    const user = userEvent.setup()
+    const onCloseTab = vi.fn()
+    const onPanelChange = vi.fn()
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={view}
+        panel="diff"
+        selectedPlanId={undefined}
+        onPanelChange={onPanelChange}
+        tabs={['diff', 'plan']}
+        onCloseTab={onCloseTab}
+      />,
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getAllByRole('tab')).toHaveLength(2)
+    expect(within(panel).queryByRole('tab', { name: '检查器' })).toBeNull()
+    await user.click(within(panel).getByRole('button', { name: '关闭计划' }))
+    expect(onCloseTab).toHaveBeenCalledWith('plan')
+
+    await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    await user.click(await screen.findByRole('menuitem', { name: '检查' }))
+    expect(onPanelChange).toHaveBeenCalledWith('inspector')
+  })
+
+  it('hides the add menu when every tab is open', () => {
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={view}
+        panel="diff"
+        selectedPlanId={undefined}
+        onPanelChange={() => {}}
+        onCloseTab={() => {}}
+      />,
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getAllByRole('tab')).toHaveLength(4)
+    expect(within(panel).queryByRole('button', { name: '打开其他面板' })).toBeNull()
   })
 
   it('supports the bottom placement and inspector without change-set navigation', () => {
@@ -450,7 +493,7 @@ describe('SessionSidePanel', () => {
   it('collapses to zero width and removes itself from the accessible tree', () => {
     wrap(<Harness open={false} />)
     const panel = screen.getByRole('dialog', { hidden: true })
-    expect(panel.className).toContain('w-0')
+    expect(panel.style.width).toBe('0px')
     expect(panel.className).toContain('opacity-0')
     expect(panel.className).toContain('pointer-events-none')
     expect(panel.className).toContain('translate-x-full')

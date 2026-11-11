@@ -82,8 +82,10 @@ test('提出计划、批准后更新步骤进度', async ({ launch, userData }) 
     await window.keyboard.press('Escape')
     await expect(sessionPanel(window)).toBeHidden()
     await approve.click()
-    await expect(window.getByText('已完成')).toBeVisible({ timeout: 20_000 })
-    await expect(window.getByText('说明：只加了一行注释')).toBeVisible()
+    // 步骤的状态和说明在右侧的完整计划里；收起的会话信息栏不在页面上，先重新打开。
+    await summary.click()
+    await expect(details.getByText('已完成')).toBeVisible({ timeout: 20_000 })
+    await expect(details.getByText('说明：只加了一行注释')).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲', { timeout: 20_000 })
   } finally {
     await mock.close()

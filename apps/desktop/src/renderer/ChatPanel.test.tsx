@@ -185,6 +185,70 @@ describe('ChatPanel', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it('closes session panel tabs one by one and collapses the panel with the last one', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    const toggle = screen.getByRole('button', { name: '会话信息' })
+    await userEvent.click(toggle)
+    const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))
+    expect(tabNames()).toEqual(['改动', '会话要点', '计划', '检查器'])
+
+    // 关掉不在前台的标签，当前标签不变。
+    await userEvent.click(screen.getByRole('button', { name: '关闭计划' }))
+    expect(tabNames()).toEqual(['改动', '会话要点', '检查器'])
+    expect(screen.getByRole('tab', { name: '改动' }).getAttribute('aria-selected')).toBe('true')
+
+    // 关掉当前标签，切到它后面的那个。
+    await userEvent.click(screen.getByRole('button', { name: '关闭改动' }))
+    expect(screen.getByRole('tab', { name: '会话要点' }).getAttribute('aria-selected')).toBe('true')
+
+    // 从「+」菜单重新打开。
+    await userEvent.click(screen.getByRole('button', { name: '打开其他面板' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '计划' }))
+    expect(screen.getByRole('tab', { name: '计划' }).getAttribute('aria-selected')).toBe('true')
+
+    // 关掉最后一个标签即收起整栏；再打开时恢复全部标签。
+    for (const name of ['关闭检查器', '关闭计划', '关闭会话要点']) {
+      await userEvent.click(screen.getByRole('button', { name }))
+    }
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(toggle)
+    expect(tabNames()).toEqual(['改动', '会话要点', '计划', '检查器'])
+  })
+
+  it('floats the plan progress above the composer while a plan is being carried out', async () => {
+    const planContent = {
+      goal: '整理设置页',
+      files: [],
+      steps: [
+        { id: 'a', title: '重排入口' },
+        { id: 'b', title: '统一间距' },
+      ],
+      risks: '',
+      verification: '',
+      markdown: '',
+    }
+    const { open, emit } = setup({ history: HISTORY })
+    await open()
+    expect(screen.queryByRole('region', { name: '计划进度' })).toBeNull()
+    const base = HISTORY.length
+    emit(
+      ev(base + 1, 'plan.proposed', { planId: 'pl1', content: planContent }),
+      ev(base + 2, 'plan.approved', { planId: 'pl1' }),
+      ev(base + 3, 'plan.step.updated', { planId: 'pl1', stepIndex: 0, status: 'done' }),
+    )
+    const card = await screen.findByRole('region', { name: '计划进度' })
+    expect(within(card).getByText('1 / 2')).toBeTruthy()
+
+    // 点目标在右侧打开完整计划。
+    await userEvent.click(within(card).getByRole('button', { name: '整理设置页' }))
+    expect(screen.getByRole('tab', { name: '计划' }).getAttribute('aria-selected')).toBe('true')
+
+    // 步骤全部做完后卡片消失。
+    emit(ev(base + 4, 'plan.step.updated', { planId: 'pl1', stepIndex: 1, status: 'done' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: '计划进度' })).toBeNull())
+  })
+
   it('closes the overlay with the backdrop or Esc and returns focus to the toggle', async () => {
     const { open } = setup({ history: HISTORY })
     await open()
@@ -1008,10 +1072,13 @@ describe('tool calls and undo turn', () => {
       },
     })
     await open()
-    expect(screen.getAllByRole('separator').map((s) => s.getAttribute('aria-label'))).toEqual([
-      expect.stringMatching(/^第 1 轮前/),
-      expect.stringMatching(/^第 2 轮前/),
-    ])
+    // 侧栏的宽度分隔条也是 separator（可聚焦），这里只看检查点分隔线。
+    expect(
+      screen
+        .getAllByRole('separator')
+        .filter((s) => s.tabIndex !== 0)
+        .map((s) => s.getAttribute('aria-label')),
+    ).toEqual([expect.stringMatching(/^第 1 轮前/), expect.stringMatching(/^第 2 轮前/)])
     const rail = screen.getByRole('navigation', { name: '对话导航' })
     const first = within(rail).getByRole('button', { name: '跳到第 1 轮：跑测试' })
     const scrolled = vi.fn()

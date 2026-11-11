@@ -9,8 +9,8 @@
  */
 import type { Theme } from '@cairn/protocol'
 
-/** 实际渲染的配色，对应 tokens.css 中的五套主题。 */
-export type ChromeTheme = 'bluestone' | 'obsidian' | 'paper' | 'tundra' | 'slate'
+/** 实际渲染的配色，对应 tokens.css 中的两套主题。 */
+export type ChromeTheme = 'light' | 'dark'
 
 interface ChromePalette {
   /** 窗口底色（`--chrome`），也是启动时的 backgroundColor。 */
@@ -19,29 +19,22 @@ interface ChromePalette {
 
 /** 与 tokens.css 中每套主题的 `--chrome` 保持一致。 */
 const CHROME_PALETTES: Record<ChromeTheme, ChromePalette> = {
-  bluestone: { chrome: '#0b0d0f' },
-  obsidian: { chrome: '#08090a' },
-  paper: { chrome: '#e6dccb' },
-  tundra: { chrome: '#e7ebe5' },
-  slate: { chrome: '#0a0c10' },
+  light: { chrome: '#f5f5f6' },
+  dark: { chrome: '#161617' },
 }
 
-/** 把设置中的主题（含 `system` 与旧值）解析成实际配色。 */
+/** 把设置中的主题（含 `system` 与旧版本的配色名）解析成实际配色。 */
 export function resolveChromeTheme(theme: Theme | undefined, dark: boolean): ChromeTheme {
   switch (theme) {
-    case 'bluestone':
-    case 'obsidian':
+    case 'light':
     case 'paper':
     case 'tundra':
-    case 'slate':
-      return theme
-    case 'light':
-      return 'tundra'
-    case 'dark':
-    case 'graphite':
-      return 'obsidian'
+      return 'light'
+    case undefined:
+    case 'system':
+      return dark ? 'dark' : 'light'
     default:
-      return dark ? 'slate' : 'paper'
+      return 'dark'
   }
 }
 
