@@ -64,6 +64,7 @@ import { createProjectService } from './services/project-service.js'
 import { cloneGitRepository } from './services/git-clone.js'
 import { checkoutGitBranch, readGitInfo } from './services/git-info.js'
 import { createFileService } from './services/file-service.js'
+import { createMentionService, ripgrepFileLister } from './services/mention-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
@@ -631,6 +632,7 @@ const gateway = createRendererGateway({
   commands: sessions,
   projects,
   files,
+  mentions: createMentionService({ storage, listFiles: ripgrepFileLister(ripgrepPath) }),
   settings: {
     get: () => settings.get(),
     // 切换权限模式后，运行中的宿主改用新的预设

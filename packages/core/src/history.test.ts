@@ -5,7 +5,12 @@ import {
   type EventType,
 } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
-import { SESSION_BRIEF_PREFIX, INTERRUPTED_TOOL_RESULT_TEXT, rebuildHistory } from './index.js'
+import {
+  SESSION_BRIEF_PREFIX,
+  INTERRUPTED_TOOL_RESULT_TEXT,
+  rebuildHistory,
+  userTurnContent,
+} from './index.js'
 
 const model = { providerId: 'fake', modelId: 'fake-1' }
 const text = (t: string) => [{ type: 'text' as const, text: t }]
@@ -75,6 +80,26 @@ describe('rebuildHistory', () => {
         reasoning: { text: '打招呼', providerId: 'fake' },
         model,
         ts: 40,
+      },
+    ])
+  })
+
+  it('用户消息带着 @ 引用展开的上下文时，重建的历史里也带上（ADR-0037）', () => {
+    const ev = stream()
+    const history = rebuild([
+      ev('message.user', {
+        messageId: 'u1',
+        content: text('看看 @a.ts'),
+        mentions: [{ path: 'a.ts', kind: 'file' }],
+        context: '<file path="a.ts">\nx\n</file>',
+      }),
+    ])
+    expect(history).toEqual([
+      {
+        role: 'user',
+        content: [...text('看看 @a.ts'), ...text('<file path="a.ts">\nx\n</file>')],
+        ts: 10,
+        turnId: 't1',
       },
     ])
   })
@@ -502,5 +527,18 @@ describe('rebuildHistory', () => {
       ev('message.user', { messageId: 'u1', content: text('晚') }, { turnId: 't2' }),
     ])
     expect(roles(cleared)).toEqual(['user'])
+  })
+})
+
+describe('userTurnContent', () => {
+  it('没有上下文时原样返回输入', () => {
+    expect(userTurnContent({ content: text('你好') })).toEqual(text('你好'))
+  })
+
+  it('上下文作为最后一段文字附在输入后面', () => {
+    expect(userTurnContent({ content: text('你好'), context: 'ctx' })).toEqual([
+      ...text('你好'),
+      ...text('ctx'),
+    ])
   })
 })

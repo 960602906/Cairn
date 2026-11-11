@@ -22,6 +22,7 @@ import {
   type UpdateStatus,
   type EventEnvelope,
   type RpcChannel,
+  type ResolvedMention,
   type RpcError,
 } from '@cairn/protocol'
 import type { z } from 'zod'
@@ -29,6 +30,7 @@ import type { CredentialCommands } from './credential-store.js'
 import type { SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { FileCommands } from './file-service.js'
+import type { MentionCommands } from './mention-service.js'
 import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
 import type { HubCommands } from './hub-service.js'
@@ -46,7 +48,13 @@ type Handler<M extends keyof Requests> = (
 export interface SessionCommands {
   readonly create: Handler<'session.create'>
   readonly list: Handler<'session.list'>
-  readonly prompt: Handler<'session.prompt'>
+  /** 引用已在网关里展开（ADR-0037）：`mentions` 是能读到的那些，`context` 只给模型看。 */
+  readonly prompt: (
+    params: Omit<z.output<Requests['session.prompt']['params']>, 'mentions'> & {
+      mentions?: ResolvedMention[] | undefined
+      context?: string | undefined
+    },
+  ) => z.input<Requests['session.prompt']['result']>
   readonly abort: Handler<'session.abort'>
   readonly rename: Handler<'session.rename'>
   readonly archive: Handler<'session.archive'>
@@ -159,6 +167,8 @@ export interface RendererGatewayOptions {
   readonly projects: ProjectCommands
   /** 文件树：列出、新建、重命名、删除与在系统文件管理器中定位。 */
   readonly files: FileCommands
+  /** 输入框的 `@` 引用（ADR-0037）：候选搜索与发送时展开。省略时 `fs.search` 返回空。 */
+  readonly mentions?: MentionCommands | undefined
   readonly settings: SettingsCommands
   /** 凭据命令（M1-03b）：界面只能写入、删除与查询是否已配置。 */
   readonly credentials: CredentialCommands
@@ -277,7 +287,7 @@ type Timer = ReturnType<typeof setTimeout>
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { appInfo, events, commands, projects, files, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, permissions, skills, mcp } = options
-  const { hub } = options
+  const { hub, mentions } = options
   const { agents, trials, diagnostics, activity, changeSets } = options
   const { sandbox } = options
   const { update } = options
@@ -369,7 +379,18 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('fs.rename', (params) => files.rename(params))
       endpoint.handle('fs.delete', (params) => files.delete(params))
       endpoint.handle('fs.reveal', (params) => files.reveal(params))
-      endpoint.handle('session.prompt', (params) => commands.prompt(params))
+      endpoint.handle('fs.search', async (params) =>
+        mentions ? mentions.search(params) : { entries: [], truncated: false },
+      )
+      endpoint.handle('session.prompt', async ({ mentions: requested, ...params }) => {
+        if (!requested || requested.length === 0 || !mentions) return commands.prompt(params)
+        const expanded = await mentions.expand({ sessionId: params.sessionId, mentions: requested })
+        return commands.prompt({
+          ...params,
+          ...(expanded.mentions.length > 0 ? { mentions: expanded.mentions } : {}),
+          ...(expanded.context !== undefined ? { context: expanded.context } : {}),
+        })
+      })
       endpoint.handle('plan.approve', (params) => commands.approvePlan(params))
       endpoint.handle('plan.replan', (params) => commands.replan(params))
       endpoint.handle('plan.abandon', (params) => commands.abandonPlan(params))

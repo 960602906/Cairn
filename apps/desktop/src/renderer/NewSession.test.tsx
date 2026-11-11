@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
@@ -56,6 +56,10 @@ function setup(settings: object = {}, sessionCreate: unknown = { sessionId: 's1'
       }
     }
     if (method === 'session.create') return sessionCreate
+    if (method === 'fs.search') {
+      if ((params as { query: string }).query === 'boom') throw new Error('boom')
+      return { entries: [{ path: 'src/a.ts', kind: 'file' }], truncated: false }
+    }
     if (method === 'session.subscribe') return { events: [], lastSeq: 0 }
     return {}
   })
@@ -76,6 +80,30 @@ describe('greetingPeriod', () => {
 })
 
 describe('NewSession controls', () => {
+  it('suggests files of the selected project after @ and sends them as mentions', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await screen.findAllByText('work')
+    await user.type(input, '看 @boom')
+    expect(await screen.findByText('没有匹配的文件或文件夹')).toBeTruthy()
+    await user.clear(input)
+    await user.type(input, '看 @a')
+    const list = await screen.findByRole('listbox', { name: '引用文件' })
+    await within(list).findByText('a.ts')
+    expect(request).toHaveBeenCalledWith('fs.search', { projectId: 'p1', query: 'a', limit: 50 })
+    await user.keyboard('{Enter}')
+    expect(input.value).toBe('看 @src/a.ts ')
+    await user.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: [{ type: 'text', text: '看 @src/a.ts' }],
+        mentions: [{ path: 'src/a.ts' }],
+      }),
+    )
+  })
+
   it('creates the session, switches the model, then sends the first prompt in plan mode', async () => {
     const { request } = setup()
     const user = userEvent.setup()

@@ -14,7 +14,15 @@ import {
   DiagnosticsSummary,
 } from '../diagnostics.js'
 import { RunInspectResult } from '../inspect.js'
-import { AgentDefinitionRef, ContentPart, ErrorInfo, Id, ModelRef, Timestamp } from '../common.js'
+import {
+  AgentDefinitionRef,
+  ContentPart,
+  ErrorInfo,
+  Id,
+  ModelRef,
+  PromptMention,
+  Timestamp,
+} from '../common.js'
 import {
   AgentDetail,
   AgentDiff,
@@ -133,6 +141,13 @@ export const FileTreeEntry = z.object({
   hidden: z.boolean(),
 })
 export type FileTreeEntry = z.infer<typeof FileTreeEntry>
+
+/** `fs.search` 的一项：相对工作区、`/` 分隔的路径。 */
+export const FileSearchEntry = z.object({ path: z.string().min(1), kind: FileTreeEntryKind })
+export type FileSearchEntry = z.infer<typeof FileSearchEntry>
+
+/** 一条输入最多带几个 `@` 引用（ADR-0037）。 */
+export const MAX_PROMPT_MENTIONS = 20
 
 /** 会话标题的长度上限（字符，M2-02）。 */
 export const SESSION_TITLE_MAX_LENGTH = 200
@@ -427,6 +442,25 @@ export const MainForRenderer = defineSide({
         truncated: z.boolean(),
       }),
     },
+    /**
+     * 输入框 `@` 引用的候选（ADR-0037）：在会话的工作区或项目目录里按路径模糊搜索文件和目录。
+     * 遵守 `.gitignore`，跳过 `.git`；空查询返回第一层的目录与文件。
+     */
+    'fs.search': {
+      params: z
+        .object({
+          /** 在会话的工作区里搜（隔离工作区时是它自己的目录）。 */
+          sessionId: Id.optional(),
+          /** 还没有会话时（新对话页）在项目目录里搜。 */
+          projectId: Id.optional(),
+          query: z.string().max(512),
+          limit: z.number().int().min(1).max(100).optional(),
+        })
+        .refine((p) => (p.sessionId === undefined) !== (p.projectId === undefined), {
+          message: 'exactly one of sessionId and projectId',
+        }),
+      result: z.object({ entries: z.array(FileSearchEntry), truncated: z.boolean() }),
+    },
     /** 新建文件或目录；父目录必须已经存在，目标已存在时报 `fs.conflict`。 */
     'fs.create': {
       params: z.object({
@@ -464,12 +498,14 @@ export const MainForRenderer = defineSide({
     },
     /**
      * 发送用户输入。`mode: 'plan'`（M3-05）时这一轮只读并提出计划；省略为正常执行。
+     * `mentions` 是输入框里的 `@` 引用（ADR-0037），主进程读取后作为上下文附在这一轮输入之后。
      */
     'session.prompt': {
       params: z.object({
         sessionId: Id,
         content: z.array(ContentPart).min(1),
         mode: PromptMode.optional(),
+        mentions: z.array(PromptMention).max(MAX_PROMPT_MENTIONS).optional(),
       }),
       result: z.object({ messageId: Id }),
     },

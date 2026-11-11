@@ -19,6 +19,7 @@ import {
   Id,
   ModelRef,
   ReasoningPart,
+  ResolvedMention,
   RunLimits,
   RunMode,
   RunState,
@@ -177,6 +178,13 @@ const payloadSchemas = {
   'message.user': z.object({
     messageId: Id,
     content: z.array(ContentPart),
+    /** 展开成功的 `@` 引用（ADR-0037），界面用它高亮消息里的引用。 */
+    mentions: z.array(ResolvedMention).optional(),
+    /**
+     * 引用展开后的上下文。只发给模型（接在 `content` 之后），界面不显示；
+     * 恢复会话重建历史时同样带上，保证模型看到的输入前后一致。
+     */
+    context: z.string().optional(),
   }),
   /** 实时：助手回复的文本增量。 */
   'message.assistant.delta': z.object({ messageId: Id, text: z.string() }),

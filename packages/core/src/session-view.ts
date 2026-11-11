@@ -32,6 +32,7 @@ import {
   type RunLimits,
   type RunMode,
   type RunState,
+  type ResolvedMention,
   type SandboxExecution,
   type CheckpointReason,
   type PlanDocument,
@@ -66,6 +67,8 @@ interface MessageMeta {
 export interface UserMessageView extends MessageMeta {
   readonly role: 'user'
   readonly content: readonly ContentPart[]
+  /** 用 `@` 引用的文件与文件夹（ADR-0037）。展开的内容只给模型，不在这里。 */
+  readonly mentions: readonly ResolvedMention[]
 }
 
 export interface AssistantMessageView extends MessageMeta {
@@ -720,6 +723,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         role: 'user',
         ...meta(event, event.payload.messageId, turnId),
         content: event.payload.content,
+        mentions: event.payload.mentions ?? [],
       })
     }
     case 'message.assistant.completed': {

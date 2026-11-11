@@ -55,6 +55,26 @@ export const ContentPart = z.discriminatedUnion('type', [
 ])
 export type ContentPart = z.infer<typeof ContentPart>
 
+/** 引用的行范围（从 1 开始，包含两端）。 */
+export const MentionLines = z
+  .object({ start: z.number().int().min(1), end: z.number().int().min(1) })
+  .refine((lines) => lines.end >= lines.start, { message: 'end must not be before start' })
+export type MentionLines = z.infer<typeof MentionLines>
+
+/**
+ * 输入框里的 `@` 引用（ADR-0037）：相对工作区的路径，可以带行范围。
+ * 发送时由主进程展开成给模型看的上下文；不存在或越界的路径被忽略。
+ */
+export const PromptMention = z.object({
+  path: z.string().min(1).max(4096),
+  lines: MentionLines.optional(),
+})
+export type PromptMention = z.infer<typeof PromptMention>
+
+/** 展开后的引用：主进程确认存在并读到的文件或目录，写进 `message.user` 供界面显示。 */
+export const ResolvedMention = PromptMention.extend({ kind: z.enum(['file', 'dir']) })
+export type ResolvedMention = z.infer<typeof ResolvedMention>
+
 /**
  * 推理内容的一段原始块。签名等字段对应用不透明，只用于把推理原样带回给产生它的模型：
  * Anthropic 的 thinking 签名与 redacted_thinking 数据、Gemini 的 thought signature、
