@@ -107,6 +107,8 @@ const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
 /** 运行中发送按钮换成停止按钮，此时为 null。 */
 const sendButton = () => screen.queryByRole('button', { name: '发送' }) as HTMLButtonElement
 const stopButton = () => screen.queryByRole('button', { name: '停止' }) as HTMLButtonElement | null
+/** 计划模式开启时输入框里出现「退出计划模式」标记。 */
+const planOn = () => screen.queryByRole('button', { name: '退出计划模式' }) !== null
 /** 右侧会话信息栏默认收起，交互前先打开（窄窗口时它不再在可访问树里）。 */
 const showPanel = async () => {
   const toggle = screen.getByRole('button', { name: '会话信息' })
@@ -1281,9 +1283,12 @@ describe('Composer (M2-04)', () => {
       handlers: { 'settings.get': () => ({ providers }) },
     })
     await open()
-    const toggle = screen.getByRole('button', { name: '计划模式' })
-    await userEvent.click(toggle)
-    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(planOn()).toBe(false)
+    await userEvent.type(input(), '/plan{Enter}')
+    expect(planOn()).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: '退出计划模式' }))
+    expect(planOn()).toBe(false)
+    await userEvent.type(input(), '/plan{Enter}')
     expect(input().placeholder).toBe('描述要做的事。这一轮只会阅读项目并提出计划')
     await userEvent.type(input(), '先看看{Enter}')
     expect(request).toHaveBeenCalledWith('session.prompt', {
@@ -1299,8 +1304,7 @@ describe('Composer (M2-04)', () => {
       handlers: { 'settings.get': () => ({ providers }) },
     })
     await open()
-    const toggle = screen.getByRole('button', { name: '计划模式' })
-    const pressed = () => toggle.getAttribute('aria-pressed')
+    const pressed = () => String(planOn())
     expect(pressed()).toBe('false')
 
     fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true })
@@ -1412,9 +1416,8 @@ describe('Composer (M2-04)', () => {
       handlers: { 'settings.get': () => ({ providers }) },
     })
     await open()
-    const toggle = screen.getByRole('button', { name: '计划模式' })
     await userEvent.type(input(), '/plan{Enter}')
-    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(planOn()).toBe(true)
     expect(input().value).toBe('')
     expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
   })
@@ -1497,10 +1500,9 @@ describe('Composer (M2-04)', () => {
       handlers: { 'settings.get': () => ({ providers }) },
     })
     await open()
-    const toggle = screen.getByRole('button', { name: '计划模式' })
     await userEvent.type(input(), '/')
     await userEvent.keyboard('{ArrowDown}{ArrowUp}{Enter}')
-    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(planOn()).toBe(true)
   })
 
   it('runs commands with arguments typed after the name', async () => {
@@ -1514,9 +1516,7 @@ describe('Composer (M2-04)', () => {
       'session.prompt',
       expect.objectContaining({ sessionId: 's1', content: text('重构输入框'), mode: 'plan' }),
     )
-    expect(screen.getByRole('button', { name: '计划模式' }).getAttribute('aria-pressed')).toBe(
-      'false',
-    )
+    expect(planOn()).toBe(false)
 
     await userEvent.type(input(), '/model 强{Enter}')
     expect(request).toHaveBeenCalledWith('session.setModel', {
@@ -1624,10 +1624,9 @@ describe('Composer (M2-04)', () => {
       handlers: { 'settings.get': () => ({ providers }) },
     })
     await open()
-    const toggle = screen.getByRole('button', { name: '计划模式' })
     await userEvent.type(input(), '/plan')
     await userEvent.click(sendButton())
-    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(planOn()).toBe(true)
     expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
   })
 

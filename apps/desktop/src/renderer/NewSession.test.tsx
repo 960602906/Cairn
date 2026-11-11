@@ -84,8 +84,9 @@ describe('NewSession controls', () => {
 
     await user.click(screen.getByRole('button', { name: '模型：测试供应商 · 快' }))
     await user.click(await screen.findByRole('menuitem', { name: /强/ }))
-    await user.click(screen.getByRole('button', { name: '计划模式' }))
+    await user.type(input, '/plan{Enter}')
     expect(input.getAttribute('placeholder')).toBe('描述要做的事。这一轮只会阅读项目并提出计划')
+    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
     await user.type(input, '做点事')
     await user.click(screen.getByRole('button', { name: '发送' }))
 
@@ -106,6 +107,33 @@ describe('NewSession controls', () => {
       sessionId: 's1',
       model: { providerId: 'fake', modelId: 'strong' },
     })
+  })
+
+  it('sends /plan with a task in plan mode and toggles plan mode with the shortcut', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await screen.findByRole('button', { name: '模型：测试供应商 · 快' })
+    fireEvent.keyDown(document.body, { key: 'P', ctrlKey: true, shiftKey: true })
+    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: '退出计划模式' }))
+    expect(screen.queryByRole('button', { name: '退出计划模式' })).toBeNull()
+
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.append(dialog)
+    fireEvent.keyDown(document.body, { key: 'P', ctrlKey: true, shiftKey: true })
+    dialog.remove()
+    expect(screen.queryByRole('button', { name: '退出计划模式' })).toBeNull()
+
+    await user.type(input, '/plan 整理目录{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: [{ type: 'text', text: '整理目录' }],
+        mode: 'plan',
+      }),
+    )
   })
 
   it('keeps the default model when it is already selected and switches the permission mode', async () => {

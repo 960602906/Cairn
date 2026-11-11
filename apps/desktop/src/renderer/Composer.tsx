@@ -20,6 +20,7 @@ import {
   ListChecks,
   ShieldCheck,
   Square,
+  X,
   Zap,
 } from 'lucide-react'
 import {
@@ -149,6 +150,33 @@ export function modelLabels(
   const short = configured?.displayName ?? configured?.id ?? model.modelId
   const full = provider === undefined ? model.modelId : `${provider.displayName} · ${short}`
   return { short, full }
+}
+
+/**
+ * 计划模式标记：只在开启时出现，点一下退出。开启靠 `/plan` 或快捷键，不再常驻一个开关按钮。
+ */
+export function PlanModeChip({
+  on,
+  onExit,
+}: {
+  readonly on: boolean
+  readonly onExit: () => void
+}) {
+  const { t } = useTranslation('session')
+  if (!on) return null
+  return (
+    <button
+      type="button"
+      aria-label={t('composer.plan.exit')}
+      title={t('composer.plan.hint', { shortcut: planShortcut() })}
+      onClick={onExit}
+      className="group flex h-7 items-center gap-1 rounded-item bg-accent-soft px-2 text-ui text-accent outline-none focus-visible:ring-1 focus-visible:ring-accent"
+    >
+      <ListChecks className="size-3.5" />
+      {t('composer.plan.toggle')}
+      <X className="size-3 opacity-60 group-hover:opacity-100" />
+    </button>
+  )
 }
 
 export function PermissionMenu() {
@@ -756,20 +784,7 @@ export function Composer({
           </div>
           <div className="mt-2 flex items-center gap-1">
             <PermissionMenu />
-            <button
-              type="button"
-              aria-pressed={planMode}
-              aria-label={t('composer.plan.label')}
-              title={t('composer.plan.hint', { shortcut: planShortcut() })}
-              onClick={() => setPlanMode((on) => !on)}
-              className={cn(
-                'flex h-7 items-center gap-1 rounded-item px-2 text-ui outline-none focus-visible:ring-1 focus-visible:ring-accent',
-                planMode ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-hover',
-              )}
-            >
-              <ListChecks className="size-3.5" />
-              {t('composer.plan.toggle')}
-            </button>
+            <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
             <div className="ml-auto flex min-w-0 items-center gap-1">
               <ModelPicker
                 providers={providers}

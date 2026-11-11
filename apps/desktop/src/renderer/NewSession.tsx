@@ -3,7 +3,7 @@
  * 工作空间与分支显示在输入框上方。发送时先用当前工作空间创建会话，再把这条输入作为第一轮发送。
  * 还没有工作空间时可以打开本地文件夹。
  */
-import { ArrowUp, ListChecks } from 'lucide-react'
+import { ArrowUp } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ModelRef } from '@cairn/protocol'
@@ -13,8 +13,10 @@ import {
   PermissionMenu,
   resolveDefaultModel,
   sameModel,
+  PlanModeChip,
 } from './Composer.js'
-import { planShortcut } from './layout/shortcuts.js'
+import { parseComposerCommand } from './composer-commands.js'
+import { isPlanModeKey } from './layout/shortcuts.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
 import { CairnMark } from './ui/index.js'
@@ -25,6 +27,9 @@ const MAX_TEXTAREA_HEIGHT = 200
 const MAX_TITLE_LENGTH = 60
 
 type GreetingPeriod = 'morning' | 'noon' | 'afternoon' | 'evening' | 'night'
+
+/** 新对话页只识别 `/plan`。 */
+const PLAN_ONLY = [{ name: 'plan', args: 'text' }] as const
 
 export function greetingPeriod(hour: number): GreetingPeriod {
   if (hour >= 5 && hour < 12) return 'morning'
@@ -113,7 +118,15 @@ export function NewSession({
 
   const send = async () => {
     const path = projectPath.trim()
-    const draft = text.trim()
+    // 新对话页只认 `/plan`：单独一个切换计划模式，后面跟任务描述则以计划模式发送这一条。
+    const command = parseComposerCommand(text, PLAN_ONLY)
+    if (command !== undefined && command.args === '') {
+      setPlanMode((on) => !on)
+      setText('')
+      return
+    }
+    const draft = command === undefined ? text.trim() : command.args
+    const plan = planMode || command !== undefined
     if (path === '' || draft === '' || busy || model === undefined) return
     setBusy(true)
     const sessionId = await createSession(path, titleFromPrompt(draft) || undefined)
@@ -123,10 +136,22 @@ export function NewSession({
     }
     // 新会话先按模型创建，再切换用户选的模型，最后才发出第一轮。
     if (!sameModel(model, defaultModel)) await setSessionModel(sessionId, model)
-    await sendPrompt(draft, planMode ? 'plan' : 'normal')
+    await sendPrompt(draft, plan ? 'plan' : 'normal')
     setBusy(false)
     onDone()
   }
+
+  // Ctrl+Shift+P / ⌘⇧P 与会话输入框一致：切换计划模式；对话框和菜单打开时交给它们。
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!isPlanModeKey(event) || event.defaultPrevented) return
+      if (document.querySelector('[role="dialog"]:not([aria-hidden="true"]), [role="menu"]')) return
+      event.preventDefault()
+      setPlanMode((on) => !on)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
@@ -167,17 +192,7 @@ export function NewSession({
           />
           <div className="mt-2 flex items-center gap-1">
             <PermissionMenu />
-            <button
-              type="button"
-              aria-pressed={planMode}
-              aria-label={t('composer.plan.label')}
-              title={t('composer.plan.hint', { shortcut: planShortcut() })}
-              onClick={() => setPlanMode((on) => !on)}
-              className="flex h-7 items-center gap-1 rounded-item px-2 text-ui text-muted outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent aria-pressed:bg-accent-soft aria-pressed:text-accent"
-            >
-              <ListChecks className="size-3.5" />
-              {t('composer.plan.toggle')}
-            </button>
+            <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
             <div className="ml-auto flex min-w-0 items-center gap-1">
               <ModelPicker
                 providers={providers}

@@ -197,10 +197,7 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
     await expect(runStatus(window)).toHaveText('空闲')
 
     // 第三轮：计划模式 → 提出计划 → 批准
-    const planToggle = window.getByRole('button', { name: '计划模式' })
-    await planToggle.click()
-    await expect(planToggle).toHaveAttribute('aria-pressed', 'true')
-    await sendPrompt(window, '给 flow.md 加标题')
+    await sendPrompt(window, '/plan 给 flow.md 加标题')
     const approve = window.getByRole('button', { name: '批准执行' })
     await expect(approve).toBeEnabled({ timeout: 20_000 })
     await approve.click()
@@ -211,7 +208,6 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
     await expect(window.getByText('已完成')).toBeVisible({ timeout: 20_000 })
     await expect(runStatus(window)).toHaveText('空闲', { timeout: 20_000 })
     await window.keyboard.press('Escape')
-    await planToggle.click()
 
     // 之后连续长对话触发压缩，分隔线可见
     const long = 'please remember this goal. '.repeat(300)
