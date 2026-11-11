@@ -1,5 +1,5 @@
 /**
- * 临时诊断（验证完即删）：在 CI 的非交互窗口站上，比较沙箱进程沿用宿主桌面与使用专用桌面的结果。
+ * 临时诊断（验证完即删）：在 CI 上比较沙箱进程启动方式的各种变体，定位 0xC0000142。
  * 只在设置 `CAIRN_SANDBOX_DIAG=1` 的 Windows 上运行。
  */
 import { mkdtempSync } from 'node:fs'
@@ -8,45 +8,59 @@ import path from 'node:path'
 import { describe, it } from 'vitest'
 import { runCommand } from '../run.js'
 import { createSandboxRunner } from './restricted.js'
-import { loadSandboxNativeApi } from './windows-api.js'
+import { createNativeApi } from './windows-api.js'
+
+const variants: Array<{ name: string; desktop: string; spawn: string; il: 'low' | 'medium' }> = [
+  { name: 'base', desktop: 'inherit', spawn: '', il: 'low' },
+  { name: 'medium', desktop: 'inherit', spawn: '', il: 'medium' },
+  { name: 'detached', desktop: 'inherit', spawn: 'detached', il: 'low' },
+  { name: 'newconsole-hide', desktop: 'inherit', spawn: 'newconsole,hide', il: 'low' },
+  { name: 'explicit', desktop: 'explicit', spawn: '', il: 'low' },
+  { name: 'desktop', desktop: 'desktop', spawn: '', il: 'low' },
+  { name: 'desktop-nolabel', desktop: 'desktop-nolabel', spawn: '', il: 'low' },
+  { name: 'station', desktop: 'station', spawn: '', il: 'low' },
+  { name: 'medium-detached', desktop: 'inherit', spawn: 'detached', il: 'medium' },
+  { name: 'station-detached', desktop: 'station', spawn: 'detached', il: 'low' },
+]
 
 describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG'])(
-  '沙箱桌面诊断',
+  '沙箱启动诊断',
   () => {
-    it('沿用宿主桌面与专用桌面', { timeout: 120_000 }, async () => {
+    it('各种变体', { timeout: 600_000 }, async () => {
+      const { default: koffi } = await import('koffi')
       const lines: string[] = []
-      for (const mode of ['inherit', 'private'] as const) {
-        const api = await loadSandboxNativeApi('win32')
-        const env = { ...process.env, CAIRN_SANDBOX_DESKTOP: mode === 'inherit' ? 'inherit' : '' }
-        // 每种模式各自一份原生 API，桌面缓存互不影响
-        const { createNativeApi } = await import('./windows-api.js')
-        const { default: koffi } = await import('koffi')
-        const native = createNativeApi(koffi as never, { env })
-        const runner = await createSandboxRunner({ api: native })
-        const cwd = mkdtempSync(path.join(tmpdir(), `cairn-diag-${mode}-`))
-        for (const shell of [
-          {
-            kind: 'cmd' as const,
-            exe: path.join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'cmd.exe'),
-          },
-        ]) {
-          try {
-            const result = await runCommand(shell, 'echo ok>probe.txt & type probe.txt', {
+      const cmd = path.join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'cmd.exe')
+      for (const variant of variants) {
+        process.env['CAIRN_SANDBOX_DIAG_SPAWN'] = variant.spawn
+        const native = createNativeApi(koffi as never, {
+          env: { ...process.env, CAIRN_SANDBOX_DESKTOP: variant.desktop },
+        })
+        const api = {
+          ...native,
+          createRestrictedToken: () => native.createRestrictedToken(variant.il),
+        }
+        const cwd = mkdtempSync(path.join(tmpdir(), `cairn-diag-${variant.name}-`))
+        try {
+          const runner = await createSandboxRunner({ api })
+          const result = await runCommand(
+            { kind: 'cmd', exe: cmd },
+            'echo ok>probe.txt & type probe.txt',
+            {
               cwd,
               timeoutMs: 30_000,
               sandbox: { runner, policy: { profile: 'workspace-write', network: 'none' } },
-            })
-            lines.push(
-              `${mode} ${shell.kind}: exit=${result.exitCode} out=${JSON.stringify(result.stdout)} err=${JSON.stringify(result.stderr)} desktop=${native.describeDesktop?.()} available=${runner.capability.available}`,
-            )
-          } catch (error) {
-            lines.push(
-              `${mode} ${shell.kind}: threw ${error instanceof Error ? error.message : String(error)} desktop=${native.describeDesktop?.()}`,
-            )
-          }
+            },
+          )
+          lines.push(
+            `${variant.name}: exit=${result.exitCode} out=${JSON.stringify(result.stdout.trim())} err=${JSON.stringify(result.stderr.trim().slice(0, 200))} desktop=${native.describeDesktop?.()}`,
+          )
+        } catch (error) {
+          lines.push(
+            `${variant.name}: threw ${error instanceof Error ? error.message : String(error)} desktop=${native.describeDesktop?.()}`,
+          )
         }
-        void api
       }
+      delete process.env['CAIRN_SANDBOX_DIAG_SPAWN']
       console.log(`SANDBOX-DIAG\n${lines.join('\n')}`)
     })
   },

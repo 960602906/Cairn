@@ -487,7 +487,25 @@ export function createNativeApi(
       const stationName = current ? objectName(current) : ''
       // 读不到名称时不冒险改动，沿用宿主的桌面
       if (!stationName) return skip(`station name unavailable (${lastError()})`)
-      if (stationName.toLowerCase() === 'winsta0') return skip('interactive WinSta0')
+      const diagMode = (options.env ?? process.env)[SANDBOX_DESKTOP_ENV] ?? ''
+      // 临时诊断（验证完即删）
+      if (diagMode === 'explicit') {
+        desktop = Buffer.from(`${stationName}\\Default\0`, 'utf16le')
+        desktopNote = `explicit ${stationName}\\Default`
+        return desktop
+      }
+      if (diagMode === 'desktop' || diagMode === 'desktop-nolabel') {
+        const deskName = `CairnSandbox-${options.pid ?? process.pid}`
+        const created = u.CreateDesktopW(deskName, null, null, 0, GENERIC_ALL, null)
+        if (!created) return skip(`diag CreateDesktopW failed (${lastError()})`)
+        const label = diagMode === 'desktop' ? setLowLabel(created) : undefined
+        if (label) return skip(`diag label desktop: ${label}`)
+        desktop = Buffer.from(`${stationName}\\${deskName}\0`, 'utf16le')
+        desktopNote = `diag ${stationName}\\${deskName}`
+        return desktop
+      }
+      if (stationName.toLowerCase() === 'winsta0' && diagMode !== 'station')
+        return skip('interactive WinSta0')
       const name = `CairnSandbox-${options.pid ?? process.pid}`
       const station = u.CreateWindowStationW(name, 0, WINSTA_ALL_ACCESS, null)
       if (!station) return skip(`CreateWindowStationW failed (${lastError()}) on ${stationName}`)
@@ -532,7 +550,16 @@ export function createNativeApi(
     const target = sandboxDesktop()
     if (target) info.writeBigUInt64LE(koffi.address(target), SI_DESKTOP)
     const processInfo = Buffer.alloc(24)
-    const flags = CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT
+    // 临时诊断（验证完即删）
+    const diagSpawn = (process.env['CAIRN_SANDBOX_DIAG_SPAWN'] ?? '').split(',')
+    let consoleFlag = CREATE_NO_WINDOW
+    if (diagSpawn.includes('detached')) consoleFlag = 0x0000_0008
+    if (diagSpawn.includes('newconsole')) consoleFlag = 0x0000_0010
+    if (diagSpawn.includes('hide')) {
+      info.writeUInt32LE(STARTF_USESTDHANDLES | 0x1, SI_DW_FLAGS)
+      info.writeUInt16LE(0, 64)
+    }
+    const flags = CREATE_SUSPENDED | consoleFlag | CREATE_UNICODE_ENVIRONMENT
     const create = (extraFlags: number) =>
       api.CreateProcessAsUserW(
         options.token,
