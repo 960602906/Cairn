@@ -25,6 +25,7 @@ import {
   type McpToolExposure,
   type McpToolSummary,
   type PermissionEffect,
+  type PermissionRule,
   type ToolCategory,
 } from '@cairn/protocol'
 import type { McpEnvRef, McpServerRecord, Storage } from '@cairn/storage'
@@ -51,6 +52,11 @@ export interface McpServiceOptions {
   readonly manager?: McpManager
   /** 状态变化时调用；服务把它推给界面。 */
   readonly onStatus?: (event: McpStatusEvent) => void
+  /**
+   * 交给宿主的工具清单或工具权限可能变了（连接、断开、停用、改了工具设置）。
+   * 主进程据此让空闲的宿主重启，下一轮拿到新的清单。
+   */
+  readonly onToolsChanged?: () => void
   readonly onError?: (error: unknown) => void
 }
 
@@ -77,6 +83,10 @@ export interface McpService extends McpCommands {
   initialize(): Promise<void>
   /** 这一轮交给宿主的工具定义。 */
   exposures(): McpToolExposure[]
+  /** 用户在设置页为单个工具选的效果，转成按工具名匹配的规则（与其他规则一起取最严格的）。 */
+  permissionRules(): PermissionRule[]
+  /** 等进行中的连接尝试结束（测试与退出时用）。 */
+  settled(): Promise<void>
   call(
     serverId: string,
     toolName: string,
@@ -134,6 +144,7 @@ export function createMcpService(options: McpServiceOptions): McpService {
       ...(state.error ? { error: state.error } : {}),
       toolCount: state.status === 'connected' ? state.tools.length : 0,
     })
+    if (state.status !== 'connecting') options.onToolsChanged?.()
   }
 
   const requireRecord = (serverId: string): McpServerRecord => {
@@ -297,12 +308,25 @@ export function createMcpService(options: McpServiceOptions): McpService {
       env,
       enabled: input.enabled ?? current.enabled,
     })
-    manager.remove(serverId)
-    if (record.enabled) {
-      const spec = await specOf(record)
-      await manager.add(spec)
-    }
+    if (record.enabled) await connect(record)
+    else manager.remove(serverId)
     return record
+  }
+
+  /**
+   * 重新连接一个服务，不等连接结果：管理器同步进入“连接中”，之后的状态经 `mcp.status` 推给界面。
+   * 等待的话，连不上的服务要重试完（可能几十秒）界面才有响应。
+   */
+  const connect = async (record: McpServerRecord): Promise<void> => {
+    manager.remove(record.serverId)
+    const spec = await specOf(record)
+    track(manager.add(spec))
+  }
+
+  const pending = new Set<Promise<unknown>>()
+  const track = (promise: Promise<unknown>): void => {
+    const tracked = promise.catch(options.onError).finally(() => pending.delete(tracked))
+    pending.add(tracked)
   }
 
   return {
@@ -311,7 +335,7 @@ export function createMcpService(options: McpServiceOptions): McpService {
         if (!record.enabled) continue
         try {
           const spec = await specOf(record)
-          void manager.add(spec).catch(options.onError)
+          track(manager.add(spec))
         } catch (error) {
           options.onError?.(error)
         }
@@ -342,26 +366,26 @@ export function createMcpService(options: McpServiceOptions): McpService {
       storage.mcpServers.remove(serverId)
       for (const entry of record.env) void credentials.delete(entry.credentialRef)
       if (record.credentialRef) void credentials.delete(record.credentialRef)
+      options.onToolsChanged?.()
       return {}
     },
 
     async reconnect({ serverId }) {
       const record = requireRecord(serverId)
       if (!record.enabled) throw new RpcError(McpServiceErrorCode.Invalid, { reason: 'disabled' })
-      const spec = await specOf(record)
-      await manager.add(spec)
+      await connect(record)
       return summaryOf(record)
     },
 
     async setEnabled({ serverId, enabled }) {
       const record = storage.mcpServers.update(serverId, { enabled })
-      manager.remove(serverId)
-      if (enabled) await manager.add(await specOf(record))
-      options.onStatus?.({
-        serverId,
-        status: enabled ? 'disconnected' : 'disabled',
-        toolCount: 0,
-      })
+      if (enabled) {
+        await connect(record)
+      } else {
+        manager.remove(serverId)
+        options.onToolsChanged?.()
+        options.onStatus?.({ serverId, status: 'disabled', toolCount: 0 })
+      }
       return summaryOf(record)
     },
 
@@ -379,6 +403,7 @@ export function createMcpService(options: McpServiceOptions): McpService {
         category: category ?? summary.category,
         effect: effect ?? summary.effect,
       })
+      options.onToolsChanged?.()
       return {
         ...summary,
         category: pref.category,
@@ -414,6 +439,26 @@ export function createMcpService(options: McpServiceOptions): McpService {
       return result
     },
 
+    permissionRules() {
+      const names = toolNames()
+      const rules: PermissionRule[] = []
+      for (const [serverId, serverNames] of names) {
+        for (const [originalName, name] of serverNames) {
+          const pref = storage.mcpToolPrefs.get(serverId, originalName)
+          // 没设置过的工具不加规则：第三方工具默认就是“询问”
+          if (!pref) continue
+          rules.push({
+            id: `mcp.${serverId}.${originalName}`,
+            scope: 'global',
+            effect: pref.effect,
+            match: { tool: name },
+            source: 'user',
+          })
+        }
+      }
+      return rules
+    },
+
     async call(serverId, toolName, input, maxOutputTokens = 4_000) {
       try {
         const result = await manager.call(serverId, toolName, input)
@@ -434,6 +479,10 @@ export function createMcpService(options: McpServiceOptions): McpService {
         options.onError?.(error)
         throw new RpcError(McpServiceErrorCode.CallFailed)
       }
+    },
+
+    async settled() {
+      while (pending.size > 0) await Promise.all([...pending])
     },
 
     close: () => manager.close(),

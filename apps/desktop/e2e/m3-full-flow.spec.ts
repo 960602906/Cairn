@@ -131,8 +131,18 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
         args: [fixture],
       },
     )
-    expect(server.status).toBe('connected')
-    expect(server.tools.map((tool) => tool.name)).toContain('mcp_flowfixture_echo')
+    // 添加不等连接结果（立即返回“连接中”），这里等它连上
+    await expect
+      .poll(
+        async () =>
+          (
+            await request<{ status: string; tools: { name: string }[] }>(window, 'mcp.get', {
+              serverId: server.serverId,
+            })
+          ).tools.map((tool) => tool.name),
+        { timeout: 20_000 },
+      )
+      .toContain('mcp_flowfixture_echo')
 
     // 复制编程助手 → 改指令 → 发布
     const duplicated = await request<{ agentId: string }>(window, 'agent.duplicate', {

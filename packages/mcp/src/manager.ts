@@ -251,6 +251,7 @@ export class McpManager {
         this.log(entry, 'info', `connected to ${entry.spec.name} (${entry.tools.length} tools)`)
         return
       } catch (error) {
+        if (entry.closed) return
         const message = this.redact(entry, error instanceof Error ? error.message : String(error))
         const timeout = error instanceof McpError && error.code === McpErrorCode.Timeout
         if (attempt >= attempts) {
@@ -290,8 +291,23 @@ export class McpManager {
       }
     })
     const timeoutMs = entry.spec.connectTimeoutMs ?? 15_000
-    await withTimeout(client.connect(), timeoutMs, McpErrorCode.Timeout)
-    entry.tools = [...(await withTimeout(client.listTools(), timeoutMs, McpErrorCode.Timeout))]
+    try {
+      await withTimeout(client.connect(), timeoutMs, McpErrorCode.Timeout)
+      entry.tools = [...(await withTimeout(client.listTools(), timeoutMs, McpErrorCode.Timeout))]
+    } catch (error) {
+      // 失败或超时的连接要关掉，不然每次重试都多留一个子进程
+      if (entry.client === client) entry.client = undefined
+      entry.tools = []
+      await client.close().catch(() => undefined)
+      throw error
+    }
+    if (entry.closed || entry.client !== client) {
+      // 连接期间服务被删除、停用或替换：这个连接不再用
+      if (entry.client === client) entry.client = undefined
+      entry.tools = []
+      await client.close().catch(() => undefined)
+      throw new McpError(McpErrorCode.ConnectFailed, 'server was removed while connecting')
+    }
   }
 
   private scheduleReconnect(entry: Entry, delay?: number): void {

@@ -493,6 +493,29 @@ describe('scheduling', () => {
     expect(hosts[2]?.prompts).toHaveLength(1)
   })
 
+  it('restarts hosts with a stale tool list: idle ones now, busy ones after the turn (M3-09)', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, { idleTimeoutMs: 60_000 })
+    const ids = ['/a', '/b'].map((p) => manager.create({ projectPath: p }).sessionId)
+    for (const sessionId of ids) manager.prompt({ sessionId, content: text('go') })
+    await flush()
+    const [idle, busy] = hosts
+    startTurn(ids[0]!, idle!.runId, 't1')
+    finishTurn(ids[0]!, idle!.runId, 't1')
+    startTurn(ids[1]!, busy!.runId, 't2')
+
+    manager.refreshTools()
+    await flush()
+    expect(idle!.stop).toHaveBeenCalled()
+    expect(busy!.stop).not.toHaveBeenCalled()
+
+    finishTurn(ids[1]!, busy!.runId, 't2')
+    await flush()
+    // 不等 60 秒的空闲超时
+    expect(busy!.stop).toHaveBeenCalled()
+    expect(manager.activeSessions()).toEqual([])
+  })
+
   it('asks running hosts to refresh their permission rules (M1-11b)', async () => {
     const { supervisor, hosts } = fakeSupervisor()
     const onError = vi.fn()

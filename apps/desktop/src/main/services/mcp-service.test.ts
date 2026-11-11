@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { McpManager, type McpClient, type McpTool } from '@cairn/mcp'
 import { createMemoryStorage } from '@cairn/storage'
-import { createMcpService, type McpCredentialStore } from './mcp-service.js'
+import { createMcpService, type McpCredentialStore, type McpService } from './mcp-service.js'
 
 const tools: McpTool[] = [
   {
@@ -44,14 +44,47 @@ function setup(
     sleep: async () => undefined,
   })
   const statuses: unknown[] = []
-  const service = createMcpService({
+  const raw = createMcpService({
     storage,
     credentials,
     manager,
     createId: () => 'srv-1',
     onStatus: (event) => statuses.push(event),
   })
-  return { storage, secrets, credentials, client, manager, service, statuses }
+  return { storage, secrets, credentials, client, manager, service: settling(raw), raw, statuses }
+}
+
+/**
+ * 服务的写操作不等连接结果。大多数用例关心连接之后的状态：这里等连接结束，再重新读一次。
+ */
+function settling(service: McpService): McpService {
+  return {
+    ...service,
+    async add(input) {
+      const detail = await service.add(input)
+      await service.settled()
+      return service.get({ serverId: detail.serverId })
+    },
+    async update(input) {
+      await service.update(input)
+      await service.settled()
+      return service.get({ serverId: input.serverId })
+    },
+    async reconnect(input) {
+      await service.reconnect(input)
+      await service.settled()
+      return service.list({}).servers.find((item) => item.serverId === input.serverId)!
+    },
+    async setEnabled(input) {
+      await service.setEnabled(input)
+      await service.settled()
+      return service.list({}).servers.find((item) => item.serverId === input.serverId)!
+    },
+    async initialize() {
+      await service.initialize()
+      await service.settled()
+    },
+  }
 }
 
 describe('mcp-service', () => {
@@ -446,15 +479,17 @@ describe('mcp-service', () => {
 
   it('未注入管理器与状态回调时仍可添加与关闭', async () => {
     const storage = createMemoryStorage({ now: () => 1 })
-    const service = createMcpService({
-      storage,
-      credentials: {
-        set: async () => undefined,
-        delete: async () => true,
-        resolve: async () => undefined,
-        has: () => false,
-      },
-    })
+    const service = settling(
+      createMcpService({
+        storage,
+        credentials: {
+          set: async () => undefined,
+          delete: async () => true,
+          resolve: async () => undefined,
+          has: () => false,
+        },
+      }),
+    )
     const detail = await service.add({
       name: 'Broken',
       kind: 'stdio',
@@ -609,11 +644,13 @@ describe('mcp-service', () => {
       has: () => false,
     }
     const statuses: { status: string; toolCount: number; error?: unknown }[] = []
-    const service = createMcpService({
-      storage: createMemoryStorage({ now: () => 1 }),
-      credentials,
-      onStatus: (event) => statuses.push(event),
-    })
+    const service = settling(
+      createMcpService({
+        storage: createMemoryStorage({ now: () => 1 }),
+        credentials,
+        onStatus: (event) => statuses.push(event),
+      }),
+    )
     const detail = await service.add({
       name: 'Fixture',
       kind: 'stdio',
@@ -625,11 +662,13 @@ describe('mcp-service', () => {
     await service.close()
 
     const failed: { status: string; toolCount: number; error?: unknown }[] = []
-    const broken = createMcpService({
-      storage: createMemoryStorage({ now: () => 1 }),
-      credentials,
-      onStatus: (event) => failed.push(event),
-    })
+    const broken = settling(
+      createMcpService({
+        storage: createMemoryStorage({ now: () => 1 }),
+        credentials,
+        onStatus: (event) => failed.push(event),
+      }),
+    )
     const error = await broken.add({
       name: 'Broken',
       kind: 'stdio',
@@ -656,5 +695,126 @@ describe('mcp-service', () => {
       server: { name: 'Remote', kind: 'http' },
     })
     expect(remote.url).toBe('')
+  })
+})
+
+describe('mcp-service 不等连接、工具权限与清单变化', () => {
+  it('添加、启用、重连都立即返回“连接中”，连接结果之后再推送', async () => {
+    let finish: () => void = () => undefined
+    const { raw } = setup({
+      client: {
+        connect: vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              finish = resolve
+            }),
+        ),
+      },
+    })
+    const detail = await raw.add({ name: 'Slow', kind: 'stdio', command: 'node' })
+    expect(detail.status).toBe('connecting')
+    finish()
+    await raw.settled()
+    expect(raw.get({ serverId: 'srv-1' }).status).toBe('connected')
+
+    const reconnecting = raw.reconnect({ serverId: 'srv-1' })
+    expect((await reconnecting).status).toBe('connecting')
+    finish()
+    await raw.settled()
+
+    expect((await raw.setEnabled({ serverId: 'srv-1', enabled: false })).status).toBe('disabled')
+    expect((await raw.setEnabled({ serverId: 'srv-1', enabled: true })).status).toBe('connecting')
+    finish()
+    await raw.settled()
+    expect(raw.get({ serverId: 'srv-1' }).status).toBe('connected')
+  })
+
+  it('保存时不再连接已停用的服务', async () => {
+    const { service, client } = setup()
+    await service.add({ name: 'A', kind: 'stdio', command: 'node', enabled: false })
+    await service.update({
+      serverId: 'srv-1',
+      server: { name: 'A', kind: 'stdio', command: 'node2', enabled: false },
+    })
+    expect(client.connect).not.toHaveBeenCalled()
+  })
+
+  it('设置过效果的工具变成按工具名匹配的规则，没设置过的不加', async () => {
+    const { service } = setup()
+    await service.add({ name: 'GitHub', kind: 'stdio', command: 'node' })
+    expect(service.permissionRules()).toEqual([])
+    service.setTool({ serverId: 'srv-1', name: 'mcp_github_create_issue', effect: 'deny' })
+    expect(service.permissionRules()).toEqual([
+      {
+        id: 'mcp.srv-1.create_issue',
+        scope: 'global',
+        effect: 'deny',
+        match: { tool: 'mcp_github_create_issue' },
+        source: 'user',
+      },
+    ])
+    await service.setEnabled({ serverId: 'srv-1', enabled: false })
+    expect(service.permissionRules()).toEqual([])
+  })
+
+  it('连接结果、停用、删除与工具设置都通知工具清单变化', async () => {
+    const storage = createMemoryStorage({ now: () => 100 })
+    const changed = vi.fn()
+    const client: McpClient = {
+      connect: vi.fn(async () => undefined),
+      listTools: vi.fn(async () => tools),
+      callTool: vi.fn(async () => ({ text: 'done', isError: false })),
+      close: vi.fn(async () => undefined),
+    }
+    const manager = new McpManager({ createClient: () => client, sleep: async () => undefined })
+    const service = settling(
+      createMcpService({
+        storage,
+        credentials: {
+          set: async () => undefined,
+          delete: async () => true,
+          resolve: async () => undefined,
+          has: () => false,
+        },
+        manager,
+        createId: () => 'srv-1',
+        onStatus: (event) => manager.get(event.serverId),
+        onToolsChanged: changed,
+      }),
+    )
+    // 自己的管理器不经服务的 onStatus：这里只验证服务主动发出的通知
+    await service.add({ name: 'A', kind: 'stdio', command: 'node' })
+    const before = changed.mock.calls.length
+    service.setTool({ serverId: 'srv-1', name: 'mcp_a_create_issue', effect: 'allow' })
+    await service.setEnabled({ serverId: 'srv-1', enabled: false })
+    service.remove({ serverId: 'srv-1' })
+    expect(changed.mock.calls.length).toBe(before + 3)
+  })
+
+  it('默认管理器连上后通知工具清单变化，连接中不通知', async () => {
+    const changed = vi.fn()
+    const statuses: string[] = []
+    const service = settling(
+      createMcpService({
+        storage: createMemoryStorage({ now: () => 1 }),
+        credentials: {
+          set: async () => undefined,
+          delete: async () => true,
+          resolve: async () => undefined,
+          has: () => false,
+        },
+        onStatus: (event) => statuses.push(event.status),
+        onToolsChanged: () => changed(statuses.at(-1)),
+      }),
+    )
+    await service.add({
+      name: 'Fixture',
+      kind: 'stdio',
+      command: process.execPath,
+      args: [fixtureServer],
+    })
+    expect(changed).toHaveBeenCalled()
+    expect(changed.mock.calls.every(([status]) => status !== 'connecting')).toBe(true)
+    await service.close()
   })
 })

@@ -117,7 +117,7 @@
   "permissions.ask": "询问",
   "permissions.ask.hint": "改文件、运行命令前先问你。",
   "permissions.auto": "自动",
-  "permissions.auto.hint": "常规操作直接执行，危险操作仍会询问。",
+  "permissions.auto.hint": "不会超过设置里的全局权限模式：全局也是“自动”时常规操作才直接执行，危险操作仍会询问。",
   "limits.intro": "留空使用应用的默认值。",
   "limits.steps": "每轮最大步数",
   "limits.duration": "每轮最长时间（分钟）",
