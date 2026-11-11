@@ -100,6 +100,8 @@ export interface SandboxNativeApi {
   deleteAppContainer(name: string): void
   sidFromString(sid: string): Handle
   sidToString(sid: Handle): string
+  /** 沙箱进程用哪个桌面，以及没建专用桌面的原因（诊断用）。 */
+  describeDesktop?(): string
 }
 
 interface KoffiLibrary {
@@ -423,8 +425,8 @@ export function createNativeApi(
     return buffer.toString('utf16le').split('\0')[0]!
   }
 
-  /** 给窗口站或桌面加低完整性标签，让低完整性的沙箱进程能连上。 */
-  const setLowLabel = (object: Handle): boolean => {
+  /** 给窗口站或桌面加低完整性标签，让低完整性的沙箱进程能连上。失败时返回原因。 */
+  const setLowLabel = (object: Handle): string | undefined => {
     const descriptor: unknown[] = [null]
     if (
       !security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -434,26 +436,27 @@ export function createNativeApi(
         null,
       )
     ) {
-      return false
+      return `ConvertStringSecurityDescriptorToSecurityDescriptorW (${lastError()})`
     }
     try {
       const present = Buffer.alloc(4)
       const defaulted = Buffer.alloc(4)
       const sacl: unknown[] = [null]
-      if (!security.GetSecurityDescriptorSacl(descriptor[0], present, sacl, defaulted)) return false
-      return (
-        Number(
-          security.SetSecurityInfo(
-            object,
-            SE_WINDOW_OBJECT,
-            LABEL_SECURITY_INFORMATION,
-            null,
-            null,
-            null,
-            sacl[0],
-          ),
-        ) === 0
+      if (!security.GetSecurityDescriptorSacl(descriptor[0], present, sacl, defaulted)) {
+        return `GetSecurityDescriptorSacl (${lastError()})`
+      }
+      const result = Number(
+        security.SetSecurityInfo(
+          object,
+          SE_WINDOW_OBJECT,
+          LABEL_SECURITY_INFORMATION,
+          null,
+          null,
+          null,
+          sacl[0],
+        ),
       )
+      return result === 0 ? undefined : `SetSecurityInfo (${result})`
     } finally {
       api.LocalFree(descriptor[0])
     }
@@ -469,22 +472,34 @@ export function createNativeApi(
    * 任何一步失败都退回沿用宿主的桌面（之后若子进程起不来，按 `sandbox.child_start_failed` 处理）。
    */
   let desktop: Buffer | null | undefined
+  let desktopNote = 'not used yet'
   const sandboxDesktop = (): Buffer | null => {
     if (desktop !== undefined) return desktop
     desktop = null
-    if ((options.env ?? process.env)[SANDBOX_DESKTOP_ENV] === 'inherit') return desktop
+    const skip = (note: string) => {
+      desktopNote = note
+      return null
+    }
+    if ((options.env ?? process.env)[SANDBOX_DESKTOP_ENV] === 'inherit') return skip('inherit')
     try {
       const u = user32()
       const current = u.GetProcessWindowStation()
       const stationName = current ? objectName(current) : ''
       // 读不到名称时不冒险改动，沿用宿主的桌面
-      if (!stationName || stationName.toLowerCase() === 'winsta0') return desktop
+      if (!stationName) return skip(`station name unavailable (${lastError()})`)
+      if (stationName.toLowerCase() === 'winsta0') return skip('interactive WinSta0')
       const name = `CairnSandbox-${options.pid ?? process.pid}`
       const station = u.CreateWindowStationW(name, 0, WINSTA_ALL_ACCESS, null)
-      if (!station) return desktop
-      if (!setLowLabel(station) || !u.SetProcessWindowStation(station)) {
+      if (!station) return skip(`CreateWindowStationW failed (${lastError()}) on ${stationName}`)
+      const stationLabel = setLowLabel(station)
+      if (stationLabel) {
         u.CloseWindowStation(station)
-        return desktop
+        return skip(`label station: ${stationLabel}`)
+      }
+      if (!u.SetProcessWindowStation(station)) {
+        const error = lastError()
+        u.CloseWindowStation(station)
+        return skip(`SetProcessWindowStation failed (${error})`)
       }
       let created: Handle
       try {
@@ -492,13 +507,21 @@ export function createNativeApi(
       } finally {
         u.SetProcessWindowStation(current)
       }
-      if (!created || !setLowLabel(created)) {
+      if (!created) {
+        const error = lastError()
         u.CloseWindowStation(station)
-        return desktop
+        return skip(`CreateDesktopW failed (${error})`)
+      }
+      const desktopLabel = setLowLabel(created)
+      if (desktopLabel) {
+        u.CloseWindowStation(station)
+        return skip(`label desktop: ${desktopLabel}`)
       }
       desktop = Buffer.from(`${name}\\Default\0`, 'utf16le')
-    } catch {
+      desktopNote = `${name}\\Default (host on ${stationName})`
+    } catch (error) {
       desktop = null
+      desktopNote = `error: ${error instanceof Error ? error.message : String(error)}`
     }
     return desktop
   }
@@ -625,6 +648,7 @@ export function createNativeApi(
 
   return {
     currentUserSid,
+    describeDesktop: () => desktopNote,
     createRestrictedToken(level) {
       const token: unknown[] = [null]
       check(

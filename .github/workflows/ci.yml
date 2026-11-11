@@ -42,6 +42,13 @@ jobs:
       - name: Check app version (single source)
         run: pnpm check:version
 
+      - name: DIAG sandbox desktop (temporary)
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        run: pnpm exec vitest run packages/shell/src/sandbox/desktop.diag.test.ts
+        env:
+          CAIRN_SANDBOX_DIAG: '1'
+
       - name: Typecheck
         run: pnpm typecheck
 
