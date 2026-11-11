@@ -14,6 +14,8 @@ const TOKEN_QUERY = 0x0008
 const DISABLE_MAX_PRIVILEGE = 0x1
 const LUA_TOKEN = 0x4
 const TOKEN_INTEGRITY_LEVEL = 25
+const TOKEN_DEFAULT_DACL = 6
+const SDDL_REVISION_1 = 1
 const TOKEN_USER = 1
 const PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x0002_0009
 const EXTENDED_STARTUPINFO_PRESENT = 0x0008_0000
@@ -239,6 +241,18 @@ export function createNativeApi(koffi: {
       'void *',
       'uint32_t',
     ]),
+    ConvertStringSecurityDescriptorToSecurityDescriptorW: fn<number>(
+      advapi32,
+      'ConvertStringSecurityDescriptorToSecurityDescriptorW',
+      'int',
+      ['str16', 'uint32_t', outHandle, 'void *'],
+    ),
+    GetSecurityDescriptorDacl: fn<number>(advapi32, 'GetSecurityDescriptorDacl', 'int', [
+      handle,
+      'void *',
+      outHandle,
+      'void *',
+    ]),
     CreateAppContainerProfile: fn<number>(userenv, 'CreateAppContainerProfile', 'int32_t', [
       'str16',
       'str16',
@@ -452,6 +466,45 @@ export function createNativeApi(koffi: {
     }
   }
 
+  /**
+   * 给沙箱令牌换上只授权当前用户与 SYSTEM 的默认 DACL。
+   *
+   * 子进程自己的进程与线程对象按令牌的默认 DACL 建。以管理员身份运行（提权的宿主，例如“以管理员身份运行”、
+   * 从提权终端或 CI runner 启动）时，宿主令牌的默认 DACL 只授权 Administrators 与 SYSTEM；`LUA_TOKEN` 把
+   * Administrators 改为仅拒绝后，子进程连自己的进程对象都打不开，DLL 初始化失败，以 `0xC0000142` 退出。
+   * 未提权的宿主默认 DACL 本来就授权当前用户，替换后行为不变。
+   */
+  const setDefaultDacl = (token: Handle): void => {
+    const descriptor: unknown[] = [null]
+    check(
+      api.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        `D:(A;;GA;;;${currentUserSid()})(A;;GA;;;SY)`,
+        SDDL_REVISION_1,
+        descriptor,
+        null,
+      ),
+      'ConvertStringSecurityDescriptorToSecurityDescriptorW',
+    )
+    try {
+      const present = Buffer.alloc(4)
+      const defaulted = Buffer.alloc(4)
+      const dacl: unknown[] = [null]
+      check(
+        api.GetSecurityDescriptorDacl(descriptor[0], present, dacl, defaulted),
+        'GetSecurityDescriptorDacl',
+      )
+      const info = Buffer.alloc(8)
+      // 与其他输出句柄一样，koffi 可能直接给出地址（bigint），也可能给出指针对象
+      info.writeBigUInt64LE(typeof dacl[0] === 'bigint' ? dacl[0] : koffi.address(dacl[0]), 0)
+      check(
+        api.SetTokenInformation(token, TOKEN_DEFAULT_DACL, info, info.length),
+        'SetTokenInformation(TokenDefaultDacl)',
+      )
+    } finally {
+      api.LocalFree(descriptor[0])
+    }
+  }
+
   return {
     currentUserSid,
     createRestrictedToken(level) {
@@ -489,10 +542,16 @@ export function createNativeApi(koffi: {
               lastError(),
             )
           }
-          return restricted[0] as Handle
         } finally {
           api.CloseHandle(labelSid)
         }
+        try {
+          setDefaultDacl(restricted[0] as Handle)
+        } catch (error) {
+          api.CloseHandle(restricted[0])
+          throw error
+        }
+        return restricted[0] as Handle
       } finally {
         api.CloseHandle(token[0])
       }

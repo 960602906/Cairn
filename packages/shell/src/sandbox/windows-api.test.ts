@@ -16,6 +16,12 @@ import {
 
 type Handler = (...args: never[]) => unknown
 
+/** 读用户 SID 时先报缓冲区不足（122），之后报给定的错误码。 */
+const lastErrors = (error: number): Handler => {
+  let calls = 0
+  return (() => (calls++ === 0 ? 122 : error)) as Handler
+}
+
 interface FakeOptions {
   handlers?: Record<string, Handler>
 }
@@ -97,6 +103,19 @@ function fakeKoffi(options: FakeOptions = {}) {
       return 1
     }) as Handler,
     SetTokenInformation: (() => 1) as Handler,
+    ConvertStringSecurityDescriptorToSecurityDescriptorW: ((
+      _sddl: unknown,
+      _revision: unknown,
+      out: unknown[],
+    ) => {
+      out[0] = 0x800n
+      return 1
+    }) as Handler,
+    GetSecurityDescriptorDacl: ((_descriptor: unknown, present: Buffer, out: unknown[]) => {
+      present.writeUInt32LE(1, 0)
+      out[0] = 0x810n
+      return 1
+    }) as Handler,
     CreateAppContainerProfile: ((...args: unknown[]) => {
       const out = args[args.length - 1] as unknown[]
       out[0] = 0x600n
@@ -180,8 +199,61 @@ describe('createNativeApi', () => {
     const label = set.args[2] as Buffer
     expect(label).toHaveLength(16)
     expect(label.readBigUInt64LE(0)).toBe(0x400n)
-    // 先关标签 SID，再关父进程令牌
-    expect(called('CloseHandle').map((call) => call.args[0])).toEqual([0x400n, 100n])
+    // 先关标签 SID，再关读用户 SID 的令牌与父进程令牌
+    expect(called('CloseHandle').map((call) => call.args[0])).toEqual([0x400n, 100n, 100n])
+  })
+
+  it('replaces the default DACL so the child can open its own process object', () => {
+    const { api, called } = fakeKoffi()
+    api.createRestrictedToken('low')
+    const [convert] = called('ConvertStringSecurityDescriptorToSecurityDescriptorW')
+    expect(convert!.args.slice(0, 2)).toEqual(['D:(A;;GA;;;S-1-5-21-1)(A;;GA;;;SY)', 1])
+    expect(called('GetSecurityDescriptorDacl')[0]!.args[0]).toBe(0x800n)
+    const set = called('SetTokenInformation')[1]!
+    expect(set.args.slice(0, 2)).toEqual([300n, 6])
+    expect((set.args[2] as Buffer).readBigUInt64LE(0)).toBe(0x810n)
+    expect(set.args[3]).toBe(8)
+    expect(called('LocalFree').map((call) => call.args[0])).toContain(0x800n)
+  })
+
+  it('takes the DACL address from a pointer object', () => {
+    const { api, called } = fakeKoffi({
+      handlers: {
+        GetSecurityDescriptorDacl: ((_descriptor: unknown, _present: unknown, out: unknown[]) => {
+          out[0] = { pointer: true }
+          return 1
+        }) as Handler,
+      },
+    })
+    api.createRestrictedToken('low')
+    expect((called('SetTokenInformation')[1]!.args[2] as Buffer).readBigUInt64LE(0)).toBe(0x9000n)
+  })
+
+  it.each([
+    ['ConvertStringSecurityDescriptorToSecurityDescriptorW', false],
+    ['GetSecurityDescriptorDacl', true],
+  ])('closes the restricted token when %s fails', (name, frees) => {
+    const { api, called } = fakeKoffi({
+      handlers: { [name]: (() => 0) as Handler, GetLastError: lastErrors(87) },
+    })
+    expect(() => api.createRestrictedToken('low')).toThrow(new RegExp(`${name} failed`))
+    expect(called('CloseHandle').map((call) => call.args[0])).toContain(300n)
+    expect(called('LocalFree').some((call) => call.args[0] === 0x800n)).toBe(frees)
+  })
+
+  it('closes the restricted token when the default DACL cannot be set', () => {
+    let calls = 0
+    const { api, called } = fakeKoffi({
+      handlers: {
+        SetTokenInformation: (() => (++calls === 1 ? 1 : 0)) as Handler,
+        GetLastError: lastErrors(5),
+      },
+    })
+    expect(() => api.createRestrictedToken('low')).toThrow(
+      /SetTokenInformation\(TokenDefaultDacl\) failed \(Win32 5\)/,
+    )
+    expect(called('CloseHandle').map((call) => call.args[0])).toEqual([0x400n, 100n, 300n, 100n])
+    expect(called('LocalFree').map((call) => call.args[0])).toContain(0x800n)
   })
 
   it('uses a medium label and closes the restricted token when it cannot be set', () => {
