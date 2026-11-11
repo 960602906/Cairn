@@ -200,6 +200,8 @@ apps/desktop            Electron 应用（main / preload / renderer / agent-host
 
 权限、安全、可观测性、配置是横切关注点，分别由 `core` 的权限引擎、主进程的凭据与日志服务、`protocol` 中的事件与 trace 字段承担。
 
+界面层的会话详情统一由右侧工作台承载：对话只保留摘要，文件改动、子 Agent、计划、检查器、活动等内容点击后在右侧标签中展开；新增面板通过 `apps/desktop/src/renderer/SessionPanels.tsx` 的注册表接入。交互细则见[视觉规范 2.1](design/visual-style.md#21-右侧工作台会话详情收纳区)。
+
 ---
 
 ## 6. Agent 运行时抽象

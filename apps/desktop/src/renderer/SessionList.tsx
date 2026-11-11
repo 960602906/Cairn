@@ -256,9 +256,7 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
   }, [refreshSessions])
 
   if (sessions.length === 0) {
-    // 没有工作空间时，工作空间区的空状态已经说明了原因，不再重复“还没有会话”。
-    if (projects.length === 0) return null
-    return <p className="px-2.5 py-2 text-note text-faint">{t('list.empty')}</p>
+    return null
   }
   // 工作空间行下面已经列出各自工作空间的会话，这里只补上不属于任何已打开工作空间的会话。
   const projectPaths = new Set(projects.map((project) => project.path))
@@ -304,9 +302,6 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
                     !isCollapsed && 'rotate-90',
                   )}
                 />
-                <span className="tabular text-[9.5px] font-normal text-faint">
-                  {group.sessions.length}
-                </span>
               </button>
             </h3>
             {!isCollapsed && (

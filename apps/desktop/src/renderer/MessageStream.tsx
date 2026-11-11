@@ -258,6 +258,7 @@ function Message({
   compacted,
   omitted,
   onOpenPlan,
+  onOpenChanges,
 }: {
   readonly message: MessageView
   readonly view: SessionView
@@ -277,6 +278,7 @@ function Message({
   /** 这条消息之前是“工具输出已省略”的提示。 */
   readonly omitted: boolean
   readonly onOpenPlan: (planId: string) => void
+  readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const approvals = useSessionStore((s) => {
@@ -363,7 +365,11 @@ function Message({
         <em className="mt-1.5 block text-note text-muted not-italic">{t('message.incomplete')}</em>
       )}
       {footer && message.turnId !== undefined && (
-        <TurnChanges sessionId={view.sessionId} turnId={message.turnId} />
+        <TurnChanges
+          sessionId={view.sessionId}
+          turnId={message.turnId}
+          {...(onOpenChanges === undefined ? {} : { onOpen: () => onOpenChanges() })}
+        />
       )}
       {footer && (
         <TurnActions text={footer.text} model={modelName(footer.model)} tokens={footer.tokens}>
@@ -605,6 +611,7 @@ export function MessageStream({
                 compacted={markBetween(previous, message.seq, view.compaction)}
                 omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
                 onOpenPlan={openPlan}
+                onOpenChanges={onOpenChanges}
               />
               {lastOfTurn &&
                 message.turnId !== undefined &&

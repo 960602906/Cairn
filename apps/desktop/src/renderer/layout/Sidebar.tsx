@@ -1,5 +1,5 @@
 /**
- * 左侧栏：应用标志、全局入口（新对话 / 搜索 / 活动）、工作空间与会话列表，底部是设置。
+ * 左侧栏：应用标志、活动图标、收起按钮、新对话 / 搜索入口、工作空间与会话列表，底部是设置。
  *
  * 三栏布局里它是唯一的左栏，原来 60px 的图标栏已经并进来。宽窗口常驻，可以收成 0 宽
  * （收起后由顶栏的按钮展开）；窄窗口由 App 放进抽屉。
@@ -22,37 +22,63 @@ const SIDEBAR_MAX = 420
 function NavRow({
   icon,
   label,
-  name,
-  active = false,
   trailing,
   onClick,
 }: {
   readonly icon: ReactNode
   /** 显示的文字。 */
   readonly label: string
-  /** 无障碍名称，默认与文字相同。 */
-  readonly name?: string
-  readonly active?: boolean
   readonly trailing?: ReactNode
   readonly onClick: () => void
 }) {
   return (
     <button
       type="button"
-      aria-label={name ?? label}
-      aria-current={active ? 'page' : undefined}
+      aria-label={label}
       onClick={onClick}
       className={cn(
         'flex h-8 w-full items-center gap-2.5 rounded-item px-2.5 text-ui outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent [&_svg]:size-4 [&_svg]:shrink-0',
-        active ? 'bg-press text-fg' : 'text-fg2 hover:bg-hover hover:text-fg',
+        'text-fg2 hover:bg-hover hover:text-fg',
       )}
     >
-      <span aria-hidden className={active ? 'text-fg' : 'text-muted'}>
+      <span aria-hidden className="text-muted">
         {icon}
       </span>
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       {trailing}
     </button>
+  )
+}
+
+function ActivityIconButton({
+  active,
+  badge,
+  onClick,
+}: {
+  readonly active: boolean
+  readonly badge: number
+  readonly onClick: () => void
+}) {
+  const { t } = useTranslation('session')
+  const label = badge > 0 ? t('sidebar.activityWithBadge', { count: badge }) : t('sidebar.activity')
+  return (
+    <IconButton
+      label={label}
+      size="icon-sm"
+      aria-current={active ? 'page' : undefined}
+      className={cn('relative', active && 'bg-press text-fg')}
+      onClick={onClick}
+    >
+      <Activity />
+      {badge > 0 && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-1 -right-1 min-w-[15px] rounded-full bg-accent px-1 text-center text-[9px] leading-[15px] font-semibold text-ink-fg"
+        >
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
+    </IconButton>
   )
 }
 
@@ -66,7 +92,6 @@ export function Sidebar({
   onSettings,
   activityActive = false,
   activityBadge = 0,
-  onBrowseProjectInFileTree,
   onNewConversationProject,
 }: {
   readonly open: boolean
@@ -78,7 +103,6 @@ export function Sidebar({
   readonly onSettings?: () => void
   readonly activityActive?: boolean
   readonly activityBadge?: number
-  readonly onBrowseProjectInFileTree?: (project: ProjectSummary) => void
   readonly onNewConversationProject?: (project: ProjectSummary) => void
 }) {
   const { t } = useTranslation('session')
@@ -128,6 +152,13 @@ export function Sidebar({
             </>
           )}
           <div className="no-drag ml-auto flex items-center gap-0.5">
+            {onActivity && (
+              <ActivityIconButton
+                active={activityActive}
+                badge={activityBadge}
+                onClick={onActivity}
+              />
+            )}
             <IconButton label={t('sidebar.collapse')} size="icon-sm" onClick={onClose}>
               <PanelLeftClose />
             </IconButton>
@@ -149,34 +180,10 @@ export function Sidebar({
             trailing={<Kbd aria-hidden>{searchShortcut()}</Kbd>}
             onClick={onSearch}
           />
-          {onActivity && (
-            <NavRow
-              icon={<Activity />}
-              label={t('sidebar.activity')}
-              name={
-                activityBadge > 0
-                  ? t('sidebar.activityWithBadge', { count: activityBadge })
-                  : t('sidebar.activity')
-              }
-              active={activityActive}
-              trailing={
-                activityBadge > 0 ? (
-                  <span
-                    aria-hidden
-                    className="tabular min-w-[18px] rounded-full bg-accent px-1.5 text-center text-[10.5px] leading-[18px] font-semibold text-ink-fg"
-                  >
-                    {activityBadge > 99 ? '99+' : activityBadge}
-                  </span>
-                ) : undefined
-              }
-              onClick={onActivity}
-            />
-          )}
         </div>
 
         <nav aria-label={t('list.title')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           <WorkspaceList
-            onBrowseInFileTree={(project) => onBrowseProjectInFileTree?.(project)}
             onNewConversation={(project) => onNewConversationProject?.(project)}
             onSelectSession={onSelect}
           />

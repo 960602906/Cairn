@@ -1,10 +1,9 @@
 /**
  * 新对话首页（对齐 LiveAgent）：上方是应用标志与随时段变化的问候，输入框像对话页一样贴在底部，
  * 工作空间与分支显示在输入框上方。发送时先用当前工作空间创建会话，再把这条输入作为第一轮发送。
- *
- * 还没有配置模型供应商时，在输入框下方提示先去设置添加；还没有工作空间时可以打开本地文件夹。
+ * 还没有工作空间时可以打开本地文件夹。
  */
-import { ArrowUp, Cpu, ListChecks } from 'lucide-react'
+import { ArrowUp, ListChecks } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ModelRef } from '@cairn/protocol'
@@ -18,7 +17,7 @@ import {
 import { planShortcut } from './layout/shortcuts.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
-import { Button, CairnMark } from './ui/index.js'
+import { CairnMark } from './ui/index.js'
 
 /** 文本框最高（px），超过后滚动。 */
 const MAX_TEXTAREA_HEIGHT = 200
@@ -56,14 +55,11 @@ function titleFromPrompt(text: string): string {
 export function NewSession({
   initialProjectPath,
   onDone,
-  onSettings,
 }: {
   /** 从某个工作空间的“新建会话”进入时预先选中的项目路径。 */
   readonly initialProjectPath?: string | undefined
   /** 会话创建并发出第一条消息后离开新对话页。 */
   readonly onDone: () => void
-  /** 打开设置页的“模型供应商”（没有配置供应商时的引导）。 */
-  readonly onSettings?: () => void
 }) {
   const { t } = useTranslation('session')
   const createSession = useSessionStore((s) => s.createSession)
@@ -74,8 +70,6 @@ export function NewSession({
   const openProject = useSessionStore((s) => s.openProject)
   const providers = useSessionStore((s) => s.settings?.providers) ?? []
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
-  // 设置还没读到时不提示（旧版主进程或测试替身可能不返回供应商列表）
-  const noProvider = useSessionStore((s) => s.settings?.providers?.length === 0)
   const hasModel = enabledModelChoices(providers).length > 0
   const [projectPath, setProjectPath] = useState(initialProjectPath ?? projects[0]?.path ?? '')
   const [selectedModel, setSelectedModel] = useState<ModelRef | undefined>()
@@ -154,28 +148,6 @@ export function NewSession({
       </div>
 
       <div className="mx-auto w-full max-w-[880px] shrink-0 px-5 pb-4 min-[1200px]:px-8">
-        {noProvider && (
-          <section
-            aria-label={t('new.noProvider.title')}
-            className="mb-3 flex items-start gap-3 rounded-card bg-sunk px-4 py-3 shadow-hair"
-          >
-            <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-raise text-fg2 shadow-1 [&_svg]:size-4">
-              <Cpu />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-ui font-medium text-fg">{t('new.noProvider.title')}</span>
-              <span className="mt-0.5 block text-note text-muted">
-                {t('new.noProvider.description')}
-              </span>
-            </span>
-            {onSettings && (
-              <Button variant="primary" className="shrink-0" onClick={onSettings}>
-                {t('new.noProvider.action')}
-              </Button>
-            )}
-          </section>
-        )}
-
         <WorkspaceGitBar
           projectPath={projectPath === '' ? undefined : projectPath}
           projects={projects}

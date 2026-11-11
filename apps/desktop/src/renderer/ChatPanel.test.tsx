@@ -185,35 +185,93 @@ describe('ChatPanel', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('closes session panel tabs one by one and collapses the panel with the last one', async () => {
-    const { open } = setup({ history: HISTORY })
+  it('opens the home first, then closes tabs one by one back to the home', async () => {
+    const { open } = setup({
+      history: HISTORY,
+      handlers: {
+        'run.inspect': () => ({
+          tree: { sessionId: 's1', rootRunId: 'r1', generatedAt: 1, runs: [] },
+          snapshots: [],
+          settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+        }),
+      },
+    })
     await open()
     const toggle = screen.getByRole('button', { name: '会话信息' })
     await userEvent.click(toggle)
-    const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))
-    expect(tabNames()).toEqual(['改动', '会话要点', '计划', '检查器'])
+    const tabNames = () =>
+      within(screen.getByRole('tablist', { name: '会话页面' }))
+        .getAllByRole('tab')
+        .map((tab) => tab.getAttribute('aria-label'))
+    expect(tabNames()).toEqual(['首页'])
+    expect(screen.getByRole('tab', { name: '首页' }).getAttribute('aria-selected')).toBe('true')
+
+    // 「+」菜单只列出固定入口；改动、概要、计划都在对话里点开。
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).queryByRole('button', { name: '打开改动' })).toBeNull()
+    expect(within(panel).queryByRole('button', { name: '打开概要' })).toBeNull()
+    await userEvent.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      '文件',
+      '检查',
+      '活动',
+    ])
+    expect(screen.queryByRole('menuitem', { name: '改动' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '概要' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '计划' })).toBeNull()
+    await userEvent.click(await screen.findByRole('menuitem', { name: '检查' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(tabNames()).toEqual(['首页', '检查器'])
+
+    await userEvent.click(screen.getByRole('button', { name: '打开其他面板' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '文件' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(tabNames()).toEqual(['首页', '检查器', '文件树'])
+    expect(screen.getByRole('tab', { name: '文件树' }).getAttribute('aria-selected')).toBe('true')
 
     // 关掉不在前台的标签，当前标签不变。
-    await userEvent.click(screen.getByRole('button', { name: '关闭计划' }))
-    expect(tabNames()).toEqual(['改动', '会话要点', '检查器'])
-    expect(screen.getByRole('tab', { name: '改动' }).getAttribute('aria-selected')).toBe('true')
+    await userEvent.click(screen.getByRole('button', { name: '关闭检查器' }))
+    expect(tabNames()).toEqual(['首页', '文件树'])
+    expect(screen.getByRole('tab', { name: '文件树' }).getAttribute('aria-selected')).toBe('true')
 
-    // 关掉当前标签，切到它后面的那个。
-    await userEvent.click(screen.getByRole('button', { name: '关闭改动' }))
-    expect(screen.getByRole('tab', { name: '会话要点' }).getAttribute('aria-selected')).toBe('true')
+    // 关掉当前标签，回到首页。
+    await userEvent.click(screen.getByRole('button', { name: '关闭文件树' }))
+    expect(tabNames()).toEqual(['首页'])
+    expect(screen.getByRole('tab', { name: '首页' }).getAttribute('aria-selected')).toBe('true')
 
-    // 从「+」菜单重新打开。
+    // 从「+」菜单重新打开文件树，再关掉回到首页。
     await userEvent.click(screen.getByRole('button', { name: '打开其他面板' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: '计划' }))
-    expect(screen.getByRole('tab', { name: '计划' }).getAttribute('aria-selected')).toBe('true')
+    await userEvent.click(await screen.findByRole('menuitem', { name: '文件' }))
+    expect(tabNames()).toEqual(['首页', '文件树'])
+    expect(screen.getByRole('tab', { name: '文件树' }).getAttribute('aria-selected')).toBe('true')
 
-    // 关掉最后一个标签即收起整栏；再打开时恢复全部标签。
-    for (const name of ['关闭检查器', '关闭计划', '关闭会话要点']) {
-      await userEvent.click(screen.getByRole('button', { name }))
-    }
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    await userEvent.click(toggle)
-    expect(tabNames()).toEqual(['改动', '会话要点', '计划', '检查器'])
+    await userEvent.click(screen.getByRole('button', { name: '关闭文件树' }))
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(tabNames()).toEqual(['首页'])
+    expect(screen.getByRole('tab', { name: '首页' }).getAttribute('aria-selected')).toBe('true')
+    expect(within(panel).getByText('工作台')).toBeTruthy()
+  })
+
+  it('returns to the home and clears tabs when switching sessions', async () => {
+    const { open, store } = setup({ history: HISTORY })
+    await open()
+    await showPanel()
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await userEvent.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '文件' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(screen.getByRole('tab', { name: '文件树' })).toBeTruthy()
+
+    act(() =>
+      store.setState({
+        activeSessionId: 's2',
+        views: { ...store.getState().views, s2: createSessionView('s2') },
+      }),
+    )
+    const tabs = within(screen.getByRole('tablist', { name: '会话页面' }))
+    expect(tabs.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'))).toEqual(['首页'])
+    expect(tabs.getByRole('tab', { name: '首页' }).getAttribute('aria-selected')).toBe('true')
+    expect(within(panel).getByRole('button', { name: '打开文件树' })).toBeTruthy()
   })
 
   it('floats the plan progress above the composer while a plan is being carried out', async () => {
@@ -421,34 +479,6 @@ describe('ChatPanel', () => {
       ev(10, 'turn.started', {}, 't2'),
     )
     expect(screen.queryByLabelText(/已加载项目说明/)).toBeNull()
-  })
-
-  it('opens the session brief and saves an edit without sending a prompt', async () => {
-    const { request, open, emit } = setup({
-      history: [
-        ...HISTORY,
-        ev(9, 'session.brief.updated', { content: '目标：修复测试', editedBy: 'agent' }),
-      ],
-      handlers: { 'session.brief.update': () => ({}) },
-    })
-    await open()
-    expect(messages().slice(0, 2)).toEqual(['你你好', '助手你好！fake-1'])
-    await showPanel()
-    await userEvent.click(screen.getByRole('tab', { name: '会话要点' }))
-    const panel = screen.getByRole('dialog', { name: '会话信息' })
-    expect(within(panel).getByText('目标：修复测试')).toBeTruthy()
-    await userEvent.click(within(panel).getByRole('button', { name: '编辑' }))
-    const box = within(panel).getByRole('textbox', { name: '编辑' })
-    await userEvent.clear(box)
-    await userEvent.type(box, '不要改 API')
-    await userEvent.click(within(panel).getByRole('button', { name: '保存' }))
-    expect(request).toHaveBeenCalledWith('session.brief.update', {
-      sessionId: 's1',
-      content: '不要改 API',
-    })
-    expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
-    emit(ev(10, 'session.brief.updated', { content: '不要改 API', editedBy: 'user' }))
-    expect(within(panel).getByText('不要改 API')).toBeTruthy()
   })
 
   it('shows a compaction divider that expands to the summary, and the omission note once', async () => {
@@ -1504,7 +1534,8 @@ describe('file changes (M2-07)', () => {
     const list = screen.getByRole('list', { name: '消息' })
     const turn = within(list).getByRole('region', { name: '本轮变更' })
     expect(within(turn).getByRole('button', { name: /src\/app\.ts/ })).toBeTruthy()
-    await showPanel()
+    // 改动入口在对话里：面板收起时点「本轮变更」标题直接在右侧打开改动页面。
+    await userEvent.click(within(turn).getByRole('button', { name: '在右侧查看全部改动' }))
     const panel = screen.getByRole('dialog', { name: '会话信息' })
     expect(within(panel).getByRole('tab', { name: '改动' }).getAttribute('aria-selected')).toBe(
       'true',
@@ -1518,7 +1549,10 @@ describe('file changes (M2-07)', () => {
     expect(screen.queryByRole('region', { name: '本轮变更' })).toBeNull()
     await showPanel()
     const panel = screen.getByRole('dialog', { name: '会话信息' })
-    expect(within(panel).getByText('还没有文件改动。')).toBeTruthy()
+    expect(within(panel).queryByText('还没有文件改动。')).toBeNull()
+    await userEvent.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    expect(await screen.findByRole('menuitem', { name: '文件' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '改动' })).toBeNull()
   })
 })
 

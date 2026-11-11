@@ -1,8 +1,9 @@
 /**
- * 工作空间文件树（目录功能同步）：懒加载目录、展开/折叠、搜索过滤、
+ * 可复用的工作空间文件树：懒加载目录、展开/折叠、搜索过滤、
  * 新建文件/目录、重命名、删除、复制路径与在系统文件管理器中定位。
  *
- * 数据来自 `fs.*` RPC；只展示当前项目的相对路径。
+ * 右侧工作台的文件树使用 `variant="panel"`，工具栏收成图标按钮，避免在 348px 宽的侧栏里
+ * 挤成两行文字。数据来自 `fs.*` RPC，只展示当前项目的相对路径。
  */
 import {
   ChevronRight,
@@ -10,14 +11,14 @@ import {
   Eye,
   EyeOff,
   File,
+  FilePlus,
   Folder,
   FolderOpen,
+  FolderPlus,
   MoreHorizontal,
   Pencil,
-  Plus,
   RefreshCw,
   Trash2,
-  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -38,6 +39,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  PanelEmpty,
   Spinner,
 } from './ui/index.js'
 
@@ -46,17 +48,42 @@ type Draft = { kind: 'file' | 'dir'; parent: string; value: string }
 
 const join = (parent: string, name: string) => (parent === '' ? name : `${parent}/${name}`)
 
-export function FileTreeDialog({
+function ToolbarButton({
+  label,
+  onClick,
+  children,
+}: {
+  readonly label: string
+  readonly onClick: () => void
+  readonly children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="inline-flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted outline-none hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent [&_svg]:size-3.5"
+    >
+      {children}
+    </button>
+  )
+}
+
+export function FileTreeBrowser({
   project,
-  open,
-  onOpenChange,
+  active = true,
+  variant = 'dialog',
 }: {
   readonly project: ProjectSummary | undefined
-  readonly open: boolean
-  readonly onOpenChange: (open: boolean) => void
+  /** 是否处于打开状态；隐藏时停止重新加载，标签页挂载即视为打开。 */
+  readonly active?: boolean
+  /** `panel` 使用紧凑工具栏，`dialog` 保留带文字的按钮。 */
+  readonly variant?: 'dialog' | 'panel'
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
+  const compact = variant === 'panel'
   const [children, setChildren] = useState<Children>({})
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(['']))
   const [loading, setLoading] = useState<ReadonlySet<string>>(() => new Set())
@@ -96,7 +123,7 @@ export function FileTreeDialog({
   )
 
   useEffect(() => {
-    if (!open || !project) return
+    if (!active || !project) return
     setChildren({})
     setExpanded(new Set(['']))
     setSelected('')
@@ -104,7 +131,7 @@ export function FileTreeDialog({
     setError(null)
     void load('', true)
     // 只在新项目或面板重新打开时重置，不跟随 children/load 的引用变化。
-  }, [open, project?.projectId, showHidden])
+  }, [active, project?.projectId, showHidden])
 
   const toggle = (entry: FileTreeEntry) => {
     setSelected(entry.path)
@@ -297,23 +324,42 @@ export function FileTreeDialog({
   const draftParent = selectedEntry?.kind === 'dir' ? selectedEntry.path : parentDir
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(640px,calc(100vh-80px))] w-[min(760px,calc(100vw-48px))] flex-col p-0">
-        <header className="flex shrink-0 items-center gap-3 border-b-[0.5px] border-hair px-4 py-3">
-          <FolderOpen aria-hidden className="size-4 text-muted" />
-          <DialogTitle className="min-w-0 flex-1 truncate text-ui">
-            {projectDisplayName(project, tc('project.defaultName'), t('fileTree.title'))}
-          </DialogTitle>
-          <button
-            type="button"
-            aria-label={t('fileTree.close')}
-            className="inline-flex size-7 items-center justify-center rounded-[6px] text-muted hover:bg-hover hover:text-fg"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="size-4" />
-          </button>
-        </header>
-
+    <div className="flex h-full min-h-0 flex-col">
+      {compact ? (
+        <div className="flex shrink-0 flex-col gap-1.5 border-b-[0.5px] border-hair px-3 py-2">
+          <input
+            aria-label={t('fileTree.search')}
+            placeholder={t('fileTree.searchPlaceholder')}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-7 min-w-0 w-full rounded-[6px] bg-sunk px-2 text-note text-fg outline-none placeholder:text-faint focus:shadow-[0_0_0_1.5px_var(--accent)]"
+          />
+          <div className="flex items-center gap-1">
+            <ToolbarButton
+              label={t('fileTree.newFile')}
+              onClick={() => setDraft({ kind: 'file', parent: draftParent, value: '' })}
+            >
+              <FilePlus />
+            </ToolbarButton>
+            <ToolbarButton
+              label={t('fileTree.newFolder')}
+              onClick={() => setDraft({ kind: 'dir', parent: draftParent, value: '' })}
+            >
+              <FolderPlus />
+            </ToolbarButton>
+            <span className="flex-1" />
+            <ToolbarButton label={t('fileTree.refresh')} onClick={refresh}>
+              <RefreshCw />
+            </ToolbarButton>
+            <ToolbarButton
+              label={t(showHidden ? 'fileTree.hideHidden' : 'fileTree.showHidden')}
+              onClick={() => setShowHidden((current) => !current)}
+            >
+              {showHidden ? <EyeOff /> : <Eye />}
+            </ToolbarButton>
+          </div>
+        </div>
+      ) : (
         <div className="flex shrink-0 items-center gap-2 border-b-[0.5px] border-hair px-3 py-2">
           <input
             aria-label={t('fileTree.search')}
@@ -328,7 +374,7 @@ export function FileTreeDialog({
             aria-label={t('fileTree.newFile')}
             onClick={() => setDraft({ kind: 'file', parent: draftParent, value: '' })}
           >
-            <Plus />
+            <FilePlus />
             {t('fileTree.newFile')}
           </Button>
           <Button
@@ -337,55 +383,57 @@ export function FileTreeDialog({
             aria-label={t('fileTree.newFolder')}
             onClick={() => setDraft({ kind: 'dir', parent: draftParent, value: '' })}
           >
-            <Plus />
+            <FolderPlus />
             {t('fileTree.newFolder')}
           </Button>
-          <button
-            type="button"
-            aria-label={t('fileTree.refresh')}
-            className="inline-flex size-7 items-center justify-center rounded-[6px] text-muted hover:bg-hover hover:text-fg"
-            onClick={refresh}
-          >
-            <RefreshCw className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label={t(showHidden ? 'fileTree.hideHidden' : 'fileTree.showHidden')}
-            className="inline-flex size-7 items-center justify-center rounded-[6px] text-muted hover:bg-hover hover:text-fg"
+          <ToolbarButton label={t('fileTree.refresh')} onClick={refresh}>
+            <RefreshCw />
+          </ToolbarButton>
+          <ToolbarButton
+            label={t(showHidden ? 'fileTree.hideHidden' : 'fileTree.showHidden')}
             onClick={() => setShowHidden((current) => !current)}
           >
-            {showHidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          </button>
+            {showHidden ? <EyeOff /> : <Eye />}
+          </ToolbarButton>
         </div>
+      )}
 
-        {error && (
-          <p
-            role="alert"
-            className="shrink-0 border-b-[0.5px] border-hair px-4 py-2 text-note text-danger"
-          >
-            {error}
+      {error && (
+        <p
+          role="alert"
+          className="shrink-0 border-b-[0.5px] border-hair px-4 py-2 text-note text-danger"
+        >
+          {error}
+        </p>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        {!project ? (
+          <PanelEmpty icon={<FolderOpen />} className="px-2">
+            {t('fileTree.noProject')}
+          </PanelEmpty>
+        ) : loading.has('') && children[''] === undefined ? (
+          <p role="status" className="px-3 py-2 text-note text-muted">
+            {t('fileTree.loading')}
           </p>
+        ) : (visible[''] ?? []).length === 0 ? (
+          <p className="px-3 py-2 text-note text-faint">{t('fileTree.empty')}</p>
+        ) : (
+          <ul>{renderRows('', 0)}</ul>
         )}
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-          {loading.has('') && children[''] === undefined ? (
-            <p role="status" className="px-3 py-2 text-note text-muted">
-              {t('fileTree.loading')}
-            </p>
-          ) : (visible[''] ?? []).length === 0 ? (
-            <p className="px-3 py-2 text-note text-faint">{t('fileTree.empty')}</p>
-          ) : (
-            <ul>{renderRows('', 0)}</ul>
-          )}
-        </div>
-
-        <footer className="flex shrink-0 items-center gap-2 border-t-[0.5px] border-hair px-4 py-2 text-[11px] text-faint">
-          <span className="truncate" title={project?.path}>
-            {project?.path}
-          </span>
-          <span className="ml-auto">{t('fileTree.hint')}</span>
-        </footer>
-      </DialogContent>
+      <footer
+        className={cn(
+          'flex shrink-0 items-center gap-2 border-t-[0.5px] border-hair text-[11px] text-faint',
+          compact ? 'px-3 py-1.5' : 'px-4 py-2',
+        )}
+      >
+        <span className="truncate" title={project?.path}>
+          {project?.path ?? t('fileTree.noProject')}
+        </span>
+        {!compact && <span className="ml-auto">{t('fileTree.hint')}</span>}
+      </footer>
 
       <Dialog open={draft !== null} onOpenChange={(next) => !next && setDraft(null)}>
         <DialogContent>
@@ -457,6 +505,6 @@ export function FileTreeDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Dialog>
+    </div>
   )
 }

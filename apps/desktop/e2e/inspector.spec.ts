@@ -69,7 +69,11 @@ test('查看运行树、上下文、用量与设置', async ({ launch, userData 
 
     const panelToggle = window.getByRole('button', { name: '会话信息', exact: true })
     if ((await panelToggle.getAttribute('aria-expanded')) !== 'true') await panelToggle.click()
-    await window.getByRole('tab', { name: '检查器' }).click()
+    await sessionPanel(window).getByRole('button', { name: '打开检查' }).click()
+    await expect(window.getByRole('tab', { name: '检查器' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
     const panel = window.getByRole('tabpanel', { name: '时间线' })
     await expect(panel.getByRole('list', { name: '运行树' })).toBeVisible()
     await expect(panel.getByText('编程助手')).toBeVisible()

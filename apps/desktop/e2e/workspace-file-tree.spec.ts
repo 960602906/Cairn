@@ -1,11 +1,11 @@
 /**
- * 工作空间菜单与文件树（目录功能同步）：置顶、重命名、归档、在文件树浏览、
- * 新建/重命名/删除文件，以及移除工作空间。
+ * 工作空间菜单与文件树（目录功能同步）：置顶、重命名、归档、新建/重命名/删除文件，
+ * 以及移除工作空间。文件树从右侧工作台打开。
  */
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { expect, test } from './app.js'
-import { createSession, projectDir } from './session.js'
+import { createSession, openSession, projectDir } from './session.js'
 
 test('工作空间菜单与文件树的新增、重命名、删除和移除', async ({ launch, userData }) => {
   const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
@@ -45,43 +45,48 @@ test('工作空间菜单与文件树的新增、重命名、删除和移除', as
   await rename.getByRole('button', { name: '保存' }).click()
   await expect(workspaces).toContainText('project-renamed')
 
-  await row.hover()
-  await row.getByRole('button', { name: '工作空间操作' }).click()
-  await window.getByRole('menuitem', { name: '在文件树浏览' }).click()
-  const dialog = window.getByRole('dialog')
-  await expect(dialog.getByRole('heading', { name: 'project-renamed' })).toBeVisible()
-  await expect(dialog.getByText('notes.txt')).toBeVisible()
+  // 重命名工作空间后重新打开会话，再从右侧工作台进入文件树。
+  await openSession(window, '目录功能')
+  // 文件树从右侧工作台打开。
+  const panelToggle = window.getByRole('button', { name: '会话信息', exact: true })
+  if ((await panelToggle.getAttribute('aria-expanded')) === 'false') await panelToggle.click()
+  const panel = window
+    .getByRole('complementary', { name: '会话信息' })
+    .or(window.getByRole('dialog', { name: '会话信息' }))
+  await panel.getByRole('button', { name: '打开文件树' }).click()
+  await expect(panel.getByRole('tab', { name: '文件树' })).toHaveAttribute('aria-selected', 'true')
+  await expect(panel.getByText('notes.txt')).toBeVisible()
 
-  await dialog.getByRole('button', { name: '新建文件夹', exact: true }).click()
+  await panel.getByRole('button', { name: '新建文件夹', exact: true }).click()
   await window.getByLabel('名称').last().fill('folder')
   await window.getByRole('button', { name: '确定' }).last().click()
-  await expect(dialog.getByText('folder')).toBeVisible()
+  await expect(panel.getByText('folder')).toBeVisible()
 
-  await dialog.getByRole('button', { name: '刷新文件树' }).click()
-  await expect(dialog.getByText('notes.txt')).toBeVisible()
-  await dialog.getByRole('button', { name: '显示隐藏文件' }).click()
-  await expect(dialog.getByRole('button', { name: '隐藏隐藏文件' })).toBeVisible()
-  await dialog.getByRole('button', { name: '隐藏隐藏文件' }).click()
+  await panel.getByRole('button', { name: '刷新文件树' }).click()
+  await expect(panel.getByText('notes.txt')).toBeVisible()
+  await panel.getByRole('button', { name: '显示隐藏文件' }).click()
+  await expect(panel.getByRole('button', { name: '隐藏隐藏文件' })).toBeVisible()
+  await panel.getByRole('button', { name: '隐藏隐藏文件' }).click()
 
-  await dialog.getByRole('button', { name: '新建文件', exact: true }).click()
+  await panel.getByRole('button', { name: '新建文件', exact: true }).click()
   await window.getByLabel('名称').last().fill('created.txt')
   await window.getByRole('button', { name: '确定' }).last().click()
-  await expect(dialog.getByText('created.txt')).toBeVisible()
+  await expect(panel.getByText('created.txt')).toBeVisible()
 
-  const created = dialog.getByText('created.txt').locator('..')
+  const created = panel.getByText('created.txt').locator('..')
   await created.getByRole('button', { name: '文件操作' }).click()
   await window.getByRole('menuitem', { name: '重命名' }).click()
   await window.getByLabel('名称').last().fill('renamed.txt')
   await window.getByRole('button', { name: '确定' }).last().click()
-  await expect(dialog.getByText('renamed.txt')).toBeVisible()
+  await expect(panel.getByText('renamed.txt')).toBeVisible()
 
-  const renamed = dialog.getByText('renamed.txt').locator('..')
+  const renamed = panel.getByText('renamed.txt').locator('..')
   await renamed.getByRole('button', { name: '文件操作' }).click()
   await window.getByRole('menuitem', { name: '删除' }).click()
   await window.getByRole('button', { name: '删除' }).last().click()
-  await expect(dialog.getByText('renamed.txt')).toHaveCount(0)
+  await expect(panel.getByText('renamed.txt')).toHaveCount(0)
 
-  await dialog.getByRole('button', { name: '关闭文件树' }).click()
+  await window.getByRole('button', { name: '会话信息', exact: true }).click()
   await row.hover()
   await row.getByRole('button', { name: '工作空间操作' }).click()
   await window.getByRole('menuitem', { name: '移除工作空间' }).click()
