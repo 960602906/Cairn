@@ -29,7 +29,7 @@ async function request<T>(window: Page, method: string, params: object): Promise
 }
 
 async function openUpdateSettings(window: Page): Promise<void> {
-  // 用全局导航的“设置”按钮而不是 Ctrl+,：冷启动时 React 的快捷键监听可能还没挂上，
+  // 用左栏的“设置”按钮而不是 Ctrl+,：冷启动时 React 的快捷键监听可能还没挂上，
   // 键盘事件会丢失（CI 上已复现）。点击按钮会等待元素出现，天然避开这个竞态。
   await window.getByRole('button', { name: '设置', exact: true }).click()
   const nav = window.getByRole('navigation', { name: '设置分类' })

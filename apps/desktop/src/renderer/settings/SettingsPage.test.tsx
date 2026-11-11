@@ -106,6 +106,9 @@ function setup(
 }
 
 const openSettings = async () => {
+  // 窄窗口下设置入口在左栏抽屉里，先展开。
+  const expand = screen.queryByRole('button', { name: '展开侧栏' })
+  if (expand) await userEvent.click(expand)
   await userEvent.click(await screen.findByRole('button', { name: /^设置/ }))
   return screen.findByRole('heading', { name: '通用与外观' })
 }

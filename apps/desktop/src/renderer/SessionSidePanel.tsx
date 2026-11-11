@@ -5,7 +5,7 @@
  * 视觉上它是对话纸面的延伸：和对话同一底色，只用一条发丝线分开，标签是一排安静的胶囊，
  * 不再有单独的标题栏和底色。常驻时由顶栏按钮开合，所以只在浮层模式下显示关闭按钮。
  */
-import { ChevronRight, FileDiff, ListTodo, X } from 'lucide-react'
+import { ChevronRight, FileDiff, ListTodo, Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
@@ -17,7 +17,16 @@ import { Inspector } from './Inspector.js'
 import { PlanDetails } from './PlanCard.js'
 import { SessionBriefPanel } from './SessionBrief.js'
 import { useSessionStore } from './store-context.js'
-import { cn, IconButton, PanelEmpty, SegmentedControl } from './ui/index.js'
+import {
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  IconButton,
+  PanelEmpty,
+  SegmentedControl,
+} from './ui/index.js'
 
 export type SessionPanel = 'diff' | 'brief' | 'plan' | 'inspector'
 
@@ -27,6 +36,9 @@ const PANELS = [
   { id: 'plan', label: 'sidePanel.plan' },
   { id: 'inspector', label: 'sidePanel.inspectorShort' },
 ] as const
+
+/** 全部面板，按固定顺序；标签栏按这个顺序排列已打开的标签。 */
+export const SESSION_PANELS: readonly SessionPanel[] = PANELS.map((item) => item.id)
 
 const EMPTY_CHANGE_SETS: readonly ChangeSetSummary[] = []
 
@@ -114,6 +126,8 @@ export function SessionSidePanel({
   selectedChangeSetId,
   onSelectChangeSet,
   onPanelChange,
+  tabs = SESSION_PANELS,
+  onCloseTab,
   open = true,
   placement = 'side',
   docked = false,
@@ -128,6 +142,9 @@ export function SessionSidePanel({
   readonly selectedChangeSetId?: string | undefined
   readonly onSelectChangeSet?: ((changeSetId: string | undefined) => void) | undefined
   readonly onPanelChange: (panel: SessionPanel) => void
+  /** 已打开的标签；默认全部打开。给出 `onCloseTab` 后每个标签可以关闭，未打开的从「+」菜单打开。 */
+  readonly tabs?: readonly SessionPanel[]
+  readonly onCloseTab?: ((panel: SessionPanel) => void) | undefined
   /** 由顶栏按钮控制；窄窗口为浮层，宽窗口占用布局宽度。 */
   readonly open?: boolean
   /** 叠层布局把工作台放在对话下方；`side` 保持原有的右侧浮层/侧栏。 */
@@ -241,32 +258,72 @@ export function SessionSidePanel({
     >
       <div className={cn('flex h-full shrink-0 flex-col', bottom ? 'w-full' : 'w-[348px]')}>
         <div className="flex h-11 shrink-0 items-center gap-1 pr-2 pl-2.5">
-          <div role="tablist" className="flex min-w-0 flex-1 items-center gap-0.5">
-            {PANELS.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-label={t(
-                  id === 'brief'
-                    ? 'sidePanel.brief'
-                    : id === 'inspector'
-                      ? 'sidePanel.inspector'
-                      : label,
-                )}
-                aria-selected={panel === id}
-                onClick={() => onPanelChange(id)}
-                className={cn(
-                  'flex h-7 min-w-0 items-center rounded-item px-2.5 text-note transition-colors outline-none focus-visible:ring-1 focus-visible:ring-accent',
-                  panel === id
-                    ? 'bg-sunk font-medium text-fg'
-                    : 'text-muted hover:bg-hover hover:text-fg2',
-                )}
-              >
-                <span className="truncate">{t(label)}</span>
-              </button>
-            ))}
+          <div role="tablist" className="flex min-w-0 items-center gap-0.5">
+            {PANELS.filter(({ id }) => tabs.includes(id)).map(({ id, label }) => {
+              const full = t(
+                id === 'brief'
+                  ? 'sidePanel.brief'
+                  : id === 'inspector'
+                    ? 'sidePanel.inspector'
+                    : label,
+              )
+              const selected = panel === id
+              return (
+                <div
+                  key={id}
+                  className={cn(
+                    'group/tab flex h-7 min-w-0 items-center rounded-item transition-colors',
+                    selected ? 'bg-sunk text-fg' : 'text-muted hover:bg-hover hover:text-fg2',
+                  )}
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-label={full}
+                    aria-selected={selected}
+                    onClick={() => onPanelChange(id)}
+                    className={cn(
+                      'flex h-7 min-w-0 items-center rounded-item pl-2.5 text-note outline-none focus-visible:ring-1 focus-visible:ring-accent',
+                      onCloseTab ? 'pr-1' : 'pr-2.5',
+                      selected && 'font-medium',
+                    )}
+                  >
+                    <span className="truncate">{t(label)}</span>
+                  </button>
+                  {onCloseTab && (
+                    <button
+                      type="button"
+                      aria-label={t('sidePanel.closeTab', { name: full })}
+                      onClick={() => onCloseTab(id)}
+                      className={cn(
+                        'mr-1 grid size-4 shrink-0 place-items-center rounded-[4px] text-faint outline-none transition-opacity hover:bg-press hover:text-fg focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-accent',
+                        selected ? 'opacity-100' : 'opacity-0 group-hover/tab:opacity-100',
+                      )}
+                    >
+                      <X aria-hidden className="size-3" />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
+          {onCloseTab && tabs.length < PANELS.length && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <IconButton label={t('sidePanel.addTab')} size="icon-sm">
+                  <Plus />
+                </IconButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[140px]">
+                {PANELS.filter(({ id }) => !tabs.includes(id)).map(({ id, label }) => (
+                  <DropdownMenuItem key={id} onSelect={() => onPanelChange(id)}>
+                    {t(label)}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <span className="flex-1" />
           {onClose && !docked && (
             <IconButton label={t('sidePanel.close')} size="icon-sm" onClick={onClose}>
               <X />

@@ -1,13 +1,14 @@
 /**
  * 根组件。界面文案一律通过 i18n key 引用（ADR-0013）。
  *
- * 布局（01 枢纽）：60px 图标栏常驻，右侧是 252px 会话列和主工作区。会话列在宽窗口常驻，
- * 可以收成 0 宽；窗口窄于 900px 时改为抽屉，避免把正文挤到 600px 以下。设置页用设置导航
- * 替换会话列，活动中心占满主区。
+ * 布局是三栏：252px 左栏（标志、新对话 / 搜索 / 活动、会话列表、设置）、中间的对话、右侧的
+ * 会话信息栏。左栏在宽窗口常驻，可以收成 0 宽，收起后由顶栏左侧的按钮展开；窗口窄于 900px
+ * 时改为抽屉，避免把正文挤到 600px 以下。设置页用设置导航替换左栏，活动中心显示在主区。
  *
  * ⌘N / Ctrl+N 新对话；⌘K / Ctrl+K 搜索；⌘, / Ctrl+, 设置；Esc 关闭抽屉/返回对话。
  * 主题跟随设置（M2-01，`ThemeSync`）。
  */
+import { PanelLeftOpen, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
@@ -17,7 +18,6 @@ import { ChatPanel, TopBar } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
 import { FileTreeDialog } from './FileTreeDialog.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
-import { AppRail } from './layout/AppRail.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
@@ -30,7 +30,7 @@ import { SettingsContent, SettingsNav, type SettingsSection } from './settings/S
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
 import { ThemeSync } from './ThemeSync.js'
 import { UpdateNotice } from './UpdateNotice.js'
-import { CairnAppMark, TooltipProvider } from './ui/index.js'
+import { CairnAppMark, IconButton, TooltipProvider } from './ui/index.js'
 
 export interface AppProps {
   readonly i18n: I18nInstance
@@ -166,17 +166,12 @@ function Workspace() {
   const openActivity = useCallback(() => {
     setSettings(undefined)
     setComposing(false)
-    setSessionsOpen(false)
+    if (narrow) setSessionsOpen(false)
     setActivity(true)
-  }, [])
+  }, [narrow])
 
-  /** 会话栏收起或进入其他页面后，从图标栏恢复会话列表。 */
-  const openSessions = useCallback(() => {
-    setSettings(undefined)
-    setActivity(false)
-    setComposing(false)
-    setSessionsOpen(true)
-  }, [])
+  /** 左栏收起后，从顶栏按钮展开；不离开当前页面。 */
+  const openSessions = useCallback(() => setSessionsOpen(true), [])
 
   const openSessionFromActivity = useCallback(
     (sessionId: string, changeSetId?: string) => {
@@ -226,6 +221,14 @@ function Workspace() {
       if (narrow) setSessionsOpen(false)
       setFileTreeProject(project)
     },
+    onNewChat: startNewChat,
+    onActivity: openActivity,
+    onSettings: () => {
+      setSessionsOpen(false)
+      setSettings('general')
+    },
+    activityActive: activity,
+    activityBadge,
     onNewConversationProject: (project: ProjectSummary) => {
       if (narrow) setSessionsOpen(false)
       setSettings(undefined)
@@ -235,21 +238,16 @@ function Workspace() {
     },
   } as const
 
-  const rail = (showSessions: boolean) => (
-    <AppRail
-      onNewChat={startNewChat}
-      onSessions={openSessions}
-      sessionsOpen={sessionsOpen}
-      showSessions={showSessions}
-      onSearch={() => setSearching(true)}
-      onActivity={openActivity}
-      onSettings={() => {
-        setSessionsOpen(false)
-        setSettings('general')
-      }}
-      activityActive={activity}
-      activityBadge={activityBadge}
-    />
+  /** 左栏收起（或窄窗口）时，顶栏左侧提供展开与新对话入口。 */
+  const reveal = sessionsOpen ? null : (
+    <div className="no-drag mr-1 flex shrink-0 items-center gap-0.5">
+      <IconButton label={t('sidebar.expand')} size="icon-sm" onClick={openSessions}>
+        <PanelLeftOpen />
+      </IconButton>
+      <IconButton label={t('list.new')} size="icon-sm" onClick={startNewChat}>
+        <SquarePen />
+      </IconButton>
+    </div>
   )
 
   const search = (
@@ -267,13 +265,13 @@ function Workspace() {
 
   const drawer =
     narrow && sessionsOpen ? (
-      <div className="fixed inset-y-0 right-0 left-[60px] z-50">
+      <div className="fixed inset-0 z-50">
         <div
           aria-hidden
           className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
           onClick={() => setSessionsOpen(false)}
         />
-        <div className="absolute inset-y-0 left-0 border-r-[0.5px] border-hair bg-chrome shadow-3">
+        <div className="absolute inset-y-0 left-0 bg-chrome shadow-3">
           <Sidebar open {...sidebarProps} />
         </div>
       </div>
@@ -283,7 +281,6 @@ function Workspace() {
     return (
       <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        {rail(false)}
         <SettingsNav
           open
           collapsible={false}
@@ -308,10 +305,10 @@ function Workspace() {
     return (
       <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        {rail(false)}
+        {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
-          <ActivityView onOpenSession={openSessionFromActivity} />
+          <ActivityView leading={reveal} onOpenSession={openSessionFromActivity} />
         </main>
         {drawer}
         {search}
@@ -325,13 +322,12 @@ function Workspace() {
     <div className={SHELL} style={chromeStyle}>
       {/* 应用名只给读屏（窗口标题区不显示文字）；冒烟检查也据此确认界面已渲染 */}
       <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-      {rail(true)}
       {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
         <ErrorBanner />
         {composing || showNew ? (
           <>
-            <TopBar />
+            <TopBar>{reveal}</TopBar>
             {updateNotice}
             <NewSession
               initialProjectPath={newChatProjectPath}
@@ -341,6 +337,7 @@ function Workspace() {
           </>
         ) : (
           <ChatPanel
+            leading={reveal}
             notice={updateNotice}
             {...(pendingChangeSet === undefined
               ? {}

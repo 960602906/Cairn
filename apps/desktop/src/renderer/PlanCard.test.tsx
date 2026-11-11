@@ -7,7 +7,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSessionView, type PlanView } from '@cairn/core'
 import { createI18n } from '@cairn/i18n'
 import { createStore } from 'zustand/vanilla'
-import { PlanDetails, PlanSummaryCard, planDocument, planPreview } from './PlanCard.js'
+import {
+  PlanDetails,
+  PlanProgress,
+  PlanSummaryCard,
+  planDocument,
+  planInProgress,
+  planPreview,
+} from './PlanCard.js'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 
@@ -204,5 +211,66 @@ describe('PlanDetails', () => {
 
     wrap(<PlanDetails plan={{ ...empty, status: 'rejected' }} />)
     expect(screen.getByText('已放弃')).toBeTruthy()
+  })
+})
+
+describe('PlanProgress', () => {
+  const running: PlanView = {
+    ...plan,
+    status: 'approved',
+    steps: [
+      { id: 'a', title: '读入口', status: 'done' },
+      { id: 'b', title: '改实现', status: 'in_progress' },
+      { id: 'c', title: '跑测试', status: 'pending' },
+      { id: 'd', title: '补文档', status: 'skipped' },
+    ],
+  }
+
+  it('knows whether a plan still has work left', () => {
+    expect(planInProgress(running)).toBe(true)
+    expect(
+      planInProgress({ ...running, steps: [{ id: 'a', title: '读入口', status: 'done' }] }),
+    ).toBe(false)
+  })
+
+  it('lists the steps with a count, collapses to the current step, and opens the full plan', async () => {
+    const user = userEvent.setup()
+    const onOpen = vi.fn()
+    wrap(<PlanProgress plan={running} onOpen={onOpen} />)
+    const card = screen.getByRole('region', { name: '计划进度' })
+    expect(within(card).getByText('2 / 4')).toBeTruthy()
+    expect(within(card).getAllByRole('listitem')).toHaveLength(4)
+    expect(within(card).getByText('进行中')).toBeTruthy()
+
+    await user.click(within(card).getByRole('button', { name: '收起计划步骤' }))
+    expect(within(card).queryByRole('listitem')).toBeNull()
+    // 收起后标题行显示当前步骤。
+    expect(within(card).getByText('改实现')).toBeTruthy()
+    await user.click(within(card).getByRole('button', { name: '查看完整计划：读代码' }))
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    await user.click(within(card).getByRole('button', { name: '展开计划步骤' }))
+    expect(within(card).getAllByRole('listitem')).toHaveLength(4)
+  })
+
+  it('falls back to the next pending step, then to the goal, when collapsed', async () => {
+    const user = userEvent.setup()
+    const view = wrap(
+      <PlanProgress
+        plan={{ ...running, steps: [{ id: 'c', title: '跑测试', status: 'pending' }] }}
+        onOpen={() => {}}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: '收起计划步骤' }))
+    expect(screen.getByText('跑测试')).toBeTruthy()
+    view.unmount()
+
+    wrap(
+      <PlanProgress
+        plan={{ ...running, steps: [{ id: 'a', title: '读入口', status: 'done' }] }}
+        onOpen={() => {}}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: '收起计划步骤' }))
+    expect(screen.getByText('读代码')).toBeTruthy()
   })
 })

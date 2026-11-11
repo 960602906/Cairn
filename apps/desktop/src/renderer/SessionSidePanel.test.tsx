@@ -413,6 +413,48 @@ describe('SessionSidePanel', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('shows only the open tabs, closes one, and reopens another from the add menu', async () => {
+    const user = userEvent.setup()
+    const onCloseTab = vi.fn()
+    const onPanelChange = vi.fn()
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={view}
+        panel="diff"
+        selectedPlanId={undefined}
+        onPanelChange={onPanelChange}
+        tabs={['diff', 'plan']}
+        onCloseTab={onCloseTab}
+      />,
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getAllByRole('tab')).toHaveLength(2)
+    expect(within(panel).queryByRole('tab', { name: '检查器' })).toBeNull()
+    await user.click(within(panel).getByRole('button', { name: '关闭计划' }))
+    expect(onCloseTab).toHaveBeenCalledWith('plan')
+
+    await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    await user.click(await screen.findByRole('menuitem', { name: '检查' }))
+    expect(onPanelChange).toHaveBeenCalledWith('inspector')
+  })
+
+  it('hides the add menu when every tab is open', () => {
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={view}
+        panel="diff"
+        selectedPlanId={undefined}
+        onPanelChange={() => {}}
+        onCloseTab={() => {}}
+      />,
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getAllByRole('tab')).toHaveLength(4)
+    expect(within(panel).queryByRole('button', { name: '打开其他面板' })).toBeNull()
+  })
+
   it('supports the bottom placement and inspector without change-set navigation', () => {
     wrap(
       <SessionSidePanel

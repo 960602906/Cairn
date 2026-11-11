@@ -1,8 +1,8 @@
 /**
- * 视觉验收（01 枢纽）：主题切换 + 六档窗口尺寸。
+ * 视觉验收（三栏布局）：主题切换 + 六档窗口尺寸。
  *
  * - 默认主题是板岩；五套内置配色都必须真的写到 <html data-theme>。
- * - 60px 图标栏在所有目标尺寸下常驻；会话列 ≥900px 常驻，<900px 改为抽屉。
+ * - 没有图标栏；252px 左栏 ≥900px 常驻，<900px 改为抽屉，由顶栏按钮展开。
  * - 工作台 ≥1440px 占布局宽度，更窄时是右侧浮层。
  * - 页面不能出现横向滚动，输入框始终可见。
  * - 截图保存到 design/redesign-v8/live，便于人工复核。
@@ -71,7 +71,6 @@ const themeOf = (page: Page) =>
     return view.document.documentElement.dataset['theme']
   })
 
-const rail = (page: Page) => page.getByRole('navigation', { name: '全局导航' })
 const sessions = (page: Page) => page.getByRole('navigation', { name: '会话' })
 const panel = (page: Page) => sessionPanel(page)
 
@@ -90,18 +89,18 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   for (const size of SIZES) {
     await resize(app.app, window, size)
     await noHorizontalOverflow(window)
-    await expect(rail(window)).toBeVisible()
+    await expect(window.getByRole('navigation', { name: '全局导航' })).toHaveCount(0)
     await expect(window.getByLabel('输入消息')).toBeVisible()
     await window.screenshot({
       path: path.join(ARTIFACTS, `chat-${size.width}x${size.height}.png`),
     })
   }
 
-  // 1440：三列尺寸符合 01 枢纽规格（图标栏 60 / 会话列 252 / 工作台 348）。
+  // 1440：左栏 252 / 会话信息栏 348，中间是对话。
   await resize(app.app, window, { width: 1440, height: 900 })
-  const widthOf = async (locator: ReturnType<typeof rail>) =>
+  const widthOf = async (locator: ReturnType<typeof sessions>) =>
     Math.round((await locator.boundingBox())!.width)
-  expect(Math.abs((await widthOf(rail(window))) - 60)).toBeLessThanOrEqual(1)
+  expect(Math.round((await sessions(window).boundingBox())!.x)).toBeLessThanOrEqual(8)
   expect(Math.abs((await widthOf(sessions(window))) - 252)).toBeLessThanOrEqual(2)
   // 工作台从浮层切换为常驻时会有 200ms 的宽度过渡，等它稳定下来。
   await expect
@@ -120,18 +119,19 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   await window.getByRole('button', { name: '会话信息', exact: true }).click()
   await expect(panel(window)).toBeHidden()
 
-  // 880：会话列变成抽屉，由图标栏开合。
+  // 880：左栏变成抽屉，由顶栏按钮展开。
   await resize(app.app, window, { width: 880, height: 800 })
   await expect(sessions(window)).toHaveCount(0)
-  await rail(window).getByRole('button', { name: '展开侧栏' }).click()
+  await window.getByRole('button', { name: '展开侧栏' }).click()
   await expect(sessions(window)).toBeVisible()
   await noHorizontalOverflow(window)
   await window.screenshot({ path: path.join(ARTIFACTS, 'sessions-drawer-880x800.png') })
   await window.keyboard.press('Escape')
   await expect(sessions(window)).toHaveCount(0)
 
-  // 880：设置页同样不能横向溢出。
-  await rail(window).getByRole('button', { name: '设置' }).click()
+  // 880：设置页同样不能横向溢出。设置入口在左栏抽屉里。
+  await window.getByRole('button', { name: '展开侧栏' }).click()
+  await window.getByRole('button', { name: /^设置/ }).click()
   await expect(window.getByRole('heading', { name: '通用与外观' })).toBeVisible()
   await noHorizontalOverflow(window)
   await window.screenshot({ path: path.join(ARTIFACTS, 'settings-880x800.png') })
@@ -140,7 +140,7 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
 
   // 主题：五套内置配色逐个应用并截图。
   await resize(app.app, window, { width: 1440, height: 900 })
-  await rail(window).getByRole('button', { name: '设置' }).click()
+  await window.getByRole('button', { name: /^设置/ }).click()
   await window
     .getByRole('navigation', { name: '设置分类' })
     .getByRole('button', { name: /^通用与外观/ })

@@ -9,6 +9,8 @@ import {
   CircleDot,
   CircleSlash,
   Copy,
+  ChevronDown,
+  ListTodo,
   Download,
   Lightbulb,
   Maximize2,
@@ -198,6 +200,94 @@ const STEP_ICON = {
   pending: Circle,
 } as const
 
+function StepIcon({ status }: { readonly status: PlanView['steps'][number]['status'] }) {
+  const Icon = STEP_ICON[status]
+  return (
+    <Icon
+      aria-hidden
+      className={cn(
+        'size-3.5 shrink-0',
+        status === 'done' ? 'text-ok' : status === 'in_progress' ? 'text-accent' : 'text-faint',
+      )}
+    />
+  )
+}
+
+/** 计划还有没做完的步骤。 */
+export function planInProgress(plan: PlanView): boolean {
+  return plan.steps.some((step) => step.status === 'pending' || step.status === 'in_progress')
+}
+
+/**
+ * 执行中的计划进度：悬浮在输入框上方的一张小卡片，随时能看到做到哪一步。
+ * 标题行可以收起步骤；点目标在右侧打开完整计划。
+ */
+export function PlanProgress({
+  plan,
+  onOpen,
+}: {
+  readonly plan: PlanView
+  readonly onOpen: () => void
+}) {
+  const { t } = useTranslation('session')
+  const [expanded, setExpanded] = useState(true)
+  const finished = plan.steps.filter(
+    (step) => step.status === 'done' || step.status === 'skipped',
+  ).length
+  const current =
+    plan.steps.find((step) => step.status === 'in_progress') ??
+    plan.steps.find((step) => step.status === 'pending')
+  return (
+    <section
+      aria-label={t('plan.progress.label')}
+      className="mb-2 overflow-hidden rounded-card bg-raise shadow-2"
+    >
+      <div className="flex h-9 items-center gap-2 pr-1.5 pl-3">
+        <ListTodo aria-hidden className="size-3.5 shrink-0 text-muted" />
+        <button
+          type="button"
+          aria-label={t('plan.summary.open', { goal: plan.content.goal })}
+          onClick={onOpen}
+          className="min-w-0 flex-1 truncate rounded-[5px] text-left text-note font-medium text-fg outline-none hover:underline focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          {expanded || !current ? plan.content.goal : current.title}
+        </button>
+        <span className="tabular shrink-0 text-note text-muted">
+          {t('plan.progress.count', { done: finished, total: plan.steps.length })}
+        </span>
+        <IconButton
+          label={t(expanded ? 'plan.progress.collapse' : 'plan.progress.expand')}
+          size="icon-sm"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <ChevronDown className={cn('transition-transform', !expanded && 'rotate-180')} />
+        </IconButton>
+      </div>
+      {expanded && (
+        <ol className="flex max-h-44 flex-col gap-1.5 overflow-y-auto border-t-[0.5px] border-hair px-3 py-2.5">
+          {plan.steps.map((step) => (
+            <li key={step.id} className="flex items-center gap-2.5 text-ui">
+              <StepIcon status={step.status} />
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate',
+                  step.status === 'done' || step.status === 'skipped' ? 'text-muted' : 'text-fg',
+                )}
+              >
+                {step.title}
+              </span>
+              <span className="shrink-0 text-[11.5px] text-muted">
+                {t(`plan.step.${step.status}`)}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  )
+}
+
 /** 右侧栏的完整计划：只展示内容，不重复审批操作。铺在侧栏纸面上，不再套一层卡片。 */
 export function PlanDetails({ plan }: { readonly plan: PlanView }) {
   const { t } = useTranslation('session')
@@ -209,20 +299,11 @@ export function PlanDetails({ plan }: { readonly plan: PlanView }) {
         <h4 className={label}>{t('plan.steps')}</h4>
         <ol className="mt-2 flex flex-col gap-2.5">
           {plan.steps.map((step) => {
-            const Icon = STEP_ICON[step.status]
             return (
               <li key={step.id} className="flex items-start gap-2.5 text-ui">
-                <Icon
-                  aria-hidden
-                  className={cn(
-                    'mt-[3px] size-3.5 shrink-0',
-                    step.status === 'done'
-                      ? 'text-ok'
-                      : step.status === 'in_progress'
-                        ? 'text-accent'
-                        : 'text-faint',
-                  )}
-                />
+                <span className="mt-[3px] flex">
+                  <StepIcon status={step.status} />
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className={cn(step.status === 'done' ? 'text-fg2' : 'text-fg')}>
                     {step.title}

@@ -60,10 +60,54 @@ describe('Sidebar', () => {
     expect(sidebar.firstElementChild?.className).toContain('-translate-x-3')
   })
 
-  it('shows the session title, count and search entry', () => {
+  it('shows the app name, the session list and the search entry', () => {
     renderSidebar(true)
-    expect(screen.getByText('会话')).toBeTruthy()
+    expect(screen.getByText('Cairn')).toBeTruthy()
+    expect(screen.getByRole('navigation', { name: '会话' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '搜索对话' })).toBeTruthy()
+    // 没有传入处理函数的入口不显示。
+    expect(screen.queryByRole('button', { name: '新对话' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '设置' })).toBeNull()
+  })
+
+  it('offers new chat, activity with a badge, and settings', () => {
+    const onNewChat = vi.fn()
+    const onActivity = vi.fn()
+    const onSettings = vi.fn()
+    renderSidebar(true, {
+      onNewChat,
+      onActivity,
+      onSettings,
+      activityBadge: 120,
+      activityActive: true,
+    })
+    fireEvent.click(screen.getByRole('button', { name: '新对话' }))
+    const activity = screen.getByRole('button', { name: '活动，120 个待审批' })
+    expect(activity.getAttribute('aria-current')).toBe('page')
+    expect(activity.textContent).toContain('99+')
+    fireEvent.click(activity)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    expect(onNewChat).toHaveBeenCalledTimes(1)
+    expect(onActivity).toHaveBeenCalledTimes(1)
+    expect(onSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a small badge count and no badge at zero', () => {
+    renderSidebar(true, { onActivity: vi.fn(), activityBadge: 2 })
+    expect(screen.getByRole('button', { name: '活动，2 个待审批' }).textContent).toContain('2')
+    cleanup()
+    renderSidebar(true, { onActivity: vi.fn() })
+    expect(screen.getByRole('button', { name: '活动' })).toBeTruthy()
+  })
+
+  it('leaves room for the traffic lights on macOS', () => {
+    vi.stubGlobal('cairn', { windowControls: { platform: 'darwin' } })
+    try {
+      renderSidebar(true)
+      expect(screen.queryByText('Cairn')).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('wires the collapse and search actions', () => {

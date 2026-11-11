@@ -224,7 +224,7 @@ export function SettingsContent({
   return (
     <>
       <div
-        className="drag flex h-12 shrink-0 items-center gap-1.5 bg-chrome pl-3"
+        className="drag flex h-12 shrink-0 items-center gap-1.5 bg-paper pl-3"
         style={TITLE_BAR_INSET}
       >
         {leading}
