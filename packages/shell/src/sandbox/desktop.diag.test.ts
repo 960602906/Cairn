@@ -136,12 +136,6 @@ describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG
       W.OpenProcessToken(self, 0xf01ff, tok)
       const ilBuf = Buffer.alloc(64)
       const need = Buffer.alloc(4)
-      step('if (W.GetTokenInformation(tok[')
-      if (W.GetTokenInformation(tok[0], 25, ilBuf, 64, need)) {
-        const s: unknown[] = [null]
-        W.ConvertSidToStringSidW(koffi.decode(ilBuf, 'void *'), s)
-        lines.push(`parent IL=${koffi.decode(s[0], 'str16')}`)
-      }
       const et = Buffer.alloc(4)
       step('W.GetTokenInformation(tok[0], ')
       W.GetTokenInformation(tok[0], 18, et, 4, need)
@@ -298,7 +292,6 @@ describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG
           `${c.name}: exit=0x${code.readUInt32LE(0).toString(16)} out=${JSON.stringify(text)}${tokenNote}`,
         )
       }
-      console.log(`SANDBOX-DIAG\n${lines.join('\n')}`)
     })
   },
 )
