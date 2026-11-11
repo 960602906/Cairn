@@ -17,7 +17,7 @@ describe('window chrome', () => {
   it('leaves window controls to the renderer elsewhere', () => {
     const options = windowChromeOptions('win32', 'dark')
     expect(options.titleBarStyle).toBe('hidden')
-    expect(options.backgroundColor).toBe('#161617')
+    expect(options.backgroundColor).toBe('#0a0c10')
     expect(windowChromeOptions('linux', 'light').backgroundColor).toBe('#f5f5f6')
     expect(usesCustomWindowControls('win32')).toBe(true)
     expect(usesCustomWindowControls('linux')).toBe(true)

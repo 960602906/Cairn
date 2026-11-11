@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, test } from './app.js'
 
-const ARTIFACTS = path.resolve(import.meta.dirname, '../../../design/redesign-v8/settings')
+const ARTIFACTS = path.resolve(import.meta.dirname, '../../../.cache/cairn-visual-check/settings')
 mkdirSync(ARTIFACTS, { recursive: true })
 
 const SIZES = [
@@ -157,7 +157,7 @@ test('窗口标题区底色跟随主题', async ({ launch }) => {
   const themes = window.getByRole('radiogroup', { name: '主题' })
 
   await themes.getByRole('radio', { name: /^深色/ }).click()
-  await expect.poll(background).toBe('#161617')
+  await expect.poll(background).toBe('#0a0c10')
 
   await themes.getByRole('radio', { name: /^浅色/ }).click()
   await expect.poll(background).toBe('#f5f5f6')

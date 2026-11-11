@@ -20,7 +20,7 @@ interface ChromePalette {
 /** 与 tokens.css 中每套主题的 `--chrome` 保持一致。 */
 const CHROME_PALETTES: Record<ChromeTheme, ChromePalette> = {
   light: { chrome: '#f5f5f6' },
-  dark: { chrome: '#161617' },
+  dark: { chrome: '#0a0c10' },
 }
 
 /** 把设置中的主题（含 `system` 与旧版本的配色名）解析成实际配色。 */

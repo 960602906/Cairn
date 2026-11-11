@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { ElectronApplication } from '@playwright/test'
 import { expect, test, type RunningApp } from './app.js'
 
-const ARTIFACTS = path.resolve(import.meta.dirname, '../../../design/redesign-v8/onboarding')
+const ARTIFACTS = path.resolve(import.meta.dirname, '../../../.cache/cairn-visual-check/onboarding')
 mkdirSync(ARTIFACTS, { recursive: true })
 
 function onboardingSeen(userData: string): unknown {

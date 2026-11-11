@@ -1,11 +1,11 @@
 /*
  * 设计令牌（视觉规范 §3，ADR-0024）。
  *
- * 只有两套配色，都是中性的黑白灰，不带品牌色：
- *   dark  深色 —— 也是没有 data-theme 时的回退
- *   light 浅色
+ * 只有两套配色：
+ *   dark  深色（板岩）—— 冷蓝黑 + 鸢尾，也是没有 data-theme 时的回退
+ *   light 浅色 —— 中性白灰
  * “跟随系统”由 theme.ts 解析成其中一套，写到 <html data-theme>。强调色就是前景色本身
- * （浅色近黑、深色近白），只有成功 / 警告 / 危险和 diff 用彩色。
+ * （浅色近黑、深色用鸢尾紫），只有成功 / 警告 / 危险和 diff 另行用色。
  *
  * 组件只能引用这些变量（或 index.css 中映射出的 Tailwind 工具类），不能写死颜色。
  * 新增令牌时两套配色都要给出值。
@@ -14,60 +14,60 @@
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --chrome: #161617;
-  --chrome-glow: #161617;
-  --paper: #1e1e20;
-  --raise: #262628;
-  --sunk: #28282b;
-  --sunk2: #323236;
-  --hover: rgba(255, 255, 255, 0.055);
-  --press: rgba(255, 255, 255, 0.1);
-  --hair: rgba(255, 255, 255, 0.08);
-  --hair2: rgba(255, 255, 255, 0.16);
-  --fg: #ededef;
-  --fg2: #c9c9ce;
-  --muted: #a0a0a8;
-  --faint: #8b8b94;
-  --ink: #ededef;
-  --ink-fg: #18181b;
-  --accent: #ededef;
-  --accent-soft: rgba(255, 255, 255, 0.1);
-  --brand-accent: #ededef;
-  --ok: #5fd39a;
-  --ok-soft: rgba(95, 211, 154, 0.12);
-  --warn: #eeb170;
-  --warn-soft: rgba(238, 177, 112, 0.14);
-  --danger: #f47f7a;
-  --danger-soft: rgba(244, 127, 122, 0.14);
-  --code-bg: #18181a;
-  --code-head: #222224;
-  --gutter: #74747c;
-  --gutter-bg: #1a1a1c;
-  --line-hl: rgba(255, 255, 255, 0.05);
+  --chrome: #0a0c10;
+  --chrome-glow: #141a2a;
+  --paper: #0f1217;
+  --raise: #151a21;
+  --sunk: #171c23;
+  --sunk2: #1e242d;
+  --hover: rgba(255, 255, 255, 0.05);
+  --press: rgba(255, 255, 255, 0.095);
+  --hair: rgba(255, 255, 255, 0.07);
+  --hair2: rgba(255, 255, 255, 0.14);
+  --fg: #edf0f6;
+  --fg2: #c5cbd7;
+  --muted: #98a2b1;
+  --faint: #8f99a8;
+  --ink: #8b93ff;
+  --ink-fg: #0a0f1e;
+  --accent: #8b93ff;
+  --accent-soft: rgba(139, 147, 255, 0.14);
+  --brand-accent: #8b93ff;
+  --ok: #5ee2a0;
+  --ok-soft: rgba(94, 226, 160, 0.12);
+  --warn: #f0a36b;
+  --warn-soft: rgba(240, 163, 107, 0.14);
+  --danger: #ff8095;
+  --danger-soft: rgba(255, 128, 149, 0.14);
+  --code-bg: #0a0d12;
+  --code-head: #121720;
+  --gutter: #6d7890;
+  --gutter-bg: #0c1017;
+  --line-hl: rgba(139, 147, 255, 0.08);
   --add-bg: rgba(94, 226, 160, 0.1);
   --add-gut: rgba(94, 226, 160, 0.18);
   --add-word: rgba(94, 226, 160, 0.24);
   --add-fg: #7fe0b2;
-  --del-bg: rgba(244, 127, 122, 0.1);
-  --del-gut: rgba(244, 127, 122, 0.18);
-  --del-word: rgba(244, 127, 122, 0.24);
-  --del-fg: #f47f7a;
+  --del-bg: rgba(255, 128, 149, 0.1);
+  --del-gut: rgba(255, 128, 149, 0.18);
+  --del-word: rgba(255, 128, 149, 0.24);
+  --del-fg: #ff8095;
   --hunk-bg: rgba(139, 166, 232, 0.1);
   --hunk-fg: #a9b6ff;
   --tk-k: #d7a2ff;
   --tk-f: #8fb0ff;
   --tk-s: #7fe0c0;
   --tk-n: #f4b96f;
-  --tk-c: #7a7a83;
-  --tk-p: #a0a0a8;
+  --tk-c: #6f778f;
+  --tk-p: #98a0b6;
   --tk-t: #7fd8ff;
   --tk-pr: #c2b0ff;
-  --tk-v: #e6e6ea;
-  --term-bg: #131314;
-  --term-fg: #d9d9de;
-  --term-dim: #85858e;
+  --tk-v: #e6e9f5;
+  --term-bg: #080b10;
+  --term-fg: #d5dbe6;
+  --term-dim: #7c8798;
   --term-ok: #7fe0b2;
-  --term-acc: #a9bdff;
+  --term-acc: #a9b6ff;
   --term-line: rgba(255, 255, 255, 0.07);
   --term-err: #f0a3a3;
   --term-c0: #45474f;

@@ -29,7 +29,7 @@ describe('ThemeSync', () => {
         <ThemeSync env={env} />
       </SessionStoreProvider>,
     )
-    // 设置读到之前按默认的板岩
+    // 设置读到之前跟随系统（测试环境没有 matchMedia，按浅色处理）
     expect(root.setAttribute).toHaveBeenCalledWith('data-theme', 'light')
     await vi.waitFor(() => expect(root.setAttribute).toHaveBeenLastCalledWith('data-theme', 'dark'))
     await act(() => store.getState().updateSettings({ theme: 'light' }))
