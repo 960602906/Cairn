@@ -33,6 +33,7 @@ import {
   reduceSessionEvents,
   rootRun,
   sessionStatus,
+  userTurnContent,
   type CompactionBudget,
   type RunView,
   type SessionView,
@@ -522,7 +523,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       return {}
     },
 
-    prompt({ sessionId, content, mode = 'normal' }) {
+    prompt({ sessionId, content: typed, mode = 'normal', mentions, context }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       const record = requireSession(sessionId)
       const slot = slots.get(sessionId)
@@ -559,8 +560,19 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
       const messageId = createId()
       events.publish([
-        { ...header(sessionId, runId), type: 'message.user', payload: { messageId, content } },
+        {
+          ...header(sessionId, runId),
+          type: 'message.user',
+          payload: {
+            messageId,
+            content: typed,
+            ...(mentions && mentions.length > 0 ? { mentions } : {}),
+            ...(context !== undefined ? { context } : {}),
+          },
+        },
       ])
+      // 模型看到的是输入加上展开的引用；界面只显示输入本身。
+      const content = userTurnContent({ content: typed, context })
 
       if (slot?.handle && hostReady) {
         send(sessionId, slot, slot.handle, { messageId, content, mode })

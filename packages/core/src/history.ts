@@ -5,7 +5,7 @@
  *
  * 规则：
  * - 只取指定运行的事件；按 seq 去重（seq 不大于已处理的最大值时忽略），增量事件忽略。
- * - 用户消息、助手完成消息按出现顺序转换。
+ * - 用户消息、助手完成消息按出现顺序转换。用户消息带上 `@` 引用展开的上下文（`userTurnContent`）。
  * - 工具结果按到达顺序紧跟在发出调用的助手消息之后：`tool.completed` → `ok`，`tool.failed` → `error`，
  *   `tool.cancelled` → `cancelled`，审批被拒绝 → `denied`，审批被取消 → `cancelled`。
  *   同一调用只取第一个结果；不属于待决调用的结果忽略。
@@ -34,6 +34,19 @@ type ToolStatus = Extract<CanonicalMessage, { role: 'tool' }>['status']
 export const INTERRUPTED_TOOL_RESULT_TEXT =
   'This tool call was interrupted while running and its result is unknown. ' +
   'Check the current state before retrying it.'
+
+/**
+ * 一条用户输入发给模型的内容：用户写的内容，加上 `@` 引用展开后的上下文（ADR-0037）。
+ * 主进程发给宿主时和重建历史时都用它，保证模型两次看到的输入一样。
+ */
+export function userTurnContent(payload: {
+  readonly content: readonly ContentPart[]
+  readonly context?: string | undefined
+}): ContentPart[] {
+  return payload.context
+    ? [...payload.content, { type: 'text', text: payload.context }]
+    : [...payload.content]
+}
 
 export interface RebuildHistoryOptions {
   /** 只重建该运行的历史。 */
@@ -92,7 +105,7 @@ export function rebuildHistory(
         flush(event.ts)
         history.push({
           role: 'user',
-          content: event.payload.content,
+          content: userTurnContent(event.payload),
           ts: event.ts,
           ...(event.turnId ? { turnId: event.turnId } : {}),
         })

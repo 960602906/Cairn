@@ -153,6 +153,24 @@ describe('reduceSession：一轮完整对话', () => {
     expect(view.lastSeq).toBe(events.length)
   })
 
+  it('用户消息带上 @ 引用，展开的上下文不进视图', () => {
+    const ev = stream()
+    const mentioned = reduceAll([
+      ev('message.user', {
+        messageId: 'm1',
+        content: text('看看 @src'),
+        mentions: [{ path: 'src', kind: 'dir' }],
+        context: '<directory path="src/">\na.ts\n</directory>',
+      }),
+    ])
+    expect(mentioned.messages[0]).toMatchObject({
+      role: 'user',
+      content: text('看看 @src'),
+      mentions: [{ path: 'src', kind: 'dir' }],
+    })
+    expect(mentioned.messages[0]).not.toHaveProperty('context')
+  })
+
   it('消息列表', () => {
     expect(view.messages).toEqual([
       {
@@ -163,6 +181,7 @@ describe('reduceSession：一轮完整对话', () => {
         seq: 3,
         ts: 30,
         content: text('你好'),
+        mentions: [],
       },
       {
         role: 'assistant',

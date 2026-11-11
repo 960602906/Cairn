@@ -7,7 +7,8 @@
  *   Tab 补全，Esc 关闭；没有匹配时按普通消息发送。写了空白之后面板收起，`/名称 参数` 在发送时执行，
  *   例如 `/plan 任务描述` 以计划模式发送、`/model 名称` 直接切换模型、`/settings mcp` 打开对应分区。
  *   运行中不能执行的指令在面板里置灰并说明原因。
- * - 文本框下面叠一层高亮（ComposerHighlight）：开头的指令、网址和代码片段有底色或下划线；
+ * - 输入 `@` 弹出文件与文件夹候选（ComposerMentions，ADR-0037），发送时主进程把引用的内容附给模型。
+ * - 文本框下面叠一层高亮（ComposerHighlight）：开头的指令、`@` 引用、网址和代码片段有底色或下划线；
  *   文本框自己的文字透明，只显示光标和选区。
  * - 下方左边是权限模式（只读 / 询问 / 自动，全局设置），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、
  *   上下文占用圆环（悬停显示百分比与 token 数）与发送 / 停止按钮。
@@ -57,6 +58,7 @@ import {
   type RestoreTarget,
 } from './Checkpoints.js'
 import { ComposerHighlight } from './ComposerHighlight.js'
+import { MENTION_LIST_ID, useMentionMenu } from './ComposerMentions.js'
 import { isPlanModeKey, planShortcut } from './layout/shortcuts.js'
 import type { SessionPanel } from './SessionPanels.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
@@ -419,8 +421,17 @@ export function Composer({
         // `/plan 任务` 会发出一轮对话，和普通消息一样要等运行结束。
         !(active && parsedCommand.command.id === 'plan' && parsedCommand.args !== '')
       : !active)
+  const mention = useMentionMenu({
+    text,
+    setText,
+    textarea,
+    root,
+    scope: { sessionId },
+    disabled: sending,
+  })
   const commandQuery = composerCommandQuery(text)
-  const commandPanelOpen = commandQuery !== null && dismissedDraft !== text && !sending
+  const commandPanelOpen =
+    !mention.open && commandQuery !== null && dismissedDraft !== text && !sending
   const filteredCommands =
     commandQuery === null ? [] : filterComposerCommands(commands, commandQuery)
   const activeCommandIndex =
@@ -627,6 +638,7 @@ export function Composer({
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // 输入法组字时的 Enter 属于候选词确认，不执行命令、也不发送。
     if (event.key === 'Enter' && event.nativeEvent.isComposing) return
+    if (mention.onKeyDown(event)) return
     if (commandPanelOpen) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         if (filteredCommands.length === 0) return
@@ -669,6 +681,7 @@ export function Composer({
     <div ref={root}>
       <WorkspaceGitBar projectPath={projectPath} />
       <div className="relative">
+        {mention.list}
         {commandPanelOpen && (
           <div
             id="composer-command-list"
@@ -758,12 +771,20 @@ export function Composer({
               ref={textarea}
               rows={1}
               aria-label={t('input.label')}
-              aria-expanded={commandPanelOpen}
-              aria-controls={commandPanelOpen ? 'composer-command-list' : undefined}
+              aria-expanded={commandPanelOpen || mention.open}
+              aria-controls={
+                mention.open
+                  ? MENTION_LIST_ID
+                  : commandPanelOpen
+                    ? 'composer-command-list'
+                    : undefined
+              }
               aria-activedescendant={
-                commandPanelOpen && activeCommandIndex >= 0
-                  ? `composer-command-${filteredCommands[activeCommandIndex]?.id}`
-                  : undefined
+                mention.open
+                  ? mention.activeId
+                  : commandPanelOpen && activeCommandIndex >= 0
+                    ? `composer-command-${filteredCommands[activeCommandIndex]?.id}`
+                    : undefined
               }
               placeholder={planMode ? t('composer.plan.placeholder') : t('input.placeholder')}
               value={text}
@@ -772,6 +793,7 @@ export function Composer({
                 setCommandNotice(null)
               }}
               onKeyDown={keyDown}
+              onSelect={mention.onCaret}
               className="relative block max-h-[200px] min-h-6 w-full resize-none break-words bg-transparent px-1 text-body text-transparent caret-fg outline-none placeholder:text-faint"
             />
             {/* 放在文本框之后：它的布局副作用要等文本框的 ref 就绪 */}
