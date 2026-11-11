@@ -344,6 +344,33 @@ describe('prompt', () => {
     expect(manager.isBusy('unknown')).toBe(false)
   })
 
+  it('stores @ mentions with the user message and sends their context to the model (ADR-0037)', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, { idleTimeoutMs: 1_000 })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    const mentions = [{ path: 'a.ts', kind: 'file' as const }]
+    manager.prompt({ sessionId, content: text('看 @a.ts'), mentions, context: 'ctx' })
+    const user = published.find((e) => e.type === 'message.user')
+    expect(user?.payload).toEqual({
+      messageId: expect.any(String),
+      content: text('看 @a.ts'),
+      mentions,
+      context: 'ctx',
+    })
+    await flush()
+    expect(hosts[0]?.inputs[0]).toMatchObject({ content: [...text('看 @a.ts'), ...text('ctx')] })
+    startTurn(sessionId, 'id3', 't1')
+    finishTurn(sessionId, 'id3', 't1')
+
+    // 宿主运行中直接转发，同样带上上下文；空的引用列表不落库
+    manager.prompt({ sessionId, content: text('再看'), mentions: [], context: 'more' })
+    await flush()
+    expect(hosts[0]?.inputs[1]).toMatchObject({ content: [...text('再看'), ...text('more')] })
+    expect(published.filter((e) => e.type === 'message.user').at(-1)?.payload).not.toHaveProperty(
+      'mentions',
+    )
+  })
+
   it('restarts a stopped host with the conversation history and the run configuration', async () => {
     const { supervisor, hosts } = fakeSupervisor()
     const { manager } = setup(supervisor, { idleTimeoutMs: 1_000 })

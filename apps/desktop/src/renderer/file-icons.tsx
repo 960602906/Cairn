@@ -45,7 +45,10 @@ export function FileTypeIcon({
   readonly className?: string | undefined
 }) {
   return (
-    <span aria-hidden className={cn('flex size-3.5 shrink-0 items-center justify-center', className)}>
+    <span
+      aria-hidden
+      className={cn('flex size-3.5 shrink-0 items-center justify-center', className)}
+    >
       <IconImage src={fileIconUrl(name)} />
     </span>
   )
@@ -61,7 +64,10 @@ export function FolderTypeIcon({
   readonly className?: string | undefined
 }) {
   return (
-    <span aria-hidden className={cn('flex size-3.5 shrink-0 items-center justify-center', className)}>
+    <span
+      aria-hidden
+      className={cn('flex size-3.5 shrink-0 items-center justify-center', className)}
+    >
       <IconImage src={folderIconUrl(name, expanded)} />
     </span>
   )

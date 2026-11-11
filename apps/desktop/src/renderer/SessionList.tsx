@@ -4,13 +4,7 @@
  * 每一项显示运行状态（运行中转圈、等待审批与失败用彩色圆点，并有读屏文字），悬停时出现“会话操作”菜单：
  * 重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
-import {
-  ChevronRight,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  TriangleAlert,
-} from 'lucide-react'
+import { ChevronRight, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'

@@ -1,7 +1,7 @@
 /**
  * 新对话首页（对齐 LiveAgent）：上方是应用标志与随时段变化的问候，输入框像对话页一样贴在底部，
  * 工作空间与分支显示在输入框上方。发送时先用当前工作空间创建会话，再把这条输入作为第一轮发送。
- * 还没有工作空间时可以打开本地文件夹。
+ * 还没有工作空间时可以打开本地文件夹。输入 `@` 可以引用所选工作空间里的文件（ADR-0037）。
  */
 import { ArrowUp } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
@@ -16,6 +16,7 @@ import {
   PlanModeChip,
 } from './Composer.js'
 import { parseComposerCommand } from './composer-commands.js'
+import { MENTION_LIST_ID, useMentionMenu } from './ComposerMentions.js'
 import { isPlanModeKey } from './layout/shortcuts.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
@@ -83,6 +84,16 @@ export function NewSession({
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const box = useRef<HTMLDivElement>(null)
+  const projectId = projects.find((project) => project.path === projectPath.trim())?.projectId
+  const mention = useMentionMenu({
+    text,
+    setText,
+    textarea,
+    root: box,
+    scope: projectId === undefined ? undefined : { projectId },
+    disabled: busy,
+  })
   const period = useGreetingPeriod()
   const model = selectedModel ?? resolveDefaultModel(providers, defaultModel)
 
@@ -154,7 +165,9 @@ export function NewSession({
   }, [])
 
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    if (event.key === 'Enter' && event.nativeEvent.isComposing) return
+    if (mention.onKeyDown(event)) return
+    if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     void send()
   }
@@ -179,42 +192,49 @@ export function NewSession({
           onSelectProject={setProjectPath}
           onOpenFolder={() => void chooseFolder()}
         />
-        <div className="rounded-[16px] border border-hair2 bg-raise px-4 pt-3.5 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60">
-          <textarea
-            ref={textarea}
-            rows={2}
-            aria-label={t('input.label')}
-            placeholder={planMode ? t('composer.plan.placeholder') : t('new.placeholder')}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={keyDown}
-            className="block max-h-[200px] min-h-12 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
-          />
-          <div className="mt-2 flex items-center gap-1">
-            <PermissionMenu />
-            <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
-            <div className="ml-auto flex min-w-0 items-center gap-1">
-              <ModelPicker
-                providers={providers}
-                model={model}
-                fixed={false}
-                disabled={!hasModel}
-                open={modelMenuOpen}
-                onOpenChange={setModelMenuOpen}
-                onSelect={setSelectedModel}
-              />
-              <button
-                type="button"
-                aria-label={t('input.send')}
-                title={t('input.send')}
-                disabled={
-                  busy || projectPath.trim() === '' || text.trim() === '' || model === undefined
-                }
-                onClick={() => void send()}
-                className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
-              >
-                <ArrowUp className="size-4" />
-              </button>
+        <div ref={box} className="relative">
+          {mention.list}
+          <div className="rounded-[16px] border border-hair2 bg-raise px-4 pt-3.5 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60">
+            <textarea
+              ref={textarea}
+              rows={2}
+              aria-label={t('input.label')}
+              placeholder={planMode ? t('composer.plan.placeholder') : t('new.placeholder')}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={keyDown}
+              onSelect={mention.onCaret}
+              aria-expanded={mention.open}
+              aria-controls={mention.open ? MENTION_LIST_ID : undefined}
+              aria-activedescendant={mention.activeId}
+              className="block max-h-[200px] min-h-12 w-full resize-none bg-transparent px-1 text-body text-fg outline-none placeholder:text-faint"
+            />
+            <div className="mt-2 flex items-center gap-1">
+              <PermissionMenu />
+              <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
+              <div className="ml-auto flex min-w-0 items-center gap-1">
+                <ModelPicker
+                  providers={providers}
+                  model={model}
+                  fixed={false}
+                  disabled={!hasModel}
+                  open={modelMenuOpen}
+                  onOpenChange={setModelMenuOpen}
+                  onSelect={setSelectedModel}
+                />
+                <button
+                  type="button"
+                  aria-label={t('input.send')}
+                  title={t('input.send')}
+                  disabled={
+                    busy || projectPath.trim() === '' || text.trim() === '' || model === undefined
+                  }
+                  onClick={() => void send()}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
+                >
+                  <ArrowUp className="size-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>

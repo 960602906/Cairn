@@ -26,6 +26,7 @@
 import { createSessionView, reduceSession, sessionStatus, type SessionView } from '@cairn/core'
 import {
   RpcError,
+  type FileSearchEntry,
   type AgentDraftRef,
   type AgentDefinitionRef,
   type AgentDetail,
@@ -89,6 +90,7 @@ import {
 import type { z } from 'zod'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { MainApi } from './api.js'
+import { extractMentions } from './composer-tokens.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 export type ProviderTestResult = z.output<Requests['provider.test']['result']>
@@ -178,6 +180,15 @@ export interface SessionActions {
   /** 向当前会话发送文本输入；没有发送（空输入、未选中会话或请求失败）时返回 false。 */
   /** `mode` 省略或为 `normal` 时不传给主进程，避免改掉已有调用的请求体。 */
   sendPrompt(text: string, mode?: 'normal' | 'plan'): Promise<boolean>
+  /**
+   * 输入框 `@` 引用的候选（ADR-0037）：在会话工作区或项目目录里按路径搜。
+   * 失败时返回空列表，不弹错误：打字过程中的搜索失败不值得打断用户。
+   */
+  searchFiles(
+    scope: { readonly sessionId: string } | { readonly projectId: string },
+    query: string,
+    limit?: number,
+  ): Promise<{ entries: FileSearchEntry[]; truncated: boolean }>
   /** 批准待审计划。`steps` 是改过的步骤标题；省略表示按原文执行。 */
   approvePlan(planId: string, steps?: readonly { id: string; title: string }[]): Promise<boolean>
   /** 带着说明重新规划。新的一轮仍是计划模式。 */
@@ -937,17 +948,32 @@ export function createSessionStore(api: MainApi): SessionStore {
         const trimmed = text.trim()
         if (sessionId === undefined || trimmed === '') return false
         const content: ContentPart[] = [{ type: 'text', text: trimmed }]
+        // `@` 引用由主进程读出内容附给模型（ADR-0037）；读不到的引用主进程会忽略。
+        const mentions = extractMentions(trimmed)
         // 先标记再请求：turn.started 可能早于请求响应到达
         setAwaiting(sessionId, true)
         const sent = await run(() =>
           api.request('session.prompt', {
             sessionId,
             content,
+            ...(mentions.length > 0 ? { mentions } : {}),
             ...(mode === 'plan' ? { mode: 'plan' as const } : {}),
           }),
         )
         if (sent === undefined) setAwaiting(sessionId, false)
         return sent !== undefined
+      },
+
+      async searchFiles(scope, query, limit) {
+        try {
+          return await api.request('fs.search', {
+            ...scope,
+            query,
+            ...(limit !== undefined ? { limit } : {}),
+          })
+        } catch {
+          return { entries: [], truncated: false }
+        }
       },
 
       async approvePlan(planId, steps) {

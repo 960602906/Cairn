@@ -44,3 +44,4 @@
 | [0034](0034-windows-command-sandbox.md) | Windows 命令沙箱 | 提议（M5-00 草案） |
 | [0035](0035-windows-packaging.md) | Windows 打包与分发 | 提议（M5-00 草案） |
 | [0036](0036-auto-update-signing-and-rollback.md) | 自动更新、代码签名与回滚 | 提议（M5-00 草案） |
+| [0037](0037-composer-mentions.md) | 输入框的 `@` 引用 | 已接受 |

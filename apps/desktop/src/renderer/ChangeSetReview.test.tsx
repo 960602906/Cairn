@@ -254,7 +254,10 @@ describe('ChangeSetReview', () => {
     binary.wrap(<ChangeSetReview sessionId="s1" changeSetId="cs1" />)
     await userEvent.click(screen.getByRole('button', { name: /logo\.png/ }))
     expect(
-      screen.getByRole('button', { name: /logo\.png/ }).querySelector('img')?.getAttribute('src'),
+      screen
+        .getByRole('button', { name: /logo\.png/ })
+        .querySelector('img')
+        ?.getAttribute('src'),
     ).toBe('./image.svg')
     expect(screen.getByText('二进制文件，只记录元数据，不显示内容差异。')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: /huge\.log/ }))

@@ -1,6 +1,6 @@
 /**
  * 输入框的高亮层：叠在 `<textarea>` 下面，用完全相同的排版把草稿再画一遍，
- * 给 `/` 指令、网址和代码片段加上样式。文本框本身的文字是透明的，只留光标和选区，
+ * 给 `/` 指令、`@` 引用、网址和代码片段加上样式。文本框本身的文字是透明的，只留光标和选区，
  * 所以输入法、撤销、粘贴都还是浏览器原生的行为。
  *
  * 两层必须逐字对齐：高亮只能用不影响宽度的样式（底色、下划线），不能换字体或加内边距。
@@ -11,6 +11,7 @@ import { cn } from './ui/index.js'
 
 const TOKEN_CLASS: Readonly<Record<Exclude<ComposerTokenType, 'text'>, string>> = {
   command: 'rounded-[4px] bg-accent-soft',
+  mention: 'rounded-[4px] bg-accent-soft text-accent',
   code: 'rounded-[4px] bg-sunk2',
   url: 'underline decoration-hair2 underline-offset-[3px]',
 }

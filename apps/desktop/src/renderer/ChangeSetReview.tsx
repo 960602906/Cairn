@@ -6,13 +6,7 @@
  * - 待处理文件可以整体或逐个接受 / 拒绝；冲突文件只能保留主工作区、采用子运行或手动处理；
  * - 合并后可以用改动集记录的检查点撤销这次合并。
  */
-import {
-  Check,
-  ChevronRight,
-  RotateCcw,
-  TriangleAlert,
-  X,
-} from 'lucide-react'
+import { Check, ChevronRight, RotateCcw, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DelegationView } from '@cairn/core'

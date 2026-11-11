@@ -792,6 +792,92 @@ describe('ChatPanel', () => {
     })
   })
 
+  it('suggests files after @, inserts the pick and sends the mentions (ADR-0037)', async () => {
+    const search = vi.fn(({ query }: { query: string }) => ({
+      entries:
+        query === ''
+          ? [
+              { path: 'src', kind: 'dir' },
+              { path: 'README.md', kind: 'file' },
+            ]
+          : query === 'src/'
+            ? [{ path: 'src/app.ts', kind: 'file' }]
+            : [],
+      truncated: query === 'src/',
+    }))
+    const { request, open } = setup({ history: HISTORY, handlers: { 'fs.search': search } })
+    await open()
+
+    await userEvent.type(input(), '看 @')
+    const list = await screen.findByRole('listbox', { name: '引用文件' })
+    expect(await within(list).findByText('README.md')).toBeTruthy()
+    expect(search).toHaveBeenLastCalledWith({ sessionId: 's1', query: '', limit: 50 })
+    expect(input().getAttribute('aria-controls')).toBe('composer-mention-list')
+
+    // Tab 进入文件夹，继续选
+    await userEvent.keyboard('{Tab}')
+    expect(input().value).toBe('看 @src/')
+    expect(await within(screen.getByRole('listbox')).findByText('app.ts')).toBeTruthy()
+    expect(screen.getByText('结果太多，只显示前面一部分，继续输入可以缩小范围')).toBeTruthy()
+    await userEvent.keyboard('{Enter}')
+    expect(input().value).toBe('看 @src/app.ts ')
+    expect(screen.queryByRole('listbox', { name: '引用文件' })).toBeNull()
+    expect(document.querySelector('[data-token="mention"]')?.textContent).toBe('@src/app.ts')
+
+    // 没有匹配；Esc 关闭后 Enter 正常发送
+    await userEvent.type(input(), '和 @zz')
+    expect(await screen.findByText('没有匹配的文件或文件夹')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox', { name: '引用文件' })).toBeNull()
+    await userEvent.keyboard('{Enter}')
+    expect(request).toHaveBeenCalledWith('session.prompt', {
+      sessionId: 's1',
+      content: text('看 @src/app.ts 和 @zz'),
+      mentions: [{ path: 'src/app.ts' }, { path: 'zz' }],
+    })
+  })
+
+  it('picks a mention with the mouse and closes the list on an outside click', async () => {
+    const search = vi.fn(() => ({
+      entries: [
+        { path: 'docs/a.md', kind: 'file' },
+        { path: 'docs/b.md', kind: 'file' },
+      ],
+      truncated: false,
+    }))
+    const { open } = setup({ history: HISTORY, handlers: { 'fs.search': search } })
+    await open()
+    await userEvent.type(input(), '@do')
+    const list = await screen.findByRole('listbox', { name: '引用文件' })
+    await within(list).findByText('a.md')
+    await userEvent.keyboard('{ArrowDown}')
+    expect(within(list).getAllByRole('option')[1]!.getAttribute('aria-selected')).toBe('true')
+    expect(input().getAttribute('aria-activedescendant')).toBe('composer-mention-1')
+    await userEvent.keyboard('{ArrowUp}{ArrowUp}')
+    expect(within(list).getAllByRole('option')[1]!.getAttribute('aria-selected')).toBe('true')
+    fireEvent.mouseDown(within(list).getByText('a.md'))
+    expect(input().value).toBe('@docs/a.md ')
+
+    await userEvent.type(input(), '@')
+    await screen.findByRole('listbox', { name: '引用文件' })
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('listbox', { name: '引用文件' })).toBeNull()
+  })
+
+  it('runs a command picked with the mouse and closes the panel on an outside click', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    await userEvent.type(input(), '/')
+    await screen.findByRole('listbox', { name: '输入指令' })
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
+    await userEvent.type(input(), 'pla')
+    const list = await screen.findByRole('listbox', { name: '输入指令' })
+    fireEvent.mouseDown(within(list).getAllByRole('option')[0]!)
+    expect(planOn()).toBe(true)
+    expect(input().value).toBe('')
+  })
+
   it('shows the turn as running between sending and turn.started', async () => {
     const { request, store, open, emit } = setup({ history: HISTORY })
     await open()

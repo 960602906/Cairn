@@ -17,6 +17,7 @@ import { createSessionEventService, type SessionEventService } from './event-ser
 import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
+import type { MentionCommands } from './mention-service.js'
 import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
 import type { TrialCommands } from './trial-service.js'
@@ -118,6 +119,7 @@ let update: UpdateCommands
 let inspect: InspectCommands
 let activity: ActivityCommands
 let backgroundCommands: CommandCommands
+let mentions: MentionCommands | undefined
 const approvalListeners = new Set<(sessionId: string) => void>()
 const activityListeners = new Set<() => void>()
 const commandListeners = new Set<(commandId: string) => void>()
@@ -156,7 +158,22 @@ const APP_INFO = {
   databaseSchemaVersion: 17,
 }
 
-function setup(eventsOverride?: Partial<SessionEventService>) {
+function setup(
+  eventsOverride?: Partial<SessionEventService>,
+  { withMentions = true }: { withMentions?: boolean } = {},
+) {
+  mentions = withMentions
+    ? {
+        search: vi.fn(async () => ({
+          entries: [{ path: 'a.ts', kind: 'file' as const }],
+          truncated: false,
+        })),
+        expand: vi.fn(async () => ({
+          mentions: [{ path: 'a.ts', kind: 'file' as const }],
+          context: 'ctx',
+        })),
+      }
+    : undefined
   const storage = createMemoryStorage({ now: () => 1 })
   storage.projects.create({ projectId: 'p1', name: 'demo', path: '/work' })
   for (const id of ['s1', 's2']) {
@@ -453,6 +470,7 @@ function setup(eventsOverride?: Partial<SessionEventService>) {
     inspect,
     activity,
     backgroundCommands,
+    mentions,
     mcpStatus: () => () => undefined,
   })
   return connectRenderer()
@@ -692,6 +710,58 @@ describe('createRendererGateway: commands and lifecycle', () => {
       {},
     )
     expect(commands.setModel).toHaveBeenCalledWith({ sessionId: 's1', model })
+  })
+
+  it('expands @ mentions before handing the prompt to the session manager', async () => {
+    const { client } = setup()
+    const content = [{ type: 'text' as const, text: '看 @a.ts @b.ts' }]
+    await client.request('session.prompt', {
+      sessionId: 's1',
+      content,
+      mentions: [{ path: 'a.ts' }, { path: 'b.ts', lines: { start: 1, end: 2 } }],
+    })
+    expect(mentions!.expand).toHaveBeenCalledWith({
+      sessionId: 's1',
+      mentions: [{ path: 'a.ts' }, { path: 'b.ts', lines: { start: 1, end: 2 } }],
+    })
+    expect(commands.prompt).toHaveBeenCalledWith({
+      sessionId: 's1',
+      content,
+      mentions: [{ path: 'a.ts', kind: 'file' }],
+      context: 'ctx',
+    })
+
+    // 一个都展开不了时不带 mentions 和 context
+    vi.mocked(mentions!.expand).mockResolvedValueOnce({ mentions: [], context: undefined })
+    await client.request('session.prompt', { sessionId: 's1', content, mentions: [{ path: 'x' }] })
+    expect(commands.prompt).toHaveBeenLastCalledWith({ sessionId: 's1', content })
+
+    await client.request('session.prompt', { sessionId: 's1', content, mentions: [] })
+    expect(mentions!.expand).toHaveBeenCalledTimes(2)
+  })
+
+  it('searches files for @ mentions; returns nothing without a mention service', async () => {
+    const { client } = setup()
+    await expect(client.request('fs.search', { sessionId: 's1', query: 'a' })).resolves.toEqual({
+      entries: [{ path: 'a.ts', kind: 'file' }],
+      truncated: false,
+    })
+    expect(mentions!.search).toHaveBeenCalledWith({ sessionId: 's1', query: 'a' })
+    await expect(
+      client.request('fs.search', { sessionId: 's1', projectId: 'p1', query: '' }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+
+    const bare = setup(undefined, { withMentions: false })
+    await expect(bare.client.request('fs.search', { projectId: 'p1', query: '' })).resolves.toEqual(
+      { entries: [], truncated: false },
+    )
+    const content = [{ type: 'text' as const, text: '@a.ts' }]
+    await bare.client.request('session.prompt', {
+      sessionId: 's1',
+      content,
+      mentions: [{ path: 'a.ts' }],
+    })
+    expect(commands.prompt).toHaveBeenLastCalledWith({ sessionId: 's1', content })
   })
 
   it('delegates credential requests; no request returns the key', async () => {
