@@ -3,7 +3,7 @@
  * 临时诊断（验证完即删）：直接调用 Win32，比较沙箱进程启动方式的各种变体，定位 0xC0000142。
  * 只在设置 `CAIRN_SANDBOX_DIAG=1` 的 Windows 上运行。
  */
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, it } from 'vitest'
@@ -118,7 +118,9 @@ describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG
           'void *',
         ]),
       }
-      const lines: string[] = []
+      const lines = { push: (t: string) => writeSync(2, `DIAG ${t}\n`), join: () => '' }
+      const step = (t: string) => writeSync(2, `STEP ${t}\n`)
+      step('const self = W.GetCurrentProce')
       const self = W.GetCurrentProcess()
       const inJob = Buffer.alloc(4)
       W.IsProcessInJob(self, null, inJob)
@@ -130,15 +132,18 @@ describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG
         `parent: inJob=${inJob.readUInt32LE(0)} limits=${q1 ? '0x' + ext.readUInt32LE(16).toString(16) : 'err' + W.GetLastError()} ui=${q2 ? '0x' + ui.readUInt32LE(0).toString(16) : 'err' + W.GetLastError()} console=${W.GetConsoleWindow() ? 'yes' : 'no'} stdin=${W.GetFileType(W.GetStdHandle(-10))} stdout=${W.GetFileType(W.GetStdHandle(-11))} stderr=${W.GetFileType(W.GetStdHandle(-12))}`,
       )
       const tok: unknown[] = [null]
+      step('W.OpenProcessToken(self, 0xf01')
       W.OpenProcessToken(self, 0xf01ff, tok)
       const ilBuf = Buffer.alloc(64)
       const need = Buffer.alloc(4)
+      step('if (W.GetTokenInformation(tok[')
       if (W.GetTokenInformation(tok[0], 25, ilBuf, 64, need)) {
         const s: unknown[] = [null]
         W.ConvertSidToStringSidW(koffi.decode(ilBuf, 'void *'), s)
         lines.push(`parent IL=${koffi.decode(s[0], 'str16')}`)
       }
       const et = Buffer.alloc(4)
+      step('W.GetTokenInformation(tok[0], ')
       W.GetTokenInformation(tok[0], 18, et, 4, need)
       lines.push(`parent elevationType=${et.readUInt32LE(0)}`)
 
@@ -192,11 +197,13 @@ describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG
         },
       ]
       for (const c of cases) {
+        step(c.name)
         const dir = mkdtempSync(path.join(tmpdir(), 'cairn-diag-'))
         const outFile = path.join(dir, 'out.txt')
         const sa = Buffer.alloc(24)
         sa.writeUInt32LE(24, 0)
         sa.writeUInt32LE(1, 16)
+        step('const fh = W.CreateFileW(')
         const fh = W.CreateFileW(outFile, 0xc0000000, 3, sa, 2, 0x80, null)
         const extended = c.inherit === 'list'
         const si = Buffer.alloc(extended ? 112 : 104)
@@ -276,6 +283,7 @@ describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG
         }
         const proc = koffi.decode(pi, 'void *')
         const thread = koffi.decode(pi, 8, 'void *')
+        step('W.ResumeThread(thread)')
         W.ResumeThread(thread)
         const waited = W.WaitForSingleObject(proc, 20_000)
         if (waited !== 0) W.TerminateProcess(proc, 1)
