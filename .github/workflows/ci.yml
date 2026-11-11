@@ -111,6 +111,39 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: pnpm smoke:packaged
 
+      # 临时诊断（验证完即删）：对比不同启动外壳与临时目录形式下，打包应用沙箱的表现
+      - name: DIAG env under pwsh
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        run: |
+          "TEMP=$env:TEMP"; "TMP=$env:TMP"
+          node -e "console.log('tmpdir', require('os').tmpdir()); console.log(Object.keys(process.env).sort().join(' '))"
+          whoami /groups | Select-String -Pattern 'Label|S-1-5-5|Administrators'
+          icacls $env:TEMP
+
+      - name: DIAG env under bash
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "TEMP=$TEMP TMP=$TMP"
+          node -e "console.log('tmpdir', require('os').tmpdir()); console.log(Object.keys(process.env).sort().join(' '))"
+
+      - name: DIAG packaged e2e under bash
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        shell: bash
+        run: pnpm e2e:packaged
+
+      - name: DIAG packaged e2e under pwsh with long TEMP
+        if: matrix.os == 'windows-latest'
+        continue-on-error: true
+        run: |
+          $long = (Get-Item -LiteralPath $env:TEMP).FullName
+          "long=$long"
+          $env:TEMP = $long; $env:TMP = $long
+          pnpm e2e:packaged
+
       - name: E2E test packaged application
         if: matrix.os == 'windows-latest'
         run: pnpm e2e:packaged
