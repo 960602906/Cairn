@@ -148,9 +148,27 @@ describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG
         label.writeBigUInt64LE(BigInt(koffi.address(p[0])), 0)
         return W.SetTokenInformation(t, 25, label, 16) ? '' : ` setIL err ${W.GetLastError()}`
       }
-      const restricted = (flags: number, il?: string) => {
+      const restricted = (flags: number, il?: string, disable: string[] = []) => {
         const out: unknown[] = [null]
-        if (!W.CreateRestrictedToken(tok[0], flags, 0, null, 0, null, 0, null, out))
+        const arr = Buffer.alloc(Math.max(1, disable.length) * 16)
+        disable.forEach((sid, i) => {
+          const p: unknown[] = [null]
+          W.ConvertStringSidToSidW(sid, p)
+          arr.writeBigUInt64LE(BigInt(koffi.address(p[0])), i * 16)
+        })
+        if (
+          !W.CreateRestrictedToken(
+            tok[0],
+            flags,
+            disable.length,
+            disable.length ? arr : null,
+            0,
+            null,
+            0,
+            null,
+            out,
+          )
+        )
           return { err: `crt ${W.GetLastError()}` }
         return { t: out[0], note: il ? setIl(out[0], il) : '' }
       }
@@ -169,26 +187,25 @@ describe.skipIf(process.platform !== 'win32' || !process.env['CAIRN_SANDBOX_DIAG
         inherit: 'std' | 'none' | 'list'
         flags?: number
       }> = [
-        { name: 'createprocess-plain', inherit: 'std' },
-        { name: 'dup-same', token: () => dup(), inherit: 'std' },
-        { name: 'dup-medium', token: () => dup(MED), inherit: 'std' },
-        { name: 'dup-low', token: () => dup(LOW), inherit: 'std' },
-        { name: 'restrict-0', token: () => restricted(0), inherit: 'std' },
-        { name: 'restrict-lua', token: () => restricted(0x4), inherit: 'std' },
-        { name: 'restrict-dmp', token: () => restricted(0x1), inherit: 'std' },
-        { name: 'restrict-both-low (product)', token: () => restricted(0x5, LOW), inherit: 'std' },
-        { name: 'restrict-both-low noinherit', token: () => restricted(0x5, LOW), inherit: 'none' },
+        { name: 'product', token: () => restricted(0x5, LOW), inherit: 'std' },
+        { name: 'dmp-low', token: () => restricted(0x1, LOW), inherit: 'std' },
         {
-          name: 'restrict-both-low handlelist',
-          token: () => restricted(0x5, LOW),
-          inherit: 'list',
-        },
-        {
-          name: 'restrict-both-low nobreakaway',
-          token: () => restricted(0x5, LOW),
+          name: 'dmp-low-noadmin',
+          token: () => restricted(0x1, LOW, ['S-1-5-32-544']),
           inherit: 'std',
-          flags: 0,
         },
+        {
+          name: 'dmp-low-noadmin-nolocalacct',
+          token: () => restricted(0x1, LOW, ['S-1-5-32-544', 'S-1-5-114']),
+          inherit: 'std',
+        },
+        {
+          name: 'dmp-high-noadmin',
+          token: () => restricted(0x1, undefined, ['S-1-5-32-544']),
+          inherit: 'std',
+        },
+        { name: 'lua-low', token: () => restricted(0x4, LOW), inherit: 'std' },
+        { name: 'lua-medium', token: () => restricted(0x4, MED), inherit: 'std' },
       ]
       for (const c of cases) {
         step(c.name)
