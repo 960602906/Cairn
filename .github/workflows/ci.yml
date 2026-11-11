@@ -111,8 +111,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: pnpm smoke:packaged
 
-      # 用默认的 pwsh 启动：runner 的步骤跑在非交互窗口站里，正好覆盖沙箱的专用窗口站路径
-      # （从服务、CI 或受限终端启动时，见 ADR-0034）。
+      # 用默认的 pwsh 启动：runner 是提权的管理员，正好覆盖沙箱令牌默认 DACL 的处理（见 ADR-0034）。
       - name: E2E test packaged application
         if: matrix.os == 'windows-latest'
         run: pnpm e2e:packaged
