@@ -56,9 +56,7 @@ function ChangeSetList({
       </p>
     )
   }
-  if (changeSets.length === 0) {
-    return <PanelEmpty icon={<FileDiff />}>{t('changeset.empty')}</PanelEmpty>
-  }
+  // 列表为空且不在加载时，上层不显示这个标签页（见 hasChangeSets）。
   return (
     <ul aria-label={t('changeset.list')} className="flex flex-col gap-0.5 px-2 pb-2">
       {changeSets.map((changeSet) => {

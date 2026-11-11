@@ -154,6 +154,29 @@ describe('PlanDetails', () => {
     expect(within(card).queryByRole('button')).toBeNull()
   })
 
+  it('marks each step with its status and note', () => {
+    wrap(
+      <PlanDetails
+        plan={{
+          ...plan,
+          steps: [
+            { id: 'a', title: '读入口', status: 'done', note: '入口在 main.ts' },
+            { id: 'b', title: '改实现', status: 'in_progress' },
+            { id: 'c', title: '补文档', status: 'skipped' },
+            { id: 'd', title: '跑测试', status: 'pending' },
+          ],
+        }}
+      />,
+    )
+    const card = screen.getByRole('article', { name: '计划' })
+    for (const label of ['已完成', '进行中', '已跳过', '未开始']) {
+      expect(within(card).getByText(label)).toBeTruthy()
+    }
+    expect(within(card).getByText('说明：入口在 main.ts')).toBeTruthy()
+    expect(card.querySelector('.text-ok')).toBeTruthy()
+    expect(card.querySelector('.text-accent')).toBeTruthy()
+  })
+
   it('renders empty sections and approved or rejected status', () => {
     const empty = {
       ...plan,
