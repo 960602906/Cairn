@@ -8,7 +8,6 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
-  Folder,
   FolderOpen,
   MoreHorizontal,
   Pencil,
@@ -22,6 +21,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PROJECT_NAME_MAX_LENGTH, type ProjectSummary, type SessionSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
+import { FolderTypeIcon } from './file-icons.js'
+import { lastSegment } from './paths.js'
 import { projectDisplayName } from './project-name.js'
 import { SessionItem } from './SessionList.js'
 import { useSessionStore } from './store-context.js'
@@ -141,7 +142,7 @@ function WorkspaceRow({
               !collapsed && 'rotate-90',
             )}
           />
-          <Folder aria-hidden className="size-3.5 shrink-0 text-muted" />
+          <FolderTypeIcon name={lastSegment(project.path)} expanded={!collapsed} />
           <span className="min-w-0 flex-1 truncate">{displayName}</span>
           {pinned && (
             <Pin aria-label={t('workspace.unpin')} className="size-3 shrink-0 text-accent" />

@@ -4,18 +4,11 @@
  * 每一项显示运行状态（运行中转圈、等待审批与失败用彩色圆点，并有读屏文字），悬停时出现“会话操作”菜单：
  * 重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
-import {
-  ChevronRight,
-  Folder,
-  FolderOpen,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  TriangleAlert,
-} from 'lucide-react'
+import { ChevronRight, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'
+import { FolderTypeIcon } from './file-icons.js'
 import { lastSegment } from './paths.js'
 import { useSessionStore } from './store-context.js'
 import {
@@ -289,11 +282,7 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
                 }
                 className="flex w-full items-center gap-1.5 rounded-[6px] px-2 py-1 text-left text-[10.5px] font-medium tracking-[0.03em] text-muted transition-colors hover:bg-hover hover:text-fg2"
               >
-                {isCollapsed ? (
-                  <Folder aria-hidden className="size-3.5 shrink-0 text-faint" />
-                ) : (
-                  <FolderOpen aria-hidden className="size-3.5 shrink-0 text-faint" />
-                )}
+                <FolderTypeIcon name={lastSegment(group.projectPath)} expanded={!isCollapsed} />
                 <span className="truncate">{group.name}</span>
                 <ChevronRight
                   aria-hidden

@@ -175,4 +175,11 @@ describe('SessionHome', () => {
     expect(screen.getByRole('button', { name: '打开文件树' })).toBeTruthy()
     await waitFor(() => expect(screen.queryByText('正在读取目录…')).toBeNull())
   })
+
+  it('shows an empty tree without the main process bridge', async () => {
+    setup()
+    expect(await screen.findByRole('button', { name: '打开文件树' })).toBeTruthy()
+    expect(screen.queryByText('无法读取文件树。')).toBeNull()
+    expect(screen.queryByText('正在读取目录…')).toBeNull()
+  })
 })

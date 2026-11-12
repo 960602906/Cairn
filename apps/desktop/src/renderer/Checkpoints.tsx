@@ -19,6 +19,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sessionStatus, type CheckpointView, type RestoreView, type SessionView } from '@cairn/core'
 import type { CheckpointFileChange, ContentPart, SessionStatus } from '@cairn/protocol'
+import { FileTypeIcon } from './file-icons.js'
 import { turnEntries } from './file-changes.js'
 import { useSessionStore } from './store-context.js'
 import {
@@ -321,6 +322,7 @@ export function RestoreDialog({
           >
             {sorted.map((file) => (
               <li key={file.path} className="flex items-center gap-3 px-3 py-1 text-ui">
+                <FileTypeIcon name={file.path} />
                 <code className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-fg">
                   {file.path}
                 </code>

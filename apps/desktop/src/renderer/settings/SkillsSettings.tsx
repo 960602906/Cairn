@@ -29,6 +29,7 @@ import type {
   SkillInstallSource,
   SkillSummary,
 } from '@cairn/protocol'
+import { FileTypeIcon } from '../file-icons.js'
 import { Markdown } from '../Markdown.js'
 import { projectDisplayName } from '../project-name.js'
 import { useSessionStore } from '../store-context.js'
@@ -79,6 +80,7 @@ function FileList({
       <ul className="flex flex-col gap-1">
         {files.map((file) => (
           <li key={file.path} className="flex min-w-0 items-center gap-2 text-[12.5px] text-fg2">
+            <FileTypeIcon name={file.path} />
             <span className="truncate font-mono [font-variant-ligatures:none]">{file.path}</span>
             {file.script && (
               <span className="shrink-0 rounded-full bg-sunk2 px-1.5 py-0.5 text-[11px] text-fg2">

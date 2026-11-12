@@ -6,14 +6,7 @@
  * - 待处理文件可以整体或逐个接受 / 拒绝；冲突文件只能保留主工作区、采用子运行或手动处理；
  * - 合并后可以用改动集记录的检查点撤销这次合并。
  */
-import {
-  Check,
-  ChevronRight,
-  FileDiff as FileDiffIcon,
-  RotateCcw,
-  TriangleAlert,
-  X,
-} from 'lucide-react'
+import { Check, ChevronRight, RotateCcw, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DelegationView } from '@cairn/core'
@@ -21,6 +14,7 @@ import type { ChangeSetFileInfo, ChangeSetInfo, ChangeSetStatus } from '@cairn/p
 import { agentName } from './agents/model.js'
 import { changeSetDiffContent, changeSetFileKind } from './change-set-patch.js'
 import { ChangeCounts, DiffCard, KindBadge, RatioBlocks } from './DiffCard.js'
+import { FileTypeIcon } from './file-icons.js'
 import { languageForPath } from './languages.js'
 import { useSessionStore } from './store-context.js'
 import {
@@ -103,7 +97,7 @@ function FileRow({
         onClick={() => setOpen((value) => !value)}
         className="group/file flex h-9 w-full items-center gap-2 px-3 text-left text-note hover:bg-hover"
       >
-        <FileDiffIcon aria-hidden className="size-3.5 shrink-0 text-muted" />
+        <FileTypeIcon name={file.path} />
         <span className="min-w-0 truncate font-mono text-[12px]" title={file.path}>
           {file.path}
         </span>

@@ -375,6 +375,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('project.update', (params) => projects.update(params))
       endpoint.handle('project.remove', (params) => projects.remove(params))
       endpoint.handle('fs.list', (params) => files.list(params))
+      endpoint.handle('fs.read', (params) => files.read(params))
       endpoint.handle('fs.create', (params) => files.create(params))
       endpoint.handle('fs.rename', (params) => files.rename(params))
       endpoint.handle('fs.delete', (params) => files.delete(params))

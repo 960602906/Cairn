@@ -22,13 +22,29 @@ import { useSessionStore } from './store-context.js'
 import { cn, PanelEmpty, SegmentedControl } from './ui/index.js'
 
 export type SessionPanel = 'files' | 'diff' | 'brief' | 'plan' | 'inspector' | 'activity'
-export type SessionPanelView = SessionPanel | 'home'
+/** 文件预览标签的标识：`file:` + 相对项目根的路径。 */
+export type FileTabId = `file:${string}`
+/** 标签栏里的一项：固定面板或一个文件。 */
+export type SessionTab = SessionPanel | FileTabId
+export type SessionPanelView = SessionTab | 'home'
+
+export const fileTabId = (path: string): FileTabId => `file:${path}`
+export const fileTabPath = (tab: FileTabId): string => tab.slice('file:'.length)
+export const isFileTab = (tab: SessionPanelView): tab is FileTabId => tab.startsWith('file:')
 
 /** 面板内容共享的会话上下文；新增面板时从这里取需要的字段。 */
 export interface SessionPanelContext {
   readonly sessionId: string
   readonly view: SessionView | undefined
   readonly status: SessionStatus
+  /** 当前标签是否可见；文件树在后台隐藏时不再重新加载。 */
+  readonly active: boolean
+  /** 单击文件时打开预览标签。 */
+  readonly onOpenFile?: ((path: string) => void) | undefined
+  /** 文件树重命名后同步已打开的文件标签。 */
+  readonly onFileRenamed?: ((from: string, to: string) => void) | undefined
+  /** 文件树删除后关闭受影响的文件标签。 */
+  readonly onFileDeleted?: ((path: string) => void) | undefined
   readonly selectedPlanId: string | undefined
   readonly selectedChangeSetId: string | undefined
   readonly onSelectChangeSet?: ((changeSetId: string | undefined) => void) | undefined
@@ -52,11 +68,26 @@ export interface SessionPanelDefinition {
 const EMPTY_PROJECTS: readonly ProjectSummary[] = []
 const EMPTY_CHANGE_SETS: readonly ChangeSetSummary[] = []
 
-function FilesPanel({ view }: SessionPanelContext) {
+function FilesPanel({
+  view,
+  active,
+  onOpenFile,
+  onFileRenamed,
+  onFileDeleted,
+}: SessionPanelContext) {
   const projects = useSessionStore((state) => state.projects ?? EMPTY_PROJECTS)
   const projectPath = view?.info?.projectPath
   const project = projects.find((item) => item.path === projectPath)
-  return <FileTreeBrowser project={project} variant="panel" />
+  return (
+    <FileTreeBrowser
+      project={project}
+      variant="panel"
+      active={active}
+      {...(onOpenFile === undefined ? {} : { onOpenFile })}
+      {...(onFileRenamed === undefined ? {} : { onFileRenamed })}
+      {...(onFileDeleted === undefined ? {} : { onFileDeleted })}
+    />
+  )
 }
 
 function ChangeSetList({

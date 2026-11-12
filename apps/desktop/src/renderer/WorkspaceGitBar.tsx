@@ -5,12 +5,13 @@
  * 不是 Git 仓库或读取失败时只显示目录。窗口重新获得焦点时刷新一次，用户在外面的
  * 终端切换分支后回来即可看到。
  */
-import { Check, ChevronDown, Folder, FolderOpen, GitBranch } from 'lucide-react'
+import { Check, ChevronDown, FolderOpen, GitBranch } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { translateError } from '@cairn/i18n'
 import { RpcError, type ProjectSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
+import { FolderTypeIcon } from './file-icons.js'
 import { lastSegment } from './paths.js'
 import { projectDisplayName, projectNameForPath } from './project-name.js'
 import {
@@ -109,7 +110,9 @@ export function WorkspaceGitBar({
         title={projectPath}
         className="flex h-6 min-w-0 max-w-[260px] items-center gap-1.5 rounded-item px-1.5 text-note text-muted outline-none hover:bg-hover hover:text-fg2 [&_svg]:size-3.5"
       >
-        <Folder aria-hidden className="shrink-0 text-faint" />
+        <FolderTypeIcon
+          name={projectPath === undefined ? workspaceLabel : lastSegment(projectPath)}
+        />
         <span className="truncate">{workspaceLabel}</span>
         <ChevronDown aria-hidden className="shrink-0 text-faint" />
       </DropdownMenuTrigger>
@@ -120,7 +123,7 @@ export function WorkspaceGitBar({
             key={project.projectId}
             onSelect={() => onSelectProject?.(project.path)}
           >
-            <Folder className="shrink-0" />
+            <FolderTypeIcon name={lastSegment(project.path)} />
             <span className="min-w-0 flex-1 truncate">
               {projectDisplayName(project, tc('project.defaultName'))}
             </span>
@@ -140,7 +143,7 @@ export function WorkspaceGitBar({
       aria-label={t('composer.workspace.directory', { path: projectPath })}
       className="flex min-w-0 items-center gap-1.5"
     >
-      <Folder aria-hidden className="size-3.5 shrink-0 text-faint" />
+      <FolderTypeIcon name={lastSegment(projectPath)} />
       <span className="truncate">{lastSegment(projectPath)}</span>
     </span>
   ) : null

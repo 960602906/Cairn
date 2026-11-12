@@ -25,7 +25,15 @@ import { totals, turnEntries } from './file-changes.js'
 import { MessageStream } from './MessageStream.js'
 import { planInProgress, PlanProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
-import { SessionSidePanel, type SessionPanel, type SessionPanelView } from './SessionSidePanel.js'
+import {
+  fileTabId,
+  fileTabPath,
+  isFileTab,
+  SessionSidePanel,
+  type SessionPanel,
+  type SessionPanelView,
+  type SessionTab,
+} from './SessionSidePanel.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
 import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
@@ -109,7 +117,7 @@ export function ChatPanel({
   )
   const [panel, setPanelState] = useState<SessionPanelView>('home')
   /** 右侧已打开的标签；空数组表示只看首页。 */
-  const [tabs, setTabs] = useState<readonly SessionPanel[]>([])
+  const [tabs, setTabs] = useState<readonly SessionTab[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | undefined>()
   /** 宽屏工作台常驻；窄屏默认收起，按需浮出。 */
@@ -123,7 +131,7 @@ export function ChatPanel({
   const run = view ? rootRun(view) : undefined
 
   /** 点击已打开标签：只切换，不重置当前选中项。 */
-  const activateTab = useCallback((next: SessionPanel) => {
+  const activateTab = useCallback((next: SessionTab) => {
     setTabs((current) => (current.includes(next) ? current : [...current, next]))
     setPanelState(next)
   }, [])
@@ -137,6 +145,51 @@ export function ChatPanel({
       setPanelPreference(true)
     },
     [activateTab],
+  )
+
+  /** 单击文件：追加标签；已经打开时只激活。 */
+  const openFile = useCallback(
+    (path: string) => {
+      activateTab(fileTabId(path))
+      setPanelPreference(true)
+    },
+    [activateTab],
+  )
+
+  /** 重命名：同步这个文件及子路径下已打开的标签。 */
+  const renameFileTabs = useCallback(
+    (from: string, to: string) => {
+      const mapped = tabs.map((tab) => {
+        if (!isFileTab(tab)) return tab
+        const path = fileTabPath(tab)
+        if (path !== from && !path.startsWith(`${from}/`)) return tab
+        return fileTabId(`${to}${path.slice(from.length)}`)
+      })
+      const next = [...new Set(mapped)]
+      setTabs(next)
+      setPanelState((current) => {
+        if (!isFileTab(current)) return current
+        const path = fileTabPath(current)
+        if (path !== from && !path.startsWith(`${from}/`)) return current
+        return fileTabId(`${to}${path.slice(from.length)}`)
+      })
+    },
+    [tabs],
+  )
+
+  /** 删除：关闭这个文件或目录下已打开的标签。 */
+  const deleteFileTabs = useCallback(
+    (path: string) => {
+      const matches = (tab: SessionTab) =>
+        isFileTab(tab) && (fileTabPath(tab) === path || fileTabPath(tab).startsWith(`${path}/`))
+      const index = tabs.findIndex((tab) => tab === panel)
+      const next = tabs.filter((tab) => !matches(tab))
+      setTabs(next)
+      if (isFileTab(panel) && matches(panel)) {
+        setPanelState(next[Math.min(Math.max(index, 0), next.length - 1)] ?? 'home')
+      }
+    },
+    [panel, tabs],
   )
 
   useImperativeHandle(
@@ -195,7 +248,7 @@ export function ChatPanel({
     sessionId,
   ])
 
-  const closeTab = (id: SessionPanel) => {
+  const closeTab = (id: SessionTab) => {
     const remaining = tabs.filter((item) => item !== id)
     if (remaining.length === 0) {
       // 关掉最后一个标签回到首页，工作台本身保持打开。
@@ -379,6 +432,9 @@ export function ChatPanel({
           onSelectChangeSet={setSelectedChangeSetId}
           onOpenPanel={openPanel}
           onActivateTab={activateTab}
+          onOpenFile={openFile}
+          onFileRenamed={renameFileTabs}
+          onFileDeleted={deleteFileTabs}
           onHome={() => setPanelState('home')}
           tabs={tabs}
           onCloseTab={closeTab}

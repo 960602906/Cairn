@@ -106,6 +106,8 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(root, 'src/renderer'),
+    // 文件树图标按需从静态资源加载，避免把整套 SVG 打进 JS。
+    publicDir: resolve(root, 'node_modules/vscode-material-icons/generated/icons'),
     plugins: [contentSecurityPolicy(), react(), tailwindcss()],
     build: {
       rollupOptions: {

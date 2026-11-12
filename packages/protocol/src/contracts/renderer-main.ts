@@ -443,6 +443,18 @@ export const MainForRenderer = defineSide({
       }),
     },
     /**
+     * 读取项目内一个文件的内容（文件树预览）。按读取文件的规则解码：BOM、UTF-16、
+     * 含 NUL 的视为二进制；二进制与超过 `FILE_CONTENT_MAX_CHARS` 的文本只返回大小。
+     * 目标是目录时报 `fs.is_directory`。
+     */
+    'fs.read': {
+      params: z.object({
+        projectId: Id,
+        path: z.string().min(1).max(4096),
+      }),
+      result: z.object({ content: FileContent }),
+    },
+    /**
      * 输入框 `@` 引用的候选（ADR-0037）：在会话的工作区或项目目录里按路径模糊搜索文件和目录。
      * 遵守 `.gitignore`，跳过 `.git`；空查询返回第一层的目录与文件。
      */

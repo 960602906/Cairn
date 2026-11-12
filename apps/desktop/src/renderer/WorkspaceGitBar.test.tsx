@@ -53,6 +53,13 @@ afterEach(() => {
 })
 
 describe('WorkspaceGitBar', () => {
+  it('shows the current directory with its material folder icon', () => {
+    const { container } = render(view('/work/src'))
+
+    expect(screen.getByLabelText('当前目录：/work/src')).toBeTruthy()
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src.svg')
+  })
+
   it('shows the workspace name and its current branch', async () => {
     const request = installBridge(async () => ({
       branch: 'main',

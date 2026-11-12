@@ -15,6 +15,7 @@ import { SessionStoreProvider } from './store-context.js'
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  delete (window as { cairn?: unknown }).cairn
 })
 
 type Listener = (data: { sessionId: string; events: EventEnvelope[] }) => void
@@ -31,6 +32,18 @@ const summary = (title: string, status: SessionSummary['status'] = 'idle'): Sess
 const model = { providerId: 'fake', modelId: 'fake-1' }
 const limits = { maxStepsPerTurn: 50, maxTurnDurationMs: 1_800_000, maxConsecutiveToolErrors: 5 }
 const text = (t: string) => [{ type: 'text' as const, text: t }]
+
+/** 文件树直接走 `window.cairn`，测试里把 store 的请求替身转成桥接响应。 */
+function installFileBridge(request: (method: string, params: unknown) => unknown) {
+  ;(window as { cairn?: unknown }).cairn = {
+    ready: async () => ({ ok: true, result: undefined }),
+    request: async (method: string, params: unknown) => ({
+      ok: true,
+      result: await request(method, params),
+    }),
+    on: () => () => undefined,
+  }
+}
 
 const ev = (seq: number, type: string, payload: object, turnId = 't1'): EventEnvelope =>
   ({ v: 1, sessionId: 's1', runId: 'r1', turnId, ts: seq, seq, type, payload }) as EventEnvelope
@@ -252,6 +265,131 @@ describe('ChatPanel', () => {
     expect(tabNames()).toEqual(['首页'])
     expect(screen.getByRole('tab', { name: '首页' }).getAttribute('aria-selected')).toBe('true')
     expect(within(panel).getByText('工作台')).toBeTruthy()
+  })
+
+  it('opens files in their own tabs and keeps the file tree while switching', async () => {
+    const rootEntries = [
+      { path: 'src', name: 'src', kind: 'dir' as const, hidden: false },
+      { path: 'notes.txt', name: 'notes.txt', kind: 'file' as const, hidden: false },
+    ]
+    const { open, store, request } = setup({
+      history: HISTORY,
+      handlers: {
+        'fs.list': (params: { path?: string }) => ({
+          entries:
+            params.path === 'src'
+              ? [{ path: 'src/inner.ts', name: 'inner.ts', kind: 'file', hidden: false }]
+              : rootEntries,
+          truncated: false,
+        }),
+        'fs.read': () => ({ content: { kind: 'text', text: 'notes\n' } }),
+      },
+    })
+    await open()
+    installFileBridge(request)
+    act(() =>
+      store.setState({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+      }),
+    )
+    await showPanel()
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await userEvent.click(within(panel).getByRole('button', { name: '打开文件树' }))
+    await waitFor(() => expect(within(panel).getByText('notes.txt')).toBeTruthy())
+
+    const treeRow = (name: string) =>
+      within(panel)
+        .getAllByText(name)
+        .map((element) => element.closest('li'))
+        .find((row) => row !== null) as HTMLElement
+    const tabNames = () =>
+      within(screen.getByRole('tablist', { name: '会话页面' }))
+        .getAllByRole('tab')
+        .map((tab) => tab.getAttribute('aria-label'))
+
+    await userEvent.click(within(treeRow('notes.txt')!).getByText('notes.txt'))
+    expect(tabNames()).toEqual(['首页', '文件树', 'notes.txt'])
+    expect(screen.getByRole('tab', { name: 'notes.txt' }).getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    expect(screen.getByRole('region', { name: '文件预览：notes.txt' }).textContent).toContain(
+      'notes',
+    )
+
+    await userEvent.click(screen.getByRole('tab', { name: '文件树' }))
+    await userEvent.click(within(treeRow('src')).getByRole('button', { name: '展开目录' }))
+    await waitFor(() => expect(within(panel).getByText('inner.ts')).toBeTruthy())
+
+    await userEvent.click(within(treeRow('inner.ts')!).getByText('inner.ts'))
+    expect(tabNames()).toEqual(['首页', '文件树', 'notes.txt', 'src/inner.ts'])
+    await userEvent.click(screen.getByRole('tab', { name: '文件树' }))
+    // 树没有卸载：展开过的目录和里面的文件还在。
+    expect(
+      within(panel)
+        .getAllByText('inner.ts')
+        .some((element) => element.closest('li') !== null),
+    ).toBe(true)
+
+    // 再点同一个文件只激活已有标签，不重复创建。
+    await userEvent.click(within(treeRow('notes.txt')!).getByText('notes.txt'))
+    expect(tabNames()).toEqual(['首页', '文件树', 'notes.txt', 'src/inner.ts'])
+    await userEvent.click(screen.getByRole('button', { name: '关闭notes.txt' }))
+    expect(tabNames()).toEqual(['首页', '文件树', 'src/inner.ts'])
+  })
+
+  it('renames and deletes open file tabs from the tree', async () => {
+    const entries = [{ path: 'notes.txt', name: 'notes.txt', kind: 'file' as const, hidden: false }]
+    const { open, store, request } = setup({
+      history: HISTORY,
+      handlers: {
+        'fs.list': () => ({ entries, truncated: false }),
+        'fs.read': () => ({ content: { kind: 'text', text: 'notes\n' } }),
+        'fs.rename': () => {
+          entries[0] = { ...entries[0]!, path: 'renamed.txt', name: 'renamed.txt' }
+          return { path: 'renamed.txt' }
+        },
+        'fs.delete': () => {
+          entries.splice(0)
+          return {}
+        },
+      },
+    })
+    await open()
+    installFileBridge(request)
+    act(() =>
+      store.setState({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+      }),
+    )
+    await showPanel()
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await userEvent.click(within(panel).getByRole('button', { name: '打开文件树' }))
+    await userEvent.click(await within(panel).findByText('notes.txt'))
+    expect(screen.getByRole('tab', { name: 'notes.txt' })).toBeTruthy()
+
+    const row = () =>
+      within(panel)
+        .getAllByText('notes.txt')
+        .map((el) => el.closest('li'))
+        .find((item) => item !== null)!
+    await userEvent.click(row()!.querySelector('button[aria-label="文件操作"]') as HTMLElement)
+    await userEvent.click(await screen.findByRole('menuitem', { name: '重命名' }))
+    const input = await screen.findByLabelText('名称')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'renamed.txt')
+    await userEvent.click(screen.getByRole('button', { name: '确定' }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'renamed.txt' })).toBeTruthy())
+    expect(screen.queryByRole('tab', { name: 'notes.txt' })).toBeNull()
+
+    const renamed = () =>
+      within(panel)
+        .getAllByText('renamed.txt')
+        .map((el) => el.closest('li'))
+        .find((item) => item !== null)!
+    await userEvent.click(renamed()!.querySelector('button[aria-label="文件操作"]') as HTMLElement)
+    await userEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
+    await userEvent.click(await screen.findByRole('button', { name: '删除' }))
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'renamed.txt' })).toBeNull())
   })
 
   it('returns to the home and clears tabs when switching sessions', async () => {

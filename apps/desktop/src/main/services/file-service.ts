@@ -7,13 +7,21 @@
 import type { Dirent } from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { RpcError, type FileTreeEntry, type FileTreeEntryKind } from '@cairn/protocol'
+import {
+  FILE_CONTENT_MAX_CHARS,
+  RpcError,
+  type FileContent,
+  type FileTreeEntry,
+  type FileTreeEntryKind,
+} from '@cairn/protocol'
 import type { Storage } from '@cairn/storage'
+import { decodeFile, READ_FILE_MAX_BYTES } from '@cairn/tools'
 
 export const FileServiceErrorCode = {
   ProjectNotFound: 'fs.project_not_found',
   InvalidPath: 'fs.invalid_path',
   NotDirectory: 'fs.not_directory',
+  IsDirectory: 'fs.is_directory',
   NotFound: 'fs.not_found',
   Conflict: 'fs.conflict',
   Failed: 'fs.failed',
@@ -26,6 +34,7 @@ export interface FileCommands {
     showHidden?: boolean | undefined
     limit?: number | undefined
   }): Promise<{ entries: FileTreeEntry[]; truncated: boolean }>
+  read(input: { projectId: string; path: string }): Promise<{ content: FileContent }>
   create(input: {
     projectId: string
     path: string
@@ -214,6 +223,47 @@ export function createFileService(options: FileServiceOptions): FileCommands {
       })
       const limit = input.limit ?? DEFAULT_LIST_LIMIT
       return { entries: entries.slice(0, limit), truncated: entries.length > limit }
+    },
+
+    async read(input) {
+      const target = await resolveTarget(input.projectId, input.path, {
+        allowRoot: false,
+        mustExist: true,
+      })
+      let size: number
+      try {
+        const stats = await fsp.stat(target.absolute)
+        if (!stats.isFile()) {
+          throw new RpcError(FileServiceErrorCode.IsDirectory, {
+            path: displayPath(target.relative),
+          })
+        }
+        size = stats.size
+      } catch (error) {
+        if (error instanceof RpcError) throw error
+        throw new RpcError(
+          isNotFound(error) ? FileServiceErrorCode.NotFound : FileServiceErrorCode.Failed,
+          { path: displayPath(target.relative) },
+        )
+      }
+      if (size > READ_FILE_MAX_BYTES) {
+        return { content: { kind: 'too_large', size } }
+      }
+      let buffer: Buffer
+      try {
+        buffer = await fsp.readFile(target.absolute)
+      } catch (error) {
+        throw new RpcError(
+          isNotFound(error) ? FileServiceErrorCode.NotFound : FileServiceErrorCode.Failed,
+          { path: displayPath(target.relative) },
+        )
+      }
+      const decoded = decodeFile(buffer)
+      if (decoded.binary) return { content: { kind: 'binary', size: buffer.length } }
+      if (decoded.text.length > FILE_CONTENT_MAX_CHARS) {
+        return { content: { kind: 'too_large', size: buffer.length } }
+      }
+      return { content: { kind: 'text', text: decoded.text } }
     },
 
     async create(input) {

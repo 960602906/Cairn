@@ -442,6 +442,7 @@ function setup(
     projects,
     files: {
       list: vi.fn(async () => ({ entries: [], truncated: false })),
+      read: vi.fn(async () => ({ content: { kind: 'text' as const, text: 'hello' } })),
       create: vi.fn(async () => ({ path: '' })),
       rename: vi.fn(async () => ({ path: '' })),
       delete: vi.fn(async () => ({})),
@@ -1010,6 +1011,13 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(projects.remove).toHaveBeenCalledOnce()
   })
 
+  it('delegates file reads for the workspace tree', async () => {
+    const { client } = setup()
+    await expect(
+      client.request('fs.read', { projectId: 'p1', path: 'README.md' }),
+    ).resolves.toEqual({ content: { kind: 'text', text: 'hello' } })
+  })
+
   it('delegates agent requests and session.setAgent (M3-11)', async () => {
     const { client } = setup()
     await expect(client.request('agent.list', {})).resolves.toEqual({ agents: [] })
@@ -1163,7 +1171,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
     pair.renderer.onMessage((m) => raw.push(m))
     pair.renderer.post({ kind: 'hello', protocolVersion: 1, ack: false })
     pair.renderer.post({ kind: 'request', id: 'x', method: 'session.create', params: {} })
-    pair.renderer.post({ kind: 'request', id: 'y', method: 'fs.read', params: {} })
+    pair.renderer.post({ kind: 'request', id: 'y', method: 'fs.unknown', params: {} })
     await vi.advanceTimersByTimeAsync(0)
     expect(raw).toContainEqual(
       expect.objectContaining({
@@ -1222,6 +1230,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       projects,
       files: {
         list: async () => ({ entries: [], truncated: false }),
+        read: async () => ({ content: { kind: 'text' as const, text: '' } }),
         create: async () => ({ path: '' }),
         rename: async () => ({ path: '' }),
         delete: async () => ({}),

@@ -10,9 +10,7 @@ import {
   Copy,
   Eye,
   EyeOff,
-  File,
   FilePlus,
-  Folder,
   FolderOpen,
   FolderPlus,
   MoreHorizontal,
@@ -20,10 +18,11 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { FileTreeEntry, ProjectSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
+import { FileTypeIcon, FolderTypeIcon } from './file-icons.js'
 import { projectDisplayName } from './project-name.js'
 import {
   Button,
@@ -74,12 +73,21 @@ export function FileTreeBrowser({
   project,
   active = true,
   variant = 'dialog',
+  onOpenFile,
+  onFileRenamed,
+  onFileDeleted,
 }: {
   readonly project: ProjectSummary | undefined
   /** 是否处于打开状态；隐藏时停止重新加载，标签页挂载即视为打开。 */
   readonly active?: boolean
   /** `panel` 使用紧凑工具栏，`dialog` 保留带文字的按钮。 */
   readonly variant?: 'dialog' | 'panel'
+  /** 单击文件时打开预览标签。 */
+  readonly onOpenFile?: ((path: string) => void) | undefined
+  /** 重命名后同步已打开的文件标签。 */
+  readonly onFileRenamed?: ((from: string, to: string) => void) | undefined
+  /** 删除后关闭受影响的文件标签。 */
+  readonly onFileDeleted?: ((path: string) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -95,6 +103,8 @@ export function FileTreeBrowser({
   const [renameTarget, setRenameTarget] = useState<FileTreeEntry | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<FileTreeEntry | null>(null)
+  /** 已经初始化过的项目 + 隐藏项组合；切到文件标签再回来时不重建树。 */
+  const treeKey = useRef<string | undefined>(undefined)
 
   const load = useCallback(
     async (dir: string, force = false) => {
@@ -124,13 +134,16 @@ export function FileTreeBrowser({
 
   useEffect(() => {
     if (!active || !project) return
+    const key = `${project.projectId}\0${showHidden}`
+    if (treeKey.current === key) return
+    treeKey.current = key
     setChildren({})
     setExpanded(new Set(['']))
     setSelected('')
     setQuery('')
     setError(null)
     void load('', true)
-    // 只在新项目或面板重新打开时重置，不跟随 children/load 的引用变化。
+    // 只在新项目、隐藏项开关或面板首次打开时重置，不跟随 children/load 的引用变化。
   }, [active, project?.projectId, showHidden])
 
   const toggle = (entry: FileTreeEntry) => {
@@ -187,6 +200,7 @@ export function FileTreeBrowser({
         from: renameTarget.path,
         to,
       })
+      onFileRenamed?.(renameTarget.path, to)
       setRenameTarget(null)
       await refresh()
       setSelected(to)
@@ -200,6 +214,7 @@ export function FileTreeBrowser({
         projectId: project.projectId,
         path: deleteTarget.path,
       })
+      onFileDeleted?.(deleteTarget.path)
       setDeleteTarget(null)
       await refresh()
     })
@@ -243,8 +258,13 @@ export function FileTreeBrowser({
               entry.hidden && 'opacity-65',
             )}
             style={{ paddingLeft: 4 + depth * 14 }}
-            onClick={() => setSelected(entry.path)}
-            onDoubleClick={() => (isDir ? toggle(entry) : copyPath(entry.path))}
+            onClick={() => {
+              setSelected(entry.path)
+              if (!isDir) onOpenFile?.(entry.path)
+            }}
+            onDoubleClick={() => {
+              if (isDir) toggle(entry)
+            }}
           >
             <button
               type="button"
@@ -267,26 +287,25 @@ export function FileTreeBrowser({
               )}
             </button>
             {isDir ? (
-              isExpanded ? (
-                <FolderOpen aria-hidden className="size-3.5 shrink-0 text-muted" />
-              ) : (
-                <Folder aria-hidden className="size-3.5 shrink-0 text-muted" />
-              )
+              <FolderTypeIcon name={entry.name} expanded={isExpanded} />
             ) : (
-              <File aria-hidden className="size-3.5 shrink-0 text-muted" />
+              <FileTypeIcon name={entry.name} />
             )}
-            <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+            <span className="min-w-0 flex-1 truncate" title={entry.path}>
+              {entry.name}
+            </span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
                   aria-label={t('fileTree.actions')}
+                  onClick={(event) => event.stopPropagation()}
                   className="inline-flex size-6 shrink-0 items-center justify-center rounded-[5px] text-muted opacity-60 transition-opacity group-hover:opacity-100 hover:bg-raise hover:text-fg focus-visible:opacity-100 data-[state=open]:opacity-100 [&_svg]:size-3.5"
                 >
                   <MoreHorizontal />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
+              <DropdownMenuContent align="start" onClick={(event) => event.stopPropagation()}>
                 <DropdownMenuItem
                   onSelect={() => {
                     setRenameTarget(entry)

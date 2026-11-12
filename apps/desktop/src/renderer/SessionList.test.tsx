@@ -7,7 +7,7 @@ import { RpcError, type SessionSummary } from '@cairn/protocol'
 import type { MainApi } from './api.js'
 import { App } from './App.js'
 import { createSessionStore } from './session-store.js'
-import { groupSessions } from './SessionList.js'
+import { formatSessionTime, groupSessions } from './SessionList.js'
 
 afterEach(cleanup)
 
@@ -128,7 +128,10 @@ describe('SessionList', () => {
     ])
     expect(screen.getByRole('region', { name: '项目 work' })).toBeTruthy()
     expect(screen.getByRole('region', { name: '项目 other' })).toBeTruthy()
-    expect(screen.getByRole('region', { name: '项目 work' }).querySelector('h3 svg')).not.toBeNull()
+    expect(
+      screen.getByRole('region', { name: '项目 work' }).querySelector('img')?.getAttribute('src'),
+    ).toBe('./folder-open.svg')
+    expect(screen.getByRole('region', { name: '项目 work' }).querySelector('h3 img')).not.toBeNull()
 
     await userEvent.click(sessionButton(items[1]!))
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s2'))
@@ -146,7 +149,7 @@ describe('SessionList', () => {
     const group = await screen.findByRole('region', { name: '项目 work' })
     const toggle = within(group).getByRole('button', { name: /^work/ })
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('folder-open')
+    expect(group.querySelector('h3 img')?.getAttribute('src')).toBe('./folder-open.svg')
     expect(group.querySelector('h3 svg.lucide-chevron-right')?.getAttribute('class')).toContain(
       'rotate-90',
     )
@@ -154,8 +157,7 @@ describe('SessionList', () => {
 
     await userEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    expect(group.querySelector('h3 svg')?.getAttribute('class')).toContain('lucide-folder')
-    expect(group.querySelector('h3 svg')?.getAttribute('class')).not.toContain('folder-open')
+    expect(group.querySelector('h3 img')?.getAttribute('src')).toBe('./folder.svg')
     expect(group.querySelector('h3 svg.lucide-chevron-right')?.getAttribute('class')).not.toContain(
       'rotate-90',
     )
@@ -367,5 +369,15 @@ describe('App without the preload API', () => {
         title: '你好',
       }),
     )
+  })
+})
+
+describe('formatSessionTime', () => {
+  const now = new Date(2026, 10, 11, 21, 30).getTime()
+  it('shows the time today, “yesterday” and month-day before that', () => {
+    expect(formatSessionTime(new Date(2026, 10, 11, 9, 5).getTime(), '昨天', now)).toBe('09:05')
+    expect(formatSessionTime(new Date(2026, 10, 10, 23, 0).getTime(), '昨天', now)).toBe('昨天')
+    expect(formatSessionTime(new Date(2026, 9, 3, 8, 0).getTime(), '昨天', now)).toBe('10-03')
+    expect(formatSessionTime(Number.NaN, '昨天', now)).toBe('')
   })
 })

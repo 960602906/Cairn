@@ -2,7 +2,7 @@
  * 文件改动的入口（M2-07）：
  *
  * - **本轮变更**（视觉规范 §7.4，`TurnChanges`）：每轮结束、有文件改动时出现在最后一条助手消息下面，标题
- *   “本轮变更”和总增删数，下面每个文件一行（语言图标、路径、新文件 / 已删除标记、增删数、比例方块），点击展开
+ *   “本轮变更”和总增删数，下面每个文件一行（文件类型图标、路径、新文件 / 已删除标记、增删数、比例方块），点击展开
  *   对应的 diff 卡片。
  * - **右侧改动栏**（`SessionChangesPanel`）：列出本会话所有改动，可展开 diff 并撤销。
  * - **撤销此文件**：确认后整文件撤销这一项包含的所有改动（`changes.revert`）。只在会话空闲时可用；文件之后又被
@@ -14,9 +14,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sessionStatus } from '@cairn/core'
 import type { FileContent, SessionStatus } from '@cairn/protocol'
-import { LanguageIcon, splitPath } from './CodeCard.js'
+import { splitPath } from './CodeCard.js'
 import { ChangeCounts, DiffCard, KindBadge, RatioBlocks, type DiffContent } from './DiffCard.js'
 import { fileEntries, totals, turnEntries, type FileEntry } from './file-changes.js'
+import { FileTypeIcon } from './file-icons.js'
 import { languageForPath } from './languages.js'
 import { useSessionStore } from './store-context.js'
 import {
@@ -177,7 +178,7 @@ export function FileChangeList({
               onClick={() => toggle(entry.path)}
               className="group/file flex h-9 w-full items-center gap-2 px-3 text-left text-note hover:bg-hover"
             >
-              <LanguageIcon language={languageForPath(entry.path)} />
+              <FileTypeIcon name={entry.path} />
               <span className="min-w-0 truncate font-mono text-[12px]" title={entry.path}>
                 <span className="text-muted">{dir}</span>
                 <span className="text-fg">{name}</span>
