@@ -44,15 +44,13 @@ import type {
   SessionStatus,
   SkillSummary,
 } from '@cairn/protocol'
+import { matchCommandArg, parseComposerCommand, SETTINGS_SECTIONS } from './composer-commands.js'
+import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
 import {
-  COMPOSER_COMMANDS,
-  composerCommandQuery,
-  filterComposerCommands,
-  matchCommandArg,
-  parseComposerCommand,
-  SETTINGS_SECTIONS,
-  type ComposerCommandArgs,
-} from './composer-commands.js'
+  availableCommands,
+  commandPanel,
+  type AvailableComposerCommand,
+} from './composer-shared.js'
 import { extractAgents, mentionText } from './composer-tokens.js'
 import { agentName, localized } from './agents/model.js'
 import { FILE_DRAG_TYPE, draggedFile } from './file-drag.js'
@@ -109,16 +107,7 @@ type CommandNotice = {
 }
 
 /** 指令面板里的一项：内置指令或一个已启用的技能。 */
-interface AvailableCommand {
-  readonly id: string
-  readonly name: string
-  readonly description: string
-  readonly args: ComposerCommandArgs
-  readonly kind: 'command' | 'skill'
-  readonly skill?: string | undefined
-  readonly panel?: SessionPanel | undefined
-  readonly unavailable?: string | undefined
-}
+type AvailableCommand = AvailableComposerCommand
 
 /** 文本框最高（px），超过后滚动。 */
 const MAX_TEXTAREA_HEIGHT = 200
@@ -385,9 +374,12 @@ export function Composer({
   const abort = useSessionStore((s) => s.abort)
   const agents = useSessionStore((s) => s.agents) ?? []
   const listSkills = useSessionStore((s) => s.listSkills)
+  const delegationTargets = useSessionStore((s) => s.delegationTargets)
   const projects = useSessionStore((s) => s.projects)
   const providers = useSessionStore((s) => s.settings?.providers) ?? []
   const [skills, setSkills] = useState<readonly SkillSummary[]>([])
+  /** `@Agent` 能点的目标（M4-02）；undefined 表示主进程没给名单，不过滤。 */
+  const [delegateIds, setDelegateIds] = useState<readonly string[]>()
   const view = useSessionStore((s) => s.views[sessionId])
   const canRestore = useCanRestore(view)
   const [restoreTarget, setRestoreTarget] = useState<RestoreTarget>()
@@ -428,60 +420,55 @@ export function Composer({
     }
   }, [listSkills, projectId])
 
+  // `@Agent` 只能点名当前 Agent 的委派白名单（M4-02）：主进程展开时按同一份名单过滤。
+  useEffect(() => {
+    let alive = true
+    void delegationTargets(sessionId).then((targets) => {
+      if (alive)
+        setDelegateIds(targets === undefined ? undefined : targets.enabled ? targets.agentIds : [])
+    })
+    return () => {
+      alive = false
+    }
+  }, [delegationTargets, sessionId])
+
   const agentOptions = useMemo<MentionAgent[]>(
     () =>
-      agents.map((item) => ({
-        agentId: item.agentId,
-        name: agentName(item, i18n.language),
-        description: localized(item.description, i18n.language, ''),
-      })),
-    [agents, i18n.language],
+      agents
+        .filter((item) => delegateIds === undefined || delegateIds.includes(item.agentId))
+        .map((item) => ({
+          agentId: item.agentId,
+          name: agentName(item, i18n.language),
+          description: localized(item.description, i18n.language, ''),
+        })),
+    [agents, delegateIds, i18n.language],
   )
   /** `@` 后面能写的 Agent 名称（两种语言都认，发送时换成 id）。 */
   const agentMentions = useMemo(() => {
     const byName = new Map<string, { agentId: string; name: string }>()
     for (const item of agents) {
+      if (delegateIds !== undefined && !delegateIds.includes(item.agentId)) continue
       for (const candidate of [item.name['zh-CN'], item.name['en-US']]) {
         const name = candidate?.trim()
         if (name !== undefined && name !== '') byName.set(name, { agentId: item.agentId, name })
       }
     }
     return [...byName.values()]
-  }, [agents])
+  }, [agents, delegateIds])
 
-  const commands: AvailableCommand[] = [
-    ...COMPOSER_COMMANDS.filter((command) =>
-      command.panel !== undefined
-        ? onOpenPanel !== undefined
-        : command.id === 'new'
-          ? onNewChat !== undefined
-          : command.id === 'settings'
-            ? onOpenSettings !== undefined
-            : true,
-    ).map((command) => ({
-      ...command,
-      kind: 'command' as const,
-      description: t(command.descriptionKey),
-      unavailable:
-        command.idleOnly === true && active
-          ? 'composer.command.unavailable.running'
-          : command.id === 'model' && modelMenuDisabled
-            ? 'composer.command.unavailable.model'
-            : command.id === 'undo' && (!canRestore || undoTarget === undefined)
-              ? 'composer.command.unavailable.undo'
-              : undefined,
-    })),
-    ...skills
-      .filter((skill) => skill.enabled && !skill.shadowed)
-      .map((skill) => ({
-        id: `skill:${skill.name}`,
-        name: skill.name,
-        description: skill.description,
-        args: 'text' as const,
-        kind: 'skill' as const,
-        skill: skill.name,
-      })),
-  ]
+  const commands: readonly AvailableCommand[] = availableCommands(
+    skills,
+    t,
+    {
+      active,
+      modelMenuDisabled,
+      undoAvailable: canRestore && undoTarget !== undefined,
+      ...(onOpenPanel === undefined ? {} : { onOpenPanel }),
+      ...(onNewChat === undefined ? {} : { onNewChat }),
+      ...(onOpenSettings === undefined ? {} : { onOpenSettings }),
+    },
+    true,
+  )
   const commandNames = commands.map((command) => command.name)
   const parsedCommand = parseComposerCommand(text, commands)
   const canSend =
@@ -504,25 +491,11 @@ export function Composer({
     agents: agentOptions,
     disabled: sending,
   })
-  const commandQuery = composerCommandQuery(text)
-  const commandPanelOpen =
-    !mention.open && commandQuery !== null && dismissedDraft !== text && !sending
   // 菜单分两组：内置指令在前，技能在后，各自按相关度排序。
-  const filteredCommands =
-    commandQuery === null
-      ? []
-      : [
-          ...filterComposerCommands(
-            commands.filter((command) => command.kind === 'command'),
-            commandQuery,
-          ),
-          ...filterComposerCommands(
-            commands.filter((command) => command.kind === 'skill'),
-            commandQuery,
-          ),
-        ]
-  const activeCommandIndex =
-    filteredCommands.length === 0 ? -1 : Math.min(commandIndex, filteredCommands.length - 1)
+  const panel = commandPanel(text, commands, dismissedDraft, commandIndex)
+  const commandPanelOpen = !mention.open && panel.open && !sending
+  const filteredCommands = commandPanelOpen ? panel.filtered : []
+  const activeCommandIndex = panel.activeIndex
 
   const showNotice = (
     key: string,
@@ -736,8 +709,8 @@ export function Composer({
   useEffect(() => {
     setCommandIndex(0)
     // 离开 `/` 草稿后忘掉这次关闭，下一次重新输入 `/` 时面板还会打开。
-    if (commandQuery === null) setDismissedDraft(null)
-  }, [commandQuery])
+    if (panel.query === null) setDismissedDraft(null)
+  }, [panel.query])
 
   // 点击输入框以外的地方关闭命令面板，避免它一直挂在对话上方。
   useEffect(() => {
@@ -806,78 +779,12 @@ export function Composer({
       <div className="relative">
         {mention.list}
         {commandPanelOpen && (
-          <div
-            id="composer-command-list"
-            role="listbox"
-            aria-label={t('composer.command.label')}
-            className="absolute inset-x-0 bottom-full z-50 mb-2 max-h-64 overflow-y-auto rounded-card bg-raise p-1 text-ui text-fg shadow-2"
-          >
-            {filteredCommands.length === 0 ? (
-              <p className="px-2 py-2 text-note text-muted">{t('composer.command.empty')}</p>
-            ) : (
-              filteredCommands.map((command, index) => {
-                const selected = index === activeCommandIndex
-                const groupStart = index === 0 || filteredCommands[index - 1]?.kind !== command.kind
-                return (
-                  <Fragment key={command.id}>
-                    {groupStart && (
-                      <p className="px-2 pt-2 pb-1 text-[11px] text-faint">
-                        {t(
-                          command.kind === 'skill'
-                            ? 'composer.command.group.skills'
-                            : 'composer.command.group.commands',
-                        )}
-                      </p>
-                    )}
-                    <div
-                      id={`composer-command-${command.id}`}
-                      role="option"
-                      aria-selected={selected}
-                      aria-disabled={command.unavailable !== undefined}
-                      onMouseDown={(event) => {
-                        event.preventDefault()
-                        void runCommand(command)
-                      }}
-                      onMouseEnter={() => setCommandIndex(index)}
-                      className={cn(
-                        'flex cursor-default select-none items-start gap-2 rounded-[7px] px-2 py-1.5',
-                        selected && 'bg-hover',
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'shrink-0 font-mono text-note',
-                          command.unavailable === undefined ? 'text-fg' : 'text-faint',
-                        )}
-                      >
-                        {'/'}
-                        {command.name}
-                        {command.args !== 'none' && (
-                          <span className="text-faint">
-                            {' '}
-                            {t(`composer.command.args.${command.args}`)}
-                          </span>
-                        )}
-                      </span>
-                      <span
-                        className={cn(
-                          'min-w-0 text-note',
-                          command.unavailable === undefined ? 'text-muted' : 'text-faint',
-                        )}
-                      >
-                        {command.unavailable === undefined
-                          ? command.description
-                          : t(command.unavailable)}
-                      </span>
-                    </div>
-                  </Fragment>
-                )
-              })
-            )}
-            <p className="mt-1 border-t border-hair px-2 pt-1.5 text-[11px] text-faint">
-              {t('composer.command.hint')}
-            </p>
-          </div>
+          <ComposerCommandList
+            commands={filteredCommands}
+            activeIndex={activeCommandIndex}
+            onSelect={(command) => void runCommand(command)}
+            onHover={setCommandIndex}
+          />
         )}
         <form
           onSubmit={submit}
@@ -927,17 +834,13 @@ export function Composer({
               aria-label={t('input.label')}
               aria-expanded={commandPanelOpen || mention.open}
               aria-controls={
-                mention.open
-                  ? MENTION_LIST_ID
-                  : commandPanelOpen
-                    ? 'composer-command-list'
-                    : undefined
+                mention.open ? MENTION_LIST_ID : commandPanelOpen ? COMMAND_LIST_ID : undefined
               }
               aria-activedescendant={
                 mention.open
                   ? mention.activeId
                   : commandPanelOpen && activeCommandIndex >= 0
-                    ? `composer-command-${filteredCommands[activeCommandIndex]?.id}`
+                    ? commandOptionId(filteredCommands[activeCommandIndex]!)
                     : undefined
               }
               placeholder={planMode ? t('composer.plan.placeholder') : t('input.placeholder')}

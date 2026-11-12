@@ -168,3 +168,77 @@ test('/技能名：从面板选中、写任务，模型收到技能正文', asyn
     await mock.close()
   }
 })
+
+/**
+ * 新对话首页与会话输入框共用 `/技能名`：选中技能后写任务，创建会话并把技能正文一起发给模型。
+ * 新对话页不能出现 `/files` 等需要会话的指令（对齐两者的输入体验）。
+ */
+test('新对话页 /技能名：选中、写任务、创建会话后模型收到技能正文', async ({ launch, userData }) => {
+  const mock = await startMockModel({ reply: '新会话收到技能了', title: '新会话技能' })
+  const source = path.join(userData, 'skill-src', 'summarize')
+  mkdirSync(source, { recursive: true })
+  writeFileSync(
+    path.join(source, 'SKILL.md'),
+    '---\nname: summarize\ndescription: Summarize the changes.\n---\nAlways answer with a summary.\n',
+  )
+  try {
+    const project = projectDir(userData)
+    mkdirSync(path.join(project, 'src'), { recursive: true })
+    writeFileSync(path.join(project, 'src', 'sum.mjs'), 'export const sum = (a, b) => a + b\n')
+
+    const { app, window } = await launch()
+    await configure(window, mock.baseUrl)
+    await app.evaluate(({ dialog }, folder) => {
+      dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folder] })) as never
+    }, source)
+    await window.evaluate(async (folder) => {
+      const cairn = (
+        globalThis as unknown as {
+          cairn: {
+            ready(): Promise<unknown>
+            request(m: string, p: object): Promise<{ result: { installed: boolean } }>
+          }
+        }
+      ).cairn
+      await cairn.ready()
+      const preview = await cairn.request('skill.install', {
+        source: { kind: 'directory', path: folder },
+      })
+      if (!preview.result.installed) {
+        await cairn.request('skill.install', {
+          source: { kind: 'directory', path: folder },
+          confirm: true,
+        })
+      }
+    }, source)
+    // 新对话页选择工作空间，等价于会话页 `/技能名` 用的项目上下文。
+    await app.evaluate(({ dialog }, folder) => {
+      dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [folder] })) as never
+    }, project)
+    await window.getByRole('button', { name: /^工作空间：/ }).click()
+    await window.getByRole('menuitem', { name: '选择文件夹…' }).click()
+    await expect(window.getByRole('button', { name: '工作空间：project' })).toBeVisible()
+
+    const input = window.getByRole('textbox', { name: '输入消息' })
+    await input.click()
+    await input.pressSequentially('/')
+    const list = window.getByRole('listbox', { name: '输入指令' })
+    await expect(list.getByRole('option', { name: /\/plan/ })).toBeVisible()
+    await expect(list.getByRole('option', { name: /\/summarize/ })).toBeVisible()
+    await expect(list.getByRole('option', { name: /\/files/ })).toHaveCount(0)
+    await list.getByRole('option', { name: /\/summarize/ }).click()
+    await expect(input).toHaveValue('/summarize ')
+    await input.pressSequentially('总结项目')
+    await input.press('Enter')
+
+    await expect(window.getByText('新会话收到技能了')).toBeVisible()
+    const messages = window.getByRole('list', { name: '消息' })
+    await expect(messages).toContainText('总结项目')
+    const sent = mock.requests
+      .map((request) => JSON.stringify(request.messages ?? []))
+      .find((body) => body.includes('<skill name=\\"summarize\\">'))
+    expect(sent).toContain('Always answer with a summary.')
+  } finally {
+    await mock.close()
+  }
+})

@@ -795,6 +795,72 @@ describe('MessageStream Agent 标记', () => {
   })
 })
 
+describe('MessageStream 状态呈现', () => {
+  const emptyStore = () =>
+    createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      approvals: {},
+      settings: { providers: [] },
+      agents: [],
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+
+  const renderStream = (stream: SessionView | undefined) =>
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={emptyStore()}>
+          <MessageStream view={stream} onOpenPlan={vi.fn()} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+
+  it('guides the user when the session has no messages yet', () => {
+    const empty = reduceSessionEvents(createSessionView('s1'), START.slice(0, 1))
+    renderStream(empty)
+    expect(screen.getByText('开始一个新任务')).toBeTruthy()
+    expect(screen.getByText(/工具调用和文件改动/)).toBeTruthy()
+  })
+
+  it('guides the user when no view is available', () => {
+    renderStream(undefined)
+    expect(screen.getByText('开始一个新任务')).toBeTruthy()
+  })
+
+  it('shows a thinking placeholder while a reply has neither text nor reasoning', () => {
+    const stream = view([...START, ev(5, 'message.assistant.delta', { messageId: 'm1', text: '' })])
+    const { container } = renderStream(stream)
+    expect(screen.getByText('思考中')).toBeTruthy()
+    expect(container.querySelector('li[aria-busy="true"]')).toBeTruthy()
+  })
+
+  it('grades an aborted turn as neutral instead of an error', () => {
+    const stream = view([...START, ev(5, 'turn.aborted', { reason: 'user' })])
+    const { container } = renderStream(stream)
+    expect(screen.getByText('已停止')).toBeTruthy()
+    expect(screen.getByRole('img', { name: '已停止' })).toBeTruthy()
+    expect(container.textContent).not.toContain('本轮失败')
+  })
+
+  it('grades a failed turn as danger and a limit as a warning', () => {
+    const failed = renderStream(
+      view([...START, ev(5, 'turn.failed', { error: { code: 'unknown' }, retryable: false })]),
+    )
+    expect(screen.getByRole('img', { name: '本轮失败' })).toBeTruthy()
+    expect(screen.getByText(/^本轮失败：/).closest('div')?.className).toContain('bg-danger-soft')
+    failed.unmount()
+
+    renderStream(
+      view([
+        ...START,
+        ev(5, 'turn.limit_reached', { limit: 'maxStepsPerTurn', value: 10 }),
+        ev(6, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }),
+      ]),
+    )
+    expect(screen.getByRole('img', { name: '达到限额' })).toBeTruthy()
+    expect(screen.getByText(/最多 10 步/).closest('div')?.className).toContain('bg-warn-soft')
+  })
+})
+
 describe('MessageStream 试运行（M4-12）', () => {
   const trialEv = (seq: number, type: string, payload: object, turnId = 't1'): EventEnvelope =>
     ({ ...ev(seq, type, payload, turnId), sessionId: 't1' }) as EventEnvelope

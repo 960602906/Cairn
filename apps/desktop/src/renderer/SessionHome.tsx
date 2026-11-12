@@ -15,17 +15,23 @@ import { FileTypeIcon, FolderTypeIcon } from './file-icons.js'
 import { formatCompactTokens } from './format.js'
 import { lastSegment } from './paths.js'
 import { projectDisplayName } from './project-name.js'
+import { statusPresentation, TONE_TEXT } from './status-presentation.js'
 import { useSessionStore } from './store-context.js'
 import { cn } from './ui/index.js'
 
 const TREE_PREVIEW_LIMIT = 6
 const EMPTY_PROJECTS: readonly ProjectSummary[] = []
 
-function statusTone(status: SessionStatus): string {
-  if (status === 'failed' || status === 'interrupted') return 'text-danger'
-  if (status === 'waiting_approval') return 'text-warn'
-  if (status === 'running') return 'text-accent'
-  return 'text-muted'
+/** 首页的状态文字：与侧栏 StatusMark 同一套色调，并配图形，避免只靠颜色区分。 */
+function StatusLabel({ status }: { readonly status: SessionStatus }) {
+  const { t } = useTranslation('session')
+  const { Icon, tone } = statusPresentation(status)
+  return (
+    <span className={cn('inline-flex items-center gap-1', TONE_TEXT[tone])}>
+      <Icon aria-hidden className={cn('size-3 shrink-0', status === 'running' && 'animate-spin')} />
+      <span>{t(`status.${status}`)}</span>
+    </span>
+  )
 }
 
 function HomeCard({
@@ -145,8 +151,8 @@ export function SessionHome({
             {projectName === '' ? t('sidePanel.home.noProjectLabel') : projectName}
           </p>
         </span>
-        <span className={cn('shrink-0 pt-0.5 text-note', statusTone(status))}>
-          {t(`status.${status}`)}
+        <span className="shrink-0 pt-0.5 text-note">
+          <StatusLabel status={status} />
         </span>
       </header>
 
@@ -177,7 +183,7 @@ export function SessionHome({
         <HomeCard
           icon={<Activity />}
           title={t('sidePanel.inspectorShort')}
-          meta={<span className={statusTone(status)}>{t(`status.${status}`)}</span>}
+          meta={<StatusLabel status={status} />}
           onClick={onOpenInspector}
         >
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted">

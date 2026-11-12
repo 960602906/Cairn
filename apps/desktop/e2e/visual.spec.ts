@@ -11,7 +11,14 @@ import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt, sessionPanel } from './session.js'
+import {
+  createSession,
+  liveMessage,
+  projectDir,
+  runStatus,
+  sendPrompt,
+  sessionPanel,
+} from './session.js'
 
 const ARTIFACTS = path.resolve(import.meta.dirname, '../../../.cache/cairn-visual-check/live')
 mkdirSync(ARTIFACTS, { recursive: true })
@@ -61,6 +68,32 @@ async function noHorizontalOverflow(page: Page) {
   })
   expect(metrics.document, JSON.stringify(metrics)).toBeLessThanOrEqual(metrics.inner + 1)
   expect(metrics.body, JSON.stringify(metrics)).toBeLessThanOrEqual(metrics.inner + 1)
+}
+
+/**
+ * 直接写 `data-theme`，用于给同一条状态拍浅色 / 深色两张截图（持久化在别处断言）。
+ * 等颜色过渡结束再返回，避免截图停在过渡中间。
+ */
+async function setTheme(page: Page, theme: 'light' | 'dark') {
+  await page.evaluate(async (value) => {
+    const view = globalThis as unknown as {
+      document: {
+        documentElement: { setAttribute(name: string, value: string): void }
+        getAnimations(): readonly {
+          readonly constructor: { readonly name: string }
+          readonly finished: Promise<unknown>
+        }[]
+      }
+    }
+    view.document.documentElement.setAttribute('data-theme', value)
+    // 只等颜色过渡：循环动画（转圈、微光）永远不结束，不能一起等。
+    await Promise.all(
+      view.document
+        .getAnimations()
+        .filter((animation) => animation.constructor.name === 'CSSTransition')
+        .map((animation) => animation.finished.catch(() => undefined)),
+    )
+  }, theme)
 }
 
 const themeOf = (page: Page) =>
@@ -157,4 +190,47 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
       path: path.join(ARTIFACTS, `theme-${id}.png`),
     })
   }
+})
+
+/**
+ * 状态呈现（聊天区域状态显示优化方案 §5）：空会话引导、停止结局的分级卡片在浅色 / 深色下都可读，
+ * 并且输入框上方没有新增可见状态条、计时或「按 Esc 停止」提示。
+ */
+test('chat status reads the same in both themes without a status bar', async ({
+  launch,
+  userData,
+}) => {
+  const app = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
+  const window = app.window
+  await createSession(window, projectDir(userData), '状态呈现')
+  await resize(app.app, window, { width: 1440, height: 900 })
+
+  // 输入框上方没有状态条：唯一的 role=status 是不占位的读屏播报。
+  const status = runStatus(window)
+  await expect(status).toHaveText('空闲')
+  const box = await status.boundingBox()
+  expect(box?.height ?? 0).toBeLessThanOrEqual(1)
+  await expect(window.getByText(/按 Esc 停止|已用时间|剩余步数/)).toHaveCount(0)
+
+  // 空会话：品牌图形 + 一句引导，而不是一条空白。
+  await expect(window.getByText('开始一个新任务')).toBeVisible()
+  await setTheme(window, 'light')
+  await window.screenshot({ path: path.join(ARTIFACTS, 'chat-empty-light.png') })
+  await setTheme(window, 'dark')
+  await window.screenshot({ path: path.join(ARTIFACTS, 'chat-empty-dark.png') })
+
+  // 停止结局：中性卡片加图标标签，浅色 / 深色下都能分辨。
+  const long = '这是一段很长的输入，用来在回复过程中停止。'.repeat(8)
+  await sendPrompt(window, long)
+  await expect(liveMessage(window)).toContainText(long.slice(0, 5))
+  await window.getByRole('button', { name: '停止', exact: true }).click()
+  await expect(runStatus(window)).toHaveText('空闲')
+  await expect(window.getByRole('img', { name: '已停止' })).toBeVisible()
+  await expect(window.getByText('开始一个新任务')).toHaveCount(0)
+  await setTheme(window, 'light')
+  await noHorizontalOverflow(window)
+  await window.screenshot({ path: path.join(ARTIFACTS, 'chat-stopped-light.png') })
+  await setTheme(window, 'dark')
+  await noHorizontalOverflow(window)
+  await window.screenshot({ path: path.join(ARTIFACTS, 'chat-stopped-dark.png') })
 })

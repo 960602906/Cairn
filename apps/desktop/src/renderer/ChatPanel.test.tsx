@@ -707,6 +707,8 @@ describe('ChatPanel', () => {
     const [item] = await screen.findAllByRole('listitem')
     await userEvent.click(within(item!).getAllByRole('button')[0]!)
     expect(screen.getByRole('heading', { level: 2, name: '未命名会话' })).toBeTruthy()
+    // 订阅返回前没有消息：只显示空状态引导，列表里没有消息条目。
+    expect(screen.getByText('开始一个新任务')).toBeTruthy()
     expect(messages()).toEqual([])
 
     await act(async () => replay({ events: [created('新标题')], lastSeq: 1 }))
@@ -984,6 +986,54 @@ describe('ChatPanel', () => {
       content: text('看 @审查员 看看'),
       agents: [{ agentId: 'user.review', name: '审查员' }],
     })
+  })
+
+  it('suggests only agents in the current delegation whitelist', async () => {
+    const agentSummary = (agentId: string, name: string) => ({
+      agentId,
+      name: { 'zh-CN': name },
+      description: {},
+      source: 'user',
+      archived: false,
+      status: 'published',
+      version: 1,
+      hasDraft: false,
+      modelMode: 'inherit',
+      updatedAt: 1,
+    })
+    const { store, open } = setup({
+      history: HISTORY,
+      handlers: {
+        'agent.list': () => ({
+          agents: [
+            agentSummary('builtin.explorer', '探索员'),
+            agentSummary('builtin.coder', '编程助手'),
+          ],
+        }),
+        'agent.delegationTargets': () => ({ enabled: true, agentIds: ['builtin.explorer'] }),
+      },
+    })
+    await waitFor(() => expect(store.getState().agents).toHaveLength(2))
+    await open()
+    await userEvent.type(input(), '看 @探')
+    const list = await screen.findByRole('listbox', { name: '引用文件' })
+    await within(list).findByText('探索员')
+    expect(within(list).queryByText('编程助手')).toBeNull()
+
+    // 委派关闭时一个 Agent 都不建议。
+    cleanup()
+    const off = setup({
+      history: HISTORY,
+      handlers: {
+        'agent.list': () => ({ agents: [agentSummary('builtin.explorer', '探索员')] }),
+        'agent.delegationTargets': () => ({ enabled: false, agentIds: [] }),
+      },
+    })
+    await waitFor(() => expect(off.store.getState().agents).toHaveLength(1))
+    await off.open()
+    await userEvent.type(input(), '看 @探')
+    await screen.findByRole('listbox', { name: '引用文件' })
+    expect(screen.queryByText('探索员')).toBeNull()
   })
 
   it('inserts a dragged file as a mention', async () => {
@@ -1395,7 +1445,8 @@ describe('tool calls and undo turn', () => {
       },
     })
     await open()
-    expect(screen.getByRole('separator', { name: /^第 1 轮前已保存检查点 · / })).toBeTruthy()
+    // 第一轮不显示检查点分隔线，避免对话开头多一行提示。
+    expect(screen.queryByRole('separator', { name: /^第 1 轮前已保存检查点 · / })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: '撤销本轮' }))
     const confirm = await dialog('撤销第 1 轮的改动？')
     expect(within(confirm).getByText(/对话记录保留/)).toBeTruthy()
@@ -1435,6 +1486,19 @@ describe('tool calls and undo turn', () => {
     expect(await screen.findByText(/^已撤销上一次恢复 · /)).toBeTruthy()
     // 只有最近一次恢复可以撤销
     expect(screen.getAllByRole('button', { name: '撤销这次恢复' })).toHaveLength(1)
+  })
+
+  it('shows the checkpoint divider from the second turn on', async () => {
+    const { open } = setup({
+      history: [
+        ...HISTORY,
+        ev(9, 'message.user', { messageId: 'm3', content: text('继续') }, 't2'),
+        ev(10, 'turn.started', {}, 't2'),
+        ev(11, 'checkpoint.created', { checkpointId: CHECKPOINT, reason: 'turn_start' }, 't2'),
+      ],
+    })
+    await open()
+    expect(screen.getByRole('separator', { name: /^第 2 轮前已保存检查点 · / })).toBeTruthy()
   })
 
   it('cannot confirm when no file needs restoring', async () => {
@@ -1521,7 +1585,7 @@ describe('tool calls and undo turn', () => {
         .getAllByRole('separator')
         .filter((s) => s.tabIndex !== 0)
         .map((s) => s.getAttribute('aria-label')),
-    ).toEqual([expect.stringMatching(/^第 1 轮前/), expect.stringMatching(/^第 2 轮前/)])
+    ).toEqual([expect.stringMatching(/^第 2 轮前/)])
     const rail = screen.getByRole('navigation', { name: '对话导航' })
     const first = within(rail).getByRole('button', { name: '跳到第 1 轮：跑测试' })
     const scrolled = vi.fn()

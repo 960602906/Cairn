@@ -48,9 +48,10 @@ import { TurnChanges } from './FileChanges.js'
 import { DelegationCard } from './DelegationCard.js'
 import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
+import { outcomePresentation, TONE_SOFT } from './status-presentation.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
-import { Button, IconButton, Shimmer } from './ui/index.js'
+import { Button, CairnMark, IconButton, Shimmer } from './ui/index.js'
 import { AgentAvatar } from './agents/AgentAvatar.js'
 import { agentName } from './agents/model.js'
 
@@ -557,6 +558,22 @@ function Message({
   )
 }
 
+/**
+ * 空会话：品牌图形加一句引导，避免消息区只剩一条空白。
+ *
+ * 不放进消息列表：它是引导，不是消息，列表里只保留真正的消息条目。
+ */
+function EmptyStream() {
+  const { t } = useTranslation('session')
+  return (
+    <div className="flex flex-col items-center gap-2.5 px-6 pt-16 pb-8 text-center">
+      <CairnMark size={44} className="text-faint" />
+      <p className="text-ui font-medium text-fg2">{t('chat.empty.title')}</p>
+      <p className="max-w-[340px] text-note text-muted">{t('chat.empty.hint')}</p>
+    </div>
+  )
+}
+
 /** 同一轮中紧跟在助手消息之后的助手消息。 */
 const continues = (
   previous: MessageView | undefined,
@@ -606,6 +623,12 @@ function LiveMessage({
       {live.reasoning !== '' && <Reasoning text={live.reasoning} live={live.text === ''} />}
       {live.text !== '' && (
         <Markdown text={live.text} resolvePaths={resolvePaths} onOpenFile={onOpenFile} />
+      )}
+      {/* 已发出但还没有思考也没有正文：给出「思考中」占位，不留空白条目。 */}
+      {live.reasoning === '' && live.text === '' && (
+        <p className="flex items-center gap-1.5 text-note text-muted">
+          <Shimmer>{t('run.thinking')}</Shimmer>
+        </p>
       )}
     </li>
   )
@@ -673,6 +696,7 @@ export function MessageStream({
     })
     .sort((a, b) => a.startedAt - b.startedAt)
   const outcome = view && turnOutcome(view, t, i18n)
+  const outcomeStyle = view ? outcomePresentation(view) : undefined
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const agents = useSessionStore((s) => s.agents) ?? []
   /** 上一轮因限额停下时，可以一键接着做（Runtime §10.3：开始新的一轮，计数重新开始）。 */
@@ -746,13 +770,13 @@ export function MessageStream({
     return map
   }, [view])
   const looseDelegations = (view?.delegations ?? []).filter((item) => item.turnId === undefined)
-  /** 每轮第一条用户消息上方的检查点分隔线。 */
+  /** 每轮第一条用户消息上方的检查点分隔线；第一轮不显示，对话开头不需要“已保存检查点”的提示。 */
   const dividerFor = (message: MessageView, index: number) => {
     if (message.role !== 'user' || message.turnId === undefined) return undefined
     if (view?.messages[index - 1]?.turnId === message.turnId) return undefined
     const checkpoint = checkpoints.get(message.turnId)
     const turn = turns.get(message.turnId)
-    return checkpoint && turn !== undefined ? { turn, checkpoint } : undefined
+    return checkpoint && turn !== undefined && turn > 1 ? { turn, checkpoint } : undefined
   }
   /** 模型显示名：已配置的“供应商 · 模型”，否则为模型 id。 */
   const modelName = (model: ModelRef) => {
@@ -771,10 +795,16 @@ export function MessageStream({
     return (paths: readonly string[]) => pathsExist(projectId, paths)
   }, [pathsExist, projectId])
   if (!view) {
-    return <ol aria-label={t('chat.messages')} className="flex flex-col gap-7" />
+    return (
+      <>
+        <EmptyStream />
+        <ol aria-label={t('chat.messages')} className="flex flex-col gap-7" />
+      </>
+    )
   }
   return (
     <>
+      {messages.length === 0 && live.length === 0 && <EmptyStream />}
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
         {messages.map((message, index) => {
           const previous = messages[index - 1]?.seq ?? 0
@@ -868,8 +898,13 @@ export function MessageStream({
           />
         ))}
       </ol>
-      {outcome && (
-        <div className="flex items-center gap-3 rounded-card bg-sunk px-3.5 py-2.5 text-ui text-fg2">
+      {outcome && outcomeStyle && (
+        <div
+          className={`flex items-center gap-3 rounded-card px-3.5 py-2.5 text-ui ${TONE_SOFT[outcomeStyle.tone]}`}
+        >
+          <span role="img" aria-label={t(outcomeStyle.iconLabelKey)} className="shrink-0">
+            <outcomeStyle.Icon aria-hidden className="size-4" />
+          </span>
           <p className="min-w-0 flex-1">{outcome}</p>
           {canContinue && (
             <Button

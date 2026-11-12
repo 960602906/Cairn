@@ -13,6 +13,8 @@
   "input.label": "Trial input",
   "input.placeholder": "Describe what to verify; Ctrl+Enter to send",
   "cleared": "Cleared {{count}} trial runs",
+  "history.title": "History",
+  "history.empty": "No trial runs yet.",
   "action.close": "Close trial run",
   "action.start": "Start trial",
   "action.restart": "Restart",

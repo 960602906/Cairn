@@ -31,6 +31,7 @@ import {
   isActiveRunState,
   rebuildHistory,
   reduceSessionEvents,
+  resolveDelegationPolicy,
   rootRun,
   sessionStatus,
   userTurnContent,
@@ -400,6 +401,20 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     return record
   }
 
+  /**
+   * 会话当前的 Agent：试运行用它的草稿，普通会话用最近的根运行，都没有时用默认配置。
+   * 输入框的 `@Agent` 候选与发送时展开按同一份定义取委派名单。
+   */
+  function currentAgent(sessionId: string): RunAgentRef {
+    const record = requireSession(sessionId)
+    if (record.kind === 'trial') {
+      return record.trialAgentId !== undefined && record.trialDraftHash !== undefined
+        ? { id: record.trialAgentId, draftHash: record.trialDraftHash }
+        : options.runDefaults.agent
+    }
+    return rootRun(getView(sessionId))?.agent ?? options.runDefaults.agent
+  }
+
   const manager: SessionManager = {
     create({ projectPath, title, model: requested }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
@@ -498,6 +513,13 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
      * 切换 Agent（M3-11）：新建一个运行，`run.created` 引用 `id@version`，之前的对话作为历史
      * （下一次输入时重建）。运行中不能切换；空闲的宿主先停止，新宿主带新 Agent 的指令与工具。
      */
+    /** 当前 Agent 的委派范围（M4-02）：`@Agent` 候选与展开都只认这份名单。 */
+    delegationTargets({ sessionId }) {
+      const ref = sessionId === undefined ? options.runDefaults.agent : currentAgent(sessionId)
+      const policy = resolveDelegationPolicy(options.resolveAgent?.(ref)?.delegation)
+      return { enabled: policy.enabled, agentIds: [...policy.allowedAgents] }
+    },
+
     async setAgent({ sessionId, agent }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       const record = requireSession(sessionId)

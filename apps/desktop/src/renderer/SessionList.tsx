@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'
 import { FolderTypeIcon } from './file-icons.js'
 import { lastSegment } from './paths.js'
+import { statusPresentation, TONE_DOT } from './status-presentation.js'
 import { useSessionStore } from './store-context.js'
 import {
   Button,
@@ -75,15 +76,8 @@ export function formatSessionTime(updatedAt: number, yesterday: string, now = Da
 
 function StatusMark({ status }: { readonly status: SessionStatus }) {
   if (status === 'running') return <Spinner className="size-3" />
-  const tone =
-    status === 'waiting_approval'
-      ? 'bg-warn'
-      : status === 'failed' || status === 'crashed'
-        ? 'bg-danger'
-        : undefined
-  return (
-    <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', tone ?? 'bg-transparent')} />
-  )
+  const tone = TONE_DOT[statusPresentation(status).tone]
+  return <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', tone)} />
 }
 
 function RenameInput({

@@ -14,6 +14,7 @@ import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import type { ProjectSummary } from '@cairn/protocol'
 import { ActivityView } from './ActivityView.js'
+import { AgentsView } from './agents/AgentsView.js'
 import { ChatPanel, TopBar, type ChatPanelHandle } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
@@ -57,6 +58,7 @@ function Workspace() {
   const [composing, setComposing] = useState(false)
   const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
   const [activity, setActivity] = useState(false)
+  const [agentsView, setAgentsView] = useState(false)
   const [sidePanel, setSidePanel] = useState<SessionPanelView>('home')
   const [searching, setSearching] = useState(false)
   /** 活动中心要求打开的改动集；`ChatPanel` 打开后清空。 */
@@ -85,6 +87,7 @@ function Workspace() {
   const startNewChat = useCallback(() => {
     setSettings(undefined)
     setActivity(false)
+    setAgentsView(false)
     setSidePanel('home')
     setComposing(true)
     setNewChatProjectPath(undefined)
@@ -123,6 +126,7 @@ function Workspace() {
       if (isSettingsKey(event)) {
         event.preventDefault()
         setSessionsOpen(false)
+        setAgentsView(false)
         setSettings((current) => current ?? 'general')
         return
       }
@@ -143,7 +147,7 @@ function Workspace() {
     void loadUpdateStatus()
   }, [loadUpdateStatus])
 
-  // Agent 管理页已移除，但委派卡片与检查器仍需要 Agent 名称，启动时读一次列表。
+  // 委派卡片、检查器与 Agents 页都需要 Agent 名称，启动时读一次列表。
   useEffect(() => {
     void refreshAgents()
   }, [refreshAgents])
@@ -153,6 +157,7 @@ function Workspace() {
       onActivityOpen(({ sessionId }) => {
         setSettings(undefined)
         setActivity(false)
+        setAgentsView(false)
         setComposing(false)
         void selectSession(sessionId)
         if (sidePanel === 'activity') chatRef.current?.closePanel()
@@ -169,6 +174,7 @@ function Workspace() {
 
   const openActivity = useCallback(() => {
     setSettings(undefined)
+    setAgentsView(false)
     setComposing(false)
     if (narrow) setSessionsOpen(false)
     // 已经打开会话时，活动作为工作台标签显示在右侧，不再整页替换对话。
@@ -183,9 +189,19 @@ function Workspace() {
   /** 左栏收起后，从顶栏按钮展开；不离开当前页面。 */
   const openSessions = useCallback(() => setSessionsOpen(true), [])
 
+  const openAgents = useCallback(() => {
+    setSettings(undefined)
+    setActivity(false)
+    setComposing(false)
+    setSidePanel('home')
+    setAgentsView(true)
+    if (narrow) setSessionsOpen(false)
+  }, [narrow])
+
   const openSessionFromActivity = useCallback(
     (sessionId: string, changeSetId?: string) => {
       setActivity(false)
+      setAgentsView(false)
       setComposing(false)
       setPendingChangeSet(changeSetId === undefined ? undefined : { sessionId, changeSetId })
       void selectSession(sessionId)
@@ -198,6 +214,7 @@ function Workspace() {
   const configureModels = useCallback(() => {
     setSettings('providers')
     setActivity(false)
+    setAgentsView(false)
     setComposing(false)
     setSessionsOpen(false)
   }, [])
@@ -227,20 +244,25 @@ function Workspace() {
       if (narrow) setSessionsOpen(false)
       setComposing(false)
       setActivity(false)
+      setAgentsView(false)
     },
     onNewChat: startNewChat,
     onActivity: openActivity,
+    onAgents: openAgents,
     onSettings: () => {
       setSessionsOpen(false)
+      setAgentsView(false)
       setSettings('general')
     },
     activityActive:
       activity || (!composing && activeSessionId !== undefined && sidePanel === 'activity'),
+    agentsActive: agentsView,
     activityBadge,
     onNewConversationProject: (project: ProjectSummary) => {
       if (narrow) setSessionsOpen(false)
       setSettings(undefined)
       setActivity(false)
+      setAgentsView(false)
       setNewChatProjectPath(project.path)
       setComposing(true)
     },
@@ -262,6 +284,7 @@ function Workspace() {
       onSelect={() => {
         setSettings(undefined)
         setActivity(false)
+        setAgentsView(false)
         setComposing(false)
         setSessionsOpen(false)
       }}
@@ -314,6 +337,23 @@ function Workspace() {
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
           <ActivityView leading={reveal} onOpenSession={openSessionFromActivity} />
+        </main>
+        {drawer}
+        {search}
+        {welcome}
+        <WindowControls />
+      </div>
+    )
+  }
+
+  if (agentsView) {
+    return (
+      <div className={SHELL} style={chromeStyle}>
+        <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
+        {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
+          <ErrorBanner />
+          <AgentsView leading={reveal} />
         </main>
         {drawer}
         {search}
