@@ -11,7 +11,7 @@
  * - 文本框下面叠一层高亮（ComposerHighlight）：开头的指令、`@` 引用、网址和代码片段有底色或下划线；
  *   文本框自己的文字透明，只显示光标和选区。
  * - 下方左边是权限模式（只读 / 询问 / 自动，全局设置），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、
- *   上下文占用圆环（悬停显示百分比与 token 数）与发送 / 停止按钮。
+ *   上下文占用圆环（点击显示最近用量与分类占比）与发送 / 停止按钮。
  */
 import {
   ArrowUp,
@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Eye,
   ListChecks,
+  RotateCw,
   ShieldCheck,
   Square,
   X,
@@ -36,6 +37,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RunView, SessionView } from '@cairn/core'
+import { translateError } from '@cairn/i18n'
 import type {
   AgentDefinitionRef,
   ModelRef,
@@ -53,6 +55,8 @@ import {
 } from './composer-shared.js'
 import { extractAgents, mentionText } from './composer-tokens.js'
 import { agentName, localized } from './agents/model.js'
+import { contextBreakdown, latestSnapshot } from './context-breakdown.js'
+import { formatCompactTokens } from './format.js'
 import { FILE_DRAG_TYPE, draggedFile } from './file-drag.js'
 import {
   RestoreDialog,
@@ -64,6 +68,7 @@ import {
 import { ComposerHighlight } from './ComposerHighlight.js'
 import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMentions.js'
 import { isPlanModeKey, planShortcut } from './layout/shortcuts.js'
+import { inspectionKey } from './session-store.js'
 import type { SessionPanel } from './SessionPanels.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
 import { useSessionStore } from './store-context.js'
@@ -75,6 +80,10 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTitle,
+  PopoverTrigger,
   Tooltip,
 } from './ui/index.js'
 
@@ -288,54 +297,168 @@ export function ModelPicker({
   )
 }
 
-/** 上下文占用圆环：模型的上下文窗口已用多少；不知道窗口大小时不显示。 */
-function ContextRing({
+/** 上下文圆环与用量明细：点击后按需读取最近一次模型调用前的分类估算。 */
+function ContextUsage({
+  sessionId,
   model,
   tokens,
 }: {
+  readonly sessionId: string
   readonly model: ModelRef | undefined
-  readonly tokens: number
+  readonly tokens: number | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const providers = useSessionStore((s) => s.settings?.providers)
+  const inspectRun = useSessionStore((s) => s.inspectRun)
+  const inspection = useSessionStore((s) => s.inspections[inspectionKey(sessionId)])
   const window = providers
     ?.find((p) => p.id === model?.providerId)
     ?.models.find((m) => m.id === model?.modelId)?.contextWindow
-  if (!window) return null
-  const ratio = Math.min(1, tokens / window)
+  const used = tokens ?? 0
+  const ratio = window === undefined ? 0 : Math.min(1, used / window)
   const percent = Math.round(ratio * 100)
   const r = 6
   const c = 2 * Math.PI * r
-  const label = t('composer.context', {
-    percent,
-    used: tokens.toLocaleString(i18n.language),
-    total: window.toLocaleString(i18n.language),
-  })
+  const label =
+    window === undefined
+      ? t('composer.context.open')
+      : t('composer.context', {
+          percent,
+          used: used.toLocaleString(i18n.language),
+          total: window.toLocaleString(i18n.language),
+        })
+  const snapshot = latestSnapshot(inspection?.result?.snapshots ?? [])
+  const breakdown = contextBreakdown(snapshot)
+  const notFound = inspection?.error?.code === 'run.not_found'
+  const error = inspection?.error === undefined || notFound ? undefined : inspection.error
+
+  const openBreakdown = (open: boolean) => {
+    if (open) void inspectRun(sessionId)
+  }
+
   return (
-    <Tooltip content={label}>
-      <span
-        role="img"
-        aria-label={label}
-        tabIndex={0}
-        className="flex size-7 items-center justify-center rounded-item outline-none focus-visible:ring-1 focus-visible:ring-accent"
-      >
-        <svg viewBox="0 0 16 16" className="size-4 -rotate-90">
-          <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2" className="stroke-hair2" />
-          <circle
-            cx="8"
-            cy="8"
-            r={r}
-            fill="none"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeDasharray={`${c * ratio} ${c}`}
-            className={
-              ratio >= 0.9 ? 'stroke-danger' : ratio >= 0.7 ? 'stroke-warn' : 'stroke-muted'
-            }
-          />
-        </svg>
-      </span>
-    </Tooltip>
+    <Popover onOpenChange={openBreakdown}>
+      <Tooltip content={label}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            className="flex size-7 items-center justify-center rounded-item outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden className="size-4 -rotate-90">
+              <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2" className="stroke-hair2" />
+              {window !== undefined && (
+                <circle
+                  cx="8"
+                  cy="8"
+                  r={r}
+                  fill="none"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeDasharray={`${c * ratio} ${c}`}
+                  className={
+                    ratio >= 0.9
+                      ? 'stroke-danger'
+                      : ratio >= 0.7
+                        ? 'stroke-warn'
+                        : 'stroke-muted'
+                  }
+                />
+              )}
+            </svg>
+          </button>
+        </PopoverTrigger>
+      </Tooltip>
+      <PopoverContent aria-label={t('composer.context.breakdown')}>
+        <div className="flex flex-col gap-3">
+          <PopoverTitle>{t('composer.context.breakdown')}</PopoverTitle>
+          <section className="rounded-item bg-sunk px-2.5 py-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-note text-muted">{t('composer.context.current')}</span>
+              <span className="tabular text-ui font-medium text-fg">
+                {tokens === undefined
+                  ? t('composer.context.noUsage')
+                  : window === undefined
+                    ? t('composer.context.tokensUnknown', { used: formatCompactTokens(used) })
+                    : t('composer.context.tokens', {
+                        used: formatCompactTokens(used),
+                        total: formatCompactTokens(window),
+                      })}
+              </span>
+            </div>
+            {window === undefined && (
+              <p className="mt-1 text-note text-faint">{t('composer.context.unknownWindow')}</p>
+            )}
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <div className="flex flex-col gap-0.5">
+              <h4 className="text-note font-medium text-fg2">
+                {t('composer.context.estimateTitle')}
+              </h4>
+              <p className="text-note text-faint">{t('composer.context.estimateHint')}</p>
+            </div>
+            {inspection?.loading && inspection.result === undefined ? (
+              <p role="status" className="text-note text-muted">
+                {t('composer.context.loading')}
+              </p>
+            ) : error !== undefined ? (
+              <div role="alert" className="flex flex-col items-start gap-2">
+                <p className="text-note text-danger">{translateError(i18n, error)}</p>
+                <button
+                  type="button"
+                  onClick={() => void inspectRun(sessionId)}
+                  className="flex h-7 items-center gap-1.5 rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+                >
+                  <RotateCw aria-hidden className="size-3" />
+                  {t('composer.context.retry')}
+                </button>
+              </div>
+            ) : breakdown.total === 0 ? (
+              <p className="text-note text-faint">{t('composer.context.empty')}</p>
+            ) : (
+              <>
+                <div
+                  role="img"
+                  aria-label={t('inspector.context.bar', {
+                    total: breakdown.total.toLocaleString(i18n.language),
+                  })}
+                  className="flex h-2 overflow-hidden rounded-full bg-sunk2"
+                >
+                  {breakdown.parts.map((part) => (
+                    <span
+                      key={part.key}
+                      className={part.tone}
+                      style={{ width: `${(part.tokens / breakdown.total) * 100}%` }}
+                    />
+                  ))}
+                </div>
+                <ul
+                  aria-label={t('inspector.context.breakdown')}
+                  className="flex flex-col gap-1"
+                >
+                  {breakdown.parts.map((part) => (
+                    <li key={part.key} className="flex items-center gap-2 text-note">
+                      <span
+                        aria-hidden
+                        className={cn('size-2 shrink-0 rounded-full', part.tone)}
+                      />
+                      <span className="min-w-0 flex-1 text-fg2">
+                        {t(`inspector.context.${part.key}`)}
+                      </span>
+                      <span className="tabular text-muted">
+                        {formatCompactTokens(part.tokens)} ·{' '}
+                        {Math.round((part.tokens / breakdown.total) * 100)}%
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </section>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -879,7 +1002,7 @@ export function Composer({
                 }}
                 onSelect={(next) => void setSessionModel(sessionId, next)}
               />
-              <ContextRing model={model} tokens={contextTokens ?? 0} />
+              <ContextUsage sessionId={sessionId} model={model} tokens={contextTokens} />
               {active && (
                 <button
                   type="button"

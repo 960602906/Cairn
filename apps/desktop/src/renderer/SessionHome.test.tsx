@@ -84,9 +84,7 @@ function installBridge(request: (method: string, params: unknown) => unknown) {
 function setup({
   homeView = view,
   projects = [project],
-  status = 'idle' as const,
   onOpenFiles = vi.fn(),
-  onOpenInspector = vi.fn(),
 } = {}) {
   const store = createStore<Record<string, unknown>>(() => ({
     projects,
@@ -94,16 +92,11 @@ function setup({
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreProvider store={store as never}>
-        <SessionHome
-          view={homeView}
-          status={status}
-          onOpenFiles={onOpenFiles}
-          onOpenInspector={onOpenInspector}
-        />
+        <SessionHome view={homeView} onOpenFiles={onOpenFiles} />
       </SessionStoreProvider>
     </I18nextProvider>,
   )
-  return { onOpenFiles, onOpenInspector }
+  return { onOpenFiles }
 }
 
 afterEach(() => {
@@ -112,7 +105,7 @@ afterEach(() => {
 })
 
 describe('SessionHome', () => {
-  it('previews the tree and inspector, and opens each section', async () => {
+  it('previews the tree and opens the files section', async () => {
     const request = installBridge((method) =>
       method === 'fs.list'
         ? {
@@ -135,14 +128,11 @@ describe('SessionHome', () => {
     expect(screen.queryByRole('button', { name: '打开概要' })).toBeNull()
 
     expect(screen.queryByRole('button', { name: '打开计划' })).toBeNull()
-    expect(screen.getByText('2 个运行')).toBeTruthy()
-    expect(screen.getByText('上下文 12.5K')).toBeTruthy()
-    expect(screen.getByText('累计 25.0K tokens')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '打开检查' })).toBeNull()
+    expect(screen.queryByText('累计 25.0K tokens')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: '打开文件树' }))
-    await userEvent.click(screen.getByRole('button', { name: '打开检查' }))
     expect(callbacks.onOpenFiles).toHaveBeenCalledOnce()
-    expect(callbacks.onOpenInspector).toHaveBeenCalledOnce()
   })
 
   it('keeps the remaining entries visible with empty states and no plan card', async () => {
@@ -162,7 +152,7 @@ describe('SessionHome', () => {
 
     expect(await screen.findByText('demo')).toBeTruthy()
     expect(screen.getByText('没有关联的工作空间。')).toBeTruthy()
-    expect(screen.getByText('还没有运行记录。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '打开检查' })).toBeNull()
     expect(screen.queryByRole('button', { name: '打开计划' })).toBeNull()
   })
 

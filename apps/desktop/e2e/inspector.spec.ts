@@ -1,5 +1,5 @@
 /**
- * 运行检查器（M4-05）：一轮真实对话后打开检查器，验证运行树、上下文、用量与设置，
+ * 上下文用量明细（M4-05）：一轮真实对话后点击输入框圆环，验证最近报告用量与分类占比，
  * 并保存浅色 / 深色截图。
  */
 import { mkdirSync } from 'node:fs'
@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt, sessionPanel } from './session.js'
+import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'inspector reply'
 const ARTIFACTS_DIR =
@@ -57,7 +57,7 @@ async function setTheme(window: Page, theme: 'light' | 'dark') {
   }, theme)
 }
 
-test('查看运行树、上下文、用量与设置', async ({ launch, userData }) => {
+test('点击输入框圆环查看上下文用量与分类占比', async ({ launch, userData }) => {
   const mock = await startMockModel({ reply: REPLY })
   try {
     const { window } = await launch()
@@ -67,22 +67,16 @@ test('查看运行树、上下文、用量与设置', async ({ launch, userData 
     await expect(window.getByText(REPLY)).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲')
 
-    const panelToggle = window.getByRole('button', { name: '会话信息', exact: true })
-    if ((await panelToggle.getAttribute('aria-expanded')) !== 'true') await panelToggle.click()
-    await sessionPanel(window).getByRole('button', { name: '打开检查' }).click()
-    await expect(window.getByRole('tab', { name: '检查器' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
-    const panel = window.getByRole('tabpanel', { name: '时间线' })
-    await expect(panel.getByRole('list', { name: '运行树' })).toBeVisible()
-    await expect(panel.getByText('编程助手')).toBeVisible()
-    await expect(panel.getByRole('button', { name: '定位到第 1 轮' })).toBeVisible()
-    await panel.getByRole('button', { name: '定位到第 1 轮' }).click()
-    const turnId = await window.locator('[data-turn]').first().getAttribute('data-turn')
-    expect(turnId).not.toBeNull()
-    await expect(window.locator(`[data-turn="${turnId}"]`)).toBeFocused()
-    await expect(sessionPanel(window)).toBeHidden()
+    const ring = window.getByRole('button', { name: /上下文已用|查看上下文用量/ })
+    await ring.click()
+
+    const popover = window.getByRole('dialog', { name: '上下文用量' })
+    await expect(popover).toBeVisible()
+    await expect(popover.getByText('最近报告的占用')).toBeVisible()
+    await expect(popover.getByText('最近调用前的估算')).toBeVisible()
+    await expect(popover.getByRole('list', { name: '上下文 token 明细' })).toBeVisible()
+    await expect(popover.getByText('系统提示词')).toBeVisible()
+    await expect(popover.getByText('工具定义')).toBeVisible()
 
     mkdirSync(ARTIFACTS_DIR, { recursive: true })
     await setTheme(window, 'light')
@@ -91,19 +85,9 @@ test('查看运行树、上下文、用量与设置', async ({ launch, userData 
     await window.screenshot({ path: path.join(ARTIFACTS_DIR, 'inspector-dark.png') })
     await setTheme(window, 'light')
 
-    await window.getByRole('button', { name: '会话信息', exact: true }).click()
-    await expect(sessionPanel(window)).toBeVisible()
-    await window.getByRole('tab', { name: '上下文' }).click()
-    await expect(window.getByText('系统提示词各部分')).toBeVisible()
-    await expect(window.getByRole('list', { name: '上下文 token 明细' })).toBeVisible()
-
-    await window.getByRole('tab', { name: '用量' }).click()
-    await expect(window.getByText('按 Agent 分组')).toBeVisible()
-    await expect(window.getByText('本会话')).toBeVisible()
-
-    await window.getByRole('tab', { name: '设置' }).click()
-    await expect(window.getByText('生效的权限规则')).toBeVisible()
-    await expect(window.getByText('每轮最多步骤')).toBeVisible()
+    // 点外面关闭浮层。
+    await window.keyboard.press('Escape')
+    await expect(popover).toBeHidden()
   } finally {
     await mock.close()
   }

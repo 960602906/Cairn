@@ -9,13 +9,13 @@
  * 主题跟随设置（M2-01，`ThemeSync`）。
  */
 import { PanelLeftOpen } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import type { ProjectSummary } from '@cairn/protocol'
 import { ActivityView } from './ActivityView.js'
 import { AgentsView } from './agents/AgentsView.js'
-import { ChatPanel, TopBar, type ChatPanelHandle } from './ChatPanel.js'
+import { ChatPanel, TopBar } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
@@ -25,7 +25,6 @@ import { WindowControls } from './layout/WindowControls.js'
 import { NewSession } from './NewSession.js'
 import { WelcomeDialog } from './onboarding/WelcomeDialog.js'
 import { SessionSearch } from './SessionSearch.js'
-import type { SessionPanelView } from './SessionSidePanel.js'
 import type { SessionStore } from './session-store.js'
 import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
@@ -59,15 +58,12 @@ function Workspace() {
   const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
   const [activity, setActivity] = useState(false)
   const [agentsView, setAgentsView] = useState(false)
-  const [sidePanel, setSidePanel] = useState<SessionPanelView>('home')
   const [searching, setSearching] = useState(false)
   /** 活动中心要求打开的改动集；`ChatPanel` 打开后清空。 */
   const [pendingChangeSet, setPendingChangeSet] = useState<
     { sessionId: string; changeSetId: string } | undefined
   >()
   const [newChatProjectPath, setNewChatProjectPath] = useState<string | undefined>()
-  const chatRef = useRef<ChatPanelHandle>(null)
-  const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const refreshActivity = useSessionStore((s) => s.refreshActivity)
   const refreshAgents = useSessionStore((s) => s.refreshAgents)
   const loadUpdateStatus = useSessionStore((s) => s.loadUpdateStatus)
@@ -88,7 +84,6 @@ function Workspace() {
     setSettings(undefined)
     setActivity(false)
     setAgentsView(false)
-    setSidePanel('home')
     setComposing(true)
     setNewChatProjectPath(undefined)
     setPendingChangeSet(undefined)
@@ -160,10 +155,9 @@ function Workspace() {
         setAgentsView(false)
         setComposing(false)
         void selectSession(sessionId)
-        if (sidePanel === 'activity') chatRef.current?.closePanel()
         if (narrow) setSessionsOpen(false)
       }),
-    [narrow, onActivityOpen, selectSession, sidePanel],
+    [narrow, onActivityOpen, selectSession],
   )
 
   const closeSettings = useCallback(() => {
@@ -177,14 +171,8 @@ function Workspace() {
     setAgentsView(false)
     setComposing(false)
     if (narrow) setSessionsOpen(false)
-    // 已经打开会话时，活动作为工作台标签显示在右侧，不再整页替换对话。
-    if (activeSessionId !== undefined && !composing && chatRef.current) {
-      setActivity(false)
-      chatRef.current.openPanel('activity')
-      return
-    }
     setActivity(true)
-  }, [activeSessionId, composing, narrow])
+  }, [narrow])
 
   /** 左栏收起后，从顶栏按钮展开；不离开当前页面。 */
   const openSessions = useCallback(() => setSessionsOpen(true), [])
@@ -193,7 +181,6 @@ function Workspace() {
     setSettings(undefined)
     setActivity(false)
     setComposing(false)
-    setSidePanel('home')
     setAgentsView(true)
     if (narrow) setSessionsOpen(false)
   }, [narrow])
@@ -205,10 +192,9 @@ function Workspace() {
       setComposing(false)
       setPendingChangeSet(changeSetId === undefined ? undefined : { sessionId, changeSetId })
       void selectSession(sessionId)
-      if (changeSetId === undefined && sidePanel === 'activity') chatRef.current?.closePanel()
       if (narrow) setSessionsOpen(false)
     },
-    [narrow, selectSession, sidePanel],
+    [narrow, selectSession],
   )
 
   const configureModels = useCallback(() => {
@@ -254,8 +240,7 @@ function Workspace() {
       setAgentsView(false)
       setSettings('general')
     },
-    activityActive:
-      activity || (!composing && activeSessionId !== undefined && sidePanel === 'activity'),
+    activityActive: activity,
     agentsActive: agentsView,
     activityBadge,
     onNewConversationProject: (project: ProjectSummary) => {
@@ -381,11 +366,8 @@ function Workspace() {
           </>
         ) : (
           <ChatPanel
-            chatRef={chatRef}
             leading={reveal}
             notice={updateNotice}
-            onPanelChange={setSidePanel}
-            onOpenActivitySession={openSessionFromActivity}
             onNewChat={startNewChat}
             onOpenSettings={setSettings}
             {...(pendingChangeSet === undefined

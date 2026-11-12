@@ -10,18 +10,16 @@ import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
 import type { ChangeSetSummary, ProjectSummary, SessionStatus } from '@cairn/protocol'
-import { ActivityContent } from './ActivityView.js'
 import { ChangeSetReview } from './ChangeSetReview.js'
 import { ChangeCounts } from './DiffCard.js'
 import { SessionChangesPanel } from './FileChanges.js'
 import { FileTreeBrowser } from './FileTreeBrowser.js'
-import { Inspector } from './Inspector.js'
 import { PlanDetails } from './PlanCard.js'
 import { SessionBriefPanel } from './SessionBrief.js'
 import { useSessionStore } from './store-context.js'
 import { cn, PanelEmpty, SegmentedControl } from './ui/index.js'
 
-export type SessionPanel = 'files' | 'diff' | 'brief' | 'plan' | 'inspector' | 'activity'
+export type SessionPanel = 'files' | 'diff' | 'brief' | 'plan'
 /** 文件预览标签的标识：`file:` + 相对项目根的路径。 */
 export type FileTabId = `file:${string}`
 /** 标签栏里的一项：固定面板或一个文件。 */
@@ -49,9 +47,6 @@ export interface SessionPanelContext {
   readonly selectedChangeSetId: string | undefined
   readonly onSelectChangeSet?: ((changeSetId: string | undefined) => void) | undefined
   readonly onOpenPanel: (panel: SessionPanel) => void
-  readonly onLocateTurn?: ((runId: string, turnId: string) => void) | undefined
-  /** 活动中心里打开其他会话；由外层负责切换会话并定位改动集。 */
-  readonly onOpenActivitySession?: ((sessionId: string, changeSetId?: string) => void) | undefined
 }
 
 export interface SessionPanelDefinition {
@@ -256,35 +251,6 @@ function PlanPanel({ view, selectedPlanId }: SessionPanelContext) {
   )
 }
 
-function InspectorPanel({
-  sessionId,
-  view,
-  onLocateTurn,
-  onOpenPanel,
-  onSelectChangeSet,
-}: SessionPanelContext) {
-  const openChangeSet = (changeSetId: string) => {
-    onOpenPanel('diff')
-    onSelectChangeSet?.(changeSetId)
-  }
-  return (
-    <Inspector
-      sessionId={sessionId}
-      delegations={view?.delegations ?? []}
-      onLocate={onLocateTurn}
-      {...(onSelectChangeSet === undefined ? {} : { onOpenChanges: openChangeSet })}
-    />
-  )
-}
-
-function ActivityPanel({ onOpenActivitySession }: SessionPanelContext) {
-  return (
-    <div className="h-full overflow-y-auto">
-      <ActivityContent compact onOpenSession={onOpenActivitySession ?? (() => undefined)} />
-    </div>
-  )
-}
-
 /**
  * 面板注册表：顺序就是标签栏与「+」菜单里的顺序。
  * 子 Agent 详情等新面板追加到这里即可，不需要再改 `SessionSidePanel`。
@@ -317,20 +283,6 @@ export const SESSION_PANEL_DEFINITIONS: readonly SessionPanelDefinition[] = [
     label: 'sidePanel.plan',
     addable: false,
     content: PlanPanel,
-  },
-  {
-    id: 'inspector',
-    shortLabel: 'sidePanel.inspectorShort',
-    label: 'sidePanel.inspector',
-    addable: true,
-    content: InspectorPanel,
-  },
-  {
-    id: 'activity',
-    shortLabel: 'sidePanel.activityShort',
-    label: 'sidePanel.activity',
-    addable: true,
-    content: ActivityPanel,
   },
 ]
 

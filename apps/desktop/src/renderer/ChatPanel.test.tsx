@@ -12,6 +12,7 @@ import { ChatPanel } from './ChatPanel.js'
 import { FILE_DRAG_TYPE } from './file-drag.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
+import { TooltipProvider } from './ui/index.js'
 
 afterEach(() => {
   cleanup()
@@ -140,7 +141,9 @@ describe('ChatPanel', () => {
     const { container } = render(
       <I18nextProvider i18n={createI18n('zh-CN')}>
         <SessionStoreProvider store={store}>
-          <ChatPanel />
+          <TooltipProvider>
+            <ChatPanel />
+          </TooltipProvider>
         </SessionStoreProvider>
       </I18nextProvider>,
     )
@@ -171,11 +174,13 @@ describe('ChatPanel', () => {
     render(
       <I18nextProvider i18n={createI18n('zh-CN')}>
         <SessionStoreProvider store={store}>
-          <ChatPanel
-            initialChangeSetId="cs1"
-            initialChangeSetSessionId="s1"
-            onInitialChangeSetOpened={opened}
-          />
+          <TooltipProvider>
+            <ChatPanel
+              initialChangeSetId="cs1"
+              initialChangeSetSessionId="s1"
+              onInitialChangeSetOpened={opened}
+            />
+          </TooltipProvider>
         </SessionStoreProvider>
       </I18nextProvider>,
     )
@@ -229,24 +234,12 @@ describe('ChatPanel', () => {
     await userEvent.click(within(panel).getByRole('button', { name: '打开其他面板' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
       '文件',
-      '检查',
-      '活动',
     ])
     expect(screen.queryByRole('menuitem', { name: '改动' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '概要' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '计划' })).toBeNull()
-    await userEvent.click(await screen.findByRole('menuitem', { name: '检查' }))
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-    expect(tabNames()).toEqual(['首页', '检查器'])
-
-    await userEvent.click(screen.getByRole('button', { name: '打开其他面板' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: '文件' }))
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-    expect(tabNames()).toEqual(['首页', '检查器', '文件树'])
-    expect(screen.getByRole('tab', { name: '文件树' }).getAttribute('aria-selected')).toBe('true')
-
-    // 关掉不在前台的标签，当前标签不变。
-    await userEvent.click(screen.getByRole('button', { name: '关闭检查器' }))
     expect(tabNames()).toEqual(['首页', '文件树'])
     expect(screen.getByRole('tab', { name: '文件树' }).getAttribute('aria-selected')).toBe('true')
 
@@ -504,11 +497,13 @@ describe('ChatPanel', () => {
     render(
       <I18nextProvider i18n={createI18n('zh-CN')}>
         <SessionStoreProvider store={store}>
-          <ChatPanel
-            initialChangeSetId="cs1"
-            initialChangeSetSessionId="s2"
-            onInitialChangeSetOpened={opened}
-          />
+          <TooltipProvider>
+            <ChatPanel
+              initialChangeSetId="cs1"
+              initialChangeSetSessionId="s2"
+              onInitialChangeSetOpened={opened}
+            />
+          </TooltipProvider>
         </SessionStoreProvider>
       </I18nextProvider>,
     )
@@ -1713,12 +1708,60 @@ describe('Composer (M2-04)', () => {
     })
     await open()
     expect(
-      await screen.findByRole('img', { name: '上下文已用 25%（25,000 / 100,000 tokens）' }),
+      await screen.findByRole('button', {
+        name: '上下文已用 25%（25,000 / 100,000 tokens）',
+      }),
     ).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '权限模式：询问' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /自动/ }))
     expect(request).toHaveBeenCalledWith('settings.update', { permissionMode: 'auto' })
     expect(await screen.findByRole('button', { name: '权限模式：自动' })).toBeTruthy()
+  })
+
+  it('opens the context breakdown without listing individual skills', async () => {
+    const snapshot = {
+      snapshotId: 'snap1',
+      sessionId: 's1',
+      runId: 'r1',
+      agent: { id: 'builtin.coder', version: 1 },
+      model,
+      createdAt: 8,
+      tokens: 100,
+      systemPrompt: [
+        { title: 'Base prompt', text: 'base', tokens: 52 },
+        { title: 'Skills', text: '- tdd: 测试驱动', tokens: 30 },
+      ],
+      skills: [{ name: 'tdd', description: '测试驱动', pinned: false, tokens: 30 }],
+      tools: [{ name: 'read_file', description: 'read', tokens: 10 }],
+      history: { messages: 1, tokens: 8, preview: [] },
+    }
+    const { request, open } = setup({
+      history: withModel,
+      handlers: {
+        'settings.get': () => ({ providers }),
+        'run.inspect': () => ({
+          tree: { sessionId: 's1', rootRunId: 'r1', generatedAt: 1, runs: [] },
+          snapshots: [snapshot],
+          settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+        }),
+      },
+    })
+    await open()
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: '上下文已用 25%（25,000 / 100,000 tokens）',
+      }),
+    )
+    expect(await screen.findByRole('list', { name: '上下文 token 明细' })).toBeTruthy()
+    expect(screen.getByText('最近报告的占用')).toBeTruthy()
+    expect(screen.getByText('25.0K / 100K tokens')).toBeTruthy()
+    expect(screen.getByText('系统提示词')).toBeTruthy()
+    expect(screen.getByText('技能')).toBeTruthy()
+    expect(screen.getByText('工具定义')).toBeTruthy()
+    expect(screen.getByText('历史消息')).toBeTruthy()
+    expect(screen.queryByText('tdd')).toBeNull()
+    expect(screen.queryByText('测试驱动')).toBeNull()
+    expect(request).toHaveBeenCalledWith('run.inspect', { sessionId: 's1' })
   })
 
   it('stops with Esc while running', async () => {
@@ -1809,11 +1852,11 @@ describe('Composer (M2-04)', () => {
     expect(await screen.findByRole('button', { name: '模型：测试供应商 · fake-1' })).toBeTruthy()
     emit(ev(10, 'usage.reported', { model, usage: { inputTokens: 75_000, outputTokens: 0 } }))
     expect(
-      await screen.findByRole('img', { name: '上下文已用 75%（75,000 / 100,000 tokens）' }),
+      await screen.findByRole('button', { name: '上下文已用 75%（75,000 / 100,000 tokens）' }),
     ).toBeTruthy()
     emit(ev(11, 'usage.reported', { model, usage: { inputTokens: 95_000, outputTokens: 0 } }))
     expect(
-      await screen.findByRole('img', { name: '上下文已用 95%（95,000 / 100,000 tokens）' }),
+      await screen.findByRole('button', { name: '上下文已用 95%（95,000 / 100,000 tokens）' }),
     ).toBeTruthy()
   })
 
@@ -1839,8 +1882,6 @@ describe('Composer (M2-04)', () => {
         'files',
         'diff',
         'brief',
-        'inspect',
-        'activity',
         'settings',
       ].map((id) => `composer-command-${id}`),
     )

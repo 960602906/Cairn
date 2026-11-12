@@ -1,6 +1,6 @@
 /**
  * 多 Agent 委派界面（M4-05）：父运行并行派出两个只读子运行，对话里显示委派卡片；
- * 检查器显示运行树，打开子运行后可返回父运行。
+ * 展开委派卡片后按需读取子运行的只读过程树。
  */
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
@@ -10,7 +10,6 @@ import {
   projectDir,
   runStatus,
   sendPrompt,
-  sessionPanel,
   setAgentOnSession,
 } from './session.js'
 
@@ -147,30 +146,19 @@ test('并行子运行的委派卡片与运行树', async ({ launch, userData }) 
     await setAgentOnSession(window, '委派会话', { id: lead.agentId, version: lead.version })
 
     await sendPrompt(window, '并行检查')
-    await expect(window.getByRole('article', { name: /委派任务：检查登录流程/ })).toBeVisible({
-      timeout: 30_000,
-    })
+    const loginCard = window.getByRole('article', { name: /委派任务：检查登录流程/ })
+    await expect(loginCard).toBeVisible({ timeout: 30_000 })
     await expect(window.getByRole('article', { name: /委派任务：检查权限规则/ })).toBeVisible()
     await expect(
       window.getByRole('list', { name: '消息' }).getByText('父运行完成').first(),
     ).toBeVisible({ timeout: 30_000 })
     await expect(runStatus(window)).toHaveText('空闲', { timeout: 30_000 })
 
-    const panelToggle = window.getByRole('button', { name: '会话信息', exact: true })
-    if ((await panelToggle.getAttribute('aria-expanded')) !== 'true') await panelToggle.click()
-    await sessionPanel(window).getByRole('button', { name: '打开检查' }).click()
-    await expect(window.getByRole('tab', { name: '检查器' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
-    const panel = window.getByRole('tabpanel', { name: '时间线' })
-    await expect(panel.getByRole('list', { name: '运行树' })).toBeVisible()
-    await expect(panel.getByText('只读检查员').first()).toBeVisible()
-    await panel.getByRole('button', { name: '打开子运行' }).first().click()
-    const inspector = sessionPanel(window)
-    await expect(inspector.getByRole('button', { name: '返回父运行' })).toBeVisible()
-    await inspector.getByRole('button', { name: '返回父运行' }).click()
-    await expect(panel.getByRole('button', { name: '打开子运行' }).first()).toBeVisible()
+    // 展开委派卡片后，卡片里按需读取并显示子运行的运行树。
+    await loginCard.getByRole('button', { name: /检查登录流程/ }).click()
+    await expect(loginCard.getByRole('list', { name: '运行树' })).toBeVisible()
+    await expect(loginCard.getByText('只读检查员').first()).toBeVisible()
+    await expect(loginCard.getByRole('button', { name: /第 1 轮/ })).toBeVisible()
   } finally {
     await mock?.close()
   }

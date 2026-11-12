@@ -68,15 +68,13 @@ export function SessionSidePanel({
   placement = 'side',
   docked = false,
   onClose,
-  onLocateTurn,
-  onOpenActivitySession,
 }: {
   readonly sessionId: string
   readonly view: SessionView | undefined
   readonly status: SessionStatus
   readonly panel: SessionPanelView
   readonly selectedPlanId: string | undefined
-  /** 从委派卡片、活动中心或检查器打开的改动集。 */
+  /** 从委派卡片或活动中心打开的改动集。 */
   readonly selectedChangeSetId?: string | undefined
   readonly onSelectChangeSet?: ((changeSetId: string | undefined) => void) | undefined
   /** 打开或切换到某个面板；首页卡片和「+」菜单使用，会回到该面板的概览状态。 */
@@ -102,10 +100,6 @@ export function SessionSidePanel({
   /** 宽屏时占用布局宽度；窄屏时作为右侧浮层。 */
   readonly docked?: boolean
   readonly onClose?: () => void
-  /** 从运行树定位到对话轮次。 */
-  readonly onLocateTurn?: ((runId: string, turnId: string) => void) | undefined
-  /** 活动中心面板里打开其他会话。 */
-  readonly onOpenActivitySession?: ((sessionId: string, changeSetId?: string) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const bottom = placement === 'bottom'
@@ -297,12 +291,7 @@ export function SessionSidePanel({
         </div>
         <div className="min-h-0 flex-1">
           {panel === 'home' && (
-            <SessionHome
-              view={view}
-              status={status}
-              onOpenFiles={() => onOpenPanel('files')}
-              onOpenInspector={() => onOpenPanel('inspector')}
-            />
+            <SessionHome view={view} onOpenFiles={() => onOpenPanel('files')} />
           )}
           {panel !== 'home' && !isFileTab(panel) && panel !== 'files' && (
             <SessionPanelContent
@@ -318,8 +307,6 @@ export function SessionSidePanel({
               selectedChangeSetId={selectedChangeSetId}
               onOpenPanel={onOpenPanel}
               {...(onSelectChangeSet === undefined ? {} : { onSelectChangeSet })}
-              {...(onLocateTurn === undefined ? {} : { onLocateTurn })}
-              {...(onOpenActivitySession === undefined ? {} : { onOpenActivitySession })}
             />
           )}
           {panel !== 'home' && isFileTab(panel) && (
@@ -346,8 +333,6 @@ export function SessionSidePanel({
                 selectedChangeSetId={selectedChangeSetId}
                 onOpenPanel={onOpenPanel}
                 {...(onSelectChangeSet === undefined ? {} : { onSelectChangeSet })}
-                {...(onLocateTurn === undefined ? {} : { onLocateTurn })}
-                {...(onOpenActivitySession === undefined ? {} : { onOpenActivitySession })}
               />
             </div>
           )}
