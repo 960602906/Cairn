@@ -547,6 +547,122 @@ describe('commands', () => {
     expect(store.getState().error?.code).toBe('run.busy')
   })
 
+  it('sends / skills and @ agents with the prompt', async () => {
+    const { api, calls } = fakeApi({
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+      'session.prompt': () => ({ messageId: 'm1' }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    expect(
+      await store.getState().sendPrompt('/review @审查员 看 @a.ts', 'normal', {
+        skills: ['review'],
+        agents: [{ agentId: 'user.review', name: '审查员' }],
+        agentNames: ['审查员'],
+      }),
+    ).toBe(true)
+    expect(calls.filter(([method]) => method === 'session.prompt')).toEqual([
+      [
+        'session.prompt',
+        {
+          sessionId: 's1',
+          content: [{ type: 'text', text: '/review @审查员 看 @a.ts' }],
+          mentions: [{ path: 'a.ts' }],
+          skills: [{ name: 'review' }],
+          agents: [{ agentId: 'user.review', name: '审查员' }],
+        },
+      ],
+    ])
+
+    // 不点名时不带 skills / agents 字段；计划模式仍然只多带 mode
+    await store.getState().sendPrompt('hello', 'plan', { skills: [], agents: [] })
+    expect(calls.filter(([method]) => method === 'session.prompt').at(-1)).toEqual([
+      'session.prompt',
+      {
+        sessionId: 's1',
+        content: [{ type: 'text', text: 'hello' }],
+        mode: 'plan',
+      },
+    ])
+
+    // 协议只收 5 个 Agent，多出来的丢掉而不是让整条消息失败
+    const manyAgents = Array.from({ length: 6 }, (_, index) => ({
+      agentId: `user.a${index}`,
+      name: `A${index}`,
+    }))
+    await store.getState().sendPrompt('hi', 'normal', { agents: manyAgents })
+    const sent = calls.filter(([method]) => method === 'session.prompt').at(-1)?.[1] as {
+      agents: unknown[]
+    }
+    expect(sent.agents).toHaveLength(5)
+  })
+
+  it('resolves which paths exist, without failing the reply', async () => {
+    const { api } = fakeApi({
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+      'fs.exists': (params: { paths: string[] }) => ({
+        existing: params.paths.filter((path) => path === 'a.ts'),
+      }),
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().pathsExist('p1', [])).toEqual(new Set())
+    expect(await store.getState().pathsExist('p1', ['a.ts', 'b.ts'])).toEqual(new Set(['a.ts']))
+
+    const failing = createSessionStore(
+      fakeApi({ 'fs.exists': () => Promise.reject(new RpcError('fs.failed')) }).api,
+    )
+    expect(await failing.getState().pathsExist('p1', ['a.ts'])).toEqual(new Set())
+  })
+
+  it('sends version and other optional fields only when given', async () => {
+    const { api, calls } = fakeApi({
+      'agent.get': () => ({ agentId: 'a', source: 'user', archived: false }),
+      'agent.export': () => ({ markdown: '# a' }),
+      'agent.effectiveConfig': () => ({}),
+      'fs.search': () => ({ entries: [], truncated: false }),
+      'activity.resolve': () => ({}),
+      'changeset.apply': () => ({}),
+      'changeset.reject': () => ({}),
+      'provider.models': () => ({ models: [] }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().getAgent('a', 2)
+    await store.getState().exportAgent('a', 2)
+    await store.getState().agentEffectiveConfig('a')
+    await store.getState().searchFiles({ projectId: 'p1' }, 'q')
+    await store.getState().resolveActivity('ap', 'allow_once', ' 收紧 ')
+    await store.getState().applyChangeSet('s1', 'cs', ['a.ts'])
+    await store.getState().rejectChangeSet('s1', 'cs')
+    await store.getState().agentEffectiveConfig('a', 's1')
+    await store.getState().fetchModels({ id: 'p' } as never, 'key')
+    await store.getState().fetchModels({ id: 'p' } as never)
+
+    const picked = calls.filter(([method]) =>
+      [
+        'agent.get',
+        'agent.export',
+        'agent.effectiveConfig',
+        'fs.search',
+        'activity.resolve',
+        'changeset.apply',
+        'changeset.reject',
+        'provider.models',
+      ].includes(method),
+    )
+    expect(picked).toEqual([
+      ['agent.get', { agentId: 'a', version: 2 }],
+      ['agent.export', { agentId: 'a', version: 2 }],
+      ['agent.effectiveConfig', { agentId: 'a' }],
+      ['fs.search', { projectId: 'p1', query: 'q' }],
+      ['activity.resolve', { approvalId: 'ap', decision: 'allow_once', feedback: '收紧' }],
+      ['changeset.apply', { sessionId: 's1', changeSetId: 'cs', paths: ['a.ts'] }],
+      ['changeset.reject', { sessionId: 's1', changeSetId: 'cs' }],
+      ['agent.effectiveConfig', { agentId: 'a', sessionId: 's1' }],
+      ['provider.models', { provider: { id: 'p' }, secret: 'key' }],
+      ['provider.models', { provider: { id: 'p' } }],
+    ])
+  })
+
   it('marks a session as awaiting its turn until the turn starts', async () => {
     let emitStarted = () => {}
     const { api, emit } = fakeApi({

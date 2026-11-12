@@ -18,6 +18,7 @@ import { splitPath } from './CodeCard.js'
 import { ChangeCounts, DiffCard, KindBadge, RatioBlocks, type DiffContent } from './DiffCard.js'
 import { fileEntries, totals, turnEntries, type FileEntry } from './file-changes.js'
 import { FileTypeIcon } from './file-icons.js'
+import { fileDragProps } from './file-drag.js'
 import { languageForPath } from './languages.js'
 import { useSessionStore } from './store-context.js'
 import {
@@ -174,6 +175,7 @@ export function FileChangeList({
           <li key={entry.path}>
             <button
               type="button"
+              {...fileDragProps(entry.path, 'file')}
               aria-expanded={expanded}
               onClick={() => toggle(entry.path)}
               className="group/file flex h-9 w-full items-center gap-2 px-3 text-left text-note hover:bg-hover"

@@ -24,6 +24,7 @@ import {
   type RpcChannel,
   type ResolvedMention,
   type RpcError,
+  type SkillCatalogEntry,
 } from '@cairn/protocol'
 import type { z } from 'zod'
 import type { CredentialCommands } from './credential-store.js'
@@ -38,6 +39,7 @@ import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
 import type { TrialCommands } from './trial-service.js'
 import type { AppInfoCommands } from './app-info-service.js'
+import { expandPromptAgents, expandPromptSkills } from './prompt-context.js'
 
 type Requests = (typeof MainForRenderer)['requests']
 type Handler<M extends keyof Requests> = (
@@ -184,8 +186,13 @@ export interface RendererGatewayOptions {
   readonly changeSets: ChangeSetCommands
   /** 审批（M1-11b）：读取未决审批与作出决定。 */
   readonly approvals: ApprovalCommands
-  /** 技能（M3-07）：列表、安装、卸载与启用；选择来源（M3-08）。 */
-  readonly skills: SkillCommands
+  /**
+   * 技能（M3-07）：列表、安装、卸载与启用；选择来源（M3-08）。
+   * `catalog` 供 `/技能名` 展开这一轮的正文，可由实现省略（省略时技能指令不生效）。
+   */
+  readonly skills: SkillCommands & {
+    readonly catalog?: ((sessionId: string) => readonly SkillCatalogEntry[]) | undefined
+  }
   /** 资源市场目录（M5）：ClawHub 技能与 MCP Registry。 */
   readonly hub: HubCommands
   /** MCP 服务（M3-09）：配置、连接、工具与日志。 */
@@ -383,15 +390,51 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('fs.search', async (params) =>
         mentions ? mentions.search(params) : { entries: [], truncated: false },
       )
-      endpoint.handle('session.prompt', async ({ mentions: requested, ...params }) => {
-        if (!requested || requested.length === 0 || !mentions) return commands.prompt(params)
-        const expanded = await mentions.expand({ sessionId: params.sessionId, mentions: requested })
-        return commands.prompt({
-          ...params,
-          ...(expanded.mentions.length > 0 ? { mentions: expanded.mentions } : {}),
-          ...(expanded.context !== undefined ? { context: expanded.context } : {}),
-        })
-      })
+      endpoint.handle('fs.exists', (params) => files.exists(params))
+      endpoint.handle(
+        'session.prompt',
+        async ({
+          mentions: requested,
+          skills: requestedSkills,
+          agents: requestedAgents,
+          ...params
+        }) => {
+          const contexts: string[] = []
+          let resolvedMentions: ResolvedMention[] | undefined
+          if (requested && requested.length > 0 && mentions) {
+            const expanded = await mentions.expand({
+              sessionId: params.sessionId,
+              mentions: requested,
+            })
+            resolvedMentions = expanded.mentions
+            if (expanded.context !== undefined) contexts.push(expanded.context)
+          }
+
+          const skillExpansion =
+            requestedSkills === undefined || requestedSkills.length === 0
+              ? { skills: [], context: undefined }
+              : expandPromptSkills(skills.catalog?.(params.sessionId) ?? [], requestedSkills)
+          if (skillExpansion.context !== undefined) contexts.push(skillExpansion.context)
+
+          const agentExpansion = expandPromptAgents(
+            requestedAgents === undefined || requestedAgents.length === 0
+              ? []
+              : agents.list({}).agents,
+            requestedAgents ?? [],
+          )
+          if (agentExpansion.context !== undefined) contexts.push(agentExpansion.context)
+
+          return commands.prompt({
+            ...params,
+            ...(resolvedMentions !== undefined && resolvedMentions.length > 0
+              ? { mentions: resolvedMentions }
+              : {}),
+            ...(skillExpansion.skills.length > 0 ? { skills: skillExpansion.skills } : {}),
+            ...(agentExpansion.agents.length > 0 ? { agents: agentExpansion.agents } : {}),
+            ...(contexts.length > 0 ? { context: contexts.join('\n\n') } : {}),
+          })
+        },
+      )
       endpoint.handle('plan.approve', (params) => commands.approvePlan(params))
       endpoint.handle('plan.replan', (params) => commands.replan(params))
       endpoint.handle('plan.abandon', (params) => commands.abandonPlan(params))

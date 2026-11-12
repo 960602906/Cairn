@@ -76,6 +76,20 @@ export const ResolvedMention = PromptMention.extend({ kind: z.enum(['file', 'dir
 export type ResolvedMention = z.infer<typeof ResolvedMention>
 
 /**
+ * 用户用 `/技能名` 指定这一轮使用的技能。名称由主进程对照当前会话可用的技能校验，
+ * 正文作为只给模型看的上下文附在这一轮输入之后，并在 `message.user` 里留下标记。
+ */
+export const PromptSkill = z.object({ name: z.string().min(1).max(200) })
+export type PromptSkill = z.infer<typeof PromptSkill>
+
+/**
+ * 用户用 `@Agent名` 指定要把这部分工作委派给的 Agent。`agentId` 由渲染进程按当前列表填入，
+ * 主进程确认它仍然可用后，把一条委派提示附给模型（`name` 用于显示与提示文字）。
+ */
+export const PromptAgent = z.object({ agentId: Id, name: z.string().min(1).max(200) })
+export type PromptAgent = z.infer<typeof PromptAgent>
+
+/**
  * 推理内容的一段原始块。签名等字段对应用不透明，只用于把推理原样带回给产生它的模型：
  * Anthropic 的 thinking 签名与 redacted_thinking 数据、Gemini 的 thought signature、
  * DeepSeek（openai 格式）回传推理时使用的字段名等（M1-01b）。

@@ -171,6 +171,26 @@ describe('reduceSession：一轮完整对话', () => {
     expect(mentioned.messages[0]).not.toHaveProperty('context')
   })
 
+  it('用户消息带上 / 技能与 @Agent，技能正文不进视图', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('message.user', {
+        messageId: 'm1',
+        content: text('/review @审查员 看看'),
+        skills: [{ name: 'review' }],
+        agents: [{ agentId: 'user.review', name: '审查员' }],
+        context: '<skill name="review">\n正文\n</skill>',
+      }),
+    ])
+    expect(view.messages[0]).toMatchObject({
+      role: 'user',
+      skills: [{ name: 'review' }],
+      agents: [{ agentId: 'user.review', name: '审查员' }],
+      mentions: [],
+    })
+    expect(view.messages[0]).not.toHaveProperty('context')
+  })
+
   it('消息列表', () => {
     expect(view.messages).toEqual([
       {
@@ -182,6 +202,8 @@ describe('reduceSession：一轮完整对话', () => {
         ts: 30,
         content: text('你好'),
         mentions: [],
+        skills: [],
+        agents: [],
       },
       {
         role: 'assistant',

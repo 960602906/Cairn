@@ -4,7 +4,7 @@
  * 还没有工作空间时可以打开本地文件夹。输入 `@` 可以引用所选工作空间里的文件（ADR-0037）。
  */
 import { ArrowUp } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ModelRef } from '@cairn/protocol'
 import {
@@ -16,7 +16,9 @@ import {
   PlanModeChip,
 } from './Composer.js'
 import { parseComposerCommand } from './composer-commands.js'
-import { MENTION_LIST_ID, useMentionMenu } from './ComposerMentions.js'
+import { extractAgents } from './composer-tokens.js'
+import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMentions.js'
+import { agentName, localized } from './agents/model.js'
 import { isPlanModeKey } from './layout/shortcuts.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
@@ -67,11 +69,12 @@ export function NewSession({
   /** 会话创建并发出第一条消息后离开新对话页。 */
   readonly onDone: () => void
 }) {
-  const { t } = useTranslation('session')
+  const { t, i18n } = useTranslation('session')
   const createSession = useSessionStore((s) => s.createSession)
   const setSessionModel = useSessionStore((s) => s.setSessionModel)
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const projects = useSessionStore((s) => s.projects)
+  const agents = useSessionStore((s) => s.agents) ?? []
   const refreshProjects = useSessionStore((s) => s.refreshProjects)
   const openProject = useSessionStore((s) => s.openProject)
   const providers = useSessionStore((s) => s.settings?.providers) ?? []
@@ -86,12 +89,32 @@ export function NewSession({
   const textarea = useRef<HTMLTextAreaElement>(null)
   const box = useRef<HTMLDivElement>(null)
   const projectId = projects.find((project) => project.path === projectPath.trim())?.projectId
+  const agentOptions = useMemo<MentionAgent[]>(
+    () =>
+      agents.map((agent) => ({
+        agentId: agent.agentId,
+        name: agentName(agent, i18n.language),
+        description: localized(agent.description, i18n.language, ''),
+      })),
+    [agents, i18n.language],
+  )
+  const agentMentions = useMemo(() => {
+    const byName = new Map<string, { agentId: string; name: string }>()
+    for (const agent of agents) {
+      for (const candidate of [agent.name['zh-CN'], agent.name['en-US']]) {
+        const name = candidate?.trim()
+        if (name !== undefined && name !== '') byName.set(name, { agentId: agent.agentId, name })
+      }
+    }
+    return [...byName.values()]
+  }, [agents])
   const mention = useMentionMenu({
     text,
     setText,
     textarea,
     root: box,
     scope: projectId === undefined ? undefined : { projectId },
+    agents: agentOptions,
     disabled: busy,
   })
   const period = useGreetingPeriod()
@@ -147,7 +170,10 @@ export function NewSession({
     }
     // 新会话先按模型创建，再切换用户选的模型，最后才发出第一轮。
     if (!sameModel(model, defaultModel)) await setSessionModel(sessionId, model)
-    await sendPrompt(draft, plan ? 'plan' : 'normal')
+    await sendPrompt(draft, plan ? 'plan' : 'normal', {
+      agents: extractAgents(draft, agentMentions),
+      agentNames: agentMentions.map((item) => item.name),
+    })
     setBusy(false)
     onDone()
   }

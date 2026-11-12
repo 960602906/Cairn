@@ -8,6 +8,7 @@ import {
   type RunInspectResult,
   type RpcChannel,
   type SandboxStatus,
+  type SkillCatalogEntry,
   type UpdateStatus,
   type UnsequencedEvent,
 } from '@cairn/protocol'
@@ -110,7 +111,7 @@ let changes: ChangeCommands
 let checkpoints: CheckpointCommands
 let changeSets: ChangeSetCommands
 let approvals: ApprovalCommands
-let skills: SkillCommands
+let skills: SkillCommands & { catalog: (sessionId: string) => SkillCatalogEntry[] }
 let agents: AgentCommands
 let trials: TrialCommands
 let diagnostics: DiagnosticsCommands
@@ -292,6 +293,7 @@ function setup(
     })),
     uninstall: vi.fn(() => ({})),
     setEnabled: vi.fn(),
+    catalog: vi.fn(() => []),
   }
   approvalListeners.clear()
   commandListeners.clear()
@@ -302,7 +304,7 @@ function setup(
     validation: { ok: true, errors: [], warnings: [] },
   }
   agents = {
-    list: vi.fn(() => ({ agents: [] })),
+    list: vi.fn<AgentCommands['list']>(() => ({ agents: [] })),
     get: vi.fn(() => agentDetail),
     saveDraft: vi.fn(() => agentDetail),
     publish: vi.fn(() => agentDetail),
@@ -443,6 +445,7 @@ function setup(
     files: {
       list: vi.fn(async () => ({ entries: [], truncated: false })),
       read: vi.fn(async () => ({ content: { kind: 'text' as const, text: 'hello' } })),
+      exists: vi.fn(async () => ({ existing: [] })),
       create: vi.fn(async () => ({ path: '' })),
       rename: vi.fn(async () => ({ path: '' })),
       delete: vi.fn(async () => ({})),
@@ -738,6 +741,85 @@ describe('createRendererGateway: commands and lifecycle', () => {
 
     await client.request('session.prompt', { sessionId: 's1', content, mentions: [] })
     expect(mentions!.expand).toHaveBeenCalledTimes(2)
+  })
+
+  it('expands / skills and @ agents into one context', async () => {
+    const { client } = setup()
+    const catalogSkill: SkillCatalogEntry = {
+      name: 'review',
+      description: 'Review code.',
+      sha256: 'b'.repeat(64),
+      source: 'user',
+      pinned: false,
+      root: '/skills/review',
+      body: 'Review carefully.',
+      hasScripts: false,
+      files: [],
+    }
+    vi.mocked(skills.catalog).mockReturnValueOnce([catalogSkill])
+    vi.mocked(agents.list).mockReturnValueOnce({
+      agents: [
+        {
+          agentId: 'user.review',
+          name: { 'zh-CN': '审查员', 'en-US': 'Reviewer' },
+          description: { 'zh-CN': '代码审查', 'en-US': 'Reviews code' },
+          source: 'user',
+          archived: false,
+          status: 'published',
+          version: 1,
+          hasDraft: false,
+          modelMode: 'inherit',
+          updatedAt: 1,
+        },
+      ],
+    })
+    const content = [{ type: 'text' as const, text: '/review @审查员 看 @a.ts' }]
+    await client.request('session.prompt', {
+      sessionId: 's1',
+      content,
+      mentions: [{ path: 'a.ts' }],
+      skills: [{ name: 'review' }, { name: 'missing' }],
+      agents: [{ agentId: 'user.review', name: '审查员' }],
+    })
+    expect(skills.catalog).toHaveBeenCalledWith('s1')
+    const call = vi.mocked(commands.prompt).mock.calls.at(-1)?.[0] as Record<string, unknown>
+    expect(call.skills).toEqual([{ name: 'review' }])
+    expect(call.agents).toEqual([{ agentId: 'user.review', name: '审查员' }])
+    expect(call.mentions).toEqual([{ path: 'a.ts', kind: 'file' }])
+    expect(call.context).toContain('ctx')
+    expect(call.context).toContain('<skill name="review">')
+    expect(call.context).toContain('<agent id="user.review" name="审查员"/>')
+
+    // 未点名的技能不动技能目录；点名但都找不到时只传文字
+    vi.mocked(skills.catalog).mockClear()
+    await client.request('session.prompt', { sessionId: 's1', content })
+    expect(skills.catalog).not.toHaveBeenCalled()
+    expect(commands.prompt).toHaveBeenLastCalledWith({ sessionId: 's1', content })
+
+    await client.request('session.prompt', {
+      sessionId: 's1',
+      content,
+      skills: [{ name: 'missing' }],
+      agents: [{ agentId: 'unknown', name: 'x' }],
+    })
+    expect(skills.catalog).toHaveBeenCalledWith('s1')
+    expect(commands.prompt).toHaveBeenLastCalledWith({ sessionId: 's1', content })
+  })
+
+  it('reports which paths exist for clickable replies', async () => {
+    const { client } = setup()
+    await expect(
+      client.request('fs.exists', { projectId: 'p1', paths: ['a.ts', 'missing.ts'] }),
+    ).resolves.toEqual({ existing: [] })
+    await expect(
+      client.request('fs.exists', { projectId: 'p1', paths: ['a'.repeat(4097)] }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+    await expect(
+      client.request('fs.exists', {
+        projectId: 'p1',
+        paths: Array.from({ length: 201 }, (_, i) => `f${i}.ts`),
+      }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
   })
 
   it('searches files for @ mentions; returns nothing without a mention service', async () => {
@@ -1231,6 +1313,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       files: {
         list: async () => ({ entries: [], truncated: false }),
         read: async () => ({ content: { kind: 'text' as const, text: '' } }),
+        exists: async () => ({ existing: [] }),
         create: async () => ({ path: '' }),
         rename: async () => ({ path: '' }),
         delete: async () => ({}),

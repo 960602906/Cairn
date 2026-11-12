@@ -35,6 +35,8 @@ export interface FileCommands {
     limit?: number | undefined
   }): Promise<{ entries: FileTreeEntry[]; truncated: boolean }>
   read(input: { projectId: string; path: string }): Promise<{ content: FileContent }>
+  /** 批量确认相对路径在项目里存在且是文件；不存在或越界的直接略过。 */
+  exists(input: { projectId: string; paths: readonly string[] }): Promise<{ existing: string[] }>
   create(input: {
     projectId: string
     path: string
@@ -223,6 +225,24 @@ export function createFileService(options: FileServiceOptions): FileCommands {
       })
       const limit = input.limit ?? DEFAULT_LIST_LIMIT
       return { entries: entries.slice(0, limit), truncated: entries.length > limit }
+    },
+
+    async exists(input) {
+      // 项目不存在时仍然报错；单个路径的问题只影响它自己。
+      await projectRoot(input.projectId)
+      const existing = new Set<string>()
+      for (const candidate of input.paths) {
+        try {
+          const target = await resolveTarget(input.projectId, candidate, {
+            allowRoot: false,
+            mustExist: true,
+          })
+          if ((await fsp.stat(target.absolute)).isFile()) existing.add(target.relative)
+        } catch {
+          // 不存在、越界或读不了：不在这条消息里变成链接。
+        }
+      }
+      return { existing: [...existing] }
     },
 
     async read(input) {

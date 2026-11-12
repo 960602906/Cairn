@@ -10,7 +10,7 @@
  * M2-08：每轮的用户消息上方是检查点分隔线，轮次操作中有“撤销本轮”，恢复之后显示恢复标记
  * （`Checkpoints.tsx`）。
  */
-import { Check, ChevronRight, Copy } from 'lucide-react'
+import { Bot, Check, ChevronRight, Copy } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -24,7 +24,15 @@ import {
   type SessionView,
 } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
-import { isAgentDraftRef, type ContentPart, type ModelRef } from '@cairn/protocol'
+import {
+  isAgentDraftRef,
+  type ContentPart,
+  type ModelRef,
+  type MentionLines,
+  type PromptAgent,
+  type PromptSkill,
+  type ResolvedMention,
+} from '@cairn/protocol'
 import {
   CheckpointDivider,
   RestoreMarks,
@@ -33,6 +41,9 @@ import {
   turnNumbers,
   UndoTurnButton,
 } from './Checkpoints.js'
+import { COMPOSER_COMMANDS } from './composer-commands.js'
+import { parseMention, tokenize } from './composer-tokens.js'
+import { FileTypeIcon } from './file-icons.js'
 import { TurnChanges } from './FileChanges.js'
 import { DelegationCard } from './DelegationCard.js'
 import { Markdown } from './Markdown.js'
@@ -112,24 +123,172 @@ function Reasoning({ text, live = false }: { readonly text: string; readonly liv
   )
 }
 
-/** 助手正文：文本按 Markdown 渲染。 */
-function AssistantContent({ parts }: { readonly parts: readonly ContentPart[] }) {
+/** 助手正文：文本按 Markdown 渲染；行内代码里的项目路径可以点开。 */
+function AssistantContent({
+  parts,
+  resolvePaths,
+  onOpenFile,
+}: {
+  readonly parts: readonly ContentPart[]
+  readonly resolvePaths: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  readonly onOpenFile: ((path: string, line?: number) => void) | undefined
+}) {
   const { t } = useTranslation('session')
   return parts.map((part, index) =>
     part.type === 'text' ? (
-      <Markdown key={index} text={part.text} />
+      <Markdown key={index} text={part.text} resolvePaths={resolvePaths} onOpenFile={onOpenFile} />
     ) : (
       <p key={index}>{t('message.image')}</p>
     ),
   )
 }
 
-/** 用户消息：原样显示（不按 Markdown 解释），保留换行。 */
-function UserContent({ parts }: { readonly parts: readonly ContentPart[] }) {
+const COMMAND_NAMES = COMPOSER_COMMANDS.map((command) => command.name)
+
+const mentionKey = (path: string, lines?: MentionLines) =>
+  `${path}:${lines === undefined ? '' : `${lines.start}-${lines.end}`}`
+
+const baseName = (path: string) => path.split('/').at(-1) ?? path
+
+/** 用户消息里确认存在的 `@` 文件引用：点击在右侧打开。 */
+function FileMention({
+  text,
+  path,
+  line,
+  onOpenFile,
+}: {
+  readonly text: string
+  readonly path: string
+  readonly line: number | undefined
+  readonly onOpenFile: ((path: string, line?: number) => void) | undefined
+}) {
+  const content = (
+    <>
+      <FileTypeIcon name={baseName(path)} />
+      {text}
+    </>
+  )
+  const className =
+    'inline-flex max-w-full items-center gap-1 rounded-[4px] bg-accent-soft px-1 text-accent align-baseline'
+  return onOpenFile === undefined ? (
+    <span data-token="mention" className={className}>
+      {content}
+    </span>
+  ) : (
+    <button
+      type="button"
+      data-token="mention"
+      title={path}
+      onClick={() => onOpenFile(path, line)}
+      className={`${className} cursor-pointer outline-none hover:bg-press focus-visible:ring-1 focus-visible:ring-accent`}
+    >
+      {content}
+    </button>
+  )
+}
+
+/**
+ * 用户消息：原样显示（不按 Markdown 解释），保留换行。指令、确认过的 `@` 引用与网址
+ * 用和输入框一致的分词高亮；引用和网址可以点。
+ */
+function UserContent({
+  parts,
+  mentions,
+  skills,
+  agents,
+  onOpenFile,
+}: {
+  readonly parts: readonly ContentPart[]
+  readonly mentions: readonly ResolvedMention[]
+  readonly skills: readonly PromptSkill[]
+  readonly agents: readonly PromptAgent[]
+  readonly onOpenFile: ((path: string, line?: number) => void) | undefined
+}) {
   const { t } = useTranslation('session')
+  const resolved = useMemo(
+    () => new Set(mentions.map((mention) => mentionKey(mention.path, mention.lines))),
+    [mentions],
+  )
+  const agentNames = useMemo(() => new Set(agents.map((agent) => agent.name)), [agents])
+  const renderText = (text: string) =>
+    tokenize(text, { commands: COMMAND_NAMES }).map((token) => {
+      if (token.type === 'text') return token.text
+      if (token.type === 'command') {
+        return (
+          <span
+            key={token.start}
+            data-token="command"
+            className="rounded-[4px] bg-accent-soft px-0.5 font-mono"
+          >
+            {token.text}
+          </span>
+        )
+      }
+      if (token.type === 'code') {
+        return (
+          <code key={token.start} className="rounded-[4px] bg-sunk px-0.5 font-mono">
+            {token.text}
+          </code>
+        )
+      }
+      if (token.type === 'url') {
+        return (
+          <a
+            key={token.start}
+            href={token.text}
+            target="_blank"
+            rel="noreferrer"
+            className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+          >
+            {token.text}
+          </a>
+        )
+      }
+      const parsed = parseMention(token.text.slice(1))
+      if (parsed === undefined) return token.text
+      if (agentNames.has(parsed.path)) {
+        return (
+          <span
+            key={token.start}
+            data-token="agent"
+            className="inline-flex max-w-full items-center gap-1 rounded-[4px] bg-accent-soft px-1 text-accent align-baseline"
+          >
+            <Bot aria-hidden className="size-3.5" />
+            {token.text}
+          </span>
+        )
+      }
+      if (!resolved.has(mentionKey(parsed.path, parsed.lines))) return token.text
+      return (
+        <FileMention
+          key={token.start}
+          text={token.text}
+          path={parsed.path}
+          line={parsed.lines?.start}
+          onOpenFile={onOpenFile}
+        />
+      )
+    })
+
   return parts.map((part, index) => (
     <p key={index} className="whitespace-pre-wrap">
-      {part.type === 'text' ? part.text : t('message.image')}
+      {part.type === 'text' ? (
+        <>
+          {index === 0 &&
+            skills.map((skill) => (
+              <span
+                key={skill.name}
+                data-token="skill"
+                className="mr-1 inline-flex items-center rounded-[4px] bg-accent-soft px-1 font-mono text-note text-accent"
+              >
+                /{skill.name}
+              </span>
+            ))}
+          {renderText(part.text)}
+        </>
+      ) : (
+        t('message.image')
+      )}
     </p>
   ))
 }
@@ -259,6 +418,8 @@ function Message({
   omitted,
   onOpenPlan,
   onOpenChanges,
+  resolvePaths,
+  onOpenFile,
 }: {
   readonly message: MessageView
   readonly view: SessionView
@@ -279,6 +440,10 @@ function Message({
   readonly omitted: boolean
   readonly onOpenPlan: (planId: string) => void
   readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
+  /** 行内代码里的项目路径是否存在；助手正文据此变成可点的路径。 */
+  readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  /** 点击消息里的文件：在右侧打开并定位到行。 */
+  readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const approvals = useSessionStore((s) => {
@@ -308,7 +473,13 @@ function Message({
         {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
         <div className="max-w-[78%] rounded-[10px] bg-sunk2 px-3.5 py-2.5 text-fg shadow-1">
-          <UserContent parts={message.content} />
+          <UserContent
+            parts={message.content}
+            mentions={message.mentions ?? []}
+            skills={message.skills ?? []}
+            agents={message.agents ?? []}
+            onOpenFile={onOpenFile}
+          />
         </div>
         {restores && (
           <div className="self-stretch">
@@ -346,7 +517,11 @@ function Message({
       {message.reasoning && message.reasoning.text !== '' && (
         <Reasoning text={message.reasoning.text} />
       )}
-      <AssistantContent parts={message.content} />
+      <AssistantContent
+        parts={message.content}
+        resolvePaths={resolvePaths}
+        onOpenFile={onOpenFile}
+      />
       {message.toolCalls.length > 0 && (
         <ToolTimeline>
           {message.toolCalls.map((call) => (
@@ -396,10 +571,14 @@ function LiveMessage({
   live,
   view,
   continued,
+  resolvePaths,
+  onOpenFile,
 }: {
   readonly live: LiveMessageView
   readonly view: SessionView | undefined
   readonly continued: boolean
+  readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const agents = useSessionStore((s) => s.agents) ?? []
@@ -425,7 +604,9 @@ function LiveMessage({
         </div>
       )}
       {live.reasoning !== '' && <Reasoning text={live.reasoning} live={live.text === ''} />}
-      {live.text !== '' && <Markdown text={live.text} />}
+      {live.text !== '' && (
+        <Markdown text={live.text} resolvePaths={resolvePaths} onOpenFile={onOpenFile} />
+      )}
     </li>
   )
 }
@@ -462,6 +643,7 @@ export function MessageStream({
   onOpenChanges,
   sessionId,
   onContinue,
+  onOpenFile,
 }: {
   readonly view: SessionView | undefined
   readonly onOpenPlan?: ((planId: string) => void) | undefined
@@ -470,10 +652,14 @@ export function MessageStream({
   readonly sessionId?: string | undefined
   /** 达到限额后“继续”的动作；省略时向当前选中的会话发送继续提示。 */
   readonly onContinue?: ((prompt: string) => void) | undefined
+  /** 点击消息里的文件：在右侧打开并定位到行。 */
+  readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const openPlan = onOpenPlan ?? noopPlan
   const providers = useSessionStore((s) => s.settings?.providers)
+  const projects = useSessionStore((s) => s.projects)
+  const pathsExist = useSessionStore((s) => s.pathsExist)
   const messages = view
     ? view.messages.filter((message) => {
         const run = view.runs[message.runId]
@@ -576,6 +762,14 @@ export function MessageStream({
       ? `${provider.displayName} · ${configured.displayName ?? configured.id}`
       : model.modelId
   }
+  const projectId =
+    view?.info?.projectPath === undefined
+      ? undefined
+      : projects?.find((project) => project.path === view.info?.projectPath)?.projectId
+  const resolvePaths = useMemo(() => {
+    if (projectId === undefined || typeof pathsExist !== 'function') return undefined
+    return (paths: readonly string[]) => pathsExist(projectId, paths)
+  }, [pathsExist, projectId])
   if (!view) {
     return <ol aria-label={t('chat.messages')} className="flex flex-col gap-7" />
   }
@@ -612,6 +806,8 @@ export function MessageStream({
                 omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
                 onOpenPlan={openPlan}
                 onOpenChanges={onOpenChanges}
+                resolvePaths={resolvePaths}
+                onOpenFile={onOpenFile}
               />
               {lastOfTurn &&
                 message.turnId !== undefined &&
@@ -667,6 +863,8 @@ export function MessageStream({
             live={message}
             view={view}
             continued={index === 0 && continues(messages.at(-1), message)}
+            resolvePaths={resolvePaths}
+            onOpenFile={onOpenFile}
           />
         ))}
       </ol>

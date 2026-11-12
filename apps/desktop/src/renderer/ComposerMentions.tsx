@@ -15,6 +15,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { Bot } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { FileSearchEntry } from '@cairn/protocol'
 import { activeMention, mentionText } from './composer-tokens.js'
@@ -24,6 +25,13 @@ import { cn } from './ui/index.js'
 
 /** 在哪里搜：会话的工作区，或者（还没有会话时）项目目录。 */
 export type MentionScope = { readonly sessionId: string } | { readonly projectId: string }
+
+/** `@` 候选里的 Agent：名称用于插入草稿，说明只在菜单里显示。 */
+export interface MentionAgent {
+  readonly agentId: string
+  readonly name: string
+  readonly description: string
+}
 
 const SEARCH_LIMIT = 50
 /** 打字时等多久再搜（毫秒）。 */
@@ -35,6 +43,18 @@ type Results = {
   readonly entries: readonly FileSearchEntry[]
   readonly truncated: boolean
 }
+
+type MentionOption =
+  | FileSearchEntry
+  | {
+      readonly kind: 'agent'
+      readonly agentId: string
+      readonly name: string
+      readonly description: string
+    }
+
+const isAgent = (option: MentionOption): option is Extract<MentionOption, { kind: 'agent' }> =>
+  option.kind === 'agent'
 
 export interface MentionMenu {
   readonly open: boolean
@@ -52,6 +72,7 @@ export function useMentionMenu({
   textarea,
   root,
   scope,
+  agents = [],
   disabled = false,
 }: {
   readonly text: string
@@ -60,6 +81,8 @@ export function useMentionMenu({
   /** 输入框整体；在它外面按下鼠标时关闭候选。 */
   readonly root: RefObject<HTMLElement | null>
   readonly scope: MentionScope | undefined
+  /** 可用的 Agent，排在文件前面；空查询时也列出。 */
+  readonly agents?: readonly MentionAgent[]
   readonly disabled?: boolean
 }): MentionMenu {
   const { t } = useTranslation('session')
@@ -72,13 +95,30 @@ export function useMentionMenu({
 
   const scopeKey =
     scope === undefined ? undefined : 'sessionId' in scope ? scope.sessionId : scope.projectId
-  const mention = disabled || scope === undefined ? undefined : activeMention(text, caret)
+  const mention = disabled ? undefined : activeMention(text, caret)
   const key = mention === undefined ? undefined : `${scopeKey}\n${mention.start}\n${mention.query}`
-  const open = key !== undefined && dismissed !== key
+  // 没有可搜的目录时仍然可以列出 Agent（新对话页还没选项目）。
+  const open =
+    key !== undefined &&
+    dismissed !== key &&
+    (scope !== undefined || agents.length > 0) &&
+    mention !== undefined
   const current = key !== undefined && results?.key === key ? results : undefined
-  const entries = current?.entries ?? []
-  const loading = open && current === undefined
-  const active = entries.length === 0 ? -1 : Math.min(index, entries.length - 1)
+  const fileEntries = current?.entries ?? []
+  const loading = open && scope !== undefined && current === undefined
+  const agentQuery = (mention?.query ?? '').trim().toLowerCase()
+  const matchingAgents: MentionOption[] = open
+    ? agents
+        .filter(
+          (agent) =>
+            agentQuery === '' ||
+            agent.name.toLowerCase().includes(agentQuery) ||
+            agent.description.toLowerCase().includes(agentQuery),
+        )
+        .map((agent) => ({ kind: 'agent' as const, ...agent }))
+    : []
+  const options = [...matchingAgents, ...fileEntries].slice(0, SEARCH_LIMIT)
+  const active = options.length === 0 ? -1 : Math.min(index, options.length - 1)
 
   const onCaret = () => {
     const el = textarea.current
@@ -126,12 +166,13 @@ export function useMentionMenu({
   }, [open, key, root])
 
   /** 用选中的候选替换 `@查询`。`enter` 为 true 时进入文件夹继续选，不加结尾空格。 */
-  const choose = (entry: FileSearchEntry, enter: boolean) => {
+  const choose = (option: MentionOption, enter: boolean) => {
     if (mention === undefined) return
-    const replacement =
-      enter && entry.kind === 'dir'
-        ? mentionText(entry.path, 'dir').trimEnd().replace(/"$/, '')
-        : mentionText(entry.path, entry.kind)
+    const replacement = isAgent(option)
+      ? mentionText(option.name, 'agent')
+      : enter && option.kind === 'dir'
+        ? mentionText(option.path, 'dir').trimEnd().replace(/"$/, '')
+        : mentionText(option.path, option.kind)
     const next = text.slice(0, mention.start) + replacement + text.slice(caret)
     pendingCaret.current = mention.start + replacement.length
     setText(next)
@@ -146,16 +187,16 @@ export function useMentionMenu({
       return true
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      if (entries.length === 0) return false
+      if (options.length === 0) return false
       event.preventDefault()
       setIndex((current) => {
-        const base = Math.min(current, entries.length - 1)
+        const base = Math.min(current, options.length - 1)
         const next = event.key === 'ArrowDown' ? base + 1 : base - 1
-        return (next + entries.length) % entries.length
+        return (next + options.length) % options.length
       })
       return true
     }
-    const entry = entries[active]
+    const entry = options[active]
     if (entry === undefined) return false
     if ((event.key === 'Tab' && !event.shiftKey) || (event.key === 'Enter' && !event.shiftKey)) {
       event.preventDefault()
@@ -172,24 +213,51 @@ export function useMentionMenu({
       aria-label={t('composer.mention.label')}
       className="absolute inset-x-0 bottom-full z-50 mb-2 max-h-64 overflow-y-auto rounded-card bg-raise p-1 text-ui text-fg shadow-2"
     >
-      {entries.length === 0 ? (
+      {options.length === 0 ? (
         <p className="px-2 py-2 text-note text-muted">
           {loading ? t('composer.mention.loading') : t('composer.mention.empty')}
         </p>
       ) : (
-        entries.map((entry, position) => {
-          const slash = entry.path.lastIndexOf('/')
-          const name = entry.path.slice(slash + 1)
-          const parent = slash === -1 ? '' : entry.path.slice(0, slash)
+        options.map((option, position) => {
+          if (isAgent(option)) {
+            return (
+              <div
+                key={`agent:${option.agentId}`}
+                id={`composer-mention-${position}`}
+                role="option"
+                aria-selected={position === active}
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  choose(option, false)
+                }}
+                onMouseEnter={() => setIndex(position)}
+                className={cn(
+                  'flex cursor-default select-none items-center gap-2 rounded-[7px] px-2 py-1.5',
+                  position === active && 'bg-hover',
+                )}
+              >
+                <Bot aria-hidden className="size-4 shrink-0 text-muted" />
+                <span className="shrink-0 text-note text-fg">{option.name}</span>
+                {option.description !== '' && (
+                  <span className="min-w-0 truncate text-note text-faint">
+                    {option.description}
+                  </span>
+                )}
+              </div>
+            )
+          }
+          const slash = option.path.lastIndexOf('/')
+          const name = option.path.slice(slash + 1)
+          const parent = slash === -1 ? '' : option.path.slice(0, slash)
           return (
             <div
-              key={`${entry.kind}:${entry.path}`}
+              key={`${option.kind}:${option.path}`}
               id={`composer-mention-${position}`}
               role="option"
               aria-selected={position === active}
               onMouseDown={(event) => {
                 event.preventDefault()
-                choose(entry, false)
+                choose(option, false)
               }}
               onMouseEnter={() => setIndex(position)}
               className={cn(
@@ -197,10 +265,14 @@ export function useMentionMenu({
                 position === active && 'bg-hover',
               )}
             >
-              {entry.kind === 'dir' ? <FolderTypeIcon name={name} /> : <FileTypeIcon name={name} />}
+              {option.kind === 'dir' ? (
+                <FolderTypeIcon name={name} />
+              ) : (
+                <FileTypeIcon name={name} />
+              )}
               <span className="shrink-0 text-note text-fg">
                 {name}
-                {entry.kind === 'dir' ? '/' : ''}
+                {option.kind === 'dir' ? '/' : ''}
               </span>
               {parent !== '' && (
                 <span className="min-w-0 truncate text-note text-faint" dir="rtl">

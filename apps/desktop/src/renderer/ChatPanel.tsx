@@ -120,6 +120,8 @@ export function ChatPanel({
   const [tabs, setTabs] = useState<readonly SessionTab[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | undefined>()
+  /** 从消息里的路径打开文件时要定位的行号；按路径记住，换标签时仍生效。 */
+  const [fileLines, setFileLines] = useState<Readonly<Record<string, number>>>({})
   /** 宽屏工作台常驻；窄屏默认收起，按需浮出。 */
   const docked = useMediaQuery(PANEL_DOCK_QUERY)
   const [panelPreference, setPanelPreference] = useState<boolean>()
@@ -147,11 +149,17 @@ export function ChatPanel({
     [activateTab],
   )
 
-  /** 单击文件：追加标签；已经打开时只激活。 */
+  /** 单击文件：追加标签；已经打开时只激活。带行号时打开后定位到那一行。 */
   const openFile = useCallback(
-    (path: string) => {
+    (path: string, line?: number) => {
       activateTab(fileTabId(path))
       setPanelPreference(true)
+      setFileLines((current) => {
+        const next = { ...current }
+        if (line === undefined) delete next[path]
+        else next[path] = line
+        return next
+      })
     },
     [activateTab],
   )
@@ -167,6 +175,14 @@ export function ChatPanel({
       })
       const next = [...new Set(mapped)]
       setTabs(next)
+      setFileLines((current) => {
+        const lines: Record<string, number> = {}
+        for (const [path, line] of Object.entries(current)) {
+          if (path !== from && !path.startsWith(`${from}/`)) lines[path] = line
+          else lines[`${to}${path.slice(from.length)}`] = line
+        }
+        return lines
+      })
       setPanelState((current) => {
         if (!isFileTab(current)) return current
         const path = fileTabPath(current)
@@ -185,6 +201,13 @@ export function ChatPanel({
       const index = tabs.findIndex((tab) => tab === panel)
       const next = tabs.filter((tab) => !matches(tab))
       setTabs(next)
+      setFileLines((current) => {
+        const lines: Record<string, number> = {}
+        for (const [key, line] of Object.entries(current)) {
+          if (key !== path && !key.startsWith(`${path}/`)) lines[key] = line
+        }
+        return lines
+      })
       if (isFileTab(panel) && matches(panel)) {
         setPanelState(next[Math.min(Math.max(index, 0), next.length - 1)] ?? 'home')
       }
@@ -392,6 +415,7 @@ export function ChatPanel({
                   openPanel('diff', changeSetId === undefined ? {} : { changeSetId })
                 }
                 onOpenPlan={(planId) => openPanel('plan', { planId })}
+                onOpenFile={openFile}
               />
               <ApprovalList />
             </div>
@@ -433,6 +457,7 @@ export function ChatPanel({
           onOpenPanel={openPanel}
           onActivateTab={activateTab}
           onOpenFile={openFile}
+          fileLines={fileLines}
           onFileRenamed={renameFileTabs}
           onFileDeleted={deleteFileTabs}
           onHome={() => setPanelState('home')}

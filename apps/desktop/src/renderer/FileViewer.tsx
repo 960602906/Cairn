@@ -3,7 +3,7 @@
  * 行号、换行、复制、刷新与在资源管理器中显示。超大文件只渲染前 5,000 行。
  */
 import { FolderOpen, RefreshCw, TriangleAlert, WrapText } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
 import { translateError } from '@cairn/i18n'
@@ -58,10 +58,13 @@ function IconAction({
 export function FileViewer({
   path,
   view,
+  line,
 }: {
   /** 相对项目根的路径。 */
   readonly path: string
   readonly view: SessionView | undefined
+  /** 打开后定位并高亮的行号（从 1 开始）；来自消息里的 `path:12`。 */
+  readonly line?: number | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const projects = useSessionStore((state) => state.projects ?? EMPTY_PROJECTS)
@@ -113,6 +116,14 @@ export function FileViewer({
   const tokens = useHighlight(previewText, language)
   const { dir, name } = splitPath(path)
   const gutter = String(lines.length).length > 4 ? 'w-[58px]' : 'w-[46px]'
+  const scroller = useRef<HTMLDivElement>(null)
+
+  // 从消息里的 `path:12` 打开：等内容渲染出来后滚到那一行。
+  useEffect(() => {
+    if (line === undefined || state.status !== 'ready') return
+    const target = scroller.current?.querySelector<HTMLElement>(`[data-line="${line}"]`)
+    target?.scrollIntoView({ block: 'center' })
+  }, [line, path, state.status])
 
   const reveal = () => {
     if (!project) return
@@ -174,10 +185,17 @@ export function FileViewer({
       ) : content?.kind === 'text' && displayText === '' ? (
         <PanelEmpty className="px-4">{t('fileViewer.empty')}</PanelEmpty>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto py-2.5 font-mono text-code [tab-size:4]">
+        <div
+          ref={scroller}
+          className="min-h-0 flex-1 overflow-auto py-2.5 font-mono text-code [tab-size:4]"
+        >
           <div className={cn(wrap ? 'w-full' : 'w-max min-w-full')}>
-            {lines.map((line, index) => (
-              <div key={index} className="flex">
+            {lines.map((row, index) => (
+              <div
+                key={index}
+                data-line={index + 1}
+                className={cn('flex', line === index + 1 && 'bg-accent-soft')}
+              >
                 <span
                   aria-hidden
                   className={cn('tabular shrink-0 pr-4 text-right text-gutter select-none', gutter)}
@@ -194,7 +212,7 @@ export function FileViewer({
                     ? tokens[index]!.map((token, tokenIndex) => (
                         <Token key={tokenIndex} token={token} />
                       ))
-                    : line}
+                    : row}
                 </span>
               </div>
             ))}

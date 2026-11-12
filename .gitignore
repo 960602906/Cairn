@@ -12,6 +12,9 @@ playwright-report/
 playwright-report-packaged/
 *.tsbuildinfo
 dev-app-update.yml
+# 本地解包/临时目录（Electron 发行包残留，随机后缀）
+tmpdist*/
+tmpe*/
 .vite/
 .impeccable/
 .DS_Store

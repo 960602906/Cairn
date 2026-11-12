@@ -365,16 +365,18 @@ describe('multi-session concurrency (M4-13)', () => {
     }
     const sessionIds = threeSessions()
     promptAll(sessionIds)
+    // 并行跑整套测试时子进程启动会慢一些，这里的等待放宽到 10 秒。
+    const waitFor = (check: () => void) => vi.waitFor(check, { timeout: 10_000 })
     for (const sessionId of sessionIds) {
-      await vi.waitFor(() => expect(count(sessionId, 'run.delegated')).toBe(2))
+      await waitFor(() => expect(count(sessionId, 'run.delegated')).toBe(2))
     }
 
     const [first, second, third] = sessionIds as [string, string, string]
     procs[1]?.kill()
-    await vi.waitFor(() => expect(count(second, 'session.crashed')).toBe(1))
+    await waitFor(() => expect(count(second, 'session.crashed')).toBe(1))
 
     for (const sessionId of [first, third]) {
-      await vi.waitFor(() => expect(rootCount(sessionId, 'turn.completed')).toBe(1))
+      await waitFor(() => expect(rootCount(sessionId, 'turn.completed')).toBe(1))
       expect(count(sessionId, 'session.crashed')).toBe(0)
     }
     expect(rootCount(second, 'turn.completed')).toBe(0)
