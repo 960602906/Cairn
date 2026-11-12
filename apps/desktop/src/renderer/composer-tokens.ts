@@ -12,7 +12,7 @@
  * - 引用是开头或空白后面的 `@路径`，路径里有空格时写成 `@"路 径"`；后面可以跟行号
  *   `:12` 或 `:12-30`（ADR-0037）。遇到全角标点就断开，末尾的英文标点也不算在内。
  */
-import type { PromptMention } from '@cairn/protocol'
+import type { PromptAgent, PromptMention } from '@cairn/protocol'
 
 export type ComposerTokenType = 'text' | 'command' | 'mention' | 'url' | 'code'
 
@@ -155,14 +155,18 @@ export function tokenize(text: string, options: TokenizeOptions = {}): ComposerT
   return tokens
 }
 
-/** 草稿里的所有引用，去重，最多 {@link MAX_MENTIONS} 个。代码片段里的 `@` 不算。 */
-export function extractMentions(text: string): PromptMention[] {
+/**
+ * 草稿里的所有文件引用，去重，最多 {@link MAX_MENTIONS} 个。代码片段里的 `@` 不算，
+ * `agents` 里点名的 Agent 也不算文件引用。
+ */
+export function extractMentions(text: string, agents: Iterable<string> = []): PromptMention[] {
+  const agentNames = new Set(agents)
   const mentions: PromptMention[] = []
   const seen = new Set<string>()
   for (const token of tokenize(text)) {
     if (token.type !== 'mention') continue
     const mention = parseMention(token.text.slice(1))
-    if (mention === undefined) continue
+    if (mention === undefined || agentNames.has(pathOf(mention))) continue
     const key = `${mention.path}:${mention.lines?.start ?? ''}-${mention.lines?.end ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
@@ -170,6 +174,33 @@ export function extractMentions(text: string): PromptMention[] {
     if (mentions.length === MAX_MENTIONS) break
   }
   return mentions
+}
+
+/** 引用里的路径不保留末尾的 `/`，方便与 Agent 名称比较。 */
+const pathOf = (mention: PromptMention) => mention.path.replace(/\/+$/, '')
+
+/**
+ * 草稿里点名要委派的 Agent，按出现顺序去重。只有名称与 {@link agents} 完全一致才算，
+ * 其余 `@` 仍按文件引用处理。
+ */
+export function extractAgents(
+  text: string,
+  agents: readonly { readonly agentId: string; readonly name: string }[],
+): PromptAgent[] {
+  const byName = new Map(agents.map((agent) => [agent.name, agent]))
+  const result: PromptAgent[] = []
+  const seen = new Set<string>()
+  for (const token of tokenize(text)) {
+    if (token.type !== 'mention') continue
+    const mention = parseMention(token.text.slice(1))
+    if (mention === undefined) continue
+    const agent = byName.get(mention.path)
+    if (agent === undefined || seen.has(agent.agentId)) continue
+    seen.add(agent.agentId)
+    result.push({ agentId: agent.agentId, name: agent.name })
+    if (result.length === MAX_MENTIONS) break
+  }
+  return result
 }
 
 /** 光标所在的、正在输入的引用：`start` 是 `@` 的位置，`query` 是 `@` 到光标之间的文字。 */
@@ -187,8 +218,11 @@ export function activeMention(
   return { start: match.index, query: raw.startsWith('"') ? raw.slice(1) : raw }
 }
 
-/** 选中候选后写进草稿的文字：路径里有空白时加引号，目录以 `/` 结尾，末尾带一个空格。 */
-export function mentionText(path: string, kind: 'file' | 'dir'): string {
+/**
+ * 选中候选后写进草稿的文字：路径里有空白时加引号，目录以 `/` 结尾，末尾带一个空格。
+ * Agent 与文件一样，只是名称可能带空白。
+ */
+export function mentionText(path: string, kind: 'file' | 'dir' | 'agent'): string {
   const full = kind === 'dir' ? `${path.replace(/\/+$/, '')}/` : path
   return /\s/.test(full) ? `@"${full}" ` : `@${full} `
 }

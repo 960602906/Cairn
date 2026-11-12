@@ -20,7 +20,9 @@ import {
   ErrorInfo,
   Id,
   ModelRef,
+  PromptAgent,
   PromptMention,
+  PromptSkill,
   Timestamp,
 } from '../common.js'
 import {
@@ -148,6 +150,12 @@ export type FileSearchEntry = z.infer<typeof FileSearchEntry>
 
 /** 一条输入最多带几个 `@` 引用（ADR-0037）。 */
 export const MAX_PROMPT_MENTIONS = 20
+/** 一条输入最多使用几个技能。 */
+export const MAX_PROMPT_SKILLS = 5
+/** 一条输入最多点名几个要委派的 Agent。 */
+export const MAX_PROMPT_AGENTS = 5
+/** 一次批量检查多少个路径是否存在（助手消息里的行内代码）。 */
+export const MAX_EXISTS_PATHS = 200
 
 /** 会话标题的长度上限（字符，M2-02）。 */
 export const SESSION_TITLE_MAX_LENGTH = 200
@@ -473,6 +481,17 @@ export const MainForRenderer = defineSide({
         }),
       result: z.object({ entries: z.array(FileSearchEntry), truncated: z.boolean() }),
     },
+    /**
+     * 批量确认这些相对路径在项目里存在（助手消息把行内代码里的路径变成可点的链接）。
+     * 不存在、越界或不是文件的路径不会出现在结果里。
+     */
+    'fs.exists': {
+      params: z.object({
+        projectId: Id,
+        paths: z.array(z.string().min(1).max(4096)).max(MAX_EXISTS_PATHS),
+      }),
+      result: z.object({ existing: z.array(z.string()) }),
+    },
     /** 新建文件或目录；父目录必须已经存在，目标已存在时报 `fs.conflict`。 */
     'fs.create': {
       params: z.object({
@@ -511,6 +530,8 @@ export const MainForRenderer = defineSide({
     /**
      * 发送用户输入。`mode: 'plan'`（M3-05）时这一轮只读并提出计划；省略为正常执行。
      * `mentions` 是输入框里的 `@` 引用（ADR-0037），主进程读取后作为上下文附在这一轮输入之后。
+     * `skills` 是 `/技能名` 指定的技能，`agents` 是 `@Agent名` 要求委派的 Agent，同样由主进程
+     * 校验后展开成只给模型看的上下文；展开成功的那些随 `message.user` 落库，供界面显示标记。
      */
     'session.prompt': {
       params: z.object({
@@ -518,6 +539,8 @@ export const MainForRenderer = defineSide({
         content: z.array(ContentPart).min(1),
         mode: PromptMode.optional(),
         mentions: z.array(PromptMention).max(MAX_PROMPT_MENTIONS).optional(),
+        skills: z.array(PromptSkill).max(MAX_PROMPT_SKILLS).optional(),
+        agents: z.array(PromptAgent).max(MAX_PROMPT_AGENTS).optional(),
       }),
       result: z.object({ messageId: Id }),
     },

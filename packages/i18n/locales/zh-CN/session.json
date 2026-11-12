@@ -267,6 +267,8 @@
   "composer.command.label": "输入指令",
   "composer.command.empty": "没有匹配的指令",
   "composer.command.hint": "↑↓ 选择 · Enter 执行 · Tab 补全 · Esc 关闭",
+  "composer.command.group.commands": "指令",
+  "composer.command.group.skills": "技能",
   "composer.mention.label": "引用文件",
   "composer.mention.empty": "没有匹配的文件或文件夹",
   "composer.mention.loading": "正在查找…",

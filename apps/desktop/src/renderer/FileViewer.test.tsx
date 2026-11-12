@@ -70,6 +70,20 @@ function setup(content: FileContent | Error, path = 'src/index.ts') {
   return { ...rendered, handler }
 }
 
+function renderWithLine(line: number) {
+  installBridge(() => ({
+    content: { kind: 'text' as const, text: 'const a = 1\nconst b = 2\n' },
+  }))
+  const store = createStore<Record<string, unknown>>(() => ({ projects: [project] }))
+  return (
+    <I18nextProvider i18n={i18n}>
+      <SessionStoreProvider store={store as never}>
+        <FileViewer path="src/index.ts" view={view} line={line} />
+      </SessionStoreProvider>
+    </I18nextProvider>
+  )
+}
+
 afterEach(() => {
   cleanup()
   delete (window as { cairn?: unknown }).cairn
@@ -83,6 +97,29 @@ describe('FileViewer', () => {
     expect(region.textContent).toContain('const b = 2')
     expect(region.textContent).toContain('1')
     expect(region.textContent).toContain('2')
+  })
+
+  it('scrolls to the requested line and tolerates a line past the end', async () => {
+    const scroll = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: scroll,
+      configurable: true,
+      writable: true,
+    })
+    try {
+      const { rerender } = render(renderWithLine(2))
+      const region = await screen.findByRole('region', { name: '文件预览：src/index.ts' })
+      await waitFor(() => expect(region.textContent).toContain('const b = 2'))
+      await waitFor(() => expect(scroll).toHaveBeenCalled())
+      expect(region.querySelector('[data-line="2"]')?.className).toContain('bg-accent-soft')
+
+      scroll.mockClear()
+      rerender(renderWithLine(99))
+      await waitFor(() => expect(region.textContent).toContain('const b = 2'))
+      expect(scroll).not.toHaveBeenCalled()
+    } finally {
+      Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+    }
   })
 
   it('shows empty, binary and oversized states', async () => {
@@ -178,7 +215,7 @@ describe('FileViewer', () => {
   it('explains when the session has no workspace and does nothing on reveal', async () => {
     const user = userEvent.setup()
     const handler = installBridge(() => ({}))
-    const store = createStore<Record<string, unknown>>(() => ({ projects: [] }))
+    const store = createStore<Record<string, unknown>>(() => ({}))
     render(
       <I18nextProvider i18n={i18n}>
         <SessionStoreProvider store={store as never}>

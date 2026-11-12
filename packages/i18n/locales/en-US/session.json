@@ -267,6 +267,8 @@
   "composer.command.label": "Composer commands",
   "composer.command.empty": "No matching commands",
   "composer.command.hint": "↑↓ select · Enter run · Tab complete · Esc close",
+  "composer.command.group.commands": "Commands",
+  "composer.command.group.skills": "Skills",
   "composer.mention.label": "Reference a file",
   "composer.mention.empty": "No matching files or folders",
   "composer.mention.loading": "Searching…",

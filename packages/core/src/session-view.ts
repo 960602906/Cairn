@@ -28,6 +28,8 @@ import {
   type LiveEvent,
   type ModelRef,
   type PersistedEvent,
+  type PromptAgent,
+  type PromptSkill,
   type ReasoningPart,
   type RunLimits,
   type RunMode,
@@ -69,6 +71,10 @@ export interface UserMessageView extends MessageMeta {
   readonly content: readonly ContentPart[]
   /** 用 `@` 引用的文件与文件夹（ADR-0037）。展开的内容只给模型，不在这里。 */
   readonly mentions: readonly ResolvedMention[]
+  /** `/技能名` 指定的技能。展开的正文只给模型，不在这里。 */
+  readonly skills: readonly PromptSkill[]
+  /** `@Agent名` 要求委派的 Agent。 */
+  readonly agents: readonly PromptAgent[]
 }
 
 export interface AssistantMessageView extends MessageMeta {
@@ -724,6 +730,8 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         ...meta(event, event.payload.messageId, turnId),
         content: event.payload.content,
         mentions: event.payload.mentions ?? [],
+        skills: event.payload.skills ?? [],
+        agents: event.payload.agents ?? [],
       })
     }
     case 'message.assistant.completed': {

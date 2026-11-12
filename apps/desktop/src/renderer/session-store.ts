@@ -25,6 +25,7 @@
  */
 import { createSessionView, reduceSession, sessionStatus, type SessionView } from '@cairn/core'
 import {
+  MAX_PROMPT_AGENTS,
   RpcError,
   type FileSearchEntry,
   type AgentDraftRef,
@@ -71,6 +72,7 @@ import {
   type PermissionRule,
   type PermissionRuleEntry,
   type ProjectSummary,
+  type PromptAgent,
   type ProviderConfig,
   type RunInspectResult,
   type SandboxStatus,
@@ -177,9 +179,20 @@ export interface SessionActions {
   setSessionModel(sessionId: string, model: ModelRef): Promise<boolean>
   /** 选中会话并订阅其事件；传 undefined 取消选中。 */
   selectSession(sessionId: string | undefined): Promise<void>
-  /** 向当前会话发送文本输入；没有发送（空输入、未选中会话或请求失败）时返回 false。 */
-  /** `mode` 省略或为 `normal` 时不传给主进程，避免改掉已有调用的请求体。 */
-  sendPrompt(text: string, mode?: 'normal' | 'plan'): Promise<boolean>
+  /**
+   * 向当前会话发送文本输入；没有发送（空输入、未选中会话或请求失败）时返回 false。
+   * `mode` 省略或为 `normal` 时不传给主进程，避免改掉已有调用的请求体。
+   * `references` 带上 `/技能名` 与 `@Agent名`；`agentNames` 用来把这些名字从文件引用里排除。
+   */
+  sendPrompt(
+    text: string,
+    mode?: 'normal' | 'plan',
+    references?: {
+      readonly skills?: readonly string[]
+      readonly agents?: readonly PromptAgent[]
+      readonly agentNames?: readonly string[]
+    },
+  ): Promise<boolean>
   /**
    * 输入框 `@` 引用的候选（ADR-0037）：在会话工作区或项目目录里按路径搜。
    * 失败时返回空列表，不弹错误：打字过程中的搜索失败不值得打断用户。
@@ -189,6 +202,11 @@ export interface SessionActions {
     query: string,
     limit?: number,
   ): Promise<{ entries: FileSearchEntry[]; truncated: boolean }>
+  /**
+   * 批量确认这些相对路径在项目里存在（助手消息里的行内代码据此变成可点的路径）。
+   * 失败时返回空集合，不打断渲染。
+   */
+  pathsExist(projectId: string, paths: readonly string[]): Promise<ReadonlySet<string>>
   /** 批准待审计划。`steps` 是改过的步骤标题；省略表示按原文执行。 */
   approvePlan(planId: string, steps?: readonly { id: string; title: string }[]): Promise<boolean>
   /** 带着说明重新规划。新的一轮仍是计划模式。 */
@@ -943,13 +961,16 @@ export function createSessionStore(api: MainApi): SessionStore {
         return result !== undefined
       },
 
-      async sendPrompt(text, mode = 'normal') {
+      async sendPrompt(text, mode = 'normal', references) {
         const sessionId = get().activeSessionId
         const trimmed = text.trim()
         if (sessionId === undefined || trimmed === '') return false
         const content: ContentPart[] = [{ type: 'text', text: trimmed }]
-        // `@` 引用由主进程读出内容附给模型（ADR-0037）；读不到的引用主进程会忽略。
-        const mentions = extractMentions(trimmed)
+        // `@` 文件引用由主进程读出内容附给模型（ADR-0037）；读不到的引用主进程会忽略。
+        // `@Agent名` 不算文件引用，由 `agentNames` 排除。
+        const mentions = extractMentions(trimmed, references?.agentNames)
+        const skills = references?.skills ?? []
+        const agents = references?.agents ?? []
         // 先标记再请求：turn.started 可能早于请求响应到达
         setAwaiting(sessionId, true)
         const sent = await run(() =>
@@ -957,6 +978,9 @@ export function createSessionStore(api: MainApi): SessionStore {
             sessionId,
             content,
             ...(mentions.length > 0 ? { mentions } : {}),
+            ...(skills.length > 0 ? { skills: skills.map((name) => ({ name })) } : {}),
+            // 协议只接受前 5 个 Agent，多出来的 `@` 仍按普通文字留在消息里。
+            ...(agents.length > 0 ? { agents: agents.slice(0, MAX_PROMPT_AGENTS) } : {}),
             ...(mode === 'plan' ? { mode: 'plan' as const } : {}),
           }),
         )
@@ -973,6 +997,16 @@ export function createSessionStore(api: MainApi): SessionStore {
           })
         } catch {
           return { entries: [], truncated: false }
+        }
+      },
+
+      async pathsExist(projectId, paths) {
+        if (paths.length === 0) return new Set()
+        try {
+          const result = await api.request('fs.exists', { projectId, paths: [...paths] })
+          return new Set(result.existing)
+        } catch {
+          return new Set()
         }
       },
 

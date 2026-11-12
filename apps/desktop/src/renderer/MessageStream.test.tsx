@@ -9,7 +9,7 @@ import { I18nextProvider } from 'react-i18next'
 import { createStore } from 'zustand/vanilla'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
-import { Markdown } from './Markdown.js'
+import { codePath, inlineCodeCandidates, Markdown } from './Markdown.js'
 import { MessageStream, turnFooters } from './MessageStream.js'
 
 afterEach(cleanup)
@@ -87,6 +87,61 @@ describe('Markdown（M2-03）', () => {
     expect(screen.getByText('pnpm test').tagName).toBe('CODE')
   })
 
+  it('renders the remaining block elements', () => {
+    const { container } = render(
+      <Markdown text={'#### 四\n\n##### 五\n\n###### 六\n\n> 引用\n\n---\n\n1. 一\n2. 二'} />,
+    )
+    expect(screen.getByRole('heading', { level: 4, name: '四' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 5, name: '五' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 6, name: '六' })).toBeTruthy()
+    expect(container.querySelector('blockquote')?.textContent).toContain('引用')
+    expect(container.querySelector('hr')).toBeTruthy()
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('recognises relative paths in inline code', () => {
+    expect(codePath('src/a.ts')).toEqual({ path: 'src/a.ts' })
+    expect(codePath('src/a.ts:12')).toEqual({ path: 'src/a.ts', line: 12 })
+    expect(codePath('src/a.ts:12-30')).toEqual({ path: 'src/a.ts', line: 12 })
+    expect(codePath('src/a.ts:0')).toBeUndefined()
+    expect(codePath('a.ts:12')).toBeUndefined()
+    expect(codePath('/abs/a.ts')).toBeUndefined()
+    expect(codePath('./a/b.ts')).toBeUndefined()
+    expect(codePath('../a/b.ts')).toBeUndefined()
+    expect(codePath('https://a.dev/x')).toBeUndefined()
+    expect(codePath('src/a b.ts')).toBeUndefined()
+    expect(codePath(`src/${'a'.repeat(4089)}.ts`)).toEqual({ path: `src/${'a'.repeat(4089)}.ts` })
+    expect(codePath(`src/${'a'.repeat(4090)}.ts`)).toBeUndefined()
+    expect(inlineCodeCandidates('`src/a.ts` 和 ```ts\nsrc/b.ts\n``` 和 `pnpm test`')).toEqual([
+      'src/a.ts',
+    ])
+  })
+
+  it('makes an existing inline-code path clickable and leaves the rest alone', async () => {
+    const resolvePaths = vi.fn(async (paths: readonly string[]) => new Set(paths.slice(0, 1)))
+    const onOpenFile = vi.fn()
+    render(
+      <Markdown
+        text={'见 `src/a.ts:12` 和 `src/missing.ts`，跑 `pnpm test`'}
+        resolvePaths={resolvePaths}
+        onOpenFile={onOpenFile}
+      />,
+    )
+    const button = await screen.findByRole('button', { name: 'src/a.ts:12' })
+    await userEvent.click(button)
+    expect(resolvePaths).toHaveBeenCalledWith(['src/a.ts', 'src/missing.ts'])
+    expect(onOpenFile).toHaveBeenCalledWith('src/a.ts', 12)
+    expect(screen.getByText('src/missing.ts').tagName).toBe('CODE')
+    expect(screen.getByText('pnpm test').tagName).toBe('CODE')
+  })
+
+  it('does not resolve paths without both props', () => {
+    const resolvePaths = vi.fn(async () => new Set(['src/a.ts']))
+    render(<Markdown text={'`src/a.ts`'} resolvePaths={resolvePaths} />)
+    expect(screen.getByText('src/a.ts').tagName).toBe('CODE')
+    expect(resolvePaths).not.toHaveBeenCalled()
+  })
+
   it('不渲染原始 HTML，去掉 javascript: 链接', () => {
     const { container } = render(
       <Markdown
@@ -102,6 +157,80 @@ describe('Markdown（M2-03）', () => {
     expect(good.getAttribute('href')).toBe('https://example.com')
     expect(good.getAttribute('target')).toBe('_blank')
     expect(good.getAttribute('rel')).toBe('noreferrer')
+  })
+})
+
+describe('MessageStream 用户消息高亮', () => {
+  const userMessage = (extra: object = {}) =>
+    reduceSessionEvents(createSessionView('s1'), [
+      ev(1, 'session.created', {
+        projectId: 'p1',
+        projectPath: '/w',
+        workspacePath: '/w',
+        title: 'x',
+      }),
+      ev(2, 'run.created', {
+        agent: { id: 'a', version: 1 },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      ev(3, 'message.user', {
+        messageId: 'u1',
+        content: text('/plan @审查员 看 @a.ts:12 和 @b.ts https://a.dev 跑 `pnpm test`'),
+        mentions: [{ path: 'a.ts', kind: 'file', lines: { start: 12, end: 12 } }],
+        skills: [{ name: 'review' }],
+        agents: [{ agentId: 'user.review', name: '审查员' }],
+        ...extra,
+      }),
+    ])
+
+  const renderMessage = (
+    view: SessionView,
+    onOpenFile?: ((path: string, line?: number) => void) | undefined,
+  ) => {
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      approvals: {},
+      settings: { providers: [] },
+      agents: [],
+      projects: [],
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    const result = render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={view} onOpenPlan={vi.fn()} onOpenFile={onOpenFile} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    return result
+  }
+
+  it('marks the command, the skill, the agent and confirmed files', async () => {
+    const view = userMessage()
+    const onOpenFile = vi.fn()
+    const { container } = renderMessage(view, onOpenFile)
+    const tokens = (name: string) => container.querySelectorAll(`[data-token="${name}"]`)
+    expect(tokens('command')[0]?.textContent).toBe('/plan')
+    expect(tokens('skill')[0]?.textContent).toBe('/review')
+    expect(tokens('agent')[0]?.textContent).toBe('@审查员')
+    expect(container.querySelector('code')?.textContent).toBe('`pnpm test`')
+    expect(screen.getByRole('link', { name: 'https://a.dev' })).toBeTruthy()
+
+    // 只有主进程确认过的文件引用才成为按钮
+    expect(tokens('mention')).toHaveLength(1)
+    expect(container.textContent).toContain('@b.ts')
+    await userEvent.click(screen.getByRole('button', { name: /@a\.ts:12/ }))
+    expect(onOpenFile).toHaveBeenCalledWith('a.ts', 12)
+  })
+
+  it('keeps a confirmed mention a plain chip without a file opener', () => {
+    const view = userMessage({ agents: [], skills: [] })
+    const { container } = renderMessage(view)
+    const mention = container.querySelector('[data-token="mention"]')
+    expect(mention?.tagName).toBe('SPAN')
+    expect(mention?.textContent).toBe('@a.ts:12')
   })
 })
 

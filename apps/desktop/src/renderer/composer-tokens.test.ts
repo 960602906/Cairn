@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   activeMention,
+  extractAgents,
   extractMentions,
   MAX_MENTIONS,
   mentionText,
@@ -180,5 +181,42 @@ describe('mentions', () => {
     expect(mentionText('src', 'dir')).toBe('@src/ ')
     expect(mentionText('src/', 'dir')).toBe('@src/ ')
     expect(mentionText('my docs/a.md', 'file')).toBe('@"my docs/a.md" ')
+    expect(mentionText('审查员', 'agent')).toBe('@审查员 ')
+    expect(mentionText('代码 审查', 'agent')).toBe('@"代码 审查" ')
+  })
+
+  it('leaves agent names out of file mentions', () => {
+    expect(extractMentions('@审查员 看 @src/a.ts', ['审查员'])).toEqual([{ path: 'src/a.ts' }])
+    // 目录写法的末尾斜杠不影响与 Agent 名称的匹配
+    expect(extractMentions('@审查员/ @a.ts', ['审查员'])).toEqual([{ path: 'a.ts' }])
+    expect(extractMentions('@审查员 @a.ts')).toEqual([{ path: '审查员' }, { path: 'a.ts' }])
+  })
+})
+
+describe('extractAgents', () => {
+  const agents = [
+    { agentId: 'user.review', name: '审查员' },
+    { agentId: 'user.test', name: '测试 员' },
+  ]
+
+  it('keeps only exact agent names, deduped and in order', () => {
+    // 带空白的名称必须写成引号形式，否则只能认出前半截
+    expect(extractAgents('@测试 员', agents)).toEqual([])
+    expect(extractAgents('@审查员 先看，再 @"测试 员"，最后 @审查员', agents)).toEqual([
+      { agentId: 'user.review', name: '审查员' },
+      { agentId: 'user.test', name: '测试 员' },
+    ])
+    expect(extractAgents('@审查 @审查员看 @a.ts', agents)).toEqual([])
+    expect(extractAgents('`@审查员`', agents)).toEqual([])
+  })
+
+  it('caps the list like file mentions', () => {
+    const many = Array.from({ length: MAX_MENTIONS + 3 }, (_, i) => ({
+      agentId: `a${i}`,
+      name: `agent${i}`,
+    }))
+    const text = many.map((agent) => `@${agent.name}`).join(' ')
+    expect(extractAgents(text, many)).toHaveLength(MAX_MENTIONS)
+    expect(extractAgents('没有引用', agents)).toEqual([])
   })
 })

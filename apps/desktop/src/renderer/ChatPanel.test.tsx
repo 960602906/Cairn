@@ -9,6 +9,7 @@ import { RpcError, type EventEnvelope, type SessionSummary } from '@cairn/protoc
 import type { MainApi } from './api.js'
 import { App } from './App.js'
 import { ChatPanel } from './ChatPanel.js'
+import { FILE_DRAG_TYPE } from './file-drag.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 
@@ -873,8 +874,178 @@ describe('ChatPanel', () => {
     expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
     await userEvent.type(input(), 'pla')
     const list = await screen.findByRole('listbox', { name: '输入指令' })
+    // 鼠标移过某一行时它成为选中行
+    fireEvent.mouseOver(within(list).getAllByRole('option')[0]!)
+    expect(within(list).getAllByRole('option')[0]!.getAttribute('aria-selected')).toBe('true')
     fireEvent.mouseDown(within(list).getAllByRole('option')[0]!)
     expect(planOn()).toBe(true)
+    expect(input().value).toBe('')
+  })
+
+  it('lists enabled skills after / and sends the chosen one with the task', async () => {
+    const skill = {
+      name: 'review',
+      description: '逐条审查改动',
+      sha256: 'a'.repeat(64),
+      source: 'user' as const,
+      enabled: true,
+      pinned: false,
+      tokens: { index: 5, pinned: 12 },
+      shadowed: false,
+      hasScripts: false,
+      files: [],
+    }
+    const { request, store, open } = setup({
+      history: HISTORY,
+      handlers: {
+        'skill.list': () => ({ skills: [skill, { ...skill, name: 'off', enabled: false }] }),
+      },
+    })
+    await open()
+    store.setState({
+      projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+    })
+    await userEvent.type(input(), '/')
+    const list = await screen.findByRole('listbox', { name: '输入指令' })
+    expect(within(list).getByText('指令')).toBeTruthy()
+    expect(within(list).getByText('技能')).toBeTruthy()
+    expect(within(list).getByRole('option', { name: /\/review/ })).toBeTruthy()
+    expect(within(list).queryByRole('option', { name: /\/off/ })).toBeNull()
+
+    // 先补全成 `/review `，再写任务
+    fireEvent.mouseDown(within(list).getByRole('option', { name: /\/review/ }))
+    expect(input().value).toBe('/review ')
+    expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
+    await userEvent.type(input(), '看看改动{Enter}')
+    expect(request).toHaveBeenCalledWith('session.prompt', {
+      sessionId: 's1',
+      content: text('看看改动'),
+      skills: [{ name: 'review' }],
+    })
+  })
+
+  it('suggests agents first after @ and sends the picked one', async () => {
+    const { request, store, open } = setup({
+      history: HISTORY,
+      handlers: {
+        'agent.list': () => ({
+          agents: [
+            {
+              agentId: 'user.review',
+              name: { 'zh-CN': '审查员', 'en-US': 'Reviewer' },
+              description: { 'zh-CN': '逐条审查改动' },
+              source: 'user',
+              archived: false,
+              status: 'published',
+              version: 1,
+              hasDraft: false,
+              modelMode: 'inherit',
+              updatedAt: 1,
+            },
+            {
+              agentId: 'user.helper',
+              name: { 'zh-CN': '审查助手' },
+              description: {},
+              source: 'user',
+              archived: false,
+              status: 'published',
+              version: 1,
+              hasDraft: false,
+              modelMode: 'inherit',
+              updatedAt: 1,
+            },
+          ],
+        }),
+      },
+    })
+    await waitFor(() => expect(store.getState().agents).toHaveLength(2))
+    await open()
+    // 说明里的字也能搜到
+    await userEvent.type(input(), '看 @逐条')
+    expect(
+      await within(await screen.findByRole('listbox', { name: '引用文件' })).findByText('审查员'),
+    ).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await userEvent.clear(input())
+
+    await userEvent.type(input(), '看 @审')
+    const list = await screen.findByRole('listbox', { name: '引用文件' })
+    const options = within(list).getAllByRole('option')
+    expect(options[0]?.textContent).toContain('审查员')
+    expect(options[1]?.textContent).toBe('审查助手')
+    // 鼠标移过某一行时它成为选中行，再移回第一行选它
+    fireEvent.mouseOver(options[1]!)
+    expect(options[1]!.getAttribute('aria-selected')).toBe('true')
+    fireEvent.mouseDown(options[0]!)
+    expect(input().value).toBe('看 @审查员 ')
+    await userEvent.type(input(), '看看{Enter}')
+    expect(request).toHaveBeenCalledWith('session.prompt', {
+      sessionId: 's1',
+      content: text('看 @审查员 看看'),
+      agents: [{ agentId: 'user.review', name: '审查员' }],
+    })
+  })
+
+  it('inserts a dragged file as a mention', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    await userEvent.type(input(), '看 ')
+    const form = input().closest('form')!
+    const dataTransfer = {
+      types: [FILE_DRAG_TYPE],
+      getData: (type: string) =>
+        type === FILE_DRAG_TYPE ? JSON.stringify({ path: 'docs/a.md', kind: 'file' }) : '',
+      dropEffect: 'none',
+    }
+    // 外部拖进来的内容不提示
+    fireEvent.dragOver(form, { dataTransfer: { ...dataTransfer, types: [] } })
+    expect(form.className.split(' ')).not.toContain('ring-2')
+
+    fireEvent.dragOver(form, { dataTransfer })
+    expect(form.className.split(' ')).toContain('ring-2')
+    // 拖到输入框里自己的元素上不算离开
+    fireEvent(form, new MouseEvent('dragleave', { bubbles: true, relatedTarget: form }))
+    expect(form.className.split(' ')).toContain('ring-2')
+    fireEvent.dragLeave(form)
+    expect(form.className.split(' ')).not.toContain('ring-2')
+
+    // 不是本界面拖出的内容：不插入
+    fireEvent.drop(form, { dataTransfer: { ...dataTransfer, types: [], getData: () => '' } })
+    expect(input().value).toBe('看 ')
+
+    fireEvent.drop(form, { dataTransfer })
+    expect(input().value).toBe('看 @docs/a.md ')
+  })
+
+  it('does not start a plan turn while one is running', async () => {
+    const { request, open } = setup({ history: RUNNING })
+    await open()
+    await userEvent.type(input(), '/plan 接着做')
+    await userEvent.keyboard('{Enter}')
+    expect(request).not.toHaveBeenCalledWith('session.prompt', expect.anything())
+    // 草稿保留，运行的这一轮仍可以停下
+    expect(input().value).toBe('/plan 接着做')
+    expect(stopButton()).not.toBeNull()
+  })
+
+  it('ignores a drop while a prompt is being sent', async () => {
+    const { open } = setup({
+      history: HISTORY,
+      // 发送一直不返回：输入框保持“发送中”
+      handlers: { 'session.prompt': () => new Promise(() => {}) },
+    })
+    await open()
+    await userEvent.type(input(), '你好{Enter}')
+    expect(input().value).toBe('')
+    const form = input().closest('form')!
+    const dataTransfer = {
+      types: [FILE_DRAG_TYPE],
+      getData: () => JSON.stringify({ path: 'docs/a.md', kind: 'file' }),
+      dropEffect: 'none',
+    }
+    fireEvent.dragOver(form, { dataTransfer })
+    expect(form.className.split(' ')).not.toContain('ring-2')
+    fireEvent.drop(form, { dataTransfer })
     expect(input().value).toBe('')
   })
 

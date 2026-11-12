@@ -4,9 +4,11 @@
  * 点击后由主进程交给系统浏览器打开（security.ts）。代码块用代码卡片（M2-06）：语言取自 info string，
  * 重点行写在其后的花括号里（` ```ts {2,4-6} `）。
  */
+import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { CodeCard, parseLineRanges } from './CodeCard.js'
+import { tokenize } from './composer-tokens.js'
 import { languageByName } from './languages.js'
 
 type Element = NonNullable<ExtraProps['node']>
@@ -16,6 +18,34 @@ const textOf = (nodes: readonly ElementContent[]): string =>
   nodes
     .map((n) => (n.type === 'text' ? n.value : n.type === 'element' ? textOf(n.children) : ''))
     .join('')
+
+/**
+ * 行内代码里的相对路径：`src/a.ts` 或 `src/a.ts:12`。只认带 `/` 的相对路径，
+ * 排除绝对路径、`./` 与 `../` 开头、网址与带空白的文字。
+ */
+export function codePath(
+  text: string,
+): { readonly path: string; readonly line?: number } | undefined {
+  const match =
+    /^(?!\/)(?!\.{1,2}\/)(?!.*:\/\/)([^\s:`"'\\]+\/[^\s:`"'\\]+?)(?::(\d+)(?:-\d+)?)?$/.exec(text)
+  if (match === null) return undefined
+  const path = match[1] as string
+  if (path.length > 4096) return undefined
+  const line = match[2] === undefined ? undefined : Number(match[2])
+  if (line !== undefined && line < 1) return undefined
+  return line === undefined ? { path } : { path, line }
+}
+
+/** 一段 Markdown 里可能需要确认是否存在的行内代码路径（不含代码块），去重。 */
+export function inlineCodeCandidates(text: string): string[] {
+  const paths = new Set<string>()
+  for (const token of tokenize(text)) {
+    if (token.type !== 'code' || token.text.startsWith('```')) continue
+    const parsed = codePath(token.text.slice(1, -1))
+    if (parsed !== undefined) paths.add(parsed.path)
+  }
+  return [...paths]
+}
 
 /** 代码块的语言、重点行与正文；结构不是 `<pre><code>` 时返回 undefined。 */
 export function codeBlockOf(pre: Element | undefined) {
@@ -107,9 +137,69 @@ function strip<T extends { node?: unknown }>({ node: _node, ...rest }: T): Omit<
   return rest
 }
 
-export function Markdown({ text }: { readonly text: string }) {
+export interface MarkdownProps {
+  readonly text: string
+  /**
+   * 批量确认行内代码里的相对路径是否存在。存在时那段行内代码变成可点的路径；
+   * 省略时保持原样（例如设置页预览）。
+   */
+  readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  /** 点击可点的路径；`line` 是冒号后面的行号。 */
+  readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
+}
+
+const EMPTY_PATHS: ReadonlySet<string> = new Set()
+
+export function Markdown({ text, resolvePaths, onOpenFile }: MarkdownProps) {
+  const [existing, setExisting] = useState<ReadonlySet<string>>(EMPTY_PATHS)
+  const candidates = useMemo(() => inlineCodeCandidates(text), [text])
+
+  useEffect(() => {
+    // 没有点击处理时不必问主进程，路径保持普通行内代码。
+    if (resolvePaths === undefined || onOpenFile === undefined || candidates.length === 0) {
+      setExisting(EMPTY_PATHS)
+      return
+    }
+    let alive = true
+    void resolvePaths(candidates).then((paths) => {
+      if (alive) setExisting(paths)
+    })
+    return () => {
+      alive = false
+    }
+  }, [candidates, onOpenFile, resolvePaths])
+
+  const activeComponents = useMemo<Components>(() => {
+    if (resolvePaths === undefined || onOpenFile === undefined) return components
+    return {
+      ...components,
+      code: (props) => {
+        const raw = props.node ? textOf(props.node.children) : String(props.children ?? '')
+        const parsed = codePath(raw)
+        if (parsed !== undefined && existing.has(parsed.path)) {
+          return (
+            <button
+              type="button"
+              title={raw}
+              onClick={() => onOpenFile(parsed.path, parsed.line)}
+              className="cursor-pointer rounded-[5px] bg-sunk px-[5px] py-[1px] font-mono text-[0.87em] text-fg underline decoration-accent/40 underline-offset-2 outline-none hover:decoration-accent focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              {raw}
+            </button>
+          )
+        }
+        return (
+          <code
+            className="rounded-[5px] bg-sunk px-[5px] py-[1px] font-mono text-[0.87em] text-fg"
+            {...strip(props)}
+          />
+        )
+      },
+    }
+  }, [existing, onOpenFile, resolvePaths])
+
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={activeComponents}>
       {text}
     </ReactMarkdown>
   )

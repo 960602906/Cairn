@@ -281,6 +281,35 @@ describe('file service', () => {
     )
   })
 
+  it('reports which candidate paths exist as files', async () => {
+    mkdirSync(path.join(ctx.root, 'src'))
+    writeFileSync(path.join(ctx.root, 'src', 'a.ts'), 'a')
+    writeFileSync(path.join(ctx.root, 'b.md'), 'b')
+
+    expect(
+      await ctx.service.exists({
+        projectId: 'p1',
+        paths: ['src/a.ts', 'b.md', 'missing.ts', 'src', '.', '', '../escape.ts', 'C:/x'],
+      }),
+    ).toEqual({ existing: ['src/a.ts', 'b.md'] })
+    expect(await ctx.service.exists({ projectId: 'p1', paths: [] })).toEqual({ existing: [] })
+    expect(await ctx.service.exists({ projectId: 'p1', paths: ['src/a.ts', 'src/a.ts'] })).toEqual({
+      existing: ['src/a.ts'],
+    })
+  })
+
+  it('reports no paths for an unknown project and keeps unreadable ones out', async () => {
+    writeFileSync(path.join(ctx.root, 'a.txt'), 'a')
+    await expect(ctx.service.exists({ projectId: 'nope', paths: ['a.txt'] })).rejects.toMatchObject(
+      { code: 'fs.project_not_found' },
+    )
+
+    vi.spyOn(fsp, 'stat').mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'EACCES' }))
+    expect(await ctx.service.exists({ projectId: 'p1', paths: ['a.txt'] })).toEqual({
+      existing: [],
+    })
+  })
+
   it('maps filesystem failures to RPC errors', async () => {
     const failure = (code: string) => Object.assign(new Error(code), { code })
     writeFileSync(path.join(ctx.root, 'a.txt'), 'a')

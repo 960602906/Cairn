@@ -18,6 +18,8 @@ import {
   ErrorInfo,
   Id,
   ModelRef,
+  PromptAgent,
+  PromptSkill,
   ReasoningPart,
   ResolvedMention,
   RunLimits,
@@ -180,6 +182,10 @@ const payloadSchemas = {
     content: z.array(ContentPart),
     /** 展开成功的 `@` 引用（ADR-0037），界面用它高亮消息里的引用。 */
     mentions: z.array(ResolvedMention).optional(),
+    /** 这一轮使用的技能（`/技能名`）；界面在消息气泡里显示标记。 */
+    skills: z.array(PromptSkill).optional(),
+    /** 这一轮要求委派的 Agent（`@Agent名`）；界面用来高亮引用。 */
+    agents: z.array(PromptAgent).optional(),
     /**
      * 引用展开后的上下文。只发给模型（接在 `content` 之后），界面不显示；
      * 恢复会话重建历史时同样带上，保证模型看到的输入前后一致。

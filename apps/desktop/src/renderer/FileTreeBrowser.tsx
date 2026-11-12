@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import type { FileTreeEntry, ProjectSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
 import { FileTypeIcon, FolderTypeIcon } from './file-icons.js'
+import { fileDragProps } from './file-drag.js'
 import { projectDisplayName } from './project-name.js'
 import {
   Button,
@@ -252,6 +253,7 @@ export function FileTreeBrowser({
       return (
         <li key={entry.path}>
           <div
+            {...fileDragProps(entry.path, entry.kind)}
             className={cn(
               'group flex h-[28px] cursor-default items-center gap-1 rounded-[6px] pr-1 text-note',
               selected === entry.path ? 'bg-accent-soft text-fg' : 'text-fg2 hover:bg-hover',

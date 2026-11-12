@@ -60,6 +60,7 @@ export function SessionSidePanel({
   onOpenFile,
   onFileRenamed,
   onFileDeleted,
+  fileLines = {},
   onHome,
   tabs,
   onCloseTab,
@@ -88,6 +89,8 @@ export function SessionSidePanel({
   readonly onFileRenamed?: ((from: string, to: string) => void) | undefined
   /** 文件树删除后关闭受影响的文件标签。 */
   readonly onFileDeleted?: ((path: string) => void) | undefined
+  /** 从消息里的路径打开文件时要定位的行号，按路径记录。 */
+  readonly fileLines?: Readonly<Record<string, number>> | undefined
   readonly onHome: () => void
   /** 已打开的标签；标签栏按这个顺序显示。 */
   readonly tabs: readonly SessionTab[]
@@ -320,7 +323,13 @@ export function SessionSidePanel({
             />
           )}
           {panel !== 'home' && isFileTab(panel) && (
-            <FileViewer path={fileTabPath(panel)} view={view} />
+            <FileViewer
+              path={fileTabPath(panel)}
+              view={view}
+              {...(fileLines[fileTabPath(panel)] !== undefined
+                ? { line: fileLines[fileTabPath(panel)] }
+                : {})}
+            />
           )}
           {tabs.includes('files') && (
             <div hidden={panel !== 'files'} className="h-full min-h-0">

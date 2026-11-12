@@ -523,7 +523,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       return {}
     },
 
-    prompt({ sessionId, content: typed, mode = 'normal', mentions, context }) {
+    prompt({ sessionId, content: typed, mode = 'normal', mentions, skills, agents, context }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       const record = requireSession(sessionId)
       const slot = slots.get(sessionId)
@@ -567,6 +567,8 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
             messageId,
             content: typed,
             ...(mentions && mentions.length > 0 ? { mentions } : {}),
+            ...(skills && skills.length > 0 ? { skills } : {}),
+            ...(agents && agents.length > 0 ? { agents } : {}),
             ...(context !== undefined ? { context } : {}),
           },
         },

@@ -371,6 +371,31 @@ describe('prompt', () => {
     )
   })
 
+  it('stores / skills and @ agents with the user message', async () => {
+    const { supervisor } = fakeSupervisor()
+    const { manager } = setup(supervisor, { idleTimeoutMs: 1_000 })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    const skills = [{ name: 'review' }]
+    const agents = [{ agentId: 'user.review', name: '审查员' }]
+    manager.prompt({ sessionId, content: text('/review 看'), skills, agents, context: 'ctx' })
+    expect(published.find((e) => e.type === 'message.user')?.payload).toEqual({
+      messageId: expect.any(String),
+      content: text('/review 看'),
+      skills,
+      agents,
+      context: 'ctx',
+    })
+    await flush()
+    startTurn(sessionId, 'id3', 't1')
+    finishTurn(sessionId, 'id3', 't1')
+
+    // 空的技能与 Agent 列表不落库
+    manager.prompt({ sessionId, content: text('hi'), skills: [], agents: [] })
+    const last = published.filter((e) => e.type === 'message.user').at(-1)?.payload
+    expect(last).not.toHaveProperty('skills')
+    expect(last).not.toHaveProperty('agents')
+  })
+
   it('restarts a stopped host with the conversation history and the run configuration', async () => {
     const { supervisor, hosts } = fakeSupervisor()
     const { manager } = setup(supervisor, { idleTimeoutMs: 1_000 })
