@@ -191,6 +191,7 @@ describe('MessageStream 用户消息高亮', () => {
   ) => {
     const store = createStore<Record<string, unknown>>(() => ({
       activeSessionId: undefined,
+      awaitingTurn: {},
       approvals: {},
       settings: { providers: [] },
       agents: [],
@@ -355,6 +356,7 @@ describe('MessageStream 渲染', () => {
   it('renders the empty stream without a view', () => {
     const store = createStore<Record<string, unknown>>(() => ({
       activeSessionId: undefined,
+      awaitingTurn: {},
       approvals: {},
       settings: undefined,
       sendPrompt: vi.fn(),
@@ -796,19 +798,20 @@ describe('MessageStream Agent 标记', () => {
 })
 
 describe('MessageStream 状态呈现', () => {
-  const emptyStore = () =>
+  const emptyStore = (awaiting = false) =>
     createStore<Record<string, unknown>>(() => ({
       activeSessionId: undefined,
+      awaitingTurn: awaiting ? { s1: true } : {},
       approvals: {},
       settings: { providers: [] },
       agents: [],
       sendPrompt: vi.fn(),
     })) as unknown as SessionStore
 
-  const renderStream = (stream: SessionView | undefined) =>
+  const renderStream = (stream: SessionView | undefined, awaiting = false) =>
     render(
       <I18nextProvider i18n={createI18n('zh-CN')}>
-        <SessionStoreProvider store={emptyStore()}>
+        <SessionStoreProvider store={emptyStore(awaiting)}>
           <MessageStream view={stream} onOpenPlan={vi.fn()} />
         </SessionStoreProvider>
       </I18nextProvider>,
@@ -826,11 +829,45 @@ describe('MessageStream 状态呈现', () => {
     expect(screen.getByText('开始一个新任务')).toBeTruthy()
   })
 
-  it('shows a thinking placeholder while a reply has neither text nor reasoning', () => {
-    const stream = view([...START, ev(5, 'message.assistant.delta', { messageId: 'm1', text: '' })])
+  it('fills the blank right after sending with a running indicator', () => {
+    const { container } = renderStream(view(START), true)
+    expect(screen.getByText('运行中')).toBeTruthy()
+    expect(container.querySelector('[data-running-status]')).toBeTruthy()
+  })
+
+  it('shows the current activity while the model is thinking', () => {
+    const stream = view([...START, ev(5, 'run.state.changed', { from: 'idle', to: 'thinking' })])
     const { container } = renderStream(stream)
     expect(screen.getByText('思考中')).toBeTruthy()
-    expect(container.querySelector('li[aria-busy="true"]')).toBeTruthy()
+    expect(container.querySelector('[data-running-status]')).toBeTruthy()
+  })
+
+  it('hides the running indicator once the reply starts streaming', () => {
+    const stream = view([
+      ...START,
+      ev(5, 'run.state.changed', { from: 'idle', to: 'thinking' }),
+      ev(6, 'message.assistant.delta', { messageId: 'm1', text: '你好' }),
+    ])
+    const { container } = renderStream(stream)
+    expect(container.querySelector('[data-running-status]')).toBeNull()
+  })
+
+  it('hides the running indicator while a tool is running', () => {
+    const stream = view([
+      ...START,
+      ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
+      ev(6, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: [],
+        model,
+        toolCalls: [{ id: 'tc1', name: 'read_file', input: { path: 'a.ts' } }],
+      }),
+      ev(7, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
+      ev(8, 'tool.started', { toolCallId: 'tc1' }),
+    ])
+    const { container } = renderStream(stream)
+    expect(container.querySelector('[data-running-status]')).toBeNull()
+    expect(screen.getByText('执行中')).toBeTruthy()
   })
 
   it('grades an aborted turn as neutral instead of an error', () => {
@@ -870,7 +907,10 @@ describe('MessageStream 试运行（M4-12）', () => {
     state: Record<string, unknown>,
     props: { sessionId?: string; onContinue?: (prompt: string) => void } = {},
   ) => {
-    const store = createStore<Record<string, unknown>>(() => state) as unknown as SessionStore
+    const store = createStore<Record<string, unknown>>(() => ({
+      awaitingTurn: {},
+      ...state,
+    })) as unknown as SessionStore
     return render(
       <I18nextProvider i18n={createI18n('zh-CN')}>
         <SessionStoreProvider store={store}>

@@ -15,7 +15,6 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   rootRun,
-  type CheckpointView,
   type DelegationView,
   type LiveMessageView,
   type MessageView,
@@ -33,14 +32,7 @@ import {
   type PromptSkill,
   type ResolvedMention,
 } from '@cairn/protocol'
-import {
-  CheckpointDivider,
-  RestoreMarks,
-  restoresByMessage,
-  turnCheckpoints,
-  turnNumbers,
-  UndoTurnButton,
-} from './Checkpoints.js'
+import { RestoreMarks, restoresByMessage, UndoTurnButton } from './Checkpoints.js'
 import { COMPOSER_COMMANDS } from './composer-commands.js'
 import { parseMention, tokenize } from './composer-tokens.js'
 import { FileTypeIcon } from './file-icons.js'
@@ -48,7 +40,8 @@ import { TurnChanges } from './FileChanges.js'
 import { DelegationCard } from './DelegationCard.js'
 import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
-import { outcomePresentation, TONE_SOFT } from './status-presentation.js'
+import { RunningIndicator } from './RunningIndicator.js'
+import { outcomePresentation, runningActivityKey, TONE_SOFT } from './status-presentation.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
 import { Button, CairnMark, IconButton, Shimmer } from './ui/index.js'
@@ -413,7 +406,6 @@ function Message({
   modelName,
   sessionId,
   continued,
-  divider,
   restores,
   compacted,
   omitted,
@@ -429,8 +421,6 @@ function Message({
   readonly modelName: (model: ModelRef) => string
   /** 审批状态所属的会话；省略时使用当前选中的会话。 */
   readonly sessionId: string | undefined
-  /** 用户消息上方的检查点分隔线。 */
-  readonly divider: { readonly turn: number; readonly checkpoint: CheckpointView } | undefined
   /** 这条消息之后发生的恢复。 */
   readonly restores: readonly RestoreView[] | undefined
   /** 紧跟在同一轮的上一条助手消息之后：间距收紧为块间距（14px）。 */
@@ -471,7 +461,6 @@ function Message({
         data-turn={message.turnId}
       >
         {marks}
-        {divider && <CheckpointDivider turn={divider.turn} checkpoint={divider.checkpoint} />}
         <strong className="sr-only">{t('message.user')}</strong>
         <div className="max-w-[78%] rounded-[10px] bg-sunk2 px-3.5 py-2.5 text-fg shadow-1">
           <UserContent
@@ -695,8 +684,13 @@ export function MessageStream({
       return run === undefined || run.parentRunId === undefined
     })
     .sort((a, b) => a.startedAt - b.startedAt)
+  const awaiting = useSessionStore(
+    (s) => view !== undefined && s.awaitingTurn[view.sessionId] === true,
+  )
   const outcome = view && turnOutcome(view, t, i18n)
   const outcomeStyle = view ? outcomePresentation(view) : undefined
+  const runningKey =
+    view !== undefined && outcome === undefined ? runningActivityKey(view, awaiting) : undefined
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const agents = useSessionStore((s) => s.agents) ?? []
   /** 上一轮因限额停下时，可以一键接着做（Runtime §10.3：开始新的一轮，计数重新开始）。 */
@@ -756,8 +750,6 @@ export function MessageStream({
         : [],
     ),
   )
-  const turns = view ? turnNumbers(view) : new Map<string, number>()
-  const checkpoints = view ? turnCheckpoints(view) : new Map<string, CheckpointView>()
   const restores = view ? restoresByMessage(view) : new Map<string, readonly RestoreView[]>()
   const delegationsByTurn = useMemo(() => {
     const map = new Map<string, DelegationView[]>()
@@ -770,14 +762,6 @@ export function MessageStream({
     return map
   }, [view])
   const looseDelegations = (view?.delegations ?? []).filter((item) => item.turnId === undefined)
-  /** 每轮第一条用户消息上方的检查点分隔线；第一轮不显示，对话开头不需要“已保存检查点”的提示。 */
-  const dividerFor = (message: MessageView, index: number) => {
-    if (message.role !== 'user' || message.turnId === undefined) return undefined
-    if (view?.messages[index - 1]?.turnId === message.turnId) return undefined
-    const checkpoint = checkpoints.get(message.turnId)
-    const turn = turns.get(message.turnId)
-    return checkpoint && turn !== undefined && turn > 1 ? { turn, checkpoint } : undefined
-  }
   /** 模型显示名：已配置的“供应商 · 模型”，否则为模型 id。 */
   const modelName = (model: ModelRef) => {
     const provider = providers?.find((p) => p.id === model.providerId)
@@ -804,7 +788,7 @@ export function MessageStream({
   }
   return (
     <>
-      {messages.length === 0 && live.length === 0 && <EmptyStream />}
+      {messages.length === 0 && live.length === 0 && runningKey === undefined && <EmptyStream />}
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
         {messages.map((message, index) => {
           const previous = messages[index - 1]?.seq ?? 0
@@ -830,7 +814,6 @@ export function MessageStream({
                 modelName={modelName}
                 sessionId={sessionId}
                 continued={continues(messages[index - 1], message)}
-                divider={dividerFor(message, index)}
                 restores={restores.get(message.messageId)}
                 compacted={markBetween(previous, message.seq, view.compaction)}
                 omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
@@ -898,6 +881,7 @@ export function MessageStream({
           />
         ))}
       </ol>
+      {runningKey !== undefined && <RunningIndicator text={t(runningKey)} />}
       {outcome && outcomeStyle && (
         <div
           className={`flex items-center gap-3 rounded-card px-3.5 py-2.5 text-ui ${TONE_SOFT[outcomeStyle.tone]}`}

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionView } from '@cairn/core'
+import type { RunState } from '@cairn/protocol'
 import {
   outcomePresentation,
+  runningActivityKey,
   statusPresentation,
   TONE_DOT,
   TONE_SOFT,
@@ -117,5 +119,75 @@ describe('tone classes', () => {
     expect(Object.keys(TONE_TEXT)).toEqual(['neutral', 'accent', 'warn', 'danger'])
     expect(Object.keys(TONE_DOT)).toEqual(['neutral', 'accent', 'warn', 'danger'])
     expect(Object.keys(TONE_SOFT)).toEqual(['neutral', 'warn', 'danger'])
+  })
+})
+
+describe('runningActivityKey', () => {
+  /** 一个根运行的会话视图：运行态、进行中的流式内容与工具按参数决定。 */
+  const viewFor = (
+    state: RunState,
+    extra: { live?: boolean; tool?: 'requested' | 'running' } = {},
+  ): SessionView => {
+    const base = viewWith({ status: 'running' })
+    return {
+      ...base,
+      runs: { r1: { ...base.runs.r1!, state } },
+      live: extra.live
+        ? {
+            m1: {
+              messageId: 'm1',
+              runId: 'r1',
+              turnId: 't1',
+              text: '你好',
+              reasoning: '',
+              lastDeltaSeq: 1,
+              startedAt: 1,
+            },
+          }
+        : {},
+      tools: extra.tool
+        ? {
+            tc1: {
+              toolCallId: 'tc1',
+              runId: 'r1',
+              turnId: 't1',
+              name: 'read_file',
+              input: { path: 'a.ts' },
+              status: extra.tool,
+              requestedAt: 1,
+              output: undefined,
+              display: undefined,
+              sandbox: undefined,
+              truncated: false,
+              error: undefined,
+              cancelReason: undefined,
+              durationMs: undefined,
+            },
+          }
+        : {},
+    } as unknown as SessionView
+  }
+
+  it('describes the stage the run is in', () => {
+    expect(runningActivityKey(viewFor('thinking'), false)).toBe('run.thinking')
+    expect(runningActivityKey(viewFor('tooling'), false)).toBe('run.tooling')
+    expect(runningActivityKey(viewFor('aborting'), false)).toBe('run.aborting')
+    expect(runningActivityKey(viewFor('awaiting_approval'), false)).toBe('status.waiting_approval')
+    expect(runningActivityKey(viewFor('awaiting_children'), false)).toBe('status.running')
+  })
+
+  it('says running while the turn has not started yet', () => {
+    expect(runningActivityKey(viewFor('idle'), true)).toBe('status.running')
+  })
+
+  it('says nothing when the session is not running', () => {
+    expect(runningActivityKey(viewFor('idle'), false)).toBeUndefined()
+    expect(runningActivityKey(viewFor('completed'), false)).toBeUndefined()
+  })
+
+  it('says nothing once there is something to look at', () => {
+    expect(runningActivityKey(viewFor('thinking', { live: true }), false)).toBeUndefined()
+    expect(runningActivityKey(viewFor('tooling', { tool: 'running' }), false)).toBeUndefined()
+    expect(runningActivityKey(viewFor('tooling', { tool: 'requested' }), false)).toBeUndefined()
   })
 })
