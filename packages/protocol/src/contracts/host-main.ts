@@ -208,6 +208,11 @@ export const HostForMain = defineSide({
         content: z.array(ContentPart).min(1),
         mode: PromptMode.optional(),
         plan: ActivePlan.optional(),
+        /**
+         * 发送方式（Runtime §9）：`queue` 默认，排到当前轮之后作为新一轮；
+         * `steer` 引导，注入当前轮、在下一次模型调用前生效；`interrupt` 先中止当前轮再发送。
+         */
+        send: z.enum(['queue', 'steer', 'interrupt']).optional(),
       }),
       result: z.object({}),
     },

@@ -719,7 +719,8 @@ describe('ChatPanel', () => {
   it('streams the live reply and replaces it with the completed message once', async () => {
     const { open, emit } = setup({ history: RUNNING })
     await open()
-    expect(sendButton()).toBeNull()
+    // 运行中发送按钮仍在（发送会作为引导注入当前轮），只是没有输入时禁用
+    expect(sendButton()!.disabled).toBe(true)
     expect(stopButton()).toBeTruthy()
 
     emit(
@@ -1106,7 +1107,8 @@ describe('ChatPanel', () => {
     // 排队或宿主启动中：还没有 turn.started
     expect(stopButton()).toBeTruthy()
     await userEvent.type(input(), '下一句')
-    expect(sendButton()).toBeNull()
+    // 运行中也能发送（作为引导注入当前轮）
+    expect(sendButton()).not.toBeNull()
     expect(store.getState().sessions[0]?.status).toBe('running')
     // 刷新列表时同样保留
     await act(() => store.getState().refreshSessions())

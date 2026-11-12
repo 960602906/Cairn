@@ -473,6 +473,7 @@ export function Composer({
   const parsedCommand = parseComposerCommand(text, commands)
   const canSend =
     !sending &&
+    !stopping &&
     text.trim() !== '' &&
     (parsedCommand !== undefined
       ? parsedCommand.command.unavailable === undefined &&
@@ -481,7 +482,8 @@ export function Composer({
             parsedCommand.args !== '' && !active
           : // `/plan 任务` 会发出一轮对话，和普通消息一样要等运行结束。
             !(active && parsedCommand.command.id === 'plan' && parsedCommand.args !== ''))
-      : !active)
+      : // 普通消息运行中也能发：主进程会把它作为引导注入当前轮。
+        true)
   const mention = useMentionMenu({
     text,
     setText,
@@ -878,7 +880,7 @@ export function Composer({
                 onSelect={(next) => void setSessionModel(sessionId, next)}
               />
               <ContextRing model={model} tokens={contextTokens ?? 0} />
-              {active ? (
+              {active && (
                 <button
                   type="button"
                   aria-label={tc('action.stop')}
@@ -891,17 +893,16 @@ export function Composer({
                 >
                   <Square className="size-3 fill-current" />
                 </button>
-              ) : (
-                <button
-                  type="submit"
-                  aria-label={t('input.send')}
-                  title={t('input.send')}
-                  disabled={!canSend}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
-                >
-                  <ArrowUp className="size-4" />
-                </button>
               )}
+              <button
+                type="submit"
+                aria-label={t('input.send')}
+                title={t('input.send')}
+                disabled={!canSend}
+                className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
+              >
+                <ArrowUp className="size-4" />
+              </button>
             </div>
           </div>
         </form>

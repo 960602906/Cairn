@@ -548,11 +548,18 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     prompt({ sessionId, content: typed, mode = 'normal', mentions, skills, agents, context }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
       const record = requireSession(sessionId)
-      const slot = slots.get(sessionId)
-      if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
+      if (options.isLocked?.(sessionId)) {
         throw new RpcError(SessionErrorCode.Busy, { sessionId })
       }
+      const slot = slots.get(sessionId)
       const running = slot?.handle?.state() === 'running'
+      // 运行中（有进行中的轮次）：把输入作为引导注入当前轮，不打断、不另起一轮（Runtime §9）。
+      // 宿主仍在运行时下面不会写中断标记，这里直接读当前状态。
+      const activeRun = running ? rootRun(getView(sessionId)) : undefined
+      const activeTurn = activeRun !== undefined && isActiveRunState(activeRun.state)
+      if (!activeTurn && sessionBusy(sessionId)) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
       // 没有宿主时仍处于运行中的运行，是上一个宿主崩溃留下的
       if (!running) markInterrupted(sessionId, 'host_lost')
       const view = getView(sessionId)
@@ -571,13 +578,15 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         throw new RpcError(SessionErrorCode.DraftChanged, { sessionId })
       }
       const next = runConfig(agent, record.model)
-      // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）
+      // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）。
+      // 引导注入当前轮时不换模型，下一轮才换。
       const modelChanged =
-        running && next.model !== undefined && !sameModel(next.model, slot!.model)
+        !activeTurn && running && next.model !== undefined && !sameModel(next.model, slot!.model)
       if (modelChanged) void slot!.handle!.stop()
       const hostReady = running && !modelChanged
       const resume = root !== undefined && root.state !== 'disposed' && acceptsInput(root.state)
-      const runId = resume ? root.runId : createId()
+      // 引导沿用当前运行的 runId；其余情况按能否直接继续决定。
+      const runId = activeTurn ? root!.runId : resume ? root.runId : createId()
       const history = hostReady ? [] : rebuildHistory(events.readAfter(sessionId, 0), { runId })
 
       const messageId = createId()
@@ -598,7 +607,10 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       // 模型看到的是输入加上展开的引用；界面只显示输入本身。
       const content = userTurnContent({ content: typed, context })
 
-      if (slot?.handle && hostReady) {
+      if (activeTurn && slot?.handle) {
+        // 引导：注入当前轮，在下一次模型调用前生效。不置 awaitingTurn（不会产生新的 turn.started）。
+        slot.handle.prompt({ messageId, content, send: 'steer' }).catch((error) => onError(error))
+      } else if (slot?.handle && hostReady) {
         send(sessionId, slot, slot.handle, { messageId, content, mode })
       } else {
         waiting.set(sessionId, {
