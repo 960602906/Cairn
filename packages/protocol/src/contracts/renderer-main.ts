@@ -1128,6 +1128,14 @@ export const MainForRenderer = defineSide({
       params: z.object({ agentId: Id, sessionId: Id.optional() }),
       result: AgentEffectiveConfig,
     },
+    /**
+     * 这个会话当前 Agent 允许委派的目标（M4-02）：`@Agent` 候选与主进程展开共用同一份名单。
+     * 省略 `sessionId` 时按新会话的默认 Agent 计算。委派关闭时 `enabled` 为 false、名单为空。
+     */
+    'agent.delegationTargets': {
+      params: z.object({ sessionId: Id.optional() }),
+      result: z.object({ enabled: z.boolean(), agentIds: z.array(Id) }),
+    },
     /** 诊断包导出前的清单（M3-13）：只含计数与版本，不含任何凭据或路径。 */
     'diagnostics.summary': {
       params: DiagnosticsExportInput,
@@ -1180,9 +1188,8 @@ export const RendererForMain = defineSide({ requests: {}, events: {} })
 
 /**
  * 已规划、尚未实现的接口名（架构 §15.2）。实现时从这里移入 MainForRenderer。
+ *
+ * 目前架构里列出的接口都已实现（`session.rename`、`session.archive`、`provider.test`
+ * 分别在 M2-02、M2-02、M1-12 落地），保持空数组让「已规划但缺失」一目了然。
  */
-export const RESERVED_RENDERER_MAIN_METHODS = [
-  'session.rename',
-  'session.archive',
-  'provider.test',
-] as const
+export const RESERVED_RENDERER_MAIN_METHODS = [] as const

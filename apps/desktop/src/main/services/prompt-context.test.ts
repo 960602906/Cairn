@@ -92,4 +92,26 @@ describe('expandPromptAgents', () => {
       context: undefined,
     })
   })
+
+  it('only keeps targets inside the delegation whitelist', () => {
+    const available = [agent('builtin.explorer'), agent('builtin.coder')]
+    const requested = [
+      { agentId: 'builtin.explorer', name: '探索员' },
+      { agentId: 'builtin.coder', name: '编程助手' },
+    ]
+    expect(
+      expandPromptAgents(available, requested, {
+        enabled: true,
+        agentIds: ['builtin.explorer'],
+      }),
+    ).toEqual({
+      agents: [{ agentId: 'builtin.explorer', name: '探索员' }],
+      context: `${AGENT_CONTEXT_HEADER}\n\n<agent id="builtin.explorer" name="探索员"/>`,
+    })
+    // 委派关闭时一个都不展开，模型也就不会收到 “去调用 delegate” 的说明。
+    expect(expandPromptAgents(available, requested, { enabled: false, agentIds: [] })).toEqual({
+      agents: [],
+      context: undefined,
+    })
+  })
 })

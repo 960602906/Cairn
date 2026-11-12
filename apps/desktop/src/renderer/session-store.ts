@@ -315,6 +315,13 @@ export interface SessionActions {
   }): Promise<AgentSummary[] | undefined>
   /** 一份 Agent 的当前状态（草稿优先）；失败时返回 undefined。 */
   getAgent(agentId: string, version?: number): Promise<AgentDetail | undefined>
+  /**
+   * 当前 Agent 允许委派的目标（M4-02）：输入框 `@Agent` 候选只列这些。
+   * 没有 `sessionId` 时按新会话的默认 Agent 计算；主进程没有这个接口时返回 undefined。
+   */
+  delegationTargets(
+    sessionId?: string,
+  ): Promise<{ enabled: boolean; agentIds: readonly string[] } | undefined>
   /** 保存草稿；校验错误由主进程返回在 detail.validation 中。 */
   saveAgentDraft(definition: AgentDraftInput): Promise<AgentDetail | undefined>
   publishAgent(agentId: string): Promise<AgentDetail | undefined>
@@ -1170,6 +1177,15 @@ export function createSessionStore(api: MainApi): SessionStore {
         run(() =>
           api.request('agent.get', version === undefined ? { agentId } : { agentId, version }),
         ),
+
+      delegationTargets: async (sessionId) => {
+        const result = await run(() =>
+          api.request('agent.delegationTargets', sessionId === undefined ? {} : { sessionId }),
+        )
+        // 旧主进程或测试替身没有这个接口时返回 undefined，调用方不做过滤。
+        if (!result || !Array.isArray(result.agentIds)) return undefined
+        return { enabled: result.enabled === true, agentIds: result.agentIds }
+      },
 
       saveAgentDraft: (definition) => run(() => api.request('agent.saveDraft', { definition })),
 

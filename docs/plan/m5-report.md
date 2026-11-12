@@ -29,6 +29,11 @@
 | 签名 | **未签名**（`CSC_IDENTITY_AUTO_DISCOVERY=false`），无发布者证书 |
 | 更新发布者校验 | 未配置 `CAIRN_UPDATE_PUBLISHER`；更新包 `signatureVerified: false` |
 
+> 后续变更：本报告的构建、哈希与安装验收固定在上表的 `2c8e21a`。之后 `main` 又合并了
+> #152～#163（沙箱修复、三栏布局、输入框指令与引用、Agents 管理页与试运行等界面改动）。
+> 这些提交没有重新执行打包、安装与更新验收；签发 stable 前需要按
+> [发布前置条件](m5-release-prerequisites.md) 重新跑一遍。
+
 ## 3. 产物与校验和
 
 在 `apps/desktop/dist` 生成，SHA-256 由本机验收构建计算；发布流水线会在标签构建时重新生成并公开校验。

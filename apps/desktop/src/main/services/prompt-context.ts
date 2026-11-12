@@ -54,16 +54,32 @@ export interface PromptAgentExpansion {
   readonly context: string | undefined
 }
 
+/**
+ * 当前 Agent 的委派范围（M4-02）：关闭时一个都不能点名，打开时只认 `allowedAgents`。
+ * 省略时不做限制（旧调用方保持原行为）。
+ */
+export interface DelegationScope {
+  readonly enabled: boolean
+  readonly agentIds: readonly string[]
+}
+
+/**
+ * 展开 `@Agent名`。只有已发布、未归档、且在当前 Agent 委派名单里的目标才会展开；
+ * 名单外的名字照旧留在用户消息里，但不写进上下文，避免让模型调用一个会被拒绝的 `delegate`。
+ */
 export function expandPromptAgents(
   available: readonly AgentSummary[],
   requested: readonly PromptAgent[],
+  scope?: DelegationScope,
 ): PromptAgentExpansion {
   const byId = new Map(available.map((agent) => [agent.agentId, agent]))
+  const allowed = scope === undefined ? undefined : new Set(scope.enabled ? scope.agentIds : [])
   const agents: PromptAgent[] = []
   const blocks: string[] = []
   const seen = new Set<string>()
   for (const item of requested) {
     if (seen.has(item.agentId)) continue
+    if (allowed !== undefined && !allowed.has(item.agentId)) continue
     const agent = byId.get(item.agentId)
     if (agent === undefined || agent.archived) continue
     seen.add(item.agentId)

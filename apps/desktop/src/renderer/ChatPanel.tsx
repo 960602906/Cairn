@@ -320,8 +320,9 @@ export function ChatPanel({
     turnId === undefined || changes === undefined ? undefined : totals(turnEntries(changes, turnId))
   return (
     <section aria-labelledby="chat-title" className="flex min-h-0 flex-1 flex-col bg-paper">
-      {/* 读屏与端到端测试的运行状态；视觉上不占位，状态变化经 role=status 播报。 */}
-      <span role="status" className="sr-only">
+      {/* 读屏与端到端测试的运行状态；视觉上不占位。role=status 只在文字变化（状态变化）时播报，
+          不额外计时或重复播报；不在这里新增可见状态条（聊天区域状态显示优化方案 §1.2）。 */}
+      <span role="status" aria-atomic="true" className="sr-only">
         {t(`status.${status}`)}
       </span>
       <TopBar>

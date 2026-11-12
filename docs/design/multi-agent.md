@@ -118,6 +118,8 @@ interface DelegateInput {
 - `delegate` 经过完整的工具流水线：参数校验、`allowedAgents` 检查、权限判定（可配置为需要审批）、事件记录。
 - 返回值是结构化结果（第 6 节），不包含子运行的完整对话。
 - 父 Agent 只能看到 `allowedAgents` 中的 Agent，工具说明中列出这些 Agent 的名称和描述，帮助模型选择。
+  输入框的 `@Agent名` 用同一份名单（`agent.delegationTargets`）：候选只列白名单里的目标，发送时名单外的点名不展开，
+  委派关闭时不附“调用 `delegate`”的说明，避免模型调用一个必然被拒绝的工具。
 
 ---
 

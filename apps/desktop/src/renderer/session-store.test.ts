@@ -663,6 +663,30 @@ describe('commands', () => {
     ])
   })
 
+  it('reads delegation targets and tolerates an old main process', async () => {
+    const { api } = fakeApi({
+      'agent.delegationTargets': ({ sessionId }: { sessionId?: string }) =>
+        sessionId === undefined
+          ? { enabled: true, agentIds: ['builtin.explorer'] }
+          : { enabled: false, agentIds: [] },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().delegationTargets()).resolves.toEqual({
+      enabled: true,
+      agentIds: ['builtin.explorer'],
+    })
+    await expect(store.getState().delegationTargets('s1')).resolves.toEqual({
+      enabled: false,
+      agentIds: [],
+    })
+
+    // 旧主进程返回 `{}`：不做过滤。
+    const old = fakeApi()
+    await expect(
+      createSessionStore(old.api).getState().delegationTargets('s1'),
+    ).resolves.toBeUndefined()
+  })
+
   it('marks a session as awaiting its turn until the turn starts', async () => {
     let emitStarted = () => {}
     const { api, emit } = fakeApi({

@@ -750,7 +750,7 @@ Cairn/
 | **M5 发布** | 命令沙箱、自动更新、签名与 Windows 安装包（附带精简版 MinGit 供检查点使用，ADR-0008） | 可以分发给他人安装（0.1.0 unsigned beta 已达成；stable 待签名、法务与干净 VM 矩阵） |
 | **M6 跨平台与开源** | macOS、Linux 适配与打包，Linux 凭据存储处理，开源准备（许可证、贡献指南） | 三个平台可用，仓库可公开 |
 
-各阶段的任务分解见 [`docs/plan/`](plan/)：[M0 基础](plan/m0.md)、[M1 最小可用](plan/m1.md)、[M2 可审阅](plan/m2.md)、[M3 日常可用](plan/m3.md)、[M4 多 Agent 协作](plan/m4.md)、[M5 发布](plan/m5.md)。
+各阶段的任务分解见 [`docs/plan/`](plan/)：[M0 基础](plan/m0.md)、[M1 最小可用](plan/m1.md)、[M2 可审阅](plan/m2.md)、[M3 日常可用](plan/m3.md)、[M4 多 Agent 协作](plan/m4.md)、[M5 发布](plan/m5.md)、[M6 跨平台与开源](plan/m6.md)。
 
 > M5 状态（2026-11-10）：M5-00～M5-10 已实施，产出 unsigned beta；stable 的阻塞项、已执行的
 > 自动化证据与未执行的干净 VM 矩阵见 [M5 发布验收报告](plan/m5-report.md) 与

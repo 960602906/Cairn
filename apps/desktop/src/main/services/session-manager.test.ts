@@ -1020,6 +1020,40 @@ describe('agent switching (M3-11)', () => {
     expect(hosts[0]?.init).toMatchObject({ runId })
     expect(hosts[0]?.init).toMatchObject({ model: { providerId: 'openai', modelId: 'gpt' } })
   })
+
+  it('reports the delegation targets of the current agent', async () => {
+    const { supervisor } = fakeSupervisor()
+    const agentDef = definition({
+      delegation: {
+        enabled: true,
+        allowedAgents: ['builtin.explorer', 'builtin.reviewer'],
+        maxDepth: 1,
+        maxChildrenPerTurn: 4,
+        maxParallel: 2,
+        childBudgetShare: 0.5,
+        defaultWorkspace: 'auto',
+        mergeReview: 'user',
+      },
+    })
+    const { manager } = setup(supervisor, resolver(agentDef))
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    const targets = { enabled: true, agentIds: ['builtin.explorer', 'builtin.reviewer'] }
+    // 没有会话按新会话的默认 Agent；还没运行过的会话同样回退到默认 Agent。
+    expect(manager.delegationTargets({})).toEqual(targets)
+    expect(manager.delegationTargets({ sessionId })).toEqual(targets)
+    await manager.setAgent({ sessionId, agent: { id: agentDef.id, version: agentDef.version } })
+    expect(manager.delegationTargets({ sessionId })).toEqual(targets)
+    expect(() => manager.delegationTargets({ sessionId: 'missing' })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+  })
+
+  it('reports no targets when the current agent cannot delegate', () => {
+    const { manager } = setup(fakeSupervisor().supervisor, resolver(definition()))
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    expect(manager.delegationTargets({})).toEqual({ enabled: false, agentIds: [] })
+    expect(manager.delegationTargets({ sessionId })).toEqual({ enabled: false, agentIds: [] })
+  })
 })
 
 describe('trial sessions (M4-12)', () => {
@@ -1132,5 +1166,53 @@ describe('trial sessions (M4-12)', () => {
     )
     await flush()
     expect(hosts).toEqual([])
+  })
+
+  it('reads delegation targets from the trial draft', () => {
+    const { manager } = setup(fakeSupervisor().supervisor, {
+      resolveAgent: () => ({
+        ...draftDefinition(),
+        delegation: {
+          enabled: true,
+          allowedAgents: ['builtin.explorer'],
+          maxDepth: 1,
+          maxChildrenPerTurn: 2,
+          maxParallel: 1,
+          childBudgetShare: 0.5,
+          defaultWorkspace: 'auto',
+          mergeReview: 'user',
+        },
+      }),
+    })
+    storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work' })
+    storage.sessions.create({
+      sessionId: 't1',
+      projectId: 'p1',
+      workspacePath: '/work',
+      title: '',
+      kind: 'trial',
+      trialAgentId: 'user.reviewer',
+      trialDraftHash: 'hash-1',
+    })
+    expect(manager.delegationTargets({ sessionId: 't1' })).toEqual({
+      enabled: true,
+      agentIds: ['builtin.explorer'],
+    })
+  })
+
+  it('falls back to the default agent for a malformed trial', () => {
+    const { manager } = setup(fakeSupervisor().supervisor)
+    storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work' })
+    storage.sessions.create({
+      sessionId: 't2',
+      projectId: 'p1',
+      workspacePath: '/work',
+      title: '',
+      kind: 'trial',
+    })
+    expect(manager.delegationTargets({ sessionId: 't2' })).toEqual({
+      enabled: false,
+      agentIds: [],
+    })
   })
 })

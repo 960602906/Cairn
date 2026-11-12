@@ -62,6 +62,8 @@ export interface SessionCommands {
   readonly archive: Handler<'session.archive'>
   readonly setModel: Handler<'session.setModel'>
   readonly setAgent: Handler<'session.setAgent'>
+  /** 当前 Agent 允许委派的目标（M4-02）：`@Agent` 候选与发送时展开共用。 */
+  readonly delegationTargets: Handler<'agent.delegationTargets'>
   readonly compact: Handler<'session.compact'>
   readonly updateBrief: Handler<'session.brief.update'>
   readonly approvePlan: Handler<'plan.approve'>
@@ -416,11 +418,16 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
               : expandPromptSkills(skills.catalog?.(params.sessionId) ?? [], requestedSkills)
           if (skillExpansion.context !== undefined) contexts.push(skillExpansion.context)
 
+          // 只能点名当前 Agent 的委派白名单里的目标：名单外的名字照旧只是文字，
+          // 不再让模型去调用一个会被拒绝的 delegate。
           const agentExpansion = expandPromptAgents(
             requestedAgents === undefined || requestedAgents.length === 0
               ? []
               : agents.list({}).agents,
             requestedAgents ?? [],
+            requestedAgents === undefined || requestedAgents.length === 0
+              ? undefined
+              : await commands.delegationTargets({ sessionId: params.sessionId }),
           )
           if (agentExpansion.context !== undefined) contexts.push(agentExpansion.context)
 
@@ -445,6 +452,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.archive', (params) => commands.archive(params))
       endpoint.handle('session.setModel', (params) => commands.setModel(params))
       endpoint.handle('session.setAgent', (params) => commands.setAgent(params))
+      endpoint.handle('agent.delegationTargets', (params) => commands.delegationTargets(params))
       endpoint.handle('settings.get', () => settings.get())
       endpoint.handle('settings.update', (patch) => settings.update(patch))
       endpoint.handle('settings.shell', (params) => settings.shell(params))

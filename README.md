@@ -25,7 +25,7 @@ Cairn 是一个**本地优先**的编程桌面 Agent。选择本地项目目录�
 - **平台层（自研）**：运行编排、上下文、工具注册表与工具流水线、权限与审批、检查点、事件日志、存储、凭据、界面和多 Agent 协作。
 - **引擎层（可替换）**：只负责 Agent 循环（调用模型 → 解析工具调用 → 回填结果）与模型通信，经 `AgentRuntime` 接口接入；首选 pi。工具执行仍由平台完成，更换引擎不影响权限、审计和存储。
 
-> **状态**：0.1.0 unsigned beta。M0～M5 已实施，可安装分发；stable 仍被代码签名、法务审查与干净 VM 验收矩阵阻塞。首发 Windows x64，按用户安装。验收证据见 [M5 发布验收报告](docs/plan/m5-report.md)，任务分解见 [docs/plan/m5.md](docs/plan/m5.md)。
+> **状态**：0.1.0 unsigned beta。M0～M5 已实施，可安装分发；stable 仍被代码签名、法务审查与干净 VM 验收矩阵阻塞。首发 Windows x64，按用户安装。验收证据见 [M5 发布验收报告](docs/plan/m5-report.md)，任务分解见 [docs/plan/m5.md](docs/plan/m5.md)；下一阶段 [M6 跨平台与开源](docs/plan/m6.md) 在规划中。
 
 ## 主要特点 / Highlights
 
@@ -121,6 +121,7 @@ pnpm package:nsis; pnpm acceptance:installed  # 真实 NSIS：安装 / 卸载 / 
 - [多 Agent 协作](docs/design/multi-agent.md)（已确认）
 - [安装、升级与卸载 / Install, upgrade and uninstall](docs/dev/install.md)
 - [故障排查 / Troubleshooting](docs/dev/troubleshooting.md)
+- [聊天区域状态显示优化方案](docs/plan/chat-status-display.md)（待实施）
 - [M5 发布验收报告 / M5 release acceptance report](docs/plan/m5-report.md)
 - [更新日志 / Changelog](CHANGELOG.md)
 - [隐私说明 / Privacy notice](PRIVACY.md)
@@ -134,5 +135,6 @@ pnpm package:nsis; pnpm acceptance:installed  # 真实 NSIS：安装 / 卸载 / 
 - [M3 日常可用](docs/plan/m3.md)
 - [M4 多 Agent 协作](docs/plan/m4.md)
 - [M5 发布](docs/plan/m5.md)
+- [M6 跨平台与开源](docs/plan/m6.md)（规划中）
 
 作者 / Author：960602906

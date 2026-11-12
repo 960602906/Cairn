@@ -195,6 +195,7 @@ function setup(
     replan: vi.fn(() => ({ messageId: 'm1' })),
     abandonPlan: vi.fn(() => ({})),
     setAgent: vi.fn(() => ({})),
+    delegationTargets: vi.fn(() => ({ enabled: true, agentIds: ['user.review'] })),
   }
   projects = {
     list: vi.fn(() => ({ projects: [PROJECT] })),
@@ -804,6 +805,68 @@ describe('createRendererGateway: commands and lifecycle', () => {
     })
     expect(skills.catalog).toHaveBeenCalledWith('s1')
     expect(commands.prompt).toHaveBeenLastCalledWith({ sessionId: 's1', content })
+  })
+
+  it('drops @ agents outside the current delegation whitelist', async () => {
+    const { client } = setup()
+    const agentSummary = (agentId: string, name: string) => ({
+      agentId,
+      name: { 'zh-CN': name },
+      description: { 'zh-CN': '' },
+      source: 'user' as const,
+      archived: false,
+      status: 'published' as const,
+      version: 1,
+      hasDraft: false,
+      modelMode: 'inherit' as const,
+      updatedAt: 1,
+    })
+    vi.mocked(agents.list).mockReturnValueOnce({
+      agents: [
+        agentSummary('builtin.explorer', '探索员'),
+        agentSummary('builtin.coder', '编程助手'),
+      ],
+    })
+    const content = [{ type: 'text' as const, text: '@探索员 @编程助手 看看' }]
+    const requested = [
+      { agentId: 'builtin.explorer', name: '探索员' },
+      { agentId: 'builtin.coder', name: '编程助手' },
+    ]
+    vi.mocked(commands.delegationTargets).mockReturnValueOnce({
+      enabled: true,
+      agentIds: ['builtin.explorer'],
+    })
+    await client.request('session.prompt', { sessionId: 's1', content, agents: requested })
+    const call = vi.mocked(commands.prompt).mock.calls.at(-1)?.[0] as Record<string, unknown>
+    expect(commands.delegationTargets).toHaveBeenCalledWith({ sessionId: 's1' })
+    expect(call.agents).toEqual([{ agentId: 'builtin.explorer', name: '探索员' }])
+    expect(call.context).toContain('<agent id="builtin.explorer"')
+    expect(call.context).not.toContain('builtin.coder')
+
+    // 委派关闭时一个都不展开，也不给模型 “调用 delegate” 的说明。
+    vi.mocked(agents.list).mockReturnValueOnce({
+      agents: [agentSummary('builtin.explorer', '探索员')],
+    })
+    vi.mocked(commands.delegationTargets).mockReturnValueOnce({ enabled: false, agentIds: [] })
+    await client.request('session.prompt', {
+      sessionId: 's1',
+      content,
+      agents: [{ agentId: 'builtin.explorer', name: '探索员' }],
+    })
+    expect(commands.prompt).toHaveBeenLastCalledWith({ sessionId: 's1', content })
+  })
+
+  it('reports the delegation targets of the session', async () => {
+    const { client } = setup()
+    await expect(client.request('agent.delegationTargets', { sessionId: 's1' })).resolves.toEqual({
+      enabled: true,
+      agentIds: ['user.review'],
+    })
+    vi.mocked(commands.delegationTargets).mockReturnValueOnce({ enabled: false, agentIds: [] })
+    await expect(client.request('agent.delegationTargets', {})).resolves.toEqual({
+      enabled: false,
+      agentIds: [],
+    })
   })
 
   it('reports which paths exist for clickable replies', async () => {

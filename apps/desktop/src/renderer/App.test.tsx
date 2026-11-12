@@ -127,6 +127,19 @@ describe('App', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: '活动' })).toBeNull())
   })
 
+  it('opens the Agents page from the sidebar and returns to a new chat', async () => {
+    const { store } = makeActivityStore()
+    render(<App i18n={createI18n('zh-CN')} store={store} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Agents' }))
+    expect(await screen.findByRole('heading', { name: 'Agents' })).toBeDefined()
+    // 入口标成当前页，左栏仍在。
+    expect(screen.getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByRole('navigation', { name: '会话' })).toBeTruthy()
+
+    fireEvent.keyDown(window, { key: 'n', ctrlKey: true })
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agents' })).toBeNull())
+  })
+
   it('keeps the sidebar next to the activity center and only offers expand when collapsed', async () => {
     const { store } = makeActivityStore()
     render(<App i18n={createI18n('zh-CN')} store={store} />)

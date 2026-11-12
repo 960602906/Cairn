@@ -13,6 +13,8 @@
   "input.label": "试运行输入",
   "input.placeholder": "描述要验证的任务，Ctrl+Enter 发送",
   "cleared": "已清除 {{count}} 条试运行记录",
+  "history.title": "历史记录",
+  "history.empty": "还没有试运行记录。",
   "action.close": "关闭试运行",
   "action.start": "开始试运行",
   "action.restart": "重新开始",

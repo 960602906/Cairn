@@ -9,6 +9,7 @@ import { App } from './App.js'
 import { greetingPeriod, NewSession } from './NewSession.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
+import { FILE_DRAG_TYPE } from './file-drag.js'
 
 afterEach(cleanup)
 
@@ -33,7 +34,12 @@ const providers = [
   },
 ]
 
-function setup(settings: object = {}, sessionCreate: unknown = { sessionId: 's1' }) {
+function setup(
+  settings: object = {},
+  sessionCreate: unknown = { sessionId: 's1' },
+  skillList: unknown = { skills: [] },
+  handlers: Record<string, (params: unknown) => unknown> = {},
+) {
   let current = {
     locale: 'zh-CN',
     providers,
@@ -42,6 +48,8 @@ function setup(settings: object = {}, sessionCreate: unknown = { sessionId: 's1'
     ...settings,
   }
   const request = vi.fn(async (method: string, params: unknown) => {
+    const handler = handlers[method]
+    if (handler) return handler(params)
     if (method === 'settings.get') {
       return current
     }
@@ -55,6 +63,7 @@ function setup(settings: object = {}, sessionCreate: unknown = { sessionId: 's1'
         projects: [{ projectId: 'p1', name: 'work', path: '/work', createdAt: 1 }],
       }
     }
+    if (method === 'skill.list') return skillList
     if (method === 'session.create') return sessionCreate
     if (method === 'fs.search') {
       if ((params as { query: string }).query === 'boom') throw new Error('boom')
@@ -76,6 +85,236 @@ describe('greetingPeriod', () => {
     expect([12, 13].map(greetingPeriod)).toEqual(['noon', 'noon'])
     expect([14, 17].map(greetingPeriod)).toEqual(['afternoon', 'afternoon'])
     expect([18, 22].map(greetingPeriod)).toEqual(['evening', 'evening'])
+  })
+})
+
+const skill = (name: string, overrides: object = {}) => ({
+  name,
+  description: `${name} 的说明`,
+  sha256: 'a'.repeat(64),
+  source: 'user',
+  enabled: true,
+  pinned: false,
+  tokens: { index: 5, pinned: 12 },
+  shadowed: false,
+  hasScripts: false,
+  files: [],
+  ...overrides,
+})
+
+describe('NewSession composer parity', () => {
+  it('lists enabled skills after /, highlights the command, and sends the skill payload', async () => {
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      {
+        skills: [
+          skill('review'),
+          skill('off', { enabled: false }),
+          skill('shadowed', { shadowed: true }),
+        ],
+      },
+    )
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await waitFor(() => expect(request).toHaveBeenCalledWith('skill.list', { projectId: 'p1' }))
+    await user.type(input, '/')
+    const list = await screen.findByRole('listbox', { name: '输入指令' })
+    expect(within(list).getByRole('option', { name: /\/plan/ })).toBeTruthy()
+    expect(within(list).getByRole('option', { name: /\/review/ })).toBeTruthy()
+    expect(within(list).queryByRole('option', { name: /\/off/ })).toBeNull()
+    expect(within(list).queryByRole('option', { name: /\/shadowed/ })).toBeNull()
+    expect(within(list).getByText('技能')).toBeTruthy()
+
+    // ↑ 回到最后一项，Tab 把 `/review` 补全成可以接着写任务的样子。
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    expect(input.getAttribute('aria-activedescendant')).toBe('composer-command-skill:review')
+    // ↓ 回到第一项，再 ↑ 回到技能，循环不越界。
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(input.getAttribute('aria-activedescendant')).toBe('composer-command-plan')
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    expect(input.getAttribute('aria-activedescendant')).toBe('composer-command-skill:review')
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(input.value).toBe('/review ')
+    expect(document.querySelector('[data-token="command"]')?.textContent).toBe('/review')
+    await user.type(input, '看看改动{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: [{ type: 'text', text: '看看改动' }],
+        skills: [{ name: 'review' }],
+      }),
+    )
+    expect(request).toHaveBeenCalledWith('session.create', {
+      projectPath: '/work',
+      title: '看看改动',
+    })
+  })
+
+  it('does not create a session for a skill without a task and toggles plan from the send button', async () => {
+    const { request } = setup({}, { sessionId: 's1' }, { skills: [skill('review')] })
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await waitFor(() => expect(request).toHaveBeenCalledWith('skill.list', { projectId: 'p1' }))
+    await user.type(input, '/review{Enter}')
+    expect(input.value).toBe('/review ')
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+
+    await user.clear(input)
+    await user.type(input, '/plan')
+    await screen.findByRole('listbox', { name: '输入指令' })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    expect(input.value).toBe('')
+    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+  })
+
+  it('only suggests agents the default agent may delegate to', async () => {
+    const agentSummary = (agentId: string, name: string) => ({
+      agentId,
+      name: { 'zh-CN': name },
+      description: {},
+      source: 'user',
+      archived: false,
+      status: 'published',
+      version: 1,
+      hasDraft: false,
+      modelMode: 'inherit',
+      updatedAt: 1,
+    })
+    setup(
+      {},
+      { sessionId: 's1' },
+      { skills: [] },
+      {
+        'agent.list': () => ({
+          agents: [
+            agentSummary('builtin.explorer', '探索员'),
+            agentSummary('builtin.coder', '编程助手'),
+          ],
+        }),
+        'agent.delegationTargets': () => ({ enabled: true, agentIds: ['builtin.explorer'] }),
+      },
+    )
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.type(input, '看 @探')
+    const list = await screen.findByRole('listbox', { name: '引用文件' })
+    await within(list).findByText('探索员')
+    expect(within(list).queryByText('编程助手')).toBeNull()
+
+    // 委派关闭时一个 Agent 都不建议。
+    cleanup()
+    setup(
+      {},
+      { sessionId: 's1' },
+      { skills: [] },
+      {
+        'agent.list': () => ({ agents: [agentSummary('builtin.explorer', '探索员')] }),
+        'agent.delegationTargets': () => ({ enabled: false, agentIds: [] }),
+      },
+    )
+    const next = await screen.findByPlaceholderText('有什么可以帮你？')
+    await userEvent.type(next, '看 @探')
+    await screen.findByRole('listbox', { name: '引用文件' })
+    expect(screen.queryByText('探索员')).toBeNull()
+  })
+
+  it('completes a dismissed skill name instead of sending it', async () => {
+    const { request } = setup({}, { sessionId: 's1' }, { skills: [skill('review')] })
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await waitFor(() => expect(request).toHaveBeenCalledWith('skill.list', { projectId: 'p1' }))
+    await user.type(input, '/review')
+    await screen.findByRole('listbox', { name: '输入指令' })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
+    await user.keyboard('{Enter}')
+    expect(input.value).toBe('/review ')
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+  })
+
+  it('closes the command panel with Escape and an outside click', async () => {
+    setup()
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.type(input, '/')
+    await screen.findByRole('listbox', { name: '输入指令' })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
+
+    await user.clear(input)
+    await user.type(input, '/p')
+    await screen.findByRole('listbox', { name: '输入指令' })
+    // 非 DOM 节点上的 pointerdown 不影响面板。
+    fireEvent.pointerDown(window)
+    expect(screen.getByRole('listbox', { name: '输入指令' })).toBeTruthy()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('listbox', { name: '输入指令' })).toBeNull()
+  })
+
+  it('keeps unmatched drafts ordinary and toggles plan after the panel is dismissed', async () => {
+    setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    // 没有匹配项时方向键与 Tab 不拦，面板保持打开。
+    await user.type(input, '/zzz')
+    const list = await screen.findByRole('listbox', { name: '输入指令' })
+    expect(within(list).getByText('没有匹配的指令')).toBeTruthy()
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(input.value).toBe('/zzz')
+    expect(screen.getByRole('listbox', { name: '输入指令' })).toBeTruthy()
+    // 点在输入框里不算离开面板。
+    fireEvent.pointerDown(input)
+    expect(screen.getByRole('listbox', { name: '输入指令' })).toBeTruthy()
+
+    // 关掉面板后 `/plan` 单独发送只切换计划模式。
+    await user.clear(input)
+    await user.type(input, '/plan')
+    await screen.findByRole('listbox', { name: '输入指令' })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await user.keyboard('{Enter}')
+    expect(input.value).toBe('')
+    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
+  })
+
+  it('inserts a dragged file as a highlighted @ mention and sends it', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await user.type(input, '看 ')
+    const dataTransfer = {
+      types: [FILE_DRAG_TYPE],
+      getData: (type: string) =>
+        type === FILE_DRAG_TYPE ? JSON.stringify({ path: 'src/a.ts', kind: 'file' }) : '',
+      dropEffect: 'none',
+    }
+    fireEvent.dragOver(input, { dataTransfer })
+    const card = input.parentElement!.parentElement!
+    expect(card.className).toContain('ring-2')
+    fireEvent.dragLeave(card, { relatedTarget: document.body })
+    expect(card.className).not.toContain('ring-2')
+    // 不是本应用拖来的内容不高亮。
+    fireEvent.dragOver(input, { dataTransfer: { ...dataTransfer, types: ['text/plain'] } })
+    expect(card.className).not.toContain('ring-2')
+    fireEvent.dragOver(input, { dataTransfer })
+    fireEvent.drop(input, { dataTransfer })
+    expect(input.value).toBe('看 @src/a.ts ')
+    expect(document.querySelector('[data-token="mention"]')?.textContent).toBe('@src/a.ts')
+
+    // 非本应用的文件拖入时不动草稿。
+    fireEvent.drop(input, { dataTransfer: { ...dataTransfer, getData: () => '' } })
+    expect(input.value).toBe('看 @src/a.ts ')
+    await user.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: [{ type: 'text', text: '看 @src/a.ts' }],
+        mentions: [{ path: 'src/a.ts' }],
+      }),
+    )
   })
 })
 
