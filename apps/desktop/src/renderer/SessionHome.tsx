@@ -1,49 +1,30 @@
 /**
- * 右侧工作台首页：把当前会话最常用的入口摊成几张紧凑卡片。
+ * 右侧工作台首页：只保留当前项目文件树的紧凑预览。
  *
- * 文件树和检查始终显示；点击卡片在标签栏打开完整页面。
- * 改动从对话里的「本轮变更」进入，计划从对话里的计划卡片进入，都不在首页重复出现。
- * 首页只读，文件树等多写操作都在对应的标签页里完成。
+ * 上下文用量已移到输入框的圆环弹层，检查器和运行统计卡片不再占用右栏。
  */
-import { Activity, ChevronRight, FolderTree } from 'lucide-react'
+import { FolderTree } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
-import type { FileTreeEntry, ProjectSummary, SessionStatus } from '@cairn/protocol'
+import type { FileTreeEntry, ProjectSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
 import { FileTypeIcon, FolderTypeIcon } from './file-icons.js'
-import { formatCompactTokens } from './format.js'
 import { lastSegment } from './paths.js'
 import { projectDisplayName } from './project-name.js'
-import { statusPresentation, TONE_TEXT } from './status-presentation.js'
 import { useSessionStore } from './store-context.js'
-import { cn } from './ui/index.js'
 
 const TREE_PREVIEW_LIMIT = 6
 const EMPTY_PROJECTS: readonly ProjectSummary[] = []
 
-/** 首页的状态文字：与侧栏 StatusMark 同一套色调，并配图形，避免只靠颜色区分。 */
-function StatusLabel({ status }: { readonly status: SessionStatus }) {
-  const { t } = useTranslation('session')
-  const { Icon, tone } = statusPresentation(status)
-  return (
-    <span className={cn('inline-flex items-center gap-1', TONE_TEXT[tone])}>
-      <Icon aria-hidden className={cn('size-3 shrink-0', status === 'running' && 'animate-spin')} />
-      <span>{t(`status.${status}`)}</span>
-    </span>
-  )
-}
-
 function HomeCard({
   icon,
   title,
-  meta,
   onClick,
   children,
 }: {
   readonly icon: ReactNode
   readonly title: string
-  readonly meta?: ReactNode
   readonly onClick: () => void
   readonly children: ReactNode
 }) {
@@ -60,15 +41,6 @@ function HomeCard({
           {icon}
         </span>
         <span className="min-w-0 text-ui font-medium text-fg">{title}</span>
-        {meta !== undefined && (
-          <span className="ml-auto flex min-w-0 items-center gap-2 text-note text-muted">
-            {meta}
-          </span>
-        )}
-        <ChevronRight
-          aria-hidden
-          className={cn('size-3.5 shrink-0 text-faint', meta === undefined && 'ml-auto')}
-        />
       </span>
       <span className="flex min-w-0 flex-col gap-1 pl-8 text-note">{children}</span>
     </button>
@@ -77,14 +49,10 @@ function HomeCard({
 
 export function SessionHome({
   view,
-  status,
   onOpenFiles,
-  onOpenInspector,
 }: {
   readonly view: SessionView | undefined
-  readonly status: SessionStatus
   readonly onOpenFiles: () => void
-  readonly onOpenInspector: () => void
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -103,10 +71,6 @@ export function SessionHome({
     tc('project.defaultName'),
     projectPath === undefined ? '' : lastSegment(projectPath),
   )
-  const contextTokens = view?.contextTokens
-  const totalTokens =
-    view === undefined ? undefined : view.usage.inputTokens + view.usage.outputTokens
-  const runCount = view?.runOrder.length ?? 0
 
   useEffect(() => {
     if (project === undefined) {
@@ -151,9 +115,6 @@ export function SessionHome({
             {projectName === '' ? t('sidePanel.home.noProjectLabel') : projectName}
           </p>
         </span>
-        <span className="shrink-0 pt-0.5 text-note">
-          <StatusLabel status={status} />
-        </span>
       </header>
 
       <div className="flex flex-col gap-0.5 px-2 pb-4">
@@ -178,34 +139,6 @@ export function SessionHome({
               </span>
             ))
           )}
-        </HomeCard>
-
-        <HomeCard
-          icon={<Activity />}
-          title={t('sidePanel.inspectorShort')}
-          meta={<StatusLabel status={status} />}
-          onClick={onOpenInspector}
-        >
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted">
-            <span>{t('sidePanel.home.runs', { count: runCount })}</span>
-            {contextTokens !== undefined && (
-              <>
-                <span aria-hidden>·</span>
-                <span>
-                  {t('sidePanel.home.context', { tokens: formatCompactTokens(contextTokens) })}
-                </span>
-              </>
-            )}
-            {totalTokens !== undefined && totalTokens > 0 && (
-              <>
-                <span aria-hidden>·</span>
-                <span>
-                  {t('sidePanel.home.tokens', { tokens: formatCompactTokens(totalTokens) })}
-                </span>
-              </>
-            )}
-          </span>
-          {runCount === 0 && <span className="text-faint">{t('sidePanel.home.noUsage')}</span>}
         </HomeCard>
       </div>
     </div>

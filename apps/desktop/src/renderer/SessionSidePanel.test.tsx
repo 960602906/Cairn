@@ -8,7 +8,7 @@ import { createSessionView, type DelegationView, type PlanView } from '@cairn/co
 import { createI18n } from '@cairn/i18n'
 import type { ChangeSetSummary } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
-import { inspectionKey, type SessionStore } from './session-store.js'
+import type { SessionStore } from './session-store.js'
 import {
   SESSION_PANELS,
   SessionSidePanel,
@@ -195,30 +195,12 @@ const wrap = (
     applyChangeSet: vi.fn(async () => changeSetDetail),
     rejectChangeSet: vi.fn(async () => changeSetDetail),
     resolveChangeSetConflict: vi.fn(async () => changeSetDetail),
-    activity: undefined,
-    activityLoading: false,
-    activityError: undefined,
-    commands: [],
-    refreshActivity: vi.fn(async () => {}),
-    refreshCommands: vi.fn(async () => {}),
     restoreCheckpoint: vi.fn(async () => ({ checkpointId: 'c', files: [] })),
     approvePlan: vi.fn(),
     replan: vi.fn(),
     abandonPlan: vi.fn(),
     updateBrief: vi.fn(async () => true),
     agents: [],
-    inspections: {
-      [inspectionKey('s1')]: {
-        loading: false,
-        result: {
-          tree: { sessionId: 's1', rootRunId: '', generatedAt: 1, runs: [] },
-          snapshots: [],
-          settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
-        },
-        error: undefined,
-      },
-    },
-    inspectRun: vi.fn(),
   })) as unknown as SessionStore
   return render(
     <I18nextProvider i18n={i18n}>
@@ -326,7 +308,7 @@ describe('SessionSidePanel', () => {
       'true',
     )
     expect(within(panel).getByRole('button', { name: '打开文件树' })).toBeTruthy()
-    expect(within(panel).getByRole('button', { name: '打开检查' })).toBeTruthy()
+    expect(within(panel).queryByRole('button', { name: '打开检查' })).toBeNull()
     // 对话里点开的内容不占首页。
     expect(within(panel).queryByRole('button', { name: '打开改动' })).toBeNull()
     expect(within(panel).queryByRole('button', { name: '打开概要' })).toBeNull()
@@ -339,21 +321,17 @@ describe('SessionSidePanel', () => {
     expect(within(panel).getByRole('button', { name: '打开文件树' })).toBeTruthy()
   })
 
-  it('keeps conversation panels out of the add menu and opens activity', async () => {
+  it('only offers files in the add menu', async () => {
     const user = userEvent.setup()
     wrap(<Harness initialPanel="home" initialTabs={[]} />)
     const panel = screen.getByRole('dialog', { name: '会话信息' })
     await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
     expect(await screen.findByRole('menuitem', { name: '文件' })).toBeTruthy()
-    expect(screen.getByRole('menuitem', { name: '检查' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '检查' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: '活动' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '改动' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '概要' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '计划' })).toBeNull()
-    await user.click(await screen.findByRole('menuitem', { name: '活动' }))
-    expect(within(panel).getByRole('tab', { name: '活动' }).getAttribute('aria-selected')).toBe(
-      'true',
-    )
-    expect(within(panel).getByRole('heading', { name: '活动' })).toBeTruthy()
   })
 
   it('animates the width, opacity, and slide while open', () => {
@@ -365,17 +343,6 @@ describe('SessionSidePanel', () => {
     expect(panel.className).toContain('translate-x-0')
     expect(panel.className).toContain('opacity-100')
     expect(panel.getAttribute('aria-hidden')).toBe('false')
-  })
-
-  it('opens the inspector as a side panel tab', async () => {
-    const user = userEvent.setup()
-    wrap(<Harness initialTabs={SESSION_PANELS} />)
-    const panel = screen.getByRole('dialog', { name: '会话信息' })
-    await user.click(within(panel).getByRole('tab', { name: '检查器' }))
-    expect(within(panel).getByRole('tab', { name: '检查器' }).getAttribute('aria-selected')).toBe(
-      'true',
-    )
-    expect(within(panel).getByText('没有运行记录。')).toBeTruthy()
   })
 
   it('lists change sets and opens the review, then returns to the list (M4-10)', async () => {
@@ -515,8 +482,8 @@ describe('SessionSidePanel', () => {
     expect(onCloseTab).toHaveBeenCalledWith('plan')
 
     await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
-    await user.click(await screen.findByRole('menuitem', { name: '检查' }))
-    expect(onOpenPanel).toHaveBeenCalledWith('inspector')
+    await user.click(await screen.findByRole('menuitem', { name: '文件' }))
+    expect(onOpenPanel).toHaveBeenCalledWith('files')
   })
 
   it('hides the add menu when every tab is open', () => {
@@ -539,13 +506,13 @@ describe('SessionSidePanel', () => {
     expect(within(panel).queryByRole('button', { name: '打开其他面板' })).toBeNull()
   })
 
-  it('supports the bottom placement and inspector without change-set navigation', () => {
+  it('supports the bottom placement', () => {
     wrap(
       <SessionSidePanel
         sessionId="s1"
         view={undefined}
         status="idle"
-        panel="inspector"
+        panel="diff"
         selectedPlanId={undefined}
         onOpenPanel={() => {}}
         onActivateTab={() => {}}
@@ -559,7 +526,7 @@ describe('SessionSidePanel', () => {
     const panel = screen.getByRole('complementary', { name: '会话信息' })
     expect(panel.className).toContain('w-full')
     expect(panel.className).toContain('border-t-[0.5px]')
-    expect(within(panel).getByText('没有运行记录。')).toBeTruthy()
+    expect(within(panel).getByRole('region', { name: '本会话的改动' })).toBeTruthy()
   })
 
   it('opens a change set without a back callback', () => {

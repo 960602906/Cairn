@@ -9,11 +9,9 @@ import { FileDiff, PanelRight } from 'lucide-react'
 import {
   useCallback,
   useEffect,
-  useImperativeHandle,
   useRef,
   useState,
   type ReactNode,
-  type Ref,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { activeExecutionPlan, rootRun, sessionStatus } from '@cairn/core'
@@ -44,13 +42,6 @@ import { cn, IconButton } from './ui/index.js'
 /** 工作台从浮层切到常驻列的宽度；1280/1366 下仍保持浮层，避免把正文挤到 600px 以下。 */
 const PANEL_DOCK_QUERY = '(min-width: 1440px)'
 
-export interface ChatPanelHandle {
-  /** 打开工作台里的某个标签；没有活动会话时调用方应先回退到弹窗。 */
-  openPanel(panel: SessionPanel): void
-  /** 收起工作台；从活动面板跳到某个会话时使用。 */
-  closePanel(): void
-}
-
 /** 纸面顶栏（48px）：和对话同一底色，左侧是项目 / 会话面包屑，右侧是会话信息栏开关。 */
 export function TopBar({ children }: { readonly children?: ReactNode }) {
   return (
@@ -74,9 +65,6 @@ export function ChatPanel({
   onInitialChangeSetOpened,
   notice,
   leading,
-  chatRef,
-  onPanelChange,
-  onOpenActivitySession,
   onNewChat,
   onOpenSettings,
 }: {
@@ -89,12 +77,6 @@ export function ChatPanel({
   readonly notice?: ReactNode
   /** 顶栏最左侧的内容：左栏收起时的展开与新对话按钮。 */
   readonly leading?: ReactNode
-  /** 让外层（例如项目菜单）打开工作台标签。 */
-  readonly chatRef?: Ref<ChatPanelHandle> | undefined
-  /** 当前工作台页面变化；左栏据此高亮「活动」等入口。 */
-  readonly onPanelChange?: ((panel: SessionPanelView) => void) | undefined
-  /** 活动面板里打开其他会话；由外层负责切换会话并定位改动集。 */
-  readonly onOpenActivitySession?: ((sessionId: string, changeSetId?: string) => void) | undefined
   /** 输入框 `/new`。 */
   readonly onNewChat?: (() => void) | undefined
   /** 输入框 `/settings [分区]`。 */
@@ -215,23 +197,10 @@ export function ChatPanel({
     [panel, tabs],
   )
 
-  useImperativeHandle(
-    chatRef,
-    () => ({
-      openPanel: (next) => openPanel(next),
-      closePanel: () => setPanelPreference(false),
-    }),
-    [openPanel],
-  )
-
   // 跨断点时恢复默认：宽屏常驻，窄屏收起，避免缩窗后浮层突然盖住对话。
   useEffect(() => {
     setPanelPreference(undefined)
   }, [docked])
-
-  useEffect(() => {
-    onPanelChange?.(panelOpen ? panel : 'home')
-  }, [onPanelChange, panel, panelOpen])
 
   useEffect(() => {
     if (!overlayOpen) return
@@ -284,20 +253,6 @@ export function ChatPanel({
       const index = tabs.indexOf(id)
       setPanelState(remaining[Math.min(index, remaining.length - 1)]!)
     }
-  }
-
-  const locateTurn = (runId: string, turnId: string) => {
-    void runId
-    openPanel('inspector')
-    // 浮层会锁住对话区的焦点；先收起浮层，等遮罩和 inert 解除后再定位。
-    setPanelPreference(docked)
-    requestAnimationFrame(() => {
-      const target = scroller.current?.querySelector<HTMLElement>(
-        `[data-turn="${CSS.escape(turnId)}"]`,
-      )
-      target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      target?.focus({ preventScroll: true })
-    })
   }
 
   // 没有选中的会话时由 App 显示新对话页，这里不再渲染占位内容。
@@ -466,8 +421,6 @@ export function ChatPanel({
           onCloseTab={closeTab}
           open={panelOpen}
           onClose={() => setPanelPreference(false)}
-          onLocateTurn={locateTurn}
-          {...(onOpenActivitySession === undefined ? {} : { onOpenActivitySession })}
         />
       </div>
     </section>

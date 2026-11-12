@@ -22,6 +22,7 @@ export {
 } from './dropdown-menu.js'
 export { Kbd } from './kbd.js'
 export { PanelEmpty } from './panel-empty.js'
+export { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from './popover.js'
 export { SegmentedControl, type SegmentedOption } from './segmented.js'
 export { Shimmer, Spinner } from './spinner.js'
 export { Switch } from './switch.js'

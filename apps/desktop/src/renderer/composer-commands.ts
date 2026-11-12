@@ -17,8 +17,6 @@ export type ComposerCommandId =
   | 'files'
   | 'diff'
   | 'brief'
-  | 'inspect'
-  | 'activity'
   | 'settings'
 
 /** 指令后面能跟什么：没有参数、一段任务描述、模型名、设置分区名。 */
@@ -75,20 +73,6 @@ export const COMPOSER_COMMANDS: readonly ComposerCommandDefinition[] = [
     descriptionKey: 'composer.command.brief.hint',
     args: 'none',
     panel: 'brief',
-  },
-  {
-    id: 'inspect',
-    name: 'inspect',
-    descriptionKey: 'composer.command.inspect.hint',
-    args: 'none',
-    panel: 'inspector',
-  },
-  {
-    id: 'activity',
-    name: 'activity',
-    descriptionKey: 'composer.command.activity.hint',
-    args: 'none',
-    panel: 'activity',
   },
   {
     id: 'settings',
