@@ -524,7 +524,13 @@ function writeRecentAgents(ids: readonly string[]): void {
 }
 
 /** 这些事件说明等待的那一轮已经开始或不会再开始。 */
-const TURN_SETTLED = new Set(['turn.started', 'turn.failed', 'turn.aborted', 'session.crashed'])
+const TURN_SETTLED = new Set([
+  'turn.started',
+  'turn.completed',
+  'turn.failed',
+  'turn.aborted',
+  'session.crashed',
+])
 
 /** 这些事件之后重新读取未决审批。 */
 
@@ -978,8 +984,13 @@ export function createSessionStore(api: MainApi): SessionStore {
         const mentions = extractMentions(trimmed, references?.agentNames)
         const skills = references?.skills ?? []
         const agents = references?.agents ?? []
-        // 先标记再请求：turn.started 可能早于请求响应到达
-        setAwaiting(sessionId, true)
+        // 运行中再发送会作为引导注入当前轮，不产生新的 turn.started；
+        // 此时不置等待标记，否则界面会一直停在“运行中”。空闲发送仍需先标记：
+        // turn.started 可能早于请求响应到达。
+        const view = get().views[sessionId]
+        const status = view === undefined ? 'idle' : sessionStatus(view)
+        const steering = status === 'running' || status === 'waiting_approval'
+        if (!steering) setAwaiting(sessionId, true)
         const sent = await run(() =>
           api.request('session.prompt', {
             sessionId,
@@ -991,7 +1002,7 @@ export function createSessionStore(api: MainApi): SessionStore {
             ...(mode === 'plan' ? { mode: 'plan' as const } : {}),
           }),
         )
-        if (sent === undefined) setAwaiting(sessionId, false)
+        if (sent === undefined && !steering) setAwaiting(sessionId, false)
         return sent !== undefined
       },
 

@@ -1065,11 +1065,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   })
 
   endpoint.handle('host.prompt', (input) => {
+    // 引导：注入当前轮，在下一次模型调用前生效；不另起一轮，也不改这一轮的计划模式。
+    if (input.send === 'steer') {
+      requireRun().send(input, 'steer').catch(onError)
+      return {}
+    }
     planTurn = input.mode === 'plan'
     activePlan = planTurn ? undefined : input.plan
     // 一轮结束才 resolve；结果以事件回传，这里不等待。计划模式的只读拦截维持到这一轮结束。
     requireRun()
-      .send(input)
+      .send(input, input.send)
       .finally(() => {
         planTurn = false
       })

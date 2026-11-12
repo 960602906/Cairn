@@ -304,15 +304,19 @@ describe('prompt', () => {
     expect(hosts[0]?.prompts).toEqual([messageId])
     expect(manager.activeSessions()).toEqual([sessionId])
 
-    // 一轮进行中不接受新输入
+    // 已发送、尚未 turn.started 时仍不接受新输入
     expect(manager.isBusy(sessionId)).toBe(true)
     expect(() => manager.prompt({ sessionId, content: text('again') })).toThrow(
       expect.objectContaining({ code: 'run.busy' }),
     )
     startTurn(sessionId, 'id3', 't1')
-    expect(() => manager.prompt({ sessionId, content: text('again') })).toThrow(
-      expect.objectContaining({ code: 'run.busy' }),
-    )
+    // 运行中再发会作为引导注入当前轮：不抛忙、不另起一轮、沿用同一个运行
+    const steered = manager.prompt({ sessionId, content: text('more') })
+    expect(hosts[0]?.inputs.at(-1)).toMatchObject({
+      messageId: steered.messageId,
+      content: text('more'),
+      send: 'steer',
+    })
     expect(manager.list({}).sessions[0]?.status).toBe('running')
     finishTurn(sessionId, 'id3', 't1')
     expect(manager.isBusy(sessionId)).toBe(false)
@@ -321,8 +325,9 @@ describe('prompt', () => {
     const second = manager.prompt({ sessionId, content: text('next') })
     await flush()
     expect(supervisor.startHost).toHaveBeenCalledTimes(1)
-    expect(hosts[0]?.prompts).toEqual([messageId, second.messageId])
+    expect(hosts[0]?.prompts).toEqual([messageId, steered.messageId, second.messageId])
     expect(published.filter((e) => e.type === 'message.user').map((e) => e.runId)).toEqual([
+      'id3',
       'id3',
       'id3',
     ])

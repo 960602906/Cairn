@@ -1096,6 +1096,29 @@ describe('agent host', () => {
     await expect(main.request('host.heartbeat', {})).resolves.toEqual({ ts: 7 })
   })
 
+  it('steers into the running turn instead of starting another one', async () => {
+    const { main, events, waitFor } = setup({
+      turns: [{ steps: [{ kind: 'reply', text: 'done' }] }],
+      delayMs: 20,
+    })
+    await main.request('host.init', init)
+    await main.request('host.prompt', { messageId: 'm1', content: text('first') })
+    await waitFor('message.assistant.delta')
+
+    // 运行中再发一条：注入当前轮，不另起一轮
+    await main.request('host.prompt', {
+      messageId: 'm2',
+      content: text('补充'),
+      send: 'steer',
+    })
+    await waitFor('turn.completed')
+
+    expect(events.filter((e) => e.type === 'turn.started')).toHaveLength(1)
+    expect(events.filter((e) => e.type === 'run.created')).toHaveLength(1)
+    // 用户消息由主进程落库广播，host 不重复发出
+    expect(events.filter((e) => e.type === 'message.user')).toEqual([])
+  })
+
   it('resumes an existing run from history without run.created', async () => {
     const { main, events, waitFor } = setup()
     await main.request('host.init', {

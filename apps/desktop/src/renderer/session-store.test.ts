@@ -726,6 +726,30 @@ describe('commands', () => {
     expect(store.getState().awaitingTurn).toEqual({})
   })
 
+  it('does not mark awaitingTurn when steering a running turn', async () => {
+    const { api, calls } = fakeApi({
+      'session.list': () => ({ sessions: [summary('s1')] }),
+      'session.subscribe': () => ({
+        events: [
+          created('s1'),
+          ...thinking('s1', 2),
+          ev('s1', 4, 'turn.started', {}, { turnId: 't1' }),
+        ],
+        lastSeq: 4,
+      }),
+      'session.prompt': () => ({ messageId: 'm9' }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshSessions()
+    await store.getState().selectSession('s1')
+
+    expect(await store.getState().sendPrompt('补充')).toBe(true)
+    // 引导注入当前轮，不产生新的 turn.started：不置等待标记
+    expect(store.getState().awaitingTurn).toEqual({})
+    expect(calls.some(([method]) => method === 'session.prompt')).toBe(true)
+    expect(store.getState().sessions[0]?.status).toBe('running')
+  })
+
   it('stops listening after dispose', async () => {
     const { api, listeners } = fakeApi()
     const store = createSessionStore(api)
