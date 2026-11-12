@@ -1438,7 +1438,7 @@ describe('tool calls and undo turn', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('shows the checkpoint divider and undoes the turn, then the restore', async () => {
+  it('undoes the turn and then the restore', async () => {
     const { open, request, emit } = setup({
       history: finished(checkpoint(13)),
       handlers: {
@@ -1490,7 +1490,7 @@ describe('tool calls and undo turn', () => {
     expect(screen.getAllByRole('button', { name: '撤销这次恢复' })).toHaveLength(1)
   })
 
-  it('shows the checkpoint divider from the second turn on', async () => {
+  it('does not show a checkpoint divider between turns', async () => {
     const { open } = setup({
       history: [
         ...HISTORY,
@@ -1500,7 +1500,9 @@ describe('tool calls and undo turn', () => {
       ],
     })
     await open()
-    expect(screen.getByRole('separator', { name: /^第 2 轮前已保存检查点 · / })).toBeTruthy()
+    expect(screen.getAllByRole('separator').filter((s) => s.tabIndex !== 0)).toEqual([])
+    // 撤销入口仍在：左侧对话导航条可以回到某一轮之前。
+    expect(screen.getByRole('navigation', { name: '对话导航' })).toBeTruthy()
   })
 
   it('cannot confirm when no file needs restoring', async () => {
@@ -1581,13 +1583,8 @@ describe('tool calls and undo turn', () => {
       },
     })
     await open()
-    // 侧栏的宽度分隔条也是 separator（可聚焦），这里只看检查点分隔线。
-    expect(
-      screen
-        .getAllByRole('separator')
-        .filter((s) => s.tabIndex !== 0)
-        .map((s) => s.getAttribute('aria-label')),
-    ).toEqual([expect.stringMatching(/^第 2 轮前/)])
+    // 不再显示轮次之间的检查点分隔线；左侧导航条提供同等入口。
+    expect(screen.getAllByRole('separator').filter((s) => s.tabIndex !== 0)).toEqual([])
     const rail = screen.getByRole('navigation', { name: '对话导航' })
     const first = within(rail).getByRole('button', { name: '跳到第 1 轮：跑测试' })
     const scrolled = vi.fn()

@@ -1,8 +1,8 @@
 /**
- * 工具时间线（M2-05，视觉规范 §6；M1-16b 起的工具卡片改写）：助手消息中的工具调用按顺序排成时间线。
+ * 工具步骤（M2-05，视觉规范 §6；M1-16b 起的工具卡片改写）：助手消息中的工具调用按顺序排成列表。
  *
- * - 每一步一行：左侧节点（完成 ✓、进行中转圈、失败 ✕、等待中空心圆、取消 –），节点之间有竖线；
- *   文字是“动作 + 对象”（如“读取 `src/a.ts`”），进行中的步骤文字流光；右侧是耗时或状态。
+ * - 每一步一行：左侧是环石 C（执行中旋转、完成绿色、失败红色；等待中空心圆、取消 –），
+ *   无纵向连接线；文字是“动作 + 对象”（如“读取 `src/a.ts`”），进行中的步骤文字流光；右侧是耗时或状态。
  * - 点击一行展开详情：参数与完整输出（可滚动）、截断说明。失败的错误不用展开就显示。
  * - `run_command` 用终端卡片（M2-06）：执行中直接显示实时输出，完成后展开显示；退出码不是 0 时默认展开。
  *   `read_file` 展开后用代码卡片显示读到的内容。其他工具执行中显示实时输出的最后几行。
@@ -10,7 +10,7 @@
  *
  * 不使用 `<p>`：消息流的测试按段落读取消息正文。
  */
-import { Check, ChevronRight, Minus, X } from 'lucide-react'
+import { ChevronRight, Minus } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LiveToolOutputView, ToolCallView } from '@cairn/core'
@@ -22,7 +22,7 @@ import { languageForPath } from './languages.js'
 import { SandboxBadge } from './SandboxBadge.js'
 import { TerminalCard, type TerminalCardProps } from './TerminalCard.js'
 import { parseReadFileOutput, parseRunCommandOutput } from './tool-results.js'
-import { cn, Shimmer, Spinner } from './ui/index.js'
+import { CairnMark, cn, Shimmer } from './ui/index.js'
 
 export { formatDuration }
 
@@ -34,7 +34,7 @@ const CODE_MAX_HEIGHT = 420
 export const INPUT_SUMMARY_CHARS = 120
 
 /** 参数中最能说明调用的字段，按顺序取第一个字符串。 */
-const SUMMARY_KEYS = ['command', 'pattern', 'query', 'path', 'url'] as const
+const SUMMARY_KEYS = ['command', 'pattern', 'query', 'path', 'url', 'name'] as const
 
 const truncate = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text
@@ -82,6 +82,8 @@ const ACTIONS: ReadonlySet<string> = new Set([
   'list_dir',
   'search',
   'run_command',
+  'load_skill',
+  'start_command',
 ])
 
 function formatInput(input: unknown): string {
@@ -130,25 +132,28 @@ export function terminalData(
 }
 
 function Node({ status }: { readonly status: ToolCallView['status'] }) {
-  const base =
-    'relative z-10 flex size-4 shrink-0 items-center justify-center rounded-full bg-paper'
+  const base = 'flex size-4 shrink-0 items-center justify-center'
   switch (status) {
     case 'completed':
       return (
-        <span aria-hidden className={cn(base, 'bg-ok-soft text-ok')}>
-          <Check className="size-2.5" strokeWidth={3} />
+        <span aria-hidden className={cn(base, 'text-ok')}>
+          <CairnMark size={13} />
         </span>
       )
     case 'running':
       return (
-        <span aria-hidden className={base}>
-          <Spinner className="size-3" />
+        <span
+          aria-hidden
+          className={cn(base, 'animate-spin text-accent')}
+          style={{ animationDuration: '1.4s' }}
+        >
+          <CairnMark size={13} />
         </span>
       )
     case 'failed':
       return (
-        <span aria-hidden className={cn(base, 'bg-danger-soft text-danger')}>
-          <X className="size-2.5" strokeWidth={3} />
+        <span aria-hidden className={cn(base, 'text-danger')}>
+          <CairnMark size={13} />
         </span>
       )
     case 'cancelled':
@@ -191,15 +196,20 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   const liveText = running && live && !terminal ? live.chunks.map((c) => c.text).join('') : ''
   const tail = liveText.trim() === '' ? undefined : previewLines(liveText, 'end')
   const object = summarizeInput(args)
-  const action = ACTIONS.has(name) ? t(`tool.action.${name}`) : name
+  const action = name === 'load_skill' ? '' : ACTIONS.has(name) ? t(`tool.action.${name}`) : name
   const statusText =
     awaitingApproval && status === 'requested'
       ? t('tool.awaitingApproval')
       : t(`tool.status.${status}`)
   const label = (
     <>
-      <span className="shrink-0">{action}</span>
-      <code className="min-w-0 truncate rounded-[4px] bg-sunk px-1 font-mono text-[12.5px] text-fg2">
+      {action !== '' && <span className="shrink-0">{action}</span>}
+      <code
+        className={cn(
+          'min-w-0 truncate text-[12.5px] text-fg2',
+          name === 'load_skill' ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
+        )}
+      >
         {object}
       </code>
     </>
@@ -308,9 +318,5 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
 
 /** 一条助手消息中的工具调用时间线。 */
 export function ToolTimeline({ children }: { readonly children: ReactNode }) {
-  return (
-    <ol className="relative my-2 flex flex-col before:absolute before:top-3 before:bottom-3 before:left-[7.5px] before:w-px before:bg-hair2">
-      {children}
-    </ol>
-  )
+  return <ol className="my-2 flex flex-col">{children}</ol>
 }

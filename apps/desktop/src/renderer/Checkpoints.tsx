@@ -1,8 +1,6 @@
 /**
  * 检查点与撤销（M2-08，视觉规范 §6；替换 M1-16b 的 `UndoTurn`）：
  *
- * - **检查点分隔线**：每轮开始时宿主保存检查点（`turn_start`），这一轮的用户消息上方是一条细线
- *   “第 N 轮前已保存检查点 · 时间”。
  * - **撤销确认框**（危险操作确认框）：模糊遮罩、红色图标；标题写清动作（“撤销第 3 轮的改动？”，不是最后一轮时
  *   是“撤销第 3 轮及之后的改动？”），正文说明后果，列出受影响的文件和各自的结果（恢复 / 恢复原内容 / 删除）；
  *   两个等宽按钮，按钮写明数量（“撤销 2 个文件”）。打开时先预览（`checkpoint.preview`），确认后恢复
@@ -86,33 +84,6 @@ export interface RestoreTarget {
   readonly turn: number | undefined
   /** 这一轮之后还有别的轮次（标题写“及之后”）。 */
   readonly later: boolean
-}
-
-/** 用户消息上方的检查点分隔线。 */
-export function CheckpointDivider({
-  turn,
-  checkpoint,
-}: {
-  readonly turn: number
-  readonly checkpoint: CheckpointView
-}) {
-  const { t, i18n } = useTranslation('session')
-  return (
-    <div
-      role="separator"
-      aria-label={t('checkpoint.divider', {
-        turn,
-        time: formatTime(checkpoint.createdAt, i18n.language),
-      })}
-      className="mb-3.5 flex items-center gap-3 self-stretch text-note text-faint"
-    >
-      <span aria-hidden className="h-px flex-1 bg-hair" />
-      <span aria-hidden className="shrink-0">
-        {t('checkpoint.divider', { turn, time: formatTime(checkpoint.createdAt, i18n.language) })}
-      </span>
-      <span aria-hidden className="h-px flex-1 bg-hair" />
-    </div>
-  )
 }
 
 /** 恢复的说明：回到第几轮之前，或撤销了上一次恢复。 */

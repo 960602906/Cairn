@@ -180,8 +180,8 @@ describe('PlanDetails', () => {
       expect(within(card).getByText(label)).toBeTruthy()
     }
     expect(within(card).getByText('说明：入口在 main.ts')).toBeTruthy()
-    expect(card.querySelector('.text-ok')).toBeTruthy()
-    expect(card.querySelector('.text-accent')).toBeTruthy()
+    expect(card.querySelector('.text-ok svg path')).toBeTruthy()
+    expect(card.querySelector('.animate-spin svg path')).toBeTruthy()
   })
 
   it('renders empty sections and approved or rejected status', () => {
@@ -241,6 +241,11 @@ describe('PlanProgress', () => {
     expect(within(card).getByText('2 / 4')).toBeTruthy()
     expect(within(card).getAllByRole('listitem')).toHaveLength(4)
     expect(within(card).getByText('进行中')).toBeTruthy()
+    const rows = within(card).getAllByRole('listitem')
+    expect(rows[0]!.querySelector('.text-ok svg path')).toBeTruthy()
+    expect(rows[1]!.querySelector('.animate-spin svg path')).toBeTruthy()
+    expect(rows[2]!.querySelector('svg.text-faint')).toBeTruthy()
+    expect(rows[3]!.querySelector('svg.text-faint')).toBeTruthy()
 
     await user.click(within(card).getByRole('button', { name: '收起计划步骤' }))
     expect(within(card).queryByRole('listitem')).toBeNull()

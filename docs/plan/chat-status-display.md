@@ -6,6 +6,9 @@
 > “chat status reads the same in both themes without a status bar”。
 > 上级文档：[视觉规范](../design/visual-style.md)（ADR-0024）、[M2 计划](m2.md) M2-04、[M4 计划](m4.md) M4-05。
 > 适用：桌面应用 `apps/desktop/src/renderer` 中间对话列内的状态反馈，不含输入框上方新增状态条。
+>
+> 第二轮（2026-11-12，按用户反馈）：见文末「6. 第二轮调整」。要点是消息列内**新增**可见的运行指示
+> （不是输入框上方的状态条），工具步骤改用彩色品牌图形（运行中旋转 / 成功绿色 / 失败红色），去掉工具竖线与轮次之间的检查点分隔线。
 
 ## 1. 目标与范围
 
@@ -59,3 +62,13 @@
 
 - 命令：`pnpm typecheck`、`pnpm lint`、`pnpm test`（重点相关用例）、`pnpm format:check`、`pnpm check:i18n`、`pnpm --filter @cairn/desktop e2e` 中 `visual.spec.ts` / `conversation.spec.ts` / `approval.spec.ts` 不回归。
 - 渲染核对（浅色 / 深色、窄窗口）：空闲空状态、发送后未出字、思考中、等待审批、停止 / 中断 / 失败 / 崩溃 / 限额 / 重试各状态的图标 + 文字 + 颜色 + 读屏播报；**输入框上方布局与现状一致，没有新增状态条、计时或停止提示**；空状态与生成中占位出现时不抖动、不遮挡审批卡片；键盘 `Esc` 与审批数字键不冲突；减少动态效果时动画关闭。
+
+## 6. 第二轮调整（2026-11-12）
+
+按用户反馈收尾，仍不新增输入框上方状态条：
+
+1. **运行指示（消息列内）**：发送后到第一条正文 / 思考增量之间不再空白。`status-presentation.ts` 的 `runningActivityKey(view, awaiting)` 给出「当前阶段」文案（运行中 / 思考中 / 正在调用工具 / 正在停止 / 等待审批 / 等待子任务回落到运行中）；`RunningIndicator.tsx` 用旋转的环石 C + 流光文字显示。只在空白期出现：已有流式正文 / 思考、已有正在执行的顶层工具、或已有轮次结局提示时不显示。放在消息 `<ol>` 之外，避免影响消息计数与流式文本采集的 e2e 断言。
+2. **工具步骤**：`ToolTimeline.tsx` 的节点改用环石 C（执行中旋转，成功绿色，失败红色），取消 ✓/✕ 和纵向连接线；语义仍靠状态文字和颜色区分；`SUMMARY_KEYS` 增加 `name`，`load_skill` 只显示技能名（无「加载」字样、无原始 JSON、无等宽底块）；`start_command` 补上「后台运行」动作词。
+3. **去掉检查点分隔线**：删除 `Checkpoints.tsx` 的 `CheckpointDivider` 与 `MessageStream` 的 `divider` 传参，及 `checkpoint.divider` 文案。「撤销本轮」、`TurnRail` 导航条与恢复标记保留。
+4. **计划进度**：`PlanCard.tsx` 的 `StepIcon` 与工具步骤视觉一致：进行中旋转的品牌图形、完成绿色品牌图形；未开始和跳过仍用各自形状。`PlanStepStatus` 目前只有 `pending/in_progress/done/skipped`，没有失败态，不伪造红色失败步骤；轮次失败仍由结局卡片提示。
+5. **测试与视觉**：`status-presentation.test.ts`、`MessageStream.test.tsx`、`ToolTimeline.test.tsx`、`PlanCard.test.tsx`、`ChatPanel.test.tsx` 同步更新；本地 e2e 截图核对运行指示与工具完成态（绿色品牌图形、技能名摘要、无竖线）。

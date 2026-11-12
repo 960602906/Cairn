@@ -15,8 +15,8 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react'
-import { rootRun, type SessionView } from '@cairn/core'
-import type { SessionStatus } from '@cairn/protocol'
+import { ACTIVE_RUN_STATES, rootRun, type SessionView } from '@cairn/core'
+import type { RunState, SessionStatus } from '@cairn/protocol'
 
 export type StatusTone = 'neutral' | 'accent' | 'warn' | 'danger'
 
@@ -42,6 +42,50 @@ export function statusPresentation(status: SessionStatus): StatusPresentation {
       return { tone: 'neutral', Icon: Ban }
     default:
       return { tone: 'neutral', Icon: Circle }
+  }
+}
+
+/** 运行指示覆盖的状态：core 的“运行中”再加上正在停止（也需要反馈）。 */
+const INDICATOR_STATES: ReadonlySet<RunState> = new Set([...ACTIVE_RUN_STATES, 'aborting'])
+
+/**
+ * 消息列末尾的运行指示文案（聊天区状态显示优化方案 §3.2）：
+ * 只在“已经发出、但界面上还没有可看的内容”时返回文案 —— 已有流式正文 / 思考，
+ * 或已有正在执行的工具（工具时间线已体现活动）时不显示。返回 i18n key，文字仍由 `t(key)` 提供。
+ */
+export function runningActivityKey(view: SessionView, awaiting: boolean): string | undefined {
+  const state = rootRun(view)?.state
+  const active = awaiting || (state !== undefined && INDICATOR_STATES.has(state))
+  if (!active) return undefined
+  const rootRuns = new Set(
+    view.runOrder.filter((runId) => view.runs[runId]?.parentRunId === undefined),
+  )
+  if (
+    Object.values(view.live).some(
+      (message) => rootRuns.has(message.runId) && (message.text !== '' || message.reasoning !== ''),
+    )
+  ) {
+    return undefined
+  }
+  if (
+    Object.values(view.tools).some(
+      (tool) =>
+        rootRuns.has(tool.runId) && (tool.status === 'requested' || tool.status === 'running'),
+    )
+  ) {
+    return undefined
+  }
+  switch (state) {
+    case 'thinking':
+      return 'run.thinking'
+    case 'tooling':
+      return 'run.tooling'
+    case 'aborting':
+      return 'run.aborting'
+    case 'awaiting_approval':
+      return 'status.waiting_approval'
+    default:
+      return 'status.running'
   }
 }
 

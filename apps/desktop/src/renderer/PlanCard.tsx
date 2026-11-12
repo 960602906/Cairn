@@ -5,8 +5,6 @@ import {
   Check,
   ChevronRight,
   Circle,
-  CircleCheck,
-  CircleDot,
   CircleSlash,
   Copy,
   ChevronDown,
@@ -20,7 +18,7 @@ import { useTranslation } from 'react-i18next'
 import { sessionStatus, type PlanView } from '@cairn/core'
 import { PLAN_FEEDBACK_MAX } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
-import { Button, cn, IconButton } from './ui/index.js'
+import { Button, CairnMark, cn, IconButton } from './ui/index.js'
 
 /** 下载与复制使用的完整计划文本。 */
 export function planDocument(plan: PlanView): string {
@@ -193,24 +191,23 @@ export function PlanSummaryCard({
   )
 }
 
-const STEP_ICON = {
-  done: CircleCheck,
-  in_progress: CircleDot,
-  skipped: CircleSlash,
-  pending: Circle,
-} as const
-
 function StepIcon({ status }: { readonly status: PlanView['steps'][number]['status'] }) {
-  const Icon = STEP_ICON[status]
-  return (
-    <Icon
-      aria-hidden
-      className={cn(
-        'size-3.5 shrink-0',
-        status === 'done' ? 'text-ok' : status === 'in_progress' ? 'text-accent' : 'text-faint',
-      )}
-    />
-  )
+  if (status === 'done' || status === 'in_progress') {
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          'grid size-3.5 shrink-0 place-items-center',
+          status === 'done' ? 'text-ok' : 'animate-spin text-accent',
+        )}
+        {...(status === 'in_progress' ? { style: { animationDuration: '1.4s' } } : {})}
+      >
+        <CairnMark size={13} />
+      </span>
+    )
+  }
+  const Icon = status === 'skipped' ? CircleSlash : Circle
+  return <Icon aria-hidden className="size-3.5 shrink-0 text-faint" />
 }
 
 /** 计划还有没做完的步骤。 */

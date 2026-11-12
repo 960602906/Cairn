@@ -197,6 +197,57 @@ describe('ToolStep：其他工具', () => {
   })
 })
 
+describe('ToolStep：完成态', () => {
+  it('完成后的节点是绿色品牌 Logo，不再显示对勾', () => {
+    const { container } = step({ tool: tool({ status: 'completed' }) })
+    const node = container
+      .querySelector('section[data-status="completed"]')!
+      .querySelector('span[aria-hidden]')!
+    expect(node.className).toContain('text-ok')
+    expect(node.querySelector('svg')).toBeTruthy()
+    expect(container.querySelector('svg.lucide-check')).toBeNull()
+  })
+
+  it('失败节点使用红色品牌 Logo，不再显示红色 X', () => {
+    const { container } = step({ tool: tool({ status: 'failed' }) })
+    const node = container
+      .querySelector('section[data-status="failed"]')!
+      .querySelector('span[aria-hidden]')!
+    expect(node.className).toContain('text-danger')
+    expect(node.querySelector('svg')).toBeTruthy()
+    expect(container.querySelector('svg.lucide-x')).toBeNull()
+  })
+
+  it('工具列表没有竖线', () => {
+    const { container } = step({ tool: tool({ status: 'completed' }) })
+    const ol = container.querySelector('ol')!
+    expect(ol.className).not.toContain('before:bg-hair2')
+  })
+
+  it('技能加载只显示技能名，不显示动作词或原始 JSON', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ToolTimeline>
+          <ToolStep
+            name="load_skill"
+            input={{ name: 'using-superpowers' }}
+            tool={tool({
+              name: 'load_skill',
+              status: 'completed',
+              input: { name: 'using-superpowers' },
+            })}
+            live={undefined}
+          />
+        </ToolTimeline>
+      </I18nextProvider>,
+    )
+    expect(screen.queryByText('加载')).toBeNull()
+    expect(screen.getByText('using-superpowers')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('load_skill')
+    expect(document.body.textContent).not.toContain('"name"')
+  })
+})
+
 describe('terminalData', () => {
   const sandbox = {
     profile: 'workspace-write' as const,
