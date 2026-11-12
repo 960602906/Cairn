@@ -109,12 +109,19 @@ const open = async () => {
 const list = () => screen.getByRole('list', { name: '已配置的供应商' })
 const providerButtons = () => within(list()).getAllByRole('listitem')
 
-async function createProvider(format: 'Anthropic' | 'OpenAI' | 'Gemini') {
+async function openAddDialog() {
   await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
-  const picker = screen.getByRole('dialog', { name: '选择接口格式' })
-  await userEvent.click(within(picker).getByRole('radio', { name: new RegExp(`^${format}`) }))
-  await userEvent.click(within(picker).getByRole('button', { name: '下一步' }))
+  return screen.getByRole('dialog', { name: '接入哪个服务？' })
+}
+
+async function addService(name: string | RegExp) {
+  const picker = await openAddDialog()
+  await userEvent.click(within(picker).getByRole('button', { name }))
   return screen.getByRole('dialog', { name: '新供应商' })
+}
+
+async function addCustomProvider(format: 'Anthropic' | 'OpenAI' | 'Gemini') {
+  return addService(`自定义 / 第三方中转（${format} 格式）`)
 }
 
 async function editProvider(name: RegExp) {
@@ -131,9 +138,9 @@ describe('ProvidersSettings', () => {
     await open()
     expect(screen.getByText('这个接口格式还没有供应商。')).toBeTruthy()
 
-    const card = await createProvider('OpenAI')
+    const card = await addCustomProvider('OpenAI')
     expect((within(card).getByLabelText('Base URL') as HTMLInputElement).value).toBe('')
-    expect(within(card).getByText('OpenAI · 兼容')).toBeTruthy()
+    expect(within(card).getByText('OpenAI · 第三方中转')).toBeTruthy()
     await userEvent.clear(within(card).getByLabelText('名称'))
     await userEvent.type(within(card).getByLabelText('名称'), 'DeepSeek')
     await userEvent.type(within(card).getByLabelText('Base URL'), 'https://api.deepseek.com')
@@ -170,7 +177,7 @@ describe('ProvidersSettings', () => {
   it('adds a second provider without replacing the first', async () => {
     const { updates, settings } = setup({ providers: [deepseek] })
     await open()
-    const card = await createProvider('OpenAI')
+    const card = await addCustomProvider('OpenAI')
     expect((within(card).getByLabelText('名称') as HTMLInputElement).value).toBe('自定义供应商')
     await userEvent.type(within(card).getByLabelText('Base URL'), 'https://relay.example.com/v1')
     await userEvent.click(within(card).getByRole('button', { name: '保存' }))
@@ -276,8 +283,8 @@ describe('ProvidersSettings', () => {
   it('creates a custom relay from any format and validates the address', async () => {
     setup({ providers: [deepseek] })
     await open()
-    const card = await createProvider('Gemini')
-    expect(within(card).getByText('Gemini · 兼容')).toBeTruthy()
+    const card = await addCustomProvider('Gemini')
+    expect(within(card).getByText('Gemini · 第三方中转')).toBeTruthy()
     const url = within(card).getByLabelText('Base URL') as HTMLInputElement
     expect(url.value).toBe('')
     const save = within(card).getByRole('button', { name: '保存' }) as HTMLButtonElement
@@ -294,13 +301,61 @@ describe('ProvidersSettings', () => {
     expect(screen.queryByRole('dialog', { name: '新供应商' })).toBeNull()
   })
 
-  it('creates a provider by double-clicking an interface format', async () => {
+  it('adds an official service with its template prefilled', async () => {
+    const { updates, settings } = setup()
+    await open()
+    const card = await addService(/^DeepSeek/)
+
+    expect((within(card).getByLabelText('名称') as HTMLInputElement).value).toBe('DeepSeek')
+    expect((within(card).getByLabelText('Base URL') as HTMLInputElement).value).toBe(
+      'https://api.deepseek.com',
+    )
+    expect(within(card).getByText('OpenAI · 官方')).toBeTruthy()
+    expect(within(card).getAllByText('deepseek-flash').length).toBeGreaterThan(0)
+    expect(within(card).getAllByText('deepseek-v4-pro').length).toBeGreaterThan(0)
+
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).toMatchObject({
+      providers: [
+        expect.objectContaining({
+          id: 'deepseek',
+          kind: 'openai',
+          displayName: 'DeepSeek',
+          baseUrl: 'https://api.deepseek.com',
+          credentialRef: 'deepseek',
+          template: 'deepseek',
+          compat: expect.objectContaining({
+            thinkingFormat: 'deepseek',
+            maxTokensField: 'max_tokens',
+          }),
+          models: [
+            expect.objectContaining({ id: 'deepseek-flash' }),
+            expect.objectContaining({ id: 'deepseek-v4-pro' }),
+          ],
+        }),
+      ],
+      defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
+    })
+    expect(settings().providers[0]?.template).toBe('deepseek')
+    expect(within(list()).getByText('DeepSeek')).toBeTruthy()
+  })
+
+  it('opens the editor from a service row with Enter, without a confirm step', async () => {
     setup()
     await open()
-    await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
-    const picker = screen.getByRole('dialog', { name: '选择接口格式' })
-    await userEvent.dblClick(within(picker).getByRole('radio', { name: /^OpenAI/ }))
-    expect(screen.getByRole('dialog', { name: '新供应商' })).toBeTruthy()
+    const picker = await openAddDialog()
+    expect(within(picker).queryByRole('button', { name: '下一步' })).toBeNull()
+    within(picker)
+      .getByRole('button', { name: /^Anthropic/ })
+      .focus()
+    await userEvent.keyboard('{Enter}')
+
+    const card = screen.getByRole('dialog', { name: '新供应商' })
+    expect((within(card).getByLabelText('Base URL') as HTMLInputElement).value).toBe(
+      'https://api.anthropic.com',
+    )
+    expect(within(card).getByText('Anthropic · 官方')).toBeTruthy()
   })
 
   it('advances the compatibility parameters for OpenAI relays', async () => {
@@ -471,9 +526,9 @@ describe('ProvidersSettings', () => {
     setup({ providers: [deepseek, gateway] })
     await open()
     await userEvent.click(screen.getAllByRole('button', { name: '添加供应商' })[0]!)
-    expect(screen.getByRole('dialog', { name: '选择接口格式' })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: '接入哪个服务？' })).toBeTruthy()
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '选择接口格式' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '接入哪个服务？' })).toBeNull())
 
     const card = await editProvider(/^DeepSeek/)
     await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))

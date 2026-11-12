@@ -1,7 +1,8 @@
 /**
- * 打开项目与模型配置（M1-16a；M2-10 起在设置页“模型供应商”中）：选择 OpenAI 接口格式，填写本地 mock
- * 端点和模型，测试连接后保存并成为默认模型；新建会话时用系统对话框选择项目文件夹（对话框在主进程中替换为
- * 固定返回），之后回复来自配置的端点。Linux CI 没有系统加密，界面提示无法保存 Key，mock 端点不检查 Key。
+ * 打开项目与模型配置（M1-16a；M2-10 起在设置页“模型供应商”中）：选择“自定义 / 第三方中转”的 OpenAI
+ * 格式，填写本地 mock 端点和模型，测试连接后保存并成为默认模型；新建会话时用系统对话框选择项目文件夹
+ * （对话框在主进程中替换为固定返回），之后回复来自配置的端点。Linux CI 没有系统加密，界面提示无法保存
+ * Key，mock 端点不检查 Key。
  */
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
@@ -25,8 +26,7 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     await window.getByRole('button', { name: '添加供应商' }).first().click()
 
     const picker = window.getByRole('dialog')
-    await picker.getByRole('radio', { name: /OpenAI/ }).click()
-    await picker.getByRole('button', { name: '下一步' }).click()
+    await picker.getByRole('button', { name: '自定义 / 第三方中转（OpenAI 格式）' }).click()
 
     const card = window.getByRole('dialog')
     await card.getByLabel('Base URL').fill(mock.baseUrl)

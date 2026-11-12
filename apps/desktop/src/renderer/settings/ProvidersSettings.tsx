@@ -3,12 +3,13 @@
  *
  * - 顶部按接口格式分标签（Anthropic / OpenAI / Gemini），标签右侧“添加供应商”。
  * - 每个标签下是供应商卡片；点名称或编辑按钮打开弹窗，删除也在卡片上。
- * - 添加时只选接口格式；地址与 Key 在编辑弹窗里填写，不再区分“官方 / 中转”。
+ * - 添加时按接口格式选择要接入的服务：官方服务用模板预填地址、模型与兼容参数，
+ *   自定义 / 第三方中转得到空白草稿；选中即进入编辑弹窗。
  * - 弹窗里：名称、服务、Base URL、Key、测试连接；模型列表（搜索、拉取、手动添加、
  *   批量启停、逐个开关）与右侧模型详情（上下文、输出上限、能力、默认模型）双栏。
  * - 高级兼容参数收在编辑弹窗底部的折叠区，不再让用户先理解“来源/兼容哪家”。
  */
-import { findTemplate } from '@cairn/core'
+import { findTemplate, PROVIDER_TEMPLATES } from '@cairn/core'
 import type {
   ErrorInfo,
   ModelCompat,
@@ -58,13 +59,14 @@ import {
   draftOf,
   formatTokens,
   genericDraftFor,
+  newDraftForTemplate,
   problemsOf,
   profileFrom,
   slugId,
+  sourceOf,
   templatesOf,
   testModelOf,
   uniqueProviderId,
-  uniqueDisplayName,
   type ProviderDraft,
 } from './providers-model.js'
 import { SettingsHeader } from './SettingsPage.js'
@@ -452,61 +454,98 @@ function TestBar({
   )
 }
 
-function CreateProviderDialog({
+/** 添加供应商时选中的服务：官方服务带模板 id，自定义只有接口格式。 */
+type AddChoice = { readonly kind: ProviderKind; readonly template?: string }
+
+const pickRowClass =
+  'flex w-full items-center gap-2.5 rounded-[9px] bg-sunk px-2.5 py-2 text-left transition-colors hover:bg-hover'
+
+/**
+ * 添加供应商：按接口格式列出可接入的服务。
+ *
+ * 点官方服务直接用模板预填地址、模型与兼容参数；点“自定义 / 第三方中转”得到空白草稿。
+ * 每一行都是普通按钮，单击（或键盘 Enter / 空格）就进入编辑弹窗，没有“先选中再下一步”。
+ */
+function AddProviderDialog({
   open,
-  kind,
-  onKind,
-  onCreate,
+  onPick,
   onClose,
 }: {
   readonly open: boolean
-  readonly kind: ProviderKind
-  readonly onKind: (kind: ProviderKind) => void
-  readonly onCreate: (kind: ProviderKind) => void
+  readonly onPick: (choice: AddChoice) => void
   readonly onClose: () => void
 }) {
   const { t } = useTranslation('settings')
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="w-[min(600px,calc(100vw-32px))]">
-        <DialogTitle>{t('providers.add.pickKind')}</DialogTitle>
-        <DialogDescription>{t('providers.add.pickKindHint')}</DialogDescription>
-        <div className="mt-5 flex flex-col gap-4">
-          <div role="radiogroup" aria-label={t('providers.field.kind')} className="grid gap-2">
-            {KINDS.map((value) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={value === kind}
-                onClick={() => onKind(value)}
-                onDoubleClick={() => onCreate(value)}
-                className={cn(
-                  'flex items-center gap-3 rounded-[10px] bg-sunk px-3 py-2.5 text-left transition-colors hover:bg-hover',
-                  value === kind && 'bg-accent-soft shadow-[inset_0_0_0_1.5px_var(--accent)]',
-                )}
-              >
-                <span
-                  aria-hidden
-                  className="inline-grid size-7 shrink-0 place-items-center rounded-[8px] bg-paper text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)]"
-                >
-                  <ProviderBrandIcon kind={value} className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[13.5px] font-medium text-fg">
-                    {t(`providers.kind.${value}.name`)}
-                  </span>
-                  <span className="block text-[11.5px] text-muted">
-                    {t(`providers.kind.${value}.api`)}
-                  </span>
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-faint" />
-              </button>
-            ))}
-          </div>
-          <Button variant="primary" onClick={() => onCreate(kind)}>
-            {t('providers.add.next')}
-          </Button>
+      <DialogContent className="max-h-[calc(100dvh-48px)] w-[min(520px,calc(100vw-32px))] overflow-y-auto">
+        <DialogTitle>{t('providers.add.pickService')}</DialogTitle>
+        <DialogDescription>{t('providers.add.pickServiceHint')}</DialogDescription>
+        <div
+          role="group"
+          aria-label={t('providers.add.serviceList')}
+          className="mt-5 flex flex-col gap-4"
+        >
+          {KINDS.map((kind) => (
+            <section key={kind} className="flex flex-col gap-1.5">
+              <h3 className="px-1 text-[11.5px] font-medium text-muted">
+                {t('providers.add.kindGroup', { format: t(`providers.kind.${kind}.name`) })}
+              </h3>
+              <ul className="flex flex-col gap-1">
+                {PROVIDER_TEMPLATES.filter((template) => template.kind === kind).map((template) => (
+                  <li key={template.id}>
+                    <button
+                      type="button"
+                      onClick={() => onPick({ kind, template: template.id })}
+                      className={pickRowClass}
+                    >
+                      <Logo
+                        name={template.displayName}
+                        kind={template.kind}
+                        template={template.id}
+                        size={28}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13.5px] font-medium text-fg">
+                          {template.displayName}
+                        </span>
+                        <span className="block truncate font-mono text-[11.5px] text-muted">
+                          {template.baseUrl}
+                        </span>
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-faint" />
+                    </button>
+                  </li>
+                ))}
+                <li>
+                  <button
+                    type="button"
+                    aria-label={t('providers.add.genericFor', {
+                      format: t(`providers.kind.${kind}.name`),
+                    })}
+                    onClick={() => onPick({ kind })}
+                    className={pickRowClass}
+                  >
+                    <span
+                      aria-hidden
+                      className="inline-grid size-7 shrink-0 place-items-center rounded-[8px] bg-paper text-muted shadow-[inset_0_0_0_0.5px_var(--hair2)]"
+                    >
+                      <Plus className="size-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-medium text-fg">
+                        {t('providers.add.generic')}
+                      </span>
+                      <span className="block truncate text-[11.5px] text-muted">
+                        {t('providers.add.genericHint')}
+                      </span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-faint" />
+                  </button>
+                </li>
+              </ul>
+            </section>
+          ))}
         </div>
       </DialogContent>
     </Dialog>
@@ -1065,11 +1104,8 @@ function ProviderEditor({
             <DialogTitle className="truncate text-[16px]">
               {saved ? t('providers.editProvider') : t('providers.new')}
             </DialogTitle>
-            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-note text-muted">
-              <span>
-                {t(`providers.kind.${draft.kind}.name`)} · {t('providers.compatible')}
-              </span>
-              {draft.displayName && <span className="truncate">· {draft.displayName}</span>}
+            <p className="mt-0.5 text-note text-muted">
+              {t(`providers.kind.${draft.kind}.name`)} · {t(`providers.source.${sourceOf(draft)}`)}
             </p>
           </div>
           {saved && <DeleteProvider name={saved.displayName} onConfirm={() => void remove()} />}
@@ -1352,7 +1388,7 @@ export function ProvidersSettings() {
   const credentialStatus = useSessionStore((s) => s.credentialStatus)
   const providers = settings?.providers ?? []
   const [activeKind, setActiveKind] = useState<ProviderKind | undefined>()
-  const [picker, setPicker] = useState<ProviderKind | undefined>()
+  const [addOpen, setAddOpen] = useState(false)
   const [editor, setEditor] = useState<
     { readonly saved: ProviderConfig | undefined; readonly draft: ProviderDraft } | undefined
   >()
@@ -1395,16 +1431,15 @@ export function ProvidersSettings() {
 
   const resultKey = editor?.saved?.id ?? (editor ? '\u0000new' : undefined)
 
-  const openAdd = () => setPicker(kind)
+  const openAdd = () => setAddOpen(true)
 
-  const createProvider = (nextKind: ProviderKind) => {
-    const draft = genericDraftFor(
-      nextKind,
-      uniqueDisplayName(t('providers.add.genericName'), providers),
-      providers,
-    )
-    setActiveKind(nextKind)
-    setPicker(undefined)
+  const addProvider = (choice: AddChoice) => {
+    const template = choice.template ? findTemplate(choice.template) : undefined
+    const draft = template
+      ? newDraftForTemplate(template, providers)
+      : genericDraftFor(choice.kind, t('providers.add.genericName'), providers)
+    setActiveKind(choice.kind)
+    setAddOpen(false)
     setEditor({ saved: undefined, draft })
   }
 
@@ -1495,13 +1530,7 @@ export function ProvidersSettings() {
         />
       )}
 
-      <CreateProviderDialog
-        open={picker !== undefined}
-        kind={picker ?? kind}
-        onKind={(next) => setPicker(next)}
-        onCreate={createProvider}
-        onClose={() => setPicker(undefined)}
-      />
+      <AddProviderDialog open={addOpen} onPick={addProvider} onClose={() => setAddOpen(false)} />
     </>
   )
 }
