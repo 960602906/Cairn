@@ -10,8 +10,8 @@
  * M2-08：每轮的用户消息上方是检查点分隔线，轮次操作中有“撤销本轮”，恢复之后显示恢复标记
  * （`Checkpoints.tsx`）。
  */
-import { Bot, Check, ChevronRight, Copy } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Bot, Brain, Check, ChevronRight, Copy } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   rootRun,
@@ -43,7 +43,16 @@ import { RunningIndicator } from './RunningIndicator.js'
 import { outcomePresentation, runningActivityKey, TONE_SOFT } from './status-presentation.js'
 import { useSessionStore } from './store-context.js'
 import { ToolStep, ToolTimeline } from './ToolTimeline.js'
-import { Button, CairnMark, IconButton, Shimmer } from './ui/index.js'
+import {
+  Button,
+  CairnMark,
+  cn,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  IconButton,
+  Shimmer,
+} from './ui/index.js'
 import { AgentAvatar } from './agents/AgentAvatar.js'
 import { agentName } from './agents/model.js'
 
@@ -90,18 +99,46 @@ const COPIED_MS = 1600
 
 const noopPlan = () => undefined
 
+/** 本次会话挂载时不播动画；之后新出现的消息才淡入。 */
+function useEnteringIds(ids: readonly string[]): ReadonlySet<string> {
+  const initial = useRef<ReadonlySet<string> | null>(null)
+  if (initial.current === null) initial.current = new Set(ids)
+  return new Set(ids.filter((id) => !initial.current!.has(id)))
+}
+
+/**
+ * 思考过程：卡片化的折叠容器（视觉规范 §6）。收起时只有一行“大脑图标 + 思考过程 + 展开箭头”，
+ * 展开后正文在卡片里，和助手正文用发丝线隔开。流式输出时标签用流光文字。
+ *
+ * 正文用 `forceMount` 常驻 DOM、收起时靠高度归零（而不是卸载），这样流式内容和按文本查找都不受影响；
+ * 收起状态下加 `aria-hidden`，与原生 `<details>` 一样不让读屏读到未展开的正文。
+ */
 function Reasoning({ text, live = false }: { readonly text: string; readonly live?: boolean }) {
   const { t } = useTranslation('session')
+  const [open, setOpen] = useState(false)
   return (
-    <details className="group/reasoning mb-2">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-ui text-muted select-none hover:text-fg2 [&::-webkit-details-marker]:hidden">
-        {live ? <Shimmer>{t('message.reasoning')}</Shimmer> : t('message.reasoning')}
-        <ChevronRight className="size-3.5 transition-transform group-open/reasoning:rotate-90" />
-      </summary>
-      <p className="mt-2 border-l-2 border-hair2 pl-3.5 text-[14px] leading-relaxed whitespace-pre-wrap text-muted">
-        {text}
-      </p>
-    </details>
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="mb-2.5 overflow-hidden rounded-card bg-sunk shadow-hair"
+    >
+      <CollapsibleTrigger className="group/reasoning flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui text-muted outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent">
+        <Brain aria-hidden className="size-3.5 shrink-0 text-faint" />
+        <span className="min-w-0 flex-1 truncate">
+          {live ? <Shimmer>{t('message.reasoning')}</Shimmer> : t('message.reasoning')}
+        </span>
+        <ChevronRight
+          aria-hidden
+          className="size-3.5 shrink-0 text-faint transition-transform group-data-[state=open]/reasoning:rotate-90"
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent forceMount aria-hidden={!open}>
+        <span aria-hidden className="block h-[0.5px] bg-hair" />
+        <p className="px-3.5 pt-2 pb-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap text-muted">
+          {text}
+        </p>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -389,6 +426,7 @@ function Message({
   restores,
   compacted,
   omitted,
+  entering,
   onOpenPlan,
   onOpenChanges,
   resolvePaths,
@@ -408,6 +446,8 @@ function Message({
   readonly compacted: boolean
   /** 这条消息之前是“工具输出已省略”的提示。 */
   readonly omitted: boolean
+  /** 本次会话中新出现的消息才播入场动画。 */
+  readonly entering: boolean
   readonly onOpenPlan: (planId: string) => void
   readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
   /** 行内代码里的项目路径是否存在；助手正文据此变成可点的路径。 */
@@ -436,7 +476,10 @@ function Message({
     return (
       <li
         tabIndex={-1}
-        className="flex scroll-mt-4 flex-col items-end rounded-item outline-none focus:outline-none focus-visible:outline-none"
+        className={cn(
+          'flex scroll-mt-4 flex-col items-end rounded-item outline-none focus:outline-none focus-visible:outline-none',
+          entering && 'animate-message-in',
+        )}
         data-turn={message.turnId}
       >
         {marks}
@@ -460,7 +503,7 @@ function Message({
     )
   }
   return (
-    <li className={continued ? '-mt-3.5 text-fg' : 'text-fg'}>
+    <li className={cn(continued ? '-mt-3.5 text-fg' : 'text-fg', entering && 'animate-message-in')}>
       {marks}
       <strong className="sr-only">{t('message.assistant')}</strong>
       {(() => {
@@ -556,12 +599,15 @@ function LiveMessage({
   live,
   view,
   continued,
+  entering,
   resolvePaths,
   onOpenFile,
 }: {
   readonly live: LiveMessageView
   readonly view: SessionView | undefined
   readonly continued: boolean
+  /** 新出现的流式消息才播入场动画。 */
+  readonly entering: boolean
   readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
@@ -580,7 +626,10 @@ function LiveMessage({
       ? t('composer.agent.default')
       : agent?.id
   return (
-    <li aria-busy="true" className={continued ? '-mt-3.5 text-fg' : 'text-fg'}>
+    <li
+      aria-busy="true"
+      className={cn(continued ? '-mt-3.5 text-fg' : 'text-fg', entering && 'animate-message-in')}
+    >
       <strong className="sr-only">{t('message.assistant')}</strong>
       {showAgentBadge && agentDisplayName && (
         <div className="mb-1.5 flex items-center gap-1.5 text-note font-medium text-fg2">
@@ -590,7 +639,10 @@ function LiveMessage({
       )}
       {live.reasoning !== '' && <Reasoning text={live.reasoning} live={live.text === ''} />}
       {live.text !== '' && (
-        <Markdown text={live.text} resolvePaths={resolvePaths} onOpenFile={onOpenFile} />
+        <div className="stream-caret-anchor">
+          <Markdown text={live.text} resolvePaths={resolvePaths} onOpenFile={onOpenFile} />
+          <span aria-hidden className="stream-caret" />
+        </div>
       )}
       {/* 已发出但还没有思考也没有正文：给出「思考中」占位，不留空白条目。 */}
       {live.reasoning === '' && live.text === '' && (
@@ -662,6 +714,10 @@ export function MessageStream({
       return run === undefined || run.parentRunId === undefined
     })
     .sort((a, b) => a.startedAt - b.startedAt)
+  const enteringIds = useEnteringIds([
+    ...messages.map((message) => message.messageId),
+    ...live.map((message) => message.messageId),
+  ])
   const awaiting = useSessionStore(
     (s) => view !== undefined && s.awaitingTurn[view.sessionId] === true,
   )
@@ -786,6 +842,7 @@ export function MessageStream({
                 restores={restores.get(message.messageId)}
                 compacted={markBetween(previous, message.seq, view.compaction)}
                 omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
+                entering={enteringIds.has(message.messageId)}
                 onOpenPlan={openPlan}
                 onOpenChanges={onOpenChanges}
                 resolvePaths={resolvePaths}
@@ -845,6 +902,7 @@ export function MessageStream({
             live={message}
             view={view}
             continued={index === 0 && continues(messages.at(-1), message)}
+            entering={enteringIds.has(message.messageId)}
             resolvePaths={resolvePaths}
             onOpenFile={onOpenFile}
           />

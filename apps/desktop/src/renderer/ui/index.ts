@@ -3,6 +3,7 @@ export { Button, IconButton, buttonVariants, type ButtonProps } from './button.j
 export { CairnAppMark, CairnMark } from './CairnMark.js'
 export { Checkbox } from './checkbox.js'
 export { cn } from './cn.js'
+export { Collapsible, CollapsibleContent, CollapsibleTrigger } from './collapsible.js'
 export {
   Dialog,
   DialogClose,

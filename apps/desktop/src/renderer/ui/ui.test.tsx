@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   Button,
   cn,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -206,6 +209,36 @@ describe('DropdownMenu', () => {
     expect(screen.getByRole('menuitem', { name: 'Delete' }).className).toContain('text-danger')
     await userEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
     expect(onRename).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Collapsible', () => {
+  it('toggles the content and reports the open state on the trigger', async () => {
+    render(
+      <Collapsible>
+        <CollapsibleTrigger>思考过程</CollapsibleTrigger>
+        <CollapsibleContent>正文</CollapsibleContent>
+      </Collapsible>,
+    )
+    const trigger = screen.getByRole('button', { name: '思考过程' })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    await userEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('keeps the content mounted when asked, collapsing it by height', () => {
+    render(
+      <Collapsible>
+        <CollapsibleTrigger>思考过程</CollapsibleTrigger>
+        <CollapsibleContent forceMount>正文</CollapsibleContent>
+      </Collapsible>,
+    )
+    // 收起时正文仍在 DOM 里（流式内容与读屏文本不因开合丢失），靠高度收住
+    const content = screen.getByText('正文')
+    expect(content.getAttribute('data-state')).toBe('closed')
+    expect(content.className).toContain('data-[state=closed]:h-0')
   })
 })
 
