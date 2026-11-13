@@ -581,6 +581,31 @@ function EmptyStream() {
       <CairnMark size={44} className="text-faint" />
       <p className="text-ui font-medium text-fg2">{t('chat.empty.title')}</p>
       <p className="max-w-[340px] text-note text-muted">{t('chat.empty.hint')}</p>
+      <SuggestionChips />
+    </div>
+  )
+}
+
+/**
+ * 新会话的建议提示词（视觉规范 §5）：点一下直接发送，等用户输入第一个字之前作为引导，
+ * 之后整个欢迎屏随消息流一起淡出，chip 不重复出现。
+ */
+function SuggestionChips() {
+  const { t } = useTranslation('session')
+  const sendPrompt = useSessionStore((s) => s.sendPrompt)
+  const suggestions = [1, 2, 3].map((i) => t(`chat.empty.suggestion.${i}`))
+  return (
+    <div className="mt-3 flex max-w-[520px] flex-wrap justify-center gap-2">
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion}
+          type="button"
+          onClick={() => void sendPrompt(suggestion)}
+          className="rounded-full bg-sunk px-3.5 py-1.5 text-note text-muted shadow-hair outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          {suggestion}
+        </button>
+      ))}
     </div>
   )
 }
