@@ -897,6 +897,9 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     registerPlanTools(registry, {
       createId: options.createId,
       activePlan: () => activePlan,
+      revisePlan: (steps) => {
+        if (activePlan) activePlan = { ...activePlan, steps: [...steps] }
+      },
     })
     // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息。项目说明每轮再补（M3-02）。
     const promptBase = {
@@ -1067,6 +1070,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   endpoint.handle('host.prompt', (input) => {
     // 引导：注入当前轮，在下一次模型调用前生效；不另起一轮，也不改这一轮的计划模式。
     if (input.send === 'steer') {
+      // 正常执行的引导同步计划快照；只读计划轮不能借引导切换成执行模式。
+      if (!planTurn && input.plan) activePlan = input.plan
       requireRun().send(input, 'steer').catch(onError)
       return {}
     }

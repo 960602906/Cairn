@@ -3,16 +3,23 @@
  *
  * - 计划这一轮的有效权限收紧为只读：写、执行、网络一律拒绝，规则里的 allow 也不能放开；
  * - 这一轮多一个 `propose_plan`，调用成功后结束本轮；
- * - 批准之后的正常轮次多一个 `update_plan_step`，用步骤 id 更新进度，说明写在事件的 `note` 上。
+ * - 批准之后的正常轮次多一个 `update_plan_step`，用步骤 id 更新进度，说明写在事件的 `note` 上；
+ * - 执行期间用户改任务时，模型用 `revise_plan_steps` 提交完整的新步骤列表，界面实时刷新。
  */
+import { z } from 'zod'
 import type { ActivePlan, PlanDocument, PlanStepUpdateStatus } from '@cairn/protocol'
-import { PlanDocument as PlanDocumentSchema } from '@cairn/protocol'
+import {
+  PLAN_STEP_MAX,
+  PlanDocument as PlanDocumentSchema,
+  PlanStep as PlanStepSchema,
+} from '@cairn/protocol'
 import type { PermissionGuard } from './permissions.js'
 import { ToolError, ToolErrorCode, type ToolDefinition, type ToolRegistry } from './tools.js'
 import type { RuntimeToolEffect } from './runtime.js'
 
 export const PROPOSE_PLAN_TOOL = 'propose_plan'
 export const UPDATE_PLAN_STEP_TOOL = 'update_plan_step'
+export const REVISE_PLAN_STEPS_TOOL = 'revise_plan_steps'
 
 export const PlanErrorCode = {
   NotPending: 'plan.not_pending',
@@ -46,7 +53,8 @@ export function planToolVisible(
   hasActivePlan: boolean,
 ): boolean {
   if (name === PROPOSE_PLAN_TOOL) return mode === 'plan'
-  if (name === UPDATE_PLAN_STEP_TOOL) return mode === 'normal' && hasActivePlan
+  if (name === UPDATE_PLAN_STEP_TOOL || name === REVISE_PLAN_STEPS_TOOL)
+    return mode === 'normal' && hasActivePlan
   return true
 }
 
@@ -72,7 +80,7 @@ export function executionPlanInstructions(plan: {
     .map((step, index) => `${index + 1}. ${step.id}: ${step.title}`)
     .join('\n')
   return `# Approved plan
-The user approved this plan. Carry it out. As you start, finish, or skip a step, call update_plan_step with that step's id. If you must deviate, keep going and pass a short note explaining why. A note does not block the work.
+The user approved this plan. Carry it out now — do not stop after presenting or acknowledging it. Use your available tools to execute the steps. Start by marking the first step in_progress with update_plan_step, then work through them. As you start, finish, or skip a step, call update_plan_step with that step's id. If the user changes the task while you work, call revise_plan_steps with the complete new step list before continuing; keep ids for retained steps so their progress survives, omit removed steps, and give added steps new ids. If you must deviate, keep going and pass a short note explaining why. A note does not block the work.
 
 Goal: ${plan.goal}
 Steps:
@@ -121,8 +129,10 @@ export function applyStepTitles(
 export function approvedPlanMessage(original: PlanDocument, approved: PlanDocument): string {
   const edited = original.steps.some((step, index) => step.title !== approved.steps[index]?.title)
   const markdown = approved.markdown.trim()
-  if (!edited && markdown !== '') return markdown
-  return renderPlan(approved)
+  const body = !edited && markdown !== '' ? markdown : renderPlan(approved)
+  const firstStepId = approved.steps[0]!.id
+  const directive = `已批准此计划，请立即开始执行。先调用 update_plan_step 把第一步（${firstStepId}）标记为 in_progress，然后按步骤推进，不要停下来等确认。`
+  return `${directive}\n\n${body}`
 }
 
 const PROPOSE_SCHEMA = {
@@ -158,6 +168,40 @@ const PROPOSE_SCHEMA = {
   additionalProperties: false,
 } as const
 
+const RevisedStepsSchema = z.object({
+  steps: z
+    .array(PlanStepSchema)
+    .min(1)
+    .max(PLAN_STEP_MAX)
+    .refine((steps) => new Set(steps.map((step) => step.id)).size === steps.length, {
+      message: 'duplicate step id',
+    }),
+})
+
+const REVISE_SCHEMA = {
+  type: 'object',
+  properties: {
+    steps: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 20,
+      description:
+        'The complete ordered step list after this revision. Retain ids for existing steps, omit deleted steps, and assign new ids to added steps.',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', minLength: 1 },
+          title: { type: 'string', minLength: 1 },
+        },
+        required: ['id', 'title'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['steps'],
+  additionalProperties: false,
+} as const
+
 const UPDATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -180,6 +224,12 @@ export interface PlanToolDeps {
   readonly createId: () => string
   /** 正在执行的已批准计划；没有时 `update_plan_step` 失败。 */
   readonly activePlan: () => ActivePlan | undefined
+  /**
+   * 修订后同步宿主内存里的活动计划，使同一轮里的后续 `update_plan_step` 按新步骤校验。
+   * 不传时只发事件，宿主会以旧步骤校验到下一次 `host.prompt` 为止。
+   */
+  readonly revisePlan?:
+    ((steps: readonly { readonly id: string; readonly title: string }[]) => void) | undefined
 }
 
 function issuesOf(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
@@ -222,10 +272,50 @@ function proposePlanTool(deps: PlanToolDeps): ToolDefinition {
         content: [
           {
             type: 'text',
-            text: 'Plan recorded. This turn ends so the user can review it. Do not continue.',
+            text: 'Plan recorded. This turn ends so the user can review it. Wait for the user to approve before executing.',
           },
         ],
         stopLoop: true,
+        effects: [effect],
+      }
+    },
+  }
+}
+
+function revisePlanStepsTool(deps: PlanToolDeps): ToolDefinition {
+  return {
+    name: REVISE_PLAN_STEPS_TOOL,
+    description:
+      'Replace the ordered steps of the approved plan when the user changes the task. Send the complete list; keep existing ids for retained steps to preserve progress, omit removed steps, and use new ids for added steps.',
+    inputSchema: REVISE_SCHEMA,
+    category: 'read',
+    source: { kind: 'builtin' },
+    trust: 'builtin',
+    async execute(input) {
+      const parsed = RevisedStepsSchema.safeParse(input)
+      if (!parsed.success) {
+        throw new ToolError(
+          ToolErrorCode.InvalidInput,
+          `Invalid steps:\n${issuesOf(parsed.error)}`,
+          { name: REVISE_PLAN_STEPS_TOOL },
+        )
+      }
+      const plan = deps.activePlan()
+      if (!plan) {
+        throw new ToolError(
+          PlanErrorCode.NoActivePlan,
+          'No approved plan is being executed, so revise_plan_steps is not available.',
+        )
+      }
+      const effect: RuntimeToolEffect = {
+        type: 'plan.steps.revised',
+        payload: { planId: plan.planId, steps: parsed.data.steps },
+      }
+      deps.revisePlan?.(parsed.data.steps)
+      return {
+        content: [
+          { type: 'text', text: 'Plan steps revised. Continue working on the updated list.' },
+        ],
         effects: [effect],
       }
     },
@@ -268,6 +358,7 @@ function updatePlanStepTool(deps: PlanToolDeps): ToolDefinition {
         type: 'plan.step.updated',
         payload: {
           planId: plan.planId,
+          stepId,
           stepIndex,
           status,
           ...(trimmed ? { note: trimmed } : {}),
@@ -281,8 +372,9 @@ function updatePlanStepTool(deps: PlanToolDeps): ToolDefinition {
   }
 }
 
-/** 注册两个计划工具。是否交给模型由 `planToolVisible` 决定，不在这里过滤。 */
+/** 注册计划工具。是否交给模型由 `planToolVisible` 决定，不在这里过滤。 */
 export function registerPlanTools(registry: ToolRegistry, deps: PlanToolDeps): void {
   registry.register(proposePlanTool(deps))
   registry.register(updatePlanStepTool(deps))
+  registry.register(revisePlanStepsTool(deps))
 }

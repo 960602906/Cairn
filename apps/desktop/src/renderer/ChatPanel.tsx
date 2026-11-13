@@ -6,13 +6,7 @@
  * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
 import { FileDiff, PanelRight } from 'lucide-react'
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { activeExecutionPlan, rootRun, sessionStatus } from '@cairn/core'
 import { isAgentDraftRef } from '@cairn/protocol'
@@ -382,6 +376,7 @@ export function ChatPanel({
               <PlanProgress
                 key={progressPlan.planId}
                 plan={progressPlan}
+                running={status === 'running'}
                 onOpen={() => openPanel('plan', { planId: progressPlan.planId })}
               />
             )}

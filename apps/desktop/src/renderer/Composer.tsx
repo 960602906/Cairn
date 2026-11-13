@@ -357,11 +357,7 @@ function ContextUsage({
                   strokeLinecap="round"
                   strokeDasharray={`${c * ratio} ${c}`}
                   className={
-                    ratio >= 0.9
-                      ? 'stroke-danger'
-                      : ratio >= 0.7
-                        ? 'stroke-warn'
-                        : 'stroke-muted'
+                    ratio >= 0.9 ? 'stroke-danger' : ratio >= 0.7 ? 'stroke-warn' : 'stroke-muted'
                   }
                 />
               )}
@@ -433,16 +429,10 @@ function ContextUsage({
                     />
                   ))}
                 </div>
-                <ul
-                  aria-label={t('inspector.context.breakdown')}
-                  className="flex flex-col gap-1"
-                >
+                <ul aria-label={t('inspector.context.breakdown')} className="flex flex-col gap-1">
                   {breakdown.parts.map((part) => (
                     <li key={part.key} className="flex items-center gap-2 text-note">
-                      <span
-                        aria-hidden
-                        className={cn('size-2 shrink-0 rounded-full', part.tone)}
-                      />
+                      <span aria-hidden className={cn('size-2 shrink-0 rounded-full', part.tone)} />
                       <span className="min-w-0 flex-1 text-fg2">
                         {t(`inspector.context.${part.key}`)}
                       </span>
@@ -687,6 +677,8 @@ export function Composer({
     setSending(true)
     const sent = await sendPrompt(draft, planMode ? 'plan' : 'normal', referencesOf(draft))
     setSending(false)
+    // 计划模式只对这一轮生效，发出后立即退出，避免后续消息仍被当作只读计划拦截。
+    if (sent) setPlanMode(false)
     if (!sent) setText((current) => (current === '' ? draft : current))
   }
 
@@ -715,6 +707,7 @@ export function Composer({
         skills: [command.name],
       })
       setSending(false)
+      if (sent) setPlanMode(false)
       if (!sent) restore()
       textarea.current?.focus()
       return
@@ -729,6 +722,7 @@ export function Composer({
           setSending(true)
           const sent = await sendPrompt(args, 'plan', referencesOf(args))
           setSending(false)
+          if (sent) setPlanMode(false)
           if (!sent) restore()
         }
         break

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -147,6 +147,21 @@ describe('PlanSummaryCard', () => {
     wrap(<PlanSummaryCard plan={{ ...plan, status: 'approved' }} onOpen={vi.fn()} />)
     expect(screen.queryByRole('button', { name: '批准执行' })).toBeNull()
   })
+
+  it('shows a rejected badge for rejected plans', () => {
+    wrap(<PlanSummaryCard plan={{ ...plan, status: 'rejected' }} onOpen={vi.fn()} />)
+    expect(screen.getByText('已放弃')).toBeTruthy()
+  })
+
+  it('ignores replan submit when note is empty or session view is missing', async () => {
+    const user = userEvent.setup()
+    const emptyViewStore = makeStore({ views: {} })
+    wrap(<PlanSummaryCard plan={plan} onOpen={vi.fn()} />, emptyViewStore)
+    await user.click(screen.getByRole('button', { name: '重新规划' }))
+    const form = screen.getByRole('textbox', { name: '重新规划' }).closest('form')!
+    fireEvent.submit(form)
+    expect(emptyViewStore.getState().replan).not.toHaveBeenCalled()
+  })
 })
 
 describe('PlanDetails', () => {
@@ -164,6 +179,7 @@ describe('PlanDetails', () => {
   it('marks each step with its status and note', () => {
     wrap(
       <PlanDetails
+        running
         plan={{
           ...plan,
           steps: [
@@ -182,6 +198,7 @@ describe('PlanDetails', () => {
     expect(within(card).getByText('说明：入口在 main.ts')).toBeTruthy()
     expect(card.querySelector('.text-ok svg path')).toBeTruthy()
     expect(card.querySelector('.animate-spin svg path')).toBeTruthy()
+    expect(within(card).getByText('执行中')).toBeTruthy()
   })
 
   it('renders empty sections and approved or rejected status', () => {
@@ -255,6 +272,16 @@ describe('PlanProgress', () => {
     expect(onOpen).toHaveBeenCalledTimes(1)
     await user.click(within(card).getByRole('button', { name: '展开计划步骤' }))
     expect(within(card).getAllByRole('listitem')).toHaveLength(4)
+  })
+
+  it('shows a running badge and spinner only while the session is running', () => {
+    const view = wrap(<PlanProgress plan={running} onOpen={() => {}} />)
+    expect(screen.queryByText('执行中')).toBeNull()
+    view.unmount()
+
+    wrap(<PlanProgress plan={running} running onOpen={() => {}} />)
+    const card = screen.getByRole('region', { name: '计划进度' })
+    expect(within(card).getByText('执行中')).toBeTruthy()
   })
 
   it('falls back to the next pending step, then to the goal, when collapsed', async () => {

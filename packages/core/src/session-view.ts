@@ -769,12 +769,22 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
           ...(event.payload.feedback ? { feedback: event.payload.feedback } : {}),
         }
       })
+    case 'plan.steps.revised':
+      return resolvePlan(view, event.payload.planId, (plan) => {
+        if (plan.status !== 'approved') return undefined
+        const content = { ...plan.content, steps: event.payload.steps, markdown: '' }
+        return { ...plan, content, steps: stepsFrom(content, plan.steps) }
+      })
     case 'plan.step.updated':
       return resolvePlan(view, event.payload.planId, (plan) => {
         if (plan.status !== 'approved') return undefined
-        const index = event.payload.stepIndex
+        // 修订后步骤位置可能变了：有 id 时按 id 定位，旧事件没有 id 才用 index。
+        const index =
+          event.payload.stepId === undefined
+            ? event.payload.stepIndex
+            : plan.steps.findIndex((step) => step.id === event.payload.stepId)
         const current = plan.steps[index]
-        if (!current) return undefined
+        if (index < 0 || !current) return undefined
         const note = event.payload.note?.trim()
         const steps = plan.steps.map((step, i) =>
           i === index

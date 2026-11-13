@@ -31,7 +31,7 @@ const START: EventEnvelope[] = [
 ]
 
 describe('turnFooters（M2-03）', () => {
-  it('本轮结束后在最后一条助手消息下汇总本轮文本与 token 数', () => {
+  it('本轮结束后在最后一条助手消息下汇总本轮文本', () => {
     const footers = turnFooters(
       view([
         ...START,
@@ -43,7 +43,7 @@ describe('turnFooters（M2-03）', () => {
       ]),
     )
     expect([...footers.keys()]).toEqual(['a2'])
-    expect(footers.get('a2')).toEqual({ text: '第一段\n\n第二段', model, tokens: 350 })
+    expect(footers.get('a2')).toEqual({ text: '第一段\n\n第二段' })
   })
 
   it('进行中的一轮没有轮次操作', () => {
@@ -56,7 +56,7 @@ describe('turnFooters（M2-03）', () => {
     expect(footers.size).toBe(0)
   })
 
-  it('没有用量时 token 数为 undefined；每轮各有一个', () => {
+  it('每轮各有一个轮次操作，只带这一轮的文本', () => {
     const footers = turnFooters(
       view([
         ...START,
@@ -69,8 +69,8 @@ describe('turnFooters（M2-03）', () => {
         ev(11, 'turn.completed', { durationMs: 10 }, 't2'),
       ]),
     )
-    expect(footers.get('a1')).toEqual({ text: '一', model, tokens: undefined })
-    expect(footers.get('a2')).toEqual({ text: '二', model, tokens: 3 })
+    expect(footers.get('a1')).toEqual({ text: '一' })
+    expect(footers.get('a2')).toEqual({ text: '二' })
   })
 })
 

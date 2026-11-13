@@ -144,9 +144,7 @@ function RunNodeView({
                     {open && (
                       <div className="mt-1 mb-2 flex flex-col gap-2 pl-5">
                         {turn.steps.length === 0 ? (
-                          <p className="text-note text-faint">
-                            {t('inspector.timeline.noSteps')}
-                          </p>
+                          <p className="text-note text-faint">{t('inspector.timeline.noSteps')}</p>
                         ) : (
                           turn.steps.map((step, stepIndex) => (
                             <div
@@ -161,9 +159,7 @@ function RunNodeView({
                                   {step.finishReason ?? t('inspector.timeline.running')}
                                 </span>
                                 <span className="tabular shrink-0 text-[11px] text-muted">
-                                  {compactTokens(
-                                    step.usage.inputTokens + step.usage.outputTokens,
-                                  )}
+                                  {compactTokens(step.usage.inputTokens + step.usage.outputTokens)}
                                 </span>
                               </div>
                               <p className="truncate font-mono text-[11px] text-faint">

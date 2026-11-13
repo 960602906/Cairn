@@ -45,7 +45,12 @@ describe('contextBreakdown', () => {
     expect(contextBreakdown(undefined)).toEqual({ parts: [], total: 0 })
     expect(
       contextBreakdown(
-        snapshot({ systemPrompt: [], skills: [], tools: [], history: { messages: 0, tokens: 0, preview: [] } }),
+        snapshot({
+          systemPrompt: [],
+          skills: [],
+          tools: [],
+          history: { messages: 0, tokens: 0, preview: [] },
+        }),
       ),
     ).toEqual({ parts: [], total: 0 })
   })

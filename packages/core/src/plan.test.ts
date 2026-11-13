@@ -6,6 +6,7 @@ import {
   PlanModeReasonCode,
   PLAN_MODE_DENY_REASON,
   PROPOSE_PLAN_TOOL,
+  REVISE_PLAN_STEPS_TOOL,
   RunEngine,
   UPDATE_PLAN_STEP_TOOL,
   applyStepTitles,
@@ -89,6 +90,12 @@ describe('plan tools', () => {
     const tool = registry.get(PROPOSE_PLAN_TOOL)!
     const output = await tool.execute({ ...doc, markdown: '  ' }, ctx)
     expect(output.stopLoop).toBe(true)
+    expect(output.content).toEqual([
+      {
+        type: 'text',
+        text: 'Plan recorded. This turn ends so the user can review it. Wait for the user to approve before executing.',
+      },
+    ])
     expect(output.effects).toEqual([
       {
         type: 'plan.proposed',
@@ -98,6 +105,11 @@ describe('plan tools', () => {
         },
       },
     ])
+
+    // 缺少必填字段时报错并列出具体路径
+    await expect(tool.execute({ goal: 'x' }, ctx)).rejects.toMatchObject({
+      code: 'tool.invalid_input',
+    })
     await expect(
       tool.execute({ ...doc, steps: [{ id: '1bad', title: 'x' }] }, ctx),
     ).rejects.toMatchObject({
@@ -134,7 +146,7 @@ describe('plan tools', () => {
     expect(output.effects).toEqual([
       {
         type: 'plan.step.updated',
-        payload: { planId: 'pl1', stepIndex: 1, status: 'done', note: '改了测试' },
+        payload: { planId: 'pl1', stepId: 'test', stepIndex: 1, status: 'done', note: '改了测试' },
       },
     ])
     await expect(tool.execute({ stepId: 'missing', status: 'done' }, ctx)).rejects.toMatchObject({
@@ -147,11 +159,67 @@ describe('plan tools', () => {
       code: PlanErrorCode.NoActivePlan,
     })
   })
+
+  it('revises the step list and syncs the host snapshot', async () => {
+    let active: { planId: string; goal: string; steps: typeof doc.steps } | undefined = {
+      planId: 'pl1',
+      goal: doc.goal,
+      steps: doc.steps,
+    }
+    const revised: { id: string; title: string }[][] = []
+    const registry = createToolRegistry()
+    registerPlanTools(registry, {
+      createId: () => 'unused',
+      activePlan: () => active,
+      revisePlan: (steps) => {
+        revised.push(steps.map((step) => ({ ...step })))
+        if (active) active = { ...active, steps: steps.map((step) => ({ ...step })) }
+      },
+    })
+    const tool = registry.get(REVISE_PLAN_STEPS_TOOL)!
+    const steps = [
+      { id: 'read', title: '读 src/a.ts' },
+      { id: 'write', title: '写实现' },
+    ]
+    const output = await tool.execute({ steps }, ctx)
+    expect(output.effects).toEqual([
+      { type: 'plan.steps.revised', payload: { planId: 'pl1', steps } },
+    ])
+    expect(revised).toEqual([steps])
+    // 修订后的步骤立即可用于 update_plan_step。
+    const update = registry.get(UPDATE_PLAN_STEP_TOOL)!
+    await expect(
+      update.execute({ stepId: 'write', status: 'in_progress' }, ctx),
+    ).resolves.toBeTruthy()
+
+    await expect(
+      tool.execute(
+        {
+          steps: [
+            { id: 'read', title: 'a' },
+            { id: 'read', title: 'b' },
+          ],
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'tool.invalid_input' })
+    active = undefined
+    await expect(tool.execute({ steps }, ctx)).rejects.toMatchObject({
+      code: PlanErrorCode.NoActivePlan,
+    })
+  })
 })
 
 describe('plan text', () => {
-  it('keeps markdown when titles are unchanged and rewrites them when they are not', () => {
-    expect(approvedPlanMessage(doc, doc)).toBe(doc.markdown)
+  it('prepends an approval directive and keeps markdown when titles are unchanged', () => {
+    const approved = approvedPlanMessage(doc, doc)
+    expect(approved).toContain('已批准此计划')
+    expect(approved).toContain('update_plan_step')
+    expect(approved).toContain('read')
+    expect(approved).toContain(doc.markdown)
+  })
+
+  it('rewrites edited step titles in the approval message', () => {
     const edited = applyStepTitles(doc, [{ id: 'read', title: '先读测试' }])
     expect(edited.steps[0]?.title).toBe('先读测试')
     expect(approvedPlanMessage(doc, edited)).toContain('先读测试')

@@ -9,15 +9,7 @@ import type { SessionPanel } from './SessionPanels.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
 
 export type ComposerCommandId =
-  | 'compact'
-  | 'plan'
-  | 'model'
-  | 'new'
-  | 'undo'
-  | 'files'
-  | 'diff'
-  | 'brief'
-  | 'settings'
+  'compact' | 'plan' | 'model' | 'new' | 'undo' | 'files' | 'diff' | 'brief' | 'settings'
 
 /** 指令后面能跟什么：没有参数、一段任务描述、模型名、设置分区名。 */
 export type ComposerCommandArgs = 'none' | 'text' | 'model' | 'settings'

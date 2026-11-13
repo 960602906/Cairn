@@ -290,9 +290,7 @@ export function SessionSidePanel({
           )}
         </div>
         <div className="min-h-0 flex-1">
-          {panel === 'home' && (
-            <SessionHome view={view} onOpenFiles={() => onOpenPanel('files')} />
-          )}
+          {panel === 'home' && <SessionHome view={view} onOpenFiles={() => onOpenPanel('files')} />}
           {panel !== 'home' && !isFileTab(panel) && panel !== 'files' && (
             <SessionPanelContent
               panel={panel}

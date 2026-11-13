@@ -152,9 +152,7 @@ describe('RunTimeline', () => {
     const child = expand.closest('li')
     expect(child).not.toBeNull()
     await user.click(expand)
-    expect(
-      within(child!).queryByRole('button', { name: /^定位到第 1 轮/ }),
-    ).toBeNull()
+    expect(within(child!).queryByRole('button', { name: /^定位到第 1 轮/ })).toBeNull()
   })
 
   it('opens a turn to show steps and tool calls', async () => {

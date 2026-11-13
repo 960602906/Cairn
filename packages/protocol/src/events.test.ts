@@ -145,6 +145,7 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   },
   'plan.approved': { planId: 'pl1' },
   'plan.rejected': { planId: 'pl1', feedback: '太复杂' },
+  'plan.steps.revised': { planId: 'pl1', steps: [{ id: 'read', title: '先读测试' }] },
   'plan.step.updated': { planId: 'pl1', stepIndex: 0, status: 'done', note: '改了测试' },
 }
 

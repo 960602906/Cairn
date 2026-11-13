@@ -26,7 +26,6 @@ import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
 import {
   isAgentDraftRef,
   type ContentPart,
-  type ModelRef,
   type MentionLines,
   type PromptAgent,
   type PromptSkill,
@@ -48,20 +47,16 @@ import { Button, CairnMark, IconButton, Shimmer } from './ui/index.js'
 import { AgentAvatar } from './agents/AgentAvatar.js'
 import { agentName } from './agents/model.js'
 
-/** 本轮结束后，最后一条助手消息下面的操作：复制本轮回复；右侧灰字是模型名与本轮 token 数（不显示金额）。 */
+/** 本轮结束后，最后一条助手消息下面的操作：复制本轮回复、撤销本轮。 */
 function TurnActions({
   text,
-  model,
-  tokens,
   children,
 }: {
   readonly text: string
-  readonly model: string
-  readonly tokens: number | undefined
   /** 复制之后的其他操作（撤销本轮）。 */
   readonly children?: ReactNode
 }) {
-  const { t, i18n } = useTranslation('session')
+  const { t } = useTranslation('session')
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
@@ -87,13 +82,6 @@ function TurnActions({
         {copied ? <Check className="text-ok" /> : <Copy />}
       </IconButton>
       {children}
-      <span className="ml-auto truncate">{model}</span>
-      {tokens !== undefined && (
-        <span className="tabular shrink-0">
-          ·{' '}
-          {t('message.tokens', { count: tokens, formatted: tokens.toLocaleString(i18n.language) })}
-        </span>
-      )}
     </div>
   )
 }
@@ -292,13 +280,11 @@ const textOf = (parts: readonly ContentPart[]) =>
 
 export interface TurnFooter {
   readonly text: string
-  readonly model: ModelRef
-  readonly tokens: number | undefined
 }
 
 /**
  * 每轮最后一条助手消息的轮次操作：本轮已结束（不是进行中的那一轮）时才有。
- * 返回 messageId → 本轮所有助手回复的文本、最后的模型与本轮 token 数（输入 + 输出）。
+ * 返回 messageId → 本轮所有助手回复的文本。
  */
 export function turnFooters(view: SessionView): ReadonlyMap<string, TurnFooter> {
   const running = rootRun(view)?.turn
@@ -320,12 +306,7 @@ export function turnFooters(view: SessionView): ReadonlyMap<string, TurnFooter> 
     const lastOfTurn = next === undefined || next.role === 'user' || next.turnId !== message.turnId
     if (!lastOfTurn || (message.turnId !== undefined && message.turnId === runningTurn)) return
     if (next === undefined && Object.keys(view.live).length > 0) return
-    const usage = message.turnId === undefined ? undefined : view.usageByTurn[message.turnId]
-    footers.set(message.messageId, {
-      text: texts.join('\n\n'),
-      model: message.model,
-      tokens: usage && usage.inputTokens + usage.outputTokens,
-    })
+    footers.set(message.messageId, { text: texts.join('\n\n') })
     texts.length = 0
   })
   return footers
@@ -403,7 +384,6 @@ function Message({
   view,
   footer,
   plans,
-  modelName,
   sessionId,
   continued,
   restores,
@@ -418,7 +398,6 @@ function Message({
   readonly view: SessionView
   readonly footer: TurnFooter | undefined
   readonly plans: readonly PlanView[]
-  readonly modelName: (model: ModelRef) => string
   /** 审批状态所属的会话；省略时使用当前选中的会话。 */
   readonly sessionId: string | undefined
   /** 这条消息之后发生的恢复。 */
@@ -537,7 +516,7 @@ function Message({
         />
       )}
       {footer && (
-        <TurnActions text={footer.text} model={modelName(footer.model)} tokens={footer.tokens}>
+        <TurnActions text={footer.text}>
           {message.turnId !== undefined && <UndoTurnButton view={view} turnId={message.turnId} />}
         </TurnActions>
       )}
@@ -669,7 +648,6 @@ export function MessageStream({
 }) {
   const { t, i18n } = useTranslation('session')
   const openPlan = onOpenPlan ?? noopPlan
-  const providers = useSessionStore((s) => s.settings?.providers)
   const projects = useSessionStore((s) => s.projects)
   const pathsExist = useSessionStore((s) => s.pathsExist)
   const messages = view
@@ -762,14 +740,6 @@ export function MessageStream({
     return map
   }, [view])
   const looseDelegations = (view?.delegations ?? []).filter((item) => item.turnId === undefined)
-  /** 模型显示名：已配置的“供应商 · 模型”，否则为模型 id。 */
-  const modelName = (model: ModelRef) => {
-    const provider = providers?.find((p) => p.id === model.providerId)
-    const configured = provider?.models.find((m) => m.id === model.modelId)
-    return provider && configured
-      ? `${provider.displayName} · ${configured.displayName ?? configured.id}`
-      : model.modelId
-  }
   const projectId =
     view?.info?.projectPath === undefined
       ? undefined
@@ -811,7 +781,6 @@ export function MessageStream({
                     ? view.plans.filter((plan) => plan.turnId === message.turnId)
                     : []
                 }
-                modelName={modelName}
                 sessionId={sessionId}
                 continued={continues(messages[index - 1], message)}
                 restores={restores.get(message.messageId)}

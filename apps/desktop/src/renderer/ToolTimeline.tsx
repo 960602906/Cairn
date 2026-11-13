@@ -13,7 +13,13 @@
 import { ChevronRight, Minus } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { LiveToolOutputView, ToolCallView } from '@cairn/core'
+import {
+  PROPOSE_PLAN_TOOL,
+  REVISE_PLAN_STEPS_TOOL,
+  UPDATE_PLAN_STEP_TOOL,
+  type LiveToolOutputView,
+  type ToolCallView,
+} from '@cairn/core'
 import { translateError } from '@cairn/i18n'
 import type { ContentPart } from '@cairn/protocol'
 import { CodeCard } from './CodeCard.js'
@@ -195,8 +201,34 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   const open = openState ?? (terminal !== undefined && !terminal.running && terminal.exitCode !== 0)
   const liveText = running && live && !terminal ? live.chunks.map((c) => c.text).join('') : ''
   const tail = liveText.trim() === '' ? undefined : previewLines(liveText, 'end')
-  const object = summarizeInput(args)
-  const action = name === 'load_skill' ? '' : ACTIONS.has(name) ? t(`tool.action.${name}`) : name
+  const argsRecord =
+    typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {}
+  const planTool =
+    name === PROPOSE_PLAN_TOOL || name === REVISE_PLAN_STEPS_TOOL || name === UPDATE_PLAN_STEP_TOOL
+  // 计划类工具的参数是一整份计划对象，直接抖 JSON 很丑；用一句人能读懂的话代替。
+  let action: string
+  let object: string
+  if (name === PROPOSE_PLAN_TOOL) {
+    const goal = argsRecord['goal']
+    action = t('tool.action.propose_plan')
+    object = typeof goal === 'string' && goal !== '' ? goal : summarizeInput(args)
+  } else if (name === REVISE_PLAN_STEPS_TOOL) {
+    const steps = argsRecord['steps']
+    action = t('tool.action.revise_plan_steps')
+    object = t('tool.planSteps', { steps: Array.isArray(steps) ? steps.length : 0 })
+  } else if (name === UPDATE_PLAN_STEP_TOOL) {
+    action = t('tool.action.update_plan_step')
+    const stepId = typeof argsRecord['stepId'] === 'string' ? argsRecord['stepId'] : ''
+    const stepStatus = argsRecord['status']
+    const statusLabel =
+      stepStatus === 'in_progress' || stepStatus === 'done' || stepStatus === 'skipped'
+        ? t(`plan.step.${stepStatus}`)
+        : ''
+    object = [stepId, statusLabel].filter((part) => part !== '').join(' · ')
+  } else {
+    action = name === 'load_skill' ? '' : ACTIONS.has(name) ? t(`tool.action.${name}`) : name
+    object = summarizeInput(args)
+  }
   const statusText =
     awaitingApproval && status === 'requested'
       ? t('tool.awaitingApproval')
@@ -207,7 +239,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
       <code
         className={cn(
           'min-w-0 truncate text-[12.5px] text-fg2',
-          name === 'load_skill' ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
+          name === 'load_skill' || planTool ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
         )}
       >
         {object}
