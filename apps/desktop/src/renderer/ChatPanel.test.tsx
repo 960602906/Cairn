@@ -1788,6 +1788,23 @@ describe('Composer (M2-04)', () => {
       content: [{ type: 'text', text: '先看看' }],
       mode: 'plan',
     })
+    // 计划模式消息发出后自动退出计划模式
+    expect(planOn()).toBe(false)
+  })
+
+  it('runs /plan with args and exits plan mode after sending', async () => {
+    const { request, open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/plan 直接以计划发送{Enter}')
+    expect(request).toHaveBeenCalledWith('session.prompt', {
+      sessionId: 's1',
+      content: [{ type: 'text', text: '直接以计划发送' }],
+      mode: 'plan',
+    })
+    expect(planOn()).toBe(false)
   })
 
   it('toggles plan mode with Ctrl+Shift+P and leaves Shift+Tab to focus navigation', async () => {
@@ -1864,17 +1881,9 @@ describe('Composer (M2-04)', () => {
         .getAllByRole('option')
         .map((option) => option.id),
     ).toEqual(
-      [
-        'plan',
-        'model',
-        'compact',
-        'undo',
-        'new',
-        'files',
-        'diff',
-        'brief',
-        'settings',
-      ].map((id) => `composer-command-${id}`),
+      ['plan', 'model', 'compact', 'undo', 'new', 'files', 'diff', 'brief', 'settings'].map(
+        (id) => `composer-command-${id}`,
+      ),
     )
     await userEvent.type(input(), 'mo')
     const options = within(list).getAllByRole('option')

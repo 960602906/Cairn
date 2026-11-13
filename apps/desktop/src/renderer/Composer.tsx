@@ -357,11 +357,7 @@ function ContextUsage({
                   strokeLinecap="round"
                   strokeDasharray={`${c * ratio} ${c}`}
                   className={
-                    ratio >= 0.9
-                      ? 'stroke-danger'
-                      : ratio >= 0.7
-                        ? 'stroke-warn'
-                        : 'stroke-muted'
+                    ratio >= 0.9 ? 'stroke-danger' : ratio >= 0.7 ? 'stroke-warn' : 'stroke-muted'
                   }
                 />
               )}
@@ -433,16 +429,10 @@ function ContextUsage({
                     />
                   ))}
                 </div>
-                <ul
-                  aria-label={t('inspector.context.breakdown')}
-                  className="flex flex-col gap-1"
-                >
+                <ul aria-label={t('inspector.context.breakdown')} className="flex flex-col gap-1">
                   {breakdown.parts.map((part) => (
                     <li key={part.key} className="flex items-center gap-2 text-note">
-                      <span
-                        aria-hidden
-                        className={cn('size-2 shrink-0 rounded-full', part.tone)}
-                      />
+                      <span aria-hidden className={cn('size-2 shrink-0 rounded-full', part.tone)} />
                       <span className="min-w-0 flex-1 text-fg2">
                         {t(`inspector.context.${part.key}`)}
                       </span>

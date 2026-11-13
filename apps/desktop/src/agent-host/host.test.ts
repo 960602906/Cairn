@@ -1119,6 +1119,27 @@ describe('agent host', () => {
     expect(events.filter((e) => e.type === 'message.user')).toEqual([])
   })
 
+  it('keeps a plan turn read-only when a steer carries a plan snapshot', async () => {
+    const { main, events, waitFor } = setup({
+      turns: [{ steps: [{ kind: 'reply', text: 'plan' }] }],
+      delayMs: 20,
+    })
+    await main.request('host.init', init)
+    await main.request('host.prompt', { messageId: 'm1', content: text('plan it'), mode: 'plan' })
+    await waitFor('message.assistant.delta')
+
+    // 只读计划轮里的引导不会把这一轮切换成执行模式。
+    await main.request('host.prompt', {
+      messageId: 'm2',
+      content: text('补充'),
+      send: 'steer',
+      plan: { planId: 'pl1', goal: 'goal', steps: [{ id: 's1', title: 'one' }] },
+    })
+    await waitFor('turn.completed')
+
+    expect(events.filter((e) => e.type === 'turn.started')).toHaveLength(1)
+  })
+
   it('resumes an existing run from history without run.created', async () => {
     const { main, events, waitFor } = setup()
     await main.request('host.init', {
@@ -1505,7 +1526,11 @@ describe('agent host', () => {
                 ],
               },
             },
-            { kind: 'tool', name: 'update_plan_step', input: { stepId: 'two', status: 'in_progress' } },
+            {
+              kind: 'tool',
+              name: 'update_plan_step',
+              input: { stepId: 'two', status: 'in_progress' },
+            },
             { kind: 'reply', text: 'done' },
           ],
         },

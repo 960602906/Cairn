@@ -81,11 +81,7 @@ function installBridge(request: (method: string, params: unknown) => unknown) {
   return handler
 }
 
-function setup({
-  homeView = view,
-  projects = [project],
-  onOpenFiles = vi.fn(),
-} = {}) {
+function setup({ homeView = view, projects = [project], onOpenFiles = vi.fn() } = {}) {
   const store = createStore<Record<string, unknown>>(() => ({
     projects,
   }))

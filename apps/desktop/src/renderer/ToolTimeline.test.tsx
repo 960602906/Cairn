@@ -330,4 +330,47 @@ describe('ToolStep：计划工具', () => {
     expect(label()).toContain('更新步骤')
     expect(code().textContent).toBe('s2 · 进行中')
   })
+
+  it('propose_plan 没有目标时退回参数摘要', () => {
+    step({
+      name: 'propose_plan',
+      tool: tool({ name: 'propose_plan', input: {} }),
+    })
+    expect(code().textContent).toBe('{}')
+  })
+
+  it('revise_plan_steps 没有步骤列表时显示 0 个步骤', () => {
+    step({
+      name: 'revise_plan_steps',
+      tool: tool({ name: 'revise_plan_steps', input: {} }),
+    })
+    expect(code().textContent).toBe('0 个步骤')
+  })
+
+  it('update_plan_step 显示完成状态', () => {
+    step({
+      name: 'update_plan_step',
+      tool: tool({ name: 'update_plan_step', input: { stepId: 's1', status: 'done' } }),
+    })
+    expect(code().textContent).toBe('s1 · 已完成')
+  })
+
+  it('update_plan_step 缺少 id 或状态未知时不显示多余文字', () => {
+    step({
+      name: 'update_plan_step',
+      tool: tool({ name: 'update_plan_step', input: { status: 'blocked' } }),
+    })
+    expect(label()).toContain('更新步骤')
+    expect(code().textContent).toBe('')
+  })
+
+  it('执行中的工具显示最后几行实时输出，并提示前面省略了行', () => {
+    step({
+      name: 'read_file',
+      tool: tool({ name: 'read_file', status: 'running', input: { path: 'a.ts' } }),
+      live: live('1\n2\n3\n4\n5\n6\n7\n'),
+    })
+    expect(screen.getByText(/前面还有 2 行/)).toBeTruthy()
+    expect(document.querySelector('pre')?.textContent).toBe('3\n4\n5\n6\n7')
+  })
 })

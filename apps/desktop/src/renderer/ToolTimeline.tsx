@@ -239,9 +239,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
       <code
         className={cn(
           'min-w-0 truncate text-[12.5px] text-fg2',
-          name === 'load_skill' || planTool
-            ? 'font-sans'
-            : 'rounded-[4px] bg-sunk px-1 font-mono',
+          name === 'load_skill' || planTool ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
         )}
       >
         {object}

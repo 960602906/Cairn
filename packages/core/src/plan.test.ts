@@ -105,6 +105,11 @@ describe('plan tools', () => {
         },
       },
     ])
+
+    // 缺少必填字段时报错并列出具体路径
+    await expect(tool.execute({ goal: 'x' }, ctx)).rejects.toMatchObject({
+      code: 'tool.invalid_input',
+    })
     await expect(
       tool.execute({ ...doc, steps: [{ id: '1bad', title: 'x' }] }, ctx),
     ).rejects.toMatchObject({
@@ -183,10 +188,20 @@ describe('plan tools', () => {
     expect(revised).toEqual([steps])
     // 修订后的步骤立即可用于 update_plan_step。
     const update = registry.get(UPDATE_PLAN_STEP_TOOL)!
-    await expect(update.execute({ stepId: 'write', status: 'in_progress' }, ctx)).resolves.toBeTruthy()
+    await expect(
+      update.execute({ stepId: 'write', status: 'in_progress' }, ctx),
+    ).resolves.toBeTruthy()
 
     await expect(
-      tool.execute({ steps: [{ id: 'read', title: 'a' }, { id: 'read', title: 'b' }] }, ctx),
+      tool.execute(
+        {
+          steps: [
+            { id: 'read', title: 'a' },
+            { id: 'read', title: 'b' },
+          ],
+        },
+        ctx,
+      ),
     ).rejects.toMatchObject({ code: 'tool.invalid_input' })
     active = undefined
     await expect(tool.execute({ steps }, ctx)).rejects.toMatchObject({

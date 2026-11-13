@@ -51,9 +51,7 @@ export function contextBreakdown(snapshot: RunSnapshot | undefined): ContextBrea
   }
   const tools = snapshot.tools.reduce((sum, tool) => sum + tool.tokens, 0)
   const history = snapshot.history.tokens
-  const compaction = snapshot.compaction
-    ? estimateTokens(snapshot.compaction.summary)
-    : 0
+  const compaction = snapshot.compaction ? estimateTokens(snapshot.compaction.summary) : 0
   const values: Readonly<Record<ContextPartKey, number>> = {
     system,
     skills,

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -146,6 +146,21 @@ describe('PlanSummaryCard', () => {
 
     wrap(<PlanSummaryCard plan={{ ...plan, status: 'approved' }} onOpen={vi.fn()} />)
     expect(screen.queryByRole('button', { name: '批准执行' })).toBeNull()
+  })
+
+  it('shows a rejected badge for rejected plans', () => {
+    wrap(<PlanSummaryCard plan={{ ...plan, status: 'rejected' }} onOpen={vi.fn()} />)
+    expect(screen.getByText('已放弃')).toBeTruthy()
+  })
+
+  it('ignores replan submit when note is empty or session view is missing', async () => {
+    const user = userEvent.setup()
+    const emptyViewStore = makeStore({ views: {} })
+    wrap(<PlanSummaryCard plan={plan} onOpen={vi.fn()} />, emptyViewStore)
+    await user.click(screen.getByRole('button', { name: '重新规划' }))
+    const form = screen.getByRole('textbox', { name: '重新规划' }).closest('form')!
+    fireEvent.submit(form)
+    expect(emptyViewStore.getState().replan).not.toHaveBeenCalled()
   })
 })
 

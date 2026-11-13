@@ -130,10 +130,8 @@ export function approvedPlanMessage(original: PlanDocument, approved: PlanDocume
   const edited = original.steps.some((step, index) => step.title !== approved.steps[index]?.title)
   const markdown = approved.markdown.trim()
   const body = !edited && markdown !== '' ? markdown : renderPlan(approved)
-  const firstStepId = approved.steps[0]?.id
-  const directive = firstStepId
-    ? `已批准此计划，请立即开始执行。先调用 update_plan_step 把第一步（${firstStepId}）标记为 in_progress，然后按步骤推进，不要停下来等确认。`
-    : '已批准此计划，请立即开始执行，按步骤推进。'
+  const firstStepId = approved.steps[0]!.id
+  const directive = `已批准此计划，请立即开始执行。先调用 update_plan_step 把第一步（${firstStepId}）标记为 in_progress，然后按步骤推进，不要停下来等确认。`
   return `${directive}\n\n${body}`
 }
 
@@ -230,7 +228,8 @@ export interface PlanToolDeps {
    * 修订后同步宿主内存里的活动计划，使同一轮里的后续 `update_plan_step` 按新步骤校验。
    * 不传时只发事件，宿主会以旧步骤校验到下一次 `host.prompt` 为止。
    */
-  readonly revisePlan?: ((steps: readonly { readonly id: string; readonly title: string }[]) => void) | undefined
+  readonly revisePlan?:
+    ((steps: readonly { readonly id: string; readonly title: string }[]) => void) | undefined
 }
 
 function issuesOf(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {
@@ -314,7 +313,9 @@ function revisePlanStepsTool(deps: PlanToolDeps): ToolDefinition {
       }
       deps.revisePlan?.(parsed.data.steps)
       return {
-        content: [{ type: 'text', text: 'Plan steps revised. Continue working on the updated list.' }],
+        content: [
+          { type: 'text', text: 'Plan steps revised. Continue working on the updated list.' },
+        ],
         effects: [effect],
       }
     },

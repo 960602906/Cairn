@@ -29,11 +29,11 @@ export function PopoverContent({
   )
 }
 
-export function PopoverTitle({ className, ...props }: ComponentProps<typeof PopoverPrimitive.Title>) {
+export function PopoverTitle({
+  className,
+  ...props
+}: ComponentProps<typeof PopoverPrimitive.Title>) {
   return (
-    <PopoverPrimitive.Title
-      className={cn('text-ui font-medium text-fg', className)}
-      {...props}
-    />
+    <PopoverPrimitive.Title className={cn('text-ui font-medium text-fg', className)} {...props} />
   )
 }

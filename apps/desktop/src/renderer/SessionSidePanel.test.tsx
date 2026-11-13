@@ -457,6 +457,25 @@ describe('SessionSidePanel', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('renders an empty plan panel when view is undefined', () => {
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={undefined}
+        status="idle"
+        panel="plan"
+        selectedPlanId={undefined}
+        onOpenPanel={() => {}}
+        onActivateTab={() => {}}
+        onHome={() => {}}
+        tabs={['plan']}
+        onCloseTab={() => {}}
+      />,
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getByText('还没有计划。')).toBeTruthy()
+  })
+
   it('shows only the open tabs, closes one, and reopens another from the add menu', async () => {
     const user = userEvent.setup()
     const onCloseTab = vi.fn()

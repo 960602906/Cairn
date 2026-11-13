@@ -991,6 +991,10 @@ describe('reduceSession：工具调用（M1-05c）', () => {
       events.filter((e) => e.type !== 'tool.output.delta'),
     )
     expect(withLive).toEqual(persisted)
+
+    // run.disposed 清理该 run 的 liveToolOutput
+    const disposed = reduceSession(withLive, ev('run.disposed', {}))
+    expect(disposed.liveToolOutput).toEqual({})
   })
 
   it('失败与取消；结束后的事件与增量被忽略', () => {
@@ -1002,6 +1006,14 @@ describe('reduceSession：工具调用（M1-05c）', () => {
       ev('tool.cancelled', { toolCallId: 'c2', reason: 'user' }, t),
     ])
     expect(v.tools['c1']).toMatchObject({ status: 'failed', error: { code: 'tool.denied' } })
+    expect(v.tools['c2']).toMatchObject({ status: 'cancelled', cancelReason: 'user' })
+
+    // 后台命令输出增量被忽略
+    const ignoredCmd = reduceSession(
+      v,
+      ev('command.output.delta', { commandId: 'cmd1', stream: 'stdout', text: 'hi' }, t),
+    )
+    expect(ignoredCmd).toBe(v)
     expect(v.tools['c2']).toMatchObject({ status: 'cancelled', cancelReason: 'user' })
     const after = [
       ev('tool.started', { toolCallId: 'c1' }, t),
@@ -1127,13 +1139,75 @@ describe('reduceSession：计划（M3-05）', () => {
         ],
       }),
       // 修订后按 id 定位，即使 index 与原来不同也能更新到正确步骤。
-      ev('plan.step.updated', { planId: 'pl1', stepId: 'write', stepIndex: 1, status: 'in_progress' }),
+      ev('plan.step.updated', {
+        planId: 'pl1',
+        stepId: 'write',
+        stepIndex: 1,
+        status: 'in_progress',
+      }),
     ])
     expect(view.plans[0]?.steps).toEqual([
       { id: 'read', title: '读 src/a.ts', status: 'done' },
       { id: 'write', title: '写实现', status: 'in_progress' },
     ])
     expect(activeExecutionPlan(view)?.steps).toHaveLength(2)
+  })
+
+  it('待批准的计划不会被修订或更新步骤改动', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.steps.revised', { planId: 'pl1', steps: [{ id: 'x', title: '新步骤' }] }),
+      ev('plan.step.updated', { planId: 'pl1', stepId: 'nope', stepIndex: 0, status: 'done' }),
+    ])
+    expect(view.plans[0]?.status).toBe('proposed')
+    expect(view.plans[0]?.steps.map((step) => step.title)).toEqual(
+      doc.steps.map((step) => step.title),
+    )
+    expect(view.plans[0]?.steps.every((step) => step.status === 'pending')).toBe(true)
+  })
+
+  it('不带说明的更新保留步骤已有说明', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.approved', { planId: 'pl1' }),
+      ev('plan.step.updated', {
+        planId: 'pl1',
+        stepIndex: 0,
+        status: 'in_progress',
+        note: '先看测试',
+      }),
+      ev('plan.step.updated', { planId: 'pl1', stepIndex: 0, status: 'done' }),
+      ev('plan.step.updated', { planId: 'pl1', stepIndex: 1, status: 'done' }),
+    ])
+    expect(view.plans[0]?.steps[0]).toMatchObject({ status: 'done', note: '先看测试' })
+    expect(view.plans[0]?.steps[1]).not.toHaveProperty('note')
+  })
+
+  it('忽略重复与未知计划的计划事件', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.approved', { planId: 'nope' }),
+      ev('plan.approved', { planId: 'pl1' }),
+      ev('plan.approved', { planId: 'pl1' }),
+    ])
+    expect(view.plans).toHaveLength(1)
+    expect(view.plans[0]?.status).toBe('approved')
+  })
+
+  it('修订保留同 id 步骤的说明', () => {
+    const ev = stream()
+    const first = doc.steps[0]!
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.approved', { planId: 'pl1' }),
+      ev('plan.step.updated', { planId: 'pl1', stepIndex: 0, status: 'done', note: '注意' }),
+      ev('plan.steps.revised', { planId: 'pl1', steps: [{ id: first.id, title: '改标题' }] }),
+    ])
+    expect(view.plans[0]?.steps[0]).toMatchObject({ title: '改标题', status: 'done', note: '注意' })
   })
 
   it('拒绝待审计划，已批准的计划还留着', () => {
@@ -1148,5 +1222,18 @@ describe('reduceSession：计划（M3-05）', () => {
     expect(view.plans.map((plan) => plan.status)).toEqual(['approved', 'rejected'])
     expect(view.plans[1]?.feedback).toBe('太复杂')
     expect(activeExecutionPlan(view)?.planId).toBe('pl1')
+  })
+
+  it('清空要点事件在本来就没有要点时只推进 seq', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('run.created', { agent: { id: 'a', version: 1 }, model, mode: 'interactive', limits }),
+    ])
+    const next = reduceSession(
+      view,
+      ev('session.brief.updated', { content: '  ', editedBy: 'user' }),
+    )
+    expect(next.brief).toBeUndefined()
+    expect(next.lastSeq).toBe(view.lastSeq + 1)
   })
 })
