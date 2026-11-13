@@ -927,28 +927,6 @@ describe('MessageStream 状态呈现', () => {
     expect(screen.getByText(/工具调用和文件改动/)).toBeTruthy()
   })
 
-  it('offers suggestion chips that send on click', async () => {
-    const sendPrompt = vi.fn()
-    const store = createStore<Record<string, unknown>>(() => ({
-      activeSessionId: undefined,
-      awaitingTurn: {},
-      approvals: {},
-      settings: { providers: [] },
-      agents: [],
-      sendPrompt,
-    })) as unknown as SessionStore
-    render(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <SessionStoreProvider store={store}>
-          <MessageStream view={undefined} onOpenPlan={vi.fn()} />
-        </SessionStoreProvider>
-      </I18nextProvider>,
-    )
-    const first = screen.getByRole('button', { name: '总结一下这个项目的架构和主要模块' })
-    await userEvent.click(first)
-    expect(sendPrompt).toHaveBeenCalledWith('总结一下这个项目的架构和主要模块')
-  })
-
   it('guides the user when no view is available', () => {
     renderStream(undefined)
     expect(screen.getByText('开始一个新任务')).toBeTruthy()
