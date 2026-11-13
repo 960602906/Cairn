@@ -9,7 +9,7 @@
  * 主题跟随设置（M2-01，`ThemeSync`）。
  */
 import { PanelLeftOpen } from 'lucide-react'
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import type { ProjectSummary } from '@cairn/protocol'
@@ -53,8 +53,19 @@ function windowControlsStyle(): CSSProperties | undefined {
 function Workspace() {
   const { t } = useTranslation('session')
   const narrow = useMediaQuery(NARROW_QUERY)
+  const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const [sessionsOpen, setSessionsOpen] = useState(true)
-  const [composing, setComposing] = useState(false)
+  /**
+   * 是否停在新对话页。不能用 `activeSessionId === undefined` 直接判断：新建会话时它会先一步
+   * 变好，那时第一条消息还没送到，切到会话页会闪一下空状态（欢迎屏一闪而过）。所以进入或
+   * 回到新对话页后由这个状态记住，直到新会话的第一条消息发出（`onDone`）或改选了别的会话。
+   */
+  const [composing, setComposing] = useState(() => activeSessionId === undefined)
+  /**
+   * 新对话页正在创建会话并发出第一条消息。这段时间里 `activeSessionId` 会先变好，
+   * 但页面不能跟着切走，否则消息区会闪一下空状态。用 ref 记下来，判断时不触发重渲染。
+   */
+  const creatingSession = useRef(false)
   const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
   const [activity, setActivity] = useState(false)
   const [agentsView, setAgentsView] = useState(false)
@@ -73,8 +84,6 @@ function Workspace() {
   const selectSession = useSessionStore((s) => s.selectSession)
   const activityBadge = useSessionStore((s) => s.activity?.counts?.approvals ?? 0)
   const chromeStyle = windowControlsStyle()
-  // 没有选中的会话时直接显示新对话页（标志、问候与底部输入框）；选中后（即使不在列表中）显示会话
-  const showNew = useSessionStore((s) => s.activeSessionId === undefined)
   const updateNotice = <UpdateNotice onOpenSettings={() => setSettings('update')} />
   const [welcomeDismissed, setWelcomeDismissed] = useState(false)
   const showWelcome = userSettings?.onboardingSeen === false && !welcomeDismissed
@@ -94,6 +103,12 @@ function Workspace() {
   useEffect(() => {
     setSessionsOpen(!narrow)
   }, [narrow])
+
+  // 会话被归档或取消选中后回到新对话页；选中别的会话时离开它。
+  useEffect(() => {
+    if (activeSessionId === undefined) setComposing(true)
+    else if (!creatingSession.current) setComposing(false)
+  }, [activeSessionId])
 
   useEffect(() => {
     if (!narrow || !sessionsOpen) return
@@ -355,12 +370,15 @@ function Workspace() {
       {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
         <ErrorBanner />
-        {composing || showNew ? (
+        {composing ? (
           <>
             <TopBar>{reveal}</TopBar>
             {updateNotice}
             <NewSession
               initialProjectPath={newChatProjectPath}
+              onCreatingChange={(creating) => {
+                creatingSession.current = creating
+              }}
               onDone={() => setComposing(false)}
             />
           </>

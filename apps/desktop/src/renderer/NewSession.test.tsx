@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
@@ -85,6 +85,53 @@ describe('greetingPeriod', () => {
     expect([12, 13].map(greetingPeriod)).toEqual(['noon', 'noon'])
     expect([14, 17].map(greetingPeriod)).toEqual(['afternoon', 'afternoon'])
     expect([18, 22].map(greetingPeriod)).toEqual(['evening', 'evening'])
+  })
+})
+
+describe('NewSession welcome', () => {
+  it('fills the composer from a suggestion chip without creating a session', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+
+    await user.click(screen.getByRole('button', { name: '总结一下这个项目的架构和主要模块' }))
+
+    expect(input.value).toBe('总结一下这个项目的架构和主要模块')
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+  })
+
+  it('stays on the welcome page until the first message is sent', async () => {
+    let release!: () => void
+    const promptSent = new Promise<{ messageId: string }>((resolve) => {
+      release = () => resolve({ messageId: 'm1' })
+    })
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      { skills: [] },
+      {
+        'session.prompt': () => promptSent,
+      },
+    )
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.type(input, '做点事')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+
+    // 会话已经建好（activeSessionId 已变），但第一轮还没发出去：不切到会话页，避免闪一下空状态。
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.create', {
+        projectPath: '/work',
+        title: '做点事',
+      }),
+    )
+    expect(screen.getByText('今天想从哪里开始？')).toBeTruthy()
+    expect(screen.queryByText('开始一个新任务')).toBeNull()
+
+    await act(async () => {
+      release()
+    })
+    await waitFor(() => expect(screen.queryByText('今天想从哪里开始？')).toBeNull())
   })
 })
 

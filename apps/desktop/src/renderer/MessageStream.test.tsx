@@ -353,6 +353,35 @@ describe('MessageStream 渲染', () => {
     expect(sendPrompt).toHaveBeenCalled()
   })
 
+  it('shows the reasoning as a collapsible card that expands on click', async () => {
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      inspectRun: vi.fn(),
+      settings: { providers: [] },
+      agents: [],
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={rich} onOpenPlan={vi.fn()} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    const triggers = screen.getAllByRole('button', { name: '思考过程' })
+    expect(triggers.length).toBe(2)
+    // 收起时正文仍可读（读屏与流式内容不丢失），点击后展开
+    expect(screen.getByText('想一想')).toBeTruthy()
+    expect(triggers[0]!.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(triggers[0]!)
+    expect(triggers[0]!.getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('renders the empty stream without a view', () => {
     const store = createStore<Record<string, unknown>>(() => ({
       activeSessionId: undefined,
@@ -445,6 +474,80 @@ describe('MessageStream 渲染', () => {
       </I18nextProvider>,
     )
     expect(screen.getByText('补测试')).toBeTruthy()
+  })
+
+  it('renders a streaming caret on live text and limits enter animations to newly added messages', () => {
+    const initialView = {
+      ...rich,
+      live: {
+        l1: {
+          messageId: 'l1',
+          runId: 'r1',
+          turnId: 't1',
+          text: '流式正文',
+          reasoning: '',
+          lastDeltaSeq: 5,
+          startedAt: 3,
+        },
+      },
+    } as unknown as SessionView
+
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      inspectRun: vi.fn(),
+      settings: { providers: [] },
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+
+    const { container, rerender } = render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={initialView} onOpenPlan={vi.fn()} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+
+    // 流式文本段末挂着光标
+    expect(container.querySelector('.stream-caret')).toBeTruthy()
+    // 首次挂载已有消息不播入场动画，避免历史会话整列闪
+    const initialItems = container.querySelectorAll('li')
+    expect(initialItems.length).toBeGreaterThan(0)
+    for (const item of initialItems) {
+      expect(item.className).not.toContain('animate-message-in')
+    }
+
+    // 后续新追加的消息播入场动画
+    const updatedView = {
+      ...initialView,
+      messages: [
+        ...initialView.messages,
+        {
+          messageId: 'u2',
+          role: 'user',
+          runId: 'r1',
+          turnId: 't2',
+          seq: 4,
+          ts: 4,
+          content: [{ type: 'text', text: '新追加' }],
+        },
+      ],
+    } as unknown as SessionView
+
+    rerender(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={updatedView} onOpenPlan={vi.fn()} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+
+    const newlyAdded = container.querySelector('[data-turn="t2"]')
+    expect(newlyAdded?.className).toContain('animate-message-in')
   })
 })
 

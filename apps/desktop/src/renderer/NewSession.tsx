@@ -72,10 +72,16 @@ function titleFromPrompt(text: string): string {
 
 export function NewSession({
   initialProjectPath,
+  onCreatingChange,
   onDone,
 }: {
   /** 从某个工作空间的“新建会话”进入时预先选中的项目路径。 */
   readonly initialProjectPath?: string | undefined
+  /**
+   * 开始 / 结束创建会话。创建期间会话已经选中，但第一条消息还没发出，
+   * 外层据此留在这一页，避免闪一下空的消息区。
+   */
+  readonly onCreatingChange?: ((creating: boolean) => void) | undefined
   /** 会话创建并发出第一条消息后离开新对话页。 */
   readonly onDone: () => void
 }) {
@@ -150,6 +156,8 @@ export function NewSession({
   })
   const period = useGreetingPeriod()
   const model = selectedModel ?? resolveDefaultModel(providers, defaultModel)
+  /** 欢迎页的建议提示词。 */
+  const suggestions = [1, 2, 3].map((index) => t(`new.suggestion.${index}`))
 
   // 新对话页还没有会话，只有 `/plan` 和技能能在创建会话前执行。
   const commands: readonly AvailableComposerCommand[] = availableCommands(skills, t, {}, false)
@@ -237,9 +245,13 @@ export function NewSession({
     const draft = parsed.draft.trim()
     if (path === '' || draft === '' || busy || model === undefined) return
     setBusy(true)
+    // 从这里到第一条消息发出为止，会话已经选中但消息区还是空的：
+    // 告诉外层别切走，否则欢迎屏会闪一下空状态。
+    onCreatingChange?.(true)
     const sessionId = await createSession(path, titleFromPrompt(draft) || undefined)
     if (sessionId === undefined) {
       setBusy(false)
+      onCreatingChange?.(false)
       return
     }
     // 新会话先按模型创建，再切换用户选的模型，最后才发出第一轮。
@@ -250,6 +262,7 @@ export function NewSession({
       skills: [...parsed.skills],
     })
     setBusy(false)
+    onCreatingChange?.(false)
     onDone()
   }
 
@@ -366,6 +379,27 @@ export function NewSession({
           {t(`new.greeting.${period}`)}
         </p>
         <p className="mt-2 text-center text-note text-muted">{t('new.greetingSubtitle')}</p>
+        {/* 建议提示词：点一下填进输入框，用户可以改写或补充后再发送。 */}
+        <div className="mt-7 flex max-w-[680px] flex-wrap justify-center gap-2">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setText(suggestion)
+                requestAnimationFrame(() => {
+                  const element = textarea.current
+                  element?.focus()
+                  element?.setSelectionRange(suggestion.length, suggestion.length)
+                })
+              }}
+              className="rounded-full bg-raise px-3.5 py-1.5 text-note text-muted shadow-hair outline-none transition-colors hover:bg-sunk2 hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="mx-auto w-full max-w-[880px] shrink-0 px-5 pb-4 min-[1200px]:px-8">
