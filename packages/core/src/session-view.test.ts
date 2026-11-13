@@ -1113,6 +1113,29 @@ describe('reduceSession：计划（M3-05）', () => {
     expect(activeExecutionPlan(view)?.planId).toBe('pl1')
   })
 
+  it('执行中修订步骤：保留同 id 的进度，新增步骤从 pending 开始，删除的步骤消失', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.approved', { planId: 'pl1' }),
+      ev('plan.step.updated', { planId: 'pl1', stepId: 'read', stepIndex: 0, status: 'done' }),
+      ev('plan.steps.revised', {
+        planId: 'pl1',
+        steps: [
+          { id: 'read', title: '读 src/a.ts' },
+          { id: 'write', title: '写实现' },
+        ],
+      }),
+      // 修订后按 id 定位，即使 index 与原来不同也能更新到正确步骤。
+      ev('plan.step.updated', { planId: 'pl1', stepId: 'write', stepIndex: 1, status: 'in_progress' }),
+    ])
+    expect(view.plans[0]?.steps).toEqual([
+      { id: 'read', title: '读 src/a.ts', status: 'done' },
+      { id: 'write', title: '写实现', status: 'in_progress' },
+    ])
+    expect(activeExecutionPlan(view)?.steps).toHaveLength(2)
+  })
+
   it('拒绝待审计划，已批准的计划还留着', () => {
     const ev = stream()
     const view = reduceAll([

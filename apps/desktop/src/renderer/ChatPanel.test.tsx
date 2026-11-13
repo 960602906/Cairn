@@ -635,7 +635,7 @@ describe('ChatPanel', () => {
       ],
     })
     await open()
-    expect(messages().slice(0, 2)).toEqual(['你你好', '助手你好！fake-1'])
+    expect(messages().slice(0, 2)).toEqual(['你你好', '助手你好！'])
     expect(screen.getByRole('button', { name: /较早的对话已压缩/ })).toBeTruthy()
     expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeTruthy()
     expect(screen.queryByText('只剩目标')).toBeNull()
@@ -660,33 +660,24 @@ describe('ChatPanel', () => {
     await open()
     expect(request).toHaveBeenCalledWith('session.subscribe', { sessionId: 's1', afterSeq: 0 })
     expect(screen.getByRole('heading', { level: 2, name: '修复登录' })).toBeTruthy()
-    expect(messages()).toEqual(['你你好', '助手你好！fake-1'])
+    expect(messages()).toEqual(['你你好', '助手你好！'])
     expect(stopButton()).toBeNull()
   })
 
-  it('shows turn actions with the configured model name, token count and copy (M2-03)', async () => {
+  it('shows turn actions with copy and no model or token text (M2-03)', async () => {
     const writeText = vi.fn(() => Promise.resolve())
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const provider = {
-      id: 'fake',
-      kind: 'openai',
-      displayName: '测试供应商',
-      baseUrl: 'https://example.com',
-      models: [{ id: 'fake-1', displayName: '快' }],
-    }
     const history = [
       ...HISTORY.slice(0, 6),
       ev(7, 'usage.reported', { model, usage: { inputTokens: 1200, outputTokens: 34 } }),
       ev(8, 'turn.completed', { durationMs: 10 }),
     ]
-    const { open } = setup({
-      history,
-      handlers: { 'settings.get': () => ({ providers: [provider] }) },
-    })
+    const { open } = setup({ history })
     await open()
     const copy = await screen.findByRole('button', { name: '复制本轮回复' })
-    expect(within(copy.parentElement!).getByText('测试供应商 · 快')).toBeTruthy()
-    expect(screen.getByText(/1,234 tokens/)).toBeTruthy()
+    // 页脚只留动作：不再显示模型名与 token 数。
+    expect(within(copy.parentElement!).queryByText('fake-1')).toBeNull()
+    expect(within(copy.parentElement!).queryByText(/tokens/)).toBeNull()
     fireEvent.click(copy)
     expect(writeText).toHaveBeenCalledWith('你好！')
     expect(await screen.findByRole('button', { name: '已复制' })).toBeTruthy()
@@ -754,9 +745,9 @@ describe('ChatPanel', () => {
     emit(done)
     expect(messages()).toEqual([
       '你你好',
-      '助手你好！fake-1',
+      '助手你好！',
       '你再说一次',
-      '助手思考过程想想好的，\n你好！[图片]读取{}等待执行fake-1',
+      '助手思考过程想想好的，\n你好！[图片]读取{}等待执行',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
     expect(stopButton()).toBeNull()
@@ -1209,7 +1200,7 @@ describe('ChatPanel', () => {
     expect(stopButton()).toBeNull()
     expect(screen.getByText('已停止')).toBeTruthy()
     // 已输出的部分保留，并注明未完成
-    expect(messages().at(-1)).toBe('助手说到（回复未完成）fake-1')
+    expect(messages().at(-1)).toBe('助手说到（回复未完成）')
   })
 
   it.each([

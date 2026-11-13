@@ -1485,6 +1485,52 @@ describe('agent host', () => {
     expect(completed?.payload).toMatchObject({ output: text('Step one is now done.') })
   })
 
+  it('applies a mid-turn plan revision before the next step update', async () => {
+    const plan = {
+      planId: 'plan-1',
+      goal: 'Ship it',
+      steps: [{ id: 'one', title: 'First step' }],
+    }
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'tool',
+              name: 'revise_plan_steps',
+              input: {
+                steps: [
+                  { id: 'one', title: 'First step' },
+                  { id: 'two', title: 'Added step' },
+                ],
+              },
+            },
+            { kind: 'tool', name: 'update_plan_step', input: { stepId: 'two', status: 'in_progress' } },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script, { registerTools: (registry) => registry.register(echoTool) })
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go'), plan })
+    await h.waitFor('turn.completed')
+    expect(h.events.some((event) => event.type === 'tool.failed')).toBe(false)
+    expect(h.events.find((event) => event.type === 'plan.steps.revised')?.payload).toMatchObject({
+      planId: 'plan-1',
+      steps: [
+        { id: 'one', title: 'First step' },
+        { id: 'two', title: 'Added step' },
+      ],
+    })
+    expect(h.events.find((event) => event.type === 'plan.step.updated')?.payload).toMatchObject({
+      planId: 'plan-1',
+      stepId: 'two',
+      stepIndex: 1,
+      status: 'in_progress',
+    })
+  })
+
   it('resolves workspace paths and reads the skill read-only roots (M3-07)', async () => {
     const probes: unknown[] = []
     const probe: ToolDefinition<{ path: string }> = {

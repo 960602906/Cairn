@@ -382,6 +382,7 @@ export function ChatPanel({
               <PlanProgress
                 key={progressPlan.planId}
                 plan={progressPlan}
+                running={status === 'running'}
                 onOpen={() => openPanel('plan', { planId: progressPlan.planId })}
               />
             )}

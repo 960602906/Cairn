@@ -9,7 +9,7 @@
  * - 宿主发出的事件没有 seq（UnsequencedEvent），由主进程分配 seq 后成为 EventEnvelope。
  */
 import { z } from 'zod'
-import { PlanDocument, PlanStepStatus } from './plan.js'
+import { PLAN_STEP_MAX, PlanDocument, PlanStep, PlanStepStatus } from './plan.js'
 import {
   AgentDefinitionRef,
   RunAgentRef,
@@ -370,8 +370,15 @@ const payloadSchemas = {
    */
   'plan.approved': z.object({ planId: Id, content: PlanDocument.optional() }),
   'plan.rejected': z.object({ planId: Id, feedback: z.string().optional() }),
+  /** 执行时按用户的新消息调整步骤；同 id 的步骤保留进度，新步骤从 pending 开始。 */
+  'plan.steps.revised': z.object({
+    planId: Id,
+    steps: z.array(PlanStep).min(1).max(PLAN_STEP_MAX),
+  }),
   'plan.step.updated': z.object({
     planId: Id,
+    /** 新事件用步骤 id 定位，旧事件仍按 index 重放。 */
+    stepId: PlanStep.shape.id.optional(),
     stepIndex: z.number().int().nonnegative(),
     status: PlanStepStatus,
     /** 模型对这一步的说明。偏离计划时写在这里，不阻止执行。 */

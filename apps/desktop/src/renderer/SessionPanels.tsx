@@ -236,14 +236,14 @@ function BriefPanel({ sessionId }: SessionPanelContext) {
   return <SessionBriefPanel sessionId={sessionId} />
 }
 
-function PlanPanel({ view, selectedPlanId }: SessionPanelContext) {
+function PlanPanel({ view, selectedPlanId, status }: SessionPanelContext) {
   const { t } = useTranslation('session')
   const plans = view?.plans ?? []
   const plan = plans.find((item) => item.planId === selectedPlanId) ?? plans.at(-1)
   return (
     <div className="h-full overflow-y-auto">
       {plan ? (
-        <PlanDetails key={plan.planId} plan={plan} />
+        <PlanDetails key={plan.planId} plan={plan} running={status === 'running'} />
       ) : (
         <PanelEmpty icon={<ListTodo />}>{t('sidePanel.emptyPlan')}</PanelEmpty>
       )}

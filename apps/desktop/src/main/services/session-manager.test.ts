@@ -917,6 +917,19 @@ describe('plan (M3-05)', () => {
     expect(host.inputs.at(-1)).not.toHaveProperty('mode')
   })
 
+  it('passes the executed plan snapshot when steering mid-turn', async () => {
+    const { manager, sessionId, host } = await proposed()
+    manager.approvePlan({ sessionId, planId: 'pl1' })
+    await flush()
+    startTurn(sessionId, host.runId, 't2', false)
+    const steered = manager.prompt({ sessionId, content: text('加一步') })
+    expect(host.inputs.at(-1)).toMatchObject({
+      messageId: steered.messageId,
+      send: 'steer',
+      plan: { planId: 'pl1', goal: '读代码', steps: [{ id: 'read', title: '读 a.ts' }] },
+    })
+  })
+
   it('replans in plan mode and rejects a plan that is not pending', async () => {
     const { manager, sessionId, host } = await proposed()
     const next = manager.replan({ sessionId, planId: 'pl1', feedback: '换个做法' })

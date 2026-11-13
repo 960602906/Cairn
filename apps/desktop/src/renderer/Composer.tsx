@@ -687,6 +687,8 @@ export function Composer({
     setSending(true)
     const sent = await sendPrompt(draft, planMode ? 'plan' : 'normal', referencesOf(draft))
     setSending(false)
+    // 计划模式只对这一轮生效，发出后立即退出，避免后续消息仍被当作只读计划拦截。
+    if (sent) setPlanMode(false)
     if (!sent) setText((current) => (current === '' ? draft : current))
   }
 
@@ -715,6 +717,7 @@ export function Composer({
         skills: [command.name],
       })
       setSending(false)
+      if (sent) setPlanMode(false)
       if (!sent) restore()
       textarea.current?.focus()
       return
@@ -729,6 +732,7 @@ export function Composer({
           setSending(true)
           const sent = await sendPrompt(args, 'plan', referencesOf(args))
           setSending(false)
+          if (sent) setPlanMode(false)
           if (!sent) restore()
         }
         break

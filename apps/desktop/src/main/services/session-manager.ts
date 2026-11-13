@@ -609,7 +609,11 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
       if (activeTurn && slot?.handle) {
         // 引导：注入当前轮，在下一次模型调用前生效。不置 awaitingTurn（不会产生新的 turn.started）。
-        slot.handle.prompt({ messageId, content, send: 'steer' }).catch((error) => onError(error))
+        // 活跃计划可能在这轮里刚修订，传递最新步骤供宿主校验后续工具调用。
+        const plan = executionPlan(sessionId, 'normal')
+        slot.handle
+          .prompt({ messageId, content, send: 'steer', ...(plan ? { plan } : {}) })
+          .catch((error) => onError(error))
       } else if (slot?.handle && hostReady) {
         send(sessionId, slot, slot.handle, { messageId, content, mode })
       } else {

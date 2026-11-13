@@ -22,6 +22,7 @@ import { Button, CairnMark, cn, IconButton } from './ui/index.js'
 
 /** 下载与复制使用的完整计划文本。 */
 export function planDocument(plan: PlanView): string {
+  // 执行时的修订会清掉旧 Markdown；复制/下载必须反映当前步骤。
   if (plan.content.markdown.trim() !== '') return plan.content.markdown.trim()
   const { goal, files, risks, verification } = plan.content
   return [
@@ -156,7 +157,23 @@ export function PlanSummaryCard({
       <header className="flex h-10 items-center gap-2 border-b-[0.5px] border-hair px-3">
         <Lightbulb aria-hidden className="size-3.5 text-faint" />
         <span className="text-note font-medium text-fg2">{t('plan.title')}</span>
-        <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11px] text-muted">
+        <span
+          className={cn(
+            'flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px]',
+            plan.status === 'approved'
+              ? 'bg-accent-soft text-accent'
+              : 'bg-sunk text-muted',
+          )}
+        >
+          {plan.status === 'approved' && (
+            <span
+              aria-hidden
+              className="animate-spin"
+              style={{ animationDuration: '1.4s' }}
+            >
+              <CairnMark size={11} />
+            </span>
+          )}
           {status}
         </span>
         <span className="ml-auto flex shrink-0 items-center">
@@ -221,9 +238,12 @@ export function planInProgress(plan: PlanView): boolean {
  */
 export function PlanProgress({
   plan,
+  running,
   onOpen,
 }: {
   readonly plan: PlanView
+  /** 会话正在运行（Agent 正在执行步骤）。 */
+  readonly running?: boolean
   readonly onOpen: () => void
 }) {
   const { t } = useTranslation('session')
@@ -240,7 +260,13 @@ export function PlanProgress({
       className="mb-2 overflow-hidden rounded-card bg-raise shadow-2"
     >
       <div className="flex h-9 items-center gap-2 pr-1.5 pl-3">
-        <ListTodo aria-hidden className="size-3.5 shrink-0 text-muted" />
+        {running ? (
+          <span className="animate-spin text-accent" style={{ animationDuration: '1.4s' }}>
+            <CairnMark size={14} />
+          </span>
+        ) : (
+          <ListTodo aria-hidden className="size-3.5 shrink-0 text-muted" />
+        )}
         <button
           type="button"
           title={t('plan.openSide')}
@@ -249,6 +275,14 @@ export function PlanProgress({
         >
           {expanded || !current ? plan.content.goal : current.title}
         </button>
+        {running && (
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent">
+            <span className="animate-spin" style={{ animationDuration: '1.4s' }}>
+              <CairnMark size={10} />
+            </span>
+            {t('plan.progress.running')}
+          </span>
+        )}
         <span className="tabular shrink-0 text-note text-muted">
           {t('plan.progress.count', { done: finished, total: plan.steps.length })}
         </span>
@@ -286,12 +320,29 @@ export function PlanProgress({
 }
 
 /** 右侧栏的完整计划：只展示内容，不重复审批操作。铺在侧栏纸面上，不再套一层卡片。 */
-export function PlanDetails({ plan }: { readonly plan: PlanView }) {
+export function PlanDetails({
+  plan,
+  running,
+}: {
+  readonly plan: PlanView
+  /** 会话正在运行（Agent 正在执行步骤）。 */
+  readonly running?: boolean
+}) {
   const { t } = useTranslation('session')
   const label = 'text-[11.5px] font-medium tracking-[0.02em] text-faint'
   return (
     <article aria-label={t('plan.title')} className="flex flex-col gap-5 px-4 pt-2 pb-5">
-      <h3 className="text-heading leading-snug text-fg">{plan.content.goal}</h3>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-heading leading-snug text-fg">{plan.content.goal}</h3>
+        {running && (
+          <span className="mt-1 flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent">
+            <span className="animate-spin" style={{ animationDuration: '1.4s' }}>
+              <CairnMark size={10} />
+            </span>
+            {t('plan.progress.running')}
+          </span>
+        )}
+      </div>
       <section>
         <h4 className={label}>{t('plan.steps')}</h4>
         <ol className="mt-2 flex flex-col gap-2.5">

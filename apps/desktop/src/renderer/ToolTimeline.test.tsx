@@ -290,3 +290,44 @@ describe('terminalData', () => {
     ).toMatchObject({ sandbox })
   })
 })
+
+describe('ToolStep：计划工具', () => {
+  const label = () => toggle().textContent
+  const code = () => document.querySelector('code')!
+
+  it('propose_plan 显示动作与目标，而不是整段 JSON', () => {
+    step({
+      name: 'propose_plan',
+      tool: tool({
+        name: 'propose_plan',
+        input: { goal: '梳理登录流程', steps: [{ id: 's1', title: '读代码' }] },
+      }),
+    })
+    expect(label()).toContain('制定计划')
+    expect(code().textContent).toBe('梳理登录流程')
+  })
+
+  it('revise_plan_steps 显示调整后的步骤数', () => {
+    step({
+      name: 'revise_plan_steps',
+      tool: tool({
+        name: 'revise_plan_steps',
+        input: { steps: [{ id: 's1' }, { id: 's2' }, { id: 's3' }] },
+      }),
+    })
+    expect(label()).toContain('调整计划')
+    expect(code().textContent).toBe('3 个步骤')
+  })
+
+  it('update_plan_step 显示步骤 id 与状态', () => {
+    step({
+      name: 'update_plan_step',
+      tool: tool({
+        name: 'update_plan_step',
+        input: { stepId: 's2', status: 'in_progress' },
+      }),
+    })
+    expect(label()).toContain('更新步骤')
+    expect(code().textContent).toBe('s2 · 进行中')
+  })
+})
