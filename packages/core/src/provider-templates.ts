@@ -202,6 +202,7 @@ export function hostModelConfig(
       supportsTools: profile.supportsTools,
       supportsParallelToolCalls: profile.supportsParallelToolCalls,
       supportsReasoning: profile.supportsReasoning,
+      ...(profile.thinkingLevel ? { thinkingLevel: profile.thinkingLevel } : {}),
       ...(profile.pricing ? { pricing: profile.pricing } : {}),
     },
     ...(compat ? { compat } : {}),

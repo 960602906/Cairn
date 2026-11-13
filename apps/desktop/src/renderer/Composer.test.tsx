@@ -126,6 +126,72 @@ describe('Composer model helpers', () => {
     expect(onSelect).toHaveBeenCalledWith(strong)
   })
 
+  it('picks the thinking level of the current model', async () => {
+    const user = userEvent.setup()
+    const onSelectThinkingLevel = vi.fn()
+    const reasoning: ProviderConfig[] = [
+      {
+        id: 'p2',
+        kind: 'openai',
+        displayName: '供应商二',
+        baseUrl: 'https://example.com',
+        models: [{ id: 'strong', displayName: '强', ...capabilities, supportsReasoning: true }],
+      },
+    ]
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={reasoning}
+          model={strong}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={() => {}}
+          onSelect={() => {}}
+          thinkingLevel="low"
+          onSelectThinkingLevel={onSelectThinkingLevel}
+        />
+      </I18nextProvider>,
+    )
+    expect(screen.getByText('思考强度')).toBeTruthy()
+    await user.click(screen.getByRole('menuitem', { name: '高' }))
+    expect(onSelectThinkingLevel).toHaveBeenCalledWith('high')
+  })
+
+  it('explains when the model does not support reasoning, and hides the section without a session', () => {
+    const { rerender } = render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={providers}
+          model={fast}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={() => {}}
+          onSelect={() => {}}
+          onSelectThinkingLevel={() => {}}
+        />
+      </I18nextProvider>,
+    )
+    expect(screen.getByText('思考强度')).toBeTruthy()
+    expect(screen.getByText('当前模型不支持推理')).toBeTruthy()
+
+    rerender(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={providers}
+          model={fast}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={() => {}}
+          onSelect={() => {}}
+        />
+      </I18nextProvider>,
+    )
+    expect(screen.queryByText('思考强度')).toBeNull()
+  })
+
   it('shows the empty label when no model is configured', () => {
     render(
       <I18nextProvider i18n={createI18n('zh-CN')}>

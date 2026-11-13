@@ -557,6 +557,34 @@ describe('ProvidersSettings', () => {
     expect(within(gatewayCard).getByText('manual-by-enter')).toBeTruthy()
   })
 
+  it('picks a thinking level for models that support reasoning', async () => {
+    const { updates } = setup({ providers: [deepseek, gateway] })
+    await open()
+    const card = await editProvider(/^DeepSeek/)
+    await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
+    const detail = within(card).getByRole('complementary', { name: '模型设置' })
+    // 不支持思考的模型没有档位可选
+    expect(within(detail).queryByRole('radiogroup', { name: '思考强度' })).toBeNull()
+
+    await userEvent.click(within(detail).getByRole('switch', { name: '支持思考' }))
+    const group = within(detail).getByRole('radiogroup', { name: '思考强度' })
+    expect(within(group).getByRole('radio', { name: '高' }).getAttribute('aria-checked')).toBe(
+      'true',
+    )
+    await userEvent.click(within(group).getByRole('radio', { name: '中' }))
+    expect(within(group).getByRole('radio', { name: '中' }).getAttribute('aria-checked')).toBe(
+      'true',
+    )
+
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates.length).toBeGreaterThan(0))
+    const saved = updates.at(-1)?.providers?.find((p) => p.id === 'deepseek')
+    expect(saved?.models.find((m) => m.id === 'deepseek-v4-pro')).toMatchObject({
+      supportsReasoning: true,
+      thinkingLevel: 'medium',
+    })
+  })
+
   it('disables the key input when system encryption is unavailable', async () => {
     setup(
       { providers: [deepseek] },

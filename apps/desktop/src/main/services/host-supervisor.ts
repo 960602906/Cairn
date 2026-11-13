@@ -160,9 +160,12 @@ export interface HostSupervisorOptions {
   readonly resolveCredential?: (model: HostInit['model']) => Promise<ResolvedCredential | undefined>
   /**
    * 按模型给出宿主的模型配置（M1-04b）；没有时返回 undefined（宿主用 FakeRuntime 或开发用的
-   * 环境变量）。抛出时按启动失败处理。省略表示不传。
+   * 环境变量）。会话自己的思考强度在这里覆盖模型配置里的默认值。抛出时按启动失败处理。省略表示不传。
    */
-  readonly resolveModelConfig?: (model: HostInit['model']) => HostModelConfig | undefined
+  readonly resolveModelConfig?: (
+    model: HostInit['model'],
+    sessionId: string,
+  ) => HostModelConfig | undefined
   /**
    * 适用于会话的权限规则（M1-10c，权限服务）。抛出时按启动失败处理。省略时不传，宿主按“询问”模式
    * 的预设判定。
@@ -528,7 +531,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
       // 握手与初始化在总时限内完成
       const started = (async () => {
         await endpoint.ready
-        const modelConfig = options.resolveModelConfig?.(init.model)
+        const modelConfig = options.resolveModelConfig?.(init.model, sessionId)
         const permissionRules = options.resolvePermissionRules?.(sessionId, init.agent)
         const checkpoints = options.resolveCheckpoints?.(sessionId)
         const git = options.resolveGit?.()

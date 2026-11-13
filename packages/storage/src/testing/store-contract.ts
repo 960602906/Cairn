@@ -263,6 +263,22 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.sessions.get('s1')?.model).toEqual(next)
       })
 
+      it('stores the thinking level of a session on its own', () => {
+        seed()
+        expect(storage.sessions.get('s1')).not.toHaveProperty('thinkingLevel')
+        clock = 500
+        expect(storage.sessions.setThinkingLevel('s1', 'low')).toMatchObject({
+          thinkingLevel: 'low',
+          updatedAt: 500,
+        })
+        expect(storage.sessions.get('s1')?.thinkingLevel).toBe('low')
+        expect(storage.sessions.setThinkingLevel('s1', 'high').thinkingLevel).toBe('high')
+        expectStorageError(
+          () => storage.sessions.setThinkingLevel('nope', 'low'),
+          StorageErrorCode.NotFound,
+        )
+      })
+
       it('rejects unknown projects and duplicate ids', () => {
         seed()
         expectStorageError(
@@ -308,6 +324,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       it('reports missing sessions on update', () => {
         expectStorageError(() => storage.sessions.rename('nope', 't'), StorageErrorCode.NotFound)
         expectStorageError(() => storage.sessions.archive('nope'), StorageErrorCode.NotFound)
+        expectStorageError(() => storage.sessions.unarchive('nope'), StorageErrorCode.NotFound)
         expectStorageError(
           () => storage.sessions.setModel('nope', { providerId: 'p', modelId: 'm' }),
           StorageErrorCode.NotFound,
@@ -345,6 +362,17 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(
           storage.sessions.list({ projectId: 'p1', includeArchived: true }).map((s) => s.sessionId),
         ).toEqual(['s1', 's2'])
+      })
+
+      it('restores an archived session with unarchive', () => {
+        seed()
+        storage.sessions.archive('s1')
+        expect(storage.sessions.list().map((s) => s.sessionId)).toEqual([])
+
+        clock = 500
+        const restored = storage.sessions.unarchive('s1')
+        expect(restored).toMatchObject({ sessionId: 's1', archived: false, updatedAt: 500 })
+        expect(storage.sessions.list().map((s) => s.sessionId)).toEqual(['s1'])
       })
 
       it('marks trial sessions and excludes them from the default list', () => {

@@ -43,6 +43,14 @@ export type ModelCompat = z.infer<typeof ModelCompat>
 const Price = z.number().nonnegative()
 
 /**
+ * 思考强度（M1-04c）：只对声明了 `supportsReasoning` 的模型有意义。运行时支持更多档位
+ * （`off`、`minimal`、`xhigh`、`max`），但 `off` 与「不支持思考」重复，其余档位各家语义不一，
+ * 界面只承诺这三档。没有设置时按 `high`。
+ */
+export const ReasoningEffort = z.enum(['low', 'medium', 'high'])
+export type ReasoningEffort = z.infer<typeof ReasoningEffort>
+
+/**
  * 单价（Runtime §15）：每百万 token 的价格，货币按提供方的计价（界面只显示数字）。用于估算费用与
  * `maxCostPerTurn` 限额（M1-14b）；没有填写时只统计 token。缓存命中的输入没有单独价格时按普通输入计。
  */
@@ -65,6 +73,8 @@ export const ModelProfile = z.object({
   supportsTools: z.boolean(),
   supportsParallelToolCalls: z.boolean(),
   supportsReasoning: z.boolean(),
+  /** 思考强度；只在 `supportsReasoning` 为真时生效，省略时按 `high`。 */
+  thinkingLevel: ReasoningEffort.optional(),
   verifiedAt: Timestamp.optional(),
   /**
    * 是否在模型选择中列出（M2-10）；省略表示启用。停用的模型不能设为默认模型，已在使用它的会话不受影响。

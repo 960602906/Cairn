@@ -12,7 +12,7 @@ import type {
 import type { CanonicalMessage } from '@cairn/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PiErrorCode } from './errors.js'
-import { PiRuntime } from './session.js'
+import { PiRuntime, resolveThinkingLevel } from './session.js'
 import { sse, startMockOpenAI, type MockOpenAI, type MockResponse } from './testing/mock-openai.js'
 
 const KEY = 'test-key-not-real'
@@ -120,6 +120,15 @@ const ANSWER_TURN: MockResponse = {
 const types = (events: RuntimeEvent[]) => events.map((e) => e.type)
 type Sent = { role: string; content?: unknown; reasoning_content?: string; tool_calls?: unknown[] }
 const sentMessages = (i: number) => mock!.requests[i]!.body['messages'] as Sent[]
+
+describe('resolveThinkingLevel', () => {
+  it('模型不支持推理时强制 off；支持时用配置的档位，没配置按 high', () => {
+    expect(resolveThinkingLevel(false, 'low')).toBe('off')
+    expect(resolveThinkingLevel(false)).toBe('off')
+    expect(resolveThinkingLevel(true, 'medium')).toBe('medium')
+    expect(resolveThinkingLevel(true)).toBe('high')
+  })
+})
 
 describe('PiRuntime：带工具调用的对话（openai 格式 mock 端点）', () => {
   it('事件顺序、工具钩子、历史与请求内容', async () => {

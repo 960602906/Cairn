@@ -71,6 +71,8 @@ export const SessionErrorCode = {
   AgentNotFound: 'agent.not_found',
   /** 试运行开始后草稿又改过；必须用新配置重新开始。 */
   DraftChanged: 'trial.draft_changed',
+  /** 只有已归档的会话能彻底删除。 */
+  NotArchived: 'session.not_archived',
 } as const
 
 /** 新运行使用的配置。 */
@@ -497,6 +499,13 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       return {}
     },
 
+    unarchive({ sessionId }) {
+      requireSession(sessionId)
+      storage.sessions.unarchive(sessionId)
+      events.publish([{ ...header(sessionId, sessionId), type: 'session.unarchived', payload: {} }])
+      return {}
+    },
+
     setModel({ sessionId, model }) {
       requireSession(sessionId)
       if (options.models && !options.models.has(model)) {
@@ -505,6 +514,37 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       storage.sessions.setModel(sessionId, model)
       events.publish([
         { ...header(sessionId, sessionId), type: 'session.model.changed', payload: { model } },
+      ])
+      return {}
+    },
+
+    /**
+     * 彻底删除会话：连同事件一起删掉，不可恢复。只对已归档的会话用。
+     * 运行中的会话不能删（归档的会话本来就不在跑）。
+     */
+    delete({ sessionId }) {
+      const record = requireSession(sessionId)
+      if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      if (!record.archived) throw new RpcError(SessionErrorCode.NotArchived, { sessionId })
+      storage.sessions.remove(sessionId)
+      return {}
+    },
+
+    /**
+     * 设定本会话的思考强度：写库并广播事件，下一轮（下次启动宿主）生效。
+     * 模型不支持推理时宿主会忽略这个设置。
+     */
+    setThinkingLevel({ sessionId, thinkingLevel }) {
+      requireSession(sessionId)
+      storage.sessions.setThinkingLevel(sessionId, thinkingLevel)
+      events.publish([
+        {
+          ...header(sessionId, sessionId),
+          type: 'session.thinkingLevel.changed',
+          payload: { thinkingLevel },
+        },
       ])
       return {}
     },

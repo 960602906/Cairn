@@ -50,6 +50,7 @@ describe('openSqliteStorage', () => {
         '0014_session-kind',
         '0015_background-commands',
         '0016_project-pinning',
+        '0017_session-thinking-level',
       ],
     })
     storage.close()
@@ -133,6 +134,7 @@ describe('openSqliteStorage', () => {
       '0014_session-kind',
       '0015_background-commands',
       '0016_project-pinning',
+      '0017_session-thinking-level',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

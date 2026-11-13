@@ -29,8 +29,10 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   },
   'session.renamed': { title: '重命名' },
   'session.model.changed': { model },
+  'session.thinkingLevel.changed': { thinkingLevel: 'high' },
   'session.crashed': { error: { code: 'host.crashed' } },
   'session.archived': {},
+  'session.unarchived': {},
   'session.brief.updated': { content: '目标：修复测试', editedBy: 'agent' },
   'run.created': {
     agent: { id: 'builtin.coder', version: 1 },

@@ -88,6 +88,7 @@ interface SessionRow {
   trial_draft_hash: string | null
   model_provider_id: string | null
   model_id: string | null
+  thinking_level: string | null
   created_at: number
   updated_at: number
 }
@@ -366,6 +367,9 @@ const toSession = (row: SessionRow): SessionRecord => ({
   ...(row.model_provider_id === null || row.model_id === null
     ? {}
     : { model: { providerId: row.model_provider_id, modelId: row.model_id } }),
+  ...(row.thinking_level === null
+    ? {}
+    : { thinkingLevel: row.thinking_level as NonNullable<SessionRecord['thinkingLevel']> }),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 })
@@ -483,12 +487,20 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       `UPDATE sessions SET model_provider_id = @providerId, model_id = @modelId, updated_at = @at
        WHERE session_id = @sessionId`,
     ),
+    setSessionThinkingLevel: db.prepare(
+      `UPDATE sessions SET thinking_level = @thinkingLevel, updated_at = @at
+       WHERE session_id = @sessionId`,
+    ),
     updateSession: db.prepare(
       `UPDATE sessions SET
          title = coalesce(@title, title),
          archived = max(archived, @archived),
          updated_at = @at
        WHERE session_id = @sessionId`,
+    ),
+    // 取消归档要能把 archived 归零，updateSession 的 max(archived, @archived) 做不到
+    unarchiveSession: db.prepare(
+      'UPDATE sessions SET archived = 0, updated_at = @at WHERE session_id = @sessionId',
     ),
     deleteSessionEvents: db.prepare('DELETE FROM events WHERE session_id = ?'),
     deleteSessionFileChanges: db.prepare('DELETE FROM file_changes WHERE session_id = ?'),
@@ -1078,8 +1090,18 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       },
       rename: (sessionId, title) => updateSession(sessionId, title, 0),
       archive: (sessionId) => updateSession(sessionId, null, 1),
+      unarchive(sessionId) {
+        const { changes } = q.unarchiveSession.run({ sessionId, at: now() })
+        if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { sessionId })
+        return toSession(q.sessionById.get(sessionId)!)
+      },
       setModel(sessionId, model) {
         const { changes } = q.setSessionModel.run({ sessionId, ...model, at: now() })
+        if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { sessionId })
+        return toSession(q.sessionById.get(sessionId)!)
+      },
+      setThinkingLevel(sessionId, thinkingLevel) {
+        const { changes } = q.setSessionThinkingLevel.run({ sessionId, thinkingLevel, at: now() })
         if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { sessionId })
         return toSession(q.sessionById.get(sessionId)!)
       },

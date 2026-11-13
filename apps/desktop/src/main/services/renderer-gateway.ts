@@ -60,7 +60,11 @@ export interface SessionCommands {
   readonly abort: Handler<'session.abort'>
   readonly rename: Handler<'session.rename'>
   readonly archive: Handler<'session.archive'>
+  readonly unarchive: Handler<'session.unarchive'>
+  /** 彻底删除已归档的会话（不可恢复）。 */
+  readonly delete: Handler<'session.delete'>
   readonly setModel: Handler<'session.setModel'>
+  readonly setThinkingLevel: Handler<'session.setThinkingLevel'>
   readonly setAgent: Handler<'session.setAgent'>
   /** 当前 Agent 允许委派的目标（M4-02）：`@Agent` 候选与发送时展开共用。 */
   readonly delegationTargets: Handler<'agent.delegationTargets'>
@@ -450,7 +454,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.abort', (params) => commands.abort(params))
       endpoint.handle('session.rename', (params) => commands.rename(params))
       endpoint.handle('session.archive', (params) => commands.archive(params))
+      endpoint.handle('session.unarchive', (params) => commands.unarchive(params))
+      endpoint.handle('session.delete', (params) => commands.delete(params))
       endpoint.handle('session.setModel', (params) => commands.setModel(params))
+      endpoint.handle('session.setThinkingLevel', (params) => commands.setThinkingLevel(params))
       endpoint.handle('session.setAgent', (params) => commands.setAgent(params))
       endpoint.handle('agent.delegationTargets', (params) => commands.delegationTargets(params))
       endpoint.handle('settings.get', () => settings.get())

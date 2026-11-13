@@ -274,6 +274,51 @@ describe('create and list', () => {
     )
   })
 
+  it('restores an archived session (M2-02)', () => {
+    const { manager } = setup(fakeSupervisor().supervisor)
+    const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })
+    manager.archive({ sessionId })
+    expect(manager.list({}).sessions.map((s) => s.sessionId)).toEqual([])
+
+    manager.unarchive({ sessionId })
+    expect(published.at(-1)).toMatchObject({ type: 'session.unarchived', payload: {} })
+    expect(manager.list({}).sessions.map((s) => s.sessionId)).toEqual([sessionId])
+    expect(manager.list({}).sessions[0]?.status).toBe('idle')
+
+    expect(() => manager.unarchive({ sessionId: 'missing' })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+  })
+
+  it('deletes only archived sessions, permanently', () => {
+    const { manager } = setup(fakeSupervisor().supervisor)
+    const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })
+
+    expect(() => manager.delete({ sessionId })).toThrow(
+      expect.objectContaining({ code: 'session.not_archived' }),
+    )
+
+    manager.archive({ sessionId })
+    manager.delete({ sessionId })
+    expect(manager.list({ includeArchived: true }).sessions).toEqual([])
+    expect(storage.sessions.get(sessionId)).toBeUndefined()
+    expect(() => manager.delete({ sessionId })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+  })
+
+  it('stores the thinking level of a session and announces it', () => {
+    const { manager } = setup(fakeSupervisor().supervisor)
+    const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })
+
+    manager.setThinkingLevel({ sessionId, thinkingLevel: 'low' })
+    expect(storage.sessions.get(sessionId)?.thinkingLevel).toBe('low')
+    expect(published.at(-1)).toMatchObject({
+      type: 'session.thinkingLevel.changed',
+      payload: { thinkingLevel: 'low' },
+    })
+  })
+
   it('rejects relative project paths', () => {
     const { manager } = setup(fakeSupervisor().supervisor)
     expect(() => manager.create({ projectPath: 'demo' })).toThrow(

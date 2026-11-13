@@ -39,6 +39,7 @@ function setup(
     openedProject?: ProjectSummary | undefined
     sessions?: SessionSummary[]
     onSelectSession?: () => void
+    showArchivedSessions?: boolean
   } = {},
 ) {
   const updateProject = vi.fn(async (_projectId: string, patch: Partial<ProjectSummary> = {}) =>
@@ -48,10 +49,13 @@ function setup(
   const refreshProjects = vi.fn(async () => undefined)
   const openProject = vi.fn(async () => options.openedProject)
   const selectSession = vi.fn(async () => undefined)
+  const setShowArchivedSessions = vi.fn(async () => undefined)
   const store = createStore<Record<string, unknown>>(() => ({
     projects,
     sessions: options.sessions ?? [],
     activeSessionId: undefined,
+    showArchivedSessions: options.showArchivedSessions ?? false,
+    setShowArchivedSessions,
     updateProject,
     removeProject,
     openProject,
@@ -70,6 +74,7 @@ function setup(
   )
   return {
     container: rendered.container,
+    setShowArchivedSessions,
     updateProject,
     removeProject,
     refreshProjects,
@@ -162,7 +167,7 @@ describe('WorkspaceList', () => {
   })
 
   it('shows archived state and removes a workspace after confirmation', async () => {
-    const { removeProject } = setup([project({ archivedAt: 3 })])
+    const { removeProject } = setup([project({ archivedAt: 3 })], { showArchivedSessions: true })
     expect(screen.getByText('已归档')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
     await userEvent.click(screen.getByRole('menuitem', { name: '移除工作空间' }))
@@ -179,7 +184,9 @@ describe('WorkspaceList', () => {
       request,
       on: () => () => undefined,
     }
-    const { updateProject } = setup([project({ isPinned: true, archivedAt: 3 })])
+    const { updateProject } = setup([project({ isPinned: true, archivedAt: 3 })], {
+      showArchivedSessions: true,
+    })
     expect(screen.getByLabelText('取消置顶')).toBeTruthy()
     expect(screen.getByText('已归档')).toBeTruthy()
 
@@ -194,6 +201,18 @@ describe('WorkspaceList', () => {
     await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
     await userEvent.click(screen.getByRole('menuitem', { name: '在资源管理器浏览' }))
     expect(request).toHaveBeenCalledWith('fs.reveal', { projectId: 'p1' }, undefined)
+  })
+
+  it('hides archived workspaces until the archive toggle is on', async () => {
+    const { setShowArchivedSessions } = setup([
+      project(),
+      project({ projectId: 'archived', name: 'archived', archivedAt: 3 }),
+    ])
+    expect(screen.queryByText('archived')).toBeNull()
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+
+    await userEvent.click(screen.getByRole('button', { name: '显示已归档内容' }))
+    expect(setShowArchivedSessions).toHaveBeenCalledWith(true)
   })
 
   it('shows the empty state when no projects exist', () => {

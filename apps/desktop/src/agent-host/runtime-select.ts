@@ -63,7 +63,11 @@ export function selectHostRuntime(
 ): (ref: ModelRef, credential?: HostCredential, modelConfig?: HostModelConfig) => HostRuntime {
   return (ref, credential, modelConfig) => {
     if (modelConfig) {
-      return { runtime: new PiRuntime(), model: resolveModel(ref, modelConfig, credential?.apiKey) }
+      const thinkingLevel = modelConfig.profile.thinkingLevel
+      return {
+        runtime: new PiRuntime(thinkingLevel ? { thinkingLevel } : {}),
+        model: resolveModel(ref, modelConfig, credential?.apiKey),
+      }
     }
     if (runtimeKind(env) === 'fake') return createFakeHostRuntime(ref)
     return { runtime: new PiRuntime(), model: modelFromEnv(ref, env, credential) }

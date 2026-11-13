@@ -610,7 +610,7 @@ describe('startHost', () => {
     const resolveModelConfig = vi.fn(() => modelConfig)
     const { supervisor } = setup(host, { resolveModelConfig })
     await supervisor.startHost(init)
-    expect(resolveModelConfig).toHaveBeenCalledWith(init.model)
+    expect(resolveModelConfig).toHaveBeenCalledWith(init.model, init.sessionId)
     expect(host.inits).toEqual([{ ...init, modelConfig }])
   })
 

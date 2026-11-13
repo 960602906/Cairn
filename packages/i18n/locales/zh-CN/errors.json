@@ -68,6 +68,7 @@
   "credentials.decrypt_failed": "无法读取已保存的 Key，请重新填写",
   "settings.invalid_default_model": "默认模型不在已配置的模型中",
   "session.unknown_model": "所选模型没有配置",
+  "session.not_archived": "只有已归档的会话能彻底删除",
   "path.empty": "路径为空",
   "path.invalid_character": "路径中含有不允许的字符",
   "path.malformed": "路径格式不正确",

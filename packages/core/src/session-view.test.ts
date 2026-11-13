@@ -424,10 +424,12 @@ describe('reduceSession：会话事件', () => {
       ev('session.created', { ...created, title: '重复' }),
       ev('session.renamed', { title: '新' }),
       ev('session.model.changed', { model: { providerId: 'p', modelId: 'm2' } }),
+      ev('session.thinkingLevel.changed', { thinkingLevel: 'low' }),
       ev('session.archived', {}),
     ])
     expect(view.info?.title).toBe('新')
     expect(view.info?.model).toEqual({ providerId: 'p', modelId: 'm2' })
+    expect(view.info?.thinkingLevel).toBe('low')
     expect(view.info?.createdAt).toBe(20)
     expect(view.archived).toBe(true)
     expect(sessionStatus(view)).toBe('archived')
