@@ -50,6 +50,7 @@ const view: SessionView = {
     workspacePath: 'C:\\work\\demo',
     title: '修复登录',
     model: undefined,
+    thinkingLevel: undefined,
     createdAt: 1,
   },
   brief: { content: '## 目标\n修复登录\n- 不要改 API', editedBy: 'user' as const },
@@ -141,6 +142,7 @@ describe('SessionHome', () => {
         workspacePath: 'C:\\work\\demo',
         title: '',
         model: undefined,
+        thinkingLevel: undefined,
         createdAt: 1,
       },
     }

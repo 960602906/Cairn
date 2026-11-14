@@ -31,6 +31,7 @@ import {
   type PromptAgent,
   type PromptSkill,
   type ReasoningPart,
+  type ReasoningEffort,
   type RunLimits,
   type RunMode,
   type RunState,
@@ -55,6 +56,8 @@ export interface SessionInfo {
   readonly title: string
   /** 会话使用的模型（下一轮起）；M1-04a 之前创建、没有记录模型的会话为 undefined。 */
   readonly model: ModelRef | undefined
+  /** 本会话的思考强度（下一轮起）；没有设置时用模型配置里的默认值。 */
+  readonly thinkingLevel: ReasoningEffort | undefined
   readonly createdAt: number
 }
 
@@ -557,15 +560,29 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       const { projectId, projectPath, workspacePath, title, model } = event.payload
       return {
         ...view,
-        info: { projectId, projectPath, workspacePath, title, model, createdAt: event.ts },
+        info: {
+          projectId,
+          projectPath,
+          workspacePath,
+          title,
+          model,
+          thinkingLevel: undefined,
+          createdAt: event.ts,
+        },
       }
     }
     case 'session.renamed':
       return view.info ? { ...view, info: { ...view.info, title: event.payload.title } } : undefined
     case 'session.model.changed':
       return view.info ? { ...view, info: { ...view.info, model: event.payload.model } } : undefined
+    case 'session.thinkingLevel.changed':
+      return view.info
+        ? { ...view, info: { ...view.info, thinkingLevel: event.payload.thinkingLevel } }
+        : undefined
     case 'session.archived':
       return { ...view, archived: true }
+    case 'session.unarchived':
+      return { ...view, archived: false }
     case 'checkpoint.created': {
       const checkpoint: CheckpointView = {
         checkpointId: event.payload.checkpointId,

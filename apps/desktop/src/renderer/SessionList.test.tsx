@@ -243,6 +243,35 @@ describe('SessionList', () => {
     expect(request).toHaveBeenCalledWith('session.archive', { sessionId: 's1' })
   })
 
+  it('restores an archived session from its menu', async () => {
+    let sessions = [summary('s1', '已归档的会话', 'archived')]
+    const { request } = setup({
+      'session.list': () => ({ sessions }),
+      'session.unarchive': () => {
+        sessions = [summary('s1', '已归档的会话')]
+        return {}
+      },
+    })
+    const item = (await screen.findAllByRole('listitem'))[0]!
+    await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '取消归档' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.unarchive', { sessionId: 's1' }),
+    )
+  })
+
+  it('reloads the session list with archived sessions from the sidebar toggle', async () => {
+    const { request } = setup({ 'session.list': () => ({ sessions: [] }) })
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.list', { includeArchived: false }),
+    )
+    await userEvent.click(await screen.findByRole('button', { name: '显示已归档内容' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.list', { includeArchived: true }),
+    )
+    expect(screen.getByRole('button', { name: '隐藏已归档内容' })).toBeTruthy()
+  })
+
   it('creates a session from the first message', async () => {
     const sessions: SessionSummary[] = [summary('s0', '已有')]
     const { request, store } = setup({

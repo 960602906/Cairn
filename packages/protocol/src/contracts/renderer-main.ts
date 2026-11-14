@@ -62,7 +62,13 @@ import {
   SandboxStatus,
   SandboxUnavailableBehavior,
 } from '../sandbox.js'
-import { CONFIG_ID_PATTERN, ProviderConfig, ProviderConfigList, RemoteModel } from '../providers.js'
+import {
+  CONFIG_ID_PATTERN,
+  ProviderConfig,
+  ProviderConfigList,
+  ReasoningEffort,
+  RemoteModel,
+} from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
 import { TrialStarted, TrialSummary } from '../trial.js'
@@ -643,6 +649,30 @@ export const MainForRenderer = defineSide({
      * 会话正在运行时报 `run.busy`。
      */
     'session.archive': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({}),
+    },
+    /**
+     * 取消归档（M2-02 的补充）：写入 `session.unarchived`，会话重新出现在默认列表里。
+     * 归档会话本来就不在运行，不需要再判运行状态。
+     */
+    'session.unarchive': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({}),
+    },
+    /**
+     * 设定本会话的思考强度：写入 `session.thinkingLevel.changed`，下一轮生效。
+     * 模型不支持推理时忽略这个设置。
+     */
+    'session.setThinkingLevel': {
+      params: z.object({ sessionId: Id, thinkingLevel: ReasoningEffort }),
+      result: z.object({}),
+    },
+    /**
+     * 彻底删除会话：连同事件一起删掉，不可恢复。只对已归档的会话用；
+     * 运行中的会话报 `run.busy`，未归档的会话报 `session.not_archived`。
+     */
+    'session.delete': {
       params: z.object({ sessionId: Id }),
       result: z.object({}),
     },

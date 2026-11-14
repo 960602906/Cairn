@@ -147,6 +147,7 @@ describe('translateError', () => {
       'settings.write_failed',
       'settings.invalid_default_model',
       'session.unknown_model',
+      'session.not_archived',
       'credentials.unavailable',
       'credentials.invalid_ref',
       'credentials.invalid_value',

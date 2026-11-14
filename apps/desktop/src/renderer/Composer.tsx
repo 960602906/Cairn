@@ -42,6 +42,7 @@ import type {
   AgentDefinitionRef,
   ModelRef,
   PermissionMode,
+  ReasoningEffort,
   ProviderConfig,
   SessionStatus,
   SkillSummary,
@@ -79,6 +80,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Popover,
   PopoverContent,
@@ -238,6 +240,9 @@ export function PermissionMenu() {
   )
 }
 
+/** 思考强度的三档；模型不支持推理时不显示。 */
+const THINKING_LEVELS: readonly ReasoningEffort[] = ['low', 'medium', 'high']
+
 export function ModelPicker({
   providers,
   model,
@@ -246,6 +251,8 @@ export function ModelPicker({
   open,
   onOpenChange,
   onSelect,
+  thinkingLevel,
+  onSelectThinkingLevel,
   align = 'end',
 }: {
   readonly providers: readonly ProviderConfig[]
@@ -257,6 +264,10 @@ export function ModelPicker({
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
   readonly onSelect: (model: ModelRef) => void
+  /** 本会话设定的思考强度；没有时用模型配置里的默认值。 */
+  readonly thinkingLevel?: ReasoningEffort | undefined
+  /** 给出时才能改思考强度；没有会话（新会话页）时不显示这一段。 */
+  readonly onSelectThinkingLevel?: ((level: ReasoningEffort) => void) | undefined
   readonly align?: 'start' | 'end'
 }) {
   const { t } = useTranslation('session')
@@ -264,6 +275,10 @@ export function ModelPicker({
   const options = enabledModelChoices(providers)
   const { full, short } = modelLabels(model, providers)
   const label = full ?? short ?? t('composer.model.none')
+  const current = providers
+    .find((provider) => provider.id === model?.providerId)
+    ?.models.find((item) => item.id === model?.modelId)
+  const level = thinkingLevel ?? current?.thinkingLevel ?? 'high'
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
@@ -292,6 +307,28 @@ export function ModelPicker({
             </DropdownMenuItem>
           </Fragment>
         ))}
+        {onSelectThinkingLevel && current && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-faint">
+              {t('composer.thinkingLevel.title')}
+            </DropdownMenuLabel>
+            {current.supportsReasoning === true ? (
+              THINKING_LEVELS.map((option) => (
+                <DropdownMenuItem key={option} onSelect={() => onSelectThinkingLevel(option)}>
+                  <span className="min-w-0 flex-1 truncate">
+                    {t(`composer.thinkingLevel.${option}`)}
+                  </span>
+                  {level === option && <Check className="text-fg!" />}
+                </DropdownMenuItem>
+              ))
+            ) : (
+              <DropdownMenuItem disabled>
+                {t('composer.thinkingLevel.unsupported')}
+              </DropdownMenuItem>
+            )}
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -483,6 +520,7 @@ export function Composer({
   const { t: ts } = useTranslation('settings')
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const setSessionModel = useSessionStore((s) => s.setSessionModel)
+  const setSessionThinkingLevel = useSessionStore((s) => s.setSessionThinkingLevel)
   const compactSession = useSessionStore((s) => s.compactSession)
   const abort = useSessionStore((s) => s.abort)
   const agents = useSessionStore((s) => s.agents) ?? []
@@ -995,6 +1033,8 @@ export function Composer({
                   if (!next) textarea.current?.focus()
                 }}
                 onSelect={(next) => void setSessionModel(sessionId, next)}
+                thinkingLevel={view?.info?.thinkingLevel}
+                onSelectThinkingLevel={(level) => void setSessionThinkingLevel(sessionId, level)}
               />
               <ContextUsage sessionId={sessionId} model={model} tokens={contextTokens} />
               {active && (

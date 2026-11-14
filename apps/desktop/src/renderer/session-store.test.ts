@@ -383,6 +383,54 @@ describe('session list', () => {
     expect(store.getState().error?.code).toBe('run.busy')
   })
 
+  it('lists archived sessions on demand and restores them', async () => {
+    let sessions = [summary('s1'), summary('s2', 'archived')]
+    const { api, calls } = fakeApi({
+      'session.list': ({ includeArchived }: { includeArchived?: boolean }) => ({
+        sessions: includeArchived ? sessions : sessions.filter((s) => s.status !== 'archived'),
+      }),
+      'session.unarchive': () => ({}),
+    })
+    const store = createSessionStore(api)
+
+    await store.getState().refreshSessions()
+    expect(calls).toContainEqual(['session.list', { includeArchived: false }])
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(['s1'])
+
+    await store.getState().setShowArchivedSessions(true)
+    expect(calls).toContainEqual(['session.list', { includeArchived: true }])
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(['s1', 's2'])
+
+    sessions = [summary('s1')]
+    await expect(store.getState().unarchiveSession('s2')).resolves.toBe(true)
+    expect(calls).toContainEqual(['session.unarchive', { sessionId: 's2' }])
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(['s1'])
+    expect(store.getState().showArchivedSessions).toBe(true)
+  })
+
+  it('deletes an archived session and sets the thinking level of a session', async () => {
+    let sessions = [summary('s1'), summary('s2', 'archived')]
+    const { api, calls } = fakeApi({
+      'session.list': ({ includeArchived }: { includeArchived?: boolean }) => ({
+        sessions: includeArchived ? sessions : sessions.filter((s) => s.status !== 'archived'),
+      }),
+      'session.delete': () => ({}),
+      'session.setThinkingLevel': () => ({}),
+    })
+    const store = createSessionStore(api)
+
+    sessions = [summary('s1')]
+    await expect(store.getState().deleteSession('s2')).resolves.toBe(true)
+    expect(calls).toContainEqual(['session.delete', { sessionId: 's2' }])
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(['s1'])
+
+    await expect(store.getState().setSessionThinkingLevel('s1', 'low')).resolves.toBe(true)
+    expect(calls).toContainEqual([
+      'session.setThinkingLevel',
+      { sessionId: 's1', thinkingLevel: 'low' },
+    ])
+  })
+
   it('reports a failed rename', async () => {
     const { api } = fakeApi({
       'session.rename': () => {

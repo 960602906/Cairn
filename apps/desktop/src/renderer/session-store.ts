@@ -67,6 +67,7 @@ import {
   type McpStatusEvent,
   type McpToolSummary,
   type ModelRef,
+  type ReasoningEffort,
   type PermissionEffect,
   type PendingApproval,
   type PermissionRule,
@@ -117,6 +118,8 @@ export interface TrialState {
 export interface SessionState {
   /** 会话列表（按最近更新排序，由主进程决定）。 */
   readonly sessions: readonly SessionSummary[]
+  /** 侧栏是否列出已归档的会话；关闭时 `session.list` 不带上 `includeArchived`。 */
+  readonly showArchivedSessions: boolean
   /** 各会话的事件投影。 */
   readonly views: Readonly<Record<string, SessionView>>
   readonly activeSessionId: string | undefined
@@ -175,8 +178,16 @@ export interface SessionActions {
   renameSession(sessionId: string, title: string): Promise<boolean>
   /** 删除（归档）会话（M2-02）：是当前会话时先取消选中；成功后刷新列表。 */
   archiveSession(sessionId: string): Promise<boolean>
+  /** 取消归档（M2-02）：会话重新出现在默认列表里；成功后刷新列表。 */
+  unarchiveSession(sessionId: string): Promise<boolean>
+  /** 彻底删除已归档的会话（不可恢复）；成功后刷新列表。 */
+  deleteSession(sessionId: string): Promise<boolean>
+  /** 是否在侧栏列出已归档的会话；切换后重新读取列表。 */
+  setShowArchivedSessions(show: boolean): Promise<void>
   /** 更换会话的模型（M2-04），下一轮生效；返回是否成功。 */
   setSessionModel(sessionId: string, model: ModelRef): Promise<boolean>
+  /** 设定本会话的思考强度（下一轮生效）；返回是否成功。 */
+  setSessionThinkingLevel(sessionId: string, thinkingLevel: ReasoningEffort): Promise<boolean>
   /** 选中会话并订阅其事件；传 undefined 取消选中。 */
   selectSession(sessionId: string | undefined): Promise<void>
   /**
@@ -730,6 +741,7 @@ export function createSessionStore(api: MainApi): SessionStore {
 
     return {
       sessions: [],
+      showArchivedSessions: false,
       views: {},
       activeSessionId: undefined,
       awaitingTurn: {},
@@ -757,7 +769,8 @@ export function createSessionStore(api: MainApi): SessionStore {
       trial: undefined,
 
       async refreshSessions() {
-        const result = await run(() => api.request('session.list', {}))
+        const includeArchived = get().showArchivedSessions
+        const result = await run(() => api.request('session.list', { includeArchived }))
         if (!result) return
         // 已订阅的会话以本地投影的状态为准（比列表请求更新）
         const state = get()
@@ -799,8 +812,35 @@ export function createSessionStore(api: MainApi): SessionStore {
         return true
       },
 
+      async unarchiveSession(sessionId) {
+        const done = await run(() => api.request('session.unarchive', { sessionId }))
+        if (done === undefined) return false
+        await get().refreshSessions()
+        return true
+      },
+
+      async deleteSession(sessionId) {
+        const done = await run(() => api.request('session.delete', { sessionId }))
+        if (done === undefined) return false
+        await get().refreshSessions()
+        return true
+      },
+
+      async setShowArchivedSessions(show) {
+        if (get().showArchivedSessions === show) return
+        set({ showArchivedSessions: show })
+        await get().refreshSessions()
+      },
+
       async setSessionModel(sessionId, model) {
         const done = await run(() => api.request('session.setModel', { sessionId, model }))
+        return done !== undefined
+      },
+
+      async setSessionThinkingLevel(sessionId, thinkingLevel) {
+        const done = await run(() =>
+          api.request('session.setThinkingLevel', { sessionId, thinkingLevel }),
+        )
         return done !== undefined
       },
 

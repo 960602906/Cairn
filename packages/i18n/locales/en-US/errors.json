@@ -68,6 +68,7 @@
   "credentials.decrypt_failed": "The saved key cannot be read. Please enter it again",
   "settings.invalid_default_model": "The default model is not one of the configured models",
   "session.unknown_model": "The selected model is not configured",
+  "session.not_archived": "Only archived sessions can be deleted permanently",
   "path.empty": "The path is empty",
   "path.invalid_character": "The path contains characters that are not allowed",
   "path.malformed": "The path is malformed",

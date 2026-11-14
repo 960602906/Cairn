@@ -279,7 +279,9 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
       },
       rename: (sessionId, title) => updateSession(sessionId, { title }),
       archive: (sessionId) => updateSession(sessionId, { archived: true }),
+      unarchive: (sessionId) => updateSession(sessionId, { archived: false }),
       setModel: (sessionId, model) => updateSession(sessionId, { model: { ...model } }),
+      setThinkingLevel: (sessionId, thinkingLevel) => updateSession(sessionId, { thinkingLevel }),
       touch: (sessionId) => updateSession(sessionId, {}),
     },
 

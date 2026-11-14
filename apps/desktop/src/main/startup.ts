@@ -409,7 +409,14 @@ const supervisor = createHostSupervisor({
     const ref = settings.credentialRef(model)
     return ref === undefined ? undefined : credentials.resolve(ref)
   },
-  resolveModelConfig: (model) => settings.hostModelConfig(model),
+  resolveModelConfig: (model, sessionId) => {
+    const config = settings.hostModelConfig(model)
+    if (!config) return undefined
+    // 会话自己指定的思考强度覆盖模型配置里的默认值（模型不支持推理时不覆盖）
+    const thinkingLevel = storage.sessions.get(sessionId)?.thinkingLevel
+    if (!thinkingLevel || !config.profile.supportsReasoning) return config
+    return { ...config, profile: { ...config.profile, thinkingLevel } }
+  },
   // MCP 工具在设置页单独选的效果也是规则，和其他规则一起取最严格的
   resolvePermissionRules: (sessionId, agent) => {
     const rules = [...permissions.rulesForSession(sessionId), ...mcp.permissionRules()]

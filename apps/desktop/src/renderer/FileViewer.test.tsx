@@ -28,6 +28,7 @@ const view: SessionView = {
     workspacePath: 'C:\\work\\demo',
     title: '预览',
     model: undefined,
+    thinkingLevel: undefined,
     createdAt: 1,
   },
 }

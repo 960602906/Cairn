@@ -61,6 +61,14 @@ export interface PiRuntimeOptions {
   readonly thinkingLevel?: ThinkingLevel
 }
 
+/** 模型不支持推理时强制 `off`；支持时用配置的档位，没配置按 `high`。 */
+export function resolveThinkingLevel(
+  supportsReasoning: boolean,
+  requested?: ThinkingLevel,
+): ThinkingLevel {
+  return supportsReasoning ? (requested ?? 'high') : 'off'
+}
+
 export class PiRuntime implements AgentRuntime {
   readonly id = 'pi'
   readonly #options: PiRuntimeOptions
@@ -114,9 +122,10 @@ class PiSession implements RuntimeSession {
     this.#tools = init.tools
     this.#binding = bindModel(init.model)
     this.#history = [...init.history]
-    const thinkingLevel: ThinkingLevel = init.model.profile.supportsReasoning
-      ? (options.thinkingLevel ?? 'high')
-      : 'off'
+    const thinkingLevel = resolveThinkingLevel(
+      init.model.profile.supportsReasoning,
+      options.thinkingLevel,
+    )
     const held: { agent?: Agent } = {}
     this.#agent = new Agent({
       initialState: {

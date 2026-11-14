@@ -7,6 +7,7 @@
  * Esc 返回对话（有对话框或菜单打开时不处理）。
  */
 import {
+  Archive,
   ChevronLeft,
   Cpu,
   Info,
@@ -20,6 +21,7 @@ import { useEffect, type ReactNode, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { CairnMark, IconButton, Kbd } from '../ui/index.js'
+import { ArchivedSessionsSettings } from './ArchivedSessionsSettings.js'
 import { GeneralSettings } from './GeneralSettings.js'
 import { AboutSettings } from './AboutSettings.js'
 import { McpSettings } from './McpSettings.js'
@@ -31,7 +33,7 @@ import { UpdateSettings } from './UpdateSettings.js'
 import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
-  'general' | 'update' | 'providers' | 'skills' | 'mcp' | 'permissions' | 'about'
+  'general' | 'archived' | 'update' | 'providers' | 'skills' | 'mcp' | 'permissions' | 'about'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -47,6 +49,7 @@ const GROUPS: readonly {
     group: 'general',
     sections: [
       { id: 'general', icon: <Palette /> },
+      { id: 'archived', icon: <Archive /> },
       { id: 'update', icon: <RefreshCw /> },
       { id: 'about', icon: <Info /> },
     ],
@@ -232,6 +235,7 @@ export function SettingsContent({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-[920px] flex-col gap-6 px-8 pt-6 pb-16 max-[640px]:px-4">
           {section === 'general' && <GeneralSettings />}
+          {section === 'archived' && <ArchivedSessionsSettings />}
           {section === 'update' && <UpdateSettings />}
           {section === 'providers' && <ProvidersSettings />}
           {section === 'skills' && <SkillsSettings />}

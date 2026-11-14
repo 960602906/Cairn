@@ -677,6 +677,24 @@ function ModelDetail({
           checked={model.supportsReasoning}
           onChange={(supportsReasoning) => onChange({ supportsReasoning })}
         />
+        {model.supportsReasoning && (
+          <div className="mt-1 border-t border-hair pt-2 pb-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[12.5px] text-fg2">{t('providers.model.thinkingLevel')}</span>
+              <SegmentedControl
+                label={t('providers.model.thinkingLevel')}
+                value={model.thinkingLevel ?? 'high'}
+                options={[
+                  { value: 'low', label: t('providers.model.thinkingLevel.low') },
+                  { value: 'medium', label: t('providers.model.thinkingLevel.medium') },
+                  { value: 'high', label: t('providers.model.thinkingLevel.high') },
+                ]}
+                onChange={(thinkingLevel) => onChange({ thinkingLevel })}
+              />
+            </div>
+            <p className="mt-1 text-note text-faint">{t('providers.model.thinkingLevel.hint')}</p>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-1.5">
         <Button

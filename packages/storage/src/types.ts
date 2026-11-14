@@ -15,6 +15,7 @@ import type {
   PermissionRule,
   PersistedEvent,
   ProviderConfig,
+  ReasoningEffort,
   SkillSource,
 } from '@cairn/protocol'
 import type { McpAuthKind, McpServerKind, PermissionEffect, ToolCategory } from '@cairn/protocol'
@@ -125,6 +126,8 @@ export interface SessionRecord {
   readonly trialDraftHash?: string
   /** 会话使用的模型（M1-04a）；之前创建的会话没有。 */
   readonly model?: ModelRef
+  /** 本会话的思考强度覆盖（下一轮生效）；没有时用模型配置里的默认值。 */
+  readonly thinkingLevel?: ReasoningEffort
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -158,8 +161,12 @@ export interface SessionStore {
   remove(sessionId: string): void
   rename(sessionId: string, title: string): SessionRecord
   archive(sessionId: string): SessionRecord
+  /** 取消归档：会话重新出现在默认列表里。不存在时报 `storage.not_found`。 */
+  unarchive(sessionId: string): SessionRecord
   /** 更换会话使用的模型（M2-04），下一轮生效。 */
   setModel(sessionId: string, model: ModelRef): SessionRecord
+  /** 设定会话的思考强度，下一轮生效。不存在时报 `storage.not_found`。 */
+  setThinkingLevel(sessionId: string, thinkingLevel: ReasoningEffort): SessionRecord
   /** 更新 `updatedAt`（有新事件时由主进程调用）。 */
   touch(sessionId: string): SessionRecord
 }

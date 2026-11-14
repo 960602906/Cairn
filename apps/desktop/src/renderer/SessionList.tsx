@@ -4,7 +4,14 @@
  * 每一项显示运行状态（运行中转圈、等待审批与失败用彩色圆点，并有读屏文字），悬停时出现“会话操作”菜单：
  * 重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
-import { ChevronRight, MoreHorizontal, Pencil, Trash2, TriangleAlert } from 'lucide-react'
+import {
+  ArchiveRestore,
+  ChevronRight,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'
@@ -131,8 +138,12 @@ export function SessionItem({
   const { t: tc } = useTranslation()
   const renameSession = useSessionStore((s) => s.renameSession)
   const archiveSession = useSessionStore((s) => s.archiveSession)
+  const unarchiveSession = useSessionStore((s) => s.unarchiveSession)
+  const deleteSession = useSessionStore((s) => s.deleteSession)
   const [renaming, setRenaming] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const archived = session.status === 'archived'
   const title = session.title === '' ? t('title.untitled') : session.title
   const time = formatSessionTime(session.updatedAt, t('list.yesterday'))
 
@@ -159,6 +170,7 @@ export function SessionItem({
         onClick={onSelect}
         className={cn(
           'relative flex h-[33px] w-full items-center gap-2 rounded-[7px] pr-7 pl-2.5 text-left text-note text-fg2 outline-none transition-colors hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent',
+          archived && 'opacity-65',
           active && 'bg-accent-soft font-medium text-fg hover:bg-accent-soft',
         )}
       >
@@ -196,10 +208,23 @@ export function SessionItem({
             {t('item.rename')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem tone="danger" onSelect={() => setConfirming(true)}>
-            <Trash2 />
-            {t('item.delete')}
-          </DropdownMenuItem>
+          {archived ? (
+            <>
+              <DropdownMenuItem onSelect={() => void unarchiveSession(session.sessionId)}>
+                <ArchiveRestore />
+                {t('item.restore')}
+              </DropdownMenuItem>
+              <DropdownMenuItem tone="danger" onSelect={() => setConfirmingDelete(true)}>
+                <Trash2 />
+                {t('item.deleteForever')}
+              </DropdownMenuItem>
+            </>
+          ) : (
+            <DropdownMenuItem tone="danger" onSelect={() => setConfirming(true)}>
+              <Trash2 />
+              {t('item.delete')}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <Dialog open={confirming} onOpenChange={setConfirming}>
@@ -219,6 +244,27 @@ export function SessionItem({
               }}
             >
               {t('delete.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <DialogContent tone="danger" icon={<TriangleAlert />}>
+          <DialogTitle>{t('deleteForever.title', { title })}</DialogTitle>
+          <DialogDescription>{t('deleteForever.description')}</DialogDescription>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button size="lg">{tc('action.cancel')}</Button>
+            </DialogClose>
+            <Button
+              size="lg"
+              variant="danger"
+              onClick={() => {
+                setConfirmingDelete(false)
+                void deleteSession(session.sessionId)
+              }}
+            >
+              {t('deleteForever.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

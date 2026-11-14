@@ -2,7 +2,7 @@
  * 工作空间列表（目录功能同步）：工作空间行下直接列出各自的会话，行与菜单负责项目管理。
  *
  * 菜单顺序与 LiveAgent 一致：置顶、重命名、归档、在资源管理器浏览，最后是危险操作
- * “移除工作空间”。归档项目收进独立分组，仍可取消归档。
+ * “移除工作空间”。归档的工作空间默认隐藏，打开侧栏的“显示已归档”后仍在原位显示，可取消归档。
  */
 import {
   Archive,
@@ -322,7 +322,12 @@ export function WorkspaceList({
   const sessions = useSessionStore((s) => s.sessions) ?? []
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const selectSession = useSessionStore((s) => s.selectSession)
-  const ordered = sortWorkspaceProjects(projects)
+  const showArchivedSessions = useSessionStore((s) => s.showArchivedSessions)
+  const setShowArchivedSessions = useSessionStore((s) => s.setShowArchivedSessions)
+  // 归档的工作空间默认不进侧栏；打开“显示已归档”后一并列出（与归档会话同一个开关）
+  const ordered = sortWorkspaceProjects(projects).filter(
+    (project) => showArchivedSessions || project.archivedAt === undefined,
+  )
   const [collapsed, setCollapsed] = useState(false)
   const [creating, setCreating] = useState(false)
   const sessionsByPath = new Map<string, SessionSummary[]>()
@@ -351,17 +356,32 @@ export function WorkspaceList({
             className={cn('size-3 shrink-0 transition-transform', collapsed && '-rotate-90')}
           />
           <span className="truncate">{t('workspace.section')}</span>
-          <span className="tabular text-[10.5px] font-normal text-faint">{projects.length}</span>
+          <span className="tabular text-[10.5px] font-normal text-faint">{ordered.length}</span>
         </button>
-        <button
-          type="button"
-          aria-label={t('workspace.create')}
-          title={t('workspace.create')}
-          onClick={() => setCreating(true)}
-          className="ml-auto inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] text-faint hover:bg-hover hover:text-fg [&_svg]:size-3.5"
-        >
-          <Plus />
-        </button>
+        <span className="ml-auto flex items-center gap-0.5">
+          <button
+            type="button"
+            aria-label={t(showArchivedSessions ? 'list.hideArchived' : 'list.showArchived')}
+            title={t(showArchivedSessions ? 'list.hideArchived' : 'list.showArchived')}
+            aria-pressed={showArchivedSessions}
+            onClick={() => void setShowArchivedSessions(!showArchivedSessions)}
+            className={cn(
+              'inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] hover:bg-hover hover:text-fg [&_svg]:size-3.5',
+              showArchivedSessions ? 'bg-press text-fg' : 'text-faint',
+            )}
+          >
+            <Archive />
+          </button>
+          <button
+            type="button"
+            aria-label={t('workspace.create')}
+            title={t('workspace.create')}
+            onClick={() => setCreating(true)}
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded-[6px] text-faint hover:bg-hover hover:text-fg [&_svg]:size-3.5"
+          >
+            <Plus />
+          </button>
+        </span>
       </div>
       {!collapsed &&
         (ordered.length === 0 ? (

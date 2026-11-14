@@ -33,6 +33,7 @@ import { FileChangeKind } from './changes.js'
 import { CheckpointReason } from './checkpoints.js'
 import { BackgroundCommandStatus } from './commands.js'
 import { SandboxExecution } from './sandbox.js'
+import { ReasoningEffort } from './providers.js'
 
 /** 事件信封的 schema 版本（架构 §7.1 `EventEnvelope.v`）。 */
 export const EVENT_SCHEMA_VERSION = 1 as const
@@ -112,6 +113,10 @@ const payloadSchemas = {
   'session.model.changed': z.object({ model: ModelRef }),
   'session.crashed': z.object({ error: ErrorInfo }),
   'session.archived': z.object({}),
+  /** 取消归档：会话重新出现在默认列表里。 */
+  'session.unarchived': z.object({}),
+  /** 思考强度改为这里给出的档位，下一轮生效（模型不支持推理时忽略）。 */
+  'session.thinkingLevel.changed': z.object({ thinkingLevel: ReasoningEffort }),
   /** 会话要点（Runtime §25.2）。 */
   'session.brief.updated': z.object({
     content: z.string(),
