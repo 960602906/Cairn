@@ -120,4 +120,22 @@ describe('selectHostRuntime', () => {
     }
     expect(selectHostRuntime({})(proxyRef, undefined, config).model).not.toHaveProperty('apiKey')
   })
+
+  it('把模型配置里的思考档位交给 pi 运行时', () => {
+    const config = {
+      kind: 'openai' as const,
+      baseUrl: 'http://127.0.0.1:3425/v1',
+      profile: {
+        id: 'group/smart-split',
+        contextWindow: 1_000,
+        maxOutputTokens: 100,
+        supportsTools: true,
+        supportsParallelToolCalls: false,
+        supportsReasoning: true,
+        thinkingLevel: 'low' as const,
+      },
+    }
+    const host = selectHostRuntime({})(ref, { apiKey: 'k' }, config)
+    expect(host.runtime).toBeInstanceOf(PiRuntime)
+  })
 })

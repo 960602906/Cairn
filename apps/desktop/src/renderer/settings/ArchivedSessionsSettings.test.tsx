@@ -87,4 +87,84 @@ describe('ArchivedSessionsSettings', () => {
     setup([summary('s2', '还在用的对话', 'idle')])
     await waitFor(() => expect(screen.getByText('没有已归档的对话')).toBeTruthy())
   })
+
+  it('renders multiple archived conversations, including an untitled one in a known workspace', async () => {
+    const request = vi.fn(async () => ({
+      ok: true,
+      result: {
+        sessions: [
+          summary('s1', '', 'archived'),
+          { ...summary('s2', '第二个归档会话', 'archived'), updatedAt: 0 },
+        ],
+      },
+    }))
+    ;(window as { cairn?: unknown }).cairn = {
+      ready: async () => ({ ok: true, result: undefined }),
+      request,
+      on: () => () => undefined,
+    }
+    const store = createStore<Record<string, unknown>>(() => ({
+      projects: [
+        {
+          projectId: 'p1',
+          name: '工作空间 A',
+          path: '/work/demo',
+          createdAt: 1,
+          sessionCount: 0,
+        },
+      ],
+      unarchiveSession: vi.fn(async () => true),
+      deleteSession: vi.fn(async () => true),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreProvider store={store}>
+          <ArchivedSessionsSettings />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByText('第二个归档会话')).toBeTruthy())
+    expect(screen.getByText('未命名会话')).toBeTruthy()
+    expect(screen.getAllByText('工作空间 A').length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('falls back to the empty state without the preload bridge', async () => {
+    delete (window as { cairn?: unknown }).cairn
+    const store = createStore<Record<string, unknown>>(() => ({
+      projects: [],
+      unarchiveSession: vi.fn(async () => true),
+      deleteSession: vi.fn(async () => true),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreProvider store={store}>
+          <ArchivedSessionsSettings />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('没有已归档的对话')).toBeTruthy())
+  })
+
+  it('names an untitled conversation in the delete confirmation', async () => {
+    const user = userEvent.setup()
+    const { deleteSession } = setup([summary('s1', '', 'archived')])
+    await waitFor(() => expect(screen.getByText('未命名会话')).toBeTruthy())
+
+    await user.click(screen.getByRole('button', { name: '彻底删除' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('彻底删除“未命名会话”？')).toBeTruthy()
+    expect(deleteSession).not.toHaveBeenCalled()
+  })
+
+  it('does not delete a conversation when the confirmation is cancelled', async () => {
+    const user = userEvent.setup()
+    const { deleteSession } = setup([summary('s1', '归档的对话', 'archived')])
+    await waitFor(() => expect(screen.getByText('归档的对话')).toBeTruthy())
+
+    await user.click(screen.getByRole('button', { name: '彻底删除' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '取消' }))
+    expect(deleteSession).not.toHaveBeenCalled()
+  })
 })

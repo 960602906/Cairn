@@ -205,7 +205,7 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
     const planSummary = window.getByRole('button', { name: '查看完整计划：给 flow.md 加标题' })
     await expect(planSummary).toBeVisible({ timeout: 20_000 })
     await planSummary.click()
-    await expect(window.getByText('已完成')).toBeVisible({ timeout: 20_000 })
+    await expect(window.getByText('已完成', { exact: true })).toBeVisible({ timeout: 20_000 })
     await expect(runStatus(window)).toHaveText('空闲', { timeout: 20_000 })
     await window.keyboard.press('Escape')
 

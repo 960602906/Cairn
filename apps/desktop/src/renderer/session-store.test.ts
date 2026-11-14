@@ -431,6 +431,33 @@ describe('session list', () => {
     ])
   })
 
+  it('reports a failed delete', async () => {
+    const { api } = fakeApi({
+      'session.delete': () => {
+        throw new RpcError('storage.not_found')
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().deleteSession('s2')).resolves.toBe(false)
+    expect(store.getState().error?.code).toBe('storage.not_found')
+  })
+
+  it('reports a failed unarchive and a failed thinking-level change', async () => {
+    const { api } = fakeApi({
+      'session.unarchive': () => {
+        throw new RpcError('storage.not_found')
+      },
+      'session.setThinkingLevel': () => {
+        throw new RpcError('run.busy')
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().unarchiveSession('s2')).resolves.toBe(false)
+    expect(store.getState().error?.code).toBe('storage.not_found')
+    await expect(store.getState().setSessionThinkingLevel('s1', 'high')).resolves.toBe(false)
+    expect(store.getState().error?.code).toBe('run.busy')
+  })
+
   it('reports a failed rename', async () => {
     const { api } = fakeApi({
       'session.rename': () => {
