@@ -1672,6 +1672,26 @@ describe('Composer (M2-04)', () => {
     expect(await screen.findByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
   })
 
+  it('sets the session thinking level from the model menu', async () => {
+    const reasoning = [
+      {
+        ...providers[0]!,
+        models: providers[0]!.models.map((model) => ({ ...model, supportsReasoning: true })),
+      },
+    ]
+    const { request, open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers: reasoning }) },
+    })
+    await open()
+    await userEvent.click(await screen.findByRole('button', { name: '模型：测试供应商 · 快' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '中' }))
+    expect(request).toHaveBeenCalledWith('session.setThinkingLevel', {
+      sessionId: 's1',
+      thinkingLevel: 'medium',
+    })
+  })
+
   it('hides disabled models from the menu but keeps the current name (M2-10)', async () => {
     const disabled = [
       {

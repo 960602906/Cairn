@@ -307,6 +307,19 @@ describe('create and list', () => {
     )
   })
 
+  it('refuses to delete while the session is locked', () => {
+    let locked = false
+    const { manager } = setup(fakeSupervisor().supervisor, { isLocked: () => locked })
+    const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })
+    manager.archive({ sessionId })
+    // 撤销改动或恢复检查点时不能删
+    locked = true
+
+    expect(() => manager.delete({ sessionId })).toThrow(
+      expect.objectContaining({ code: 'run.busy' }),
+    )
+  })
+
   it('stores the thinking level of a session and announces it', () => {
     const { manager } = setup(fakeSupervisor().supervisor)
     const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })

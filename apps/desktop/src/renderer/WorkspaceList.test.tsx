@@ -263,6 +263,42 @@ describe('WorkspaceList', () => {
     expect(onSelectSession).toHaveBeenCalledOnce()
   })
 
+  it('collapses an expanded session list back to the preview', async () => {
+    setup([project()], {
+      sessions: Array.from({ length: 10 }, (_, index) => session(`s${index}`, `会话 ${index}`)),
+    })
+    await userEvent.click(screen.getByRole('button', { name: '展开剩余 2 个' }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(11)
+
+    await userEvent.click(screen.getByRole('button', { name: '收起' }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(9)
+  })
+
+  it('closes the rename dialog without saving the same name', async () => {
+    const { updateProject } = setup([project()])
+    await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    const rename = screen.getByRole('dialog')
+    await userEvent.click(within(rename).getByRole('button', { name: '保存' }))
+    expect(updateProject).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('keeps the rename dialog open and reports a failed rename', async () => {
+    const { updateProject } = setup([project()])
+    updateProject.mockResolvedValueOnce(undefined as never)
+    await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    const rename = screen.getByRole('dialog')
+    await userEvent.clear(screen.getByLabelText('名称'))
+    await userEvent.type(screen.getByLabelText('名称'), 'demo-2')
+    await userEvent.click(within(rename).getByRole('button', { name: '保存' }))
+    expect(await within(rename).findByRole('alert')).toBeTruthy()
+    expect(updateProject).toHaveBeenCalledWith('p1', { name: 'demo-2' })
+    // 失败时留住对话框，方便改名重试。
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
   it('opens the create dialog and adds a local folder', async () => {
     const opened = project({ projectId: 'p2', name: 'other', path: '/work/other' })
     const { openProject } = setup([project()], { openedProject: opened })

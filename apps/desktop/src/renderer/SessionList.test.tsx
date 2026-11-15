@@ -260,6 +260,32 @@ describe('SessionList', () => {
     )
   })
 
+  it('deletes an archived session for good after confirmation', async () => {
+    let sessions = [summary('s1', '已归档的会话', 'archived')]
+    const { request } = setup({
+      'session.list': () => ({ sessions }),
+      'session.delete': ({ sessionId }: { sessionId: string }) => {
+        sessions = sessions.filter((s) => s.sessionId !== sessionId)
+        return {}
+      },
+    })
+    const item = (await screen.findAllByRole('listitem'))[0]!
+    const askDelete = async () => {
+      await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+      await userEvent.click(await screen.findByRole('menuitem', { name: '彻底删除' }))
+      return screen.findByRole('dialog', { name: '彻底删除会话“已归档的会话”？' })
+    }
+
+    let dialog = await askDelete()
+    await userEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(request.mock.calls.some(([m]) => m === 'session.delete')).toBe(false)
+
+    dialog = await askDelete()
+    await userEvent.click(within(dialog).getByRole('button', { name: '彻底删除' }))
+    await waitFor(() => expect(screen.queryAllByRole('listitem')).toHaveLength(0))
+    expect(request).toHaveBeenCalledWith('session.delete', { sessionId: 's1' })
+  })
+
   it('reloads the session list with archived sessions from the sidebar toggle', async () => {
     const { request } = setup({ 'session.list': () => ({ sessions: [] }) })
     await waitFor(() =>
