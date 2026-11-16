@@ -110,6 +110,19 @@ describe('smokePackaged', () => {
     await promise
   })
 
+  it('does not require bundled MinGit on macOS or Linux', async () => {
+    for (const platform of ['linux', 'darwin'] as const) {
+      const child = fakeChild()
+      const verify = vi.fn(() => {
+        throw new Error('bundled git is missing')
+      })
+      const promise = smokePackaged(options(child, { platform, verifyGit: verify }))
+      child.emit('exit', 0, null)
+      await expect(promise).resolves.toEqual([])
+      expect(verify).not.toHaveBeenCalled()
+    }
+  })
+
   it('supports an explicit output directory and the default log sink', async () => {
     const child = fakeChild()
     const locateApp = vi.fn(() => app)

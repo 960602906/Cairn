@@ -1,13 +1,15 @@
 // @ts-check
 /**
- * 发布产物整理（M5-08）：把 electron-builder 的输出变成可上传、可校验、可追溯的一组文件。
+ * 发布产物整理（M5-08 / M6-07）：把 electron-builder 的输出变成可上传、可校验、可追溯的一组文件。
  *
- * 产物目录包含：
- * - NSIS 安装包与 blockmap；
- * - `latest.yml`（stable）或 `beta.yml`（beta）更新元数据；
+ * 每个平台单独整理（M6-07 的三平台发布流水线），产物目录包含：
+ * - 该平台的安装包与 blockmap；
+ * - 该平台的更新元数据：Windows `latest.yml`/`beta.yml`，macOS `latest-mac.yml`/`beta-mac.yml`，
+ *   Linux `latest-linux.yml`/`beta-linux.yml`；
  * - `SHA256SUMS`（对目录内除自身外的全部文件）；
  * - `THIRD_PARTY_NOTICES.txt`、`dependencies.json`；
- * - `release-notes.md`（从 CHANGELOG 抽取本节，附签名状态）；
+ * - `release-notes.md`（从 CHANGELOG 抽取本节，附平台签名状态）；
+ * - `platform-notes.json`（供 `merge-release.mjs` 汇总三平台发布说明）；
  * - `provenance.json`（提交、工作流、工具链、签名摘要与每个产物的 SHA-256）。
  *
  * 任何字段不一致（版本、通道、安装包名、哈希）都失败关闭，避免把错误元数据发布到更新源。
@@ -25,11 +27,126 @@ import {
 } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { readSigningConfig, signatureSummary } from '@cairn/release-tools'
+import {
+  macSignatureSummary,
+  readMacSigningConfig,
+  readSigningConfig,
+  signatureSummary,
+} from '@cairn/release-tools'
 
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..', 'apps/desktop')
 export const PRODUCT_NAME = 'Cairn'
 export const PROVENANCE_SCHEMA_VERSION = 1
+export const PLATFORM_NOTES_SCHEMA_VERSION = 1
+export const RELEASE_PLATFORMS = ['windows', 'mac', 'linux']
+
+/**
+ * @typedef {{
+ *   label: string;
+ *   artifacts: (version: string) => string[];
+ *   updatable: (version: string) => string[];
+ *   blockmaps: (version: string) => string[];
+ *   builderMetadata: string;
+ *   metadataName: (channel: 'stable' | 'beta') => string;
+ *   support: readonly string[];
+ *   install: readonly string[];
+ *   knownIssues: readonly string[];
+ * }} PlatformSpec
+ */
+
+/** @type {Record<string, PlatformSpec>} */
+const PLATFORM_SPECS = {
+  windows: {
+    label: 'Windows x64',
+    artifacts: (version) => [`Cairn-${version}-x64-setup.exe`],
+    updatable: (version) => [`Cairn-${version}-x64-setup.exe`],
+    blockmaps: (version) => [`Cairn-${version}-x64-setup.exe.blockmap`],
+    builderMetadata: 'latest.yml',
+    metadataName: (channel) => (channel === 'stable' ? 'latest.yml' : 'beta.yml'),
+    support: [
+      'Windows 11（至少 24H2，正式支持）；Windows 10 22H2（best-effort）',
+      'Windows x64、NSIS、按用户安装、无需管理员',
+    ],
+    install: [
+      '下载安装包并运行；安装器会创建桌面与开始菜单快捷方式。',
+      '卸载后用户数据默认保留；需要彻底清理时删除 `%APPDATA%\\Cairn`。',
+    ],
+    knownIssues: [
+      '沙箱默认档位限制工作区外写入与管理员权限，但网络尚未隔离；需要联网的命令按审批执行。',
+      '自动更新不做二进制降级；数据库版本过新时拒绝启动。',
+      'Windows 10 22H2 已结束微软支持，仅尽力兼容。',
+    ],
+  },
+  mac: {
+    label: 'macOS（arm64 + x64）',
+    artifacts: (version) =>
+      ['arm64', 'x64'].flatMap((arch) => [
+        `Cairn-${version}-${arch}.dmg`,
+        `Cairn-${version}-${arch}.zip`,
+      ]),
+    updatable: (version) => ['arm64', 'x64'].map((arch) => `Cairn-${version}-${arch}.zip`),
+    blockmaps: (version) => ['arm64', 'x64'].map((arch) => `Cairn-${version}-${arch}.zip.blockmap`),
+    builderMetadata: 'latest-mac.yml',
+    metadataName: (channel) => (channel === 'stable' ? 'latest-mac.yml' : 'beta-mac.yml'),
+    support: [
+      'macOS 13 Ventura 及以上（Apple Silicon 与 Intel 分架构构建）',
+      'macOS arm64 / x64、DMG 安装、ZIP 用于自动更新',
+    ],
+    install: [
+      '打开 DMG，把 Cairn 拖入“应用程序”；首次启动如被 Gatekeeper 阻止，请在“系统设置 → 隐私与安全性”中放行。',
+      '卸载时退出 Cairn 并把 `Cairn.app` 移到废纸篓；用户数据默认保留在 `~/Library/Application Support/Cairn`。',
+    ],
+    knownIssues: [
+      '未签名构建会被 Gatekeeper 阻止，不得宣称“已验证发布者”。',
+      '命令沙箱尚未在 macOS 实现；命令按权限规则在沙箱外运行并标注“未沙箱化”。',
+    ],
+  },
+  linux: {
+    label: 'Linux x64',
+    artifacts: (version) => [`Cairn-${version}-x64.AppImage`, `Cairn-${version}-x64.deb`],
+    updatable: (version) => [`Cairn-${version}-x64.AppImage`],
+    blockmaps: () => [],
+    builderMetadata: 'latest-linux.yml',
+    metadataName: (channel) => (channel === 'stable' ? 'latest-linux.yml' : 'beta-linux.yml'),
+    support: [
+      'Ubuntu LTS x64 为基线；其他发行版 best-effort',
+      'AppImage（免安装、可自动更新）与 deb（系统安装、由包管理器升级）',
+    ],
+    install: [
+      'AppImage：`chmod +x Cairn-<version>-x64.AppImage && ./Cairn-<version>-x64.AppImage`。',
+      'deb：`sudo apt install ./Cairn-<version>-x64.deb`；卸载使用 `sudo apt remove cairn`。',
+    ],
+    knownIssues: [
+      'Linux 没有统一代码签名；完整性由 SHA-256 校验和与 HTTPS 更新源保证。',
+      '缺少用户命名空间时 AppImage 可能只能以 `--no-sandbox` 启动；这与 Cairn 命令沙箱无关，命令仍标注“未沙箱化”。',
+      'deb 不自动更新，由系统包管理器升级；AppImage 通过 `electron-updater` 更新。',
+    ],
+  },
+}
+
+/**
+ * @param {string} platform
+ * @returns {PlatformSpec}
+ */
+export function platformSpec(platform) {
+  const spec = PLATFORM_SPECS[platform]
+  if (spec === undefined) {
+    throw new Error(`unsupported release platform: ${platform}`)
+  }
+  return spec
+}
+
+/**
+ * 每个平台的签名摘要：Windows Authenticode、macOS Developer ID、Linux 无签名。
+ * @param {string} platform
+ * @param {Readonly<Record<string, string | undefined>>} env
+ * @returns {Record<string, unknown>}
+ */
+export function platformSigningSummary(platform, env = process.env) {
+  if (platform === 'windows') return signatureSummary(readSigningConfig(env))
+  if (platform === 'mac') return macSignatureSummary(readMacSigningConfig(env))
+  return { mode: 'none', integrity: 'sha256+https' }
+}
 
 /**
  * @param {string} file
@@ -104,6 +221,109 @@ export function renderUpdateMetadata({ version, installer, sha512, size, release
     yamlString('releaseDate', releaseDate),
     '',
   ].join('\n')
+}
+
+/**
+ * 生成多文件更新元数据（macOS 的 arm64/x64 ZIP、Linux 的 AppImage）。第一个文件是
+ * electron-builder 的 `path` 主产物；格式与 electron-updater 的 generic provider 一致。
+ * @param {{
+ *   version: string;
+ *   files: readonly { name: string; sha512: string; size: number }[];
+ *   releaseDate: string;
+ * }} input
+ * @returns {string}
+ */
+export function renderUpdateMetadataFiles({ version, files, releaseDate }) {
+  const [primary] = files
+  if (primary === undefined) throw new Error('update metadata needs at least one file')
+  return [
+    yamlString('version', version),
+    'files:',
+    ...files.flatMap((file) => [
+      `  - ${yamlString('url', file.name)}`,
+      `    ${yamlString('sha512', file.sha512)}`,
+      `    size: ${file.size}`,
+    ]),
+    yamlString('path', primary.name),
+    yamlString('sha512', primary.sha512),
+    yamlString('releaseDate', releaseDate),
+    '',
+  ].join('\n')
+}
+
+/**
+ * 解析 electron-builder 写出的更新元数据。
+ * @param {string} metadata
+ * @returns {{
+ *   version: string | undefined;
+ *   path: string | undefined;
+ *   sha512: string | undefined;
+ *   files: { url: string; sha512: string; size: number }[];
+ * }}
+ */
+export function parseUpdateMetadata(metadata) {
+  /** @param {string} name */
+  const topLevel = (name) => {
+    const match = new RegExp(`^${name}:\\s*(.+)$`, 'm').exec(metadata)
+    return match?.[1]?.trim().replace(/^['"]|['"]$/g, '')
+  }
+  /** @type {{ url: string; sha512: string; size: number }[]} */
+  const files = []
+  for (const block of metadata.split(/^\s*-\s+url:/m).slice(1)) {
+    const url =
+      /^\s*(.+)$/m
+        .exec(block)?.[1]
+        ?.trim()
+        .replace(/^['"]|['"]$/g, '') ?? ''
+    const sha512 =
+      /^\s+sha512:\s*(.+)$/m
+        .exec(block)?.[1]
+        ?.trim()
+        .replace(/^['"]|['"]$/g, '') ?? ''
+    const size = Number(/^\s+size:\s*(\d+)$/m.exec(block)?.[1] ?? '')
+    files.push({ url, sha512, size })
+  }
+  return { version: topLevel('version'), path: topLevel('path'), sha512: topLevel('sha512'), files }
+}
+
+/**
+ * 校验更新元数据与产物一致；返回问题列表。
+ * @param {{
+ *   metadata: string;
+ *   version: string;
+ *   files: readonly { name: string; sha512: string; size: number }[];
+ * }} input
+ * @returns {string[]}
+ */
+export function validateUpdateMetadataFiles({ metadata, version, files }) {
+  const parsed = parseUpdateMetadata(metadata)
+  const problems = []
+  if (parsed.version !== version) problems.push('update metadata version does not match the build')
+  const expected = new Map(files.map((file) => [file.name, file]))
+  const seen = new Set()
+  for (const entry of parsed.files) {
+    const file = expected.get(entry.url)
+    if (file === undefined) {
+      problems.push(`update metadata references an unexpected file: ${entry.url}`)
+      continue
+    }
+    seen.add(entry.url)
+    if (entry.sha512 !== file.sha512) {
+      problems.push(`update metadata sha512 does not match ${file.name}`)
+    }
+    if (entry.size !== file.size) {
+      problems.push(`update metadata size does not match ${file.name}`)
+    }
+  }
+  for (const name of expected.keys()) {
+    if (!seen.has(name)) problems.push(`update metadata does not reference ${name}`)
+  }
+  if (parsed.path === undefined || !expected.has(parsed.path)) {
+    problems.push('update metadata path does not reference a built updatable file')
+  } else if (parsed.sha512 !== expected.get(parsed.path)?.sha512) {
+    problems.push('update metadata top-level sha512 does not match the primary file')
+  }
+  return problems
 }
 
 /**
@@ -210,9 +430,11 @@ export function buildDependenciesManifest({ stageDir, bundled, electronVersion, 
  *   commit: string;
  *   buildTime: string;
  *   changelogSection: string;
- *   signing: ReturnType<typeof signatureSummary>;
- *   installer: string;
- *   installerSha256: string;
+ *   signing: Record<string, any>;
+ *   installer?: string;
+ *   installerSha256?: string;
+ *   platform?: string;
+ *   downloads?: readonly { name: string; sha256: string }[];
  * }} input
  * @returns {string}
  */
@@ -225,10 +447,16 @@ export function renderReleaseNotes({
   signing,
   installer,
   installerSha256,
+  platform = 'windows',
+  downloads,
 }) {
-  const signed = signing.mode !== 'none'
+  const spec = platformSpec(platform)
+  const metadataName = spec.metadataName(channel)
+  const packageTarget = platform === 'windows' ? 'nsis' : platform
+  const files =
+    downloads ?? (installer === undefined ? [] : [{ name: installer, sha256: installerSha256 }])
   return [
-    `# Cairn ${version} 发布说明`,
+    `# Cairn ${version} 发布说明（${spec.label}）`,
     '',
     '## 版本与通道',
     '',
@@ -236,8 +464,8 @@ export function renderReleaseNotes({
     `- 通道：\`${channel}\``,
     `- 构建提交：\`${commit}\``,
     `- 构建时间：\`${buildTime}\``,
-    '- 支持系统：Windows 11（至少 24H2，正式支持）；Windows 10 22H2（best-effort）',
-    '- 安装形态：Windows x64、NSIS、按用户安装、无需管理员',
+    `- 支持系统：${spec.support[0]}`,
+    `- 安装形态：${spec.support[1]}`,
     '',
     '## 本次变化',
     '',
@@ -245,37 +473,66 @@ export function renderReleaseNotes({
     '',
     '## 签名状态',
     '',
-    signed
-      ? `- 安装包、主程序与卸载程序：已签名（${signing.mode}）`
-      : '- 安装包、主程序与卸载程序：**unsigned beta**',
-    `- 证书主题与 \`publisherName\`：${signing.publisher ?? '未配置（unsigned）'}`,
-    `- 时间戳服务：${signing.timestampUrl ?? '未使用'}`,
-    ...(signed
-      ? []
-      : ['- 未签名版本可能触发 SmartScreen 警告；不得宣称“已验证发布者”或“无警告”。']),
+    ...signingLines(platform, signing),
     '',
     '## 已知问题',
     '',
-    '- 沙箱默认档位限制工作区外写入与管理员权限，但网络尚未隔离；需要联网的命令按审批执行。',
-    '- 自动更新不做二进制降级；数据库版本过新时拒绝启动。',
-    '- Windows 10 22H2 已结束微软支持，仅尽力兼容。',
+    ...spec.knownIssues.map((issue) => `- ${issue}`),
     '',
     '## 验证范围',
     '',
     '- 单元、集成与覆盖率门禁：`pnpm test:coverage`',
     '- 构建与冒烟：`pnpm build`、`pnpm smoke`',
     '- 端到端：`pnpm e2e`',
-    '- 安装、启动、卸载与保留用户数据：`pnpm smoke:installed`',
-    '- 自动更新：本地静态源 e2e + 本发布产物的 `latest.yml` / `beta.yml` 校验',
+    `- 安装包构建与校验：\`pnpm package:${packageTarget}\`、\`pnpm package:verify -- --${packageTarget}\``,
+    `- 自动更新：本发布产物的 \`${metadataName}\` 校验`,
     '',
     '## 下载与校验',
     '',
-    `- 安装包：\`${installer}\``,
-    `- SHA-256：\`${installerSha256}\``,
-    `- 更新元数据：\`${channel === 'stable' ? 'latest.yml' : 'beta.yml'}\` 与 blockmap`,
+    ...files.flatMap((file) => [`- 安装包：\`${file.name}\``, `- SHA-256：\`${file.sha256}\``]),
+    `- 更新元数据：\`${metadataName}\``,
     '- 第三方声明与 GPL 源码获取方式：安装目录 `THIRD_PARTY_NOTICES.txt`、应用内关于页',
     '',
   ].join('\n')
+}
+
+/**
+ * 每个平台的签名说明。Linux 没有统一代码签名，不能写成 SmartScreen 警告。
+ * @param {string} platform
+ * @param {Record<string, any>} signing
+ * @returns {string[]}
+ */
+export function signingLines(platform, signing) {
+  if (platform === 'linux') {
+    return [
+      '- 安装包与主程序：**未签名**（Linux 无统一代码签名体系）',
+      '- 完整性：SHA-256 校验和与 HTTPS 更新源；仓库签名留待后续分发渠道',
+    ]
+  }
+  if (platform === 'mac') {
+    if (signing['mode'] === 'none') {
+      return [
+        '- 应用与安装包：**unsigned beta**',
+        '- 未签名版本可能被 Gatekeeper 阻止；不得宣称“已验证发布者”或“无警告”。',
+      ]
+    }
+    return [
+      `- 应用与安装包：已签名（${String(signing['mode'])}）并公证`,
+      `- Developer ID 身份：${String(signing['identity'] ?? '未配置')}`,
+      '- 公证：由 electron-builder 调用 notarytool；`pnpm sign:verify:mac` 校验签名与 stapling',
+    ]
+  }
+  const signed = signing['mode'] !== 'none'
+  return [
+    signed
+      ? `- 安装包、主程序与卸载程序：已签名（${String(signing['mode'])}）`
+      : '- 安装包、主程序与卸载程序：**unsigned beta**',
+    `- 证书主题与 \`publisherName\`：${String(signing['publisher'] ?? '未配置（unsigned）')}`,
+    `- 时间戳服务：${String(signing['timestampUrl'] ?? '未使用')}`,
+    ...(signed
+      ? []
+      : ['- 未签名版本可能触发 SmartScreen 警告；不得宣称“已验证发布者”或“无警告”。']),
+  ]
 }
 
 /**
@@ -284,15 +541,26 @@ export function renderReleaseNotes({
  *   channel: 'stable' | 'beta';
  *   commit: string;
  *   buildTime: string;
- *   signing: ReturnType<typeof signatureSummary>;
+ *   signing: Record<string, unknown>;
  *   artifacts: readonly { name: string; sha256: string; size: number }[];
  *   env: Readonly<Record<string, string | undefined>>;
+ *   platform?: string;
  * }} input
  * @returns {Record<string, unknown>}
  */
-export function renderProvenance({ version, channel, commit, buildTime, signing, artifacts, env }) {
+export function renderProvenance({
+  version,
+  channel,
+  commit,
+  buildTime,
+  signing,
+  artifacts,
+  env,
+  platform,
+}) {
   return {
     schemaVersion: PROVENANCE_SCHEMA_VERSION,
+    ...(platform === undefined ? {} : { platform }),
     version,
     channel,
     commit,
@@ -342,9 +610,16 @@ export function validateUpdateMetadata({ metadata, version, installer, sha512, s
  *   desktopRoot?: string | undefined;
  *   version?: string | undefined;
  *   channel: 'stable' | 'beta';
+ *   platform?: string;
  *   env?: Readonly<Record<string, string | undefined>> | undefined;
  * }} options
- * @returns {{ outDir: string; metadata: string; files: string[]; releaseNotes: string }}
+ * @returns {{
+ *   outDir: string;
+ *   metadata: string;
+ *   files: string[];
+ *   releaseNotes: string;
+ *   platformNotes: Record<string, any>;
+ * }}
  */
 export function releaseArtifacts({
   distDir,
@@ -352,8 +627,10 @@ export function releaseArtifacts({
   desktopRoot = DESKTOP_ROOT,
   version,
   channel,
+  platform = 'windows',
   env = process.env,
 }) {
+  const spec = platformSpec(platform)
   const manifest = readJson(path.join(desktopRoot, 'package.json'))
   const releaseVersion = version ?? String(manifest.version)
   if (manifest.version !== releaseVersion) {
@@ -361,19 +638,22 @@ export function releaseArtifacts({
   }
   const dist = distDir ?? path.join(desktopRoot, 'dist')
   const out = outDir ?? path.join(dist, 'release')
-  const installerName = `${PRODUCT_NAME}-${releaseVersion}-x64-setup.exe`
-  const installer = path.join(dist, installerName)
-  const blockmap = `${installer}.blockmap`
-  const builderMetadata = path.join(dist, 'latest.yml')
-  for (const file of [installer, blockmap, builderMetadata]) {
+  const artifactNames = spec.artifacts(releaseVersion)
+  const blockmapNames = spec.blockmaps(releaseVersion)
+  const updatableNames = spec.updatable(releaseVersion)
+  const builderMetadata = path.join(dist, spec.builderMetadata)
+  for (const name of [...artifactNames, ...blockmapNames]) {
+    const file = path.join(dist, name)
     if (!existsSync(file)) throw new Error(`release artifact is missing: ${file}`)
   }
-
-  const signingConfig = readSigningConfig(env)
-  if (channel === 'stable' && signingConfig.mode === 'none') {
-    throw new Error('stable releases must be signed')
+  if (!existsSync(builderMetadata)) {
+    throw new Error(`release artifact is missing: ${builderMetadata}`)
   }
-  const signing = signatureSummary(signingConfig)
+
+  const signing = platformSigningSummary(platform, env)
+  if (channel === 'stable' && platform !== 'linux' && signing['mode'] === 'none') {
+    throw new Error(`${spec.label} stable releases must be signed`)
+  }
 
   const buildInfo = readJson(path.join(desktopRoot, 'out', 'build-info.json'))
   if (buildInfo['version'] !== releaseVersion) {
@@ -386,30 +666,35 @@ export function releaseArtifacts({
     throw new Error('build-info.json has no usable commit; build from a git checkout')
   }
 
-  const installerSha512 = createHash('sha512').update(readFileSync(installer)).digest('base64')
-  const installerSha256 = sha256(installer)
-  const installerSize = statSync(installer).size
-  const problems = validateUpdateMetadata({
+  const updatable = updatableNames.map((name) => {
+    const file = path.join(dist, name)
+    return {
+      name,
+      sha512: createHash('sha512').update(readFileSync(file)).digest('base64'),
+      size: statSync(file).size,
+      sha256: sha256(file),
+    }
+  })
+  const problems = validateUpdateMetadataFiles({
     metadata: readFileSync(builderMetadata, 'utf8'),
     version: releaseVersion,
-    installer: installerName,
-    sha512: installerSha512,
-    size: installerSize,
+    files: updatable,
   })
-  if (problems.length > 0) throw new Error(problems.join('; '))
+  if (problems.length > 0) {
+    throw new Error(problems.map((problem) => `${spec.builderMetadata}: ${problem}`).join('; '))
+  }
 
   rmSync(out, { recursive: true, force: true })
   mkdirSync(out, { recursive: true })
-  const metadataName = channel === 'stable' ? 'latest.yml' : 'beta.yml'
-  copyFileSync(installer, path.join(out, installerName))
-  copyFileSync(blockmap, path.join(out, path.basename(blockmap)))
+  const metadataName = spec.metadataName(channel)
+  for (const name of [...artifactNames, ...blockmapNames]) {
+    copyFileSync(path.join(dist, name), path.join(out, name))
+  }
   writeFileSync(
     path.join(out, metadataName),
-    renderUpdateMetadata({
+    renderUpdateMetadataFiles({
       version: releaseVersion,
-      installer: installerName,
-      sha512: installerSha512,
-      size: installerSize,
+      files: updatable,
       releaseDate: String(buildInfo['buildTime'] ?? ''),
     }),
   )
@@ -423,26 +708,59 @@ export function releaseArtifacts({
     electronVersion: String(buildInfo['electronVersion'] ?? ''),
     nodeVersion: String(buildInfo['nodeVersion'] ?? ''),
   })
-  writeFileSync(path.join(out, 'dependencies.json'), `${JSON.stringify(dependencies, null, 2)}\n`)
+  writeFileSync(
+    path.join(out, 'dependencies.json'),
+    `${JSON.stringify(dependencies, null, 2)}
+`,
+  )
 
   const changelog = readFileSync(path.resolve(desktopRoot, '..', '..', 'CHANGELOG.md'), 'utf8')
+  const changelogSection = extractChangelogSection(changelog, releaseVersion)
+  const downloads = artifactNames.map((name) => ({ name, sha256: sha256(path.join(out, name)) }))
   const releaseNotes = renderReleaseNotes({
     version: releaseVersion,
     channel,
     commit: String(buildInfo['commit']),
     buildTime: String(buildInfo['buildTime'] ?? ''),
-    changelogSection: extractChangelogSection(changelog, releaseVersion),
+    changelogSection,
     signing,
-    installer: installerName,
-    installerSha256,
+    platform,
+    downloads,
   })
   writeFileSync(path.join(out, 'release-notes.md'), releaseNotes)
 
+  /** @type {Record<string, any>} */
+  const platformNotes = {
+    schemaVersion: PLATFORM_NOTES_SCHEMA_VERSION,
+    platform,
+    label: spec.label,
+    version: releaseVersion,
+    channel,
+    commit: String(buildInfo['commit']),
+    buildTime: String(buildInfo['buildTime'] ?? ''),
+    signing,
+    metadata: metadataName,
+    support: spec.support,
+    install: spec.install,
+    knownIssues: spec.knownIssues,
+    changelogSection,
+    downloads: downloads.map((file) => ({
+      name: file.name,
+      sha256: file.sha256,
+      size: statSync(path.join(out, file.name)).size,
+    })),
+  }
+  writeFileSync(
+    path.join(out, 'platform-notes.json'),
+    `${JSON.stringify(platformNotes, null, 2)}
+`,
+  )
+
   /** @type {string[]} */
-  const artifactNames = readdirSync(out)
+  const artifactNamesInRelease = readdirSync(out)
     .filter((name) => name !== 'SHA256SUMS' && name !== 'provenance.json')
     .sort()
-  const artifacts = artifactNames.map((name) => {
+  const artifacts = artifactNamesInRelease.map((name) => {
     const file = path.join(out, name)
     return { name, sha256: sha256(file), size: statSync(file).size }
   })
@@ -457,10 +775,12 @@ export function releaseArtifacts({
         signing,
         artifacts,
         env,
+        platform,
       }),
       null,
       2,
-    )}\n`,
+    )}
+`,
   )
   const checksummed = readdirSync(out).filter((name) => name !== 'SHA256SUMS')
   writeChecksums({ directory: out, files: checksummed })
@@ -469,6 +789,7 @@ export function releaseArtifacts({
     metadata: metadataName,
     files: readdirSync(out).sort(),
     releaseNotes,
+    platformNotes,
   }
 }
 
@@ -495,8 +816,15 @@ export function main({
     return index === -1 ? undefined : argv[index + 1]
   }
   const channel = value('--channel') ?? env['CAIRN_CHANNEL'] ?? 'beta'
+  const platform = value('--platform') ?? 'windows'
   if (channel !== 'stable' && channel !== 'beta') {
-    error('usage: release-artifacts.mjs --channel stable|beta [--dist <dir>] [--out <dir>]')
+    error(
+      'usage: release-artifacts.mjs --channel stable|beta [--platform windows|mac|linux] [--dist <dir>] [--out <dir>]',
+    )
+    return 1
+  }
+  if (!RELEASE_PLATFORMS.includes(platform)) {
+    error(`--platform must be one of ${RELEASE_PLATFORMS.join(', ')}`)
     return 1
   }
   try {
@@ -506,6 +834,7 @@ export function main({
       desktopRoot,
       version: value('--version'),
       channel,
+      platform,
       env,
     })
     log(`release: ${result.files.length} files in ${result.outDir}`)

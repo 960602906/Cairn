@@ -72,6 +72,8 @@ nsis:
 mac:
   icon: build/icons/icon.icns
   category: public.app-category.developer-tools
+  # DMG 与 ZIP 都使用同一命名规则；ZIP 的默认名会带 `-mac` 后缀，与发布脚本和更新元数据不一致。
+  artifactName: Cairn-${version}-${arch}.${ext}
   # 分架构构建：Apple Silicon 与 Intel 各自一个 DMG / ZIP（更新用）。
   target:
     - target: dmg

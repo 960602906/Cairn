@@ -1,9 +1,11 @@
 # 发布运行手册（代码签名与发布）
 
 > 适用：M5-08 起的 Windows x64、按用户安装的 NSIS 发布；M6-02 起的 macOS DMG/ZIP；
-> M6-03 起的 Linux x64 AppImage/deb。
+> M6-03 起的 Linux x64 AppImage/deb；M6-07 起三平台在同一标签下汇总发布。
 > 上级文档：[M5 计划](../plan/m5.md)、[ADR-0036](../adr/0036-auto-update-signing-and-rollback.md)、
 > [ADR-0041](../adr/0041-macos-packaging-and-notarization.md)、
+> [ADR-0042](../adr/0042-linux-packaging.md)、
+> [ADR-0043](../adr/0043-cross-platform-ci-and-release.md)、
 > [发布前置条件](../plan/m5-release-prerequisites.md)。
 
 本手册覆盖 `.github/workflows/release.yml` 的配置、dry-run、正式发布、证书轮换与紧急撤包。
@@ -11,23 +13,26 @@
 
 ## 1. 发布产物
 
-`pnpm release:artifacts` 在 `apps/desktop/dist/release/` 生成并校验：
+`pnpm release:artifacts -- --platform <windows|mac|linux>` 在每个平台 job 的
+`apps/desktop/dist/release/` 生成并校验：
 
-| 文件 | 用途 |
-|---|---|
-| `Cairn-<version>-x64-setup.exe` | 安装包 |
-| `Cairn-<version>-x64-setup.exe.blockmap` | 差分下载元数据 |
-| `latest.yml`（stable）或 `beta.yml`（beta） | `electron-updater` generic provider 元数据 |
-| `SHA256SUMS` | 所有发布文件的 SHA-256 |
-| `THIRD_PARTY_NOTICES.txt` | 随包第三方许可声明 |
-| `dependencies.json` | 实际随包分发的 npm 包与外部二进制 |
-| `release-notes.md` | 由 `CHANGELOG.md` 对应版本小节生成 |
-| `provenance.json` | 版本、通道、提交、工作流、签名摘要与产物哈希 |
+| 文件 | Windows | macOS | Linux |
+|---|---|---|---|
+| 安装包 | `Cairn-<version>-x64-setup.exe` | `Cairn-<version>-{arm64,x64}.dmg` | `Cairn-<version>-x64.deb` |
+| 更新载体 | 同一安装包 | `Cairn-<version>-{arm64,x64}.zip` | `Cairn-<version>-x64.AppImage` |
+| blockmap | `.exe.blockmap` | `.zip.blockmap` | 无 |
+| 更新元数据 | `latest.yml` / `beta.yml` | `latest-mac.yml` / `beta-mac.yml` | `latest-linux.yml` / `beta-linux.yml` |
+
+每个平台目录还包含 `SHA256SUMS`、`THIRD_PARTY_NOTICES.txt`、`dependencies.json`、
+`release-notes.md`、`platform-notes.json` 与 `provenance.json`。`assemble` job 用
+`pnpm release:merge` 把三个平台目录合并成一次发布：同名产物必须字节一致，否则失败；
+`THIRD_PARTY_NOTICES` 与 `dependencies` 按平台改名；合并后的 `release-notes.md` 汇总
+三个平台的签名状态、下载列表、安装方式与已知问题。
 
 `release:artifacts` 会拒绝：版本与 `apps/desktop/package.json` 不一致、通道与
-`out/build-info.json` 不一致、缺少安装包/blockmap/`latest.yml`、`latest.yml` 的
-版本/路径/SHA-512/大小与安装包不一致、stable 未签名。发布说明直接读取 `CHANGELOG.md`
-对应版本的小节，不手工复制。
+`out/build-info.json` 不一致、缺少本平台安装包/blockmap/更新元数据、更新元数据中的
+版本/路径/SHA-512/大小与产物不一致、Windows/macOS 的 stable 未签名。发布说明直接读取
+`CHANGELOG.md` 对应版本的小节，不手工复制。
 
 ## 2. 一次性配置
 
@@ -129,8 +134,9 @@ PowerShell 生成 PFX 的 Base64（只写入 GitHub secret，不要粘贴到日�
 - `channel` 选 `auto`；
 - `publish` 不勾选。
 
-流水线会执行版本检查、类型检查、lint、格式、i18n、许可证、覆盖率、构建、打包、
-签名校验、安装冒烟、产物整理与 `release:publish --dry-run`，但不会上传。
+流水线会在三个 runner 上构建并校验各自平台，`assemble` 汇总后执行
+`release:publish --dry-run`，但不会上传。Windows job 另外执行类型检查、lint、格式、
+i18n、许可证、覆盖率与安装冒烟。
 
 ### 5.3 正式发布
 
@@ -145,10 +151,12 @@ PowerShell 生成 PFX 的 Base64（只写入 GitHub secret，不要粘贴到日�
 以下任一失败都会阻止上传：
 
 - 标签与版本不一致、stable 使用 prerelease 标签；
-- 类型检查、lint、格式、i18n、许可证、覆盖率、构建、打包、安装冒烟失败；
+- 任一平台的构建、打包、`package:verify` 或打包冒烟失败；
+- Windows 的类型检查、lint、格式、i18n、许可证、覆盖率或安装冒烟失败；
 - 签名缺失、`signtool`/Authenticode 校验失败、证书主题不匹配、无时间戳；
-- `latest.yml`/`beta.yml` 与安装包不一致、产物缺失、公开下载或哈希校验失败；
-- unsigned 构建尝试进入 stable。
+- macOS 的 `codesign`/`spctl`/`stapler` 校验失败；
+- `latest*.yml` / `beta*.yml` 与产物不一致、产物缺失、公开下载或哈希校验失败；
+- Windows/macOS 的 unsigned 构建尝试进入 stable。
 
 ## 6. 回滚与紧急撤包
 
@@ -273,12 +281,13 @@ stapling，更新包以 `.app` 的签名与公证结果为准。只有全部通�
 - `APPLE_APP_SPECIFIC_PASSWORD` 泄漏后必须立即在 Apple ID 页面吊销并重新生成。
 - 证书轮换时保持 Team ID 与签名身份名称稳定；更新清单与签名摘要只记录身份，不记录凭据。
 
-### 10.4 尚未接入的部分
+### 10.4 发布流水线（M6-07）
 
-`release.yml` 目前仍只构建 Windows。macOS runner、`latest-mac.yml`、按架构的发布清单与
-更新源目录属于 M6-07；在它完成之前，以上命令只用于本机或手工构建，不能视为已发布的
-macOS 更新通道。真实 Apple Silicon/Intel 安装、公证与更新下载仍需在配置好账号的 macOS
-环境执行并记录证据。
+`release.yml` 的 `build-macos` job 在 `macos-latest` 上构建两个架构，产出
+`latest-mac.yml` / `beta-mac.yml` 与 `platform-notes.json`，再由 `assemble` 合并进同一
+次发布。stable 要求 `CAIRN_MAC_SIGN_MODE=developer-id`；beta 的签名失败会显式降级为
+unsigned，并在发布说明中标注。真实 Apple Silicon/Intel 安装、公证与更新下载仍需在配置
+好账号的 macOS 环境执行并记录证据。
 
 ## 11. Linux：AppImage 与 deb（M6-03）
 
@@ -300,10 +309,11 @@ deb 使用 electron-builder 的默认运行库依赖（含 `libsecret-1-0`、`li
 
 ### 11.2 更新边界
 
-- AppImage：`electron-updater` 通过 generic 源更新，需要 `latest-linux.yml` 与对应
-  AppImage；该元数据由发布流水线生成（M6-07）。
+- AppImage：`electron-updater` 通过 generic 源更新，需要 `latest-linux.yml` /
+  `beta-linux.yml` 与对应 AppImage；该元数据由 `build-linux` job 生成并由 `assemble`
+  合并进发布。
 - deb：不自动更新；由系统包管理器或手动安装新版本。发布说明必须写清两条升级路径。
-- 在 M6-07 完成前，上述命令只用于本机或手工构建，不能视为已发布的 Linux 更新通道。
+- Linux 的 stable 允许 unsigned；发布说明写明完整性由 SHA-256 与 HTTPS 更新源保证。
 
 ### 11.3 Chromium 沙箱与 `--no-sandbox`
 
@@ -317,4 +327,55 @@ deb 使用 electron-builder 的默认运行库依赖（含 `libsecret-1-0`、`li
 ### 11.4 未验证
 
 真实 AppImage/deb 构建、Ubuntu LTS 安装/启动/卸载/重装、`xdg-open`、无用户命名空间时的
-启动、AppImage 更新与 `latest-linux.yml` 生成仍需 Linux runner/真机与 M6-07 的流水线。
+启动与 AppImage 更新仍需 Linux runner/真机验证；流水线已能生成并校验
+`latest-linux.yml`，但客户端更新下载尚未在真机记录。
+
+## 12. 跨平台 CI 与发布（M6-07）
+
+### 12.1 CI 矩阵
+
+`.github/workflows/ci.yml` 在 `windows-latest`、`ubuntu-latest`、`macos-latest` 上运行：
+
+- format、typecheck、lint、i18n、单测与覆盖率、build、smoke；
+- 三平台都执行 `package:dir`、`package:verify` 与 `smoke:packaged`；
+- Playwright e2e 在 Windows 与 Linux 上运行，macOS 以打包冒烟 + 手工矩阵覆盖；
+- `dco` job 对 PR 的每个非合并提交运行 `pnpm check:dco -- --base <base sha>`。
+
+贡献者本地提交必须使用 `git commit -s`；DCO 失败时用 `git rebase --signoff` 修正历史，
+不要用空提交绕过。
+
+### 12.2 发布 job 结构
+
+| job | runner | 作用 |
+|---|---|---|
+| `prepare` | ubuntu | 校验标签、版本与通道，输出 `tag`/`version`/`channel` |
+| `build-windows` | windows | 全量质量门禁、NSIS、签名、安装冒烟、产物整理 |
+| `build-macos` | macos | DMG/ZIP、Developer ID 签名与公证、打包冒烟、产物整理 |
+| `build-linux` | ubuntu | AppImage/deb、打包冒烟、产物整理 |
+| `assemble` | ubuntu | 下载三个平台包、`release:merge`、dry-run、provenance |
+| `publish` | ubuntu | 一次性上传到 GitHub Releases 或静态更新源并回读校验 |
+
+每个构建 job 上传 `cairn-release-<version>-<platform>`；`assemble` 用
+`node scripts/merge-release.mjs --root release --out release/merged` 合并，任何平台失败
+都会阻止上传。
+
+### 12.3 签名降级
+
+- Windows：beta 的 `pnpm package:nsis` 失败时，job 用 `CAIRN_SIGN_MODE=none` 重试一次；
+  发布说明标注 unsigned。stable 不重试。
+- macOS：同上，重试使用 `CAIRN_MAC_SIGN_MODE=none`；stable 要求
+  `CAIRN_MAC_SIGN_MODE=developer-id`。
+- Linux：没有统一代码签名，stable 允许 unsigned，发布说明写明完整性模型。
+
+### 12.4 macOS 双架构
+
+同一个 macOS job 产出 arm64 与 x64。staging 保留
+`better-sqlite3/prebuilds/darwin-{arm64,x64}.node`，避免 x64 应用加载 arm64 原生模块；
+koffi 只用于 Windows Job Object，macOS/Linux 不会加载。`mac.artifactName` 固定为
+`Cairn-${version}-${arch}.${ext}`，ZIP 不再带 `-mac` 后缀。
+
+### 12.5 未验证
+
+真实标签发布、macOS 签名/公证、Windows 签名降级、三平台更新下载与客户端读取
+`latest*.yml` 仍需配置 secrets、证书与更新源后在真实 runner/真机执行。流水线结构、
+合并逻辑与 DCO 由单元测试覆盖；没有外部条件时不得把上述结论记为已通过。

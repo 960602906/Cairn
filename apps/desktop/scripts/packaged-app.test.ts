@@ -228,6 +228,6 @@ describe('packagedApp', () => {
       directory: 'dist/win-unpacked',
       executable: 'Cairn.exe',
     })
-    expect(lookup).toHaveBeenCalledWith({ outputDir: DEFAULT_OUTPUT_DIR })
+    expect(lookup).toHaveBeenCalledWith({ outputDir: DEFAULT_OUTPUT_DIR, arch: process.arch })
   })
 })

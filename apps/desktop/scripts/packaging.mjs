@@ -289,13 +289,16 @@ export function installProductionDependencies({
 
 /**
  * 删除 staging 中与目标平台无关的原生预编译文件和 better-sqlite3 的 C 源码。
- * 安装包只支持 Windows x64（ADR-0035），保留其他平台只会增加体积与扫描面。
+ * 安装包只支持各平台 x64（macOS 另有 arm64）；保留其他平台只会增加体积与扫描面。
+ *
+ * macOS 在同一个构建里产出 arm64 与 x64 两个应用，因此两份 darwin 预编译都必须保留，
+ * 否则 x64 应用会加载 arm64 的 better-sqlite3（M6-07 修正）。
  * @param {{
  *   stageDir?: string;
  *   platform?: NodeJS.Platform;
  *   arch?: NodeJS.Architecture;
  * }} [options]
- * @returns {{ removed: string[]; kept: string }}
+ * @returns {{ removed: string[]; kept: string[] }}
  */
 export function pruneStagedDependencies({
   stageDir = DEFAULT_STAGE_DIR,
@@ -303,12 +306,13 @@ export function pruneStagedDependencies({
   arch = process.arch,
 } = {}) {
   const prebuilds = path.join(stageDir, 'node_modules/better-sqlite3/prebuilds')
-  const expected = `${platform}-${arch}.node`
+  const keep =
+    platform === 'darwin' ? ['darwin-arm64.node', 'darwin-x64.node'] : [`${platform}-${arch}.node`]
   const removed = []
   if (existsSync(prebuilds)) {
     for (const entry of readdirSync(prebuilds, { withFileTypes: true })) {
       if (!entry.isFile()) continue
-      if (entry.name === expected) continue
+      if (keep.includes(entry.name)) continue
       rmSync(path.join(prebuilds, entry.name), { force: true })
       removed.push(entry.name)
     }
@@ -318,7 +322,7 @@ export function pruneStagedDependencies({
     rmSync(sqliteDeps, { recursive: true, force: true })
     removed.push('better-sqlite3/deps')
   }
-  return { removed, kept: expected }
+  return { removed, kept: keep }
 }
 
 /**

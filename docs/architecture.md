@@ -612,7 +612,8 @@ interface CredentialProvider {
 - ripgrep 等外部二进制按平台打包，不依赖用户本机安装。
 - 换行符：读取时识别 CRLF/LF，写入时保持文件原有换行风格。
 - 文件编码：默认 UTF-8，检测到 BOM 时保留；其他编码在读取时提示。
-- CI 在 Windows 上运行全部测试；跨平台阶段加入 macOS 和 Linux 运行器。
+- CI 在 Windows、macOS 与 Linux 三个运行器上执行测试、构建、打包校验与冒烟（M6-07，
+  ADR-0043）；Playwright e2e 覆盖 Windows 与 Linux，macOS 以打包冒烟与手工矩阵补齐。
 
 ---
 
@@ -700,13 +701,15 @@ agent 循环设置最大步数和单轮最长时间，防止无限循环。
 - **自动更新**：electron-updater 6.8.11 + generic 公开只读 HTTPS 源；检查 → 下载 → 校验
   （SHA-512、大小、发布者签名）→ 重启安装。运行中任务、待审批与检查点恢复期间禁止静默重启；
   不提供二进制降级，升级前备份，`SchemaTooNew` 阻断降级（ADR-0036）。
-- **代码签名与发布**：`.github/workflows/release.yml` 在标签构建时执行 Windows 签名、产物哈希、
-  `latest.yml`/`beta.yml` 生成与发布；证书只来自 CI secrets。macOS 的 Developer ID 签名与公证
-  校验已由 M6-02 提供，Linux 以 SHA-256 校验和与 HTTPS 更新源为完整性边界（ADR-0042），
-  跨平台发布流水线仍属 M6-07。未取得证书时只能产出 unsigned beta，stable 发布被门禁阻塞（M5-08）。
+- **代码签名与发布**：`.github/workflows/release.yml` 在标签构建时按平台并行构建
+  （Windows NSIS、macOS DMG/ZIP、Linux AppImage/deb），各自生成 `latest*.yml`/`beta*.yml`
+  与校验和，再由 `assemble` 合并、`publish` 一次上传；证书只来自 CI secrets。Windows 使用
+  Authenticode，macOS 使用 Developer ID 与 notarytool，Linux 以 SHA-256 与 HTTPS 更新源为
+  完整性边界（ADR-0042、ADR-0043）。beta 的签名失败会显式降级为 unsigned 并标注；
+  Windows/macOS 的 stable 未签名会被门禁阻塞（M5-08）。
 - **验收**：单元/集成/组件测试 + 构建产物 e2e（55 项）+ 已打包应用 e2e（安装形态冒烟与发布
-  全流程）+ NSIS 安装/卸载/重装验收（`pnpm acceptance:installed`）+ Windows CI。干净 VM、标准
-  用户与 SmartScreen 的人工矩阵见 [M5 发布验收报告](plan/m5-report.md)。
+  全流程）+ NSIS 安装/卸载/重装验收（`pnpm acceptance:installed`）+ 三平台 CI 与打包冒烟。
+  干净 VM、标准用户与 SmartScreen 的人工矩阵见 [M5 发布验收报告](plan/m5-report.md)。
 - **依赖许可证**：CI 中检查，只允许 MIT、Apache-2.0、BSD、ISC 等宽松许可证（ADR-0014）；
   GPL 组件只以独立程序形式随包，不链接进 Cairn 代码。
 

@@ -8,13 +8,17 @@ import {
   extractChangelogSection,
   listInstalledPackages,
   main,
+  parseUpdateMetadata,
+  platformSpec,
   readJson,
   releaseArtifacts,
   renderProvenance,
   renderReleaseNotes,
   renderUpdateMetadata,
+  renderUpdateMetadataFiles,
   sha256,
   validateUpdateMetadata,
+  validateUpdateMetadataFiles,
   writeChecksums,
 } from './release-artifacts.mjs'
 
@@ -133,6 +137,53 @@ function fixture(
       ].join('\n'),
   )
   return { root, desktop, dist, env: { CAIRN_SIGN_MODE: 'none' } }
+}
+
+function addPlatformArtifacts(
+  target: Fixture,
+  platform: 'mac' | 'linux',
+  channel: 'stable' | 'beta' = 'beta',
+): void {
+  const names =
+    platform === 'mac'
+      ? ['arm64', 'x64'].flatMap((arch) => [
+          `Cairn-${VERSION}-${arch}.dmg`,
+          `Cairn-${VERSION}-${arch}.zip`,
+        ])
+      : [`Cairn-${VERSION}-x64.AppImage`, `Cairn-${VERSION}-x64.deb`]
+  for (const name of names) writeFileSync(path.join(target.dist, name), `${name}-bytes`)
+  const updatable =
+    platform === 'mac'
+      ? ['arm64', 'x64'].map((arch) => `Cairn-${VERSION}-${arch}.zip`)
+      : [`Cairn-${VERSION}-x64.AppImage`]
+  if (platform === 'mac') {
+    for (const arch of ['arm64', 'x64']) {
+      writeFileSync(path.join(target.dist, `Cairn-${VERSION}-${arch}.zip.blockmap`), 'blockmap')
+    }
+  }
+  const files = updatable.map((name) => {
+    const file = path.join(target.dist, name)
+    return {
+      name,
+      sha512: createHash('sha512').update(readFileSync(file)).digest('base64'),
+      size: statSync(file).size,
+    }
+  })
+  writeFileSync(
+    path.join(target.dist, platform === 'mac' ? 'latest-mac.yml' : 'latest-linux.yml'),
+    renderUpdateMetadataFiles({
+      version: VERSION,
+      files,
+      releaseDate: '2026-11-10T08:30:00.000Z',
+    }),
+  )
+  writeFileSync(
+    path.join(target.desktop, 'out/build-info.json'),
+    JSON.stringify({
+      ...readJson(path.join(target.desktop, 'out/build-info.json')),
+      channel,
+    }),
+  )
 }
 
 afterEach(() => {
@@ -339,15 +390,17 @@ describe('release artifact assembly', () => {
       'THIRD_PARTY_NOTICES.txt',
       'beta.yml',
       'dependencies.json',
+      'platform-notes.json',
       'provenance.json',
       'release-notes.md',
     ])
     const provenance = readJson(path.join(dist, 'release/provenance.json'))
     const checksums = readFileSync(path.join(dist, 'release/SHA256SUMS'), 'utf8').trim().split('\n')
-    expect(checksums).toHaveLength(7)
+    expect(checksums).toHaveLength(8)
     expect(checksums.some((line) => line.endsWith('provenance.json'))).toBe(true)
+    expect(provenance['platform']).toBe('windows')
     expect(provenance['signing']).toEqual({ mode: 'none' })
-    expect(provenance['artifacts']).toHaveLength(6)
+    expect(provenance['artifacts']).toHaveLength(7)
     expect(readFileSync(path.join(dist, 'release/release-notes.md'), 'utf8')).toContain(
       'unsigned beta',
     )
@@ -434,6 +487,201 @@ describe('release artifact assembly', () => {
     ).toThrow(/missing/)
   })
 
+  it('assembles a macOS release with latest-mac.yml and both architectures', () => {
+    const mac = fixture({ channel: 'beta' })
+    addPlatformArtifacts(mac, 'mac')
+    const result = releaseArtifacts({
+      desktopRoot: mac.desktop,
+      channel: 'beta',
+      platform: 'mac',
+      env: mac.env,
+    })
+    expect(result.metadata).toBe('beta-mac.yml')
+    expect(result.files).toContain(`Cairn-${VERSION}-arm64.dmg`)
+    expect(result.files).toContain(`Cairn-${VERSION}-x64.zip.blockmap`)
+    expect(result.platformNotes['platform']).toBe('mac')
+    const notes = readFileSync(path.join(mac.dist, 'release/release-notes.md'), 'utf8')
+    expect(notes).toContain('macOS')
+    expect(notes).toContain('Gatekeeper')
+    expect(notes).toContain('beta-mac.yml')
+    expect(notes).toContain(`Cairn-${VERSION}-arm64.dmg`)
+  })
+
+  it('allows unsigned stable Linux releases and documents their integrity model', () => {
+    const linux = fixture({ channel: 'stable' })
+    addPlatformArtifacts(linux, 'linux', 'stable')
+    const result = releaseArtifacts({
+      desktopRoot: linux.desktop,
+      channel: 'stable',
+      platform: 'linux',
+      env: { CAIRN_SIGN_MODE: 'none' },
+    })
+    expect(result.metadata).toBe('latest-linux.yml')
+    const notes = readFileSync(path.join(linux.dist, 'release/release-notes.md'), 'utf8')
+    expect(notes).toContain('**未签名**')
+    expect(notes).toContain('HTTPS')
+    expect(notes).not.toContain('SmartScreen')
+    expect(result.platformNotes['signing']).toEqual({ mode: 'none', integrity: 'sha256+https' })
+
+    const withoutDownloads = renderReleaseNotes({
+      version: VERSION,
+      channel: 'beta',
+      commit: 'abcdef1',
+      buildTime: '2026-11-10T08:30:00.000Z',
+      changelogSection: '- change',
+      signing: { mode: 'none' },
+      platform: 'linux',
+    })
+    expect(withoutDownloads).toContain('未签名')
+    expect(withoutDownloads).not.toContain('- 安装包：')
+  })
+
+  it('refuses unsigned stable macOS releases and accepts Developer ID builds', () => {
+    const unsigned = fixture({ channel: 'stable' })
+    addPlatformArtifacts(unsigned, 'mac', 'stable')
+    expect(() =>
+      releaseArtifacts({
+        desktopRoot: unsigned.desktop,
+        channel: 'stable',
+        platform: 'mac',
+        env: { CAIRN_MAC_SIGN_MODE: 'none' },
+      }),
+    ).toThrow(/must be signed/)
+
+    const signed = fixture({ channel: 'stable' })
+    addPlatformArtifacts(signed, 'mac', 'stable')
+    const result = releaseArtifacts({
+      desktopRoot: signed.desktop,
+      channel: 'stable',
+      platform: 'mac',
+      env: {
+        CAIRN_MAC_SIGN_MODE: 'developer-id',
+        CAIRN_MAC_IDENTITY: 'Developer ID Application: Cairn (TEAMID)',
+        MAC_CERTIFICATE: 'CERTIFICATE_VALUE',
+        MAC_CERTIFICATE_PASSWORD: 'PASSWORD_VALUE',
+        APPLE_ID: 'release@example.invalid',
+        APPLE_APP_SPECIFIC_PASSWORD: 'APPLE_VALUE',
+        APPLE_TEAM_ID: 'TEAMID',
+      },
+    })
+    expect(result.metadata).toBe('latest-mac.yml')
+    const notes = readFileSync(path.join(signed.dist, 'release/release-notes.md'), 'utf8')
+    expect(notes).toContain('已签名（developer-id）并公证')
+    expect(notes).toContain('Developer ID Application: Cairn (TEAMID)')
+  })
+
+  it('fails when a platform artifact or its metadata is missing', () => {
+    const mac = fixture({ channel: 'beta' })
+    addPlatformArtifacts(mac, 'mac')
+    rmSync(path.join(mac.dist, `Cairn-${VERSION}-x64.dmg`))
+    expect(() =>
+      releaseArtifacts({
+        desktopRoot: mac.desktop,
+        channel: 'beta',
+        platform: 'mac',
+        env: mac.env,
+      }),
+    ).toThrow(/missing/)
+
+    const linux = fixture({ channel: 'beta' })
+    addPlatformArtifacts(linux, 'linux')
+    rmSync(path.join(linux.dist, 'latest-linux.yml'))
+    expect(() =>
+      releaseArtifacts({
+        desktopRoot: linux.desktop,
+        channel: 'beta',
+        platform: 'linux',
+        env: linux.env,
+      }),
+    ).toThrow(/latest-linux\.yml/)
+  })
+
+  it('validates multi-file update metadata against every updatable artifact', () => {
+    const files = [
+      { name: 'a.zip', sha512: 'aaa', size: 1 },
+      { name: 'b.zip', sha512: 'bbb', size: 2 },
+    ]
+    const metadata = renderUpdateMetadataFiles({
+      version: VERSION,
+      files,
+      releaseDate: '2026-11-10T08:30:00.000Z',
+    })
+    expect(validateUpdateMetadataFiles({ metadata, version: VERSION, files })).toEqual([])
+
+    expect(
+      validateUpdateMetadataFiles({
+        metadata,
+        version: '9.9.9',
+        files: [files[0]!, { name: 'c.zip', sha512: 'ccc', size: 3 }],
+      }),
+    ).toEqual([
+      'update metadata version does not match the build',
+      'update metadata references an unexpected file: b.zip',
+      'update metadata does not reference c.zip',
+    ])
+
+    const driftedFiles = [{ name: 'a.zip', sha512: 'wrong', size: 99 }]
+    expect(
+      validateUpdateMetadataFiles({
+        metadata: renderUpdateMetadataFiles({
+          version: VERSION,
+          files: driftedFiles,
+          releaseDate: '',
+        }),
+        version: VERSION,
+        files: [files[0]!],
+      }),
+    ).toEqual([
+      'update metadata sha512 does not match a.zip',
+      'update metadata size does not match a.zip',
+      'update metadata top-level sha512 does not match the primary file',
+    ])
+
+    expect(
+      validateUpdateMetadataFiles({
+        metadata: `version: "${VERSION}"\nfiles:\n`,
+        version: VERSION,
+        files: [files[0]!],
+      }).join('\n'),
+    ).toMatch(/does not reference a\.zip[\s\S]*path does not reference/)
+
+    const drifted = metadata.replace('path: "a.zip"', 'path: "b.zip"')
+    expect(
+      validateUpdateMetadataFiles({
+        metadata: drifted,
+        version: VERSION,
+        files: [files[0]!],
+      }).join('\n'),
+    ).toMatch(/path does not reference/)
+
+    expect(() =>
+      renderUpdateMetadataFiles({ version: VERSION, files: [], releaseDate: '' }),
+    ).toThrow(/at least one file/)
+
+    expect(platformSpec('linux').builderMetadata).toBe('latest-linux.yml')
+    expect(() => platformSpec('solaris')).toThrow(/unsupported release platform/)
+
+    expect(parseUpdateMetadata('version: "0.1.1"\nfiles:\n  - url: a.zip\n').files).toEqual([
+      { url: 'a.zip', sha512: '', size: 0 },
+    ])
+  })
+
+  it('tolerates build metadata without a build time', () => {
+    const windows = fixture({ channel: 'beta' })
+    const buildInfo = readJson(path.join(windows.desktop, 'out/build-info.json'))
+    delete buildInfo['buildTime']
+    writeFileSync(path.join(windows.desktop, 'out/build-info.json'), JSON.stringify(buildInfo))
+    const result = releaseArtifacts({
+      desktopRoot: windows.desktop,
+      channel: 'beta',
+      env: windows.env,
+    })
+    expect(readFileSync(path.join(windows.dist, 'release/beta.yml'), 'utf8')).toContain(
+      'releaseDate: ""',
+    )
+    expect(result.platformNotes['buildTime']).toBe('')
+  })
+
   it('fails when the changelog section is unavailable', () => {
     const { desktop, env } = fixture({
       channel: 'beta',
@@ -449,6 +697,7 @@ describe('CLI', () => {
   it('validates the channel and reports success or failure', () => {
     const error = vi.fn()
     expect(main({ argv: ['--channel', 'nightly'], error })).toBe(1)
+    expect(main({ argv: ['--channel', 'beta', '--platform', 'solaris'], error })).toBe(1)
 
     const { desktop, dist, env } = fixture()
     const log = vi.fn()
