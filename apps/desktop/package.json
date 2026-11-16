@@ -5,6 +5,7 @@
   "description": "Local-first desktop AI coding agent",
   "author": "Cairn contributors",
   "copyright": "Copyright © 2026 Cairn contributors",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",

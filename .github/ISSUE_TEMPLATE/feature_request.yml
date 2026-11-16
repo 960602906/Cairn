@@ -1,0 +1,50 @@
+name: Feature request / 功能建议
+description: Suggest an idea or a change / 提出想法或改进
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, check the [M6 plan](../../docs/plan/m6.md) and
+        [open ADRs](../../docs/adr/README.md) — the behavior may already be planned or decided.
+
+        提交前请先看 [M6 计划](../../docs/plan/m6.md) 与 [ADR](../../docs/adr/README.md)。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 要解决的问题
+      description: What are you trying to do, and what gets in the way? / 你想做什么，哪里受阻？
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution / 建议方案
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / 考虑过的替代方案
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 涉及模块
+      multiple: true
+      options:
+        - Chat and agent runtime / 对话与 Agent 运行时
+        - Tools, approvals and sandbox / 工具、审批与沙箱
+        - Changes and checkpoints / 改动与检查点
+        - Skills and MCP / 技能与 MCP
+        - Settings and providers / 设置与模型供应商
+        - Packaging and updates / 打包与更新
+        - Documentation / 文档
+        - Other / 其他
+    validations:
+      required: false

@@ -1,63 +1,60 @@
 # 本地测试环境
 
-需要在维护者（lan）本机运行的测试（m0.md 中标为 **[用户本地]** 的预研、M1 起的真实模型对话验证）所用的环境与接入信息。
+有些测试需要真实模型服务或真实 Windows 机器，CI 只跑录制回放。计划里标为 **[用户本地]**
+的任务由维护者在自己机器上执行；本页记录所需环境与操作步骤，外部贡献者可按自己的环境调整。
+凭据（API Key）只从环境变量读取，**不要写进仓库、录制文件或文档**。
 
-## Windows 机器
+## Windows 开发机
 
-- Windows 11（10.0.26100），系统区域设置为中文：ANSI 与 OEM 代码页都是 936，`culture=zh-CN`。
-- 仓库在 `C:\Users\mrqin\Desktop\Cairn`。目录所有者是 `BUILTIN\Administrators`，git 会报 “dubious ownership”。可以给每条命令加 `-c safe.directory=C:/Users/mrqin/Desktop/Cairn`，或执行一次：
+- Windows 10/11。验证过中文区域设置（ANSI 与 OEM 代码页都是 936，`culture=zh-CN`）下构建与
+  测试正常；其他区域设置未逐一验证。
+- 仓库放在哪里都可以。目录属于 `BUILTIN\Administrators` 时 git 会报 “dubious ownership”，
+  给命令加 `-c safe.directory=<仓库路径>`，或执行一次：
 
   ```powershell
-  git config --global --add safe.directory C:/Users/mrqin/Desktop/Cairn
+  git config --global --add safe.directory <仓库路径>
   ```
 
-- PowerShell：自带 Windows PowerShell 5.1；PowerShell 7.6.9 是**商店版**，路径为 `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`，实际安装在 `C:\Program Files\WindowsApps\...`。商店版 pwsh 的子进程会脱离作业对象，见 ADR-0012 与 `spikes/powershell/README.md`。
+- PowerShell：自带 Windows PowerShell 5.1；PowerShell 7 如果是**商店版**，子进程会脱离作业
+  对象，见 ADR-0012 与 `spikes/powershell/README.md`。
 - npm 11 默认不运行依赖的安装脚本，koffi 会提示 `install-scripts`，不影响使用（用的是预编译二进制）。
-- Electron 本体在第一次启动时才下载（`require('electron')` 发现缺失时运行 `install.js`）。本机从 GitHub 下载会报 `fetch failed`，改用镜像：
+- Electron 本体在第一次启动时才下载（`require('electron')` 发现缺失时运行 `install.js`）。
+  网络访问 GitHub 受限时改用镜像：
 
   ```powershell
   $env:ELECTRON_MIRROR = 'https://npmmirror.com/mirrors/electron/'
   node node_modules/electron/install.js   # 在 apps/desktop 下运行
   ```
 
-## 本地模型网关
+## 真实模型验证
 
-本机 `127.0.0.1:3425` 上有一个模型网关，同时提供四种接口格式。后面是同一个模型：deepseek-v4.1-flash，经 WorkBuddy 反代。
+契约录制工具（`packages/runtime-pi/src/testing/contract/`）可以把任意 OpenAI、Anthropic 或
+Gemini 兼容端点当作上游，用环境变量指定：
 
-| 格式 | `kind`（ADR-0021） | baseUrl | API Key | 模型 |
-|---|---|---|---|---|
-| OpenAI Chat Completions | `openai` | `http://127.0.0.1:3425/v1` | `magpie` | `group/smart-split` |
-| OpenAI Responses | 暂不支持 | `http://127.0.0.1:3425/v1` | `magpie` | `group/smart-split` |
-| Anthropic Messages | `anthropic` | `http://127.0.0.1:3425` | `magpie` | `group/smart-split` |
-| Gemini | `gemini` | `http://127.0.0.1:3425` | `magpie` | `group/smart-split` |
+- `CAIRN_CONTRACT_UPSTREAM`：上游 baseUrl，如 `https://api.deepseek.com`（openai 格式）、
+  `https://api.deepseek.com/anthropic`（anthropic 格式），或自建网关。
+- `CAIRN_CONTRACT_MODEL`：模型 id。
+- `CAIRN_CONTRACT_KEY_ENV`：存放 Key 的环境变量名，工具只从该变量读取。
 
-- 只能在这台机器上访问，CI 与云端容器连不到。
-- 网关信任本机回环请求，Key 填任意值都可以，这里统一用 `magpie`（如 `GEMINI_API_KEY=magpie`）。真实的上游 Key 不要写进仓库。
-- 用途：
-  - 真实模型的工具调用、推理内容、流式字段的验证（S2）；
-  - ADR-0021 要求的三种格式各完成一次真实对话（M1）；
-  - 补录真实的契约测试录制（见下文“录制契约测试”）。
-- OpenAI Responses 接口不在 ADR-0021 首批的三种格式之内，可用来评估是否值得增加。
-- 与 DeepSeek 官方接口的差异（S2、S8）：
-  - 不遵守关闭思考的参数；
-  - 普通回复会夹带 `<｜end▁of▁sentence｜>` 等乱码；
-  - 不校验 Key，测不了认证失败；
-  - 比官方慢约 50%～100%。
-
-  测协议细节时以官方接口为准。
+用自建或第三方网关时注意：思考开关、流式字段与结束符行为可能与官方接口不同，测协议细节时以
+官方接口为准。
 
 ## DeepSeek 官方接口
 
 - Key 放在环境变量 `DEEPSEEK_API_KEY` 中，不写进仓库、录制文件或文档。
-- openai 格式：`https://api.deepseek.com`；anthropic 格式：`https://api.deepseek.com/anthropic`；没有 gemini 格式。
+- openai 格式：`https://api.deepseek.com`；anthropic 格式：`https://api.deepseek.com/anthropic`；
+  没有 gemini 格式。
 - 模型：`deepseek-flash`（V4.1 Flash）、`deepseek-v4-pro`。
 - 云端容器可以直接访问。
 
 ## 录制契约测试（M1-02）
 
-录制工具在 `packages/runtime-pi/src/testing/contract/`，录制文件与黄金文件在 `packages/runtime-pi/contract/`。用法见 `packages/runtime-pi/src/contract-record.test.ts` 的说明。
+录制文件与黄金文件在 `packages/runtime-pi/contract/`。用法见
+`packages/runtime-pi/src/contract-record.test.ts` 的说明。
 
-- 每次录制一个场景（`openai-tool`、`openai-parallel`、`openai-abort`、`openai-auth-fail`，anthropic 与 gemini 同理，另有 `gemini-3-tool`）。录完会回放一次，确认结果相同，并打印每一步的结束原因、用量、文本与工具调用，用来检查模型的行为是否合理，例如是否真的调用了工具。
+- 每次录制一个场景（`openai-tool`、`openai-parallel`、`openai-abort`、`openai-auth-fail`，
+  anthropic 与 gemini 同理，另有 `gemini-3-tool`）。录完会回放一次，确认结果相同，并打印每一步
+  的结束原因、用量、文本与工具调用，用来检查模型的行为是否合理，例如是否真的调用了工具。
 - 录制文件不含 Key。测试会检查录制中没有凭据请求头，也没有疑似 Key 的字符串。
 - 录完后生成黄金文件，审阅后与录制文件一起提交。
 
@@ -73,7 +70,6 @@ foreach ($s in 'openai-tool','openai-parallel','openai-abort') {
   pnpm contract:record
 }
 # anthropic 格式：CAIRN_CONTRACT_UPSTREAM 改为 https://api.deepseek.com/anthropic
-# gemini 格式：用本地网关，CAIRN_CONTRACT_UPSTREAM=http://127.0.0.1:3425，模型 group/smart-split，Key 用 magpie
 # 认证失败：把 Key 换成错误的值，录制 *-auth-fail
 
 pnpm vitest run -u packages/runtime-pi/src/contract.test.ts   # 为新录制生成黄金文件
