@@ -30,7 +30,9 @@ export interface QuestionServiceOptions {
 export interface ResolveQuestionParams {
   readonly sessionId: string
   readonly questionId: string
-  readonly answers: readonly AskUserAnswer[]
+  /** 用户放弃回答时为省略或空数组。 */
+  readonly answers?: readonly AskUserAnswer[] | undefined
+  readonly cancelled?: boolean | undefined
 }
 
 export interface PendingQuestionEntry {
@@ -112,11 +114,14 @@ export function createQuestionService(options: QuestionServiceOptions = {}): Que
         request: entry.request,
       })),
 
-    resolve({ sessionId, questionId, answers }) {
+    resolve({ sessionId, questionId, answers = [], cancelled = false }) {
       const entry = take(sessionId, questionId)
       if (!entry) throw new RpcError(QuestionErrorCode.NotFound, { questionId })
       pending.delete(questionId)
-      entry.resolve({ answers: [...answers] })
+      entry.resolve({
+        answers: cancelled ? [] : [...answers],
+        ...(cancelled ? { cancelled: true } : {}),
+      })
       changed(sessionId)
       return {}
     },

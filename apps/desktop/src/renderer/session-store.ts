@@ -69,7 +69,7 @@ import {
   type ModelRef,
   type ReasoningEffort,
   type PermissionEffect,
-  type AskUserAnswer,
+  type AskUserResolution,
   type PendingApproval,
   type PendingQuestion,
   type PermissionRule,
@@ -246,8 +246,8 @@ export interface SessionActions {
     decision: ApprovalDecision,
     feedback?: string,
   ): Promise<boolean>
-  /** 回答当前会话的一个提问（`ask_user`）；成功时返回 true。 */
-  resolveQuestion(questionId: string, answers: readonly AskUserAnswer[]): Promise<boolean>
+  /** 回答当前会话的一个提问（`ask_user`），或整张取消；成功时返回 true。 */
+  resolveQuestion(questionId: string, resolution: AskUserResolution): Promise<boolean>
   refreshProjects(): Promise<void>
   /** 用系统对话框选择文件夹作为项目；取消或失败时返回 undefined。 */
   openProject(): Promise<ProjectSummary | undefined>
@@ -382,8 +382,8 @@ export interface SessionActions {
     decision: ApprovalDecision,
     feedback?: string,
   ): Promise<boolean>
-  /** 回答试运行会话中的一个提问。 */
-  resolveTrialQuestion(questionId: string, answers: readonly AskUserAnswer[]): Promise<boolean>
+  /** 回答试运行会话中的一个提问，或整张取消。 */
+  resolveTrialQuestion(questionId: string, resolution: AskUserResolution): Promise<boolean>
   /** 关闭试运行面板并取消订阅；不删除历史记录。 */
   closeTrial(): Promise<void>
   /** 读取一个 Agent 的试运行历史。 */
@@ -509,6 +509,13 @@ export interface SessionActions {
   clearError(): void
   /** 取消订阅并停止接收事件。 */
   dispose(): void
+}
+
+/** 把界面上的回答（或取消）转换成 `question.resolve` 的参数。 */
+function questionResolution(resolution: AskUserResolution) {
+  return 'cancelled' in resolution
+    ? { cancelled: true as const }
+    : { answers: [...resolution.answers] }
 }
 
 export type SessionStore = StoreApi<SessionState & SessionActions>
@@ -1010,14 +1017,14 @@ export function createSessionStore(api: MainApi): SessionStore {
         return resolved !== undefined
       },
 
-      async resolveTrialQuestion(questionId, answers) {
+      async resolveTrialQuestion(questionId, resolution) {
         const trial = get().trial
         if (!trial) return false
         const resolved = await run(() =>
           api.request('question.resolve', {
             sessionId: trial.sessionId,
             questionId,
-            answers: [...answers],
+            ...questionResolution(resolution),
           }),
         )
         await loadQuestions(trial.sessionId)
@@ -1160,14 +1167,14 @@ export function createSessionStore(api: MainApi): SessionStore {
         return resolved !== undefined
       },
 
-      async resolveQuestion(questionId, answers) {
+      async resolveQuestion(questionId, resolution) {
         const sessionId = get().activeSessionId
         if (sessionId === undefined) return false
         const resolved = await run(() =>
           api.request('question.resolve', {
             sessionId,
             questionId,
-            answers: [...answers],
+            ...questionResolution(resolution),
           }),
         )
         await loadQuestions(sessionId)

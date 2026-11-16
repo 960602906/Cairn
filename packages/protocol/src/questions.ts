@@ -4,8 +4,9 @@
  * 模型需要用户在几个方案中做出选择，或补充无法从工作区得到的信息时，调用 `ask_user`；宿主经主进程
  * 把问题交给界面，用户回答后作为工具结果回给模型，**同一轮继续执行**，不需要结束这一轮再让用户重新输入。
  *
- * 一次调用可以带多个问题（最多 `ASK_USER_MAX_QUESTIONS` 个），界面用一个卡片一次收齐所有回答。
- * 每个问题提供 2～6 个选项，模型可以标出一个推荐选项；用户始终可以填写自定义回答。
+ * 一次调用可以带多个问题（最多 `ASK_USER_MAX_QUESTIONS` 个），界面把卡片浮在输入框上方，一次只显示
+ * 一个问题：可以后退改答案，也可以整张取消。每个问题提供 2～6 个选项，模型可以标出一个推荐选项；
+ * 用户始终可以填写自定义回答。用户取消时工具结果告诉模型没有拿到回答，由模型自行决定下一步。
  */
 import { z } from 'zod'
 import { Id } from './common.js'
@@ -24,7 +25,7 @@ export const ASK_USER_CUSTOM_MAX = 2_000
 export const AskUserOption = z.object({
   label: z.string().trim().min(1).max(ASK_USER_OPTION_LABEL_MAX),
   description: z.string().trim().max(ASK_USER_OPTION_DESCRIPTION_MAX).optional(),
-  /** 模型推荐的选项。每个问题最多一个；界面高亮显示，并作为默认选中项。 */
+  /** 模型推荐的选项。每个问题最多一个；界面高亮并加「推荐」标记，但不预先选中。 */
   recommended: z.boolean().optional(),
 })
 export type AskUserOption = z.infer<typeof AskUserOption>
@@ -62,6 +63,13 @@ export const AskUserAnswer = z.object({
 export type AskUserAnswer = z.infer<typeof AskUserAnswer>
 
 export const AskUserResponse = z.object({
+  /** 用户取消时为空。 */
   answers: z.array(AskUserAnswer).max(ASK_USER_MAX_QUESTIONS),
+  /** 用户取消了这次提问：没有回答，`answers` 为空。 */
+  cancelled: z.boolean().optional(),
 })
 export type AskUserResponse = z.infer<typeof AskUserResponse>
+
+/** 界面回答一个提问：给出每个问题的答案，或整张取消。 */
+export type AskUserResolution =
+  { readonly answers: readonly AskUserAnswer[] } | { readonly cancelled: true }

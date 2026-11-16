@@ -376,12 +376,17 @@ export function ChatPanel({
                 onOpenPlan={(planId) => openPanel('plan', { planId })}
                 onOpenFile={openFile}
               />
-              <QuestionList />
               <ApprovalList />
             </div>
           </div>
           <TurnRail view={view} />
-          <div className="mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
+          <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
+            {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3">
+              <div className="pointer-events-auto mx-auto max-h-[min(60vh,560px)] max-w-[840px] overflow-y-auto">
+                <QuestionList />
+              </div>
+            </div>
             {progressList && (
               <TaskProgress
                 key={progressList.listId}

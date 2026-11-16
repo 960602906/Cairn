@@ -37,7 +37,8 @@ const TOOLS_SECTION = `# Tools
 const ASK_USER_SECTION = `# Asking the user
 - When you need a decision between concrete options, or information you cannot find in the workspace, call ask_user instead of ending your turn with a question in plain text.
 - Give 2-6 concrete options per question and mark the one you recommend with recommended: true; put it first. Ask only what you actually need, and answer routine questions yourself.
-- The user can always type a custom answer, so do not add an "Other" option.`
+- The user can always type a custom answer, so do not add an "Other" option.
+- The user can dismiss the questions without answering. If that happens, do not ask the same thing again: continue with the most reasonable choice, say which assumption you made, or explain in plain text what you need.`
 
 export interface SystemPromptEnvironment {
   /** 操作系统名称，如 `Windows`、`macOS`、`Linux`。 */

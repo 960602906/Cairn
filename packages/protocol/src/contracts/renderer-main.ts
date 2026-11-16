@@ -838,14 +838,15 @@ export const MainForRenderer = defineSide({
       result: z.object({ questions: z.array(PendingQuestion) }),
     },
     /**
-     * 回答一个提问：每个问题给出选中的选项与/或自定义回答。提问已结束或不存在时报
-     * `question.not_found`。
+     * 回答一个提问：每个问题给出选中的选项与/或自定义回答；`cancelled: true` 表示用户放弃了这次
+     * 提问，不给答案。提问已结束或不存在时报 `question.not_found`。
      */
     'question.resolve': {
       params: z.object({
         sessionId: Id,
         questionId: Id,
-        answers: z.array(AskUserAnswer),
+        answers: z.array(AskUserAnswer).optional(),
+        cancelled: z.boolean().optional(),
       }),
       result: z.object({}),
     },

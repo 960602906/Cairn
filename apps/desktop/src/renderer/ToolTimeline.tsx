@@ -105,6 +105,16 @@ function formatInput(input: unknown): string {
   }
 }
 
+/** 用户取消了 `ask_user` 的提问：结果里只有 `cancelled: true`。 */
+export function isAskUserCancelled(output: string): boolean {
+  try {
+    const parsed = JSON.parse(output) as { cancelled?: unknown }
+    return parsed?.cancelled === true
+  } catch {
+    return false
+  }
+}
+
 /** `ask_user` 的结果是结构化 JSON；展开时显示成“问题 → 回答”，不显示原始 JSON。 */
 export function formatAskUserAnswers(output: string): string | undefined {
   try {
@@ -223,7 +233,11 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   const args = tool?.input ?? input
   const running = status === 'running'
   const output = tool?.output ? outputText(tool.output) : ''
-  const shownOutput = name === ASK_USER_TOOL ? (formatAskUserAnswers(output) ?? output) : output
+  const shownOutput =
+    name === ASK_USER_TOOL
+      ? (formatAskUserAnswers(output) ??
+        (isAskUserCancelled(output) ? t('question.cancelled') : output))
+      : output
   const terminal = name === 'run_command' ? terminalData(args, tool, live) : undefined
   const file =
     name === 'read_file' && status === 'completed' ? parseReadFileOutput(output) : undefined

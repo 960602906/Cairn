@@ -74,7 +74,7 @@ const QUESTIONS_JSON_SCHEMA = {
                 recommended: {
                   type: 'boolean',
                   description:
-                    'Set true on the single option you recommend. The UI highlights it and makes it the default choice.',
+                    'Set true on the single option you recommend. The UI highlights it and marks it as recommended.',
                 },
               },
               required: ['label'],
@@ -117,11 +117,21 @@ function checkQuestions(questions: z.infer<typeof InputSchema>['questions']): st
   return undefined
 }
 
-/** 把回答按问题顺序整理成给模型看的 JSON 文本。 */
+/** 把回答按问题顺序整理成给模型看的 JSON 文本；用户取消时给出明确的提示。 */
 export function renderAnswers(
   questions: readonly { readonly id: string; readonly question: string }[],
   response: AskUserResponse,
 ): string {
+  if (response.cancelled === true) {
+    return JSON.stringify(
+      {
+        cancelled: true,
+        note: 'The user dismissed the questions without answering. Do not ask again right away: continue with your best judgment and say which assumption you made, or explain briefly in plain text what you still need.',
+      },
+      null,
+      2,
+    )
+  }
   const byId = new Map(response.answers.map((answer) => [answer.questionId, answer]))
   const answers = questions.map((question) => {
     const answer = byId.get(question.id)
@@ -138,7 +148,7 @@ function askUserTool(): ToolDefinition {
   return {
     name: ASK_USER_TOOL,
     description:
-      'Ask the user a question and wait for their answer. Use it when you genuinely need a decision between concrete approaches, or information you cannot find in the workspace; do not use it for things you can decide yourself. Provide 1-4 questions, each with 2-6 concrete options and at most one marked recommended. The user can also type a custom answer. The answer comes back as the tool result and your turn continues, so never end your turn with a question in plain text.',
+      'Ask the user a question and wait for their answer. Use it when you genuinely need a decision between concrete approaches, or information you cannot find in the workspace; do not use it for things you can decide yourself. Provide 1-4 questions, each with 2-6 concrete options and at most one marked recommended. The user can also type a custom answer, or dismiss the questions; if they dismiss, continue with your best judgment and state the assumption instead of asking again. The answer comes back as the tool result and your turn continues, so never end your turn with a question in plain text.',
     inputSchema: QUESTIONS_JSON_SCHEMA,
     category: 'read',
     source: { kind: 'builtin' },

@@ -50,6 +50,14 @@ describe('createQuestionService', () => {
     expect(service.pending({ sessionId: 's1' }).questions).toEqual([])
   })
 
+  it('resolves a question the user cancelled without answers', async () => {
+    const { service } = setup()
+    const pending = service.request('s1', request('q1'))
+    service.resolve({ sessionId: 's1', questionId: 'q1', cancelled: true })
+    await expect(pending).resolves.toEqual({ answers: [], cancelled: true })
+    expect(service.pending({ sessionId: 's1' }).questions).toEqual([])
+  })
+
   it('lists pending questions across sessions with request time', () => {
     const { service } = setup()
     void service.request('s1', request('q1'))

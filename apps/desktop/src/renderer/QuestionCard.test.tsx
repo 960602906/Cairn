@@ -71,27 +71,9 @@ describe('QuestionCard', () => {
     const resolveQuestion = vi.fn(async () => true)
     wrap(<QuestionCard question={single} active />, makeStore(resolveQuestion))
     await userEvent.click(screen.getByRole('button', { name: /方案 B/ }))
-    expect(resolveQuestion).toHaveBeenCalledWith('call-1', [
-      { questionId: 'q1', selected: ['方案 B'] },
-    ])
-  })
-
-  it('collects selections and a custom answer before submitting', async () => {
-    const resolveQuestion = vi.fn(async () => true)
-    wrap(<QuestionCard question={multiple} active />, makeStore(resolveQuestion))
-    const submit = screen.getByRole('button', { name: '提交' })
-    expect((submit as HTMLButtonElement).disabled).toBe(true)
-
-    await userEvent.click(screen.getByRole('button', { name: /a\.ts/ }))
-    await userEvent.click(screen.getByRole('button', { name: /b\.ts/ }))
-    await userEvent.type(screen.getAllByRole('textbox')[1]!, '再看 CI')
-    expect((submit as HTMLButtonElement).disabled).toBe(false)
-
-    await userEvent.click(submit)
-    expect(resolveQuestion).toHaveBeenCalledWith('call-2', [
-      { questionId: 'q1', selected: ['a.ts', 'b.ts'] },
-      { questionId: 'q2', selected: [], custom: '再看 CI' },
-    ])
+    expect(resolveQuestion).toHaveBeenCalledWith('call-1', {
+      answers: [{ questionId: 'q1', selected: ['方案 B'] }],
+    })
   })
 
   it('uses a custom answer as the only answer', async () => {
@@ -99,8 +81,49 @@ describe('QuestionCard', () => {
     wrap(<QuestionCard question={single} active />, makeStore(resolveQuestion))
     await userEvent.type(screen.getByPlaceholderText(/推荐：方案 A/), '两个都要')
     await userEvent.click(screen.getByRole('button', { name: '提交' }))
-    expect(resolveQuestion).toHaveBeenCalledWith('call-1', [
-      { questionId: 'q1', selected: [], custom: '两个都要' },
-    ])
+    expect(resolveQuestion).toHaveBeenCalledWith('call-1', {
+      answers: [{ questionId: 'q1', selected: [], custom: '两个都要' }],
+    })
+  })
+
+  it('cancels the whole question without answers', async () => {
+    const resolveQuestion = vi.fn(async () => true)
+    wrap(<QuestionCard question={single} active />, makeStore(resolveQuestion))
+    await userEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(resolveQuestion).toHaveBeenCalledWith('call-1', { cancelled: true })
+  })
+
+  it('walks through questions one at a time and can go back', async () => {
+    const resolveQuestion = vi.fn(async () => true)
+    wrap(<QuestionCard question={multiple} active />, makeStore(resolveQuestion))
+
+    // 第一个问题：没有回答时不能前进
+    expect(screen.getByText('要改哪些文件？')).toBeTruthy()
+    expect(screen.queryByText('怎么验证？')).toBeNull()
+    const next = screen.getByRole('button', { name: '下一个' }) as HTMLButtonElement
+    expect(next.disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: '上一个' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /a\.ts/ }))
+    await userEvent.click(screen.getByRole('button', { name: /b\.ts/ }))
+    expect((next as HTMLButtonElement).disabled).toBe(false)
+    await userEvent.click(next)
+
+    // 第二个问题：自定义回答后提交；可以退回第一个问题
+    expect(screen.getByText('怎么验证？')).toBeTruthy()
+    expect(screen.queryByText('要改哪些文件？')).toBeNull()
+    await userEvent.type(screen.getAllByRole('textbox')[0]!, '再看 CI')
+    await userEvent.click(screen.getByRole('button', { name: '上一个' }))
+    expect(screen.getByText('要改哪些文件？')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /a\.ts/ }).getAttribute('aria-pressed')).toBe('true')
+    await userEvent.click(screen.getByRole('button', { name: '下一个' }))
+
+    await userEvent.click(screen.getByRole('button', { name: '提交' }))
+    expect(resolveQuestion).toHaveBeenCalledWith('call-2', {
+      answers: [
+        { questionId: 'q1', selected: ['a.ts', 'b.ts'] },
+        { questionId: 'q2', selected: [], custom: '再看 CI' },
+      ],
+    })
   })
 })

@@ -122,6 +122,22 @@ describe('ask_user tool', () => {
     ).rejects.toMatchObject({ code: 'tool.invalid_input' })
   })
 
+  it('tells the model when the user dismissed the questions', async () => {
+    const registry = createToolRegistry()
+    registerAskUserTool(registry)
+    const tool = registry.get(ASK_USER_TOOL)!
+    const result = await tool.execute(
+      { questions: [{ question: 'A?', options: [{ label: 'one' }, { label: 'two' }] }] },
+      ctx(async () => ({ answers: [], cancelled: true })),
+    )
+    const text = result.content[0]
+    expect(text?.type).toBe('text')
+    expect(JSON.parse((text as { text: string }).text)).toMatchObject({
+      cancelled: true,
+      note: expect.stringContaining('dismissed'),
+    })
+  })
+
   it('renders answers in question order and tolerates missing answers', () => {
     expect(
       renderAnswers(
