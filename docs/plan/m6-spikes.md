@@ -26,15 +26,16 @@
 
 | 平台 | 架构 | 发布形态 | 最低系统版本（基线） | 备注 |
 |---|---|---|---|---|
-| Windows | x64 | NSIS 按用户安装 | Windows 10（Electron 45 基线） | M5 已实现；本机 24H2 已验收 |
-| macOS | arm64 + x64（Universal 或分架构） | DMG + ZIP（更新用） | macOS 12 Monterey | 首次正式支持，M6-02 落地 |
-| Linux | x64 | AppImage + deb | Ubuntu LTS（以 22.04/24.04 为基线，glibc 2.31+） | 其他发行版 best-effort |
+| Windows | x64 | NSIS 按用户安装 | Windows 10（暂定，Electron 45 下限待核实） | M5 已实现；本机 24H2 已验收 |
+| macOS | arm64 + x64（Universal 或分架构） | DMG + ZIP（更新用） | macOS 12 Monterey（暂定，待核实） | 首次正式支持，M6-02 落地 |
+| Linux | x64 | AppImage + deb | Ubuntu LTS（22.04/24.04 为目标基线，glibc 下限待核实） | 其他发行版 best-effort |
 
-**最低版本依据**：Electron 45 的官方支持策略为「各平台最新三个主版本」。Windows 下限为
-Windows 10（自 Electron 23 起已放弃 Windows 7/8）；Linux 要求 glibc 2.31+（对应 Ubuntu 20.04 起，
-以当前 LTS 22.04/24.04 为实际基线）；macOS 下限为 macOS 12。**上述基线以 Electron 官方
-支持文档为准，M6-02/M6-03 在真实机器上启动前需再次核对 Electron 45 发布说明**——本机无法
-访问 electronjs.org 在线确认，未把它当作已验证事实写进验收结论。
+**最低版本依据与待核实项**：Windows 10 起（Electron 23 已放弃 Windows 7/8）、Linux
+glibc 2.31+（Ubuntu 20.04 起）、macOS 12 起是基于历史版本的**暂定候选**，不是已确认的
+Electron 45 下限；本机无法访问 electronjs.org 在线确认。M6-02/M6-03 在真实机器上启动前，
+必须核对 [Electron 官方支持文档](https://www.electronjs.org/docs/latest/tutorial/support) 与
+[Electron 45 发布说明](https://www.electronjs.org/blog)，再把经过验证的最低版本更新到此表。
+在核实前不得以暂定候选作为发行版对外的最低系统要求。
 
 不在本轮范围（与 M6 §2.1 一致）：Windows ARM64、Linux arm64、32 位、移动端、Web 版、
 企业分发与 MSIX。接口层为这些平台留位置（M6-01），本轮不实现。
@@ -52,10 +53,12 @@ Windows 10（自 Electron 23 起已放弃 Windows 7/8）；Linux 要求 glibc 2.
 ### 3.1 现状：已经平台无关
 
 逐包审计 `process.platform` / `win32` / `darwin` / `linux` 的出现位置，结论是共享代码
-**没有把 Windows 假设写进平台无关的接口**。所有平台分支都满足：
+**总体上没有把 Windows 假设写进平台无关的接口**。大部分平台分支满足：
 
 1. 通过函数参数注入 `platform: NodeJS.Platform`（默认 `process.platform`），测试可传假平台；
 2. 平台差异被封装在具名模块里，调用方不直接判断平台。
+
+例外见 §3.2（模块级常量、MCP 子进程结束、沙箱协议枚举），由 M6-01/M6-05 收口。
 
 ### 3.2 需要 M6-01 收口的散落判断
 
@@ -68,8 +71,8 @@ Windows 10（自 Electron 23 起已放弃 Windows 7/8）；Linux 要求 glibc 2.
 | `packages/shell/**` | `select.ts`、`process-tree.ts`、`sandbox/probe.ts`、`sandbox/restricted.ts`、`sandbox/windows-api.ts` 全部以 `options.platform` 注入 | 已是适配层雏形；M6-01 补「不支持时明确错误」的统一出口 |
 | `packages/protocol/src/sandbox.ts:85` | `platform: z.enum(['win32', 'other'])` | M6-05 细化为 `win32 | darwin | linux | other` |
 
-**结论**：共享包里不存在「未封装的平台判断」影响调用方的地方；M6-01 的工作是**形式化**而非
-重写——把上表散点收进 `@cairn/shell` 的 `platform` 适配层，统一「不支持平台」的错误与降级语义，
+**结论**：共享包的少量散落平台判断有封装不充分之处；M6-01 的工作是**收口**而非
+重写——把上表散点收进具名适配层，统一「不支持平台」的错误与降级语义，
 并让 `createSdkClient` 平台可注入。真实「Windows 专属」代码集中在 `packages/shell/src/sandbox/*`
 与 `apps/desktop/src/main/services/*`（safeStorage、git-locator、打包脚本），边界已经清晰。
 
@@ -127,9 +130,9 @@ git rev-list --all | xargs -I{} sh -c \
 
 ### 5.2 内部资料与不可分发二进制
 
-- [ ] 确认 `git ls-files` 中没有 `*.pem`、`*.p12`、`*.pfx`、`*.key`、`*.env`（含历史）。
+- [ ] 审核 `git ls-files` 中所有 `*.pem`、`*.p12`、`*.pfx`、`*.key`、`*.env`（含历史）。已知有 `apps/desktop/e2e/fixtures/localhost-{cert,key}.pem` 测试用自签名证书与私钥；核验其仅用于本地回环测试，绝不用于生产，其他条目逐项确认。
 - [ ] 确认没有提交过 `.cache/mingit`、`apps/desktop/resources/git`（随包 Git 由 `pnpm fetch:mingit` 现取）。
-- [ ] 确认没有 IDE 本地配置、`.scratch/`、`design/` 等本地目录入库（`.gitignore` 已覆盖，需复核）。
+- [ ] 确认没有 IDE 本地配置、`.scratch/`、`design/` 等本地目录入库（`.gitignore` 已覆盖 `.scratch/`，`design/` 需复核）。
 - [ ] 确认测试中的凭据都是样例数据（如 `{{SECRET_*}}` 占位、假 key），无真实可用 key。
 
 ### 5.3 第三方许可证与源码获取
