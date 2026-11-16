@@ -33,6 +33,8 @@ export async function recordScenario(
       model,
       reasoning: options.reasoning,
     })
+    // 场景可能中途 abort：先等代理把上游响应记录完，否则录制会停在任意分块处（跨平台不一致）。
+    await proxy.drained()
     const cassette: Cassette = {
       version: CASSETTE_VERSION,
       name: options.name ?? scenario.name,
