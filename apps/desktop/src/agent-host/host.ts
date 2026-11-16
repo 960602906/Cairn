@@ -49,8 +49,10 @@ import {
   PlanModeReasonCode,
   planModeGuard,
   planToolVisible,
+  registerAskUserTool,
   registerPlanTools,
   registerTaskListTools,
+  ASK_USER_TOOL,
   sandboxGuard,
   taskListToolVisible,
   type AgentRunHandle,
@@ -102,6 +104,7 @@ import {
 import { SKILL_PIN_MAX_CHARS } from '@cairn/skills'
 import { createLoadSkillTool, createPathResolver, createStartCommandTool } from '@cairn/tools'
 import { createHostApprovalGate } from './approval-gate.js'
+import { createHostQuestionGate } from './question-gate.js'
 import { createHostCheckpoints, type OpenShadowRepo } from './checkpoints.js'
 import { createHostChangeRecorder } from './change-recorder.js'
 
@@ -960,6 +963,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     )
 
     /** 真正交给模型的内置 / MCP 工具（计划工具在 `prepareTurn` 里按模式加回）。 */
+    // 无人值守运行没有用户可回答（ADR-0018）：不注册提问工具，模型按需要直接返回结果。
+    if (hasBuiltinTools && init.mode === 'interactive') registerAskUserTool(registry)
     const hasTools = registry
       .list()
       .some((definition) => toolSelected(agentDefinition?.tools, definition))
@@ -977,8 +982,11 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       },
     })
     // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息。项目说明每轮再补（M3-02）。
+    const askUserDefinition = registry.get(ASK_USER_TOOL)
     const promptBase = {
       tools: hasTools,
+      userQuestions:
+        askUserDefinition !== undefined && toolSelected(agentDefinition?.tools, askUserDefinition),
       environment: {
         os: operatingSystemName(options.platform ?? process.platform),
         ...(hasTools && toolEnvironment.shell ? { shell: toolEnvironment.shell } : {}),
@@ -1003,6 +1011,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
               agent: init.agent,
             }),
           }),
+          askUser: createHostQuestionGate({ endpoint }),
           checkpoints,
           changes: createHostChangeRecorder(endpoint),
           workspaceRoot: init.workspacePath,

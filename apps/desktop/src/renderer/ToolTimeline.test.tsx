@@ -197,6 +197,42 @@ describe('ToolStep：其他工具', () => {
   })
 })
 
+describe('ToolStep：ask_user', () => {
+  const ask = (output: unknown, input: unknown) =>
+    tool({ name: 'ask_user', status: 'completed', input, output: text(JSON.stringify(output)) })
+
+  it('shows the first question in the summary and the answers when expanded', async () => {
+    const user = userEvent.setup()
+    step({
+      name: 'ask_user',
+      input: { questions: [{ question: '用哪种方案？' }] },
+      tool: ask(
+        { answers: [{ question: '用哪种方案？', selected: ['A'] }] },
+        {
+          questions: [{ question: '用哪种方案？' }],
+        },
+      ),
+    })
+    expect(screen.getByText(/用哪种方案/)).toBeTruthy()
+    await user.click(toggle())
+    expect(screen.getByText('用哪种方案？ → A')).toBeTruthy()
+  })
+
+  it('says the user dismissed the questions instead of dumping JSON', async () => {
+    const user = userEvent.setup()
+    step({ name: 'ask_user', input: { questions: 'oops' }, tool: ask({ cancelled: true }, {}) })
+    await user.click(toggle())
+    expect(screen.getByText('你取消了回答')).toBeTruthy()
+  })
+
+  it('falls back to the raw output when it is neither an answer nor a cancellation', async () => {
+    const user = userEvent.setup()
+    step({ name: 'ask_user', input: {}, tool: ask({ answers: 'x' }, {}) })
+    await user.click(toggle())
+    expect(screen.getByText('{"answers":"x"}')).toBeTruthy()
+  })
+})
+
 describe('ToolStep：完成态', () => {
   it('完成后的节点是绿色品牌 Logo，不再显示对勾', () => {
     const { container } = step({ tool: tool({ status: 'completed' }) })

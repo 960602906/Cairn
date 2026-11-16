@@ -10,6 +10,7 @@
   "permissions.hint": "切换后会重新开始一次试运行。",
   "configChanged": "配置已变化。用新配置重新开始后才会生效。",
   "approvals": "待审批",
+  "questions": "需要你回答",
   "input.label": "试运行输入",
   "input.placeholder": "描述要验证的任务，Ctrl+Enter 发送",
   "cleared": "已清除 {{count}} 条试运行记录",

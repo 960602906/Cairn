@@ -51,3 +51,4 @@
 | [0041](0041-macos-packaging-and-notarization.md) | macOS 打包、签名与公证 | 已接受（M6-02） |
 | [0042](0042-linux-packaging.md) | Linux 打包与桌面集成 | 已接受（M6-03） |
 | [0043](0043-cross-platform-ci-and-release.md) | 跨平台 CI 与发布流水线 | 已接受（M6-07） |
+| [0044](0044-user-questions.md) | 用户提问：`ask_user` 工具与选项卡片 | 已接受 |

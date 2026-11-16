@@ -441,6 +441,32 @@ describe('ChatPanel', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: '计划进度' })).toBeNull())
   })
 
+  it('floats the pending plan above the composer until the user decides', async () => {
+    const planContent = {
+      goal: '整理设置页',
+      files: [],
+      steps: [{ id: 'a', title: '重排入口' }],
+      risks: '',
+      verification: '',
+      markdown: '',
+    }
+    const { open, emit } = setup({ history: HISTORY })
+    await open()
+    expect(screen.queryByRole('region', { name: '待批准的计划' })).toBeNull()
+    const base = HISTORY.length
+    emit(ev(base + 1, 'plan.proposed', { planId: 'pl1', content: planContent }))
+    const bar = await screen.findByRole('region', { name: '待批准的计划' })
+    expect(within(bar).getByText('整理设置页')).toBeTruthy()
+    expect(within(bar).getByRole('button', { name: '批准执行' })).toBeTruthy()
+    expect(within(bar).getByRole('button', { name: '取消' })).toBeTruthy()
+    // 浮动面板会盖住消息末尾，有待决定的内容时多留一段底部空白。
+    expect(document.body.innerHTML).toContain('pb-28')
+
+    emit(ev(base + 2, 'plan.rejected', { planId: 'pl1' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: '待批准的计划' })).toBeNull())
+    expect(document.body.innerHTML).toContain('pb-8')
+  })
+
   it('floats an ad-hoc task list without a plan (ADR-0038)', async () => {
     const { open, emit } = setup({ history: HISTORY })
     await open()

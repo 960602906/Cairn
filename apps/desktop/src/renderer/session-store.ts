@@ -69,7 +69,9 @@ import {
   type ModelRef,
   type ReasoningEffort,
   type PermissionEffect,
+  type AskUserResolution,
   type PendingApproval,
+  type PendingQuestion,
   type PermissionRule,
   type PermissionRuleEntry,
   type ProjectSummary,
@@ -130,6 +132,8 @@ export interface SessionState {
   readonly awaitingTurn: Readonly<Record<string, true>>
   /** 各会话的未决审批（按请求顺序）；只读取当前会话的。 */
   readonly approvals: Readonly<Record<string, readonly PendingApproval[]>>
+  /** 各会话的未回答提问（`ask_user`，按请求顺序）；只读取当前会话的。 */
+  readonly questions: Readonly<Record<string, readonly PendingQuestion[]>>
   /** 各会话的文件改动记录（按发生顺序）；只读取当前会话的。 */
   readonly changes: Readonly<Record<string, readonly FileChangeSummary[]>>
   /** 各会话的改动集汇总（按创建顺序）；只读取当前会话的。 */
@@ -242,6 +246,8 @@ export interface SessionActions {
     decision: ApprovalDecision,
     feedback?: string,
   ): Promise<boolean>
+  /** 回答当前会话的一个提问（`ask_user`），或整张取消；成功时返回 true。 */
+  resolveQuestion(questionId: string, resolution: AskUserResolution): Promise<boolean>
   refreshProjects(): Promise<void>
   /** 用系统对话框选择文件夹作为项目；取消或失败时返回 undefined。 */
   openProject(): Promise<ProjectSummary | undefined>
@@ -376,6 +382,8 @@ export interface SessionActions {
     decision: ApprovalDecision,
     feedback?: string,
   ): Promise<boolean>
+  /** 回答试运行会话中的一个提问，或整张取消。 */
+  resolveTrialQuestion(questionId: string, resolution: AskUserResolution): Promise<boolean>
   /** 关闭试运行面板并取消订阅；不删除历史记录。 */
   closeTrial(): Promise<void>
   /** 读取一个 Agent 的试运行历史。 */
@@ -503,6 +511,13 @@ export interface SessionActions {
   dispose(): void
 }
 
+/** 把界面上的回答（或取消）转换成 `question.resolve` 的参数。 */
+function questionResolution(resolution: AskUserResolution) {
+  return 'cancelled' in resolution
+    ? { cancelled: true as const }
+    : { answers: [...resolution.answers] }
+}
+
 export type SessionStore = StoreApi<SessionState & SessionActions>
 
 const toError = (error: unknown): ErrorInfo =>
@@ -601,6 +616,7 @@ export function createSessionStore(api: MainApi): SessionStore {
   let trialSubscribed: string | undefined
 
   let loadApprovalsFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
+  let loadQuestionsFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
   let loadChangesFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
   let loadChangeSetsFor: (sessionId: string) => Promise<void> = () => Promise.resolve()
   let loadChangeSetFor: (
@@ -648,6 +664,15 @@ export function createSessionStore(api: MainApi): SessionStore {
     }
 
     loadApprovalsFor = loadApprovals
+
+    /** 重新读取会话的未回答提问；失败时保留之前的结果。 */
+    const loadQuestions = async (sessionId: string) => {
+      const result = await run(() => api.request('question.pending', { sessionId }))
+      if (result)
+        set((state) => ({ questions: { ...state.questions, [sessionId]: result.questions } }))
+    }
+
+    loadQuestionsFor = loadQuestions
 
     const loadChanges = async (sessionId: string) => {
       const request = (changeRequests.get(sessionId) ?? 0) + 1
@@ -749,6 +774,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       activeSessionId: undefined,
       awaitingTurn: {},
       approvals: {},
+      questions: {},
       changes: {},
       changeSets: {},
       changeSetsLoading: {},
@@ -867,6 +893,7 @@ export function createSessionStore(api: MainApi): SessionStore {
         set((state) => receive(state, sessionId, [...result.events, ...(buffered ?? [])]))
         await Promise.all([
           loadApprovals(sessionId),
+          loadQuestions(sessionId),
           loadChanges(sessionId),
           loadChangeSets(sessionId),
         ])
@@ -908,7 +935,7 @@ export function createSessionStore(api: MainApi): SessionStore {
         }
         trialSubscribed = started.sessionId
         set((state) => receive(state, started.sessionId, [...result.events, ...(buffered ?? [])]))
-        await loadApprovals(started.sessionId)
+        await Promise.all([loadApprovals(started.sessionId), loadQuestions(started.sessionId)])
         return started
       },
 
@@ -946,7 +973,7 @@ export function createSessionStore(api: MainApi): SessionStore {
         }
         trialSubscribed = started.sessionId
         set((state) => receive(state, started.sessionId, [...result.events, ...(buffered ?? [])]))
-        await loadApprovals(started.sessionId)
+        await Promise.all([loadApprovals(started.sessionId), loadQuestions(started.sessionId)])
         return started
       },
 
@@ -987,6 +1014,20 @@ export function createSessionStore(api: MainApi): SessionStore {
           }),
         )
         await loadApprovals(trial.sessionId)
+        return resolved !== undefined
+      },
+
+      async resolveTrialQuestion(questionId, resolution) {
+        const trial = get().trial
+        if (!trial) return false
+        const resolved = await run(() =>
+          api.request('question.resolve', {
+            sessionId: trial.sessionId,
+            questionId,
+            ...questionResolution(resolution),
+          }),
+        )
+        await loadQuestions(trial.sessionId)
         return resolved !== undefined
       },
 
@@ -1123,6 +1164,20 @@ export function createSessionStore(api: MainApi): SessionStore {
           }),
         )
         await loadApprovals(sessionId)
+        return resolved !== undefined
+      },
+
+      async resolveQuestion(questionId, resolution) {
+        const sessionId = get().activeSessionId
+        if (sessionId === undefined) return false
+        const resolved = await run(() =>
+          api.request('question.resolve', {
+            sessionId,
+            questionId,
+            ...questionResolution(resolution),
+          }),
+        )
+        await loadQuestions(sessionId)
         return resolved !== undefined
       },
 
@@ -1552,6 +1607,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       dispose() {
         offEvents()
         offApprovals()
+        offQuestions()
         offActivity()
         pending.clear()
         inspectionRequests.clear()
@@ -1593,6 +1649,11 @@ export function createSessionStore(api: MainApi): SessionStore {
   const offApprovals = api.on('approval.changed', ({ sessionId }) => {
     if (sessionId === subscribed || sessionId === trialSubscribed) {
       void loadApprovalsFor(sessionId)
+    }
+  })
+  const offQuestions = api.on('question.changed', ({ sessionId }) => {
+    if (sessionId === subscribed || sessionId === trialSubscribed) {
+      void loadQuestionsFor(sessionId)
     }
   })
   const offActivity = api.on('activity.changed', () => {

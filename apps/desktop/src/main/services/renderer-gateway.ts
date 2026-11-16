@@ -107,6 +107,14 @@ export interface ApprovalCommands {
   readonly subscribe: (listener: (sessionId: string) => void) => () => void
 }
 
+/** 由提问服务实现的提问命令（`ask_user`）。 */
+export interface QuestionCommands {
+  readonly pending: Handler<'question.pending'>
+  readonly resolve: Handler<'question.resolve'>
+  /** 未决提问有变化时调用（推送 `question.changed`）；返回取消函数。 */
+  readonly subscribe: (listener: (sessionId: string) => void) => () => void
+}
+
 /** 运行检查器（M4-04）。 */
 export interface InspectCommands {
   readonly inspect: Handler<'run.inspect'>
@@ -192,6 +200,8 @@ export interface RendererGatewayOptions {
   readonly changeSets: ChangeSetCommands
   /** 审批（M1-11b）：读取未决审批与作出决定。 */
   readonly approvals: ApprovalCommands
+  /** 用户提问（`ask_user`）：读取未决提问与回答。 */
+  readonly questions: QuestionCommands
   /**
    * 技能（M3-07）：列表、安装、卸载与启用；选择来源（M3-08）。
    * `catalog` 供 `/技能名` 展开这一轮的正文，可由实现省略（省略时技能指令不生效）。
@@ -299,7 +309,7 @@ type Timer = ReturnType<typeof setTimeout>
 
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { appInfo, events, commands, projects, files, settings, credentials, providers } = options
-  const { changes, checkpoints, approvals, permissions, skills, mcp } = options
+  const { changes, checkpoints, approvals, questions, permissions, skills, mcp } = options
   const { hub, mentions } = options
   const { agents, trials, diagnostics, activity, changeSets } = options
   const { sandbox } = options
@@ -309,6 +319,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   const connections = new Set<{
     deliver: (sessionId: string, events: readonly EventEnvelope[]) => void
     approvalsChanged: (sessionId: string) => void
+    questionsChanged: (sessionId: string) => void
     activityChanged: () => void
     commandChanged: (commandId: string) => void
     openActivitySession: (sessionId: string) => void
@@ -322,6 +333,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   })
   const unsubscribeApprovals = approvals.subscribe((sessionId) => {
     for (const connection of connections) connection.approvalsChanged(sessionId)
+  })
+  const unsubscribeQuestions = questions.subscribe((sessionId) => {
+    for (const connection of connections) connection.questionsChanged(sessionId)
   })
   const unsubscribeActivity = activity.subscribe(() => {
     for (const connection of connections) connection.activityChanged()
@@ -485,6 +499,8 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('changeset.resolveConflict', (params) => changeSets.resolveConflict(params))
       endpoint.handle('approval.pending', (params) => approvals.pending(params))
       endpoint.handle('approval.resolve', (params) => approvals.resolve(params))
+      endpoint.handle('question.pending', (params) => questions.pending(params))
+      endpoint.handle('question.resolve', (params) => questions.resolve(params))
       endpoint.handle('activity.list', (params) => activity.list(params))
       endpoint.handle('activity.resolve', (params) => activity.resolve(params))
       endpoint.handle('command.list', (params) => backgroundCommands.list(params))
@@ -579,6 +595,11 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           flush()
           endpoint.emit('approval.changed', { sessionId })
         },
+        questionsChanged(sessionId: string) {
+          if (!subs.has(sessionId)) return
+          flush()
+          endpoint.emit('question.changed', { sessionId })
+        },
         activityChanged() {
           if (closed) return
           endpoint.emit('activity.changed', {})
@@ -625,6 +646,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
     close() {
       unsubscribeEvents()
       unsubscribeApprovals()
+      unsubscribeQuestions()
       unsubscribeActivity()
       unsubscribeMcp()
       unsubscribeCommands()

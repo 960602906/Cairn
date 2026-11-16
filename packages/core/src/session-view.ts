@@ -264,6 +264,15 @@ export interface PlanView {
   readonly turnId?: string
 }
 
+/** 最近一份还在等用户决定的计划；没有时返回 undefined。 */
+export function proposedPlan(view: SessionView): PlanView | undefined {
+  for (let index = view.plans.length - 1; index >= 0; index -= 1) {
+    const plan = view.plans[index]
+    if (plan?.status === 'proposed') return plan
+  }
+  return undefined
+}
+
 /** 最近一份已批准的计划。后面又提出或放弃的计划不会把它盖掉。 */
 export function activeExecutionPlan(view: SessionView): PlanView | undefined {
   for (let index = view.plans.length - 1; index >= 0; index -= 1) {

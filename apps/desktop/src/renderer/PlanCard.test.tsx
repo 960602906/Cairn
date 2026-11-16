@@ -8,6 +8,7 @@ import { createSessionView, type PlanView } from '@cairn/core'
 import { createI18n } from '@cairn/i18n'
 import { createStore } from 'zustand/vanilla'
 import {
+  PlanActions,
   PlanDetails,
   PlanProgress,
   PlanSummaryCard,
@@ -107,19 +108,8 @@ describe('PlanSummaryCard', () => {
     await user.click(screen.getByRole('button', { name: '在右侧打开计划' }))
     expect(onOpen).toHaveBeenCalledTimes(2)
 
-    await user.click(screen.getByRole('button', { name: '批准执行' }))
-    expect(store.getState().approvePlan).toHaveBeenCalledWith('pl1')
-
-    await user.click(screen.getByRole('button', { name: '重新规划' }))
-    const submit = screen.getByRole('button', { name: '按说明重新规划' }) as HTMLButtonElement
-    expect(submit.disabled).toBe(true)
-    await user.type(screen.getByRole('textbox', { name: '重新规划' }), '换个做法')
-    await user.click(submit)
-    expect(store.getState().replan).toHaveBeenCalledWith('pl1', '换个做法')
-
-    await user.click(screen.getByRole('button', { name: '取消' }))
-    await user.click(screen.getByRole('button', { name: '放弃' }))
-    expect(store.getState().abandonPlan).toHaveBeenCalledWith('pl1')
+    // 批准 / 重新规划 / 取消浮在输入框上方，见 PlanActions。
+    expect(screen.queryByRole('button', { name: '批准执行' })).toBeNull()
   })
 
   it('keeps the copy label when the clipboard fails', async () => {
@@ -133,35 +123,80 @@ describe('PlanSummaryCard', () => {
     expect(screen.getByRole('button', { name: '复制计划' })).toBeTruthy()
   })
 
-  it('disables review actions while running and hides them after approval', () => {
-    const busy = makeStore({ awaitingTurn: { s1: true } })
-    const view = wrap(<PlanSummaryCard plan={plan} onOpen={vi.fn()} />, busy)
-    expect((screen.getByRole('button', { name: '批准执行' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-    expect((screen.getByRole('button', { name: '重新规划' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
-    expect((screen.getByRole('button', { name: '放弃' }) as HTMLButtonElement).disabled).toBe(true)
-    view.unmount()
-
-    wrap(<PlanSummaryCard plan={{ ...plan, status: 'approved' }} onOpen={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: '批准执行' })).toBeNull()
-  })
-
-  it('shows a rejected badge for rejected plans', () => {
+  it('shows a canceled badge for canceled plans and a replanned one with feedback', () => {
     wrap(<PlanSummaryCard plan={{ ...plan, status: 'rejected' }} onOpen={vi.fn()} />)
-    expect(screen.getByText('已放弃')).toBeTruthy()
+    expect(screen.getByText('已取消')).toBeTruthy()
+    cleanup()
+    wrap(
+      <PlanSummaryCard
+        plan={{ ...plan, status: 'rejected', feedback: '换个做法' }}
+        onOpen={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('已重新规划')).toBeTruthy()
+  })
+})
+
+describe('PlanActions', () => {
+  it('approves or replans a proposed plan', async () => {
+    const user = userEvent.setup()
+    const store = makeStore()
+    wrap(<PlanActions plan={plan} />, store)
+    const bar = screen.getByRole('region', { name: '待批准的计划' })
+    expect(within(bar).getByText('读代码')).toBeTruthy()
+
+    await user.click(within(bar).getByRole('button', { name: '批准执行' }))
+    expect(store.getState().approvePlan).toHaveBeenCalledWith('pl1')
+
+    await user.click(within(bar).getByRole('button', { name: '重新规划' }))
+    const submit = within(bar).getByRole('button', { name: '按说明重新规划' }) as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+    await user.type(within(bar).getByRole('textbox', { name: '重新规划' }), '换个做法')
+    await user.click(submit)
+    expect(store.getState().replan).toHaveBeenCalledWith('pl1', '换个做法')
   })
 
-  it('ignores replan submit when note is empty or session view is missing', async () => {
+  it('goes back from replanning and cancels the plan without starting a turn', async () => {
+    const user = userEvent.setup()
+    const store = makeStore()
+    wrap(<PlanActions plan={plan} />, store)
+    await user.click(screen.getByRole('button', { name: '重新规划' }))
+    await user.click(screen.getByRole('button', { name: '返回' }))
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(store.getState().abandonPlan).toHaveBeenCalledWith('pl1')
+    expect(store.getState().approvePlan).not.toHaveBeenCalled()
+    expect(store.getState().replan).not.toHaveBeenCalled()
+  })
+
+  it('ignores replan submit when the note is empty or the session view is missing', async () => {
     const user = userEvent.setup()
     const emptyViewStore = makeStore({ views: {} })
-    wrap(<PlanSummaryCard plan={plan} onOpen={vi.fn()} />, emptyViewStore)
+    wrap(<PlanActions plan={plan} />, emptyViewStore)
     await user.click(screen.getByRole('button', { name: '重新规划' }))
     const form = screen.getByRole('textbox', { name: '重新规划' }).closest('form')!
     fireEvent.submit(form)
     expect(emptyViewStore.getState().replan).not.toHaveBeenCalled()
+  })
+
+  it('disables the actions while running and hides them once the plan is decided', () => {
+    const busy = wrap(<PlanActions plan={plan} />, makeStore({ awaitingTurn: { s1: true } }))
+    for (const name of ['批准执行', '重新规划', '取消']) {
+      expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true)
+    }
+    busy.unmount()
+
+    wrap(<PlanActions plan={{ ...plan, status: 'approved' }} />)
+    expect(screen.queryByRole('region', { name: '待批准的计划' })).toBeNull()
+    cleanup()
+    wrap(<PlanActions plan={undefined} />)
+    expect(screen.queryByRole('region', { name: '待批准的计划' })).toBeNull()
+  })
+
+  it('stays idle when no session is selected', () => {
+    wrap(<PlanActions plan={plan} />, makeStore({ activeSessionId: undefined }))
+    expect((screen.getByRole('button', { name: '批准执行' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    )
   })
 })
 
@@ -228,7 +263,7 @@ describe('PlanDetails', () => {
     cleanup()
 
     wrap(<PlanDetails plan={{ ...empty, status: 'rejected' }} />)
-    expect(screen.getByText('已放弃')).toBeTruthy()
+    expect(screen.getByText('已取消')).toBeTruthy()
   })
 })
 

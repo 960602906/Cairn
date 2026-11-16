@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
-import type { PendingApproval } from '@cairn/protocol'
+import type { PendingApproval, PendingQuestion } from '@cairn/protocol'
 import type { MainApi } from '../api.js'
 import { createSessionStore } from '../session-store.js'
 import { SessionStoreContext } from '../store-context.js'
@@ -192,6 +192,38 @@ describe('AgentTrial', () => {
     // 对话框自身关闭（Esc）也走同一条清理路径。
     fireEvent.keyDown(document.body, { key: 'Escape' })
     await waitFor(() => expect(onOpenChange.mock.calls.length).toBeGreaterThanOrEqual(1))
+  })
+
+  it('shows questions from the trial session and answers them', async () => {
+    const question: PendingQuestion = {
+      questionId: 'q-call-1',
+      toolCallId: 'q-call-1',
+      questions: [
+        {
+          id: 'q1',
+          question: '用哪个方案？',
+          options: [{ label: '方案 A' }, { label: '方案 B', recommended: true }],
+        },
+      ],
+    }
+    const { store, calls } = setup({ 'question.pending': () => ({ questions: [question] }) })
+    await store.getState().refreshProjects()
+    renderTrial(store)
+    fireEvent.click(screen.getByRole('button', { name: '开始试运行' }))
+
+    const card = await screen.findByRole('article', { name: '需要你的选择' })
+    expect(within(card).getByText('用哪个方案？')).toBeTruthy()
+    fireEvent.click(within(card).getByRole('button', { name: /方案 B/ }))
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'question.resolve',
+        params: {
+          sessionId: 'trial-1',
+          questionId: 'q-call-1',
+          answers: [{ questionId: 'q1', selected: ['方案 B'] }],
+        },
+      }),
+    )
   })
 
   it('chooses a project folder before starting when no project is listed', async () => {
