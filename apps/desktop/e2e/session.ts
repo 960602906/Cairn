@@ -168,8 +168,8 @@ export async function openSession(window: Page, title: string) {
 }
 
 /**
- * 给已有会话指定 Agent（`session.setAgent`）。Agent 选择器已从界面移除，
- * 委派、改动集等仍需要自定义 Agent 的用例直接用 RPC 指定。
+ * 给已有会话指定 Agent（`session.setAgent`）。选择器的界面用例见 `agent-picker.spec.ts`；
+ * 委派、改动集等只需要一个指定 Agent 的用例直接用 RPC，不必绕开界面。
  */
 export async function setAgentOnSession(
   window: Page,

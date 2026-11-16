@@ -1672,6 +1672,72 @@ describe('Composer (M2-04)', () => {
     expect(await screen.findByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
   })
 
+  it('switches the session agent from the composer picker (M6-08)', async () => {
+    const agents = [
+      {
+        agentId: 'a',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+        description: {},
+        source: 'builtin',
+        archived: false,
+        status: 'published',
+        version: 1,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+      {
+        agentId: 'b',
+        name: { 'zh-CN': '代码审查员', 'en-US': 'Reviewer' },
+        description: {},
+        source: 'builtin',
+        archived: false,
+        status: 'published',
+        version: 2,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ]
+    const { request, open } = setup({
+      history: HISTORY,
+      handlers: { 'agent.list': () => ({ agents }) },
+    })
+    await open()
+    await userEvent.click(await screen.findByRole('button', { name: 'Agent：编程助手' }))
+    await userEvent.click(await screen.findByRole('option', { name: /代码审查员/ }))
+    expect(request).toHaveBeenCalledWith('session.setAgent', {
+      sessionId: 's1',
+      agent: { id: 'b', version: 2 },
+    })
+  })
+
+  it('cannot switch the agent while the session is running', async () => {
+    const agents = [
+      {
+        agentId: 'a',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+        description: {},
+        source: 'builtin',
+        archived: false,
+        status: 'published',
+        version: 1,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ]
+    const { open } = setup({
+      history: RUNNING,
+      status: 'running',
+      handlers: { 'agent.list': () => ({ agents }) },
+    })
+    await open()
+    const trigger = await screen.findByRole('button', { name: 'Agent：编程助手' })
+    expect((trigger as HTMLButtonElement).disabled).toBe(true)
+    expect(trigger.getAttribute('title')).toBe('运行中不能切换 Agent')
+  })
+
   it('sets the session thinking level from the model menu', async () => {
     const reasoning = [
       {
