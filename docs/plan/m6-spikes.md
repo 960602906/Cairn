@@ -26,16 +26,28 @@
 
 | 平台 | 架构 | 发布形态 | 最低系统版本（基线） | 备注 |
 |---|---|---|---|---|
-| Windows | x64 | NSIS 按用户安装 | Windows 10（暂定，Electron 45 下限待核实） | M5 已实现；本机 24H2 已验收 |
-| macOS | arm64 + x64（Universal 或分架构） | DMG + ZIP（更新用） | macOS 12 Monterey（暂定，待核实） | 首次正式支持，M6-02 落地 |
-| Linux | x64 | AppImage + deb | Ubuntu LTS（22.04/24.04 为目标基线，glibc 下限待核实） | 其他发行版 best-effort |
+| Windows | x64 | NSIS 按用户安装 | Windows 10 及以上（Electron 45 官方基线） | M5 已实现；本机 24H2 已验收 |
+| macOS | arm64 + x64（Universal 或分架构） | DMG + ZIP（更新用） | macOS 13 Ventura 及以上（Electron 45 官方基线） | 首次正式支持，M6-02 落地 |
+| Linux | x64 | AppImage + deb | Ubuntu LTS（22.04/24.04 为目标基线；受 Chromium/发行版支持约束） | 其他发行版 best-effort |
 
-**最低版本依据与待核实项**：Windows 10 起（Electron 23 已放弃 Windows 7/8）、Linux
-glibc 2.31+（Ubuntu 20.04 起）、macOS 12 起是基于历史版本的**暂定候选**，不是已确认的
-Electron 45 下限；本机无法访问 electronjs.org 在线确认。M6-02/M6-03 在真实机器上启动前，
-必须核对 [Electron 官方支持文档](https://www.electronjs.org/docs/latest/tutorial/support) 与
-[Electron 45 发布说明](https://www.electronjs.org/blog)，再把经过验证的最低版本更新到此表。
-在核实前不得以暂定候选作为发行版对外的最低系统要求。
+**最低版本依据**（已核实）：来源为 Electron v45.2.1 的 `README.md`「Platform support」小节，
+可复现：
+
+```bash
+gh api 'repos/electron/electron/contents/README.md?ref=v45.2.1' --jq .content | base64 -d \
+  | sed -n '/## Platform support/,/## Electron Fiddle/p'
+```
+
+其原文要点：
+
+- **macOS（Ventura and up）**：提供 64 位 Intel 与 Apple Silicon/ARM 二进制；
+- **Windows（Windows 10 and up）**：提供 `x64`/`amd64` 与 `arm64` 二进制；
+- **Linux**：提供 `x64`/`arm64` 二进制，支持 Chromium 与发行版仍在支持的版本（如 Ubuntu/
+  Fedora/Debian），预编译二进制在 Ubuntu 上构建。
+
+因此 macOS 下限是 **Ventura（13）**，不是早期猜测的 Monterey（12）；Linux 不写固定 glibc，
+而由 Chromium/发行版支持边界决定，M6-03 以 Ubuntu LTS 22.04/24.04 为实际验收基线。
+M6-02/M6-03 在真实机器上启动前仍需以该 README 与 Electron 45 发布说明为准复核一次。
 
 不在本轮范围（与 M6 §2.1 一致）：Windows ARM64、Linux arm64、32 位、移动端、Web 版、
 企业分发与 MSIX。接口层为这些平台留位置（M6-01），本轮不实现。
@@ -168,6 +180,6 @@ git ls-files | grep -iE "CONTRIBUTING|CODE_OF_CONDUCT|SECURITY|ISSUE_TEMPLATE|PU
 ## 7. 未验证项（不得外推）
 
 - macOS/Linux 上真实安装、启动、跑通任务：需 M6-02/M6-03 在真实或 CI 平台执行。
-- Electron 45 的最低系统版本：本机无法访问 electronjs.org 确认，§2.1 的基线下限
-  需在 M6-02/M6-03 前复核官方发布说明，不当作已核实事实。
+- Linux 具体 glibc/发行版下限：Electron 只声明「Chromium 与发行版仍支持的版本」，没有固定
+  glibc 值；M6-03 以 Ubuntu LTS 22.04/24.04 为验收基线，其他发行版 best-effort。
 - 历史敏感信息扫描尚未执行：§5 只给出命令，执行结果与清理记录属于 M6-06。
