@@ -39,6 +39,8 @@
   "sandbox.reason.restricted_token_unavailable": "a restricted token cannot be created",
   "sandbox.reason.appcontainer_unavailable": "AppContainer is unavailable",
   "sandbox.reason.platform_unsupported": "not supported on this platform",
+  "sandbox.reason.platform_unsupported_linux": "the command sandbox is not available on Linux yet",
+  "sandbox.reason.platform_unsupported_macos": "the command sandbox is not available on macOS yet",
   "sandbox.reason.native_unavailable": "the Windows sandbox API could not be loaded",
   "sandbox.reason.probe_failed": "the capability probe failed",
   "sandbox.reason.unknown": "unknown reason"

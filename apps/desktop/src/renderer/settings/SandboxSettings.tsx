@@ -94,27 +94,36 @@ function CapabilityPanel({ status }: { readonly status: SandboxStatus | 'loading
         </p>
       )}
       <p className="text-note text-fg2">{t('general.sandbox.status.network', { network })}</p>
-      <div className="flex flex-col gap-1.5 border-t-[0.5px] border-hair pt-2.5">
-        <span className="text-note font-medium text-fg2">{t('general.sandbox.status.checks')}</span>
-        <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
-          {CHECK_KEYS.map((key) => {
-            const ok = capability.checks[key]
-            return (
-              <li key={key} className="flex items-center gap-1.5 text-note text-muted">
-                {ok ? (
-                  <Check aria-hidden className="size-3 shrink-0 text-ok" />
-                ) : (
-                  <X aria-hidden className="size-3 shrink-0 text-faint" />
-                )}
-                <span>{t(`general.sandbox.check.${key}`)}</span>
-                <span className="sr-only">
-                  {ok ? t('general.sandbox.status.yes') : t('general.sandbox.status.no')}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
-      </div>
+      {capability.supported ? (
+        <div className="flex flex-col gap-1.5 border-t-[0.5px] border-hair pt-2.5">
+          <span className="text-note font-medium text-fg2">
+            {t('general.sandbox.status.checks')}
+          </span>
+          <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
+            {CHECK_KEYS.map((key) => {
+              const ok = capability.checks[key]
+              return (
+                <li key={key} className="flex items-center gap-1.5 text-note text-muted">
+                  {ok ? (
+                    <Check aria-hidden className="size-3 shrink-0 text-ok" />
+                  ) : (
+                    <X aria-hidden className="size-3 shrink-0 text-faint" />
+                  )}
+                  <span>{t(`general.sandbox.check.${key}`)}</span>
+                  <span className="sr-only">
+                    {ok ? t('general.sandbox.status.yes') : t('general.sandbox.status.no')}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ) : (
+        // 平台尚未实现命令沙箱（M6-05）：不展示 Windows 专属的四项检查，说明实际行为
+        <p className="border-t-[0.5px] border-hair pt-2.5 text-note text-warn">
+          {t('general.sandbox.status.unsupportedPlatform')}
+        </p>
+      )}
       <p className="text-note text-faint">{t('general.sandbox.diagnostics')}</p>
     </div>
   )

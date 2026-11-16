@@ -361,8 +361,15 @@ describe('命令沙箱守卫（M5-04）', () => {
     expect(decide(read, { ...available, profile: 'danger-full-access' }).decision).toBe('allow')
   })
 
-  it('does not intercept platforms without the sandbox (M6 scope)', () => {
-    expect(decide(run, { ...available, supported: false, available: false }).decision).toBe('allow')
+  it('does not add a sandbox gate on platforms without the sandbox (M6-05)', () => {
+    // 平台未实现沙箱：普通权限规则照常生效；execute 类默认仍需审批，卡片与事件标注未沙箱化
+    const unsupported = { ...available, supported: false, available: false }
+    // 询问模式（没有预设规则）：execute 类按类别默认值仍要审批
+    expect(decide(run, unsupported, presetRules('ask')).decision).toBe('ask')
+    // 用户显式放行（自动模式或允许规则）后，命令可以在沙箱外运行
+    expect(decide(run, unsupported, presetRules('auto')).decision).toBe('allow')
+    expect(decide(run, unsupported, allowAll).decision).toBe('allow')
+    expect(decide(read, unsupported).decision).toBe('allow')
   })
 
   it('requires per-command approval for danger-full-access, even with an allow rule', () => {

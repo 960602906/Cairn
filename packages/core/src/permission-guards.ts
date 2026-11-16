@@ -372,7 +372,11 @@ export const SandboxGuardReasonCode = {
 } as const
 
 export interface SandboxGuardState {
-  /** 当前平台是否支持 M5 的命令沙箱；不支持时不拦截（M6 之前保持现有语义）。 */
+  /**
+   * 当前平台是否实现了命令沙箱（目前只有 Windows）。未实现时不额外拦截：`execute` 类工具默认
+   * 就要审批，命令卡片与事件同时标注“未沙箱化”及平台原因（M6-05）。已实现但运行时不可用时
+   * 才按 `unavailable` 失败关闭或逐次审批。
+   */
   readonly supported: boolean
   readonly available: boolean
   readonly unavailable: 'deny' | 'ask'
@@ -391,11 +395,13 @@ const SANDBOX_ESCAPE_REASON =
   'Only commands that need access outside the workspace should use this option.'
 
 /**
- * 命令沙箱的审批/拒绝（M5-04）：只作用于 `run_command` 与 `start_command`。
+ * 命令沙箱的审批/拒绝（M5-04；跨平台语义见 M6-05 与 ADR-0034）：
  *
  * - `danger-full-access`：强制逐次审批，不能被“始终允许”规则静默放行；
  * - 沙箱不可用且设置为失败关闭：直接拒绝，命令不会启动；
- * - 沙箱不可用且设置为审批：每次审批（“本次不使用沙箱”），审批后以应用用户权限执行。
+ * - 沙箱不可用且设置为审批：每次审批（“本次不使用沙箱”），审批后以应用用户权限执行；
+ * - 平台尚未实现沙箱：不额外拦截。`execute` 类工具默认仍需审批，命令卡片与事件标注
+ *   “未沙箱化”及平台原因；用户显式放行后才以应用用户权限运行。
  */
 export function sandboxGuard(state: () => SandboxGuardState): PermissionGuard {
   return (request) => {

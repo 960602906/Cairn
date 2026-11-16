@@ -39,6 +39,8 @@
   "sandbox.reason.restricted_token_unavailable": "无法创建受限令牌",
   "sandbox.reason.appcontainer_unavailable": "AppContainer 不可用",
   "sandbox.reason.platform_unsupported": "当前平台不支持",
+  "sandbox.reason.platform_unsupported_linux": "Linux 版本尚未提供命令沙箱",
+  "sandbox.reason.platform_unsupported_macos": "macOS 版本尚未提供命令沙箱",
   "sandbox.reason.native_unavailable": "无法加载 Windows 沙箱 API",
   "sandbox.reason.probe_failed": "能力探测失败",
   "sandbox.reason.unknown": "原因未知"

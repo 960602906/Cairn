@@ -31,12 +31,20 @@ function api(overrides: Partial<SandboxNativeApi> = {}): SandboxNativeApi {
 }
 
 describe('probeCapability', () => {
-  it('reports unsupported on non-Windows platforms', async () => {
-    const capability = await probeCapability({ platform: 'linux' })
-    expect(capability).toMatchObject({
+  it('reports unsupported on non-Windows platforms with a platform-specific reason', async () => {
+    const linux = await probeCapability({ platform: 'linux' })
+    expect(linux).toMatchObject({
       supported: false,
       available: false,
       mechanism: 'none',
+      reason: 'sandbox.platform_unsupported_linux',
+    })
+    expect(await probeCapability({ platform: 'darwin' })).toMatchObject({
+      supported: false,
+      reason: 'sandbox.platform_unsupported_macos',
+    })
+    expect(await probeCapability({ platform: 'freebsd' })).toMatchObject({
+      supported: false,
       reason: 'sandbox.platform_unsupported',
     })
   })

@@ -83,7 +83,7 @@ describe('createSandboxService', () => {
     expect(await unsupported.capability()).toMatchObject({
       available: false,
       supported: false,
-      reason: 'sandbox.platform_unsupported',
+      reason: 'sandbox.platform_unsupported_linux',
     })
 
     const supported = createSandboxService({
@@ -256,7 +256,10 @@ describe('createSandboxService', () => {
     const text = JSON.stringify(diagnostics)
     expect(text).not.toContain('someone')
     expect(text).not.toContain('AppData')
-    expect((await setup({ platform: 'linux' }).service.diagnostics()).platform).toBe('other')
+    // M6-05：诊断区分具体平台，其他平台归为 other
+    expect((await setup({ platform: 'linux' }).service.diagnostics()).platform).toBe('linux')
+    expect((await setup({ platform: 'darwin' }).service.diagnostics()).platform).toBe('darwin')
+    expect((await setup({ platform: 'freebsd' }).service.diagnostics()).platform).toBe('other')
   })
 
   it('deletes the experimental AppContainer profile on cleanup only when named', async () => {
