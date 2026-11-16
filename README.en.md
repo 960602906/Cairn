@@ -33,10 +33,10 @@ Architecturally, Cairn = **our own agent platform** + **a pluggable agent engine
   preferred engine. Tool execution stays in the platform, so swapping engines does not affect
   permissions, auditing or storage.
 
-> **Status**: 0.1.0 unsigned beta, MIT licensed. M0–M5 are implemented and installable; stable is
-> still blocked on code signing, legal review and a clean-VM acceptance matrix. Windows x64 ships
-> first, per-user install. See the [M5 release acceptance report](docs/plan/m5-report.md) and the
-> [M6 plan](docs/plan/m6.md) for cross-platform support and open sourcing.
+> **Status**: 0.1.0 unsigned beta, MIT licensed. M0–M5 are implemented and installable; M6 added
+> macOS/Linux packaging, the three-platform CI matrix and a per-platform release pipeline (see the
+> [M6 acceptance report](docs/plan/m6-report.md)). Stable is still blocked on code signing, legal
+> review and a clean-VM acceptance matrix. Windows x64 ships first, per-user install.
 
 ## Highlights
 
@@ -129,7 +129,9 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
 
 ## Plan
 
-- Shipping platform: Windows first; macOS and Linux next.
+- Shipping platform: Windows first; macOS/Linux packaging and the per-platform release pipeline
+  landed in M6, and their channels open after signing, notarization and real-device install
+  acceptance (see the [M6 acceptance report](docs/plan/m6-report.md)).
 - Initial models: Anthropic, OpenAI and Gemini protocol formats; services like DeepSeek use the
   OpenAI-compatible format.
 - UI languages: Chinese and English; light, dark and follow-system themes.

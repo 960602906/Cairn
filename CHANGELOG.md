@@ -30,6 +30,16 @@
   诊断包与重启恢复），以及真实 NSIS 安装/卸载/重装恢复与中文长路径验收
   （`pnpm e2e:packaged`、`pnpm acceptance:installed`），验收记录见
   `docs/plan/m5-report.md`（M5-10）。
+- 跨平台支持：macOS arm64/x64 的 DMG 与 ZIP 打包、Developer ID 签名/公证校验与菜单适配；
+  Linux 的 AppImage/deb、桌面项与校验和；无密钥环时明确拒绝保存凭据并说明原因；非 Windows
+  平台在界面与事件里标注“未沙箱化”（ADR-0034、ADR-0040～0042）。
+- 三平台 CI 与发布流水线：Windows/Ubuntu/macOS 的构建、打包校验与冒烟，DCO 校验，
+  `prepare → build-* → assemble → publish` 与按平台的 `latest*.yml`、校验和、发布说明
+  （ADR-0043）。
+- 开源材料：MIT 许可证、CONTRIBUTING（DCO）、CODE_OF_CONDUCT、SECURITY、Issue/PR 模板与
+  英文 README（M6-06）。
+- 会话内 Agent 选择器：在输入框左下切换已发布 Agent，运行中禁用，支持搜索与快捷键
+  （M6-08）。
 
 ### Changed
 
