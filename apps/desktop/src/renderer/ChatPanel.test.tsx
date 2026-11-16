@@ -441,6 +441,32 @@ describe('ChatPanel', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: '计划进度' })).toBeNull())
   })
 
+  it('floats an ad-hoc task list without a plan (ADR-0038)', async () => {
+    const { open, emit } = setup({ history: HISTORY })
+    await open()
+    const base = HISTORY.length
+    emit(
+      ev(base + 1, 'tasklist.created', {
+        listId: 'tl1',
+        title: '修测试',
+        source: 'ad_hoc',
+        items: [
+          { itemId: 'a', title: '读用例' },
+          { itemId: 'b', title: '改代码' },
+        ],
+      }),
+      ev(base + 2, 'tasklist.item.updated', { listId: 'tl1', itemId: 'a', status: 'done' }),
+    )
+    const card = await screen.findByRole('region', { name: '任务进度' })
+    expect(within(card).getByText('修测试')).toBeTruthy()
+    expect(within(card).getByText('1 / 2')).toBeTruthy()
+    // 临时列表没有计划可打开。
+    expect(within(card).queryByRole('button', { name: '修测试' })).toBeNull()
+
+    emit(ev(base + 3, 'tasklist.item.updated', { listId: 'tl1', itemId: 'b', status: 'done' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: '任务进度' })).toBeNull())
+  })
+
   it('closes the overlay with the backdrop or Esc and returns focus to the toggle', async () => {
     const { open } = setup({ history: HISTORY })
     await open()

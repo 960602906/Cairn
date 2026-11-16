@@ -1556,6 +1556,199 @@ describe('agent host', () => {
     })
   })
 
+  it('writes task list events through the plan alias when a list is linked (ADR-0038)', async () => {
+    const plan = {
+      planId: 'plan-1',
+      goal: 'Ship it',
+      steps: [{ id: 'one', title: 'First step' }],
+    }
+    const taskLists = [
+      {
+        listId: 'plan-plan-1',
+        title: 'Ship it',
+        source: 'plan' as const,
+        planId: 'plan-1',
+        items: [{ itemId: 'one', title: 'First step', status: 'pending' as const }],
+      },
+    ]
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            { kind: 'tool', name: 'update_plan_step', input: { stepId: 'one', status: 'done' } },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script, { registerTools: (registry) => registry.register(echoTool) })
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', {
+      messageId: 'm1',
+      content: text('go'),
+      plan,
+      taskLists,
+    })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tasklist.item.updated')?.payload).toEqual({
+      listId: 'plan-plan-1',
+      itemId: 'one',
+      status: 'done',
+    })
+    expect(h.events.some((event) => event.type === 'plan.step.updated')).toBe(false)
+  })
+
+  it('exposes task list tools in a normal turn and records item updates', async () => {
+    const taskLists = [
+      {
+        listId: 'tl1',
+        title: 'Checklist',
+        source: 'ad_hoc' as const,
+        items: [{ itemId: 'x', title: 'Do it', status: 'pending' as const }],
+      },
+    ]
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'tool',
+              name: 'update_task_item',
+              input: { listId: 'tl1', itemId: 'x', status: 'done' },
+            },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script, { registerTools: (registry) => registry.register(echoTool) })
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go'), taskLists })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tasklist.item.updated')?.payload).toEqual({
+      listId: 'tl1',
+      itemId: 'x',
+      status: 'done',
+    })
+    expect(h.events.some((event) => event.type === 'tool.failed')).toBe(false)
+  })
+
+  it('keeps the in-memory list mirror consistent within a turn', async () => {
+    const taskLists = [
+      {
+        listId: 'tl1',
+        title: 'Checklist',
+        source: 'ad_hoc' as const,
+        items: [
+          { itemId: 'x', title: 'Do it', status: 'in_progress' as const, note: '旧说明' },
+          { itemId: 'y', title: 'Then', status: 'pending' as const },
+        ],
+      },
+    ]
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'tool',
+              name: 'create_task_list',
+              input: { title: 'New', items: [{ title: 'a' }] },
+            },
+            {
+              kind: 'tool',
+              name: 'revise_task_items',
+              input: { listId: 'nope', items: [{ id: 'a', title: 'a' }] },
+            },
+            {
+              kind: 'tool',
+              name: 'revise_task_items',
+              input: {
+                listId: 'tl1',
+                items: [
+                  { id: 'x', title: 'Do it' },
+                  { id: 'z', title: 'New' },
+                ],
+              },
+            },
+            {
+              kind: 'tool',
+              name: 'update_task_item',
+              input: { listId: 'tl1', itemId: 'x', status: 'done', note: 'ok' },
+            },
+            {
+              kind: 'tool',
+              name: 'update_task_item',
+              input: { listId: 'tl1', itemId: 'x', status: 'in_progress' },
+            },
+            {
+              kind: 'tool',
+              name: 'update_task_item',
+              input: { listId: 'nope', itemId: 'x', status: 'done' },
+            },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script, { registerTools: (registry) => registry.register(echoTool) })
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go'), taskLists })
+    await h.waitFor('turn.completed')
+
+    expect(h.events.find((event) => event.type === 'tasklist.created')?.payload).toMatchObject({
+      title: 'New',
+      source: 'ad_hoc',
+    })
+    expect(h.events.find((event) => event.type === 'tasklist.items.revised')?.payload).toEqual({
+      listId: 'tl1',
+      items: [
+        { itemId: 'x', title: 'Do it' },
+        { itemId: 'z', title: 'New' },
+      ],
+    })
+    const updates = h.events.filter((event) => event.type === 'tasklist.item.updated')
+    expect(updates).toHaveLength(2)
+    expect(updates[0]?.payload).toEqual({
+      listId: 'tl1',
+      itemId: 'x',
+      status: 'done',
+      note: 'ok',
+    })
+    // 不带说明的更新不改写已有说明。
+    expect(updates[1]?.payload).toEqual({ listId: 'tl1', itemId: 'x', status: 'in_progress' })
+    // 两个未知目标被拒绝，但不中断这一轮。
+    expect(h.events.filter((event) => event.type === 'tool.failed')).toHaveLength(2)
+  })
+
+  it('hides task list tools in plan mode', async () => {
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'tool',
+              name: 'create_task_list',
+              input: { title: 'Sneak', items: [{ title: 'x' }] },
+            },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script, { registerTools: (registry) => registry.register(echoTool) })
+    await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+    await h.main.request('host.prompt', {
+      messageId: 'm1',
+      content: text('plan'),
+      mode: 'plan',
+    })
+    await h.waitFor('turn.completed')
+    expect(h.events.some((event) => event.type === 'tasklist.created')).toBe(false)
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.denied' },
+    })
+  })
+
   it('resolves workspace paths and reads the skill read-only roots (M3-07)', async () => {
     const probes: unknown[] = []
     const probe: ToolDefinition<{ path: string }> = {

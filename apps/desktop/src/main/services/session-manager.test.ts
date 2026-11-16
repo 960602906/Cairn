@@ -952,9 +952,28 @@ describe('plan (M3-05)', () => {
     if (!('messageId' in approved)) throw new Error('approvePlan should resolve immediately')
     await flush()
     expect(published.some((event) => event.type === 'plan.approved')).toBe(true)
+    // 批准即创建执行列表，且排在 plan.approved 之前（ADR-0038）。
+    const taskListIndex = types().indexOf('tasklist.created')
+    expect(taskListIndex).toBeGreaterThan(-1)
+    expect(taskListIndex).toBeLessThan(types().indexOf('plan.approved'))
+    expect(published[taskListIndex]?.payload).toMatchObject({
+      listId: 'plan-pl1',
+      title: '读代码',
+      source: 'plan',
+      planId: 'pl1',
+      items: [{ itemId: 'read', title: '先读测试' }],
+    })
     expect(host.inputs[1]).toMatchObject({
       messageId: approved.messageId,
       plan: { planId: 'pl1', goal: '读代码', steps: [{ id: 'read', title: '先读测试' }] },
+      taskLists: [
+        {
+          listId: 'plan-pl1',
+          source: 'plan',
+          planId: 'pl1',
+          items: [{ itemId: 'read', title: '先读测试', status: 'pending' }],
+        },
+      ],
     })
     expect(host.inputs[1]).not.toHaveProperty('mode')
     expect(
@@ -985,6 +1004,7 @@ describe('plan (M3-05)', () => {
       messageId: steered.messageId,
       send: 'steer',
       plan: { planId: 'pl1', goal: '读代码', steps: [{ id: 'read', title: '读 a.ts' }] },
+      taskLists: [{ listId: 'plan-pl1', planId: 'pl1' }],
     })
   })
 
@@ -1005,6 +1025,115 @@ describe('plan (M3-05)', () => {
     expect(() => manager.abandonPlan({ sessionId, planId: 'pl1' })).toThrow(
       expect.objectContaining({ code: 'plan.not_pending' }),
     )
+  })
+})
+
+describe('task lists in prompts (ADR-0038)', () => {
+  it('passes open lists on the next prompt and omits closed ones', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, { idleTimeoutMs: 60_000 })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: text('hi') })
+    await flush()
+    const host = hosts[0]!
+    startTurn(sessionId, host.runId, 't1')
+    finishTurn(sessionId, host.runId, 't1')
+    expect(host.inputs[0]).not.toHaveProperty('taskLists')
+
+    hostEmits(sessionId, host.runId, [
+      'tasklist.created',
+      {
+        listId: 'tl1',
+        title: '清单',
+        source: 'ad_hoc',
+        items: [{ itemId: 'x', title: '做' }],
+      },
+    ])
+    manager.prompt({ sessionId, content: text('继续') })
+    await flush()
+    expect(host.inputs.at(-1)).toMatchObject({
+      taskLists: [
+        {
+          listId: 'tl1',
+          title: '清单',
+          source: 'ad_hoc',
+          items: [{ itemId: 'x', title: '做', status: 'pending' }],
+        },
+      ],
+    })
+
+    startTurn(sessionId, host.runId, 't2', false)
+    finishTurn(sessionId, host.runId, 't2')
+    hostEmits(sessionId, host.runId, ['tasklist.closed', { listId: 'tl1' }])
+    manager.prompt({ sessionId, content: text('再来') })
+    await flush()
+    expect(host.inputs.at(-1)).not.toHaveProperty('taskLists')
+  })
+
+  it('closes superseded plan lists and reuses an existing one on approval', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, { idleTimeoutMs: 60_000 })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: text('计划一下'), mode: 'plan' })
+    await flush()
+    const host = hosts[0]!
+    startTurn(sessionId, host.runId, 't1')
+    hostEmits(sessionId, host.runId, [
+      'plan.proposed',
+      {
+        planId: 'pl1',
+        content: {
+          goal: '读代码',
+          files: [],
+          steps: [{ id: 'read', title: '读 a.ts' }],
+          risks: '',
+          verification: '',
+          markdown: '',
+        },
+      },
+      { turnId: 't1' },
+    ])
+    // 上一份计划的列表还开着；同一计划的列表已经存在（例如恢复的会话）。
+    hostEmits(sessionId, host.runId, [
+      'tasklist.created',
+      {
+        listId: 'plan-pl0',
+        title: '旧计划',
+        source: 'plan',
+        planId: 'pl0',
+        items: [{ itemId: 'old', title: '旧' }],
+      },
+    ])
+    hostEmits(sessionId, host.runId, [
+      'tasklist.created',
+      {
+        listId: 'plan-pl1',
+        title: '读代码',
+        source: 'plan',
+        planId: 'pl1',
+        items: [{ itemId: 'read', title: '读 a.ts' }],
+      },
+    ])
+    finishTurn(sessionId, host.runId, 't1')
+
+    // 计划轮不下发列表快照，执行轮才有（见上一条用例）。
+    manager.prompt({ sessionId, content: text('再计划'), mode: 'plan' })
+    await flush()
+    expect(host.inputs.at(-1)).not.toHaveProperty('taskLists')
+    startTurn(sessionId, host.runId, 't2', false)
+    finishTurn(sessionId, host.runId, 't2')
+
+    manager.approvePlan({ sessionId, planId: 'pl1' })
+    await flush()
+    expect(published.filter((event) => event.type === 'tasklist.closed')).toMatchObject([
+      { payload: { listId: 'plan-pl0', reason: 'superseded' } },
+    ])
+    // 已经存在同 id 的列表时不重复创建。
+    expect(
+      published
+        .filter((event) => event.type === 'tasklist.created')
+        .map((event) => (event.payload as { listId: string }).listId),
+    ).toEqual(['plan-pl0', 'plan-pl1'])
   })
 })
 

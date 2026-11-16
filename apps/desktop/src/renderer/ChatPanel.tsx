@@ -8,14 +8,14 @@
 import { FileDiff, PanelRight } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { activeExecutionPlan, rootRun, sessionStatus } from '@cairn/core'
+import { progressTaskList, rootRun, sessionStatus } from '@cairn/core'
 import { isAgentDraftRef } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { totals, turnEntries } from './file-changes.js'
 import { MessageStream } from './MessageStream.js'
-import { planInProgress, PlanProgress } from './PlanCard.js'
+import { TaskProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
 import {
   fileTabId,
@@ -262,8 +262,11 @@ export function ChatPanel({
   const path = view?.info?.projectPath ?? summary?.projectPath
   const project = projectNameForPath(path, projects, tc('project.defaultName'))
   const model = view?.info?.model ?? run?.model ?? summary?.model ?? defaultModel
-  const executing = view ? activeExecutionPlan(view) : undefined
-  const progressPlan = executing && planInProgress(executing) ? executing : undefined
+  const progressList = view ? progressTaskList(view) : undefined
+  const progressPlan =
+    view && progressList?.planId
+      ? view.plans.find((plan) => plan.planId === progressList.planId)
+      : undefined
   const turnId = run?.turn?.turnId
   const turnChanges =
     turnId === undefined || changes === undefined ? undefined : totals(turnEntries(changes, turnId))
@@ -372,12 +375,16 @@ export function ChatPanel({
           </div>
           <TurnRail view={view} />
           <div className="mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
-            {progressPlan && (
-              <PlanProgress
-                key={progressPlan.planId}
-                plan={progressPlan}
+            {progressList && (
+              <TaskProgress
+                key={progressList.listId}
+                list={progressList}
                 running={status === 'running'}
-                onOpen={() => openPanel('plan', { planId: progressPlan.planId })}
+                {...(progressPlan
+                  ? {
+                      onOpen: () => openPanel('plan', { planId: progressPlan.planId }),
+                    }
+                  : { labelKey: 'taskList.progress.label' as const })}
               />
             )}
             <Composer

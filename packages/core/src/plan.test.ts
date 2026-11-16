@@ -18,6 +18,7 @@ import {
   planToolVisible,
   presetRules,
   registerPlanTools,
+  registerTaskListTools,
   renderPlan,
   type ResolvedModel,
   type ToolContext,
@@ -83,10 +84,7 @@ describe('plan tools', () => {
 
   it('records a plan and stops the turn, filling in empty markdown', async () => {
     const registry = createToolRegistry()
-    registerPlanTools(registry, {
-      createId: () => 'pl1',
-      activePlan: () => undefined,
-    })
+    registerPlanTools(registry, { createId: () => 'pl1' })
     const tool = registry.get(PROPOSE_PLAN_TOOL)!
     const output = await tool.execute({ ...doc, markdown: '  ' }, ctx)
     expect(output.stopLoop).toBe(true)
@@ -136,8 +134,12 @@ describe('plan tools', () => {
       steps: doc.steps,
     }
     const registry = createToolRegistry()
-    registerPlanTools(registry, {
+    registerTaskListTools(registry, {
       createId: () => 'unused',
+      lists: () => [],
+      createList: () => undefined,
+      reviseItems: () => undefined,
+      updateItem: () => undefined,
       activePlan: () => active,
     })
     const tool = registry.get(UPDATE_PLAN_STEP_TOOL)!
@@ -168,8 +170,12 @@ describe('plan tools', () => {
     }
     const revised: { id: string; title: string }[][] = []
     const registry = createToolRegistry()
-    registerPlanTools(registry, {
+    registerTaskListTools(registry, {
       createId: () => 'unused',
+      lists: () => [],
+      createList: () => undefined,
+      reviseItems: () => undefined,
+      updateItem: () => undefined,
       activePlan: () => active,
       revisePlan: (steps) => {
         revised.push(steps.map((step) => ({ ...step })))

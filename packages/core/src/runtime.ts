@@ -86,6 +86,15 @@ export type RuntimeToolEffect =
   | { readonly type: 'plan.proposed'; readonly payload: EventPayload<'plan.proposed'> }
   | { readonly type: 'plan.step.updated'; readonly payload: EventPayload<'plan.step.updated'> }
   | { readonly type: 'plan.steps.revised'; readonly payload: EventPayload<'plan.steps.revised'> }
+  | { readonly type: 'tasklist.created'; readonly payload: EventPayload<'tasklist.created'> }
+  | {
+      readonly type: 'tasklist.items.revised'
+      readonly payload: EventPayload<'tasklist.items.revised'>
+    }
+  | {
+      readonly type: 'tasklist.item.updated'
+      readonly payload: EventPayload<'tasklist.item.updated'>
+    }
 
 /** 工具执行结果，回填给模型。状态与 `CanonicalMessage` 的工具结果一致（`unknown` 只用于恢复）。 */
 export interface RuntimeToolResult {

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { sessionStatus, type PlanView } from '@cairn/core'
+import { sessionStatus, type PlanView, type TaskItemView, type TaskListView } from '@cairn/core'
 import { PLAN_FEEDBACK_MAX } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
 import { Button, CairnMark, cn, IconButton } from './ui/index.js'
@@ -226,31 +226,38 @@ export function planInProgress(plan: PlanView): boolean {
   return plan.steps.some((step) => step.status === 'pending' || step.status === 'in_progress')
 }
 
+/** 进度卡只需要标题与条目；计划视图与待办列表都能直接传入。 */
+type ProgressList = Pick<TaskListView, 'title' | 'items'>
+
 /**
- * 执行中的计划进度：悬浮在输入框上方的一张小卡片，随时能看到做到哪一步。
- * 标题行可以收起步骤；点目标在右侧打开完整计划。
+ * 待办列表进度卡（ADR-0038）：悬浮在输入框上方，计划关联列表与普通轮次的临时列表共用。
+ * 标题行可以收起条目；只有计划来源的列表提供 `onOpen`（打开完整计划）。
  */
-export function PlanProgress({
-  plan,
+export function TaskProgress({
+  list,
   running,
   onOpen,
+  labelKey = 'plan.progress.label',
 }: {
-  readonly plan: PlanView
-  /** 会话正在运行（Agent 正在执行步骤）。 */
+  readonly list: ProgressList
+  /** 会话正在运行（Agent 正在执行）。 */
   readonly running?: boolean
-  readonly onOpen: () => void
+  /** 打开计划侧栏；临时列表没有可打开的详情。 */
+  readonly onOpen?: () => void
+  readonly labelKey?: 'plan.progress.label' | 'taskList.progress.label'
 }) {
   const { t } = useTranslation('session')
   const [expanded, setExpanded] = useState(true)
-  const finished = plan.steps.filter(
-    (step) => step.status === 'done' || step.status === 'skipped',
+  const finished = list.items.filter(
+    (item) => item.status === 'done' || item.status === 'skipped',
   ).length
   const current =
-    plan.steps.find((step) => step.status === 'in_progress') ??
-    plan.steps.find((step) => step.status === 'pending')
+    list.items.find((item) => item.status === 'in_progress') ??
+    list.items.find((item) => item.status === 'pending')
+  const title = expanded || !current ? list.title : current.title
   return (
     <section
-      aria-label={t('plan.progress.label')}
+      aria-label={t(labelKey)}
       className="mb-2 overflow-hidden rounded-card bg-raise shadow-2"
     >
       <div className="flex h-9 items-center gap-2 pr-1.5 pl-3">
@@ -261,14 +268,18 @@ export function PlanProgress({
         ) : (
           <ListTodo aria-hidden className="size-3.5 shrink-0 text-muted" />
         )}
-        <button
-          type="button"
-          title={t('plan.openSide')}
-          onClick={onOpen}
-          className="min-w-0 flex-1 truncate rounded-[5px] text-left text-note font-medium text-fg outline-none hover:underline focus-visible:ring-1 focus-visible:ring-accent"
-        >
-          {expanded || !current ? plan.content.goal : current.title}
-        </button>
+        {onOpen ? (
+          <button
+            type="button"
+            title={t('plan.openSide')}
+            onClick={onOpen}
+            className="min-w-0 flex-1 truncate rounded-[5px] text-left text-note font-medium text-fg outline-none hover:underline focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            {title}
+          </button>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-note font-medium text-fg">{title}</span>
+        )}
         {running && (
           <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent">
             <span className="animate-spin" style={{ animationDuration: '1.4s' }}>
@@ -278,7 +289,7 @@ export function PlanProgress({
           </span>
         )}
         <span className="tabular shrink-0 text-note text-muted">
-          {t('plan.progress.count', { done: finished, total: plan.steps.length })}
+          {t('plan.progress.count', { done: finished, total: list.items.length })}
         </span>
         <IconButton
           label={t(expanded ? 'plan.progress.collapse' : 'plan.progress.expand')}
@@ -291,19 +302,19 @@ export function PlanProgress({
       </div>
       {expanded && (
         <ol className="flex max-h-44 flex-col gap-1.5 overflow-y-auto border-t-[0.5px] border-hair px-3 py-2.5">
-          {plan.steps.map((step) => (
-            <li key={step.id} className="flex items-center gap-2.5 text-ui">
-              <StepIcon status={step.status} />
+          {list.items.map((item) => (
+            <li key={item.itemId} className="flex items-center gap-2.5 text-ui">
+              <StepIcon status={item.status} />
               <span
                 className={cn(
                   'min-w-0 flex-1 truncate',
-                  step.status === 'done' || step.status === 'skipped' ? 'text-muted' : 'text-fg',
+                  item.status === 'done' || item.status === 'skipped' ? 'text-muted' : 'text-fg',
                 )}
               >
-                {step.title}
+                {item.title}
               </span>
               <span className="shrink-0 text-[11.5px] text-muted">
-                {t(`plan.step.${step.status}`)}
+                {t(`plan.step.${item.status}`)}
               </span>
             </li>
           ))}
@@ -313,17 +324,56 @@ export function PlanProgress({
   )
 }
 
+/** 计划进度：沿用计划标题与步骤，内部与通用进度卡一致。 */
+export function PlanProgress({
+  plan,
+  running,
+  onOpen,
+}: {
+  readonly plan: PlanView
+  /** 会话正在运行（Agent 正在执行步骤）。 */
+  readonly running?: boolean
+  readonly onOpen: () => void
+}) {
+  return (
+    <TaskProgress
+      list={{
+        title: plan.content.goal,
+        items: plan.steps.map((step) => ({
+          itemId: step.id,
+          title: step.title,
+          status: step.status,
+          ...(step.note ? { note: step.note } : {}),
+        })),
+      }}
+      {...(running !== undefined ? { running } : {})}
+      onOpen={onOpen}
+    />
+  )
+}
+
 /** 右侧栏的完整计划：只展示内容，不重复审批操作。铺在侧栏纸面上，不再套一层卡片。 */
 export function PlanDetails({
   plan,
+  steps,
   running,
 }: {
   readonly plan: PlanView
+  /** 执行中的步骤来自关联待办列表（ADR-0038）；省略时用计划快照。 */
+  readonly steps?: readonly TaskItemView[]
   /** 会话正在运行（Agent 正在执行步骤）。 */
   readonly running?: boolean
 }) {
   const { t } = useTranslation('session')
   const label = 'text-[11.5px] font-medium tracking-[0.02em] text-faint'
+  const rows =
+    steps ??
+    plan.steps.map((step) => ({
+      itemId: step.id,
+      title: step.title,
+      status: step.status,
+      ...(step.note ? { note: step.note } : {}),
+    }))
   return (
     <article aria-label={t('plan.title')} className="flex flex-col gap-5 px-4 pt-2 pb-5">
       <div className="flex items-start justify-between gap-2">
@@ -340,9 +390,9 @@ export function PlanDetails({
       <section>
         <h4 className={label}>{t('plan.steps')}</h4>
         <ol className="mt-2 flex flex-col gap-2.5">
-          {plan.steps.map((step) => {
+          {rows.map((step) => {
             return (
-              <li key={step.id} className="flex items-start gap-2.5 text-ui">
+              <li key={step.itemId} className="flex items-start gap-2.5 text-ui">
                 <span className="mt-[3px] flex">
                   <StepIcon status={step.status} />
                 </span>
