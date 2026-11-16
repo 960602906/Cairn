@@ -1373,6 +1373,122 @@ describe('reduceSession：待办列表（ADR-0038）', () => {
     expect(progressTaskList(finished)?.listId).toBe('tl2')
   })
 
+  it('忽略重复条目、未知列表与已关闭列表的修订', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('tasklist.created', {
+        listId: 'tl1',
+        title: '甲',
+        source: 'ad_hoc',
+        items: [
+          { itemId: 'a', title: '一' },
+          { itemId: 'b', title: '二' },
+        ],
+      }),
+      // 同一列表里条目 id 重复：整条事件忽略。
+      ev('tasklist.created', {
+        listId: 'tl2',
+        title: '乙',
+        source: 'ad_hoc',
+        items: [
+          { itemId: 'a', title: '一' },
+          { itemId: 'a', title: '二' },
+        ],
+      }),
+      // 修订同样拒绝重复 id，未知列表只推进 seq。
+      ev('tasklist.items.revised', {
+        listId: 'tl1',
+        items: [
+          { itemId: 'b', title: '一' },
+          { itemId: 'b', title: '二' },
+        ],
+      }),
+      ev('tasklist.items.revised', { listId: 'none', items: [{ itemId: 'b', title: '二' }] }),
+      // 未知条目忽略，状态与说明按事件更新。
+      ev('tasklist.item.updated', { listId: 'tl1', itemId: 'none', status: 'done' }),
+      ev('tasklist.item.updated', {
+        listId: 'tl1',
+        itemId: 'a',
+        status: 'in_progress',
+        note: ' 偏离 ',
+      }),
+      // 不带说明的更新保留已有说明与新状态。
+      ev('tasklist.item.updated', { listId: 'tl1', itemId: 'a', status: 'done' }),
+      // 本来就没有说明的条目，不带说明更新后仍然没有说明。
+      ev('tasklist.item.updated', { listId: 'tl1', itemId: 'b', status: 'skipped' }),
+    ])
+    expect(view.taskLists.map((list) => list.listId)).toEqual(['tl1'])
+    expect(view.taskLists[0]?.items).toEqual([
+      { itemId: 'a', title: '一', status: 'done', note: '偏离' },
+      { itemId: 'b', title: '二', status: 'skipped' },
+    ])
+  })
+
+  it('修订时保留已有说明，关闭后的修订被忽略', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('tasklist.created', {
+        listId: 'tl1',
+        title: '甲',
+        source: 'ad_hoc',
+        items: [
+          { itemId: 'a', title: '一' },
+          { itemId: 'b', title: '二' },
+        ],
+      }),
+      ev('tasklist.item.updated', {
+        listId: 'tl1',
+        itemId: 'a',
+        status: 'done',
+        note: '先做了',
+      }),
+      ev('tasklist.items.revised', {
+        listId: 'tl1',
+        items: [
+          { itemId: 'a', title: '一（改名）' },
+          { itemId: 'c', title: '三' },
+        ],
+      }),
+    ])
+    expect(view.taskLists[0]?.items).toEqual([
+      { itemId: 'a', title: '一（改名）', status: 'done', note: '先做了' },
+      { itemId: 'c', title: '三', status: 'pending' },
+    ])
+    const closed = reduceSession(view, ev('tasklist.closed', { listId: 'tl1' }))
+    const revised = reduceSession(
+      closed,
+      ev('tasklist.items.revised', { listId: 'tl1', items: [{ itemId: 'd', title: '四' }] }),
+    )
+    expect(revised.taskLists[0]).toBe(closed.taskLists[0])
+    const updated = reduceSession(
+      closed,
+      ev('tasklist.item.updated', { listId: 'tl1', itemId: 'a', status: 'in_progress' }),
+    )
+    expect(updated.taskLists[0]).toBe(closed.taskLists[0])
+  })
+
+  it('合成的计划列表保留步骤说明与轮次', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }, { turnId: 't1' }),
+      ev('plan.approved', { planId: 'pl1' }, { turnId: 't1' }),
+      ev(
+        'plan.step.updated',
+        { planId: 'pl1', stepId: 'a', stepIndex: 0, status: 'in_progress', note: '换了个入口' },
+        { turnId: 't1' },
+      ),
+    ])
+    const plan = activeExecutionPlan(view)!
+    expect(planProgressSteps(view, plan)[0]).toMatchObject({
+      itemId: 'a',
+      status: 'in_progress',
+      note: '换了个入口',
+    })
+    const list = progressTaskList(view)!
+    expect(list).toMatchObject({ listId: 'plan-pl1', turnId: 't1' })
+    expect(list.items[0]).toMatchObject({ itemId: 'a', status: 'in_progress', note: '换了个入口' })
+  })
+
   it('临时列表全部完成时进度卡消失', () => {
     const ev = stream()
     const done = reduceAll([

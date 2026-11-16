@@ -367,6 +367,31 @@ describe('ToolStep：计划工具', () => {
     expect(code().textContent).toBe('a · 已完成')
   })
 
+  it('任务工具缺少参数时退回摘要或留空', () => {
+    step({
+      name: 'create_task_list',
+      tool: tool({ name: 'create_task_list', input: { title: '' } }),
+    })
+    expect(label()).toContain('创建任务列表')
+    expect(code().textContent).toContain('"title":""')
+
+    cleanup()
+    step({
+      name: 'revise_task_items',
+      tool: tool({ name: 'revise_task_items', input: {} }),
+    })
+    expect(label()).toContain('调整任务')
+    expect(code().textContent).toBe('0 项')
+
+    cleanup()
+    step({
+      name: 'update_task_item',
+      tool: tool({ name: 'update_task_item', input: { listId: 'tl1' } }),
+    })
+    expect(label()).toContain('更新任务')
+    expect(code().textContent).toBe('')
+  })
+
   it('propose_plan 没有目标时退回参数摘要', () => {
     step({
       name: 'propose_plan',

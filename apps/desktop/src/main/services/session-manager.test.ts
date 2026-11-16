@@ -1069,6 +1069,72 @@ describe('task lists in prompts (ADR-0038)', () => {
     await flush()
     expect(host.inputs.at(-1)).not.toHaveProperty('taskLists')
   })
+
+  it('closes superseded plan lists and reuses an existing one on approval', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, { idleTimeoutMs: 60_000 })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: text('计划一下'), mode: 'plan' })
+    await flush()
+    const host = hosts[0]!
+    startTurn(sessionId, host.runId, 't1')
+    hostEmits(sessionId, host.runId, [
+      'plan.proposed',
+      {
+        planId: 'pl1',
+        content: {
+          goal: '读代码',
+          files: [],
+          steps: [{ id: 'read', title: '读 a.ts' }],
+          risks: '',
+          verification: '',
+          markdown: '',
+        },
+      },
+      { turnId: 't1' },
+    ])
+    // 上一份计划的列表还开着；同一计划的列表已经存在（例如恢复的会话）。
+    hostEmits(sessionId, host.runId, [
+      'tasklist.created',
+      {
+        listId: 'plan-pl0',
+        title: '旧计划',
+        source: 'plan',
+        planId: 'pl0',
+        items: [{ itemId: 'old', title: '旧' }],
+      },
+    ])
+    hostEmits(sessionId, host.runId, [
+      'tasklist.created',
+      {
+        listId: 'plan-pl1',
+        title: '读代码',
+        source: 'plan',
+        planId: 'pl1',
+        items: [{ itemId: 'read', title: '读 a.ts' }],
+      },
+    ])
+    finishTurn(sessionId, host.runId, 't1')
+
+    // 计划轮不下发列表快照，执行轮才有（见上一条用例）。
+    manager.prompt({ sessionId, content: text('再计划'), mode: 'plan' })
+    await flush()
+    expect(host.inputs.at(-1)).not.toHaveProperty('taskLists')
+    startTurn(sessionId, host.runId, 't2', false)
+    finishTurn(sessionId, host.runId, 't2')
+
+    manager.approvePlan({ sessionId, planId: 'pl1' })
+    await flush()
+    expect(published.filter((event) => event.type === 'tasklist.closed')).toMatchObject([
+      { payload: { listId: 'plan-pl0', reason: 'superseded' } },
+    ])
+    // 已经存在同 id 的列表时不重复创建。
+    expect(
+      published
+        .filter((event) => event.type === 'tasklist.created')
+        .map((event) => (event.payload as { listId: string }).listId),
+    ).toEqual(['plan-pl0', 'plan-pl1'])
+  })
 })
 
 describe('agent switching (M3-11)', () => {

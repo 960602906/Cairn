@@ -285,6 +285,24 @@ describe('PlanProgress', () => {
     expect(within(card).getByText('执行中')).toBeTruthy()
   })
 
+  it('carries step notes into the progress rows', () => {
+    wrap(
+      <PlanProgress
+        plan={{
+          ...running,
+          steps: [
+            { id: 'a', title: '读入口', status: 'done', note: '换了入口' },
+            { id: 'b', title: '改实现', status: 'pending' },
+          ],
+        }}
+        onOpen={() => {}}
+      />,
+    )
+    const card = screen.getByRole('region', { name: '计划进度' })
+    expect(within(card).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(card).getByText('读入口')).toBeTruthy()
+  })
+
   it('renders an ad-hoc list without an open action and reads from the list items', async () => {
     const user = userEvent.setup()
     wrap(

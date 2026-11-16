@@ -171,6 +171,22 @@ describe('task list tools', () => {
     ).rejects.toMatchObject({ code: TaskListErrorCode.UnknownItem })
   })
 
+  it('rejects malformed list input with readable issues', async () => {
+    const h = harness()
+    await expect(h.run(CREATE_TASK_LIST_TOOL, null)).rejects.toMatchObject({
+      code: 'tool.invalid_input',
+    })
+    await expect(h.run(CREATE_TASK_LIST_TOOL, { title: '空', items: [] })).rejects.toMatchObject({
+      code: 'tool.invalid_input',
+    })
+    await expect(
+      h.run(REVISE_TASK_ITEMS_TOOL, { listId: 'nope', items: [] }),
+    ).rejects.toMatchObject({ code: 'tool.invalid_input' })
+    await expect(
+      h.run(UPDATE_TASK_ITEM_TOOL, { listId: 'tl1', itemId: 'a', status: 'unknown' }),
+    ).rejects.toMatchObject({ code: 'tool.invalid_input' })
+  })
+
   it('revises items while keeping progress of retained ids', async () => {
     const h = harness({
       lists: [
@@ -238,6 +254,25 @@ describe('plan compatibility aliases', () => {
       },
     ])
     expect(h.lists()[0]?.items.map((item) => item.itemId)).toEqual(['a', 'b'])
+  })
+
+  it('rejects unknown steps and invalid updates on the alias', async () => {
+    const h = harness({ lists: [planList], plan })
+    await expect(h.run(UPDATE_PLAN_STEP_TOOL, { stepId: 'a' })).rejects.toMatchObject({
+      code: 'tool.invalid_input',
+    })
+    await expect(
+      h.run(UPDATE_PLAN_STEP_TOOL, { stepId: 'nope', status: 'done' }),
+    ).rejects.toMatchObject({ code: PlanErrorCode.UnknownStep })
+    const output = await h.run(UPDATE_PLAN_STEP_TOOL, {
+      stepId: 'a',
+      status: 'in_progress',
+      note: ' 偏离 ',
+    })
+    expect(output.effects?.[0]).toMatchObject({
+      type: 'tasklist.item.updated',
+      payload: { listId: 'plan-pl1', itemId: 'a', status: 'in_progress', note: '偏离' },
+    })
   })
 
   it('falls back to plan events for sessions without a list', async () => {
