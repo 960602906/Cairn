@@ -8,7 +8,7 @@
 import { FileDiff, PanelRight } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { progressTaskList, rootRun, sessionStatus } from '@cairn/core'
+import { progressTaskList, proposedPlan, rootRun, sessionStatus } from '@cairn/core'
 import { isAgentDraftRef } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
 import { QuestionList } from './QuestionCard.js'
@@ -16,7 +16,7 @@ import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { totals, turnEntries } from './file-changes.js'
 import { MessageStream } from './MessageStream.js'
-import { TaskProgress } from './PlanCard.js'
+import { PlanActions, TaskProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
 import {
   fileTabId,
@@ -91,6 +91,10 @@ export function ChatPanel({
   const pendingQuestions = useSessionStore((s) =>
     s.activeSessionId === undefined ? 0 : (s.questions[s.activeSessionId]?.length ?? 0),
   )
+  const pendingPlan = useSessionStore((s) => {
+    const view = s.activeSessionId === undefined ? undefined : s.views[s.activeSessionId]
+    return view === undefined ? undefined : proposedPlan(view)
+  })
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
   const changes = useSessionStore((s) =>
     s.activeSessionId === undefined ? undefined : s.changes[s.activeSessionId],
@@ -365,7 +369,9 @@ export function ChatPanel({
             <div
               ref={content}
               className={cn(
-                'mx-auto flex w-full max-w-[840px] flex-col gap-4 px-5 pt-6 pb-8 text-body min-[1200px]:px-8',
+                'mx-auto flex w-full max-w-[840px] flex-col gap-4 px-5 pt-6 text-body min-[1200px]:px-8',
+                // 有浮动面板时多留一段底部空白，滚到底也能看到消息末尾而不被面板盖住。
+                pendingQuestions > 0 || pendingPlan !== undefined ? 'pb-28' : 'pb-8',
               )}
             >
               <MessageStream
@@ -383,7 +389,8 @@ export function ChatPanel({
           <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
             {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
             <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3">
-              <div className="pointer-events-auto mx-auto max-h-[min(60vh,560px)] max-w-[840px] overflow-y-auto">
+              <div className="pointer-events-auto mx-auto flex max-h-[min(60vh,560px)] max-w-[840px] flex-col gap-2.5 overflow-y-auto">
+                <PlanActions plan={pendingPlan} />
                 <QuestionList />
               </div>
             </div>

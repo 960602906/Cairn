@@ -46,7 +46,13 @@ export function planPreview(plan: PlanView): string {
   return lines.join('\n').trim()
 }
 
-function PlanReviewActions({ plan }: { readonly plan: PlanView }) {
+/**
+ * 待审批计划的操作条：浮在输入框上方，计划正文仍留在对话里。
+ *
+ * 「取消」放弃这份计划：不再开始新的一轮，也不执行；计划卡片留在对话里并标记为已取消。
+ * 计划模式的那一轮在 `propose_plan` 之后已经结束，没有在等结果，所以取消不需要回传任何东西。
+ */
+export function PlanActions({ plan }: { readonly plan: PlanView | undefined }) {
   const { t } = useTranslation('session')
   const approvePlan = useSessionStore((s) => s.approvePlan)
   const replan = useSessionStore((s) => s.replan)
@@ -63,12 +69,34 @@ function PlanReviewActions({ plan }: { readonly plan: PlanView }) {
     return status === 'running' || status === 'waiting_approval'
   })
   const note = feedback.trim()
-  if (plan.status !== 'proposed') return null
+  if (!plan || plan.status !== 'proposed') return null
   return (
-    <div className="border-t-[0.5px] border-hair px-3 py-2.5">
-      {replanning ? (
+    <section aria-label={t('plan.actions')} className="rounded-card bg-raise px-3 py-2.5 shadow-2">
+      <div className="flex items-center gap-2">
+        <Lightbulb aria-hidden className="size-3.5 shrink-0 text-accent" />
+        <span
+          className="min-w-0 flex-1 truncate text-note font-medium text-fg"
+          title={plan.content.goal}
+        >
+          {plan.content.goal}
+        </span>
+        {!replanning && (
+          <span className="flex shrink-0 items-center gap-2">
+            <Button variant="primary" disabled={busy} onClick={() => void approvePlan(plan.planId)}>
+              {t('plan.approve')}
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => setReplanning(true)}>
+              {t('plan.replan')}
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => void abandonPlan(plan.planId)}>
+              {t('plan.cancelPlan')}
+            </Button>
+          </span>
+        )}
+      </div>
+      {replanning && (
         <form
-          className="flex flex-col gap-2"
+          className="mt-2 flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault()
             if (note === '' || busy) return
@@ -95,24 +123,12 @@ function PlanReviewActions({ plan }: { readonly plan: PlanView }) {
               disabled={busy}
               onClick={() => setReplanning(false)}
             >
-              {t('plan.cancel')}
+              {t('plan.replanBack')}
             </Button>
           </div>
         </form>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <Button variant="primary" disabled={busy} onClick={() => void approvePlan(plan.planId)}>
-            {t('plan.approve')}
-          </Button>
-          <Button variant="secondary" disabled={busy} onClick={() => setReplanning(true)}>
-            {t('plan.replan')}
-          </Button>
-          <Button variant="ghost" disabled={busy} onClick={() => void abandonPlan(plan.planId)}>
-            {t('plan.abandon')}
-          </Button>
-        </div>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -131,7 +147,9 @@ export function PlanSummaryCard({
       ? t('plan.short.proposed')
       : plan.status === 'approved'
         ? t('plan.short.approved')
-        : t('plan.short.rejected')
+        : plan.feedback
+          ? t('plan.short.replanned')
+          : t('plan.short.rejected')
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(planDocument(plan))
@@ -197,7 +215,6 @@ export function PlanSummaryCard({
           {planPreview(plan)}
         </p>
       </button>
-      <PlanReviewActions plan={plan} />
     </article>
   )
 }
