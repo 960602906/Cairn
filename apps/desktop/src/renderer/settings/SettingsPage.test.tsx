@@ -369,6 +369,26 @@ describe('SettingsPage', () => {
     expect(screen.getByText('由 AppContainer 能力执行。')).toBeTruthy()
   })
 
+  it('explains a platform without the command sandbox (M6-05)', async () => {
+    setup({}, undefined, {
+      ...SANDBOX_STATUS,
+      platform: 'linux',
+      capability: {
+        ...SANDBOX_STATUS.capability,
+        supported: false,
+        available: false,
+        reason: 'sandbox.platform_unsupported_linux',
+      },
+    })
+    await openSettings()
+    const panel = await screen.findByTestId('sandbox-capability')
+    expect(panel.getAttribute('data-sandbox-available')).toBe('false')
+    expect(within(panel).getByText('不可用 · Linux 版本尚未提供命令沙箱')).toBeTruthy()
+    expect(within(panel).getByText(/此平台尚未提供命令沙箱/)).toBeTruthy()
+    // 不展示 Windows 专属的四项能力检查
+    expect(within(panel).queryByText('AppContainer')).toBeNull()
+  })
+
   it('explains when the preferred mechanism fell back', async () => {
     setup({}, undefined, { ...SANDBOX_STATUS, mechanism: 'appcontainer' })
     await openSettings()

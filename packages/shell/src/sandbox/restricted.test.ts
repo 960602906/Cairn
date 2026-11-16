@@ -554,7 +554,7 @@ describe('createSandboxRunner', () => {
       .catch((e: unknown) => e)
     expect(unavailable).toMatchObject({ code: 'sandbox.unavailable' })
     expect(unsupported.executionFor(policy('workspace-write')).reason).toBe(
-      'sandbox.platform_unsupported',
+      'sandbox.platform_unsupported_linux',
     )
   })
 

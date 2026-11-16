@@ -56,6 +56,31 @@
 - **测试。** 组件测试覆盖徽标（生效 / 未生效 / 网络是否隔离 / 未知原因）、审批不可覆盖、终端与时间线、设置页加载 / 失败 / 回退 / 不可用、诊断弹窗与 `sandbox.json`；权限与流水线测试覆盖 `overridable` 传播。e2e 覆盖设置页切换、审批卡片标记，并在 Windows 且能力可用时用真实命令验证工作区写入成功、工作区外写入被拒绝。非 Windows 平台在命令沙箱不生效时按原有语义运行，e2e 明确跳过真实隔离用例。
 - **边界。** 沙箱仍只覆盖 `run_command` / `start_command` 的进程树；受限令牌不隔离网络；干净 VM、标准用户、Windows 10 与中文用户名留给 M5-10。
 
+## 跨平台语义（M6-05）
+
+- **只有 Windows 有 OS 级命令沙箱。** `sandboxPlatformSupport(platform)` 是唯一判断点：
+  `win32` 支持；`linux` 与 `darwin` 明确返回不支持，并分别给出
+  `sandbox.platform_unsupported_linux` / `sandbox.platform_unsupported_macos`；其他平台用
+  `sandbox.platform_unsupported`。能力探测直接采用该结果，不进入 Win32 API。
+- **没有沙箱的平台不额外拦截，但也不假装隔离。** 命令仍受权限模型约束：`execute` 类默认
+  “询问”，用户规则或自动模式可以放行；放行后命令以应用用户权限运行。
+  `SandboxExecution.enforced=false`，`reason` 为平台原因；`tool.started`、终端卡片与审批卡片
+  显示“未沙箱化：Linux 版本尚未提供命令沙箱”（macOS 同理）。设置页的能力面板显示同一说明，
+  不再展示 Windows 专属的四项检查。
+- **运行中失败关闭的语义不变。** Windows 上能力不可用或执行失败仍按 `sandboxUnavailable`
+  （默认 `deny`）拒绝或逐次审批；`danger-full-access` 仍逐次审批且不能被规则放行。
+- **诊断。** `SandboxStatus.platform` 由 `win32|other` 细化为 `win32|darwin|linux|other`，
+  与能力、原因一起写入诊断包；不包含路径或用户名。
+- **Linux 评估（未实现）。** 可行方向是 Landlock（内核 5.13+，文件系统与网络访问控制）+
+  seccomp-bpf（系统调用过滤）+ user/mount/pid namespace。难点：发行版内核差异、AppImage 的
+  挂载路径、工具链需要的缓存目录（pnpm、npm、Go、Rust），以及 Chromium 自身的
+  `--no-sandbox` 与内核沙箱叠加。M6 不实现。
+- **macOS 评估（未实现）。** 可行方向是 Seatbelt（`sandbox_init` 配置 API 已弃用但仍在用）
+  或签名应用的 App Sandbox 权限。难点：未签名 beta、开发者工具需要访问工作区外的 SDK 与缓存、
+  DMG/ZIP 分发下的权限声明。M6 不实现。
+- **验收边界。** “不声称已沙箱”由能力探测、事件字段与界面文案三处共同保证；Linux/macOS 上
+  命令确实未隔离，文档与界面必须继续这样写。
+
 ## 备选方案
 
 - **AppContainer 默认**：隔离更强，但真实开发工具链不可用，否决。

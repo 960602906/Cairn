@@ -160,7 +160,7 @@ export function createSandboxService(options: SandboxServiceOptions): SandboxSer
     },
     async diagnostics() {
       return {
-        platform: platform === 'win32' ? 'win32' : 'other',
+        platform: diagnosticsPlatform(platform),
         mechanism,
         policy: policy(),
         unavailable: options.settings().sandboxUnavailable ?? DEFAULT_SANDBOX_UNAVAILABLE,
@@ -172,6 +172,18 @@ export function createSandboxService(options: SandboxServiceOptions): SandboxSer
       const api = await (options.api ?? loadSandboxNativeApi)(platform)
       api?.deleteAppContainer(name)
     },
+  }
+}
+
+/** 诊断包只记录粗粒度平台（M6-05）；其他平台归为 `other`。 */
+function diagnosticsPlatform(platform: NodeJS.Platform): SandboxStatus['platform'] {
+  switch (platform) {
+    case 'win32':
+    case 'darwin':
+    case 'linux':
+      return platform
+    default:
+      return 'other'
   }
 }
 

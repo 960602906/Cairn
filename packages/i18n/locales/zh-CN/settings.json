@@ -454,6 +454,7 @@
   "general.sandbox.status.fallback": "所选机制 {{preferred}} 不可用，已回退到 {{actual}}。",
   "general.sandbox.status.network": "网络：{{network}}",
   "general.sandbox.status.checks": "能力检查",
+  "general.sandbox.status.unsupportedPlatform": "此平台尚未提供命令沙箱：命令按权限规则在沙箱外运行，审批卡片与终端会标注“未沙箱化”。",
   "general.sandbox.check.restrictedToken": "受限令牌",
   "general.sandbox.check.lowIntegrity": "低完整性",
   "general.sandbox.check.jobObject": "Job Object",

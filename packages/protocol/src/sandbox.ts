@@ -82,7 +82,8 @@ export type SandboxUnavailableBehavior = z.infer<typeof SandboxUnavailableBehavi
  * `capability.mechanism` 是实际可用的机制；两者不同表示已回退（例如 AppContainer 不可用）。
  */
 export const SandboxStatus = z.object({
-  platform: z.enum(['win32', 'other']),
+  /** 记录平台，便于诊断区分“没有实现”与“实现不可用”（M6-05）。 */
+  platform: z.enum(['win32', 'darwin', 'linux', 'other']),
   mechanism: z.enum(['restricted-token', 'appcontainer']),
   policy: SandboxPolicy,
   unavailable: SandboxUnavailableBehavior,

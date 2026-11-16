@@ -454,6 +454,7 @@
   "general.sandbox.status.fallback": "The selected mechanism {{preferred}} is unavailable; fell back to {{actual}}.",
   "general.sandbox.status.network": "Network: {{network}}",
   "general.sandbox.status.checks": "Capability checks",
+  "general.sandbox.status.unsupportedPlatform": "This platform does not provide the command sandbox yet: commands run outside it under your permission rules, and approvals and terminals label them as not sandboxed.",
   "general.sandbox.check.restrictedToken": "Restricted token",
   "general.sandbox.check.lowIntegrity": "Low integrity",
   "general.sandbox.check.jobObject": "Job Object",

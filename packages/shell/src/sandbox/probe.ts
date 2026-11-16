@@ -3,6 +3,7 @@
  * 结果只包含能力布尔值与错误码，不含路径、用户名或凭据。
  */
 import { createSandboxJob, type SandboxJobFactory } from './job.js'
+import { sandboxPlatformSupport } from './platform.js'
 import { unsupportedCapability, type SandboxCapability, type SandboxMechanism } from './types.js'
 import { loadSandboxNativeApi, type SandboxNativeApi } from './windows-api.js'
 
@@ -20,7 +21,8 @@ export const PROBE_APP_CONTAINER_NAME = 'com.cairn.sandbox.probe'
 
 export async function probeCapability(options: ProbeOptions = {}): Promise<SandboxCapability> {
   const platform = options.platform ?? process.platform
-  if (platform !== 'win32') return unsupportedCapability()
+  const support = sandboxPlatformSupport(platform)
+  if (!support.supported) return unsupportedCapability(support.reason)
   const api = options.api === undefined ? await loadSandboxNativeApi(platform) : options.api
   if (!api) {
     return {
