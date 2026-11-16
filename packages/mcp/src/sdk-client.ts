@@ -63,7 +63,16 @@ export function stdioCommand(
   return { command: comspec || 'cmd.exe', args: ['/d', '/c', command, ...args] }
 }
 
-export function createSdkClient(spec: McpServerSpec): McpClient {
+export interface CreateSdkClientOptions {
+  /** 结束 stdio 子进程树时判断平台；默认 `process.platform`（测试可注入）。 */
+  readonly platform?: NodeJS.Platform
+}
+
+export function createSdkClient(
+  spec: McpServerSpec,
+  options: CreateSdkClientOptions = {},
+): McpClient {
+  const platform = options.platform ?? process.platform
   const client = new Client({ name: 'cairn', version: '0.0.0' })
   let closed = false
   let closeListener: (() => void) | undefined
@@ -134,7 +143,7 @@ export function createSdkClient(spec: McpServerSpec): McpClient {
       const pid = stdio?.pid ?? null
       stdio = undefined
       await client.close().catch(() => undefined)
-      terminateProcessTree(pid)
+      terminateProcessTree(pid, platform)
     },
 
     onClose(listener) {
@@ -147,20 +156,22 @@ export function createSdkClient(spec: McpServerSpec): McpClient {
   }
 }
 
-/** 退出时结束 stdio MCP 子进程树；远程传输没有 pid。 */
-function terminateProcessTree(pid: number | null): void {
+/**
+ * 退出时结束 stdio MCP 子进程树；远程传输没有 pid。Windows 用 `taskkill /T /F`，
+ * 其他平台向进程发 `SIGTERM`。平台由调用方注入，便于测试两条分支。
+ */
+export function terminateProcessTree(pid: number | null, platform: NodeJS.Platform): void {
   if (pid === null) return
-  if (process.platform === 'win32') {
+  if (platform === 'win32') {
     spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], {
       windowsHide: true,
       stdio: 'ignore',
     })
     return
   }
-  /* v8 ignore next 3 -- 只在非 Windows 平台执行 */
   try {
     process.kill(pid, 'SIGTERM')
   } catch {
-    // 进程已经退出
+    // 进程已经退出（ESRCH）或没有权限（EPERM）
   }
 }

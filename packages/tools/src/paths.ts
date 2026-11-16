@@ -4,6 +4,7 @@
 import fs from 'node:fs/promises'
 import {
   PathErrorCode,
+  pathStyleFor,
   resolveWorkspacePath,
   ToolError,
   type PathFileSystem,
@@ -13,7 +14,7 @@ import {
   type WorkspacePath,
 } from '@cairn/core'
 
-export const PATH_STYLE: PathStyle = process.platform === 'win32' ? 'win32' : 'posix'
+export const PATH_STYLE: PathStyle = pathStyleFor(process.platform)
 
 const isNotFound = (error: unknown) => {
   const code = (error as NodeJS.ErrnoException).code

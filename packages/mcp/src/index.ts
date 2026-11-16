@@ -11,7 +11,13 @@ export {
   type McpReconnectPolicy,
 } from './manager.js'
 export { redactSecrets } from './redact.js'
-export { contentToText, createSdkClient, stdioCommand } from './sdk-client.js'
+export {
+  contentToText,
+  createSdkClient,
+  stdioCommand,
+  terminateProcessTree,
+  type CreateSdkClientOptions,
+} from './sdk-client.js'
 export type {
   CreateMcpClient,
   McpCallOptions,

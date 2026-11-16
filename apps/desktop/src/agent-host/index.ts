@@ -10,7 +10,7 @@ import { appendFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { openShadowRepo } from '@cairn/checkpoint'
-import { redact } from '@cairn/core'
+import { caseInsensitiveFileSystem, redact } from '@cairn/core'
 import type {} from 'electron'
 import { HOST_PORT_MESSAGE, portChannel } from '../shared/host-port.js'
 import { createBuiltinTools } from './builtin-tools.js'
@@ -42,7 +42,7 @@ process.parentPort.on('message', (event) => {
     },
     exit: (code) => process.exit(code),
     createId: randomUUID,
-    caseInsensitive: process.platform === 'win32',
+    caseInsensitive: caseInsensitiveFileSystem(process.platform),
     registerTools,
     openCheckpoints: openShadowRepo,
     onError: reportError,

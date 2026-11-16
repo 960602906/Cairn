@@ -4,9 +4,10 @@
  */
 import { execFile } from 'node:child_process'
 import nodePath from 'node:path'
+import { platformBinaryName } from '@cairn/core'
 
-/** 当前平台 ripgrep 可执行文件的名称。 */
-export const RIPGREP_BINARY = process.platform === 'win32' ? 'rg.exe' : 'rg'
+/** 当前平台 ripgrep 可执行文件的名称（Windows 为 `rg.exe`，其他平台为 `rg`）。 */
+export const RIPGREP_BINARY = platformBinaryName('rg', process.platform)
 
 /**
  * 给出目录中的 ripgrep 路径。目录位于 `app.asar` 内时改为 `app.asar.unpacked` 中的同一位置。
