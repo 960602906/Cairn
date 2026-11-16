@@ -616,12 +616,41 @@ describe('electron-builder invocation', () => {
     expect(options?.env).toMatchObject({ CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
   })
 
+  it('builds Linux AppImage and deb without a signing environment', () => {
+    const directory = temporaryDirectory()
+    const runner = vi.fn<typeof spawnSync>(() => ({
+      status: 0,
+      signal: null,
+      output: [],
+      pid: 1,
+      stdout: '',
+      stderr: '',
+    }))
+    const env = { PATH: '/usr/bin' }
+    runElectronBuilder({
+      target: 'linux',
+      stageDir: directory,
+      outputDir: path.join(directory, 'dist'),
+      runner,
+      platform: 'linux',
+      env,
+    })
+    const [command, args, options] = runner.mock.calls[0]!
+    expect(command).toBe(process.execPath)
+    expect(args).toEqual(expect.arrayContaining(['--linux', 'AppImage', 'deb']))
+    expect(args.some((arg) => String(arg).startsWith('--config.win'))).toBe(false)
+    expect(options?.env).toBe(env)
+  })
+
   it('only builds each installer on its own platform and reports builder failures', () => {
     expect(() => runElectronBuilder({ target: 'nsis', platform: 'linux' })).toThrow(
       'NSIS packaging is supported on Windows only (ADR-0035)',
     )
     expect(() => runElectronBuilder({ target: 'mac', platform: 'win32' })).toThrow(
       'macOS packaging must run on macOS (ADR-0041)',
+    )
+    expect(() => runElectronBuilder({ target: 'linux', platform: 'win32' })).toThrow(
+      'Linux packaging must run on Linux (ADR-0042)',
     )
     const runner = vi.fn<typeof spawnSync>(() => ({
       status: 1,
@@ -677,7 +706,7 @@ describe('main', () => {
 
   it('rejects an invocation without a target', async () => {
     await expect(main({ argv: [], desktopRoot: desktopFixture() })).rejects.toThrow(
-      'usage: packaging.mjs --dir|--nsis|--mac',
+      'usage: packaging.mjs --dir|--nsis|--mac|--linux',
     )
   })
 
@@ -848,6 +877,53 @@ describe('main', () => {
       expect(existsSync(path.join(paths.outputDir, `Cairn-0.1.0-${arch}.dmg.sha256`))).toBe(true)
       expect(existsSync(path.join(paths.outputDir, `Cairn-0.1.0-${arch}.zip.sha256`))).toBe(true)
     }
+  })
+
+  it('writes checksums for the Linux AppImage and deb', async () => {
+    const paths = packagingFixture()
+    rmSync(path.join(paths.desktopRoot, 'out/bin/rg.exe'))
+    write(path.join(paths.desktopRoot, 'out/bin/rg'))
+    const verify = vi.fn(async () => [])
+    const code = await main({
+      argv: ['--linux'],
+      ...paths,
+      platform: 'linux',
+      install: vi.fn(),
+      build: vi.fn(({ outputDir }) => {
+        write(path.join(outputDir, 'Cairn-0.1.0-x64.AppImage'), 'appimage')
+        write(path.join(outputDir, 'Cairn-0.1.0-x64.deb'), 'deb')
+      }),
+      verify,
+      log: vi.fn(),
+    })
+    expect(code).toBe(0)
+    expect(verify).toHaveBeenCalledWith({
+      desktopRoot: paths.desktopRoot,
+      outputDir: paths.outputDir,
+      target: 'linux',
+      platform: 'linux',
+    })
+    expect(existsSync(path.join(paths.outputDir, 'Cairn-0.1.0-x64.AppImage.sha256'))).toBe(true)
+    expect(existsSync(path.join(paths.outputDir, 'Cairn-0.1.0-x64.deb.sha256'))).toBe(true)
+  })
+
+  it('lists every Linux artifact when the builder produces nothing', async () => {
+    const paths = packagingFixture()
+    rmSync(path.join(paths.desktopRoot, 'out/bin/rg.exe'))
+    write(path.join(paths.desktopRoot, 'out/bin/rg'))
+    await expect(
+      main({
+        argv: ['--linux'],
+        ...paths,
+        platform: 'linux',
+        install: vi.fn(),
+        build: vi.fn(),
+        verify: vi.fn(async () => []),
+        log: vi.fn(),
+      }),
+    ).rejects.toThrow(
+      'Linux artifacts were not created: Cairn-0.1.0-x64.AppImage, Cairn-0.1.0-x64.deb',
+    )
   })
 
   it('lists every macOS artifact when the builder produces nothing', async () => {

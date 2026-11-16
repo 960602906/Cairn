@@ -44,7 +44,8 @@
     "sync:version": "node scripts/sync-version.mjs",
     "build:info": "node scripts/build-info.mjs",
     "package:mac": "pnpm --filter @cairn/desktop package:mac",
-    "sign:verify:mac": "node scripts/mac-signing.mjs"
+    "sign:verify:mac": "node scripts/mac-signing.mjs",
+    "package:linux": "pnpm --filter @cairn/desktop package:linux"
   },
   "devDependencies": {
     "@cairn/release-tools": "workspace:*",

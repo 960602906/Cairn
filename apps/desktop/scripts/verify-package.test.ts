@@ -1,6 +1,6 @@
 import type { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { FuseState, FuseV1Options } from '@electron/fuses'
@@ -178,6 +178,30 @@ async function macFixture(): Promise<MacFixture> {
     stderr: '',
   })) as unknown as typeof spawnSync
   return { desktopRoot: path.join(root, 'desktop'), outputDir: root, runner }
+}
+
+async function linuxFixture(): Promise<Fixture> {
+  const app = await fixture({ asarFiles: { 'out/bin/rg': '' } })
+  const directory = path.join(app.outputDir, 'linux-unpacked')
+  renameSync(app.directory, directory)
+  write(path.join(directory, 'cairn'), '')
+  const prebuilds = path.join(
+    directory,
+    'resources/app.asar.unpacked/node_modules/better-sqlite3/prebuilds',
+  )
+  renameSync(path.join(prebuilds, 'win32-x64.node'), path.join(prebuilds, 'linux-x64.node'))
+  renameSync(
+    path.join(directory, 'resources/app.asar.unpacked/out/bin/rg.exe'),
+    path.join(directory, 'resources/app.asar.unpacked/out/bin/rg'),
+  )
+  return {
+    ...app,
+    directory,
+    executable: path.join(directory, 'cairn'),
+    resources: path.join(directory, 'resources'),
+    appAsar: path.join(directory, 'resources/app.asar'),
+    unpacked: path.join(directory, 'resources/app.asar.unpacked'),
+  }
 }
 
 function successfulRunner(): typeof spawnSync {
@@ -741,19 +765,7 @@ describe('verifyPackage', () => {
   })
 
   it('supports non-Windows prebuild names', async () => {
-    const app = await fixture({ asarFiles: { 'out/bin/rg': '' } })
-    const linuxDirectory = path.join(app.outputDir, 'linux-unpacked')
-    renameSync(app.directory, linuxDirectory)
-    write(path.join(linuxDirectory, 'cairn'), '')
-    const prebuilds = path.join(
-      linuxDirectory,
-      'resources/app.asar.unpacked/node_modules/better-sqlite3/prebuilds',
-    )
-    renameSync(path.join(prebuilds, 'win32-x64.node'), path.join(prebuilds, 'linux-x64.node'))
-    renameSync(
-      path.join(linuxDirectory, 'resources/app.asar.unpacked/out/bin/rg.exe'),
-      path.join(linuxDirectory, 'resources/app.asar.unpacked/out/bin/rg'),
-    )
+    const app = await linuxFixture()
     await expect(
       verifyPackage({
         desktopRoot: app.desktopRoot,
@@ -763,6 +775,55 @@ describe('verifyPackage', () => {
         readFuses: async () => [],
       }),
     ).resolves.toEqual([])
+  })
+
+  it('verifies Linux AppImage and deb checksums', async () => {
+    const app = await linuxFixture()
+    const files = ['AppImage', 'deb'].map((ext) =>
+      path.join(app.outputDir, `Cairn-0.1.0-x64.${ext}`),
+    )
+    for (const file of files) {
+      write(file, path.basename(file))
+      const hash = createHash('sha256').update(readFileSync(file)).digest('hex')
+      write(`${file}.sha256`, `${hash}  ${path.basename(file)}\n`)
+    }
+    const verify = () =>
+      verifyPackage({
+        desktopRoot: app.desktopRoot,
+        outputDir: app.outputDir,
+        platform: 'linux',
+        runner: successfulRunner(),
+        readFuses: async () => [],
+        target: 'linux',
+        minimumInstallerBytes: 0,
+      })
+    await expect(verify()).resolves.toEqual([])
+
+    write(`${files[1]}.sha256`, 'deadbeef  Cairn-0.1.0-x64.deb\n')
+    await expect(verify()).resolves.toContain(
+      'Linux deb checksum does not match: Cairn-0.1.0-x64.deb',
+    )
+    rmSync(`${files[0]}.sha256`)
+    await expect(verify()).resolves.toContain(`missing Linux AppImage checksum: ${files[0]}.sha256`)
+  })
+
+  it('reports missing Linux artifacts', async () => {
+    const app = await linuxFixture()
+    const problems = await verifyPackage({
+      desktopRoot: app.desktopRoot,
+      outputDir: app.outputDir,
+      platform: 'linux',
+      runner: successfulRunner(),
+      readFuses: async () => [],
+      target: 'linux',
+      minimumInstallerBytes: 0,
+    })
+    expect(problems).toEqual(
+      expect.arrayContaining([
+        `missing Linux AppImage: ${path.join(app.outputDir, 'Cairn-0.1.0-x64.AppImage')}`,
+        `missing Linux deb: ${path.join(app.outputDir, 'Cairn-0.1.0-x64.deb')}`,
+      ]),
+    )
   })
 
   it('accepts a macOS app bundle without MinGit or Windows native modules', async () => {
@@ -835,6 +896,14 @@ describe('main', () => {
         process.argv = previous
       }
       expect(print).toHaveBeenCalledWith('verify: installer passed')
+
+      process.argv = ['node', 'verify-package.mjs', '--linux']
+      try {
+        await expect(main({ verify: async () => [] })).resolves.toBe(0)
+      } finally {
+        process.argv = previous
+      }
+      expect(print).toHaveBeenCalledWith('verify: AppImage and deb passed')
     } finally {
       print.mockRestore()
       error.mockRestore()

@@ -1,6 +1,7 @@
 # 发布运行手册（代码签名与发布）
 
-> 适用：M5-08 起的 Windows x64、按用户安装的 NSIS 发布；M6-02 起的 macOS DMG/ZIP。
+> 适用：M5-08 起的 Windows x64、按用户安装的 NSIS 发布；M6-02 起的 macOS DMG/ZIP；
+> M6-03 起的 Linux x64 AppImage/deb。
 > 上级文档：[M5 计划](../plan/m5.md)、[ADR-0036](../adr/0036-auto-update-signing-and-rollback.md)、
 > [ADR-0041](../adr/0041-macos-packaging-and-notarization.md)、
 > [发布前置条件](../plan/m5-release-prerequisites.md)。
@@ -278,3 +279,42 @@ stapling，更新包以 `.app` 的签名与公证结果为准。只有全部通�
 更新源目录属于 M6-07；在它完成之前，以上命令只用于本机或手工构建，不能视为已发布的
 macOS 更新通道。真实 Apple Silicon/Intel 安装、公证与更新下载仍需在配置好账号的 macOS
 环境执行并记录证据。
+
+## 11. Linux：AppImage 与 deb（M6-03）
+
+Linux 产物只在 Linux 上构建；Windows/macOS runner 会直接拒绝。目标为 x64，以 Ubuntu LTS
+为基线。
+
+### 11.1 构建与校验
+
+```bash
+pnpm build
+pnpm package:linux
+pnpm package:verify -- --linux
+```
+
+产物位于 `apps/desktop/dist/`：`Cairn-<version>-x64.AppImage` 与
+`Cairn-<version>-x64.deb`，以及各自的 `.sha256`。`verify-package` 会检查
+`linux-unpacked/cairn`、asar、skills、`out/bin/rg`、`linux-x64.node` 与两个安装包。
+deb 使用 electron-builder 的默认运行库依赖（含 `libsecret-1-0`、`libnss3`、`libxss1`）。
+
+### 11.2 更新边界
+
+- AppImage：`electron-updater` 通过 generic 源更新，需要 `latest-linux.yml` 与对应
+  AppImage；该元数据由发布流水线生成（M6-07）。
+- deb：不自动更新；由系统包管理器或手动安装新版本。发布说明必须写清两条升级路径。
+- 在 M6-07 完成前，上述命令只用于本机或手工构建，不能视为已发布的 Linux 更新通道。
+
+### 11.3 Chromium 沙箱与 `--no-sandbox`
+
+- 默认不关闭 Chromium 沙箱。Ubuntu 24.04 等限制非特权用户命名空间的环境可能无法启动
+  AppImage；排障时可显式加 `--no-sandbox`。
+- `--no-sandbox` 只影响 Chromium 进程沙箱，不改变 Cairn 的命令执行权限模型；Linux 尚未
+  实现命令沙箱（ADR-0034 / M6-05），界面与事件继续标注“未沙箱化”。
+- 不得把 `--no-sandbox` 写进桌面项或发布脚本作为默认值；发布说明中说明风险与替代修复
+  （启用用户命名空间或改用 deb）。
+
+### 11.4 未验证
+
+真实 AppImage/deb 构建、Ubuntu LTS 安装/启动/卸载/重装、`xdg-open`、无用户命名空间时的
+启动、AppImage 更新与 `latest-linux.yml` 生成仍需 Linux runner/真机与 M6-07 的流水线。

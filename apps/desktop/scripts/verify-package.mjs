@@ -3,8 +3,8 @@
  * 打包产物校验（M5-02，ADR-0035）。
  *
  * 只检查产物本身，不启动应用：必需文件、asar 中不应出现的内容、原生模块与 ripgrep
- * （Windows 为 `rg.exe`，macOS/Linux 为 `rg`）、技能资源、Electron fuses、NSIS 安装包或
- * macOS DMG/ZIP 与校验和。真实的 SQLite、koffi、ripgrep 与技能加载由 `smoke:packaged`
+ * （Windows 为 `rg.exe`，macOS/Linux 为 `rg`）、技能资源、Electron fuses、NSIS 安装包、
+ * macOS DMG/ZIP 或 Linux AppImage/deb 与校验和。真实的 SQLite、koffi、ripgrep 与技能加载由 `smoke:packaged`
  * 启动已打包程序验证。
  */
 import { spawnSync } from 'node:child_process'
@@ -449,6 +449,24 @@ export async function verifyPackage({
       }
     }
   }
+  if (target === 'linux') {
+    for (const ext of ['AppImage', 'deb']) {
+      const file = path.join(outputDir, `Cairn-${version}-x64.${ext}`)
+      const checksum = `${file}.sha256`
+      if (!existsSync(file)) {
+        problems.push(`missing Linux ${ext}: ${file}`)
+        continue
+      }
+      if (!existsSync(checksum)) {
+        problems.push(`missing Linux ${ext} checksum: ${checksum}`)
+      } else if (!checksumMatches(file, sha256(file))) {
+        problems.push(`Linux ${ext} checksum does not match: ${path.basename(file)}`)
+      }
+      if (statSync(file).size < minimumInstallerBytes) {
+        problems.push(`Linux ${ext} is unexpectedly small: ${path.basename(file)}`)
+      }
+    }
+  }
   if (target === 'nsis') {
     const installer = path.join(outputDir, `Cairn-${String(manifest.version)}-x64-setup.exe`)
     for (const { file, label } of [
@@ -487,7 +505,7 @@ export async function verifyPackage({
  * @param {{
  *   desktopRoot?: string;
  *   outputDir?: string;
- *   target?: 'dir' | 'nsis' | 'mac';
+ *   target?: 'dir' | 'nsis' | 'mac' | 'linux';
  *   verify?: typeof verifyPackage;
  * }} [options]
  * @returns {Promise<number>}
@@ -497,9 +515,11 @@ export async function main({
   outputDir = DEFAULT_OUTPUT_DIR,
   target = process.argv.includes('--mac')
     ? 'mac'
-    : process.argv.includes('--nsis')
-      ? 'nsis'
-      : 'dir',
+    : process.argv.includes('--linux')
+      ? 'linux'
+      : process.argv.includes('--nsis')
+        ? 'nsis'
+        : 'dir',
   verify = verifyPackage,
 } = {}) {
   const problems = await verify({ desktopRoot, outputDir, target })
@@ -507,7 +527,12 @@ export async function main({
     for (const problem of problems) console.error(`verify: ${problem}`)
     return 1
   }
-  const labels = { dir: 'unpacked application', nsis: 'installer', mac: 'DMG and ZIP' }
+  const labels = {
+    dir: 'unpacked application',
+    nsis: 'installer',
+    mac: 'DMG and ZIP',
+    linux: 'AppImage and deb',
+  }
   console.log(`verify: ${labels[target]} passed`)
   return 0
 }
