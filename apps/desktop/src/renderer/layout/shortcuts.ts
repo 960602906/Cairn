@@ -29,6 +29,19 @@ export function isSettingsKey(
   return mod && !event.shiftKey && !event.altKey && event.key === ','
 }
 
+/** “切换 Agent”的快捷键提示（M6-08）。 */
+export const agentPickerShortcut = (platform?: string): string =>
+  isMacPlatform(platform) ? '⌘.' : 'Ctrl .'
+
+/** 按键是否为“切换 Agent”（⌘. / Ctrl+.，不带 Shift 与 Alt）。 */
+export function isAgentPickerKey(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
+  platform?: string,
+): boolean {
+  const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
+  return mod && !event.shiftKey && !event.altKey && event.key === '.'
+}
+
 /** “搜索对话”的快捷键提示（M2-12）。 */
 export const searchShortcut = (platform?: string): string =>
   isMacPlatform(platform) ? '⌘K' : 'Ctrl K'

@@ -10,8 +10,9 @@
  * - 输入 `@` 弹出文件与文件夹候选（ComposerMentions，ADR-0037），发送时主进程把引用的内容附给模型。
  * - 文本框下面叠一层高亮（ComposerHighlight）：开头的指令、`@` 引用、网址和代码片段有底色或下划线；
  *   文本框自己的文字透明，只显示光标和选区。
- * - 下方左边是权限模式（只读 / 询问 / 自动，全局设置），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、
- *   上下文占用圆环（点击显示最近用量与分类占比）与发送 / 停止按钮。
+ * - 下方左边是 Agent（当前会话使用哪一个，M6-08）、权限模式（只读 / 询问 / 自动，全局设置），
+ *   右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、上下文占用圆环（点击显示最近用量与
+ *   分类占比）与发送 / 停止按钮。
  */
 import {
   ArrowUp,
@@ -55,6 +56,7 @@ import {
   type AvailableComposerCommand,
 } from './composer-shared.js'
 import { extractAgents, mentionText } from './composer-tokens.js'
+import { AgentPicker } from './agents/AgentPicker.js'
 import { agentName, localized } from './agents/model.js'
 import { contextBreakdown, latestSnapshot } from './context-breakdown.js'
 import { formatCompactTokens } from './format.js'
@@ -1019,6 +1021,7 @@ export function Composer({
             />
           </div>
           <div className="mt-2 flex items-center gap-1">
+            <AgentPicker sessionId={sessionId} agent={agent} disabled={active} />
             <PermissionMenu />
             <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
             <div className="ml-auto flex min-w-0 items-center gap-1">

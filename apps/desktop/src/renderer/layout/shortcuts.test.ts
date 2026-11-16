@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  agentPickerShortcut,
+  isAgentPickerKey,
   isMacPlatform,
   isNewChatKey,
   isPlanModeKey,
@@ -41,6 +43,16 @@ describe('shortcuts', () => {
     expect(isSettingsKey(key({ key: ',', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(false)
     expect(isSettingsKey(key({ key: '.', ctrlKey: true }), 'Win32')).toBe(false)
   })
+  it('opens the agent picker with ⌘. or Ctrl+. (M6-08)', () => {
+    expect(agentPickerShortcut('MacIntel')).toBe('⌘.')
+    expect(agentPickerShortcut('Win32')).toBe('Ctrl .')
+    expect(isAgentPickerKey(key({ key: '.', metaKey: true }), 'MacIntel')).toBe(true)
+    expect(isAgentPickerKey(key({ key: '.', ctrlKey: true }), 'Win32')).toBe(true)
+    expect(isAgentPickerKey(key({ key: '.', ctrlKey: true }), 'MacIntel')).toBe(false)
+    expect(isAgentPickerKey(key({ key: '.', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(false)
+    expect(isAgentPickerKey(key({ key: ',', ctrlKey: true }), 'Win32')).toBe(false)
+  })
+
   it('searches the sessions with ⌘K or Ctrl+K (M2-12)', () => {
     expect(searchShortcut('MacIntel')).toBe('⌘K')
     expect(searchShortcut('Win32')).toBe('Ctrl K')
