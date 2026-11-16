@@ -138,6 +138,9 @@ jobs:
           # DCO 需要完整的提交范围；浅克隆会让 base..head 为空而假通过。
           fetch-depth: 0
 
+      # setup-node 会按 packageManager 字段查找 pnpm；先安装它，否则 job 在 setup-node 就失败。
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc

@@ -321,6 +321,7 @@ describe('verifyPackage', () => {
         desktopRoot: app.desktopRoot,
         outputDir: app.outputDir,
         platform: 'win32',
+        arch: 'x64',
         runner: successfulRunner(),
         readFuses: async () => [],
         minimumInstallerBytes: 0,
@@ -335,6 +336,7 @@ describe('verifyPackage', () => {
       desktopRoot: missing.desktopRoot,
       outputDir: missing.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -348,6 +350,7 @@ describe('verifyPackage', () => {
       desktopRoot: invalid.desktopRoot,
       outputDir: invalid.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -376,6 +379,7 @@ describe('verifyPackage', () => {
       desktopRoot: missingAsar.desktopRoot,
       outputDir: missingAsar.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -391,6 +395,7 @@ describe('verifyPackage', () => {
       desktopRoot: incomplete.desktopRoot,
       outputDir: incomplete.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -417,6 +422,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -439,6 +445,7 @@ describe('verifyPackage', () => {
       desktopRoot: missing.desktopRoot,
       outputDir: missing.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -457,6 +464,7 @@ describe('verifyPackage', () => {
       desktopRoot: untrimmed.desktopRoot,
       outputDir: untrimmed.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -480,6 +488,7 @@ describe('verifyPackage', () => {
       desktopRoot: broken.desktopRoot,
       outputDir: broken.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: brokenRunner,
       readFuses: async () => [],
     })
@@ -495,6 +504,7 @@ describe('verifyPackage', () => {
       desktopRoot: outdated.desktopRoot,
       outputDir: outdated.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: outdatedRunner,
       readFuses: async () => [],
     })
@@ -519,6 +529,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -542,6 +553,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -560,6 +572,7 @@ describe('verifyPackage', () => {
         desktopRoot: mismatch.desktopRoot,
         outputDir: mismatch.outputDir,
         platform: 'win32',
+        arch: 'x64',
         runner: successfulRunner(),
         readFuses: async () => [],
       }),
@@ -582,6 +595,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -631,6 +645,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner,
       readFuses: async () => [],
     })
@@ -653,6 +668,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: silentRunner,
       readFuses: async () => [],
     })
@@ -666,6 +682,7 @@ describe('verifyPackage', () => {
         desktopRoot: app.desktopRoot,
         outputDir: app.outputDir,
         platform: 'win32',
+        arch: 'x64',
         runner: successfulRunner(),
         readFuses: async () => ['runAsNode enabled'],
       }),
@@ -682,6 +699,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
       target: 'nsis',
@@ -695,6 +713,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
       target: 'nsis',
@@ -707,6 +726,7 @@ describe('verifyPackage', () => {
         desktopRoot: app.desktopRoot,
         outputDir: app.outputDir,
         platform: 'win32',
+        arch: 'x64',
         runner: successfulRunner(),
         readFuses: async () => [],
         target: 'nsis',
@@ -721,6 +741,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
       target: 'nsis',
@@ -742,6 +763,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -758,6 +780,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'win32',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
     })
@@ -771,6 +794,7 @@ describe('verifyPackage', () => {
         desktopRoot: app.desktopRoot,
         outputDir: app.outputDir,
         platform: 'linux',
+        arch: 'x64',
         runner: successfulRunner(),
         readFuses: async () => [],
       }),
@@ -792,6 +816,7 @@ describe('verifyPackage', () => {
         desktopRoot: app.desktopRoot,
         outputDir: app.outputDir,
         platform: 'linux',
+        arch: 'x64',
         runner: successfulRunner(),
         readFuses: async () => [],
         target: 'linux',
@@ -813,6 +838,7 @@ describe('verifyPackage', () => {
       desktopRoot: app.desktopRoot,
       outputDir: app.outputDir,
       platform: 'linux',
+      arch: 'x64',
       runner: successfulRunner(),
       readFuses: async () => [],
       target: 'linux',
@@ -871,6 +897,7 @@ describe('verifyPackage', () => {
         desktopRoot: app.desktopRoot,
         outputDir: app.outputDir,
         platform: 'win32',
+        arch: 'x64',
         runner: successfulRunner(),
         readFuses: async () => [],
       }),

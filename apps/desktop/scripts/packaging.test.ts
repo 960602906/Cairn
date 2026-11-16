@@ -455,9 +455,11 @@ describe('pruneStagedDependencies', () => {
 
   it('is a no-op when optional native directories do not exist', () => {
     const directory = temporaryDirectory()
-    expect(pruneStagedDependencies({ stageDir: directory })).toEqual({
+    expect(
+      pruneStagedDependencies({ stageDir: directory, platform: 'linux', arch: 'x64' }),
+    ).toEqual({
       removed: [],
-      kept: [`${process.platform}-${process.arch}.node`],
+      kept: ['linux-x64.node'],
     })
   })
 })
