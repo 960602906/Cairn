@@ -178,6 +178,53 @@ describe('buildSystemPrompt', () => {
     ).not.toContain('# Skills')
   })
 
+  it('lists task lists with their ids and statuses (ADR-0038)', () => {
+    const prompt = buildSystemPrompt({
+      tools: true,
+      environment,
+      plan: {
+        kind: 'execute',
+        goal: '做点事',
+        listId: 'plan-pl1',
+        steps: [{ id: 'a', title: '第一步' }],
+      },
+      taskLists: [
+        {
+          listId: 'plan-pl1',
+          title: '做点事',
+          source: 'plan',
+          planId: 'pl1',
+          items: [{ itemId: 'a', title: '第一步', status: 'in_progress' }],
+        },
+        {
+          listId: 'tl2',
+          title: '临时清单',
+          source: 'ad_hoc',
+          items: [{ itemId: 'x', title: '临时项', status: 'pending' }],
+        },
+      ],
+    })
+    const plan = prompt.indexOf('# Approved plan')
+    const lists = prompt.indexOf('# Task lists')
+    const env = prompt.indexOf('# Environment')
+    expect(plan).toBeGreaterThan(-1)
+    expect(lists).toBeGreaterThan(plan)
+    expect(env).toBeGreaterThan(lists)
+    expect(prompt).toContain('Progress is tracked in task list "plan-pl1"')
+    expect(prompt).toContain('- plan-pl1 — 做点事 (plan)')
+    expect(prompt).toContain('1. a: 第一步 [in_progress]')
+    expect(prompt).toContain('- tl2 — 临时清单 (ad_hoc)')
+    expect(prompt).toContain('1. x: 临时项 [pending]')
+
+    expect(
+      buildSystemPrompt({
+        tools: false,
+        environment: { os: 'Linux', workspacePath: '/work', date: '2026-01-02' },
+        taskLists: [],
+      }),
+    ).not.toContain('# Task lists')
+  })
+
   it('covers the required rules of the base prompt (architecture §13)', () => {
     expect(BASE_SYSTEM_PROMPT).toContain('Reply in the language the user writes in')
     expect(BASE_SYSTEM_PROMPT).toContain('ask a short clarifying question')

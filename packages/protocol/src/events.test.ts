@@ -149,6 +149,18 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   'plan.rejected': { planId: 'pl1', feedback: '太复杂' },
   'plan.steps.revised': { planId: 'pl1', steps: [{ id: 'read', title: '先读测试' }] },
   'plan.step.updated': { planId: 'pl1', stepIndex: 0, status: 'done', note: '改了测试' },
+  'tasklist.created': {
+    listId: 'tl1',
+    title: '修复测试',
+    source: 'ad_hoc',
+    items: [{ itemId: 'read', title: '读失败用例' }],
+  },
+  'tasklist.items.revised': {
+    listId: 'tl1',
+    items: [{ itemId: 'read', title: '先读失败用例' }],
+  },
+  'tasklist.item.updated': { listId: 'tl1', itemId: 'read', status: 'done', note: '已修复' },
+  'tasklist.closed': { listId: 'tl1' },
 }
 
 function envelope(type: string, payload: unknown, extra: Record<string, unknown> = {}) {

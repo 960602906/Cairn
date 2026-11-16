@@ -20,6 +20,7 @@ import { BackgroundCommand } from '../commands.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
 import { RunSnapshotInput } from '../inspect.js'
 import { ActivePlan, PromptMode } from '../plan.js'
+import { ActiveTaskList } from '../task-list.js'
 import { PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
 import {
   SandboxCapability,
@@ -200,7 +201,8 @@ export const HostForMain = defineSide({
     /**
      * 用户输入已由主进程落库为 message.user，messageId 与之对应。
      * `mode: 'plan'`（M3-05）时这一轮只读，并多一个 `propose_plan`。
-     * `plan` 是正在执行的已批准计划，有它时提供 `update_plan_step`。
+     * `plan` 是正在执行的已批准计划，有它时提供兼容别名 `update_plan_step`。
+     * `taskLists` 是本会话未关闭的待办列表（ADR-0038），工具按 `listId` 显式寻址。
      */
     'host.prompt': {
       params: z.object({
@@ -208,6 +210,7 @@ export const HostForMain = defineSide({
         content: z.array(ContentPart).min(1),
         mode: PromptMode.optional(),
         plan: ActivePlan.optional(),
+        taskLists: z.array(ActiveTaskList).optional(),
         /**
          * 发送方式（Runtime §9）：`queue` 默认，排到当前轮之后作为新一轮；
          * `steer` 引导，注入当前轮、在下一次模型调用前生效；`interrupt` 先中止当前轮再发送。

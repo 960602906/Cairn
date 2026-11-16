@@ -44,10 +44,15 @@ import {
   operatingSystemName,
   toolSelected,
   toolOutputBudget,
+  isTaskListTool,
+  PLAN_MODE_DENY_REASON,
+  PlanModeReasonCode,
   planModeGuard,
   planToolVisible,
   registerPlanTools,
+  registerTaskListTools,
   sandboxGuard,
+  taskListToolVisible,
   type AgentRunHandle,
   type AgentRuntime,
   type DelegationChain,
@@ -73,6 +78,7 @@ import {
   MainForHost,
   RpcError,
   type ActivePlan,
+  type ActiveTaskList,
   type AgentDefinition,
   type DelegateChanges,
   DelegateInput,
@@ -89,6 +95,8 @@ import {
   type SandboxUnavailableBehavior,
   type ShellPreference,
   type SkillCatalogEntry,
+  type TaskItem,
+  type TaskItemUpdateStatus,
   sandboxExecution,
 } from '@cairn/protocol'
 import { SKILL_PIN_MAX_CHARS } from '@cairn/skills'
@@ -272,6 +280,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let planTurn = false
   /** 正在执行的已批准计划。下一次 `host.prompt` 会换掉或清掉。 */
   let activePlan: ActivePlan | undefined
+  /** 本会话未关闭的待办列表（ADR-0038）。下一次 `host.prompt` 用主进程的投影覆盖。 */
+  let taskLists: ActiveTaskList[] = []
   /**
    * 共享写入锁（M4-08）：同一会话同一时刻只允许一个写入类子运行修改父工作区。宿主按会话创建，
    * 因此内存中的队列就够用；隔离工作区不受这个锁限制，可以并行。
@@ -302,6 +312,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     guards: [
       ...DEFAULT_PERMISSION_GUARDS,
       planModeGuard(() => planTurn),
+      // 待办列表工具与兼容别名类别是 `read`，只靠 visibleSpecs 隐藏不够：计划轮直接拒绝执行。
+      (request) =>
+        planTurn && isTaskListTool(request.definition.name)
+          ? {
+              effect: 'deny',
+              reasonCode: PlanModeReasonCode,
+              reason: PLAN_MODE_DENY_REASON,
+            }
+          : undefined,
       delegationApprovalGuard,
       sandboxGuard(() => sandboxState),
       (request) => rootPathGuard(request),
@@ -312,6 +331,55 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   const requireRun = () => {
     if (!run) throw new RpcError(AgentHostErrorCode.NotInitialized)
     return run
+  }
+
+  /**
+   * 工具成功后同步内存镜像（ADR-0038），使同一轮里的后续调用按最新列表校验。
+   * 跨轮的正确性由主进程每次 `host.prompt` 发来的投影快照保证。
+   */
+  const createTaskList = (list: ActiveTaskList): void => {
+    if (!taskLists.some((entry) => entry.listId === list.listId)) taskLists = [...taskLists, list]
+  }
+  const reviseTaskItems = (listId: string, items: readonly TaskItem[]): void => {
+    taskLists = taskLists.map((list) => {
+      if (list.listId !== listId) return list
+      const previous = new Map(list.items.map((item) => [item.itemId, item]))
+      return {
+        ...list,
+        items: items.map((item) => {
+          const prior = previous.get(item.itemId)
+          return {
+            itemId: item.itemId,
+            title: item.title,
+            status: prior?.status ?? 'pending',
+            ...(prior?.note ? { note: prior.note } : {}),
+          }
+        }),
+      }
+    })
+  }
+  const updateTaskItem = (
+    listId: string,
+    itemId: string,
+    status: TaskItemUpdateStatus,
+    note: string | undefined,
+  ): void => {
+    taskLists = taskLists.map((list) =>
+      list.listId === listId
+        ? {
+            ...list,
+            items: list.items.map((item) =>
+              item.itemId === itemId
+                ? {
+                    ...item,
+                    status,
+                    ...(note ? { note } : item.note ? { note: item.note } : {}),
+                  }
+                : item,
+            ),
+          }
+        : list,
+    )
   }
 
   endpoint.handle('host.init', async (init) => {
@@ -417,6 +485,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       registry.specs(
         (definition) =>
           planToolVisible(definition.name, mode, executing) &&
+          taskListToolVisible(definition.name, mode, executing) &&
           toolSelected(agentDefinition?.tools, definition),
       )
     registerMcpToolsInto(registry, init.mcpTools ?? [])
@@ -894,9 +963,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     const hasTools = registry
       .list()
       .some((definition) => toolSelected(agentDefinition?.tools, definition))
-    registerPlanTools(registry, {
+    registerPlanTools(registry, { createId: options.createId })
+    registerTaskListTools(registry, {
       createId: options.createId,
+      lists: () => taskLists,
+      createList: createTaskList,
+      reviseItems: reviseTaskItems,
+      updateItem: updateTaskItem,
       activePlan: () => activePlan,
+      // 旧会话没有关联列表时，兼容别名回退到 `plan.steps.revised`；这里同步内存中的计划快照。
       revisePlan: (steps) => {
         if (activePlan) activePlan = { ...activePlan, steps: [...steps] }
       },
@@ -982,6 +1057,11 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         }))
         const mode = planTurn ? 'plan' : 'normal'
         const executing = mode === 'normal' ? activePlan : undefined
+        /** 计划关联的执行列表；旧会话没有时回退到计划步骤。 */
+        const planList =
+          executing === undefined
+            ? undefined
+            : taskLists.find((list) => list.source === 'plan' && list.planId === executing.planId)
         return {
           systemPrompt: buildSystemPrompt({
             ...promptBase,
@@ -996,10 +1076,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
                     plan: {
                       kind: 'execute' as const,
                       goal: executing.goal,
-                      steps: executing.steps,
+                      ...(planList ? { listId: planList.listId } : {}),
+                      steps: (
+                        planList?.items ??
+                        executing.steps.map((step) => ({ itemId: step.id, title: step.title }))
+                      ).map((item) => ({ id: item.itemId, title: item.title })),
                     },
                   }
                 : {}),
+            ...(mode === 'normal' && taskLists.length > 0 ? { taskLists } : {}),
           }),
           tools: visibleSpecs(mode, executing !== undefined),
           ...(context ? { context } : {}),
@@ -1070,13 +1155,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   endpoint.handle('host.prompt', (input) => {
     // 引导：注入当前轮，在下一次模型调用前生效；不另起一轮，也不改这一轮的计划模式。
     if (input.send === 'steer') {
-      // 正常执行的引导同步计划快照；只读计划轮不能借引导切换成执行模式。
+      // 正常执行的引导同步计划与列表快照；只读计划轮不能借引导切换成执行模式。
       if (!planTurn && input.plan) activePlan = input.plan
+      if (!planTurn && input.taskLists) taskLists = [...input.taskLists]
       requireRun().send(input, 'steer').catch(onError)
       return {}
     }
     planTurn = input.mode === 'plan'
     activePlan = planTurn ? undefined : input.plan
+    // 计划轮是只读调查，不携带待办列表（工具也不可见）。
+    taskLists = planTurn ? [] : [...(input.taskLists ?? [])]
     // 一轮结束才 resolve；结果以事件回传，这里不等待。计划模式的只读拦截维持到这一轮结束。
     requireRun()
       .send(input, input.send)

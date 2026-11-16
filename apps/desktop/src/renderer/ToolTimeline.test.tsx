@@ -331,6 +331,42 @@ describe('ToolStep：计划工具', () => {
     expect(code().textContent).toBe('s2 · 进行中')
   })
 
+  it('create_task_list 显示标题', () => {
+    step({
+      name: 'create_task_list',
+      tool: tool({
+        name: 'create_task_list',
+        input: { title: '修测试', items: [{ title: '读用例' }] },
+      }),
+    })
+    expect(label()).toContain('创建任务列表')
+    expect(code().textContent).toBe('修测试')
+  })
+
+  it('revise_task_items 显示条目数', () => {
+    step({
+      name: 'revise_task_items',
+      tool: tool({
+        name: 'revise_task_items',
+        input: { listId: 'tl1', items: [{ id: 'a' }, { id: 'b' }] },
+      }),
+    })
+    expect(label()).toContain('调整任务')
+    expect(code().textContent).toBe('2 项')
+  })
+
+  it('update_task_item 显示条目 id 与状态', () => {
+    step({
+      name: 'update_task_item',
+      tool: tool({
+        name: 'update_task_item',
+        input: { listId: 'tl1', itemId: 'a', status: 'done' },
+      }),
+    })
+    expect(label()).toContain('更新任务')
+    expect(code().textContent).toBe('a · 已完成')
+  })
+
   it('propose_plan 没有目标时退回参数摘要', () => {
     step({
       name: 'propose_plan',

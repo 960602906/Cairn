@@ -41,11 +41,13 @@ import {
   type PlanDocument,
   type PlanStepStatus,
   type SessionStatus,
+  type TaskListSource,
   type TokenUsage,
   type ToolCall,
   type ToolDisplay,
   type ToolOutputChunk as ProtocolToolOutputChunk,
 } from '@cairn/protocol'
+import { taskListIdForPlan } from '@cairn/protocol'
 import { canTransition } from './run-state.js'
 
 /** 会话基本信息（来自 `session.created` / `session.renamed` / `session.model.changed`）。 */
@@ -271,6 +273,93 @@ export function activeExecutionPlan(view: SessionView): PlanView | undefined {
   return undefined
 }
 
+/** 待办列表里的一项（ADR-0038）。状态从 `pending` 起，由 `tasklist.item.updated` 推进。 */
+export interface TaskItemView {
+  readonly itemId: string
+  readonly title: string
+  readonly status: PlanStepStatus
+  readonly note?: string
+}
+
+/** 会话里的一份待办列表（`tasklist.created` 起）。计划批准创建的那份带 `planId`。 */
+export interface TaskListView {
+  readonly listId: string
+  readonly title: string
+  readonly source: TaskListSource
+  readonly planId?: string
+  readonly items: readonly TaskItemView[]
+  /** 已关闭的列表不再接受更新，也不出现在浮动进度卡上。 */
+  readonly closed: boolean
+  readonly seq: number
+  readonly runId: string
+  readonly turnId?: string
+}
+
+/** 未关闭的待办列表，按创建顺序。 */
+export function activeTaskLists(view: SessionView): readonly TaskListView[] {
+  return view.taskLists.filter((list) => !list.closed)
+}
+
+/** 计划关联的执行列表；旧会话没有时返回 undefined，调用方回退到 `plan.steps`。 */
+export function taskListForPlan(view: SessionView, planId: string): TaskListView | undefined {
+  return view.taskLists.find((list) => list.source === 'plan' && list.planId === planId)
+}
+
+/** 列表里是否还有没做完的项。 */
+export function taskListInProgress(list: TaskListView): boolean {
+  return list.items.some((item) => item.status === 'pending' || item.status === 'in_progress')
+}
+
+/** 计划卡片显示的步骤：有关联列表时用列表项，否则用计划快照（旧会话）。 */
+export function planProgressSteps(view: SessionView, plan: PlanView): readonly TaskItemView[] {
+  const list = taskListForPlan(view, plan.planId)
+  return list
+    ? list.items
+    : plan.steps.map((step) => ({
+        itemId: step.id,
+        title: step.title,
+        status: step.status,
+        ...(step.note ? { note: step.note } : {}),
+      }))
+}
+
+/** 旧会话没有列表事件：按计划快照合成一份，让进度卡与侧栏继续工作。 */
+function synthesizedPlanList(plan: PlanView): TaskListView {
+  return {
+    listId: taskListIdForPlan(plan.planId),
+    title: plan.content.goal,
+    source: 'plan',
+    planId: plan.planId,
+    items: plan.steps.map((step) => ({
+      itemId: step.id,
+      title: step.title,
+      status: step.status,
+      ...(step.note ? { note: step.note } : {}),
+    })),
+    closed: false,
+    seq: plan.seq,
+    runId: plan.runId,
+    ...(plan.turnId ? { turnId: plan.turnId } : {}),
+  }
+}
+
+/**
+ * 浮动进度卡显示的列表：执行中的计划优先（旧会话用合成列表），
+ * 否则最近一个仍有未完成项的临时列表；都完成时不显示。
+ */
+export function progressTaskList(view: SessionView): TaskListView | undefined {
+  const plan = activeExecutionPlan(view)
+  if (plan) {
+    const list = taskListForPlan(view, plan.planId) ?? synthesizedPlanList(plan)
+    if (!list.closed && taskListInProgress(list)) return list
+  }
+  for (let index = view.taskLists.length - 1; index >= 0; index -= 1) {
+    const list = view.taskLists[index]!
+    if (list.source === 'ad_hoc' && !list.closed && taskListInProgress(list)) return list
+  }
+  return undefined
+}
+
 export interface SessionView {
   readonly sessionId: string
   /** 已归约的最后一条持久化事件的 seq；0 表示尚未处理任何事件（seq 从 1 开始）。 */
@@ -324,6 +413,8 @@ export interface SessionView {
   readonly brief?: { readonly content: string; readonly editedBy: 'agent' | 'user' }
   /** 会话里的计划，按提出顺序（M3-05）。 */
   readonly plans: readonly PlanView[]
+  /** 会话里的待办列表，按创建顺序（ADR-0038）。 */
+  readonly taskLists: readonly TaskListView[]
   /** 父运行发起的子任务，按发生顺序（M4-05）。 */
   readonly delegations: readonly DelegationView[]
 }
@@ -349,6 +440,7 @@ export function createSessionView(sessionId: string): SessionView {
     checkpoints: [],
     restores: [],
     plans: [],
+    taskLists: [],
     delegations: [],
   }
 }
@@ -536,6 +628,36 @@ function proposePlan(
     ...(event.turnId ? { turnId: event.turnId } : {}),
   }
   return { ...view, plans: [...view.plans, plan] }
+}
+
+function resolveTaskList(
+  view: SessionView,
+  listId: string,
+  update: (list: TaskListView) => TaskListView | undefined,
+): SessionView | undefined {
+  const index = view.taskLists.findIndex((list) => list.listId === listId)
+  if (index < 0) return undefined
+  const next = update(view.taskLists[index]!)
+  if (!next || next === view.taskLists[index]) return undefined
+  const taskLists = view.taskLists.slice()
+  taskLists[index] = next
+  return { ...view, taskLists }
+}
+
+/** 整体修订：保留同 id 的进度与说明，移除的消失，新 id 从 `pending` 起。 */
+function revisedItemViews(
+  previous: readonly TaskItemView[],
+  items: readonly { readonly itemId: string; readonly title: string }[],
+): TaskItemView[] {
+  return items.map((item) => {
+    const prior = previous.find((entry) => entry.itemId === item.itemId)
+    return {
+      itemId: item.itemId,
+      title: item.title,
+      status: prior?.status ?? 'pending',
+      ...(prior?.note ? { note: prior.note } : {}),
+    }
+  })
 }
 
 function resolvePlan(
@@ -814,6 +936,55 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         )
         return { ...plan, steps }
       })
+
+    case 'tasklist.created': {
+      const { listId, title, source, planId, items } = event.payload
+      if (view.taskLists.some((list) => list.listId === listId)) return undefined
+      if (new Set(items.map((item) => item.itemId)).size !== items.length) return undefined
+      const list: TaskListView = {
+        listId,
+        title,
+        source,
+        ...(planId ? { planId } : {}),
+        items: items.map((item) => ({
+          itemId: item.itemId,
+          title: item.title,
+          status: 'pending',
+        })),
+        closed: false,
+        seq: event.seq,
+        runId: event.runId,
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+      }
+      return { ...view, taskLists: [...view.taskLists, list] }
+    }
+    case 'tasklist.items.revised':
+      return resolveTaskList(view, event.payload.listId, (list) => {
+        if (list.closed) return undefined
+        const { items } = event.payload
+        if (new Set(items.map((item) => item.itemId)).size !== items.length) return undefined
+        return { ...list, items: revisedItemViews(list.items, items) }
+      })
+    case 'tasklist.item.updated':
+      return resolveTaskList(view, event.payload.listId, (list) => {
+        if (list.closed) return undefined
+        const index = list.items.findIndex((item) => item.itemId === event.payload.itemId)
+        const current = list.items[index]
+        if (!current) return undefined
+        const note = event.payload.note?.trim()
+        return {
+          ...list,
+          items: list.items.with(index, {
+            ...current,
+            status: event.payload.status,
+            ...(note ? { note } : current.note ? { note: current.note } : {}),
+          }),
+        }
+      })
+    case 'tasklist.closed':
+      return resolveTaskList(view, event.payload.listId, (list) =>
+        list.closed ? undefined : { ...list, closed: true },
+      )
 
     case 'session.brief.updated': {
       const content = event.payload.content.trim()

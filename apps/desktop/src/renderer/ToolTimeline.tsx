@@ -14,9 +14,12 @@ import { ChevronRight, Minus } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  CREATE_TASK_LIST_TOOL,
   PROPOSE_PLAN_TOOL,
   REVISE_PLAN_STEPS_TOOL,
+  REVISE_TASK_ITEMS_TOOL,
   UPDATE_PLAN_STEP_TOOL,
+  UPDATE_TASK_ITEM_TOOL,
   type LiveToolOutputView,
   type ToolCallView,
 } from '@cairn/core'
@@ -203,9 +206,14 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   const tail = liveText.trim() === '' ? undefined : previewLines(liveText, 'end')
   const argsRecord =
     typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {}
+  // 计划与待办列表工具的参数是结构化对象，直接抖 JSON 很丑；用一句人能读懂的话代替。
   const planTool =
-    name === PROPOSE_PLAN_TOOL || name === REVISE_PLAN_STEPS_TOOL || name === UPDATE_PLAN_STEP_TOOL
-  // 计划类工具的参数是一整份计划对象，直接抖 JSON 很丑；用一句人能读懂的话代替。
+    name === PROPOSE_PLAN_TOOL ||
+    name === REVISE_PLAN_STEPS_TOOL ||
+    name === UPDATE_PLAN_STEP_TOOL ||
+    name === CREATE_TASK_LIST_TOOL ||
+    name === REVISE_TASK_ITEMS_TOOL ||
+    name === UPDATE_TASK_ITEM_TOOL
   let action: string
   let object: string
   if (name === PROPOSE_PLAN_TOOL) {
@@ -225,6 +233,23 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
         ? t(`plan.step.${stepStatus}`)
         : ''
     object = [stepId, statusLabel].filter((part) => part !== '').join(' · ')
+  } else if (name === CREATE_TASK_LIST_TOOL) {
+    const title = argsRecord['title']
+    action = t('tool.action.create_task_list')
+    object = typeof title === 'string' && title !== '' ? title : summarizeInput(args)
+  } else if (name === REVISE_TASK_ITEMS_TOOL) {
+    const items = argsRecord['items']
+    action = t('tool.action.revise_task_items')
+    object = t('tool.taskItems', { count: Array.isArray(items) ? items.length : 0 })
+  } else if (name === UPDATE_TASK_ITEM_TOOL) {
+    action = t('tool.action.update_task_item')
+    const itemId = typeof argsRecord['itemId'] === 'string' ? argsRecord['itemId'] : ''
+    const itemStatus = argsRecord['status']
+    const statusLabel =
+      itemStatus === 'in_progress' || itemStatus === 'done' || itemStatus === 'skipped'
+        ? t(`plan.step.${itemStatus}`)
+        : ''
+    object = [itemId, statusLabel].filter((part) => part !== '').join(' · ')
   } else {
     action = name === 'load_skill' ? '' : ACTIONS.has(name) ? t(`tool.action.${name}`) : name
     object = summarizeInput(args)

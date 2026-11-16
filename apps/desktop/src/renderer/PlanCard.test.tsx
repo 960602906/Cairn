@@ -11,6 +11,7 @@ import {
   PlanDetails,
   PlanProgress,
   PlanSummaryCard,
+  TaskProgress,
   planDocument,
   planInProgress,
   planPreview,
@@ -282,6 +283,43 @@ describe('PlanProgress', () => {
     wrap(<PlanProgress plan={running} running onOpen={() => {}} />)
     const card = screen.getByRole('region', { name: '计划进度' })
     expect(within(card).getByText('执行中')).toBeTruthy()
+  })
+
+  it('renders an ad-hoc list without an open action and reads from the list items', async () => {
+    const user = userEvent.setup()
+    wrap(
+      <TaskProgress
+        labelKey="taskList.progress.label"
+        list={{
+          title: '临时清单',
+          items: [
+            { itemId: 'a', title: '读入口', status: 'done' },
+            { itemId: 'b', title: '改实现', status: 'in_progress' },
+          ],
+        }}
+      />,
+    )
+    const card = screen.getByRole('region', { name: '任务进度' })
+    expect(within(card).getByText('临时清单')).toBeTruthy()
+    expect(within(card).getByText('1 / 2')).toBeTruthy()
+    // 临时列表没有可打开的详情：只有收起按钮。
+    expect(within(card).getAllByRole('button')).toHaveLength(1)
+    await user.click(within(card).getByRole('button', { name: '收起计划步骤' }))
+    expect(within(card).getByText('改实现')).toBeTruthy()
+  })
+
+  it('renders list steps in PlanDetails while keeping the approved content', () => {
+    wrap(
+      <PlanDetails
+        plan={{ ...plan, status: 'approved' }}
+        steps={[{ itemId: 'read', title: '读入口（改写）', status: 'done' }]}
+      />,
+    )
+    expect(screen.getByText('读入口（改写）')).toBeTruthy()
+    expect(screen.queryByText('读 src/a.ts')).toBeNull()
+    // 计划正文（风险、验证）仍是批准时的快照。
+    expect(screen.getByText('可能漏掉入口')).toBeTruthy()
+    expect(screen.getByText('单测通过')).toBeTruthy()
   })
 
   it('falls back to the next pending step, then to the goal, when collapsed', async () => {

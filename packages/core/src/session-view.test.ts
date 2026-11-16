@@ -2,12 +2,17 @@ import type { EventEnvelope, EventPayload, EventType, TokenUsage } from '@cairn/
 import { describe, expect, it } from 'vitest'
 import {
   activeExecutionPlan,
+  activeTaskLists,
   createSessionView,
   MAX_LIVE_TOOL_OUTPUT_CHARS,
+  planProgressSteps,
+  progressTaskList,
   reduceSession,
   reduceSessionEvents,
   rootRun,
   sessionStatus,
+  taskListForPlan,
+  taskListInProgress,
   type SessionView,
 } from './index.js'
 
@@ -108,6 +113,7 @@ describe('createSessionView', () => {
       checkpoints: [],
       restores: [],
       plans: [],
+      taskLists: [],
       delegations: [],
     })
   })
@@ -1237,5 +1243,148 @@ describe('reduceSession：计划（M3-05）', () => {
     )
     expect(next.brief).toBeUndefined()
     expect(next.lastSeq).toBe(view.lastSeq + 1)
+  })
+})
+
+describe('reduceSession：待办列表（ADR-0038）', () => {
+  const doc = {
+    goal: '做点事',
+    files: [],
+    steps: [
+      { id: 'a', title: '第一步' },
+      { id: 'b', title: '第二步' },
+    ],
+    risks: '',
+    verification: '',
+    markdown: '',
+  }
+
+  it('归约创建、更新、整体修订与关闭', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('tasklist.created', {
+        listId: 'tl1',
+        title: '修测试',
+        source: 'ad_hoc',
+        items: [
+          { itemId: 'a', title: '甲' },
+          { itemId: 'b', title: '乙' },
+        ],
+      }),
+      ev('tasklist.item.updated', { listId: 'tl1', itemId: 'a', status: 'in_progress' }),
+      ev('tasklist.items.revised', {
+        listId: 'tl1',
+        items: [
+          { itemId: 'a', title: '甲（改名）' },
+          { itemId: 'c', title: '丙' },
+        ],
+      }),
+    ])
+    const list = view.taskLists[0]!
+    expect(list).toMatchObject({ listId: 'tl1', source: 'ad_hoc', closed: false })
+    expect(list.items).toEqual([
+      { itemId: 'a', title: '甲（改名）', status: 'in_progress' },
+      { itemId: 'c', title: '丙', status: 'pending' },
+    ])
+    expect(taskListInProgress(list)).toBe(true)
+
+    const closed = reduceSession(view, ev('tasklist.closed', { listId: 'tl1' }))
+    expect(closed.taskLists[0]?.closed).toBe(true)
+    expect(activeTaskLists(closed)).toEqual([])
+    // 关闭后更新被忽略，只推进 seq。
+    const ignored = reduceSession(
+      closed,
+      ev('tasklist.item.updated', { listId: 'tl1', itemId: 'a', status: 'done' }),
+    )
+    expect(ignored.taskLists[0]).toBe(closed.taskLists[0])
+  })
+
+  it('重复创建与未知列表只推进 seq', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('tasklist.created', {
+        listId: 'tl1',
+        title: '甲',
+        source: 'ad_hoc',
+        items: [{ itemId: 'a', title: '一' }],
+      }),
+      ev('tasklist.created', {
+        listId: 'tl1',
+        title: '乙',
+        source: 'ad_hoc',
+        items: [{ itemId: 'b', title: '二' }],
+      }),
+      ev('tasklist.item.updated', { listId: 'nope', itemId: 'a', status: 'done' }),
+    ])
+    expect(view.taskLists).toHaveLength(1)
+    expect(view.taskLists[0]?.title).toBe('甲')
+    expect(view.lastSeq).toBe(3)
+  })
+
+  it('旧会话没有列表事件时按计划快照合成进度', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.approved', { planId: 'pl1' }),
+      ev('plan.step.updated', { planId: 'pl1', stepId: 'a', stepIndex: 0, status: 'done' }),
+    ])
+    const plan = activeExecutionPlan(view)!
+    expect(planProgressSteps(view, plan).map((step) => step.status)).toEqual(['done', 'pending'])
+    expect(taskListForPlan(view, 'pl1')).toBeUndefined()
+    const list = progressTaskList(view)!
+    expect(list).toMatchObject({ listId: 'plan-pl1', source: 'plan', planId: 'pl1' })
+    expect(list.items[0]).toMatchObject({ itemId: 'a', status: 'done' })
+  })
+
+  it('浮动进度卡优先计划列表，其次最近的临时列表', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('tasklist.created', {
+        listId: 'plan-pl1',
+        title: '做点事',
+        source: 'plan',
+        planId: 'pl1',
+        items: [
+          { itemId: 'a', title: '第一步' },
+          { itemId: 'b', title: '第二步' },
+        ],
+      }),
+      ev('plan.approved', { planId: 'pl1' }),
+      ev('tasklist.created', {
+        listId: 'tl2',
+        title: '临时清单',
+        source: 'ad_hoc',
+        items: [{ itemId: 'x', title: '临时项' }],
+      }),
+    ])
+    expect(progressTaskList(view)?.listId).toBe('plan-pl1')
+    expect(taskListForPlan(view, 'pl1')?.listId).toBe('plan-pl1')
+    expect(planProgressSteps(view, activeExecutionPlan(view)!).map((step) => step.status)).toEqual([
+      'pending',
+      'pending',
+    ])
+
+    const finished = reduceSessionEvents(view, [
+      ev('tasklist.item.updated', { listId: 'plan-pl1', itemId: 'a', status: 'done' }),
+      ev('tasklist.item.updated', { listId: 'plan-pl1', itemId: 'b', status: 'skipped' }),
+    ])
+    // 计划做完了：不再显示；临时列表仍有未完成项时回退到它。
+    expect(progressTaskList(finished)?.listId).toBe('tl2')
+  })
+
+  it('临时列表全部完成时进度卡消失', () => {
+    const ev = stream()
+    const done = reduceAll([
+      ev('tasklist.created', {
+        listId: 'tl1',
+        title: '甲',
+        source: 'ad_hoc',
+        items: [{ itemId: 'a', title: '一' }],
+      }),
+      ev('tasklist.item.updated', { listId: 'tl1', itemId: 'a', status: 'done' }),
+    ])
+    expect(progressTaskList(done)).toBeUndefined()
+    expect(activeTaskLists(done)).toHaveLength(1)
   })
 })

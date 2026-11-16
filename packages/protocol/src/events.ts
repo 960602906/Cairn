@@ -11,6 +11,14 @@
 import { z } from 'zod'
 import { PLAN_STEP_MAX, PlanDocument, PlanStep, PlanStepStatus } from './plan.js'
 import {
+  TASK_ITEM_ID_PATTERN,
+  TASK_ITEM_NOTE_MAX,
+  TASK_LIST_TITLE_MAX,
+  TaskItems,
+  TaskItemUpdateStatus,
+  TaskListSource,
+} from './task-list.js'
+import {
   AgentDefinitionRef,
   RunAgentRef,
   ContentPart,
@@ -388,6 +396,39 @@ const payloadSchemas = {
     status: PlanStepStatus,
     /** 模型对这一步的说明。偏离计划时写在这里，不阻止执行。 */
     note: z.string().max(2_000).optional(),
+  }),
+
+  // ---------- 待办列表（ADR-0038） ----------
+  /**
+   * 创建一份列表。计划批准时以批准的步骤创建 `source: 'plan'` 的列表（`itemId` 与步骤 id 相同）；
+   * 普通执行轮也可以创建 `ad_hoc` 列表。
+   */
+  'tasklist.created': z.object({
+    listId: Id,
+    title: z.string().trim().min(1).max(TASK_LIST_TITLE_MAX),
+    source: TaskListSource,
+    /** 计划来源的列表指向对应计划。 */
+    planId: Id.optional(),
+    /** 委派来源的列表指向子运行。 */
+    runId: Id.optional(),
+    items: TaskItems,
+  }),
+  /** 整体替换有序任务项：保留同 id 的进度，删除的消失，新 id 从 pending 开始。 */
+  'tasklist.items.revised': z.object({
+    listId: Id,
+    items: TaskItems,
+  }),
+  /** 推进一个条目的状态；`note` 解释偏离，不阻止执行。 */
+  'tasklist.item.updated': z.object({
+    listId: Id,
+    itemId: z.string().regex(TASK_ITEM_ID_PATTERN),
+    status: TaskItemUpdateStatus,
+    note: z.string().max(TASK_ITEM_NOTE_MAX).optional(),
+  }),
+  /** 关闭一份列表（不再显示进度，也不能再修订）。 */
+  'tasklist.closed': z.object({
+    listId: Id,
+    reason: z.string().optional(),
   }),
 } satisfies Record<string, z.ZodType>
 

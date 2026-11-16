@@ -22,6 +22,7 @@ import { basename, isAbsolute } from 'node:path'
 import {
   acceptsInput,
   activeExecutionPlan,
+  activeTaskLists,
   applyStepTitles,
   approvedPlanMessage,
   compactionEventPayload,
@@ -42,6 +43,7 @@ import {
 import {
   RpcError,
   type ActivePlan,
+  type ActiveTaskList,
   type AgentDefinition,
   type ContentPart,
   type ModelRef,
@@ -49,6 +51,7 @@ import {
   type RunAgentRef,
   type RunLimits,
   type UnsequencedEvent,
+  taskListIdForPlan,
 } from '@cairn/protocol'
 import type { Storage } from '@cairn/storage'
 import { latestBrief } from './brief.js'
@@ -291,6 +294,28 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
   }
 
   /**
+   * 本会话未关闭的待办列表（ADR-0038）。计划轮是只读调查，不带列表。
+   * 每次 prompt 都从投影重建，因此恢复会话、宿主重启后仍然准确。
+   */
+  function executionTaskLists(sessionId: string, mode: PromptMode): ActiveTaskList[] | undefined {
+    if (mode === 'plan') return undefined
+    const lists = activeTaskLists(getView(sessionId))
+    if (lists.length === 0) return undefined
+    return lists.map((list) => ({
+      listId: list.listId,
+      title: list.title,
+      source: list.source,
+      ...(list.planId ? { planId: list.planId } : {}),
+      items: list.items.map((item) => ({
+        itemId: item.itemId,
+        title: item.title,
+        status: item.status,
+        ...(item.note ? { note: item.note } : {}),
+      })),
+    }))
+  }
+
+  /**
    * Agent 定义决定运行用的模型与限额（M3-11）：`mode: 'fixed'` 时忽略会话模型；限额在
    * `runDefaults.limits` 之上覆盖。没有固定模型时用会话模型，再回退到已配置的默认模型；
    * 没有注入 `resolveAgent`（或未发布）时用默认配置。
@@ -317,12 +342,14 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     slot.awaitingTurn = true
     updateIdle(sessionId, slot)
     const plan = executionPlan(sessionId, pending.mode)
+    const taskLists = executionTaskLists(sessionId, pending.mode)
     handle
       .prompt({
         messageId: pending.messageId,
         content: pending.content,
         ...(pending.mode === 'plan' ? { mode: 'plan' as const } : {}),
         ...(plan ? { plan } : {}),
+        ...(taskLists ? { taskLists } : {}),
       })
       .catch((error: unknown) => {
         onError(error)
@@ -651,8 +678,15 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         // 引导：注入当前轮，在下一次模型调用前生效。不置 awaitingTurn（不会产生新的 turn.started）。
         // 活跃计划可能在这轮里刚修订，传递最新步骤供宿主校验后续工具调用。
         const plan = executionPlan(sessionId, 'normal')
+        const taskLists = executionTaskLists(sessionId, 'normal')
         slot.handle
-          .prompt({ messageId, content, send: 'steer', ...(plan ? { plan } : {}) })
+          .prompt({
+            messageId,
+            content,
+            send: 'steer',
+            ...(plan ? { plan } : {}),
+            ...(taskLists ? { taskLists } : {}),
+          })
           .catch((error) => onError(error))
       } else if (slot?.handle && hostReady) {
         send(sessionId, slot, slot.handle, { messageId, content, mode })
@@ -690,14 +724,41 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         throw new RpcError(SessionErrorCode.UnknownStep, { planId })
       }
       const content = applyStepTitles(plan.content, steps)
-      const root = rootRun(getView(sessionId))
-      events.publish([
-        {
-          ...header(sessionId, root?.runId ?? sessionId),
-          type: 'plan.approved',
-          payload: { planId, content },
-        },
-      ])
+      const view = getView(sessionId)
+      const root = rootRun(view)
+      const runId = root?.runId ?? sessionId
+      // 批准即创建执行待办列表（ADR-0038）：条目 id 与步骤 id 相同，状态由列表事件推进。
+      // 先发 `tasklist.created` 再发 `plan.approved`，保证列表事件之后到达时能定位到它。
+      const listId = taskListIdForPlan(planId)
+      const batch: UnsequencedEvent[] = []
+      for (const list of view.taskLists) {
+        if (list.source === 'plan' && !list.closed && list.planId !== planId) {
+          batch.push({
+            ...header(sessionId, runId),
+            type: 'tasklist.closed',
+            payload: { listId: list.listId, reason: 'superseded' },
+          })
+        }
+      }
+      if (!view.taskLists.some((list) => list.listId === listId)) {
+        batch.push({
+          ...header(sessionId, runId),
+          type: 'tasklist.created',
+          payload: {
+            listId,
+            title: content.goal,
+            source: 'plan',
+            planId,
+            items: content.steps.map((step) => ({ itemId: step.id, title: step.title })),
+          },
+        })
+      }
+      batch.push({
+        ...header(sessionId, runId),
+        type: 'plan.approved',
+        payload: { planId, content },
+      })
+      events.publish(batch)
       return manager.prompt({
         sessionId,
         content: [{ type: 'text', text: approvedPlanMessage(plan.content, content) }],

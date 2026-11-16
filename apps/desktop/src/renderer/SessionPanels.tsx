@@ -8,7 +8,7 @@
 import { ChevronRight, FileDiff, ListTodo } from 'lucide-react'
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SessionView } from '@cairn/core'
+import { planProgressSteps, type SessionView } from '@cairn/core'
 import type { ChangeSetSummary, ProjectSummary, SessionStatus } from '@cairn/protocol'
 import { ChangeSetReview } from './ChangeSetReview.js'
 import { ChangeCounts } from './DiffCard.js'
@@ -243,7 +243,12 @@ function PlanPanel({ view, selectedPlanId, status }: SessionPanelContext) {
   return (
     <div className="h-full overflow-y-auto">
       {plan ? (
-        <PlanDetails key={plan.planId} plan={plan} running={status === 'running'} />
+        <PlanDetails
+          key={plan.planId}
+          plan={plan}
+          {...(view ? { steps: planProgressSteps(view, plan) } : {})}
+          running={status === 'running'}
+        />
       ) : (
         <PanelEmpty icon={<ListTodo />}>{t('sidePanel.emptyPlan')}</PanelEmpty>
       )}
