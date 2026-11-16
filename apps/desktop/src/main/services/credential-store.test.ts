@@ -301,6 +301,29 @@ describe('knownSecrets 与可用性', () => {
     })
     expect(await off.available()).toBe(false)
   })
+
+  it('报告不可用的原因；可用或没有实现原因时不给（M6-04）', async () => {
+    const insecure = (): SecretCipher =>
+      fakeCipher({
+        isAvailable: async () => false,
+        unavailableReason: async () => 'insecure-linux-backend',
+      })
+    expect(await createLocalKeyStore({ file, cipher: insecure() }).unavailableReason()).toBe(
+      'insecure-linux-backend',
+    )
+    expect(
+      await createLocalKeyStore({
+        file,
+        cipher: fakeCipher({ unavailableReason: async () => 'insecure-linux-backend' }),
+      }).unavailableReason(),
+    ).toBeUndefined()
+    expect(
+      await createLocalKeyStore({
+        file,
+        cipher: fakeCipher({ isAvailable: async () => false }),
+      }).unavailableReason(),
+    ).toBeUndefined()
+  })
 })
 
 describe('createCredentialCommands', () => {
@@ -320,6 +343,24 @@ describe('createCredentialCommands', () => {
     expect(await codeOf(() => commands.set({ ref: 'a', secret: ' ' }))).toBe(
       CredentialErrorCode.InvalidValue,
     )
+  })
+
+  it('系统加密不可用时带上原因，可用时不带（M6-04）', async () => {
+    const store = createLocalKeyStore({
+      file,
+      cipher: fakeCipher({
+        isAvailable: async () => false,
+        unavailableReason: async () => 'unknown-linux-backend',
+      }),
+    })
+    const commands = createCredentialCommands(store)
+    expect(await commands.status({ ref: 'a' })).toEqual({
+      configured: false,
+      available: false,
+      reason: 'unknown-linux-backend',
+    })
+    const available = createCredentialCommands(createLocalKeyStore({ file, cipher: fakeCipher() }))
+    expect(await available.status({ ref: 'a' })).toEqual({ configured: false, available: true })
   })
 
   it('只对足够长的 Key 给出末 4 位，解密失败时不给（M2-10）', async () => {

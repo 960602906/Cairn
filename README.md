@@ -124,6 +124,7 @@ pnpm package:nsis; pnpm acceptance:installed  # 真实 NSIS：安装 / 卸载 / 
 - [Agent 管理界面](docs/design/agent-management-ui.md)（已确认）
 - [多 Agent 协作](docs/design/multi-agent.md)（已确认）
 - [安装、升级与卸载 / Install, upgrade and uninstall](docs/dev/install.md)
+- [凭据存储 / Credential storage](docs/dev/credentials.md)
 - [故障排查 / Troubleshooting](docs/dev/troubleshooting.md)
 - [聊天区域状态显示优化方案](docs/plan/chat-status-display.md)（待实施）
 - [M5 发布验收报告 / M5 release acceptance report](docs/plan/m5-report.md)

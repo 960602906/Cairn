@@ -284,6 +284,19 @@ export const CREDENTIAL_REF_PATTERN = CONFIG_ID_PATTERN
 export const CredentialRef = z.string().regex(CREDENTIAL_REF_PATTERN)
 
 /**
+ * 系统加密不可用的原因（M6-04）：界面据此显示具体说明，不改变“拒绝保存”的策略。
+ * - `system-encryption-unavailable`：系统加密不可用（如密钥服务未运行）；
+ * - `insecure-linux-backend`：Linux 无系统密钥环，`safeStorage` 只剩固定密钥的弱加密；
+ * - `unknown-linux-backend`：Linux 上无法确定后端。
+ */
+export const CredentialUnavailableReason = z.enum([
+  'system-encryption-unavailable',
+  'insecure-linux-backend',
+  'unknown-linux-backend',
+])
+export type CredentialUnavailableReason = z.infer<typeof CredentialUnavailableReason>
+
+/**
  * 保存的一条权限规则（M2-11）：全局规则没有 `projectId`，项目规则带所属项目。会话范围的规则只在会话中
  * 生效，设置页不列出。
  */
@@ -732,10 +745,14 @@ export const MainForRenderer = defineSide({
     /** `available`：系统加密是否可用；不可用时无法保存（Linux 无密钥环）。 */
     'credentials.status': {
       params: z.object({ ref: CredentialRef }),
-      /** `last4`：已保存的 Key 的末 4 位（M2-10，Key 不少于 8 个字符时才有），用于界面辨认。 */
+      /**
+       * `last4`：已保存的 Key 的末 4 位（M2-10，Key 不少于 8 个字符时才有），用于界面辨认。
+       * `reason`：不可用的原因（M6-04），只在 `available` 为 false 时出现。
+       */
       result: z.object({
         configured: z.boolean(),
         available: z.boolean(),
+        reason: CredentialUnavailableReason.optional(),
         last4: z.string().length(4).optional(),
       }),
     },

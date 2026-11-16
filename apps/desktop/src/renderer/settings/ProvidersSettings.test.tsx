@@ -597,6 +597,23 @@ describe('ProvidersSettings', () => {
     expect(within(card).getByText('系统加密不可用，无法保存 Key。')).toBeTruthy()
   })
 
+  it.each([
+    ['system-encryption-unavailable', '本机的系统加密不可用，无法保存 Key。'],
+    [
+      'insecure-linux-backend',
+      '未检测到系统密钥环，Key 无法安全保存。请安装并解锁 GNOME Keyring 或 KWallet，然后重启 Cairn。',
+    ],
+    ['unknown-linux-backend', '无法确认本机的系统密钥环，Key 不能安全保存。'],
+  ] as const)('explains why keys cannot be saved: %s (M6-04)', async (reason, hint) => {
+    setup(
+      { providers: [deepseek] },
+      { 'credentials.status': () => ({ configured: false, available: false, reason }) },
+    )
+    await open()
+    const card = await editProvider(/^DeepSeek/)
+    await waitFor(() => expect(within(card).getByText(hint)).toBeTruthy())
+  })
+
   it('keeps the editor open when saving fails and when the key status is missing', async () => {
     setup(
       { providers: [deepseek] },

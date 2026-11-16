@@ -143,6 +143,7 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
 - [Agent management UI](docs/design/agent-management-ui.md) (accepted)
 - [Multi-agent collaboration](docs/design/multi-agent.md) (accepted)
 - [Install, upgrade and uninstall](docs/dev/install.md)
+- [Credential storage](docs/dev/credentials.md)
 - [Troubleshooting](docs/dev/troubleshooting.md)
 - [M5 release acceptance report](docs/plan/m5-report.md)
 - [Changelog](CHANGELOG.md)

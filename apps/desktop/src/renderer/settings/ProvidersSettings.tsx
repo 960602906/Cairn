@@ -35,7 +35,7 @@ import {
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { translateError } from '@cairn/i18n'
 import { useTranslation } from 'react-i18next'
-import type { ProviderTestResult } from '../session-store.js'
+import type { CredentialStatus, ProviderTestResult } from '../session-store.js'
 import { useSessionStore } from '../store-context.js'
 import {
   Button,
@@ -71,11 +71,7 @@ import {
 } from './providers-model.js'
 import { SettingsHeader } from './SettingsPage.js'
 
-type KeyStatus = {
-  readonly configured: boolean
-  readonly available: boolean
-  readonly last4?: string
-}
+type KeyStatus = CredentialStatus
 type TestResult = ProviderTestResult
 
 const KINDS: readonly ProviderKind[] = ['anthropic', 'openai', 'gemini']
@@ -342,6 +338,18 @@ function KindTabs({
   )
 }
 
+/** 不可用的具体原因对应的文案 key（M6-04）；未知原因回退到通用说明。 */
+function unavailableHintKey(reason: CredentialStatus['reason']): string {
+  switch (reason) {
+    case 'insecure-linux-backend':
+    case 'unknown-linux-backend':
+    case 'system-encryption-unavailable':
+      return `providers.key.unavailable.${reason}`
+    default:
+      return 'providers.key.unavailable'
+  }
+}
+
 function KeyField({
   status,
   secret,
@@ -375,7 +383,7 @@ function KeyField({
     <Labeled
       label={t('providers.field.key')}
       labelFor={id}
-      hint={unavailable ? t('providers.key.unavailable') : t('providers.key.hint')}
+      hint={unavailable ? t(unavailableHintKey(status?.reason)) : t('providers.key.hint')}
     >
       <div className="flex items-center gap-2">
         <input

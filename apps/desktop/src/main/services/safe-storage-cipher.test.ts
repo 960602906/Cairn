@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { createSafeStorageCipher, type SafeStorageLike } from './safe-storage-cipher.js'
+import {
+  createSafeStorageCipher,
+  credentialAvailability,
+  type SafeStorageLike,
+} from './safe-storage-cipher.js'
 
 const storage = (
   available: boolean,
@@ -47,5 +51,40 @@ describe('createSafeStorageCipher', () => {
     expect(
       typeof (await createSafeStorageCipher(storage(true, 'gnome_libsecret')).isAvailable()),
     ).toBe('boolean')
+  })
+
+  it('给出不可用的原因（M6-04）', async () => {
+    expect(await credentialAvailability(storage(false), 'win32')).toEqual({
+      available: false,
+      reason: 'system-encryption-unavailable',
+    })
+    expect(await credentialAvailability(storage(true, 'basic_text'), 'linux')).toEqual({
+      available: false,
+      reason: 'insecure-linux-backend',
+    })
+    expect(await credentialAvailability(storage(true, 'unknown'), 'linux')).toEqual({
+      available: false,
+      reason: 'unknown-linux-backend',
+    })
+    expect(await credentialAvailability(storage(true), 'linux')).toEqual({
+      available: false,
+      reason: 'unknown-linux-backend',
+    })
+    expect(await credentialAvailability(storage(true, 'kwallet6'), 'linux')).toEqual({
+      available: true,
+    })
+    expect(await credentialAvailability(storage(true), 'darwin')).toEqual({ available: true })
+  })
+
+  it('Cipher 的 unavailableReason 只在不可用时给出', async () => {
+    expect(
+      await createSafeStorageCipher(
+        storage(true, 'gnome_libsecret'),
+        'linux',
+      ).unavailableReason?.(),
+    ).toBeUndefined()
+    expect(
+      await createSafeStorageCipher(storage(true, 'basic_text'), 'linux').unavailableReason?.(),
+    ).toBe('insecure-linux-backend')
   })
 })
