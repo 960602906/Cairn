@@ -122,6 +122,46 @@ shasum -a 256 -c Cairn-0.1.0-arm64.dmg.sha256
   在确认已备份项目与会话后手动删除 `~/Library/Application Support/Cairn`。
 - 不需要预装 Git：macOS 通常自带 Git；缺少时检查点降级，写文件类改动仍可撤销。
 
+## 9. Linux（AppImage 与 deb）
+
+> 状态：打包能力已实现，尚未发布公开安装包。以下步骤适用于自行构建或内部验收的 Linux
+> 版本；自动更新通道与发布流水线属于 M6-07。
+
+- 支持 x64 Linux，以 Ubuntu LTS 为基线；其他发行版 best-effort，arm64 与 32 位不在本轮。
+- 下载 `Cairn-<version>-x64.AppImage` 或 `Cairn-<version>-x64.deb` 及对应的 `.sha256`，
+  校验后再运行：
+
+```bash
+sha256sum -c Cairn-0.1.0-x64.AppImage.sha256
+sha256sum -c Cairn-0.1.0-x64.deb.sha256
+```
+
+- **AppImage（免安装）**：
+
+```bash
+chmod +x Cairn-0.1.0-x64.AppImage
+./Cairn-0.1.0-x64.AppImage
+```
+
+  如果系统禁用了非特权用户命名空间，AppImage 可能无法启动 Chromium 沙箱。此时可临时用
+  `./Cairn-0.1.0-x64.AppImage --no-sandbox` 排障；这会关闭 Chromium 沙箱，不等于 Cairn
+  的命令沙箱，命令仍按权限规则在未沙箱化模式下运行，界面会标注该状态。优先修复系统的
+  用户命名空间配置，而不是长期关闭沙箱。
+
+- **deb（系统安装）**：
+
+```bash
+sudo apt install ./Cairn-0.1.0-x64.deb
+```
+
+  安装后可从应用菜单或命令行 `cairn` 启动。卸载使用 `sudo apt remove cairn`，卸载会保留
+  用户数据；需要彻底清理时手动删除 `~/.config/Cairn`（开发版为 `~/.config/Cairn-dev`）。
+- 用户数据位于 `~/.config/Cairn`，目录结构与其它平台相同；无系统密钥环时 Cairn 会拒绝
+  保存凭据并说明原因（ADR-0040），其它功能不受影响。
+- 更新：AppImage 使用应用内更新（需要发布通道提供 `latest-linux.yml`）；deb 不自动更新，
+  由系统包管理器或手动安装新版本。
+- 不需要预装 Git：优先使用本机 Git，缺少时检查点降级，写文件类改动仍可撤销。
+
 ---
 
 ## English summary
@@ -129,7 +169,9 @@ shasum -a 256 -c Cairn-0.1.0-arm64.dmg.sha256
 Cairn 0.1.0 beta targets Windows x64 and installs per user without administrator rights.
 macOS DMG/ZIP packaging exists from M6-02 but signed public builds are not yet released;
 verify the SHA-256, drag the app to Applications, and expect Gatekeeper to block unsigned
-internal builds.
+internal builds. Linux x64 builds are shipped as AppImage and deb from M6-03; verify the
+SHA-256, install with `apt` or run the AppImage, and note that `--no-sandbox` only disables
+the Chromium sandbox when user namespaces are unavailable.
 Verify the installer SHA-256 before running it. Unsigned beta builds may trigger
 SmartScreen; continue only if you trust the source and the hash matches. The first launch
 shows a one-time notice that can be reopened from Settings → About. A model provider must

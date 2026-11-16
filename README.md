@@ -115,11 +115,20 @@ pnpm package:mac
 pnpm sign:verify:mac -- --dist apps/desktop/dist --version 0.1.0
 ```
 
+Linux 打包必须在 Linux 上运行，产出 x64 的 AppImage、deb 与校验和（见
+[发布手册](docs/dev/release.md) §11）：
+
+```bash
+pnpm package:linux
+pnpm package:verify -- --linux
+```
+
 安装、升级、卸载与故障排查见[安装文档](docs/dev/install.md)和[故障排查](docs/dev/troubleshooting.md)。
 
 ## 当前计划 / Plan
 
-- 当前发布通道：Windows；macOS 打包已在 M6-02 落地，Linux 与跨平台发布通道仍在 M6 中。
+- 当前发布通道：Windows；macOS 与 Linux 打包已分别在 M6-02、M6-03 落地，跨平台发布通道
+  仍在 M6 中。
 - 首批模型：Anthropic、OpenAI、Gemini 三种协议格式；DeepSeek 等兼容服务走 OpenAI 格式。
 - 界面语言：中文、英文；主题支持浅色、深色与跟随系统。
 - stable 发布前仍需完成代码签名、法务审查与干净 VM 验收矩阵。

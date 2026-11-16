@@ -6,6 +6,11 @@
   "author": "Cairn contributors",
   "copyright": "Copyright © 2026 Cairn contributors",
   "license": "MIT",
+  "homepage": "https://github.com/960602906/Cairn",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/960602906/Cairn.git"
+  },
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
@@ -22,7 +27,8 @@
     "smoke:installed": "node scripts/smoke-installed.mjs",
     "acceptance:installed": "node scripts/acceptance-installed.mjs",
     "e2e:packaged": "playwright test -c e2e/packaged.config.ts",
-    "package:mac": "node scripts/packaging.mjs --mac"
+    "package:mac": "node scripts/packaging.mjs --mac",
+    "package:linux": "node scripts/packaging.mjs --linux"
   },
   "build": {
     "appId": "com.cairn.desktop"

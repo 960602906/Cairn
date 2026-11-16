@@ -106,6 +106,28 @@ dmg:
       type: link
       path: /Applications
 
+linux:
+  icon: build/icons/icon.png
+  category: Development
+  executableName: cairn
+  synopsis: Local-first desktop AI coding agent
+  # 只发布 x64；AppImage 用于免安装运行与自动更新，deb 用于系统集成与卸载。
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  artifactName: Cairn-${version}-${arch}.${ext}
+  maintainer: Cairn contributors <960602906@qq.com>
+
+deb:
+  # electron-builder 的默认依赖已含 libsecret-1-0（凭据存储）、libnss3 等运行库；
+  # 这里显式声明，避免以后默认值变化时静默丢依赖。
+  depends:
+    - default
+
 # M5-06 会替换为真实的公开只读更新源；此处只声明发布器，普通打包使用 --publish never。
 publish:
   provider: generic
