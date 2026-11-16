@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability / 安全漏洞
+    url: https://github.com/960602906/Cairn/security/advisories/new
+    about: Report privately. Do not open a public issue. / 请私下报告，不要公开提 issue。
+  - name: Documentation / 文档
+    url: https://github.com/960602906/Cairn/blob/main/docs/architecture.md
+    about: Architecture, ADRs and development docs. / 架构、ADR 与开发文档。
