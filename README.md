@@ -29,7 +29,7 @@ Cairn 是一个**本地优先**的编程桌面 Agent。选择本地项目目录�
 - **平台层（自研）**：运行编排、上下文、工具注册表与工具流水线、权限与审批、检查点、事件日志、存储、凭据、界面和多 Agent 协作。
 - **引擎层（可替换）**：只负责 Agent 循环（调用模型 → 解析工具调用 → 回填结果）与模型通信，经 `AgentRuntime` 接口接入；首选 pi。工具执行仍由平台完成，更换引擎不影响权限、审计和存储。
 
-> **状态**：0.1.0 unsigned beta，MIT 许可证。M0～M5 已实施，可安装分发；stable 仍被代码签名、法务审查与干净 VM 验收矩阵阻塞。首发 Windows x64，按用户安装。验收证据见 [M5 发布验收报告](docs/plan/m5-report.md)，任务分解见 [docs/plan/m5.md](docs/plan/m5.md)；[M6 跨平台与开源](docs/plan/m6.md) 进行中。
+> **状态**：0.1.0 unsigned beta，MIT 许可证。M0～M5 已实施，可安装分发；M6 的 macOS/Linux 打包、三平台 CI 与按平台发布流水线已落地（验收见 [M6 验收报告](docs/plan/m6-report.md)）。stable 仍被代码签名、法务审查与干净 VM 验收矩阵阻塞。首发 Windows x64，按用户安装。
 
 ## 主要特点 / Highlights
 
@@ -127,8 +127,8 @@ pnpm package:verify -- --linux
 
 ## 当前计划 / Plan
 
-- 当前发布通道：Windows；macOS 与 Linux 打包已分别在 M6-02、M6-03 落地，跨平台发布通道
-  仍在 M6 中。
+- 当前发布通道：Windows；macOS 与 Linux 的打包和三平台发布流水线已在 M6 落地，启用通道
+  仍待签名、公证与真机安装验收（见 [M6 验收报告](docs/plan/m6-report.md)）。
 - 首批模型：Anthropic、OpenAI、Gemini 三种协议格式；DeepSeek 等兼容服务走 OpenAI 格式。
 - 界面语言：中文、英文；主题支持浅色、深色与跟随系统。
 - stable 发布前仍需完成代码签名、法务审查与干净 VM 验收矩阵。
