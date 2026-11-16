@@ -45,6 +45,7 @@ import {
   ChangeSetSummary,
 } from '../change-sets.js'
 import { PLAN_FEEDBACK_MAX, PlanStep, PromptMode } from '../plan.js'
+import { AskUserAnswer, AskUserRequest } from '../questions.js'
 import { SkillDetail, SkillInstallSource, SkillSource, SkillSummary } from '../skills.js'
 import { HubMcpCard, HubSkillCard } from '../hub.js'
 import {
@@ -79,6 +80,7 @@ export const SessionStatus = z.enum([
   'idle',
   'running',
   'waiting_approval',
+  'waiting_input',
   'failed',
   'interrupted',
   'crashed',
@@ -275,6 +277,10 @@ export type SettingsPatch = z.infer<typeof SettingsPatch>
 /** 等待用户决定的审批（M1-11b）：内容与宿主的 `host.approval.request` 相同。 */
 export const PendingApproval = HostApprovalRequest
 export type PendingApproval = HostApprovalRequest
+
+/** 等待用户回答的提问：内容与宿主的 `host.question.request` 相同。 */
+export const PendingQuestion = AskUserRequest
+export type PendingQuestion = AskUserRequest
 
 /** 拒绝时附加的说明的长度上限（交给模型）。 */
 export const APPROVAL_FEEDBACK_MAX_LENGTH = 2000
@@ -826,6 +832,23 @@ export const MainForRenderer = defineSide({
       }),
       result: z.object({}),
     },
+    /** 会话中等待用户回答的提问（`ask_user`），按请求顺序。 */
+    'question.pending': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ questions: z.array(PendingQuestion) }),
+    },
+    /**
+     * 回答一个提问：每个问题给出选中的选项与/或自定义回答。提问已结束或不存在时报
+     * `question.not_found`。
+     */
+    'question.resolve': {
+      params: z.object({
+        sessionId: Id,
+        questionId: Id,
+        answers: z.array(AskUserAnswer),
+      }),
+      result: z.object({}),
+    },
     /** 跨会话活动快照（M4-06）：待审批、运行中与最近完成。 */
     'activity.list': {
       params: z.object({}),
@@ -1219,6 +1242,11 @@ export const MainForRenderer = defineSide({
      * 只推送给订阅了该会话的窗口。审批请求在 `approval.requested` 事件之后才登记，因此不能只靠事件。
      */
     'approval.changed': z.object({ sessionId: Id }),
+    /**
+     * 会话的待回答提问有变化（新请求、已回答或被取消）；界面重新读取 `question.pending`。
+     * 只推送给订阅了该会话的窗口。
+     */
+    'question.changed': z.object({ sessionId: Id }),
     /** MCP 服务的连接状态变化（M3-09）。 */
     'mcp.status': McpStatusEvent,
     /** 自动更新状态变化（M5-06）；界面据此刷新更新设置与提示。 */

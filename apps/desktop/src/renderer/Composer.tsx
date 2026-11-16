@@ -550,7 +550,7 @@ export function Composer({
   const textarea = useRef<HTMLTextAreaElement>(null)
   const root = useRef<HTMLDivElement>(null)
   const noticeId = useRef(0)
-  const active = status === 'running' || status === 'waiting_approval'
+  const active = status === 'running' || status === 'waiting_approval' || status === 'waiting_input'
   const stopping = run?.state === 'aborting'
   const fixedModel = agent !== undefined && run?.agent.id === agent.id && fixedAgentModel
   const enabledModelCount = providers
@@ -822,7 +822,7 @@ export function Composer({
   }
 
   // 运行中按 Esc 停止（对话框或菜单打开时由它们处理 Esc）
-  const canStop = status === 'running' && !stopping && !aborting
+  const canStop = (status === 'running' || status === 'waiting_input') && !stopping && !aborting
   const stopRef = useRef(stop)
   stopRef.current = stop
   useEffect(() => {

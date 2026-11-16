@@ -14,6 +14,7 @@ import { ChevronRight, Minus } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  ASK_USER_TOOL,
   CREATE_TASK_LIST_TOOL,
   PROPOSE_PLAN_TOOL,
   REVISE_PLAN_STEPS_TOOL,
@@ -93,6 +94,7 @@ const ACTIONS: ReadonlySet<string> = new Set([
   'run_command',
   'load_skill',
   'start_command',
+  'ask_user',
 ])
 
 function formatInput(input: unknown): string {
@@ -100,6 +102,29 @@ function formatInput(input: unknown): string {
     return JSON.stringify(input, null, 2) ?? String(input)
   } catch {
     return String(input)
+  }
+}
+
+/** `ask_user` 的结果是结构化 JSON；展开时显示成“问题 → 回答”，不显示原始 JSON。 */
+export function formatAskUserAnswers(output: string): string | undefined {
+  try {
+    const parsed = JSON.parse(output) as { answers?: unknown }
+    if (!Array.isArray(parsed.answers)) return undefined
+    return parsed.answers
+      .flatMap((entry) => {
+        if (typeof entry !== 'object' || entry === null) return []
+        const record = entry as Record<string, unknown>
+        const question = typeof record['question'] === 'string' ? record['question'] : ''
+        const selected = Array.isArray(record['selected'])
+          ? record['selected'].filter((value): value is string => typeof value === 'string')
+          : []
+        const custom = typeof record['custom'] === 'string' ? record['custom'] : ''
+        const answer = [...selected, ...(custom === '' ? [] : [custom])].join(', ')
+        return [`${question} → ${answer === '' ? '—' : answer}`]
+      })
+      .join('\n')
+  } catch {
+    return undefined
   }
 }
 
@@ -198,6 +223,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   const args = tool?.input ?? input
   const running = status === 'running'
   const output = tool?.output ? outputText(tool.output) : ''
+  const shownOutput = name === ASK_USER_TOOL ? (formatAskUserAnswers(output) ?? output) : output
   const terminal = name === 'run_command' ? terminalData(args, tool, live) : undefined
   const file =
     name === 'read_file' && status === 'completed' ? parseReadFileOutput(output) : undefined
@@ -250,6 +276,17 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
         ? t(`plan.step.${itemStatus}`)
         : ''
     object = [itemId, statusLabel].filter((part) => part !== '').join(' · ')
+  } else if (name === ASK_USER_TOOL) {
+    action = t('tool.action.ask_user')
+    const questions = argsRecord['questions']
+    const first =
+      Array.isArray(questions) && typeof questions[0] === 'object' && questions[0] !== null
+        ? (questions[0] as Record<string, unknown>)['question']
+        : undefined
+    object =
+      typeof first === 'string'
+        ? truncate(first.replace(/\s+/g, ' ').trim(), INPUT_SUMMARY_CHARS)
+        : summarizeInput(args)
   } else {
     action = name === 'load_skill' ? '' : ACTIONS.has(name) ? t(`tool.action.${name}`) : name
     object = summarizeInput(args)
@@ -361,7 +398,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
               <div>
                 <div className="mb-1 text-muted">{t('tool.output')}</div>
                 <pre className="max-h-72 overflow-auto rounded-item bg-sunk px-3 py-2 font-mono text-[12px] whitespace-pre-wrap break-all text-fg2">
-                  {output.replace(/\n+$/, '')}
+                  {shownOutput.replace(/\n+$/, '')}
                 </pre>
               </div>
             )}

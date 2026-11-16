@@ -70,6 +70,7 @@ import { createMentionService, ripgrepFileLister } from './services/mention-serv
 import { createRendererGateway } from './services/renderer-gateway.js'
 import { createRendererChannel } from './services/renderer-transport.js'
 import { createApprovalService } from './services/approval-service.js'
+import { createQuestionService } from './services/question-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
 import { createTrialService } from './services/trial-service.js'
@@ -298,6 +299,8 @@ const approvals = createApprovalService({
   permissions,
   onRuleAdded: () => sessions.refreshPermissions(),
 })
+/** 用户提问（`ask_user`）：宿主的提问等待界面回答；同一会话按请求顺序。 */
+const questions = createQuestionService()
 /** 活动中心（M4-06）：跨会话审批、运行与最近完成；只读投影，不保存第二份状态。 */
 const activity = createActivityService({
   storage,
@@ -444,6 +447,8 @@ const supervisor = createHostSupervisor({
       : undefined,
   requestApproval: (sessionId, runId, request) => approvals.request(sessionId, runId, request),
   cancelApproval: (sessionId, approvalId) => approvals.cancel(sessionId, approvalId),
+  requestQuestion: (sessionId, request) => questions.request(sessionId, request),
+  cancelQuestion: (sessionId, questionId) => questions.cancel(sessionId, questionId),
   recordChange: (sessionId, runId, input) => changes.record(sessionId, runId, input),
   recordSnapshot: (sessionId, snapshot) => {
     inspect.record(sessionId, snapshot)
@@ -684,6 +689,7 @@ const gateway = createRendererGateway({
   hub,
   changeSets,
   approvals,
+  questions,
   activity,
   backgroundCommands: commandService,
   skills,

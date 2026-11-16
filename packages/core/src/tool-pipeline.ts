@@ -19,6 +19,8 @@
  * 经 `emit` 发出。
  */
 import type {
+  AskUserQuestion,
+  AskUserResponse,
   ContentPart,
   ErrorInfo,
   EventPayload,
@@ -154,6 +156,19 @@ export interface ApprovalGate {
   request(request: ApprovalRequest): Promise<ApprovalResponse>
 }
 
+/** 一次向用户提问（`ask_user`）。 */
+export interface AskUserGateRequest {
+  readonly questionId: string
+  readonly toolCallId: string
+  readonly questions: readonly AskUserQuestion[]
+  readonly signal: AbortSignalLike
+}
+
+/** 用户提问（`ask_user` 实现）：等待回答；取消信号触发时应尽快返回。 */
+export interface AskUserGate {
+  ask(request: AskUserGateRequest): Promise<AskUserResponse>
+}
+
 /** 流水线对单次调用的回调（RunEngine 提供）。 */
 export interface ToolCallObserver {
   /** 进入执行阶段，对应 `tool.started`。 */
@@ -210,6 +225,8 @@ export interface ToolPipelineOptions {
    */
   readonly restriction?: PermissionGate
   readonly approvals: ApprovalGate
+  /** 用户提问（`ask_user`）；省略时工具报不可用（例如委派子运行不直接向用户提问）。 */
+  readonly askUser?: AskUserGate
   readonly checkpoints: ToolCheckpoints
   /** 改动记录；省略时写类工具的改动不留记录。 */
   readonly changes?: ToolChangeRecorder
@@ -427,6 +444,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         })
         observer.emit('file.changed', { changeId, path: change.path, kind: change.kind })
       },
+      ...(options.askUser
+        ? {
+            askUser: (request) => options.askUser!.ask({ ...request, toolCallId: call.id, signal }),
+          }
+        : {}),
     }
 
     try {

@@ -10,6 +10,7 @@
   "permissions.hint": "Switching restarts the trial run.",
   "configChanged": "Configuration changed. Restart with the new configuration to apply it.",
   "approvals": "Pending approvals",
+  "questions": "Needs your answer",
   "input.label": "Trial input",
   "input.placeholder": "Describe what to verify; Ctrl+Enter to send",
   "cleared": "Cleared {{count}} trial runs",

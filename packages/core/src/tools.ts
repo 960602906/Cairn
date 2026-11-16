@@ -9,6 +9,8 @@
  *   检查点（M1-12）在这里只定义接口。
  */
 import type {
+  AskUserQuestion,
+  AskUserResponse,
   ContentPart,
   FileChangeKind,
   FileHunk,
@@ -100,6 +102,17 @@ export interface ToolContext {
    * 记录失败时抛出，文件本身已经改动，工具应在结果中说明而不是报告失败。
    */
   recordChange(change: ToolFileChange): Promise<void>
+  /**
+   * 向用户提问并等待回答（`ask_user`）。没有提供时（例如委派子运行）返回 undefined，
+   * 工具应报不可用。`toolCallId` 与取消信号由流水线补上。
+   */
+  askUser?(request: ToolUserQuestionRequest): Promise<AskUserResponse>
+}
+
+/** 工具发起的提问。`questionId` 由工具生成，一次可以带多个问题。 */
+export interface ToolUserQuestionRequest {
+  readonly questionId: string
+  readonly questions: readonly AskUserQuestion[]
 }
 
 /** 工具执行的结果，交回模型。 */

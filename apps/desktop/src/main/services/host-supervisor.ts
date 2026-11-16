@@ -27,6 +27,8 @@ import {
   createEndpoint,
   HostForMain,
   type AgentDefinition,
+  type AskUserRequest,
+  type AskUserResponse,
   type FileChangeInput,
   type HostApprovalRequest,
   type HostApprovalResponse,
@@ -201,6 +203,16 @@ export interface HostSupervisorOptions {
   ) => Promise<HostApprovalResponse>
   /** 宿主取消了未决审批（M1-11a）。 */
   readonly cancelApproval?: (sessionId: string, approvalId: string) => void
+  /**
+   * 转交宿主的用户提问（`ask_user`），等用户回答后返回。省略时报 `run.unsupported`，
+   * 宿主按工具执行失败处理。
+   */
+  readonly requestQuestion?: (
+    sessionId: string,
+    request: AskUserRequest,
+  ) => Promise<AskUserResponse>
+  /** 宿主取消了未决提问（用户停止、轮次中止或宿主退出）。 */
+  readonly cancelQuestion?: (sessionId: string, questionId: string) => void
   /** 宿主上报一次模型调用前的上下文快照（M4-04）。 */
   readonly recordSnapshot?: (sessionId: string, snapshot: RunSnapshotInput) => void
   /** 握手与 `host.init` 的总时限，默认 10 秒。 */
@@ -360,6 +372,9 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
        * 取消可能先到。
        */
       const cancelledEarly = new Set<string>()
+      /** 宿主请求、尚未回答的用户提问。 */
+      const questions = new Set<string>()
+      const cancelledQuestionsEarly = new Set<string>()
 
       const finish = (exit: HostExit) => {
         if (state === 'stopped' || state === 'crashed') return
@@ -388,6 +403,9 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         }
         approvals.clear()
         cancelledEarly.clear()
+        for (const questionId of questions) options.cancelQuestion?.(sessionId, questionId)
+        questions.clear()
+        cancelledQuestionsEarly.clear()
         if (exit.error) recordCrash(exit.error)
         resolveExited(exit)
       }
@@ -497,6 +515,26 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
           return
         }
         options.cancelApproval?.(sessionId, approvalId)
+      })
+
+      endpoint.handle('host.question.request', async (request) => {
+        if (!options.requestQuestion) throw new RpcError('run.unsupported')
+        if (cancelledQuestionsEarly.delete(request.questionId)) {
+          throw new RpcError('question.cancelled', { questionId: request.questionId })
+        }
+        questions.add(request.questionId)
+        try {
+          return await options.requestQuestion(sessionId, request)
+        } finally {
+          questions.delete(request.questionId)
+        }
+      })
+      endpoint.on('host.question.cancelled', ({ questionId }) => {
+        if (!questions.delete(questionId)) {
+          cancelledQuestionsEarly.add(questionId)
+          return
+        }
+        options.cancelQuestion?.(sessionId, questionId)
       })
 
       endpoint.on('host.event', ({ event }) => {

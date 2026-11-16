@@ -674,6 +674,50 @@ describe('agent host', () => {
       })
     })
 
+    it('asks the user a question and continues with the answer', async () => {
+      const questions = [
+        {
+          question: 'Which one?',
+          options: [{ label: 'A', recommended: true }, { label: 'B' }],
+        },
+      ]
+      const h = setup(
+        {
+          turns: [
+            {
+              steps: [
+                { kind: 'tool', name: 'ask_user', input: { questions } },
+                { kind: 'reply', text: 'done' },
+              ],
+            },
+          ],
+        },
+        { registerTools },
+      )
+      const requests: unknown[] = []
+      h.main.handle('host.question.request', (request) => {
+        requests.push(request)
+        return { answers: [{ questionId: 'q1', selected: ['A'] }] }
+      })
+      await h.main.request('host.init', { ...init, permissionRules: presetRules('auto') })
+      await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+      await h.waitFor('turn.completed')
+      expect(requests).toEqual([
+        {
+          questionId: expect.any(String),
+          toolCallId: expect.any(String),
+          questions: [{ id: 'q1', question: 'Which one?', options: questions[0]!.options }],
+        },
+      ])
+      const completed = h.events.filter((event) => event.type === 'tool.completed')
+      expect(completed).toHaveLength(1)
+      expect(completed[0]!.payload).toMatchObject({
+        output: text(
+          JSON.stringify({ answers: [{ question: 'Which one?', selected: ['A'] }] }, null, 2),
+        ),
+      })
+    })
+
     it('starts background commands through the main process (M4-14)', async () => {
       const h = setup(
         {

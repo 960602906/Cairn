@@ -10,7 +10,10 @@ export type UpdateNoticeKind = 'available' | 'downloading' | 'downloaded'
 /** 会话列表里是否有运行中或等待审批的会话。 */
 export function hasRunningSessions(sessions: readonly { readonly status: string }[]): boolean {
   return sessions.some(
-    (session) => session.status === 'running' || session.status === 'waiting_approval',
+    (session) =>
+      session.status === 'running' ||
+      session.status === 'waiting_approval' ||
+      session.status === 'waiting_input',
   )
 }
 

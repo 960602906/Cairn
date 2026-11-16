@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { progressTaskList, rootRun, sessionStatus } from '@cairn/core'
 import { isAgentDraftRef } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
+import { QuestionList } from './QuestionCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { totals, turnEntries } from './file-changes.js'
@@ -86,6 +87,9 @@ export function ChatPanel({
   const projects = useSessionStore((s) => s.projects)
   const awaiting = useSessionStore(
     (s) => s.activeSessionId !== undefined && s.awaitingTurn[s.activeSessionId] === true,
+  )
+  const pendingQuestions = useSessionStore((s) =>
+    s.activeSessionId === undefined ? 0 : (s.questions[s.activeSessionId]?.length ?? 0),
   )
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
   const changes = useSessionStore((s) =>
@@ -255,9 +259,11 @@ export function ChatPanel({
   const title = view?.info?.title ?? summary?.title ?? ''
   const viewStatus = view ? sessionStatus(view) : undefined
   const status = awaiting
-    ? viewStatus === 'waiting_approval'
-      ? 'waiting_approval'
-      : 'running'
+    ? pendingQuestions > 0
+      ? 'waiting_input'
+      : viewStatus === 'waiting_approval'
+        ? 'waiting_approval'
+        : 'running'
     : (viewStatus ?? summary?.status ?? 'idle')
   const path = view?.info?.projectPath ?? summary?.projectPath
   const project = projectNameForPath(path, projects, tc('project.defaultName'))
@@ -370,6 +376,7 @@ export function ChatPanel({
                 onOpenPlan={(planId) => openPanel('plan', { planId })}
                 onOpenFile={openFile}
               />
+              <QuestionList />
               <ApprovalList />
             </div>
           </div>

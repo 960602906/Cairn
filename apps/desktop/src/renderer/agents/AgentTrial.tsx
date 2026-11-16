@@ -7,9 +7,10 @@
  */
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { PendingApproval, TrialSummary } from '@cairn/protocol'
+import type { PendingApproval, PendingQuestion, TrialSummary } from '@cairn/protocol'
 import { ApprovalCard } from '../ApprovalCard.js'
 import { MessageStream } from '../MessageStream.js'
+import { QuestionCard } from '../QuestionCard.js'
 import { inputClass } from '../settings/Field.js'
 import { useSessionStore } from '../store-context.js'
 import {
@@ -23,6 +24,7 @@ import {
 } from '../ui/index.js'
 
 const NONE_APPROVALS: readonly PendingApproval[] = []
+const NONE_QUESTIONS: readonly PendingQuestion[] = []
 const NONE_HISTORY: readonly TrialSummary[] = []
 
 /** 历史行的时间：用本地时间显示，测试里按内容匹配。 */
@@ -57,12 +59,16 @@ export function AgentTrial({
   const approvals = useSessionStore((s) =>
     current ? (s.approvals[current.sessionId] ?? NONE_APPROVALS) : NONE_APPROVALS,
   )
+  const questions = useSessionStore((s) =>
+    current ? (s.questions[current.sessionId] ?? NONE_QUESTIONS) : NONE_QUESTIONS,
+  )
   const projects = useSessionStore((s) => s.projects)
   const startTrial = useSessionStore((s) => s.startTrial)
   const restartTrial = useSessionStore((s) => s.restartTrial)
   const sendTrialPrompt = useSessionStore((s) => s.sendTrialPrompt)
   const abortTrial = useSessionStore((s) => s.abortTrial)
   const resolveApproval = useSessionStore((s) => s.resolveTrialApproval)
+  const resolveQuestion = useSessionStore((s) => s.resolveTrialQuestion)
   const closeTrial = useSessionStore((s) => s.closeTrial)
   const listTrials = useSessionStore((s) => s.listTrials)
   const clearTrials = useSessionStore((s) => s.clearTrials)
@@ -236,6 +242,19 @@ export function AgentTrial({
               {current ? (
                 <div className="flex flex-col gap-3">
                   <MessageStream view={view} sessionId={current.sessionId} />
+                  {questions.length > 0 && (
+                    <section aria-label={t('questions')} className="flex flex-col gap-3.5">
+                      <h3 className="text-ui font-medium text-fg">{t('questions')}</h3>
+                      {questions.map((question, index) => (
+                        <QuestionCard
+                          key={question.questionId}
+                          question={question}
+                          active={index === 0}
+                          onResolve={resolveQuestion}
+                        />
+                      ))}
+                    </section>
+                  )}
                   {approvals.length > 0 && (
                     <section aria-label={t('approvals')} className="flex flex-col gap-3.5">
                       <h3 className="text-ui font-medium text-fg">{t('approvals')}</h3>

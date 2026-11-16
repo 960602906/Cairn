@@ -11,6 +11,7 @@ import {
   CirclePause,
   Clock3,
   LoaderCircle,
+  MessageCircleQuestion,
   RefreshCw,
   TriangleAlert,
   type LucideIcon,
@@ -32,6 +33,8 @@ export function statusPresentation(status: SessionStatus): StatusPresentation {
       return { tone: 'accent', Icon: LoaderCircle }
     case 'waiting_approval':
       return { tone: 'warn', Icon: Clock3 }
+    case 'waiting_input':
+      return { tone: 'warn', Icon: MessageCircleQuestion }
     case 'failed':
       return { tone: 'danger', Icon: CircleAlert }
     case 'interrupted':

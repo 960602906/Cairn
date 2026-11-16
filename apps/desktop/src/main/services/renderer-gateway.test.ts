@@ -38,6 +38,7 @@ import {
   type UpdateCommands,
   type PermissionCommands,
   type ProviderCommands,
+  type QuestionCommands,
   type SettingsCommands,
 } from './renderer-gateway.js'
 
@@ -111,6 +112,7 @@ let changes: ChangeCommands
 let checkpoints: CheckpointCommands
 let changeSets: ChangeSetCommands
 let approvals: ApprovalCommands
+let questions: QuestionCommands
 let skills: SkillCommands & { catalog: (sessionId: string) => SkillCatalogEntry[] }
 let agents: AgentCommands
 let trials: TrialCommands
@@ -122,6 +124,7 @@ let activity: ActivityCommands
 let backgroundCommands: CommandCommands
 let mentions: MentionCommands | undefined
 const approvalListeners = new Set<(sessionId: string) => void>()
+const questionListeners = new Set<(sessionId: string) => void>()
 const activityListeners = new Set<() => void>()
 const commandListeners = new Set<(commandId: string) => void>()
 const updateListeners = new Set<(status: UpdateStatus) => void>()
@@ -300,6 +303,7 @@ function setup(
     catalog: vi.fn(() => []),
   }
   approvalListeners.clear()
+  questionListeners.clear()
   commandListeners.clear()
   const agentDetail = {
     agentId: 'user.x',
@@ -360,6 +364,14 @@ function setup(
     subscribe: vi.fn((listener: (sessionId: string) => void) => {
       approvalListeners.add(listener)
       return () => approvalListeners.delete(listener)
+    }),
+  }
+  questions = {
+    pending: vi.fn(() => ({ questions: [] })),
+    resolve: vi.fn(() => ({})),
+    subscribe: vi.fn((listener: (sessionId: string) => void) => {
+      questionListeners.add(listener)
+      return () => questionListeners.delete(listener)
     }),
   }
   diagnostics = {
@@ -467,6 +479,7 @@ function setup(
     },
     changeSets,
     approvals,
+    questions,
     skills,
     mcp: {} as unknown as McpCommands,
     agents,
@@ -1397,6 +1410,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       },
       changeSets,
       approvals,
+      questions,
       skills,
       mcp: {} as unknown as McpCommands,
       agents,

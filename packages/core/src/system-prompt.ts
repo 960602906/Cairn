@@ -34,6 +34,11 @@ const TOOLS_SECTION = `# Tools
 - Long results are cut off with a note on how to get the rest; follow it instead of repeating the same call.
 - Some tool calls need the user's approval. If the user denies one, do not retry it unchanged; follow their feedback or ask.`
 
+const ASK_USER_SECTION = `# Asking the user
+- When you need a decision between concrete options, or information you cannot find in the workspace, call ask_user instead of ending your turn with a question in plain text.
+- Give 2-6 concrete options per question and mark the one you recommend with recommended: true; put it first. Ask only what you actually need, and answer routine questions yourself.
+- The user can always type a custom answer, so do not add an "Other" option.`
+
 export interface SystemPromptEnvironment {
   /** 操作系统名称，如 `Windows`、`macOS`、`Linux`。 */
   readonly os: string
@@ -47,6 +52,8 @@ export interface SystemPromptEnvironment {
 export interface SystemPromptInput {
   /** 是否有可用的工具：有时加入工具使用说明与安全规则。 */
   readonly tools: boolean
+  /** 这一轮有 `ask_user` 工具时加入提问说明。 */
+  readonly userQuestions?: boolean
   readonly environment: SystemPromptEnvironment
   /** Agent 定义中的指令（M3 的自定义 Agent）。 */
   readonly agentInstructions?: string
@@ -140,6 +147,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   return [
     BASE_SYSTEM_PROMPT,
     input.tools ? TOOLS_SECTION : undefined,
+    input.userQuestions ? ASK_USER_SECTION : undefined,
     input.tools ? `# Safety\n- ${TOOL_RESULT_NOTICE}` : undefined,
     section('Agent instructions', input.agentInstructions),
     section(

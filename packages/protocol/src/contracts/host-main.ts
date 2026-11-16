@@ -20,6 +20,7 @@ import { BackgroundCommand } from '../commands.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
 import { RunSnapshotInput } from '../inspect.js'
 import { ActivePlan, PromptMode } from '../plan.js'
+import { AskUserRequest, AskUserResponse } from '../questions.js'
 import { ActiveTaskList } from '../task-list.js'
 import { PermissionMode, PermissionRule, ToolCategory } from '../permissions.js'
 import {
@@ -253,6 +254,11 @@ export const HostForMain = defineSide({
      * 对应的 `host.approval.request`（宿主已不再等待它的结果）。
      */
     'host.approval.cancelled': z.object({ approvalId: Id }),
+    /**
+     * 未决的用户提问被宿主取消（用户停止、轮次中止或宿主退出前）：主进程收起问题卡片，并以错误结束
+     * 对应的 `host.question.request`（宿主已不再等待它的结果）。
+     */
+    'host.question.cancelled': z.object({ questionId: Id }),
   },
 })
 
@@ -265,6 +271,14 @@ export const MainForHost = defineSide({
     'host.approval.request': {
       params: HostApprovalRequest,
       result: HostApprovalResponse,
+    },
+    /**
+     * 请求用户回答 `ask_user` 的问题：等到用户回答或宿主取消（`host.question.cancelled`）才返回，
+     * 没有超时。会话与运行由连接确定。
+     */
+    'host.question.request': {
+      params: AskUserRequest,
+      result: AskUserResponse,
     },
     /**
      * 记录一次文件改动（M1-08b）：主进程把前后内容写入 blob 存储、写入改动记录，返回记录 id。
