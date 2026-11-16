@@ -107,6 +107,22 @@ jobs:
       - name: Verify packaged application
         run: pnpm package:verify
 
+      # safeStorage 在 macOS 上把主密钥存进钥匙串，条目只信任创建它的那个二进制。
+      # 前面的 `pnpm smoke` 用未打包的 Electron 创建了该条目，打包后的签名身份不同，
+      # 读取时会要求用户授权——runner 没有可交互的桌面，读取以 errSecAuthFailed 失败。
+      # 冒烟只把空的自建钥匙串放进搜索列表：打包应用成为条目创建者，校验的是真实的
+      # safeStorage，而不是绕过它。
+      - name: Use an isolated keychain for the packaged smoke test
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          keychain="$RUNNER_TEMP/cairn-smoke.keychain"
+          security create-keychain -p cairn-smoke "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p cairn-smoke "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -s "$keychain"
+
       - name: Smoke test packaged application
         run: pnpm smoke:packaged
 

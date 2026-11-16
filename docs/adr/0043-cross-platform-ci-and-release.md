@@ -74,6 +74,10 @@ DMG/ZIP 与 Linux AppImage/deb 的打包脚本，但还没有：
   `scripts/merge-release.mjs`、`scripts/check-dco.mjs` 及单元测试。
 - 打包：`pruneStagedDependencies` 在 macOS 保留两份预编译；`smoke:packaged` 只在
   Windows 校验随包 MinGit；`packaged-app` 按 `process.arch` 定位应用目录。
+- macOS 打包冒烟使用独立钥匙串：safeStorage 的主密钥条目只信任创建它的二进制，而
+  前一步 `pnpm smoke` 已用未打包的 Electron 在登录钥匙串创建了同名条目；打包应用读取时
+  需要用户授权，无桌面的 runner 上以 `errSecAuthFailed` 失败。CI 在冒烟前把空的自建
+  钥匙串设为搜索列表与默认钥匙串，让打包应用自己创建条目，仍然校验真实的 safeStorage。
 - 文档：本 ADR、`docs/dev/release.md` §12、M6 计划与架构同步。
 
 ## 后果

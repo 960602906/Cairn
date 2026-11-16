@@ -344,6 +344,11 @@ deb 使用 electron-builder 的默认运行库依赖（含 `libsecret-1-0`、`li
 贡献者本地提交必须使用 `git commit -s`；DCO 失败时用 `git rebase --signoff` 修正历史，
 不要用空提交绕过。
 
+macOS runner 上，冒烟前会创建一个空的临时钥匙串并设为搜索列表与默认钥匙串。safeStorage
+的主密钥条目只信任创建它的二进制：前面的未打包冒烟已用 Electron 在登录钥匙串写入了同名
+条目，打包应用读取时需要用户授权，而无桌面的 runner 会以 `errSecAuthFailed` 失败。独立
+钥匙串让打包应用自己创建条目，冒烟仍然校验真实的系统加密。
+
 ### 12.2 发布 job 结构
 
 | job | runner | 作用 |
