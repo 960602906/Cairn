@@ -84,6 +84,7 @@ export default tseslint.config(
       '**/out/**',
       '**/coverage/**',
       '.cache/**',
+      '.scratch/**',
       'apps/desktop/resources/git/**',
       'design/**/*.cjs',
       'spikes/m5/work/**',
