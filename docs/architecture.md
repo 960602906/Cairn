@@ -577,7 +577,10 @@ interface CredentialProvider {
 ```
 
 - 第一版只实现 `local-key`：密钥用 Electron `safeStorage` 加密后保存（Windows 下基于 DPAPI）。
-- 在 Linux 上 `safeStorage` 可能因没有系统密钥环而退化为弱加密，届时需检测并提示用户（M6 处理）。
+- 在 Linux 上 `safeStorage` 可能因没有系统密钥环而退化为弱加密。M6-04 把这种情况归为不可用，
+  拒绝保存并区分原因（`system-encryption-unavailable`、`insecure-linux-backend`、
+  `unknown-linux-backend`），界面按原因提示（ADR-0040，详见
+  [凭据存储](dev/credentials.md)）。
 - 密钥只在主进程解密，在 `host.init` 时通过 MessagePort 传给对应会话的宿主进程；不写入环境变量、不进入日志、不传给渲染进程。
 
 ---

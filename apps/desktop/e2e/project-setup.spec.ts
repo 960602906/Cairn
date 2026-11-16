@@ -34,7 +34,9 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     await card.getByLabel('模型名称，例如 deepseek-chat').fill('deepseek-flash')
     await card.getByRole('button', { name: '添加', exact: true }).click()
     if (process.platform === 'linux') {
-      await expect(card.getByText('系统加密不可用，无法保存 Key。')).toBeVisible()
+      // M6-04：按不可用原因给出具体说明（无密钥环时提示安装/解锁密钥环）
+      await expect(card.getByLabel('API Key')).toBeDisabled()
+      await expect(card.getByText(/系统密钥环/)).toBeVisible()
     }
     await card.getByRole('button', { name: '测试连接' }).click()
     await expect(card.getByRole('status')).toContainText('连接正常')

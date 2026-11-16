@@ -99,6 +99,9 @@ type Requests = (typeof MainForRenderer)['requests']
 export type ProviderTestResult = z.output<Requests['provider.test']['result']>
 export type ProviderModelsResult = z.output<Requests['provider.models']['result']>
 
+/** 凭据状态（M6-04）：不可用时带上原因，界面据此给出具体说明。 */
+export type CredentialStatus = z.output<Requests['credentials.status']['result']>
+
 export interface InspectionState {
   readonly loading: boolean
   readonly result: RunInspectResult | undefined
@@ -431,7 +434,7 @@ export interface SessionActions {
   /** 保存 Key；成功时返回 true。 */
   saveCredential(ref: string, secret: string): Promise<boolean>
   /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
-  credentialStatus(ref: string): Promise<{ configured: boolean; available: boolean } | undefined>
+  credentialStatus(ref: string): Promise<CredentialStatus | undefined>
   /** 测试供应商的连接（M2-10）；请求本身失败时返回 undefined（错误写入 `error`）。 */
   testProvider(
     provider: ProviderConfig,

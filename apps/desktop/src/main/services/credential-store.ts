@@ -38,9 +38,22 @@ export const CREDENTIALS_FILE_VERSION = 1
 /** Key 的最大长度（字符）。 */
 export const MAX_SECRET_LENGTH = 4096
 
+/**
+ * 系统加密不可用的原因（M6-04）。界面据此给出具体说明；只表示“不能安全保存”，不改变拒绝策略。
+ */
+export type CredentialUnavailableReason =
+  /** Electron 报告系统加密不可用（例如密钥服务没有运行）。 */
+  | 'system-encryption-unavailable'
+  /** Linux 上没有系统密钥环，`safeStorage` 退化为固定密钥的弱加密（后端 `basic_text`）。 */
+  | 'insecure-linux-backend'
+  /** Linux 上无法确定后端（`safeStorage` 没有给出后端，或为 `unknown`）。 */
+  | 'unknown-linux-backend'
+
 /** 系统加密。 */
 export interface SecretCipher {
   isAvailable(): Promise<boolean>
+  /** 不可用的原因；可用时返回 `undefined`。没有实现时视为原因未知。 */
+  unavailableReason?(): Promise<CredentialUnavailableReason | undefined>
   encrypt(plain: string): Promise<Buffer>
   /** `shouldReEncrypt`：系统密钥已轮换，应重新加密保存。 */
   decrypt(data: Buffer): Promise<{ readonly plain: string; readonly shouldReEncrypt: boolean }>
@@ -63,6 +76,8 @@ export interface LocalKeyStore extends CredentialProvider {
   has(ref: string): boolean
   /** 系统加密是否可用。 */
   available(): Promise<boolean>
+  /** 系统加密不可用的原因；可用或无法判断时为 `undefined`。 */
+  unavailableReason(): Promise<CredentialUnavailableReason | undefined>
   /** 本进程中保存或解析过的 Key，供日志脱敏按原文替换（`@cairn/core` 的 `redact`）。 */
   knownSecrets(): readonly string[]
 }
@@ -183,6 +198,11 @@ export function createLocalKeyStore(options: LocalKeyStoreOptions): LocalKeyStor
 
     available: () => cipher.isAvailable(),
 
+    async unavailableReason() {
+      if (await cipher.isAvailable()) return undefined
+      return (await cipher.unavailableReason?.()) ?? undefined
+    },
+
     knownSecrets: () => [...seen],
 
     async resolve(ref): Promise<ResolvedCredential | undefined> {
@@ -234,13 +254,19 @@ export function createCredentialCommands(store: LocalKeyStore): CredentialComman
     status: async ({ ref }) => {
       const configured = store.has(ref)
       const available = await store.available()
+      const reason = available ? undefined : await store.unavailableReason()
       // 末 4 位（M2-10）只在 Key 足够长时给出；解密失败时不给，不影响状态
       let last4: string | undefined
       if (configured && available) {
         const key = await store.resolve(ref).catch(() => undefined)
         if (key && key.apiKey.length >= 8) last4 = key.apiKey.slice(-4)
       }
-      return { configured, available, ...(last4 ? { last4 } : {}) }
+      return {
+        configured,
+        available,
+        ...(reason ? { reason } : {}),
+        ...(last4 ? { last4 } : {}),
+      }
     },
   }
 }
