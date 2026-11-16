@@ -35,8 +35,19 @@ test('渲染进程可以保存与查询凭据，但读不到明文', async ({ la
 
   const before = await send('credentials.status', { ref: 'deepseek' })
   expect(before.ok).toBe(true)
-  const available = before.ok && (before.result as { available: boolean }).available
-  expect(before).toEqual({ ok: true, result: { configured: false, available } })
+  const status = before.ok ? (before.result as { available: boolean; reason?: string }) : undefined
+  const available = status?.available === true
+  if (available) {
+    expect(before).toEqual({ ok: true, result: { configured: false, available: true } })
+  } else {
+    // M6-04：不可用时带上原因；Linux CI 没有密钥环，基本是弱加密或无法确认后端
+    expect(status?.reason).toBeDefined()
+    expect(['insecure-linux-backend', 'unknown-linux-backend']).toContain(status?.reason)
+    expect(before).toEqual({
+      ok: true,
+      result: { configured: false, available: false, reason: status?.reason },
+    })
+  }
 
   const saved = await send('credentials.set', { ref: 'deepseek', secret: SECRET })
   if (!available) {
