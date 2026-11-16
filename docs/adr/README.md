@@ -46,3 +46,4 @@
 | [0036](0036-auto-update-signing-and-rollback.md) | 自动更新、代码签名与回滚 | 已接受（M5-06～M5-08、M5-10 验收） |
 | [0037](0037-composer-mentions.md) | 输入框的 `@` 引用 | 已接受 |
 | [0038](0038-task-list-independent-of-plan-mode.md) | 待办列表独立于计划模式 | 提议 |
+| [0039](0039-open-source-license-and-dco.md) | 开源许可证（MIT）与贡献者协议（DCO） | 已接受 |
