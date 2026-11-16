@@ -99,7 +99,9 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
             models: [
               {
                 id: 'e2e-model',
-                contextWindow: 4_000,
+                // 工具定义本身就占掉大半窗口：太小的话前两轮就要压缩，工具结果还没交回模型就被丢掉。
+                // 这里留出放得下前三轮的余量，后面的长对话仍然会触发压缩。
+                contextWindow: 6_000,
                 maxOutputTokens: 200,
                 supportsTools: true,
                 supportsParallelToolCalls: false,
