@@ -2045,3 +2045,73 @@ describe('activity center', () => {
     )
   })
 })
+
+describe('user questions', () => {
+  const pending = {
+    questionId: 'q1',
+    toolCallId: 'tc1',
+    questions: [{ id: 'a', question: 'Which?', options: [{ label: 'A' }, { label: 'B' }] }],
+  }
+  const subscribe = ({ sessionId }: { sessionId: string }) => ({
+    events: [created(sessionId)],
+    lastSeq: 1,
+  })
+
+  it('answers the active session and reloads the pending list', async () => {
+    const { api, calls, emitChannel } = fakeApi({
+      'session.subscribe': subscribe,
+      'approval.pending': () => ({ approvals: [] }),
+      'question.pending': () => ({ questions: [pending] }),
+      'question.resolve': () => ({ resolved: true }),
+    })
+    const store = createSessionStore(api)
+    // 没有选中的会话：什么也不做
+    expect(await store.getState().resolveQuestion('q1', { cancelled: true })).toBe(false)
+
+    await store.getState().selectSession('s1')
+    expect(store.getState().questions['s1']).toEqual([pending])
+
+    const answers = [{ questionId: 'a', selected: ['A'] }]
+    expect(await store.getState().resolveQuestion('q1', { answers })).toBe(true)
+    expect(calls).toContainEqual([
+      'question.resolve',
+      { sessionId: 's1', questionId: 'q1', answers },
+    ])
+    // 取消只回传 cancelled，不带空答案
+    expect(await store.getState().resolveQuestion('q1', { cancelled: true })).toBe(true)
+    expect(calls).toContainEqual([
+      'question.resolve',
+      { sessionId: 's1', questionId: 'q1', cancelled: true },
+    ])
+
+    const before = calls.filter(([method]) => method === 'question.pending').length
+    emitChannel('question.changed', { sessionId: 's1' })
+    await vi.waitFor(() =>
+      expect(calls.filter(([method]) => method === 'question.pending')).toHaveLength(before + 1),
+    )
+  })
+
+  it('answers trial questions only while a trial is running', async () => {
+    const { api, calls } = fakeApi({
+      'session.subscribe': subscribe,
+      'trial.start': () => ({
+        sessionId: 't1',
+        agent: { id: 'user.reviewer', draftHash: 'hash-t1' },
+        draftHash: 'hash-t1',
+        useAgentPermissions: false,
+      }),
+      'approval.pending': () => ({ approvals: [] }),
+      'question.pending': () => ({ questions: [pending] }),
+      'question.resolve': () => ({ resolved: true }),
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().resolveTrialQuestion('q1', { cancelled: true })).toBe(false)
+
+    await store.getState().startTrial({ agentId: 'user.reviewer', projectPath: '/work' })
+    expect(await store.getState().resolveTrialQuestion('q1', { cancelled: true })).toBe(true)
+    expect(calls).toContainEqual([
+      'question.resolve',
+      { sessionId: 't1', questionId: 'q1', cancelled: true },
+    ])
+  })
+})

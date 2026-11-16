@@ -459,9 +459,12 @@ describe('ChatPanel', () => {
     expect(within(bar).getByText('整理设置页')).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '批准执行' })).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '取消' })).toBeTruthy()
+    // 浮动面板会盖住消息末尾，有待决定的内容时多留一段底部空白。
+    expect(document.body.innerHTML).toContain('pb-28')
 
     emit(ev(base + 2, 'plan.rejected', { planId: 'pl1' }))
     await waitFor(() => expect(screen.queryByRole('region', { name: '待批准的计划' })).toBeNull())
+    expect(document.body.innerHTML).toContain('pb-8')
   })
 
   it('floats an ad-hoc task list without a plan (ADR-0038)', async () => {

@@ -120,6 +120,13 @@ describe('ask_user tool', () => {
         ctx(async () => ({ answers: [] })),
       ),
     ).rejects.toMatchObject({ code: 'tool.invalid_input' })
+    // 顶层字段类型不对：错误没有路径，直接给出 zod 的说明。
+    await expect(
+      definition.execute(
+        { questions: 'x' } as never,
+        ctx(async () => ({ answers: [] })),
+      ),
+    ).rejects.toMatchObject({ code: 'tool.invalid_input' })
   })
 
   it('tells the model when the user dismissed the questions', async () => {

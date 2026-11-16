@@ -34,8 +34,9 @@ function initialDrafts(question: PendingQuestion): Drafts {
   )
 }
 
+/** 每份草稿都由 `initialDrafts` 按问题 id 建好，之后只改不增。 */
 function draftOf(drafts: Drafts, questionId: string): Draft {
-  return drafts[questionId] ?? { selected: [], custom: '' }
+  return drafts[questionId]!
 }
 
 function isAnswered(drafts: Drafts, questions: readonly AskUserQuestion[]): boolean {
@@ -45,10 +46,12 @@ function isAnswered(drafts: Drafts, questions: readonly AskUserQuestion[]): bool
   })
 }
 
-/** 键盘事件是否来自正在打字的输入框。 */
+/**
+ * 键盘事件是否来自可编辑控件。输入框里的按键一律交给输入框自己处理——包括空输入框里的
+ * 第一个字符（keydown 时值还是空的，不能据此判断“没在打字”）。
+ */
 function typing(target: EventTarget | null): boolean {
-  if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement)
-    return target.value !== ''
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) return true
   return target instanceof HTMLElement && target.isContentEditable
 }
 

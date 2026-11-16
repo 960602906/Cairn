@@ -718,6 +718,26 @@ describe('agent host', () => {
       })
     })
 
+    it('does not mention ask_user in unattended runs', async () => {
+      const prompts = async (mode: 'interactive' | 'unattended') => {
+        const snapshots: RunSnapshotInput[] = []
+        const h = setup({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }, { registerTools })
+        h.main.handle('host.snapshot', (snapshot) => {
+          snapshots.push(snapshot)
+          return {}
+        })
+        await h.main.request('host.init', { ...init, mode, permissionRules: presetRules('auto') })
+        await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+        await h.waitFor('turn.completed')
+        await vi.waitFor(() => expect(snapshots).toHaveLength(1))
+        return snapshots[0]!.systemPrompt.map((section) => section.title)
+      }
+
+      expect(await prompts('interactive')).toContain('Asking the user')
+      // 无人值守运行没有用户可回答：不注册工具，提示词里也不提。
+      expect(await prompts('unattended')).not.toContain('Asking the user')
+    })
+
     it('starts background commands through the main process (M4-14)', async () => {
       const h = setup(
         {

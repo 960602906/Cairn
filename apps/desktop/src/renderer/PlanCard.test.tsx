@@ -191,6 +191,13 @@ describe('PlanActions', () => {
     wrap(<PlanActions plan={undefined} />)
     expect(screen.queryByRole('region', { name: '待批准的计划' })).toBeNull()
   })
+
+  it('stays idle when no session is selected', () => {
+    wrap(<PlanActions plan={plan} />, makeStore({ activeSessionId: undefined }))
+    expect((screen.getByRole('button', { name: '批准执行' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+  })
 })
 
 describe('PlanDetails', () => {
