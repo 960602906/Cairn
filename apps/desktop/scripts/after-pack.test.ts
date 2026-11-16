@@ -5,10 +5,14 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const afterPack = require('./after-pack.cjs') as ((context: {
+interface PackContext {
   appOutDir: string
-}) => Promise<void>) & {
+  packager?: { platform?: { name?: string }; appInfo?: { productFilename?: string } }
+}
+
+const afterPack = require('./after-pack.cjs') as ((context: PackContext) => Promise<void>) & {
   appUpdateConfig(rawUrl?: string): string
+  resourcesDirectory(context: PackContext): string
   DEFAULT_UPDATE_URL: string
 }
 
@@ -52,6 +56,21 @@ describe('afterPack', () => {
     expect(readFileSync(path.join(appOutDir, 'resources/app-update.yml'), 'utf8')).toBe(
       afterPack.appUpdateConfig('https://updates.example/beta'),
     )
+  })
+
+  it('writes app-update.yml into the macOS app bundle resources', async () => {
+    const appOutDir = temporaryDirectory()
+    const context = {
+      appOutDir,
+      packager: { platform: { name: 'mac' }, appInfo: { productFilename: 'Cairn' } },
+    }
+    await afterPack(context)
+    expect(afterPack.resourcesDirectory(context)).toBe(
+      path.join(appOutDir, 'Cairn.app/Contents/Resources'),
+    )
+    expect(
+      readFileSync(path.join(appOutDir, 'Cairn.app/Contents/Resources/app-update.yml'), 'utf8'),
+    ).toContain(afterPack.DEFAULT_UPDATE_URL)
   })
 
   it('uses the default source when the build has no update URL', async () => {

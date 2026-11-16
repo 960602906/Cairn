@@ -42,7 +42,9 @@
     "fetch:mingit": "node scripts/fetch-mingit.mjs",
     "check:mingit": "node scripts/fetch-mingit.mjs --check",
     "sync:version": "node scripts/sync-version.mjs",
-    "build:info": "node scripts/build-info.mjs"
+    "build:info": "node scripts/build-info.mjs",
+    "package:mac": "pnpm --filter @cairn/desktop package:mac",
+    "sign:verify:mac": "node scripts/mac-signing.mjs"
   },
   "devDependencies": {
     "@cairn/release-tools": "workspace:*",

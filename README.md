@@ -107,11 +107,19 @@ pnpm package:dir; pnpm e2e:packaged        # 解包产物：安装形态冒烟 +
 pnpm package:nsis; pnpm acceptance:installed  # 真实 NSIS：安装 / 卸载 / 重装恢复
 ```
 
+macOS 打包必须在 macOS 上运行，产出 arm64 与 x64 的 DMG、ZIP 及校验和；签名与公证
+需要 Apple Developer 账号（见[发布手册](docs/dev/release.md) §10）：
+
+```bash
+pnpm package:mac
+pnpm sign:verify:mac -- --dist apps/desktop/dist --version 0.1.0
+```
+
 安装、升级、卸载与故障排查见[安装文档](docs/dev/install.md)和[故障排查](docs/dev/troubleshooting.md)。
 
 ## 当前计划 / Plan
 
-- 首发平台：Windows，后续支持 macOS 与 Linux。
+- 当前发布通道：Windows；macOS 打包已在 M6-02 落地，Linux 与跨平台发布通道仍在 M6 中。
 - 首批模型：Anthropic、OpenAI、Gemini 三种协议格式；DeepSeek 等兼容服务走 OpenAI 格式。
 - 界面语言：中文、英文；主题支持浅色、深色与跟随系统。
 - stable 发布前仍需完成代码签名、法务审查与干净 VM 验收矩阵。

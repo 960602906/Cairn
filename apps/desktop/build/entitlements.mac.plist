@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS 签名与公证的权限（M6-02，ADR-0041）。
+
+  - allow-jit / allow-unsigned-executable-memory：V8 需要可执行内存，Electron 应用的标准两项。
+  - disable-library-validation：随包原生模块（better-sqlite3、koffi）由 electron-builder 逐个签名，
+    Electron 的 helper 进程还会加载主程序目录外的 .node；不关闭校验时，hardened runtime
+    可能拒绝这些库。只放宽库校验，不授予文件、网络或自动化权限。
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>

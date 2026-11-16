@@ -2,9 +2,10 @@
 /**
  * 打包产物校验（M5-02，ADR-0035）。
  *
- * 只检查产物本身，不启动应用：必需文件、asar 中不应出现的内容、原生模块与 rg.exe、
- * 技能资源、Electron fuses、NSIS 安装包/blockmap/校验和。真实的 SQLite、koffi、ripgrep
- * 与技能加载由 `smoke:packaged` 启动已打包程序验证。
+ * 只检查产物本身，不启动应用：必需文件、asar 中不应出现的内容、原生模块与 ripgrep
+ * （Windows 为 `rg.exe`，macOS/Linux 为 `rg`）、技能资源、Electron fuses、NSIS 安装包或
+ * macOS DMG/ZIP 与校验和。真实的 SQLite、koffi、ripgrep 与技能加载由 `smoke:packaged`
+ * 启动已打包程序验证。
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -17,17 +18,28 @@ import { FuseState, FuseV1Options, getCurrentFuseWire } from '@electron/fuses'
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
 export const DEFAULT_OUTPUT_DIR = path.join(DESKTOP_ROOT, 'dist')
 
-const REQUIRED_ASAR = [
-  'out/main/index.js',
-  'out/main/startup.js',
-  'out/main/agent-host.js',
-  'out/preload/index.cjs',
-  'out/renderer/index.html',
-  'out/bin/rg.exe',
-  'out/build-info.json',
-  'out/THIRD_PARTY_NOTICES.txt',
-  'package.json',
-]
+/** 随包的 ripgrep 在 `app.asar` 里的相对路径。 */
+export function bundledRipgrepPath(platform = process.platform) {
+  return `out/bin/${platform === 'win32' ? 'rg.exe' : 'rg'}`
+}
+
+/**
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string[]}
+ */
+function requiredAsar(platform = process.platform) {
+  return [
+    'out/main/index.js',
+    'out/main/startup.js',
+    'out/main/agent-host.js',
+    'out/preload/index.cjs',
+    'out/renderer/index.html',
+    bundledRipgrepPath(platform),
+    'out/build-info.json',
+    'out/THIRD_PARTY_NOTICES.txt',
+    'package.json',
+  ]
+}
 
 const FORBIDDEN_PREFIXES = [
   'src/',
@@ -92,13 +104,34 @@ function findFiles(dir, pattern) {
 }
 
 /**
+ * electron-builder 的未打包目录：Windows 固定 `win-unpacked`，macOS 按架构分
+ * `mac`（x64）与 `mac-arm64`，Linux 为 `linux-unpacked`。
  * @param {NodeJS.Platform} platform
+ * @param {NodeJS.Architecture} [arch]
  * @returns {string}
  */
-export function unpackedDirectoryName(platform = process.platform) {
+export function unpackedDirectoryName(platform = process.platform, arch = 'x64') {
   if (platform === 'win32') return 'win-unpacked'
-  if (platform === 'darwin') return 'mac'
+  if (platform === 'darwin') return arch === 'x64' ? 'mac' : `mac-${arch}`
   return 'linux-unpacked'
+}
+
+/**
+ * 产物里的资源目录：macOS 在 `Cairn.app/Contents/Resources`，其他平台在 `<app>/resources`。
+ * @param {{ directory: string; executable: string }} app
+ * @param {NodeJS.Platform} [platform]
+ * @param {string} [productName]
+ * @returns {string}
+ */
+export function packagedResourcesDirectory(
+  app,
+  platform = process.platform,
+  productName = 'Cairn',
+) {
+  if (platform === 'darwin') {
+    return path.join(app.directory, `${productName}.app`, 'Contents', 'Resources')
+  }
+  return path.join(app.directory, 'resources')
 }
 
 /**
@@ -106,6 +139,7 @@ export function unpackedDirectoryName(platform = process.platform) {
  * @param {{
  *   outputDir?: string;
  *   platform?: NodeJS.Platform;
+ *   arch?: NodeJS.Architecture;
  *   productName?: string;
  *   packageName?: string;
  * }} [options]
@@ -114,10 +148,11 @@ export function unpackedDirectoryName(platform = process.platform) {
 export function findUnpackedApp({
   outputDir = DEFAULT_OUTPUT_DIR,
   platform = process.platform,
+  arch = 'x64',
   productName = 'Cairn',
   packageName = '@cairn/desktop',
 } = {}) {
-  const directory = path.join(outputDir, unpackedDirectoryName(platform))
+  const directory = path.join(outputDir, unpackedDirectoryName(platform, arch))
   /** @type {string[]} */
   let candidates
   if (platform === 'win32') {
@@ -204,8 +239,9 @@ export async function verifyFuses(executable, readWire = getCurrentFuseWire) {
  * @param {{
  *   desktopRoot?: string;
  *   outputDir?: string;
- *   target?: 'dir' | 'nsis';
+ *   target?: 'dir' | 'nsis' | 'mac' | 'linux';
  *   platform?: NodeJS.Platform;
+ *   arch?: NodeJS.Architecture;
  *   runner?: typeof spawnSync;
  *   readFuses?: (executable: string) => Promise<string[]>;
  *   minimumInstallerBytes?: number;
@@ -217,6 +253,7 @@ export async function verifyPackage({
   outputDir = DEFAULT_OUTPUT_DIR,
   target = 'dir',
   platform = process.platform,
+  arch = process.arch,
   runner = spawnSync,
   readFuses = verifyFuses,
   minimumInstallerBytes = 50 * 1024 * 1024,
@@ -228,22 +265,26 @@ export async function verifyPackage({
     app = findUnpackedApp({
       outputDir,
       platform,
+      arch,
       productName: 'Cairn',
       packageName: '@cairn/desktop',
     })
   } catch (error) {
     return [errorMessage(error)]
   }
-  const resourcesDir = path.join(app.directory, 'resources')
+  const resourcesDir = packagedResourcesDirectory(app, platform)
   const appAsar = path.join(resourcesDir, 'app.asar')
   const unpacked = path.join(resourcesDir, 'app.asar.unpacked')
-  const sqlitePrebuild = `${platform === 'win32' ? 'win32' : platform}-x64.node`
+  const sqlitePrebuild = `${platform}-${arch}.node`
   for (const { file, label } of [
     { file: app.executable, label: 'main executable' },
     { file: appAsar, label: 'app.asar' },
     { file: path.join(resourcesDir, 'skills/example/SKILL.md'), label: 'resources/skills' },
-    { file: path.join(resourcesDir, 'git/LICENSE.txt'), label: 'resources/git license' },
     { file: path.join(resourcesDir, 'app-update.yml'), label: 'app-update.yml' },
+    // 随包 MinGit 只在 Windows 上分发（ADR-0008）。
+    ...(platform === 'win32'
+      ? [{ file: path.join(resourcesDir, 'git/LICENSE.txt'), label: 'resources/git license' }]
+      : []),
   ]) {
     if (!existsSync(file)) problems.push(`missing ${label}: ${file}`)
   }
@@ -259,11 +300,13 @@ export async function verifyPackage({
     }
   }
   const bundledGit = path.join(resourcesDir, 'git/ucrt64/bin/git.exe')
-  if (!existsSync(bundledGit)) problems.push(`missing bundled MinGit: ${bundledGit}`)
+  if (platform === 'win32' && !existsSync(bundledGit)) {
+    problems.push(`missing bundled MinGit: ${bundledGit}`)
+  }
   if (!existsSync(appAsar)) return problems
 
   const entries = new Set(listPackage(appAsar, { isPack: false }).map(normalized))
-  for (const required of REQUIRED_ASAR) {
+  for (const required of requiredAsar(platform)) {
     if (!entries.has(required)) problems.push(`app.asar is missing ${required}`)
   }
   for (const entry of entries) {
@@ -304,7 +347,7 @@ export async function verifyPackage({
   }
 
   for (const { label, pattern } of [
-    { label: 'ripgrep', pattern: /^rg\.exe$/i },
+    { label: 'ripgrep', pattern: platform === 'win32' ? /^rg\.exe$/i : /^rg$/ },
     {
       label: 'better-sqlite3 native module',
       pattern: new RegExp(`^${sqlitePrebuild.replaceAll('.', '\\.')}$`, 'i'),
@@ -334,7 +377,7 @@ export async function verifyPackage({
     }
   }
 
-  const rg = path.join(unpacked, 'out/bin/rg.exe')
+  const rg = path.join(unpacked, bundledRipgrepPath(platform))
   if (existsSync(rg)) {
     const result = runner(rg, ['--version'], {
       encoding: 'utf8',
@@ -385,6 +428,27 @@ export async function verifyPackage({
   problems.push(...(await readFuses(app.executable)))
 
   const manifest = JSON.parse(readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'))
+  const version = String(manifest.version)
+  if (target === 'mac') {
+    for (const artifactArch of ['arm64', 'x64']) {
+      for (const ext of ['dmg', 'zip']) {
+        const file = path.join(outputDir, `Cairn-${version}-${artifactArch}.${ext}`)
+        const checksum = `${file}.sha256`
+        if (!existsSync(file)) {
+          problems.push(`missing macOS ${ext}: ${file}`)
+          continue
+        }
+        if (!existsSync(checksum)) {
+          problems.push(`missing macOS ${ext} checksum: ${checksum}`)
+        } else if (!checksumMatches(file, sha256(file))) {
+          problems.push(`macOS ${ext} checksum does not match: ${path.basename(file)}`)
+        }
+        if (ext === 'dmg' && statSync(file).size < minimumInstallerBytes) {
+          problems.push(`macOS DMG is unexpectedly small: ${path.basename(file)}`)
+        }
+      }
+    }
+  }
   if (target === 'nsis') {
     const installer = path.join(outputDir, `Cairn-${String(manifest.version)}-x64-setup.exe`)
     for (const { file, label } of [
@@ -423,7 +487,7 @@ export async function verifyPackage({
  * @param {{
  *   desktopRoot?: string;
  *   outputDir?: string;
- *   target?: 'dir' | 'nsis';
+ *   target?: 'dir' | 'nsis' | 'mac';
  *   verify?: typeof verifyPackage;
  * }} [options]
  * @returns {Promise<number>}
@@ -431,7 +495,11 @@ export async function verifyPackage({
 export async function main({
   desktopRoot = DESKTOP_ROOT,
   outputDir = DEFAULT_OUTPUT_DIR,
-  target = process.argv.includes('--nsis') ? 'nsis' : 'dir',
+  target = process.argv.includes('--mac')
+    ? 'mac'
+    : process.argv.includes('--nsis')
+      ? 'nsis'
+      : 'dir',
   verify = verifyPackage,
 } = {}) {
   const problems = await verify({ desktopRoot, outputDir, target })
@@ -439,7 +507,8 @@ export async function main({
     for (const problem of problems) console.error(`verify: ${problem}`)
     return 1
   }
-  console.log(`verify: ${target === 'nsis' ? 'installer' : 'unpacked application'} passed`)
+  const labels = { dir: 'unpacked application', nsis: 'installer', mac: 'DMG and ZIP' }
+  console.log(`verify: ${labels[target]} passed`)
   return 0
 }
 

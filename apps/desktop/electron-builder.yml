@@ -27,9 +27,6 @@ asarUnpack:
 extraResources:
   - from: resources/skills
     to: skills
-  # 随包 MinGit（M5-03）：由 `pnpm fetch:mingit` 生成，不提交到仓库。
-  - from: resources/git
-    to: git
 
 # 运行时依赖由 staging 的 package.json 提供。所依赖的原生模块基于 Node-API 预编译，
 # 不再调用 node-gyp，避免构建机需要 Visual Studio/C++ 工具链。
@@ -48,6 +45,11 @@ electronFuses:
 
 win:
   icon: build/icons/icon.ico
+  extraResources:
+    # 随包 MinGit（M5-03）：由 `pnpm fetch:mingit` 生成，不提交到仓库。
+    # macOS / Linux 使用系统 Git（ADR-0008），不带这份资源。
+    - from: resources/git
+      to: git
   target:
     - target: nsis
       arch:
@@ -66,6 +68,43 @@ nsis:
   deleteAppDataOnUninstall: false
   runAfterFinish: true
   artifactName: Cairn-${version}-${arch}-setup.${ext}
+
+mac:
+  icon: build/icons/icon.icns
+  category: public.app-category.developer-tools
+  # 分架构构建：Apple Silicon 与 Intel 各自一个 DMG / ZIP（更新用）。
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  # 未签名构建：本地与普通 PR 产出 unsigned 包，M6-02 的签名/公证在发布流水线开启。
+  identity: null
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # 公证默认关闭，由 macSigningBuilderArgs() 在凭据齐全时打开。
+  notarize: false
+
+dmg:
+  artifactName: Cairn-${version}-${arch}.${ext}
+  title: ${productName} ${version}
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 140
+      y: 190
+      type: file
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications
 
 # M5-06 会替换为真实的公开只读更新源；此处只声明发布器，普通打包使用 --publish never。
 publish:
