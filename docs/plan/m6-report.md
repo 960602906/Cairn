@@ -142,21 +142,14 @@ M6-09 不是代码任务，依赖所有者侧资源。当前状态为“明确�
 
 ## 8. 分支清理记录
 
-按 M6-10 范围核对了已合并或被后续 PR 取代的远程分支。删除命令被执行环境的权限策略
-（`Git Destructive`）拦截，因此本报告只记录核对结果与待执行的命令，实际删除由所有者执行。
+按 M6-10 范围核对并删除了已合并或被后续 PR 取代的远程分支（2026-11-16，
+`git ls-remote` 复核已不存在）：
 
 | 分支 | 对应 PR | 依据 |
 |---|---|---|
 | `codex/ui-followups-20261109` | #131（已合并） | 内容已进入 `main`，无独有提交 |
 | `codex/ui-p0-p1-fixes` | #150（已合并） | 实现已被后续 PR 取代 |
 | `codex/composer-slash-commands` | #149（已合并） | 输入框 `/` 指令已由 #149 及其后续落地 |
-
-```bash
-git push origin --delete \
-  codex/ui-followups-20261109 \
-  codex/ui-p0-p1-fixes \
-  codex/composer-slash-commands
-```
 
 其余早期 `codex/*`、`cursor/*`、`claude/*` 分支不在本次清理范围：它们可能保留阶段性资料，
 由所有者按需处理。
