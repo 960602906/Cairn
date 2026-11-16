@@ -48,3 +48,4 @@
 | [0038](0038-task-list-independent-of-plan-mode.md) | 待办列表独立于计划模式 | 提议 |
 | [0039](0039-open-source-license-and-dco.md) | 开源许可证（MIT）与贡献者协议（DCO） | 已接受 |
 | [0040](0040-linux-credential-refusal.md) | Linux 无系统密钥环时显式拒绝保存凭据 | 已接受（M6-04） |
+| [0041](0041-macos-packaging-and-notarization.md) | macOS 打包、签名与公证 | 已接受（M6-02） |

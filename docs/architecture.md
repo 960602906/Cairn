@@ -684,10 +684,12 @@ agent 循环设置最大步数和单轮最长时间，防止无限循环。
   `out/build-info.json`（版本、通道、提交 SHA、构建时间、Electron/Node 版本）。版本以根
   `package.json` 为唯一来源，CI 用 `check:version` 校验。
 - **打包**：先 staging，再由 electron-builder 26.18.0 生成 Windows x64 按用户 NSIS
-  （`perMachine=false`，不要求管理员，可修改安装目录，保留用户数据）。工作区 `node_modules`、
-  测试、e2e、spikes、源码与 source map 不进入安装包（ADR-0035）。
+  （`perMachine=false`，不要求管理员，可修改安装目录，保留用户数据）；M6-02 起 macOS 在
+  macOS 主机上产出 arm64/x64 的 DMG 与 ZIP（ADR-0041）。工作区 `node_modules`、测试、e2e、
+  spikes、源码与 source map 不进入安装包（ADR-0035）。
 - **原生模块**：`better-sqlite3`、`koffi` 等按 Electron 版本准备，运行时外部依赖由 staging
-  `package.json` 白名单控制；`@vscode/ripgrep` 二进制复制到 `out/bin/rg.exe`。
+  `package.json` 白名单控制；`@vscode/ripgrep` 二进制复制到 `out/bin/`（Windows 为
+  `rg.exe`，macOS/Linux 为 `rg`）。
 - **随包 MinGit**：固定 MinGit `2.56.0.4` 与 SHA-256，构建时下载、裁剪、校验；安装版优先使用
   本机 Git，没有可用 Git 时用随包产物建立检查点。GPLv2 全文、源码地址与第三方声明随包分发
   （`THIRD_PARTY_NOTICES.txt`、`license-exceptions.json`）。
@@ -697,8 +699,9 @@ agent 循环设置最大步数和单轮最长时间，防止无限循环。
 - **自动更新**：electron-updater 6.8.11 + generic 公开只读 HTTPS 源；检查 → 下载 → 校验
   （SHA-512、大小、发布者签名）→ 重启安装。运行中任务、待审批与检查点恢复期间禁止静默重启；
   不提供二进制降级，升级前备份，`SchemaTooNew` 阻断降级（ADR-0036）。
-- **代码签名与发布**：`.github/workflows/release.yml` 在标签构建时执行签名、产物哈希、
-  `latest.yml`/`beta.yml` 生成与发布；证书只来自 CI secrets。未取得证书时只能产出 unsigned beta，
+- **代码签名与发布**：`.github/workflows/release.yml` 在标签构建时执行 Windows 签名、产物哈希、
+  `latest.yml`/`beta.yml` 生成与发布；证书只来自 CI secrets。macOS 的 Developer ID 签名与公证
+  校验已由 M6-02 提供，跨平台发布流水线仍属 M6-07。未取得证书时只能产出 unsigned beta，
   stable 发布被门禁阻塞（M5-08）。
 - **验收**：单元/集成/组件测试 + 构建产物 e2e（55 项）+ 已打包应用 e2e（安装形态冒烟与发布
   全流程）+ NSIS 安装/卸载/重装验收（`pnpm acceptance:installed`）+ Windows CI。干净 VM、标准

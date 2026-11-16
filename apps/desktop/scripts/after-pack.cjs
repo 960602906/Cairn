@@ -33,11 +33,24 @@ function appUpdateConfig(rawUrl = DEFAULT_UPDATE_URL) {
 }
 
 /**
- * @param {{ appOutDir: string }} context
+ * 产物里的 `Resources` 目录：macOS 在 `Cairn.app/Contents/Resources`，其他平台在 `<appOutDir>/resources`。
+ * @param {{ appOutDir: string; packager?: { platform?: { name?: string }; appInfo?: { productFilename?: string } } }} context
+ * @returns {string}
+ */
+function resourcesDirectory(context) {
+  if (context.packager?.platform?.name === 'mac') {
+    const app = context.packager.appInfo?.productFilename ?? 'Cairn'
+    return path.join(context.appOutDir, `${app}.app`, 'Contents', 'Resources')
+  }
+  return path.join(context.appOutDir, 'resources')
+}
+
+/**
+ * @param {{ appOutDir: string; packager?: { platform?: { name?: string }; appInfo?: { productFilename?: string } } }} context
  * @returns {Promise<void>}
  */
 async function afterPack(context) {
-  const resources = path.join(context.appOutDir, 'resources')
+  const resources = resourcesDirectory(context)
   mkdirSync(resources, { recursive: true })
   writeFileSync(
     path.join(resources, 'app-update.yml'),
@@ -47,4 +60,5 @@ async function afterPack(context) {
 
 module.exports = afterPack
 module.exports.appUpdateConfig = appUpdateConfig
+module.exports.resourcesDirectory = resourcesDirectory
 module.exports.DEFAULT_UPDATE_URL = DEFAULT_UPDATE_URL

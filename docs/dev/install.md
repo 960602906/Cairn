@@ -1,7 +1,8 @@
 # 安装、升级与卸载
 
 > 适用于 Cairn 0.1.0 公开 beta（Windows x64）。安装包按用户安装，不需要管理员权限。
-> 未签名 beta 可能触发 Windows SmartScreen；stable 发布前必须完成签名与法务确认。
+> macOS 的 DMG/ZIP 打包从 M6-02 起可用，但签名、公证与正式发布通道尚未接入（M6-07/M6-09）。
+> 未签名 beta 可能触发 Windows SmartScreen 或 macOS Gatekeeper；stable 发布前必须完成签名与法务确认。
 
 ## 1. 系统要求
 
@@ -97,11 +98,38 @@ NSIS 支持按用户静默安装与卸载：
 `/D=` 必须是绝对路径且放在最后。自动化测试应使用临时数据目录（`CAIRN_USER_DATA_DIR`），
 不要触碰真实 `%APPDATA%\Cairn`。
 
+## 8. macOS（DMG 与 ZIP）
+
+> 状态：打包能力已实现，尚未发布签名的公开安装包。以下步骤适用于自行构建或内部验收的
+> macOS 版本；公开分发必须以 Developer ID 签名并公证（ADR-0041）。
+
+- 支持 macOS 13 Ventura 或更新版本，arm64（Apple Silicon）与 x64（Intel）分别发布；
+  不要混用架构。
+- 下载 `Cairn-<version>-<arch>.dmg` 与对应的 `.sha256`，在终端校验：
+
+```bash
+shasum -a 256 -c Cairn-0.1.0-arm64.dmg.sha256
+```
+
+- 打开 DMG，把 Cairn 拖入“应用程序”。首次启动未签名内部包时，Gatekeeper 可能提示无法
+  验证开发者；只有在确认来源与哈希后才在“系统设置 → 隐私与安全性”中放行。不要关闭
+  Gatekeeper。
+- 用户数据位于 `~/Library/Application Support/Cairn`（开发版为 `Cairn-dev`），目录结构与
+  Windows 相同；代理与模型配置、会话、检查点和凭据都在这里。
+- 更新使用同架构的 `Cairn-<version>-<arch>.zip`，由应用内更新流程下载并校验；DMG 只用于
+  首次安装。
+- 卸载：退出 Cairn，把应用从“应用程序”移到废纸篓；用户数据不会自动删除。需要彻底清理时，
+  在确认已备份项目与会话后手动删除 `~/Library/Application Support/Cairn`。
+- 不需要预装 Git：macOS 通常自带 Git；缺少时检查点降级，写文件类改动仍可撤销。
+
 ---
 
 ## English summary
 
 Cairn 0.1.0 beta targets Windows x64 and installs per user without administrator rights.
+macOS DMG/ZIP packaging exists from M6-02 but signed public builds are not yet released;
+verify the SHA-256, drag the app to Applications, and expect Gatekeeper to block unsigned
+internal builds.
 Verify the installer SHA-256 before running it. Unsigned beta builds may trigger
 SmartScreen; continue only if you trust the source and the hash matches. The first launch
 shows a one-time notice that can be reopened from Settings → About. A model provider must

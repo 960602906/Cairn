@@ -20,6 +20,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   MessageChannelMain,
   nativeTheme,
   Notification,
@@ -28,6 +29,7 @@ import {
   shell,
   utilityProcess,
 } from 'electron'
+import { macApplicationMenu, shouldInstallApplicationMenu } from './app-menu.js'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
 import { readAppInfo } from './build-info.js'
 import { resolveBuiltinSkillsDir } from './builtin-skills.js'
@@ -949,6 +951,9 @@ async function smokeCredentials(): Promise<CredentialCheck> {
 
 void app.whenReady().then(() => {
   restrictPermissions(session.defaultSession)
+  if (shouldInstallApplicationMenu()) {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(macApplicationMenu()))
+  }
   followThemeSetting()
   registerWindowControls()
   void mcp.initialize()

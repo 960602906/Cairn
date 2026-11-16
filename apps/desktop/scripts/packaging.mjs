@@ -1,6 +1,9 @@
 // @ts-check
 /**
- * Windows 打包（M5-02，ADR-0035）。
+ * 桌面应用打包（M5-02 / M6-02，ADR-0035 / ADR-0041）。
+ *
+ * staging、运行时依赖探测与校验在 Windows 与 macOS 间共用；安装包目标按平台选择
+ * （NSIS 只在 Windows，DMG/ZIP 只在 macOS）。
  *
  * electron-builder 不能直接把 pnpm 工作区作为项目目录：工作区链接与虚拟 store 会让 `app.asar`
  * 膨胀到约 145 MB。这里先把构建产物、技能资源与“实际被主进程加载的外部依赖”复制到扁平 staging，
@@ -24,7 +27,14 @@ import { createRequire, isBuiltin } from 'node:module'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { init as initLexer, parse as parseImports } from 'es-module-lexer'
-import { readSigningConfig, signingBuilderArgs, signingEnvironment } from '@cairn/release-tools'
+import {
+  macSigningBuilderArgs,
+  macSigningEnvironment,
+  readMacSigningConfig,
+  readSigningConfig,
+  signingBuilderArgs,
+  signingEnvironment,
+} from '@cairn/release-tools'
 import { verifyPackage } from './verify-package.mjs'
 
 const THIS_DIR = import.meta.dirname
@@ -170,11 +180,21 @@ export function readJsonFile(file) {
 }
 
 /**
+ * 构建产物里随包的 ripgrep 相对路径：Windows 带 `.exe`，macOS / Linux 不带。
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string}
+ */
+export function stagedBinaryPath(platform = process.platform) {
+  return `bin/${platform === 'win32' ? 'rg.exe' : 'rg'}`
+}
+
+/**
  * 复制构建产物到独立 staging，并写入裁剪后的 package.json。
  * @param {{
  *   desktopRoot?: string;
  *   stageDir?: string;
  *   dependencies: Readonly<Record<string, string>>;
+ *   platform?: NodeJS.Platform;
  * }} options
  * @returns {{ manifest: Record<string, unknown>; modules: string[] }}
  */
@@ -182,6 +202,7 @@ export function stageApplication({
   desktopRoot = DESKTOP_ROOT,
   stageDir = DEFAULT_STAGE_DIR,
   dependencies,
+  platform = process.platform,
 }) {
   const outDir = path.join(desktopRoot, 'out')
   for (const required of [
@@ -190,7 +211,7 @@ export function stageApplication({
     'main/agent-host.js',
     'preload/index.cjs',
     'renderer/index.html',
-    'bin/rg.exe',
+    stagedBinaryPath(platform),
     'build-info.json',
     'THIRD_PARTY_NOTICES.txt',
   ]) {
@@ -310,7 +331,7 @@ export function electronBuilderCli(desktopRoot = DESKTOP_ROOT) {
 /**
  * 运行 electron-builder；普通构建永远不发布。
  * @param {{
- *   target: 'dir' | 'nsis';
+ *   target: 'dir' | 'nsis' | 'mac';
  *   desktopRoot?: string;
  *   stageDir?: string;
  *   outputDir?: string;
@@ -318,6 +339,7 @@ export function electronBuilderCli(desktopRoot = DESKTOP_ROOT) {
  *   env?: NodeJS.ProcessEnv;
  *   platform?: NodeJS.Platform;
  *   signing?: ReturnType<typeof readSigningConfig>;
+ *   macSigning?: ReturnType<typeof readMacSigningConfig>;
  * }} options
  */
 export function runElectronBuilder({
@@ -329,9 +351,14 @@ export function runElectronBuilder({
   env = process.env,
   platform = process.platform,
   signing = readSigningConfig(env),
+  macSigning = platform === 'darwin' ? readMacSigningConfig(env) : { mode: 'none' },
 }) {
-  if (platform !== 'win32') {
-    throw new Error('M5-02 packaging supports Windows x64 only (ADR-0035)')
+  // 安装包只能在对应平台上构建：NSIS 需要 Windows，DMG 需要 macOS（ADR-0035、ADR-0041）。
+  if (target === 'nsis' && platform !== 'win32') {
+    throw new Error('NSIS packaging is supported on Windows only (ADR-0035)')
+  }
+  if (target === 'mac' && platform !== 'darwin') {
+    throw new Error('macOS packaging must run on macOS (ADR-0041)')
   }
   const args = [
     electronBuilderCli(desktopRoot),
@@ -346,13 +373,18 @@ export function runElectronBuilder({
     '--publish',
     'never',
   ]
-  args.push(...signingBuilderArgs(signing))
+  // 签名材料只进入对应平台的参数与环境变量，不出现在命令行与构建日志里。
+  if (platform === 'win32') args.push(...signingBuilderArgs(signing))
+  if (platform === 'darwin') args.push(...macSigningBuilderArgs(macSigning))
   if (target === 'dir') args.push('--dir')
-  else args.push('--win', 'nsis')
+  else if (target === 'nsis') args.push('--win', 'nsis')
+  else args.push('--mac', 'dmg', 'zip')
   const result = runner(process.execPath, args, {
     cwd: desktopRoot,
-    // 签名材料只经环境变量进入子进程，不出现在命令行与构建日志里。
-    env: signingEnvironment(signing, env),
+    env:
+      platform === 'darwin'
+        ? macSigningEnvironment(macSigning, env)
+        : signingEnvironment(signing, env),
     stdio: 'inherit',
     windowsHide: true,
   })
@@ -374,6 +406,20 @@ export function writeChecksum(file) {
 }
 
 /**
+ * macOS 安装包里必须出现的产物：两个架构各一个 DMG（安装）与 ZIP（更新用）。
+ * @param {readonly string[]} files dist 目录中的文件名
+ * @param {string} version
+ * @returns {{ missing: string[]; present: string[] }}
+ */
+export function macArtifacts(files, version) {
+  const required = ['arm64', 'x64'].flatMap((arch) =>
+    ['dmg', 'zip'].map((ext) => `Cairn-${version}-${arch}.${ext}`),
+  )
+  const present = required.filter((name) => files.includes(name))
+  return { missing: required.filter((name) => !present.includes(name)), present }
+}
+
+/**
  * 解析命令行参数并执行完整打包。
  * @param {{
  *   argv?: readonly string[];
@@ -383,6 +429,7 @@ export function writeChecksum(file) {
  *   install?: typeof installProductionDependencies;
  *   build?: typeof runElectronBuilder;
  *   verify?: typeof verifyPackage;
+ *   platform?: NodeJS.Platform;
  *   log?: (line: string) => void;
  * }} [options]
  * @returns {Promise<number>}
@@ -395,11 +442,18 @@ export async function main({
   install = installProductionDependencies,
   build = runElectronBuilder,
   verify = verifyPackage,
+  platform = process.platform,
   log = (line) => console.log(line),
 } = {}) {
-  const target = argv.includes('--nsis') ? 'nsis' : argv.includes('--dir') ? 'dir' : undefined
+  const target = argv.includes('--mac')
+    ? 'mac'
+    : argv.includes('--nsis')
+      ? 'nsis'
+      : argv.includes('--dir')
+        ? 'dir'
+        : undefined
   if (target === undefined) {
-    throw new Error('usage: packaging.mjs --dir|--nsis')
+    throw new Error('usage: packaging.mjs --dir|--nsis|--mac')
   }
   const desktopManifest = readJsonFile(path.join(desktopRoot, 'package.json'))
   const dependencies = /** @type {Record<string, string>} */ (desktopManifest['dependencies'] ?? {})
@@ -409,24 +463,34 @@ export async function main({
     desktopRoot,
     stageDir,
     dependencies: runtime.dependencies,
+    platform,
   })
   log(`package: staged Cairn ${String(staged.manifest['version'])} in ${stageDir}`)
   install({ stageDir })
   const pruned = pruneStagedDependencies({ stageDir })
   log(`package: pruned ${pruned.removed.length} unnecessary native/source entries`)
-  build({ target, desktopRoot, stageDir, outputDir })
+  build({ target, desktopRoot, stageDir, outputDir, platform })
+  const version = String(staged.manifest['version'])
   if (target === 'nsis') {
-    const version = String(staged.manifest['version'])
     const installer = path.join(outputDir, `Cairn-${version}-x64-setup.exe`)
     if (!existsSync(installer)) throw new Error(`NSIS installer was not created: ${installer}`)
     writeChecksum(installer)
   }
-  const problems = await verify({ desktopRoot, outputDir, target })
+  if (target === 'mac') {
+    const files = existsSync(outputDir) ? readdirSync(outputDir) : []
+    const { missing, present } = macArtifacts(files, version)
+    if (missing.length > 0) {
+      throw new Error(`macOS artifacts were not created: ${missing.join(', ')}`)
+    }
+    for (const name of present) writeChecksum(path.join(outputDir, name))
+  }
+  const problems = await verify({ desktopRoot, outputDir, target, platform })
   if (problems.length > 0) {
     for (const problem of problems) console.error(`package: ${problem}`)
     return 1
   }
-  log(`package: ${target === 'nsis' ? 'NSIS installer' : 'unpacked application'} verified`)
+  const labels = { dir: 'unpacked application', nsis: 'NSIS installer', mac: 'DMG and ZIP' }
+  log(`package: ${labels[target]} verified`)
   return 0
 }
 

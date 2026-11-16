@@ -1,7 +1,8 @@
 # 发布运行手册（代码签名与发布）
 
-> 适用：M5-08 起的 Windows x64、按用户安装的 NSIS 发布。
+> 适用：M5-08 起的 Windows x64、按用户安装的 NSIS 发布；M6-02 起的 macOS DMG/ZIP。
 > 上级文档：[M5 计划](../plan/m5.md)、[ADR-0036](../adr/0036-auto-update-signing-and-rollback.md)、
+> [ADR-0041](../adr/0041-macos-packaging-and-notarization.md)、
 > [发布前置条件](../plan/m5-release-prerequisites.md)。
 
 本手册覆盖 `.github/workflows/release.yml` 的配置、dry-run、正式发布、证书轮换与紧急撤包。
@@ -218,3 +219,62 @@ pnpm sign:verify -- --dist apps/desktop/dist --version 0.1.0
   已打包应用全流程由 `pnpm e2e:packaged`（含 `acceptance.spec.ts`）覆盖。
 - 干净 VM、标准用户、Windows 10、SmartScreen 与真实 0.1.0→0.1.1 安装升级仍未执行；
   状态与阻塞项见 [M5 发布验收报告](../plan/m5-report.md)。本手册不能替代真机证据。
+
+## 10. macOS：签名、公证与打包（M6-02）
+
+macOS 产物按架构分别构建，只能在 macOS 上执行；Windows runner 会直接拒绝。
+
+### 10.1 本机（unsigned，仅内部使用）
+
+```bash
+pnpm build
+pnpm package:mac
+pnpm package:verify -- --mac
+```
+
+产物位于 `apps/desktop/dist/`：`Cairn-<version>-{arm64,x64}.{dmg,zip}` 与各自的
+`.sha256`。未签名包不能作为公开 beta 分发：Gatekeeper 会拦截，更新服务也无法验证签名。
+本地首次打开时按住 Control 点击应用并选择“打开”，或在“系统设置 → 隐私与安全性”中放行；
+这不适用于对外发布。
+
+### 10.2 Developer ID 签名与公证
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `CAIRN_MAC_SIGN_MODE` | 是 | `none`（默认）或 `developer-id` |
+| `CAIRN_MAC_IDENTITY` | `developer-id` | 完整的 `Developer ID Application: ...` 身份 |
+| `MAC_CERTIFICATE` 或 `CSC_LINK` | `developer-id` | 导出为 `.p12` 后的 Base64 |
+| `MAC_CERTIFICATE_PASSWORD` 或 `CSC_KEY_PASSWORD` | `developer-id` | `.p12` 密码 |
+| `APPLE_ID` | `developer-id` | Apple 开发者账号邮箱 |
+| `APPLE_APP_SPECIFIC_PASSWORD` | `developer-id` | 应用专用密码，不是账号密码 |
+| `APPLE_TEAM_ID` | `developer-id` | Team ID |
+
+证书与密码只通过子进程环境传给 electron-builder，不会出现在命令行或日志。`developer-id`
+模式同时启用 hardened runtime（`build/entitlements.mac.plist`）与公证；缺少任一凭据都会
+直接失败，不产出无法通过 Gatekeeper 的安装包。
+
+在 CI secrets 或当前进程环境中设置上表变量后运行：
+
+```bash
+pnpm package:mac
+pnpm sign:verify:mac -- --dist apps/desktop/dist --version 0.1.0
+```
+
+不要把证书内容或密码写进命令行、脚本或 shell 历史；electron-builder 只从环境读取。
+
+`sign:verify:mac` 对两个 `.app` 运行 `codesign --verify --deep --strict --verbose=2` 与
+`spctl --assess --type execute`，对已公证的 DMG 运行 `xcrun stapler validate`。ZIP 不能
+stapling，更新包以 `.app` 的签名与公证结果为准。只有全部通过才允许进入发布清单。
+
+### 10.3 公证与 stapling 的门禁
+
+- 公证失败、票据未 stapled 或 Gatekeeper 评估失败都视为发布阻塞项。
+- `APPLE_APP_SPECIFIC_PASSWORD` 泄漏后必须立即在 Apple ID 页面吊销并重新生成。
+- 证书轮换时保持 Team ID 与签名身份名称稳定；更新清单与签名摘要只记录身份，不记录凭据。
+
+### 10.4 尚未接入的部分
+
+`release.yml` 目前仍只构建 Windows。macOS runner、`latest-mac.yml`、按架构的发布清单与
+更新源目录属于 M6-07；在它完成之前，以上命令只用于本机或手工构建，不能视为已发布的
+macOS 更新通道。真实 Apple Silicon/Intel 安装、公证与更新下载仍需在配置好账号的 macOS
+环境执行并记录证据。

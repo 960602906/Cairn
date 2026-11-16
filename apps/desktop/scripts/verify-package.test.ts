@@ -122,9 +122,67 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   }
 }
 
+interface MacFixture {
+  readonly desktopRoot: string
+  readonly outputDir: string
+  readonly runner: typeof spawnSync
+}
+
+async function macFixture(): Promise<MacFixture> {
+  const root = temporaryDirectory()
+  const appRoot = path.join(root, 'mac-arm64/Cairn.app')
+  const resources = path.join(appRoot, 'Contents/Resources')
+  const unpacked = path.join(resources, 'app.asar.unpacked')
+  const asarSource = path.join(root, 'asar-source')
+  for (const [relative, content] of Object.entries({
+    'out/main/index.js': '',
+    'out/main/startup.js': '',
+    'out/main/agent-host.js': '',
+    'out/preload/index.cjs': '',
+    'out/renderer/index.html': '<html></html>',
+    'out/bin/rg': '',
+    'out/build-info.json': JSON.stringify({ version: '0.1.0' }),
+    'out/THIRD_PARTY_NOTICES.txt': 'notices',
+    'package.json': JSON.stringify({ name: '@cairn/desktop', version: '0.1.0' }),
+  })) {
+    write(path.join(asarSource, relative), content)
+  }
+  await createPackage(asarSource, path.join(resources, 'app.asar'))
+  write(path.join(appRoot, 'Contents/MacOS/Cairn'), 'mach-o')
+  write(path.join(resources, 'skills/example/SKILL.md'), '# Example\n')
+  write(
+    path.join(resources, 'app-update.yml'),
+    'provider: generic\nurl: https://updates.invalid/cairn/\n',
+  )
+  write(path.join(unpacked, 'out/bin/rg'), '')
+  write(path.join(unpacked, 'node_modules/better-sqlite3/prebuilds/darwin-arm64.node'), 'sqlite')
+  for (const relative of [
+    'node_modules/koffi/index.js',
+    'node_modules/koffi/src/koffi/index.js',
+    'node_modules/koffi/index.cjs',
+    'node_modules/koffi/src/koffi/index.cjs',
+  ]) {
+    write(path.join(unpacked, relative), '')
+  }
+  write(
+    path.join(unpacked, 'node_modules/@koromix/koffi-darwin-arm64/darwin_arm64/koffi.node'),
+    'koffi',
+  )
+  write(path.join(root, 'desktop/package.json'), JSON.stringify({ version: '0.1.0' }))
+  const runner = vi.fn((command: string) => ({
+    status: 0,
+    signal: null,
+    output: [],
+    pid: 1,
+    stdout: /rg$/.test(command) ? 'ripgrep 15.0.0 (rev 3a612f88b8)\n' : '',
+    stderr: '',
+  })) as unknown as typeof spawnSync
+  return { desktopRoot: path.join(root, 'desktop'), outputDir: root, runner }
+}
+
 function successfulRunner(): typeof spawnSync {
   return vi.fn((command: string) => {
-    if (/rg\.exe$/i.test(command)) {
+    if (/rg(?:\.exe)?$/i.test(command)) {
       return {
         status: 0,
         signal: null,
@@ -158,6 +216,7 @@ describe('unpacked directory lookup', () => {
   it('uses electron-builder output names per platform', () => {
     expect(unpackedDirectoryName('win32')).toBe('win-unpacked')
     expect(unpackedDirectoryName('darwin')).toBe('mac')
+    expect(unpackedDirectoryName('darwin', 'arm64')).toBe('mac-arm64')
     expect(unpackedDirectoryName('linux')).toBe('linux-unpacked')
   })
 
@@ -515,7 +574,7 @@ describe('verifyPackage', () => {
   it('reports ripgrep and native module execution failures', async () => {
     const app = await fixture()
     const runner = vi.fn((command: string) => {
-      if (/rg\.exe$/i.test(command)) {
+      if (/rg(?:\.exe)?$/i.test(command)) {
         return {
           status: 1,
           signal: null,
@@ -682,7 +741,7 @@ describe('verifyPackage', () => {
   })
 
   it('supports non-Windows prebuild names', async () => {
-    const app = await fixture()
+    const app = await fixture({ asarFiles: { 'out/bin/rg': '' } })
     const linuxDirectory = path.join(app.outputDir, 'linux-unpacked')
     renameSync(app.directory, linuxDirectory)
     write(path.join(linuxDirectory, 'cairn'), '')
@@ -691,6 +750,10 @@ describe('verifyPackage', () => {
       'resources/app.asar.unpacked/node_modules/better-sqlite3/prebuilds',
     )
     renameSync(path.join(prebuilds, 'win32-x64.node'), path.join(prebuilds, 'linux-x64.node'))
+    renameSync(
+      path.join(linuxDirectory, 'resources/app.asar.unpacked/out/bin/rg.exe'),
+      path.join(linuxDirectory, 'resources/app.asar.unpacked/out/bin/rg'),
+    )
     await expect(
       verifyPackage({
         desktopRoot: app.desktopRoot,
@@ -700,6 +763,40 @@ describe('verifyPackage', () => {
         readFuses: async () => [],
       }),
     ).resolves.toEqual([])
+  })
+
+  it('accepts a macOS app bundle without MinGit or Windows native modules', async () => {
+    const app = await macFixture()
+    await expect(
+      verifyPackage({
+        desktopRoot: app.desktopRoot,
+        outputDir: app.outputDir,
+        platform: 'darwin',
+        arch: 'arm64',
+        runner: app.runner,
+        readFuses: async () => [],
+      }),
+    ).resolves.toEqual([])
+  })
+
+  it('reports missing macOS artifacts and checksums for the DMG target', async () => {
+    const app = await macFixture()
+    const problems = await verifyPackage({
+      desktopRoot: app.desktopRoot,
+      outputDir: app.outputDir,
+      platform: 'darwin',
+      arch: 'arm64',
+      runner: app.runner,
+      readFuses: async () => [],
+      target: 'mac',
+      minimumInstallerBytes: 0,
+    })
+    expect(problems).toEqual(
+      expect.arrayContaining([
+        `missing macOS dmg: ${path.join(app.outputDir, 'Cairn-0.1.0-arm64.dmg')}`,
+        `missing macOS zip: ${path.join(app.outputDir, 'Cairn-0.1.0-arm64.zip')}`,
+      ]),
+    )
   })
 
   it('accepts a staged manifest without devDependencies', async () => {

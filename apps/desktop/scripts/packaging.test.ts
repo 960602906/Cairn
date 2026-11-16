@@ -250,6 +250,7 @@ describe('stageApplication', () => {
       desktopRoot: root,
       stageDir: stage,
       dependencies: { zod: '4.6.6' },
+      platform: 'win32',
     })
     expect(result.modules).toEqual(['zod'])
     expect(existsSync(path.join(stage, 'out/renderer/index.html'))).toBe(true)
@@ -269,7 +270,12 @@ describe('stageApplication', () => {
     const root = desktopFixture()
     const stage = path.join(root, '.package/app')
     write(path.join(stage, 'stale.txt'), 'stale')
-    stageApplication({ desktopRoot: root, stageDir: stage, dependencies: { zod: '4.6.6' } })
+    stageApplication({
+      desktopRoot: root,
+      stageDir: stage,
+      dependencies: { zod: '4.6.6' },
+      platform: 'win32',
+    })
     expect(existsSync(path.join(stage, 'stale.txt'))).toBe(false)
   })
 
@@ -281,8 +287,31 @@ describe('stageApplication', () => {
         desktopRoot: root,
         stageDir: path.join(root, '.package/app'),
         dependencies: { zod: '4.6.6' },
+        platform: 'win32',
       }),
     ).toThrow('apps/desktop/out/bin/rg.exe is missing; run `pnpm build` first')
+  })
+
+  it('expects the platform-native ripgrep name on macOS and Linux', () => {
+    const root = desktopFixture()
+    rmSync(path.join(root, 'out/bin/rg.exe'))
+    write(path.join(root, 'out/bin/rg'))
+    const stage = path.join(root, '.package/app')
+    stageApplication({
+      desktopRoot: root,
+      stageDir: stage,
+      dependencies: { zod: '4.6.6' },
+      platform: 'darwin',
+    })
+    expect(existsSync(path.join(stage, 'out/bin/rg'))).toBe(true)
+    expect(() =>
+      stageApplication({
+        desktopRoot: root,
+        stageDir: stage,
+        dependencies: { zod: '4.6.6' },
+        platform: 'linux',
+      }),
+    ).not.toThrow()
   })
 
   it('fails when built-in skills are missing', () => {
@@ -293,6 +322,7 @@ describe('stageApplication', () => {
         desktopRoot: root,
         stageDir: path.join(root, '.package/app'),
         dependencies: { zod: '4.6.6' },
+        platform: 'win32',
       }),
     ).toThrow('built-in skills are missing')
   })
@@ -515,9 +545,83 @@ describe('electron-builder invocation', () => {
     })
   })
 
-  it('rejects non-Windows packaging and reports builder failures', () => {
-    expect(() => runElectronBuilder({ target: 'dir', platform: 'linux' })).toThrow(
-      'M5-02 packaging supports Windows x64 only (ADR-0035)',
+  it('builds macOS DMG and ZIP with Developer ID configuration', () => {
+    const directory = temporaryDirectory()
+    const certificate = 'base64-p12-fixture'
+    const password = '{{SECRET_mac8k2xq}}'
+    const runner = vi.fn<typeof spawnSync>(() => ({
+      status: 0,
+      signal: null,
+      output: [],
+      pid: 1,
+      stdout: null,
+      stderr: null,
+    }))
+    runElectronBuilder({
+      target: 'mac',
+      stageDir: directory,
+      outputDir: path.join(directory, 'dist'),
+      runner,
+      platform: 'darwin',
+      env: {},
+      macSigning: {
+        mode: 'developer-id',
+        identity: 'Developer ID Application: Cairn (TEAMID)',
+        certificate,
+        password,
+        notarize: { appleId: 'ci@example.com', appleIdPassword: 'app-password', teamId: 'TEAMID' },
+      },
+    })
+    const [, args, options] = runner.mock.calls[0]!
+    expect(args).toEqual(expect.arrayContaining(['--mac', 'dmg', 'zip']))
+    expect(args).toEqual(
+      expect.arrayContaining([
+        '--config.mac.identity=Developer ID Application: Cairn (TEAMID)',
+        '--config.mac.notarize=true',
+      ]),
+    )
+    expect(args.some((argument) => argument.includes(certificate))).toBe(false)
+    expect(args.some((argument) => argument.includes(password))).toBe(false)
+    expect(options?.env).toMatchObject({
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false',
+      CSC_LINK: certificate,
+      CSC_KEY_PASSWORD: password,
+      APPLE_ID: 'ci@example.com',
+      APPLE_TEAM_ID: 'TEAMID',
+    })
+  })
+
+  it('reads macOS signing configuration from the environment by default', () => {
+    const directory = temporaryDirectory()
+    const runner = vi.fn<typeof spawnSync>(() => ({
+      status: 0,
+      signal: null,
+      output: [],
+      pid: 1,
+      stdout: '',
+      stderr: '',
+    }))
+    runElectronBuilder({
+      target: 'mac',
+      stageDir: directory,
+      outputDir: path.join(directory, 'dist'),
+      runner,
+      platform: 'darwin',
+      env: {},
+    })
+    const [command, args, options] = runner.mock.calls[0]!
+    expect(command).toBe(process.execPath)
+    expect(args).toContain('--mac')
+    expect(args.some((arg) => String(arg).startsWith('--config.mac.identity='))).toBe(false)
+    expect(options?.env).toMatchObject({ CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
+  })
+
+  it('only builds each installer on its own platform and reports builder failures', () => {
+    expect(() => runElectronBuilder({ target: 'nsis', platform: 'linux' })).toThrow(
+      'NSIS packaging is supported on Windows only (ADR-0035)',
+    )
+    expect(() => runElectronBuilder({ target: 'mac', platform: 'win32' })).toThrow(
+      'macOS packaging must run on macOS (ADR-0041)',
     )
     const runner = vi.fn<typeof spawnSync>(() => ({
       status: 1,
@@ -573,7 +677,7 @@ describe('main', () => {
 
   it('rejects an invocation without a target', async () => {
     await expect(main({ argv: [], desktopRoot: desktopFixture() })).rejects.toThrow(
-      'usage: packaging.mjs --dir|--nsis',
+      'usage: packaging.mjs --dir|--nsis|--mac',
     )
   })
 
@@ -586,6 +690,7 @@ describe('main', () => {
     const code = await main({
       argv: ['--dir'],
       ...paths,
+      platform: 'win32',
       install,
       build,
       verify,
@@ -598,11 +703,13 @@ describe('main', () => {
       desktopRoot: paths.desktopRoot,
       stageDir: paths.stageDir,
       outputDir: paths.outputDir,
+      platform: 'win32',
     })
     expect(verify).toHaveBeenCalledWith({
       desktopRoot: paths.desktopRoot,
       outputDir: paths.outputDir,
       target: 'dir',
+      platform: 'win32',
     })
     expect(log.mock.calls.map(([line]) => line)).toEqual(
       expect.arrayContaining([
@@ -622,6 +729,7 @@ describe('main', () => {
         main({
           argv: ['--dir'],
           ...paths,
+          platform: 'win32',
           install: vi.fn(),
           build: vi.fn(),
           verify: vi.fn(async () => []),
@@ -650,6 +758,7 @@ describe('main', () => {
       main({
         argv: ['--dir'],
         ...paths,
+        platform: 'win32',
         install: vi.fn(),
         build: vi.fn(),
         verify: vi.fn(async () => []),
@@ -666,6 +775,7 @@ describe('main', () => {
     const code = await main({
       argv: ['--nsis'],
       ...paths,
+      platform: 'win32',
       install: vi.fn(),
       build,
       verify: vi.fn(async () => []),
@@ -681,6 +791,7 @@ describe('main', () => {
       main({
         argv: ['--nsis'],
         ...paths,
+        platform: 'win32',
         install: vi.fn(),
         build: vi.fn(),
         verify: vi.fn(async () => []),
@@ -693,6 +804,7 @@ describe('main', () => {
       const code = await main({
         argv: ['--dir'],
         ...paths,
+        platform: 'win32',
         install: vi.fn(),
         build: vi.fn(),
         verify: vi.fn(async () => ['bad package']),
@@ -703,5 +815,78 @@ describe('main', () => {
     } finally {
       error.mockRestore()
     }
+  })
+
+  it('writes checksums for both macOS architectures and verifies the DMG set', async () => {
+    const paths = packagingFixture()
+    rmSync(path.join(paths.desktopRoot, 'out/bin/rg.exe'))
+    write(path.join(paths.desktopRoot, 'out/bin/rg'))
+    const verify = vi.fn(async () => [])
+    const code = await main({
+      argv: ['--mac'],
+      ...paths,
+      platform: 'darwin',
+      install: vi.fn(),
+      build: vi.fn(({ outputDir }) => {
+        for (const arch of ['arm64', 'x64']) {
+          for (const ext of ['dmg', 'zip']) {
+            write(path.join(outputDir, `Cairn-0.1.0-${arch}.${ext}`), `${arch} ${ext}`)
+          }
+        }
+      }),
+      verify,
+      log: vi.fn(),
+    })
+    expect(code).toBe(0)
+    expect(verify).toHaveBeenCalledWith({
+      desktopRoot: paths.desktopRoot,
+      outputDir: paths.outputDir,
+      target: 'mac',
+      platform: 'darwin',
+    })
+    for (const arch of ['arm64', 'x64']) {
+      expect(existsSync(path.join(paths.outputDir, `Cairn-0.1.0-${arch}.dmg.sha256`))).toBe(true)
+      expect(existsSync(path.join(paths.outputDir, `Cairn-0.1.0-${arch}.zip.sha256`))).toBe(true)
+    }
+  })
+
+  it('lists every macOS artifact when the builder produces nothing', async () => {
+    const paths = packagingFixture()
+    rmSync(path.join(paths.desktopRoot, 'out/bin/rg.exe'))
+    write(path.join(paths.desktopRoot, 'out/bin/rg'))
+    const verify = vi.fn(async () => [])
+    await expect(
+      main({
+        argv: ['--mac'],
+        ...paths,
+        platform: 'darwin',
+        install: vi.fn(),
+        build: vi.fn(),
+        verify,
+        log: vi.fn(),
+      }),
+    ).rejects.toThrow(
+      'macOS artifacts were not created: Cairn-0.1.0-arm64.dmg, Cairn-0.1.0-arm64.zip, Cairn-0.1.0-x64.dmg, Cairn-0.1.0-x64.zip',
+    )
+    expect(verify).not.toHaveBeenCalled()
+  })
+
+  it('fails when a macOS artifact is missing', async () => {
+    const paths = packagingFixture()
+    rmSync(path.join(paths.desktopRoot, 'out/bin/rg.exe'))
+    write(path.join(paths.desktopRoot, 'out/bin/rg'))
+    await expect(
+      main({
+        argv: ['--mac'],
+        ...paths,
+        platform: 'darwin',
+        install: vi.fn(),
+        build: vi.fn(({ outputDir }) => {
+          write(path.join(outputDir, 'Cairn-0.1.0-arm64.dmg'), 'dmg')
+        }),
+        verify: vi.fn(async () => []),
+        log: vi.fn(),
+      }),
+    ).rejects.toThrow('macOS artifacts were not created: Cairn-0.1.0-arm64.zip')
   })
 })
