@@ -1,7 +1,8 @@
 name: Release
 
-# M5-08：标签 `v*` 构建、测试、签名、校验并发布；`workflow_dispatch` 用于测试标签 dry-run。
-# 发布门禁（签名、校验和、许可证、i18n、测试）任一失败都会阻止上传。见 docs/dev/release.md。
+# M5-08 / M6-07：标签 `v*` 在三个平台构建、签名、校验并汇总发布；`workflow_dispatch`
+# 用于测试标签 dry-run。发布门禁（版本、签名、校验和、许可证、i18n、测试）任一失败都会
+# 阻止上传。见 docs/dev/release.md 与 ADR-0043。
 on:
   push:
     tags: ['v*']
@@ -41,20 +42,16 @@ env:
   ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
   # 公开配置走 repository variables；证书与上传凭据只走 secrets（docs/dev/release.md）。
   CAIRN_SIGN_MODE: ${{ vars.CAIRN_SIGN_MODE || 'none' }}
+  CAIRN_MAC_SIGN_MODE: ${{ vars.CAIRN_MAC_SIGN_MODE || 'none' }}
   CAIRN_UPDATE_URL: ${{ vars.CAIRN_UPDATE_URL }}
   CAIRN_UPDATE_PUBLISHER: ${{ vars.CAIRN_UPDATE_PUBLISHER }}
   CAIRN_TIMESTAMP_URL: ${{ vars.CAIRN_TIMESTAMP_URL }}
 
 jobs:
-  build:
-    name: Build and verify release
-    runs-on: windows-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      # artifact attestation 需要 OIDC；仓库套餐不支持时该步骤失败但不会阻断发布。
-      id-token: write
-      attestations: write
+  prepare:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       version: ${{ steps.tag.outputs.version }}
@@ -63,6 +60,52 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Validate release tag and channel
+        id: tag
+        shell: bash
+        run: |
+          tag="${{ inputs.tag }}"
+          if [ -z "${tag// }" ]; then tag="${{ github.ref_name }}"; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          arguments=(scripts/check-release-tag.mjs --tag "$tag" --github-output "$GITHUB_OUTPUT")
+          requested="${{ inputs.channel }}"
+          if [ -n "$requested" ] && [ "$requested" != "auto" ]; then
+            arguments+=(--channel "$requested")
+          fi
+          node "${arguments[@]}"
+
+      - name: Check release configuration
+        if: >-
+          ${{
+            (github.event_name == 'workflow_dispatch' && inputs.publish) ||
+            (github.event_name == 'push' && vars.CAIRN_PUBLISH_METHOD != '' && vars.CAIRN_PUBLISH_METHOD != 'none')
+          }}
+        shell: bash
+        run: |
+          if [ -z "$CAIRN_UPDATE_URL" ]; then
+            echo 'CAIRN_UPDATE_URL must be configured before publishing a release' >&2
+            exit 1
+          fi
+          if [ '${{ steps.tag.outputs.channel }}' = 'stable' ] && [ -z "$CAIRN_UPDATE_PUBLISHER" ]; then
+            echo 'CAIRN_UPDATE_PUBLISHER is required for stable releases' >&2
+            exit 1
+          fi
+
+  build-windows:
+    name: Build Windows release
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
@@ -75,39 +118,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Validate release tag and channel
-        id: tag
-        shell: pwsh
-        run: |
-          $tag = "${{ inputs.tag }}".Trim()
-          if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "${{ github.ref_name }}" }
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          $arguments = @('scripts/check-release-tag.mjs', '--tag', $tag, '--github-output', $env:GITHUB_OUTPUT)
-          $requested = "${{ inputs.channel }}"
-          if ($requested -and $requested -ne 'auto') { $arguments += @('--channel', $requested) }
-          node @arguments
-
       - name: Refuse unsigned stable releases
+        if: needs.prepare.outputs.channel == 'stable' && (vars.CAIRN_SIGN_MODE == '' || vars.CAIRN_SIGN_MODE == 'none')
         shell: pwsh
-        run: |
-          if ('${{ steps.tag.outputs.channel }}' -eq 'stable' -and $env:CAIRN_SIGN_MODE -eq 'none') {
-            throw 'unsigned builds cannot enter the stable channel (ADR-0036)'
-          }
-
-      - name: Check release configuration
-        if: >-
-          ${{
-            (github.event_name == 'workflow_dispatch' && inputs.publish) ||
-            (github.event_name == 'push' && vars.CAIRN_PUBLISH_METHOD != '' && vars.CAIRN_PUBLISH_METHOD != 'none')
-          }}
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:CAIRN_UPDATE_URL)) {
-            throw 'CAIRN_UPDATE_URL must be configured before publishing a release'
-          }
-          if ('${{ steps.tag.outputs.channel }}' -eq 'stable' -and [string]::IsNullOrWhiteSpace($env:CAIRN_UPDATE_PUBLISHER)) {
-            throw 'CAIRN_UPDATE_PUBLISHER is required for stable releases'
-          }
+        run: throw 'unsigned Windows builds cannot enter the stable channel (ADR-0036)'
 
       - name: Check app version (single source)
         run: pnpm check:version
@@ -133,7 +147,7 @@ jobs:
       - name: Build desktop app with release metadata
         run: pnpm build
         env:
-          CAIRN_CHANNEL: ${{ steps.tag.outputs.channel }}
+          CAIRN_CHANNEL: ${{ needs.prepare.outputs.channel }}
 
       - name: Cache MinGit archive
         uses: actions/cache@v4
@@ -145,6 +159,8 @@ jobs:
         run: pnpm fetch:mingit
 
       - name: Build signed NSIS installer
+        id: package
+        continue-on-error: ${{ needs.prepare.outputs.channel == 'beta' }}
         run: pnpm package:nsis
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
@@ -156,12 +172,19 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
+      # 签名失败时 beta 明确降级为 unsigned，并在发布说明里标注；stable 不允许降级。
+      - name: Retry unsigned beta build
+        if: steps.package.outcome == 'failure' && needs.prepare.outputs.channel == 'beta'
+        run: pnpm package:nsis
+        env:
+          CAIRN_SIGN_MODE: none
+
       - name: Verify installer
         run: pnpm package:verify -- --nsis
 
       - name: Verify Authenticode signatures
-        if: env.CAIRN_SIGN_MODE != 'none'
-        run: pnpm sign:verify -- --dist apps/desktop/dist --version ${{ steps.tag.outputs.version }}
+        if: steps.package.outcome == 'success' && vars.CAIRN_SIGN_MODE != '' && vars.CAIRN_SIGN_MODE != 'none'
+        run: pnpm sign:verify -- --dist apps/desktop/dist --version ${{ needs.prepare.outputs.version }}
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
@@ -172,7 +195,7 @@ jobs:
       - name: Smoke test installed application
         run: pnpm smoke:installed
         env:
-          CAIRN_VERIFY_SIGNATURES: ${{ env.CAIRN_SIGN_MODE != 'none' && '1' || '0' }}
+          CAIRN_VERIFY_SIGNATURES: ${{ steps.package.outcome == 'success' && vars.CAIRN_SIGN_MODE != '' && vars.CAIRN_SIGN_MODE != 'none' && '1' || '0' }}
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
@@ -180,8 +203,13 @@ jobs:
           AZURE_SIGN_PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
 
       - name: Assemble release artifacts
-        run: pnpm release:artifacts -- --channel ${{ steps.tag.outputs.channel }} --dist apps/desktop/dist --out apps/desktop/dist/release --version ${{ steps.tag.outputs.version }}
+        run: >-
+          pnpm release:artifacts -- --platform windows
+          --channel ${{ needs.prepare.outputs.channel }}
+          --dist apps/desktop/dist --out apps/desktop/dist/release
+          --version ${{ needs.prepare.outputs.version }}
         env:
+          CAIRN_SIGN_MODE: ${{ steps.package.outcome == 'failure' && 'none' || vars.CAIRN_SIGN_MODE || 'none' }}
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
@@ -191,15 +219,248 @@ jobs:
       - name: Upload release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: cairn-release-${{ steps.tag.outputs.version }}
-          path: |
-            apps/desktop/dist/release/
+          name: cairn-release-${{ needs.prepare.outputs.version }}-windows
+          path: apps/desktop/dist/release/
           if-no-files-found: error
           retention-days: 90
 
+      - name: Upload failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-report-windows
+          path: |
+            apps/desktop/playwright-report-packaged/
+            apps/desktop/test-results-packaged/
+            apps/desktop/dist/*.yml
+          retention-days: 14
+
+  build-macos:
+    name: Build macOS release
+    needs: prepare
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Refuse unsigned stable releases
+        if: needs.prepare.outputs.channel == 'stable' && vars.CAIRN_MAC_SIGN_MODE != 'developer-id'
+        run: |
+          echo 'unsigned macOS builds cannot enter the stable channel (ADR-0041)' >&2
+          exit 1
+
+      - name: Check app version (single source)
+        run: pnpm check:version
+
+      - name: Check i18n keys (ADR-0013)
+        run: pnpm check:i18n
+
+      - name: Check dependency licenses (ADR-0014)
+        run: pnpm check:licenses
+
+      - name: Build desktop app with release metadata
+        run: pnpm build
+        env:
+          CAIRN_CHANNEL: ${{ needs.prepare.outputs.channel }}
+
+      - name: Build signed DMG and ZIP
+        id: package
+        continue-on-error: ${{ needs.prepare.outputs.channel == 'beta' }}
+        run: pnpm package:mac
+        env:
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          CAIRN_MAC_IDENTITY: ${{ vars.CAIRN_MAC_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Retry unsigned beta build
+        if: steps.package.outcome == 'failure' && needs.prepare.outputs.channel == 'beta'
+        run: pnpm package:mac
+        env:
+          CAIRN_MAC_SIGN_MODE: none
+
+      - name: Verify DMG and ZIP
+        run: pnpm package:verify -- --mac
+
+      - name: Verify Developer ID signature and notarization
+        if: steps.package.outcome == 'success' && vars.CAIRN_MAC_SIGN_MODE == 'developer-id'
+        run: pnpm sign:verify:mac -- --dist apps/desktop/dist --version ${{ needs.prepare.outputs.version }}
+        env:
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          CAIRN_MAC_IDENTITY: ${{ vars.CAIRN_MAC_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Smoke test packaged application
+        run: pnpm smoke:packaged
+
+      - name: Assemble release artifacts
+        run: >-
+          pnpm release:artifacts -- --platform mac
+          --channel ${{ needs.prepare.outputs.channel }}
+          --dist apps/desktop/dist --out apps/desktop/dist/release
+          --version ${{ needs.prepare.outputs.version }}
+        env:
+          CAIRN_MAC_SIGN_MODE: ${{ steps.package.outcome == 'failure' && 'none' || vars.CAIRN_MAC_SIGN_MODE || 'none' }}
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          CAIRN_MAC_IDENTITY: ${{ vars.CAIRN_MAC_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairn-release-${{ needs.prepare.outputs.version }}-mac
+          path: apps/desktop/dist/release/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-report-mac
+          path: |
+            apps/desktop/dist/*.yml
+            apps/desktop/dist/*.yaml
+          retention-days: 14
+
+  build-linux:
+    name: Build Linux release
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check app version (single source)
+        run: pnpm check:version
+
+      - name: Check i18n keys (ADR-0013)
+        run: pnpm check:i18n
+
+      - name: Check dependency licenses (ADR-0014)
+        run: pnpm check:licenses
+
+      - name: Build desktop app with release metadata
+        run: pnpm build
+        env:
+          CAIRN_CHANNEL: ${{ needs.prepare.outputs.channel }}
+
+      # Linux 没有统一代码签名；stable 允许 unsigned，完整性由 SHA-256 与 HTTPS 更新源保证
+      #（ADR-0042）。这里不设置签名降级步骤，也不声称“已签名”。
+      - name: Build AppImage and deb
+        run: pnpm package:linux
+
+      - name: Verify AppImage and deb
+        run: pnpm package:verify -- --linux
+
+      - name: Smoke test packaged application
+        run: xvfb-run -a pnpm smoke:packaged
+
+      - name: Assemble release artifacts
+        run: >-
+          pnpm release:artifacts -- --platform linux
+          --channel ${{ needs.prepare.outputs.channel }}
+          --dist apps/desktop/dist --out apps/desktop/dist/release
+          --version ${{ needs.prepare.outputs.version }}
+        env:
+          CAIRN_SIGN_MODE: none
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairn-release-${{ needs.prepare.outputs.version }}-linux
+          path: apps/desktop/dist/release/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload failure report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-report-linux
+          path: |
+            apps/desktop/dist/*.yml
+            apps/desktop/dist/*.yaml
+          retention-days: 14
+
+  assemble:
+    name: Assemble release bundle
+    needs: [prepare, build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # artifact attestation 需要 OIDC；仓库套餐不支持时该步骤失败但不会阻断发布。
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download platform bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cairn-release-${{ needs.prepare.outputs.version }}-*
+          path: release
+
+      - name: Merge platform bundles
+        run: node scripts/merge-release.mjs --root release --out release/merged
+
       - name: Publish dry run
         if: github.event_name == 'workflow_dispatch' && !inputs.publish
-        run: pnpm release:publish -- --dry-run --tag ${{ steps.tag.outputs.tag }} --dir apps/desktop/dist/release --channel ${{ steps.tag.outputs.channel }}
+        run: >-
+          node scripts/publish-release.mjs --dry-run
+          --tag ${{ needs.prepare.outputs.tag }}
+          --dir release/merged
+          --channel ${{ needs.prepare.outputs.channel }}
+
+      - name: Upload merged release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairn-release-${{ needs.prepare.outputs.version }}
+          path: release/merged/
+          if-no-files-found: error
+          retention-days: 90
 
       # 公开仓库/企业套餐支持时生成可验证的来源证明；否则 provenance.json、提交 SHA
       # 与保留 90 天的构建日志仍构成可追溯证据（docs/dev/release.md）。
@@ -208,69 +469,68 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            apps/desktop/dist/Cairn-*-x64-setup.exe
-            apps/desktop/dist/release/*
-
-      - name: Upload failure report
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-report
-          path: |
-            apps/desktop/playwright-report-packaged/
-            apps/desktop/test-results-packaged/
-            apps/desktop/dist/*.yml
-          retention-days: 14
+            release/merged/*
 
   publish:
     name: Publish release
-    needs: build
+    needs: [prepare, assemble]
     if: >-
       ${{
         (github.event_name == 'workflow_dispatch' && inputs.publish) ||
         (github.event_name == 'push' && vars.CAIRN_PUBLISH_METHOD != '' && vars.CAIRN_PUBLISH_METHOD != 'none')
       }}
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write
       actions: read
     env:
-      CAIRN_SIGN_MODE: ${{ vars.CAIRN_SIGN_MODE || 'none' }}
       CAIRN_PUBLISH_METHOD: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_method || vars.CAIRN_PUBLISH_METHOD }}
       CAIRN_UPLOAD_REMOTE: ${{ secrets.CAIRN_UPLOAD_REMOTE }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.build.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
 
-      - name: Download release bundle
+      - name: Download merged release bundle
         uses: actions/download-artifact@v4
         with:
-          name: cairn-release-${{ needs.build.outputs.version }}
+          name: cairn-release-${{ needs.prepare.outputs.version }}
           path: release
 
       - name: Publish to GitHub Releases
         if: env.CAIRN_PUBLISH_METHOD == 'github'
-        run: node scripts/publish-release.mjs --tag ${{ needs.build.outputs.tag }} --dir release --channel ${{ needs.build.outputs.channel }} --method github --repo ${{ github.repository }}
+        run: >-
+          node scripts/publish-release.mjs
+          --tag ${{ needs.prepare.outputs.tag }}
+          --dir release
+          --channel ${{ needs.prepare.outputs.channel }}
+          --method github
+          --repo ${{ github.repository }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to the static update source
         if: env.CAIRN_PUBLISH_METHOD == 'rclone'
-        shell: pwsh
+        shell: bash
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:CAIRN_UPDATE_URL)) {
-            throw 'CAIRN_UPDATE_URL is required to verify the public update source'
-          }
-          node scripts/publish-release.mjs --tag ${{ needs.build.outputs.tag }} --dir release --channel ${{ needs.build.outputs.channel }} --method rclone --verify-base-url $env:CAIRN_UPDATE_URL
+          if [ -z "$CAIRN_UPDATE_URL" ]; then
+            echo 'CAIRN_UPDATE_URL is required to verify the public update source' >&2
+            exit 1
+          fi
+          node scripts/publish-release.mjs \
+            --tag "${{ needs.prepare.outputs.tag }}" \
+            --dir release \
+            --channel "${{ needs.prepare.outputs.channel }}" \
+            --method rclone \
+            --verify-base-url "$CAIRN_UPDATE_URL"
 
       - name: Reject unknown publish method
         if: env.CAIRN_PUBLISH_METHOD != 'github' && env.CAIRN_PUBLISH_METHOD != 'rclone'
         run: |
-          Write-Error "unsupported CAIRN_PUBLISH_METHOD: $env:CAIRN_PUBLISH_METHOD"
+          echo "unsupported CAIRN_PUBLISH_METHOD: $CAIRN_PUBLISH_METHOD" >&2
           exit 1

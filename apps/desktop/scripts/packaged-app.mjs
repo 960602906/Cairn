@@ -132,13 +132,20 @@ export function temporaryUserData() {
  * @param {{
  *   outputDir?: string;
  *   platform?: NodeJS.Platform;
+ *   arch?: NodeJS.Architecture;
  *   lookup?: typeof findUnpackedApp;
  * }} [options]
  * @returns {{ directory: string; executable: string }}
  */
-export function packagedApp({ outputDir, platform, lookup = findUnpackedApp } = {}) {
+export function packagedApp({
+  outputDir,
+  platform,
+  arch = process.arch,
+  lookup = findUnpackedApp,
+} = {}) {
   return lookup({
     ...(platform === undefined ? {} : { platform }),
+    arch,
     outputDir: outputDir ?? DEFAULT_OUTPUT_DIR,
   })
 }

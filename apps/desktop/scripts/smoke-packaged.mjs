@@ -44,13 +44,16 @@ export async function smokePackaged({
   const app = locateApp(outputDir === undefined ? {} : { outputDir })
   /** @type {string[]} */
   const gitProblems = []
-  try {
-    const git = verifyGit(path.join(app.directory, 'resources/git'))
-    log(`bundled git: ${git.version}`)
-  } catch (error) {
-    gitProblems.push(
-      `bundled MinGit failed: ${error instanceof Error ? error.message : String(error)}`,
-    )
+  // MinGit 只在 Windows 随包分发；macOS/Linux 使用系统 Git（ADR-0008）。
+  if (platform === 'win32') {
+    try {
+      const git = verifyGit(path.join(app.directory, 'resources/git'))
+      log(`bundled git: ${git.version}`)
+    } catch (error) {
+      gitProblems.push(
+        `bundled MinGit failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   }
   const userData = createUserData()
   try {

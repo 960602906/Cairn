@@ -427,17 +427,39 @@ describe('pruneStagedDependencies', () => {
       pruneStagedDependencies({ stageDir: directory, platform: 'win32', arch: 'x64' }),
     ).toEqual({
       removed: ['darwin-arm64.node', 'linux-x64.node', 'better-sqlite3/deps'],
-      kept: 'win32-x64.node',
+      kept: ['win32-x64.node'],
     })
     expect(readdirSync(prebuilds).sort()).toEqual(['nested', 'win32-x64.node'])
     expect(existsSync(path.join(directory, 'node_modules/better-sqlite3/deps'))).toBe(false)
   })
 
+  it('keeps both macOS prebuilds for a dual-architecture build', () => {
+    const directory = temporaryDirectory()
+    const prebuilds = path.join(directory, 'node_modules/better-sqlite3/prebuilds')
+    for (const name of [
+      'darwin-arm64.node',
+      'darwin-x64.node',
+      'linux-x64.node',
+      'win32-x64.node',
+    ]) {
+      write(path.join(prebuilds, name))
+    }
+    expect(
+      pruneStagedDependencies({ stageDir: directory, platform: 'darwin', arch: 'arm64' }),
+    ).toEqual({
+      removed: ['linux-x64.node', 'win32-x64.node'],
+      kept: ['darwin-arm64.node', 'darwin-x64.node'],
+    })
+    expect(readdirSync(prebuilds).sort()).toEqual(['darwin-arm64.node', 'darwin-x64.node'])
+  })
+
   it('is a no-op when optional native directories do not exist', () => {
     const directory = temporaryDirectory()
-    expect(pruneStagedDependencies({ stageDir: directory })).toEqual({
+    expect(
+      pruneStagedDependencies({ stageDir: directory, platform: 'linux', arch: 'x64' }),
+    ).toEqual({
       removed: [],
-      kept: `${process.platform}-${process.arch}.node`,
+      kept: ['linux-x64.node'],
     })
   })
 })

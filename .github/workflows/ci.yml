@@ -19,8 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows 是首发平台，必须通过（架构 §18）。
-        os: [windows-latest, ubuntu-latest]
+        # 三个平台都必须通过（架构 §18、§26）；Windows 仍是首发平台。
+        os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
@@ -78,14 +78,16 @@ jobs:
       - name: Smoke test desktop app
         run: pnpm smoke
 
-      # Playwright 启动构建产物（M0-16）。Linux 无头模式下窗口只有 1×1，用 Xvfb 提供显示器
+      # Playwright 启动构建产物（M0-16）。Linux 无头模式下窗口只有 1×1，用 Xvfb 提供显示器。
+      # macOS 的 e2e 由打包冒烟 + 手工矩阵覆盖（M6 计划 §2.1），不在 PR 上跑 Playwright。
       - name: E2E test desktop app
+        if: matrix.os != 'macos-latest'
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a pnpm e2e; else pnpm e2e; fi
 
-      # Windows 是首发平台：解包产物必须可验证、可启动，并通过真实打包程序的 e2e（M5-02）。
-      # NSIS 安装包只在 release workflow 构建，普通 PR 不下载/执行安装器。
+      # 三个平台都要校验解包产物可启动（M6-07）：Windows 另外跑真实打包程序的 e2e（M5-02）。
+      # NSIS/DMG/AppImage 安装包只在 release workflow 构建，普通 PR 不下载/执行安装器。
       - name: Cache MinGit archive
         if: matrix.os == 'windows-latest'
         uses: actions/cache@v4
@@ -98,17 +100,30 @@ jobs:
         run: pnpm fetch:mingit
 
       - name: Package desktop app
-        if: matrix.os == 'windows-latest'
         run: pnpm package:dir
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
       - name: Verify packaged application
-        if: matrix.os == 'windows-latest'
         run: pnpm package:verify
 
+      # safeStorage 在 macOS 上把主密钥存进钥匙串，条目只信任创建它的那个二进制。
+      # 前面的 `pnpm smoke` 用未打包的 Electron 创建了该条目，打包后的签名身份不同，
+      # 读取时会要求用户授权——runner 没有可交互的桌面，读取以 errSecAuthFailed 失败。
+      # 冒烟只把空的自建钥匙串放进搜索列表：打包应用成为条目创建者，校验的是真实的
+      # safeStorage，而不是绕过它。
+      - name: Use an isolated keychain for the packaged smoke test
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          keychain="$RUNNER_TEMP/cairn-smoke.keychain"
+          security create-keychain -p cairn-smoke "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p cairn-smoke "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -s "$keychain"
+
       - name: Smoke test packaged application
-        if: matrix.os == 'windows-latest'
         run: pnpm smoke:packaged
 
       # 用默认的 pwsh 启动：runner 是提权的管理员，正好覆盖沙箱令牌默认 DACL 的处理（见 ADR-0034）。
@@ -127,6 +142,27 @@ jobs:
             apps/desktop/playwright-report-packaged/
             apps/desktop/test-results-packaged/
           retention-days: 14
+
+  dco:
+    name: dco
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # DCO 需要完整的提交范围；浅克隆会让 base..head 为空而假通过。
+          fetch-depth: 0
+
+      # setup-node 会按 packageManager 字段查找 pnpm；先安装它，否则 job 在 setup-node 就失败。
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check DCO sign-off (ADR-0039)
+        run: node scripts/check-dco.mjs --base "${{ github.event.pull_request.base.sha }}"
 
   licenses:
     name: licenses

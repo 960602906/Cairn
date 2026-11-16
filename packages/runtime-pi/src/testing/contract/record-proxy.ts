@@ -12,6 +12,13 @@ const HOP_HEADERS = new Set(['host', 'connection', 'content-length', 'accept-enc
 export interface RecordingProxy {
   readonly baseUrl: string
   readonly interactions: Interaction[]
+  /**
+   * 等所有已到达的请求的上游响应转发（并记录）完成。
+   *
+   * 客户端中途 abort（`openai-abort` 场景）时，客户端先结束，代理还在读上游的剩余响应；
+   * 直接读取 `interactions` 会拿到写到一半的分块，且写到哪里取决于事件循环时序（不同平台不同）。
+   */
+  drained(): Promise<void>
   close(): Promise<void>
 }
 
@@ -20,11 +27,18 @@ export interface RecordingProxy {
  */
 export async function startRecordingProxy(upstream: string): Promise<RecordingProxy> {
   const interactions: Interaction[] = []
+  const inFlight = new Set<Promise<void>>()
   const server = createServer((req, res) => {
     let raw = ''
     req.setEncoding('utf8')
     req.on('data', (chunk: string) => (raw += chunk))
-    req.on('end', async () => {
+    req.on('end', () => {
+      const task = handle()
+      inFlight.add(task)
+      void task.finally(() => inFlight.delete(task))
+    })
+
+    async function handle(): Promise<void> {
       const request = recordRequest(req, raw)
       const headers: Record<string, string> = { 'accept-encoding': 'identity' }
       for (const [name, value] of Object.entries(req.headers)) {
@@ -64,13 +78,17 @@ export async function startRecordingProxy(upstream: string): Promise<RecordingPr
         if (!res.headersSent) res.writeHead(502, response.headers)
         res.end(response.chunks[0])
       }
-    })
+    }
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const { port } = server.address() as AddressInfo
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     interactions,
+    drained: async () => {
+      // 等待期间可能还有请求到达（`inFlight` 清空后再检查一次）
+      while (inFlight.size > 0) await Promise.allSettled([...inFlight])
+    },
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections()
