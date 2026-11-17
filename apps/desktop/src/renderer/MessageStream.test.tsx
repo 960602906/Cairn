@@ -9,7 +9,7 @@ import { I18nextProvider } from 'react-i18next'
 import { createStore } from 'zustand/vanilla'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
-import { codePath, inlineCodeCandidates, Markdown } from './Markdown.js'
+import { codeBlockOf, codePath, inlineCodeCandidates, Markdown } from './Markdown.js'
 import { MessageStream, turnFooters } from './MessageStream.js'
 
 afterEach(cleanup)
@@ -140,6 +140,42 @@ describe('Markdown（M2-03）', () => {
     render(<Markdown text={'`src/a.ts`'} resolvePaths={resolvePaths} />)
     expect(screen.getByText('src/a.ts').tagName).toBe('CODE')
     expect(resolvePaths).not.toHaveBeenCalled()
+  })
+
+  it('解析代码块的语言与重点行，非 pre>code 结构返回 undefined', () => {
+    const pre = (child: unknown) =>
+      ({ type: 'element', tagName: 'pre', properties: {}, children: [child] }) as never
+    expect(codeBlockOf(undefined)).toBeUndefined()
+    expect(
+      codeBlockOf(pre({ type: 'element', tagName: 'div', properties: {}, children: [] })),
+    ).toBeUndefined()
+
+    const block = codeBlockOf(
+      pre({
+        type: 'element',
+        tagName: 'code',
+        properties: { className: ['language-ts'] },
+        data: { meta: '{1-3}' },
+        children: [{ type: 'text', value: 'const a = 1\n' }],
+      }),
+    )
+    expect(block).toEqual({
+      lang: 'ts',
+      highlightLines: new Set([1, 2, 3]),
+      text: 'const a = 1',
+    })
+
+    // className 不是数组、meta 缺失时没有语言与重点行
+    const plain = codeBlockOf(
+      pre({
+        type: 'element',
+        tagName: 'code',
+        properties: { className: 'language-js' },
+        children: [{ type: 'text', value: 'x' }],
+      }),
+    )
+    expect(plain?.lang).toBeUndefined()
+    expect(plain?.highlightLines.size).toBe(0)
   })
 
   it('不渲染原始 HTML，去掉 javascript: 链接', () => {
@@ -1305,5 +1341,593 @@ describe('MessageStream 试运行（M4-12）', () => {
     // 点击再次收起
     await userEvent.click(activityButton)
     expect(activityButton.getAttribute('aria-expanded')).toBe('false')
+  })
+})
+
+describe('MessageStream 多步骤归组的细节', () => {
+  const renderStream = (
+    stream: SessionView,
+    awaiting: string[] = [],
+    onOpenChanges?: () => void,
+    agents: unknown[] = [],
+  ) => {
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: 's1',
+      awaitingTurn: {},
+      approvals: awaiting.length > 0 ? { s1: awaiting.map((toolCallId) => ({ toolCallId })) } : {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      inspectRun: vi.fn(),
+      settings: { providers: [] },
+      agents,
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    return render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={stream} onOpenChanges={onOpenChanges} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+  }
+
+  const base = {
+    sessionId: 's1',
+    lastSeq: 20,
+    info: undefined,
+    archived: false,
+    crash: undefined,
+    runs: {
+      r1: {
+        runId: 'r1',
+        parentRunId: undefined,
+        agent: { id: 'builtin.coder', version: 1 },
+        turn: { turnId: 't1', status: 'completed' },
+      },
+      r2: { runId: 'r2', parentRunId: undefined, agent: { id: 'other.agent', version: 1 } },
+    },
+    runOrder: ['r1', 'r2'],
+    messages: [
+      {
+        messageId: 'u1',
+        role: 'user',
+        runId: 'r1',
+        turnId: 't1',
+        seq: 2,
+        ts: 1,
+        content: text('开始'),
+      },
+      {
+        messageId: 'a1',
+        role: 'assistant',
+        runId: 'r1',
+        turnId: 't1',
+        seq: 3,
+        ts: 2,
+        content: [],
+        reasoning: { type: 'text', text: '想一想' },
+        toolCalls: [{ id: 'tc1', name: 'read_file', input: { path: 'a.ts' } }],
+        model,
+        incomplete: false,
+      },
+      {
+        messageId: 'a2',
+        role: 'assistant',
+        runId: 'r1',
+        turnId: 't1',
+        seq: 4,
+        ts: 3,
+        content: text('补充说明'),
+        reasoning: { type: 'text', text: '' },
+        toolCalls: [{ id: 'tc2', name: 'run_command', input: { command: 'pnpm test' } }],
+        model,
+        incomplete: false,
+      },
+      {
+        messageId: 'a3',
+        role: 'assistant',
+        runId: 'r1',
+        turnId: 't1',
+        seq: 5,
+        ts: 4,
+        content: [],
+        reasoning: undefined,
+        toolCalls: [{ id: 'tc3', name: 'list_dir', input: { path: 'src' } }],
+        model,
+        incomplete: true,
+      },
+    ],
+    live: {},
+    tools: {
+      tc1: { toolCallId: 'tc1', status: 'completed', durationMs: 10 },
+      tc2: { toolCallId: 'tc2', status: 'completed', durationMs: 20 },
+      tc3: { toolCallId: 'tc3', status: 'completed', durationMs: 30 },
+    },
+    liveToolOutput: {},
+    usage: { inputTokens: 0, outputTokens: 0 },
+    usageByTurn: {},
+    contextTokens: undefined,
+    checkpoints: [],
+    restores: [],
+    compaction: undefined,
+    toolOutputOmitted: undefined,
+    plans: [],
+    delegations: [],
+  } as unknown as SessionView
+
+  it('展开归组卡片时显示步骤正文与工具，并带出计划、委派、恢复和轮次操作', async () => {
+    const stream = {
+      ...base,
+      checkpoints: [
+        {
+          checkpointId: 'c1',
+          reason: 'turn_start',
+          seq: 1,
+          runId: 'r1',
+          turnId: 't1',
+          createdAt: 1,
+        },
+      ],
+      restores: [{ checkpointId: 'c1', seq: 6, ts: 6 }],
+      compaction: { summary: '压缩摘要', seq: 3 },
+      toolOutputOmitted: { seq: 3 },
+      plans: [
+        {
+          planId: 'pl1',
+          turnId: 't1',
+          status: 'approved',
+          seq: 6,
+          runId: 'r1',
+          content: {
+            goal: '归组验证',
+            files: [],
+            steps: [],
+            risks: '',
+            verification: '',
+            markdown: '',
+          },
+          steps: [],
+        },
+      ],
+      delegations: [
+        {
+          childRunId: 'child1',
+          parentRunId: 'r1',
+          agent: { id: 'a', version: 1 },
+          task: '补测试',
+          workspace: 'isolated',
+          workspacePath: '/w',
+          budget: undefined,
+          turnId: 't1',
+          createdAt: 1,
+          completed: undefined,
+        },
+      ],
+    } as unknown as SessionView
+    renderStream(stream, [], vi.fn())
+
+    expect(screen.getByText('较早的对话已压缩')).toBeTruthy()
+    expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeTruthy()
+    expect(screen.getByText('编程助手')).toBeTruthy()
+
+    const activity = screen.getByRole('button', { name: '已执行 3 个步骤' })
+    expect(activity.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(activity)
+    expect(activity.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('想一想')).toBeTruthy()
+    expect(screen.getByText('补充说明')).toBeTruthy()
+    expect(screen.getByText('a.ts')).toBeTruthy()
+    expect(screen.getByText('pnpm test')).toBeTruthy()
+    expect(screen.getByText('（回复未完成）')).toBeTruthy()
+    expect(screen.getByText('计划')).toBeTruthy()
+    expect(screen.getByText('补测试')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '撤销本轮' })).toBeTruthy()
+  })
+
+  it('运行中的归组默认展开，手动收起后状态变化不再自动展开', async () => {
+    const live = {
+      ...base,
+      live: {
+        l1: {
+          messageId: 'l1',
+          runId: 'r1',
+          turnId: 't1',
+          text: '',
+          reasoning: '',
+          lastDeltaSeq: 5,
+          startedAt: 3,
+        },
+      },
+    } as unknown as SessionView
+    const rendered = renderStream(live)
+    const running = screen.getByRole('button', { name: '正在执行 3 个步骤' })
+    expect(running.getAttribute('aria-expanded')).toBe('true')
+
+    await userEvent.click(running)
+    expect(running.getAttribute('aria-expanded')).toBe('false')
+
+    // 本轮结束后标题变成已完成，但用户手动收起后不会被自动展开
+    rendered.rerender(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider
+          store={
+            createStore<Record<string, unknown>>(() => ({
+              activeSessionId: 's1',
+              awaitingTurn: {},
+              approvals: {},
+              changes: {},
+              changeSets: {},
+              inspections: {},
+              inspectRun: vi.fn(),
+              settings: { providers: [] },
+              agents: [],
+              sendPrompt: vi.fn(),
+            })) as unknown as SessionStore
+          }
+        >
+          <MessageStream view={base} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    const done = screen.getByRole('button', { name: '已执行 3 个步骤' })
+    expect(done.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(done)
+    expect(done.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('等待审批的归组以需要留意的状态默认展开', () => {
+    renderStream(base, ['tc2'])
+    const activity = screen.getByRole('button', { name: '3 个步骤 · 需要留意' })
+    expect(activity.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('从第一条消息开始的归组与单独的思考步骤', () => {
+    const started = {
+      ...base,
+      messages: [
+        {
+          messageId: 'a1',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 3,
+          ts: 2,
+          content: [],
+          reasoning: { type: 'text', text: '' },
+          toolCalls: [],
+          model,
+          incomplete: false,
+        },
+        {
+          messageId: 'a2',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 4,
+          ts: 3,
+          content: [],
+          reasoning: { type: 'text', text: '第二步' },
+          toolCalls: [{ id: 'tc1', name: 'read_file', input: { path: 'a.ts' } }],
+          model,
+          incomplete: false,
+        },
+      ],
+    } as unknown as SessionView
+    renderStream(started)
+    expect(screen.getByRole('button', { name: '已执行 1 个步骤' })).toBeTruthy()
+    cleanup()
+
+    const single = {
+      ...base,
+      messages: [
+        {
+          messageId: 'u1',
+          role: 'user',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 2,
+          ts: 1,
+          content: text('开始'),
+        },
+        {
+          messageId: 'a1',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 3,
+          ts: 2,
+          content: [],
+          reasoning: { type: 'text', text: '只想一下' },
+          toolCalls: [],
+          model,
+          incomplete: false,
+        },
+      ],
+    } as unknown as SessionView
+    renderStream(single)
+    expect(screen.queryByRole('button', { name: /个步骤/ })).toBeNull()
+    expect(screen.getByText('只想一下')).toBeTruthy()
+  })
+
+  it('复制本轮回复后显示已复制，剪贴板失败时保持原样', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const stream = view([
+      ...START,
+      ev(5, 'message.assistant.completed', { messageId: 'a1', content: text('结果'), model }),
+      ev(6, 'turn.completed', { durationMs: 10 }),
+    ])
+    const rendered = renderStream(stream)
+    await userEvent.click(screen.getByRole('button', { name: '复制本轮回复' }))
+    expect(writeText).toHaveBeenCalledWith('结果')
+    expect(screen.getByRole('button', { name: '已复制' })).toBeTruthy()
+    rendered.unmount()
+
+    const failing = vi.fn().mockRejectedValue(new Error('no clipboard'))
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: failing },
+    })
+    renderStream(stream)
+    await userEvent.click(screen.getByRole('button', { name: '复制本轮回复' }))
+    expect(screen.getByRole('button', { name: '复制本轮回复' })).toBeTruthy()
+  })
+
+  it('本轮仍在运行时归组标题显示正在执行', () => {
+    const stream = {
+      ...base,
+      runOrder: ['r1'],
+      runs: {
+        ...base.runs,
+        r1: { ...base.runs.r1, turn: { turnId: 't1', status: 'running' } },
+      },
+    } as unknown as SessionView
+    renderStream(stream)
+    expect(
+      screen.getByRole('button', { name: '正在执行 3 个步骤' }).getAttribute('aria-expanded'),
+    ).toBe('true')
+  })
+
+  it('宿主退出导致的中断使用中断文案', () => {
+    renderStream(view([...START, ev(5, 'turn.aborted', { reason: 'shutdown' })]))
+    expect(screen.getByText('本轮已中断，可以继续对话。')).toBeTruthy()
+  })
+
+  it('只有实时消息且还没有内容时显示思考中占位', () => {
+    const stream = {
+      ...base,
+      messages: [base.messages[0]],
+      live: {
+        l1: {
+          messageId: 'l1',
+          runId: 'r1',
+          turnId: 't1',
+          text: '',
+          reasoning: '',
+          lastDeltaSeq: 1,
+          startedAt: 1,
+        },
+      },
+    } as unknown as SessionView
+    renderStream(stream)
+    expect(screen.getAllByText('思考中').length).toBeGreaterThan(0)
+  })
+
+  it('归组会收集没有工具但有后续工具的思考步骤，并在不连续处停止', () => {
+    const stream = {
+      ...base,
+      runOrder: ['r1'],
+      messages: [
+        {
+          messageId: 'a1',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 3,
+          ts: 2,
+          content: [],
+          reasoning: undefined,
+          toolCalls: [{ id: 'tc1', name: 'read_file', input: { path: 'a.ts' } }],
+          model,
+          incomplete: false,
+        },
+        {
+          messageId: 'a2',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 4,
+          ts: 3,
+          content: [],
+          reasoning: undefined,
+          toolCalls: [],
+          model,
+          incomplete: false,
+        },
+        {
+          messageId: 'a3',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 5,
+          ts: 4,
+          content: [],
+          reasoning: { type: 'text', text: '' },
+          toolCalls: [],
+          model,
+          incomplete: false,
+        },
+        {
+          messageId: 'a4',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 6,
+          ts: 5,
+          content: [],
+          reasoning: undefined,
+          toolCalls: [{ id: 'tc2', name: 'list_dir', input: { path: 'src' } }],
+          model,
+          incomplete: false,
+        },
+        {
+          messageId: 'a5',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 7,
+          ts: 6,
+          content: [],
+          reasoning: undefined,
+          toolCalls: [],
+          model,
+          incomplete: false,
+        },
+      ],
+    } as unknown as SessionView
+    renderStream(stream, [], vi.fn())
+    expect(screen.getByRole('button', { name: '已执行 2 个步骤' })).toBeTruthy()
+  })
+
+  it('失败但没有错误详情时使用未知错误说明', () => {
+    const stream = {
+      ...base,
+      runOrder: ['r1'],
+      runs: {
+        ...base.runs,
+        r1: {
+          ...base.runs.r1,
+          turn: { turnId: 't1', status: 'failed', error: undefined },
+        },
+      },
+      messages: [base.messages[0]],
+    } as unknown as SessionView
+    renderStream(stream)
+    expect(screen.getByText(/^本轮失败：/)).toBeTruthy()
+  })
+
+  it('新出现的归组播放入场动画', () => {
+    const tree = (stream: SessionView) => (
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider
+          store={
+            createStore<Record<string, unknown>>(() => ({
+              activeSessionId: 's1',
+              awaitingTurn: {},
+              approvals: {},
+              changes: {},
+              changeSets: {},
+              inspections: {},
+              inspectRun: vi.fn(),
+              settings: { providers: [] },
+              agents: [],
+              sendPrompt: vi.fn(),
+            })) as unknown as SessionStore
+          }
+        >
+          <MessageStream view={stream} />
+        </SessionStoreProvider>
+      </I18nextProvider>
+    )
+    const initial = { ...base, messages: [base.messages[0]] } as unknown as SessionView
+    const rendered = render(tree(initial))
+    rendered.rerender(tree(base))
+    expect(screen.getByRole('button', { name: '已执行 3 个步骤' })).toBeTruthy()
+    expect(document.querySelector('.animate-message-in')).toBeTruthy()
+  })
+
+  it('归组找不到运行或 Agent 摘要时回退到 Agent id', () => {
+    // 运行不在 view.runs 里：按未知 Agent 渲染，不回退到任何名字
+    const unknown = {
+      ...base,
+      runs: {},
+      runOrder: [],
+      messages: base.messages.slice(1),
+    } as unknown as SessionView
+    const first = renderStream(unknown, [], undefined, [
+      {
+        agentId: 'builtin.coder',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+      },
+    ])
+    expect(screen.getByRole('button', { name: '已执行 3 个步骤' })).toBeTruthy()
+    first.unmount()
+
+    // 有 Agent 摘要时使用摘要里的名字
+    const summary = renderStream(base, [], undefined, [
+      {
+        agentId: 'builtin.coder',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+      },
+    ])
+    expect(screen.getByRole('button', { name: '已执行 3 个步骤' })).toBeTruthy()
+    summary.unmount()
+
+    // 只有 Agent id、没有摘要时显示 id
+    const other = {
+      ...base,
+      runOrder: ['r1'],
+      runs: {
+        r1: { ...base.runs.r1, agent: { id: 'other.agent', version: 1 } },
+      },
+    } as unknown as SessionView
+    renderStream(other)
+    expect(screen.getByRole('button', { name: '已执行 3 个步骤' })).toBeTruthy()
+  })
+
+  it('说明崩溃、等待重试与其他限额', () => {
+    const crash = renderStream({
+      ...base,
+      crash: { code: 'host.crashed', message: '' },
+    } as unknown as SessionView)
+    expect(screen.getByText('Agent 进程意外退出，可以从最后保存的位置继续。')).toBeTruthy()
+    crash.unmount()
+
+    const retrying = renderStream({
+      ...base,
+      runOrder: ['r1'],
+      runs: {
+        ...base.runs,
+        r1: {
+          ...base.runs.r1,
+          turn: {
+            turnId: 't1',
+            status: 'running',
+            retry: {
+              attempt: 1,
+              maxRetries: 3,
+              delayMs: 5000,
+              error: { code: 'model.error' },
+              at: 1,
+            },
+          },
+        },
+      },
+    } as unknown as SessionView)
+    expect(screen.getByText(/模型请求失败/)).toBeTruthy()
+    expect(screen.getByText(/5 秒后重试/)).toBeTruthy()
+    retrying.unmount()
+
+    renderStream({
+      ...base,
+      runOrder: ['r1'],
+      runs: {
+        ...base.runs,
+        r1: {
+          ...base.runs.r1,
+          turn: {
+            turnId: 't1',
+            status: 'failed',
+            limitReached: { limit: 'maxConsecutiveToolErrors', value: 2 },
+            error: { code: 'run.limit_reached' },
+          },
+        },
+      },
+    } as unknown as SessionView)
+    expect(screen.getByText(/工具调用连续失败 2 次/)).toBeTruthy()
   })
 })

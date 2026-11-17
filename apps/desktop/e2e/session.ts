@@ -42,10 +42,24 @@ export const sessionPanel = (window: Page) =>
     .getByRole('complementary', { name: '会话信息' })
     .or(window.getByRole('dialog', { name: '会话信息' }))
 
-/** 展开所有已收起工具步骤汇总；运行中的汇总本来展开。 */
+/** 点开一个收起的汇总，等它真正展开后再继续，避免重复点回收起状态。 */
+async function expandCollapsed(window: Page, selector: string) {
+  const collapsed = () => window.locator(`${selector}[aria-expanded="false"]`)
+  for (;;) {
+    const count = await collapsed().count()
+    if (count === 0) return
+    await collapsed().first().click()
+    await expect(collapsed()).toHaveCount(count - 1)
+  }
+}
+
+/**
+ * 展开所有已收起的分组：先展开整轮活动分组（多步骤归组），再展开单个助手消息里的工具汇总。
+ * 运行中的分组本来展开。
+ */
 export async function expandToolGroup(window: Page) {
-  const collapsed = window.locator('[data-tool-group][aria-expanded="false"]')
-  while ((await collapsed.count()) > 0) await collapsed.first().click()
+  await expandCollapsed(window, '[data-activity-group]')
+  await expandCollapsed(window, '[data-tool-group]')
 }
 
 /**
