@@ -466,12 +466,15 @@ describe('cleanup / list / sweep', () => {
     const listed = execFileSync('git', ['--git-dir', gitDir, 'worktree', 'list'], {
       stdio: 'pipe',
     }).toString()
-    expect(listed).toContain('r1')
+    // 只比对工作区的完整路径：临时目录名里可能恰好含有 `r1`，子串断言会误判。
+    const shown = (value: string) => value.replace(/\\/g, '/')
+    const workspacePath = shown(workspace.path)
+    expect(shown(listed)).toContain(workspacePath)
     await service.cleanup('r1')
     const after = execFileSync('git', ['--git-dir', gitDir, 'worktree', 'list'], {
       stdio: 'pipe',
     }).toString()
-    expect(after).not.toContain('r1')
+    expect(shown(after)).not.toContain(workspacePath)
     expect(workspace.mode).toBe('worktree')
   })
 })
