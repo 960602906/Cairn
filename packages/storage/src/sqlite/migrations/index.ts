@@ -16,6 +16,7 @@ import { sessionKind } from './0014-session-kind.js'
 import { backgroundCommands } from './0015-background-commands.js'
 import { projectPinning } from './0016-project-pinning.js'
 import { sessionThinkingLevel } from './0017-session-thinking-level.js'
+import { memoryEntries } from './0018-memory-entries.js'
 
 /** 应用的全部迁移，按编号排列。新增迁移时追加到末尾。 */
 export const MIGRATIONS: readonly Migration[] = [
@@ -36,4 +37,5 @@ export const MIGRATIONS: readonly Migration[] = [
   backgroundCommands,
   projectPinning,
   sessionThinkingLevel,
+  memoryEntries,
 ]

@@ -9,6 +9,7 @@ import {
   type BackgroundCommand,
   type BackgroundCommandOutput,
 } from '@cairn/protocol'
+import { checkMemoryContent, checkMemoryOwner, MEMORY_SCOPE_ORDER } from './memory-entries.js'
 import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
 import {
   StorageError,
@@ -25,6 +26,7 @@ import {
   type FileChangeRecord,
   type ListSessionsOptions,
   type McpServerRecord,
+  type MemoryEntryRecord,
   type McpToolPref,
   type PermissionRuleRecord,
   type ProjectRecord,
@@ -44,6 +46,8 @@ interface State {
   changes: Map<string, FileChangeRecord>
   /** 按添加顺序。 */
   rules: Map<string, PermissionRuleRecord>
+  /** 按提议顺序。 */
+  memories: Map<string, MemoryEntryRecord>
   /** 键为 scope、source、name。 */
   skillPrefs: Map<string, SkillPref>
   mcpServers: Map<string, McpServerRecord>
@@ -73,6 +77,7 @@ function cloneState(state: State): State {
     events: new Map([...state.events].map(([id, list]) => [id, [...list]])),
     changes: new Map(state.changes),
     rules: new Map(state.rules),
+    memories: new Map(state.memories),
     skillPrefs: new Map(state.skillPrefs),
     mcpServers: new Map(state.mcpServers),
     mcpToolPrefs: new Map(state.mcpToolPrefs),
@@ -100,6 +105,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     events: new Map(),
     changes: new Map(),
     rules: new Map(),
+    memories: new Map(),
     skillPrefs: new Map(),
     mcpServers: new Map(),
     mcpToolPrefs: new Map(),
@@ -266,6 +272,9 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         }
         for (const [ruleId, record] of s.rules) {
           if (record.sessionId === sessionId) s.rules.delete(ruleId)
+        }
+        for (const [memoryId, entry] of s.memories) {
+          if (entry.sessionId === sessionId) s.memories.delete(memoryId)
         }
         for (const [snapshotId, snapshot] of s.runSnapshots) {
           if (snapshot.sessionId === sessionId) s.runSnapshots.delete(snapshotId)
@@ -654,6 +663,81 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         if (!live().rules.delete(ruleId)) {
           throw new StorageError(StorageErrorCode.NotFound, { ruleId })
         }
+      },
+    },
+
+    memories: {
+      propose(input) {
+        checkMemoryOwner(input)
+        const s = live()
+        if (input.sessionId !== undefined) requireSession(input.sessionId)
+        if (input.projectId !== undefined && !s.projects.has(input.projectId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { projectId: input.projectId })
+        }
+        if (s.memories.has(input.memoryId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { memoryId: input.memoryId })
+        }
+        const record: MemoryEntryRecord = {
+          memoryId: input.memoryId,
+          scope: input.scope,
+          ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
+          ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+          content: input.content,
+          status: 'proposed',
+          ...(input.sourceRunId === undefined ? {} : { sourceRunId: input.sourceRunId }),
+          ...(input.sourceAgentId === undefined ? {} : { sourceAgentId: input.sourceAgentId }),
+          createdAt: now(),
+          updatedAt: now(),
+        }
+        s.memories.set(record.memoryId, record)
+        return copy(record)
+      },
+      get(memoryId) {
+        const record = live().memories.get(memoryId)
+        return record && copy(record)
+      },
+      list(listOptions = {}) {
+        return [...live().memories.values()]
+          .filter(
+            (entry) =>
+              entry.scope === 'global' ||
+              (entry.scope === 'project' && entry.projectId === listOptions.projectId) ||
+              (entry.scope === 'session' && entry.sessionId === listOptions.sessionId),
+          )
+          .filter(
+            (entry) => listOptions.status === undefined || entry.status === listOptions.status,
+          )
+          .sort(
+            (a, b) =>
+              MEMORY_SCOPE_ORDER[a.scope] - MEMORY_SCOPE_ORDER[b.scope] ||
+              a.createdAt - b.createdAt,
+          )
+          .map(copy)
+      },
+      confirm(memoryId) {
+        const s = live()
+        const record = s.memories.get(memoryId)
+        if (!record) throw new StorageError(StorageErrorCode.NotFound, { memoryId })
+        if (record.status === 'active') return copy(record)
+        const next: MemoryEntryRecord = { ...record, status: 'active', updatedAt: now() }
+        s.memories.set(memoryId, next)
+        return copy(next)
+      },
+      update(memoryId, content) {
+        const s = live()
+        const record = s.memories.get(memoryId)
+        if (!record) throw new StorageError(StorageErrorCode.NotFound, { memoryId })
+        checkMemoryContent(content)
+        const next: MemoryEntryRecord = { ...record, content, updatedAt: now() }
+        s.memories.set(memoryId, next)
+        return copy(next)
+      },
+      delete(memoryId) {
+        const s = live()
+        const record = s.memories.get(memoryId)
+        if (!record) throw new StorageError(StorageErrorCode.NotFound, { memoryId })
+        s.memories.delete(memoryId)
+        return copy(record)
       },
     },
 

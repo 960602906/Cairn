@@ -17,6 +17,7 @@ import {
   type ProviderConfig,
   type SkillSource,
   type McpAuthKind,
+  type MemoryScope,
   type McpServerKind,
   type PermissionEffect,
   type ToolCategory,
@@ -38,6 +39,9 @@ import {
   type HunkRecord,
   type ListSessionsOptions,
   type McpEnvRef,
+  type MemoryEntryRecord,
+  type MemoryStatus,
+  type ProposeMemoryInput,
   type McpServerRecord,
   type McpToolPref,
   type PermissionRuleRecord,
@@ -48,6 +52,7 @@ import {
   type Storage,
   type StorageOptions,
 } from '../types.js'
+import { checkMemoryContent, checkMemoryOwner } from '../memory-entries.js'
 import { checkPermissionRuleOwner } from '../permission-rules.js'
 import { migrateDatabase, type MigrateResult, type Migration } from './migrate.js'
 import { MIGRATIONS } from './migrations/index.js'
@@ -163,6 +168,19 @@ interface PermissionRuleRow {
   match: string
   source: PermissionRule['source']
   created_at: number
+}
+
+interface MemoryEntryRow {
+  memory_id: string
+  scope: MemoryScope
+  session_id: string | null
+  project_id: string | null
+  content: string
+  status: MemoryStatus
+  source_run_id: string | null
+  source_agent_id: string | null
+  created_at: number
+  updated_at: number
 }
 
 interface McpServerRow {
@@ -301,6 +319,19 @@ const toRunSnapshot = (row: RunSnapshotRow): RunSnapshotRecord => ({
   createdAt: row.created_at,
   tokens: row.tokens,
   data: JSON.parse(row.data) as unknown,
+})
+
+const toMemoryEntry = (row: MemoryEntryRow): MemoryEntryRecord => ({
+  memoryId: row.memory_id,
+  scope: row.scope,
+  ...(row.session_id === null ? {} : { sessionId: row.session_id }),
+  ...(row.project_id === null ? {} : { projectId: row.project_id }),
+  content: row.content,
+  status: row.status,
+  ...(row.source_run_id === null ? {} : { sourceRunId: row.source_run_id }),
+  ...(row.source_agent_id === null ? {} : { sourceAgentId: row.source_agent_id }),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
 })
 
 const toPermissionRule = (row: PermissionRuleRow): PermissionRuleRecord => ({
@@ -572,6 +603,34 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
        VALUES (@ruleId, @scope, @projectId, @sessionId, @effect, @match, @source, @at)`,
     ),
     deleteRule: db.prepare('DELETE FROM permission_rules WHERE rule_id = ?'),
+    memoryById: db.prepare<[string], MemoryEntryRow>(
+      'SELECT * FROM memory_entries WHERE memory_id = ?',
+    ),
+    memories: db.prepare<
+      { projectId: string | null; sessionId: string | null; status: string | null },
+      MemoryEntryRow
+    >(
+      `SELECT * FROM memory_entries
+       WHERE (@status IS NULL OR status = @status)
+         AND ((scope = 'session' AND session_id = @sessionId)
+           OR (scope = 'project' AND project_id = @projectId)
+           OR scope = 'global')
+       ORDER BY CASE scope WHEN 'session' THEN 0 WHEN 'project' THEN 1 ELSE 2 END, rowid`,
+    ),
+    insertMemory: db.prepare(
+      `INSERT INTO memory_entries
+         (memory_id, scope, session_id, project_id, content, status, source_run_id,
+          source_agent_id, created_at, updated_at)
+       VALUES (@memoryId, @scope, @sessionId, @projectId, @content, 'proposed', @sourceRunId,
+          @sourceAgentId, @at, @at)`,
+    ),
+    setMemoryStatus: db.prepare(
+      'UPDATE memory_entries SET status = ?, updated_at = ? WHERE memory_id = ?',
+    ),
+    setMemoryContent: db.prepare(
+      'UPDATE memory_entries SET content = ?, updated_at = ? WHERE memory_id = ?',
+    ),
+    deleteMemory: db.prepare('DELETE FROM memory_entries WHERE memory_id = ?'),
     setHunkStatus: db.prepare('UPDATE hunks SET status = ? WHERE change_id = ?'),
     setHunkAt: db.prepare('UPDATE hunks SET status = ? WHERE change_id = ? AND position = ?'),
     skillPref: db.prepare<[string, string, string], SkillPrefRow>(
@@ -953,6 +1012,30 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     return toPermissionRule(q.ruleById.get(rule.id)!)
   })
 
+  const proposeMemory = db.transaction((input: ProposeMemoryInput): MemoryEntryRecord => {
+    checkMemoryOwner(input)
+    if (input.sessionId !== undefined && !q.sessionById.get(input.sessionId)) {
+      throw new StorageError(StorageErrorCode.NotFound, { sessionId: input.sessionId })
+    }
+    if (input.projectId !== undefined && !q.projectById.get(input.projectId)) {
+      throw new StorageError(StorageErrorCode.NotFound, { projectId: input.projectId })
+    }
+    if (q.memoryById.get(input.memoryId)) {
+      throw new StorageError(StorageErrorCode.Conflict, { memoryId: input.memoryId })
+    }
+    q.insertMemory.run({
+      memoryId: input.memoryId,
+      scope: input.scope,
+      sessionId: input.sessionId ?? null,
+      projectId: input.projectId ?? null,
+      content: input.content,
+      sourceRunId: input.sourceRunId ?? null,
+      sourceAgentId: input.sourceAgentId ?? null,
+      at: now(),
+    })
+    return toMemoryEntry(q.memoryById.get(input.memoryId)!)
+  })
+
   const backgroundCommand = (commandId: string): BackgroundCommand | undefined => {
     const row = db
       .prepare<
@@ -1325,6 +1408,43 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       delete(ruleId) {
         const { changes } = q.deleteRule.run(ruleId)
         if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { ruleId })
+      },
+    },
+
+    memories: {
+      propose: (input) => proposeMemory(input),
+      get(memoryId) {
+        const row = q.memoryById.get(memoryId)
+        return row && toMemoryEntry(row)
+      },
+      list: (listOptions = {}) =>
+        q.memories
+          .all({
+            projectId: listOptions.projectId ?? null,
+            sessionId: listOptions.sessionId ?? null,
+            status: listOptions.status ?? null,
+          })
+          .map(toMemoryEntry),
+      confirm(memoryId) {
+        const row = q.memoryById.get(memoryId)
+        if (!row) throw new StorageError(StorageErrorCode.NotFound, { memoryId })
+        if (row.status === 'active') return toMemoryEntry(row)
+        q.setMemoryStatus.run('active', now(), memoryId)
+        return toMemoryEntry(q.memoryById.get(memoryId)!)
+      },
+      update(memoryId, content) {
+        if (!q.memoryById.get(memoryId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { memoryId })
+        }
+        checkMemoryContent(content)
+        q.setMemoryContent.run(content, now(), memoryId)
+        return toMemoryEntry(q.memoryById.get(memoryId)!)
+      },
+      delete(memoryId) {
+        const row = q.memoryById.get(memoryId)
+        if (!row) throw new StorageError(StorageErrorCode.NotFound, { memoryId })
+        q.deleteMemory.run(memoryId)
+        return toMemoryEntry(row)
       },
     },
 
