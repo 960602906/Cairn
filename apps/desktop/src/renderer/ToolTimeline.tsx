@@ -32,7 +32,14 @@ import { languageForPath } from './languages.js'
 import { SandboxBadge } from './SandboxBadge.js'
 import { TerminalCard, type TerminalCardProps } from './TerminalCard.js'
 import { parseReadFileOutput, parseRunCommandOutput } from './tool-results.js'
-import { CairnMark, cn, Shimmer } from './ui/index.js'
+import {
+  CairnMark,
+  cn,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  Shimmer,
+} from './ui/index.js'
 
 export { formatDuration }
 
@@ -424,7 +431,54 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   )
 }
 
-/** 一条助手消息中的工具调用时间线。 */
-export function ToolTimeline({ children }: { readonly children: ReactNode }) {
-  return <ol className="my-2 flex flex-col">{children}</ol>
+/** 一条助手消息中的工具调用：运行中和异常时展示步骤，正常结束后收起为摘要。 */
+export function ToolTimeline({
+  children,
+  count,
+  running,
+  attention = false,
+}: {
+  readonly children: ReactNode
+  /** 省略时保持原来的逐条展示（也供独立工具卡片使用）。 */
+  readonly count?: number
+  readonly running?: boolean
+  readonly attention?: boolean
+}) {
+  const { t } = useTranslation('session')
+  const [openState, setOpenState] = useState<boolean>()
+  const open = openState ?? (running === true || attention)
+  const steps = (
+    <ol className={cn('flex flex-col', count === undefined ? 'my-2' : 'mt-1')}>{children}</ol>
+  )
+  if (count === undefined) return steps
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpenState} className="my-2">
+      <CollapsibleTrigger
+        data-tool-group
+        className="group/tools flex w-full items-center gap-2 rounded-item py-1 text-left text-ui text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
+      >
+        <CairnMark
+          size={15}
+          className={cn(
+            'shrink-0',
+            running ? 'animate-spin text-accent' : attention ? 'text-warn' : 'text-faint',
+          )}
+        />
+        <span className="min-w-0 flex-1">
+          {t(
+            running ? 'tool.group.running' : attention ? 'tool.group.attention' : 'tool.group.done',
+            {
+              steps: count,
+            },
+          )}
+        </span>
+        <ChevronRight
+          aria-hidden
+          className={cn('size-3.5 shrink-0 text-faint transition-transform', open && 'rotate-90')}
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent>{steps}</CollapsibleContent>
+    </Collapsible>
+  )
 }

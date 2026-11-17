@@ -60,6 +60,63 @@ const step = (props: Partial<ToolStepProps> & Pick<ToolStepProps, 'tool'>) =>
 const terminal = () => screen.queryByRole('figure', { name: '终端：npm test' })
 const toggle = () => document.querySelector<HTMLButtonElement>('button[aria-expanded]')!
 
+describe('ToolTimeline 汇总折叠', () => {
+  const steps = (
+    <>
+      <ToolStep
+        name="read_file"
+        input={{ path: 'a.ts' }}
+        tool={tool({ name: 'read_file', input: { path: 'a.ts' } })}
+        live={undefined}
+      />
+      <ToolStep name="run_command" input={{ command: 'npm test' }} tool={tool()} live={undefined} />
+    </>
+  )
+  const group = (props: { running?: boolean; attention?: boolean } = {}) =>
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ToolTimeline count={2} {...props}>
+          {steps}
+        </ToolTimeline>
+      </I18nextProvider>,
+    )
+
+  it('正常结束时默认收起，展开后保留逐条工具详情', async () => {
+    const user = userEvent.setup()
+    group()
+    const summary = screen.getByRole('button', { name: '已执行 2 个步骤' })
+    expect(summary.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('button', { name: /读取.*a.ts/ })).toBeNull()
+    await user.click(summary)
+    expect(summary.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('a.ts')).toBeTruthy()
+    expect(screen.getByText('npm test')).toBeTruthy()
+  })
+
+  it('运行中或需要留意时默认展开，用户仍可手动收起', async () => {
+    const user = userEvent.setup()
+    const running = group({ running: true })
+    const summary = screen.getByRole('button', { name: '正在执行 2 个步骤' })
+    expect(summary.getAttribute('aria-expanded')).toBe('true')
+    await user.click(summary)
+    expect(summary.getAttribute('aria-expanded')).toBe('false')
+    running.rerender(
+      <I18nextProvider i18n={i18n}>
+        <ToolTimeline count={2} attention>
+          {steps}
+        </ToolTimeline>
+      </I18nextProvider>,
+    )
+    expect(summary.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByRole('button', { name: '2 个步骤 · 需要留意' })).toBeTruthy()
+    cleanup()
+    group({ attention: true })
+    expect(
+      screen.getByRole('button', { name: '2 个步骤 · 需要留意' }).getAttribute('aria-expanded'),
+    ).toBe('true')
+  })
+})
+
 describe('ToolStep：run_command', () => {
   it('执行中直接显示终端卡片，不再显示实时输出预览', () => {
     step({ tool: tool({ status: 'running' }), live: live('line 1\nline 2\n') })

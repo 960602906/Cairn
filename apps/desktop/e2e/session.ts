@@ -42,11 +42,18 @@ export const sessionPanel = (window: Page) =>
     .getByRole('complementary', { name: '会话信息' })
     .or(window.getByRole('dialog', { name: '会话信息' }))
 
+/** 展开所有已收起工具步骤汇总；运行中的汇总本来展开。 */
+export async function expandToolGroup(window: Page) {
+  const collapsed = window.locator('[data-tool-group][aria-expanded="false"]')
+  while ((await collapsed.count()) > 0) await collapsed.first().click()
+}
+
 /**
- * 展开最近一次工具步骤（时间线默认折叠，成功时只显示一行摘要），返回该步骤区域。
+ * 展开最近一次工具步骤（成功时只显示一行摘要），返回该步骤区域。
  * 展开后 `run_command` 的终端卡片才在 DOM 里。
  */
 export async function expandToolStep(window: Page, name: string) {
+  await expandToolGroup(window)
   const step = window.getByRole('region', { name: `调用工具：${name}` }).last()
   const collapsed = step.locator('button[aria-expanded="false"]')
   if ((await collapsed.count()) > 0) await collapsed.first().click()

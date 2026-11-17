@@ -353,6 +353,70 @@ describe('MessageStream 渲染', () => {
     expect(sendPrompt).toHaveBeenCalled()
   })
 
+  it('已完成消息的工具步骤默认汇总，异常和运行中的步骤保持可见', async () => {
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: 's1',
+      awaitingTurn: {},
+      approvals: {},
+      changes: {},
+      agents: [],
+      settings: { providers: [] },
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    const renderStream = (stream: SessionView) => (
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={stream} />
+        </SessionStoreProvider>
+      </I18nextProvider>
+    )
+    const base = view([
+      ...START,
+      ev(5, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: text('先检查'),
+        model,
+        toolCalls: [{ id: 'tc1', name: 'read_file', input: { path: 'a.ts' } }],
+      }),
+      ev(6, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
+    ])
+    const rendered = render(renderStream(base))
+    expect(
+      screen.getByRole('button', { name: '正在执行 1 个步骤' }).getAttribute('aria-expanded'),
+    ).toBe('true')
+    const completed = view([
+      ...START,
+      ev(5, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: text('先检查'),
+        model,
+        toolCalls: [{ id: 'tc1', name: 'read_file', input: { path: 'a.ts' } }],
+      }),
+      ev(6, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
+      ev(7, 'tool.completed', {
+        toolCallId: 'tc1',
+        output: text('ok'),
+        truncated: false,
+        durationMs: 50,
+      }),
+      ev(8, 'turn.completed', { durationMs: 100 }),
+    ])
+    rendered.rerender(renderStream(completed))
+    expect(
+      screen.getByRole('button', { name: '已执行 1 个步骤' }).getAttribute('aria-expanded'),
+    ).toBe('false')
+    expect(screen.getByText('先检查')).toBeTruthy()
+    cleanup()
+    const failed = {
+      ...completed,
+      tools: { ...completed.tools, tc1: { ...completed.tools.tc1!, status: 'failed' as const } },
+    }
+    render(renderStream(failed))
+    expect(
+      screen.getByRole('button', { name: '1 个步骤 · 需要留意' }).getAttribute('aria-expanded'),
+    ).toBe('true')
+  })
+
   it('shows the reasoning as a collapsible card that expands on click', async () => {
     const store = createStore<Record<string, unknown>>(() => ({
       activeSessionId: undefined,

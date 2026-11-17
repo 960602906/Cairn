@@ -5,7 +5,7 @@
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, expandToolGroup, projectDir, runStatus, sendPrompt } from './session.js'
 
 const capabilities = {
   contextWindow: 32_000,
@@ -61,9 +61,6 @@ test('普通轮次创建待办列表并显示进度卡', async ({ launch, userDa
     await configure(window, mock.baseUrl)
     await createSession(window, projectDir(userData), '待办')
     await sendPrompt(window, '先列一个待办再开始')
-    await expect(window.getByRole('region', { name: '调用工具：create_task_list' })).toBeVisible({
-      timeout: 20_000,
-    })
     const card = window.getByRole('region', { name: '任务进度' })
     await expect(card).toBeVisible({ timeout: 20_000 })
     await expect(card).toContainText('修测试')
@@ -72,6 +69,9 @@ test('普通轮次创建待办列表并显示进度卡', async ({ launch, userDa
     // 临时列表没有可打开的计划详情。
     await expect(card.getByRole('button', { name: '修测试' })).toHaveCount(0)
     await expect(runStatus(window)).toHaveText('空闲', { timeout: 20_000 })
+    // 正常结束后工具步骤汇总收起，展开后仍能看到这次调用。
+    await expandToolGroup(window)
+    await expect(window.getByRole('region', { name: '调用工具：create_task_list' })).toBeVisible()
   } finally {
     await mock.close()
   }
