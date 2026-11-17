@@ -7,7 +7,7 @@
 import { estimateTokens } from '@cairn/core'
 import type { RunSnapshot } from '@cairn/protocol'
 
-export type ContextPartKey = 'system' | 'skills' | 'tools' | 'history' | 'compaction'
+export type ContextPartKey = 'system' | 'skills' | 'memory' | 'tools' | 'history' | 'compaction'
 
 export interface ContextPart {
   readonly key: ContextPartKey
@@ -24,12 +24,16 @@ export interface ContextBreakdown {
 const TONES: Readonly<Record<ContextPartKey, string>> = {
   system: 'bg-accent',
   skills: 'bg-ok',
+  memory: 'bg-ink',
   tools: 'bg-warn',
   history: 'bg-muted',
   compaction: 'bg-danger',
 }
 
 const SKILL_TITLES = new Set(['Skills', 'Pinned skills'])
+
+/** 记忆单独成段（M7-02），不并入系统提示词的其余部分。 */
+const MEMORY_TITLE = 'Memory'
 
 /** 最近的一份快照；快照按创建时间可能不是顺序排列。 */
 export function latestSnapshot(snapshots: readonly RunSnapshot[]): RunSnapshot | undefined {
@@ -45,8 +49,10 @@ export function contextBreakdown(snapshot: RunSnapshot | undefined): ContextBrea
   }
   let system = 0
   let skills = 0
+  let memory = 0
   for (const section of snapshot.systemPrompt) {
     if (SKILL_TITLES.has(section.title.trim())) skills += section.tokens
+    else if (section.title.trim() === MEMORY_TITLE) memory += section.tokens
     else system += section.tokens
   }
   const tools = snapshot.tools.reduce((sum, tool) => sum + tool.tokens, 0)
@@ -55,6 +61,7 @@ export function contextBreakdown(snapshot: RunSnapshot | undefined): ContextBrea
   const values: Readonly<Record<ContextPartKey, number>> = {
     system,
     skills,
+    memory,
     tools,
     history,
     compaction,

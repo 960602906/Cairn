@@ -33,6 +33,31 @@ describe('contextBreakdown', () => {
     expect(result.total).toBe(120)
   })
 
+  it('把记忆段单独列出（M7-02）', () => {
+    const result = contextBreakdown(
+      snapshot({
+        systemPrompt: [
+          { title: 'Base prompt', text: 'base', tokens: 52 },
+          { title: 'Skills', text: '- tdd: description', tokens: 20 },
+          { title: 'Memory', text: '## Session\n- 用 pnpm', tokens: 12 },
+        ],
+      }),
+    )
+    expect(result.parts.map((part) => part.key)).toEqual([
+      'system',
+      'skills',
+      'memory',
+      'tools',
+      'history',
+    ])
+    expect(result.parts.find((part) => part.key === 'memory')).toEqual({
+      key: 'memory',
+      tokens: 12,
+      tone: 'bg-ink',
+    })
+    expect(result.total).toBe(102)
+  })
+
   it('估算压缩摘要并算入总量', () => {
     const result = contextBreakdown(
       snapshot({ compaction: { summary: '之前的目标', coversTurns: ['t0', 't1'] } }),

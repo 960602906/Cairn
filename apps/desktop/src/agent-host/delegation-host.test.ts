@@ -525,6 +525,34 @@ describe('host delegation (M4-02)', () => {
     expect(h.systemPrompts['reviewer']).toContain('reviewer instructions')
   })
 
+  it('子运行按自己的 Agent 引用读取记忆（M7-02）', async () => {
+    const h = setup({
+      parentScript: {
+        turns: [{ steps: [delegateStep('builtin.reviewer'), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [{ steps: [{ kind: 'reply', text: '{"summary":"ok"}' }] }],
+      },
+    })
+    const agents: unknown[] = []
+    h.main.handle('host.memory', (params) => {
+      agents.push(params.agent)
+      return {
+        text: '## Session\n- 只读子 Agent 的记忆',
+        entries: 1,
+        dropped: 0,
+        truncated: false,
+      }
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('run.child.completed')
+    // 根运行与子运行各自按自己的 Agent 引用请求一次。
+    expect(agents).toContainEqual({ id: 'builtin.reviewer', version: 1 })
+    expect(h.systemPrompts['reviewer']).toContain('# Memory')
+    expect(h.systemPrompts['reviewer']).toContain('- 只读子 Agent 的记忆')
+  })
+
   it('主进程没有目标列表接口时仍按 id 登记 delegate', async () => {
     const h = setup({ noTargetsHandler: true })
     await h.initHost()

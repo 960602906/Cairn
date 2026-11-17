@@ -300,6 +300,20 @@ export const MainForHost = defineSide({
       }),
     },
     /**
+     * 这一轮要放进系统提示词的记忆（M7-02）。会话由连接确定，Agent 由参数给出：主进程按该 Agent 的
+     * `memory.scopes` 只选出对应范围里 `active` 的条目，跨项目的条目根本读不到。没有可用条目时没有
+     * `text`；`dropped` 是超过记忆上限被裁剪掉的条数，供运行检查器显示。
+     */
+    'host.memory': {
+      params: z.object({ agent: RunAgentRef }),
+      result: z.object({
+        text: z.string().min(1).optional(),
+        entries: z.number().int().nonnegative().optional(),
+        dropped: z.number().int().nonnegative().optional(),
+        truncated: z.boolean().optional(),
+      }),
+    },
+    /**
      * 把更早的对话总结成一段（M3-03）。会话由连接确定。没有可用模型或总结失败时没有 `text`，
      * 宿主改为丢掉最早的工具输出。
      */

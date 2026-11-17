@@ -512,6 +512,7 @@
   "inspector.context.empty": "No context snapshot yet.",
   "inspector.context.system": "System prompt",
   "inspector.context.skills": "Skills",
+  "inspector.context.memory": "Memory",
   "inspector.context.tools": "Tool definitions",
   "inspector.context.history": "History",
   "inspector.context.compaction": "Compaction summary",

@@ -240,6 +240,21 @@ export interface HostSupervisorOptions {
       }
     | undefined
   /**
+   * 这一轮的记忆（M7-02）。按 Agent 的 `memory.scopes` 只取对应范围里 `active` 的条目，已排好序并按
+   * 上限裁剪。省略或抛出时宿主这一轮不带记忆。
+   */
+  readonly loadMemory?: (
+    sessionId: string,
+    agent: RunAgentRef,
+  ) =>
+    | {
+        readonly text: string
+        readonly entries: number
+        readonly dropped: number
+        readonly truncated: boolean
+      }
+    | undefined
+  /**
    * 这一轮交给模型的技能（M3-07）。省略或抛出时宿主这一轮不带技能。
    * 只应返回已启用、且没有被同名技能盖住的。
    */
@@ -435,6 +450,19 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         if (!loaded) return {}
         const { text, sha256, bytes, truncated, lines } = loaded
         return { text, context: { agentsMd: { sha256, bytes, truncated, lines } } }
+      })
+
+      endpoint.handle('host.memory', ({ agent }) => {
+        try {
+          const loaded = options.loadMemory?.(sessionId, agent)
+          if (!loaded) return {}
+          const { text, entries, dropped, truncated } = loaded
+          return { text, entries, dropped, truncated }
+        } catch (error) {
+          // 读记忆失败不该让这一轮失败：宿主按没有记忆继续。
+          options.onError?.(error)
+          return {}
+        }
       })
 
       endpoint.handle('host.skills', () => {
