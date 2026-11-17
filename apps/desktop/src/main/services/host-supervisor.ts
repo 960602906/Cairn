@@ -38,6 +38,7 @@ import {
   type HostModelConfig,
   type BackgroundCommand,
   type IsolatedWorkspaceInfo,
+  type MemoryScope,
   type ModelRef,
   type PermissionRule,
   type PermissionMode,
@@ -255,6 +256,19 @@ export interface HostSupervisorOptions {
       }
     | undefined
   /**
+   * 写入一条记忆（M7-03，记忆服务）。按 Agent 定义决定提议还是直接生效；`never`、范围不允许或
+   * 条目不存在时抛出 `RpcError`，宿主把原因交给模型。省略时宿主的 `remember` 工具报 `run.unsupported`。
+   */
+  readonly rememberMemory?: (
+    sessionId: string,
+    params: {
+      readonly runId: string
+      readonly agent: RunAgentRef
+      readonly scope: MemoryScope
+      readonly content: string
+    },
+  ) => { readonly memoryId: string; readonly status: 'proposed' | 'active' }
+  /**
    * 这一轮交给模型的技能（M3-07）。省略或抛出时宿主这一轮不带技能。
    * 只应返回已启用、且没有被同名技能盖住的。
    */
@@ -463,6 +477,16 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
           options.onError?.(error)
           return {}
         }
+      })
+
+      endpoint.handle('host.memory.remember', ({ runId: sourceRunId, agent, scope, content }) => {
+        if (!options.rememberMemory) throw new RpcError('run.unsupported')
+        return options.rememberMemory(sessionId, {
+          runId: sourceRunId,
+          agent,
+          scope,
+          content,
+        })
       })
 
       endpoint.handle('host.skills', () => {

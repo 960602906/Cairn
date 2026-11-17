@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  BUILTIN_CODER,
   BUILTIN_TESTER,
   BUILTIN_EXPLORER,
   FakeRuntime,
@@ -292,6 +293,170 @@ describe('agent host', () => {
     const prompt = prompts.find((item) => item.includes('# Memory'))!
     expect(prompt.indexOf('# Memory')).toBeLessThan(prompt.indexOf("# User's instructions"))
     expect(h.onError).not.toHaveBeenCalled()
+  })
+
+  it('offers remember only when the agent allows memory writes, and hides it in plan turns (M7-03)', async () => {
+    const toolNames: string[][] = []
+    const script: FakeScript = {
+      turns: [
+        { steps: [{ kind: 'reply', text: 'ok' }] },
+        { steps: [{ kind: 'reply', text: 'ok' }] },
+      ],
+    }
+    const spyRuntime = () => {
+      const fake = new FakeRuntime(script)
+      return (model: Parameters<NonNullable<AgentHostOptions['createRuntime']>>[0]) => ({
+        runtime: {
+          id: 'spy',
+          async createSession(sessionInit: Parameters<typeof fake.createSession>[0]) {
+            const session = await fake.createSession(sessionInit)
+            return {
+              prompt: (input: Parameters<typeof session.prompt>[0]) => session.prompt(input),
+              steer: (input: Parameters<typeof session.steer>[0]) => session.steer(input),
+              abort: () => session.abort(),
+              onEvent: (listener: Parameters<typeof session.onEvent>[0]) =>
+                session.onEvent(listener),
+              exportHistory: () => session.exportHistory(),
+              dispose: () => session.dispose(),
+              setSystemPrompt: () => undefined,
+              setTools(tools: Parameters<NonNullable<typeof session.setTools>>[0]) {
+                toolNames.push((tools ?? []).map((tool) => tool.name))
+                session.setTools?.(tools)
+              },
+            }
+          },
+        },
+        model: fakeModel(model),
+      })
+    }
+    const h = setup(script, { createRuntime: spyRuntime() })
+    await h.main.request('host.init', {
+      ...init,
+      agentDefinition: {
+        ...BUILTIN_CODER,
+        memory: { scopes: ['session', 'project'], write: 'propose' },
+      },
+    })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(toolNames[0]).toContain('remember')
+
+    await h.main.request('host.prompt', { messageId: 'm2', content: text('plan'), mode: 'plan' })
+    await vi.waitFor(() =>
+      expect(h.events.filter((e) => e.type === 'turn.completed')).toHaveLength(2),
+    )
+    expect(toolNames[1]).not.toContain('remember')
+
+    const never = setup(script, { createRuntime: spyRuntime() })
+    await never.main.request('host.init', {
+      ...init,
+      agentDefinition: { ...BUILTIN_CODER, memory: { scopes: ['session'], write: 'never' } },
+    })
+    await never.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await never.waitFor('turn.completed')
+    expect(toolNames[2]).not.toContain('remember')
+  })
+
+  it('saves a memory through the main process and reports the proposal (M7-03)', async () => {
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'tool',
+              name: 'remember',
+              input: { scope: 'project', content: 'Use pnpm.' },
+            },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script)
+    const calls: unknown[] = []
+    h.main.handle('host.memory.remember', (params) => {
+      calls.push(params)
+      return { memoryId: 'mem-1', status: 'proposed' as const }
+    })
+    await h.main.request('host.init', {
+      ...init,
+      agentDefinition: {
+        ...BUILTIN_CODER,
+        memory: { scopes: ['session', 'project'], write: 'propose' },
+      },
+      permissionRules: presetRules('auto'),
+    })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('remember this') })
+    await h.waitFor('turn.completed')
+    expect(calls).toEqual([
+      { runId: 'r1', agent: init.agent, scope: 'project', content: 'Use pnpm.' },
+    ])
+    expect(h.events.find((event) => event.type === 'tool.completed')?.payload).toMatchObject({
+      output: text(
+        'Proposed a note for this project (memoryId: mem-1). The user can confirm or ignore it in the chat; do not propose the same note again.',
+      ),
+    })
+  })
+
+  it('turns a memory write rejection into a tool failure with the reason (M7-03)', async () => {
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            { kind: 'tool', name: 'remember', input: { scope: 'project', content: 'x' } },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script)
+    h.main.handle('host.memory.remember', () => {
+      throw new RpcError('memory.scope_not_allowed', { scope: 'project' })
+    })
+    await h.main.request('host.init', {
+      ...init,
+      agentDefinition: {
+        ...BUILTIN_CODER,
+        memory: { scopes: ['session', 'project'], write: 'propose' },
+      },
+      permissionRules: presetRules('auto'),
+    })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('remember this') })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.execution_failed', params: { code: 'memory.scope_not_allowed' } },
+    })
+  })
+
+  it('refuses memory proposals in unattended runs (M7-03)', async () => {
+    const script: FakeScript = {
+      turns: [
+        {
+          steps: [
+            { kind: 'tool', name: 'remember', input: { scope: 'session', content: 'x' } },
+            { kind: 'reply', text: 'done' },
+          ],
+        },
+      ],
+    }
+    const h = setup(script)
+    const remember = vi.fn()
+    h.main.handle('host.memory.remember', remember)
+    await h.main.request('host.init', {
+      ...init,
+      mode: 'unattended',
+      agentDefinition: {
+        ...BUILTIN_CODER,
+        memory: { scopes: ['session'], write: 'propose' },
+      },
+      permissionRules: presetRules('auto'),
+    })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('remember this') })
+    await h.waitFor('turn.completed')
+    expect(remember).not.toHaveBeenCalled()
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.execution_failed', params: { name: 'remember' } },
+    })
   })
 
   it('leaves the shell out of the system prompt without tools', async () => {

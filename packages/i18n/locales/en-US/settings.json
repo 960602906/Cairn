@@ -572,5 +572,7 @@
   "licenses.failed": "Could not read the license notices. Reinstall the app or export a diagnostics bundle to report this.",
   "licenses.unavailable": "This build does not include the third-party notices file.",
   "licenses.truncated": "The notices are long; only the beginning is shown here. The full text is in THIRD_PARTY_NOTICES.txt in the install directory.",
-  "licenses.close": "Close"
+  "licenses.close": "Close",
+  "general.agentAutoMemory.label": "Let agents save memory automatically",
+  "general.agentAutoMemory.hint": "Applies only to agents configured for automatic memory. When off, their notes still wait for your confirmation. Off by default."
 }

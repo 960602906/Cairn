@@ -38,6 +38,7 @@ import {
   type UpdateCommands,
   type PermissionCommands,
   type ProviderCommands,
+  type MemoryCommands,
   type QuestionCommands,
   type SettingsCommands,
 } from './renderer-gateway.js'
@@ -113,6 +114,7 @@ let checkpoints: CheckpointCommands
 let changeSets: ChangeSetCommands
 let approvals: ApprovalCommands
 let questions: QuestionCommands
+let memories: MemoryCommands
 let skills: SkillCommands & { catalog: (sessionId: string) => SkillCatalogEntry[] }
 let agents: AgentCommands
 let trials: TrialCommands
@@ -366,6 +368,9 @@ function setup(
       return () => approvalListeners.delete(listener)
     }),
   }
+  memories = {
+    respond: vi.fn(() => ({})),
+  }
   questions = {
     pending: vi.fn(() => ({ questions: [] })),
     resolve: vi.fn(() => ({})),
@@ -480,6 +485,7 @@ function setup(
     changeSets,
     approvals,
     questions,
+    memories,
     skills,
     mcp: {} as unknown as McpCommands,
     agents,
@@ -1077,6 +1083,25 @@ describe('createRendererGateway: commands and lifecycle', () => {
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
   })
 
+  it('delegates memory responses to the memory service (M7-03)', async () => {
+    const { client } = setup()
+    await expect(
+      client.request('memory.respond', { sessionId: 's1', memoryId: 'm1', action: 'accept' }),
+    ).resolves.toEqual({})
+    expect(memories.respond).toHaveBeenCalledWith({
+      sessionId: 's1',
+      memoryId: 'm1',
+      action: 'accept',
+    })
+    await expect(
+      client.request('memory.respond', {
+        sessionId: 's1',
+        memoryId: 'm1',
+        action: 'keep' as never,
+      }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+  })
+
   it('delegates activity requests and pushes change/open events', async () => {
     const { client } = setup()
     await expect(client.request('activity.list', {})).resolves.toEqual(ACTIVITY_RESULT)
@@ -1411,6 +1436,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       changeSets,
       approvals,
       questions,
+      memories,
       skills,
       mcp: {} as unknown as McpCommands,
       agents,

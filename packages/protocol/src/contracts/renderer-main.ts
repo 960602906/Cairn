@@ -205,6 +205,8 @@ export type Theme = z.infer<typeof Theme>
  * - `activityNotifications`：是否发送活动中心系统通知（M4-06）。没有设置时不出现，按开。
  * - `onboardingSeen`：是否已经看过首次运行说明（M5-09）。没有设置时按 `false` 返回，
  *   界面据此显示一次欢迎页；关闭后保存为 `true`。
+ * - `agentAutoMemory`：是否允许配置为自动记忆的 Agent 直接写入记忆（M7-03）。没有设置时不出现，按关；
+ *   关闭时这类 Agent 的写入也退回“待确认”。
  */
 export const Settings = z.object({
   locale: Locale,
@@ -239,6 +241,11 @@ export const Settings = z.object({
   updateSkippedVersion: z.string().min(1).max(64).optional(),
   /** 是否已经看过首次运行说明（M5-09）。省略按 false；关闭欢迎页后保存为 true。 */
   onboardingSeen: z.boolean().optional(),
+  /**
+   * 是否允许 Agent 自动写入记忆（M7-03）。只对 `memory.write = "auto"` 的 Agent 有效。
+   * 没有设置时不出现，按关；关闭时这些 Agent 的写入也退回“待确认”。
+   */
+  agentAutoMemory: z.boolean().optional(),
 })
 export type Settings = z.infer<typeof Settings>
 
@@ -271,6 +278,8 @@ export const SettingsPatch = z.object({
   updateSkippedVersion: z.string().min(1).max(64).nullable().optional(),
   /** true 表示已经看过首次运行说明；false 恢复为显示欢迎页。 */
   onboardingSeen: z.boolean().optional(),
+  /** true 允许自动记忆；false 关闭（保存时省略，与没设置一样）。 */
+  agentAutoMemory: z.boolean().optional(),
 })
 export type SettingsPatch = z.infer<typeof SettingsPatch>
 
@@ -847,6 +856,19 @@ export const MainForRenderer = defineSide({
         questionId: Id,
         answers: z.array(AskUserAnswer).optional(),
         cancelled: z.boolean().optional(),
+      }),
+      result: z.object({}),
+    },
+    /**
+     * 确认或忽略一条记忆提议（M7-03）。确认后条目生效，忽略时删除候选；界面靠
+     * `memory.accepted` / `memory.rejected` 事件把卡片收起来，所以这里不返回内容。
+     * 条目不存在时报 `memory.not_found`。
+     */
+    'memory.respond': {
+      params: z.object({
+        sessionId: Id,
+        memoryId: Id,
+        action: z.enum(['accept', 'reject']),
       }),
       result: z.object({}),
     },

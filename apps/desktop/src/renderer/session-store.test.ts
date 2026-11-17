@@ -2136,3 +2136,47 @@ describe('user questions', () => {
     ])
   })
 })
+
+describe('memory proposals (M7-03)', () => {
+  const subscribe = ({ sessionId }: { sessionId: string }) => ({
+    events: [created(sessionId)],
+    lastSeq: 1,
+  })
+
+  it('sends accept and reject for the active session only', async () => {
+    const { api, calls } = fakeApi({
+      'session.subscribe': subscribe,
+      'approval.pending': () => ({ approvals: [] }),
+      'question.pending': () => ({ questions: [] }),
+      'memory.respond': () => ({}),
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().resolveMemory('m1', 'accept')).toBe(false)
+
+    await store.getState().selectSession('s1')
+    expect(await store.getState().resolveMemory('m1', 'accept')).toBe(true)
+    expect(await store.getState().resolveMemory('m2', 'reject')).toBe(true)
+    expect(calls).toContainEqual([
+      'memory.respond',
+      { sessionId: 's1', memoryId: 'm1', action: 'accept' },
+    ])
+    expect(calls).toContainEqual([
+      'memory.respond',
+      { sessionId: 's1', memoryId: 'm2', action: 'reject' },
+    ])
+  })
+
+  it('reports a failed response without throwing', async () => {
+    const { api } = fakeApi({
+      'session.subscribe': subscribe,
+      'approval.pending': () => ({ approvals: [] }),
+      'question.pending': () => ({ questions: [] }),
+      'memory.respond': () => {
+        throw new RpcError('memory.not_found')
+      },
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    expect(await store.getState().resolveMemory('m1', 'accept')).toBe(false)
+  })
+})

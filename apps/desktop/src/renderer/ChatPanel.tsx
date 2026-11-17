@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { progressTaskList, proposedPlan, rootRun, sessionStatus } from '@cairn/core'
 import { isAgentDraftRef } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
+import { MemoryProposalList } from './MemoryProposalCard.js'
 import { QuestionList } from './QuestionCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
@@ -92,6 +93,7 @@ export function ChatPanel({
   const pendingQuestions = useSessionStore((s) =>
     s.activeSessionId === undefined ? 0 : (s.questions[s.activeSessionId]?.length ?? 0),
   )
+  const pendingMemories = view?.memoryProposals.length ?? 0
   const pendingPlan = useSessionStore((s) => {
     const view = s.activeSessionId === undefined ? undefined : s.views[s.activeSessionId]
     return view === undefined ? undefined : proposedPlan(view)
@@ -406,7 +408,9 @@ export function ChatPanel({
               className={cn(
                 'mx-auto flex w-full max-w-[840px] flex-col gap-4 px-5 pt-6 text-body min-[1200px]:px-8',
                 // 有浮动面板时多留一段底部空白，滚到底也能看到消息末尾而不被面板盖住。
-                pendingQuestions > 0 || pendingPlan !== undefined ? 'pb-28' : 'pb-8',
+                pendingQuestions > 0 || pendingPlan !== undefined || pendingMemories > 0
+                  ? 'pb-28'
+                  : 'pb-8',
               )}
             >
               <MessageStream
@@ -444,6 +448,7 @@ export function ChatPanel({
               <div className="pointer-events-auto mx-auto flex max-h-[min(60vh,560px)] max-w-[840px] flex-col gap-2.5 overflow-y-auto">
                 <PlanActions plan={pendingPlan} />
                 <QuestionList />
+                <MemoryProposalList />
               </div>
             </div>
             {progressList && (

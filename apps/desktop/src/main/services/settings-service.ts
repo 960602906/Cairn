@@ -12,6 +12,8 @@
  *   下发，已在运行的宿主不受影响。shell 偏好（M2-09）同样在启动宿主时下发。
  * - 默认模型必须是已配置的模型，否则报 `settings.invalid_default_model`；更新提供方后默认模型
  *   不再存在时一并清除。文件中的默认模型无效时视为没有设置。
+ * - 是否允许 Agent 自动记忆（M7-03）保存为 `agentAutoMemory`：默认关闭（省略），
+ *   只对 `memory.write = "auto"` 的 Agent 有效；关闭时它们写入的记忆也退回待确认。
  * - 首次运行说明是否看过（M5-09）保存为 `onboardingSeen`：没有设置或不是 `true` 时返回
  *   `false`，界面显示一次欢迎页；关闭后写入 `true`，写 `false` 会清除保存值。
  * - 先写临时文件再改名替换，写入中途退出不会留下半个文件。写入失败报 `settings.write_failed`，
@@ -207,6 +209,7 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       ...(stored['sessionBrief'] === false ? { sessionBrief: false } : {}),
       ...(stored['activityNotifications'] === false ? { activityNotifications: false } : {}),
       ...(stored['updateAutoCheck'] === false ? { updateAutoCheck: false } : {}),
+      ...(stored['agentAutoMemory'] === true ? { agentAutoMemory: true } : {}),
       onboardingSeen: stored['onboardingSeen'] === true,
     }
   }
@@ -259,6 +262,10 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       if (patch.activityNotifications !== undefined) {
         // 开是默认值，不写入文件
         next['activityNotifications'] = patch.activityNotifications ? undefined : false
+      }
+      if (patch.agentAutoMemory !== undefined) {
+        // 关是默认值，不写入文件
+        next['agentAutoMemory'] = patch.agentAutoMemory ? true : undefined
       }
       if (patch.onboardingSeen !== undefined) {
         // 没看过是默认值，不写入文件

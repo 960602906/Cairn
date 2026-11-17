@@ -80,7 +80,7 @@ export const BUILTIN_CODER: AgentDefinition = {
   permissions: 'ask',
   limits: {},
   context: { includeProjectInstructions: true, compaction: 'auto' },
-  memory: { scopes: ['session', 'project'], write: 'never' },
+  memory: { scopes: ['session', 'project'], write: 'propose' },
   delegation: {
     enabled: true,
     allowedAgents: [BUILTIN_EXPLORER_ID, BUILTIN_REVIEWER_ID, BUILTIN_TESTER_ID],
@@ -359,10 +359,6 @@ export function validateAgentDefinition(
   })
   if (definition.model.auxiliary && !context.hasModel(definition.model.auxiliary)) {
     warnings.push(issue('model.auxiliary', 'unknown_model'))
-  }
-
-  if (definition.memory.write !== 'never') {
-    warnings.push(issue('memory.write', 'memory_write_reserved'))
   }
 
   if (definition.delegation?.enabled) {

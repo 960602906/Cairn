@@ -572,5 +572,7 @@
   "licenses.failed": "无法读取许可声明。可以重新安装应用或导出诊断包反馈问题。",
   "licenses.unavailable": "这次构建没有包含第三方许可声明文件。",
   "licenses.truncated": "声明很长，这里只显示开头部分。完整内容在安装目录的 THIRD_PARTY_NOTICES.txt。",
-  "licenses.close": "关闭"
+  "licenses.close": "关闭",
+  "general.agentAutoMemory.label": "允许 Agent 自动记忆",
+  "general.agentAutoMemory.hint": "只对配置为自动写入的 Agent 生效。关闭时它们提议的记忆也要你确认；默认关闭。"
 }

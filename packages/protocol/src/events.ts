@@ -37,6 +37,7 @@ import {
   TokenUsage,
   ToolCall,
 } from './common.js'
+import { MemoryScope } from './agents.js'
 import { FileChangeKind } from './changes.js'
 import { CheckpointReason } from './checkpoints.js'
 import { BackgroundCommandStatus } from './commands.js'
@@ -430,6 +431,33 @@ const payloadSchemas = {
     listId: Id,
     reason: z.string().optional(),
   }),
+
+  // ---------- 记忆（M7-03，ADR-0019） ----------
+  /**
+   * 模型（或自动写入）新建一条待确认的记忆。`content` 在这里就带上，界面不用再查存储；
+   * 事件属于提议它的那一轮（信封的 `runId`）。
+   */
+  'memory.proposed': z.object({
+    memoryId: Id,
+    scope: MemoryScope,
+    content: z.string().min(1),
+    /** 提议的 Agent；内置 Agent 用内置 id。 */
+    sourceAgentId: Id.optional(),
+  }),
+  /**
+   * 条目变成 `active`：用户确认 `propose` 的提议，或 `auto` 直接写入。
+   * `origin` 区分两种来源，界面据此提示“自动记住”。
+   */
+  'memory.accepted': z.object({
+    memoryId: Id,
+    scope: MemoryScope,
+    content: z.string().min(1),
+    origin: z.enum(['propose', 'auto']),
+  }),
+  /** 用户忽略了提议，候选条目已删除。 */
+  'memory.rejected': z.object({ memoryId: Id }),
+  /** 用户删除了已生效的条目。 */
+  'memory.deleted': z.object({ memoryId: Id, scope: MemoryScope.optional() }),
 } satisfies Record<string, z.ZodType>
 
 type PayloadSchemas = typeof payloadSchemas

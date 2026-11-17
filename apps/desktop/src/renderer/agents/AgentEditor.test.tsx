@@ -231,7 +231,8 @@ describe('AgentEditor sections and actions', () => {
 
     // 记忆
     fireEvent.click(screen.getByRole('button', { name: /^记忆/ }))
-    expect(screen.getByText('即将推出')).toBeDefined()
+    expect(screen.getByText('本会话')).toBeDefined()
+    expect(screen.getByText('不写入')).toBeDefined()
 
     // 返回基本信息，修改后 Ctrl+S 保存
     fireEvent.click(screen.getByRole('button', { name: /^基本信息/ }))

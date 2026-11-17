@@ -51,7 +51,9 @@ import {
   planToolVisible,
   registerAskUserTool,
   registerPlanTools,
+  registerRememberTool,
   registerTaskListTools,
+  REMEMBER_TOOL,
   ASK_USER_TOOL,
   sandboxGuard,
   taskListToolVisible,
@@ -86,6 +88,8 @@ import {
   DelegateInput,
   type HostModelConfig,
   type McpToolExposure,
+  type MemoryScope,
+  type RunAgentRef,
   type ModelRef,
   type PermissionMode,
   type PermissionRule,
@@ -489,6 +493,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         (definition) =>
           planToolVisible(definition.name, mode, executing) &&
           taskListToolVisible(definition.name, mode, executing) &&
+          // 计划轮不写记忆：这一轮只读并提出计划。
+          (definition.name !== REMEMBER_TOOL || mode === 'normal') &&
           toolSelected(agentDefinition?.tools, definition),
       )
     registerMcpToolsInto(registry, init.mcpTools ?? [])
@@ -522,6 +528,33 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           })),
         ),
       )
+    }
+
+    /** 转交主进程写入记忆（M7-03）：拒绝原因（策略或范围变化）转成工具失败交给模型。 */
+    async function rememberMemory(
+      runId: string,
+      agent: RunAgentRef,
+      input: { readonly scope: MemoryScope; readonly content: string },
+    ): Promise<{ memoryId: string; status: 'proposed' | 'active' }> {
+      try {
+        return await endpoint.request('host.memory.remember', {
+          runId,
+          agent,
+          scope: input.scope,
+          content: input.content,
+        })
+      } catch (error) {
+        if (!(error instanceof RpcError)) throw error
+        const reason =
+          error.code === 'memory.scope_not_allowed'
+            ? 'the requested scope is not enabled for this agent'
+            : error.code === 'memory.disabled'
+              ? 'memory is turned off for this agent'
+              : error.code
+        throw new ToolError(ToolErrorCode.ExecutionFailed, `Memory was not saved: ${reason}.`, {
+          code: error.code,
+        })
+      }
     }
 
     /** 可委派目标的名称与描述（M4-02）；主进程没有这个接口时只列 id。 */
@@ -992,6 +1025,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         if (activePlan) activePlan = { ...activePlan, steps: [...steps] }
       },
     })
+    // 记忆写入（M7-03）：`never` 不登记，模型看不到这个工具；登记后主进程仍按最新定义再校验一次。
+    const memoryPolicy = agentDefinition?.memory
+    if (memoryPolicy !== undefined && memoryPolicy.write !== 'never') {
+      registerRememberTool(registry, {
+        scopes: memoryPolicy.scopes,
+        write: memoryPolicy.write,
+        mode: init.mode === 'interactive' ? 'interactive' : 'unattended',
+        remember: (input) => rememberMemory(init.runId, init.agent, input),
+      })
+    }
     // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息。项目说明每轮再补（M3-02）。
     const askUserDefinition = registry.get(ASK_USER_TOOL)
     const promptBase = {
