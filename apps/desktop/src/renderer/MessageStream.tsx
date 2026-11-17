@@ -180,125 +180,77 @@ interface TurnActivityGroupProps {
   readonly steps: readonly TurnActivityStep[]
   readonly view: SessionView
   readonly isRunning: boolean
-  readonly hasAwaitingApproval?: boolean | undefined
+  readonly hasAwaitingApproval: boolean
   readonly awaiting: ReadonlySet<string>
   readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }
 
 function generateActivitySummary(
-  toolCalls: readonly ToolCall[],
-  hasReasoning: boolean,
+  steps: readonly TurnActivityStep[],
+  isRunning: boolean,
+  hasAwaitingApproval: boolean,
   t: TFunction,
-): { title: string; breakdown?: string | undefined } {
-  const categories = new Set<string>()
-  const counts: Record<string, number> = {}
+): { title: string; tone: 'running' | 'attention' | 'done' } {
+  const toolCalls = steps.flatMap((s) => s.toolCalls ?? [])
+  const hasFailure = toolCalls.some((c) => c.status === 'failed' || c.status === 'cancelled')
+  const count = toolCalls.length
 
-  for (const call of toolCalls) {
-    let cat = 'other'
-    const name = call.name.toLowerCase()
-    if (
-      name === 'read_file' ||
-      name === 'read_symbol' ||
-      name.includes('search') ||
-      name === 'grep'
-    ) {
-      cat = 'explore'
-    } else if (name === 'run_command') {
-      cat = 'run'
-    } else if (name === 'apply_file_diff' || name === 'write_file' || name.includes('edit')) {
-      cat = 'edit'
-    } else if (name.includes('plan') || name.includes('task')) {
-      cat = 'plan'
-    }
-    categories.add(cat)
-    counts[cat] = (counts[cat] ?? 0) + 1
+  if (isRunning) {
+    return { title: t('tool.group.running', { steps: count }), tone: 'running' }
   }
-
-  const actions: string[] = []
-  if (categories.has('explore')) actions.push(t('turn.activity.action.explore'))
-  if (categories.has('run')) actions.push(t('turn.activity.action.run'))
-  if (categories.has('edit')) actions.push(t('turn.activity.action.edit'))
-  if (categories.has('plan')) actions.push(t('turn.activity.action.plan'))
-
-  let title: string
-  if (actions.length > 0) {
-    title = actions.join(t('turn.activity.action.separator'))
-  } else if (hasReasoning && toolCalls.length > 0) {
-    title = t('turn.activity.reasoningAndTools', { count: toolCalls.length })
-  } else if (hasReasoning) {
-    title = t('turn.activity.reasonings', { count: 1 })
-  } else {
-    title = t('turn.activity.tools', { count: toolCalls.length })
+  if (hasFailure || hasAwaitingApproval) {
+    return { title: t('tool.group.attention', { steps: count }), tone: 'attention' }
   }
-
-  const breakdownParts: string[] = []
-  if (counts['explore'])
-    breakdownParts.push(t('turn.activity.breakdown.read', { count: counts['explore'] }))
-  if (counts['run']) breakdownParts.push(t('turn.activity.breakdown.run', { count: counts['run'] }))
-  if (counts['edit'])
-    breakdownParts.push(t('turn.activity.breakdown.edit', { count: counts['edit'] }))
-  if (counts['other'])
-    breakdownParts.push(t('turn.activity.breakdown.other', { count: counts['other'] }))
-
-  const breakdown = breakdownParts.length > 0 ? breakdownParts.join(' · ') : undefined
-  return { title, breakdown }
+  return { title: t('tool.group.done', { steps: count }), tone: 'done' }
 }
 
 const TurnActivityGroup = memo(function TurnActivityGroup({
   steps,
   view,
   isRunning,
+  hasAwaitingApproval,
   awaiting,
   resolvePaths,
   onOpenFile,
 }: TurnActivityGroupProps) {
   const { t } = useTranslation('session')
-  // 默认折叠：一排一排的思考与读取/运行折叠为单行胶囊卡片，点击再展开（对齐 Antigravity）
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(isRunning || hasAwaitingApproval)
+  const [manuallyOpened, setManuallyOpened] = useState(false)
 
-  const toolCalls = useMemo(() => steps.flatMap((s) => s.toolCalls ?? []), [steps])
-  const reasonings = useMemo(
-    () => steps.filter((s) => s.reasoning && s.reasoning.trim() !== ''),
-    [steps],
-  )
-  const hasReasoning = reasonings.length > 0
+  // 状态变化时自动更新展开状态（如果用户没手动操作）
+  useEffect(() => {
+    if (!manuallyOpened) {
+      setOpen(isRunning || hasAwaitingApproval)
+    }
+  }, [isRunning, hasAwaitingApproval, manuallyOpened])
 
-  const totalDurationMs = useMemo(
-    () =>
-      toolCalls.reduce((sum, call) => {
-        const d = view.tools[call.id]?.durationMs
-        return sum + (d !== undefined && d > 0 ? d : 0)
-      }, 0),
-    [toolCalls, view.tools],
-  )
+  const handleToggle = () => {
+    setManuallyOpened(true)
+    setOpen(!open)
+  }
 
-  const { title, breakdown } = useMemo(
-    () => generateActivitySummary(toolCalls, hasReasoning, t),
-    [toolCalls, hasReasoning, t],
+  const { title, tone } = useMemo(
+    () => generateActivitySummary(steps, isRunning, hasAwaitingApproval, t),
+    [steps, isRunning, hasAwaitingApproval, t],
   )
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="my-2 max-w-full">
-      <CollapsibleTrigger className="group/activity inline-flex max-w-full cursor-pointer select-none items-center gap-2 rounded-[8px] border border-hair/70 bg-sunk/60 px-2.5 py-1.5 text-left text-ui text-fg2 outline-none transition-colors hover:border-hair hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent">
+      <CollapsibleTrigger
+        onClick={handleToggle}
+        className="group/activity inline-flex max-w-full cursor-pointer select-none items-center gap-2 rounded-[8px] border border-hair/70 bg-sunk/60 px-2.5 py-1.5 text-left text-ui text-fg2 outline-none transition-colors hover:border-hair hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
+      >
         <Activity
           aria-hidden
           className={cn(
-            'size-3.5 shrink-0 text-muted transition-colors group-hover/activity:text-accent',
-            isRunning && 'animate-pulse text-accent',
+            'size-3.5 shrink-0 transition-colors group-hover/activity:text-accent',
+            tone === 'running' ? 'animate-pulse text-accent' : tone === 'attention' ? 'text-warn' : 'text-faint',
           )}
         />
         <span className="flex min-w-0 items-center gap-1.5 truncate text-[12.5px] font-medium">
-          {isRunning ? <Shimmer>{title}</Shimmer> : title}
-          {breakdown && (
-            <span className="truncate text-note font-normal text-muted">({breakdown})</span>
-          )}
+          {tone === 'running' ? <Shimmer>{title}</Shimmer> : title}
         </span>
-        {totalDurationMs > 0 && !isRunning && (
-          <span className="tabular shrink-0 text-note text-muted">
-            {formatDuration(totalDurationMs)}
-          </span>
-        )}
         <ChevronRight
           aria-hidden
           className={cn(
