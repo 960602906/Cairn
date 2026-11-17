@@ -188,12 +188,16 @@ interface TurnActivityGroupProps {
 
 function generateActivitySummary(
   steps: readonly TurnActivityStep[],
+  view: SessionView,
   isRunning: boolean,
   hasAwaitingApproval: boolean,
   t: TFunction,
 ): { title: string; tone: 'running' | 'attention' | 'done' } {
   const toolCalls = steps.flatMap((s) => s.toolCalls ?? [])
-  const hasFailure = toolCalls.some((c) => c.status === 'failed' || c.status === 'cancelled')
+  const hasFailure = toolCalls.some((c) => {
+    const status = view.tools[c.id]?.status
+    return status === 'failed' || status === 'cancelled'
+  })
   const count = toolCalls.length
 
   if (isRunning) {
@@ -231,8 +235,8 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
   }
 
   const { title, tone } = useMemo(
-    () => generateActivitySummary(steps, isRunning, hasAwaitingApproval, t),
-    [steps, isRunning, hasAwaitingApproval, t],
+    () => generateActivitySummary(steps, view, isRunning, !!hasAwaitingApproval, t),
+    [steps, view, isRunning, hasAwaitingApproval, t],
   )
 
   return (
