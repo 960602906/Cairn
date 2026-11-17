@@ -11,6 +11,7 @@ import type {
   FileChangeKind,
   FileChangeStatus,
   FileHunk,
+  MemoryScope,
   ModelRef,
   PermissionRule,
   PersistedEvent,
@@ -221,6 +222,71 @@ export interface PermissionRuleStore {
   list(options?: ListPermissionRulesOptions): PermissionRuleRecord[]
   /** 不存在时报 `storage.not_found`。 */
   delete(ruleId: string): void
+}
+
+// ---------- 记忆（M7-01，ADR-0019） ----------
+
+export type MemoryStatus = 'proposed' | 'active'
+
+/**
+ * 一条记忆条目。范围与归属一一对应：`session` 有 `session_id`，`project` 有 `project_id`，
+ * `global` 两者都没有。`proposed` 条目要等用户确认后才变 `active`，不进入模型请求（M7-02）。
+ */
+export interface MemoryEntryRecord {
+  readonly memoryId: string
+  readonly scope: MemoryScope
+  readonly sessionId?: string
+  readonly projectId?: string
+  readonly content: string
+  readonly status: MemoryStatus
+  /** 提议或写入这条记忆的运行与 Agent；由调用方给出，M7-03 起使用。 */
+  readonly sourceRunId?: string
+  readonly sourceAgentId?: string
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+export interface ProposeMemoryInput {
+  readonly memoryId: string
+  readonly scope: MemoryScope
+  /** 必填且不能为空。 */
+  readonly content: string
+  /** `session` 范围必填，其他范围不能给出。 */
+  readonly sessionId?: string
+  /** `project` 范围必填，其他范围不能给出。 */
+  readonly projectId?: string
+  readonly sourceRunId?: string
+  readonly sourceAgentId?: string
+}
+
+export interface ListMemoryOptions {
+  /** 同时列出这个项目的记忆。 */
+  readonly projectId?: string
+  /** 同时列出这个会话的记忆。 */
+  readonly sessionId?: string
+  /** 只列出这个状态；省略时列出全部。 */
+  readonly status?: MemoryStatus
+}
+
+/**
+ * 记忆存储。查询按范围隔离：给出哪个项目/会话就只能读到哪一份记忆，跨项目的条目在查询层就不可达。
+ * 删除是硬删除；调用方负责写 `memory.deleted` 事件（M7-03）。
+ */
+export interface MemoryStore {
+  /**
+   * 写入一条 `proposed` 条目。范围与归属不符、或内容为空时报 `storage.invalid_record`；
+   * 项目或会话不存在时报 `storage.not_found`；id 重复时报 `storage.conflict`。
+   */
+  propose(input: ProposeMemoryInput): MemoryEntryRecord
+  get(memoryId: string): MemoryEntryRecord | undefined
+  /** 全局，加上给出的项目与会话的条目；按会话、项目、全局排列，同一范围内按创建顺序。 */
+  list(options?: ListMemoryOptions): MemoryEntryRecord[]
+  /** `proposed` → `active`；已经是 `active` 时原样返回。不存在时报 `storage.not_found`。 */
+  confirm(memoryId: string): MemoryEntryRecord
+  /** 编辑内容并更新 `updatedAt`。内容为空时报 `storage.invalid_record`，不存在时报 `storage.not_found`。 */
+  update(memoryId: string, content: string): MemoryEntryRecord
+  /** 硬删除并返回被删除的条目。不存在时报 `storage.not_found`。 */
+  delete(memoryId: string): MemoryEntryRecord
 }
 
 // ---------- 事件 ----------
@@ -606,6 +672,7 @@ export interface Storage {
   readonly events: EventStore
   readonly changes: FileChangeStore
   readonly permissionRules: PermissionRuleStore
+  readonly memories: MemoryStore
   readonly skillPrefs: SkillPrefStore
   readonly mcpServers: McpServerStore
   readonly mcpToolPrefs: McpToolPrefStore

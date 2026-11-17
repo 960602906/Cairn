@@ -70,10 +70,14 @@ export const AgentSkillSelection = z
   .strict()
 export type AgentSkillSelection = z.infer<typeof AgentSkillSelection>
 
-/** 记忆（第一版只预留，写入固定为 `never`）。 */
+/** 记忆范围（ADR-0019）：会话、项目、全局严格隔离。 */
+export const MemoryScope = z.enum(['session', 'project', 'global'])
+export type MemoryScope = z.infer<typeof MemoryScope>
+
+/** 记忆（M7-01 起存储与读取实现，写入方式在 M7-03 生效）。 */
 export const AgentMemoryPolicy = z
   .object({
-    scopes: z.array(z.enum(['session', 'project', 'global'])),
+    scopes: z.array(MemoryScope),
     write: z.enum(['never', 'propose', 'auto']),
   })
   .strict()

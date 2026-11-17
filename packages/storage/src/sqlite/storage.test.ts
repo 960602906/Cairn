@@ -51,6 +51,7 @@ describe('openSqliteStorage', () => {
         '0015_background-commands',
         '0016_project-pinning',
         '0017_session-thinking-level',
+        '0018_memory-entries',
       ],
     })
     storage.close()
@@ -73,6 +74,7 @@ describe('openSqliteStorage', () => {
       'hunks',
       'mcp_servers',
       'mcp_tool_prefs',
+      'memory_entries',
       'permission_rules',
       'projects',
       'provider_configs',
@@ -135,6 +137,7 @@ describe('openSqliteStorage', () => {
       '0015_background-commands',
       '0016_project-pinning',
       '0017_session-thinking-level',
+      '0018_memory-entries',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

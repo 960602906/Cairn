@@ -9,7 +9,7 @@
  */
 import type { PermissionRule, PersistedEvent } from '@cairn/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { StorageError, StorageErrorCode, type Storage } from '../types.js'
+import { StorageError, StorageErrorCode, type ProposeMemoryInput, type Storage } from '../types.js'
 
 export type StorageFactory = (now: () => number) => Storage
 
@@ -880,6 +880,193 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         storage.permissionRules.delete('a')
         expect(storage.permissionRules.get('a')).toBeUndefined()
         expectStorageError(() => storage.permissionRules.delete('a'), StorageErrorCode.NotFound)
+      })
+    })
+
+    describe('memory entries', () => {
+      it('keeps scopes isolated and lists session, project, then global entries', () => {
+        seed()
+        storage.projects.create({ projectId: 'p2', name: 'Other', path: '/work/other' })
+        storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p2',
+          workspacePath: '/work/other',
+          title: '另一个会话',
+        })
+        storage.memories.propose({ memoryId: 'g1', scope: 'global', content: '全局' })
+        storage.memories.propose({
+          memoryId: 'p1m',
+          scope: 'project',
+          projectId: 'p1',
+          content: '项目 1',
+        })
+        storage.memories.propose({
+          memoryId: 'p2m',
+          scope: 'project',
+          projectId: 'p2',
+          content: '项目 2',
+        })
+        storage.memories.propose({
+          memoryId: 's1m',
+          scope: 'session',
+          sessionId: 's1',
+          content: '会话 1',
+        })
+        storage.memories.propose({
+          memoryId: 's2m',
+          scope: 'session',
+          sessionId: 's2',
+          content: '会话 2',
+        })
+
+        const ids = (options?: Parameters<Storage['memories']['list']>[0]) =>
+          storage.memories.list(options).map((entry) => entry.memoryId)
+        // 没有给出项目或会话时只能读到全局记忆。
+        expect(ids()).toEqual(['g1'])
+        expect(ids({ projectId: 'p1', sessionId: 's1' })).toEqual(['s1m', 'p1m', 'g1'])
+        expect(ids({ projectId: 'p2', sessionId: 's2' })).toEqual(['s2m', 'p2m', 'g1'])
+        expect(ids({ projectId: 'p2' })).toEqual(['p2m', 'g1'])
+
+        // 其他项目与会话的记忆在查询层就不可达。
+        const visible = storage.memories.list({ projectId: 'p1', sessionId: 's1' })
+        expect(visible.map((entry) => entry.memoryId)).not.toContain('p2m')
+        expect(visible.map((entry) => entry.memoryId)).not.toContain('s2m')
+
+        clock = 200
+        storage.memories.confirm('s1m')
+        expect(ids({ projectId: 'p1', sessionId: 's1', status: 'active' })).toEqual(['s1m'])
+        expect(ids({ projectId: 'p1', sessionId: 's1', status: 'proposed' })).toEqual(['p1m', 'g1'])
+      })
+
+      it('records source and returns copies instead of stored records', () => {
+        seed()
+        const entry = storage.memories.propose({
+          memoryId: 'm1',
+          scope: 'session',
+          sessionId: 's1',
+          content: '偏好用制表符',
+          sourceRunId: 'r1',
+          sourceAgentId: 'builtin.default',
+        })
+        expect(entry).toEqual({
+          memoryId: 'm1',
+          scope: 'session',
+          sessionId: 's1',
+          content: '偏好用制表符',
+          status: 'proposed',
+          sourceRunId: 'r1',
+          sourceAgentId: 'builtin.default',
+          createdAt: 100,
+          updatedAt: 100,
+        })
+        ;(entry as { content: string }).content = 'tampered'
+        expect(storage.memories.get('m1')?.content).toBe('偏好用制表符')
+        expect(storage.memories.get('nope')).toBeUndefined()
+      })
+
+      it('rejects inconsistent owners, empty content, unknown owners and duplicate ids', () => {
+        seed()
+        const invalid: ProposeMemoryInput[] = [
+          { memoryId: 'a', scope: 'global', content: 'x', projectId: 'p1' },
+          { memoryId: 'a', scope: 'global', content: 'x', sessionId: 's1' },
+          { memoryId: 'a', scope: 'project', content: 'x' },
+          { memoryId: 'a', scope: 'project', content: 'x', projectId: 'p1', sessionId: 's1' },
+          { memoryId: 'a', scope: 'session', content: 'x' },
+          { memoryId: 'a', scope: 'session', content: 'x', projectId: 'p1' },
+          { memoryId: 'a', scope: 'global', content: '   ' },
+        ]
+        for (const input of invalid) {
+          expectStorageError(() => storage.memories.propose(input), StorageErrorCode.InvalidRecord)
+        }
+        expectStorageError(
+          () =>
+            storage.memories.propose({
+              memoryId: 'a',
+              scope: 'project',
+              projectId: 'nope',
+              content: 'x',
+            }),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () =>
+            storage.memories.propose({
+              memoryId: 'a',
+              scope: 'session',
+              sessionId: 'nope',
+              content: 'x',
+            }),
+          StorageErrorCode.NotFound,
+        )
+        storage.memories.propose({ memoryId: 'a', scope: 'global', content: 'x' })
+        expectStorageError(
+          () =>
+            storage.memories.propose({
+              memoryId: 'a',
+              scope: 'session',
+              sessionId: 's1',
+              content: 'x',
+            }),
+          StorageErrorCode.Conflict,
+        )
+        expect(storage.memories.list()).toHaveLength(1)
+      })
+
+      it('confirms, edits and hard-deletes entries', () => {
+        seed()
+        storage.memories.propose({ memoryId: 'm1', scope: 'global', content: 'v1' })
+        clock = 200
+        expect(storage.memories.confirm('m1')).toMatchObject({ status: 'active', updatedAt: 200 })
+        // 重复确认不再改变时间。
+        clock = 300
+        expect(storage.memories.confirm('m1')).toMatchObject({ status: 'active', updatedAt: 200 })
+        expect(storage.memories.update('m1', 'v2')).toMatchObject({
+          content: 'v2',
+          status: 'active',
+          updatedAt: 300,
+        })
+        expectStorageError(
+          () => storage.memories.update('m1', '  '),
+          StorageErrorCode.InvalidRecord,
+        )
+        expectStorageError(() => storage.memories.update('nope', 'x'), StorageErrorCode.NotFound)
+
+        const deleted = storage.memories.delete('m1')
+        expect(deleted.content).toBe('v2')
+        expect(storage.memories.get('m1')).toBeUndefined()
+        expect(storage.memories.list()).toEqual([])
+        expectStorageError(() => storage.memories.delete('m1'), StorageErrorCode.NotFound)
+        expectStorageError(() => storage.memories.confirm('m1'), StorageErrorCode.NotFound)
+      })
+
+      it('rolls back with transactions and drops session memory with its session', () => {
+        seed()
+        storage.memories.propose({
+          memoryId: 's',
+          scope: 'session',
+          sessionId: 's1',
+          content: '会话记忆',
+        })
+        storage.memories.propose({
+          memoryId: 'p',
+          scope: 'project',
+          projectId: 'p1',
+          content: '项目记忆',
+        })
+        expect(() =>
+          storage.transaction(() => {
+            storage.memories.confirm('s')
+            storage.memories.delete('p')
+            throw new Error('boom')
+          }),
+        ).toThrow('boom')
+        expect(storage.memories.get('s')?.status).toBe('proposed')
+        expect(storage.memories.get('p')).toBeDefined()
+
+        storage.sessions.remove('s1')
+        expect(storage.memories.get('s')).toBeUndefined()
+        // 项目记忆不属于某个会话，会话删除后仍在。
+        expect(storage.memories.get('p')).toBeDefined()
       })
     })
 
