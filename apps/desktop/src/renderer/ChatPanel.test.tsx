@@ -509,6 +509,194 @@ describe('ChatPanel', () => {
     expect(tabNames()).toEqual(['首页', '文件树'])
   })
 
+  it('opens the sub-agent panel from a delegation card', async () => {
+    const { open, store } = setup({
+      history: HISTORY,
+      handlers: {
+        'run.inspect': () => ({
+          tree: { sessionId: 's1', rootRunId: 'c1', generatedAt: 1, runs: [] },
+          snapshots: [],
+          settings: { projectPath: '/work', workspacePath: '/work', permissionRules: [] },
+        }),
+      },
+    })
+    await open()
+    const base = store.getState().views.s1!
+    act(() =>
+      store.setState({
+        views: {
+          s1: {
+            ...base,
+            delegations: [
+              {
+                childRunId: 'c1',
+                parentRunId: 'r1',
+                agent: { id: 'builtin.reviewer', version: 1 },
+                task: '补测试',
+                workspace: 'shared',
+                workspacePath: undefined,
+                budget: undefined,
+                turnId: undefined,
+                createdAt: 1,
+                completed: undefined,
+              },
+            ],
+          },
+        },
+      }),
+    )
+    await userEvent.click(await screen.findByRole('button', { name: /补测试/ }))
+    expect(screen.getByRole('tab', { name: '子 Agent' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('region', { name: '子 Agent' })).toBeTruthy()
+  })
+
+  const notesChange = {
+    changeId: 'ch1',
+    path: 'notes.txt',
+    kind: 'modify' as const,
+    status: 'pending' as const,
+    turnId: 't1',
+    hunks: [],
+    added: 1,
+    removed: 1,
+    createdAt: 1,
+  }
+
+  const nestedChange = { ...notesChange, path: 'src/notes.txt' }
+
+  /** 带路径的行内引用才可点：`src/notes.txt` / `src/notes.txt:12`。 */
+  const mentionHistory = (body: string): EventEnvelope[] => [
+    created('修复登录'),
+    runCreated(2),
+    userMessage(3, 'm1', '你好'),
+    ev(4, 'turn.started', {}),
+    state(5, 'idle', 'thinking'),
+    completed(6, 'm2', body),
+    ev(7, 'turn.completed', { durationMs: 10 }),
+    state(8, 'thinking', 'completed'),
+  ]
+
+  it('opens a file with session changes in the changes view and can switch to preview', async () => {
+    const { open, store, request } = setup({
+      history: HISTORY,
+      handlers: {
+        'fs.list': () => ({
+          entries: [{ path: 'notes.txt', name: 'notes.txt', kind: 'file', hidden: false }],
+          truncated: false,
+        }),
+        'fs.read': () => ({ content: { kind: 'text', text: 'new\n' } }),
+        'changes.content': () => ({
+          before: { kind: 'text', text: 'old\n' },
+          after: { kind: 'text', text: 'new\n' },
+        }),
+      },
+    })
+    await open()
+    installFileBridge(request)
+    act(() =>
+      store.setState({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+        changes: { s1: [notesChange] },
+      }),
+    )
+    await showPanel()
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await userEvent.click(within(panel).getByRole('button', { name: '打开文件树' }))
+    await userEvent.click(await within(panel).findByText('notes.txt'))
+    const region = screen.getByRole('region', { name: '文件改动：notes.txt' })
+    await waitFor(() => expect(region.textContent).toContain('new'))
+
+    await userEvent.click(screen.getByRole('radio', { name: '预览' }))
+    const preview = await screen.findByRole('region', { name: '文件预览：notes.txt' })
+    await waitFor(() => expect(preview.textContent).toContain('new'))
+  })
+
+  it('keeps line-targeted opens in preview even when the file has changes', async () => {
+    const { open, store, request } = setup({
+      history: mentionHistory('见 `src/notes.txt:12`'),
+      handlers: {
+        'fs.read': () => ({ content: { kind: 'text', text: 'new\n' } }),
+        'fs.exists': (params: { paths: string[] }) => ({ existing: params.paths }),
+        'changes.content': () => ({
+          before: { kind: 'text', text: 'old\n' },
+          after: { kind: 'text', text: 'new\n' },
+        }),
+      },
+    })
+    await open()
+    installFileBridge(request)
+    act(() =>
+      store.setState({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+        changes: { s1: [nestedChange] },
+      }),
+    )
+    await userEvent.click(await screen.findByRole('button', { name: 'src/notes.txt:12' }))
+    expect(screen.getByRole('region', { name: '文件预览：src/notes.txt' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: '文件改动：src/notes.txt' })).toBeNull()
+  })
+
+  it('drops an explicit file view when the file is deleted and reopened', async () => {
+    const entries = [{ path: 'src/notes.txt', name: 'notes.txt', kind: 'file' as const }]
+    const { open, store, request } = setup({
+      history: mentionHistory('见 `src/notes.txt`'),
+      handlers: {
+        'fs.list': (params: { path?: string }) => ({
+          entries:
+            params.path === 'src'
+              ? entries.map((entry) => ({ ...entry, hidden: false }))
+              : [{ path: 'src', name: 'src', kind: 'dir', hidden: false }],
+          truncated: false,
+        }),
+        'fs.read': () => ({ content: { kind: 'text', text: 'new\n' } }),
+        'fs.exists': (params: { paths: string[] }) => ({ existing: params.paths }),
+        'fs.delete': () => {
+          entries.splice(0)
+          return {}
+        },
+        'changes.content': () => ({
+          before: { kind: 'text', text: 'old\n' },
+          after: { kind: 'text', text: 'new\n' },
+        }),
+      },
+    })
+    await open()
+    installFileBridge(request)
+    act(() =>
+      store.setState({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+        changes: { s1: [nestedChange] },
+      }),
+    )
+    const mention = await screen.findByRole('button', { name: 'src/notes.txt' })
+    await userEvent.click(mention)
+    await screen.findByRole('region', { name: '文件改动：src/notes.txt' })
+    await userEvent.click(screen.getByRole('radio', { name: '预览' }))
+    await screen.findByRole('region', { name: '文件预览：src/notes.txt' })
+
+    await showPanel()
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await userEvent.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '文件' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    const [expand] = await within(panel).findAllByRole('button', { name: '展开目录' })
+    await userEvent.click(expand!)
+    const rowOf = () =>
+      [...panel.querySelectorAll('li')].find((item) => item.textContent?.includes('notes.txt')) as
+        HTMLElement | undefined
+    await waitFor(() => expect(rowOf()).toBeTruthy())
+    const row = rowOf()!
+    await userEvent.click(row.querySelector('button[aria-label="文件操作"]') as HTMLElement)
+    await userEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
+    await userEvent.click(await screen.findByRole('button', { name: '删除' }))
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'src/notes.txt' })).toBeNull())
+
+    // 再次从消息里的路径打开：显式选择已被丢弃，重新按有改动默认显示改动。
+    await userEvent.click(screen.getByRole('tab', { name: '文件树' }))
+    await userEvent.click(mention)
+    expect(await screen.findByRole('region', { name: '文件改动：src/notes.txt' })).toBeTruthy()
+  })
+
   it('returns to the home and clears tabs when switching sessions', async () => {
     const { open, store } = setup({ history: HISTORY })
     await open()

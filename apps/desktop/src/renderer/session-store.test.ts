@@ -1615,6 +1615,27 @@ describe('change sets (M4-10)', () => {
     expect(store.getState().changeSetLoading['cs1']).toBe(false)
   })
 
+  it('caches change set details and dedupes concurrent on-demand loads', async () => {
+    const resolvers: ((value: unknown) => void)[] = []
+    const { api, calls } = fakeApi({
+      'changeset.get': () => new Promise((resolve) => resolvers.push(resolve)),
+    })
+    const store = createSessionStore(api)
+    const first = store.getState().ensureChangeSetLoaded('s1', 'cs1')
+    const second = store.getState().ensureChangeSetLoaded('s1', 'cs1')
+    await vi.waitFor(() => expect(resolvers).toHaveLength(1))
+    resolvers[0]!({ changeSet: detail() })
+    await expect(first).resolves.toMatchObject({ changeSetId: 'cs1' })
+    await expect(second).resolves.toMatchObject({ changeSetId: 'cs1' })
+    expect(calls.filter(([method]) => method === 'changeset.get')).toHaveLength(1)
+
+    // 缓存命中后不再请求。
+    await expect(store.getState().ensureChangeSetLoaded('s1', 'cs1')).resolves.toMatchObject({
+      changeSetId: 'cs1',
+    })
+    expect(calls.filter(([method]) => method === 'changeset.get')).toHaveLength(1)
+  })
+
   it('records change set summary failures and clears the loading flag', async () => {
     const { api } = fakeApi({
       'changeset.list': () => {

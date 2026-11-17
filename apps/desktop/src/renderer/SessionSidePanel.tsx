@@ -12,6 +12,7 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
 import type { SessionStatus } from '@cairn/protocol'
+import type { FileDiffMode } from './file-changes.js'
 import { FileTypeIcon } from './file-icons.js'
 import { FileViewer } from './FileViewer.js'
 import { ResizeHandle, useResizableWidth } from './layout/resize.js'
@@ -22,6 +23,7 @@ import {
   SESSION_PANEL_DEFINITIONS,
   SessionPanelContent,
   type SessionPanel,
+  type SessionPanelTarget,
   type SessionPanelView,
   type SessionTab,
 } from './SessionPanels.js'
@@ -41,6 +43,7 @@ export {
   SESSION_PANELS,
   type FileTabId,
   type SessionPanel,
+  type SessionPanelTarget,
   type SessionPanelView,
   type SessionTab,
 } from './SessionPanels.js'
@@ -54,6 +57,7 @@ export function SessionSidePanel({
   panel,
   selectedPlanId,
   selectedChangeSetId,
+  selectedRunId,
   onSelectChangeSet,
   onOpenPanel,
   onActivateTab,
@@ -61,6 +65,8 @@ export function SessionSidePanel({
   onFileRenamed,
   onFileDeleted,
   fileLines = {},
+  fileModes = {},
+  onFileModeChange,
   onHome,
   tabs,
   onCloseTab,
@@ -76,9 +82,11 @@ export function SessionSidePanel({
   readonly selectedPlanId: string | undefined
   /** 从委派卡片或活动中心打开的改动集。 */
   readonly selectedChangeSetId?: string | undefined
+  /** 子 Agent 详情面板当前查看的子运行。 */
+  readonly selectedRunId?: string | undefined
   readonly onSelectChangeSet?: ((changeSetId: string | undefined) => void) | undefined
   /** 打开或切换到某个面板；首页卡片和「+」菜单使用，会回到该面板的概览状态。 */
-  readonly onOpenPanel: (panel: SessionPanel) => void
+  readonly onOpenPanel: (panel: SessionPanel, target?: SessionPanelTarget) => void
   /** 点击已打开的标签；保留当前选中项，不重置概览状态。 */
   readonly onActivateTab: (tab: SessionTab) => void
   /** 文件树里单击文件：追加或激活一个文件标签。 */
@@ -89,6 +97,9 @@ export function SessionSidePanel({
   readonly onFileDeleted?: ((path: string) => void) | undefined
   /** 从消息里的路径打开文件时要定位的行号，按路径记录。 */
   readonly fileLines?: Readonly<Record<string, number>> | undefined
+  /** 用户显式选择的文件视图；缺省时按文件是否有改动自动决定。 */
+  readonly fileModes?: Readonly<Record<string, FileDiffMode>> | undefined
+  readonly onFileModeChange?: ((path: string, mode: FileDiffMode) => void) | undefined
   readonly onHome: () => void
   /** 已打开的标签；标签栏按这个顺序显示。 */
   readonly tabs: readonly SessionTab[]
@@ -303,6 +314,7 @@ export function SessionSidePanel({
               {...(onFileDeleted === undefined ? {} : { onFileDeleted })}
               selectedPlanId={selectedPlanId}
               selectedChangeSetId={selectedChangeSetId}
+              selectedRunId={selectedRunId}
               onOpenPanel={onOpenPanel}
               {...(onSelectChangeSet === undefined ? {} : { onSelectChangeSet })}
             />
@@ -311,9 +323,15 @@ export function SessionSidePanel({
             <FileViewer
               path={fileTabPath(panel)}
               view={view}
+              sessionId={sessionId}
               {...(fileLines[fileTabPath(panel)] !== undefined
                 ? { line: fileLines[fileTabPath(panel)] }
                 : {})}
+              {...(fileModes[fileTabPath(panel)] !== undefined
+                ? { mode: fileModes[fileTabPath(panel)] }
+                : {})}
+              {...(onFileModeChange === undefined ? {} : { onModeChange: onFileModeChange })}
+              onOpenChangeSet={(changeSetId) => onOpenPanel('diff', { changeSetId })}
             />
           )}
           {tabs.includes('files') && (
@@ -329,6 +347,7 @@ export function SessionSidePanel({
                 {...(onFileDeleted === undefined ? {} : { onFileDeleted })}
                 selectedPlanId={selectedPlanId}
                 selectedChangeSetId={selectedChangeSetId}
+                selectedRunId={selectedRunId}
                 onOpenPanel={onOpenPanel}
                 {...(onSelectChangeSet === undefined ? {} : { onSelectChangeSet })}
               />

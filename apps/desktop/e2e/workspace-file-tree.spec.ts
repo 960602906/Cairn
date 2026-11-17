@@ -87,6 +87,8 @@ test('工作空间菜单与文件树的新增、重命名、删除和移除', as
     'true',
   )
   await expect(panel.getByRole('region', { name: '文件预览：notes.txt' })).toContainText('notes')
+  // 没有改动的文件不显示「预览 / 改动」切换。
+  await expect(panel.getByRole('radiogroup')).toHaveCount(0)
   await panel.getByRole('button', { name: '关闭notes.txt' }).click()
   await expect(panel.getByRole('tab', { name: '文件树' })).toHaveAttribute('aria-selected', 'true')
 

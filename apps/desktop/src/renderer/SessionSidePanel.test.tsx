@@ -13,6 +13,7 @@ import {
   SESSION_PANELS,
   SessionSidePanel,
   type SessionPanel,
+  type SessionPanelTarget,
   type SessionPanelView,
 } from './SessionSidePanel.js'
 import { SessionStoreProvider } from './store-context.js'
@@ -82,6 +83,10 @@ function Harness({
   initialTabs = ['diff', 'brief', 'plan'],
   showPlan = true,
   delegations = [],
+  selectedRunId,
+  fileModes,
+  onFileModeChange,
+  onOpenPanel: onOpenPanelSpy,
   onClose,
 }: {
   readonly open?: boolean
@@ -90,13 +95,18 @@ function Harness({
   readonly initialTabs?: readonly SessionPanel[]
   readonly showPlan?: boolean
   readonly delegations?: readonly DelegationView[]
+  readonly selectedRunId?: string | undefined
+  readonly fileModes?: Readonly<Record<string, 'preview' | 'changes'>>
+  readonly onFileModeChange?: ((path: string, mode: 'preview' | 'changes') => void) | undefined
+  readonly onOpenPanel?: ((panel: SessionPanel, target?: SessionPanelTarget) => void) | undefined
   readonly onClose?: (() => void) | undefined
 }) {
   const [open, setOpen] = useState(initialOpen)
   const [panel, setPanel] = useState<SessionPanelView>(initialPanel)
   const [tabs, setTabs] = useState<readonly SessionPanel[]>(initialTabs)
   const [selectedChangeSetId, setSelectedChangeSetId] = useState(initialChangeSetId)
-  const openPanel = (next: SessionPanel) => {
+  const openPanel = (next: SessionPanel, target?: SessionPanelTarget) => {
+    onOpenPanelSpy?.(next, target)
     setTabs((current) => (current.includes(next) ? current : [...current, next]))
     setPanel(next)
   }
@@ -108,6 +118,9 @@ function Harness({
       panel={panel}
       selectedPlanId={plan.planId}
       selectedChangeSetId={selectedChangeSetId}
+      selectedRunId={selectedRunId}
+      {...(fileModes === undefined ? {} : { fileModes })}
+      {...(onFileModeChange === undefined ? {} : { onFileModeChange })}
       onSelectChangeSet={setSelectedChangeSetId}
       onOpenPanel={openPanel}
       onActivateTab={setPanel}
@@ -200,6 +213,13 @@ const wrap = (
     replan: vi.fn(),
     abandonPlan: vi.fn(),
     updateBrief: vi.fn(async () => true),
+    changeContent: vi.fn(async () => ({
+      before: { kind: 'text', text: 'old\n' },
+      after: { kind: 'text', text: 'new\n' },
+    })),
+    ensureChangeSetLoaded: vi.fn(async () => undefined),
+    inspectRun: vi.fn(async () => undefined),
+    inspections: {},
     agents: [],
   })) as unknown as SessionStore
   return render(
@@ -568,6 +588,67 @@ describe('SessionSidePanel', () => {
     const panel = screen.getByRole('dialog', { name: '会话信息' })
     expect(within(panel).getByRole('region', { name: '改动集审阅' })).toBeTruthy()
     expect(within(panel).queryByRole('button', { name: '返回改动集列表' })).toBeNull()
+  })
+
+  it('registers the sub-agent panel without offering it in the add menu', async () => {
+    const user = userEvent.setup()
+    expect(SESSION_PANELS).toContain('delegation')
+    wrap(<Harness initialPanel="home" initialTabs={[]} />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    expect(await screen.findByRole('menuitem', { name: '文件' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '子 Agent' })).toBeNull()
+  })
+
+  it('renders the sub-agent panel for the selected run', () => {
+    wrap(
+      <Harness
+        initialPanel="delegation"
+        initialTabs={['delegation']}
+        delegations={[delegation]}
+        selectedRunId={delegation.childRunId}
+      />,
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getByRole('region', { name: '子 Agent' }).textContent).toContain(
+      '补全登录测试',
+    )
+  })
+
+  it('threads the explicit file view into the file tab', async () => {
+    const user = userEvent.setup()
+    const onFileModeChange = vi.fn()
+    wrap(
+      <Harness
+        initialPanel="file:src/login.ts"
+        initialTabs={[]}
+        fileModes={{ 'src/login.ts': 'changes' }}
+        onFileModeChange={onFileModeChange}
+      />,
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    // 显式选择「改动」时直接显示本会话的改动，不读源码。
+    const region = within(panel).getByRole('region', { name: '文件改动：src/login.ts' })
+    await waitFor(() => expect(region.textContent).toContain('new'))
+    await user.click(within(panel).getByRole('radio', { name: '预览' }))
+    expect(onFileModeChange).toHaveBeenCalledWith('src/login.ts', 'preview')
+  })
+
+  it('opens the change set review from a file tab', async () => {
+    const user = userEvent.setup()
+    const onOpenPanel = vi.fn()
+    wrap(
+      <Harness
+        initialPanel="file:src/a.ts"
+        initialTabs={[]}
+        fileModes={{ 'src/a.ts': 'changes' }}
+        onOpenPanel={onOpenPanel}
+      />,
+      { changeSets: [changeSetSummary], details: { cs1: changeSetDetail } },
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(await within(panel).findByRole('button', { name: '在改动集审阅中查看' }))
+    expect(onOpenPanel).toHaveBeenCalledWith('diff', { changeSetId: 'cs1' })
   })
 
   it('collapses to zero width and removes itself from the accessible tree', () => {

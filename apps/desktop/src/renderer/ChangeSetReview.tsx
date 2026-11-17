@@ -59,7 +59,7 @@ function StatusBadge({ status }: { readonly status: ChangeSetStatus }) {
   )
 }
 
-function FileStatusBadge({ status }: { readonly status: ChangeSetFileInfo['status'] }) {
+export function FileStatusBadge({ status }: { readonly status: ChangeSetFileInfo['status'] }) {
   const { t } = useTranslation('session')
   return (
     <span className={cn('shrink-0 rounded-[5px] px-1.5 py-0.5 text-[11px]', FILE_TONE[status])}>

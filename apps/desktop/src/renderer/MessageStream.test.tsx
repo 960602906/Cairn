@@ -576,6 +576,106 @@ describe('MessageStream 渲染', () => {
     expect(screen.getByText('补测试')).toBeTruthy()
   })
 
+  it('shows a running delegation for a turn that only has live messages, after the live text', async () => {
+    const liveOnly = {
+      ...rich,
+      messages: [],
+      live: {
+        l1: {
+          messageId: 'l1',
+          runId: 'r1',
+          turnId: 't2',
+          text: '流式正文',
+          reasoning: '',
+          lastDeltaSeq: 5,
+          startedAt: 3,
+        },
+      },
+      delegations: [
+        {
+          childRunId: 'child1',
+          parentRunId: 'r1',
+          agent: { id: 'a', version: 1 },
+          task: '补测试',
+          workspace: 'isolated',
+          workspacePath: '/w',
+          budget: undefined,
+          turnId: 't2',
+          createdAt: 1,
+          completed: undefined,
+        },
+      ],
+    } as unknown as SessionView
+    const onOpenRun = vi.fn()
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      settings: { providers: [] },
+      agents: [],
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={liveOnly} onOpenRun={onOpenRun} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    const cards = screen.getAllByRole('article', { name: '委派任务：补测试' })
+    expect(cards).toHaveLength(1)
+    const list = screen.getByRole('list', { name: '消息' })
+    const cardItem = cards[0]!.closest('li')
+    expect(cardItem?.parentElement).toBe(list)
+    expect(list.lastElementChild).toBe(cardItem)
+    await userEvent.click(screen.getByRole('button', { name: /补测试/ }))
+    expect(onOpenRun).toHaveBeenCalledWith('child1')
+  })
+
+  it('does not repeat a delegation when its turn already has messages', () => {
+    const withTurn = {
+      ...rich,
+      delegations: [
+        {
+          childRunId: 'child1',
+          parentRunId: 'r1',
+          agent: { id: 'a', version: 1 },
+          task: '补测试',
+          workspace: 'isolated',
+          workspacePath: '/w',
+          budget: undefined,
+          turnId: 't1',
+          createdAt: 1,
+          completed: undefined,
+        },
+      ],
+    } as unknown as SessionView
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: undefined,
+      awaitingTurn: {},
+      approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      settings: { providers: [] },
+      agents: [],
+      sendPrompt: vi.fn(),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={withTurn} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    expect(screen.getAllByRole('article', { name: '委派任务：补测试' })).toHaveLength(1)
+    const list = screen.getByRole('list', { name: '消息' })
+    expect(list.lastElementChild?.textContent).not.toContain('补测试')
+  })
+
   it('renders a streaming caret on live text and limits enter animations to newly added messages', () => {
     const initialView = {
       ...rich,

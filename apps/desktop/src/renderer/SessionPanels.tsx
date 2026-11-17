@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { planProgressSteps, type SessionView } from '@cairn/core'
 import type { ChangeSetSummary, ProjectSummary, SessionStatus } from '@cairn/protocol'
 import { ChangeSetReview } from './ChangeSetReview.js'
+import { DelegationPanel } from './DelegationPanel.js'
 import { ChangeCounts } from './DiffCard.js'
 import { SessionChangesPanel } from './FileChanges.js'
 import { FileTreeBrowser } from './FileTreeBrowser.js'
@@ -19,12 +20,19 @@ import { SessionBriefPanel } from './SessionBrief.js'
 import { useSessionStore } from './store-context.js'
 import { cn, PanelEmpty, SegmentedControl } from './ui/index.js'
 
-export type SessionPanel = 'files' | 'diff' | 'brief' | 'plan'
+export type SessionPanel = 'files' | 'diff' | 'brief' | 'plan' | 'delegation'
 /** 文件预览标签的标识：`file:` + 相对项目根的路径。 */
 export type FileTabId = `file:${string}`
 /** 标签栏里的一项：固定面板或一个文件。 */
 export type SessionTab = SessionPanel | FileTabId
 export type SessionPanelView = SessionTab | 'home'
+
+/** 打开面板时可以附带的选中项；面板据此显示对应的计划、改动集或子运行。 */
+export interface SessionPanelTarget {
+  readonly planId?: string
+  readonly changeSetId?: string
+  readonly runId?: string
+}
 
 export const fileTabId = (path: string): FileTabId => `file:${path}`
 export const fileTabPath = (tab: FileTabId): string => tab.slice('file:'.length)
@@ -45,8 +53,11 @@ export interface SessionPanelContext {
   readonly onFileDeleted?: ((path: string) => void) | undefined
   readonly selectedPlanId: string | undefined
   readonly selectedChangeSetId: string | undefined
+  /** 子 Agent 详情面板当前查看的子运行。 */
+  readonly selectedRunId: string | undefined
   readonly onSelectChangeSet?: ((changeSetId: string | undefined) => void) | undefined
-  readonly onOpenPanel: (panel: SessionPanel) => void
+  /** 打开某个面板；可附带要选中的计划、改动集或子运行。 */
+  readonly onOpenPanel: (panel: SessionPanel, target?: SessionPanelTarget) => void
 }
 
 export interface SessionPanelDefinition {
@@ -288,6 +299,13 @@ export const SESSION_PANEL_DEFINITIONS: readonly SessionPanelDefinition[] = [
     label: 'sidePanel.plan',
     addable: false,
     content: PlanPanel,
+  },
+  {
+    id: 'delegation',
+    shortLabel: 'sidePanel.delegationShort',
+    label: 'sidePanel.delegation',
+    addable: false,
+    content: DelegationPanel,
   },
 ]
 

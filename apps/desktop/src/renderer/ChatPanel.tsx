@@ -14,7 +14,7 @@ import { ApprovalList } from './ApprovalCard.js'
 import { QuestionList } from './QuestionCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
-import { totals, turnEntries } from './file-changes.js'
+import { totals, turnEntries, type FileDiffMode } from './file-changes.js'
 import { MessageStream } from './MessageStream.js'
 import { PlanActions, TaskProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
@@ -24,6 +24,7 @@ import {
   isFileTab,
   SessionSidePanel,
   type SessionPanel,
+  type SessionPanelTarget,
   type SessionPanelView,
   type SessionTab,
 } from './SessionSidePanel.js'
@@ -104,8 +105,12 @@ export function ChatPanel({
   const [tabs, setTabs] = useState<readonly SessionTab[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>()
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | undefined>()
+  /** 子 Agent 详情面板当前查看的子运行。 */
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>()
   /** 从消息里的路径打开文件时要定位的行号；按路径记住，换标签时仍生效。 */
   const [fileLines, setFileLines] = useState<Readonly<Record<string, number>>>({})
+  /** 用户显式选择的文件视图；缺省时由文件是否有改动自动决定。 */
+  const [fileModes, setFileModes] = useState<Readonly<Record<string, FileDiffMode>>>({})
   /** 宽屏工作台常驻；窄屏默认收起，按需浮出。 */
   const docked = useMediaQuery(PANEL_DOCK_QUERY)
   const [panelPreference, setPanelPreference] = useState<boolean>()
@@ -124,9 +129,10 @@ export function ChatPanel({
 
   /** 从首页、对话卡片或「+」菜单打开：必要时补标签，并回到该面板的概览状态。 */
   const openPanel = useCallback(
-    (next: SessionPanel, target?: { planId?: string; changeSetId?: string }) => {
+    (next: SessionPanel, target?: SessionPanelTarget) => {
       if (next === 'diff') setSelectedChangeSetId(target?.changeSetId)
       if (next === 'plan') setSelectedPlanId(target?.planId)
+      if (next === 'delegation') setSelectedRunId(target?.runId)
       activateTab(next)
       setPanelPreference(true)
     },
@@ -144,9 +150,21 @@ export function ChatPanel({
         else next[path] = line
         return next
       })
+      // 带行号的打开是“去看这一行”，保持预览；普通打开回到自动判断。
+      setFileModes((current) => {
+        const next = { ...current }
+        if (line === undefined) delete next[path]
+        else next[path] = 'preview'
+        return next
+      })
     },
     [activateTab],
   )
+
+  /** 用户在文件标签里显式切换视图。 */
+  const setFileMode = useCallback((path: string, mode: FileDiffMode) => {
+    setFileModes((current) => ({ ...current, [path]: mode }))
+  }, [])
 
   /** 重命名：同步这个文件及子路径下已打开的标签。 */
   const renameFileTabs = useCallback(
@@ -166,6 +184,14 @@ export function ChatPanel({
           else lines[`${to}${path.slice(from.length)}`] = line
         }
         return lines
+      })
+      setFileModes((current) => {
+        const modes: Record<string, FileDiffMode> = {}
+        for (const [path, mode] of Object.entries(current)) {
+          if (path !== from && !path.startsWith(`${from}/`)) modes[path] = mode
+          else modes[`${to}${path.slice(from.length)}`] = mode
+        }
+        return modes
       })
       setPanelState((current) => {
         if (!isFileTab(current)) return current
@@ -191,6 +217,13 @@ export function ChatPanel({
           if (key !== path && !key.startsWith(`${path}/`)) lines[key] = line
         }
         return lines
+      })
+      setFileModes((current) => {
+        const modes: Record<string, FileDiffMode> = {}
+        for (const [key, mode] of Object.entries(current)) {
+          if (key !== path && !key.startsWith(`${path}/`)) modes[key] = mode
+        }
+        return modes
       })
       if (isFileTab(panel) && matches(panel)) {
         setPanelState(next[Math.min(Math.max(index, 0), next.length - 1)] ?? 'home')
@@ -225,6 +258,8 @@ export function ChatPanel({
   useEffect(() => {
     setSelectedPlanId(undefined)
     setSelectedChangeSetId(undefined)
+    setSelectedRunId(undefined)
+    setFileModes({})
     setTabs([])
     setPanelState('home')
   }, [sessionId])
@@ -380,6 +415,7 @@ export function ChatPanel({
                   openPanel('diff', changeSetId === undefined ? {} : { changeSetId })
                 }
                 onOpenPlan={(planId) => openPanel('plan', { planId })}
+                onOpenRun={(runId) => openPanel('delegation', { runId })}
                 onOpenFile={openFile}
               />
               <ApprovalList />
@@ -446,11 +482,14 @@ export function ChatPanel({
           panel={panel}
           selectedPlanId={selectedPlanId}
           selectedChangeSetId={selectedChangeSetId}
+          selectedRunId={selectedRunId}
           onSelectChangeSet={setSelectedChangeSetId}
           onOpenPanel={openPanel}
           onActivateTab={activateTab}
           onOpenFile={openFile}
           fileLines={fileLines}
+          fileModes={fileModes}
+          onFileModeChange={setFileMode}
           onFileRenamed={renameFileTabs}
           onFileDeleted={deleteFileTabs}
           onHome={() => setPanelState('home')}
