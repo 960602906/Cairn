@@ -386,6 +386,129 @@ describe('ChatPanel', () => {
     await waitFor(() => expect(screen.queryByRole('tab', { name: 'renamed.txt' })).toBeNull())
   })
 
+  it('keeps line targets and tabs in sync when a directory is renamed and deleted', async () => {
+    // 宽屏下工作台常驻，点消息里的路径不会把对话列遮住。
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('min-width'),
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }))
+    type Entry = { path: string; name: string; kind: 'dir' | 'file'; hidden: boolean }
+    const parentOf = (path: string) => path.split('/').slice(0, -1).join('/')
+    const under = (path: string, root: string) => path === root || path.startsWith(`${root}/`)
+    const remap = (path: string, from: string, to: string) =>
+      under(path, from) ? `${to}${path.slice(from.length)}` : path
+    const entries: Entry[] = [
+      { path: 'src', name: 'src', kind: 'dir', hidden: false },
+      { path: 'src/inner.ts', name: 'inner.ts', kind: 'file', hidden: false },
+      { path: 'docs', name: 'docs', kind: 'dir', hidden: false },
+      { path: 'docs/notes.md', name: 'notes.md', kind: 'file', hidden: false },
+    ]
+    const { open, store, request } = setup({
+      history: [
+        created('修复登录'),
+        runCreated(2),
+        userMessage(3, 'm1', '你好'),
+        ev(4, 'turn.started', {}),
+        state(5, 'idle', 'thinking'),
+        completed(6, 'm2', '参考 `src/inner.ts:12` 与 `docs/notes.md:5`'),
+        ev(7, 'turn.completed', { durationMs: 10 }),
+        state(8, 'thinking', 'completed'),
+      ],
+      handlers: {
+        'fs.list': (params: { path?: string }) => ({
+          entries: entries.filter((entry) => parentOf(entry.path) === (params.path ?? '')),
+          truncated: false,
+        }),
+        'fs.read': () => ({ content: { kind: 'text', text: 'content\n' } }),
+        'fs.exists': (params: { paths: string[] }) => ({
+          existing: params.paths.filter((path) => entries.some((entry) => entry.path === path)),
+        }),
+        'fs.rename': (params: { from: string; to: string }) => {
+          entries.splice(
+            0,
+            entries.length,
+            ...entries.map((entry) => {
+              const path = remap(entry.path, params.from, params.to)
+              return { ...entry, path, name: path.split('/').at(-1)! }
+            }),
+          )
+          return { path: params.to }
+        },
+        'fs.delete': (params: { path: string }) => {
+          for (let i = entries.length - 1; i >= 0; i--) {
+            if (under(entries[i]!.path, params.path)) entries.splice(i, 1)
+          }
+          return {}
+        },
+      },
+    })
+    await open()
+    installFileBridge(request)
+    act(() =>
+      store.setState({
+        projects: [{ projectId: 'p1', name: 'demo', path: '/work', createdAt: 1 }],
+      }),
+    )
+
+    // 消息里的行内路径带行号：打开时记下定位行。
+    await userEvent.click(await screen.findByRole('button', { name: 'src/inner.ts:12' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'docs/notes.md:5' }))
+    const tabNames = () =>
+      within(screen.getByRole('tablist', { name: '会话页面' }))
+        .getAllByRole('tab')
+        .map((tab) => tab.getAttribute('aria-label'))
+    expect(tabNames()).toEqual(['首页', 'src/inner.ts', 'docs/notes.md'])
+
+    const panel = screen.getByRole('complementary', { name: '会话信息' })
+    await userEvent.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '文件' }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    const treeRow = (name: string) =>
+      within(panel)
+        .getAllByText(name)
+        .filter((element) => element.closest('[role="tab"]') === null)
+        .map((element) => element.closest('li'))
+        .find((row) => row !== null) ?? undefined
+    await userEvent.click(screen.getByRole('tab', { name: '文件树' }))
+    await userEvent.click(within(treeRow('src')!).getByRole('button', { name: '展开目录' }))
+    await waitFor(() => expect(treeRow('inner.ts')).toBeTruthy())
+
+    // 在文件树页重命名目录：不相关的标签与行号保持不变，范围内的跟着改。
+    await userEvent.click(
+      treeRow('src')!.querySelector('button[aria-label="文件操作"]') as HTMLElement,
+    )
+    await userEvent.click(await screen.findByRole('menuitem', { name: '重命名' }))
+    const input = await screen.findByLabelText('名称')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'lib')
+    await userEvent.click(screen.getByRole('button', { name: '确定' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('fs.rename', {
+        projectId: 'p1',
+        from: 'src',
+        to: 'lib',
+      }),
+    )
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'lib/inner.ts' })).toBeTruthy())
+    expect(tabNames()).toEqual(['首页', 'lib/inner.ts', 'docs/notes.md', '文件树'])
+
+    // 删除整个目录：目录下的文件标签关闭，其他文件标签与行号保留。
+    await userEvent.click(within(treeRow('lib')!).getByRole('button', { name: '展开目录' }))
+    await waitFor(() => expect(treeRow('inner.ts')).toBeTruthy())
+    await userEvent.click(
+      treeRow('lib')!.querySelector('button[aria-label="文件操作"]') as HTMLElement,
+    )
+    await userEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
+    await userEvent.click(await screen.findByRole('button', { name: '删除' }))
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'lib/inner.ts' })).toBeNull())
+    expect(tabNames()).toEqual(['首页', 'docs/notes.md', '文件树'])
+
+    // 关闭非当前标签：只移除这个标签，不切换当前页面。
+    await userEvent.click(screen.getByRole('button', { name: '关闭notes.md' }))
+    expect(tabNames()).toEqual(['首页', '文件树'])
+  })
+
   it('returns to the home and clears tabs when switching sessions', async () => {
     const { open, store } = setup({ history: HISTORY })
     await open()
@@ -574,6 +697,52 @@ describe('ChatPanel', () => {
     await open()
     act(() => store.setState({ awaitingTurn: { s1: true } }))
     expect(screen.getByRole('status').textContent).toBe('等待审批')
+  })
+
+  it('announces waiting for input when a question is pending', async () => {
+    const { open, store } = setup({ history: HISTORY })
+    await open()
+    act(() =>
+      store.setState({
+        awaitingTurn: { s1: true },
+        questions: {
+          s1: [
+            {
+              questionId: 'q1',
+              toolCallId: 'tc1',
+              questions: [
+                {
+                  id: 'a',
+                  question: '选哪个？',
+                  options: [{ label: 'A' }, { label: 'B' }],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    expect(screen.getByRole('status').textContent).toBe('等待你的回答')
+  })
+
+  it('offers a back-to-bottom button while running and scrolled up', async () => {
+    const { open } = setup({ history: RUNNING })
+    await open()
+    const scroller = screen
+      .getByRole('list', { name: '消息' })
+      .closest('.overflow-y-auto') as HTMLElement
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 300 })
+    scroller.scrollTop = 100
+    act(() => {
+      scroller.dispatchEvent(new Event('scroll'))
+    })
+
+    const button = screen.getByRole('button', { name: '回到底部' })
+    // 运行中且不在底部时，按钮上有一个脉冲小点。
+    expect(button.querySelector('.animate-pulse')).not.toBeNull()
+    await userEvent.click(button)
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
   })
 
   it('resets the panel preference when crossing the 1440px dock breakpoint', async () => {

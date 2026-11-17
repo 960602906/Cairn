@@ -374,7 +374,10 @@ describe('multi-session concurrency (M4-13)', () => {
     }
 
     const [first, second, third] = sessionIds as [string, string, string]
-    procs[1]?.kill()
+    // 宿主按会话启动顺序出现在 procs 中，但三个会话是并行启动的，不能按下标猜。
+    const crashed = inits.findIndex((init) => init.sessionId === second)
+    expect(crashed).toBeGreaterThanOrEqual(0)
+    procs[crashed]?.kill()
     await waitFor(() => expect(count(second, 'session.crashed')).toBe(1))
 
     for (const sessionId of [first, third]) {
