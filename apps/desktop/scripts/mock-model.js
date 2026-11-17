@@ -9,6 +9,7 @@
  * 组内按本轮已发生的工具调用次数推进，用完后回复固定文本。用于同一个会话里逐轮验证不同工具。
  * 给出 `replyByPrompt` 时（M7-07），同样按最后一条用户消息选回复文本（最长匹配优先）；用于让
  * 父运行、maker 与 checker 子运行各自拿到不同的回复，例如审查循环里 checker 的 JSON 判定。
+ * 给出 `failByPrompt` 时（M7-08），命中的请求以 500 结束，用来验证流水线的失败传播。
  */
 import { createServer } from 'node:http'
 
@@ -19,7 +20,7 @@ import { createServer } from 'node:http'
  * `summary`（M3-03）：请求内容里带有压缩摘要的系统提示时，改回这段文字。
  * `brief`（M3-04）：请求内容里带有会话要点的系统提示时，改回这段文字。
  * `parallelToolCalls`（M4-05）：第一次对话请求同时返回多个工具调用，用于端到端验证并行委派。
- * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], parallelToolCalls?: readonly MockToolCall[], toolCallsByPrompt?: Readonly<Record<string, readonly MockToolCall[]>>, replyByPrompt?: Readonly<Record<string, string>>, title?: string, summary?: string, brief?: string }} options
+ * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], parallelToolCalls?: readonly MockToolCall[], toolCallsByPrompt?: Readonly<Record<string, readonly MockToolCall[]>>, replyByPrompt?: Readonly<Record<string, string>>, failByPrompt?: Readonly<Record<string, boolean>>, title?: string, summary?: string, brief?: string }} options
  * @returns {Promise<{ baseUrl: string, requests: MockModelRequest[], close: () => Promise<void> }>}
  */
 export async function startMockModel({
@@ -30,6 +31,7 @@ export async function startMockModel({
   parallelToolCalls,
   toolCallsByPrompt,
   replyByPrompt,
+  failByPrompt,
   title,
   summary,
   brief,
@@ -97,6 +99,29 @@ export async function startMockModel({
         res.writeHead(401, { 'content-type': 'application/json' })
         res.end(JSON.stringify({ error: { message: 'invalid api key' } }))
         return
+      }
+      /** @param {Readonly<Record<string, unknown>> | undefined} map */
+      const promptMatches = (map) => {
+        const list = Array.isArray(body.messages) ? body.messages : []
+        let lastUser = -1
+        for (let i = 0; i < list.length; i += 1) {
+          if (list[i]?.role === 'user') lastUser = i
+        }
+        if (lastUser < 0) return undefined
+        const content = list[lastUser]?.content
+        const text = typeof content === 'string' ? content : JSON.stringify(content ?? '')
+        return Object.keys(map ?? {})
+          .filter((candidate) => text.includes(candidate))
+          .sort((a, b) => b.length - a.length)[0]
+      }
+      // 失败注入必须在写 SSE 头之前（M7-08）：之后写 500 会破坏连接。
+      if (failByPrompt !== undefined) {
+        const failKey = promptMatches(failByPrompt)
+        if (failKey !== undefined && failByPrompt[failKey]) {
+          res.writeHead(500, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: `mock failure: ${failKey}` } }))
+          return
+        }
       }
       /** @param {Record<string, unknown>} delta @param {string | null} finish */
       const chunk = (delta, finish = null) => ({

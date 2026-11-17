@@ -690,5 +690,19 @@
   "review.status.failed": "Failed",
   "review.status.stopped": "Stopped",
   "review.status.limit_reached": "Limit reached",
-  "tool.action.review_loop": "Review loop"
+  "tool.action.review_loop": "Review loop",
+  "pipeline.title": "Pipeline",
+  "pipeline.running": "Running",
+  "pipeline.progress": "{{completed}}/{{total}} stages",
+  "pipeline.status.completed": "Completed",
+  "pipeline.status.failed": "Failed",
+  "pipeline.status.stopped": "Stopped",
+  "pipeline.status.limit_reached": "Limit reached",
+  "pipeline.stage.completed": "Done",
+  "pipeline.stage.failed": "Failed",
+  "pipeline.stage.aborted": "Stopped",
+  "pipeline.stage.needs_input": "Needs input",
+  "pipeline.stage.limit_reached": "Limit reached",
+  "pipeline.skipped": "Skipped: {{stages}}",
+  "tool.action.run_pipeline": "Run pipeline"
 }

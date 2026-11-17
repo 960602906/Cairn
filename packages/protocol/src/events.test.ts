@@ -179,6 +179,20 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
     feedback: '补测试',
   },
   'team.review.completed': { reviewId: 'r1', status: 'passed', rounds: 2, summary: '可以了' },
+  'team.pipeline.stage': {
+    pipelineId: 'p1',
+    stage: 'build',
+    agentRunId: 'run-build',
+    status: 'completed',
+    summary: '测试通过',
+  },
+  'team.pipeline.completed': {
+    pipelineId: 'p1',
+    status: 'failed',
+    stages: 2,
+    skipped: ['docs'],
+    summary: 'check 失败',
+  },
 }
 
 function envelope(type: string, payload: unknown, extra: Record<string, unknown> = {}) {

@@ -1800,3 +1800,273 @@ describe('host review loop (M7-07)', () => {
     expect(h.createdRuntimes).toEqual(['fake-1'])
   })
 })
+
+describe('host pipeline (M7-08)', () => {
+  const pipelineDelegation = {
+    ...delegation,
+    allowedAgents: ['builtin.reviewer', 'builtin.coder'],
+    maxChildrenPerTurn: 6,
+    maxParallel: 2,
+  }
+
+  const pipelineTargets = [
+    { id: reviewer.id, definition: reviewer },
+    { id: coder.id, definition: coder },
+  ]
+
+  const pipelineStep = (stages: readonly Record<string, unknown>[], patch = {}) => ({
+    kind: 'tool' as const,
+    name: 'run_pipeline',
+    input: { goal: '发布前检查', stages, ...patch },
+  })
+
+  const completed = (summary: string) => ({
+    turns: [
+      {
+        steps: [{ kind: 'reply' as const, text: JSON.stringify({ status: 'completed', summary }) }],
+      },
+    ],
+  })
+
+  const failed = {
+    turns: [
+      {
+        steps: [
+          {
+            kind: 'fail' as const,
+            error: { code: 'model.error' },
+            retryable: false,
+          },
+        ],
+      },
+    ],
+  }
+
+  const pipelineEvents = (events: readonly UnsequencedEvent[]) =>
+    events
+      .filter(
+        (event) => event.type === 'team.pipeline.stage' || event.type === 'team.pipeline.completed',
+      )
+      .map((event) => event.payload)
+
+  it('按依赖执行阶段，失败后跳过后续阶段并保留已完成结果', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: pipelineDelegation }),
+      targets: pipelineTargets,
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              pipelineStep([
+                { stage: 'build', agent: reviewer.id },
+                { stage: 'check', agent: coder.id, dependsOn: ['build'] },
+                { stage: 'docs', agent: reviewer.id, dependsOn: ['check'] },
+              ]),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      childScript: completed('构建完成'),
+      grandchildScript: failed,
+    })
+    await h.initHost()
+    expect(h.runtimeTools['fake-1']?.map((tool) => tool.name)).toContain('run_pipeline')
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+
+    expect(pipelineEvents(h.events)).toEqual([
+      expect.objectContaining({ stage: 'build', status: 'completed', summary: '构建完成' }),
+      expect.objectContaining({ stage: 'check', status: 'failed' }),
+      expect.objectContaining({ status: 'failed', stages: 2, skipped: ['docs'] }),
+    ])
+    expect(toolCompletedText(h.events)).toContain('docs')
+  })
+
+  it('无依赖的阶段按并发上限执行并全部完成', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: pipelineDelegation }),
+      targets: pipelineTargets,
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              pipelineStep([
+                { stage: 'lint', agent: reviewer.id },
+                { stage: 'test', agent: coder.id },
+              ]),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      childScript: completed('检查完成'),
+      grandchildScript: completed('测试完成'),
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+
+    const completedEvent = pipelineEvents(h.events).at(-1)
+    expect(completedEvent).toMatchObject({ status: 'completed', stages: 2, skipped: [] })
+    expect(h.events.filter((event) => event.type === 'run.delegated')).toHaveLength(2)
+  })
+
+  it('阶段 Agent 不在 allowedAgents 时拒绝执行', async () => {
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...pipelineDelegation, allowedAgents: [reviewer.id] },
+      }),
+      targets: pipelineTargets,
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              pipelineStep([{ stage: 'build', agent: coder.id }]),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('delegation.agent_not_allowed')
+    expect(h.createdRuntimes).toEqual(['fake-1'])
+  })
+
+  it('阶段被硬错误打断时留下失败的结局', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: pipelineDelegation }),
+      targets: pipelineTargets,
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              pipelineStep([{ stage: 'build', agent: reviewer.id }]),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [
+              {
+                kind: 'reply',
+                text: '{"status":"completed","summary":"构建完成"}',
+                usage: { inputTokens: -1, outputTokens: 0 },
+              },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(pipelineEvents(h.events).at(-1)).toMatchObject({ status: 'failed', stages: 0 })
+  })
+
+  it('阶段没有给出摘要时用子运行的回复兜底', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: pipelineDelegation }),
+      targets: pipelineTargets,
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              pipelineStep([{ stage: 'build', agent: reviewer.id }]),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      childScript: completed(''),
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.completed')
+    const stage = pipelineEvents(h.events)[0]!
+    expect(stage).toMatchObject({ stage: 'build', status: 'completed' })
+    expect(String((stage as { summary?: string }).summary)).toContain('completed')
+  })
+
+  it('阶段列表成环时拒绝执行', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: pipelineDelegation }),
+      targets: pipelineTargets,
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              pipelineStep([
+                { stage: 'a', agent: reviewer.id, dependsOn: ['b'] },
+                { stage: 'b', agent: coder.id, dependsOn: ['a'] },
+              ]),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('tool.invalid_input')
+    expect(h.events.some((event) => event.type === 'run.delegated')).toBe(false)
+  })
+
+  it('写入类 Agent 不能参与流水线', async () => {
+    const writer = agent(coder.id, { permissions: 'ask' })
+    const h = setup({
+      definition: parentDefinition({ delegation: pipelineDelegation }),
+      targets: [
+        { id: reviewer.id, definition: reviewer },
+        { id: coder.id, definition: writer },
+      ],
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              pipelineStep([{ stage: 'build', agent: coder.id }]),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('review.read_only_required')
+  })
+
+  it('阶段数超过本轮剩余子运行名额时拒绝执行', async () => {
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...pipelineDelegation, maxChildrenPerTurn: 1 },
+      }),
+      targets: pipelineTargets,
+      parentScript: {
+        turns: [
+          {
+            steps: [
+              pipelineStep([
+                { stage: 'a', agent: reviewer.id },
+                { stage: 'b', agent: coder.id },
+              ]),
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('delegation.children_per_turn_exceeded')
+  })
+})

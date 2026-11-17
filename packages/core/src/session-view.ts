@@ -259,6 +259,29 @@ export interface ReviewLoopView {
   readonly summary: string | undefined
 }
 
+/** pipeline 的一个阶段（`team.pipeline.stage`，M7-08）。 */
+export interface PipelineStageView {
+  readonly stage: string
+  readonly agentRunId: string
+  readonly status: 'completed' | 'failed' | 'aborted' | 'needs_input' | 'limit_reached'
+  readonly summary?: string
+}
+
+/**
+ * 一条流水线（M7-08）：阶段按完成顺序记录，`status` / `skipped` 在
+ * `team.pipeline.completed` 后出现。界面按 `turnId` 把它挂到对应的轮次。
+ */
+export interface PipelineView {
+  readonly pipelineId: string
+  readonly runId: string
+  readonly turnId: string | undefined
+  readonly seq: number
+  readonly stages: readonly PipelineStageView[]
+  readonly status: 'completed' | 'failed' | 'stopped' | 'limit_reached' | undefined
+  readonly skipped: readonly string[]
+  readonly summary: string | undefined
+}
+
 /** 会话的一个检查点（`checkpoint.created`，M2-08 的检查点分隔线与历史菜单）。 */
 export interface CheckpointView {
   readonly checkpointId: string
@@ -464,6 +487,8 @@ export interface SessionView {
   /** 等待用户确认的记忆提议（M7-03），按提议顺序；确认、忽略或删除后移除。 */
   readonly memoryProposals: readonly MemoryProposalView[]
   readonly reviewLoops: readonly ReviewLoopView[]
+  /** 会话里执行过的流水线（M7-08），按发生顺序。 */
+  readonly pipelineRuns: readonly PipelineView[]
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -491,6 +516,7 @@ export function createSessionView(sessionId: string): SessionView {
     delegations: [],
     memoryProposals: [],
     reviewLoops: [],
+    pipelineRuns: [],
   }
 }
 
@@ -1116,6 +1142,77 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
             seq: event.seq,
             rounds: [],
             status: undefined,
+            summary: undefined,
+          }),
+        ],
+      }
+    }
+
+    case 'team.pipeline.stage': {
+      const { pipelineId, stage, agentRunId, status, summary } = event.payload
+      const entry: PipelineStageView = {
+        stage,
+        agentRunId,
+        status,
+        ...(summary === undefined ? {} : { summary }),
+      }
+      const existing = view.pipelineRuns.find((item) => item.pipelineId === pipelineId)
+      if (existing) {
+        if (existing.stages.some((item) => item.stage === stage)) return undefined
+        return {
+          ...view,
+          pipelineRuns: view.pipelineRuns.map((item) =>
+            item.pipelineId === pipelineId ? { ...item, stages: [...item.stages, entry] } : item,
+          ),
+        }
+      }
+      return {
+        ...view,
+        pipelineRuns: [
+          ...view.pipelineRuns,
+          {
+            pipelineId,
+            runId: event.runId,
+            turnId: event.turnId,
+            seq: event.seq,
+            stages: [entry],
+            status: undefined,
+            skipped: [],
+            summary: undefined,
+          },
+        ],
+      }
+    }
+    case 'team.pipeline.completed': {
+      const { pipelineId, status, skipped, summary } = event.payload
+      const completed = (item: PipelineView): PipelineView => ({
+        ...item,
+        status,
+        skipped,
+        ...(summary === undefined ? {} : { summary }),
+      })
+      const existing = view.pipelineRuns.find((item) => item.pipelineId === pipelineId)
+      if (existing) {
+        return {
+          ...view,
+          pipelineRuns: view.pipelineRuns.map((item) =>
+            item.pipelineId === pipelineId ? completed(item) : item,
+          ),
+        }
+      }
+      // 一个阶段都没跑（例如阶段列表非法）时补出这条流水线，界面仍能看到失败原因。
+      return {
+        ...view,
+        pipelineRuns: [
+          ...view.pipelineRuns,
+          completed({
+            pipelineId,
+            runId: event.runId,
+            turnId: event.turnId,
+            seq: event.seq,
+            stages: [],
+            status: undefined,
+            skipped: [],
             summary: undefined,
           }),
         ],

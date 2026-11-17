@@ -396,6 +396,17 @@ M7-07 落地（审查循环）：
   记录结局（`passed` / `exhausted` / `failed` / `stopped` / `limit_reached`）；投影为
   `view.reviewLoops`，对话里以审查循环卡片展示轮次与结局。
 
+M7-08 落地（pipeline）：
+
+- 执行：`runTeamPipeline` 用 `teamPipelineOrder` 得到依赖在前的顺序，按“依赖都已完成”的就绪
+  阶段分波执行；同波并发受 `maxParallel`（来自委派策略）限制，波次之间串行。
+- 失败传播：任一阶段失败（`failed` / `aborted` / `needs_input` / `limit_reached`）后不再开始
+  新阶段；同波已开始的阶段照常完成并保留结果，其余阶段写入 `skipped`。
+- 只读边界：阶段 Agent 必须是 `read-only`，与审查循环一致；每个阶段仍是一个委派子运行，
+  按本轮剩余名额整体预检，避免执行到一半被每轮上限截断。
+- 事件与界面：`team.pipeline.stage` 记录每个阶段的结果，`team.pipeline.completed` 记录结局
+  与跳过项；投影为 `view.pipelineRuns`，对话里以流水线进度卡片展示阶段状态与跳过项。
+
 ---
 
 ## 16. 对现有设计的影响

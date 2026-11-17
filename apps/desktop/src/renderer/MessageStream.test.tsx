@@ -2079,3 +2079,57 @@ describe('MessageStream 审查循环（M7-07）', () => {
     expect(cards[1]?.textContent).toContain('失败')
   })
 })
+
+describe('MessageStream 流水线（M7-08）', () => {
+  const store = createStore<Record<string, unknown>>(() => ({
+    activeSessionId: 's1',
+    awaitingTurn: {},
+    approvals: {},
+    changes: {},
+    agents: [],
+    settings: { providers: [] },
+    sendPrompt: vi.fn(),
+  })) as unknown as SessionStore
+
+  const renderStream = (stream: SessionView) =>
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={stream} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+
+  it('把流水线挂在本轮末尾，没有消息的流水线排在流末尾', () => {
+    renderStream(
+      view([
+        ...START,
+        ev(5, 'message.assistant.completed', { messageId: 'a1', content: text('做完了'), model }),
+        ev(6, 'team.pipeline.stage', {
+          pipelineId: 'pl1',
+          stage: 'build',
+          agentRunId: 'run-build',
+          status: 'completed',
+          summary: '构建完成',
+        }),
+        ev(7, 'team.pipeline.completed', {
+          pipelineId: 'pl1',
+          status: 'completed',
+          stages: 1,
+          skipped: [],
+        }),
+        ev(8, 'turn.completed', { durationMs: 10 }),
+        ev(
+          9,
+          'team.pipeline.completed',
+          { pipelineId: 'pl2', status: 'failed', stages: 0, skipped: ['a'], summary: '非法' },
+          't2',
+        ),
+      ]),
+    )
+    const cards = screen.getAllByRole('region', { name: '流水线' })
+    expect(cards).toHaveLength(2)
+    expect(cards[0]?.textContent).toContain('已完成')
+    expect(cards[1]?.textContent).toContain('失败')
+  })
+})
