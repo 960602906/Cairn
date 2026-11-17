@@ -349,7 +349,9 @@ describe('multi-session concurrency (M4-13)', () => {
     await vi.waitFor(() => expect(rootCount(second, 'turn.aborted')).toBe(1), { timeout: 5000 })
 
     for (const sessionId of [first, third]) {
-      await vi.waitFor(() => expect(rootCount(sessionId, 'turn.completed')).toBe(1), { timeout: 5000 })
+      await vi.waitFor(() => expect(rootCount(sessionId, 'turn.completed')).toBe(1), {
+        timeout: 5000,
+      })
       expect(rootCount(sessionId, 'turn.aborted')).toBe(0)
     }
     expect(rootCount(second, 'turn.completed')).toBe(0)

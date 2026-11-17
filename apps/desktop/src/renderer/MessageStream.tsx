@@ -39,7 +39,6 @@ import { parseMention, tokenize } from './composer-tokens.js'
 import { FileTypeIcon } from './file-icons.js'
 import { TurnChanges } from './FileChanges.js'
 import { DelegationCard } from './DelegationCard.js'
-import { formatDuration } from './format.js'
 import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
 import { RunningIndicator } from './RunningIndicator.js'
@@ -249,7 +248,11 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
           aria-hidden
           className={cn(
             'size-3.5 shrink-0 transition-colors group-hover/activity:text-accent',
-            tone === 'running' ? 'animate-pulse text-accent' : tone === 'attention' ? 'text-warn' : 'text-faint',
+            tone === 'running'
+              ? 'animate-pulse text-accent'
+              : tone === 'attention'
+                ? 'text-warn'
+                : 'text-faint',
           )}
         />
         <span className="flex min-w-0 items-center gap-1.5 truncate text-[12.5px] font-medium">
