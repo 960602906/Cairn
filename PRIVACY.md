@@ -1,7 +1,7 @@
 # Cairn Privacy Notice / Cairn 隐私说明
 
-Version 2026-11-10 · Applies to Cairn 0.1.0 beta
-版本 2026-11-10 · 适用于 Cairn 0.1.0 beta
+Version 2026-11-17 · Applies to Cairn 0.1.0 beta
+版本 2026-11-17 · 适用于 Cairn 0.1.0 beta
 
 Cairn is a local-first application. It has no accounts, no cloud sync and no telemetry.
 This notice explains what stays on your computer, what is sent to services you configure,
@@ -21,11 +21,12 @@ Cairn 不要求注册或登录，不收集使用统计、崩溃报告、设备�
 
 ## 2. Data stored locally / 本机数据
 
-Cairn stores project records, sessions, settings, checkpoints, logs, installed skills and
-local caches in the application data folder. On Windows the default is `%APPDATA%\Cairn`
+Cairn stores project records, sessions, settings, checkpoints, logs, installed skills,
+memory entries the agent proposes or saves, and local caches in the application data folder. On Windows the default is `%APPDATA%\Cairn`
 (`Cairn-dev` for development builds). Project files remain in the folders you choose.
 
-Cairn 在应用数据目录保存项目记录、会话、设置、检查点、日志、已安装技能与本地缓存。
+Cairn 在应用数据目录保存项目记录、会话、设置、检查点、日志、已安装技能、Agent 提议或
+保存的记忆条目与本地缓存。
 Windows 默认位置是 `%APPDATA%\Cairn`（开发版为 `Cairn-dev`）。项目文件仍留在你选择的
 目录中。
 
@@ -69,11 +70,13 @@ credentials. The update source may see standard network metadata such as your IP
 
 Diagnostics bundles are created only when you choose to export them. They contain system
 information, redacted settings and logs. Session message bodies are excluded by default and
-require an explicit opt-in. Bundles are not uploaded automatically; you decide whether and
-where to share them.
+require an explicit opt-in. Memory content is never included, even with that opt-in; only its
+length is recorded. Bundles are not uploaded automatically; you decide whether and where to
+share them.
 
 诊断包只在你主动导出时生成，包含系统信息、脱敏后的设置与日志。会话消息正文默认不包含，
-需要额外开启。诊断包不会自动上传；是否分享、分享到哪里由你决定。
+需要额外开启；记忆正文始终不包含，即使开启会话正文也只记录长度。诊断包不会自动上传；
+是否分享、分享到哪里由你决定。
 
 ## 7. Skills and MCP / 技能与 MCP
 
@@ -86,11 +89,13 @@ configuration and credentials remain on your computer unless you remove them.
 
 ## 8. Retention and deletion / 保留与删除
 
-Local data remains until you delete it. Update installation creates a backup of the
-database, settings and credential metadata before replacing files. Backups are kept
+Local data remains until you delete it; deleting a session or project also deletes the
+memory entries stored for it. Update installation creates a backup of the database, settings
+and credential metadata before replacing files. Backups are kept
 locally and follow the same deletion rules as other application data.
 
-本地数据会一直保留，直到你主动删除。安装更新前会备份数据库、设置与凭据元数据；备份
+本地数据会一直保留，直到你主动删除；删除会话或项目时，为它保存的记忆条目一并删除。
+安装更新前会备份数据库、设置与凭据元数据；备份
 保存在本机，并适用与其他应用数据相同的删除规则。
 
 ## 9. Changes and contact / 变更与联系

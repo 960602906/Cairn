@@ -577,5 +577,6 @@
   "general.agentAutoMemory.hint": "Applies only to agents configured for automatic memory. When off, their notes still wait for your confirmation. Off by default.",
   "section.memory.title": "Memory",
   "section.memory.description": "Project conventions and preferences the agent keeps across sessions. Search, edit or delete them by scope; only active entries are added to conversations.",
+  "section.memory.hint": "Memory is gathered by the agent as it works; AGENTS.md is project documentation you maintain, and the two are managed separately.",
   "page.keywords.memory": "memory remember preference convention scope session project global edit delete"
 }
