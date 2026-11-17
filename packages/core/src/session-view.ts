@@ -236,6 +236,29 @@ export interface MemoryProposalView {
   readonly createdAt: number
 }
 
+/** 审查循环的一轮（`team.review.round`，M7-07）。 */
+export interface ReviewRoundView {
+  readonly round: number
+  readonly makerRunId: string
+  readonly checkerRunId: string
+  readonly verdict: 'pass' | 'revise'
+  readonly feedback?: string
+}
+
+/**
+ * 一段审查循环（M7-07）：`rounds` 记录每轮的 maker / checker，`status` 在
+ * `team.review.completed` 后出现。界面按 `turnId` 把它挂到对应的轮次。
+ */
+export interface ReviewLoopView {
+  readonly reviewId: string
+  readonly runId: string
+  readonly turnId: string | undefined
+  readonly seq: number
+  readonly rounds: readonly ReviewRoundView[]
+  readonly status: 'passed' | 'exhausted' | 'failed' | 'stopped' | 'limit_reached' | undefined
+  readonly summary: string | undefined
+}
+
 /** 会话的一个检查点（`checkpoint.created`，M2-08 的检查点分隔线与历史菜单）。 */
 export interface CheckpointView {
   readonly checkpointId: string
@@ -440,6 +463,7 @@ export interface SessionView {
   readonly delegations: readonly DelegationView[]
   /** 等待用户确认的记忆提议（M7-03），按提议顺序；确认、忽略或删除后移除。 */
   readonly memoryProposals: readonly MemoryProposalView[]
+  readonly reviewLoops: readonly ReviewLoopView[]
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -466,6 +490,7 @@ export function createSessionView(sessionId: string): SessionView {
     taskLists: [],
     delegations: [],
     memoryProposals: [],
+    reviewLoops: [],
   }
 }
 
@@ -1028,6 +1053,75 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         ],
       }
     }
+    case 'team.review.round': {
+      const { reviewId, round, makerRunId, checkerRunId, verdict, feedback } = event.payload
+      const entry: ReviewRoundView = {
+        round,
+        makerRunId,
+        checkerRunId,
+        verdict,
+        ...(feedback === undefined ? {} : { feedback }),
+      }
+      const existing = view.reviewLoops.find((item) => item.reviewId === reviewId)
+      if (existing) {
+        if (existing.rounds.some((item) => item.round === round)) return undefined
+        return {
+          ...view,
+          reviewLoops: view.reviewLoops.map((item) =>
+            item.reviewId === reviewId ? { ...item, rounds: [...item.rounds, entry] } : item,
+          ),
+        }
+      }
+      return {
+        ...view,
+        reviewLoops: [
+          ...view.reviewLoops,
+          {
+            reviewId,
+            runId: event.runId,
+            turnId: event.turnId,
+            seq: event.seq,
+            rounds: [entry],
+            status: undefined,
+            summary: undefined,
+          },
+        ],
+      }
+    }
+    case 'team.review.completed': {
+      const { reviewId, status, summary } = event.payload
+      const completed = (item: ReviewLoopView): ReviewLoopView => ({
+        ...item,
+        status,
+        ...(summary === undefined ? {} : { summary }),
+      })
+      const existing = view.reviewLoops.find((item) => item.reviewId === reviewId)
+      if (existing) {
+        return {
+          ...view,
+          reviewLoops: view.reviewLoops.map((item) =>
+            item.reviewId === reviewId ? completed(item) : item,
+          ),
+        }
+      }
+      // 第一轮就失败（maker 或 checker 没拿到判定）时不会发出轮次事件，完成事件要能补出这段循环。
+      return {
+        ...view,
+        reviewLoops: [
+          ...view.reviewLoops,
+          completed({
+            reviewId,
+            runId: event.runId,
+            turnId: event.turnId,
+            seq: event.seq,
+            rounds: [],
+            status: undefined,
+            summary: undefined,
+          }),
+        ],
+      }
+    }
+
     // 确认、忽略、删除都会让提议从界面上消失；`auto` 写入只有 accepted，没有提议可移除。
     case 'memory.accepted':
     case 'memory.rejected':

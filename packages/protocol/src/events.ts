@@ -458,6 +458,25 @@ const payloadSchemas = {
   'memory.rejected': z.object({ memoryId: Id }),
   /** 用户删除了已生效的条目。 */
   'memory.deleted': z.object({ memoryId: Id, scope: MemoryScope.optional() }),
+  /**
+   * 审查循环的一轮（M7-07）：maker 与 checker 各是一个子运行；`verdict` 决定是否再来一轮。
+   * 事件属于父运行（`runId`），界面按 `turnId` 把整段循环挂到这一轮。
+   */
+  'team.review.round': z.object({
+    reviewId: Id,
+    round: z.number().int().positive(),
+    makerRunId: Id,
+    checkerRunId: Id,
+    verdict: z.enum(['pass', 'revise']),
+    feedback: z.string().max(4_000).optional(),
+  }),
+  /** 审查循环的结局（M7-07）：通过、轮次用尽、失败、被停止或触发限额。 */
+  'team.review.completed': z.object({
+    reviewId: Id,
+    status: z.enum(['passed', 'exhausted', 'failed', 'stopped', 'limit_reached']),
+    rounds: z.number().int().nonnegative(),
+    summary: z.string().max(4_000).optional(),
+  }),
 } satisfies Record<string, z.ZodType>
 
 type PayloadSchemas = typeof payloadSchemas

@@ -678,5 +678,17 @@
   "memory.manage.retry": "Retry",
   "sidePanel.memory": "Memory",
   "sidePanel.memoryShort": "Memory",
-  "memory.manage.loading": "Loading memory…"
+  "memory.manage.loading": "Loading memory…",
+  "review.title": "Review loop",
+  "review.running": "Running",
+  "review.rounds": "{{count}} rounds",
+  "review.round": "Round {{round}}",
+  "review.verdict.pass": "Passed",
+  "review.verdict.revise": "Needs changes",
+  "review.status.passed": "Passed",
+  "review.status.exhausted": "Rounds exhausted",
+  "review.status.failed": "Failed",
+  "review.status.stopped": "Stopped",
+  "review.status.limit_reached": "Limit reached",
+  "tool.action.review_loop": "Review loop"
 }

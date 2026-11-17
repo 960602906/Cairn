@@ -382,6 +382,20 @@ M7-06 落地（数据模型）：
   自依赖与环报错。`teamPipelineOrder` 给出依赖在前的拓扑顺序，供 M7-08 执行。
 - 主控没有把某个成员列入 `allowedAgents` 时只给警告：运行时还会按主控的实际策略再收敛一次。
 
+M7-07 落地（审查循环）：
+
+- 编排：`@cairn/core` 的 `runReviewLoop` 只做“maker → checker → 回传意见”的循环与结局判定，
+  子运行由宿主创建：每轮两个只读子运行，复用 `runDelegation` 的限额继承、工作区与结构化结果。
+- 只读边界：maker / checker 都必须是 `read-only` 的 Agent；写入类目标直接拒绝，避免共享
+  工作区或隔离改动集在审查循环里产生歧义。
+- 轮次：`maxRounds` 默认 3、上限 10，并按本轮剩余子运行名额收缩；每轮 maker / checker
+  各算一次委派，循环串行执行。
+- 判定：checker 的任务书写入 `outputSchema`，要求 `{verdict: 'pass'|'revise', feedback?}`；
+  缺判定按“未通过”处理，不会误判为通过。
+- 事件与界面：`team.review.round` 记录每轮的 maker / checker 与判定，`team.review.completed`
+  记录结局（`passed` / `exhausted` / `failed` / `stopped` / `limit_reached`）；投影为
+  `view.reviewLoops`，对话里以审查循环卡片展示轮次与结局。
+
 ---
 
 ## 16. 对现有设计的影响

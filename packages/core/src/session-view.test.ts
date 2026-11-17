@@ -116,6 +116,7 @@ describe('createSessionView', () => {
       taskLists: [],
       delegations: [],
       memoryProposals: [],
+      reviewLoops: [],
     })
   })
 })
@@ -1503,6 +1504,79 @@ describe('reduceSession：待办列表（ADR-0038）', () => {
     ])
     expect(progressTaskList(done)).toBeUndefined()
     expect(activeTaskLists(done)).toHaveLength(1)
+  })
+})
+
+describe('reduceSession：审查循环（M7-07）', () => {
+  const round = (ev: ReturnType<typeof stream>, reviewId: string, round: number) =>
+    ev(
+      'team.review.round',
+      {
+        reviewId,
+        round,
+        makerRunId: `maker-${round}`,
+        checkerRunId: `checker-${round}`,
+        verdict: round === 2 ? ('pass' as const) : ('revise' as const),
+        ...(round === 2 ? {} : { feedback: `意见 ${round}` }),
+      },
+      { turnId: 't1' },
+    )
+
+  it('按轮次累积，重复轮次只记一次，完成事件补上结局', () => {
+    const ev = stream()
+    const view = reduceAll([
+      round(ev, 'rv1', 1),
+      round(ev, 'rv1', 1),
+      round(ev, 'rv1', 2),
+      ev('team.review.completed', {
+        reviewId: 'rv1',
+        status: 'passed',
+        rounds: 2,
+        summary: '可以了',
+      }),
+    ])
+    expect(view.reviewLoops).toEqual([
+      {
+        reviewId: 'rv1',
+        runId: RUN,
+        turnId: 't1',
+        seq: 1,
+        rounds: [
+          {
+            round: 1,
+            makerRunId: 'maker-1',
+            checkerRunId: 'checker-1',
+            verdict: 'revise',
+            feedback: '意见 1',
+          },
+          { round: 2, makerRunId: 'maker-2', checkerRunId: 'checker-2', verdict: 'pass' },
+        ],
+        status: 'passed',
+        summary: '可以了',
+      },
+    ])
+  })
+
+  it('第一轮就失败时完成事件仍留下这段循环', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev(
+        'team.review.completed',
+        { reviewId: 'rv2', status: 'failed', rounds: 0, summary: 'maker 失败' },
+        { turnId: 't1' },
+      ),
+    ])
+    expect(view.reviewLoops).toEqual([
+      {
+        reviewId: 'rv2',
+        runId: RUN,
+        turnId: 't1',
+        seq: 1,
+        rounds: [],
+        status: 'failed',
+        summary: 'maker 失败',
+      },
+    ])
   })
 })
 

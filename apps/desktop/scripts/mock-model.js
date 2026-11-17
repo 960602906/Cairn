@@ -7,6 +7,8 @@
  * （M1-15a），第 n 次请求调用其中第 n 个工具，用完后回复固定文本。
  * 给出 `toolCallsByPrompt` 时（M3-14），按最后一条用户消息匹配脚本：消息包含某个键时使用对应的一组，
  * 组内按本轮已发生的工具调用次数推进，用完后回复固定文本。用于同一个会话里逐轮验证不同工具。
+ * 给出 `replyByPrompt` 时（M7-07），同样按最后一条用户消息选回复文本（最长匹配优先）；用于让
+ * 父运行、maker 与 checker 子运行各自拿到不同的回复，例如审查循环里 checker 的 JSON 判定。
  */
 import { createServer } from 'node:http'
 
@@ -17,7 +19,7 @@ import { createServer } from 'node:http'
  * `summary`（M3-03）：请求内容里带有压缩摘要的系统提示时，改回这段文字。
  * `brief`（M3-04）：请求内容里带有会话要点的系统提示时，改回这段文字。
  * `parallelToolCalls`（M4-05）：第一次对话请求同时返回多个工具调用，用于端到端验证并行委派。
- * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], parallelToolCalls?: readonly MockToolCall[], toolCallsByPrompt?: Readonly<Record<string, readonly MockToolCall[]>>, title?: string, summary?: string, brief?: string }} options
+ * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], parallelToolCalls?: readonly MockToolCall[], toolCallsByPrompt?: Readonly<Record<string, readonly MockToolCall[]>>, replyByPrompt?: Readonly<Record<string, string>>, title?: string, summary?: string, brief?: string }} options
  * @returns {Promise<{ baseUrl: string, requests: MockModelRequest[], close: () => Promise<void> }>}
  */
 export async function startMockModel({
@@ -27,6 +29,7 @@ export async function startMockModel({
   toolCalls,
   parallelToolCalls,
   toolCallsByPrompt,
+  replyByPrompt,
   title,
   summary,
   brief,
@@ -58,6 +61,23 @@ export async function startMockModel({
           message.tool_calls.length > 0,
       ).length
     return toolCallsByPrompt?.[key]?.[used]
+  }
+  /**
+   * 按最后一条用户消息选回复文本（M7-07）；最长的键优先，和工具脚本的匹配规则一致。
+   * @param {readonly { role?: string, content?: unknown }[]} messages
+   */
+  const promptReply = (messages) => {
+    let lastUser = -1
+    for (let i = 0; i < messages.length; i += 1) {
+      if (messages[i]?.role === 'user') lastUser = i
+    }
+    if (lastUser < 0) return undefined
+    const content = messages[lastUser]?.content
+    const text = typeof content === 'string' ? content : JSON.stringify(content ?? '')
+    const key = Object.keys(replyByPrompt ?? {})
+      .filter((candidate) => text.includes(candidate))
+      .sort((a, b) => b.length - a.length)[0]
+    return key === undefined ? undefined : replyByPrompt?.[key]
   }
   /** @type {MockModelRequest[]} */
   const requests = []
@@ -154,7 +174,7 @@ export async function startMockModel({
         res.end('data: [DONE]\n\n')
         return
       }
-      const text = reply
+      const text = promptReply(Array.isArray(body.messages) ? body.messages : []) ?? reply
       for (const piece of text.split(' ')) {
         res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', content: `${piece} ` }))}\n\n`)
       }
