@@ -10,7 +10,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { APP_DIR, expect, test } from './app.js'
-import { chatRequests, createSession, runStatus, sendPrompt } from './session.js'
+import { chatRequests, createSession, expandToolGroup, runStatus, sendPrompt } from './session.js'
 
 const SAMPLE = path.resolve(APP_DIR, '../../fixtures/sample-project')
 const REPLY = 'sum fixed and tests pass'
@@ -114,6 +114,7 @@ test('修复示例项目的 bug 并运行测试：审阅 diff、撤销单个文�
     await expect(runStatus(window)).toHaveText('空闲')
     const firstTurn = chatRequests(mock.requests)
     expect(firstTurn).toHaveLength(5)
+    await expandToolGroup(window)
     for (const name of ['read_file', 'edit_file', 'write_file', 'run_command']) {
       await expect(window.getByRole('region', { name: `调用工具：${name}` })).toContainText('完成')
     }

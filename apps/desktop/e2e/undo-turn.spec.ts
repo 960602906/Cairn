@@ -7,7 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, expandToolGroup, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'file written'
 
@@ -59,6 +59,7 @@ test('消息流显示工具调用，撤销本轮恢复项目文件', async ({ la
     await window.getByRole('button', { name: '允许一次' }).click()
     await expect(window.getByText(REPLY)).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲')
+    await expandToolGroup(window)
     await expect(card).toContainText('完成')
     expect(readFileSync(created, 'utf8')).toBe('hi\n')
 

@@ -72,3 +72,14 @@
 3. **去掉检查点分隔线**：删除 `Checkpoints.tsx` 的 `CheckpointDivider` 与 `MessageStream` 的 `divider` 传参，及 `checkpoint.divider` 文案。「撤销本轮」、`TurnRail` 导航条与恢复标记保留。
 4. **计划进度**：`PlanCard.tsx` 的 `StepIcon` 与工具步骤视觉一致：进行中旋转的品牌图形、完成绿色品牌图形；未开始和跳过仍用各自形状。`PlanStepStatus` 目前只有 `pending/in_progress/done/skipped`，没有失败态，不伪造红色失败步骤；轮次失败仍由结局卡片提示。
 5. **测试与视觉**：`status-presentation.test.ts`、`MessageStream.test.tsx`、`ToolTimeline.test.tsx`、`PlanCard.test.tsx`、`ChatPanel.test.tsx` 同步更新；本地 e2e 截图核对运行指示与工具完成态（绿色品牌图形、技能名摘要、无竖线）。
+
+## 7. 第三轮调整（2026-11-17）
+
+按用户要求，工具步骤在一条助手消息内归成一组，减少长回复的视觉噪音：
+
+1. **汇总行**：组头是一行“环石 C + 正在执行 / 已执行 N 个步骤 / N 个步骤 · 需要留意”，
+   点组头展开或收起。运行中品牌图形旋转，需要留意时用警告色，正常结束用弱化色。
+2. **默认开合**：执行中默认展开；正常结束后自动收起；有失败、取消或等待审批的步骤时保持展开。
+   用户手动开合后以用户选择为准，不再因状态变化自动翻转。
+3. **不藏信息**：`ToolStep` 的逐条展示与各自详情保持不变；正常结束后只收起默认视图，
+   展开后仍能看到每一步的动作、参数摘要、状态与耗时。没有工具事件但轮次已结束的旧消息按已执行处理。

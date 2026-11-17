@@ -535,7 +535,21 @@ function Message({
         onOpenFile={onOpenFile}
       />
       {message.toolCalls.length > 0 && (
-        <ToolTimeline>
+        <ToolTimeline
+          count={message.toolCalls.length}
+          running={message.toolCalls.some((call) => {
+            const status = view.tools[call.id]?.status
+            return (
+              status === 'requested' ||
+              status === 'running' ||
+              (status === undefined && view.runs[message.runId]?.turn?.status === 'running')
+            )
+          })}
+          attention={message.toolCalls.some((call) => {
+            const status = view.tools[call.id]?.status
+            return status === 'failed' || status === 'cancelled' || awaiting.has(call.id)
+          })}
+        >
           {message.toolCalls.map((call) => (
             <ToolStep
               key={call.id}

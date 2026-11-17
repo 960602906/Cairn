@@ -799,7 +799,7 @@ describe('ChatPanel', () => {
       '你你好',
       '助手你好！',
       '你再说一次',
-      '助手思考过程想想好的，\n你好！[图片]读取{}等待执行',
+      '助手思考过程想想好的，\n你好！[图片]已执行 1 个步骤',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
     expect(stopButton()).toBeNull()
@@ -1406,6 +1406,8 @@ describe('tool calls and undo turn', () => {
       ),
     })
     await open()
+    // 已完成消息的工具步骤汇总默认收起，展开后再检查步骤本身。
+    await userEvent.click(screen.getByRole('button', { name: '已执行 1 个步骤' }))
     expect(card().textContent).toBe('运行npm test完成 5ms')
     expect(card().dataset.status).toBe('completed')
     const row = within(card()).getByRole('button')
