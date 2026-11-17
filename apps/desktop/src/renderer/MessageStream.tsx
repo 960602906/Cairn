@@ -949,10 +949,13 @@ export function MessageStream({
   sessionId,
   onContinue,
   onOpenFile,
+  onOpenRun,
 }: {
   readonly view: SessionView | undefined
   readonly onOpenPlan?: ((planId: string) => void) | undefined
   readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
+  /** 点击委派卡片：在右侧工作台打开子 Agent 详情。 */
+  readonly onOpenRun?: ((runId: string) => void) | undefined
   /** 审批状态所属的会话；省略时使用当前选中的会话。 */
   readonly sessionId?: string | undefined
   /** 达到限额后“继续”的动作；省略时向当前选中的会话发送继续提示。 */
@@ -1066,7 +1069,18 @@ export function MessageStream({
     }
     return map
   }, [view])
-  const looseDelegations = (view?.delegations ?? []).filter((item) => item.turnId === undefined)
+  // 没有落到任何一轮消息末尾的委派：还没有轮次归属、本轮的完成消息尚未到达（只有 live 消息），
+  // 或者这一轮没有可挂靠的消息。它们排在流末尾，保证运行中的子 Agent 也能看到。
+  const turnsWithMessages = useMemo(
+    () =>
+      new Set(
+        messages.flatMap((message) => (message.turnId === undefined ? [] : [message.turnId])),
+      ),
+    [messages],
+  )
+  const orphanDelegations = (view?.delegations ?? []).filter(
+    (item) => item.turnId === undefined || !turnsWithMessages.has(item.turnId),
+  )
   const projectId =
     view?.info?.projectPath === undefined
       ? undefined
@@ -1130,6 +1144,7 @@ export function MessageStream({
                         view={view}
                         delegation={delegation}
                         onOpenChanges={onOpenChanges}
+                        {...(onOpenRun === undefined ? {} : { onOpenRun })}
                       />
                     </li>
                   ))}
@@ -1257,22 +1272,13 @@ export function MessageStream({
                       view={view}
                       delegation={delegation}
                       onOpenChanges={onOpenChanges}
+                      {...(onOpenRun === undefined ? {} : { onOpenRun })}
                     />
                   </li>
                 ))}
             </Fragment>
           )
         })}
-        {looseDelegations.map((delegation) => (
-          <li key={delegation.childRunId} className="list-none">
-            <DelegationCard
-              sessionId={view!.sessionId}
-              view={view!}
-              delegation={delegation}
-              onOpenChanges={onOpenChanges}
-            />
-          </li>
-        ))}
         {view?.plans
           .filter((plan) => !anchored.has(plan.planId))
           .map((plan) => (
@@ -1306,6 +1312,17 @@ export function MessageStream({
             resolvePaths={resolvePaths}
             onOpenFile={onOpenFile}
           />
+        ))}
+        {orphanDelegations.map((delegation) => (
+          <li key={delegation.childRunId} className="list-none">
+            <DelegationCard
+              sessionId={view.sessionId}
+              view={view}
+              delegation={delegation}
+              onOpenChanges={onOpenChanges}
+              {...(onOpenRun === undefined ? {} : { onOpenRun })}
+            />
+          </li>
         ))}
       </ol>
       {runningKey !== undefined && <RunningIndicator text={t(runningKey)} />}

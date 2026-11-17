@@ -1,11 +1,18 @@
 /**
  * 多 Agent 委派界面（M4-05）：父运行并行派出两个只读子运行，对话里显示委派卡片；
- * 展开委派卡片后按需读取子运行的只读过程树。
+ * 点击卡片在右侧工作台打开子 Agent 详情，按需读取该子运行的只读过程树。
  */
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt, setAgentOnSession } from './session.js'
+import {
+  createSession,
+  projectDir,
+  runStatus,
+  sendPrompt,
+  sessionPanel,
+  setAgentOnSession,
+} from './session.js'
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(
@@ -148,11 +155,15 @@ test('并行子运行的委派卡片与运行树', async ({ launch, userData }) 
     ).toBeVisible({ timeout: 30_000 })
     await expect(runStatus(window)).toHaveText('空闲', { timeout: 30_000 })
 
-    // 展开委派卡片后，卡片里按需读取并显示子运行的运行树。
+    // 点击委派卡片：右侧工作台打开「子 Agent」详情并读取子运行的运行树；
+    // 卡片本身不再内联运行树，审批仍留在卡片里。
     await loginCard.getByRole('button', { name: /检查登录流程/ }).click()
-    await expect(loginCard.getByRole('list', { name: '运行树' })).toBeVisible()
-    await expect(loginCard.getByText('只读检查员').first()).toBeVisible()
-    await expect(loginCard.getByRole('button', { name: /第 1 轮/ })).toBeVisible()
+    const detail = sessionPanel(window).getByRole('region', { name: '子 Agent' })
+    await expect(detail).toBeVisible()
+    await expect(detail.getByRole('list', { name: '运行树' })).toBeVisible({ timeout: 15_000 })
+    await expect(detail.getByText('只读检查员').first()).toBeVisible()
+    await expect(detail.getByRole('button', { name: /第 1 轮/ })).toBeVisible()
+    await expect(loginCard.getByRole('list', { name: '运行树' })).toHaveCount(0)
   } finally {
     await mock?.close()
   }

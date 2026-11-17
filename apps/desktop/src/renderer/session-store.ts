@@ -487,6 +487,11 @@ export interface SessionActions {
   loadChangeSets(sessionId: string): Promise<void>
   /** 读取一个改动集的详情（含文件 diff）。 */
   loadChangeSet(sessionId: string, changeSetId: string): Promise<ChangeSetInfo | undefined>
+  /**
+   * 按需读取改动集详情：命中缓存直接返回，同一改动集的并发调用共用一个请求。
+   * 用于文件标签判断某个文件是否属于待审阅的改动集，不触发重复请求。
+   */
+  ensureChangeSetLoaded(sessionId: string, changeSetId: string): Promise<ChangeSetInfo | undefined>
   /** 接受全部或部分待处理文件；成功时更新详情并重新读取汇总。 */
   applyChangeSet(
     sessionId: string,
@@ -629,6 +634,8 @@ export function createSessionStore(api: MainApi): SessionStore {
   const changeSetListRequests = new Map<string, number>()
   /** 各改动集最近一次读取详情的序号。 */
   const changeSetRequests = new Map<string, number>()
+  /** 按需读取改动集的进行中请求：同一改动集只请求一次。 */
+  const changeSetLoads = new Map<string, Promise<ChangeSetInfo | undefined>>()
   /** 检查器请求序号：切换标签后较早的响应不应覆盖新结果。 */
   const inspectionRequests = new Map<string, number>()
   const store = createStore<SessionState & SessionActions>()((set, get) => {
@@ -733,6 +740,22 @@ export function createSessionStore(api: MainApi): SessionStore {
       }
     }
     loadChangeSetFor = loadChangeSet
+
+    /** 按需读取改动集详情：已缓存直接返回，正在读取就复用同一个请求。 */
+    const ensureChangeSetLoaded = async (
+      sessionId: string,
+      changeSetId: string,
+    ): Promise<ChangeSetInfo | undefined> => {
+      const cached = get().changeSetDetails[changeSetId]
+      if (cached !== undefined) return cached
+      const inflight = changeSetLoads.get(changeSetId)
+      if (inflight !== undefined) return inflight
+      const request = loadChangeSet(sessionId, changeSetId).finally(() => {
+        changeSetLoads.delete(changeSetId)
+      })
+      changeSetLoads.set(changeSetId, request)
+      return request
+    }
 
     const mutateChangeSet = async (
       sessionId: string,
@@ -1553,6 +1576,8 @@ export function createSessionStore(api: MainApi): SessionStore {
 
       loadChangeSet,
 
+      ensureChangeSetLoaded,
+
       applyChangeSet: (sessionId, changeSetId, paths) =>
         mutateChangeSet(sessionId, changeSetId, () =>
           api.request(
@@ -1613,6 +1638,7 @@ export function createSessionStore(api: MainApi): SessionStore {
         inspectionRequests.clear()
         changeSetListRequests.clear()
         changeSetRequests.clear()
+        changeSetLoads.clear()
         subscribed = undefined
         trialSubscribed = undefined
       },

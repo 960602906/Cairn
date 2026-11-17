@@ -7,6 +7,9 @@
  */
 import type { FileChangeKind, FileChangeStatus, FileChangeSummary } from '@cairn/protocol'
 
+/** 文件标签的两种视图：源码预览，或这笔文件改动的 diff。 */
+export type FileDiffMode = 'preview' | 'changes'
+
 /** 一条改动里可以单独撤销的块（只有这一项只含一条改动时才有）。 */
 export interface EntryHunk {
   readonly index: number

@@ -36,7 +36,7 @@ import {
 /** 可以撤销文件的会话状态：没有在运行或等待审批。 */
 const REVERT_STATUSES: ReadonlySet<SessionStatus> = new Set(['idle', 'failed', 'interrupted'])
 
-function useCanRevert(sessionId: string): boolean {
+export function useCanRevert(sessionId: string): boolean {
   return useSessionStore((s) => {
     const view = s.views[sessionId]
     if (!view || s.awaitingTurn[sessionId]) return false
