@@ -76,6 +76,7 @@ import { createQuestionService } from './services/question-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
 import { createTrialService } from './services/trial-service.js'
+import { createTeamService } from './services/team-service.js'
 import { createWorkspaceService } from './services/workspace-service.js'
 import { latestBrief } from './services/brief.js'
 import { createBriefService } from './services/brief-service.js'
@@ -486,7 +487,13 @@ const supervisor = createHostSupervisor({
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
   loadSkills: (sessionId, agent) => agents.skillsFor(agent, sessionId),
   resolveMcpTools: (_sessionId, agent) => agents.mcpToolsFor(agent),
-  resolveAgentDefinition: (agent) => agents.definition(agent),
+  // 团队试运行时把模板的委派覆盖与协作说明并入主控定义（M7-09）。
+  resolveAgentDefinition: (agent, sessionId) => {
+    const definition = agents.definition(agent)
+    return definition && sessionId !== undefined
+      ? teams.applyTrial(sessionId, definition)
+      : definition
+  },
   // 委派目标（M4-02）：已发布定义、模型、凭据、工具与工作区方式。凭据只经私有接口传回宿主内存。
   resolveDelegation: async (sessionId, agentId) => {
     const definition = agents.get({ agentId }).published
@@ -579,6 +586,8 @@ const sessions = createSessionManager({
 })
 refreshIdleHosts = () => sessions.refreshTools()
 const trials = createTrialService({ storage, events, agents, sessions })
+/** 团队模板（M7-09）：草稿、发布与试运行；试运行沿用 Agent 试运行的隐藏会话与只读默认。 */
+const teams = createTeamService({ storage, events, agents, sessions, trials })
 sessions.recoverInterrupted()
 /**
  * 自动更新（M5-06，ADR-0036）：公开只读 HTTPS 静态源；开发模式默认关闭。
@@ -714,6 +723,7 @@ const gateway = createRendererGateway({
   mcp,
   agents,
   trials,
+  teams,
   diagnostics,
   sandbox: { status: () => sandbox.diagnostics() },
   update: {

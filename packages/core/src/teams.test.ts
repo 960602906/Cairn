@@ -1,7 +1,13 @@
 import type { AgentDefinition, TeamDraftFields, TeamPipelineStage } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
 import { BUILTIN_CODER, BUILTIN_EXPLORER, BUILTIN_REVIEWER, BUILTIN_TESTER } from './agents.js'
-import { teamPipelineOrder, validateAgentTeam, type TeamValidationContext } from './teams.js'
+import {
+  applyTeamToAgentDefinition,
+  teamBrief,
+  teamPipelineOrder,
+  validateAgentTeam,
+  type TeamValidationContext,
+} from './teams.js'
 
 const noDelegation: AgentDefinition = {
   ...BUILTIN_CODER,
@@ -231,5 +237,59 @@ describe('teamPipelineOrder（M7-06）', () => {
         stage('b', BUILTIN_TESTER.id, ['a']),
       ]),
     ).toBeUndefined()
+  })
+})
+
+describe('团队试运行的定义合并（M7-09）', () => {
+  const loopTeam: TeamDraftFields = {
+    name: { 'zh-CN': '审查小组', 'en-US': 'Review crew' },
+    description: { 'zh-CN': '审查循环' },
+    coordinator: BUILTIN_CODER.id,
+    members: [BUILTIN_REVIEWER.id, BUILTIN_TESTER.id],
+    pattern: 'review-loop',
+    reviewLoop: { maker: BUILTIN_TESTER.id, checker: BUILTIN_REVIEWER.id, maxRounds: 2 },
+    delegation: { maxChildrenPerTurn: 4 },
+  }
+
+  it('用模板的委派覆盖收紧主控策略，省略的字段沿用主控', () => {
+    const merged = applyTeamToAgentDefinition(BUILTIN_CODER, loopTeam)
+    expect(merged.delegation).toMatchObject({
+      enabled: true,
+      maxChildrenPerTurn: 4,
+      allowedAgents: BUILTIN_CODER.delegation?.allowedAgents,
+      maxDepth: BUILTIN_CODER.delegation?.maxDepth,
+    })
+    expect(merged.id).toBe(BUILTIN_CODER.id)
+  })
+
+  it('把协作方式写进指令，原有指令保留在前', () => {
+    const merged = applyTeamToAgentDefinition(
+      { ...BUILTIN_CODER, instructions: '先看需求。' },
+      loopTeam,
+    )
+    expect(merged.instructions.startsWith('先看需求。')).toBe(true)
+    expect(merged.instructions).toContain('# Team: 审查小组')
+    expect(merged.instructions).toContain(`maker=${BUILTIN_TESTER.id}`)
+    expect(merged.instructions).toContain('review_loop')
+    const briefOnly = applyTeamToAgentDefinition({ ...BUILTIN_CODER, instructions: '  ' }, loopTeam)
+    expect(briefOnly.instructions).toBe(teamBrief(loopTeam))
+  })
+
+  it('pipeline 与 delegate 的说明各自列出阶段或委派方式', () => {
+    const pipelineTeam: TeamDraftFields = {
+      ...loopTeam,
+      pattern: 'pipeline',
+      reviewLoop: undefined,
+      pipeline: [
+        { stage: 'build', agent: BUILTIN_TESTER.id },
+        { stage: 'check', agent: BUILTIN_REVIEWER.id, dependsOn: ['build'] },
+      ],
+    }
+    const brief = teamBrief(pipelineTeam)
+    expect(brief).toContain('build(builtin.tester)')
+    expect(brief).toContain('check(builtin.reviewer after build)')
+    expect(brief).toContain('run_pipeline')
+    expect(teamBrief(delegateTeam)).toContain('delegate tool')
+    expect(brief).not.toContain('delegate tool')
   })
 })

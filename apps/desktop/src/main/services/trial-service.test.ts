@@ -246,6 +246,36 @@ describe('trial service', () => {
     })
   })
 
+  it('does not count team trials and honours an explicit elevation', () => {
+    const { service, storage, agents } = setup()
+    const project = storage.projects.create({
+      projectId: 'p1',
+      name: 'demo',
+      path: projectPath,
+    })
+    storage.sessions.create({
+      sessionId: 'team-trial',
+      projectId: project.projectId,
+      workspacePath: project.path,
+      title: '',
+      kind: 'trial',
+      trialAgentId: 'user.reviewer',
+      trialDraftHash: 'hash',
+      trialTeamId: 'user.team-1',
+      trialTeamDraftHash: 'team-hash',
+    })
+    expect(service.list({ agentId: 'user.reviewer' }).trials).toEqual([])
+    const ref = { id: 'user.reviewer', draftHash: 'hash' }
+    expect(service.permissionRulesFor('team-trial', ref, [rule])).toContainEqual(
+      expect.objectContaining({ effect: 'deny' }),
+    )
+    service.markElevated('team-trial')
+    expect(service.permissionRulesFor('team-trial', ref, [rule])).toContainEqual(
+      expect.objectContaining({ id: 'agent-rule' }),
+    )
+    expect(agents.permissionRulesFor).toHaveBeenCalledTimes(1)
+  })
+
   it('uses random ids and the wall clock by default', () => {
     const storage = createMemoryStorage()
     const events = createSessionEventService({ storage })

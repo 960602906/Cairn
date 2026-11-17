@@ -277,9 +277,13 @@ export interface HostSupervisorOptions {
   readonly resolveMcpTools?: (sessionId: string, agent: RunAgentRef) => readonly McpToolExposure[]
   /**
    * 运行引用的 Agent 定义（M3-11）：宿主据此决定指令、工具选择与上下文策略。省略时宿主按
-   * 内置编程助手的行为运行（全部工具、没有额外指令）。
+   * 内置编程助手的行为运行（全部工具、没有额外指令）。团队试运行时按会话并入模板的委派
+   * 覆盖与协作说明（M7-09）。
    */
-  readonly resolveAgentDefinition?: (agent: RunAgentRef) => AgentDefinition | undefined
+  readonly resolveAgentDefinition?: (
+    agent: RunAgentRef,
+    sessionId?: string,
+  ) => AgentDefinition | undefined
   /**
    * 解析一次委派的目标 Agent（M4-02）：已发布定义、模型、凭据、模型配置、权限规则、Skills、MCP 与
    * 工作区方式。返回 undefined 表示目标不存在或未发布。省略时宿主的 `delegate` 报 `run.unsupported`。
@@ -629,7 +633,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         const shell = options.resolveShell?.()
         const sandbox = await options.resolveSandbox?.()
         const mcpTools = options.resolveMcpTools?.(sessionId, init.agent)
-        const agentDefinition = options.resolveAgentDefinition?.(init.agent)
+        const agentDefinition = options.resolveAgentDefinition?.(init.agent, sessionId)
         const credential = await options.resolveCredential?.(init.model)
         await endpoint.request(
           'host.init',

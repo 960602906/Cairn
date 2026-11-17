@@ -22,6 +22,7 @@ import type { MentionCommands } from './mention-service.js'
 import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
 import type { TrialCommands } from './trial-service.js'
+import type { TeamCommands } from './team-service.js'
 import {
   coalesceDeltas,
   createRendererGateway,
@@ -117,7 +118,8 @@ let questions: QuestionCommands
 let memories: MemoryCommands
 let skills: SkillCommands & { catalog: (sessionId: string) => SkillCatalogEntry[] }
 let agents: AgentCommands
-let trials: TrialCommands
+let trials: TrialCommands & { markElevated: (sessionId: string) => void }
+let teams: TeamCommands
 let diagnostics: DiagnosticsCommands
 let sandbox: SandboxCommands
 let update: UpdateCommands
@@ -359,7 +361,23 @@ function setup(
     })),
     clear: vi.fn(() => ({ cleared: 0 })),
     list: vi.fn(() => ({ trials: [] })),
+    markElevated: vi.fn(),
   }
+  teams = {
+    list: vi.fn(() => ({ teams: [] })),
+    get: vi.fn(),
+    saveDraft: vi.fn(),
+    publish: vi.fn(),
+    trialStart: vi.fn(() => ({
+      sessionId: 'tt-1',
+      teamId: 't1',
+      teamDraftHash: 'team-hash',
+      agent: { id: 'user.coordinator', draftHash: 'agent-hash' },
+      useAgentPermissions: false,
+    })),
+    trialClear: vi.fn(() => ({ cleared: 0 })),
+    trialList: vi.fn(() => ({ trials: [] })),
+  } as unknown as TeamCommands
   approvals = {
     pending: vi.fn(() => ({ approvals: [] })),
     resolve: vi.fn(() => ({})),
@@ -503,6 +521,7 @@ function setup(
     mcp: {} as unknown as McpCommands,
     agents,
     trials,
+    teams,
     diagnostics,
     sandbox,
     update,
@@ -723,6 +742,22 @@ describe('createRendererGateway: frames', () => {
 })
 
 describe('createRendererGateway: commands and lifecycle', () => {
+  it('routes team template commands and trial commands (M7-09)', async () => {
+    const { client } = setup()
+    await expect(client.request('team.list', {})).resolves.toEqual({ teams: [] })
+    await expect(
+      client.request('team.trial.start', { teamId: 't1', projectPath: '/work' }),
+    ).resolves.toMatchObject({ sessionId: 'tt-1', teamId: 't1' })
+    await expect(client.request('team.trial.clear', { teamId: 't1' })).resolves.toEqual({
+      cleared: 0,
+    })
+    await expect(client.request('team.trial.list', { teamId: 't1' })).resolves.toEqual({
+      trials: [],
+    })
+    expect(teams.trialStart).toHaveBeenCalledWith({ teamId: 't1', projectPath: '/work' })
+    expect(teams.trialClear).toHaveBeenCalledWith({ teamId: 't1' })
+  })
+
   it('delegates validated commands to the session manager', async () => {
     const { client } = setup()
     await expect(client.request('session.create', { projectPath: '/work' })).resolves.toEqual({
@@ -1472,6 +1507,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       mcp: {} as unknown as McpCommands,
       agents,
       trials,
+      teams,
       diagnostics,
       sandbox,
       update,

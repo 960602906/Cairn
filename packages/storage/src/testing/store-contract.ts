@@ -401,6 +401,33 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.sessions.get('t1')).toEqual(trial)
       })
 
+      it('records the team template behind a team trial (M7-09)', () => {
+        seed()
+        clock = 300
+        const trial = storage.sessions.create({
+          sessionId: 't2',
+          projectId: 'p1',
+          workspacePath: '/work/demo',
+          title: '团队试运行',
+          kind: 'trial',
+          trialAgentId: 'builtin.coder',
+          trialDraftHash: 'agent-draft',
+          trialTeamId: 'team.review',
+          trialTeamDraftHash: 'team-draft',
+        })
+        expect(trial).toMatchObject({
+          kind: 'trial',
+          trialAgentId: 'builtin.coder',
+          trialTeamId: 'team.review',
+          trialTeamDraftHash: 'team-draft',
+        })
+        expect(storage.sessions.get('t2')).toEqual(trial)
+        expect(storage.sessions.list({ includeTrial: true }).map((s) => s.sessionId)).toEqual([
+          't2',
+          's1',
+        ])
+      })
+
       it('removes a session with its events and reports missing sessions', () => {
         seed()
         storage.events.append([userEvent('s1', 1)])

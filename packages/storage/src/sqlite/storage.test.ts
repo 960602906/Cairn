@@ -53,6 +53,7 @@ describe('openSqliteStorage', () => {
         '0017_session-thinking-level',
         '0018_memory-entries',
         '0019_agent-teams',
+        '0020_trial-team',
       ],
     })
     storage.close()
@@ -142,6 +143,7 @@ describe('openSqliteStorage', () => {
       '0017_session-thinking-level',
       '0018_memory-entries',
       '0019_agent-teams',
+      '0020_trial-team',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

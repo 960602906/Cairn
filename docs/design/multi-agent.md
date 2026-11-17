@@ -407,6 +407,20 @@ M7-08 落地（pipeline）：
 - 事件与界面：`team.pipeline.stage` 记录每个阶段的结果，`team.pipeline.completed` 记录结局
   与跳过项；投影为 `view.pipelineRuns`，对话里以流水线进度卡片展示阶段状态与跳过项。
 
+M7-09 落地（试运行与验收）：
+
+- 团队模板命令：`team.list` / `team.get` / `team.saveDraft` / `team.publish`，草稿与已发布
+  版本分开，发布沿用 `validateAgentTeam`（模板里省略的委派字段沿用主控 Agent）。
+- 试运行：`team.trial.start` 在草稿状态开一个标记为 `trial` 的隐藏会话（与 Agent 试运行同一套
+  基础设施），默认只读；会话记录 `trial_team_id` 与模板草稿哈希（迁移 0020），模板之后又改过
+  时可以判断。以主控 Agent 的草稿为根运行，`applyTeamToAgentDefinition` 把模板的委派覆盖并入
+  这一轮的定义，并追加一段协作说明（模式、成员、审查循环或流水线阶段），模型由此选择
+  `delegate` / `review_loop` / `run_pipeline`。
+- 边界：团队试运行不写回任何 Agent 或模板；试运行记录不出现在会话列表、活动中心与用量统计，
+  也不计入主控 Agent 自己的试运行历史。
+- 验收：`e2e/team-trial.spec.ts` 覆盖模板草稿 → 发布 → 试运行 → 审查循环完成、非法模板被拒绝、
+  版本回退后重新试运行行为一致，以及试运行会话保持隐藏、可整体清理。
+
 ---
 
 ## 16. 对现有设计的影响

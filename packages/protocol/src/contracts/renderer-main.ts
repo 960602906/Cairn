@@ -75,6 +75,13 @@ import {
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
 import { TrialStarted, TrialSummary } from '../trial.js'
+import {
+  AgentTeamDetail,
+  AgentTeamSummary,
+  TeamDraftInput,
+  TeamTrialStarted,
+  TeamTrialSummary,
+} from '../teams.js'
 import { UpdateChannel, UpdateStatus } from '../update.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
@@ -673,6 +680,48 @@ export const MainForRenderer = defineSide({
     'trial.list': {
       params: z.object({ agentId: Id }),
       result: z.object({ trials: z.array(TrialSummary) }),
+    },
+    /** 团队模板列表（M7-09）：草稿与已发布版本都在一份摘要里。 */
+    'team.list': {
+      params: z.object({ includeArchived: z.boolean().optional() }),
+      result: z.object({ teams: z.array(AgentTeamSummary) }),
+    },
+    /** 一份团队模板：草稿优先，`published` 是最新的已发布版本，并带上校验结果。 */
+    'team.get': {
+      params: z.object({ teamId: Id, version: z.number().int().positive().optional() }),
+      result: AgentTeamDetail,
+    },
+    /** 保存团队模板草稿：新模板可以不给 id；校验有问题时仍然保存，界面负责展示。 */
+    'team.saveDraft': {
+      params: z.object({ definition: TeamDraftInput }),
+      result: AgentTeamDetail,
+    },
+    /** 发布当前草稿：校验不通过时报 `team.invalid`，版本号自增。 */
+    'team.publish': {
+      params: z.object({ teamId: Id }),
+      result: AgentTeamDetail,
+    },
+    /**
+     * 团队试运行（M7-09）：用草稿模板开一个隐藏会话，以主控 Agent 的草稿运行，
+     * 模板的委派覆盖与协作说明并入这一轮使用的定义；默认只读。
+     */
+    'team.trial.start': {
+      params: z.object({
+        teamId: Id,
+        projectPath: z.string().min(1),
+        useAgentPermissions: z.boolean().optional(),
+      }),
+      result: TeamTrialStarted,
+    },
+    /** 清除一个团队模板的全部试运行记录。 */
+    'team.trial.clear': {
+      params: z.object({ teamId: Id }),
+      result: z.object({ cleared: z.number().int().nonnegative() }),
+    },
+    /** 一个团队模板的试运行历史，按更新时间倒序。 */
+    'team.trial.list': {
+      params: z.object({ teamId: Id }),
+      result: z.object({ trials: z.array(TeamTrialSummary) }),
     },
     /**
      * 删除（归档）会话（M2-02），写入 `session.archived`：不再出现在列表中，事件与改动记录保留。

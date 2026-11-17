@@ -240,13 +240,23 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           throw new StorageError(StorageErrorCode.Conflict, { sessionId: input.sessionId })
         }
         const at = now()
-        const { model, kind, trialAgentId, trialDraftHash, ...rest } = input
+        const {
+          model,
+          kind,
+          trialAgentId,
+          trialDraftHash,
+          trialTeamId,
+          trialTeamDraftHash,
+          ...rest
+        } = input
         const record: SessionRecord = {
           ...rest,
           ...(model ? { model: { ...model } } : {}),
           kind: kind ?? 'normal',
           ...(trialAgentId === undefined ? {} : { trialAgentId }),
           ...(trialDraftHash === undefined ? {} : { trialDraftHash }),
+          ...(trialTeamId === undefined ? {} : { trialTeamId }),
+          ...(trialTeamDraftHash === undefined ? {} : { trialTeamDraftHash }),
           projectPath: project.path,
           archived: false,
           createdAt: at,

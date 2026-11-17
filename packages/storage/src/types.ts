@@ -125,6 +125,10 @@ export interface SessionRecord {
   readonly trialAgentId?: string
   /** 试运行时使用的草稿内容哈希；普通会话没有。 */
   readonly trialDraftHash?: string
+  /** 团队试运行引用的模板（M7-09）；单 Agent 试运行没有。 */
+  readonly trialTeamId?: string
+  /** 团队试运行时草稿的内容哈希，用于判断模板是否又改过（M7-09）。 */
+  readonly trialTeamDraftHash?: string
   /** 会话使用的模型（M1-04a）；之前创建的会话没有。 */
   readonly model?: ModelRef
   /** 本会话的思考强度覆盖（下一轮生效）；没有时用模型配置里的默认值。 */
@@ -142,6 +146,8 @@ export interface CreateSessionInput {
   readonly kind?: SessionKind
   readonly trialAgentId?: string
   readonly trialDraftHash?: string
+  readonly trialTeamId?: string
+  readonly trialTeamDraftHash?: string
   readonly model?: ModelRef
 }
 

@@ -93,6 +93,8 @@ interface SessionRow {
   kind: SessionRecord['kind']
   trial_agent_id: string | null
   trial_draft_hash: string | null
+  trial_team_id: string | null
+  trial_team_draft_hash: string | null
   model_provider_id: string | null
   model_id: string | null
   thinking_level: string | null
@@ -427,6 +429,8 @@ const toSession = (row: SessionRow): SessionRecord => ({
   kind: row.kind,
   ...(row.trial_agent_id === null ? {} : { trialAgentId: row.trial_agent_id }),
   ...(row.trial_draft_hash === null ? {} : { trialDraftHash: row.trial_draft_hash }),
+  ...(row.trial_team_id === null ? {} : { trialTeamId: row.trial_team_id }),
+  ...(row.trial_team_draft_hash === null ? {} : { trialTeamDraftHash: row.trial_team_draft_hash }),
   ...(row.model_provider_id === null || row.model_id === null
     ? {}
     : { model: { providerId: row.model_provider_id, modelId: row.model_id } }),
@@ -540,10 +544,10 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     insertSession: db.prepare(
       `INSERT INTO sessions
          (session_id, project_id, project_path, workspace_path, title, archived,
-          kind, trial_agent_id, trial_draft_hash,
+          kind, trial_agent_id, trial_draft_hash, trial_team_id, trial_team_draft_hash,
           model_provider_id, model_id, created_at, updated_at)
        VALUES (@sessionId, @projectId, @projectPath, @workspacePath, @title, 0,
-          @kind, @trialAgentId, @trialDraftHash,
+          @kind, @trialAgentId, @trialDraftHash, @trialTeamId, @trialTeamDraftHash,
           @modelProviderId, @modelId, @at, @at)`,
     ),
     setSessionModel: db.prepare(
@@ -1192,13 +1196,23 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         if (q.sessionById.get(input.sessionId)) {
           throw new StorageError(StorageErrorCode.Conflict, { sessionId: input.sessionId })
         }
-        const { model, kind, trialAgentId, trialDraftHash, ...rest } = input
+        const {
+          model,
+          kind,
+          trialAgentId,
+          trialDraftHash,
+          trialTeamId,
+          trialTeamDraftHash,
+          ...rest
+        } = input
         q.insertSession.run({
           ...rest,
           projectPath: project.path,
           kind: kind ?? 'normal',
           trialAgentId: trialAgentId ?? null,
           trialDraftHash: trialDraftHash ?? null,
+          trialTeamId: trialTeamId ?? null,
+          trialTeamDraftHash: trialTeamDraftHash ?? null,
           modelProviderId: model?.providerId ?? null,
           modelId: model?.modelId ?? null,
           at: now(),

@@ -7,7 +7,7 @@
  */
 import { z } from 'zod'
 import { LocalizedText } from './agents.js'
-import { Id } from './common.js'
+import { AgentDraftRef, Id, Timestamp } from './common.js'
 import { DelegationPolicy } from './delegation.js'
 
 /** 协作模式。`delegate` 由主控自由分派；`review-loop` 与 `pipeline` 由运行时固定编排。 */
@@ -129,3 +129,25 @@ export const AgentTeamVersionSummary = z.object({
   memberCount: z.number().int().nonnegative(),
 })
 export type AgentTeamVersionSummary = z.infer<typeof AgentTeamVersionSummary>
+
+/** 一次团队试运行（M7-09）：在草稿状态开一个隐藏会话，以主控 Agent 的草稿运行。 */
+export const TeamTrialStarted = z.object({
+  sessionId: Id,
+  teamId: Id,
+  teamDraftHash: Id,
+  agent: AgentDraftRef,
+  useAgentPermissions: z.boolean(),
+})
+export type TeamTrialStarted = z.infer<typeof TeamTrialStarted>
+
+/** 一次团队试运行的历史摘要。 */
+export const TeamTrialSummary = z.object({
+  sessionId: Id,
+  teamId: Id,
+  agent: AgentDraftRef,
+  projectPath: z.string().min(1),
+  title: z.string(),
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+})
+export type TeamTrialSummary = z.infer<typeof TeamTrialSummary>

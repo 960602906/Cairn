@@ -26,6 +26,7 @@ it('exports the public API', () => {
     'session-thinking-level',
     'memory-entries',
     'agent-teams',
+    'trial-team',
   ])
   expect(storage.StorageErrorCode.SeqConflict).toBe('storage.seq_conflict')
   const error = new storage.StorageError(storage.StorageErrorCode.NotFound)
