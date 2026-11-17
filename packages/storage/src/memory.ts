@@ -714,6 +714,17 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           )
           .map(copy)
       },
+      listAll(allOptions = {}) {
+        return [...live().memories.values()]
+          .filter((entry) => allOptions.scope === undefined || entry.scope === allOptions.scope)
+          .filter((entry) => allOptions.status === undefined || entry.status === allOptions.status)
+          .sort(
+            (a, b) =>
+              MEMORY_SCOPE_ORDER[a.scope] - MEMORY_SCOPE_ORDER[b.scope] ||
+              a.createdAt - b.createdAt,
+          )
+          .map(copy)
+      },
       confirm(memoryId) {
         const s = live()
         const record = s.memories.get(memoryId)

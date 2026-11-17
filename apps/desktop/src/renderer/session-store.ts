@@ -66,6 +66,9 @@ import {
   type McpServerSummary,
   type McpStatusEvent,
   type McpToolSummary,
+  type MemoryEntry,
+  type MemoryScope,
+  type MemoryStatus,
   type ModelRef,
   type ReasoningEffort,
   type PermissionEffect,
@@ -253,6 +256,15 @@ export interface SessionActions {
    * 结果由事件投影到 `view.memoryProposals`，卡片随之消失。
    */
   resolveMemory(memoryId: string, action: 'accept' | 'reject'): Promise<boolean>
+  /** 管理界面：列出记忆（M7-04），可按范围与状态筛选；失败时返回 undefined。 */
+  listMemories(params?: {
+    scope?: MemoryScope
+    status?: MemoryStatus
+  }): Promise<MemoryEntry[] | undefined>
+  /** 管理界面：编辑一条记忆的正文；成功时返回 true。 */
+  updateMemory(memoryId: string, content: string): Promise<boolean>
+  /** 管理界面：删除一条记忆；给了 `sessionId` 时会话里的提议卡片一起消失。 */
+  deleteMemory(memoryId: string, sessionId?: string): Promise<boolean>
   refreshProjects(): Promise<void>
   /** 用系统对话框选择文件夹作为项目；取消或失败时返回 undefined。 */
   openProject(): Promise<ProjectSummary | undefined>
@@ -1214,6 +1226,31 @@ export function createSessionStore(api: MainApi): SessionStore {
         if (sessionId === undefined) return false
         const result = await run(() =>
           api.request('memory.respond', { sessionId, memoryId, action }),
+        )
+        return result !== undefined
+      },
+
+      async listMemories(params) {
+        const result = await run(() =>
+          api.request('memory.list', {
+            ...(params?.scope === undefined ? {} : { scope: params.scope }),
+            ...(params?.status === undefined ? {} : { status: params.status }),
+          }),
+        )
+        return result?.entries
+      },
+
+      async updateMemory(memoryId, content) {
+        const result = await run(() => api.request('memory.update', { memoryId, content }))
+        return result !== undefined
+      },
+
+      async deleteMemory(memoryId, sessionId) {
+        const result = await run(() =>
+          api.request('memory.delete', {
+            memoryId,
+            ...(sessionId === undefined ? {} : { sessionId }),
+          }),
         )
         return result !== undefined
       },

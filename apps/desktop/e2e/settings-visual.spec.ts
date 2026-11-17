@@ -1,5 +1,5 @@
 /**
- * 设置页视觉验收：四种窗口尺寸 × 七个分类，全部不能出现横向滚动；同时检查分类搜索与
+ * 设置页视觉验收：四种窗口尺寸 × 八个分类，全部不能出现横向滚动；同时检查分类搜索与
  * Windows 窗口标题区底色是否跟随主题。
  */
 import { mkdirSync } from 'node:fs'
@@ -22,6 +22,7 @@ const SECTIONS = [
   ['providers', '模型供应商'],
   ['skills', '技能'],
   ['mcp', 'MCP 服务'],
+  ['memory', '记忆'],
   ['permissions', '权限与审批'],
   ['update', '更新'],
   ['about', '关于 Cairn'],
@@ -100,7 +101,7 @@ test('设置页在四种窗口尺寸下都不溢出', async ({ launch }) => {
   await expect(nav.getByRole('button', { name: /^技能/ })).toHaveCount(0)
 })
 
-test('浅色主题在窄窗口下七个分类都不溢出', async ({ launch }) => {
+test('浅色主题在窄窗口下八个分类都不溢出', async ({ launch }) => {
   const app = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
   const window = app.window
 
@@ -116,7 +117,7 @@ test('浅色主题在窄窗口下七个分类都不溢出', async ({ launch }) =
     await nav.getByRole('button', { name: new RegExp(`^${title}`) }).click()
     await expect(window.getByRole('heading', { name: title, level: 2 })).toBeVisible()
     await noHorizontalOverflow(window)
-    if (id === 'general' || id === 'skills' || id === 'mcp') {
+    if (id === 'general' || id === 'skills' || id === 'mcp' || id === 'memory') {
       await window.screenshot({
         path: path.join(ARTIFACTS, `section-${id}-light-880x800.png`),
       })
@@ -139,6 +140,34 @@ test('浅色主题在窄窗口下七个分类都不溢出', async ({ launch }) =
   await window.screenshot({
     path: path.join(ARTIFACTS, 'section-skills-batch-880x800.png'),
   })
+})
+
+test('记忆页在深色下不溢出（M7-04）', async ({ launch }) => {
+  const app = await launch({ env: { CAIRN_RUNTIME: 'fake' }, theme: 'dark' })
+  const window = app.window
+  await window.getByRole('button', { name: /^设置/ }).click()
+  await window
+    .getByRole('navigation', { name: '设置分类' })
+    .getByRole('button', { name: /^记忆/ })
+    .click()
+  await expect(window.getByRole('heading', { name: '记忆', level: 2 })).toBeVisible()
+  await resize(app.app, window, { width: 1440, height: 900 })
+  await noHorizontalOverflow(window)
+  await window.screenshot({ path: path.join(ARTIFACTS, 'section-memory-dark-1440x900.png') })
+})
+
+test('记忆页的英文界面在窄窗口下不溢出（M7-04）', async ({ launch }) => {
+  const app = await launch({ env: { CAIRN_RUNTIME: 'fake' }, locale: 'en-US', theme: 'light' })
+  const window = app.window
+  await window.getByRole('button', { name: /^Settings/ }).click()
+  await window
+    .getByRole('navigation', { name: 'Settings categories' })
+    .getByRole('button', { name: /^Memory/ })
+    .click()
+  await expect(window.getByRole('heading', { name: 'Memory', level: 2 })).toBeVisible()
+  await resize(app.app, window, { width: 1024, height: 768 })
+  await noHorizontalOverflow(window)
+  await window.screenshot({ path: path.join(ARTIFACTS, 'section-memory-en-1024x768.png') })
 })
 
 test('窗口标题区底色跟随主题', async ({ launch }) => {

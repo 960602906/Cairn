@@ -574,5 +574,8 @@
   "licenses.truncated": "声明很长，这里只显示开头部分。完整内容在安装目录的 THIRD_PARTY_NOTICES.txt。",
   "licenses.close": "关闭",
   "general.agentAutoMemory.label": "允许 Agent 自动记忆",
-  "general.agentAutoMemory.hint": "只对配置为自动写入的 Agent 生效。关闭时它们提议的记忆也要你确认；默认关闭。"
+  "general.agentAutoMemory.hint": "只对配置为自动写入的 Agent 生效。关闭时它们提议的记忆也要你确认；默认关闭。",
+  "section.memory.title": "记忆",
+  "section.memory.description": "Agent 跨会话记住的项目约定与偏好。可按范围搜索、编辑或删除；只有已生效的条目会注入对话。",
+  "page.keywords.memory": "记忆 记住 偏好 约定 memory 本会话 本项目 全局 删除 编辑"
 }

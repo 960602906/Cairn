@@ -115,9 +115,12 @@ export interface QuestionCommands {
   readonly subscribe: (listener: (sessionId: string) => void) => () => void
 }
 
-/** 记忆提议（M7-03）：用户在聊天里确认或忽略 Agent 提议的记忆。 */
+/** 记忆（M7-03 / M7-04）：确认或忽略提议，以及在设置页与会话面板里管理条目。 */
 export interface MemoryCommands {
   readonly respond: Handler<'memory.respond'>
+  readonly list: Handler<'memory.list'>
+  readonly update: Handler<'memory.update'>
+  readonly remove: Handler<'memory.delete'>
 }
 
 /** 运行检查器（M4-04）。 */
@@ -509,6 +512,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('question.pending', (params) => questions.pending(params))
       endpoint.handle('question.resolve', (params) => questions.resolve(params))
       endpoint.handle('memory.respond', (params) => memories.respond(params))
+      endpoint.handle('memory.list', (params) => memories.list(params))
+      endpoint.handle('memory.update', (params) => memories.update(params))
+      endpoint.handle('memory.delete', (params) => memories.remove(params))
       endpoint.handle('activity.list', (params) => activity.list(params))
       endpoint.handle('activity.resolve', (params) => activity.resolve(params))
       endpoint.handle('command.list', (params) => backgroundCommands.list(params))

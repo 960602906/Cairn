@@ -218,6 +218,9 @@ const wrap = (
       after: { kind: 'text', text: 'new\n' },
     })),
     ensureChangeSetLoaded: vi.fn(async () => undefined),
+    listMemories: vi.fn(async () => []),
+    updateMemory: vi.fn(async () => true),
+    deleteMemory: vi.fn(async () => true),
     inspectRun: vi.fn(async () => undefined),
     inspections: {},
     agents: [],
@@ -598,6 +601,21 @@ describe('SessionSidePanel', () => {
     await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
     expect(await screen.findByRole('menuitem', { name: '文件' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: '子 Agent' })).toBeNull()
+  })
+
+  it('offers the memory panel in the add menu and shows its empty state (M7-04)', async () => {
+    const user = userEvent.setup()
+    expect(SESSION_PANELS).toContain('memory')
+    wrap(<Harness initialPanel="home" initialTabs={[]} />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    expect(await screen.findByRole('menuitem', { name: '记忆' })).toBeTruthy()
+  })
+
+  it('renders the memory panel for the current session', async () => {
+    wrap(<Harness initialPanel="memory" initialTabs={['memory']} />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(await within(panel).findByText('还没有记忆')).toBeTruthy()
   })
 
   it('renders the sub-agent panel for the selected run', () => {

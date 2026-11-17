@@ -8,6 +8,7 @@
  */
 import {
   Archive,
+  Brain,
   ChevronLeft,
   Cpu,
   Info,
@@ -25,6 +26,7 @@ import { ArchivedSessionsSettings } from './ArchivedSessionsSettings.js'
 import { GeneralSettings } from './GeneralSettings.js'
 import { AboutSettings } from './AboutSettings.js'
 import { McpSettings } from './McpSettings.js'
+import { MemorySettings } from './MemorySettings.js'
 import { PermissionsSettings } from './PermissionsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
 import { McpGlyph, SkillGlyph } from './SettingIcons.js'
@@ -33,7 +35,15 @@ import { UpdateSettings } from './UpdateSettings.js'
 import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
-  'general' | 'archived' | 'update' | 'providers' | 'skills' | 'mcp' | 'permissions' | 'about'
+  | 'general'
+  | 'archived'
+  | 'update'
+  | 'providers'
+  | 'skills'
+  | 'mcp'
+  | 'memory'
+  | 'permissions'
+  | 'about'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -60,6 +70,7 @@ const GROUPS: readonly {
       { id: 'providers', icon: <Cpu /> },
       { id: 'skills', icon: <SkillGlyph /> },
       { id: 'mcp', icon: <McpGlyph /> },
+      { id: 'memory', icon: <Brain /> },
     ],
   },
   { group: 'security', sections: [{ id: 'permissions', icon: <ShieldCheck /> }] },
@@ -240,6 +251,7 @@ export function SettingsContent({
           {section === 'providers' && <ProvidersSettings />}
           {section === 'skills' && <SkillsSettings />}
           {section === 'mcp' && <McpSettings />}
+          {section === 'memory' && <MemorySettings />}
           {section === 'permissions' && <PermissionsSettings />}
           {section === 'about' && <AboutSettings />}
         </div>

@@ -259,6 +259,12 @@ export interface ProposeMemoryInput {
   readonly sourceAgentId?: string
 }
 
+/** 管理界面用的筛选（M7-04）：跨项目列出全部条目，不做范围隔离。 */
+export interface ListAllMemoryOptions {
+  readonly scope?: MemoryScope
+  readonly status?: MemoryStatus
+}
+
 export interface ListMemoryOptions {
   /** 同时列出这个项目的记忆。 */
   readonly projectId?: string
@@ -281,6 +287,11 @@ export interface MemoryStore {
   get(memoryId: string): MemoryEntryRecord | undefined
   /** 全局，加上给出的项目与会话的条目；按会话、项目、全局排列，同一范围内按创建顺序。 */
   list(options?: ListMemoryOptions): MemoryEntryRecord[]
+  /**
+   * 列出全部条目（M7-04 管理界面）：不按项目或会话隔离，可按范围与状态筛选。
+   * 只给用户的管理界面使用；Agent 读取一律走 `list`。
+   */
+  listAll(options?: ListAllMemoryOptions): MemoryEntryRecord[]
   /** `proposed` → `active`；已经是 `active` 时原样返回。不存在时报 `storage.not_found`。 */
   confirm(memoryId: string): MemoryEntryRecord
   /** 编辑内容并更新 `updatedAt`。内容为空时报 `storage.invalid_record`，不存在时报 `storage.not_found`。 */

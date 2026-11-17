@@ -2180,3 +2180,51 @@ describe('memory proposals (M7-03)', () => {
     expect(await store.getState().resolveMemory('m1', 'accept')).toBe(false)
   })
 })
+
+describe('memory management (M7-04)', () => {
+  const entry = {
+    memoryId: 'm1',
+    scope: 'project' as const,
+    projectId: 'p1',
+    content: '用 pnpm',
+    status: 'active' as const,
+    createdAt: 1,
+    updatedAt: 1,
+  }
+
+  it('lists, updates and deletes through the API', async () => {
+    const { api, calls } = fakeApi({
+      'memory.list': () => ({ entries: [entry] }),
+      'memory.update': () => ({ entry: { ...entry, content: 'new' } }),
+      'memory.delete': () => ({}),
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().listMemories()).toEqual([entry])
+    expect(await store.getState().listMemories({ scope: 'project', status: 'active' })).toEqual([
+      entry,
+    ])
+    expect(calls).toContainEqual(['memory.list', { scope: 'project', status: 'active' }])
+    expect(await store.getState().updateMemory('m1', 'new')).toBe(true)
+    expect(calls).toContainEqual(['memory.update', { memoryId: 'm1', content: 'new' }])
+    expect(await store.getState().deleteMemory('m1', 's1')).toBe(true)
+    expect(calls).toContainEqual(['memory.delete', { memoryId: 'm1', sessionId: 's1' }])
+  })
+
+  it('reports failures without throwing', async () => {
+    const { api } = fakeApi({
+      'memory.list': () => {
+        throw new RpcError('rpc.internal')
+      },
+      'memory.update': () => {
+        throw new RpcError('memory.not_found')
+      },
+      'memory.delete': () => {
+        throw new RpcError('memory.not_found')
+      },
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().listMemories()).toBeUndefined()
+    expect(await store.getState().updateMemory('m1', 'x')).toBe(false)
+    expect(await store.getState().deleteMemory('m1')).toBe(false)
+  })
+})

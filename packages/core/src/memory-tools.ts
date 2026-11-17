@@ -7,13 +7,12 @@
  * - 无人值守运行没有用户可确认，`propose` 在宿主侧直接拒绝，只有 `auto` 能写。
  */
 import { z } from 'zod'
-import type { MemoryScope } from '@cairn/protocol'
+import { MEMORY_CONTENT_MAX, type MemoryScope } from '@cairn/protocol'
+
+export { MEMORY_CONTENT_MAX }
 import { ToolError, ToolErrorCode, type ToolDefinition, type ToolRegistry } from './tools.js'
 
 export const REMEMBER_TOOL = 'remember'
-
-/** 单条记忆的正文上限。 */
-export const MEMORY_CONTENT_MAX = 2_000
 
 export type MemoryWriteMode = 'never' | 'propose' | 'auto'
 

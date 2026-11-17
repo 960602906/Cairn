@@ -11,7 +11,14 @@
  * 不依赖 Electron。
  */
 import { randomUUID } from 'node:crypto'
-import { RpcError, type AgentDefinition, type MemoryScope, type RunAgentRef } from '@cairn/protocol'
+import {
+  RpcError,
+  type AgentDefinition,
+  type MemoryEntry,
+  type MemoryScope,
+  type MemoryStatus,
+  type RunAgentRef,
+} from '@cairn/protocol'
 import type { Storage } from '@cairn/storage'
 import type { SessionEventService } from './event-service.js'
 
@@ -45,6 +52,22 @@ export interface RememberedMemory {
   readonly status: 'proposed' | 'active'
 }
 
+export interface ListMemoriesParams {
+  readonly scope?: MemoryScope | undefined
+  readonly status?: MemoryStatus | undefined
+}
+
+export interface UpdateMemoryParams {
+  readonly memoryId: string
+  readonly content: string
+}
+
+export interface DeleteMemoryParams {
+  readonly memoryId: string
+  /** 从某个会话的管理面板删除时给出：事件记到这个会话，卡片随之消失。 */
+  readonly sessionId?: string | undefined
+}
+
 export interface MemoryServiceOptions {
   readonly storage: Pick<Storage, 'sessions' | 'memories'>
   readonly events: Pick<SessionEventService, 'publish'>
@@ -60,6 +83,12 @@ export interface MemoryService {
   remember(params: RememberParams): RememberedMemory
   /** 用户确认或忽略一条提议。已经确认过的条目再次确认时什么也不做。 */
   respond(params: RespondMemoryParams): Record<string, never>
+  /** 管理界面：列出全部条目，可按范围与状态筛选（M7-04）。 */
+  list(params?: ListMemoriesParams): { readonly entries: MemoryEntry[] }
+  /** 管理界面：编辑正文，更新时间随之变化。 */
+  update(params: UpdateMemoryParams): { readonly entry: MemoryEntry }
+  /** 管理界面：删除条目；会话上下文里的删除会让提议卡片一起消失。 */
+  remove(params: DeleteMemoryParams): Record<string, never>
 }
 
 export function createMemoryService(options: MemoryServiceOptions): MemoryService {
@@ -116,6 +145,43 @@ export function createMemoryService(options: MemoryServiceOptions): MemoryServic
         },
       ])
       return { memoryId, status: 'proposed' }
+    },
+
+    list({ scope, status } = {}) {
+      return {
+        entries: options.storage.memories.listAll({
+          ...(scope === undefined ? {} : { scope }),
+          ...(status === undefined ? {} : { status }),
+        }),
+      }
+    },
+
+    update({ memoryId, content }) {
+      if (!options.storage.memories.get(memoryId)) {
+        throw new RpcError(MemoryErrorCode.NotFound, { memoryId })
+      }
+      return { entry: options.storage.memories.update(memoryId, content) }
+    },
+
+    remove({ memoryId, sessionId }) {
+      const existing = options.storage.memories.get(memoryId)
+      if (!existing) throw new RpcError(MemoryErrorCode.NotFound, { memoryId })
+      const entry = options.storage.memories.delete(memoryId)
+      // 会话范围的条目知道自己在哪个会话；项目与全局条目没有会话，只能改存储。
+      const target = sessionId ?? (entry.scope === 'session' ? entry.sessionId : undefined)
+      if (target !== undefined) {
+        options.events.publish([
+          {
+            v: 1,
+            sessionId: target,
+            runId: entry.sourceRunId ?? target,
+            ts: now(),
+            type: 'memory.deleted',
+            payload: { memoryId, scope: entry.scope },
+          },
+        ])
+      }
+      return {}
     },
 
     respond({ sessionId, memoryId, action }) {
