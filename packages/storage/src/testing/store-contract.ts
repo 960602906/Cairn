@@ -1387,6 +1387,74 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       })
     })
 
+    describe('agent teams', () => {
+      const draft = {
+        id: 'team.review',
+        name: { 'zh-CN': '审查团队' },
+        coordinator: 'builtin.coder',
+        members: ['builtin.reviewer'],
+        pattern: 'delegate',
+      }
+
+      it('creates a draft, publishes versions and keeps them ordered', () => {
+        const created = storage.teams.create({ teamId: 'team.review', draft })
+        expect(created.archived).toBe(false)
+        expect(storage.teams.list()).toHaveLength(1)
+        expect(storage.teams.get('team.review')?.draft).toEqual(draft)
+
+        storage.teams.saveDraft('team.review', { ...draft, pattern: 'review-loop' })
+        expect(storage.teams.get('team.review')?.draft).toEqual({
+          ...draft,
+          pattern: 'review-loop',
+        })
+
+        storage.teams.addVersion({
+          teamId: 'team.review',
+          version: 2,
+          definition: { ...draft, version: 2 },
+        })
+        storage.teams.addVersion({
+          teamId: 'team.review',
+          version: 1,
+          definition: { ...draft, version: 1 },
+        })
+        expect(storage.teams.versions('team.review').map((item) => item.version)).toEqual([1, 2])
+        expect(storage.teams.version('team.review', 2)?.definition).toEqual({
+          ...draft,
+          version: 2,
+        })
+
+        expect(storage.teams.clearDraft('team.review').draft).toBeUndefined()
+        expect(storage.teams.setArchived('team.review', true).archived).toBe(true)
+      })
+
+      it('rejects duplicates and missing records', () => {
+        storage.teams.create({ teamId: 'team.review', draft })
+        expectStorageError(
+          () => storage.teams.create({ teamId: 'team.review' }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.teams.saveDraft('missing', draft),
+          StorageErrorCode.NotFound,
+        )
+        storage.teams.addVersion({ teamId: 'team.review', version: 1, definition: draft })
+        expectStorageError(
+          () => storage.teams.addVersion({ teamId: 'team.review', version: 1, definition: draft }),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(() => storage.teams.remove('missing'), StorageErrorCode.NotFound)
+      })
+
+      it('removes a team together with its versions', () => {
+        storage.teams.create({ teamId: 'team.review', draft })
+        storage.teams.addVersion({ teamId: 'team.review', version: 1, definition: draft })
+        storage.teams.remove('team.review')
+        expect(storage.teams.get('team.review')).toBeUndefined()
+        expect(storage.teams.versions('team.review')).toEqual([])
+      })
+    })
+
     describe('run snapshots', () => {
       const snapshot = (snapshotId: string, runId = 'run-1', extra: object = {}) => ({
         snapshotId,

@@ -16,6 +16,8 @@ import {
   StorageErrorCode,
   type AddChangeSetFileInput,
   type AgentRecord,
+  type AgentTeamRecord,
+  type AgentTeamVersionRecord,
   type AgentVersionRecord,
   type AddRunSnapshotInput,
   type ChangeSetFileRecord,
@@ -56,6 +58,9 @@ interface State {
   agents: Map<string, AgentRecord>
   /** 键为 agentId；值按版本号升序。 */
   agentVersions: Map<string, AgentVersionRecord[]>
+  teams: Map<string, AgentTeamRecord>
+  /** 键为 teamId；值按版本号升序。 */
+  teamVersions: Map<string, AgentTeamVersionRecord[]>
   /** 按 snapshotId；列表按创建顺序与插入顺序。 */
   runSnapshots: Map<string, RunSnapshotRecord>
   /** 按 changeSetId；列表按创建顺序与插入顺序。 */
@@ -83,6 +88,8 @@ function cloneState(state: State): State {
     mcpToolPrefs: new Map(state.mcpToolPrefs),
     agents: new Map(state.agents),
     agentVersions: new Map([...state.agentVersions].map(([id, list]) => [id, [...list]])),
+    teams: new Map(state.teams),
+    teamVersions: new Map([...state.teamVersions].map(([id, list]) => [id, [...list]])),
     runSnapshots: new Map(state.runSnapshots),
     changeSets: new Map(state.changeSets),
     changeSetFiles: new Map([...state.changeSetFiles].map(([id, files]) => [id, new Map(files)])),
@@ -111,6 +118,8 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     mcpToolPrefs: new Map(),
     agents: new Map(),
     agentVersions: new Map(),
+    teams: new Map(),
+    teamVersions: new Map(),
     runSnapshots: new Map(),
     changeSets: new Map(),
     changeSetFiles: new Map(),
@@ -625,6 +634,94 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         }
         const next = [...list, record].sort((a, b) => a.version - b.version)
         s.agentVersions.set(input.agentId, next)
+        return copy(record)
+      },
+    },
+
+    teams: {
+      list: () => [...live().teams.values()].map(copy),
+      get(teamId) {
+        const record = live().teams.get(teamId)
+        return record && copy(record)
+      },
+      create(input) {
+        const s = live()
+        if (s.teams.has(input.teamId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { teamId: input.teamId })
+        }
+        const at = now()
+        const record: AgentTeamRecord = {
+          teamId: input.teamId,
+          archived: false,
+          ...(input.draft === undefined ? {} : { draft: copy(input.draft) }),
+          createdAt: at,
+          updatedAt: at,
+        }
+        s.teams.set(record.teamId, record)
+        s.teamVersions.set(record.teamId, [])
+        return copy(record)
+      },
+      saveDraft(teamId, draft) {
+        const s = live()
+        const current = s.teams.get(teamId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { teamId })
+        const next: AgentTeamRecord = { ...current, draft: copy(draft), updatedAt: now() }
+        s.teams.set(teamId, next)
+        return copy(next)
+      },
+      clearDraft(teamId) {
+        const s = live()
+        const current = s.teams.get(teamId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { teamId })
+        const { draft: _draft, ...rest } = current
+        const next: AgentTeamRecord = { ...rest, updatedAt: now() }
+        s.teams.set(teamId, next)
+        return copy(next)
+      },
+      setArchived(teamId, archived) {
+        const s = live()
+        const current = s.teams.get(teamId)
+        if (!current) throw new StorageError(StorageErrorCode.NotFound, { teamId })
+        const next: AgentTeamRecord = { ...current, archived, updatedAt: now() }
+        s.teams.set(teamId, next)
+        return copy(next)
+      },
+      remove(teamId) {
+        const s = live()
+        if (!s.teams.delete(teamId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { teamId })
+        }
+        s.teamVersions.delete(teamId)
+      },
+      versions(teamId) {
+        return (live().teamVersions.get(teamId) ?? []).map(copy)
+      },
+      version(teamId, version) {
+        const found = (live().teamVersions.get(teamId) ?? []).find(
+          (item) => item.version === version,
+        )
+        return found && copy(found)
+      },
+      addVersion(input) {
+        const s = live()
+        if (!s.teams.has(input.teamId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { teamId: input.teamId })
+        }
+        const list = s.teamVersions.get(input.teamId) ?? []
+        if (list.some((item) => item.version === input.version)) {
+          throw new StorageError(StorageErrorCode.Conflict, {
+            teamId: input.teamId,
+            version: input.version,
+          })
+        }
+        const record: AgentTeamVersionRecord = {
+          teamId: input.teamId,
+          version: input.version,
+          definition: copy(input.definition),
+          publishedAt: now(),
+        }
+        const next = [...list, record].sort((a, b) => a.version - b.version)
+        s.teamVersions.set(input.teamId, next)
         return copy(record)
       },
     },
