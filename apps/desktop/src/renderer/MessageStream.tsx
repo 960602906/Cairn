@@ -242,6 +242,7 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
     <Collapsible open={open} onOpenChange={setOpen} className="my-2 max-w-full">
       <CollapsibleTrigger
         onClick={handleToggle}
+        data-activity-group
         className="group/activity inline-flex max-w-full cursor-pointer select-none items-center gap-2 rounded-[8px] border border-hair/70 bg-sunk/60 px-2.5 py-1.5 text-left text-ui text-fg2 outline-none transition-colors hover:border-hair hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
       >
         <Activity
