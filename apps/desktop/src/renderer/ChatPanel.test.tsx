@@ -834,6 +834,94 @@ describe('ChatPanel', () => {
     })
   })
 
+  it('用上下键翻历史提示词，并在回到底部时恢复草稿', async () => {
+    const { request, open } = setup({ history: HISTORY })
+    await open()
+
+    // 还没有历史时按上键不动
+    fireEvent.keyDown(input(), { key: 'ArrowUp' })
+    expect(input().value).toBe('')
+
+    await userEvent.type(input(), '第一条{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: text('第一条'),
+      }),
+    )
+    await userEvent.type(input(), '第二条{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenLastCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: text('第二条'),
+      }),
+    )
+    // 重复发送不会在历史里出现两次
+    await userEvent.type(input(), '第二条{Enter}')
+
+    // 光标不在开头时按上键只是移动光标
+    await userEvent.type(input(), '草稿')
+    fireEvent.keyDown(input(), { key: 'ArrowUp' })
+    expect(input().value).toBe('草稿')
+
+    await userEvent.clear(input())
+    fireEvent.keyDown(input(), { key: 'ArrowDown' })
+    expect(input().value).toBe('')
+
+    const arrow = (key: 'ArrowUp' | 'ArrowDown', init: KeyboardEventInit = {}) => {
+      input().setSelectionRange(0, 0)
+      fireEvent.keyDown(input(), { key, ...init })
+    }
+
+    arrow('ArrowUp')
+    expect(input().value).toBe('第二条')
+    arrow('ArrowUp')
+    expect(input().value).toBe('第一条')
+    arrow('ArrowUp')
+    expect(input().value).toBe('第一条')
+    arrow('ArrowDown')
+    expect(input().value).toBe('第二条')
+    arrow('ArrowDown')
+    expect(input().value).toBe('')
+
+    // 编辑后历史位置重置，下键不再翻动
+    arrow('ArrowUp')
+    expect(input().value).toBe('第二条')
+    await userEvent.type(input(), 'X')
+    fireEvent.keyDown(input(), { key: 'ArrowDown' })
+    expect(input().value).toBe('第二条X')
+
+    // 带修饰键时不翻历史
+    await userEvent.clear(input())
+    arrow('ArrowUp', { shiftKey: true })
+    arrow('ArrowUp', { ctrlKey: true })
+    arrow('ArrowUp', { altKey: true })
+    arrow('ArrowUp', { metaKey: true })
+    expect(input().value).toBe('')
+  })
+
+  it('粘贴带路径的文件时插入引用，忽略没有路径的剪贴板项', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    const withPath = new File(['x'], 'a.ts')
+    Object.defineProperty(withPath, 'path', { value: '/w/a.ts' })
+    fireEvent.paste(input(), {
+      clipboardData: {
+        items: [
+          { kind: 'string' },
+          { kind: 'file', getAsFile: () => null },
+          { kind: 'file', getAsFile: () => new File(['x'], 'b.ts') },
+          { kind: 'file', getAsFile: () => withPath },
+        ],
+      },
+    })
+    expect(input().value).toBe('@/w/a.ts ')
+
+    // 没有 clipboardData 时忽略
+    fireEvent.paste(input())
+    expect(input().value).toBe('@/w/a.ts ')
+  })
+
   it('suggests files after @, inserts the pick and sends the mentions (ADR-0037)', async () => {
     const search = vi.fn(({ query }: { query: string }) => ({
       entries:

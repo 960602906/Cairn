@@ -125,4 +125,54 @@ describe('useStickToBottom', () => {
     const { getByTestId } = render(<Harness id="a" />)
     expect(getByTestId('scroller').scrollTop).toBe(0)
   })
+
+  it('scrollToBottom prefers smooth scrolling and falls back to scrollTop', () => {
+    vi.stubGlobal('ResizeObserver', undefined)
+    let scrollToBottom: ((smooth?: boolean) => void) | undefined
+    const Capture = () => {
+      const scroller = useRef<HTMLDivElement>(null)
+      const content = useRef<HTMLDivElement>(null)
+      const result = useStickToBottom(scroller, content, 'a')
+      scrollToBottom = result.scrollToBottom
+      return (
+        <div data-testid="scroller" ref={scroller}>
+          <div ref={content} />
+        </div>
+      )
+    }
+    const { getByTestId } = render(<Capture />)
+    const el = getByTestId('scroller')
+    layout(el, { scrollHeight: 500, clientHeight: 200 })
+    const smooth = vi.fn()
+    Object.defineProperty(el, 'scrollTo', { configurable: true, value: smooth })
+
+    // 默认平滑滚动
+    act(() => scrollToBottom!())
+    expect(smooth).toHaveBeenCalledWith({ top: 500, behavior: 'smooth' })
+
+    // 明确要求不平滑时直接设置 scrollTop
+    el.scrollTop = 0
+    act(() => scrollToBottom!(false))
+    expect(el.scrollTop).toBe(500)
+
+    // 没有 scrollTo 时退化为直接设置 scrollTop
+    Object.defineProperty(el, 'scrollTo', { configurable: true, value: undefined })
+    el.scrollTop = 0
+    act(() => scrollToBottom!())
+    expect(el.scrollTop).toBe(500)
+  })
+
+  it('does nothing when the scroller is not mounted', () => {
+    vi.stubGlobal('ResizeObserver', undefined)
+    let scrollToBottom: ((smooth?: boolean) => void) | undefined
+    const Missing = () => {
+      const scroller = useRef<HTMLDivElement>(null)
+      const content = useRef<HTMLDivElement>(null)
+      const result = useStickToBottom(scroller, content, 'missing')
+      scrollToBottom = result.scrollToBottom
+      return <div ref={content} />
+    }
+    render(<Missing />)
+    expect(() => act(() => scrollToBottom!())).not.toThrow()
+  })
 })
