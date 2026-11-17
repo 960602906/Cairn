@@ -539,6 +539,19 @@ export function Composer({
   const fixedAgentModel =
     agent !== undefined && agents.find((item) => item.agentId === agent.id)?.modelMode === 'fixed'
   const [text, setText] = useState('')
+  const promptHistory = useRef<string[]>([])
+  const historyIndex = useRef<number>(-1)
+  const draftBeforeHistory = useRef<string>('')
+
+  const recordHistory = (prompt: string) => {
+    const trimmed = prompt.trim()
+    if (trimmed === '') return
+    const idx = promptHistory.current.indexOf(trimmed)
+    if (idx !== -1) promptHistory.current.splice(idx, 1)
+    promptHistory.current.unshift(trimmed)
+    if (promptHistory.current.length > 50) promptHistory.current.pop()
+    historyIndex.current = -1
+  }
   const [planMode, setPlanMode] = useState(false)
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
@@ -713,6 +726,7 @@ export function Composer({
       await runCommand(parsedCommand.command, parsedCommand.args)
       return
     }
+    recordHistory(draft)
     setText('')
     setSending(true)
     const sent = await sendPrompt(draft, planMode ? 'plan' : 'normal', referencesOf(draft))
@@ -741,6 +755,7 @@ export function Composer({
     setDismissedDraft(null)
     setText('')
     if (command.kind === 'skill') {
+      if (args !== '') recordHistory(`/${command.name} ${args}`)
       setSending(true)
       const sent = await sendPrompt(args, planMode ? 'plan' : 'normal', {
         ...referencesOf(args),
@@ -759,6 +774,7 @@ export function Composer({
         if (args === '') {
           setPlanMode((on) => !on)
         } else {
+          recordHistory(`/plan ${args}`)
           setSending(true)
           const sent = await sendPrompt(args, 'plan', referencesOf(args))
           setSending(false)
@@ -927,6 +943,58 @@ export function Composer({
         // 没有匹配时按普通消息发送。
       }
     }
+    if (!mention.open && !commandPanelOpen) {
+      if (
+        event.key === 'ArrowUp' &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey
+      ) {
+        const isAtStart =
+          textarea.current?.selectionStart === 0 && textarea.current?.selectionEnd === 0
+        if (isAtStart && promptHistory.current.length > 0) {
+          if (historyIndex.current === -1) {
+            draftBeforeHistory.current = text
+          }
+          const nextIndex = Math.min(historyIndex.current + 1, promptHistory.current.length - 1)
+          const item = promptHistory.current[nextIndex]
+          if (item !== undefined) {
+            event.preventDefault()
+            historyIndex.current = nextIndex
+            setText(item)
+            requestAnimationFrame(() => {
+              textarea.current?.setSelectionRange(item.length, item.length)
+            })
+            return
+          }
+        }
+      }
+      if (
+        event.key === 'ArrowDown' &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        historyIndex.current >= 0
+      ) {
+        event.preventDefault()
+        const nextIndex = historyIndex.current - 1
+        historyIndex.current = nextIndex
+        if (nextIndex < 0) {
+          setText(draftBeforeHistory.current)
+        } else {
+          const item = promptHistory.current[nextIndex]
+          if (item !== undefined) {
+            setText(item)
+            requestAnimationFrame(() => {
+              textarea.current?.setSelectionRange(item.length, item.length)
+            })
+          }
+        }
+        return
+      }
+    }
     if (event.key !== 'Enter' || event.shiftKey) return
     event.preventDefault()
     void send()
@@ -967,6 +1035,22 @@ export function Composer({
             event.preventDefault()
             insertReference(file.path, file.kind)
           }}
+          onPaste={(event) => {
+            const items = event.clipboardData?.items
+            if (items) {
+              for (const item of items) {
+                if (item.kind === 'file') {
+                  const file = item.getAsFile()
+                  const path = file ? (file as File & { path?: string }).path : undefined
+                  if (path) {
+                    event.preventDefault()
+                    insertReference(path, 'file')
+                    return
+                  }
+                }
+              }
+            }
+          }}
           className={cn(
             'rounded-[14px] border border-hair2 bg-raise px-3.5 pt-3 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
             dragging && 'border-accent ring-2 ring-accent/20',
@@ -990,6 +1074,9 @@ export function Composer({
             <textarea
               ref={textarea}
               rows={1}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
               aria-label={t('input.label')}
               aria-expanded={commandPanelOpen || mention.open}
               aria-controls={
@@ -1007,6 +1094,7 @@ export function Composer({
               onChange={(e) => {
                 setText(e.target.value)
                 setCommandNotice(null)
+                if (historyIndex.current !== -1) historyIndex.current = -1
               }}
               onKeyDown={keyDown}
               onSelect={mention.onCaret}
@@ -1020,7 +1108,7 @@ export function Composer({
               className="px-1 text-body text-fg break-words"
             />
           </div>
-          <div className="mt-2 flex items-center gap-1">
+          <div className="mt-2 flex flex-wrap items-center gap-1">
             <AgentPicker sessionId={sessionId} agent={agent} disabled={active} />
             <PermissionMenu />
             <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />

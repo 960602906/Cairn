@@ -182,8 +182,21 @@ export function terminalData(
   }
 }
 
-function Node({ status }: { readonly status: ToolCallView['status'] }) {
+function Node({
+  status,
+  exitCode,
+}: {
+  readonly status: ToolCallView['status']
+  readonly exitCode?: number | null | undefined
+}) {
   const base = 'flex size-4 shrink-0 items-center justify-center'
+  if (exitCode !== undefined && exitCode !== null && exitCode !== 0) {
+    return (
+      <span aria-hidden className={cn(base, 'text-danger')}>
+        <CairnMark size={13} />
+      </span>
+    )
+  }
   switch (status) {
     case 'completed':
       return (
@@ -248,7 +261,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   const terminal = name === 'run_command' ? terminalData(args, tool, live) : undefined
   const file =
     name === 'read_file' && status === 'completed' ? parseReadFileOutput(output) : undefined
-  const open = openState ?? (terminal !== undefined && !terminal.running && terminal.exitCode !== 0)
+  const open = openState ?? false
   const liveText = running && live && !terminal ? live.chunks.map((c) => c.text).join('') : ''
   const tail = liveText.trim() === '' ? undefined : previewLines(liveText, 'end')
   const argsRecord =
@@ -339,7 +352,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
           onClick={() => setOpen(!open)}
           className="group/step flex w-full items-center gap-2.5 rounded-item py-1 text-left text-ui text-fg2 outline-none hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
         >
-          <Node status={status} />
+          <Node status={status} exitCode={terminal?.exitCode} />
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
             {running ? (
               <Shimmer className="flex min-w-0 items-center gap-1.5">{label}</Shimmer>
@@ -348,10 +361,19 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
             )}
           </span>
           {terminal?.sandbox && <SandboxBadge execution={terminal.sandbox} compact />}
+          {terminal?.exitCode !== undefined &&
+            terminal.exitCode !== null &&
+            terminal.exitCode !== 0 && (
+              <span className="tabular shrink-0 rounded-[4px] bg-danger/10 px-1.5 py-0.5 text-[11px] font-medium text-danger">
+                {t('terminal.exitCode', { code: terminal.exitCode })}
+              </span>
+            )}
           <span
             className={cn(
               'tabular shrink-0 text-note',
-              status === 'failed' ? 'text-danger' : 'text-muted',
+              status === 'failed' || (terminal?.exitCode !== undefined && terminal.exitCode !== 0)
+                ? 'text-danger'
+                : 'text-muted',
             )}
           >
             {status === 'completed' ? (
@@ -366,8 +388,8 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
           <ChevronRight
             aria-hidden
             className={cn(
-              'size-3.5 shrink-0 text-faint opacity-0 transition-[transform,opacity] group-hover/step:opacity-100',
-              open && 'rotate-90 opacity-100',
+              'size-3.5 shrink-0 text-faint transition-[transform,opacity] group-hover/step:text-fg',
+              open ? 'rotate-90 opacity-100 text-fg' : 'opacity-60',
             )}
           />
         </button>
@@ -384,7 +406,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
             <pre className="whitespace-pre-wrap break-all">{tail.lines}</pre>
           </div>
         )}
-        {terminal && (terminal.running || open) && (
+        {open && terminal && (
           <div className="mt-1 mb-2 ml-[26px] flex flex-col gap-1 text-note">
             <TerminalCard {...terminal} />
             {tool?.truncated && <div className="text-muted">{t('tool.truncated')}</div>}

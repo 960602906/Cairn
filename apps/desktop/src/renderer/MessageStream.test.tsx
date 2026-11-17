@@ -1193,4 +1193,119 @@ describe('MessageStream 试运行（M4-12）', () => {
     expect(screen.getByRole('button', { name: /较早的对话已压缩/ })).toBeTruthy()
     expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeTruthy()
   })
+
+  it('多个思考与工具调用时自动汇总折叠为单行卡片，点击可展开与收起', async () => {
+    const view = {
+      sessionId: 's1',
+      lastSeq: 10,
+      info: undefined,
+      archived: false,
+      crash: undefined,
+      tools: {
+        t1: { toolCallId: 't1', status: 'completed', durationMs: 100 },
+        t2: { toolCallId: 't2', status: 'completed', durationMs: 200 },
+      },
+      liveToolOutput: {},
+      usage: { inputTokens: 0, outputTokens: 0 },
+      usageByTurn: {},
+      contextTokens: undefined,
+      checkpoints: [],
+      restores: [],
+      compaction: undefined,
+      toolOutputOmitted: undefined,
+      plans: [],
+      delegations: [],
+      runs: { r1: { runId: 'r1', agent: { id: 'builtin.coder', version: 1 } } },
+      runOrder: ['r1'],
+      messages: [
+        {
+          messageId: 'u1',
+          role: 'user',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 1,
+          ts: 1,
+          content: [{ type: 'text', text: '查代码' }],
+        },
+        {
+          messageId: 'a1',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 2,
+          ts: 2,
+          content: [],
+          reasoning: { type: 'text', text: '思考中第1步' },
+          toolCalls: [{ id: 't1', name: 'read_file', input: { path: 'a.ts' } }],
+          model: { providerId: 'p', modelId: 'm' },
+          incomplete: false,
+        },
+        {
+          messageId: 'a2',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 3,
+          ts: 3,
+          content: [],
+          reasoning: { type: 'text', text: '思考中第2步' },
+          toolCalls: [{ id: 't2', name: 'run_command', input: { command: 'pnpm test' } }],
+          model: { providerId: 'p', modelId: 'm' },
+          incomplete: false,
+        },
+        {
+          messageId: 'a3',
+          role: 'assistant',
+          runId: 'r1',
+          turnId: 't1',
+          seq: 4,
+          ts: 4,
+          content: [{ type: 'text', text: '全部完成' }],
+          toolCalls: [],
+          model: { providerId: 'p', modelId: 'm' },
+          incomplete: false,
+        },
+      ],
+      live: {},
+    } as unknown as SessionView
+
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider
+          store={
+            createStore<Record<string, unknown>>(() => ({
+              activeSessionId: undefined,
+              awaitingTurn: {},
+              approvals: {},
+              settings: { providers: [] },
+              agents: [],
+              changes: {},
+              sendPrompt: vi.fn(),
+            })) as unknown as SessionStore
+          }
+        >
+          <MessageStream view={view} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+
+    // 折叠状态下，外层卡片汇总展示
+    expect(screen.getByText('浏览了文件，运行了命令')).toBeTruthy()
+    expect(screen.getByText('(1 次读取 · 1 次运行)')).toBeTruthy()
+    expect(screen.getByText('300ms')).toBeTruthy()
+    // 最终回复正常显示
+    expect(screen.getByText('全部完成')).toBeTruthy()
+
+    // 默认完成状态下收起
+    const activityButton = screen.getByRole('button', { name: /浏览了文件，运行了命令/ })
+    expect(activityButton.getAttribute('aria-expanded')).toBe('false')
+
+    // 点击展开
+    await userEvent.click(activityButton)
+    expect(activityButton.getAttribute('aria-expanded')).toBe('true')
+
+    // 点击再次收起
+    await userEvent.click(activityButton)
+    expect(activityButton.getAttribute('aria-expanded')).toBe('false')
+  })
 })

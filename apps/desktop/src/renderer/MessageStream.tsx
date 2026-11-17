@@ -10,11 +10,12 @@
  * M2-08：每轮的用户消息上方是检查点分隔线，轮次操作中有“撤销本轮”，恢复之后显示恢复标记
  * （`Checkpoints.tsx`）。
  */
-import { Bot, Brain, Check, ChevronRight, Copy } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Activity, Bot, Brain, Check, ChevronRight, Copy } from 'lucide-react'
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   rootRun,
+  type AssistantMessageView,
   type DelegationView,
   type LiveMessageView,
   type MessageView,
@@ -30,6 +31,7 @@ import {
   type PromptAgent,
   type PromptSkill,
   type ResolvedMention,
+  type ToolCall,
 } from '@cairn/protocol'
 import { RestoreMarks, restoresByMessage, UndoTurnButton } from './Checkpoints.js'
 import { COMPOSER_COMMANDS } from './composer-commands.js'
@@ -37,6 +39,7 @@ import { parseMention, tokenize } from './composer-tokens.js'
 import { FileTypeIcon } from './file-icons.js'
 import { TurnChanges } from './FileChanges.js'
 import { DelegationCard } from './DelegationCard.js'
+import { formatDuration } from './format.js'
 import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
 import { RunningIndicator } from './RunningIndicator.js'
@@ -113,37 +116,41 @@ function useEnteringIds(ids: readonly string[]): ReadonlySet<string> {
  * 正文用 `forceMount` 常驻 DOM、收起时靠高度归零（而不是卸载），这样流式内容和按文本查找都不受影响；
  * 收起状态下加 `aria-hidden`，与原生 `<details>` 一样不让读屏读到未展开的正文。
  */
-function Reasoning({ text, live = false }: { readonly text: string; readonly live?: boolean }) {
+const Reasoning = memo(function Reasoning({
+  text,
+  live = false,
+}: {
+  readonly text: string
+  readonly live?: boolean
+}) {
   const { t } = useTranslation('session')
   const [open, setOpen] = useState(false)
   return (
-    <Collapsible
-      open={open}
-      onOpenChange={setOpen}
-      className="mb-2.5 overflow-hidden rounded-card bg-sunk shadow-hair"
-    >
-      <CollapsibleTrigger className="group/reasoning flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui text-muted outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent">
-        <Brain aria-hidden className="size-3.5 shrink-0 text-faint" />
-        <span className="min-w-0 flex-1 truncate">
+    <Collapsible open={open} onOpenChange={setOpen} className="my-1.5 max-w-full">
+      <CollapsibleTrigger className="group/reasoning inline-flex items-center gap-1.5 rounded-[6px] px-2 py-0.5 text-left text-ui text-muted outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent">
+        <Brain
+          aria-hidden
+          className="size-3.5 shrink-0 text-faint transition-colors group-hover/reasoning:text-accent"
+        />
+        <span className="text-[12.5px] font-medium">
           {live ? <Shimmer>{t('message.reasoning')}</Shimmer> : t('message.reasoning')}
         </span>
         <ChevronRight
           aria-hidden
-          className="size-3.5 shrink-0 text-faint transition-transform group-data-[state=open]/reasoning:rotate-90"
+          className="size-3 shrink-0 text-faint transition-transform duration-150 group-data-[state=open]/reasoning:rotate-90"
         />
       </CollapsibleTrigger>
-      <CollapsibleContent forceMount aria-hidden={!open}>
-        <span aria-hidden className="block h-[0.5px] bg-hair" />
-        <p className="px-3.5 pt-2 pb-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap text-muted">
+      <CollapsibleContent forceMount aria-hidden={!open} className={cn(!open && 'hidden')}>
+        <div className="mt-1 ml-2 border-l-2 border-hair2 py-1 pl-3 text-[13px] leading-relaxed whitespace-pre-wrap text-muted">
           {text}
-        </p>
+        </div>
       </CollapsibleContent>
     </Collapsible>
   )
-}
+})
 
 /** 助手正文：文本按 Markdown 渲染；行内代码里的项目路径可以点开。 */
-function AssistantContent({
+const AssistantContent = memo(function AssistantContent({
   parts,
   resolvePaths,
   onOpenFile,
@@ -160,7 +167,179 @@ function AssistantContent({
       <p key={index}>{t('message.image')}</p>
     ),
   )
+})
+
+export interface TurnActivityStep {
+  readonly key: string
+  readonly reasoning?: string | undefined
+  readonly content?: readonly ContentPart[] | undefined
+  readonly toolCalls?: readonly ToolCall[] | undefined
 }
+
+interface TurnActivityGroupProps {
+  readonly steps: readonly TurnActivityStep[]
+  readonly view: SessionView
+  readonly isRunning: boolean
+  readonly hasAwaitingApproval?: boolean | undefined
+  readonly awaiting: ReadonlySet<string>
+  readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
+}
+
+function generateActivitySummary(
+  toolCalls: readonly ToolCall[],
+  hasReasoning: boolean,
+  t: TFunction,
+): { title: string; breakdown?: string | undefined } {
+  const categories = new Set<string>()
+  const counts: Record<string, number> = {}
+
+  for (const call of toolCalls) {
+    let cat = 'other'
+    const name = call.name.toLowerCase()
+    if (
+      name === 'read_file' ||
+      name === 'read_symbol' ||
+      name.includes('search') ||
+      name === 'grep'
+    ) {
+      cat = 'explore'
+    } else if (name === 'run_command') {
+      cat = 'run'
+    } else if (name === 'apply_file_diff' || name === 'write_file' || name.includes('edit')) {
+      cat = 'edit'
+    } else if (name.includes('plan') || name.includes('task')) {
+      cat = 'plan'
+    }
+    categories.add(cat)
+    counts[cat] = (counts[cat] ?? 0) + 1
+  }
+
+  const actions: string[] = []
+  if (categories.has('explore')) actions.push(t('turn.activity.action.explore'))
+  if (categories.has('run')) actions.push(t('turn.activity.action.run'))
+  if (categories.has('edit')) actions.push(t('turn.activity.action.edit'))
+  if (categories.has('plan')) actions.push(t('turn.activity.action.plan'))
+
+  let title: string
+  if (actions.length > 0) {
+    title = actions.join(t('turn.activity.action.separator'))
+  } else if (hasReasoning && toolCalls.length > 0) {
+    title = t('turn.activity.reasoningAndTools', { count: toolCalls.length })
+  } else if (hasReasoning) {
+    title = t('turn.activity.reasonings', { count: 1 })
+  } else {
+    title = t('turn.activity.tools', { count: toolCalls.length })
+  }
+
+  const breakdownParts: string[] = []
+  if (counts['explore'])
+    breakdownParts.push(t('turn.activity.breakdown.read', { count: counts['explore'] }))
+  if (counts['run']) breakdownParts.push(t('turn.activity.breakdown.run', { count: counts['run'] }))
+  if (counts['edit'])
+    breakdownParts.push(t('turn.activity.breakdown.edit', { count: counts['edit'] }))
+  if (counts['other'])
+    breakdownParts.push(t('turn.activity.breakdown.other', { count: counts['other'] }))
+
+  const breakdown = breakdownParts.length > 0 ? breakdownParts.join(' · ') : undefined
+  return { title, breakdown }
+}
+
+const TurnActivityGroup = memo(function TurnActivityGroup({
+  steps,
+  view,
+  isRunning,
+  awaiting,
+  resolvePaths,
+  onOpenFile,
+}: TurnActivityGroupProps) {
+  const { t } = useTranslation('session')
+  // 默认折叠：一排一排的思考与读取/运行折叠为单行胶囊卡片，点击再展开（对齐 Antigravity）
+  const [open, setOpen] = useState(false)
+
+  const toolCalls = useMemo(() => steps.flatMap((s) => s.toolCalls ?? []), [steps])
+  const reasonings = useMemo(
+    () => steps.filter((s) => s.reasoning && s.reasoning.trim() !== ''),
+    [steps],
+  )
+  const hasReasoning = reasonings.length > 0
+
+  const totalDurationMs = useMemo(
+    () =>
+      toolCalls.reduce((sum, call) => {
+        const d = view.tools[call.id]?.durationMs
+        return sum + (d !== undefined && d > 0 ? d : 0)
+      }, 0),
+    [toolCalls, view.tools],
+  )
+
+  const { title, breakdown } = useMemo(
+    () => generateActivitySummary(toolCalls, hasReasoning, t),
+    [toolCalls, hasReasoning, t],
+  )
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="my-2 max-w-full">
+      <CollapsibleTrigger className="group/activity inline-flex max-w-full cursor-pointer select-none items-center gap-2 rounded-[8px] border border-hair/70 bg-sunk/60 px-2.5 py-1.5 text-left text-ui text-fg2 outline-none transition-colors hover:border-hair hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent">
+        <Activity
+          aria-hidden
+          className={cn(
+            'size-3.5 shrink-0 text-muted transition-colors group-hover/activity:text-accent',
+            isRunning && 'animate-pulse text-accent',
+          )}
+        />
+        <span className="flex min-w-0 items-center gap-1.5 truncate text-[12.5px] font-medium">
+          {isRunning ? <Shimmer>{title}</Shimmer> : title}
+          {breakdown && (
+            <span className="truncate text-note font-normal text-muted">({breakdown})</span>
+          )}
+        </span>
+        {totalDurationMs > 0 && !isRunning && (
+          <span className="tabular shrink-0 text-note text-muted">
+            {formatDuration(totalDurationMs)}
+          </span>
+        )}
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            'size-3.5 shrink-0 text-faint transition-transform duration-150 group-hover/activity:text-fg',
+            open && 'rotate-90 text-fg',
+          )}
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent forceMount aria-hidden={!open} className={cn(!open && 'hidden')}>
+        <div className="mt-2 ml-1 flex flex-col gap-1 border-l-2 border-hair2/80 pl-3 pt-0.5 pb-1">
+          {steps.map((step) => (
+            <Fragment key={step.key}>
+              {step.reasoning && <Reasoning text={step.reasoning} />}
+              {step.content && step.content.length > 0 && (
+                <AssistantContent
+                  parts={step.content}
+                  resolvePaths={resolvePaths}
+                  onOpenFile={onOpenFile}
+                />
+              )}
+              {step.toolCalls && step.toolCalls.length > 0 && (
+                <ToolTimeline>
+                  {step.toolCalls.map((call) => (
+                    <ToolStep
+                      key={call.id}
+                      name={call.name}
+                      input={call.input}
+                      tool={view.tools[call.id]}
+                      live={view.liveToolOutput[call.id]}
+                      awaitingApproval={awaiting.has(call.id)}
+                    />
+                  ))}
+                </ToolTimeline>
+              )}
+            </Fragment>
+          ))}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+})
 
 const COMMAND_NAMES = COMPOSER_COMMANDS.map((command) => command.name)
 
@@ -210,7 +389,7 @@ function FileMention({
  * 用户消息：原样显示（不按 Markdown 解释），保留换行。指令、确认过的 `@` 引用与网址
  * 用和输入框一致的分词高亮；引用和网址可以点。
  */
-function UserContent({
+const UserContent = memo(function UserContent({
   parts,
   mentions,
   skills,
@@ -310,7 +489,7 @@ function UserContent({
       )}
     </p>
   ))
-}
+})
 
 const textOf = (parts: readonly ContentPart[]) =>
   parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n\n')
@@ -654,7 +833,12 @@ function LiveMessage({
       {live.reasoning !== '' && <Reasoning text={live.reasoning} live={live.text === ''} />}
       {live.text !== '' && (
         <div className="stream-caret-anchor">
-          <Markdown text={live.text} resolvePaths={resolvePaths} onOpenFile={onOpenFile} />
+          <Markdown
+            text={live.text}
+            resolvePaths={resolvePaths}
+            onOpenFile={onOpenFile}
+            debounceMs={300}
+          />
           <span aria-hidden className="stream-caret" />
         </div>
       )}
@@ -694,6 +878,110 @@ function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): strin
   return t('turn.failed', { reason: translateError(i18n, turn.error ?? { code: 'unknown' }) })
 }
 
+type RenderItem =
+  | {
+      readonly kind: 'message'
+      readonly message: MessageView
+      readonly index: number
+    }
+  | {
+      readonly kind: 'activity_group'
+      readonly turnId: string | undefined
+      readonly messages: readonly AssistantMessageView[]
+      readonly indices: readonly number[]
+    }
+
+function groupMessages(messages: readonly MessageView[]): RenderItem[] {
+  const items: RenderItem[] = []
+  let i = 0
+
+  while (i < messages.length) {
+    const msg = messages[i]!
+    const isAssistant = msg.role === 'assistant'
+    const hasToolsLaterInTurn =
+      isAssistant &&
+      msg.turnId !== undefined &&
+      messages
+        .slice(i + 1)
+        .some((m) => m.role === 'assistant' && m.turnId === msg.turnId && m.toolCalls.length > 0)
+
+    const isFinalResponse = isAssistant && msg.content.length > 0 && !hasToolsLaterInTurn
+    const isActivityStep =
+      isAssistant &&
+      !isFinalResponse &&
+      (msg.toolCalls.length > 0 ||
+        (msg.reasoning !== undefined && msg.reasoning.text !== '') ||
+        hasToolsLaterInTurn)
+
+    if (!isActivityStep) {
+      items.push({ kind: 'message', message: msg, index: i })
+      i++
+      continue
+    }
+
+    // 收集同一轮内连续的中间工具/思考步骤
+    const activityGroup: AssistantMessageView[] = [msg as AssistantMessageView]
+    const indices: number[] = [i]
+    let j = i + 1
+    while (j < messages.length) {
+      const next = messages[j]!
+      const nextHasToolsLater =
+        next.role === 'assistant' &&
+        next.turnId !== undefined &&
+        messages
+          .slice(j + 1)
+          .some((m) => m.role === 'assistant' && m.turnId === next.turnId && m.toolCalls.length > 0)
+      const nextIsFinalResponse =
+        next.role === 'assistant' && next.content.length > 0 && !nextHasToolsLater
+
+      if (
+        next.role === 'assistant' &&
+        next.turnId !== undefined &&
+        next.turnId === msg.turnId &&
+        !nextIsFinalResponse &&
+        (next.toolCalls.length > 0 ||
+          (next.reasoning !== undefined && next.reasoning.text !== '') ||
+          nextHasToolsLater)
+      ) {
+        activityGroup.push(next as AssistantMessageView)
+        indices.push(j)
+        j++
+      } else {
+        break
+      }
+    }
+
+    const totalToolCalls = activityGroup.reduce((sum, m) => sum + m.toolCalls.length, 0)
+    const totalReasonings = activityGroup.filter(
+      (m) => m.reasoning !== undefined && m.reasoning.text !== '',
+    ).length
+    const isMultiStep =
+      activityGroup.length > 1 ||
+      totalToolCalls >= 2 ||
+      (totalToolCalls >= 1 && totalReasonings >= 1)
+
+    if (isMultiStep) {
+      items.push({
+        kind: 'activity_group',
+        turnId: msg.turnId,
+        messages: activityGroup,
+        indices,
+      })
+    } else {
+      for (let k = 0; k < activityGroup.length; k++) {
+        items.push({
+          kind: 'message',
+          message: activityGroup[k]!,
+          index: indices[k]!,
+        })
+      }
+    }
+    i = j
+  }
+
+  return items
+}
+
 export function MessageStream({
   view,
   onOpenPlan,
@@ -716,12 +1004,21 @@ export function MessageStream({
   const openPlan = onOpenPlan ?? noopPlan
   const projects = useSessionStore((s) => s.projects)
   const pathsExist = useSessionStore((s) => s.pathsExist)
+  const approvals = useSessionStore((s) => {
+    const id = sessionId ?? s.activeSessionId
+    return id === undefined ? undefined : s.approvals[id]
+  })
+  const awaitingApprovalSet = useMemo(
+    () => new Set(approvals?.map((a) => a.toolCallId)),
+    [approvals],
+  )
   const messages = view
     ? view.messages.filter((message) => {
         const run = view.runs[message.runId]
         return run === undefined || run.parentRunId === undefined
       })
     : []
+  const groupedItems = useMemo(() => groupMessages(messages), [messages])
   const live = Object.values(view?.live ?? {})
     .filter((message) => {
       const run = view?.runs[message.runId]
@@ -830,41 +1127,170 @@ export function MessageStream({
     <>
       {messages.length === 0 && live.length === 0 && runningKey === undefined && <EmptyStream />}
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
-        {messages.map((message, index) => {
-          const previous = messages[index - 1]?.seq ?? 0
-          const next = messages[index + 1]
-          const lastOfTurn = next === undefined || next.turnId !== message.turnId
-          const switchInfo = switchedRuns.get(message.messageId)
+        {groupedItems.map((item) => {
+          if (item.kind === 'message') {
+            const message = item.message
+            const previous = messages[item.index - 1]?.seq ?? 0
+            const next = messages[item.index + 1]
+            const lastOfTurn = next === undefined || next.turnId !== message.turnId
+            const switchInfo = switchedRuns.get(message.messageId)
+            return (
+              <Fragment key={message.messageId}>
+                {switchInfo && (
+                  <li className="list-none">
+                    <AgentSwitchDivider name={switchInfo.name} version={switchInfo.version} />
+                  </li>
+                )}
+                <Message
+                  message={message}
+                  view={view}
+                  footer={footers.get(message.messageId)}
+                  plans={
+                    lastOfTurn && message.turnId !== undefined
+                      ? view.plans.filter((plan) => plan.turnId === message.turnId)
+                      : []
+                  }
+                  sessionId={sessionId}
+                  continued={continues(messages[item.index - 1], message)}
+                  restores={restores.get(message.messageId)}
+                  compacted={markBetween(previous, message.seq, view.compaction)}
+                  omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
+                  entering={enteringIds.has(message.messageId)}
+                  onOpenPlan={openPlan}
+                  onOpenChanges={onOpenChanges}
+                  resolvePaths={resolvePaths}
+                  onOpenFile={onOpenFile}
+                />
+                {lastOfTurn &&
+                  message.turnId !== undefined &&
+                  (delegationsByTurn.get(message.turnId) ?? []).map((delegation) => (
+                    <li key={delegation.childRunId} className="list-none">
+                      <DelegationCard
+                        sessionId={view.sessionId}
+                        view={view}
+                        delegation={delegation}
+                        onOpenChanges={onOpenChanges}
+                      />
+                    </li>
+                  ))}
+              </Fragment>
+            )
+          }
+
+          // activity_group: 同一轮中连续的多个工具调用/思考步骤
+          const group = item.messages
+          const firstMsg = group[0]!
+          const lastMsg = group[group.length - 1]!
+          const firstIndex = item.indices[0]!
+          const lastIndex = item.indices[item.indices.length - 1]!
+          const previous = messages[firstIndex - 1]?.seq ?? 0
+          const nextMsg = messages[lastIndex + 1]
+          const lastOfTurn = nextMsg === undefined || nextMsg.turnId !== item.turnId
+          const switchInfo = switchedRuns.get(firstMsg.messageId)
+          const continued = continues(messages[firstIndex - 1], firstMsg)
+          const entering = group.some((m) => enteringIds.has(m.messageId))
+
+          const steps: TurnActivityStep[] = group.map((m) => ({
+            key: m.messageId,
+            reasoning: m.reasoning?.text,
+            content: m.content.length > 0 ? m.content : undefined,
+            toolCalls: m.toolCalls,
+          }))
+
+          const isTurnRunning =
+            (rootRun(view)?.turn?.status === 'running' &&
+              rootRun(view)?.turn?.turnId === item.turnId) ||
+            Object.values(view?.live ?? {}).some((l) => l.turnId === item.turnId)
+          const hasAwaitingApproval = group.some((m) =>
+            m.toolCalls.some((c) => awaitingApprovalSet.has(c.id)),
+          )
+
+          const compacted = markBetween(previous, firstMsg.seq, view.compaction)
+          const omitted = markBetween(previous, firstMsg.seq, view.toolOutputOmitted)
+          const marks = (compacted || omitted) && (
+            <div className="mb-3.5 flex w-full flex-col gap-2 self-stretch">
+              {compacted && view.compaction && <CompactionMark summary={view.compaction.summary} />}
+              {omitted && <OmissionNote />}
+            </div>
+          )
+
+          const run = view.runs[firstMsg.runId]
+          const showAgentBadge =
+            view.runOrder.filter((runId) => view.runs[runId]?.parentRunId === undefined).length >
+              1 && !continued
+          const agent = run?.agent
+          const agentSummary = agent ? agents.find((a) => a.agentId === agent.id) : undefined
+          const agentDisplayName = agentSummary
+            ? agentName(agentSummary, i18n.language)
+            : agent?.id === 'builtin.coder'
+              ? t('composer.agent.default')
+              : agent?.id
+
+          const plans =
+            lastOfTurn && lastMsg.turnId !== undefined
+              ? view.plans.filter((plan) => plan.turnId === lastMsg.turnId)
+              : []
+          const cards = plans.map((plan) => (
+            <PlanSummaryCard key={plan.planId} plan={plan} onOpen={openPlan} />
+          ))
+          const restoresForMsg = restores.get(lastMsg.messageId)
+          const footer = footers.get(lastMsg.messageId)
+
           return (
-            <Fragment key={message.messageId}>
+            <Fragment key={firstMsg.messageId}>
               {switchInfo && (
                 <li className="list-none">
                   <AgentSwitchDivider name={switchInfo.name} version={switchInfo.version} />
                 </li>
               )}
-              <Message
-                message={message}
-                view={view}
-                footer={footers.get(message.messageId)}
-                plans={
-                  lastOfTurn && message.turnId !== undefined
-                    ? view.plans.filter((plan) => plan.turnId === message.turnId)
-                    : []
-                }
-                sessionId={sessionId}
-                continued={continues(messages[index - 1], message)}
-                restores={restores.get(message.messageId)}
-                compacted={markBetween(previous, message.seq, view.compaction)}
-                omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
-                entering={enteringIds.has(message.messageId)}
-                onOpenPlan={openPlan}
-                onOpenChanges={onOpenChanges}
-                resolvePaths={resolvePaths}
-                onOpenFile={onOpenFile}
-              />
+              <li
+                className={cn(
+                  continued ? '-mt-3.5 text-fg' : 'text-fg',
+                  entering && 'animate-message-in',
+                )}
+              >
+                {marks}
+                <strong className="sr-only">{t('message.assistant')}</strong>
+                {showAgentBadge && agentDisplayName && (
+                  <div className="mb-1.5 flex items-center gap-1.5 text-note font-medium text-fg2">
+                    <AgentAvatar icon={agentSummary?.icon} color={agentSummary?.color} size={16} />
+                    <span>{agentDisplayName}</span>
+                  </div>
+                )}
+                <TurnActivityGroup
+                  steps={steps}
+                  view={view}
+                  isRunning={isTurnRunning}
+                  hasAwaitingApproval={hasAwaitingApproval}
+                  awaiting={awaitingApprovalSet}
+                  resolvePaths={resolvePaths}
+                  onOpenFile={onOpenFile}
+                />
+                {lastMsg.incomplete && (
+                  <em className="mt-1.5 block text-note text-muted not-italic">
+                    {t('message.incomplete')}
+                  </em>
+                )}
+                {footer && lastMsg.turnId !== undefined && (
+                  <TurnChanges
+                    sessionId={view.sessionId}
+                    turnId={lastMsg.turnId}
+                    {...(onOpenChanges === undefined ? {} : { onOpen: () => onOpenChanges() })}
+                  />
+                )}
+                {footer && (
+                  <TurnActions text={footer.text}>
+                    {lastMsg.turnId !== undefined && (
+                      <UndoTurnButton view={view} turnId={lastMsg.turnId} />
+                    )}
+                  </TurnActions>
+                )}
+                {cards}
+                {restoresForMsg && <RestoreMarks view={view} restores={restoresForMsg} />}
+              </li>
               {lastOfTurn &&
-                message.turnId !== undefined &&
-                (delegationsByTurn.get(message.turnId) ?? []).map((delegation) => (
+                lastMsg.turnId !== undefined &&
+                (delegationsByTurn.get(lastMsg.turnId) ?? []).map((delegation) => (
                   <li key={delegation.childRunId} className="list-none">
                     <DelegationCard
                       sessionId={view.sessionId}

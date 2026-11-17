@@ -5,7 +5,7 @@
  * 500px 以下。正文最大 840px，输入框最大 880px。会话切换、订阅恢复、审批与检查器行为沿用
  * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
-import { FileDiff, PanelRight } from 'lucide-react'
+import { ArrowDown, FileDiff, PanelRight } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { progressTaskList, proposedPlan, rootRun, sessionStatus } from '@cairn/core'
@@ -113,7 +113,7 @@ export function ChatPanel({
   const overlayOpen = !docked && panelOpen
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
-  useStickToBottom(scroller, content, sessionId ?? '')
+  const { isPinned, scrollToBottom } = useStickToBottom(scroller, content, sessionId ?? '')
   const run = view ? rootRun(view) : undefined
 
   /** 点击已打开标签：只切换，不重置当前选中项。 */
@@ -386,6 +386,22 @@ export function ChatPanel({
             </div>
           </div>
           <TurnRail view={view} />
+          {!isPinned && (
+            <div className="pointer-events-none absolute right-6 bottom-24 z-30">
+              <button
+                type="button"
+                aria-label={t('chat.scrollToBottom')}
+                title={t('chat.scrollToBottom')}
+                onClick={() => scrollToBottom(true)}
+                className="pointer-events-auto flex size-8 items-center justify-center rounded-full border border-hair2 bg-raise text-fg shadow-2 transition-all hover:bg-hover hover:scale-105 active:scale-95 focus-visible:ring-1 focus-visible:ring-accent"
+              >
+                <ArrowDown className="size-4 text-muted" />
+                {status === 'running' && (
+                  <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-accent animate-pulse" />
+                )}
+              </button>
+            </div>
+          )}
           <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
             {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
             <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3">
