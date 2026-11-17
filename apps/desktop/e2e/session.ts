@@ -101,7 +101,12 @@ export async function rpc<T>(window: Page, method: string, params: object): Prom
   return reply.result as T
 }
 
-/** 配置一个 OpenAI 兼容供应商与凭据，供模拟模型服务使用。 */
+/**
+ * 配置一个 OpenAI 兼容供应商与凭据，供模拟模型服务使用。
+ *
+ * Linux CI 没有系统密钥环，保存凭据会被拒绝（credentials.spec.ts）；这时不写
+ * `credentialRef`，模拟模型服务不校验 Key，用例照常进行。
+ */
 export async function configureProvider(
   window: Page,
   baseUrl: string,
@@ -120,7 +125,10 @@ export async function configureProvider(
         ref: `${providerId}-key`,
         secret: key,
       })
-      if (!(stored as { ok: boolean }).ok) throw new Error('credentials.set failed')
+      const saved = stored as { ok: boolean; error?: { code?: string } }
+      if (!saved.ok && saved.error?.code !== 'credentials.unavailable') {
+        throw new Error(`credentials.set failed: ${JSON.stringify(saved.error)}`)
+      }
       const updated = await cairn.request('settings.update', {
         providers: [
           {
@@ -128,7 +136,7 @@ export async function configureProvider(
             kind: 'openai',
             displayName: providerId,
             baseUrl: url,
-            credentialRef: `${providerId}-key`,
+            ...(saved.ok ? { credentialRef: `${providerId}-key` } : {}),
             models: [
               {
                 id: 'acceptance-model',
