@@ -1290,14 +1290,12 @@ describe('MessageStream 试运行（M4-12）', () => {
     )
 
     // 折叠状态下，外层卡片汇总展示
-    expect(screen.getByText('浏览了文件，运行了命令')).toBeTruthy()
-    expect(screen.getByText('(1 次读取 · 1 次运行)')).toBeTruthy()
-    expect(screen.getByText('300ms')).toBeTruthy()
+    expect(screen.getByText('已执行 2 个步骤')).toBeTruthy()
     // 最终回复正常显示
     expect(screen.getByText('全部完成')).toBeTruthy()
 
     // 默认完成状态下收起
-    const activityButton = screen.getByRole('button', { name: /浏览了文件，运行了命令/ })
+    const activityButton = screen.getByRole('button', { name: /已执行 2 个步骤/ })
     expect(activityButton.getAttribute('aria-expanded')).toBe('false')
 
     // 点击展开
