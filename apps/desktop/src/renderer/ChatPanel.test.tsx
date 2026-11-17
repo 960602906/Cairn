@@ -1427,6 +1427,7 @@ describe('tool calls and undo turn', () => {
     const { open, emit } = setup({ history: toolTurn() })
     await open()
     expect(card().textContent).toContain('执行中')
+    await userEvent.click(within(card()).getByRole('button'))
     expect(within(card()).getByRole('figure', { name: '终端：npm test' })).toBeTruthy()
     emit({
       ...ev(9, 'tool.output.delta', { toolCallId: 'c1', stream: 'stdout', text: lines(7) }),

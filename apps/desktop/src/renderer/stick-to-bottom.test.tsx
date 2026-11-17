@@ -80,6 +80,46 @@ describe('useStickToBottom', () => {
     }
   })
 
+  it('unpins when wheel scrolls up and provides scrollToBottom', () => {
+    const callbacks: (() => void)[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          callbacks.push(cb)
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    const size = { scrollHeight: 1000, clientHeight: 300 }
+    const proto = HTMLElement.prototype
+    const original = Object.getOwnPropertyDescriptor(proto, 'scrollHeight')
+    Object.defineProperty(proto, 'scrollHeight', {
+      configurable: true,
+      get: () => size.scrollHeight,
+    })
+    try {
+      const { getByTestId } = render(<Harness id="a" />)
+      const el = getByTestId('scroller')
+      layout(el, size)
+      el.scrollTop = 700
+
+      // 向上滚轮（deltaY < 0）
+      const wheelEvent = new Event('wheel') as Event & { deltaY: number }
+      Object.defineProperty(wheelEvent, 'deltaY', { value: -50 })
+      el.dispatchEvent(wheelEvent)
+
+      // 即使高度增加，也不再强行拉回底部
+      size.scrollHeight = 1400
+      act(() => callbacks.at(-1)!())
+      expect(el.scrollTop).toBe(700)
+    } finally {
+      if (original) Object.defineProperty(proto, 'scrollHeight', original)
+      else delete (proto as { scrollHeight?: number }).scrollHeight
+    }
+  })
+
   it('still scrolls to the bottom once without ResizeObserver', () => {
     vi.stubGlobal('ResizeObserver', undefined)
     const { getByTestId } = render(<Harness id="a" />)

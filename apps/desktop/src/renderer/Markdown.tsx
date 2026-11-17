@@ -146,13 +146,16 @@ export interface MarkdownProps {
   readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
   /** 点击可点的路径；`line` 是冒号后面的行号。 */
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
+  /** 流式输出时可选的防抖毫秒数，避免每个 token 产生重复 IPC 请求。 */
+  readonly debounceMs?: number
 }
 
 const EMPTY_PATHS: ReadonlySet<string> = new Set()
 
-export function Markdown({ text, resolvePaths, onOpenFile }: MarkdownProps) {
+export function Markdown({ text, resolvePaths, onOpenFile, debounceMs = 0 }: MarkdownProps) {
   const [existing, setExisting] = useState<ReadonlySet<string>>(EMPTY_PATHS)
   const candidates = useMemo(() => inlineCodeCandidates(text), [text])
+  const candidatesKey = useMemo(() => candidates.join('\0'), [candidates])
 
   useEffect(() => {
     // 没有点击处理时不必问主进程，路径保持普通行内代码。
@@ -161,13 +164,23 @@ export function Markdown({ text, resolvePaths, onOpenFile }: MarkdownProps) {
       return
     }
     let alive = true
-    void resolvePaths(candidates).then((paths) => {
-      if (alive) setExisting(paths)
-    })
+    const check = () => {
+      void resolvePaths(candidates).then((paths) => {
+        if (alive) setExisting(paths)
+      })
+    }
+    if (debounceMs > 0) {
+      const timer = setTimeout(check, debounceMs)
+      return () => {
+        alive = false
+        clearTimeout(timer)
+      }
+    }
+    check()
     return () => {
       alive = false
     }
-  }, [candidates, onOpenFile, resolvePaths])
+  }, [candidatesKey, onOpenFile, resolvePaths, debounceMs])
 
   const activeComponents = useMemo<Components>(() => {
     if (resolvePaths === undefined || onOpenFile === undefined) return components

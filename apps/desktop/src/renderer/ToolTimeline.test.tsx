@@ -118,14 +118,18 @@ describe('ToolTimeline 汇总折叠', () => {
 })
 
 describe('ToolStep：run_command', () => {
-  it('执行中直接显示终端卡片，不再显示实时输出预览', () => {
+  it('执行中默认收起，点开显示实时输出；不再显示实时输出预览', async () => {
+    const user = userEvent.setup()
     step({ tool: tool({ status: 'running' }), live: live('line 1\nline 2\n') })
+    expect(terminal()).toBeNull()
+    expect(document.querySelector('pre')).toBeNull()
+    await user.click(toggle())
     expect(terminal()).toBeTruthy()
     expect(screen.getByRole('log').textContent).toContain('line 2')
-    expect(document.querySelector('pre')).toBeNull()
   })
 
-  it('执行中的终端卡片显示这条命令的沙箱', () => {
+  it('执行中的终端卡片显示这条命令的沙箱', async () => {
+    const user = userEvent.setup()
     step({
       tool: tool({
         status: 'running',
@@ -139,6 +143,7 @@ describe('ToolStep：run_command', () => {
       }),
       live: live('line 1\n'),
     })
+    await user.click(toggle())
     const badge = within(terminal()!).getByTestId('sandbox-badge')
     expect(badge.textContent).toBe('沙箱：工作区可写 · 网络未隔离')
   })
@@ -153,17 +158,24 @@ describe('ToolStep：run_command', () => {
     expect(within(card).getByTitle('/w').textContent).toBe('bash · 工作目录 /w')
   })
 
-  it('非 0 退出默认展开，可以收起；截断时显示说明', async () => {
+  it('非 0 退出默认收起，显示退出码标签，点开展开并显示截断说明', async () => {
     const user = userEvent.setup()
     step({ tool: tool({ display: display({ exitCode: 1 }), truncated: true }) })
+    expect(terminal()).toBeNull()
+    expect(screen.getByText('退出码 1')).toBeTruthy()
+    await user.click(toggle())
     expect(terminal()).toBeTruthy()
     expect(screen.getByText('（输出过长，交给模型时已截断）')).toBeTruthy()
     await user.click(toggle())
     expect(terminal()).toBeNull()
   })
 
-  it('旧事件没有 display 时从交给模型的文本解析', () => {
+  it('旧事件没有 display 时从交给模型的文本解析', async () => {
+    const user = userEvent.setup()
     step({ tool: tool({ output: text('Exit code: 3\nDuration: 0.5 s\n\nstderr:\nboom') }) })
+    expect(terminal()).toBeNull()
+    expect(screen.getByText('退出码 3')).toBeTruthy()
+    await user.click(toggle())
     const card = terminal()!
     expect(within(card).getByText('退出码 3')).toBeTruthy()
     expect(within(card).getByText('boom').getAttribute('style')).toContain('var(--term-err)')
