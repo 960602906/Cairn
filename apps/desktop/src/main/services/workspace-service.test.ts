@@ -466,15 +466,16 @@ describe('cleanup / list / sweep', () => {
     const listed = execFileSync('git', ['--git-dir', gitDir, 'worktree', 'list'], {
       stdio: 'pipe',
     }).toString()
-    // 只比对工作区的完整路径：临时目录名里可能恰好含有 `r1`，子串断言会误判。
+    // Windows runner 的临时目录可能以 8.3 短名出现（`RUNNER~1`），而 git 输出的是长名；
+    // 只比对该工作区相对路径的末两段（`<sessionId>/<runId>`），与临时目录前缀无关。
     const shown = (value: string) => value.replace(/\\/g, '/')
-    const workspacePath = shown(workspace.path)
-    expect(shown(listed)).toContain(workspacePath)
+    const suffix = `${path.basename(path.dirname(workspace.path))}/${path.basename(workspace.path)}`
+    expect(shown(listed)).toContain(suffix)
     await service.cleanup('r1')
     const after = execFileSync('git', ['--git-dir', gitDir, 'worktree', 'list'], {
       stdio: 'pipe',
     }).toString()
-    expect(shown(after)).not.toContain(workspacePath)
+    expect(shown(after)).not.toContain(suffix)
     expect(workspace.mode).toBe('worktree')
   })
 })
