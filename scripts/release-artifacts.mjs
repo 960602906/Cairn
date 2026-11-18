@@ -288,23 +288,32 @@ export function parseUpdateMetadata(metadata) {
 
 /**
  * 校验更新元数据与产物一致；返回问题列表。
+ *
+ * electron-builder 26 会把同平台的全部产物写进元数据 `files`（macOS 同时列 dmg，
+ * Linux 同时列 deb），但自动更新只使用 zip 与 AppImage。`allowedExtra` 列出这些
+ * 已知的非更新载体，允许它们出现；`files` 中的文件仍逐个校验哈希与大小。
+ *
  * @param {{
  *   metadata: string;
  *   version: string;
  *   files: readonly { name: string; sha512: string; size: number }[];
+ *   allowedExtra?: readonly string[];
  * }} input
  * @returns {string[]}
  */
-export function validateUpdateMetadataFiles({ metadata, version, files }) {
+export function validateUpdateMetadataFiles({ metadata, version, files, allowedExtra = [] }) {
   const parsed = parseUpdateMetadata(metadata)
   const problems = []
   if (parsed.version !== version) problems.push('update metadata version does not match the build')
   const expected = new Map(files.map((file) => [file.name, file]))
+  const extras = new Set(allowedExtra)
   const seen = new Set()
   for (const entry of parsed.files) {
     const file = expected.get(entry.url)
     if (file === undefined) {
-      problems.push(`update metadata references an unexpected file: ${entry.url}`)
+      if (!extras.has(entry.url)) {
+        problems.push(`update metadata references an unexpected file: ${entry.url}`)
+      }
       continue
     }
     seen.add(entry.url)
@@ -679,6 +688,7 @@ export function releaseArtifacts({
     metadata: readFileSync(builderMetadata, 'utf8'),
     version: releaseVersion,
     files: updatable,
+    allowedExtra: artifactNames.filter((name) => !updatableNames.includes(name)),
   })
   if (problems.length > 0) {
     throw new Error(problems.map((problem) => `${spec.builderMetadata}: ${problem}`).join('; '))
