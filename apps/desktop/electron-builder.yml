@@ -121,10 +121,16 @@ linux:
     - target: deb
       arch:
         - x64
-  artifactName: Cairn-${version}-${arch}.${ext}
+  # Linux 目标的 `${arch}` 会被展开成发行版惯用名（AppImage 为 x86_64、deb 为 amd64），
+  # 与发布脚本、校验和与更新元数据约定的 `x64` 不一致；因此各目标显式写死命名。
+  artifactName: Cairn-${version}-x64.${ext}
   maintainer: Cairn contributors <960602906@qq.com>
 
+appImage:
+  artifactName: Cairn-${version}-x64.${ext}
+
 deb:
+  artifactName: Cairn-${version}-x64.${ext}
   # electron-builder 的默认依赖已含 libsecret-1-0（凭据存储）、libnss3 等运行库；
   # 这里显式声明，避免以后默认值变化时静默丢依赖。
   depends:
