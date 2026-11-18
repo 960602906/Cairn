@@ -30,6 +30,8 @@ import {
   type AddPermissionRuleInput,
   type AddRunSnapshotInput,
   type AgentRecord,
+  type AgentTeamRecord,
+  type AgentTeamVersionRecord,
   type AgentVersionRecord,
   type ChangeSetFileRecord,
   type ChangeSetRecord,
@@ -235,6 +237,21 @@ interface AgentVersionRow {
   published_at: number
 }
 
+interface AgentTeamRow {
+  team_id: string
+  archived: number
+  draft: string | null
+  created_at: number
+  updated_at: number
+}
+
+interface AgentTeamVersionRow {
+  team_id: string
+  version: number
+  definition: string
+  published_at: number
+}
+
 interface ChangeSetRow {
   change_set_id: string
   session_id: string
@@ -304,6 +321,21 @@ const toAgent = (row: AgentRow): AgentRecord => ({
 
 const toAgentVersion = (row: AgentVersionRow): AgentVersionRecord => ({
   agentId: row.agent_id,
+  version: row.version,
+  definition: JSON.parse(row.definition) as unknown,
+  publishedAt: row.published_at,
+})
+
+const toAgentTeam = (row: AgentTeamRow): AgentTeamRecord => ({
+  teamId: row.team_id,
+  archived: row.archived !== 0,
+  ...(row.draft === null ? {} : { draft: JSON.parse(row.draft) as unknown }),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+})
+
+const toAgentTeamVersion = (row: AgentTeamVersionRow): AgentTeamVersionRecord => ({
+  teamId: row.team_id,
   version: row.version,
   definition: JSON.parse(row.definition) as unknown,
   publishedAt: row.published_at,
@@ -696,6 +728,30 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     insertAgentVersion: db.prepare(
       `INSERT INTO agent_versions (agent_id, version, definition, published_at)
        VALUES (@agentId, @version, @definition, @at)`,
+    ),
+    teams: db.prepare<[], AgentTeamRow>('SELECT * FROM agent_teams ORDER BY created_at'),
+    teamById: db.prepare<[string], AgentTeamRow>('SELECT * FROM agent_teams WHERE team_id = ?'),
+    insertTeam: db.prepare(
+      `INSERT INTO agent_teams (team_id, archived, draft, created_at, updated_at)
+       VALUES (@teamId, 0, @draft, @at, @at)`,
+    ),
+    setTeamDraft: db.prepare(
+      'UPDATE agent_teams SET draft = @draft, updated_at = @at WHERE team_id = @teamId',
+    ),
+    setTeamArchived: db.prepare(
+      'UPDATE agent_teams SET archived = @archived, updated_at = @at WHERE team_id = @teamId',
+    ),
+    deleteTeam: db.prepare('DELETE FROM agent_teams WHERE team_id = ?'),
+    deleteTeamVersions: db.prepare('DELETE FROM agent_team_versions WHERE team_id = ?'),
+    teamVersions: db.prepare<[string], AgentTeamVersionRow>(
+      'SELECT * FROM agent_team_versions WHERE team_id = ? ORDER BY version',
+    ),
+    teamVersion: db.prepare<[string, number], AgentTeamVersionRow>(
+      'SELECT * FROM agent_team_versions WHERE team_id = ? AND version = ?',
+    ),
+    insertTeamVersion: db.prepare(
+      `INSERT INTO agent_team_versions (team_id, version, definition, published_at)
+       VALUES (@teamId, @version, @definition, @at)`,
     ),
     mcpToolPrefs: db.prepare<[string], McpToolPrefRow>(
       'SELECT * FROM mcp_tool_prefs WHERE server_id = ? ORDER BY name',
@@ -1394,6 +1450,75 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
           at: now(),
         })
         return toAgentVersion(q.agentVersion.get(input.agentId, input.version)!)
+      },
+    },
+
+    teams: {
+      list: () => q.teams.all().map(toAgentTeam),
+      get(teamId) {
+        const row = q.teamById.get(teamId)
+        return row && toAgentTeam(row)
+      },
+      create(input) {
+        if (q.teamById.get(input.teamId)) {
+          throw new StorageError(StorageErrorCode.Conflict, { teamId: input.teamId })
+        }
+        q.insertTeam.run({
+          teamId: input.teamId,
+          draft: input.draft === undefined ? null : JSON.stringify(input.draft),
+          at: now(),
+        })
+        return toAgentTeam(q.teamById.get(input.teamId)!)
+      },
+      saveDraft(teamId, draft) {
+        if (!q.teamById.get(teamId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { teamId })
+        }
+        q.setTeamDraft.run({ teamId, draft: JSON.stringify(draft), at: now() })
+        return toAgentTeam(q.teamById.get(teamId)!)
+      },
+      clearDraft(teamId) {
+        if (!q.teamById.get(teamId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { teamId })
+        }
+        q.setTeamDraft.run({ teamId, draft: null, at: now() })
+        return toAgentTeam(q.teamById.get(teamId)!)
+      },
+      setArchived(teamId, archived) {
+        if (!q.teamById.get(teamId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { teamId })
+        }
+        q.setTeamArchived.run({ teamId, archived: archived ? 1 : 0, at: now() })
+        return toAgentTeam(q.teamById.get(teamId)!)
+      },
+      remove(teamId) {
+        q.deleteTeamVersions.run(teamId)
+        if (q.deleteTeam.run(teamId).changes === 0) {
+          throw new StorageError(StorageErrorCode.NotFound, { teamId })
+        }
+      },
+      versions: (teamId) => q.teamVersions.all(teamId).map(toAgentTeamVersion),
+      version(teamId, version) {
+        const row = q.teamVersion.get(teamId, version)
+        return row && toAgentTeamVersion(row)
+      },
+      addVersion(input) {
+        if (!q.teamById.get(input.teamId)) {
+          throw new StorageError(StorageErrorCode.NotFound, { teamId: input.teamId })
+        }
+        if (q.teamVersion.get(input.teamId, input.version)) {
+          throw new StorageError(StorageErrorCode.Conflict, {
+            teamId: input.teamId,
+            version: input.version,
+          })
+        }
+        q.insertTeamVersion.run({
+          teamId: input.teamId,
+          version: input.version,
+          definition: JSON.stringify(input.definition),
+          at: now(),
+        })
+        return toAgentTeamVersion(q.teamVersion.get(input.teamId, input.version)!)
       },
     },
 

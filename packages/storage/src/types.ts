@@ -538,6 +538,58 @@ export interface AgentStore {
   addVersion(input: AddAgentVersionInput): AgentVersionRecord
 }
 
+// ---------- 团队模板（M7-06） ----------
+
+/**
+ * 一条团队模板记录。`draft` 是 `TeamDraft` 的 JSON（未解析，读取方负责 zod 校验）。
+ * 与 Agent 一样，草稿与已发布版本分开保存。
+ */
+export interface AgentTeamRecord {
+  readonly teamId: string
+  readonly archived: boolean
+  readonly draft?: unknown
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+export interface CreateAgentTeamInput {
+  readonly teamId: string
+  readonly draft?: unknown
+}
+
+/** 一个已发布的团队模板版本。`definition` 是 `AgentTeam` 的 JSON。 */
+export interface AgentTeamVersionRecord {
+  readonly teamId: string
+  readonly version: number
+  readonly definition: unknown
+  readonly publishedAt: number
+}
+
+export interface AddAgentTeamVersionInput {
+  readonly teamId: string
+  readonly version: number
+  readonly definition: unknown
+}
+
+export interface AgentTeamStore {
+  get(teamId: string): AgentTeamRecord | undefined
+  list(): AgentTeamRecord[]
+  /** id 重复时报 `storage.conflict`。 */
+  create(input: CreateAgentTeamInput): AgentTeamRecord
+  /** 写入或覆盖草稿；不存在时报 `storage.not_found`。 */
+  saveDraft(teamId: string, draft: unknown): AgentTeamRecord
+  /** 发布后清掉草稿；不存在时报 `storage.not_found`。 */
+  clearDraft(teamId: string): AgentTeamRecord
+  setArchived(teamId: string, archived: boolean): AgentTeamRecord
+  /** 连同已发布版本一起删除；不存在时报 `storage.not_found`。 */
+  remove(teamId: string): void
+  /** 按版本号升序。 */
+  versions(teamId: string): AgentTeamVersionRecord[]
+  version(teamId: string, version: number): AgentTeamVersionRecord | undefined
+  /** 版本号重复时报 `storage.conflict`。 */
+  addVersion(input: AddAgentTeamVersionInput): AgentTeamVersionRecord
+}
+
 // ---------- 运行快照（M4-04） ----------
 
 /**
@@ -688,6 +740,7 @@ export interface Storage {
   readonly mcpServers: McpServerStore
   readonly mcpToolPrefs: McpToolPrefStore
   readonly agents: AgentStore
+  readonly teams: AgentTeamStore
   readonly runSnapshots: RunSnapshotStore
   readonly changeSets: ChangeSetStore
   readonly commands: BackgroundCommandStore

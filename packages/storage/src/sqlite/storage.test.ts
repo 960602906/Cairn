@@ -52,6 +52,7 @@ describe('openSqliteStorage', () => {
         '0016_project-pinning',
         '0017_session-thinking-level',
         '0018_memory-entries',
+        '0019_agent-teams',
       ],
     })
     storage.close()
@@ -64,6 +65,8 @@ describe('openSqliteStorage', () => {
       .map((r) => (r as { name: string }).name)
     expect(tables).toEqual([
       'agent_runs',
+      'agent_team_versions',
+      'agent_teams',
       'agent_versions',
       'agents',
       'background_commands',
@@ -138,6 +141,7 @@ describe('openSqliteStorage', () => {
       '0016_project-pinning',
       '0017_session-thinking-level',
       '0018_memory-entries',
+      '0019_agent-teams',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

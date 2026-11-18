@@ -369,6 +369,19 @@ interface AgentTeam {
 - 会话中可以选择"团队"代替单个 Agent，实际运行时以主控 Agent 为根运行。
 - `pipeline` 是有依赖关系的固定流程，为以后的工作流引擎打基础。
 
+M7-06 落地（数据模型）：
+
+- 协议：`TeamDraft` / `AgentTeam`（已发布版本）/ `TeamValidationResult`，上限为 50 个成员、
+  20 个 pipeline 阶段、`reviewLoop.maxRounds` ≤ 10；`delegation` 用 `DelegationPolicy` 的
+  部分覆盖，省略的字段沿用主控 Agent。
+- 存储：`agent_teams` 与 `agent_team_versions`（SQLite 迁移 0019），草稿与已发布版本分开，
+  删除模板时版本级联删除；`AgentTeamStore` 提供与 `AgentStore` 相同的草稿/发布/归档操作。
+- 校验（`@cairn/core` 的 `validateAgentTeam`）：主控必须存在且 `delegation.enabled`；
+  成员去重、不能包含主控自身、未知 Agent 报错；`review-loop` 的 maker/checker 必须在
+  模板引用的 Agent 里且不能同一个；`pipeline` 阶段 id 唯一、依赖必须引用同一模板的阶段、
+  自依赖与环报错。`teamPipelineOrder` 给出依赖在前的拓扑顺序，供 M7-08 执行。
+- 主控没有把某个成员列入 `allowedAgents` 时只给警告：运行时还会按主控的实际策略再收敛一次。
+
 ---
 
 ## 16. 对现有设计的影响
