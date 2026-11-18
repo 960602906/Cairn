@@ -69,11 +69,13 @@ Architecturally, Cairn = **our own agent platform** + **a pluggable agent engine
 | Chat and tool timeline | Change review |
 | --- | --- |
 | <img src="docs/images/chat-light.png" alt="Chat and tool timeline" width="100%"> | <img src="docs/images/changes-light.png" alt="Per-file change review and diff" width="100%"> |
+| **Built-in commands** | **Commands and shortcuts** |
+| <img src="docs/images/commands-light.png" alt="Built-in / command panel in the composer" width="100%"> | <img src="docs/images/help-light.png" alt="All commands and shortcuts from /help" width="100%"> |
 | **Model providers** | **Dark theme** |
-| <img src="docs/images/settings-provider-dialog-light.png" alt="Configure model providers and capabilities" width="100%"> | <img src="docs/images/chat-dark.png" alt="Chat in dark theme" width="100%"> |
+| <img src="docs/images/settings-providers-light.png" alt="Single-column provider and model list" width="100%"> | <img src="docs/images/chat-dark.png" alt="Chat in dark theme" width="100%"> |
 
-> Screenshots use a local mock model service for illustration only; actual content depends on the
-> model you configure.
+> The chat screenshots come from a real DeepSeek model run, for illustration only; actual content
+> depends on the model you configure.
 
 ## Architecture
 
