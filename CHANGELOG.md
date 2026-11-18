@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- 自动修复第一步（M8-01）：设置页新增「自动修复」，可保存 GitHub 令牌、按仓库与 PR 编号
+  查看 CI 检查状态，并读取失败任务的日志。令牌只保存在本机凭据存储；当前阶段只读，
+  监听与自动推送在后续阶段接入（`docs/plan/auto-fix.md`）。
+
 ## [0.1.1] - 2026-11-18
 
 Beta 版本。Windows x64、macOS arm64/x64 与 Linux x64 的发布产物需通过发布流水线验证；未配置签名时 Windows/macOS 包将标注为 unsigned。

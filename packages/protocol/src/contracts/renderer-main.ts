@@ -83,6 +83,7 @@ import {
   TeamTrialSummary,
 } from '../teams.js'
 import { UpdateChannel, UpdateStatus } from '../update.js'
+import { GithubCheckLog, GithubPullRequest, GithubRepo, GithubStatus } from '../github.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
 export const SessionStatus = z.enum([
@@ -1336,6 +1337,49 @@ export const MainForRenderer = defineSide({
     'command.stop': {
       params: z.object({ commandId: Id }),
       result: BackgroundCommand,
+    },
+    /**
+     * GitHub 连接状态（M8-01）。令牌存在凭据存储里，这里只报告是否已连接与登录名。
+     * 令牌失效时仍是已连接，读取时报 `github.auth_failed`。
+     */
+    'github.status': {
+      params: z.object({}),
+      result: GithubStatus,
+    },
+    /**
+     * 用 GitHub 令牌连接（M8-01）：先向 `/user` 验证，通过后加密保存；
+     * 令牌无效时报 `github.auth_failed`，不会覆盖已保存的令牌。
+     */
+    'github.connect': {
+      params: z.object({ token: z.string().trim().min(1).max(4096) }),
+      result: GithubStatus,
+    },
+    /** 断开并删除保存的令牌（M8-01）。没有保存过时也返回未连接。 */
+    'github.disconnect': {
+      params: z.object({}),
+      result: GithubStatus,
+    },
+    /**
+     * 一个 PR 的只读快照（M8-01）：标题、分支、head SHA 与全部检查项。
+     * 仓库或 PR 不存在时报 `github.not_found`。
+     */
+    'github.pullRequest': {
+      params: z.object({
+        repo: GithubRepo,
+        number: z.number().int().positive().max(1_000_000),
+      }),
+      result: GithubPullRequest,
+    },
+    /**
+     * 一项失败检查的日志（M8-01）：按 check run 的详情地址取对应的 Actions 任务日志，
+     * 解压后只返回末尾 `GITHUB_LOG_MAX_CHARS` 个字符。取不到时报 `github.log_unavailable`。
+     */
+    'github.checkLog': {
+      params: z.object({
+        repo: GithubRepo,
+        checkRunId: z.number().int().nonnegative(),
+      }),
+      result: GithubCheckLog,
     },
   },
   events: {

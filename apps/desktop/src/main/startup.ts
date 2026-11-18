@@ -52,6 +52,7 @@ import { createCommandService } from './services/command-service.js'
 import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
+import { createGithubService } from './services/github-service.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createInspectService } from './services/inspect-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
@@ -209,6 +210,8 @@ const credentials = createLocalKeyStore({
   onError: reportError,
 })
 knownSecrets = () => credentials.knownSecrets()
+/** GitHub 只读接入（M8-01）：令牌与模型 Key 共用凭据存储，界面只能连接、断开与读取。 */
+const github = createGithubService({ credentials })
 const settings = createSettingsService({
   file: paths.settings,
   storage,
@@ -733,6 +736,13 @@ const gateway = createRendererGateway({
     install: () => updates.install(),
     cancel: () => updates.cancel(),
     subscribe: (listener) => updates.subscribe(listener),
+  },
+  github: {
+    status: () => github.status(),
+    connect: (params) => github.connect(params),
+    disconnect: () => github.disconnect(),
+    pullRequest: (params) => github.pullRequest(params),
+    checkLog: (params) => github.checkLog(params),
   },
   inspect: {
     inspect: (params) =>
