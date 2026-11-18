@@ -591,6 +591,7 @@ function childStatus(
   if (has('turn.limit_reached')) return 'limit_reached'
   if (has('turn.aborted')) return 'aborted'
   if (has('turn.failed') || state === 'failed') return 'failed'
+  /* v8 ignore next -- 中止路径一定先发 turn.aborted；interrupted 只用于恢复的运行，不在这里创建 */
   if (state === 'interrupted' || state === 'aborting') return 'aborted'
   return parsed?.status ?? 'completed'
 }

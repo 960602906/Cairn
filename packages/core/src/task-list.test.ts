@@ -9,7 +9,9 @@ import {
   UPDATE_PLAN_STEP_TOOL,
   UPDATE_TASK_ITEM_TOOL,
   createToolRegistry,
+  isTaskListTool,
   registerTaskListTools,
+  TASK_LIST_TOOL_NAMES,
   taskListToolVisible,
   type ToolContext,
 } from './index.js'
@@ -128,6 +130,18 @@ describe('task list tools', () => {
     })
   })
 
+  it('skips occupied generated ids without duplicating a later item', async () => {
+    const h = harness()
+    const output = await h.run(CREATE_TASK_LIST_TOOL, {
+      title: '冲突',
+      items: [{ id: 'i2', title: '预留' }, { title: '自动编号' }],
+    })
+    expect(output.effects?.[0]).toMatchObject({
+      payload: { items: [{ itemId: 'i2' }, { itemId: 'i3' }] },
+    })
+    expect(h.lists()[0]?.items.map((item) => item.itemId)).toEqual(['i2', 'i3'])
+  })
+
   it('keeps given ids and rejects duplicates', async () => {
     const h = harness()
     const output = await h.run(CREATE_TASK_LIST_TOOL, {
@@ -169,6 +183,22 @@ describe('task list tools', () => {
     await expect(
       h.run(UPDATE_TASK_ITEM_TOOL, { listId: 'plan-pl1', itemId: 'nope', status: 'done' }),
     ).rejects.toMatchObject({ code: TaskListErrorCode.UnknownItem })
+  })
+
+  it('updates an item without a note', async () => {
+    const h = harness({ lists: [planList] })
+    const output = await h.run(UPDATE_TASK_ITEM_TOOL, {
+      listId: 'plan-pl1',
+      itemId: 'a',
+      status: 'in_progress',
+    })
+    expect(output.effects).toEqual([
+      {
+        type: 'tasklist.item.updated',
+        payload: { listId: 'plan-pl1', itemId: 'a', status: 'in_progress' },
+      },
+    ])
+    expect(h.lists()[0]?.items[0]).toMatchObject({ status: 'in_progress' })
   })
 
   it('rejects malformed list input with readable issues', async () => {
@@ -306,5 +336,11 @@ describe('task list visibility', () => {
     expect(taskListToolVisible(UPDATE_PLAN_STEP_TOOL, 'normal', false)).toBe(false)
     expect(taskListToolVisible(UPDATE_PLAN_STEP_TOOL, 'normal', true)).toBe(true)
     expect(taskListToolVisible('read_file', 'normal', false)).toBe(true)
+    expect(taskListToolVisible('read_file', 'plan', false)).toBe(true)
+  })
+
+  it('recognises its own tools', () => {
+    for (const name of TASK_LIST_TOOL_NAMES) expect(isTaskListTool(name)).toBe(true)
+    expect(isTaskListTool('read_file')).toBe(false)
   })
 })

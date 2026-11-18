@@ -121,6 +121,18 @@ describe('skillPackage', () => {
     for (let i = 0; i < SKILL_MAX_FILES; i += 1) many.set(`f${i}.txt`, bytes('x'))
     expect(catchSkill(() => skillPackage(many)).code).toBe(SkillErrorCode.TooLarge)
   })
+
+  it('按路径排序附带文件', () => {
+    const pkg = skillPackage(
+      new Map([
+        ['SKILL.md', bytes(markdown())],
+        ['b.txt', bytes('b')],
+        ['c.txt', bytes('c')],
+        ['a.txt', bytes('a')],
+      ]),
+    )
+    expect(pkg.files.map((file) => file.path)).toEqual(['a.txt', 'b.txt', 'c.txt'])
+  })
 })
 
 describe('skillRelativePath', () => {
@@ -188,6 +200,8 @@ describe('扫描目录', () => {
       'run.sh': 'echo hi',
     })
     fs.writeFileSync(path.join(root, 'demo', 'bin-tool'), '#!/bin/sh\necho\n')
+    // 技能目录内部的符号链接被跳过（不在文件列表里，也不递归）
+    symlinkDirectory(path.join(root, 'demo'), path.join(root, 'demo', 'link-dir'))
     writeSkill(path.join(root, 'broken'), 'not a skill')
     symlinkDirectory(path.join(root, 'demo'), path.join(root, 'linked'))
     fs.writeFileSync(path.join(root, 'readme.txt'), 'ignore')
@@ -366,6 +380,26 @@ describe('安装', () => {
     expect(catchSkill(() => previewSkill({ kind: 'zip', path: nested })).message).toContain(
       'SKILL.md',
     )
+  })
+
+  it('非文件系统错误原样抛出，并清理安装到一半的临时目录', () => {
+    // 路径含 NUL：stat 抛出的不是 ENOENT/ENOTDIR，应原样抛出而不是包装成 NotFound
+    expect(() => previewSkill({ kind: 'zip', path: 'bad\0path.zip' })).toThrow(/null bytes/)
+    expect(() => previewSkill({ kind: 'directory', path: 'bad\0path' })).toThrow(/null bytes/)
+
+    // 文件与同名目录冲突：安装过程中失败，临时目录被删除
+    const dest = tempDir()
+    const source = path.join(tempDir(), 'conflict.zip')
+    fs.writeFileSync(
+      source,
+      zipSync({
+        'SKILL.md': strToU8(markdown()),
+        a: strToU8('file'),
+        'a/b.txt': strToU8('nested'),
+      }),
+    )
+    expect(() => installSkill({ kind: 'zip', path: source }, dest)).toThrow()
+    expect(fs.readdirSync(dest)).toEqual([])
   })
 
   it('reads a zip with SKILL.md at the root, ignores directory entries and rejects multiple roots', () => {

@@ -325,6 +325,7 @@ class RunHandle implements AgentRunHandle {
     const job = this.#queue.then(() => this.#engine.compact())
     this.#queue = job.then(
       () => {},
+      /* v8 ignore next -- engine.compact() 内部捕获所有错误，不会拒绝 */
       () => {},
     )
     return job
@@ -426,10 +427,12 @@ export function createRunSupervisor(options: RunSupervisorOptions): RunSuperviso
       if (next.done) return
       const [runId, waiter] = next.value
       waiting.delete(runId)
+      /* v8 ignore start -- abort 事件已同步清空 waiting，pump 不可能再拿到排队者 */
       if (options.signal.aborted) {
         waiter.reject(new RunEngineError(RunEngineErrorCode.Disposed))
         continue
       }
+      /* v8 ignore stop */
       active.add(runId)
       waiter.resolve()
     }

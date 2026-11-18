@@ -159,6 +159,27 @@ describe('migrateDatabase', () => {
     })
   })
 
+  it('reports schema_meta when the meta table cannot be created', () => {
+    const db = new Database(file)
+    db.exec('CREATE TABLE seed (id INTEGER)')
+    db.exec('CREATE INDEX schema_meta ON seed (id)')
+    db.close()
+
+    const error = catchError(() => migrateDatabase({ file, migrations: [m1], now: () => 3 }))
+    expect(error.code).toBe(StorageErrorCode.MigrationFailed)
+    expect(error.params).toEqual({ migration: 'schema_meta', version: 0 })
+    expect(error.cause).toBeInstanceOf(Error)
+
+    // 失败后从备份恢复，原来的表和索引仍然存在。
+    const restored = new Database(file, { readonly: true })
+    expect(
+      restored
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
+        .all('schema_meta'),
+    ).toEqual([{ name: 'schema_meta' }])
+    restored.close()
+  })
+
   it('refuses to open a database newer than the application', () => {
     migrateDatabase({ file, migrations: [m1, m2] })
     const error = catchError(() => migrateDatabase({ file, migrations: [m1] }))

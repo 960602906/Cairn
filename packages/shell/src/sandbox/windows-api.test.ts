@@ -392,6 +392,27 @@ describe('createNativeApi', () => {
     expect(calls[1]!.args[6]).toBe(base)
   })
 
+  it('reports the retry error when breaking away is forbidden and the retry also fails', () => {
+    const { api, called } = fakeKoffi({
+      handlers: {
+        CreateProcessAsUserW: (() => 0) as Handler,
+        GetLastError: (() => 5) as Handler,
+      },
+    })
+    expect(() =>
+      api.spawn({
+        token: 300n,
+        commandLine: 'cmd.exe /c echo hi',
+        cwd: 'C:\\work',
+        env: Buffer.alloc(0),
+        stdin: 1n,
+        stdout: 2n,
+        stderr: 3n,
+      }),
+    ).toThrow(/CreateProcessAsUserW failed \(Win32 5\)/)
+    expect(called('CreateProcessAsUserW')).toHaveLength(2)
+  })
+
   it('starts an AppContainer process with network capabilities', () => {
     const { api, called } = fakeKoffi()
     expect(

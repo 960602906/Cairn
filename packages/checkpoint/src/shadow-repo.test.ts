@@ -462,3 +462,65 @@ describe('openShadowRepo: sessions sharing a project', () => {
     expect(listed).toEqual(['a.txt'])
   })
 })
+
+describe('openShadowRepo: defensive paths', () => {
+  it('uses the default file size limit', async () => {
+    write('a.txt', 'a')
+    const repo = await openShadowRepo({ gitDir, workTree: work })
+    await expect(repo.checkpoint('default limit')).resolves.toMatchObject({ created: true })
+  })
+
+  it('ignores malformed state entries', async () => {
+    const repo = await openShadowRepo(options())
+    await repo.checkpoint('1')
+    expect(repo.head()).toBeDefined()
+    fs.writeFileSync(
+      path.join(gitDir, 'cairn-state.json'),
+      JSON.stringify({ large: 'big.dat', nested: [1, 'vendor/lib'] }),
+    )
+    const reopened = await openShadowRepo(options())
+    expect(reopened.head()).toBeDefined()
+    await expect(reopened.checkpoint('2')).resolves.toMatchObject({
+      skippedLarge: [],
+      nestedRepos: [],
+    })
+  })
+
+  it('drops large files that disappeared from the workspace', async () => {
+    write('big.dat', Buffer.alloc(MAX + 1, 1))
+    const repo = await openShadowRepo(options())
+    expect((await repo.checkpoint('1')).skippedLarge).toEqual(['big.dat'])
+    fs.rmSync(file('big.dat'))
+    expect((await repo.checkpoint('2')).skippedLarge).toEqual([])
+  })
+
+  it('starts a new chain when the ref disappeared', async () => {
+    write('a.txt', 'a')
+    const repo = await openShadowRepo(options())
+    const first = await repo.checkpoint('1')
+    fs.rmSync(path.join(gitDir, 'refs', 'cairn', 'checkpoints'))
+    write('a.txt', 'b')
+    const next = await repo.checkpoint('2')
+    expect(next.created).toBe(true)
+    expect(next.commit).not.toBe(first.commit)
+  })
+
+  it('fails when a Git command outside allowFail fails', async () => {
+    const real = createGitRunner({
+      env: isolatedGitEnv(process.env, path.join(tmp, 'no-global')),
+    })
+    const git: GitRunner = {
+      binary: real.binary,
+      run: async (args, opts) =>
+        args.includes('status')
+          ? { code: 1, stdout: Buffer.alloc(0), stderr: 'fatal: broken index' }
+          : real.run(args, opts),
+    }
+    write('a.txt', 'a')
+    const repo = await openShadowRepo(options({ git }))
+    await expect(repo.checkpoint('1')).rejects.toMatchObject({
+      code: CheckpointErrorCode.Failed,
+      message: expect.stringContaining('exited with 1'),
+    })
+  })
+})

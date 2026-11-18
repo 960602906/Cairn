@@ -268,6 +268,7 @@ function spawnAndCollect(
     child.stdin?.end()
 
     const stop = () => {
+      /* v8 ignore next -- exit 事件会同步注销超时与取消监听，退出后 stop 不可能再被调用；这里只防将来漏清理 */
       if (exited) return
       tree.terminate().catch(() => child.kill('SIGKILL'))
     }

@@ -56,6 +56,7 @@ export function skillPackage(entries: SkillEntries): SkillPackage {
     const head = bytes.subarray(0, 2)
     files.push({ path, bytes: bytes.byteLength, script: isScript(path, head) })
   }
+  /* v8 ignore next -- 路径是 entries 的键，不会重复，比较结果不可能为 0 */
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   return {
     ...parsed,

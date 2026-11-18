@@ -174,6 +174,13 @@ describe('rotation', () => {
     logger.info('😀😀😀') // 每个 4 字节
     expect(fs.files.get(`${FILE}.1`)).toBe(line('m0'))
     expect(fs.files.get(FILE)).toBe(line('😀😀😀'))
+
+    // 2 字节字符也要按 2 计算：算成 1 字节时下面就不会轮转。
+    const two = setup({ maxBytes: lineBytes * 2 - 1 })
+    two.logger.info('é')
+    two.logger.info('m0')
+    expect(two.fs.files.get(`${FILE}.1`)).toBe(line('é'))
+    expect(two.fs.files.get(FILE)).toBe(line('m0'))
   })
 
   it('writes an oversized line into an empty file instead of rotating forever', () => {

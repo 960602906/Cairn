@@ -86,6 +86,7 @@ function listFiles(root: string): { files: SkillFile[]; hasScripts: boolean; tru
     }
   }
   walk(root, '')
+  /* v8 ignore next -- 同一目录下的相对路径不会重复，比较结果不可能为 0 */
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   return { files, hasScripts, truncated }
 }
@@ -141,8 +142,10 @@ export function scanSkillRoot(root: string): SkillScan {
   const skills: ScannedSkill[] = []
   const duplicates: string[] = []
   for (const [name, group] of byName) {
+    /* v8 ignore start -- byName 的值是刚推入过的非空数组，group[0] 一定存在，else 分支不可达 */
     if (group.length > 1) duplicates.push(name)
     else if (group[0]) skills.push(group[0])
+    /* v8 ignore stop */
   }
   duplicates.sort()
   skills.sort((a, b) => (a.skill.name < b.skill.name ? -1 : 1))

@@ -199,6 +199,7 @@ function applyCompaction(
     let endAt = -1
     for (let i = from; i < history.length; i += 1) {
       const message = history[i]
+      /* v8 ignore next -- history is a dense array, so every index in range is defined */
       if (!message) continue
       if (message.role === 'user' && message.turnId === end) endAt = i
       else if (endAt !== -1 && message.role === 'user') break

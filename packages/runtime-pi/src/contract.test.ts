@@ -11,6 +11,8 @@
  * 录制新文件见 `contract-record.test.ts`。
  */
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { createServer, type RequestListener } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -28,7 +30,12 @@ import {
 import { startRecordingProxy } from './testing/contract/record-proxy.js'
 import { recordScenario } from './testing/contract/record.js'
 import { startReplayServer, type Chunking } from './testing/contract/replay-server.js'
-import { SCENARIOS, findScenario, runScenario } from './testing/contract/scenarios.js'
+import {
+  SCENARIOS,
+  contractModel,
+  findScenario,
+  runScenario,
+} from './testing/contract/scenarios.js'
 import { normalizeRun, serializeTrace } from './testing/contract/trace.js'
 import { startUpstreamMock } from './testing/contract/upstream-mock.js'
 
@@ -155,6 +162,36 @@ describe('合成录制', () => {
       await upstream.close()
     }
   })
+
+  it('缺少 model 与 messages/contents 的请求按空值归类', async () => {
+    const upstream = await startUpstreamMock()
+    try {
+      for (const endpoint of [
+        '/v1/chat/completions',
+        '/v1/messages',
+        '/v1beta/models/x:streamGenerateContent',
+      ]) {
+        const res = await fetch(`${upstream.baseUrl}${endpoint}`, {
+          method: 'POST',
+          body: JSON.stringify({}),
+        })
+        expect(res.status, endpoint).toBe(404)
+      }
+    } finally {
+      await upstream.close()
+    }
+  })
+
+  it('场景查找与模型构造的默认值', () => {
+    expect(() => findScenario('does-not-exist')).toThrow(/unknown scenario/)
+    const scenario = findScenario('openai-tool')
+    expect(
+      contractModel(scenario, { baseUrl: 'http://x', apiKey: 'k', reasoning: false }),
+    ).toMatchObject({
+      ref: { providerId: 'contract', modelId: scenario.model },
+      baseUrl: 'http://x/v1',
+    })
+  })
 })
 
 describe('回放服务', () => {
@@ -188,6 +225,67 @@ describe('录制代理', () => {
     } finally {
       await proxy.close()
     }
+  })
+
+  async function withUpstream(
+    handler: RequestListener,
+    run: (upstreamBase: string) => Promise<void>,
+  ): Promise<void> {
+    const upstream = createServer(handler)
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve))
+    const address = upstream.address() as AddressInfo
+    try {
+      await run(`http://127.0.0.1:${address.port}`)
+    } finally {
+      upstream.closeAllConnections()
+      await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    }
+  }
+
+  it('上游没有 content-type 与响应体时记录空响应', async () => {
+    await withUpstream(
+      (_req, res) => {
+        res.writeHead(204)
+        res.end()
+      },
+      async (upstreamBase) => {
+        const proxy = await startRecordingProxy(upstreamBase)
+        try {
+          const res = await fetch(`${proxy.baseUrl}/v1/models`)
+          expect(res.status).toBe(204)
+          await proxy.drained()
+          expect(proxy.interactions[0]?.response).toEqual({
+            status: 204,
+            headers: {},
+            chunks: [],
+          })
+        } finally {
+          await proxy.close()
+        }
+      },
+    )
+  })
+
+  it('上游分块切开多字节字符时仍记录完整文本', async () => {
+    const payload = Buffer.from('你好', 'utf8')
+    await withUpstream(
+      (_req, res) => {
+        res.writeHead(200, { 'content-type': 'text/plain' })
+        res.write(payload.subarray(0, 1))
+        setTimeout(() => res.end(payload.subarray(1)), 20)
+      },
+      async (upstreamBase) => {
+        const proxy = await startRecordingProxy(upstreamBase)
+        try {
+          const res = await fetch(`${proxy.baseUrl}/v1/models`)
+          expect(await res.text()).toBe('你好')
+          await proxy.drained()
+          expect(proxy.interactions[0]?.response.chunks.join('')).toBe('你好')
+        } finally {
+          await proxy.close()
+        }
+      },
+    )
   })
 })
 

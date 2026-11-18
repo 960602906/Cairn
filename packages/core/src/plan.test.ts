@@ -104,6 +104,11 @@ describe('plan tools', () => {
       },
     ])
 
+    // 整个输入不是对象时 zod 的问题路径为空，说明里直接是问题本身。
+    await expect(tool.execute(null, ctx)).rejects.toMatchObject({
+      code: 'tool.invalid_input',
+      message: expect.stringMatching(/Invalid plan:\n[^.]/),
+    })
     // 缺少必填字段时报错并列出具体路径
     await expect(tool.execute({ goal: 'x' }, ctx)).rejects.toMatchObject({
       code: 'tool.invalid_input',
@@ -231,6 +236,19 @@ describe('plan text', () => {
     expect(approvedPlanMessage(doc, edited)).toContain('先读测试')
     expect(approvedPlanMessage(doc, edited)).not.toBe(doc.markdown)
     expect(renderPlan({ ...doc, files: [], risks: '  ', verification: '' })).toContain('(none)')
+    // 没有编辑或编辑为空时原样返回，不重建对象。
+    expect(applyStepTitles(doc, undefined)).toBe(doc)
+    expect(applyStepTitles(doc, [])).toBe(doc)
+  })
+
+  it('keeps markdown supplied by the model', async () => {
+    const registry = createToolRegistry()
+    registerPlanTools(registry, { createId: () => 'pl2' })
+    const output = await registry.get(PROPOSE_PLAN_TOOL)!.execute(doc, ctx)
+    expect(output.effects?.[0]).toMatchObject({
+      type: 'plan.proposed',
+      payload: { content: doc },
+    })
   })
 
   it('adds the plan section to the system prompt', () => {

@@ -48,8 +48,10 @@ export async function startRecordingProxy(upstream: string): Promise<RecordingPr
       interactions.push({ request, response })
       try {
         // 保留上游地址自带的路径前缀：new URL('/v1/messages', upstream) 会丢掉它
+        /* v8 ignore next -- Node 的 IncomingMessage 在有效请求上总有 url */
         const target = upstream.replace(/\/+$/, '') + (req.url ?? '/')
         const upstreamRes = await fetch(target, {
+          /* v8 ignore next -- Node 的 IncomingMessage 在有效请求上总有 method */
           method: req.method ?? 'GET',
           headers,
           ...(raw === '' ? {} : { body: raw }),

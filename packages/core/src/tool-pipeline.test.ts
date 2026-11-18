@@ -163,6 +163,68 @@ describe('ToolPipeline：成功路径', () => {
     expect(started).toEqual([sandbox])
   })
 
+  it('把 askUser 网关补上工具调用 id 与取消信号', async () => {
+    const ask = vi.fn(async () => ({ answers: [] }))
+    const h = setup(
+      [
+        tool({
+          execute: async (_input, ctx) => {
+            const response = await ctx.askUser!({ questionId: 'q1', questions: [] })
+            return { content: text(`answers=${response.answers.length}`) }
+          },
+        }),
+      ],
+      { askUser: { ask } },
+    )
+    const controller = new AbortController()
+    expect(
+      await createToolPipeline(h.options).run(call({ path: 'a' }), controller.signal, h.observer),
+    ).toEqual({ status: 'ok', content: text('answers=0'), truncated: false })
+    expect(ask).toHaveBeenCalledWith({
+      questionId: 'q1',
+      questions: [],
+      toolCallId: 'c1',
+      signal: controller.signal,
+    })
+  })
+
+  it('结果原样带上 stopLoop、effects 与 loadedSkill', async () => {
+    const effect = {
+      type: 'plan.proposed' as const,
+      payload: {
+        planId: 'pl1',
+        content: {
+          goal: '完成实现',
+          files: [],
+          steps: [{ id: 'a', title: '第一步' }],
+          risks: '',
+          verification: '',
+          markdown: '',
+        },
+      },
+    }
+    const h = setup([
+      tool({
+        execute: async () => ({
+          content: text('done'),
+          stopLoop: true,
+          effects: [effect],
+          loadedSkill: { name: 'review', sha256: 'abc' },
+        }),
+      }),
+    ])
+    expect(
+      await createToolPipeline(h.options).run(call({ path: 'a' }), signal(), h.observer),
+    ).toEqual({
+      status: 'ok',
+      content: text('done'),
+      truncated: false,
+      stopLoop: true,
+      effects: [effect],
+      loadedSkill: { name: 'review', sha256: 'abc' },
+    })
+  })
+
   it('7. 执行命令前创建检查点并发出 checkpoint.created；不可用时直接执行', async () => {
     const h = setup([tool({ name: 'run_command', category: 'execute' })])
     const pipeline = createToolPipeline(h.options)
@@ -494,6 +556,24 @@ describe('ToolPipeline：取消', () => {
       (await createToolPipeline(h.options).run(call({ path: 'a' }), controller.signal, h.observer))
         .status,
     ).toBe('cancelled')
+  })
+
+  it('创建检查点时取消直接结束，不按检查点失败询问', async () => {
+    const controller = new AbortController()
+    const h = setup([tool({ category: 'execute' })])
+    h.checkpoint.mockReturnValue(new Promise(() => undefined))
+    const pending = createToolPipeline(h.options).run(
+      call({ path: 'a' }),
+      controller.signal,
+      h.observer,
+    )
+    await vi.waitFor(() => expect(h.checkpoint).toHaveBeenCalledOnce())
+    controller.abort()
+    expect(await pending).toEqual({
+      status: 'cancelled',
+      content: text('Tool call was cancelled.'),
+    })
+    expect(h.request).not.toHaveBeenCalled()
   })
 
   it('检查点阶段取消不再询问', async () => {

@@ -113,6 +113,11 @@ describe('parseAnsi', () => {
     expect(line![0]!.text).toBe('abcd')
   })
 
+  it('冒号分隔时把空子参数当作 0', () => {
+    const [line] = parseAnsi(`${ESC}[38:5:ma`)
+    expect(line).toEqual([{ text: 'a', style: { fg: 0 } }])
+  })
+
   it('其他属性的开与关', () => {
     const [line] = parseAnsi(
       `${ESC}[2;3;4;7;9ma${ESC}[23;24;27;29mb${ESC}[21mc${ESC}[22md${ESC}[5;8;foom`,
@@ -123,6 +128,12 @@ describe('parseAnsi', () => {
       { dim: true, underline: true },
       { underline: true },
     ])
+  })
+
+  it('忽略不支持的 SGR 参数', () => {
+    // 5（闪烁）与 8（隐藏）不在这里的样式模型里。
+    const [line] = parseAnsi(`${ESC}[5;8ma`)
+    expect(line).toEqual([{ text: 'a', style: {} }])
   })
 
   it('空参数等于重置；其他 CSI 忽略', () => {

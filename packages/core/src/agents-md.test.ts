@@ -30,6 +30,24 @@ describe('decodeAgentsMd', () => {
     expect(decodeAgentsMd(broken, broken.length)?.text).toBe('\uFFFD \uFFFD')
   })
 
+  it('backs up over incomplete two-, three-, and four-byte characters', () => {
+    for (const character of ['é', '中', '😀']) {
+      const bytes = text(`a${character}z`)
+      for (let cut = 2; cut < bytes.length - 1; cut += 1) {
+        expect(utf8PrefixEnd(bytes, cut)).toBe(1)
+        expect(decodeAgentsMd(bytes, bytes.length, cut)?.included).toEqual(text('a'))
+      }
+      expect(utf8PrefixEnd(bytes, bytes.length - 1)).toBe(bytes.length - 1)
+    }
+  })
+
+  it('handles a cut made entirely of continuation bytes', () => {
+    const bytes = new Uint8Array([0x80, 0x80, 0x80, 0x61])
+    expect(utf8PrefixEnd(bytes, 2)).toBe(2)
+    // 在 ASCII 字符之后截断：一个字节宽，无需回退。
+    expect(utf8PrefixEnd(text('abc'), 2)).toBe(2)
+  })
+
   it('returns undefined for a blank file', () => {
     const bytes = text('  \n\t')
     expect(decodeAgentsMd(bytes, bytes.length)).toBeUndefined()

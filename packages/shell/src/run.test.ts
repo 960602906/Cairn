@@ -394,6 +394,63 @@ describe('启动失败', () => {
   })
 })
 
+describe('取消与结束进程树', () => {
+  const shell: ShellInfo = isWindows
+    ? { kind: 'cmd', exe: windowsCandidates(process.env).cmd[0]! }
+    : { kind: 'sh', exe: '/bin/sh' }
+
+  it('取消后不启动进程，也不要求进程树', async () => {
+    const processTree = vi.fn()
+    const result = await runCommand(shell, 'echo no', {
+      cwd: work,
+      signal: AbortSignal.abort(),
+      processTree,
+    })
+    expect(result).toMatchObject({ aborted: true, exitCode: null, durationMs: 0 })
+    expect(result.sandbox).toBeUndefined()
+    expect(processTree).not.toHaveBeenCalled()
+  })
+
+  it('在构造调用之后才取消时，释放进程树且不启动进程', async () => {
+    let reads = 0
+    const signal = {
+      get aborted() {
+        reads += 1
+        return reads >= 2
+      },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }
+    const tree = {
+      mechanism: 'taskkill' as const,
+      detached: false,
+      attach: vi.fn(),
+      terminate: vi.fn(() => Promise.resolve()),
+      dispose: vi.fn(),
+    }
+    const result = await runCommand(shell, 'echo no', {
+      cwd: work,
+      signal,
+      processTree: async () => tree,
+    })
+    expect(result).toMatchObject({ aborted: true, exitCode: null, durationMs: 0 })
+    expect(tree.dispose).toHaveBeenCalledTimes(1)
+    expect(tree.attach).not.toHaveBeenCalled()
+  })
+
+  it('collectOutput 为 false 时仍把输出交给回调，结果中不汇总', async () => {
+    const chunks: string[] = []
+    const result = await runCommand(shell, 'echo out', {
+      cwd: work,
+      collectOutput: false,
+      onStdout: (text) => chunks.push(text),
+      onStderr: (text) => chunks.push(text),
+    })
+    expect(result).toMatchObject({ exitCode: 0, stdout: '', stderr: '' })
+    expect(chunks.join('').trim()).toBe('out')
+  })
+})
+
 describe('命令沙箱接入（M5-04）', () => {
   const policy: SandboxPolicy = { profile: 'workspace-write', network: 'none' }
   const execution: SandboxExecution = {
@@ -464,6 +521,36 @@ describe('命令沙箱接入（M5-04）', () => {
         env: expect.any(Object),
       }),
     )
+  })
+
+  it('honours an explicit command-line limit when building the invocation', async () => {
+    const fake = sandbox()
+    const result = await runCommand(shell, 'echo hi', {
+      cwd: work,
+      maxCommandLineChars: 100_000,
+      sandbox: { runner: fake.runner, policy },
+    })
+    expect(result.exitCode).toBe(3)
+    const input = fake.run.mock.calls[0]![1]
+    expect(input.invocation.tempScript).toBeUndefined()
+  })
+
+  it('ignores empty output chunks from the sandbox runner', async () => {
+    const fake = sandbox()
+    fake.run.mockImplementationOnce(async (_policy, input) => {
+      input.onStdout?.('')
+      input.onStderr?.('')
+      return {
+        exitCode: 0,
+        aborted: false,
+        timedOut: false,
+        durationMs: 5,
+        execution,
+      }
+    })
+    expect(
+      await runCommand(shell, 'echo hi', { cwd: work, sandbox: { runner: fake.runner, policy } }),
+    ).toMatchObject({ exitCode: 0, stdout: '', stderr: '' })
   })
 
   it('streams without collecting output when asked', async () => {

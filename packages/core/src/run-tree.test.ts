@@ -416,6 +416,28 @@ describe('projectRunTree', () => {
     expect(tree.runs[0]!.usage.cacheReadTokens).toBe(4)
   })
 
+  it('父运行没有缓存用量时仍汇总子运行缓存用量', () => {
+    const events: EventEnvelope[] = [
+      created('parent'),
+      created('child', 1, 'parent'),
+      event(
+        'child',
+        2,
+        'step.completed',
+        {
+          model,
+          finishReason: 'stop',
+          durationMs: 1,
+          usage: { inputTokens: 2, outputTokens: 1, cacheReadTokens: 7 },
+        },
+        { turnId: 't1', stepId: 'st1' },
+      ),
+    ]
+    const tree = projectRunTree({ sessionId: 's1', events })
+    expect(tree.runs.map((run) => run.usage.cacheReadTokens)).toEqual([7, 7])
+    expect(tree.runs[0]!.usage.inputTokens).toBe(2)
+  })
+
   it('1000 条事件的投影保持稳定且可接受', () => {
     const events: EventEnvelope[] = [
       created('r1', 0),

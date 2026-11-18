@@ -199,6 +199,18 @@ describe('FakeRuntime：脚本输出', () => {
       ])
     })
 
+    it('setTools 替换工具表后按新表并行；setSystemPrompt 收下更新', async () => {
+      const t = tracking()
+      const { session } = await open(script(['read', 'read']), {
+        tools: [spec('read', false)],
+        hooks: { executeTool: t.executeTool },
+      })
+      session.setTools?.([spec('read', true)])
+      session.setSystemPrompt?.('新的系统提示词')
+      await session.prompt(user('x'))
+      expect(t.log.slice(0, 2)).toEqual(['start fake-call-1', 'start fake-call-2'])
+    })
+
     it('有不可并行或未知的工具：按顺序执行', async () => {
       for (const tools of [[spec('read', true), spec('write', false)], [spec('read', true)]]) {
         const t = tracking()

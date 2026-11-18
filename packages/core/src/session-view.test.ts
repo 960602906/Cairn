@@ -7,6 +7,7 @@ import {
   MAX_LIVE_TOOL_OUTPUT_CHARS,
   planProgressSteps,
   progressTaskList,
+  proposedPlan,
   reduceSession,
   reduceSessionEvents,
   rootRun,
@@ -442,8 +443,12 @@ describe('reduceSession：会话事件', () => {
     expect(view.info?.createdAt).toBe(20)
     expect(view.archived).toBe(true)
     expect(sessionStatus(view)).toBe('archived')
+    const restored = reduceSession(view, ev('session.unarchived', {}))
+    expect(restored.archived).toBe(false)
+    expect(sessionStatus(restored)).not.toBe('archived')
     const early = reduceAll([
       ev('session.model.changed', { model: { providerId: 'p', modelId: 'm' } }),
+      ev('session.thinkingLevel.changed', { thinkingLevel: 'high' }),
     ])
     expect(early.info).toBeUndefined()
   })
@@ -1085,6 +1090,7 @@ describe('reduceSession：工具调用（M1-05c）', () => {
     const otherRun = reduceSession(v, ev('run.disposed', {}, { runId: 'r2' }))
     expect(otherRun.liveToolOutput).toBe(v.liveToolOutput)
     expect(reduceSession(v, ev('turn.aborted', { reason: 'user' }, t)).liveToolOutput).toEqual({})
+    expect(reduceSession(v, ev('turn.completed', { durationMs: 5 }, t)).liveToolOutput).toEqual({})
     expect(reduceSession(v, ev('run.disposed', {})).liveToolOutput).toEqual({})
     expect(
       reduceSession(v, ev('session.crashed', { error: { code: 'host.crashed' } })).liveToolOutput,
@@ -1207,6 +1213,18 @@ describe('reduceSession：计划（M3-05）', () => {
     ])
     expect(view.plans).toHaveLength(1)
     expect(view.plans[0]?.status).toBe('approved')
+    expect(proposedPlan(view)).toBeUndefined()
+    expect(proposedPlan(createSessionView(SID))).toBeUndefined()
+  })
+
+  it('proposedPlan 返回最近一份仍待审的计划', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('plan.proposed', { planId: 'pl1', content: doc }),
+      ev('plan.approved', { planId: 'pl1' }),
+      ev('plan.proposed', { planId: 'pl2', content: doc }),
+    ])
+    expect(proposedPlan(view)?.planId).toBe('pl2')
   })
 
   it('修订保留同 id 步骤的说明', () => {
@@ -1228,10 +1246,13 @@ describe('reduceSession：计划（M3-05）', () => {
       ev('plan.approved', { planId: 'pl1' }),
       ev('plan.proposed', { planId: 'pl2', content: doc }),
       ev('plan.rejected', { planId: 'pl2', feedback: '太复杂' }),
+      ev('plan.proposed', { planId: 'pl3', content: doc }),
+      ev('plan.rejected', { planId: 'pl3' }),
       ev('plan.rejected', { planId: 'pl1' }),
     ])
-    expect(view.plans.map((plan) => plan.status)).toEqual(['approved', 'rejected'])
+    expect(view.plans.map((plan) => plan.status)).toEqual(['approved', 'rejected', 'rejected'])
     expect(view.plans[1]?.feedback).toBe('太复杂')
+    expect(view.plans[2]).not.toHaveProperty('feedback')
     expect(activeExecutionPlan(view)?.planId).toBe('pl1')
   })
 
@@ -1294,6 +1315,10 @@ describe('reduceSession：待办列表（ADR-0038）', () => {
     const closed = reduceSession(view, ev('tasklist.closed', { listId: 'tl1' }))
     expect(closed.taskLists[0]?.closed).toBe(true)
     expect(activeTaskLists(closed)).toEqual([])
+    // 重复关闭忽略，不产生新的列表对象。
+    expect(reduceSession(closed, ev('tasklist.closed', { listId: 'tl1' })).taskLists[0]).toBe(
+      closed.taskLists[0],
+    )
     // 关闭后更新被忽略，只推进 seq。
     const ignored = reduceSession(
       closed,
@@ -1305,12 +1330,16 @@ describe('reduceSession：待办列表（ADR-0038）', () => {
   it('重复创建与未知列表只推进 seq', () => {
     const ev = stream()
     const view = reduceAll([
-      ev('tasklist.created', {
-        listId: 'tl1',
-        title: '甲',
-        source: 'ad_hoc',
-        items: [{ itemId: 'a', title: '一' }],
-      }),
+      ev(
+        'tasklist.created',
+        {
+          listId: 'tl1',
+          title: '甲',
+          source: 'ad_hoc',
+          items: [{ itemId: 'a', title: '一' }],
+        },
+        { turnId: 't1' },
+      ),
       ev('tasklist.created', {
         listId: 'tl1',
         title: '乙',
@@ -1321,6 +1350,7 @@ describe('reduceSession：待办列表（ADR-0038）', () => {
     ])
     expect(view.taskLists).toHaveLength(1)
     expect(view.taskLists[0]?.title).toBe('甲')
+    expect(view.taskLists[0]?.turnId).toBe('t1')
     expect(view.lastSeq).toBe(3)
   })
 
@@ -1563,18 +1593,22 @@ describe('reduceSession：审查循环（M7-07）', () => {
     const view = reduceAll([
       round(ev, 'rv1', 1),
       round(ev, 'rv3', 1),
+      round(ev, 'rv1', 2),
       ev('team.review.completed', {
         reviewId: 'rv3',
         status: 'exhausted',
         rounds: 1,
         summary: '放弃',
       }),
+      ev('team.review.completed', { reviewId: 'rv4', status: 'passed', rounds: 0 }),
     ])
     expect(view.reviewLoops.map((loop) => [loop.reviewId, loop.rounds.length])).toEqual([
-      ['rv1', 1],
+      ['rv1', 2],
       ['rv3', 1],
+      ['rv4', 0],
     ])
     expect(view.reviewLoops[1]?.status).toBe('exhausted')
+    expect(view.reviewLoops[2]?.summary).toBeUndefined()
   })
 
   it('第一轮就失败时完成事件仍留下这段循环', () => {
@@ -1659,6 +1693,7 @@ describe('reduceSession：流水线（M7-08）', () => {
     const view = reduceAll([
       bare('pl3', 'a'),
       bare('pl4', 'b'),
+      bare('pl4', 'c'),
       ev(
         'team.pipeline.completed',
         { pipelineId: 'pl3', status: 'completed', stages: 1, skipped: [] },
@@ -1667,7 +1702,14 @@ describe('reduceSession：流水线（M7-08）', () => {
     ])
     expect(view.pipelineRuns.map((run) => [run.pipelineId, run.stages, run.summary])).toEqual([
       ['pl3', [{ stage: 'a', agentRunId: 'run-a', status: 'completed' }], undefined],
-      ['pl4', [{ stage: 'b', agentRunId: 'run-b', status: 'completed' }], undefined],
+      [
+        'pl4',
+        [
+          { stage: 'b', agentRunId: 'run-b', status: 'completed' },
+          { stage: 'c', agentRunId: 'run-c', status: 'completed' },
+        ],
+        undefined,
+      ],
     ])
   })
 

@@ -58,6 +58,18 @@ describe('selectShell：Windows', () => {
     expect(calls.map(([exe]) => exe)).toEqual([PWSH, 'pwsh.exe', PS51])
   })
 
+  it('探测结果没有实际路径时按候选路径判断是否商店版', async () => {
+    const { probe } = fakeProbe({
+      [PWSH]: { version: '7.5.4' },
+      [PS51]: { version: '5.1', path: PS51 },
+    })
+    expect(await selectShell({ platform: 'win32', env: winEnv, probe })).toEqual({
+      kind: 'pwsh',
+      exe: PWSH,
+      version: '7.5.4',
+    })
+  })
+
   it('PATH 中的非商店版 pwsh 使用其实际路径；候选本身在 WindowsApps 下时跳过', async () => {
     const { probe } = fakeProbe({
       [PWSH]: { version: '7.5.4', path: STORE },
@@ -128,6 +140,11 @@ describe('defaultShellProbe', () => {
   it('不存在的可执行文件返回 undefined', async () => {
     expect(await defaultShellProbe('/nonexistent/pwsh', 'pwsh')).toBeUndefined()
     expect(await defaultShellProbe('/nonexistent/bash', 'bash')).toBeUndefined()
+  })
+
+  it('非 PowerShell 的可执行文件存在即可用', async () => {
+    // 当前 Node 可执行文件一定存在且可执行，不依赖具体平台
+    expect(await defaultShellProbe(process.execPath, 'cmd')).toEqual({})
   })
 
   it.runIf(process.platform !== 'win32')('可执行文件存在时可用', async () => {

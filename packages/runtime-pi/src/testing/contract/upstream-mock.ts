@@ -313,6 +313,7 @@ export async function startUpstreamMock(): Promise<UpstreamMock> {
     req.setEncoding('utf8')
     req.on('data', (chunk: string) => (raw += chunk))
     req.on('end', async () => {
+      /* v8 ignore next -- Node 的 IncomingMessage 在有效请求上总有 url */
       const url = new URL(req.url ?? '/', 'http://localhost')
       const target = classify(url.pathname, raw === '' ? {} : (JSON.parse(raw) as Body))
       const reply = target && TURNS[target.model]?.[target.turn]

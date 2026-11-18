@@ -220,6 +220,7 @@ export function fromPiMessages(
           typeof message.content === 'string'
             ? [{ type: 'text' as const, text: message.content }]
             : message.content.map(fromPiContent)
+        /* v8 ignore next -- fromPiContent 只产生 text 片段，图片也会转成文字占位 */
         const text = content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('')
         if (content.length === 1 && text.startsWith(SESSION_BRIEF_PREFIX)) {
           result.push(

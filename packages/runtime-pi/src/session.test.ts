@@ -70,6 +70,7 @@ async function setup(
     history?: CanonicalMessage[]
     profile?: Partial<ResolvedModel['profile']>
     tools?: readonly RuntimeToolSpec[]
+    systemPrompt?: string
   } = {},
 ): Promise<Harness> {
   mock = await startMockOpenAI(responses)
@@ -88,7 +89,7 @@ async function setup(
   }
   const session = await new PiRuntime().createSession({
     model: model(mock.baseUrl, options.profile),
-    systemPrompt: '你是客服助手。',
+    systemPrompt: options.systemPrompt ?? '你是客服助手。',
     tools: options.tools ?? TOOLS,
     history: options.history ?? [],
     signal: controller.signal,
@@ -619,5 +620,114 @@ describe('PiRuntime：steer 与生命周期', () => {
     await h.session.dispose()
     await h.session.dispose()
     await expect(h.session.prompt(user('c'))).rejects.toThrow('已释放')
+  })
+})
+
+describe('PiRuntime：会话维护（replaceMessages / setTools / stopLoop）', () => {
+  it('replaceMessages 同时替换历史与模型看到的上下文', async () => {
+    const h = await setup([ANSWER_TURN], { history: [user('旧消息', 1)] })
+    h.session.replaceMessages!([user('新历史', 2)])
+    expect(h.session.exportHistory()).toEqual([user('新历史', 2)])
+    await h.session.prompt(user('继续', 3))
+    const sent = sentMessages(0)
+    expect(sent.map((m) => m.role)).toEqual(['system', 'user', 'user'])
+    expect(sent[1]).toMatchObject({ content: [{ type: 'text', text: '新历史' }] })
+    expect(h.session.exportHistory().map((m) => m.role)).toEqual(['user', 'user', 'assistant'])
+  })
+
+  it('setTools 换掉这一轮模型看到的工具，也影响 pi 对自己拒绝的调用的归类', async () => {
+    const h = await setup([ANSWER_TURN, ANSWER_TURN])
+    h.session.setTools!([TOOLS[0]!])
+    await h.session.prompt(user('a'))
+    expect(mock!.requests[0]!.body['tools']).toMatchObject([{ function: { name: 'get_order' } }])
+
+    h.session.setTools!([])
+    await h.session.prompt(user('b'))
+    expect((mock!.requests[1]!.body['tools'] as unknown[] | undefined) ?? []).toHaveLength(0)
+  })
+
+  it('工具结果要求停止本轮时不再请求模型', async () => {
+    const executeTool = vi.fn(async () => ({
+      status: 'ok' as const,
+      content: [{ type: 'text' as const, text: '已提交计划' }],
+      stopLoop: true,
+    }))
+    const h = await setup([TOOL_TURN], { hooks: { executeTool } })
+    await h.session.prompt(user('制定计划'))
+    expect(executeTool).toHaveBeenCalledTimes(1)
+    expect(mock!.requests).toHaveLength(1)
+    expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'completed' })
+    expect(h.session.exportHistory().map((m) => m.role)).toEqual(['user', 'assistant', 'tool'])
+  })
+
+  it('没有系统消息时 setSystemPrompt 不会凭空添加一条', async () => {
+    const h = await setup([ANSWER_TURN], { systemPrompt: '', tools: [] })
+    h.session.setSystemPrompt!('不会生效')
+    await h.session.prompt(user('hi'))
+    expect(sentMessages(0).map((m) => m.role)).toEqual(['user'])
+  })
+
+  it('成功结束后 retry 无消息可继续：以失败结束且不重复请求', async () => {
+    const h = await setup([ANSWER_TURN])
+    await h.session.prompt(user('hi'))
+    h.events.length = 0
+    await h.session.retry!()
+    expect(h.events).toEqual([
+      {
+        type: 'loop.ended',
+        outcome: 'failed',
+        error: { code: PiErrorCode.Unknown },
+        retryable: false,
+      },
+    ])
+    expect(mock!.requests).toHaveLength(1)
+  })
+})
+
+describe('PiRuntime：中止与监听器异常（防御路径）', () => {
+  it('调用模型后中止：被取消的调用不再上报为非法工具调用', async () => {
+    const rejected: unknown[] = []
+    const executeTool = vi.fn()
+    const h = await setup([TOOL_TURN, ANSWER_TURN], {
+      hooks: {
+        executeTool,
+        toolCallRejected: (call, error) => rejected.push({ call, error }),
+      },
+    })
+    h.session.onEvent((e) => {
+      if (e.type === 'step.completed') void h.session.abort()
+    })
+    await h.session.prompt(user('查订单'))
+    expect(executeTool).not.toHaveBeenCalled()
+    expect(rejected).toEqual([])
+    expect(h.events.at(-1)).toEqual({ type: 'loop.ended', outcome: 'aborted' })
+    expect(h.session.exportHistory().at(-1)).toMatchObject({ role: 'tool', status: 'error' })
+  })
+
+  it('message.completed 监听器抛出：本轮以失败结束且恰好一个 loop.ended', async () => {
+    const h = await setup([ANSWER_TURN])
+    h.session.onEvent((e) => {
+      if (e.type === 'message.completed') throw new Error('listener boom')
+    })
+    await h.session.prompt(user('hi'))
+    expect(h.events.filter((e) => e.type === 'loop.ended')).toEqual([
+      {
+        type: 'loop.ended',
+        outcome: 'failed',
+        error: { code: PiErrorCode.Unknown },
+        retryable: false,
+      },
+    ])
+    expect(h.events.at(-1)).toMatchObject({ type: 'loop.ended', outcome: 'failed' })
+  })
+})
+
+describe('mock 端点', () => {
+  it('没有预设响应时对空请求体返回 500，并记录空对象请求体', async () => {
+    mock = await startMockOpenAI([])
+    const res = await fetch(`${mock.baseUrl}/v1/models`)
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ error: { message: 'mock: no more responses' } })
+    expect(mock.requests[0]).toMatchObject({ body: {} })
   })
 })

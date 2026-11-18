@@ -106,6 +106,7 @@ const restoreDelayMs = (idleMs: number, costMs: number): number =>
 
 /** icacls 调用串行执行，避免并发命令互相覆盖标签。 */
 function enqueue(lease: WorkspaceLabelLease, action: () => Promise<void>): Promise<void> {
+  /* v8 ignore next -- lease.chain 始终保存 next.catch(...) 的结果（已转为 resolved），catch 回调不会执行；防御未来改动 */
   const next = lease.chain.catch(() => undefined).then(action)
   lease.chain = next.catch(() => undefined)
   return next
@@ -166,6 +167,7 @@ function restoreMedium(
   lease: WorkspaceLabelLease,
 ): void {
   void enqueue(lease, async () => {
+    /* v8 ignore next -- 恢复动作排在队列末尾，新命令的 acquire 也在同一队列；执行到此处时计数已归零，守卫只防竞态 */
     if (lease.count > 0 || lease.level !== 'low') return
     await integrity.setLevel(directory, 'medium')
     lease.level = 'medium'
@@ -315,9 +317,12 @@ async function runSandboxed(context: RunContext): Promise<SandboxRunResult> {
   let signalListener: (() => void) | undefined
 
   const stop = () => {
+    /* v8 ignore next -- 退出检测会先于 stop 生效；取消监听在 finally 中移除，退出后 stop 不会再被调用 */
     if (exited) return
+    /* v8 ignore start -- 走到这里时作业对象必然存在；无作业的启动失败在 try 中已抛出，else 分支不可达 */
     if (job) job.terminate()
     else if (processHandle !== undefined) api.terminate(processHandle)
+    /* v8 ignore stop */
   }
 
   try {

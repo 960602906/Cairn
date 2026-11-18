@@ -141,6 +141,9 @@ describe('validateAgentTeam（M7-06）', () => {
     expect(codes(validateAgentTeam({ ...base, pipeline: [] }, context))).toEqual([
       'team.pipeline_required',
     ])
+    expect(codes(validateAgentTeam({ ...base, pipeline: undefined }, context))).toEqual([
+      'team.pipeline_required',
+    ])
 
     const broken = validateAgentTeam(
       {
@@ -211,6 +214,12 @@ describe('validateAgentTeam（M7-06）', () => {
       code: 'team.member_not_allowed',
       params: { agent: BUILTIN_EXPLORER.id },
     })
+
+    const allowed = validateAgentTeam(
+      { ...delegateTeam, delegation: { allowedAgents: [BUILTIN_EXPLORER.id] } },
+      context,
+    )
+    expect(allowed).toEqual({ ok: true, errors: [], warnings: [] })
   })
 })
 
@@ -291,5 +300,38 @@ describe('团队试运行的定义合并（M7-09）', () => {
     expect(brief).toContain('run_pipeline')
     expect(teamBrief(delegateTeam)).toContain('delegate tool')
     expect(brief).not.toContain('delegate tool')
+  })
+
+  it('团队说明在没有名称、没有成员时也能生成，并优先使用中文名', () => {
+    const empty = teamBrief({
+      ...delegateTeam,
+      name: {},
+      members: [],
+      delegation: undefined,
+    })
+    expect(empty).toContain('# Team\nPattern: delegate')
+    expect(empty).toContain('Members: (none)')
+
+    const english = teamBrief({ ...delegateTeam, name: { 'en-US': '  Crew  ' } })
+    expect(english.startsWith('# Team: Crew\n')).toBe(true)
+    expect(teamBrief({ ...delegateTeam, name: { 'zh-CN': ' 中文 ', 'en-US': 'Crew' } })).toContain(
+      '# Team: 中文',
+    )
+  })
+
+  it('模板里显式 undefined 的委派字段不覆盖主控设置', () => {
+    const merged = applyTeamToAgentDefinition(BUILTIN_CODER, {
+      ...loopTeam,
+      delegation: { maxChildrenPerTurn: undefined, maxDepth: 2 },
+    })
+    expect(merged.delegation).toMatchObject({
+      maxChildrenPerTurn: BUILTIN_CODER.delegation?.maxChildrenPerTurn,
+      maxDepth: 2,
+    })
+  })
+
+  it('模板没有委派覆盖时沿用主控策略', () => {
+    const merged = applyTeamToAgentDefinition(BUILTIN_CODER, delegateTeam)
+    expect(merged.delegation).toEqual(BUILTIN_CODER.delegation)
   })
 })

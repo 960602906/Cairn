@@ -14,6 +14,7 @@ import {
   retryDelay,
   RunEngineErrorCode,
   SESSION_BRIEF_PREFIX,
+  SUMMARY_PREFIX,
   createSessionView,
   rebuildHistory,
   reduceSessionEvents,
@@ -125,6 +126,56 @@ describe('RunEngine：项目说明', () => {
     expect(events.find((event) => event.type === 'turn.started')?.payload).toEqual({
       context: { agentsMd },
     })
+  })
+
+  it('prepareTurn 给出的工具交给运行时并用于模型快照', async () => {
+    const tools: { name: string; description: string; inputSchema: object }[] = []
+    const snapshots: Parameters<NonNullable<RunEngineOptions['onModelCall']>>[0][] = []
+    const inner = fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    const runtime: AgentRuntime = {
+      id: 'tools',
+      async createSession(init) {
+        const session = await inner.createSession(init)
+        return {
+          ...session,
+          setTools: (next) => tools.push(...next),
+          prompt: session.prompt.bind(session),
+          steer: session.steer.bind(session),
+          abort: session.abort.bind(session),
+          onEvent: session.onEvent.bind(session),
+          exportHistory: session.exportHistory.bind(session),
+          dispose: session.dispose.bind(session),
+        }
+      },
+    }
+    const tool = { name: 'echo', description: 'echo', inputSchema: {} }
+    const { engine } = await start(runtime, {
+      prepareTurn: async () => ({ tools: [tool] }),
+      onModelCall: (snapshot) => {
+        snapshots.push(snapshot)
+      },
+    })
+    await engine.prompt({ messageId: 'u1', content: text('hi') })
+    expect(tools).toEqual([tool])
+    expect(snapshots[0]!.tools).toEqual([tool])
+  })
+})
+
+describe('RunEngine：准备轮次失败', () => {
+  it('清除失败轮次并允许下一次输入正常启动', async () => {
+    const prepareTurn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('prepare failed'))
+      .mockResolvedValueOnce(undefined)
+    const { engine, events } = await start(fake({ turns: [] }), { prepareTurn })
+    await expect(engine.prompt({ messageId: 'u1', content: text('first') })).rejects.toThrow(
+      'prepare failed',
+    )
+    expect(engine.state).toBe('idle')
+    expect(types(events)).toEqual(['run.created'])
+    await engine.prompt({ messageId: 'u2', content: text('second') })
+    expect(prepareTurn).toHaveBeenCalledTimes(2)
+    expect(events.at(-1)?.type).toBe('turn.completed')
   })
 })
 
@@ -693,6 +744,110 @@ describe('RunEngine：限额与非法工具调用', () => {
     const events = await run('work')
     expect(limitOf(events)).toEqual({ limit: 'maxTurnDurationMs', value: 60_000 })
     expect(count(events, 'step.started')).toBe(3)
+  })
+
+  it('等待审批期间的剩余时长不扣减已等待时间', async () => {
+    const holder: { engine?: RunEngine } = {}
+    let clock = 0
+    const seen: Partial<RunLimits>[] = []
+    const pipeline: ToolPipeline = {
+      async run(_call, _signal, observer) {
+        observer.awaitingApproval(true)
+        clock += 20_000
+        seen.push(holder.engine!.remainingLimits)
+        observer.awaitingApproval(false)
+        observer.awaitingApproval(false)
+        return { status: 'ok', content: text('ok'), truncated: false }
+      },
+    }
+    const { engine } = await start(fake({ turns: [{ steps: [tool(), reply] }] }), {
+      toolPipeline: pipeline,
+      now: () => clock,
+    })
+    holder.engine = engine
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(seen[0]).toMatchObject({ maxTurnDurationMs: 60_000 })
+    expect(engine.state).toBe('completed')
+  })
+
+  it('流水线的输出增量、额外事件与效果事件都转发到运行', async () => {
+    const effect = {
+      type: 'tasklist.created' as const,
+      payload: {
+        listId: 'tl1',
+        title: '清单',
+        source: 'ad_hoc' as const,
+        items: [{ itemId: 'i1', title: '第一项' }],
+      },
+    }
+    const changed = { changeId: 'ch1', path: 'a.ts', kind: 'modify' as const }
+    const sandbox = {
+      profile: 'workspace-write' as const,
+      network: 'none' as const,
+      mechanism: 'restricted-token' as const,
+      enforced: true,
+      networkIsolated: true,
+    }
+    const pipeline: ToolPipeline = {
+      async run(_call, _signal, observer) {
+        observer.started(sandbox)
+        observer.output('进度', 'stdout')
+        observer.emit('file.changed', changed)
+        return {
+          status: 'ok',
+          content: text('ok'),
+          truncated: true,
+          loadedSkill: { name: 'review', sha256: 'a'.repeat(64) },
+          effects: [effect],
+        }
+      },
+    }
+    const { engine, events } = await start(fake({ turns: [{ steps: [tool(), reply] }] }), {
+      toolPipeline: pipeline,
+    })
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(events.find((event) => event.type === 'tool.started')).toMatchObject({
+      payload: { toolCallId: 'fake-call-1', sandbox },
+    })
+    expect(events.find((event) => event.type === 'tool.output.delta')).toMatchObject({
+      payload: { toolCallId: 'fake-call-1', stream: 'stdout', text: '进度' },
+    })
+    expect(events.find((event) => event.type === 'file.changed')).toMatchObject({
+      payload: changed,
+    })
+    expect(events.find((event) => event.type === 'tool.completed')).toMatchObject({
+      payload: {
+        truncated: true,
+        skill: { name: 'review' },
+      },
+    })
+    expect(events.filter((event) => event.type === 'tasklist.created')).toHaveLength(1)
+  })
+
+  it('executeTool 返回的效果事件与 stopLoop 一并转发', async () => {
+    const effect = {
+      type: 'tasklist.created' as const,
+      payload: {
+        listId: 'tl1',
+        title: '清单',
+        source: 'ad_hoc' as const,
+        items: [{ itemId: 'i1', title: '第一项' }],
+      },
+    }
+    const { engine, events } = await start(fake({ turns: [{ steps: [tool(), reply] }] }), {
+      executeTool: async () => ({
+        status: 'ok',
+        content: text('ok'),
+        stopLoop: true,
+        effects: [effect],
+      }),
+    })
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    expect(events.find((event) => event.type === 'tasklist.created')).toMatchObject({
+      payload: effect.payload,
+    })
+    expect(limitOf(events)).toBeUndefined()
+    expect(engine.state).toBe('completed')
   })
 
   it('流水线给出的 display 写进 tool.completed，不进入重建的历史（M2-06）', async () => {
@@ -1276,6 +1431,28 @@ describe('RunEngine：运行时的异常与边界', () => {
     })
   })
 
+  it('轮次结束后迟到的工具调用仍可完成，且不计入已结束的轮次', async () => {
+    let hooks!: RuntimeSessionInit['hooks']
+    const pipeline: ToolPipeline = {
+      run: async (_call, _signal, observer) => {
+        observer.started()
+        return { status: 'ok', content: text('late'), truncated: false }
+      },
+    }
+    const { engine, events } = await start(
+      manual(async (emit, init) => {
+        hooks = init.hooks
+        emit({ type: 'loop.ended', outcome: 'completed' })
+      }),
+      { toolPipeline: pipeline },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('?') })
+    const before = events.length
+    await hooks.executeTool(call('late'), new AbortController().signal)
+    expect(types(events).slice(before)).toEqual(['tool.started', 'tool.completed'])
+    expect(engine.state).toBe('completed')
+  })
+
   it('运行时抛出异常：run.internal_error', async () => {
     const { engine, events } = await start(
       manual(async () => {
@@ -1479,6 +1656,60 @@ describe('RunEngine：上下文压缩（M3-03）', () => {
     expect(events.some((event) => event.type === 'context.compacted')).toBe(false)
   })
 
+  it('会话要点更新但不足以压缩时仍替换运行时历史', async () => {
+    const inner = fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    const replaced: string[][] = []
+    const runtime: AgentRuntime = {
+      id: 'brief-history',
+      async createSession(init) {
+        const session = await inner.createSession(init)
+        return {
+          ...session,
+          prompt: session.prompt.bind(session),
+          steer: session.steer.bind(session),
+          abort: session.abort.bind(session),
+          onEvent: session.onEvent.bind(session),
+          exportHistory: session.exportHistory.bind(session),
+          replaceMessages: (messages) => {
+            replaced.push(messages.filter((m) => m.role === 'summary').map((m) => m.content))
+            session.replaceMessages?.(messages)
+          },
+          dispose: session.dispose.bind(session),
+        }
+      },
+    }
+    const { engine, events } = await start(runtime, { sessionBrief: async () => 'remember this' })
+    expect(await engine.compact()).toBe(false)
+    expect(replaced).toEqual([[expect.stringContaining('remember this')]])
+    expect(types(events)).toEqual(['run.created'])
+  })
+
+  it('会话要点为空时保持原历史', async () => {
+    const { engine, events } = await start(
+      fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }),
+      {
+        sessionBrief: async () => undefined,
+      },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('continue') })
+    expect(engine.state).toBe('completed')
+    expect(types(events)).not.toContain('context.compacted')
+  })
+
+  it('会话要点读取失败时保持原历史且不阻塞模型', async () => {
+    const { engine, events } = await start(
+      fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }),
+      {
+        sessionBrief: async () => {
+          throw new Error('brief unavailable')
+        },
+      },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('continue') })
+    expect(engine.state).toBe('completed')
+    expect(types(events)).not.toContain('context.compacted')
+  })
+
   it('只有一两轮时手动压缩什么都不做', async () => {
     const summarize = vi.fn(async () => 'SUM')
     const { engine } = await start(fake({ turns: [turn('一')] }), { summarize })
@@ -1500,6 +1731,105 @@ describe('RunEngine：上下文压缩（M3-03）', () => {
 
     await engine.dispose()
     expect(await engine.compact()).toBe(false)
+  })
+})
+
+describe('RunEngine：旧版历史与外部事件', () => {
+  it('把旧版摘要与会话要点用户消息还原为对应的消息类型', async () => {
+    const calls: Parameters<NonNullable<RunEngineOptions['onModelCall']>>[0][] = []
+    const legacy = [
+      {
+        role: 'summary' as const,
+        content: 'EARLIER',
+        coversTurns: ['t1', 't2'] as [string, string],
+        ts: 1,
+      },
+      { role: 'user' as const, content: text(`${SUMMARY_PREFIX}OLD BODY`), ts: 2 },
+      {
+        role: 'user' as const,
+        content: [{ type: 'image' as const, blobRef: 'b', mimeType: 'image/png' }],
+        ts: 3,
+      },
+      { role: 'user' as const, content: text(`${SESSION_BRIEF_PREFIX}brief body`), ts: 4 },
+    ]
+    const inner = fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    const runtime: AgentRuntime = {
+      id: 'legacy-history',
+      createSession: (init) => inner.createSession({ ...init, history: legacy }),
+    }
+    const { engine } = await start(runtime, {
+      onModelCall: (snapshot) => {
+        calls.push(snapshot)
+      },
+    })
+    await engine.prompt({ messageId: 'u1', content: text('continue') })
+    const summaries = calls[0]!.messages.filter((message) => message.role === 'summary')
+    expect(summaries.map((message) => message.content)).toEqual([
+      'EARLIER',
+      'EARLIER',
+      `${SESSION_BRIEF_PREFIX}brief body`,
+    ])
+  })
+
+  it('历史损坏时仍把原上下文交给模型，本轮照常完成', async () => {
+    const calls: Parameters<NonNullable<RunEngineOptions['onModelCall']>>[0][] = []
+    const malformed = [{ role: 'user', content: [undefined] }] as never
+    const inner = fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
+    const runtime: AgentRuntime = {
+      id: 'malformed-history',
+      createSession: (init) => inner.createSession({ ...init, history: malformed }),
+    }
+    const { engine, events } = await start(runtime, {
+      onModelCall: (snapshot) => {
+        calls.push(snapshot)
+      },
+    })
+    await engine.prompt({ messageId: 'u1', content: text('continue') })
+    expect(engine.state).toBe('completed')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.messages[0]).toBe(malformed[0])
+    expect(events.at(-1)?.type).toBe('turn.completed')
+  })
+
+  it('emitEvent 以运行信封转发事件', async () => {
+    const { engine, events } = await start(fake({ turns: [] }))
+    const payload = {
+      listId: 'tl1',
+      title: '清单',
+      source: 'ad_hoc' as const,
+      items: [{ itemId: 'i1', title: '第一项' }],
+    }
+    engine.emitEvent('tasklist.created', payload)
+    expect(events.at(-1)).toMatchObject({
+      type: 'tasklist.created',
+      runId: 'r1',
+      sessionId: 's1',
+      payload,
+    })
+  })
+
+  it('手动压缩读取历史失败时返回 false', async () => {
+    const inner = fake({ turns: [] })
+    const runtime: AgentRuntime = {
+      id: 'broken-history',
+      async createSession(init) {
+        const session = await inner.createSession(init)
+        return {
+          ...session,
+          prompt: session.prompt.bind(session),
+          steer: session.steer.bind(session),
+          abort: session.abort.bind(session),
+          onEvent: session.onEvent.bind(session),
+          exportHistory: () => {
+            throw new Error('history unavailable')
+          },
+          dispose: session.dispose.bind(session),
+        }
+      },
+    }
+    const { engine, events } = await start(runtime)
+    expect(await engine.compact()).toBe(false)
+    expect(types(events)).toEqual(['run.created'])
   })
 })
 
@@ -1552,6 +1882,31 @@ describe('RunEngine：模型调用快照（M4-04）', () => {
           message.content.some((part) => part.type === 'text' && part.text === 'hello'),
       ),
     ).toBe(true)
+  })
+
+  it('运行时在步骤内请求模型时快照带有步骤 id', async () => {
+    const calls: Parameters<NonNullable<RunEngineOptions['onModelCall']>>[0][] = []
+    const { engine } = await start(
+      manual(async (emit, init) => {
+        emit({ type: 'step.started', model: ref })
+        await init.hooks.beforeModelCall?.({ systemPrompt: '', messages: [] })
+        emit({
+          type: 'step.completed',
+          finishReason: 'stop',
+          usage: { inputTokens: 1, outputTokens: 1 },
+        })
+        emit({ type: 'loop.ended', outcome: 'completed' })
+      }),
+      {
+        onModelCall: (snapshot) => {
+          expect(snapshot.stepId).toBeDefined()
+          calls.push(snapshot)
+        },
+      },
+    )
+    await engine.prompt({ messageId: 'u1', content: text('hi') })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.stepId).toMatch(/^r1-/)
   })
 
   it('压缩后的模型调用带上最近一次压缩摘要', async () => {

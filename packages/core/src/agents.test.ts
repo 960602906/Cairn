@@ -239,6 +239,7 @@ describe('validateAgentDefinition', () => {
       {
         ...baseFields(),
         tools: { allow: ['read'], deny: ['write_file', 'mcp:demo'] },
+        skills: { allow: ['*'], pinned: ['review'] },
         model: {
           mode: 'fixed',
           primary: { providerId: 'openai', modelId: 'gpt' },

@@ -44,6 +44,7 @@ const SCRIPT_EXTENSIONS = new Set([
 export function isScript(relativePath: string, head?: Uint8Array): boolean {
   const parts = relativePath.split('/')
   if (parts.includes('scripts')) return true
+  /* v8 ignore next -- split 的结果至少有一个元素，at(-1) 不会为 undefined */
   const base = parts.at(-1) ?? ''
   const dot = base.lastIndexOf('.')
   if (dot > 0 && SCRIPT_EXTENSIONS.has(base.slice(dot).toLowerCase())) return true

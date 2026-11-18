@@ -79,6 +79,7 @@ export async function startReplayServer(
   const mismatches: Mismatch[] = []
   let cursor = 0
   const server = createServer((req, res) => {
+    /* v8 ignore next -- 客户端在回放期间重置连接时才会触发；空处理器只为吞掉该错误 */
     res.on('error', () => {})
     let raw = ''
     req.setEncoding('utf8')

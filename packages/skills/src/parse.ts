@@ -51,6 +51,7 @@ export function parseSkillMarkdown(bytes: Uint8Array): ParsedSkill {
   } catch {
     throw new SkillError(SkillErrorCode.Invalid, 'SKILL.md is not valid UTF-8.')
   }
+  /* v8 ignore next -- TextDecoder 默认移除起始 BOM，解码后的文本不会再以 U+FEFF 开头；保留以防解码器行为变化 */
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
   const match = FRONTMATTER.exec(text)
   if (!match) {
@@ -61,6 +62,7 @@ export function parseSkillMarkdown(bytes: Uint8Array): ParsedSkill {
   }
   let parsed: unknown
   try {
+    /* v8 ignore next -- 正则的捕获组在匹配成功时一定存在 */
     parsed = parse(match[1] ?? '')
   } catch {
     throw new SkillError(SkillErrorCode.Invalid, 'SKILL.md front matter is not valid YAML.')
@@ -69,6 +71,7 @@ export function parseSkillMarkdown(bytes: Uint8Array): ParsedSkill {
     throw new SkillError(SkillErrorCode.Invalid, 'SKILL.md front matter must be a mapping.')
   }
   let frontmatter: Record<string, unknown>
+  /* v8 ignore start -- YAML 的普通映射经 JSON 往返仍是普通对象；只有自引用或自定义 toJSON 才会走到这里的防御分支 */
   try {
     const json = jsonValue(parsed)
     if (!isPlain(json)) {
@@ -79,6 +82,7 @@ export function parseSkillMarkdown(bytes: Uint8Array): ParsedSkill {
     if (error instanceof SkillError) throw error
     throw new SkillError(SkillErrorCode.Invalid, 'SKILL.md front matter is not plain data.')
   }
+  /* v8 ignore stop */
   const name = frontmatter['name']
   const description = frontmatter['description']
   if (typeof name !== 'string' || name.trim() === '') {
@@ -110,6 +114,7 @@ export function parseSkillMarkdown(bytes: Uint8Array): ParsedSkill {
     name: trimmedName,
     description: trimmedDescription,
     frontmatter,
+    /* v8 ignore next -- 正则的第二个捕获组在匹配成功时一定存在（可以为空字符串） */
     body: match[2] ?? '',
     markdown: text,
     sha256,

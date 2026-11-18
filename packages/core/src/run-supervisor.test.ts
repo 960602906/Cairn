@@ -351,6 +351,25 @@ describe('RunSupervisor：创建与事件', () => {
     expect(createSession).not.toHaveBeenCalled()
   })
 
+  it('创建 id 期间宿主中止时拒绝创建，不注册运行', async () => {
+    const controller = new AbortController()
+    const supervisor = createRunSupervisor({
+      runtime: fake({ turns: [] }),
+      model,
+      limits,
+      signal: controller.signal,
+      createId: () => {
+        controller.abort()
+        return 'r-aborted'
+      },
+    })
+    await expect(supervisor.createRun(init)).rejects.toMatchObject({
+      code: RunEngineErrorCode.Disposed,
+    })
+    expect(supervisor.listRuns()).toEqual([])
+    await supervisor.dispose()
+  })
+
   it('宿主信号已中止时拒绝创建，不注册运行', async () => {
     const controller = new AbortController()
     controller.abort()
@@ -364,6 +383,99 @@ describe('RunSupervisor：创建与事件', () => {
     })
     expect(supervisor.listRuns()).toEqual([])
     await supervisor.dispose()
+  })
+
+  it('显式切换 awaiting_children 会传递到引擎', async () => {
+    const { supervisor, events } = setup(fake({ turns: [] }))
+    const run = await supervisor.createRun(init)
+    run.setAwaitingChildren(true)
+    expect(run.state).toBe('idle')
+    run.setAwaitingChildren(false)
+    expect(events.map((event) => event.type)).toEqual(['run.created'])
+  })
+
+  it('compact 经运行队列执行；emitEvent 以运行信封转发', async () => {
+    const { supervisor, events } = setup(fake({ turns: [] }))
+    const run = await supervisor.createRun(init)
+    expect(await run.compact()).toBe(false)
+    const payload = {
+      listId: 'tl1',
+      title: '清单',
+      source: 'ad_hoc' as const,
+      items: [{ itemId: 'i1', title: '第一项' }],
+    }
+    run.emitEvent('tasklist.created', payload)
+    expect(events.at(-1)).toMatchObject({
+      type: 'tasklist.created',
+      runId: run.runId,
+      payload,
+    })
+  })
+
+  it('运行上下文省略回调时回退到全局的模型调用回调', async () => {
+    const globalCall = vi.fn(() => {
+      throw new Error('global callback failed')
+    })
+    const globalError = vi.fn()
+    const { supervisor } = setup(fake({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }), {
+      onModelCall: globalCall,
+      onModelCallError: globalError,
+      createRunContext: () => ({ runtime: fake({ turns: [] }), model, limits }),
+    })
+    const run = await supervisor.createRun(init)
+    await run.send(input('u1'))
+    expect(globalCall).toHaveBeenCalledOnce()
+    expect(globalError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'global callback failed' }),
+    )
+    expect(run.state).toBe('completed')
+  })
+
+  it('根运行调用 completeChild 不影响其名额', async () => {
+    const { supervisor } = setup(fake({ turns: [] }), { maxRuns: 1 })
+    const root = await supervisor.createRun(init)
+    root.completeChild()
+    expect(supervisor.getRun(root.runId)).toBe(root)
+    expect(supervisor.listRuns().map((run) => run.runId)).toEqual([root.runId])
+    await root.dispose()
+  })
+
+  it('关闭期间完成的异步上下文不再创建运行时', async () => {
+    let resume!: () => void
+    const createSession = vi.fn()
+    const { supervisor, controller } = setup(fake({ turns: [] }), {
+      createRunContext: async () => {
+        await new Promise<void>((resolve) => (resume = resolve))
+        return { runtime: { id: 'spy', createSession }, model }
+      },
+    })
+    const creating = supervisor.createRun({ ...init, runId: 'r1' })
+    controller.abort()
+    resume()
+    await expect(creating).rejects.toMatchObject({ code: RunEngineErrorCode.Disposed })
+    expect(createSession).not.toHaveBeenCalled()
+    expect(supervisor.listRuns()).toEqual([])
+  })
+
+  it('运行上下文的模型调用错误回调优先于全局回调', async () => {
+    const globalError = vi.fn()
+    const localError = vi.fn()
+    const { supervisor } = setup(fake({ turns: [] }), {
+      onModelCallError: globalError,
+      createRunContext: () => ({
+        onModelCall: () => {
+          throw new Error('local model callback')
+        },
+        onModelCallError: localError,
+      }),
+    })
+    const run = await supervisor.createRun(init)
+    await run.send(input('u1'))
+    expect(localError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'local model callback' }),
+    )
+    expect(globalError).not.toHaveBeenCalled()
+    expect(run.state).toBe('completed')
   })
 
   it('listRuns 与 listChildren', async () => {

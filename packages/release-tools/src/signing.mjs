@@ -212,7 +212,9 @@ export function findSignTool({
           const left = a.split('.').map(Number)
           const right = b.split('.').map(Number)
           for (let index = 0; index < 4; index += 1) {
+            /* v8 ignore next -- 正则限定四段版本号，索引始终在四段数组内。 */
             const leftPart = left[index] ?? 0
+            /* v8 ignore next -- 正则限定四段版本号，索引始终在四段数组内。 */
             const rightPart = right[index] ?? 0
             if (leftPart !== rightPart) return rightPart - leftPart
           }

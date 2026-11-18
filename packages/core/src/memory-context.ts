@@ -69,6 +69,7 @@ const normalize = (content: string): string => content.trim().replace(/\s+/g, ' 
 
 const scopeRank = (scope: MemoryScope): number => {
   const rank = MEMORY_SCOPE_ORDER.indexOf(scope)
+  /* v8 ignore next -- MemoryScope is a closed union, so indexOf always finds it */
   return rank === -1 ? MEMORY_SCOPE_ORDER.length : rank
 }
 
@@ -100,6 +101,7 @@ export function buildMemoryContext(
   }
 
   // 先按更新时间从新到旧挑能放下的条目，再按范围顺序输出。
+  /* v8 ignore next -- MemoryScope is a closed union; SCOPE_TITLES covers every member */
   const headingBytes = (scope: MemoryScope) => utf8Length(`## ${SCOPE_TITLES[scope] ?? scope}\n`)
   const selected = new Set<number>()
   const scopes = new Set<MemoryScope>()
@@ -132,7 +134,8 @@ export function buildMemoryContext(
     return items.length === 0
       ? undefined
       : [
-          `## ${SCOPE_TITLES[scope] ?? scope}`,
+          // 这里只遍历 MEMORY_SCOPE_ORDER，标题一定存在。
+          `## ${SCOPE_TITLES[scope]}`,
           ...items.map(({ entry }) => bullet(entry.content)),
         ].join('\n')
   }).filter((group): group is string => group !== undefined)

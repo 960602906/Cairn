@@ -80,4 +80,11 @@ describe('truncateMiddle', () => {
     const result = truncateMiddle(text, 4, () => '|')
     expect(result.text).toBe(`${'x'.repeat(8)}|😀😀`)
   })
+
+  it('treats a lone low surrogate as one character', () => {
+    // 倒数第二个单元是低代理而非高代理：不能把这两个单元当成一对。
+    const text = `${'a'.repeat(20)}\uDC00\uDE00`
+    const result = truncateMiddle(text, 2, () => '|')
+    expect(result).toEqual({ text: `${'a'.repeat(4)}|\uDE00`, omitted: 17 })
+  })
 })

@@ -7,6 +7,7 @@ import {
   readFileTool,
   READ_FILE_MAX_BYTES,
   registerReadTools,
+  splitLines,
   type ListDirInput,
   type ReadFileInput,
 } from './index.js'
@@ -345,5 +346,17 @@ describe('路径错误的说明', () => {
       message: 'The path is invalid. (path: x)',
       params: { path: 'x' },
     })
+  })
+})
+
+describe('分隔符与默认路径', () => {
+  it('splitLines 处理没有换行符与只有 CR 的文本', () => {
+    expect(splitLines('single line')).toEqual({ lines: ['single line'], lineEndings: undefined })
+    expect(splitLines('a\rb\r')).toEqual({ lines: ['a', 'b'], lineEndings: 'CR' })
+  })
+
+  it('list_dir.execute 没有 path 时默认工作区根目录', async () => {
+    const output = await listDirTool.execute({}, toolContext(fx.root))
+    expect(output.content[0]).toMatchObject({ type: 'text' })
   })
 })
