@@ -574,5 +574,8 @@
   "licenses.truncated": "The notices are long; only the beginning is shown here. The full text is in THIRD_PARTY_NOTICES.txt in the install directory.",
   "licenses.close": "Close",
   "general.agentAutoMemory.label": "Let agents save memory automatically",
-  "general.agentAutoMemory.hint": "Applies only to agents configured for automatic memory. When off, their notes still wait for your confirmation. Off by default."
+  "general.agentAutoMemory.hint": "Applies only to agents configured for automatic memory. When off, their notes still wait for your confirmation. Off by default.",
+  "section.memory.title": "Memory",
+  "section.memory.description": "Project conventions and preferences the agent keeps across sessions. Search, edit or delete them by scope; only active entries are added to conversations.",
+  "page.keywords.memory": "memory remember preference convention scope session project global edit delete"
 }

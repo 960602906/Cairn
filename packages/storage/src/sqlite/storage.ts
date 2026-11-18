@@ -617,6 +617,11 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
            OR scope = 'global')
        ORDER BY CASE scope WHEN 'session' THEN 0 WHEN 'project' THEN 1 ELSE 2 END, rowid`,
     ),
+    allMemories: db.prepare<{ scope: string | null; status: string | null }, MemoryEntryRow>(
+      `SELECT * FROM memory_entries
+       WHERE (@status IS NULL OR status = @status) AND (@scope IS NULL OR scope = @scope)
+       ORDER BY CASE scope WHEN 'session' THEN 0 WHEN 'project' THEN 1 ELSE 2 END, rowid`,
+    ),
     insertMemory: db.prepare(
       `INSERT INTO memory_entries
          (memory_id, scope, session_id, project_id, content, status, source_run_id,
@@ -1423,6 +1428,13 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
             projectId: listOptions.projectId ?? null,
             sessionId: listOptions.sessionId ?? null,
             status: listOptions.status ?? null,
+          })
+          .map(toMemoryEntry),
+      listAll: (allOptions = {}) =>
+        q.allMemories
+          .all({
+            scope: allOptions.scope ?? null,
+            status: allOptions.status ?? null,
           })
           .map(toMemoryEntry),
       confirm(memoryId) {

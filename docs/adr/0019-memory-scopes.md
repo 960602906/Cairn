@@ -2,7 +2,7 @@
 
 - 状态：已接受（功能暂缓）
 - 日期：2026-11-02
-- 详细设计：[Agent Runtime 详细设计第 22 节](../design/agent-runtime.md#22-记忆m7-01-存储m7-02-读取m7-03-写入)
+- 详细设计：[Agent Runtime 详细设计第 22 节](../design/agent-runtime.md#22-记忆m7-01-存储m7-02-读取m7-03-写入m7-04-管理)
 
 ## 背景
 

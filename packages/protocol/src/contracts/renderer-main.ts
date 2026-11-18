@@ -36,8 +36,10 @@ import {
   AgentSummary,
   AgentVersionSummary,
   LocalizedText,
+  MemoryScope,
 } from '../agents.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
+import { MEMORY_CONTENT_MAX, MemoryEntry, MemoryStatus } from '../memory.js'
 import {
   ChangeSetApplyResult,
   ChangeSetConflictResolution,
@@ -869,6 +871,36 @@ export const MainForRenderer = defineSide({
         sessionId: Id,
         memoryId: Id,
         action: z.enum(['accept', 'reject']),
+      }),
+      result: z.object({}),
+    },
+    /**
+     * 列出记忆（M7-04，管理界面）。跨项目、跨会话列出全部条目，可按范围与状态筛选；
+     * Agent 读取记忆仍走内部查询，不受这里影响。
+     */
+    'memory.list': {
+      params: z.object({
+        scope: MemoryScope.optional(),
+        status: MemoryStatus.optional(),
+      }),
+      result: z.object({ entries: z.array(MemoryEntry) }),
+    },
+    /** 编辑一条记忆的内容（M7-04）。内容会按更新时间重新排序注入。 */
+    'memory.update': {
+      params: z.object({
+        memoryId: Id,
+        content: z.string().trim().min(1).max(MEMORY_CONTENT_MAX),
+      }),
+      result: z.object({ entry: MemoryEntry }),
+    },
+    /**
+     * 删除一条记忆（M7-04）。给出 `sessionId` 时删除记进那个会话的事件日志（用于让该会话里的
+     * 提议卡片一起消失）；不给出时只有会话范围的条目能记事件，项目与全局条目只改存储。
+     */
+    'memory.delete': {
+      params: z.object({
+        memoryId: Id,
+        sessionId: Id.optional(),
       }),
       result: z.object({}),
     },

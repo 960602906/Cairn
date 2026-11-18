@@ -370,6 +370,19 @@ function setup(
   }
   memories = {
     respond: vi.fn(() => ({})),
+    list: vi.fn(() => ({ entries: [] })),
+    update: vi.fn(() => ({
+      entry: {
+        memoryId: 'm1',
+        scope: 'session' as const,
+        sessionId: 's1',
+        content: 'new',
+        status: 'active' as const,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    })),
+    remove: vi.fn(() => ({})),
   }
   questions = {
     pending: vi.fn(() => ({ questions: [] })),
@@ -1099,6 +1112,24 @@ describe('createRendererGateway: commands and lifecycle', () => {
         memoryId: 'm1',
         action: 'keep' as never,
       }),
+    ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
+  })
+
+  it('delegates memory management requests (M7-04)', async () => {
+    const { client } = setup()
+    const list = { scope: 'project' as const, status: 'active' as const }
+    await expect(client.request('memory.list', list)).resolves.toEqual({ entries: [] })
+    expect(memories.list).toHaveBeenCalledWith(list)
+    const update = { memoryId: 'm1', content: 'new' }
+    await expect(client.request('memory.update', update)).resolves.toEqual({
+      entry: expect.anything(),
+    })
+    expect(memories.update).toHaveBeenCalledWith(update)
+    const remove = { memoryId: 'm1', sessionId: 's1' }
+    await expect(client.request('memory.delete', remove)).resolves.toEqual({})
+    expect(memories.remove).toHaveBeenCalledWith(remove)
+    await expect(
+      client.request('memory.update', { memoryId: 'm1', content: '   ' }),
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
   })
 

@@ -234,6 +234,7 @@ describe('ChatPanel', () => {
     await userEvent.click(within(panel).getByRole('button', { name: '打开其他面板' }))
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
       '文件',
+      '记忆',
     ])
     expect(screen.queryByRole('menuitem', { name: '改动' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '概要' })).toBeNull()

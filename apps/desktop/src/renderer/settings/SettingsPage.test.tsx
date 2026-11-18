@@ -163,7 +163,7 @@ describe('SettingsPage', () => {
         .getAllByRole('button')
         .map((button) => button.textContent)
     expect(titles(groups[0]!)).toEqual(['通用与外观', '已归档的对话', '更新', '关于 Cairn'])
-    expect(titles(groups[1]!)).toEqual(['模型供应商', '技能', 'MCP 服务'])
+    expect(titles(groups[1]!)).toEqual(['模型供应商', '技能', 'MCP 服务', '记忆'])
     expect(titles(groups[2]!)).toEqual(['权限与审批'])
   })
 

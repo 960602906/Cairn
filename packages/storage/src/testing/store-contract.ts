@@ -938,6 +938,39 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(ids({ projectId: 'p1', sessionId: 's1', status: 'proposed' })).toEqual(['p1m', 'g1'])
       })
 
+      it('lists every scope for the management view, optionally filtered (M7-04)', () => {
+        seed()
+        storage.projects.create({ projectId: 'p2', name: 'Other', path: '/work/other' })
+        storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p2',
+          workspacePath: '/work/other',
+          title: '另一个会话',
+        })
+        storage.memories.propose({ memoryId: 'g1', scope: 'global', content: '全局' })
+        storage.memories.propose({
+          memoryId: 'p1m',
+          scope: 'project',
+          projectId: 'p1',
+          content: '项目 1',
+        })
+        storage.memories.propose({
+          memoryId: 's2m',
+          scope: 'session',
+          sessionId: 's2',
+          content: '会话 2',
+        })
+        clock = 200
+        storage.memories.confirm('g1')
+
+        const ids = (options?: Parameters<Storage['memories']['listAll']>[0]) =>
+          storage.memories.listAll(options).map((entry) => entry.memoryId)
+        expect(ids()).toEqual(['s2m', 'p1m', 'g1'])
+        expect(ids({ scope: 'project' })).toEqual(['p1m'])
+        expect(ids({ status: 'active' })).toEqual(['g1'])
+        expect(ids({ scope: 'session', status: 'proposed' })).toEqual(['s2m'])
+      })
+
       it('records source and returns copies instead of stored records', () => {
         seed()
         const entry = storage.memories.propose({

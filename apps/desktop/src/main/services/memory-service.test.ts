@@ -1,5 +1,5 @@
 import { BUILTIN_CODER } from '@cairn/core'
-import { RpcError, type AgentDefinition, type UnsequencedEvent } from '@cairn/protocol'
+import type { AgentDefinition, UnsequencedEvent } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
 import { describe, expect, it } from 'vitest'
 import { createMemoryService, MemoryErrorCode } from './memory-service.js'
@@ -50,7 +50,8 @@ const errorCode = (fn: () => unknown): string | undefined => {
     fn()
     return undefined
   } catch (error) {
-    return error instanceof RpcError ? error.code : `unexpected:${String(error)}`
+    const code = (error as { code?: unknown }).code
+    return typeof code === 'string' ? code : `unexpected:${String(error)}`
   }
 }
 
@@ -221,5 +222,95 @@ describe('createMemoryService：确认与忽略（M7-03）', () => {
     expect(
       errorCode(() => service.respond({ sessionId: 's1', memoryId: 'missing', action: 'accept' })),
     ).toBe(MemoryErrorCode.NotFound)
+  })
+})
+
+describe('createMemoryService：管理界面（M7-04）', () => {
+  const seed = () => {
+    const harness = setup()
+    harness.storage.memories.propose({ memoryId: 'g1', scope: 'global', content: '全局偏好' })
+    harness.storage.memories.confirm('g1')
+    harness.service.remember({
+      sessionId: 's1',
+      runId: 'r1',
+      agent,
+      scope: 'project',
+      content: '项目约定',
+    })
+    return harness
+  }
+
+  it('列出全部范围，可按范围与状态筛选', () => {
+    const { service } = seed()
+    expect(service.list().entries.map((entry) => entry.memoryId)).toEqual(['mem-1', 'g1'])
+    expect(service.list({ scope: 'global' }).entries.map((entry) => entry.memoryId)).toEqual(['g1'])
+    expect(service.list({ status: 'proposed' }).entries.map((entry) => entry.memoryId)).toEqual([
+      'mem-1',
+    ])
+  })
+
+  it('编辑正文并更新更新时间', () => {
+    const { service, storage } = seed()
+    const { entry } = service.update({ memoryId: 'mem-1', content: '  新的约定  ' })
+    expect(entry).toMatchObject({ memoryId: 'mem-1', content: '  新的约定  ' })
+    expect(storage.memories.get('mem-1')?.content).toBe('  新的约定  ')
+  })
+
+  it('编辑不存在或空内容时报错', () => {
+    const { service } = seed()
+    expect(errorCode(() => service.update({ memoryId: 'missing', content: 'x' }))).toBe(
+      MemoryErrorCode.NotFound,
+    )
+    expect(errorCode(() => service.update({ memoryId: 'mem-1', content: '   ' }))).toBe(
+      'storage.invalid_record',
+    )
+  })
+
+  it('删除会话范围的条目，并把事件记进那个会话', () => {
+    const { service, storage, published } = seed()
+    service.remember({
+      sessionId: 's1',
+      runId: 'r1',
+      agent,
+      scope: 'session',
+      content: '会话约定',
+    })
+    published.length = 0
+    expect(service.remove({ memoryId: 'mem-2' })).toEqual({})
+    expect(storage.memories.get('mem-2')).toBeUndefined()
+    expect(published).toEqual([
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 'r1',
+        ts: 456,
+        type: 'memory.deleted',
+        payload: { memoryId: 'mem-2', scope: 'session' },
+      },
+    ])
+  })
+
+  it('从某个会话删除项目条目时按给出的会话记事件', () => {
+    const { service, published } = seed()
+    published.length = 0
+    service.remove({ memoryId: 'mem-1', sessionId: 's1' })
+    expect(published[0]).toMatchObject({
+      sessionId: 's1',
+      type: 'memory.deleted',
+      payload: { memoryId: 'mem-1', scope: 'project' },
+    })
+  })
+
+  it('没有会话上下文时，项目与全局条目只改存储', () => {
+    const { service, published } = seed()
+    published.length = 0
+    service.remove({ memoryId: 'g1' })
+    service.remove({ memoryId: 'mem-1' })
+    expect(published).toEqual([])
+  })
+
+  it('删除不存在的条目时报 memory.not_found', () => {
+    const { service } = seed()
+    expect(errorCode(() => service.remove({ memoryId: 'missing' }))).toBe(MemoryErrorCode.NotFound)
   })
 })
