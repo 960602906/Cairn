@@ -56,6 +56,16 @@ describe('buildSystemPrompt', () => {
     `)
   })
 
+  it('adds the ask_user section only when user questions are available', () => {
+    const withQuestions = buildSystemPrompt({ tools: true, userQuestions: true, environment })
+    expect(withQuestions).toContain('# Asking the user')
+    expect(withQuestions).toContain('call ask_user instead of ending your turn')
+    expect(withQuestions.indexOf('# Asking the user')).toBeLessThan(
+      withQuestions.indexOf('# Safety'),
+    )
+    expect(buildSystemPrompt({ tools: true, environment })).not.toContain('# Asking the user')
+  })
+
   it('places project instructions after the safety rules (M3-02)', () => {
     const prompt = buildSystemPrompt({
       tools: true,

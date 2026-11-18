@@ -74,8 +74,12 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           status: 'running' as const,
         }
         expect(storage.commands.create(record)).toEqual(record)
+        expect(storage.commands.get('cmd1')).toEqual(record)
+        expect(storage.commands.get('missing')).toBeUndefined()
         expectStorageError(() => storage.commands.create(record), StorageErrorCode.Conflict)
         expect(storage.commands.list()).toEqual([record])
+        storage.commands.create({ ...record, commandId: 'cmd0', startedAt: 50 })
+        expect(storage.commands.list().map((c) => c.commandId)).toEqual(['cmd1', 'cmd0'])
         const stopped = storage.commands.finish('cmd1', 'stopped', null, 120)
         expect(stopped).toEqual({ ...record, status: 'stopped', exitCode: null, endedAt: 120 })
         const output = {
@@ -158,6 +162,12 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.projects.list().map((p) => p.projectId)).toEqual(['b', 'a'])
       })
 
+      it('breaks ties on creation time by project id', () => {
+        storage.projects.create({ projectId: 'b', name: 'B', path: '/b' })
+        storage.projects.create({ projectId: 'a', name: 'A', path: '/a' })
+        expect(storage.projects.list().map((p) => p.projectId)).toEqual(['a', 'b'])
+      })
+
       it('rejects duplicate ids and paths', () => {
         storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work/demo' })
         expectStorageError(
@@ -203,6 +213,9 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           enableProjectSkills: false,
         })
         expect(storage.projects.list().map((p) => p.projectId)).toEqual(['p1'])
+        expect(
+          storage.projects.update('p1', { readAgentsMd: true, enableProjectSkills: true }),
+        ).toMatchObject({ readAgentsMd: true, enableProjectSkills: true })
         expectStorageError(() => storage.projects.restore('missing'), StorageErrorCode.NotFound)
       })
 
@@ -367,7 +380,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
       it('restores an archived session with unarchive', () => {
         seed()
         storage.sessions.archive('s1')
-        expect(storage.sessions.list().map((s) => s.sessionId)).toEqual([])
+        expect(storage.sessions.list()).toEqual([])
 
         clock = 500
         const restored = storage.sessions.unarchive('s1')
@@ -474,7 +487,61 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           binary: false,
           large: false,
         })
+        storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p1',
+          workspacePath: '/work/demo',
+          title: '保留',
+        })
+        storage.changes.create({
+          changeId: 'change-2',
+          sessionId: 's2',
+          path: 'b.ts',
+          kind: 'modify',
+          added: 1,
+          removed: 0,
+          hunks: [],
+        })
+        storage.permissionRules.add({
+          rule: {
+            id: 'rule-2',
+            scope: 'session',
+            effect: 'allow',
+            match: { tool: 'read_file' },
+            source: 'user',
+          },
+          sessionId: 's2',
+        })
+        storage.runSnapshots.add({
+          snapshotId: 'snapshot-2',
+          sessionId: 's2',
+          runId: 'r2',
+          tokens: 1,
+          data: {},
+        })
+        storage.changeSets.create({
+          changeSetId: 'change-set-2',
+          sessionId: 's2',
+          runId: 'r2',
+          baseCommit: 'base',
+          gitDir: '/repo/.git',
+          workspacePath: '/work/isolated-2',
+        })
+        storage.changeSets.addFile({
+          changeSetId: 'change-set-2',
+          path: 'b.ts',
+          kind: 'modified',
+          added: 1,
+          removed: 0,
+          binary: false,
+          large: false,
+        })
         storage.sessions.remove('s1')
+        expect(storage.changes.list('s2')).toHaveLength(1)
+        expect(storage.permissionRules.get('rule-2')).toBeDefined()
+        expect(storage.runSnapshots.list('r2')).toHaveLength(1)
+        expect(storage.changeSets.get('change-set-2')).toBeDefined()
+        expect(storage.changeSets.listFiles('change-set-2')).toHaveLength(1)
         expect(storage.sessions.get('s1')).toBeUndefined()
         expect(storage.events.maxSeq('s1')).toBe(0)
         expect(storage.events.readAfter('s1', 0)).toEqual([])
@@ -1104,6 +1171,17 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expectStorageError(() => storage.memories.confirm('m1'), StorageErrorCode.NotFound)
       })
 
+      it('orders memories of the same scope by creation time', () => {
+        storage.memories.propose({ memoryId: 'first', scope: 'global', content: '先' })
+        clock = 200
+        storage.memories.propose({ memoryId: 'second', scope: 'global', content: '后' })
+        expect(storage.memories.list().map((entry) => entry.memoryId)).toEqual(['first', 'second'])
+        expect(storage.memories.listAll().map((entry) => entry.memoryId)).toEqual([
+          'first',
+          'second',
+        ])
+      })
+
       it('rolls back with transactions and drops session memory with its session', () => {
         seed()
         storage.memories.propose({
@@ -1261,6 +1339,8 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           effect: 'allow',
         })
         expect(storage.mcpToolPrefs.list('m1')).toEqual([pref])
+        expect(storage.mcpToolPrefs.get('m1', 'echo')).toEqual(pref)
+        expect(storage.mcpServers.get('m1')?.serverId).toBe('m1')
         storage.mcpServers.remove('m1')
         expect(storage.mcpToolPrefs.list('m1')).toEqual([])
       })
@@ -1315,6 +1395,10 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           credentialRef: 'ref-next',
           enabled: true,
         })
+
+        const cleared = storage.mcpServers.update('m2', { url: null, credentialRef: null })
+        expect(cleared.url).toBeUndefined()
+        expect(cleared.credentialRef).toBeUndefined()
 
         const minimal = storage.mcpServers.create({
           serverId: 'm3',
@@ -1389,6 +1473,11 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         const cleared = storage.agents.clearDraft('user.reviewer')
         expect(cleared.draft).toBeUndefined()
         expect(storage.agents.setArchived('user.reviewer', true).archived).toBe(true)
+        expect(storage.agents.setArchived('user.reviewer', false).archived).toBe(false)
+
+        const bare = storage.agents.create({ agentId: 'user.bare', source: 'user' })
+        expect(bare.draft).toBeUndefined()
+        expect(storage.agents.get('user.bare')?.draft).toBeUndefined()
       })
 
       it('rejects duplicates and missing records', () => {
@@ -1406,6 +1495,17 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           () =>
             storage.agents.addVersion({ agentId: 'user.reviewer', version: 1, definition: draft }),
           StorageErrorCode.Conflict,
+        )
+        expect(storage.agents.version('missing', 1)).toBeUndefined()
+        expect(storage.agents.version('user.reviewer', 2)).toBeUndefined()
+        expectStorageError(() => storage.agents.clearDraft('missing'), StorageErrorCode.NotFound)
+        expectStorageError(
+          () => storage.agents.setArchived('missing', true),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.agents.addVersion({ agentId: 'missing', version: 1, definition: draft }),
+          StorageErrorCode.NotFound,
         )
         expectStorageError(() => storage.agents.remove('missing'), StorageErrorCode.NotFound)
       })
@@ -1458,6 +1558,11 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
 
         expect(storage.teams.clearDraft('team.review').draft).toBeUndefined()
         expect(storage.teams.setArchived('team.review', true).archived).toBe(true)
+        expect(storage.teams.setArchived('team.review', false).archived).toBe(false)
+
+        const bare = storage.teams.create({ teamId: 'team.bare' })
+        expect(bare.draft).toBeUndefined()
+        expect(storage.teams.get('team.bare')?.draft).toBeUndefined()
       })
 
       it('rejects duplicates and missing records', () => {
@@ -1474,6 +1579,17 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expectStorageError(
           () => storage.teams.addVersion({ teamId: 'team.review', version: 1, definition: draft }),
           StorageErrorCode.Conflict,
+        )
+        expect(storage.teams.version('missing', 1)).toBeUndefined()
+        expect(storage.teams.version('team.review', 2)).toBeUndefined()
+        expectStorageError(() => storage.teams.clearDraft('missing'), StorageErrorCode.NotFound)
+        expectStorageError(
+          () => storage.teams.setArchived('missing', true),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.teams.addVersion({ teamId: 'missing', version: 1, definition: draft }),
+          StorageErrorCode.NotFound,
         )
         expectStorageError(() => storage.teams.remove('missing'), StorageErrorCode.NotFound)
       })
@@ -1730,6 +1846,16 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           'src/b.ts',
         ])
         expect(storage.changeSets.listFiles('cs-1')[1]).not.toHaveProperty('baseHash')
+        storage.changeSets.addFile({
+          changeSetId: 'cs-1',
+          path: 'src/large.bin',
+          kind: 'added',
+          added: 0,
+          removed: 0,
+          binary: true,
+          large: true,
+        })
+        expect(storage.changeSets.listFiles('cs-1')[2]).toMatchObject({ large: true, binary: true })
       })
 
       it('rejects duplicate files and unknown change sets', () => {
@@ -1826,6 +1952,53 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.projects.list().map((p) => p.projectId)).toEqual(['p0'])
         expect(storage.sessions.get('s1')).toBeUndefined()
         expect(storage.events.maxSeq('s1')).toBe(0)
+      })
+
+      it('keeps agent and team versions and change-set files when a transaction fails', () => {
+        seed()
+        storage.agents.create({ agentId: 'a1', source: 'user' })
+        storage.agents.addVersion({
+          agentId: 'a1',
+          version: 1,
+          definition: { id: 'a1', name: { 'zh-CN': 'A' }, instructions: 'x' },
+        })
+        storage.teams.create({ teamId: 't1' })
+        storage.teams.addVersion({
+          teamId: 't1',
+          version: 1,
+          definition: {
+            id: 't1',
+            name: { 'zh-CN': 'T' },
+            coordinator: 'builtin.coder',
+            members: [],
+            pattern: 'delegate',
+          },
+        })
+        storage.changeSets.create({
+          changeSetId: 'cs-1',
+          sessionId: 's1',
+          runId: 'r1',
+          baseCommit: 'base',
+          gitDir: '/repo/.git',
+          workspacePath: '/work/isolated',
+        })
+        storage.changeSets.addFile({
+          changeSetId: 'cs-1',
+          path: 'a.ts',
+          kind: 'added',
+          added: 1,
+          removed: 0,
+          binary: false,
+          large: false,
+        })
+        expect(() =>
+          storage.transaction(() => {
+            throw new Error('boom')
+          }),
+        ).toThrow('boom')
+        expect(storage.agents.versions('a1')).toHaveLength(1)
+        expect(storage.teams.versions('t1')).toHaveLength(1)
+        expect(storage.changeSets.listFiles('cs-1')).toHaveLength(1)
       })
 
       it('rolls back only the inner part of a nested transaction', () => {

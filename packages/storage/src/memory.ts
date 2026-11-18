@@ -629,6 +629,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         if (!s.agents.has(input.agentId)) {
           throw new StorageError(StorageErrorCode.NotFound, { agentId: input.agentId })
         }
+        /* v8 ignore next -- create() 总会初始化版本列表，agent 存在时缺失只可能是内部状态损坏 */
         const list = s.agentVersions.get(input.agentId) ?? []
         if (list.some((item) => item.version === input.version)) {
           throw new StorageError(StorageErrorCode.Conflict, {
@@ -717,6 +718,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         if (!s.teams.has(input.teamId)) {
           throw new StorageError(StorageErrorCode.NotFound, { teamId: input.teamId })
         }
+        /* v8 ignore next -- create() 总会初始化版本列表，team 存在时缺失只可能是内部状态损坏 */
         const list = s.teamVersions.get(input.teamId) ?? []
         if (list.some((item) => item.version === input.version)) {
           throw new StorageError(StorageErrorCode.Conflict, {

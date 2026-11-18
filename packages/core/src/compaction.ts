@@ -137,6 +137,7 @@ export function splitForSummary(
   const kept = turns.slice(turns.length - keepTurns)
   const first = dropped[0]
   const last = dropped[dropped.length - 1]
+  /* v8 ignore next -- keepTurns 是保留轮数（非负）；turns.length > keepTurns 时 dropped 必非空 */
   if (!first || !last) return undefined
   return {
     earlier: [...prefix, ...dropped.flatMap((turn) => turn.messages)],

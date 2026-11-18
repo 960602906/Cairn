@@ -135,3 +135,25 @@ describe('terminateProcessTree', () => {
     expect(() => terminateProcessTree(4321, 'darwin')).not.toThrow()
   })
 })
+
+describe('createSdkClient（默认参数与关闭失败）', () => {
+  it('stdio 没有参数时也能创建传输', async () => {
+    const client = createSdkClient({
+      serverId: 'no-args',
+      name: 'No Args',
+      transport: { kind: 'stdio', command: process.execPath },
+      connectTimeoutMs: 300,
+    })
+    await expect(client.connect()).rejects.toBeTruthy()
+    await client.close().catch(() => undefined)
+  })
+
+  it('未连接时关闭不会抛错', async () => {
+    const client = createSdkClient({
+      serverId: 'never-connected',
+      name: 'Never Connected',
+      transport: { kind: 'http', url: unreachable },
+    })
+    await expect(client.close()).resolves.toBeUndefined()
+  })
+})

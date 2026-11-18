@@ -88,6 +88,15 @@ describe('buildMemoryContext', () => {
     expect(built).toEqual({ included: 0, dropped: 1, truncated: true, bytes: 0 })
   })
 
+  it('按 UTF-8 计算两字节字符与代理对', () => {
+    const built = buildMemoryContext([entry('session', 'é😀')])
+    expect(built.text).toBe('## Session\n- é😀')
+    expect(built.included).toBe(1)
+    expect(built.bytes).toBe(new TextEncoder().encode(built.text).length)
+    // 'é' 两字节 + '😀' 四字节：字节数大于 UTF-16 单元数
+    expect((built.text ?? '').length).toBeLessThan(built.bytes)
+  })
+
   it('字节数按 UTF-8 计算，中文不会按字符数少算', () => {
     const built = buildMemoryContext([entry('session', '中文')], { maxBytes: 4 })
     // "## Session\n- 中文\n" 共 21 字节：超过 4 字节上限，放不下。

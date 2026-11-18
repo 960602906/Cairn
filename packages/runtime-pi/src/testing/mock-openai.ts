@@ -36,6 +36,7 @@ export async function startMockOpenAI(responses: readonly MockResponse[]): Promi
     req.on('data', (chunk: string) => (raw += chunk))
     req.on('end', () => {
       requests.push({
+        /* v8 ignore next -- Node 的 IncomingMessage 在有效请求上总有 url */
         path: req.url ?? '',
         headers: req.headers,
         body: raw === '' ? {} : (JSON.parse(raw) as Record<string, unknown>),

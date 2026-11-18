@@ -50,16 +50,19 @@ export function teamPipelineOrder(
       dependents.set(dependency, [...(dependents.get(dependency) ?? []), stage.stage])
     }
   }
+  /* v8 ignore next -- remaining 用同一组 stages 的 id 初始化，get 一定有值 */
   const ready = stages.filter((stage) => (remaining.get(stage.stage) ?? 0) === 0)
   const ordered: TeamPipelineStage[] = []
   while (ready.length > 0) {
     const stage = ready.shift()!
     ordered.push(stage)
     for (const next of dependents.get(stage.stage) ?? []) {
+      /* v8 ignore next -- next 是同一组 stages 里的依赖方，remaining 一定有它的计数 */
       const left = (remaining.get(next) ?? 0) - 1
       remaining.set(next, left)
       if (left === 0) {
         const resolved = byId.get(next)
+        /* v8 ignore next -- next 一定来自同一组 stages，byId 必能取到 */
         if (resolved) ready.push(resolved)
       }
     }
@@ -198,11 +201,12 @@ export function teamBrief(team: TeamDraftFields): string {
     lines.push('Use the review_loop tool to run maker -> checker rounds.')
   }
   if (team.pattern === 'pipeline' && team.pipeline !== undefined) {
-    const stages = team.pipeline.map((stage) =>
-      (stage.dependsOn ?? []).length === 0
+    const stages = team.pipeline.map((stage) => {
+      const dependsOn = stage.dependsOn ?? []
+      return dependsOn.length === 0
         ? `${stage.stage}(${stage.agent})`
-        : `${stage.stage}(${stage.agent} after ${(stage.dependsOn ?? []).join('+')})`,
-    )
+        : `${stage.stage}(${stage.agent} after ${dependsOn.join('+')})`
+    })
     lines.push(`Pipeline: ${stages.join(' -> ')}`)
     lines.push('Use the run_pipeline tool to execute the stages above.')
   }

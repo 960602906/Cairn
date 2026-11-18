@@ -426,6 +426,20 @@ describe('summarizeChildTurn', () => {
     ).toBe('')
   })
 
+  it('忽略没有内容数组的回复与没有用量的上报', () => {
+    expect(
+      summarizeChildTurn([
+        { type: 'message.assistant.completed', payload: { content: 'text' }, ts: 2 },
+        { type: 'usage.reported', payload: {}, ts: 3 },
+      ]),
+    ).toEqual({
+      reply: undefined,
+      usage: { inputTokens: 0, outputTokens: 0 },
+      steps: 0,
+      durationMs: 0,
+    })
+  })
+
   it('没有起止事件时耗时为 0', () => {
     expect(summarizeChildTurn([])).toEqual({
       reply: undefined,
@@ -738,11 +752,13 @@ describe('runDelegation', () => {
       input: delegate(),
       parentRemaining: {},
       systemPrompt: 'child prompt',
+      childRunId: 'child-explicit',
     })
     expect(result).toMatchObject({
       status: 'needs_input',
       question: 'Which file?',
       summary: 'need info',
+      childRunId: 'child-explicit',
     })
     expect(events.find((event) => event.type === 'run.child.completed')).toMatchObject({
       payload: { issues: ['Which file?'] },
@@ -784,6 +800,61 @@ describe('runDelegation', () => {
     expect(events.find((event) => event.type === 'run.child.completed')).toMatchObject({
       payload: { summary: 'plain answer' },
     })
+  })
+
+  it('父运行没有剩余限额信息时不做限额判断', async () => {
+    const child = new FakeRuntime({
+      turns: [{ steps: [{ kind: 'reply', text: '{"summary":"done"}' }] }],
+    })
+    const { supervisor, parent, session } = await parentRun(new FakeRuntime({ turns: [] }))
+    const withoutLimits = new Proxy(parent, {
+      get: (target, property) => {
+        if (property === 'remainingLimits') return undefined
+        const value: unknown = Reflect.get(target, property, target)
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    }) as typeof parent
+    const result = await runDelegation({
+      sessionId: 's1',
+      supervisor,
+      parent: withoutLimits,
+      session,
+      target: { definition: definition(), context: childContext(child), workspace },
+      input: delegate(),
+      parentRemaining: {},
+      systemPrompt: 'child prompt',
+    })
+    expect(result.status).toBe('completed')
+  })
+
+  it('回填的改动集不合规时按执行失败报错', async () => {
+    const child = new FakeRuntime({
+      turns: [{ steps: [{ kind: 'reply', text: '{"summary":"done"}' }] }],
+    })
+    const { supervisor, parent, session } = await parentRun(new FakeRuntime({ turns: [] }))
+    await expect(
+      runDelegation({
+        sessionId: 's1',
+        supervisor,
+        parent,
+        session,
+        target: { definition: definition(), context: childContext(child), workspace },
+        input: delegate(),
+        parentRemaining: {},
+        systemPrompt: 'child prompt',
+        collectChanges: async () => ({
+          changeSetId: '',
+          files: [],
+          merge: 'pending_review',
+        }),
+      }),
+    ).rejects.toMatchObject({
+      name: 'ToolError',
+      code: 'tool.execution_failed',
+      message: 'Delegation produced an invalid result.',
+    })
+    expect(session.runningChildren).toBe(0)
+    expect(supervisor.listChildren('parent')).toHaveLength(1)
   })
 
   it('子运行没有模型单价时不估算费用', async () => {

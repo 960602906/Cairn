@@ -96,6 +96,7 @@ describe('resolveWorkspacePathLexical：win32', () => {
     ['.. \\x', err(PathErrorCode.Malformed)],
     // 非法字符与备用数据流
     ['a.txt:secret', err(PathErrorCode.InvalidCharacter)],
+    ['C:\\bad|name', err(PathErrorCode.InvalidCharacter)],
     ['a.txt::$DATA', err(PathErrorCode.InvalidCharacter)],
     ['a?.txt', err(PathErrorCode.InvalidCharacter)],
     ['a\u0001b', err(PathErrorCode.InvalidCharacter)],

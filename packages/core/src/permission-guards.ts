@@ -47,6 +47,7 @@ const sensitive: GuardResult = { effect: 'ask', reasonCode: GuardReasonCode.Sens
 const stricter = (a: GuardResult | undefined, b: GuardResult | undefined) => {
   if (!a) return b
   if (!b) return a
+  /* v8 ignore next -- 调用点从不让 a 为 deny 且 b 为 ask：deny 在合并后立即返回，不会再与询问合并 */
   if (a.effect !== b.effect) return b.effect === 'deny' ? b : a
   return a.overridable && !b.overridable ? b : a
 }
@@ -147,6 +148,7 @@ export function tokenize(segment: string): string[] {
 }
 
 /** 命令名：去掉路径与扩展名，小写。 */
+/* v8 ignore next -- split 至少返回一个元素，pop 不会为 undefined */
 const commandName = (token: string) =>
   (token.split(/[\\/]/).pop() ?? token).toLowerCase().replace(/\.(exe|cmd|bat|com)$/, '')
 

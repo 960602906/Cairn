@@ -440,6 +440,20 @@ describe('rebuildHistory', () => {
     expect(history[1]).toMatchObject({ role: 'user', turnId: 't3' })
   })
 
+  it('压缩覆盖的结束轮次不在历史里时保持原样', () => {
+    const ev = stream()
+    const history = rebuild([
+      ev('message.user', { messageId: 'u1', content: text('早') }, { turnId: 't1' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a1', content: text('一'), model },
+        { turnId: 't1' },
+      ),
+      ev('context.compacted', { summary: '摘要', coversTurns: ['t1', 'missing'] }),
+    ])
+    expect(roles(history)).toEqual(['user', 'assistant'])
+  })
+
   it('再次压缩时用新摘要换掉上一次的摘要', () => {
     const ev = stream()
     const history = rebuild([

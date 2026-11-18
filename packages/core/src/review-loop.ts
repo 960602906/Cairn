@@ -102,6 +102,7 @@ export async function runReviewLoop(deps: ReviewLoopDeps): Promise<ReviewLoopRes
     deps.onRound?.(result)
 
     if (verdict === 'pass') return { outcome: 'passed', rounds, summary: maker.summary }
+    /* v8 ignore next -- verdict 'revise' already assigns checker.summary when feedback is missing */
     feedback = roundFeedback ?? checker.summary
   }
 

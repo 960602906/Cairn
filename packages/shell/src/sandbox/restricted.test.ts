@@ -1,14 +1,32 @@
 import fs from 'node:fs'
 import { mkdtempSync } from 'node:fs'
+import type * as fspType from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { JobObject } from '../job-object.js'
 import type { ContainerAcl } from './appcontainer.js'
 import type { IntegrityController } from './integrity.js'
 import { createSandboxRunner } from './restricted.js'
 import { SandboxError, type SandboxAbortSignal, type SandboxPolicy } from './types.js'
 import type { NativeSpawnOptions, SandboxNativeApi } from './windows-api.js'
+
+const cleanup = vi.hoisted(() => ({ failRm: false }))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof fspType
+  const base = (actual as unknown as { default?: typeof fspType }).default ?? actual
+  return {
+    ...actual,
+    default: {
+      ...base,
+      rm: async (...args: Parameters<typeof base.rm>) => {
+        if (cleanup.failRm) throw Object.assign(new Error('busy'), { code: 'EBUSY' })
+        return base.rm(...args)
+      },
+    },
+  }
+})
 
 interface Harness {
   readonly root: string
@@ -639,6 +657,15 @@ describe('createSandboxRunner', () => {
     expect(runner.capability).toEqual(availableCapability)
   })
 
+  it('loads the native API when none is provided', async () => {
+    const runner = await createSandboxRunner({ platform: 'linux' })
+    expect(runner.capability).toMatchObject({
+      supported: false,
+      available: false,
+      reason: 'sandbox.platform_unsupported_linux',
+    })
+  })
+
   it('defaults the platform to the current process', async () => {
     const test = harness()
     const runner = await createSandboxRunner({
@@ -720,6 +747,168 @@ describe('createSandboxRunner', () => {
       })
       .catch((e: unknown) => e)
     expect(error).toMatchObject({ code: 'sandbox.setup_failed' })
+  })
+
+  it('recovers the label lease after a failed acquire and reuses it for the next command', async () => {
+    const test = harness({ exited: true })
+    const levels: { directory: string; level: string }[] = []
+    let failures = 0
+    const runner = await createSandboxRunner({
+      platform: 'win32',
+      api: test.api,
+      integrity: {
+        setLevel: async (directory, level) => {
+          levels.push({ directory, level })
+          if (directory === test.workspace && level === 'low' && failures === 0) {
+            failures += 1
+            throw new SandboxError('sandbox.setup_failed', 'icacls denied')
+          }
+        },
+      },
+      acl: acl().controller,
+      jobFactory: async () => fakeJob().job,
+      tempRoot: test.root,
+      pollIntervalMs: 1,
+      restoreIdleMs: 0,
+    })
+    const input = {
+      invocation,
+      cwd: test.workspace,
+      env: {},
+      timeoutMs: 1_000,
+    }
+    await expect(runner.run(policy('workspace-write'), input)).rejects.toMatchObject({
+      code: 'sandbox.setup_failed',
+    })
+    await expect(runner.run(policy('workspace-write'), input)).resolves.toMatchObject({
+      exitCode: 0,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // 第一次打标签失败，第二次成功；命令结束后恢复中完整性
+    expect(levels.filter((entry) => entry.directory === test.workspace)).toEqual([
+      { directory: test.workspace, level: 'low' },
+      { directory: test.workspace, level: 'low' },
+      { directory: test.workspace, level: 'medium' },
+    ])
+  })
+
+  it('cancels a pending restore when the next command starts', async () => {
+    const test = harness({ exited: true })
+    const levels: { directory: string; level: string }[] = []
+    const runner = await createSandboxRunner({
+      platform: 'win32',
+      api: test.api,
+      integrity: {
+        setLevel: async (directory, level) => {
+          levels.push({ directory, level })
+        },
+      },
+      acl: acl().controller,
+      jobFactory: async () => fakeJob().job,
+      tempRoot: test.root,
+      pollIntervalMs: 1,
+      restoreIdleMs: 60_000,
+    })
+    const input = {
+      invocation,
+      cwd: test.workspace,
+      env: {},
+      timeoutMs: 1_000,
+    }
+    await runner.run(policy('workspace-write'), input)
+    await runner.run(policy('workspace-write'), input)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // 第二条命令取消了待执行的恢复，标签保持低完整性；也没有重复打标签
+    expect(levels.filter((entry) => entry.directory === test.workspace)).toEqual([
+      { directory: test.workspace, level: 'low' },
+    ])
+  })
+
+  it('keeps the workspace low while another command is still running', async () => {
+    const workspace = harness()
+    const slow = harness({ exitAfter: 40 })
+    const levels: { directory: string; level: string }[] = []
+    const runnerFor = async (test: Harness) =>
+      createSandboxRunner({
+        platform: 'win32',
+        api: test.api,
+        integrity: {
+          setLevel: async (directory, level) => {
+            levels.push({ directory, level })
+          },
+        },
+        acl: acl().controller,
+        jobFactory: async () => fakeJob().job,
+        tempRoot: test.root,
+        pollIntervalMs: 1,
+        restoreIdleMs: 0,
+      })
+    const slowRunner = await runnerFor(slow)
+    const fastRunner = await runnerFor(workspace)
+    const input = {
+      invocation,
+      cwd: slow.workspace,
+      env: {},
+      timeoutMs: 5_000,
+    }
+    const running = slowRunner.run(policy('workspace-write'), input)
+    // 先让慢命令拿到低完整性标签，再启动快速的第二条命令
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await fastRunner.run(policy('workspace-write'), input)
+    // 快速命令结束时慢命令仍在运行：不清除标签
+    expect(levels.filter((entry) => entry.directory === slow.workspace)).toContainEqual({
+      directory: slow.workspace,
+      level: 'low',
+    })
+    expect(levels.filter((entry) => entry.directory === slow.workspace)).not.toContainEqual({
+      directory: slow.workspace,
+      level: 'medium',
+    })
+    await running
+    // 慢命令结束后才恢复
+    await expect
+      .poll(() => levels.filter((entry) => entry.directory === slow.workspace), { timeout: 2_000 })
+      .toContainEqual({ directory: slow.workspace, level: 'medium' })
+  })
+
+  it('ignores a failing workspace restore', async () => {
+    const test = harness({ exited: true })
+    const runner = await createSandboxRunner({
+      platform: 'win32',
+      api: test.api,
+      integrity: {
+        setLevel: async (directory, level) => {
+          if (directory === test.workspace && level === 'medium') {
+            throw new SandboxError('sandbox.setup_failed', 'icacls denied')
+          }
+        },
+      },
+      acl: acl().controller,
+      jobFactory: async () => fakeJob().job,
+      tempRoot: test.root,
+      pollIntervalMs: 1,
+      restoreIdleMs: 0,
+    })
+    await expect(
+      runner.run(policy('workspace-write'), {
+        invocation,
+        cwd: test.workspace,
+        env: {},
+        timeoutMs: 1_000,
+      }),
+    ).resolves.toMatchObject({ exitCode: 0 })
+    // 后台恢复失败不影响命令结果，也不产生未处理的拒绝
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+
+  it('ignores cleanup failures when removing the temporary directory', async () => {
+    const test = harness()
+    cleanup.failRm = true
+    try {
+      await expect(run(test)).resolves.toMatchObject({ exitCode: 0 })
+    } finally {
+      cleanup.failRm = false
+    }
   })
 
   it('grants read-only AppContainer access without network capabilities', async () => {

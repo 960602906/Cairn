@@ -13,6 +13,12 @@ describe('createMemoryStorage', () => {
     expect(project.createdAt).toBeLessThanOrEqual(Date.now())
   })
 
+  it('does not support database snapshots', () => {
+    const storage = createMemoryStorage()
+    expect(() => storage.backup('/unused.db')).toThrow('memory storage does not support backup')
+    storage.close()
+  })
+
   it('refuses to be used after close', () => {
     const storage = createMemoryStorage()
     storage.close()

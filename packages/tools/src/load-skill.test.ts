@@ -44,3 +44,13 @@ describe('load_skill', () => {
     await expect(tool.execute({ name: 'missing' }, {} as never)).rejects.toBeInstanceOf(ToolError)
   })
 })
+
+describe('load_skill 未截断的文件列表', () => {
+  it('文件没有截断时不显示省略说明', async () => {
+    const tool = createLoadSkillTool(() => [skill()])
+    const output = await tool.execute({ name: 'house' }, {} as never)
+    const text = output.content[0]?.type === 'text' ? output.content[0].text : ''
+    expect(text).toContain('read_file path .cairn/skills/house/refs/guide.md')
+    expect(text).not.toContain('Some extra files were omitted')
+  })
+})

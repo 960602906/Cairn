@@ -5,6 +5,7 @@ import {
   COMPACTION_KEEP_TURNS,
   OMITTED_TOOL_OUTPUT,
   compactConversation,
+  compactionEventPayload,
   coveredSeqRange,
   estimateMessagesTokens,
   historyTokenLimit,
@@ -72,6 +73,36 @@ describe('splitForSummary', () => {
 
   it('returns undefined when there is nothing older than the kept turns', () => {
     expect(splitForSummary([user('t1', 'hi', 1), assistant('yo', 2)])).toBeUndefined()
+  })
+
+  it('keeps messages before the first user turn in the summarized prefix', () => {
+    const messages = [
+      assistant('preamble', 0),
+      tool('orphan', 'output', 1),
+      user('t1', 'one', 2),
+      assistant('a', 3),
+      user('t2', 'two', 4),
+      user('t3', 'three', 5),
+    ]
+    const split = splitForSummary(messages, 2)
+    expect(split?.earlier.map((message) => message.role)).toEqual([
+      'assistant',
+      'tool',
+      'user',
+      'assistant',
+    ])
+    expect(split?.coversTurns).toEqual(['t1', 't1'])
+  })
+
+  it('没有 turnId 的用户消息用时间戳组成轮次 id', () => {
+    const messages: CanonicalMessage[] = [
+      { role: 'user', content: text('first'), ts: 5 },
+      user('t2', 'two', 6),
+      user('t3', 'three', 7),
+    ]
+    const split = splitForSummary(messages, 2)
+    expect(split?.coversTurns).toEqual(['turn-5', 'turn-5'])
+    expect(split?.earlier).toEqual([messages[0]])
   })
 })
 
@@ -179,6 +210,79 @@ describe('compactConversation', () => {
       now: 8,
     })
     expect(once).toEqual({ kind: 'none' })
+  })
+
+  it('degrades tool output without any user turn and reports a fallback span', async () => {
+    const outcome = await compactConversation({
+      messages: [tool('orphan', 'word '.repeat(800), 1)],
+      budget: tight,
+      now: 2,
+    })
+    expect(outcome.kind).toBe('degraded')
+    if (outcome.kind !== 'degraded') return
+    expect(outcome.coversTurns).toEqual(['compacted', 'compacted'])
+    expect(outcome.omittedToolCallIds).toEqual(['orphan'])
+    expect(compactionEventPayload(outcome)).toMatchObject({
+      summary: '',
+      degraded: true,
+      omittedToolCallIds: ['orphan'],
+    })
+  })
+
+  it('returns none when over budget but no tool output can be omitted', async () => {
+    const outcome = await compactConversation({
+      messages: [user('t1', 'word '.repeat(800), 1)],
+      budget: tight,
+      now: 2,
+    })
+    expect(outcome).toEqual({ kind: 'none' })
+  })
+
+  it('recovers from a rejected summarizer by omitting tool output', async () => {
+    const outcome = await compactConversation({
+      messages: [
+        user('t1', 'read', 1),
+        assistant('', 2, 'c1'),
+        tool('c1', 'word '.repeat(800), 3),
+        user('t2', 'next', 4),
+        user('t3', 'latest', 5),
+      ],
+      budget: tight,
+      summarize: async () => {
+        throw new Error('model unavailable')
+      },
+      now: 6,
+    })
+    expect(outcome.kind).toBe('degraded')
+    if (outcome.kind !== 'degraded') return
+    expect(outcome.coversTurns).toEqual(['t1', 't3'])
+    expect(outcome.omittedToolCallIds).toEqual(['c1'])
+  })
+
+  it('omits kept tool output when a successful summary is still over the limit', async () => {
+    const outcome = await compactConversation({
+      messages: [
+        user('t1', 'old', 1),
+        assistant('a', 2),
+        user('t2', 'read', 3),
+        assistant('', 4, 'c1'),
+        tool('c1', 'word '.repeat(400), 5),
+        user('t3', 'latest', 6),
+        assistant('b', 7),
+      ],
+      budget: tight,
+      summarize: async () => 'brief',
+      now: 8,
+    })
+    expect(outcome.kind).toBe('summary')
+    if (outcome.kind !== 'summary') return
+    expect(outcome.summary).toBe('brief')
+    expect(outcome.coversTurns).toEqual(['t1', 't1'])
+    expect(outcome.omittedToolCallIds).toEqual(['c1'])
+    expect(outcome.messages.find((message) => message.role === 'tool')).toMatchObject({
+      content: text(OMITTED_TOOL_OUTPUT),
+    })
+    expect(compactionEventPayload(outcome).omittedToolCallIds).toEqual(['c1'])
   })
 
   it('keeps the session brief in front of the summary and out of the replaced turns', async () => {

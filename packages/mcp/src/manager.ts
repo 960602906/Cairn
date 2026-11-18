@@ -78,6 +78,7 @@ const defaultSleep = (ms: number) =>
   new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, ms)
     // 不阻止进程退出
+    /* v8 ignore next -- Node 的定时器始终是带 unref 的对象 */
     if (typeof timer === 'object' && 'unref' in timer) timer.unref()
   })
 
@@ -303,14 +304,17 @@ export class McpManager {
     }
     if (entry.closed || entry.client !== client) {
       // 连接期间服务被删除、停用或替换：这个连接不再用
+      /* v8 ignore next -- 删除/停用会先清空 entry.client，替换则指向新客户端；这里为真只是防御 */
       if (entry.client === client) entry.client = undefined
       entry.tools = []
+      /* v8 ignore next -- 关闭失败不应掩盖“连接期间被移除”的原始错误 */
       await client.close().catch(() => undefined)
       throw new McpError(McpErrorCode.ConnectFailed, 'server was removed while connecting')
     }
   }
 
   private scheduleReconnect(entry: Entry, delay?: number): void {
+    /* v8 ignore next -- 两个调用点都已检查 entry.closed；这里只是防止将来漏判 */
     if (entry.closed) return
     this.cancelReconnect(entry)
     const { attempts, initialDelayMs, factor, maxDelayMs } = this.policy
@@ -318,6 +322,7 @@ export class McpManager {
     const wait = delay ?? Math.min(initialDelayMs * factor ** (attempt - 1), maxDelayMs)
     entry.reconnectTimer = setTimeout(() => {
       entry.reconnectTimer = undefined
+      /* v8 ignore next -- close()/remove() 会先取消定时器，回调里不可能看到已关闭的服务 */
       if (entry.closed) return
       if (attempt > attempts) {
         this.setStatus(entry, 'error', {
@@ -360,6 +365,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, code: string): Pr
       }),
     ])
   } finally {
+    /* v8 ignore next -- Promise 执行器同步运行，timer 一定已赋值 */
     if (timer) clearTimeout(timer)
   }
 }

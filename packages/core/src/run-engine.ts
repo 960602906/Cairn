@@ -605,6 +605,7 @@ export class RunEngine {
       return true
     }
     const session = this.#session
+    /* v8 ignore next -- 构造成功时已绑定会话，释放后仍保留；这里只是类型收窄 */
     if (!session) return false
     try {
       const history = session.exportHistory()
@@ -808,6 +809,7 @@ export class RunEngine {
     }
     if (turn.limitHit) {
       const limit = turn.limitHit
+      /* v8 ignore next -- limitHit 只来自 #exceededLimit，命中的限额一定有值 */
       this.#emit('turn.limit_reached', { limit, value: this.#limits[limit] ?? 0 })
       this.#fail({ code: RunEngineErrorCode.LimitReached, params: { limit } }, true)
       return
@@ -1049,6 +1051,7 @@ export class RunEngine {
       const outcome = callback({
         runId: this.#o.runId,
         ...(this.#o.parentRunId ? { parentRunId: this.#o.parentRunId } : {}),
+        /* v8 ignore next -- 模型调用只发生在轮次内，turn 一定有值 */
         ...(turn ? { turnId: turn.turnId } : {}),
         ...(step ? { stepId: step.stepId } : {}),
         agent: this.#o.agent,

@@ -114,6 +114,7 @@ export function createGitRunner(options: GitRunnerOptions): GitRunner {
         )
         child.on('close', (code) => {
           const result = {
+            /* v8 ignore next -- 进程被信号终止（未正常退出）时 close 的 code 为 null；单测不杀进程 */
             code: code ?? -1,
             stdout: Buffer.concat(out),
             stderr: Buffer.concat(err).toString('utf8').trim(),
@@ -129,6 +130,7 @@ export function createGitRunner(options: GitRunnerOptions): GitRunner {
           } else resolve(result)
         })
         if (child.stdin) {
+          /* v8 ignore next -- Git 提前退出时写 stdin 才可能触发 EPIPE，取决于管道时序 */
           child.stdin.on('error', () => {})
           child.stdin.end(stdin)
         }

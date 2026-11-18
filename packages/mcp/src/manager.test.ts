@@ -490,3 +490,92 @@ describe('McpManager 关闭失败与过期的连接', () => {
     expect(manager.get('srv-1')?.status).toBe('connected')
   })
 })
+
+describe('McpManager 防御分支', () => {
+  it('HTTP 与没有环境变量的 stdio 服务都能脱敏', async () => {
+    const manager = new McpManager({ createClient: () => fakeClient() })
+    const http = await manager.add({
+      serverId: 'http',
+      name: 'HTTP',
+      transport: { kind: 'http', url: 'http://127.0.0.1:1/mcp', headers: { 'X-Token': SECRET } },
+    })
+    expect(http.status).toBe('connected')
+    const plain = await manager.add({
+      serverId: 'plain',
+      name: 'Plain',
+      transport: { kind: 'stdio', command: 'node' },
+    })
+    expect(plain.status).toBe('connected')
+    await manager.close()
+  })
+
+  it('关闭服务器时吞掉客户端关闭失败', async () => {
+    const client = fakeClient({
+      close: vi.fn(async () => {
+        throw new Error('close failed')
+      }),
+    })
+    const manager = new McpManager({ createClient: () => client, sleep: async () => undefined })
+    await manager.add(spec)
+    await expect(manager.close()).resolves.toBeUndefined()
+    expect(client.close).toHaveBeenCalled()
+  })
+
+  it('关闭时清掉待触发的重连定时器', async () => {
+    vi.useFakeTimers()
+    try {
+      let closeListener: (() => void) | undefined
+      const connect = vi.fn(async () => undefined)
+      const manager = new McpManager({
+        createClient: () =>
+          fakeClient({
+            connect,
+            onClose(listener) {
+              closeListener = listener
+            },
+          }),
+        reconnect: { attempts: 2, initialDelayMs: 10, factor: 2, maxDelayMs: 100 },
+      })
+      await manager.add(spec)
+      closeListener?.()
+      await manager.close()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(connect).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('McpManager 连接期间服务被移除', () => {
+  it('连接失败时不再回写已移除服务的客户端', async () => {
+    let fail: (error: Error) => void = () => undefined
+    const client = fakeClient({
+      connect: vi.fn(
+        () =>
+          new Promise<void>((_, reject) => {
+            fail = reject
+          }),
+      ),
+    })
+    const manager = new McpManager({ createClient: () => client, sleep: async () => undefined })
+    const adding = manager.add(spec)
+    await Promise.resolve()
+    manager.remove('srv-1')
+    fail(new Error('spawn failed'))
+    await adding
+    expect(client.close).toHaveBeenCalled()
+    expect(manager.list()).toEqual([])
+  })
+
+  it('没有请求头的 HTTP 服务也能脱敏', async () => {
+    const manager = new McpManager({ createClient: () => fakeClient() })
+    const state = await manager.add({
+      serverId: 'http',
+      name: 'HTTP',
+      transport: { kind: 'http', url: 'http://127.0.0.1:1/mcp' },
+    })
+    expect(state.status).toBe('connected')
+    await manager.close()
+  })
+})

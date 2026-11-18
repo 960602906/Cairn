@@ -127,6 +127,16 @@ describe('ask_user tool', () => {
         ctx(async () => ({ answers: [] })),
       ),
     ).rejects.toMatchObject({ code: 'tool.invalid_input' })
+    // 整个输入不是对象时 zod 的问题路径为空。
+    await expect(
+      definition.execute(
+        null,
+        ctx(async () => ({ answers: [] })),
+      ),
+    ).rejects.toMatchObject({
+      code: 'tool.invalid_input',
+      message: expect.stringMatching(/Invalid questions:\n(?!\.)/),
+    })
   })
 
   it('tells the model when the user dismissed the questions', async () => {

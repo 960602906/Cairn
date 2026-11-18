@@ -95,6 +95,13 @@ describe('Windows', () => {
   it('默认的 taskkill：可执行文件不存在时也正常返回', async () => {
     await expect(defaultTaskKill({ SystemRoot: '/no-such-dir' })(1)).resolves.toBeUndefined()
   })
+
+  it('默认的 taskkill：兼容全大写的 SYSTEMROOT，并为 SystemRoot 缺失提供默认位置', async () => {
+    // 不存在的目录：spawn 以 error 结束，结果仍然是正常返回
+    await expect(defaultTaskKill({ SYSTEMROOT: '/no-such-dir' })(1)).resolves.toBeUndefined()
+    // 完全没有 SystemRoot：使用 C:\Windows 下的 taskkill（不存在的 pid 不影响返回）
+    await expect(defaultTaskKill({})(2_147_483_647)).resolves.toBeUndefined()
+  })
 })
 
 describe('其他平台', () => {
@@ -114,5 +121,14 @@ describe('其他平台', () => {
     expect(killGroup).toHaveBeenCalledTimes(2)
     tree.dispose()
     expect(killGroup).toHaveBeenCalledTimes(2)
+  })
+
+  it('进程组：没有注入结束函数时使用默认的 process.kill(-pid)，不存在的组被忽略', async () => {
+    const tree = await createProcessTree({ platform: 'linux' })
+    expect(tree).toMatchObject({ mechanism: 'process-group', detached: true })
+    // 不存在（或不可用）的进程组：默认实现抛出的 ESRCH/参数错误由内部忽略
+    tree.attach(2_147_483_647)
+    await expect(tree.terminate()).resolves.toBeUndefined()
+    expect(() => tree.dispose()).not.toThrow()
   })
 })

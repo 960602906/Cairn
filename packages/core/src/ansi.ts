@@ -161,6 +161,7 @@ const PALETTE: readonly (readonly [number, number, number])[] = [
 ]
 
 function rgbOf256(n: number): readonly [number, number, number] {
+  /* v8 ignore next -- nearestPaletteColor returns early for n < 16 */
   if (n < 16) return PALETTE[n]!
   if (n >= 232) {
     const v = 8 + (n - 232) * 10
@@ -252,9 +253,10 @@ function applySgr(style: MutableStyle, raw: string): void {
     else if (p === 38 || p === 48) {
       const { color, used } = extendedColor(params, i + 1)
       i += used
-      if (color === undefined) continue
-      if (p === 38) style.fg = color
-      else style.bg = color
+      if (color !== undefined) {
+        if (p === 38) style.fg = color
+        else style.bg = color
+      }
     }
   }
 }

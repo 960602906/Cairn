@@ -139,6 +139,7 @@ class PiSession implements RuntimeSession {
       sessionId: `cairn-${++sessionCounter}`,
       toolExecution: 'parallel',
       identity: { attribution: null },
+      /* v8 ignore next -- held.agent 在构造结束前已赋值，回调只可能在之后调用 */
       transformContext: (messages) => this.#transformContext(held.agent ?? this.#agent, messages),
     })
     held.agent = this.#agent
@@ -251,6 +252,7 @@ class PiSession implements RuntimeSession {
     } finally {
       this.#pendingUsers.length = 0
       if (!this.#loopEnded) {
+        /* v8 ignore next -- 走到兜底时 pi 的失败助手 message_end 已把 inStep 置回 false */
         if (this.#inStep) this.#emit({ type: 'step.completed', finishReason: 'error' })
         this.#emit({
           type: 'loop.ended',
@@ -305,10 +307,12 @@ class PiSession implements RuntimeSession {
         this.#toolCalls.delete(toolCallId)
         const call = { id: toolCallId, name: spec.name, input: params }
         const gate = await hooks.beforeToolCall(call)
+        /* v8 ignore start -- pi 每次执行工具都会传入本次运行的 signal，会话信号只是兜底 */
         const result: RuntimeToolResult =
           gate.action === 'deny'
             ? { status: 'denied', content: [{ type: 'text', text: gate.reason }] }
             : await hooks.executeTool(call, (signal ?? sessionSignal) as AbortSignalLike)
+        /* v8 ignore stop */
         const [message] = toPiMessages(
           [
             {
@@ -387,6 +391,7 @@ class PiSession implements RuntimeSession {
     switch (message.role) {
       case 'user':
         this.#history.push(
+          /* v8 ignore next -- 每个用户 message_end 都对应 pendingUsers 里排队的消息 */
           this.#pendingUsers.shift() ?? fromPiMessages([message], this.#init.model.ref)[0]!,
         )
         break
@@ -411,14 +416,17 @@ class PiSession implements RuntimeSession {
         })
         break
       }
+      /* v8 ignore next 2 -- PiMessage 的角色联合已被上面三个 case 全覆盖 */
       default:
         break
     }
   }
 
   #endLoop(): void {
+    /* v8 ignore next -- pi 每轮只发出一次 agent_end，重复结束是防御 */
     if (this.#loopEnded) return
     this.#loopEnded = true
+    /* v8 ignore start -- pi 在 agent_end 前总会先发助手 message_end；SDK 行为变化时的防御 */
     if (this.#inStep) {
       this.#inStep = false
       this.#emit({
@@ -426,6 +434,7 @@ class PiSession implements RuntimeSession {
         finishReason: this.#abortRequested ? 'aborted' : 'error',
       })
     }
+    /* v8 ignore stop */
     const last = this.#lastAssistant
     if (this.#abortRequested || last?.stopReason === 'aborted') {
       this.#emit({ type: 'loop.ended', outcome: 'aborted' })

@@ -466,3 +466,37 @@ describe('改动记录（M1-08b）', () => {
     ])
   })
 })
+
+describe('edit_file：宽松匹配与预览缓存的上限', () => {
+  it('oldText 末尾的空白行不影响宽松匹配', async () => {
+    const message = await failure(
+      edit({ path: 'src/index.ts', oldText: "console.log('hi')\n\n", newText: 'x' }),
+    )
+    expect(message).toMatchObject({
+      code: 'tool.edit_file.no_match',
+      message: expect.stringContaining('starts at line 3'),
+    })
+  })
+
+  it('只有空白的 oldText 直接按找不到处理', async () => {
+    expect(await failure(edit({ path: 'src/index.ts', oldText: '   \n  ', newText: 'x' }))).toEqual(
+      {
+        code: 'tool.edit_file.no_match',
+        message:
+          'oldText was not found in src/index.ts. Read the file again and copy the exact text, including indentation.',
+      },
+    )
+  })
+
+  it('预览指纹超过 256 个时淘汰最早的条目', async () => {
+    const tool = createWriteFileTool()
+    for (let i = 0; i < 260; i += 1) {
+      await tool.describeForApproval!(
+        { path: 'README.md', content: `v${i}\n` },
+        { ...toolContext(fx.root), toolCallId: `call-${i}` },
+      )
+    }
+    const ctx = { ...toolContext(fx.root), toolCallId: 'call-259' }
+    expect(await runTool(tool, { path: 'README.md', content: 'v259\n' }, ctx)).toMatch(/^Overwrote/)
+  })
+})

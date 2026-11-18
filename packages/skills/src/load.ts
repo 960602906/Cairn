@@ -22,11 +22,13 @@ const missing = (error: unknown) => {
 
 function unwrapSingleFolder(entries: Map<string, Uint8Array>): Map<string, Uint8Array> {
   if (entries.has('SKILL.md')) return entries
+  /* v8 ignore next -- split 的结果至少有一个元素，顶层前缀不会为 undefined */
   const prefixes = new Set([...entries.keys()].map((item) => item.split('/')[0] ?? ''))
   if (prefixes.size !== 1) {
     throw new SkillError(SkillErrorCode.Invalid, 'The skill archive must contain SKILL.md.')
   }
   const prefix = [...prefixes][0]
+  /* v8 ignore next 3 -- zip 条目都经过 requireSkillRelativePath，顶层前缀一定非空；这里只防未来改动 */
   if (!prefix) {
     throw new SkillError(SkillErrorCode.Invalid, 'The skill archive must contain SKILL.md.')
   }

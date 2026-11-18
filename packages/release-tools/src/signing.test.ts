@@ -85,6 +85,11 @@ describe('signing configuration', () => {
     expect(env['WIN_CSC_LINK']).toBe('base64-pfx')
     expect(env['WIN_CSC_KEY_PASSWORD']).toBe(config.password)
     expect(signingEnvironment(config, { PATH: 'x' })['PATH']).toBe('x')
+    expect(
+      signingEnvironment({ mode: 'none' }, { CSC_IDENTITY_AUTO_DISCOVERY: 'true' })[
+        'CSC_IDENTITY_AUTO_DISCOVERY'
+      ],
+    ).toBe('true')
     expect(signatureSummary(config)).toEqual({
       mode: 'pfx',
       publisher: 'CN=Cairn, O=Cairn, C=US',
@@ -112,6 +117,36 @@ describe('signing configuration', () => {
       '--config.win.azureSignOptions.timestampRfc3161=https://timestamp.digicert.com',
       '--config.win.azureSignOptions.fileDigest=SHA256',
     ])
+  })
+
+  it('uses fallback certificate credentials and rejects missing Azure fields', () => {
+    expect(
+      readSigningConfig({
+        ...PFX_ENV,
+        WINDOWS_CERTIFICATE: '',
+        WIN_CSC_LINK: 'fallback',
+        WINDOWS_CERTIFICATE_PASSWORD: undefined,
+        WIN_CSC_KEY_PASSWORD: 'second',
+      }),
+    ).toMatchObject({ certificate: 'fallback', password: 'second' })
+    expect(
+      readSigningConfig({
+        ...PFX_ENV,
+        WINDOWS_CERTIFICATE_PASSWORD: undefined,
+        CSC_KEY_PASSWORD: 'third',
+      }),
+    ).toMatchObject({ password: 'third' })
+    expect(() =>
+      readSigningConfig({
+        ...PFX_ENV,
+        WINDOWS_CERTIFICATE_PASSWORD: undefined,
+        WIN_CSC_KEY_PASSWORD: undefined,
+        CSC_KEY_PASSWORD: undefined,
+      }),
+    ).toThrow(/PASSWORD/)
+    expect(() => readSigningConfig({ ...AZURE_ENV, AZURE_SIGN_ENDPOINT: undefined })).toThrow(
+      /ENDPOINT/,
+    )
   })
 
   it('builds PFX signing arguments with SHA-256 and RFC 3161', () => {
@@ -156,6 +191,7 @@ describe('secret handling', () => {
     expect(
       redactSecrets('no secrets', readSigningConfig({ ...PFX_ENV, WINDOWS_CERTIFICATE: 'abc' })),
     ).toBe('no secrets')
+    expect(redactSecrets('unchanged', { mode: 'none' })).toBe('unchanged')
   })
 })
 
@@ -179,6 +215,14 @@ describe('signtool discovery', () => {
     expect(findSignTool({ platform: 'win32', env: { 'ProgramFiles(x86)': root } })).toBe(
       path.join(bin, '10.0.26100.0/x64/signtool.exe'),
     )
+    expect(
+      findSignTool({
+        platform: 'win32',
+        env: { 'ProgramFiles(x86)': root },
+        list: () => ['10.0.26100.0', '10.0.26100.0'],
+        exists: () => false,
+      }),
+    ).toBe('signtool')
     expect(findSignTool({ platform: 'win32', env: {}, exists: () => false })).toBe('signtool')
     expect(() => findSignTool({ platform: 'linux' })).toThrow(/Windows only/)
   })
@@ -257,6 +301,37 @@ describe('Authenticode verification', () => {
     expect(problems).toEqual([expect.stringContaining('cannot read Authenticode status')])
   })
 
+  it('handles absent process output and a failing status query', () => {
+    const file = path.join(temporaryDirectory(), 'Cairn.exe')
+    writeFileSync(file, 'binary')
+    const runner = vi.fn().mockReturnValueOnce({ status: 1 }).mockReturnValueOnce({ status: 1 })
+    expect(
+      verifyAuthenticode({
+        file,
+        config: readSigningConfig(PFX_ENV),
+        signTool: 'signtool',
+        runner: runner as never,
+        platform: 'win32',
+      }),
+    ).toEqual([
+      expect.stringContaining('signtool verify failed'),
+      expect.stringContaining('cannot read Authenticode status'),
+    ])
+    const stderrRunner = vi
+      .fn()
+      .mockReturnValueOnce({ status: 1, stdout: null, stderr: 'verify failed' })
+      .mockReturnValueOnce({ status: 0, stdout: null, stderr: 'query failed' })
+    expect(
+      verifyAuthenticode({
+        file,
+        config: readSigningConfig(PFX_ENV),
+        signTool: 'signtool',
+        runner: stderrRunner as never,
+        platform: 'win32',
+      }),
+    ).toEqual([expect.stringContaining('verify failed'), expect.stringContaining('query failed')])
+  })
+
   it('rejects unsigned mode, missing files and non-Windows platforms', () => {
     expect(
       verifyAuthenticode({
@@ -332,6 +407,29 @@ describe('CLI', () => {
       }),
     ).toBe(1)
     expect(error).toHaveBeenCalledWith('sign: refusing to verify an unsigned release')
+  })
+
+  it('uses default console reporters for failed and successful CLI runs', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      expect(main({ argv: [] })).toBe(1)
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('usage:'))
+      const dist = temporaryDirectory()
+      expect(
+        main({
+          argv: ['--dist', dist, '--version', '0.1.1'],
+          env: PFX_ENV,
+          platform: 'win32',
+          exists: () => true,
+          runner: successfulRunner as never,
+        }),
+      ).toBe(0)
+      expect(log).toHaveBeenCalledWith('sign: 2 artifacts verified')
+    } finally {
+      error.mockRestore()
+      log.mockRestore()
+    }
   })
 
   it('reports successful verification', () => {
