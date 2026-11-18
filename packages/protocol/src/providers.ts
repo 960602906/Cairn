@@ -93,6 +93,15 @@ export type ModelProfile = z.infer<typeof ModelProfile>
 export const BASE_URL_PATTERN = /^https?:\/\/[^\s/?#@]+(?:[/?#]\S*)?$/i
 export const BaseUrl = z.string().max(2048).regex(BASE_URL_PATTERN)
 
+/** 从提供方拉取到的模型（M2-10，`provider.models`）：能力只在接口给出时才有。 */
+export const RemoteModel = z.object({
+  id: Id.max(256),
+  displayName: z.string().max(256).optional(),
+  contextWindow: PositiveInt.optional(),
+  maxOutputTokens: PositiveInt.optional(),
+})
+export type RemoteModel = z.infer<typeof RemoteModel>
+
 export const ProviderConfig = z
   .object({
     id: z.string().regex(CONFIG_ID_PATTERN),
@@ -106,6 +115,11 @@ export const ProviderConfig = z
     /** 提供方所有模型的兼容参数；创建时取自模板，可在高级设置中修改。 */
     compat: ModelCompat.optional(),
     models: z.array(ModelProfile).max(256),
+    /**
+     * 上次从提供方拉取到的模型列表（M2-10）。只作为缓存：保存后再次打开编辑时直接显示，
+     * 不必重新拉取；其中未加入 `models` 的项以未启用状态出现。
+     */
+    catalog: z.array(RemoteModel).max(1000).optional(),
   })
   .refine((config) => new Set(config.models.map((m) => m.id)).size === config.models.length, {
     message: 'duplicate model id',
@@ -120,12 +134,3 @@ export const ProviderConfigList = z
   .refine((list) => new Set(list.map((p) => p.id)).size === list.length, {
     message: 'duplicate provider id',
   })
-
-/** 从提供方拉取到的模型（M2-10，`provider.models`）：能力只在接口给出时才有。 */
-export const RemoteModel = z.object({
-  id: Id.max(256),
-  displayName: z.string().max(256).optional(),
-  contextWindow: PositiveInt.optional(),
-  maxOutputTokens: PositiveInt.optional(),
-})
-export type RemoteModel = z.infer<typeof RemoteModel>

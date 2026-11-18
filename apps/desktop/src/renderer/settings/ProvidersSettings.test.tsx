@@ -239,13 +239,13 @@ describe('ProvidersSettings', () => {
     expect(save.disabled).toBe(false)
 
     await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
-    const detail = within(card).getByRole('complementary', { name: '模型设置' })
-    await userEvent.click(within(detail).getByRole('button', { name: '设为默认' }))
-    const context = within(detail).getByLabelText('上下文长度') as HTMLInputElement
+    await userEvent.click(within(card).getByRole('button', { name: '设为默认' }))
+    const context = within(card).getByLabelText('上下文长度') as HTMLInputElement
     await userEvent.clear(context)
     await userEvent.type(context, '200000')
     await userEvent.tab()
-    await userEvent.click(within(detail).getByRole('switch', { name: '支持工具调用' }))
+    await userEvent.click(within(card).getByRole('button', { name: '更多设置' }))
+    await userEvent.click(within(card).getByRole('switch', { name: '支持工具调用' }))
 
     await userEvent.click(within(card).getByRole('button', { name: '更换' }))
     await userEvent.click(within(card).getByRole('button', { name: '保留原来的' }))
@@ -385,9 +385,9 @@ describe('ProvidersSettings', () => {
     })
   })
 
-  it('fetches the model list, or falls back to adding models manually', async () => {
+  it('fetches the model list into one list, caches it and falls back to manual adding', async () => {
     let fail = false
-    const { request } = setup(
+    const { request, updates } = setup(
       { providers: [gateway] },
       {
         'provider.models': () =>
@@ -410,21 +410,21 @@ describe('ProvidersSettings', () => {
     expect(request).toHaveBeenCalledWith('provider.models', {
       provider: expect.objectContaining({ id: 'gw' }),
     })
-    const found = await within(card).findByRole('list', { name: '拉取到的模型' })
-    expect(within(card).getByText('找到 3 个未添加的模型')).toBeTruthy()
-    expect(within(found).getByText('200k 上下文')).toBeTruthy()
-    await userEvent.click(within(found).getByRole('button', { name: '添加 claude-y' }))
-    expect(within(card).getByText('Claude Y')).toBeTruthy()
-    await userEvent.click(within(card).getByRole('button', { name: '全部添加' }))
-    expect(within(card).getByText('找到 0 个未添加的模型')).toBeTruthy()
-    await userEvent.click(within(card).getByRole('button', { name: '收起' }))
+    // 拉取到的模型和已配置的模型合并在同一个列表里
+    expect(await within(card).findByText('Claude Y')).toBeTruthy()
+    expect(within(card).getAllByText('200k').length).toBeGreaterThan(0)
+    expect(within(card).getByText('已启用 1 / 4 个模型')).toBeTruthy()
+    // 拉取结果立刻保存为缓存，下次打开不用重新拉取
+    await waitFor(() => expect(updates.at(-1)?.providers?.[0]?.catalog).toHaveLength(4))
+    await userEvent.click(within(card).getByRole('switch', { name: '添加 Claude Y' }))
+    expect(within(card).getByText('已启用 2 / 4 个模型')).toBeTruthy()
+    await userEvent.click(within(card).getByRole('switch', { name: '添加 claude-z' }))
+    await userEvent.click(within(card).getByRole('switch', { name: '添加 claude-w' }))
+    expect(within(card).getByText('已启用 4 / 4 个模型')).toBeTruthy()
     await userEvent.click(within(card).getByRole('button', { name: /claude-w/ }))
-    await userEvent.click(
-      within(within(card).getByRole('complementary', { name: '模型设置' })).getByRole('button', {
-        name: '删除 claude-w',
-      }),
-    )
+    await userEvent.click(within(card).getByRole('button', { name: '删除 claude-w' }))
     expect(within(card).queryByText('claude-w')).toBeNull()
+    expect(within(card).getByText('已启用 3 / 3 个模型')).toBeTruthy()
 
     fail = true
     await userEvent.click(within(card).getByRole('button', { name: '拉取模型列表' }))
@@ -454,9 +454,9 @@ describe('ProvidersSettings', () => {
     await open()
     const card = await editProvider(/^DeepSeek/)
     await userEvent.click(within(card).getByRole('button', { name: '测试连接' }))
-    expect((await within(card).findByRole('status')).textContent).toContain(
-      '连接失败 · 模型服务拒绝了 Key',
-    )
+    const bar = (await within(card).findByRole('status')).textContent ?? ''
+    expect(bar).toContain('2 / 2 个模型连接失败')
+    expect(bar).toContain('模型服务拒绝了 Key')
     await userEvent.click(within(card).getByRole('button', { name: '取消' }))
     expect(within(list()).getByText('连接失败')).toBeTruthy()
     const reopened = await editProvider(/^DeepSeek/)
@@ -532,12 +532,12 @@ describe('ProvidersSettings', () => {
 
     const card = await editProvider(/^DeepSeek/)
     await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
-    const detail = within(card).getByRole('complementary', { name: '模型设置' })
-    await userEvent.type(within(detail).getByLabelText('显示名称'), 'Pro')
-    await userEvent.click(within(detail).getByRole('switch', { name: '并行工具调用' }))
-    await userEvent.click(within(detail).getByRole('switch', { name: '支持思考' }))
+    await userEvent.click(within(card).getByRole('button', { name: '更多设置' }))
+    await userEvent.type(within(card).getByLabelText('显示名称'), 'Pro')
+    await userEvent.click(within(card).getByRole('switch', { name: '并行工具调用' }))
+    await userEvent.click(within(card).getByRole('switch', { name: '支持思考' }))
     expect(within(card).getAllByText('Pro').length).toBeGreaterThan(0)
-    const context = within(detail).getByLabelText('上下文长度') as HTMLInputElement
+    const context = within(card).getByLabelText('上下文长度') as HTMLInputElement
     await userEvent.clear(context)
     await userEvent.type(context, '0{Enter}')
     expect(context.value).toBe('1000000')
@@ -562,12 +562,12 @@ describe('ProvidersSettings', () => {
     await open()
     const card = await editProvider(/^DeepSeek/)
     await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
-    const detail = within(card).getByRole('complementary', { name: '模型设置' })
+    await userEvent.click(within(card).getByRole('button', { name: '更多设置' }))
     // 不支持思考的模型没有档位可选
-    expect(within(detail).queryByRole('radiogroup', { name: '思考强度' })).toBeNull()
+    expect(within(card).queryByRole('radiogroup', { name: '思考强度' })).toBeNull()
 
-    await userEvent.click(within(detail).getByRole('switch', { name: '支持思考' }))
-    const group = within(detail).getByRole('radiogroup', { name: '思考强度' })
+    await userEvent.click(within(card).getByRole('switch', { name: '支持思考' }))
+    const group = within(card).getByRole('radiogroup', { name: '思考强度' })
     expect(within(group).getByRole('radio', { name: '高' }).getAttribute('aria-checked')).toBe(
       'true',
     )

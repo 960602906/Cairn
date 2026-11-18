@@ -120,6 +120,7 @@ interface ProviderRow {
   template: string | null
   compat: string | null
   models: string
+  catalog: string | null
   updated_at: number
 }
 
@@ -450,6 +451,9 @@ const toProvider = (row: ProviderRow): ProviderConfig => ({
   ...(row.template === null ? {} : { template: row.template }),
   ...(row.compat === null ? {} : { compat: JSON.parse(row.compat) as ProviderConfig['compat'] }),
   models: JSON.parse(row.models) as ProviderConfig['models'],
+  ...(row.catalog === null
+    ? {}
+    : { catalog: JSON.parse(row.catalog) as NonNullable<ProviderConfig['catalog']> }),
 })
 
 const toEvent = (row: EventRow): PersistedEvent =>
@@ -584,9 +588,9 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     insertProvider: db.prepare(
       `INSERT INTO provider_configs
          (provider_id, position, kind, display_name, base_url, credential_ref, template, compat,
-          models, updated_at)
+          models, catalog, updated_at)
        VALUES (@id, @position, @kind, @displayName, @baseUrl, @credentialRef, @template, @compat,
-          @models, @at)`,
+          @models, @catalog, @at)`,
     ),
     maxSeq: db.prepare<[string], { seq: number | null }>(
       'SELECT max(seq) AS seq FROM events WHERE session_id = ?',
@@ -888,6 +892,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         template: config.template ?? null,
         compat: config.compat ? JSON.stringify(config.compat) : null,
         models: JSON.stringify(config.models),
+        catalog: config.catalog ? JSON.stringify(config.catalog) : null,
         at,
       })
     })
