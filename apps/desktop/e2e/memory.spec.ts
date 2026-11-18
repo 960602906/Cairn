@@ -23,6 +23,16 @@ const REPLY = '知道了'
  * 最后一次对话请求的系统提示词（排除标题、要点、摘要等辅助请求）。
  * 记忆只影响系统提示词；对话历史里的工具参数在删除后仍会保留，不能用来判断。
  */
+/**
+ * 等新的一轮真的发出请求，再读系统提示词。
+ * 上一轮结束时状态已经是“空闲”，sendPrompt 之后立即断言会读到上一轮的请求。
+ */
+async function waitForPrompt(requests: readonly { readonly messages: unknown }[], prompt: string) {
+  await expect
+    .poll(() => JSON.stringify(chatRequests(requests).at(-1)?.messages ?? []))
+    .toContain(prompt)
+}
+
 function lastSystemPrompt(requests: readonly { readonly messages: unknown }[]): string {
   const messages = chatRequests(requests).at(-1)?.messages
   if (!Array.isArray(messages)) return ''
@@ -66,6 +76,7 @@ test('记忆：提议 → 确认 → 注入 → 删除，且不跨项目', async
     mkdirSync(otherProject, { recursive: true })
     await createSession(window, otherProject, '另一个项目')
     await sendPrompt(window, '这个项目里有什么约定')
+    await waitForPrompt(mock.requests, '这个项目里有什么约定')
     await expect(runStatus(window)).toHaveText('空闲')
     expect(lastSystemPrompt(mock.requests)).not.toContain(CONTENT)
     expect(lastSystemPrompt(mock.requests)).not.toContain('# Memory')
@@ -85,6 +96,7 @@ test('记忆：提议 → 确认 → 注入 → 删除，且不跨项目', async
     await window.getByRole('button', { name: /返回对话/ }).click()
 
     await sendPrompt(window, '删除之后再来一轮')
+    await waitForPrompt(mock.requests, '删除之后再来一轮')
     await expect(runStatus(window)).toHaveText('空闲')
     expect(lastSystemPrompt(mock.requests)).not.toContain(CONTENT)
     expect(lastSystemPrompt(mock.requests)).not.toContain('# Memory')

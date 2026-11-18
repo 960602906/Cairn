@@ -29,7 +29,7 @@ Cairn 是一个**本地优先**的编程桌面 Agent。选择本地项目目录�
 - **平台层（自研）**：运行编排、上下文、工具注册表与工具流水线、权限与审批、检查点、事件日志、存储、凭据、界面和多 Agent 协作。
 - **引擎层（可替换）**：只负责 Agent 循环（调用模型 → 解析工具调用 → 回填结果）与模型通信，经 `AgentRuntime` 接口接入；首选 pi。工具执行仍由平台完成，更换引擎不影响权限、审计和存储。
 
-> **状态**：0.1.0 unsigned beta，MIT 许可证。M0～M6 已实施；Windows 可安装分发，macOS/Linux 的打包、三平台 CI 与按平台发布流水线已落地（验收见 [M6 验收报告](docs/plan/m6-report.md)）。stable 仍被代码签名、法务审查与干净 VM 验收矩阵阻塞。首发 Windows x64，按用户安装。
+> **状态**：0.1.0 unsigned beta，MIT 许可证。M0～M7 已实施；Windows 可安装分发，macOS/Linux 的打包、三平台 CI 与按平台发布流水线已落地（验收见 [M6 验收报告](docs/plan/m6-report.md)）。M7 带来了跨会话记忆与团队模板（审查循环、流水线、试运行），验收见 [M7 验收报告](docs/plan/m7-report.md)。stable 仍被代码签名、法务审查与干净 VM 验收矩阵阻塞。首发 Windows x64，按用户安装。
 
 ## 主要特点 / Highlights
 
@@ -38,17 +38,22 @@ Cairn 是一个**本地优先**的编程桌面 Agent。选择本地项目目录�
 - **可审阅**：按文件和代码块展示 diff，可接受、撤销单个文件或单块改动，也可回到任意检查点。
 - **多模型**：支持 Anthropic、OpenAI、Gemini 三种协议格式，可配置自定义 `baseUrl`；DeepSeek 等兼容服务走 OpenAI 格式。
 - **可扩展**：内置工具、Skills、MCP 服务、自定义 Agent、委派与隔离工作区进入同一套工具注册表。
+- **记得住**：Agent 能跨会话记住项目约定与偏好，条目按本会话 / 本项目 / 所有项目严格隔离，默认由你确认后才写入，可随时编辑或删除。
+- **可协作**：常用的多 Agent 协作可以存成团队模板，支持 maker/checker 审查循环、固定阶段流水线与草稿试运行，模板和 Agent 一样有版本与发布状态。
 - **可观测**：活动中心、后台命令、运行检查器、上下文用量与脱敏诊断包。
+- **顺手**：输入框里以 `/` 唤起 20 多条内置指令，用 `/help` 查看全部指令与快捷键，切换 Agent、权限模式、查看上下文与运行状态都不用离开对话。
 
 ## 界面 / Screenshots
 
 | 对话与工具时间线 | 改动审阅 |
 | --- | --- |
 | <img src="docs/images/chat-light.png" alt="对话与工具时间线" width="100%"> | <img src="docs/images/changes-light.png" alt="按文件查看改动与 diff" width="100%"> |
+| **内置指令** | **指令与快捷键** |
+| <img src="docs/images/commands-light.png" alt="输入框里的内置 / 指令面板" width="100%"> | <img src="docs/images/help-light.png" alt="用 /help 查看全部指令与快捷键" width="100%"> |
 | **模型供应商** | **深色主题** |
-| <img src="docs/images/settings-provider-dialog-light.png" alt="配置模型供应商与模型能力" width="100%"> | <img src="docs/images/chat-dark.png" alt="深色主题下的对话" width="100%"> |
+| <img src="docs/images/settings-providers-light.png" alt="单栏的供应商与模型列表" width="100%"> | <img src="docs/images/chat-dark.png" alt="深色主题下的对话" width="100%"> |
 
-> 截图使用本地模拟模型服务生成，仅用于展示界面；实际内容取决于你配置的模型。
+> 对话截图由 DeepSeek 模型实际生成，仅用于展示界面；实际内容取决于你配置的模型。
 
 ## 架构 / Architecture
 
@@ -131,6 +136,8 @@ pnpm package:verify -- --linux
   仍待签名、公证与真机安装验收（见 [M6 验收报告](docs/plan/m6-report.md)）。
 - 首批模型：Anthropic、OpenAI、Gemini 三种协议格式；DeepSeek 等兼容服务走 OpenAI 格式。
 - 界面语言：中文、英文；主题支持浅色、深色与跟随系统。
+- 记忆与团队协作：M7 已落地，记忆按会话 / 项目 / 全局隔离，团队模板支持审查循环、流水线与
+  试运行；模板的编辑界面尚未提供，目前通过 RPC 创建与试运行（见 [M7 验收报告](docs/plan/m7-report.md) §5）。
 - stable 发布前仍需完成代码签名、法务审查与干净 VM 验收矩阵。
 
 ## 文档 / Docs
@@ -146,6 +153,7 @@ pnpm package:verify -- --linux
 - [聊天区域状态显示优化方案](docs/plan/chat-status-display.md)（已实施）
 - [M5 发布验收报告 / M5 release acceptance report](docs/plan/m5-report.md)
 - [M6 验收报告 / M6 acceptance report](docs/plan/m6-report.md)
+- [M7 验收报告 / M7 acceptance report](docs/plan/m7-report.md)
 - [更新日志 / Changelog](CHANGELOG.md)
 - [隐私说明 / Privacy notice](PRIVACY.md)
 - [参与贡献 / Contributing](CONTRIBUTING.md)
@@ -162,6 +170,6 @@ pnpm package:verify -- --linux
 - [M4 多 Agent 协作](docs/plan/m4.md)
 - [M5 发布](docs/plan/m5.md)
 - [M6 跨平台与开源](docs/plan/m6.md)（已完成，stable 阻塞项见验收报告）
-- [M7 记忆与协作](docs/plan/m7.md)（规划中）
+- [M7 记忆与协作](docs/plan/m7.md)（已完成，见验收报告）
 
 作者 / Author：960602906

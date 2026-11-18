@@ -33,9 +33,11 @@ Architecturally, Cairn = **our own agent platform** + **a pluggable agent engine
   preferred engine. Tool execution stays in the platform, so swapping engines does not affect
   permissions, auditing or storage.
 
-> **Status**: 0.1.0 unsigned beta, MIT licensed. M0–M5 are implemented and installable; M6 added
-> macOS/Linux packaging, the three-platform CI matrix and a per-platform release pipeline (see the
-> [M6 acceptance report](docs/plan/m6-report.md)). Stable is still blocked on code signing, legal
+> **Status**: 0.1.0 unsigned beta, MIT licensed. M0–M7 are implemented; Windows is installable, and
+> M6 added macOS/Linux packaging, the three-platform CI matrix and a per-platform release pipeline
+> (see the [M6 acceptance report](docs/plan/m6-report.md)). M7 added cross-session memory and team
+> templates (review loops, pipelines and draft trials); see the
+> [M7 acceptance report](docs/plan/m7-report.md). Stable is still blocked on code signing, legal
 > review and a clean-VM acceptance matrix. Windows x64 ships first, per-user install.
 
 ## Highlights
@@ -50,19 +52,30 @@ Architecturally, Cairn = **our own agent platform** + **a pluggable agent engine
   like DeepSeek work through the OpenAI-compatible format.
 - **Extensible**: built-in tools, skills, MCP servers, custom agents, delegation and isolated
   workspaces all go through one tool registry.
+- **Remembering**: agents can remember project conventions and preferences across sessions. Items
+  are strictly scoped to this session / this project / all projects, written only after you confirm
+  by default, and can be edited or deleted at any time.
+- **Collaborative**: common multi-agent setups can be saved as team templates with maker/checker
+  review loops, fixed-stage pipelines and draft trials; templates are versioned and published like
+  agents.
 - **Observable**: activity center, background commands, run inspector, context usage and redacted
   diagnostics bundles.
+- **Handy**: type `/` in the composer for 20+ built-in commands, and `/help` for the full command
+  and shortcut list; switch agents, change the permission mode or check context and run status
+  without leaving the chat.
 
 ## Screenshots
 
 | Chat and tool timeline | Change review |
 | --- | --- |
 | <img src="docs/images/chat-light.png" alt="Chat and tool timeline" width="100%"> | <img src="docs/images/changes-light.png" alt="Per-file change review and diff" width="100%"> |
+| **Built-in commands** | **Commands and shortcuts** |
+| <img src="docs/images/commands-light.png" alt="Built-in / command panel in the composer" width="100%"> | <img src="docs/images/help-light.png" alt="All commands and shortcuts from /help" width="100%"> |
 | **Model providers** | **Dark theme** |
-| <img src="docs/images/settings-provider-dialog-light.png" alt="Configure model providers and capabilities" width="100%"> | <img src="docs/images/chat-dark.png" alt="Chat in dark theme" width="100%"> |
+| <img src="docs/images/settings-providers-light.png" alt="Single-column provider and model list" width="100%"> | <img src="docs/images/chat-dark.png" alt="Chat in dark theme" width="100%"> |
 
-> Screenshots use a local mock model service for illustration only; actual content depends on the
-> model you configure.
+> The chat screenshots come from a real DeepSeek model run, for illustration only; actual content
+> depends on the model you configure.
 
 ## Architecture
 
@@ -135,6 +148,9 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
 - Initial models: Anthropic, OpenAI and Gemini protocol formats; services like DeepSeek use the
   OpenAI-compatible format.
 - UI languages: Chinese and English; light, dark and follow-system themes.
+- Memory and team collaboration landed in M7: memory is scoped to session / project / global, and
+  team templates support review loops, pipelines and trials. Templates have no editor UI yet and are
+  created and trialed over RPC (see the [M7 acceptance report](docs/plan/m7-report.md) §5).
 - Stable still needs code signing, legal review and a clean-VM acceptance matrix.
 
 ## Docs
@@ -148,6 +164,8 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
 - [Credential storage](docs/dev/credentials.md)
 - [Troubleshooting](docs/dev/troubleshooting.md)
 - [M5 release acceptance report](docs/plan/m5-report.md)
+- [M6 acceptance report](docs/plan/m6-report.md)
+- [M7 acceptance report](docs/plan/m7-report.md)
 - [Changelog](CHANGELOG.md)
 - [Privacy notice](PRIVACY.md)
 - [Contributing](CONTRIBUTING.md)
@@ -163,6 +181,7 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
 - [M4 Multi-agent collaboration](docs/plan/m4.md)
 - [M5 Release](docs/plan/m5.md)
 - [M6 Cross-platform and open source](docs/plan/m6.md)
+- [M7 Memory and collaboration](docs/plan/m7.md)
 
 ## License
 
