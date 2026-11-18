@@ -28,6 +28,11 @@ export interface HostApprovalGateOptions {
   readonly onRule: (rule: PermissionRule) => void
   /** 这个流水线所属的运行与 Agent；每次请求时读取。 */
   readonly attribution: () => HostApprovalAttribution
+  /**
+   * 无人值守运行（ADR-0018）：没有用户在场，按默认的 `deny` 处理，不等待一个不会到来的决定。
+   * 权限规则应事先放行该运行需要的工具；其余调用直接失败并把原因交给模型。
+   */
+  readonly unattended?: boolean
 }
 
 export function createHostApprovalGate(options: HostApprovalGateOptions): ApprovalGate {
@@ -35,6 +40,9 @@ export function createHostApprovalGate(options: HostApprovalGateOptions): Approv
   return {
     async request(request) {
       const { approvalId, signal } = request
+      if (options.unattended) {
+        return { decision: 'deny', feedback: 'Unattended run: approval is not available.' }
+      }
       const cancel = () => endpoint.emit('host.approval.cancelled', { approvalId })
       signal.addEventListener('abort', cancel, { once: true })
       try {

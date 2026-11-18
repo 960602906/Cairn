@@ -2144,6 +2144,99 @@ describe('agent host', () => {
   })
 })
 
+describe('auto-fix git tools (M8-03)', () => {
+  const autoFix = { repo: 'o/r', prNumber: 12 }
+  const allowExecute: PermissionRule[] = [
+    {
+      id: 'r1',
+      scope: 'global',
+      effect: 'allow',
+      match: { category: ['execute'] },
+      source: 'preset',
+    },
+  ]
+
+  it('registers git_commit and git_push for an auto-fix session and proxies them to main', async () => {
+    const h = setup(
+      {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'git_commit', input: { message: 'fix: test' } },
+              { kind: 'tool', name: 'git_push', input: {} },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      { registerTools: (registry) => registry.register(echoTool) },
+    )
+    const commits: unknown[] = []
+    h.main.handle('host.git.commit', (input) => {
+      commits.push(input)
+      return { sha: 'abc1234' }
+    })
+    h.main.handle('host.git.push', () => ({ sha: 'abc1234', branch: 'fix' }))
+
+    await h.main.request('host.init', { ...init, autoFix, permissionRules: allowExecute })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+
+    expect(commits).toEqual([{ message: 'fix: test' }])
+    const outputs = h.events
+      .filter((event) => event.type === 'tool.completed')
+      .map((event) => (event.payload as { output: unknown }).output)
+    expect(outputs).toEqual([text('Committed abc1234.'), text('Pushed abc1234 to fix.')])
+  })
+
+  it('does not register the git tools in a normal session', async () => {
+    const h = setup(
+      {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'git_push', input: {} },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      { registerTools: (registry) => registry.register(echoTool) },
+    )
+    await h.main.request('host.init', { ...init, permissionRules: allowExecute })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.not_found' },
+    })
+  })
+
+  it('denies the git tools outside auto-fix sessions even if they are registered', async () => {
+    const h = setup(
+      {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'git_push', input: {} },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      {
+        registerTools: (registry) =>
+          registry.register({ ...echoTool, name: 'git_push', category: 'execute' }),
+      },
+    )
+    await h.main.request('host.init', { ...init, permissionRules: allowExecute })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.denied' },
+    })
+  })
+})
+
 describe('fake model', () => {
   it('builds the default fake runtime', () => {
     const { runtime, model } = createFakeHostRuntime({ providerId: 'fake', modelId: 'm' })

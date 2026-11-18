@@ -55,6 +55,9 @@ describe('openSqliteStorage', () => {
         '0019_agent-teams',
         '0020_trial-team',
         '0021_provider-catalog',
+        '0022_auto-fix',
+        '0023_auto-fix-session-index',
+        '0024_auto-fix-last-comment',
       ],
     })
     storage.close()
@@ -71,6 +74,7 @@ describe('openSqliteStorage', () => {
       'agent_teams',
       'agent_versions',
       'agents',
+      'auto_fix_jobs',
       'background_commands',
       'change_set_files',
       'change_sets',
@@ -83,6 +87,7 @@ describe('openSqliteStorage', () => {
       'permission_rules',
       'projects',
       'provider_configs',
+      'pull_request_watches',
       'run_snapshots',
       'schema_meta',
       'sessions',
@@ -146,6 +151,9 @@ describe('openSqliteStorage', () => {
       '0019_agent-teams',
       '0020_trial-team',
       '0021_provider-catalog',
+      '0022_auto-fix',
+      '0023_auto-fix-session-index',
+      '0024_auto-fix-last-comment',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

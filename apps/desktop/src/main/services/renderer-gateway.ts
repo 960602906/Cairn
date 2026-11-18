@@ -38,6 +38,7 @@ import type { HubCommands } from './hub-service.js'
 import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
 import type { TrialCommands } from './trial-service.js'
+import type { AutoFixCommands } from './auto-fix-service.js'
 import type { TeamCommands } from './team-service.js'
 import type { AppInfoCommands } from './app-info-service.js'
 import { expandPromptAgents, expandPromptSkills } from './prompt-context.js'
@@ -247,6 +248,10 @@ export interface RendererGatewayOptions {
   readonly update: UpdateCommands
   /** GitHub 只读接入（M8-01）。 */
   readonly github: GithubCommands
+  /** 自动修复监视（M8-02）：监视列表、暂停与状态推送。 */
+  readonly autofix: AutoFixCommands & {
+    readonly subscribe: (listener: () => void) => () => void
+  }
   /** 运行检查器（M4-04）：运行树、上下文快照与生效设置。 */
   readonly inspect: InspectCommands
   /** 活动中心（M4-06）：跨会话快照与就地审批。 */
@@ -337,7 +342,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   const { hub, mentions } = options
   const { agents, trials, teams, diagnostics, activity, changeSets } = options
   const { sandbox } = options
-  const { update, github } = options
+  const { update, github, autofix } = options
   const backgroundCommands = options.backgroundCommands
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
@@ -349,6 +354,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
     openActivitySession: (sessionId: string) => void
     mcpStatus: (event: z.output<typeof McpStatusEvent>) => void
     updateStatus: (status: UpdateStatus) => void
+    autoFixChanged: () => void
     close: () => void
   }>()
 
@@ -372,6 +378,9 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   })
   const unsubscribeUpdate = update.subscribe((status) => {
     for (const connection of connections) connection.updateStatus(status)
+  })
+  const unsubscribeAutoFix = autofix.subscribe(() => {
+    for (const connection of connections) connection.autoFixChanged()
   })
 
   return {
@@ -592,6 +601,12 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('github.pullRequest', (params) => github.pullRequest(params))
       endpoint.handle('github.checkLog', (params) => github.checkLog(params))
 
+      endpoint.handle('autofix.status', () => autofix.status())
+      endpoint.handle('autofix.watch.add', (params) => autofix.addWatch(params))
+      endpoint.handle('autofix.watch.update', (params) => autofix.updateWatch(params))
+      endpoint.handle('autofix.watch.remove', (params) => autofix.removeWatch(params))
+      endpoint.handle('autofix.pause', (params) => autofix.setPaused(params))
+
       endpoint.handle('session.subscribe', ({ sessionId, afterSeq }) => {
         // 读取与登记在同一个同步步骤中完成，期间不会有新事件发布
         const backfill = events.readAfter(sessionId, afterSeq)
@@ -660,6 +675,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           if (closed) return
           endpoint.emit('update.status', status)
         },
+        autoFixChanged() {
+          if (closed) return
+          endpoint.emit('autofix.changed', {})
+        },
         close() {
           if (closed) return
           closed = true
@@ -691,6 +710,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       unsubscribeMcp()
       unsubscribeCommands()
       unsubscribeUpdate()
+      unsubscribeAutoFix()
       for (const connection of [...connections]) connection.close()
     },
   }

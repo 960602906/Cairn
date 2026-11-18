@@ -33,6 +33,7 @@ import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.j
 import { defineSide } from '../rpc.js'
 import { SkillCatalogEntry } from '../skills.js'
 import { McpToolExposure } from '../mcp.js'
+import { AutoFixSessionContext } from '../github.js'
 
 /**
  * 宿主构造模型所需的配置（M1-04b）：由主进程按提供方配置给出，不含 Key。
@@ -196,6 +197,11 @@ export const HostForMain = defineSide({
          * 由主进程的连接管理器执行。
          */
         mcpTools: z.array(McpToolExposure).optional(),
+        /**
+         * 自动修复会话（M8-03）：只有 `kind === 'auto-fix'` 的会话才有。宿主据此注册
+         * `git_commit` / `git_push`，其他会话看不到这两个工具。
+         */
+        autoFix: AutoFixSessionContext.optional(),
       }),
       result: z.object({}),
     },
@@ -462,6 +468,22 @@ export const MainForHost = defineSide({
     'host.snapshot': {
       params: RunSnapshotInput,
       result: z.object({}),
+    },
+    /**
+     * 在自动修复的监视工作区里提交（M8-03）。会话由连接确定；主进程校验会话种类、工作区与监视，
+     * 使用受控身份提交，不接受 amend。没有改动时以 `autofix.commit_failed` 拒绝。
+     */
+    'host.git.commit': {
+      params: z.object({ message: z.string().min(1).max(2000) }),
+      result: z.object({ sha: z.string().min(7).max(64) }),
+    },
+    /**
+     * 把自动修复的提交推送到 PR 的 head 分支（M8-03）。主进程按最新的 PR 快照决定目标分支，
+     * 拒绝强制推送、非 PR 分支与分叉历史；令牌只注入这次 Git 子进程的环境，不经过宿主。
+     */
+    'host.git.push': {
+      params: z.object({}),
+      result: z.object({ sha: z.string().min(7).max(64), branch: z.string().min(1).max(255) }),
     },
   },
   events: {},

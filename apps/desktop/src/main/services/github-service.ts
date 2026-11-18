@@ -1,8 +1,8 @@
 /**
- * GitHub 只读服务（M8-01）：连接、PR 快照与失败检查日志。
+ * GitHub 只读服务（M8-01 / M8-04）：连接、PR 快照、失败检查日志与行内评审意见。
  *
  * - 令牌经 `LocalKeyStore`（ADR-0010）加密保存，明文只在本进程的请求里使用；
- * - 不轮询、不订阅、不写回：自动修复的触发与推送在后续阶段接入；
+ * - 不轮询、不订阅、不写回：轮询由自动修复服务负责，推送经受控 Git 工具在主进程执行（M8-03）；
  * - 网络错误统一映射成 `github.*` 错误码，界面按当前语言翻译；
  * - 不在日志或错误参数里带令牌，也不把完整响应体塞进错误。
  *
@@ -12,12 +12,14 @@ import { unzipSync } from 'fflate'
 import {
   GITHUB_CREDENTIAL_REF,
   GITHUB_LOG_MAX_CHARS,
+  GITHUB_REPO_PATTERN,
   GithubCheckConclusion,
   GithubErrorCode,
   RpcError,
   type GithubCheckLog,
   type GithubCheckRun,
   type GithubPullRequest,
+  type GithubReviewComment,
   type GithubStatus,
 } from '@cairn/protocol'
 import type { LocalKeyStore } from './credential-store.js'
@@ -39,6 +41,8 @@ export interface GithubService {
   disconnect(): Promise<GithubStatus>
   pullRequest(input: { repo: string; number: number }): Promise<GithubPullRequest>
   checkLog(input: { repo: string; checkRunId: number }): Promise<GithubCheckLog>
+  /** PR 的行内评审意见，按 id 升序（M8-04）；最多最近 100 条。 */
+  reviewComments(input: { repo: string; number: number }): Promise<GithubReviewComment[]>
 }
 
 const API = 'https://api.github.com'
@@ -56,7 +60,11 @@ interface PullResponse {
   readonly html_url?: unknown
   readonly state?: unknown
   readonly draft?: unknown
-  readonly head?: { readonly ref?: unknown; readonly sha?: unknown }
+  readonly head?: {
+    readonly ref?: unknown
+    readonly sha?: unknown
+    readonly repo?: { readonly full_name?: unknown } | null
+  }
   readonly base?: { readonly ref?: unknown }
   readonly mergeable_state?: unknown
 }
@@ -75,6 +83,14 @@ interface CheckListResponse {
   readonly check_runs?: unknown
 }
 
+interface ReviewCommentResponse {
+  readonly id?: unknown
+  readonly user?: { readonly login?: unknown }
+  readonly body?: unknown
+  readonly path?: unknown
+  readonly line?: unknown
+}
+
 function text(value: unknown, max: number): string | undefined {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
@@ -91,6 +107,25 @@ function conclusion(value: unknown): GithubCheckConclusion | undefined {
   return GithubCheckConclusion.safeParse(value).success
     ? (value as GithubCheckConclusion)
     : undefined
+}
+
+function toReviewComment(raw: ReviewCommentResponse): GithubReviewComment | undefined {
+  if (typeof raw.id !== 'number' || !Number.isInteger(raw.id) || raw.id < 0) return undefined
+  const author = text(raw.user?.login, 120)
+  const body = text(raw.body, 4000)
+  if (author === undefined || body === undefined) return undefined
+  const path = text(raw.path, 1024)
+  const line =
+    typeof raw.line === 'number' && Number.isInteger(raw.line) && raw.line >= 0
+      ? raw.line
+      : undefined
+  return {
+    id: raw.id,
+    author,
+    body,
+    ...(path === undefined ? {} : { path }),
+    ...(line === undefined ? {} : { line }),
+  }
 }
 
 function toCheckRun(raw: CheckRunResponse): GithubCheckRun | undefined {
@@ -223,6 +258,11 @@ export function createGithubService(options: GithubServiceOptions): GithubServic
       const url = text(pull.html_url, 4096)
       const headRef = text(pull.head?.ref, 255)
       const headSha = text(pull.head?.sha, 64)
+      const headRepoName = text(pull.head?.repo?.full_name, 201)
+      const headRepo =
+        headRepoName !== undefined && GITHUB_REPO_PATTERN.test(headRepoName)
+          ? headRepoName
+          : undefined
       const baseRef = text(pull.base?.ref, 255)
       if (
         title === undefined ||
@@ -254,10 +294,31 @@ export function createGithubService(options: GithubServiceOptions): GithubServic
         draft: pull.draft === true,
         headRef,
         headSha,
+        ...(headRepo === undefined ? {} : { headRepo }),
         baseRef,
         ...(mergeableState === undefined ? {} : { mergeableState }),
         checks,
       }
+    },
+
+    async reviewComments({ repo, number }) {
+      const token = await tokenOrThrow()
+      // 从新到旧取最近的 100 条；只需要找出比上次更新的那些。
+      const listed = await json<unknown>(
+        await call(
+          `/repos/${repo}/pulls/${number}/comments?per_page=100&sort=created&direction=desc`,
+          token,
+        ),
+      )
+      const comments: GithubReviewComment[] = []
+      if (Array.isArray(listed)) {
+        for (const item of listed) {
+          const parsed = toReviewComment(item as ReviewCommentResponse)
+          if (parsed !== undefined) comments.push(parsed)
+        }
+      }
+      comments.sort((a, b) => a.id - b.id)
+      return comments
     },
 
     async checkLog({ repo, checkRunId }) {

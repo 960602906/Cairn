@@ -11,7 +11,13 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createGitRunner, isolatedGitEnv, openShadowRepo } from '@cairn/checkpoint'
 import { BUILTIN_CODER_ID, redact } from '@cairn/core'
-import type { McpStatusEvent, Theme } from '@cairn/protocol'
+import {
+  GITHUB_CREDENTIAL_REF,
+  RpcError,
+  type McpStatusEvent,
+  type PermissionRule,
+  type Theme,
+} from '@cairn/protocol'
 import { createJobObject, loadKernel32 } from '@cairn/shell'
 import { bundledRipgrepPath } from '@cairn/tools'
 import { MIGRATIONS, openSqliteStorage } from '@cairn/storage'
@@ -53,6 +59,7 @@ import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
 import { createGithubService } from './services/github-service.js'
+import { createAutoFixService } from './services/auto-fix-service.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createInspectService } from './services/inspect-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
@@ -417,6 +424,27 @@ const compaction = createCompactService({
   credentials,
   onError: reportError,
 })
+/**
+ * 自动修复服务在会话管理器之后创建，监督器先拿到一个可变的引用（M8-03）：宿主请求到达时它已经就绪。
+ */
+const autoFixRef: { service?: ReturnType<typeof createAutoFixService> } = {}
+/** 自动修复会话的权限预设（M8-03）：无人值守运行没有人在场审批，写入与执行改成直接放行。 */
+const autoFixPresetRules: readonly PermissionRule[] = [
+  {
+    id: 'autofix.preset.write',
+    scope: 'global',
+    effect: 'allow',
+    match: { category: ['write'] },
+    source: 'preset',
+  },
+  {
+    id: 'autofix.preset.execute',
+    scope: 'global',
+    effect: 'allow',
+    match: { category: ['execute'] },
+    source: 'preset',
+  },
+]
 const supervisor = createHostSupervisor({
   spawn: createUtilityHostSpawner({
     entry: join(import.meta.dirname, 'agent-host.js'),
@@ -440,10 +468,25 @@ const supervisor = createHostSupervisor({
   },
   // MCP 工具在设置页单独选的效果也是规则，和其他规则一起取最严格的
   resolvePermissionRules: (sessionId, agent) => {
-    const rules = [...permissions.rulesForSession(sessionId), ...mcp.permissionRules()]
+    const autoFix = storage.sessions.get(sessionId)?.kind === 'auto-fix'
+    const rules = [
+      ...permissions.rulesForSession(sessionId),
+      ...(autoFix ? autoFixPresetRules : []),
+      ...mcp.permissionRules(),
+    ]
     return trials
       ? trials.permissionRulesFor(sessionId, agent, rules)
       : agents.permissionRulesFor(agent, rules)
+  },
+  // 自动修复会话（M8-03）：宿主据此注册受控的 git_commit / git_push
+  resolveAutoFix: (sessionId) => autoFixRef.service?.contextFor(sessionId),
+  commitGit: (sessionId, input) => {
+    if (!autoFixRef.service) throw new RpcError('run.unsupported')
+    return autoFixRef.service.commit(sessionId, input)
+  },
+  pushGit: (sessionId) => {
+    if (!autoFixRef.service) throw new RpcError('run.unsupported')
+    return autoFixRef.service.push(sessionId)
   },
   // 自定义说明（M1-13b）：加入系统提示词；修改后在下次启动宿主时生效
   resolveInstructions: () => settings.instructions(),
@@ -661,6 +704,45 @@ const projects = createProjectService({
   checkoutGitBranch: (path, branch) => checkoutGitBranch(projectGit, path, branch),
 })
 projects.ensureDefault()
+/**
+ * 自动修复监视（M8-02 / M8-03）：轮询被监视的 PR，CI 失败或合并冲突时在独立工作区开一个无人值守
+ * 会话；修复会话可以用受控的 `git_commit` / `git_push` 推送到 PR 的 head 分支，下一轮回检。
+ * 工作区位于 `paths.worktrees/pr-<watchId>`。
+ */
+const autoFix = createAutoFixService({
+  storage,
+  events,
+  github,
+  sessions,
+  git: projectGit,
+  worktreesRoot: paths.worktrees,
+  githubToken: async () => (await credentials.resolve(GITHUB_CREDENTIAL_REF))?.apiKey,
+  onJobFinished: (job, watch) => {
+    if (settings.get().activityNotifications === false) return
+    if (BrowserWindow.getAllWindows().some((window) => window.isVisible() && window.isFocused())) {
+      return
+    }
+    if (!Notification.isSupported()) return
+    try {
+      const english = settings.get().locale === 'en-US'
+      const target = `${watch.repo}#${watch.prNumber}`
+      const title = english ? 'Cairn auto-fix' : 'Cairn 自动修复'
+      const body =
+        job.status === 'passed'
+          ? english
+            ? `${target} · Checks passed`
+            : `${target} · 检查已通过`
+          : english
+            ? `${target} · Gave up after ${job.attempt} attempts`
+            : `${target} · 已尝试 ${job.attempt} 次，停止自动修复`
+      new Notification({ title, body }).show()
+    } catch (error) {
+      reportError(error)
+    }
+  },
+  onError: reportError,
+})
+autoFixRef.service = autoFix
 const files = createFileService({
   storage,
   revealPath: (target) => shell.showItemInFolder(target),
@@ -743,6 +825,14 @@ const gateway = createRendererGateway({
     disconnect: () => github.disconnect(),
     pullRequest: (params) => github.pullRequest(params),
     checkLog: (params) => github.checkLog(params),
+  },
+  autofix: {
+    status: () => autoFix.status(),
+    addWatch: (params) => autoFix.addWatch(params),
+    updateWatch: (params) => autoFix.updateWatch(params),
+    removeWatch: (params) => autoFix.removeWatch(params),
+    setPaused: (params) => autoFix.setPaused(params),
+    subscribe: (listener) => autoFix.subscribe(listener),
   },
   inspect: {
     inspect: (params) =>
@@ -911,6 +1001,7 @@ app.on('before-quit', (event) => {
   compaction.stop()
   activityNotifier.close()
   gateway.close()
+  autoFix.stop()
   updates.stop()
   void mcp.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
@@ -1002,6 +1093,7 @@ void app.whenReady().then(() => {
   registerWindowControls()
   void mcp.initialize()
   updates.start()
+  autoFix.start()
   const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {

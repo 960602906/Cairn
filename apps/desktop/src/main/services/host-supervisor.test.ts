@@ -363,6 +363,55 @@ describe('host.command.start（M4-14）', () => {
   })
 })
 
+describe('自动修复的 Git 工具（M8-03）', () => {
+  const autoFix = { repo: 'o/r', prNumber: 12 }
+
+  it('passes the auto-fix context in host.init only when present', async () => {
+    const host = fakeHost()
+    const resolveAutoFix = vi.fn(() => autoFix)
+    const { supervisor } = setup(host, { resolveAutoFix })
+    await supervisor.startHost(init)
+    expect(resolveAutoFix).toHaveBeenCalledWith('s1')
+    expect(host.inits).toEqual([{ ...init, autoFix }])
+
+    const plain = fakeHost()
+    const other = setup(plain, { resolveAutoFix: () => undefined })
+    await other.supervisor.startHost(init)
+    expect(plain.inits[0]).not.toHaveProperty('autoFix')
+  })
+
+  it('handles commit and push from the host with the session id', async () => {
+    const host = fakeHost()
+    const commitGit = vi.fn(async () => ({ sha: 'abc1234' }))
+    const pushGit = vi.fn(async () => ({ sha: 'abc1234', branch: 'fix' }))
+    const { supervisor } = setup(host, { commitGit, pushGit })
+    await supervisor.startHost(init)
+
+    await expect(host.endpoint!.request('host.git.commit', { message: 'fix: x' })).resolves.toEqual(
+      { sha: 'abc1234' },
+    )
+    expect(commitGit).toHaveBeenCalledWith('s1', { message: 'fix: x' })
+
+    await expect(host.endpoint!.request('host.git.push', {})).resolves.toEqual({
+      sha: 'abc1234',
+      branch: 'fix',
+    })
+    expect(pushGit).toHaveBeenCalledWith('s1')
+  })
+
+  it('reports run.unsupported without the services', async () => {
+    const host = fakeHost()
+    const { supervisor } = setup(host)
+    await supervisor.startHost(init)
+    await expect(host.endpoint!.request('host.git.commit', { message: 'x' })).rejects.toMatchObject(
+      { code: 'run.unsupported' },
+    )
+    await expect(host.endpoint!.request('host.git.push', {})).rejects.toMatchObject({
+      code: 'run.unsupported',
+    })
+  })
+})
+
 describe('MCP 工具（M3-09）', () => {
   const tool = {
     name: 'mcp_fixture_echo',

@@ -2,7 +2,7 @@
 
 > 目标：把「PR 的 CI 失败、合并冲突、新评审意见出现时，自动开一个 Agent 会话去修、验证、
 > 提交并推送」做成 Cairn 的内置能力。
-> 状态：草案，尚未排期；涉及网络出站与自动推送，落地前需要一份 ADR。
+> 状态：M8-01～M8-04 已实现；自动推送的边界与守卫见 [ADR-0045](../adr/0045-auto-fix-push-boundary.md)。
 
 ## 1. 与 Claude Code Auto-fix 的对应关系
 
@@ -146,6 +146,7 @@ comment   → headSha + ':' + lastCommentId
 | `pr_comment` | 回复评审意见（可选，默认关闭） | 需显式开启 |
 
 `git_push` 的推送凭据只在工具内部注入，不进入 `run_command` 环境与日志。
+M8-04 只实现评审意见的读取与触发；可选的 `pr_comment` 回复在后续阶段接入。
 
 ### 4.4 存储（迁移 0022）
 
@@ -233,10 +234,13 @@ CREATE INDEX auto_fix_jobs_by_watch ON auto_fix_jobs (watch_id, created_at DESC)
 - **e2e**：假 GitHub + 一个失败检查，假模型完成一次改动 → 推送 → 检查转绿；再断言达到上限后放弃。
 - 覆盖率维持现有 ≥ 95% 门槛。
 
-## 8. 待决问题（落地前需要 ADR）
+## 8. 待决问题（后续阶段）
+
+> 推送边界已由 ADR-0045 决定；以下问题在 M8-04/M8-05 落地前仍需决定。
 
 1. 轮询的网络与隐私边界：出站域名、令牌权限、是否允许企业版 GitHub / 自建实例。
 2. `auto-fix` 会话是否默认可见；与用量统计、标题生成、记忆的交互。
 3. GitHub 工具用内置工具还是内置 MCP server（复用 ADR-0026 的通道，便于以后扩展）。
-4. 冲突修复用 merge 还是 rebase；是否允许 `--force-with-lease`（当前草案：都不允许改写已推送历史）。
+4. ~~冲突修复用 merge 还是 rebase；是否允许 `--force-with-lease`~~：已决定用 merge，不改写已推送
+   历史，也不允许 force / force-with-lease（ADR-0045、M8-04）。
 5. 多账号 / 组织仓库支持的范围。

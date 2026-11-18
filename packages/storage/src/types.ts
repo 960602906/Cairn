@@ -109,7 +109,7 @@ export interface ProjectStore {
 
 // ---------- 会话 ----------
 
-export type SessionKind = 'normal' | 'trial'
+export type SessionKind = 'normal' | 'trial' | 'auto-fix'
 
 export interface SessionRecord {
   readonly sessionId: string
@@ -718,6 +718,123 @@ export interface ChangeSetStore {
   setFileStatus(changeSetId: string, path: string, status: ChangeSetFileStatus): ChangeSetFileRecord
 }
 
+// ---------- 自动修复监视（M8-02） ----------
+
+export type AutoFixTrigger = 'ci' | 'conflict' | 'comment'
+
+export type AutoFixJobStatus =
+  | 'queued'
+  | 'running'
+  /** 修复已完成，改动留在监视工作区，等待人工检查或推送（M8-02 不自动推送）。 */
+  | 'ready'
+  /** 已推送到 PR 的 head 分支，等待新一轮检查。 */
+  | 'pushed'
+  /** 推送后的检查通过。 */
+  | 'passed'
+  | 'failed'
+  | 'gave_up'
+  | 'cancelled'
+
+export interface PullRequestWatchRecord {
+  readonly watchId: string
+  /** `owner/name`。 */
+  readonly repo: string
+  readonly prNumber: number
+  /** 本地仓库路径；监视工作区从这里取提交。 */
+  readonly projectPath: string
+  readonly triggers: readonly AutoFixTrigger[]
+  readonly maxAttempts: number
+  readonly enabled: boolean
+  /** 已经开始的修复次数。 */
+  readonly attempts: number
+  readonly lastSignature?: string
+  /** 已经处理过的最新评审意见 id；省略表示还没建立基线（只处理之后的新意见，M8-04）。 */
+  readonly lastCommentId?: number
+  readonly lastEvaluatedAt?: number
+  readonly createdAt: number
+}
+
+export interface CreateWatchInput {
+  readonly watchId: string
+  readonly repo: string
+  readonly prNumber: number
+  readonly projectPath: string
+  readonly triggers: readonly AutoFixTrigger[]
+  readonly maxAttempts: number
+}
+
+export interface UpdateWatchInput {
+  readonly enabled?: boolean
+  readonly triggers?: readonly AutoFixTrigger[]
+  readonly maxAttempts?: number
+  readonly attempts?: number
+  /** `null` 清除记录（例如手动重新评估）。 */
+  readonly lastSignature?: string | null
+  /** 已处理过的最新评审意见 id（M8-04）。 */
+  readonly lastCommentId?: number
+  readonly lastEvaluatedAt?: number
+}
+
+export interface AutoFixJobRecord {
+  readonly jobId: string
+  readonly watchId: string
+  readonly sessionId?: string
+  readonly trigger: AutoFixTrigger
+  readonly signature: string
+  readonly status: AutoFixJobStatus
+  /** 第几次修复，从 1 开始。 */
+  readonly attempt: number
+  readonly detail?: string
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+export interface CreateAutoFixJobInput {
+  readonly jobId: string
+  readonly watchId: string
+  readonly trigger: AutoFixTrigger
+  readonly signature: string
+  readonly status: AutoFixJobStatus
+  readonly attempt: number
+  readonly sessionId?: string
+}
+
+export interface UpdateAutoFixJobInput {
+  readonly status?: AutoFixJobStatus
+  readonly sessionId?: string
+  /** `null` 清除说明。 */
+  readonly detail?: string | null
+}
+
+export interface AutoFixStore {
+  readonly watches: {
+    /** 按创建顺序。 */
+    list(): PullRequestWatchRecord[]
+    get(watchId: string): PullRequestWatchRecord | undefined
+    findByPullRequest(repo: string, prNumber: number): PullRequestWatchRecord | undefined
+    /** id 或 `repo + prNumber` 重复时报 `storage.conflict`。 */
+    create(input: CreateWatchInput): PullRequestWatchRecord
+    /** 不存在时报 `storage.not_found`。 */
+    update(watchId: string, patch: UpdateWatchInput): PullRequestWatchRecord
+    /** 同时删除该监视的任务记录；不存在时报 `storage.not_found`。 */
+    remove(watchId: string): void
+  }
+  readonly jobs: {
+    create(input: CreateAutoFixJobInput): AutoFixJobRecord
+    /** 不存在时报 `storage.not_found`。 */
+    update(jobId: string, patch: UpdateAutoFixJobInput): AutoFixJobRecord
+    get(jobId: string): AutoFixJobRecord | undefined
+    /** 会话对应的任务（自动修复会话一个会话只有一个任务）。 */
+    getBySession(sessionId: string): AutoFixJobRecord | undefined
+    /** 新的在前；`watchId` 省略时返回全部。 */
+    list(options?: { readonly watchId?: string; readonly limit?: number }): AutoFixJobRecord[]
+    /** 该监视排队或运行中的任务（每个监视最多一个）。 */
+    activeForWatch(watchId: string): AutoFixJobRecord | undefined
+    /** 应用启动时把上次遗留的排队/运行中任务标记为失败，返回处理的数量。 */
+    interruptActive(): number
+  }
+}
+
 // ---------- 汇总 ----------
 
 export interface BackgroundCommandStore {
@@ -750,6 +867,8 @@ export interface Storage {
   readonly runSnapshots: RunSnapshotStore
   readonly changeSets: ChangeSetStore
   readonly commands: BackgroundCommandStore
+  /** 自动修复监视与任务（M8-02）。 */
+  readonly autoFix: AutoFixStore
   /** 在一个事务中执行 `fn`；抛错时其中的所有写入回滚，错误原样抛出。可以嵌套。 */
   transaction<T>(fn: () => T): T
   /**

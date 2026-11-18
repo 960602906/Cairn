@@ -50,10 +50,11 @@ import {
   type PromptMode,
   type RunAgentRef,
   type RunLimits,
+  type RunMode,
   type UnsequencedEvent,
   taskListIdForPlan,
 } from '@cairn/protocol'
-import type { Storage } from '@cairn/storage'
+import type { SessionRecord, Storage } from '@cairn/storage'
 import { latestBrief } from './brief.js'
 import type { SessionEventService } from './event-service.js'
 import type { HostHandle, HostInit, HostSupervisor } from './host-supervisor.js'
@@ -177,6 +178,12 @@ interface Slot {
 
 /** 可被标记为中断的运行状态。 */
 const interruptible = (run: RunView) => isActiveRunState(run.state) || run.state === 'aborting'
+
+/**
+ * 自动修复会话总是无人值守（ADR-0018）：修复在主进程里自动开始，没有人在场回答提问或即时审批。
+ */
+const runModeOf = (record: Pick<SessionRecord, 'kind'>, fallback: RunMode): RunMode =>
+  record.kind === 'auto-fix' ? 'unattended' : fallback
 
 export function createSessionManager(options: SessionManagerOptions): SessionManager {
   const { storage, events, supervisor } = options
@@ -606,7 +613,12 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         {
           ...header(sessionId, runId),
           type: 'run.created',
-          payload: { agent, model, mode: options.runDefaults.mode, limits: next.limits },
+          payload: {
+            agent,
+            model,
+            mode: runModeOf(record, options.runDefaults.mode),
+            limits: next.limits,
+          },
         },
       ])
       return {}
@@ -707,7 +719,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
             : {
                 agent,
                 model: next.model ?? record.model ?? options.runDefaults.model,
-                mode: options.runDefaults.mode,
+                mode: runModeOf(record, options.runDefaults.mode),
                 limits: next.limits,
               },
           resume: resume ? { state: root.state } : undefined,

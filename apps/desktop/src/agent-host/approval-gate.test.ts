@@ -67,6 +67,23 @@ describe('createHostApprovalGate', () => {
     expect(endpoint.emit).not.toHaveBeenCalled()
   })
 
+  it('denies immediately when the run is unattended (ADR-0018)', async () => {
+    const endpoint = { request: vi.fn(), emit: vi.fn() }
+    const gate = createHostApprovalGate({
+      endpoint: endpoint as never,
+      onRule: vi.fn(),
+      attribution: () => attribution,
+      unattended: true,
+    })
+    await expect(gate.request(request(new AbortController().signal))).resolves.toEqual({
+      decision: 'deny',
+      feedback: 'Unattended run: approval is not available.',
+    })
+    // 不等待一个不会到来的决定，也不留下审批卡片。
+    expect(endpoint.request).not.toHaveBeenCalled()
+    expect(endpoint.emit).not.toHaveBeenCalled()
+  })
+
   it('passes the generated rule on and emits a cancel when the signal aborts', async () => {
     const rule = {
       id: 'rule1',

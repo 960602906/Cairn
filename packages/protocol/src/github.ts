@@ -2,7 +2,7 @@
  * GitHub 只读接入（M8-01）：PR 状态、检查项与失败日志。
  *
  * - 令牌由主进程的凭据存储加密保存（ADR-0010），界面只能连接、断开与查询是否已连接；
- * - 这里只有读取，没有推送或评论：自动修复的写回在后续阶段单独设计；
+ * - 这里只有读取，没有推送或评论：推送经自动修复的受控 Git 工具执行（ADR-0045）；
  * - 所有字段都来自 GitHub REST 的公开结构，错误按固定错误码返回，界面自行翻译。
  */
 import { z } from 'zod'
@@ -60,6 +60,11 @@ export const GithubPullRequest = z.object({
   draft: z.boolean(),
   headRef: z.string().min(1).max(255),
   headSha: z.string().min(7).max(64),
+  /**
+   * head 所在仓库（`owner/name`）。来自 fork 的 PR 与 `repo` 不同；自动修复只推送到与 PR
+   * 同仓库的分支，防止把 fork 的同名分支推成基准仓库的同名分支（M8-03）。
+   */
+  headRepo: GithubRepo.optional(),
   baseRef: z.string().min(1).max(255),
   /** `clean` / `dirty` / `unknown` 等；仓库未启用合并检查时省略。 */
   mergeableState: z.string().max(40).optional(),
@@ -90,3 +95,112 @@ export type GithubErrorCode = (typeof GithubErrorCode)[keyof typeof GithubErrorC
 
 /** 保存令牌时使用的凭据引用。 */
 export const GITHUB_CREDENTIAL_REF = 'github'
+
+// ---------- 自动修复监视（M8-02） ----------
+
+/** 会触发修复的情况（M8-04 增加评审意见）。 */
+export const AutoFixTrigger = z.enum(['ci', 'conflict', 'comment'])
+export type AutoFixTrigger = z.infer<typeof AutoFixTrigger>
+
+/**
+ * 一条 PR 评审意见（行内评论）。只保留修复需要的部分：作者、位置、内容与 id
+ * （id 单调递增，用来判断“自上次修复后是否出现了新意见”）。
+ */
+export const GithubReviewComment = z.object({
+  id: z.number().int().nonnegative(),
+  author: z.string().min(1).max(120),
+  body: z.string().max(4000),
+  /** 相对仓库根的文件路径；整体评论可能没有。 */
+  path: z.string().min(1).max(1024).optional(),
+  line: z.number().int().nonnegative().optional(),
+})
+export type GithubReviewComment = z.infer<typeof GithubReviewComment>
+
+/**
+ * 任务状态。`ready` 表示 M8-02 的“改动留在监视工作区、等待人工处理”；
+ * `pushed` 表示修复已推送到 PR 的 head 分支，等待新一轮检查；`passed` 表示推送后检查通过。
+ */
+export const AutoFixJobStatus = z.enum([
+  'queued',
+  'running',
+  'ready',
+  'pushed',
+  'passed',
+  'failed',
+  'gave_up',
+  'cancelled',
+])
+export type AutoFixJobStatus = z.infer<typeof AutoFixJobStatus>
+
+/** 一个被监视的 PR。`attempts` 是已经开始的修复次数。 */
+export const PullRequestWatch = z.object({
+  watchId: z.string().min(1).max(64),
+  repo: GithubRepo,
+  prNumber: z.number().int().positive().max(1_000_000),
+  projectPath: z.string().min(1).max(4096),
+  triggers: z.array(AutoFixTrigger).min(1).max(3),
+  maxAttempts: z.number().int().min(1).max(10),
+  enabled: z.boolean(),
+  attempts: z.number().int().nonnegative().max(1000),
+  lastSignature: z.string().max(1000).optional(),
+  /** 已经处理过的最新评审意见 id；省略表示还没建立基线（只看之后的新意见）。 */
+  lastCommentId: z.number().int().nonnegative().optional(),
+  lastEvaluatedAt: Timestamp.optional(),
+  createdAt: Timestamp,
+})
+export type PullRequestWatch = z.infer<typeof PullRequestWatch>
+
+/** 一次修复任务。`sessionId` 在会话创建后才有。 */
+export const AutoFixJob = z.object({
+  jobId: z.string().min(1).max(64),
+  watchId: z.string().min(1).max(64),
+  sessionId: z.string().min(1).max(64).optional(),
+  trigger: AutoFixTrigger,
+  signature: z.string().min(1).max(1000),
+  status: AutoFixJobStatus,
+  attempt: z.number().int().positive().max(1000),
+  detail: z.string().max(2000).optional(),
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+})
+export type AutoFixJob = z.infer<typeof AutoFixJob>
+
+/** 自动修复设置页的一次快照：全局暂停、监视列表与最近的任务。 */
+export const AutoFixStatus = z.object({
+  paused: z.boolean(),
+  watches: z.array(PullRequestWatch).max(20),
+  jobs: z.array(AutoFixJob).max(100),
+})
+export type AutoFixStatus = z.infer<typeof AutoFixStatus>
+
+/** 监视的上限与默认尝试次数。 */
+export const AUTO_FIX_MAX_WATCHES = 20
+export const AUTO_FIX_DEFAULT_ATTEMPTS = 3
+
+// ---------- 自动修复推送（M8-03） ----------
+
+/**
+ * 自动修复会话的宿主上下文：只在 `kind === 'auto-fix'` 的会话里下发，宿主据此注册
+ * `git_commit` / `git_push` 两个受控工具。仓库与 PR 号只用于提示与校验，推送目标由主进程按
+ * 最新的 PR 快照决定。
+ */
+export const AutoFixSessionContext = z.object({
+  repo: GithubRepo,
+  prNumber: z.number().int().positive().max(1_000_000),
+})
+export type AutoFixSessionContext = z.infer<typeof AutoFixSessionContext>
+
+/** 推送/提交被守卫拒绝或失败时的错误码；工具把说明交给模型，界面按当前语言翻译。 */
+export const AutoFixGitErrorCode = {
+  /** 不是自动修复会话，或会话已没有对应的监视。 */
+  NotAutoFix: 'autofix.not_auto_fix',
+  /** 提交失败（没有改动、Git 报错）。 */
+  CommitFailed: 'autofix.commit_failed',
+  /** 没有可推送的提交。 */
+  NothingToPush: 'autofix.nothing_to_push',
+  /** 推送被分支守卫拒绝。 */
+  PushDenied: 'autofix.push_denied',
+  /** 推送失败（网络、凭据或远端拒绝）。 */
+  PushFailed: 'autofix.push_failed',
+} as const
+export type AutoFixGitErrorCode = (typeof AutoFixGitErrorCode)[keyof typeof AutoFixGitErrorCode]

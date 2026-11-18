@@ -83,7 +83,14 @@ import {
   TeamTrialSummary,
 } from '../teams.js'
 import { UpdateChannel, UpdateStatus } from '../update.js'
-import { GithubCheckLog, GithubPullRequest, GithubRepo, GithubStatus } from '../github.js'
+import {
+  AutoFixStatus,
+  AutoFixTrigger,
+  GithubCheckLog,
+  GithubPullRequest,
+  GithubRepo,
+  GithubStatus,
+} from '../github.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
 export const SessionStatus = z.enum([
@@ -1381,6 +1388,41 @@ export const MainForRenderer = defineSide({
       }),
       result: GithubCheckLog,
     },
+    /**
+     * 自动修复监视（M8-02）：全局暂停、监视列表与最近的修复任务。
+     * 监视变化时主进程推送 `autofix.changed`，界面重新读取这一项。
+     */
+    'autofix.status': {
+      params: z.object({}),
+      result: AutoFixStatus,
+    },
+    'autofix.watch.add': {
+      params: z.object({
+        repo: GithubRepo,
+        prNumber: z.number().int().positive().max(1_000_000),
+        projectPath: z.string().min(1).max(4096),
+        triggers: z.array(AutoFixTrigger).min(1).max(3).optional(),
+        maxAttempts: z.number().int().min(1).max(10).optional(),
+      }),
+      result: AutoFixStatus,
+    },
+    'autofix.watch.update': {
+      params: z.object({
+        watchId: z.string().min(1).max(64),
+        enabled: z.boolean().optional(),
+        triggers: z.array(AutoFixTrigger).min(1).max(3).optional(),
+        maxAttempts: z.number().int().min(1).max(10).optional(),
+      }),
+      result: AutoFixStatus,
+    },
+    'autofix.watch.remove': {
+      params: z.object({ watchId: z.string().min(1).max(64) }),
+      result: AutoFixStatus,
+    },
+    'autofix.pause': {
+      params: z.object({ paused: z.boolean() }),
+      result: AutoFixStatus,
+    },
   },
   events: {
     /** 实时事件推送；增量事件在主进程合并后按帧率批量推送（架构 §22）。 */
@@ -1404,6 +1446,8 @@ export const MainForRenderer = defineSide({
     /** 点击系统通知后打开对应会话（M4-06）；界面负责切到会话页。 */
     'activity.open': z.object({ sessionId: Id }),
     'command.changed': z.object({ commandId: Id }),
+    /** 自动修复的监视或任务有变化（M8-02）；界面重新读取 `autofix.status`。 */
+    'autofix.changed': z.object({}),
   },
 })
 
