@@ -119,6 +119,54 @@ describe('diagnostics sanitization', () => {
     expect(JSON.stringify(full)).not.toContain('C:\\Users\\alice')
     expect(JSON.stringify(full)).toContain('~\\\\app')
   })
+
+  it('never includes memory content, even with sensitive session content enabled (M7-05)', () => {
+    const events = [
+      {
+        seq: 1,
+        ts: 1000,
+        type: 'memory.proposed',
+        payload: {
+          memoryId: 'm1',
+          scope: 'project',
+          content: '提交信息用中文',
+          sourceAgentId: 'builtin.coder',
+        },
+      },
+      {
+        seq: 2,
+        ts: 2000,
+        type: 'memory.accepted',
+        payload: { memoryId: 'm1', scope: 'project', content: '提交信息用中文', origin: 'propose' },
+      },
+      {
+        seq: 3,
+        ts: 3000,
+        type: 'memory.deleted',
+        payload: { memoryId: 'm1', scope: 'project' },
+      },
+    ]
+
+    const clean = summarizeSessionEvents(events, false, 'C:\\Users\\alice')
+    expect(JSON.stringify(clean)).not.toContain('提交信息用中文')
+
+    const full = summarizeSessionEvents(events, true, 'C:\\Users\\alice')
+    expect(JSON.stringify(full)).not.toContain('提交信息用中文')
+    expect(full[0]).toMatchObject({
+      type: 'memory.proposed',
+      payload: {
+        memoryId: 'm1',
+        scope: 'project',
+        sourceAgentId: 'builtin.coder',
+        contentLength: 7,
+      },
+    })
+    expect(full[1]).toMatchObject({
+      type: 'memory.accepted',
+      payload: { memoryId: 'm1', origin: 'propose', contentLength: 7 },
+    })
+    expect(full[2]).toMatchObject({ type: 'memory.deleted', payload: { memoryId: 'm1' } })
+  })
 })
 
 describe('DiagnosticsService zip generation and export', () => {

@@ -218,6 +218,19 @@ function isOfficialUrl(url: string): boolean {
   }
 }
 
+/**
+ * 记忆正文属于用户数据（M7-05）：即使勾选了“包含会话正文”，诊断包里也只留长度。
+ * 记忆事件是唯一把正文直接写进事件日志的地方（`memory.proposed` / `memory.accepted`）。
+ */
+function withoutMemoryContent(event: DiagnosticSessionEvent): DiagnosticSessionEvent {
+  if (!event.type?.startsWith('memory.')) return event
+  const payload = event.payload
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return event
+  const { content, ...rest } = payload as Record<string, unknown>
+  if (typeof content !== 'string') return event
+  return { ...event, payload: { ...rest, contentLength: content.length } }
+}
+
 /** 脱敏会话事件：默认过滤掉具体消息内容与工具输入/输出中的详细数据。 */
 export function summarizeSessionEvents(
   events: readonly DiagnosticSessionEvent[],
@@ -227,7 +240,8 @@ export function summarizeSessionEvents(
   return events.map((ev) => {
     if (includeSensitiveContent) {
       // 先按字段脱敏再序列化：直接对 JSON 文本做替换会漏掉被转义的反斜杠路径。
-      return sanitizeValue(ev, userHomeDir) as Record<string, unknown>
+      // 记忆正文始终不导出，不受“包含正文”开关影响。
+      return sanitizeValue(withoutMemoryContent(ev), userHomeDir) as Record<string, unknown>
     }
 
     // 默认脱敏摘要：信封字段 + 白名单里的 payload 字段，不含正文

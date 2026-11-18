@@ -54,6 +54,7 @@ export function MemorySettings() {
         title={t('section.memory.title')}
         description={t('section.memory.description')}
       />
+      <p className="text-note text-muted">{t('section.memory.hint')}</p>
       <div className="flex items-center gap-2">
         <label className="relative min-w-0 flex-1">
           <span className="sr-only">{ts('memory.manage.search')}</span>
