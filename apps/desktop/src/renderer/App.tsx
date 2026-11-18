@@ -388,6 +388,7 @@ function Workspace() {
             notice={updateNotice}
             onNewChat={startNewChat}
             onOpenSettings={setSettings}
+            onOpenSearch={() => setSearching(true)}
             {...(pendingChangeSet === undefined
               ? {}
               : {

@@ -25,6 +25,7 @@ export interface AvailableComposerCommand {
   readonly kind: 'command' | 'skill'
   readonly skill?: string | undefined
   readonly panel?: SessionPanel | undefined
+  readonly settings?: SettingsSection | undefined
   readonly unavailable?: string | undefined
 }
 
@@ -33,10 +34,12 @@ export interface CommandActions {
   readonly active?: boolean | undefined
   /** `/files` 等打开右侧面板；没有时这些指令不出现。 */
   readonly onOpenPanel?: ((panel: SessionPanel) => void) | undefined
-  /** `/new`；没有时指令不出现。 */
+  /** `/new`、`/clear`；没有时指令不出现。 */
   readonly onNewChat?: (() => void) | undefined
-  /** `/settings`；没有时指令不出现。 */
+  /** `/settings`、`/mcp` 等；没有时这些指令不出现。 */
   readonly onOpenSettings?: ((section: SettingsSection) => void) | undefined
+  /** `/search`；没有时指令不出现。 */
+  readonly onOpenSearch?: (() => void) | undefined
   readonly modelMenuDisabled?: boolean | undefined
   /** 有可撤销的轮次；没有时 `/undo` 不可用。 */
   readonly undoAvailable?: boolean | undefined
@@ -55,8 +58,10 @@ export function availableCommands(
   const commands: AvailableComposerCommand[] = COMPOSER_COMMANDS.filter((command) => {
     if (!includeSessionCommands) return command.id === 'plan'
     if (command.panel !== undefined) return actions.onOpenPanel !== undefined
-    if (command.id === 'new') return actions.onNewChat !== undefined
-    if (command.id === 'settings') return actions.onOpenSettings !== undefined
+    if (command.id === 'new' || command.id === 'clear') return actions.onNewChat !== undefined
+    if (command.id === 'search') return actions.onOpenSearch !== undefined
+    if (command.id === 'settings' || command.settings !== undefined)
+      return actions.onOpenSettings !== undefined
     return true
   }).map((command) => ({
     ...command,
@@ -69,7 +74,9 @@ export function availableCommands(
           ? 'composer.command.unavailable.model'
           : command.id === 'undo' && actions.undoAvailable !== true
             ? 'composer.command.unavailable.undo'
-            : undefined,
+            : command.id === 'stop' && actions.active !== true
+              ? 'composer.command.unavailable.idle'
+              : undefined,
   }))
   return [
     ...commands,

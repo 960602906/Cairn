@@ -61,18 +61,25 @@ export function AgentPicker({
   sessionId,
   agent,
   disabled,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   readonly sessionId: string
   /** 会话当前运行的 Agent；还没有运行时用默认 Agent。 */
   readonly agent: AgentDefinitionRef | undefined
   /** 运行中（含等待审批）：不能切换，与主进程一致。 */
   readonly disabled: boolean
+  /** 由 `/agent` 打开；省略时选择器自己管理开关。 */
+  readonly open?: boolean | undefined
+  readonly onOpenChange?: ((open: boolean) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const agents = useSessionStore((s) => s.agents) ?? []
   const recent = useSessionStore((s) => s.recentAgents) ?? []
   const setSessionAgent = useSessionStore((s) => s.setSessionAgent)
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = onOpenChange ?? setInternalOpen
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const trigger = useRef<HTMLButtonElement>(null)
