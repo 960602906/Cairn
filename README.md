@@ -48,10 +48,12 @@ Cairn 是一个**本地优先**的编程桌面 Agent。选择本地项目目录�
 | 对话与工具时间线 | 改动审阅 |
 | --- | --- |
 | <img src="docs/images/chat-light.png" alt="对话与工具时间线" width="100%"> | <img src="docs/images/changes-light.png" alt="按文件查看改动与 diff" width="100%"> |
+| **内置指令** | **指令与快捷键** |
+| <img src="docs/images/commands-light.png" alt="输入框里的内置 / 指令面板" width="100%"> | <img src="docs/images/help-light.png" alt="用 /help 查看全部指令与快捷键" width="100%"> |
 | **模型供应商** | **深色主题** |
-| <img src="docs/images/settings-provider-dialog-light.png" alt="配置模型供应商与模型能力" width="100%"> | <img src="docs/images/chat-dark.png" alt="深色主题下的对话" width="100%"> |
+| <img src="docs/images/settings-providers-light.png" alt="单栏的供应商与模型列表" width="100%"> | <img src="docs/images/chat-dark.png" alt="深色主题下的对话" width="100%"> |
 
-> 截图使用本地模拟模型服务生成，仅用于展示界面；实际内容取决于你配置的模型。
+> 对话截图由 DeepSeek 模型实际生成，仅用于展示界面；实际内容取决于你配置的模型。
 
 ## 架构 / Architecture
 
