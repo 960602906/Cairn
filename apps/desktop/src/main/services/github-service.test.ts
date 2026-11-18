@@ -1,7 +1,12 @@
 import { strToU8, zipSync } from 'fflate'
 import { describe, expect, it, vi } from 'vitest'
 import { GITHUB_CREDENTIAL_REF, GITHUB_LOG_MAX_CHARS, RpcError } from '@cairn/protocol'
-import { createGithubService, type FetchLike, type GithubCredentials } from './github-service.js'
+import {
+  createGithubService,
+  normalizeGithubApiBase,
+  type FetchLike,
+  type GithubCredentials,
+} from './github-service.js'
 
 function memoryCredentials(
   initial?: string,
@@ -406,5 +411,31 @@ describe('github-service', () => {
     const pull = await service.pullRequest({ repo: 'o/r', number: 12 })
     expect(pull.checks.map((check) => check.name)).toEqual(['odd', 'running'])
     expect(pull.checks[0]).toEqual({ id: 7, name: 'odd', status: 'completed' })
+  })
+})
+
+describe('github API base for tests (M8-05)', () => {
+  it('accepts HTTPS and loopback HTTP only', () => {
+    expect(normalizeGithubApiBase('https://github.example.com/')).toBe('https://github.example.com')
+    expect(normalizeGithubApiBase('http://127.0.0.1:4321')).toBe('http://127.0.0.1:4321')
+    expect(normalizeGithubApiBase('http://localhost:4321')).toBe('http://localhost:4321')
+    expect(normalizeGithubApiBase('http://github.example.com')).toBeUndefined()
+    expect(normalizeGithubApiBase('https://u:p@github.example.com')).toBeUndefined()
+    expect(normalizeGithubApiBase('not a url')).toBeUndefined()
+    expect(normalizeGithubApiBase('  ')).toBeUndefined()
+  })
+
+  it('routes API calls to the configured base', async () => {
+    const fetchImpl = vi.fn<FetchLike>(async () => json(user))
+    const service = createGithubService({
+      credentials: memoryCredentials(),
+      fetchImpl,
+      apiBase: 'http://127.0.0.1:4321/',
+    })
+    await service.connect({ token: 'token' })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://127.0.0.1:4321/user',
+      expect.objectContaining({ headers: expect.anything() }),
+    )
   })
 })

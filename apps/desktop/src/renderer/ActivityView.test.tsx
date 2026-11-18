@@ -4,7 +4,12 @@ import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
-import type { ActivityListResult, AgentSummary, BackgroundCommand } from '@cairn/protocol'
+import type {
+  ActivityListResult,
+  AgentSummary,
+  AutoFixStatus,
+  BackgroundCommand,
+} from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
 import { ActivityView } from './ActivityView.js'
 import type { SessionStore } from './session-store.js'
@@ -92,10 +97,12 @@ function setup(
     commands?: readonly BackgroundCommand[]
     commandOutputs?: Record<string, unknown>
     stopCommand?: () => Promise<boolean>
+    autofix?: AutoFixStatus
   } = {},
 ) {
   const refreshActivity = vi.fn(async () => {})
   const refreshCommands = vi.fn(async () => {})
+  const refreshAutofix = vi.fn(async () => {})
   const loadCommandOutput = vi.fn(async () => undefined)
   const stopCommand = vi.fn(overrides.stopCommand ?? (async () => true))
   const resolveActivity = vi.fn(overrides.resolveActivity ?? (async () => true))
@@ -112,6 +119,8 @@ function setup(
     commands: overrides.commands ?? [],
     commandOutputs: overrides.commandOutputs ?? {},
     resolveActivity,
+    autofix: overrides.autofix,
+    refreshAutofix,
   })) as unknown as SessionStore
   render(
     <I18nextProvider i18n={i18n}>
@@ -123,6 +132,7 @@ function setup(
   return {
     refreshActivity,
     refreshCommands,
+    refreshAutofix,
     loadCommandOutput,
     stopCommand,
     resolveActivity,
@@ -144,6 +154,72 @@ describe('ActivityView', () => {
     expect(screen.getByText('npm install lodash')).toBeTruthy()
     expect(screen.getByText('npm test')).toBeTruthy()
     expect(screen.getByText('重构完成')).toBeTruthy()
+  })
+
+  it('lists auto-fix jobs and opens the repair session', async () => {
+    const user = userEvent.setup()
+    const { onOpenSession } = setup({
+      autofix: {
+        paused: false,
+        watches: [
+          {
+            watchId: 'w1',
+            repo: 'o/r',
+            prNumber: 12,
+            projectPath: '/work/demo',
+            triggers: ['ci', 'comment'],
+            maxAttempts: 3,
+            enabled: true,
+            attempts: 1,
+            createdAt: 1_700_000_000_000,
+          },
+        ],
+        jobs: [
+          {
+            jobId: 'j1',
+            watchId: 'w1',
+            sessionId: 's1',
+            trigger: 'ci',
+            signature: 'abcdef:test',
+            status: 'pushed',
+            attempt: 1,
+            createdAt: 1_700_000_000_000,
+            updatedAt: 1_700_000_004_000,
+          },
+        ],
+      },
+    })
+
+    expect(screen.getByRole('region', { name: '自动修复' })).toBeTruthy()
+    const item = screen.getByRole('article', { name: '自动修复：o/r#12' })
+    expect(within(item).getByText('已推送')).toBeTruthy()
+    expect(within(item).getByText('触发：CI 失败 · 第 1/3 次')).toBeTruthy()
+    await user.click(within(item).getByRole('button', { name: '查看' }))
+    expect(onOpenSession).toHaveBeenCalledWith('s1')
+  })
+
+  it('marks the auto-fix section while watching is paused', () => {
+    setup({
+      autofix: {
+        paused: true,
+        watches: [
+          {
+            watchId: 'w1',
+            repo: 'o/r',
+            prNumber: 12,
+            projectPath: '/work/demo',
+            triggers: ['ci'],
+            maxAttempts: 3,
+            enabled: true,
+            attempts: 0,
+            createdAt: 1_700_000_000_000,
+          },
+        ],
+        jobs: [],
+      },
+    })
+    expect(screen.getByText('监视已暂停')).toBeTruthy()
+    expect(screen.getByText('监视中还没有需要修复的任务。')).toBeTruthy()
   })
 
   it('opens the change set from a completed turn (M4-10)', async () => {

@@ -58,7 +58,7 @@ import { createCommandService } from './services/command-service.js'
 import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
-import { createGithubService } from './services/github-service.js'
+import { createGithubService, normalizeGithubApiBase } from './services/github-service.js'
 import { createAutoFixService } from './services/auto-fix-service.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createInspectService } from './services/inspect-service.js'
@@ -218,7 +218,13 @@ const credentials = createLocalKeyStore({
 })
 knownSecrets = () => credentials.knownSecrets()
 /** GitHub 只读接入（M8-01）：令牌与模型 Key 共用凭据存储，界面只能连接、断开与读取。 */
-const github = createGithubService({ credentials })
+const githubApiBase = app.isPackaged
+  ? undefined
+  : normalizeGithubApiBase(process.env['CAIRN_GITHUB_API_URL'])
+const github = createGithubService({
+  credentials,
+  ...(githubApiBase === undefined ? {} : { apiBase: githubApiBase }),
+})
 const settings = createSettingsService({
   file: paths.settings,
   storage,

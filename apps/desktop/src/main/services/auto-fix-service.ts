@@ -55,7 +55,7 @@ export interface AutoFixServiceOptions {
   readonly events: Pick<SessionEventService, 'publish' | 'subscribe'>
   /** 只用到 PR 快照、失败日志与评审意见。 */
   readonly github: Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>
-  readonly sessions: Pick<SessionManager, 'prompt'>
+  readonly sessions: Pick<SessionManager, 'prompt' | 'abort'>
   readonly git: GitRunner
   /** `<userData>/worktrees`。 */
   readonly worktreesRoot: string
@@ -270,7 +270,7 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
   /** 正在修复的会话对应的任务；只在本进程内有效，重启后由 `interruptActive` 收尾。 */
   const jobsBySession = new Map<string, string>()
   let paused = false
-  let polling = false
+  let polling: Promise<void> | undefined
   let stopped = false
   let timer: ReturnType<typeof setInterval> | undefined
 
@@ -301,6 +301,32 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
     })
     if (job.sessionId !== undefined) jobsBySession.delete(job.sessionId)
     emit()
+  }
+
+  /**
+   * 暂停时收掉所有排队与运行中的任务（M8-05）：任务记为 `cancelled`，并中止对应的修复会话。
+   * 取消不算一次尝试，也不记签名，恢复后同一份失败还能再修。
+   */
+  const cancelActiveJobs = (): number => {
+    const active = storage.autoFix.jobs
+      .list()
+      .filter((job) => job.status === 'queued' || job.status === 'running')
+    for (const job of active) {
+      storage.autoFix.jobs.update(job.jobId, { status: 'cancelled', detail: 'paused' })
+      storage.autoFix.watches.update(job.watchId, {
+        lastSignature: null,
+        attempts: Math.max(0, job.attempt - 1),
+      })
+      if (job.sessionId === undefined) continue
+      jobsBySession.delete(job.sessionId)
+      // 会话可能已经结束或即将结束；取消失败不影响暂停本身。
+      try {
+        void Promise.resolve(sessions.abort({ sessionId: job.sessionId })).catch(reportError)
+      } catch (error) {
+        reportError(error)
+      }
+    }
+    return active.length
   }
 
   /** 完成或放弃时通知用户；通知本身失败不影响任务。 */
@@ -459,6 +485,8 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
 
     try {
       const { directory: worktree, conflicts } = await prepareWorktree(watch, pull, repair.trigger)
+      // 准备期间被暂停或取消：不再开会话，任务已经是最终状态。
+      if (paused || stopped || storage.autoFix.jobs.get(jobId)?.status !== 'queued') return
       const project =
         storage.projects.getByPath(watch.projectPath) ??
         storage.projects.create({
@@ -583,24 +611,30 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
       notifyFinished(gaveUpId, 'gave_up')
       return
     }
+    // 评估期间用户暂停了监视：不再新起修复。
+    if (paused || stopped) return
     await startRepair(watch, pull, repair)
   }
 
-  const poll = async () => {
-    if (stopped || paused || polling) return
-    polling = true
-    try {
+  /** 评估一轮；已经在评估时返回同一轮的 promise（恢复监视后立即触发也不会并发读两次）。 */
+  const poll = (): Promise<void> => {
+    if (stopped || paused) return Promise.resolve()
+    if (polling !== undefined) return polling
+    const task = (async () => {
       for (const watch of storage.autoFix.watches.list()) {
-        if (!watch.enabled || stopped) continue
+        if (!watch.enabled || stopped || paused) continue
         try {
           await evaluate(watch)
         } catch (error) {
           reportError(error)
         }
       }
-    } finally {
-      polling = false
-    }
+    })()
+    const tracked = task.finally(() => {
+      if (polling === tracked) polling = undefined
+    })
+    polling = tracked
+    return tracked
   }
 
   /** 删除监视工作区；失败只记录，不影响监视本身的删除。 */
@@ -794,7 +828,9 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
 
     setPaused({ paused: next }) {
       paused = next
+      if (next) cancelActiveJobs()
       emit()
+      if (!next) void poll()
       return snapshot()
     },
 

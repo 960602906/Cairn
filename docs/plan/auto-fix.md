@@ -2,7 +2,7 @@
 
 > 目标：把「PR 的 CI 失败、合并冲突、新评审意见出现时，自动开一个 Agent 会话去修、验证、
 > 提交并推送」做成 Cairn 的内置能力。
-> 状态：M8-01～M8-04 已实现；自动推送的边界与守卫见 [ADR-0045](../adr/0045-auto-fix-push-boundary.md)。
+> 状态：M8-01～M8-05 已实现；自动推送的边界与守卫见 [ADR-0045](../adr/0045-auto-fix-push-boundary.md)。
 
 ## 1. 与 Claude Code Auto-fix 的对应关系
 
@@ -232,6 +232,10 @@ CREATE INDEX auto_fix_jobs_by_watch ON auto_fix_jobs (watch_id, created_at DESC)
 - **集成**：本地假 GitHub（HTTP 桩）覆盖快照、检查项、评论；断言失败 → 创建 job → 会话。
 - **工具**：`git_push` 在本地裸仓库上推送成功；拒绝 `--force`、拒绝非 PR 分支。
 - **e2e**：假 GitHub + 一个失败检查，假模型完成一次改动 → 推送 → 检查转绿；再断言达到上限后放弃。
+  已落地的用例（`apps/desktop/e2e/autofix.spec.ts`）覆盖设置页连接与查询、添加监视、自动开修复会话、
+  活动中心列表与跳转、暂停 / 恢复；真实的推送链路由单元测试覆盖（本地假远端无法验证 `git_push`
+  硬编码的 GitHub 目标）。假 GitHub 由 `CAIRN_GITHUB_API_URL` 指向本机回环地址，只在开发构建里生效，
+  且只接受 HTTPS 或回环 HTTP，避免把令牌发到别处。
 - 覆盖率维持现有 ≥ 95% 门槛。
 
 ## 8. 待决问题（后续阶段）
