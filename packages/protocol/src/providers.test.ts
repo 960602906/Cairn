@@ -44,6 +44,14 @@ describe('ProviderConfig', () => {
     }
   })
 
+  it('keeps the fetched model catalog as an optional list', () => {
+    expect(
+      ProviderConfig.safeParse({ ...provider, catalog: [{ id: 'deepseek-chat' }] }).success,
+    ).toBe(true)
+    expect(ProviderConfig.safeParse({ ...provider }).data).not.toHaveProperty('catalog')
+    expect(ProviderConfig.safeParse({ ...provider, catalog: [{ id: '' }] }).success).toBe(false)
+  })
+
   it('requires positive limits', () => {
     expect(ModelProfile.safeParse({ ...model, contextWindow: 0 }).success).toBe(false)
     expect(ModelProfile.safeParse({ ...model, maxOutputTokens: 1.5 }).success).toBe(false)

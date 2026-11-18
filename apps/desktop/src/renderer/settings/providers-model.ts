@@ -7,7 +7,6 @@ import {
   CONFIG_ID_PATTERN,
   type ModelCompat,
   type ModelProfile,
-  type ModelRef,
   type ProviderConfig,
   type ProviderKind,
   type RemoteModel,
@@ -101,7 +100,7 @@ export function profileFrom(remote: RemoteModel, templateId: string | undefined)
   }
 }
 
-/** 编辑中的供应商。 */
+/** 编辑中的供应商。`catalog` 是上次拉取到的模型列表，只作为列表的一部分展示与缓存。 */
 export interface ProviderDraft {
   readonly kind: ProviderKind
   readonly displayName: string
@@ -109,6 +108,7 @@ export interface ProviderDraft {
   readonly template?: string | undefined
   readonly compat?: ModelCompat | undefined
   readonly models: readonly ModelProfile[]
+  readonly catalog?: readonly RemoteModel[] | undefined
 }
 
 export function draftOf(provider: ProviderConfig): ProviderDraft {
@@ -119,6 +119,7 @@ export function draftOf(provider: ProviderConfig): ProviderDraft {
     template: provider.template,
     compat: provider.compat,
     models: provider.models,
+    catalog: provider.catalog,
   }
 }
 
@@ -207,21 +208,41 @@ export function configOf(
     ...(draft.template ? { template: draft.template } : {}),
     ...(draft.kind === 'openai' && !isEmpty(draft.compat) ? { compat: draft.compat } : {}),
     models: [...draft.models],
+    ...(draft.catalog && draft.catalog.length > 0 ? { catalog: [...draft.catalog] } : {}),
   }
 }
 
-/** 测试连接用的模型：默认模型在这个供应商中且启用时用它，否则用第一个启用的模型。 */
-export function testModelOf(
-  providerId: string,
-  models: readonly ModelProfile[],
-  defaultModel: ModelRef | undefined,
-): string | undefined {
-  const enabled = models.filter((m) => m.enabled !== false)
-  if (
-    defaultModel?.providerId === providerId &&
-    enabled.some((m) => m.id === defaultModel.modelId)
-  ) {
-    return defaultModel.modelId
-  }
-  return enabled[0]?.id
+/** 列表中的一行：已配置的模型带 `profile`，只是拉取到、还没加入的没有。 */
+export interface ModelRow {
+  readonly id: string
+  readonly displayName?: string | undefined
+  readonly contextWindow?: number | undefined
+  readonly profile?: ModelProfile | undefined
 }
+
+/** 把已配置的模型和拉取到的模型合并成一个列表：已配置的在前，其余按拉取顺序。 */
+export function modelRowsOf(
+  models: readonly ModelProfile[],
+  catalog: readonly RemoteModel[] | undefined,
+): readonly ModelRow[] {
+  const seen = new Set(models.map((model) => model.id))
+  return [
+    ...models.map((model) => ({
+      id: model.id,
+      displayName: model.displayName,
+      contextWindow: model.contextWindow,
+      profile: model,
+    })),
+    ...(catalog ?? [])
+      .filter((model) => !seen.has(model.id))
+      .map((model) => ({
+        id: model.id,
+        displayName: model.displayName,
+        contextWindow: model.contextWindow,
+      })),
+  ]
+}
+
+/** 本次要测试的模型：已启用（省略 `enabled` 表示启用）的那些。 */
+export const enabledModelIdsOf = (models: readonly ModelProfile[]): readonly string[] =>
+  models.filter((model) => model.enabled !== false).map((model) => model.id)

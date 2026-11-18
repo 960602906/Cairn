@@ -19,6 +19,7 @@ import { sessionThinkingLevel } from './0017-session-thinking-level.js'
 import { memoryEntries } from './0018-memory-entries.js'
 import { agentTeams } from './0019-agent-teams.js'
 import { trialTeam } from './0020-trial-team.js'
+import { providerCatalog } from './0021-provider-catalog.js'
 
 /** 应用的全部迁移，按编号排列。新增迁移时追加到末尾。 */
 export const MIGRATIONS: readonly Migration[] = [
@@ -42,4 +43,5 @@ export const MIGRATIONS: readonly Migration[] = [
   memoryEntries,
   agentTeams,
   trialTeam,
+  providerCatalog,
 ]

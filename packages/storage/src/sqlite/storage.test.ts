@@ -54,6 +54,7 @@ describe('openSqliteStorage', () => {
         '0018_memory-entries',
         '0019_agent-teams',
         '0020_trial-team',
+        '0021_provider-catalog',
       ],
     })
     storage.close()
@@ -144,6 +145,7 @@ describe('openSqliteStorage', () => {
       '0018_memory-entries',
       '0019_agent-teams',
       '0020_trial-team',
+      '0021_provider-catalog',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

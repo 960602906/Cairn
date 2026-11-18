@@ -5,8 +5,11 @@
  * - 每个标签下是供应商卡片；点名称或编辑按钮打开弹窗，删除也在卡片上。
  * - 添加时按接口格式选择要接入的服务：官方服务用模板预填地址、模型与兼容参数，
  *   自定义 / 第三方中转得到空白草稿；选中即进入编辑弹窗。
- * - 弹窗里：名称、服务、Base URL、Key、测试连接；模型列表（搜索、拉取、手动添加、
- *   批量启停、逐个开关）与右侧模型详情（上下文、输出上限、能力、默认模型）双栏。
+ * - 弹窗保持单栏：名称、服务、Base URL、Key、测试连接，然后是一个模型列表。
+ *   拉取到的模型与已配置的模型合并在同一个列表里，每行一个开关；展开某一行才显示
+ *   上下文、输出上限与默认模型，显示名称和能力再收在“更多设置”里。
+ *   拉取结果保存在配置中，下次打开直接显示，不用重新拉取；手动添加收在列表底部。
+ * - 测试连接会逐个测试已启用的模型，并汇总哪些失败。
  * - 高级兼容参数收在编辑弹窗底部的折叠区，不再让用户先理解“来源/兼容哪家”。
  */
 import { findTemplate, PROVIDER_TEMPLATES } from '@cairn/core'
@@ -57,22 +60,37 @@ import { DeepseekIcon, ProviderBrandIcon } from './ProviderBrandIcon.js'
 import {
   configOf,
   draftOf,
+  enabledModelIdsOf,
   formatTokens,
   genericDraftFor,
+  modelRowsOf,
   newDraftForTemplate,
   problemsOf,
   profileFrom,
   slugId,
   sourceOf,
   templatesOf,
-  testModelOf,
   uniqueProviderId,
+  type ModelRow,
   type ProviderDraft,
 } from './providers-model.js'
 import { SettingsHeader } from './SettingsPage.js'
 
 type KeyStatus = CredentialStatus
 type TestResult = ProviderTestResult
+
+/** 一次连接测试：逐个启用的模型的结果。 */
+type TestOutcome = { readonly modelId: string; readonly result: TestResult }
+type TestSummary = readonly TestOutcome[]
+
+/** 失败的那些模型；测试请求本身失败（没有结果）的模型不在里面。 */
+function failuresOf(outcomes: TestSummary | undefined) {
+  return (outcomes ?? []).flatMap((outcome) =>
+    outcome.result.ok
+      ? []
+      : [{ modelId: outcome.modelId, error: outcome.result.error as ErrorInfo }],
+  )
+}
 
 const KINDS: readonly ProviderKind[] = ['anthropic', 'openai', 'gemini']
 const MAX_TOKENS_FIELDS = ['max_tokens', 'max_completion_tokens'] as const
@@ -119,18 +137,14 @@ function Logo({
   )
 }
 
-function Tag({ tone, children }: { tone?: 'accent' | 'warn' | 'ok'; children: ReactNode }) {
+const TAG_TONE = { ok: 'bg-ok-soft text-ok', warn: 'bg-warn-soft text-warn' } as const
+
+function Tag({ tone, children }: { tone: keyof typeof TAG_TONE; children: ReactNode }) {
   return (
     <span
       className={cn(
         'inline-flex h-[18px] items-center rounded-[5px] px-1.5 text-[11px] font-medium whitespace-nowrap',
-        tone === 'accent'
-          ? 'bg-accent-soft text-accent'
-          : tone === 'warn'
-            ? 'bg-warn-soft text-warn'
-            : tone === 'ok'
-              ? 'bg-ok-soft text-ok'
-              : 'bg-sunk2 text-fg2',
+        TAG_TONE[tone],
       )}
     >
       {children}
@@ -138,15 +152,12 @@ function Tag({ tone, children }: { tone?: 'accent' | 'warn' | 'ok'; children: Re
   )
 }
 
-function Status({ tone, children }: { tone: 'ok' | 'danger' | 'idle'; children: ReactNode }) {
+const STATUS_DOT = { ok: 'bg-ok', danger: 'bg-danger' } as const
+
+function Status({ tone, children }: { tone: keyof typeof STATUS_DOT; children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <i
-        className={cn(
-          'size-1.5 rounded-full',
-          tone === 'ok' ? 'bg-ok' : tone === 'danger' ? 'bg-danger' : 'bg-faint',
-        )}
-      />
+      <i className={cn('size-1.5 rounded-full', STATUS_DOT[tone])} />
       {children}
     </span>
   )
@@ -243,13 +254,14 @@ function ProviderCard({
   readonly provider: ProviderConfig
   readonly isDefault: boolean
   readonly keyStatus: KeyStatus | undefined
-  readonly result: TestResult | undefined
+  readonly result: TestSummary | undefined
   readonly onEdit: () => void
   readonly onDelete: () => void
 }) {
   const { t } = useTranslation('settings')
   const enabled = provider.models.filter((model) => model.enabled !== false).length
   const missingKey = provider.credentialRef !== undefined && keyStatus?.configured === false
+  const failed = failuresOf(result)
   return (
     <li className="group flex items-center gap-3 rounded-card bg-raise px-4 py-3 shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)] transition-colors hover:bg-sunk">
       <Logo
@@ -276,15 +288,12 @@ function ProviderCard({
       <span className="flex shrink-0 items-center gap-2.5 text-note text-muted">
         {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
         {missingKey && <Tag tone="warn">{t('providers.noKey')}</Tag>}
-        {result ? (
-          result.ok ? (
-            <Status tone="ok">{t('providers.status.ok')}</Status>
-          ) : (
+        {result &&
+          (failed.length > 0 ? (
             <Status tone="danger">{t('providers.status.failed')}</Status>
-          )
-        ) : (
-          !missingKey && <Status tone="idle">{t('providers.status.untested')}</Status>
-        )}
+          ) : (
+            <Status tone="ok">{t('providers.status.ok')}</Status>
+          ))}
       </span>
       <span className="flex shrink-0 items-center gap-0.5">
         <IconButton label={t('providers.edit')} size="icon-sm" onClick={onEdit}>
@@ -408,55 +417,82 @@ function KeyField({
 }
 
 function TestBar({
-  result,
+  outcomes,
   testing,
+  progress,
   disabled,
   onTest,
 }: {
-  readonly result: TestResult | undefined
+  readonly outcomes: TestSummary | undefined
   readonly testing: boolean
+  readonly progress: { readonly done: number; readonly total: number } | undefined
   readonly disabled: boolean
   readonly onTest: () => void
 }) {
   const { t } = useTranslation('settings')
   const errorText = useErrorText()
+  const failures = failuresOf(outcomes)
+  const latencyMs = (outcomes ?? []).reduce(
+    (slowest, outcome) => Math.max(slowest, outcome.result.latencyMs ?? 0),
+    0,
+  )
+  const total = outcomes?.length ?? 0
   return (
     <div
       role="status"
       className={cn(
         'flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-[13px] text-fg2',
-        result === undefined || testing ? 'bg-sunk' : result.ok ? 'bg-ok-soft' : 'bg-danger-soft',
+        outcomes === undefined || testing
+          ? 'bg-sunk'
+          : failures.length === 0
+            ? 'bg-ok-soft'
+            : 'bg-danger-soft',
       )}
     >
       {testing ? (
         <>
           <Spinner />
-          <span>{t('providers.test.running')}</span>
+          <span>
+            {t('providers.test.running', {
+              done: progress?.done ?? 0,
+              total: progress?.total ?? 0,
+            })}
+          </span>
         </>
-      ) : result === undefined ? (
+      ) : outcomes === undefined ? (
         <span className="text-muted">{t('providers.test.idle')}</span>
-      ) : result.ok ? (
+      ) : failures.length === 0 ? (
         <>
           <Check className="size-3.5 text-ok" strokeWidth={2.2} />
           <span>
-            <b className="font-medium text-ok">{t('providers.test.ok')}</b>
+            <b className="font-medium text-ok">
+              {total === 1 ? t('providers.test.okOne') : t('providers.test.ok', { count: total })}
+            </b>
             {' · '}
-            {t('providers.test.latency', { ms: result.latencyMs })}
+            {t('providers.test.latency', { ms: latencyMs })}
           </span>
         </>
       ) : (
         <>
           <TriangleAlert className="size-3.5 shrink-0 text-danger" />
           <span className="min-w-0">
-            <b className="font-medium text-danger">{t('providers.test.failed')}</b>
+            <b className="font-medium text-danger">
+              {total === 1
+                ? t('providers.test.failedOne')
+                : t('providers.test.failed', { failed: failures.length, total })}
+            </b>
             {' · '}
-            {errorText(result.error)}
+            {t('providers.test.failedModel', {
+              name: failures[0]!.modelId,
+              reason: errorText(failures[0]!.error),
+            })}
+            {failures.length > 1 && ` ${t('providers.test.more', { count: failures.length - 1 })}`}
           </span>
         </>
       )}
       <span className="flex-1" />
       <Button variant="ghost" size="sm" disabled={disabled || testing} onClick={onTest}>
-        {result === undefined ? t('providers.test.run') : t('providers.test.again')}
+        {outcomes === undefined ? t('providers.test.run') : t('providers.test.again')}
       </Button>
     </div>
   )
@@ -613,50 +649,24 @@ function CapabilityRow({
   )
 }
 
-function ModelDetail({
+/** 展开某个模型后的设置：常用项直接可见，显示名称与能力收在“更多设置”里。 */
+function ModelSettings({
   model,
   isDefault,
   onChange,
   onDefault,
   onRemove,
 }: {
-  readonly model: ModelProfile | undefined
+  readonly model: ModelProfile
   readonly isDefault: boolean
   readonly onChange: (patch: Partial<ModelProfile>) => void
   readonly onDefault: () => void
   readonly onRemove: () => void
 }) {
   const { t } = useTranslation('settings')
-  if (!model) {
-    return (
-      <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 text-center">
-        <span className="text-[13px] font-medium text-fg2">{t('providers.model.detail')}</span>
-        <p className="max-w-56 text-note leading-relaxed text-muted">
-          {t('providers.model.detailHint')}
-        </p>
-      </div>
-    )
-  }
+  const [more, setMore] = useState(false)
   return (
-    <div className="flex flex-col gap-3">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h4 className="truncate text-[13.5px] font-medium text-fg">
-            {model.displayName ?? model.id}
-          </h4>
-          {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
-        </div>
-        <p className="truncate font-mono text-[11.5px] text-muted">{model.id}</p>
-      </div>
-      <Labeled label={t('providers.model.displayName')}>
-        <input
-          aria-label={t('providers.model.displayName')}
-          value={model.displayName ?? ''}
-          placeholder={model.id}
-          onChange={(event) => onChange({ displayName: event.target.value })}
-          className={inputClass}
-        />
-      </Labeled>
+    <div className="border-t border-hair bg-sunk/60 px-3 py-3">
       <div className="grid grid-cols-2 gap-2.5">
         <NumberField
           label={t('providers.model.contextLength')}
@@ -669,42 +679,7 @@ function ModelDetail({
           onCommit={(maxOutputTokens) => onChange({ maxOutputTokens })}
         />
       </div>
-      <div className="rounded-[10px] bg-paper px-3 py-1 shadow-[inset_0_0_0_0.5px_var(--hair2)]">
-        <CapabilityRow
-          label={t('providers.model.tools')}
-          checked={model.supportsTools}
-          onChange={(supportsTools) => onChange({ supportsTools })}
-        />
-        <CapabilityRow
-          label={t('providers.model.parallel')}
-          checked={model.supportsParallelToolCalls}
-          onChange={(supportsParallelToolCalls) => onChange({ supportsParallelToolCalls })}
-        />
-        <CapabilityRow
-          label={t('providers.model.reasoning')}
-          checked={model.supportsReasoning}
-          onChange={(supportsReasoning) => onChange({ supportsReasoning })}
-        />
-        {model.supportsReasoning && (
-          <div className="mt-1 border-t border-hair pt-2 pb-1.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[12.5px] text-fg2">{t('providers.model.thinkingLevel')}</span>
-              <SegmentedControl
-                label={t('providers.model.thinkingLevel')}
-                value={model.thinkingLevel ?? 'high'}
-                options={[
-                  { value: 'low', label: t('providers.model.thinkingLevel.low') },
-                  { value: 'medium', label: t('providers.model.thinkingLevel.medium') },
-                  { value: 'high', label: t('providers.model.thinkingLevel.high') },
-                ]}
-                onChange={(thinkingLevel) => onChange({ thinkingLevel })}
-              />
-            </div>
-            <p className="mt-1 text-note text-faint">{t('providers.model.thinkingLevel.hint')}</p>
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5">
+      <div className="mt-1 flex items-center gap-1.5">
         <Button
           size="sm"
           variant="ghost"
@@ -728,6 +703,67 @@ function ModelDetail({
       {isDefault && (
         <p className="text-note leading-relaxed text-muted">{t('providers.model.defaultHint')}</p>
       )}
+      <button
+        type="button"
+        aria-expanded={more}
+        onClick={() => setMore((value) => !value)}
+        className="mt-1 flex w-fit items-center gap-1.5 text-[12.5px] text-muted hover:text-fg"
+      >
+        <ChevronRight className={cn('size-3.5 transition-transform', more && 'rotate-90')} />
+        {t('providers.model.more')}
+      </button>
+      {more && (
+        <div className="mt-2.5 flex flex-col gap-3">
+          <Labeled label={t('providers.model.displayName')}>
+            <input
+              aria-label={t('providers.model.displayName')}
+              value={model.displayName ?? ''}
+              placeholder={model.id}
+              onChange={(event) => onChange({ displayName: event.target.value })}
+              className={inputClass}
+            />
+          </Labeled>
+          <div className="rounded-[10px] bg-paper px-3 py-1 shadow-[inset_0_0_0_0.5px_var(--hair2)]">
+            <CapabilityRow
+              label={t('providers.model.tools')}
+              checked={model.supportsTools}
+              onChange={(supportsTools) => onChange({ supportsTools })}
+            />
+            <CapabilityRow
+              label={t('providers.model.parallel')}
+              checked={model.supportsParallelToolCalls}
+              onChange={(supportsParallelToolCalls) => onChange({ supportsParallelToolCalls })}
+            />
+            <CapabilityRow
+              label={t('providers.model.reasoning')}
+              checked={model.supportsReasoning}
+              onChange={(supportsReasoning) => onChange({ supportsReasoning })}
+            />
+            {model.supportsReasoning && (
+              <div className="mt-1 border-t border-hair pt-2 pb-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[12.5px] text-fg2">
+                    {t('providers.model.thinkingLevel')}
+                  </span>
+                  <SegmentedControl
+                    label={t('providers.model.thinkingLevel')}
+                    value={model.thinkingLevel ?? 'high'}
+                    options={[
+                      { value: 'low', label: t('providers.model.thinkingLevel.low') },
+                      { value: 'medium', label: t('providers.model.thinkingLevel.medium') },
+                      { value: 'high', label: t('providers.model.thinkingLevel.high') },
+                    ]}
+                    onChange={(thinkingLevel) => onChange({ thinkingLevel })}
+                  />
+                </div>
+                <p className="mt-1 text-note text-faint">
+                  {t('providers.model.thinkingLevel.hint')}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -745,7 +781,7 @@ function ManualModel({
   const contextValue = Number(context)
   const valid = id.trim() !== '' && Number.isInteger(contextValue) && contextValue > 0
   return (
-    <div className="flex items-center gap-2 px-2 pt-2">
+    <div className="flex items-center gap-2">
       <input
         aria-label={t('providers.manual.id')}
         placeholder={t('providers.manual.id')}
@@ -771,64 +807,6 @@ function ManualModel({
       >
         {t('providers.manual.add')}
       </Button>
-    </div>
-  )
-}
-
-function RemoteModels({
-  models,
-  onAdd,
-  onClose,
-}: {
-  readonly models: readonly RemoteModel[]
-  readonly onAdd: (models: readonly RemoteModel[]) => void
-  readonly onClose: () => void
-}) {
-  const { t } = useTranslation('settings')
-  return (
-    <div className="border-b bg-sunk/70 px-2 py-2">
-      <div className="flex items-center gap-2 px-1 pb-1.5 text-note text-muted">
-        <span className="flex-1">{t('providers.fetch.found', { count: models.length })}</span>
-        {models.length > 1 && (
-          <Button variant="ghost" size="sm" className="h-6" onClick={() => onAdd(models)}>
-            {t('providers.fetch.addAll')}
-          </Button>
-        )}
-        <IconButton label={t('providers.fetch.close')} size="icon-sm" onClick={onClose}>
-          <X />
-        </IconButton>
-      </div>
-      {models.length > 0 && (
-        <ul
-          aria-label={t('providers.fetch.list')}
-          className="max-h-44 overflow-y-auto rounded-[8px] bg-paper shadow-hair2"
-        >
-          {models.map((m) => (
-            <li
-              key={m.id}
-              className="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] [&+&]:shadow-[0_-0.5px_0_var(--hair)]"
-            >
-              <code className="min-w-0 flex-1 truncate font-mono [font-variant-ligatures:none]">
-                {m.id}
-              </code>
-              {m.contextWindow && (
-                <span className="text-[11.5px] text-muted">
-                  {t('providers.model.context', { size: formatTokens(m.contextWindow) })}
-                </span>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6"
-                aria-label={t('providers.fetch.add', { name: m.id })}
-                onClick={() => onAdd([m])}
-              >
-                <Plus />
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   )
 }
@@ -921,8 +899,8 @@ function ProviderEditor({
   readonly initialDraft: ProviderDraft
   readonly providers: readonly ProviderConfig[]
   readonly keyStatus: KeyStatus | undefined
-  readonly result: TestResult | undefined
-  readonly onResult: (result: TestResult | undefined) => void
+  readonly result: TestSummary | undefined
+  readonly onResult: (result: TestSummary | undefined) => void
   readonly onSaved: (providerId: string | undefined) => void
   readonly onCancel: () => void
 }) {
@@ -943,14 +921,15 @@ function ProviderEditor({
   const [secret, setSecret] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
-  const [fetching, setFetching] = useState(false)
-  const [remote, setRemote] = useState<
-    { readonly models: readonly RemoteModel[] } | { readonly error: ErrorInfo } | undefined
+  const [testProgress, setTestProgress] = useState<
+    { readonly done: number; readonly total: number } | undefined
   >()
+  const [fetching, setFetching] = useState(false)
+  const [fetchFailure, setFetchFailure] = useState<ErrorInfo | undefined>()
   const [manual, setManual] = useState(false)
   const [advanced, setAdvanced] = useState(false)
   const [search, setSearch] = useState('')
-  const [selectedModelId, setSelectedModelId] = useState<string | undefined>(initial.models[0]?.id)
+  const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
   const [defaultModelId, setDefaultModelId] = useState<string | undefined>(() =>
     saved && settings?.defaultModel?.providerId === saved.id
       ? settings.defaultModel.modelId
@@ -977,31 +956,33 @@ function ProviderEditor({
     saved && settings?.defaultModel?.providerId === saved.id
       ? settings.defaultModel.modelId
       : undefined
+  /**
+   * 拉取到的模型列表已经随下拉保存过（地址与接口格式没变），就不再算作未保存的改动：
+   * 拉取只是刷新缓存，不该让“保存”按钮亮起来。
+   */
+  const catalogIsCache =
+    saved !== undefined && saved.baseUrl === draft.baseUrl.trim() && saved.kind === draft.kind
+  const withoutCachedCatalog = (value: ProviderDraft) => {
+    if (!catalogIsCache) return value
+    const { catalog: _catalog, ...rest } = value
+    return rest
+  }
   const dirty =
     saved === undefined ||
-    JSON.stringify(draft) !== JSON.stringify(initial) ||
+    JSON.stringify(withoutCachedCatalog(draft)) !== JSON.stringify(withoutCachedCatalog(initial)) ||
     typedSecret !== undefined ||
     defaultModelId !== savedDefault
   const templates = templatesOf(draft.kind)
   const template = draft.template ? findTemplate(draft.template) : undefined
   const enabledCount = draft.models.filter((model) => model.enabled !== false).length
-  const selectedModel = draft.models.find((model) => model.id === selectedModelId)
-  const filteredModels = draft.models.filter((model) => {
+  const rows = modelRowsOf(draft.models, draft.catalog)
+  const filteredRows = rows.filter((row) => {
     const query = search.trim().toLowerCase()
     if (!query) return true
     return (
-      model.id.toLowerCase().includes(query) ||
-      (model.displayName ?? '').toLowerCase().includes(query)
+      row.id.toLowerCase().includes(query) || (row.displayName ?? '').toLowerCase().includes(query)
     )
   })
-  const allVisibleEnabled =
-    filteredModels.length > 0 && filteredModels.every((model) => model.enabled !== false)
-
-  useEffect(() => {
-    if (draft.models.some((model) => model.id === selectedModelId)) return
-    setSelectedModelId(draft.models[0]?.id)
-  }, [draft.models, selectedModelId])
-
   const update = (patch: Partial<ProviderDraft>) => {
     setDraft((d) => ({ ...d, ...patch }))
     onResult(undefined)
@@ -1019,16 +1000,31 @@ function ProviderEditor({
   const config = (): ProviderConfig => configOf(draft, id, saved?.credentialRef ?? id)
 
   const test = async () => {
-    const modelId = testModelOf(
-      id,
-      draft.models,
-      defaultModelId ? { providerId: id, modelId: defaultModelId } : undefined,
-    )
-    if (!modelId) return
+    const modelIds = enabledModelIdsOf(draft.models)
+    if (modelIds.length === 0) return
     setTesting(true)
-    const next = await testProvider(config(), modelId, typedSecret)
+    setTestProgress({ done: 0, total: modelIds.length })
+    const outcomes: TestOutcome[] = []
+    // 每次并发 4 个，避免一次向提供方发太多请求。
+    for (let start = 0; start < modelIds.length; start += 4) {
+      const batch = modelIds.slice(start, start + 4)
+      const tested = await Promise.all(
+        batch.map(async (modelId) => ({
+          modelId,
+          result: await testProvider(config(), modelId, typedSecret),
+        })),
+      )
+      for (const outcome of tested) {
+        if (outcome.result) outcomes.push({ modelId: outcome.modelId, result: outcome.result })
+      }
+      setTestProgress({
+        done: Math.min(start + batch.length, modelIds.length),
+        total: modelIds.length,
+      })
+    }
     setTesting(false)
-    onResult(next)
+    setTestProgress(undefined)
+    onResult(outcomes.length > 0 ? outcomes : undefined)
   }
 
   const fetchList = async () => {
@@ -1036,45 +1032,64 @@ function ProviderEditor({
     const next = await fetchModels(config(), typedSecret)
     setFetching(false)
     if (!next) return
-    if (next.ok) {
-      const have = new Set(draft.models.map((m) => m.id))
-      setRemote({ models: next.models.filter((m) => !have.has(m.id)) })
-    } else {
-      setRemote({ error: next.error })
+    if (!next.ok) {
+      setFetchFailure(next.error)
       setManual(true)
+      return
+    }
+    setFetchFailure(undefined)
+    setDraft((current) => ({ ...current, catalog: next.models }))
+    // 已保存且地址没变的供应商：拉取结果立刻保存，下次打开不用重新拉取。
+    if (saved && saved.baseUrl === draft.baseUrl.trim() && saved.kind === draft.kind) {
+      void updateSettings({
+        providers: providers.map((provider) =>
+          provider.id === saved.id ? { ...provider, catalog: next.models } : provider,
+        ),
+      })
     }
   }
+
+  const remoteOf = (row: ModelRow): RemoteModel => ({
+    id: row.id,
+    ...(row.displayName ? { displayName: row.displayName } : {}),
+    ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}),
+  })
 
   const addModels = (models: readonly RemoteModel[]) => {
     const have = new Set(draft.models.map((m) => m.id))
     const added = models.filter((m) => !have.has(m.id)).map((m) => profileFrom(m, draft.template))
     update({ models: [...draft.models, ...added] })
-    if (added[0] && selectedModelId === undefined) setSelectedModelId(added[0].id)
-    if (remote && 'models' in remote) {
-      const ids = new Set(added.map((m) => m.id))
-      setRemote({ models: remote.models.filter((m) => !ids.has(m.id)) })
-    }
   }
 
   const setModel = (modelId: string, patch: Partial<ModelProfile>) =>
     update({ models: draft.models.map((m) => (m.id === modelId ? { ...m, ...patch } : m)) })
 
-  const removeModel = (modelId: string) => {
-    update({ models: draft.models.filter((m) => m.id !== modelId) })
-    if (selectedModelId === modelId) {
-      setSelectedModelId(draft.models.find((m) => m.id !== modelId)?.id)
+  /** 列表里的开关：打开就加入并启用，关掉就保留设置但不在模型选择中列出。 */
+  const toggleRow = (row: ModelRow, enabled: boolean) => {
+    if (enabled) {
+      if (row.profile) setModel(row.id, { enabled: undefined })
+      else addModels([remoteOf(row)])
+    } else {
+      setModel(row.id, { enabled: false })
     }
   }
 
-  const toggleVisible = (enabled: boolean) => {
-    const ids = new Set(filteredModels.map((model) => model.id))
+  /** 点模型名展开或收起它的设置；还没加入的模型先加入。 */
+  const expandRow = (row: ModelRow) => {
+    if (row.profile) {
+      setSelectedModelId((current) => (current === row.id ? undefined : row.id))
+      return
+    }
+    addModels([remoteOf(row)])
+    setSelectedModelId(row.id)
+  }
+
+  const removeModel = (modelId: string) => {
     update({
-      models: draft.models.map((model) =>
-        ids.has(model.id) && model.id !== defaultModelId
-          ? { ...model, enabled: enabled ? undefined : false }
-          : model,
-      ),
+      models: draft.models.filter((m) => m.id !== modelId),
+      ...(draft.catalog ? { catalog: draft.catalog.filter((m) => m.id !== modelId) } : {}),
     })
+    if (selectedModelId === modelId) setSelectedModelId(undefined)
   }
 
   const save = async () => {
@@ -1118,7 +1133,7 @@ function ProviderEditor({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="flex max-h-[calc(100dvh-48px)] w-[min(1040px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex max-h-[calc(100dvh-48px)] w-[min(760px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0">
         <header className="flex shrink-0 items-start gap-3 px-6 pt-5 pb-4">
           <Logo
             name={draft.displayName || '?'}
@@ -1141,7 +1156,7 @@ function ProviderEditor({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <Labeled label={t('providers.field.name')} labelFor={nameId}>
               <input
                 id={nameId}
@@ -1154,7 +1169,6 @@ function ProviderEditor({
             <Labeled
               label={t('providers.field.baseUrl')}
               labelFor={urlId}
-              className="sm:col-span-2"
               hint={
                 problems.baseUrl && draft.baseUrl.trim() !== '' ? (
                   <span className="text-danger">{t('providers.baseUrl.invalid')}</span>
@@ -1170,7 +1184,7 @@ function ProviderEditor({
                 spellCheck={false}
                 placeholder={t('providers.baseUrl.placeholder')}
                 aria-invalid={problems.baseUrl && draft.baseUrl.trim() !== '' ? true : undefined}
-                onChange={(e) => update({ baseUrl: e.target.value })}
+                onChange={(e) => update({ baseUrl: e.target.value, catalog: undefined })}
               />
             </Labeled>
             <div className="sm:col-span-2">
@@ -1187,8 +1201,9 @@ function ProviderEditor({
 
           <div className="mt-3">
             <TestBar
-              result={result}
+              outcomes={result}
               testing={testing}
+              progress={testProgress}
               disabled={!valid || enabledCount === 0}
               onTest={() => void test()}
             />
@@ -1196,155 +1211,160 @@ function ProviderEditor({
 
           <section
             aria-label={t('providers.field.models')}
-            className="mt-5 grid items-stretch gap-3 lg:grid-cols-[minmax(0,1fr)_340px]"
+            className="mt-5 flex flex-col overflow-hidden rounded-card bg-paper shadow-[inset_0_0_0_0.5px_var(--hair2)]"
           >
-            <div className="flex min-h-[340px] flex-col overflow-hidden rounded-card bg-paper shadow-[inset_0_0_0_0.5px_var(--hair2)]">
-              <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-2">
-                <div className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />
-                  <input
-                    aria-label={t('providers.model.search')}
-                    placeholder={t('providers.model.search')}
-                    value={search}
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(event) => setSearch(event.target.value)}
-                    className={cn(inputClass, 'h-8 pl-8 text-[12.5px]')}
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8"
-                  disabled={!valid || fetching}
-                  onClick={() => void fetchList()}
-                >
-                  {fetching ? <Spinner /> : <RefreshCw />}
-                  {t('providers.fetch.button')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8"
-                  onClick={() => setManual((v) => !v)}
-                >
-                  <Plus />
-                  {t('providers.manual.button')}
-                </Button>
+            <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-2">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />
+                <input
+                  aria-label={t('providers.model.search')}
+                  placeholder={t('providers.model.search')}
+                  value={search}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className={cn(inputClass, 'h-8 pl-8 text-[12.5px]')}
+                />
               </div>
+              <span className="shrink-0 text-note text-muted tabular">
+                {search.trim() !== ''
+                  ? t('providers.model.matched', { count: filteredRows.length })
+                  : t('providers.model.enabledCount', {
+                      enabled: enabledCount,
+                      total: rows.length,
+                    })}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                disabled={!valid || fetching}
+                onClick={() => void fetchList()}
+              >
+                {fetching ? <Spinner /> : <RefreshCw />}
+                {t('providers.fetch.button')}
+              </Button>
+            </div>
 
-              {remote !== undefined &&
-                ('models' in remote ? (
-                  <RemoteModels
-                    models={remote.models}
-                    onAdd={addModels}
-                    onClose={() => setRemote(undefined)}
-                  />
-                ) : (
-                  <p
-                    role="alert"
-                    className="border-b bg-danger-soft px-3 py-1.5 text-note text-danger"
-                  >
-                    {t('providers.fetch.failed', { reason: errorText(remote.error) })}
-                  </p>
-                ))}
+            {fetchFailure !== undefined && (
+              <p role="alert" className="border-b bg-danger-soft px-3 py-1.5 text-note text-danger">
+                {t('providers.fetch.failed', { reason: errorText(fetchFailure) })}
+              </p>
+            )}
 
-              {manual && (
+            {rows.length === 0 ? (
+              <p className="px-4 py-8 text-center text-note text-muted">
+                {t('providers.model.empty')}
+              </p>
+            ) : filteredRows.length === 0 ? (
+              <p className="px-4 py-8 text-center text-note text-muted">
+                {t('providers.model.noMatch')}
+              </p>
+            ) : (
+              <ul className="max-h-[min(52vh,460px)] overflow-y-auto">
+                {filteredRows.map((row) => {
+                  const configured = row.profile !== undefined
+                  const enabled = configured && row.profile?.enabled !== false
+                  const isDefault = row.id === defaultModelId
+                  const name = row.displayName ?? row.id
+                  const expanded = configured && row.id === selectedModelId
+                  return (
+                    <li
+                      key={row.id}
+                      className={cn(
+                        '[&+&]:shadow-[0_-0.5px_0_var(--hair)]',
+                        expanded && 'bg-sunk/40',
+                      )}
+                    >
+                      <div className="flex items-center gap-2 px-2.5 py-1.5 text-[13px] transition-colors hover:bg-sunk">
+                        <Switch
+                          checked={enabled}
+                          disabled={isDefault}
+                          title={isDefault ? t('providers.model.defaultHint') : undefined}
+                          aria-label={
+                            configured
+                              ? t('providers.model.enable', { name })
+                              : t('providers.model.add', { name })
+                          }
+                          onCheckedChange={(next) => toggleRow(row, next)}
+                          className={cn(isDefault && 'disabled:opacity-100')}
+                        />
+                        <button
+                          type="button"
+                          aria-expanded={configured ? expanded : undefined}
+                          onClick={() => expandRow(row)}
+                          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+                        >
+                          {configured ? (
+                            <ChevronRight
+                              className={cn(
+                                'size-3 shrink-0 text-faint transition-transform',
+                                expanded && 'rotate-90',
+                              )}
+                            />
+                          ) : (
+                            <span aria-hidden className="size-3 shrink-0" />
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <code
+                              className={cn(
+                                'block truncate font-mono text-[12.5px] [font-variant-ligatures:none]',
+                                configured ? 'text-fg' : 'text-muted',
+                              )}
+                            >
+                              {row.id}
+                            </code>
+                            {row.displayName && row.displayName !== row.id && (
+                              <span className="block truncate text-[11px] text-muted">
+                                {row.displayName}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                        {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
+                        {row.contextWindow !== undefined && (
+                          <span className="shrink-0 text-[11px] whitespace-nowrap text-muted">
+                            {formatTokens(row.contextWindow)}
+                          </span>
+                        )}
+                      </div>
+                      {expanded && row.profile && (
+                        <ModelSettings
+                          model={row.profile}
+                          isDefault={isDefault}
+                          onChange={(patch) => setModel(row.id, patch)}
+                          onDefault={() => {
+                            setModel(row.id, { enabled: undefined })
+                            setDefaultModelId(row.id)
+                          }}
+                          onRemove={() => removeModel(row.id)}
+                        />
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            <div className="border-t px-2.5 py-1.5">
+              {manual ? (
                 <ManualModel
                   defaultContext={
                     (template?.modelDefaults ?? { contextWindow: 128_000 }).contextWindow
                   }
                   onAdd={(m) => addModels([m])}
                 />
-              )}
-
-              <div className="flex items-center gap-2 border-b bg-sunk/50 px-3 py-1.5">
-                <Switch
-                  checked={allVisibleEnabled}
-                  aria-label={t('providers.model.enableAll')}
-                  onCheckedChange={toggleVisible}
-                />
-                <span className="text-note text-muted">
-                  {t('providers.model.enabledCount', {
-                    enabled: enabledCount,
-                    total: draft.models.length,
-                  })}
-                </span>
-                <span className="flex-1" />
-                {search.trim() !== '' && (
-                  <span className="text-note text-faint">
-                    {t('providers.model.matched', { count: filteredModels.length })}
-                  </span>
-                )}
-              </div>
-
-              {draft.models.length === 0 ? (
-                <p className="flex flex-1 items-center justify-center px-4 text-center text-note text-muted">
-                  {t('providers.model.empty')}
-                </p>
-              ) : filteredModels.length === 0 ? (
-                <p className="flex flex-1 items-center justify-center px-4 text-center text-note text-muted">
-                  {t('providers.model.noMatch')}
-                </p>
               ) : (
-                <ul className="min-h-0 flex-1 overflow-y-auto">
-                  {filteredModels.map((model) => {
-                    const enabled = model.enabled !== false
-                    const isDefault = model.id === defaultModelId
-                    const name = model.displayName ?? model.id
-                    return (
-                      <li
-                        key={model.id}
-                        className={cn(
-                          'flex items-center gap-2 px-2.5 py-1.5 text-[13px] transition-colors [&+&]:shadow-[0_-0.5px_0_var(--hair)]',
-                          model.id === selectedModel?.id ? 'bg-accent-soft' : 'hover:bg-sunk',
-                        )}
-                      >
-                        <Switch
-                          checked={enabled}
-                          disabled={isDefault}
-                          aria-label={t('providers.model.enable', { name })}
-                          onCheckedChange={(next) =>
-                            setModel(model.id, { enabled: next ? undefined : false })
-                          }
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setSelectedModelId(model.id)}
-                          className="min-w-0 flex-1 text-left"
-                        >
-                          <code className="block truncate font-mono text-[12.5px] text-fg [font-variant-ligatures:none]">
-                            {model.id}
-                          </code>
-                          {model.displayName && model.displayName !== model.id && (
-                            <span className="block truncate text-[11px] text-muted">
-                              {model.displayName}
-                            </span>
-                          )}
-                        </button>
-                        {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
-                        <span className="shrink-0 text-[11px] whitespace-nowrap text-muted">
-                          {formatTokens(model.contextWindow)}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ul>
+                <button
+                  type="button"
+                  onClick={() => setManual(true)}
+                  className="inline-flex items-center gap-1 text-note text-muted transition-colors hover:text-fg"
+                >
+                  <Plus className="size-3" />
+                  {t('providers.manual.button')}
+                </button>
               )}
             </div>
-
-            <aside
-              aria-label={t('providers.model.detail')}
-              className="rounded-card bg-sunk px-4 py-3.5 shadow-[inset_0_0_0_0.5px_var(--hair2)]"
-            >
-              <ModelDetail
-                model={selectedModel}
-                isDefault={selectedModel !== undefined && selectedModel.id === defaultModelId}
-                onChange={(patch) => selectedModel && setModel(selectedModel.id, patch)}
-                onDefault={() => selectedModel && setDefaultModelId(selectedModel.id)}
-                onRemove={() => selectedModel && removeModel(selectedModel.id)}
-              />
-            </aside>
           </section>
 
           <div className="mt-4">
@@ -1418,7 +1438,7 @@ export function ProvidersSettings() {
   const [editor, setEditor] = useState<
     { readonly saved: ProviderConfig | undefined; readonly draft: ProviderDraft } | undefined
   >()
-  const [results, setResults] = useState<Readonly<Record<string, TestResult>>>({})
+  const [results, setResults] = useState<Readonly<Record<string, TestSummary>>>({})
   const [keys, setKeys] = useState<Readonly<Record<string, KeyStatus>>>({})
   const [keysVersion, setKeysVersion] = useState(0)
 

@@ -4,17 +4,18 @@ import type { ProviderConfig } from '@cairn/protocol'
 import {
   configOf,
   draftOf,
+  enabledModelIdsOf,
   formatTokens,
   initials,
   logoColor,
   modelDefaults,
+  modelRowsOf,
   newDraft,
   problemsOf,
   profileFrom,
   slugId,
   sourceOf,
   templatesOf,
-  testModelOf,
   uniqueProviderId,
   GENERIC_MODEL_DEFAULTS,
 } from './providers-model.js'
@@ -94,15 +95,48 @@ describe('providers-model', () => {
     expect(draftOf(config)).toMatchObject({ displayName: 'DS', template: 'deepseek' })
   })
 
-  it('picks the model used for the connection test', () => {
+  it('keeps the fetched catalog as a cache', () => {
+    const catalog = [{ id: 'a' }, { id: 'b', displayName: 'B', contextWindow: 200_000 }]
+    const config = configOf({ ...newDraft(), catalog }, 'p', undefined)
+    expect(config.catalog).toEqual(catalog)
+    expect(draftOf(config).catalog).toEqual(catalog)
+    // 空的目录不写进配置
+    expect(configOf({ ...newDraft(), catalog: [] }, 'p', undefined)).not.toHaveProperty('catalog')
+  })
+
+  it('merges fetched models into one list after the configured ones', () => {
+    const models = [
+      { ...GENERIC_MODEL_DEFAULTS, id: 'a' },
+      { ...GENERIC_MODEL_DEFAULTS, id: 'off', enabled: false },
+    ]
+    expect(
+      modelRowsOf(models, [{ id: 'a' }, { id: 'c' }, { id: 'd', contextWindow: 1_000 }]),
+    ).toEqual([
+      {
+        id: 'a',
+        displayName: undefined,
+        contextWindow: GENERIC_MODEL_DEFAULTS.contextWindow,
+        profile: models[0],
+      },
+      {
+        id: 'off',
+        displayName: undefined,
+        contextWindow: GENERIC_MODEL_DEFAULTS.contextWindow,
+        profile: models[1],
+      },
+      { id: 'c', displayName: undefined, contextWindow: undefined },
+      { id: 'd', displayName: undefined, contextWindow: 1_000 },
+    ])
+    expect(modelRowsOf([], undefined)).toEqual([])
+  })
+
+  it('tests every enabled model', () => {
     const models = [
       { ...GENERIC_MODEL_DEFAULTS, id: 'off', enabled: false },
       { ...GENERIC_MODEL_DEFAULTS, id: 'a' },
       { ...GENERIC_MODEL_DEFAULTS, id: 'b' },
     ]
-    expect(testModelOf('p', models, { providerId: 'p', modelId: 'b' })).toBe('b')
-    expect(testModelOf('p', models, { providerId: 'p', modelId: 'off' })).toBe('a')
-    expect(testModelOf('p', models, { providerId: 'q', modelId: 'b' })).toBe('a')
-    expect(testModelOf('p', [], undefined)).toBeUndefined()
+    expect(enabledModelIdsOf(models)).toEqual(['a', 'b'])
+    expect(enabledModelIdsOf([models[0]!])).toEqual([])
   })
 })

@@ -605,6 +605,10 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
             verifiedAt: 5,
           },
         ],
+        catalog: [
+          { id: 'deepseek-chat' },
+          { id: 'deepseek-reasoner', displayName: 'DeepSeek Reasoner', contextWindow: 128_000 },
+        ],
       }
       const ollama = {
         id: 'ollama',
@@ -626,6 +630,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.providers.get('ollama')).not.toHaveProperty('credentialRef')
         expect(storage.providers.get('ollama')).not.toHaveProperty('compat')
         expect(storage.providers.get('ollama')).not.toHaveProperty('template')
+        expect(storage.providers.get('ollama')).not.toHaveProperty('catalog')
 
         storage.providers.replaceAll([deepseek])
         expect(storage.providers.list()).toEqual([deepseek])
