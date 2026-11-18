@@ -170,6 +170,15 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   'memory.accepted': { memoryId: 'm1', scope: 'session', content: '用 pnpm', origin: 'propose' },
   'memory.rejected': { memoryId: 'm1' },
   'memory.deleted': { memoryId: 'm1', scope: 'project' },
+  'team.review.round': {
+    reviewId: 'r1',
+    round: 1,
+    makerRunId: 'run-maker',
+    checkerRunId: 'run-checker',
+    verdict: 'revise',
+    feedback: '补测试',
+  },
+  'team.review.completed': { reviewId: 'r1', status: 'passed', rounds: 2, summary: '可以了' },
 }
 
 function envelope(type: string, payload: unknown, extra: Record<string, unknown> = {}) {

@@ -250,6 +250,7 @@ interface EventEnvelope<T extends EventType = EventType> {
 | 审批 | `approval.requested` `approval.resolved` | 含决策来源（用户或规则） |
 | 改动 | `file.changed` | 引用改动记录 id，不内嵌文件内容 |
 | 检查点 | `checkpoint.created` `checkpoint.restored` | |
+| 团队协作 | `team.review.round` `team.review.completed` | 审查循环的每轮判定与结局（M7-07） |
 | 用量 | `usage.reported` | token 数、耗时 |
 | 其他 | `turn.limit_reached` `context.compacted` `model.fallback` `model.retry` `tool.cancelled` | 详见 Agent Runtime 设计第 12 节 |
 

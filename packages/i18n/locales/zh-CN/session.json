@@ -678,5 +678,17 @@
   "memory.manage.retry": "重试",
   "sidePanel.memory": "记忆",
   "sidePanel.memoryShort": "记忆",
-  "memory.manage.loading": "正在读取记忆…"
+  "memory.manage.loading": "正在读取记忆…",
+  "review.title": "审查循环",
+  "review.running": "进行中",
+  "review.rounds": "{{count}} 轮",
+  "review.round": "第 {{round}} 轮",
+  "review.verdict.pass": "通过",
+  "review.verdict.revise": "需要修改",
+  "review.status.passed": "已通过",
+  "review.status.exhausted": "轮次用尽",
+  "review.status.failed": "失败",
+  "review.status.stopped": "已停止",
+  "review.status.limit_reached": "触及限额",
+  "tool.action.review_loop": "审查循环"
 }

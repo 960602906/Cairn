@@ -797,6 +797,7 @@ describe('MessageStream Agent 标记', () => {
     compaction: undefined,
     toolOutputOmitted: undefined,
     plans: [],
+    reviewLoops: [],
   }
 
   const multiRun = {
@@ -1317,6 +1318,7 @@ describe('MessageStream 试运行（M4-12）', () => {
       compaction: { summary: '摘要', seq: 1 },
       toolOutputOmitted: { seq: 2 },
       plans: [],
+      reviewLoops: [],
       delegations: [],
     } as unknown as SessionView
     renderWith(view, {
@@ -1350,6 +1352,7 @@ describe('MessageStream 试运行（M4-12）', () => {
       compaction: undefined,
       toolOutputOmitted: undefined,
       plans: [],
+      reviewLoops: [],
       delegations: [],
       runs: { r1: { runId: 'r1', agent: { id: 'builtin.coder', version: 1 } } },
       runOrder: ['r1'],
@@ -1553,6 +1556,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     compaction: undefined,
     toolOutputOmitted: undefined,
     plans: [],
+    reviewLoops: [],
     delegations: [],
   } as unknown as SessionView
 
@@ -2029,5 +2033,49 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView)
     expect(screen.getByText(/工具调用连续失败 2 次/)).toBeTruthy()
+  })
+})
+
+describe('MessageStream 审查循环（M7-07）', () => {
+  const store = createStore<Record<string, unknown>>(() => ({
+    activeSessionId: 's1',
+    awaitingTurn: {},
+    approvals: {},
+    changes: {},
+    agents: [],
+    settings: { providers: [] },
+    sendPrompt: vi.fn(),
+  })) as unknown as SessionStore
+
+  const renderStream = (stream: SessionView) =>
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={stream} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+
+  it('把审查循环挂在本轮末尾，没有消息的循环排在流末尾', () => {
+    renderStream(
+      view([
+        ...START,
+        ev(5, 'message.assistant.completed', { messageId: 'a1', content: text('做完了'), model }),
+        ev(6, 'team.review.round', {
+          reviewId: 'rv1',
+          round: 1,
+          makerRunId: 'm1',
+          checkerRunId: 'c1',
+          verdict: 'pass',
+        }),
+        ev(7, 'team.review.completed', { reviewId: 'rv1', status: 'passed', rounds: 1 }),
+        ev(8, 'turn.completed', { durationMs: 10 }),
+        ev(9, 'team.review.completed', { reviewId: 'rv2', status: 'failed', rounds: 0 }, 't2'),
+      ]),
+    )
+    const cards = screen.getAllByRole('region', { name: '审查循环' })
+    expect(cards).toHaveLength(2)
+    expect(cards[0]?.textContent).toContain('已通过')
+    expect(cards[1]?.textContent).toContain('失败')
   })
 })

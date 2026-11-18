@@ -1549,3 +1549,254 @@ describe('host delegation permissions (M4-03)', () => {
     for (const config of h.sandboxConfigs) expect(config?.onUnusable).toBeTypeOf('function')
   })
 })
+
+describe('host review loop (M7-07)', () => {
+  const loopDelegation = {
+    ...delegation,
+    allowedAgents: ['builtin.reviewer', 'builtin.coder'],
+    maxChildrenPerTurn: 6,
+  }
+
+  const loopTargets = [
+    { id: reviewer.id, definition: reviewer },
+    { id: coder.id, definition: coder },
+  ]
+
+  const reviewStep = (patch: Record<string, unknown> = {}) => ({
+    kind: 'tool' as const,
+    name: 'review_loop',
+    input: { goal: '写一份说明', maker: reviewer.id, checker: coder.id, ...patch },
+  })
+
+  const completed = (summary: string, output?: unknown) => ({
+    turns: [
+      {
+        steps: [
+          {
+            kind: 'reply' as const,
+            text: JSON.stringify({
+              status: 'completed',
+              summary,
+              ...(output === undefined ? {} : { output }),
+            }),
+          },
+        ],
+      },
+    ],
+  })
+
+  const loopEvents = (events: readonly UnsequencedEvent[]) =>
+    events
+      .filter(
+        (event) => event.type === 'team.review.round' || event.type === 'team.review.completed',
+      )
+      .map((event) => event.payload)
+
+  it('maker 草案通过审查后结束，只开一轮两个子运行', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: loopDelegation }),
+      targets: loopTargets,
+      parentScript: {
+        turns: [{ steps: [reviewStep(), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: completed('草案'),
+      grandchildScript: completed('没问题', { verdict: 'pass' }),
+    })
+    await h.initHost()
+    expect(h.runtimeTools['fake-1']?.map((tool) => tool.name)).toContain('review_loop')
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+
+    expect(h.events.filter((event) => event.type === 'run.delegated')).toHaveLength(2)
+    expect(loopEvents(h.events)).toEqual([
+      {
+        reviewId: expect.any(String),
+        round: 1,
+        makerRunId: expect.any(String),
+        checkerRunId: expect.any(String),
+        verdict: 'pass',
+      },
+      {
+        reviewId: expect.any(String),
+        status: 'passed',
+        rounds: 1,
+        summary: '草案',
+      },
+    ])
+    expect(toolCompletedText(h.events)).toContain('passed')
+  })
+
+  it('checker 一直要求修改时轮次用尽，意见带回给 maker', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: loopDelegation }),
+      targets: loopTargets,
+      parentScript: {
+        turns: [{ steps: [reviewStep({ maxRounds: 2 }), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: completed('草案'),
+      grandchildScript: completed('还要改', { verdict: 'revise', feedback: '补充测试' }),
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+
+    const rounds = loopEvents(h.events).filter(
+      (payload) => (payload as { round?: number }).round !== undefined,
+    )
+    expect(rounds).toHaveLength(2)
+    expect(rounds[0]).toMatchObject({ verdict: 'revise', feedback: '补充测试' })
+    expect(loopEvents(h.events).at(-1)).toMatchObject({
+      status: 'exhausted',
+      rounds: 2,
+      summary: '补充测试',
+    })
+    // 第 2 轮 maker 的任务书里带着上一轮的意见。
+    expect(h.systemPrompts['reviewer']).toBeDefined()
+  })
+
+  it('maker 第一轮就失败时没有轮次事件，完成事件仍记下结局', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: loopDelegation }),
+      targets: loopTargets,
+      parentScript: {
+        turns: [{ steps: [reviewStep(), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [
+              {
+                kind: 'fail',
+                error: { code: 'model.error' },
+                retryable: false,
+              },
+            ],
+          },
+        ],
+      },
+      grandchildScript: completed('没问题', { verdict: 'pass' }),
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+
+    expect(h.events.some((event) => event.type === 'team.review.round')).toBe(false)
+    expect(loopEvents(h.events).at(-1)).toMatchObject({ status: 'failed', rounds: 0 })
+  })
+
+  it('循环被硬错误打断时留下失败的结局', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: loopDelegation }),
+      targets: loopTargets,
+      parentScript: {
+        turns: [{ steps: [reviewStep(), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: {
+        turns: [
+          {
+            steps: [
+              {
+                kind: 'reply',
+                text: '{"status":"completed","summary":"草案"}',
+                usage: { inputTokens: -1, outputTokens: 0 },
+              },
+            ],
+          },
+        ],
+      },
+      grandchildScript: completed('没问题', { verdict: 'pass' }),
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(h.events.some((event) => event.type === 'team.review.round')).toBe(false)
+    expect(loopEvents(h.events).at(-1)).toMatchObject({ status: 'failed', rounds: 0 })
+  })
+
+  it('maker 与 checker 不能是同一个 Agent', async () => {
+    const h = setup({
+      definition: parentDefinition({ delegation: loopDelegation }),
+      targets: loopTargets,
+      parentScript: {
+        turns: [{ steps: [reviewStep({ checker: reviewer.id }), { kind: 'reply', text: 'done' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('review.same_agent')
+    expect(h.events.some((event) => event.type === 'run.delegated')).toBe(false)
+  })
+
+  it('写入类 Agent 不能参与审查循环（沿用只读边界）', async () => {
+    const writer = agent(coder.id, { permissions: 'ask' })
+    const h = setup({
+      definition: parentDefinition({ delegation: loopDelegation }),
+      targets: [
+        { id: reviewer.id, definition: reviewer },
+        { id: coder.id, definition: writer },
+      ],
+      parentScript: {
+        turns: [{ steps: [reviewStep(), { kind: 'reply', text: 'done' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('review.read_only_required')
+    expect(h.events.some((event) => event.type === 'run.delegated')).toBe(false)
+  })
+
+  it('maker 或 checker 不在 allowedAgents 时拒绝且不解析目标', async () => {
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...loopDelegation, allowedAgents: [reviewer.id] },
+      }),
+      targets: loopTargets,
+      parentScript: {
+        turns: [{ steps: [reviewStep(), { kind: 'reply', text: 'done' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('delegation.agent_not_allowed')
+    expect(h.createdRuntimes).toEqual(['fake-1'])
+  })
+
+  it('轮次上限按本轮剩余子运行名额收缩', async () => {
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...loopDelegation, maxChildrenPerTurn: 3 },
+      }),
+      targets: loopTargets,
+      parentScript: {
+        turns: [{ steps: [reviewStep({ maxRounds: 3 }), { kind: 'reply', text: 'done' }] }],
+      },
+      childScript: completed('草案'),
+      grandchildScript: completed('还要改', { verdict: 'revise', feedback: '继续' }),
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+    expect(h.events.filter((event) => event.type === 'team.review.round')).toHaveLength(1)
+    expect(loopEvents(h.events).at(-1)).toMatchObject({ status: 'exhausted', rounds: 1 })
+  })
+
+  it('本轮子运行名额不够两轮时不发起审查循环', async () => {
+    const h = setup({
+      definition: parentDefinition({
+        delegation: { ...loopDelegation, maxChildrenPerTurn: 1 },
+      }),
+      targets: loopTargets,
+      parentScript: {
+        turns: [{ steps: [reviewStep(), { kind: 'reply', text: 'done' }] }],
+      },
+    })
+    await h.initHost()
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('tool.failed')
+    expect(JSON.stringify(h.events)).toContain('delegation.children_per_turn_exceeded')
+    expect(h.createdRuntimes).toEqual(['fake-1'])
+  })
+})

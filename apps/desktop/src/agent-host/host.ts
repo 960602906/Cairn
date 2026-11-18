@@ -33,11 +33,17 @@ import {
   combinePermissionGates,
   DEFAULT_PERMISSION_GUARDS,
   DELEGATE_RESULT_INSTRUCTION,
+  DelegationErrorCode,
   DelegationSession,
   delegateToolSpec,
   PermissionReasonCode,
   resolveDelegationPolicy,
+  REVIEW_LOOP_DEFAULT_MAX_ROUNDS,
+  REVIEW_VERDICT_SCHEMA,
+  ReviewLoopInput,
+  reviewLoopToolSpec,
   runDelegation,
+  runReviewLoop,
   presetRules,
   buildSystemPrompt,
   buildRunSnapshot,
@@ -85,6 +91,8 @@ import {
   type ActiveTaskList,
   type AgentDefinition,
   type DelegateChanges,
+  DELEGATE_SUMMARY_MAX_CHARS,
+  DELEGATE_TASK_MAX_CHARS,
   DelegateInput,
   type HostModelConfig,
   type McpToolExposure,
@@ -101,6 +109,7 @@ import {
   type SandboxUnavailableBehavior,
   type ShellPreference,
   type SkillCatalogEntry,
+  TASK_BRIEF_CONTEXT_MAX_CHARS,
   type TaskItem,
   type TaskItemUpdateStatus,
   sandboxExecution,
@@ -781,8 +790,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     }
 
     /**
-     * 登记 `delegate` 工具（M4-02）：权限 → 校验 → 解析目标 → 创建子运行 → 等待 → 结构化结果。
-     * 未启用委派、没有可委派目标或深度已到上限时不登记，模型看不到这个工具。
+     * 登记 `delegate` 与 `review_loop` 工具（M4-02、M7-07）：权限 → 校验 → 解析目标 → 创建子运行
+     * → 等待 → 结构化结果。未启用委派、没有可委派目标或深度已到上限时不登记，模型看不到它们。
      */
     async function registerDelegateTool(
       target: ToolRegistry,
@@ -799,9 +808,197 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       if (!policy.enabled || policy.allowedAgents.length === 0 || chain.depth + 1 > maxDepth) {
         return
       }
-      const spec = delegateToolSpec(await loadDelegateTargets(policy.allowedAgents))
+      const targets = await loadDelegateTargets(policy.allowedAgents)
+      const spec = delegateToolSpec(targets)
       if (!spec) return
+      const loopSpec = reviewLoopToolSpec(targets)
       let session: DelegationSession | undefined
+      const delegationSession = (parent: AgentRunHandle): DelegationSession =>
+        (session ??= new DelegationSession({ policy, parent, chain }))
+
+      /** 解析委派目标；主进程的错误映射成工具错误。 */
+      async function resolveDelegationTarget(agentId: string): Promise<DelegatedTarget> {
+        try {
+          return await endpoint.request('host.delegate', { agent: agentId })
+        } catch (error) {
+          if (error instanceof RpcError) {
+            throw new ToolError(
+              error.code,
+              `Cannot delegate to ${agentId}: ${error.code}`,
+              error.params ?? {},
+            )
+          }
+          throw error
+        }
+      }
+
+      /**
+       * 创建并执行一次子运行：工作区、上下文、限额、改动集与清理都在这里。
+       * `delegate` 与 `review_loop` 共用同一条边界；已解析的目标可以传入，避免重复请求主进程。
+       */
+      async function runDelegatedChild(
+        parent: AgentRunHandle,
+        owner: DelegationSession,
+        input: DelegateInput,
+        resolvedTarget?: DelegatedTarget,
+      ) {
+        const remaining = parent.remainingLimits
+        const validation = owner.validate(input, {
+          ...(remaining ? { parentRemaining: remaining } : {}),
+        })
+        if (!validation.ok) {
+          const problem = validation.issues.find((entry) => entry.severity === 'error')
+          if (problem) {
+            throw new ToolError(problem.code, problem.code, problem.params ?? {})
+          }
+        }
+        const resolved = resolvedTarget ?? (await resolveDelegationTarget(input.agent))
+        const childPolicy = resolveDelegationPolicy(resolved.definition.delegation)
+        const childChain: DelegationChain = {
+          agentIds: [...chain.agentIds, resolved.definition.id],
+          depth: chain.depth + 1,
+          maxDepth: Math.min(maxDepth, childPolicy.maxDepth),
+        }
+        const childHandleRef: { current?: AgentRunHandle } = {}
+        const childRunId = options.createId()
+        const readOnly = resolved.definition.permissions === 'read-only'
+        const requested = input.workspace ?? policy.defaultWorkspace
+        let workspaceMode: 'shared' | 'isolated' =
+          requested === 'auto' ? (readOnly ? 'shared' : 'isolated') : requested
+        let workspacePath = parentWorkspacePath
+        let childCheckpoints = parentCheckpoints
+        let childGitDir = parentGitDir
+        let isolatedRunId: string | undefined
+        let releaseShared: (() => void) | undefined
+        try {
+          if (workspaceMode === 'isolated') {
+            let baseCommit: string | undefined
+            try {
+              baseCommit = await parentCheckpoints.create('delegation')
+            } catch (error) {
+              onError(error)
+            }
+            if (baseCommit === undefined) {
+              // 没有可用的检查点（未安装 Git 等）：退化为共享写入，由会话级锁串行。
+              workspaceMode = 'shared'
+            } else {
+              try {
+                const created = await endpoint.request('host.workspace.create', {
+                  projectPath: parentWorkspacePath,
+                  baseCommit,
+                  sessionId: init.sessionId,
+                  runId: childRunId,
+                  ...(parentGitDir !== undefined ? { gitDir: parentGitDir } : {}),
+                })
+                workspacePath = created.path
+                isolatedRunId = childRunId
+                childGitDir = created.checkpoint.gitDir
+                childCheckpoints = options.openCheckpoints
+                  ? createHostCheckpoints({
+                      gitDir: created.checkpoint.gitDir,
+                      ref: created.checkpoint.ref,
+                      workTree: created.path,
+                      open: options.openCheckpoints,
+                      ...(init.git
+                        ? {
+                            gitBinary: init.git.binary,
+                            ...(init.git.env ? { gitEnv: init.git.env } : {}),
+                          }
+                        : {}),
+                      extraExcludes: ['.git'],
+                      onError,
+                    })
+                  : NO_CHECKPOINTS
+              } catch (error) {
+                // 主进程没有隔离工作区服务、磁盘配额或创建失败：回退到共享写入。
+                onError(error)
+                workspaceMode = 'shared'
+              }
+            }
+          }
+          if (workspaceMode === 'shared' && !readOnly) {
+            releaseShared = await acquireSharedWrite()
+          }
+          const context = await buildDelegatedContext(
+            resolved,
+            childChain,
+            childHandleRef,
+            parentGate,
+            handleRef.current?.runId ?? parentRunId,
+            {
+              path: workspacePath,
+              checkpoints: childCheckpoints,
+              ...(childGitDir !== undefined ? { gitDir: childGitDir } : {}),
+            },
+          )
+          if (!supervisor) {
+            throw new ToolError(ToolErrorCode.ExecutionFailed, 'The host is not ready.')
+          }
+          return await runDelegation({
+            sessionId: init.sessionId,
+            supervisor,
+            parent,
+            session: owner,
+            target: {
+              definition: resolved.definition,
+              context,
+              workspace: { path: workspacePath },
+            } satisfies DelegationTarget,
+            input,
+            childRunId,
+            workspace: workspaceMode,
+            parentRemaining: remaining ?? {},
+            systemPrompt: context.systemPrompt ?? '',
+            onChildCreated: (created) => (childHandleRef.current = created),
+            ...(isolatedRunId !== undefined
+              ? {
+                  // 隔离工作区里的改动先算成改动集（`changeset.created` 早于 `run.child.completed`），
+                  // 再由下面的 finally 清理工作区。
+                  collectChanges: async (childId: string): Promise<DelegateChanges | undefined> => {
+                    try {
+                      const created = await endpoint.request('host.changeset.create', {
+                        runId: childId,
+                        parentRunId: parent.runId,
+                      })
+                      return {
+                        changeSetId: created.changeSetId,
+                        files: created.files,
+                        merge: 'pending_review',
+                      }
+                    } catch (error) {
+                      // 旧主进程没有这个接口，或改动集生成失败：委派结果照常返回。
+                      if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') {
+                        onError(error)
+                      }
+                      return undefined
+                    }
+                  },
+                }
+              : {}),
+          })
+        } finally {
+          releaseShared?.()
+          if (isolatedRunId !== undefined) {
+            try {
+              await endpoint.request('host.workspace.cleanup', { runId: isolatedRunId })
+            } catch (error) {
+              onError(error)
+            }
+          }
+        }
+      }
+
+      const invalidInput = (
+        label: string,
+        error: { issues: { path: PropertyKey[]; message: string }[] },
+      ) =>
+        new ToolError(
+          ToolErrorCode.InvalidInput,
+          `Invalid ${label} input: ${error.issues
+            .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+            .join('; ')}`,
+        )
+
       target.register({
         name: spec.name,
         description: spec.description,
@@ -812,178 +1009,198 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
         parallel: true,
         async execute(raw) {
           const parsed = DelegateInput.safeParse(raw)
-          if (!parsed.success) {
-            throw new ToolError(
-              ToolErrorCode.InvalidInput,
-              `Invalid delegate input: ${parsed.error.issues
-                .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-                .join('; ')}`,
-            )
+          if (!parsed.success) throw invalidInput('delegate', parsed.error)
+          const parent = handleRef.current
+          if (!parent) {
+            throw new ToolError(ToolErrorCode.ExecutionFailed, 'Delegation is not ready yet.')
           }
+          const result = await runDelegatedChild(parent, delegationSession(parent), parsed.data)
+          return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+        },
+      })
+
+      if (!loopSpec) return
+      target.register({
+        name: loopSpec.name,
+        description: loopSpec.description,
+        inputSchema: loopSpec.inputSchema as JsonSchema,
+        category: 'delegate',
+        source: { kind: 'builtin' },
+        trust: 'builtin',
+        // 每轮串行执行，父运行在等子运行时不会再并发发起下一轮。
+        parallel: false,
+        async execute(raw) {
+          const parsed = ReviewLoopInput.safeParse(raw)
+          if (!parsed.success) throw invalidInput('review_loop', parsed.error)
           const input = parsed.data
           const parent = handleRef.current
           if (!parent) {
             throw new ToolError(ToolErrorCode.ExecutionFailed, 'Delegation is not ready yet.')
           }
-          session ??= new DelegationSession({ policy, parent, chain })
-          const remaining = parent.remainingLimits
-          const validation = session.validate(input, {
-            ...(remaining ? { parentRemaining: remaining } : {}),
-          })
-          if (!validation.ok) {
-            const problem = validation.issues.find((entry) => entry.severity === 'error')
-            if (problem) {
-              throw new ToolError(problem.code, problem.code, problem.params ?? {})
+          if (input.maker === input.checker) {
+            throw new ToolError(
+              'review.same_agent',
+              'The maker and checker must be different agents.',
+            )
+          }
+          for (const agentId of [input.maker, input.checker]) {
+            if (!policy.allowedAgents.includes(agentId)) {
+              throw new ToolError(DelegationErrorCode.AgentNotAllowed, agentId, { agent: agentId })
             }
           }
-          let resolved: DelegatedTarget
-          try {
-            resolved = await endpoint.request('host.delegate', { agent: input.agent })
-          } catch (error) {
-            if (error instanceof RpcError) {
+          const makerTarget = await resolveDelegationTarget(input.maker)
+          const checkerTarget = await resolveDelegationTarget(input.checker)
+          for (const [role, resolved] of [
+            ['maker', makerTarget],
+            ['checker', checkerTarget],
+          ] as const) {
+            if (resolved.definition.permissions !== 'read-only') {
               throw new ToolError(
-                error.code,
-                `Cannot delegate to ${input.agent}: ${error.code}`,
-                error.params ?? {},
+                'review.read_only_required',
+                `The ${role} agent must be read-only: ${resolved.definition.id}`,
+                { agent: resolved.definition.id, role },
               )
             }
-            throw error
           }
-          const childPolicy = resolveDelegationPolicy(resolved.definition.delegation)
-          const childChain: DelegationChain = {
-            agentIds: [...chain.agentIds, resolved.definition.id],
-            depth: chain.depth + 1,
-            maxDepth: Math.min(maxDepth, childPolicy.maxDepth),
-          }
-          const childHandleRef: { current?: AgentRunHandle } = {}
-          const childRunId = options.createId()
-          const readOnly = resolved.definition.permissions === 'read-only'
-          const requested = input.workspace ?? policy.defaultWorkspace
-          let workspaceMode: 'shared' | 'isolated' =
-            requested === 'auto' ? (readOnly ? 'shared' : 'isolated') : requested
-          let workspacePath = parentWorkspacePath
-          let childCheckpoints = parentCheckpoints
-          let childGitDir = parentGitDir
-          let isolatedRunId: string | undefined
-          let releaseShared: (() => void) | undefined
-          try {
-            if (workspaceMode === 'isolated') {
-              let baseCommit: string | undefined
-              try {
-                baseCommit = await parentCheckpoints.create('delegation')
-              } catch (error) {
-                onError(error)
-              }
-              if (baseCommit === undefined) {
-                // 没有可用的检查点（未安装 Git 等）：退化为共享写入，由会话级锁串行。
-                workspaceMode = 'shared'
-              } else {
-                try {
-                  const created = await endpoint.request('host.workspace.create', {
-                    projectPath: parentWorkspacePath,
-                    baseCommit,
-                    sessionId: init.sessionId,
-                    runId: childRunId,
-                    ...(parentGitDir !== undefined ? { gitDir: parentGitDir } : {}),
-                  })
-                  workspacePath = created.path
-                  isolatedRunId = childRunId
-                  childGitDir = created.checkpoint.gitDir
-                  childCheckpoints = options.openCheckpoints
-                    ? createHostCheckpoints({
-                        gitDir: created.checkpoint.gitDir,
-                        ref: created.checkpoint.ref,
-                        workTree: created.path,
-                        open: options.openCheckpoints,
-                        ...(init.git
-                          ? {
-                              gitBinary: init.git.binary,
-                              ...(init.git.env ? { gitEnv: init.git.env } : {}),
-                            }
-                          : {}),
-                        extraExcludes: ['.git'],
-                        onError,
-                      })
-                    : NO_CHECKPOINTS
-                } catch (error) {
-                  // 主进程没有隔离工作区服务、磁盘配额或创建失败：回退到共享写入。
-                  onError(error)
-                  workspaceMode = 'shared'
-                }
-              }
-            }
-            if (workspaceMode === 'shared' && !readOnly) {
-              releaseShared = await acquireSharedWrite()
-            }
-            const context = await buildDelegatedContext(
-              resolved,
-              childChain,
-              childHandleRef,
-              parentGate,
-              handleRef.current?.runId ?? parentRunId,
+
+          const owner = delegationSession(parent)
+          // 每轮两个子运行；按本轮剩余名额收缩轮次，避免中途被每轮上限截断。
+          const roundsLeft = Math.floor((policy.maxChildrenPerTurn - owner.childrenThisTurn) / 2)
+          if (roundsLeft < 1) {
+            throw new ToolError(
+              DelegationErrorCode.ChildrenPerTurnExceeded,
+              DelegationErrorCode.ChildrenPerTurnExceeded,
               {
-                path: workspacePath,
-                checkpoints: childCheckpoints,
-                ...(childGitDir !== undefined ? { gitDir: childGitDir } : {}),
+                children: owner.childrenThisTurn,
+                maxChildrenPerTurn: policy.maxChildrenPerTurn,
               },
             )
-            if (!supervisor) {
-              throw new ToolError(ToolErrorCode.ExecutionFailed, 'The host is not ready.')
-            }
-            const result = await runDelegation({
-              sessionId: init.sessionId,
-              supervisor,
-              parent,
-              session,
-              target: {
-                definition: resolved.definition,
-                context,
-                workspace: { path: workspacePath },
-              } satisfies DelegationTarget,
-              input,
-              childRunId,
-              workspace: workspaceMode,
-              parentRemaining: remaining ?? {},
-              systemPrompt: context.systemPrompt ?? '',
-              onChildCreated: (created) => (childHandleRef.current = created),
-              ...(isolatedRunId !== undefined
-                ? {
-                    // 隔离工作区里的改动先算成改动集（`changeset.created` 早于 `run.child.completed`），
-                    // 再由下面的 finally 清理工作区。
-                    collectChanges: async (
-                      childId: string,
-                    ): Promise<DelegateChanges | undefined> => {
-                      try {
-                        const created = await endpoint.request('host.changeset.create', {
-                          runId: childId,
-                          parentRunId: parent.runId,
-                        })
-                        return {
-                          changeSetId: created.changeSetId,
-                          files: created.files,
-                          merge: 'pending_review',
-                        }
-                      } catch (error) {
-                        // 旧主进程没有这个接口，或改动集生成失败：委派结果照常返回。
-                        if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') {
-                          onError(error)
-                        }
-                        return undefined
-                      }
+          }
+          const maxRounds = Math.min(input.maxRounds ?? REVIEW_LOOP_DEFAULT_MAX_ROUNDS, roundsLeft)
+
+          const contextWith = (...parts: (string | undefined)[]): string | undefined => {
+            const text = parts.filter((part): part is string => !!part).join('\n\n')
+            return text === '' ? undefined : text.slice(0, TASK_BRIEF_CONTEXT_MAX_CHARS)
+          }
+          const reviewId = options.createId()
+          let emittedRounds = 0
+          const result = await (async () => {
+            try {
+              return await runReviewLoop({
+                maxRounds,
+                runMaker: async ({ round, feedback }) => {
+                  const briefContext = contextWith(
+                    input.context,
+                    feedback === undefined
+                      ? undefined
+                      : `Reviewer feedback from the previous round:\n${feedback}`,
+                  )
+                  const child = await runDelegatedChild(
+                    parent,
+                    owner,
+                    {
+                      agent: input.maker,
+                      task: `Round ${round} draft: ${input.goal}`.slice(0, DELEGATE_TASK_MAX_CHARS),
+                      brief: {
+                        goal: input.goal,
+                        deliverable:
+                          input.deliverable ?? 'A complete result that satisfies the goal.',
+                        ...(briefContext === undefined ? {} : { context: briefContext }),
+                        ...(input.files === undefined ? {} : { files: [...input.files] }),
+                      },
                     },
+                    makerTarget,
+                  )
+                  return {
+                    status: child.status,
+                    summary: child.summary,
+                    runId: child.childRunId,
                   }
-                : {}),
-            })
-            return { content: [{ type: 'text', text: JSON.stringify(result) }] }
-          } finally {
-            releaseShared?.()
-            if (isolatedRunId !== undefined) {
-              try {
-                await endpoint.request('host.workspace.cleanup', { runId: isolatedRunId })
-              } catch (error) {
-                onError(error)
-              }
+                },
+                runChecker: async ({ round, makerSummary }) => {
+                  const briefContext = contextWith(
+                    input.context,
+                    `Maker result for round ${round}:\n${makerSummary}`,
+                  )
+                  const child = await runDelegatedChild(
+                    parent,
+                    owner,
+                    {
+                      agent: input.checker,
+                      task: `Round ${round} review: ${input.goal}`.slice(
+                        0,
+                        DELEGATE_TASK_MAX_CHARS,
+                      ),
+                      brief: {
+                        goal: `Review whether the maker result satisfies this goal:\n${input.goal}`,
+                        deliverable: 'Return the verdict object described in the system prompt.',
+                        outputSchema: { ...REVIEW_VERDICT_SCHEMA },
+                        ...(briefContext === undefined ? {} : { context: briefContext }),
+                        ...(input.files === undefined ? {} : { files: [...input.files] }),
+                      },
+                    },
+                    checkerTarget,
+                  )
+                  const output = child.output as
+                    { readonly verdict?: unknown; readonly feedback?: unknown } | undefined
+                  const feedback =
+                    typeof output?.feedback === 'string'
+                      ? output.feedback.slice(0, DELEGATE_SUMMARY_MAX_CHARS)
+                      : undefined
+                  return {
+                    status: child.status,
+                    summary: child.summary,
+                    runId: child.childRunId,
+                    verdict: output?.verdict === 'pass' ? ('pass' as const) : ('revise' as const),
+                    ...(feedback === undefined ? {} : { feedback }),
+                  }
+                },
+                onRound: (roundResult) => {
+                  emittedRounds += 1
+                  parent.emitEvent('team.review.round', {
+                    reviewId,
+                    round: roundResult.round,
+                    makerRunId: roundResult.makerRunId,
+                    checkerRunId: roundResult.checkerRunId,
+                    verdict: roundResult.verdict,
+                    ...(roundResult.feedback === undefined
+                      ? {}
+                      : { feedback: roundResult.feedback }),
+                  })
+                },
+              })
+            } catch (error) {
+              // 循环被硬错误打断（校验、预算、主进程失败）：留下可展示的结局再抛给模型。
+              parent.emitEvent('team.review.completed', {
+                reviewId,
+                status: 'failed',
+                rounds: emittedRounds,
+                summary:
+                  error instanceof Error ? error.message.slice(0, 4_000) : 'Review loop failed.',
+              })
+              throw error
             }
+          })()
+
+          parent.emitEvent('team.review.completed', {
+            reviewId,
+            status: result.outcome,
+            rounds: result.rounds.length,
+            ...(result.summary === ''
+              ? {}
+              : { summary: result.summary.slice(0, DELEGATE_SUMMARY_MAX_CHARS) }),
+          })
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  status: result.outcome,
+                  rounds: result.rounds.length,
+                  summary: result.summary,
+                }),
+              },
+            ],
           }
         },
       })
