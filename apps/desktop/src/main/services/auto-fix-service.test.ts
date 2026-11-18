@@ -6,7 +6,9 @@ import {
   RpcError,
   type AutoFixJob,
   type AutoFixJobStatus,
+  type AutoFixTrigger,
   type GithubPullRequest,
+  type GithubReviewComment,
 } from '@cairn/protocol'
 import type { GitResult, GitRunner } from '@cairn/checkpoint'
 import { createMemoryStorage, type PullRequestWatchRecord, type Storage } from '@cairn/storage'
@@ -51,6 +53,7 @@ let prompt: ReturnType<typeof vi.fn>
 let gitRun: ReturnType<typeof vi.fn>
 let pulls: ReturnType<typeof vi.fn>
 let logs: ReturnType<typeof vi.fn>
+let comments: ReturnType<typeof vi.fn>
 let errors: unknown[]
 let clock: number
 
@@ -62,6 +65,7 @@ function setup(
   overrides: {
     pull?: GithubPullRequest
     token?: string | undefined
+    comments?: GithubReviewComment[]
     onJobFinished?: (job: AutoFixJob, watch: PullRequestWatchRecord) => void
   } = {},
 ) {
@@ -72,12 +76,14 @@ function setup(
   gitRun = vi.fn(async () => gitResult())
   pulls = vi.fn(async () => overrides.pull ?? PULL)
   logs = vi.fn(async () => ({ text: 'TypeError: boom', truncated: false }))
+  comments = vi.fn(async () => overrides.comments ?? [])
   errors = []
   const git = { binary: 'git', run: gitRun } as unknown as GitRunner
   const github = {
     pullRequest: pulls,
     checkLog: logs,
-  } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog'>
+    reviewComments: comments,
+  } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>
   const sessions = { prompt } as unknown as Pick<SessionManager, 'prompt'>
   const service = createAutoFixService({
     storage,
@@ -113,14 +119,14 @@ function addWatch(
 /** 直接写存储，避免 `addWatch` 附带的异步轮询干扰断言。 */
 function seedWatch(
   service: AutoFixService,
-  patch: { attempts?: number; maxAttempts?: number } = {},
+  patch: { attempts?: number; maxAttempts?: number; triggers?: AutoFixTrigger[] } = {},
 ) {
   storage.autoFix.watches.create({
     watchId: 'w1',
     repo: 'o/r',
     prNumber: 12,
     projectPath,
-    triggers: ['ci', 'conflict'],
+    triggers: patch.triggers ?? ['ci', 'conflict'],
     maxAttempts: patch.maxAttempts ?? 3,
   })
   if (patch.attempts !== undefined) {
@@ -157,12 +163,23 @@ function gitByStep(
     ancestor?: GitResult
     head?: GitResult
     push?: GitResult
+    merge?: GitResult
+    unmerged?: string[]
+    unmergedCode?: number
   } = {},
 ) {
   gitRun.mockImplementation(async (args: string[]) => {
     if (args.includes('fetch')) return overrides.fetch ?? gitResult()
     if (args.includes('cat-file')) return overrides.catFile ?? gitResult()
     if (args.includes('merge-base')) return overrides.ancestor ?? gitResult()
+    if (args.includes('merge')) return overrides.merge ?? gitResult()
+    if (args.includes('diff')) {
+      return {
+        code: overrides.unmergedCode ?? 0,
+        stdout: Buffer.from((overrides.unmerged ?? []).join('\n')),
+        stderr: '',
+      }
+    }
     if (args.includes('rev-parse')) {
       return overrides.head ?? { code: 0, stdout: Buffer.from('local123\n'), stderr: '' }
     }
@@ -208,6 +225,22 @@ describe('repairTrigger', () => {
     expect(repairTrigger(PULL, ['conflict'])).toBeUndefined()
   })
 
+  it('signs new review comments with the latest comment id', () => {
+    const newComments: GithubReviewComment[] = [
+      { id: 40, author: 'ann', body: 'Please rename this.', path: 'src/a.ts', line: 7 },
+      { id: 42, author: 'bob', body: 'Nit: typo.' },
+    ]
+    expect(repairTrigger(PULL, ['comment'], newComments)).toEqual({
+      trigger: 'comment',
+      signature: 'abcdef1234567890:comment:42',
+      failed: [],
+      comments: newComments,
+    })
+    expect(repairTrigger(PULL, ['comment'], [])).toBeUndefined()
+    // 检查项优先于评审意见：同一轮里先修失败的检查。
+    expect(repairTrigger(PULL, ['ci', 'comment'], newComments)?.trigger).toBe('ci')
+  })
+
   it('does not treat running or neutral checks as failures', () => {
     const pull = {
       ...PULL,
@@ -236,6 +269,55 @@ describe('repairBrief', () => {
     expect(brief).toContain('git_push')
     expect(brief).toContain('不要强制推送')
     expect(brief).toContain('boom')
+  })
+
+  it('explains the merge that was already started and lists conflict files', () => {
+    const brief = repairBrief({
+      pull: { ...PULL, mergeableState: 'dirty', checks: [] },
+      trigger: 'conflict',
+      failed: [],
+      worktree: '/tmp/pr-w1',
+      conflicts: ['src/a.ts', 'src/b.ts'],
+    })
+    expect(brief).toContain('git merge origin/main')
+    expect(brief).toContain('- src/a.ts')
+    expect(brief).toContain('- src/b.ts')
+    expect(brief).toContain('不要 rebase')
+    expect(brief).toContain('git_commit')
+  })
+
+  it('lists new review comments with their location and author', () => {
+    const brief = repairBrief({
+      pull: PULL,
+      trigger: 'comment',
+      failed: [],
+      worktree: '/tmp/pr-w1',
+      comments: [
+        { id: 40, author: 'ann', body: 'Please rename this.', path: 'src/a.ts', line: 7 },
+        { id: 41, author: 'bob', body: 'Nit: typo.' },
+      ],
+    })
+    expect(brief).toContain('评审意见：2 条')
+    expect(brief).toContain('@ann（src/a.ts:7）：Please rename this.')
+    expect(brief).toContain('@bob：Nit: typo.')
+  })
+
+  it('truncates long comment lists and bodies', () => {
+    const many: GithubReviewComment[] = Array.from({ length: 22 }, (_, index) => ({
+      id: index + 1,
+      author: 'ann',
+      body: `comment ${index + 1} ${'x'.repeat(900)}`,
+    }))
+    const brief = repairBrief({
+      pull: PULL,
+      trigger: 'comment',
+      failed: [],
+      worktree: '/tmp/pr-w1',
+      comments: many,
+    })
+    expect(brief).toContain('（其余 2 条见 PR 页面）')
+    expect(brief).not.toContain('comment 21')
+    expect(brief.indexOf('comment 1 ')).toBeGreaterThan(0)
   })
 })
 
@@ -670,7 +752,8 @@ describe('auto-fix service', () => {
     const github = {
       pullRequest: pulls,
       checkLog: vi.fn(),
-    } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog'>
+      reviewComments: vi.fn(async () => []),
+    } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>
     const sessions = { prompt: vi.fn() } as unknown as Pick<SessionManager, 'prompt'>
     const git = { binary: 'git', run: vi.fn(async () => gitResult()) } as unknown as GitRunner
     const service = createAutoFixService({
@@ -708,7 +791,8 @@ describe('auto-fix service', () => {
       const github = {
         pullRequest: pulls,
         checkLog: logs,
-      } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog'>
+        reviewComments: vi.fn(async () => []),
+      } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>
       const sessions = { prompt } as unknown as Pick<SessionManager, 'prompt'>
       const service = createAutoFixService({
         storage,
@@ -736,6 +820,123 @@ describe('auto-fix service', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('auto-fix conflicts and review comments (M8-04)', () => {
+  const dirty = { ...PULL, checks: [], mergeableState: 'dirty' }
+
+  it('merges the base branch into the worktree and lists conflicts in the brief', async () => {
+    const service = seedWatch(setup({ pull: dirty }))
+    gitByStep({ merge: gitResult(1, 'CONFLICT (content)'), unmerged: ['src/a.ts', 'src/b.ts'] })
+
+    await service.poll()
+
+    expect(gitRun).toHaveBeenCalledWith(
+      expect.arrayContaining(['merge', '--no-edit', 'origin/main']),
+      { allowFail: true },
+    )
+    const job = storage.autoFix.jobs.list()[0]!
+    expect(job).toMatchObject({ trigger: 'conflict', status: 'running' })
+    const text = prompt.mock.calls[0]![0].content[0].text as string
+    expect(text).toContain('- src/a.ts')
+    expect(text).toContain('- src/b.ts')
+    expect(text).toContain('不要 rebase')
+  })
+
+  it('continues without a file list when the merge left nothing unmerged', async () => {
+    const service = seedWatch(setup({ pull: dirty }))
+    gitByStep({ unmergedCode: 1 })
+
+    await service.poll()
+
+    expect(storage.autoFix.jobs.list()[0]).toMatchObject({
+      trigger: 'conflict',
+      status: 'running',
+    })
+    const text = prompt.mock.calls[0]![0].content[0].text as string
+    expect(text).toContain('（没有未合并文件）')
+  })
+
+  it('fails the job when the base branch cannot be merged at all', async () => {
+    const service = seedWatch(setup({ pull: dirty }))
+    gitByStep({ merge: gitResult(1, 'not something we can merge') })
+
+    await service.poll()
+
+    const job = storage.autoFix.jobs.list()[0]!
+    expect(job.status).toBe('failed')
+    expect(job.detail).toContain('not something we can merge')
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('baselines existing comments without starting a repair', async () => {
+    const service = seedWatch(
+      setup({ comments: [{ id: 5, author: 'ann', body: 'old comment' }] }),
+      { triggers: ['comment'] },
+    )
+
+    await service.poll()
+
+    expect(comments).toHaveBeenCalledWith({ repo: 'o/r', number: 12 })
+    expect(storage.autoFix.watches.get('w1')!.lastCommentId).toBe(5)
+    expect(storage.autoFix.jobs.list()).toEqual([])
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('starts a repair for comments newer than the last handled id', async () => {
+    const service = seedWatch(
+      setup({
+        comments: [
+          { id: 6, author: 'ann', body: 'old comment' },
+          { id: 8, author: 'bob', body: 'Please fix this', path: 'src/a.ts', line: 3 },
+        ],
+      }),
+      { triggers: ['comment'] },
+    )
+    storage.autoFix.watches.update('w1', { lastCommentId: 6 })
+
+    await service.poll()
+
+    expect(storage.autoFix.jobs.list()[0]).toMatchObject({
+      trigger: 'comment',
+      status: 'running',
+    })
+    expect(storage.autoFix.watches.get('w1')!.lastCommentId).toBe(8)
+    const text = prompt.mock.calls[0]![0].content[0].text as string
+    expect(text).toContain('@bob（src/a.ts:3）：Please fix this')
+    expect(text).not.toContain('old comment')
+  })
+
+  it('does not repair the same comments twice', async () => {
+    const service = seedWatch(setup({ comments: [{ id: 9, author: 'ann', body: 'fix please' }] }), {
+      triggers: ['comment'],
+    })
+    // 基线已经建立（0）：第一轮处理新意见，第二轮不再重复。
+    storage.autoFix.watches.update('w1', { lastCommentId: 0 })
+
+    await service.poll()
+    await service.poll()
+
+    expect(storage.autoFix.jobs.list()).toHaveLength(1)
+    expect(prompt).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a comment read failure without treating it as no comments', async () => {
+    const service = seedWatch(setup(), { triggers: ['comment'] })
+    comments.mockRejectedValueOnce(new RpcError('github.network'))
+
+    await service.poll()
+
+    expect(errors).toHaveLength(1)
+    expect(storage.autoFix.watches.get('w1')!.lastCommentId).toBeUndefined()
+    expect(storage.autoFix.jobs.list()).toEqual([])
+  })
+
+  it('does not read comments unless the trigger is enabled', async () => {
+    const service = seedWatch(setup())
+    await service.poll()
+    expect(comments).not.toHaveBeenCalled()
   })
 })
 
@@ -897,10 +1098,11 @@ describe('auto-fix git tools (M8-03)', () => {
     const failing = createAutoFixService({
       storage,
       events,
-      github: { pullRequest: pulls, checkLog: logs } as unknown as Pick<
-        GithubService,
-        'pullRequest' | 'checkLog'
-      >,
+      github: {
+        pullRequest: pulls,
+        checkLog: logs,
+        reviewComments: vi.fn(async () => []),
+      } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>,
       sessions: { prompt } as unknown as Pick<SessionManager, 'prompt'>,
       git: { binary: 'git', run: gitRun } as unknown as GitRunner,
       worktreesRoot: root,

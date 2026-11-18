@@ -316,9 +316,34 @@ describe('AutofixSettings', () => {
         repo: '960602906/Cairn',
         prNumber: 202,
         projectPath: '/work/cairn',
+        triggers: ['ci', 'conflict'],
       }),
     )
     expect(await screen.findByText('960602906/Cairn#202')).toBeTruthy()
+  })
+
+  it('lets a new watch react to new review comments too', async () => {
+    const { store, request } = setup({
+      'github.status': () => ({ connected: true, login: 'mrqin' }),
+      'autofix.status': () => EMPTY_AUTOFIX,
+      'autofix.watch.add': () => ({ paused: false, watches: [WATCH], jobs: [] }),
+    })
+    store.setState({
+      projects: [{ projectId: 'p1', name: 'Cairn', path: '/work/cairn', createdAt: 1 }],
+    })
+    expect(await screen.findByText('已连接 mrqin')).toBeTruthy()
+    await userEvent.type(screen.getByLabelText('监视仓库'), '960602906/Cairn')
+    await userEvent.type(screen.getByLabelText('监视 PR 编号'), '202')
+    await userEvent.click(screen.getByLabelText('新评审意见'))
+    await userEvent.click(screen.getByRole('button', { name: '添加监视' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('autofix.watch.add', {
+        repo: '960602906/Cairn',
+        prNumber: 202,
+        projectPath: '/work/cairn',
+        triggers: ['ci', 'conflict', 'comment'],
+      }),
+    )
   })
 
   it('keeps the pull request when the log cannot be read', async () => {

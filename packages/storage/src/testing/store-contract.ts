@@ -1837,6 +1837,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           maxAttempts: 3,
           createdAt: 100,
         })
+        expect(created.lastCommentId).toBeUndefined()
         expect(storage.autoFix.watches.get('w1')).toEqual(created)
         expect(storage.autoFix.watches.get('missing')).toBeUndefined()
         expect(storage.autoFix.watches.findByPullRequest('o/r', 12)?.watchId).toBe('w1')
@@ -1849,6 +1850,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           maxAttempts: 5,
           attempts: 2,
           lastSignature: 'sha:test',
+          lastCommentId: 42,
           lastEvaluatedAt: 150,
         })
         expect(updated).toMatchObject({
@@ -1857,6 +1859,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           maxAttempts: 5,
           attempts: 2,
           lastSignature: 'sha:test',
+          lastCommentId: 42,
           lastEvaluatedAt: 150,
         })
 

@@ -504,6 +504,7 @@ interface WatchRow {
   enabled: number
   attempts: number
   last_signature: string | null
+  last_comment_id: number | null
   last_evaluated_at: number | null
   created_at: number
 }
@@ -527,7 +528,8 @@ const parseTriggers = (value: string): AutoFixTrigger[] => {
     const parsed: unknown = JSON.parse(value)
     if (Array.isArray(parsed)) {
       const triggers = parsed.filter(
-        (item): item is AutoFixTrigger => item === 'ci' || item === 'conflict',
+        (item): item is AutoFixTrigger =>
+          item === 'ci' || item === 'conflict' || item === 'comment',
       )
       if (triggers.length > 0) return triggers
     }
@@ -547,6 +549,7 @@ const toWatch = (row: WatchRow): PullRequestWatchRecord => ({
   enabled: row.enabled === 1,
   attempts: row.attempts,
   ...(row.last_signature === null ? {} : { lastSignature: row.last_signature }),
+  ...(row.last_comment_id === null ? {} : { lastCommentId: row.last_comment_id }),
   ...(row.last_evaluated_at === null ? {} : { lastEvaluatedAt: row.last_evaluated_at }),
   createdAt: row.created_at,
 })
@@ -1831,6 +1834,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
                attempts = coalesce(@attempts, attempts),
                last_signature = CASE WHEN @signatureChanged = 1 THEN @lastSignature
                  ELSE last_signature END,
+               last_comment_id = coalesce(@lastCommentId, last_comment_id),
                last_evaluated_at = coalesce(@lastEvaluatedAt, last_evaluated_at)
              WHERE watch_id = @watchId`,
           ).run({
@@ -1841,6 +1845,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
             attempts: patch.attempts ?? null,
             signatureChanged: signatureChanged ? 1 : 0,
             lastSignature: patch.lastSignature ?? null,
+            lastCommentId: patch.lastCommentId ?? null,
             lastEvaluatedAt: patch.lastEvaluatedAt ?? null,
           })
           return watchById(watchId)!

@@ -22,6 +22,7 @@ import { trialTeam } from './0020-trial-team.js'
 import { providerCatalog } from './0021-provider-catalog.js'
 import { autoFix } from './0022-auto-fix.js'
 import { autoFixSessionIndex } from './0023-auto-fix-session-index.js'
+import { autoFixLastComment } from './0024-auto-fix-last-comment.js'
 
 /** 应用的全部迁移，按编号排列。新增迁移时追加到末尾。 */
 export const MIGRATIONS: readonly Migration[] = [
@@ -48,4 +49,5 @@ export const MIGRATIONS: readonly Migration[] = [
   providerCatalog,
   autoFix,
   autoFixSessionIndex,
+  autoFixLastComment,
 ]

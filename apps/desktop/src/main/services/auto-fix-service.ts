@@ -1,5 +1,5 @@
 /**
- * 自动修复的监视与触发（M8-02）。
+ * 自动修复的监视与触发（M8-02 / M8-04）。
  *
  * - 轮询而不是 Webhook（桌面应用没有稳定公网入口）：每个启用的监视按固定间隔读取一次 PR；
  * - 去重签名（`headSha + 失败检查名` / `headSha`）：同一份提交只修一次，推送或改了检查才进入下一轮；
@@ -8,7 +8,9 @@
  * - 修复会话 `kind = 'auto-fix'`，以无人值守方式运行（ADR-0018）；自动修复会话可以用
  *   `git_commit` / `git_push` 两个受控工具提交并推送到 PR 的 head 分支（M8-03）；
  * - 推送后下一轮轮询：检查通过记为 `passed`；仍有新的失败则进入下一次尝试；达到尝试上限时
- *   关闭监视并记录 `gave_up`，同时通知用户。
+ *   关闭监视并记录 `gave_up`，同时通知用户；
+ * - 合并冲突时先在工作区里 `git merge origin/<base>`，未合并文件交给会话解决（M8-04）；
+ * - 新评审意见按评论 id 触发：新监视先建立基线，之后 id 更大的行内评论才会开一轮修复（M8-04）。
  *
  * 不依赖 Electron：Git、GitHub、会话与时间来源都由调用方注入。
  */
@@ -26,6 +28,7 @@ import {
   type AutoFixStatus,
   type AutoFixTrigger,
   type GithubPullRequest,
+  type GithubReviewComment,
 } from '@cairn/protocol'
 import type { GitRunner } from '@cairn/checkpoint'
 import type { PullRequestWatchRecord, Storage } from '@cairn/storage'
@@ -50,8 +53,8 @@ export const AutoFixErrorCode = {
 export interface AutoFixServiceOptions {
   readonly storage: Pick<Storage, 'autoFix' | 'sessions' | 'projects'>
   readonly events: Pick<SessionEventService, 'publish' | 'subscribe'>
-  /** 只用到 PR 快照与失败日志。 */
-  readonly github: Pick<GithubService, 'pullRequest' | 'checkLog'>
+  /** 只用到 PR 快照、失败日志与评审意见。 */
+  readonly github: Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>
   readonly sessions: Pick<SessionManager, 'prompt'>
   readonly git: GitRunner
   /** `<userData>/worktrees`。 */
@@ -102,11 +105,23 @@ export interface AutoFixService extends AutoFixCommands {
   subscribe(listener: () => void): () => void
 }
 
-/** 需要修复时的触发项与去重签名；不需要时返回 undefined。 */
+/** 一次修复的触发信息：哪一类、去重签名、失败检查与新评审意见。 */
+export interface AutoFixRepair {
+  readonly trigger: AutoFixTrigger
+  readonly signature: string
+  readonly failed: readonly string[]
+  readonly comments?: readonly GithubReviewComment[]
+}
+
+/**
+ * 需要修复时的触发项与去重签名；不需要时返回 undefined。
+ * `newComments` 只包含上次处理之后的新评审意见（M8-04）。
+ */
 export function repairTrigger(
   pull: GithubPullRequest,
   triggers: readonly AutoFixTrigger[],
-): { trigger: AutoFixTrigger; signature: string; failed: string[] } | undefined {
+  newComments: readonly GithubReviewComment[] = [],
+): AutoFixRepair | undefined {
   const failed = pull.checks
     .filter(
       (check) =>
@@ -126,35 +141,81 @@ export function repairTrigger(
   if (triggers.includes('conflict') && pull.mergeableState === 'dirty') {
     return { trigger: 'conflict', signature: pull.headSha, failed: [] }
   }
+  if (newComments.length > 0) {
+    const latest = Math.max(...newComments.map((comment) => comment.id))
+    return {
+      trigger: 'comment',
+      signature: `${pull.headSha}:comment:${latest}`.slice(0, SIGNATURE_MAX),
+      failed: [],
+      comments: newComments,
+    }
+  }
   return undefined
 }
 
-/** 修复会话的提示：说明范围与禁区，以及提交推送的受控方式（M8-03）。 */
+/** 单条评审意见在提示里的长度上限；长评论只保留开头。 */
+const COMMENT_IN_BRIEF = 800
+const COMMENTS_IN_BRIEF = 20
+
+/** 修复会话的提示：说明范围与禁区、冲突与评审意见，以及提交推送的受控方式（M8-03 / M8-04）。 */
 export function repairBrief(input: {
   pull: GithubPullRequest
   trigger: AutoFixTrigger
   failed: readonly string[]
   worktree: string
   log?: string | undefined
+  /** 触发为 `conflict` 时工作区里未合并的文件。 */
+  conflicts?: readonly string[] | undefined
+  /** 触发为 `comment` 时需要处理的评审意见。 */
+  comments?: readonly GithubReviewComment[] | undefined
 }): string {
-  const { pull, trigger, failed, worktree, log } = input
+  const { pull, trigger, failed, worktree, log, conflicts = [], comments = [] } = input
+  const headline =
+    trigger === 'ci'
+      ? `失败的检查：${failed.join('、')}`
+      : trigger === 'conflict'
+        ? `合并冲突：当前分支与 ${pull.baseRef} 存在冲突`
+        : `评审意见：${comments.length} 条新的行内评论`
   const lines = [
     '自动修复任务（改代码、运行检查、提交并推送到 PR 分支）',
     '',
     `PR：${pull.repo}#${pull.number} ${pull.title}`,
     `地址：${pull.url}`,
-    trigger === 'ci'
-      ? `失败的检查：${failed.join('、')}`
-      : `合并冲突：当前分支与 ${pull.baseRef} 存在冲突`,
+    headline,
     `本地工作区：${worktree}`,
+  ]
+  if (trigger === 'conflict') {
+    lines.push(
+      '',
+      `已经在这个工作区里执行 git merge origin/${pull.baseRef}；冲突文件：`,
+      ...(conflicts.length === 0 ? ['（没有未合并文件）'] : conflicts.map((file) => `- ${file}`)),
+      '',
+      '请逐块解决冲突：保留双方的意图，不要直接丢弃对方分支的改动；解决后运行相关检查，',
+      '用 git_commit 提交（这次提交会记录合并），再用 git_push 推送。不要 rebase 或改写历史。',
+    )
+  }
+  if (trigger === 'comment') {
+    lines.push('', '需要处理的评审意见：')
+    for (const comment of comments.slice(0, COMMENTS_IN_BRIEF)) {
+      const where =
+        comment.path === undefined
+          ? ''
+          : `（${comment.path}${comment.line === undefined ? '' : `:${comment.line}`}）`
+      lines.push(`- @${comment.author}${where}：${comment.body.slice(0, COMMENT_IN_BRIEF)}`)
+    }
+    if (comments.length > COMMENTS_IN_BRIEF) {
+      lines.push(`（其余 ${comments.length - COMMENTS_IN_BRIEF} 条见 PR 页面）`)
+    }
+  }
+  lines.push(
     '',
     '请在这个工作区里：',
-    '1. 先定位失败原因（失败日志见下）；',
+    '1. 先定位原因；',
     '2. 修改代码并运行相关检查；',
     '3. 用 git_commit 提交改动，再用 git_push 推送到 PR 的 head 分支；',
-    '4. 不要强制推送、不要合并、不要切换或推送其他分支；',
+    '4. 不要强制推送、不要合并其他分支、不要切换或推送其他分支；',
     '5. 完成后说明改了什么、运行了哪些检查、结果如何。',
-  ]
+  )
   if (log !== undefined && log.trim() !== '') {
     lines.push('', '失败日志（末尾）：', '```', log, '```')
   }
@@ -284,11 +345,23 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
     }
   })
 
-  /** 把监视工作区重置到 PR 的 head 提交；位于用户仓库之外，可随时丢弃。 */
+  /** 冲突修复时合并基准分支用的身份；与 `git_commit` 一致，不读取用户的 Git 配置。 */
+  const IDENTITY = [
+    '-c',
+    'user.name=Cairn',
+    '-c',
+    'user.email=cairn@users.noreply.github.com',
+  ] as const
+
+  /**
+   * 把监视工作区重置到 PR 的 head 提交；位于用户仓库之外，可随时丢弃。
+   * 冲突触发时再执行 `git merge origin/<base>`（M8-04）：冲突是预期结果，未合并文件交给会话解决。
+   */
   const prepareWorktree = async (
     watch: PullRequestWatchRecord,
-    headSha: string,
-  ): Promise<string> => {
+    pull: GithubPullRequest,
+    trigger: AutoFixTrigger,
+  ): Promise<{ directory: string; conflicts: string[] }> => {
     const fetched = await git.run(['-C', watch.projectPath, 'fetch', '--no-tags', 'origin'], {
       allowFail: true,
     })
@@ -296,25 +369,45 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
       throw new Error(`git fetch 失败：${fetched.stderr.trim()}`)
     }
     const present = await git.run(
-      ['-C', watch.projectPath, 'cat-file', '-e', `${headSha}^{commit}`],
+      ['-C', watch.projectPath, 'cat-file', '-e', `${pull.headSha}^{commit}`],
       { allowFail: true },
     )
     if (present.code !== 0) throw new Error('fetch 之后仍然找不到 PR 的提交')
     const directory = worktreeOf(options.worktreesRoot, watch.watchId)
     if (existsSync(directory)) {
-      const reset = await git.run(['-C', directory, 'reset', '--hard', headSha], {
+      const reset = await git.run(['-C', directory, 'reset', '--hard', pull.headSha], {
         allowFail: true,
       })
       if (reset.code !== 0) throw new Error(`重置监视工作区失败：${reset.stderr.trim()}`)
-      return directory
+    } else {
+      mkdirSync(options.worktreesRoot, { recursive: true })
+      const added = await git.run(
+        ['-C', watch.projectPath, 'worktree', 'add', '--detach', directory, pull.headSha],
+        { allowFail: true },
+      )
+      if (added.code !== 0) throw new Error(`创建监视工作区失败：${added.stderr.trim()}`)
     }
-    mkdirSync(options.worktreesRoot, { recursive: true })
-    const added = await git.run(
-      ['-C', watch.projectPath, 'worktree', 'add', '--detach', directory, headSha],
+    if (trigger !== 'conflict') return { directory, conflicts: [] }
+    const merged = await git.run(
+      ['-C', directory, ...IDENTITY, 'merge', '--no-edit', `origin/${pull.baseRef}`],
       { allowFail: true },
     )
-    if (added.code !== 0) throw new Error(`创建监视工作区失败：${added.stderr.trim()}`)
-    return directory
+    const unmerged = await git.run(['-C', directory, 'diff', '--name-only', '--diff-filter=U'], {
+      allowFail: true,
+    })
+    const conflicts =
+      unmerged.code === 0
+        ? unmerged.stdout
+            .toString('utf8')
+            .split('\n')
+            .map((file) => file.trim())
+            .filter((file) => file !== '')
+        : []
+    // 非零且没有未合并文件：不是冲突，而是 base 分支不存在或工作区状态异常，别让会话去猜。
+    if (merged.code !== 0 && conflicts.length === 0) {
+      throw new Error(`合并 origin/${pull.baseRef} 失败：${merged.stderr.trim()}`)
+    }
+    return { directory, conflicts }
   }
 
   /** 取第一个失败检查的日志末尾，拼进修复提示；失败时不影响修复。 */
@@ -338,7 +431,7 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
   const startRepair = async (
     watch: PullRequestWatchRecord,
     pull: GithubPullRequest,
-    repair: { trigger: AutoFixTrigger; signature: string; failed: string[] },
+    repair: AutoFixRepair,
   ) => {
     const jobId = createId()
     const attempt = watch.attempts + 1
@@ -351,15 +444,21 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
       attempt,
     })
     // 先记下签名与次数：即使后面的准备失败，同一份提交也不会每 60 秒重试。
+    // 评审意见同时记下已处理到的最新 id，推送后 head 变了也不会把同一批意见再修一次。
+    const latestComment =
+      repair.comments === undefined || repair.comments.length === 0
+        ? undefined
+        : Math.max(...repair.comments.map((comment) => comment.id))
     storage.autoFix.watches.update(watch.watchId, {
       lastSignature: repair.signature,
       attempts: attempt,
       lastEvaluatedAt: now(),
+      ...(latestComment === undefined ? {} : { lastCommentId: latestComment }),
     })
     emit()
 
     try {
-      const worktree = await prepareWorktree(watch, pull.headSha)
+      const { directory: worktree, conflicts } = await prepareWorktree(watch, pull, repair.trigger)
       const project =
         storage.projects.getByPath(watch.projectPath) ??
         storage.projects.create({
@@ -404,6 +503,8 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
               failed: repair.failed,
               worktree,
               log,
+              conflicts,
+              ...(repair.comments === undefined ? {} : { comments: repair.comments }),
             }),
           },
         ],
@@ -429,7 +530,24 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
       emit()
       return
     }
-    const repair = repairTrigger(pull, watch.triggers)
+    // 评审意见（M8-04）：第一次评估只建立基线，之后 id 更大的才算新意见。
+    let comments: GithubReviewComment[] | undefined
+    if (watch.triggers.includes('comment')) {
+      try {
+        comments = await github.reviewComments({ repo: watch.repo, number: watch.prNumber })
+      } catch (error) {
+        // 读不到意见不影响按检查项与冲突判断；下一轮再试。
+        reportError(error)
+      }
+    }
+    let lastCommentId = watch.lastCommentId
+    if (comments !== undefined && lastCommentId === undefined) {
+      lastCommentId = comments.reduce((latest, comment) => Math.max(latest, comment.id), 0)
+      storage.autoFix.watches.update(watch.watchId, { lastCommentId })
+    }
+    const newComments =
+      comments === undefined ? [] : comments.filter((comment) => comment.id > (lastCommentId ?? 0))
+    const repair = repairTrigger(pull, watch.triggers, newComments)
     // 上一次推送后检查通过：任务记为 passed，不再触发新的修复（M8-03 回检）。
     const pushed = storage.autoFix.jobs
       .list({ watchId: watch.watchId })
@@ -520,20 +638,9 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
           reason: errorDetail(new Error(added.stderr)),
         })
       }
-      const committed = await git.run(
-        [
-          '-C',
-          directory,
-          '-c',
-          'user.name=Cairn',
-          '-c',
-          'user.email=cairn@users.noreply.github.com',
-          'commit',
-          '-m',
-          message,
-        ],
-        { allowFail: true },
-      )
+      const committed = await git.run(['-C', directory, ...IDENTITY, 'commit', '-m', message], {
+        allowFail: true,
+      })
       if (committed.code !== 0) {
         throw new RpcError(AutoFixGitErrorCode.CommitFailed, {
           reason: errorDetail(new Error(committed.stderr)),

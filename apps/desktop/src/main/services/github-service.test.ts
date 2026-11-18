@@ -168,6 +168,51 @@ describe('github-service', () => {
     ).rejects.toMatchObject({ code: 'github.network' })
   })
 
+  it('maps review comments oldest first and drops invalid entries', async () => {
+    const calls: string[] = []
+    const service = createGithubService({
+      credentials: memoryCredentials('token'),
+      fetchImpl: async (input) => {
+        calls.push(input)
+        return json([
+          { id: 42, user: { login: 'bob' }, body: 'latest', path: 'src/a.ts', line: 3 },
+          { id: 40, user: { login: 'ann' }, body: 'first' },
+          { id: 'bad', user: { login: 'x' }, body: 'x' },
+          { id: 41, user: { login: 'x' }, body: '   ' },
+          { id: 43, user: { login: 'ann' }, body: 'no location', path: 5, line: -1 },
+        ])
+      },
+    })
+    await expect(service.reviewComments({ repo: 'o/r', number: 12 })).resolves.toEqual([
+      { id: 40, author: 'ann', body: 'first' },
+      { id: 42, author: 'bob', body: 'latest', path: 'src/a.ts', line: 3 },
+      { id: 43, author: 'ann', body: 'no location' },
+    ])
+    expect(calls[0]).toBe(
+      'https://api.github.com/repos/o/r/pulls/12/comments?per_page=100&sort=created&direction=desc',
+    )
+  })
+
+  it('treats an unexpected comment list as empty and maps errors', async () => {
+    const unexpected = createGithubService({
+      credentials: memoryCredentials('token'),
+      fetchImpl: async () => json({ message: 'not a list' }),
+    })
+    await expect(unexpected.reviewComments({ repo: 'o/r', number: 12 })).resolves.toEqual([])
+
+    const missing = createGithubService({
+      credentials: memoryCredentials('token'),
+      fetchImpl: async (input) =>
+        json(
+          {},
+          input.endsWith('/pulls/12/comments?per_page=100&sort=created&direction=desc') ? 404 : 200,
+        ),
+    })
+    await expect(missing.reviewComments({ repo: 'o/r', number: 12 })).rejects.toMatchObject({
+      code: 'github.not_found',
+    })
+  })
+
   it('requires a token for reads', async () => {
     const service = createGithubService({ credentials: memoryCredentials() })
     await expect(service.pullRequest({ repo: 'o/r', number: 1 })).rejects.toBeInstanceOf(RpcError)

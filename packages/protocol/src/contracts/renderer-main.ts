@@ -1401,7 +1401,7 @@ export const MainForRenderer = defineSide({
         repo: GithubRepo,
         prNumber: z.number().int().positive().max(1_000_000),
         projectPath: z.string().min(1).max(4096),
-        triggers: z.array(AutoFixTrigger).min(1).max(2).optional(),
+        triggers: z.array(AutoFixTrigger).min(1).max(3).optional(),
         maxAttempts: z.number().int().min(1).max(10).optional(),
       }),
       result: AutoFixStatus,
@@ -1410,7 +1410,7 @@ export const MainForRenderer = defineSide({
       params: z.object({
         watchId: z.string().min(1).max(64),
         enabled: z.boolean().optional(),
-        triggers: z.array(AutoFixTrigger).min(1).max(2).optional(),
+        triggers: z.array(AutoFixTrigger).min(1).max(3).optional(),
         maxAttempts: z.number().int().min(1).max(10).optional(),
       }),
       result: AutoFixStatus,

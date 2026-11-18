@@ -57,6 +57,7 @@ describe('openSqliteStorage', () => {
         '0021_provider-catalog',
         '0022_auto-fix',
         '0023_auto-fix-session-index',
+        '0024_auto-fix-last-comment',
       ],
     })
     storage.close()
@@ -152,6 +153,7 @@ describe('openSqliteStorage', () => {
       '0021_provider-catalog',
       '0022_auto-fix',
       '0023_auto-fix-session-index',
+      '0024_auto-fix-last-comment',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

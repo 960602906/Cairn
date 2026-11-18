@@ -720,7 +720,7 @@ export interface ChangeSetStore {
 
 // ---------- 自动修复监视（M8-02） ----------
 
-export type AutoFixTrigger = 'ci' | 'conflict'
+export type AutoFixTrigger = 'ci' | 'conflict' | 'comment'
 
 export type AutoFixJobStatus =
   | 'queued'
@@ -748,6 +748,8 @@ export interface PullRequestWatchRecord {
   /** 已经开始的修复次数。 */
   readonly attempts: number
   readonly lastSignature?: string
+  /** 已经处理过的最新评审意见 id；省略表示还没建立基线（只处理之后的新意见，M8-04）。 */
+  readonly lastCommentId?: number
   readonly lastEvaluatedAt?: number
   readonly createdAt: number
 }
@@ -768,6 +770,8 @@ export interface UpdateWatchInput {
   readonly attempts?: number
   /** `null` 清除记录（例如手动重新评估）。 */
   readonly lastSignature?: string | null
+  /** 已处理过的最新评审意见 id（M8-04）。 */
+  readonly lastCommentId?: number
   readonly lastEvaluatedAt?: number
 }
 

@@ -98,9 +98,23 @@ export const GITHUB_CREDENTIAL_REF = 'github'
 
 // ---------- 自动修复监视（M8-02） ----------
 
-/** 会触发修复的情况；评审意见在 M8-04 接入。 */
-export const AutoFixTrigger = z.enum(['ci', 'conflict'])
+/** 会触发修复的情况（M8-04 增加评审意见）。 */
+export const AutoFixTrigger = z.enum(['ci', 'conflict', 'comment'])
 export type AutoFixTrigger = z.infer<typeof AutoFixTrigger>
+
+/**
+ * 一条 PR 评审意见（行内评论）。只保留修复需要的部分：作者、位置、内容与 id
+ * （id 单调递增，用来判断“自上次修复后是否出现了新意见”）。
+ */
+export const GithubReviewComment = z.object({
+  id: z.number().int().nonnegative(),
+  author: z.string().min(1).max(120),
+  body: z.string().max(4000),
+  /** 相对仓库根的文件路径；整体评论可能没有。 */
+  path: z.string().min(1).max(1024).optional(),
+  line: z.number().int().nonnegative().optional(),
+})
+export type GithubReviewComment = z.infer<typeof GithubReviewComment>
 
 /**
  * 任务状态。`ready` 表示 M8-02 的“改动留在监视工作区、等待人工处理”；
@@ -124,11 +138,13 @@ export const PullRequestWatch = z.object({
   repo: GithubRepo,
   prNumber: z.number().int().positive().max(1_000_000),
   projectPath: z.string().min(1).max(4096),
-  triggers: z.array(AutoFixTrigger).min(1).max(2),
+  triggers: z.array(AutoFixTrigger).min(1).max(3),
   maxAttempts: z.number().int().min(1).max(10),
   enabled: z.boolean(),
   attempts: z.number().int().nonnegative().max(1000),
   lastSignature: z.string().max(1000).optional(),
+  /** 已经处理过的最新评审意见 id；省略表示还没建立基线（只看之后的新意见）。 */
+  lastCommentId: z.number().int().nonnegative().optional(),
   lastEvaluatedAt: Timestamp.optional(),
   createdAt: Timestamp,
 })

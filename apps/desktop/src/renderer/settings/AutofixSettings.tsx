@@ -3,14 +3,16 @@
  *
  * - 令牌只走 `github.connect`，主进程验证后加密保存，界面没有读取明文的接口；
  * - 仓库 + PR 编号可以直接查询，不需要先打开项目；
- * - 监视列表来自主进程轮询：CI 失败或合并冲突时在独立工作区自动开会话改代码，修复会话
- *   经受控工具提交并推送到 PR 的 head 分支（M8-03，ADR-0045）；变动经 `autofix.changed` 刷新。
+ * - 监视列表来自主进程轮询：CI 失败、合并冲突或新的评审意见时在独立工作区自动开会话改代码，
+ *   修复会话经受控工具提交并推送到 PR 的 head 分支（M8-03 / M8-04，ADR-0045）；变动经
+ *   `autofix.changed` 刷新。
  */
 import { useEffect, useState } from 'react'
 import { CircleAlert, GitPullRequest, KeyRound, Radar, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { translateError } from '@cairn/i18n'
 import type {
+  AutoFixTrigger,
   ErrorInfo,
   GithubCheckConclusion,
   GithubCheckRun,
@@ -19,7 +21,7 @@ import type {
   PullRequestWatch,
 } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
-import { Button, Spinner } from '../ui/index.js'
+import { Button, Checkbox, Spinner } from '../ui/index.js'
 import { Field, SettingsGroup, inputClass } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
 
@@ -112,6 +114,7 @@ export function AutofixSettings() {
   const [watchRepo, setWatchRepo] = useState('')
   const [watchNumber, setWatchNumber] = useState('')
   const [watchPath, setWatchPath] = useState('')
+  const [watchTriggers, setWatchTriggers] = useState<AutoFixTrigger[]>(['ci', 'conflict'])
   const [watchBusy, setWatchBusy] = useState(false)
   const [pauseBusy, setPauseBusy] = useState(false)
 
@@ -167,19 +170,33 @@ export function AutofixSettings() {
   }
 
   const addWatch = async () => {
-    if (!watchRepoValid || !watchNumberValid || watchPath === '') return
+    if (!watchRepoValid || !watchNumberValid || watchPath === '' || watchTriggers.length === 0) {
+      return
+    }
     clearError()
     setWatchBusy(true)
     const next = await addAutoFixWatch({
       repo: watchRepo.trim(),
       prNumber: watchNumberValue,
       projectPath: watchPath,
+      triggers: watchTriggers,
     })
     setWatchBusy(false)
     if (next) {
       setWatchRepo('')
       setWatchNumber('')
     }
+  }
+
+  /** 至少保留一个触发项；全部取消会让监视永远不触发。 */
+  const toggleTrigger = (trigger: AutoFixTrigger) => {
+    setWatchTriggers((current) =>
+      current.includes(trigger)
+        ? current.length === 1
+          ? current
+          : current.filter((item) => item !== trigger)
+        : [...current, trigger],
+    )
   }
 
   const toggleWatch = async (watch: PullRequestWatch) => {
@@ -481,6 +498,18 @@ export function AutofixSettings() {
               {t('autofix.watch.add')}
             </Button>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="text-note text-muted">{t('autofix.watch.triggersLabel')}</span>
+          {(['ci', 'conflict', 'comment'] as const).map((trigger) => (
+            <label key={trigger} className="flex items-center gap-1.5 text-note text-fg2">
+              <Checkbox
+                checked={watchTriggers.includes(trigger)}
+                onChange={() => toggleTrigger(trigger)}
+              />
+              {t(`autofix.trigger.${trigger}`)}
+            </label>
+          ))}
         </div>
         <p className="text-note text-muted">
           {connected ? t('autofix.watch.worktreeHint') : t('autofix.watch.needConnection')}
