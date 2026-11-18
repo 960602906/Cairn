@@ -9,6 +9,9 @@
  * - 生成一份合并的 `release-notes.md`、`provenance.json` 与 `SHA256SUMS`。
  *
  * 版本、通道、提交必须一致；同名产物内容不同即失败关闭。
+ *
+ * 汇总 job 检出标签后直接运行本脚本、不安装工作区依赖，因此这里只能依赖 node 内建模块与
+ * `release-files.mjs`；不要引入 `@cairn/*` 或其他需要 `pnpm install` 才能解析的包。
  */
 import {
   existsSync,
@@ -26,7 +29,7 @@ import {
   readJson,
   sha256,
   writeChecksums,
-} from './release-artifacts.mjs'
+} from './release-files.mjs'
 
 export const MERGED_FILES = new Set([
   'release-notes.md',

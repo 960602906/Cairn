@@ -33,11 +33,18 @@ import {
   readSigningConfig,
   signatureSummary,
 } from '@cairn/release-tools'
+import {
+  PLATFORM_NOTES_SCHEMA_VERSION,
+  readJson,
+  sha256,
+  writeChecksums,
+} from './release-files.mjs'
+
+export { PLATFORM_NOTES_SCHEMA_VERSION, readJson, sha256, writeChecksums }
 
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..', 'apps/desktop')
 export const PRODUCT_NAME = 'Cairn'
 export const PROVENANCE_SCHEMA_VERSION = 1
-export const PLATFORM_NOTES_SCHEMA_VERSION = 1
 export const RELEASE_PLATFORMS = ['windows', 'mac', 'linux']
 
 /**
@@ -146,27 +153,6 @@ export function platformSigningSummary(platform, env = process.env) {
   if (platform === 'windows') return signatureSummary(readSigningConfig(env))
   if (platform === 'mac') return macSignatureSummary(readMacSigningConfig(env))
   return { mode: 'none', integrity: 'sha256+https' }
-}
-
-/**
- * @param {string} file
- * @returns {string}
- */
-export function sha256(file) {
-  return createHash('sha256').update(readFileSync(file)).digest('hex')
-}
-
-/**
- * 读取 JSON 对象；不是对象时抛出。
- * @param {string} file
- * @returns {Record<string, any>}
- */
-export function readJson(file) {
-  const parsed = JSON.parse(readFileSync(file, 'utf8'))
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${file} is not a JSON object`)
-  }
-  return parsed
 }
 
 /**
@@ -333,18 +319,6 @@ export function validateUpdateMetadataFiles({ metadata, version, files, allowedE
     problems.push('update metadata top-level sha512 does not match the primary file')
   }
   return problems
-}
-
-/**
- * 写入 `SHA256SUMS`（`<hex>  <file name>`），返回行数。
- * @param {{ directory: string; files: readonly string[] }} input
- * @returns {number}
- */
-export function writeChecksums({ directory, files }) {
-  const names = [...new Set(files.map((file) => path.basename(file)))].sort()
-  const lines = names.map((name) => `${sha256(path.join(directory, name))}  ${name}`)
-  writeFileSync(path.join(directory, 'SHA256SUMS'), `${lines.join('\n')}\n`)
-  return names.length
 }
 
 /**
