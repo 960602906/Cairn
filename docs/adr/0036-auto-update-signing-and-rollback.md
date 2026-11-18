@@ -107,6 +107,20 @@ M5 需要让已安装的 `0.1.0` beta 能收到 `0.1.1`，同时满足：
 - 更新源必须匿名可访问；发布后要从公网重新下载并校验，不以 CI 内网成功为准。
 - 备份与人工恢复增加磁盘占用与操作步骤，但避免自动降级造成数据损坏。
 
+## 修订：公开仓库的 GitHub Releases（2026-11-18）
+
+本决定最初否决的是“GitHub API + 客户端令牌”。`electron-updater` 的 GitHub provider 对公开仓库
+只读 `releases.atom` 与 `releases/download/<tag>/`，不需要令牌，因此不再与“客户端无凭据”冲突：
+
+- `CAIRN_UPDATE_URL` 为 `https://github.com/<owner>/<repo>` 时，运行时改用 GitHub provider；
+  仍只接受 HTTPS、无凭据、无查询串与片段的地址，`latest.yml` / `beta.yml` 与安装包照旧从
+  release 资产读取并校验 SHA-512、大小与发布者。
+- beta 版本以 `--prerelease` 发布，`releases/latest` 不含预发布；beta 通道必须
+  `allowPrerelease=true`，stable 保持 `false`，并重新设置 `allowDowngrade=false`。
+- 私有仓库仍需令牌，继续不支持；GitHub Releases 也不能自定义缓存与可用性，因此静态目录
+  （对象存储/CDN）仍是需要 CDN 与可用性保障时的首选。构建期与运行时的 provider 判断在
+  `build-info.mjs`、`update-service.ts`、`after-pack.cjs` 与 `verify-package.mjs` 中保持一致。
+
 ## M5-10 验收补充（2026-11-10）
 
 - 已打包应用用本地 HTTPS 静态源验证接线：`update.status` 初始为 `idle/enabled/beta`，

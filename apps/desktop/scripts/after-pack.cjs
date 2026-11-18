@@ -16,20 +16,31 @@ const path = require('node:path')
 /** 与 `electron-builder.yml` 的 `publish` 配置保持一致。 */
 const DEFAULT_UPDATE_URL = 'https://updates.invalid/cairn/'
 
+/** `https://github.com/<owner>/<repo>`：公开仓库的 GitHub Releases 更新源。 */
+const GITHUB_REPO_PATTERN = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i
+
 /**
  * 生成 `app-update.yml` 内容。
+ *
+ * 运行时 `update-service` 会用 `setFeedURL` 覆盖提供者，这个文件仍必须存在：
+ * `electron-updater` 从它读取 `updaterCacheDirName`。GitHub 仓库地址写成 `provider: github`，
+ * 与运行时的 GitHub provider 保持一致，避免诊断时出现两套说法。
  * @param {string} [rawUrl]
  * @returns {string}
  */
 function appUpdateConfig(rawUrl = DEFAULT_UPDATE_URL) {
   const trimmed = rawUrl.trim()
   const base = trimmed === '' ? DEFAULT_UPDATE_URL : trimmed
-  return [
-    'provider: generic',
-    `url: ${base.replace(/\/+$/, '')}/`,
-    'updaterCacheDirName: cairn-updater',
-    '',
-  ].join('\n')
+  /** @type {string[]} */
+  const lines = []
+  const github = GITHUB_REPO_PATTERN.exec(base)
+  if (github?.[1] && github[2]) {
+    lines.push('provider: github', `owner: ${github[1]}`, `repo: ${github[2]}`)
+  } else {
+    lines.push('provider: generic', `url: ${base.replace(/\/+$/, '')}/`)
+  }
+  lines.push('updaterCacheDirName: cairn-updater', '')
+  return lines.join('\n')
 }
 
 /**

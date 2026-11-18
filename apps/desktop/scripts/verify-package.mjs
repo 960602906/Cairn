@@ -289,14 +289,21 @@ export async function verifyPackage({
     if (!existsSync(file)) problems.push(`missing ${label}: ${file}`)
   }
   // electron-updater 下载更新时会读取该文件；`--publish never` 不会自动生成（M5-10）。
+  // 只允许两种公开只读源：generic HTTPS 目录，或公开仓库的 GitHub Releases。
   const updateConfig = path.join(resourcesDir, 'app-update.yml')
   if (existsSync(updateConfig)) {
     const content = readFileSync(updateConfig, 'utf8')
-    if (!/^provider:\s*generic$/m.test(content)) {
-      problems.push('app-update.yml does not use the generic provider')
-    }
-    if (!/^url:\s*https:\/\/\S+$/m.test(content)) {
-      problems.push('app-update.yml does not contain an https update URL')
+    const provider = /^provider:\s*(\S+)\s*$/m.exec(content)?.[1] ?? ''
+    if (provider === 'generic') {
+      if (!/^url:\s*https:\/\/\S+$/m.test(content)) {
+        problems.push('app-update.yml does not contain an https update URL')
+      }
+    } else if (provider === 'github') {
+      if (!/^owner:\s*\S+$/m.test(content) || !/^repo:\s*\S+$/m.test(content)) {
+        problems.push('app-update.yml GitHub provider is missing owner or repo')
+      }
+    } else {
+      problems.push(`app-update.yml uses an unsupported provider: ${provider.slice(0, 40)}`)
     }
   }
   const bundledGit = path.join(resourcesDir, 'git/ucrt64/bin/git.exe')

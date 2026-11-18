@@ -56,10 +56,27 @@ export interface UpdateProgressInfo {
   readonly bytesPerSecond?: number
 }
 
+/**
+ * 更新源（ADR-0036）。
+ *
+ * - `generic`：公开只读 HTTPS 目录，直接读取 `latest.yml` / `beta.yml`；
+ * - `github`：公开仓库的 GitHub Releases。`electron-updater` 的 GitHub provider 只读公开的
+ *   Atom feed 与 `releases/download/<tag>/`，不需要 API 令牌，因此仍然满足“客户端无凭据”。
+ */
+export type UpdateSource =
+  | { readonly kind: 'generic'; readonly url: string }
+  | {
+      readonly kind: 'github'
+      readonly owner: string
+      readonly repo: string
+      /** 归一化后的公开地址，用于状态与诊断。 */
+      readonly url: string
+    }
+
 /** 对 electron-updater 的最小适配层；测试注入假实现。 */
 export interface UpdaterAdapter {
   configure(input: {
-    readonly url: string
+    readonly source: UpdateSource
     readonly channel: UpdateChannel
     readonly allowDevelopment: boolean
   }): void | Promise<void>
@@ -95,7 +112,10 @@ export interface UpdateServiceOptions {
   readonly platform?: NodeJS.Platform
   readonly env?: NodeJS.ProcessEnv
   readonly settings: UpdateSettings
-  /** 公开只读更新源；来自 `CAIRN_UPDATE_URL`。 */
+  /**
+   * 公开只读更新源；来自 `CAIRN_UPDATE_URL`。可以是 HTTPS 静态目录，也可以是
+   * `https://github.com/<owner>/<repo>`（公开仓库的 GitHub Releases）。
+   */
   readonly sourceUrl?: string | undefined
   /** 发布者完整 DN；来自 `CAIRN_UPDATE_PUBLISHER`。 */
   readonly publisherName?: string | undefined
@@ -136,7 +156,7 @@ export interface UpdateService {
 interface Configuration {
   readonly enabled: boolean
   readonly disabledReason?: UpdateDisabledReason
-  readonly source?: string
+  readonly source?: UpdateSource
   readonly channel: UpdateChannel
   readonly publisherName?: string
   readonly autoCheck: boolean
@@ -204,10 +224,29 @@ export function compareVersions(a: string, b: string): number | undefined {
   return 0
 }
 
+/** `github.com/<owner>/<repo>`：仓库地址本身，不含 releases 子路径或 `.git`。 */
+const GITHUB_REPO_PATTERN = /^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/?$/
+
+function githubSource(parsed: URL): UpdateSource | undefined {
+  if (parsed.hostname.toLowerCase() !== 'github.com') return undefined
+  const match = GITHUB_REPO_PATTERN.exec(parsed.pathname)
+  const owner = match?.[1]
+  const repo = match?.[2]
+  if (owner === undefined || repo === undefined) return undefined
+  return { kind: 'github', owner, repo, url: `https://github.com/${owner}/${repo}/` }
+}
+
+/**
+ * 归一化更新源。
+ *
+ * 只接受 HTTPS、无凭据、无查询串与片段；`https://github.com/<owner>/<repo>` 识别为 GitHub
+ * Releases，其余按 generic 静态目录处理（补尾部斜杠）。识别失败的 GitHub 子路径（例如
+ * `.../releases/latest/download/`）退回 generic，便于过渡期继续使用固定“最新发布”目录。
+ */
 function normalizeSource(
   value: string | undefined,
 ):
-  | { readonly ok: true; readonly url: string }
+  | { readonly ok: true; readonly source: UpdateSource }
   | { readonly ok: false; readonly reason: UpdateDisabledReason } {
   const trimmed = value?.trim() ?? ''
   if (trimmed === '') return { ok: false, reason: 'update.source_missing' }
@@ -225,8 +264,10 @@ function normalizeSource(
   if (parsed.search !== '' || parsed.hash !== '') {
     return { ok: false, reason: 'update.source_insecure' }
   }
+  const github = githubSource(parsed)
+  if (github !== undefined) return { ok: true, source: github }
   if (!parsed.pathname.endsWith('/')) parsed.pathname = `${parsed.pathname}/`
-  return { ok: true, url: parsed.toString() }
+  return { ok: true, source: { kind: 'generic', url: parsed.toString() } }
 }
 
 function errorMessage(error: unknown): string {
@@ -323,13 +364,20 @@ interface ElectronUpdaterLike {
   autoDownload: boolean
   autoInstallOnAppQuit: boolean
   allowDowngrade: boolean
+  /** GitHub provider 用来决定是否读取预发布；generic provider 忽略。 */
+  allowPrerelease: boolean
   forceDevUpdateConfig?: boolean
   verifyUpdateCodeSignature?: (publisherNames: string[], path: string) => Promise<string | null>
-  setFeedURL(options: {
-    readonly provider: 'generic'
-    readonly url: string
-    readonly channel: string
-  }): void
+  setFeedURL(
+    options:
+      | { readonly provider: 'generic'; readonly url: string; readonly channel: string }
+      | {
+          readonly provider: 'github'
+          readonly owner: string
+          readonly repo: string
+          readonly channel: string
+        },
+  ): void
   checkForUpdates(): Promise<{
     readonly isUpdateAvailable: boolean
     readonly updateInfo: UpdateInfoLike
@@ -392,14 +440,27 @@ async function createElectronUpdater(input: {
 
   let token: { cancel(): void } | undefined
   return {
-    configure({ url, channel, allowDevelopment }) {
+    configure({ source, channel, allowDevelopment }) {
       if (allowDevelopment) native.forceDevUpdateConfig = true
-      updater.setFeedURL({
-        provider: 'generic',
-        url,
-        // stable 使用 latest.yml，beta 使用 beta.yml（electron-updater 的通道名）。
-        channel: channel === 'stable' ? 'latest' : 'beta',
-      })
+      // stable 使用 latest.yml，beta 使用 beta.yml（electron-updater 的通道名）。
+      const channelName = channel === 'stable' ? 'latest' : 'beta'
+      if (source.kind === 'github') {
+        // 公开仓库的 GitHub provider 只读 Atom feed 与 releases/download，不需要令牌。
+        // beta 版本以 `--prerelease` 发布，`releases/latest` 不含预发布，必须显式打开
+        // allowPrerelease 才会从 feed 里选到它；同时重新关掉降级。
+        updater.allowPrerelease = channel === 'beta'
+        updater.setFeedURL({
+          provider: 'github',
+          owner: source.owner,
+          repo: source.repo,
+          channel: channelName,
+        })
+        updater.allowDowngrade = false
+        return
+      }
+      updater.allowPrerelease = false
+      updater.setFeedURL({ provider: 'generic', url: source.url, channel: channelName })
+      updater.allowDowngrade = false
     },
     async check() {
       const result = await updater.checkForUpdates()
@@ -505,14 +566,14 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       return {
         enabled: false,
         disabledReason: 'update.publisher_missing',
-        source: source.url,
+        source: source.source,
         channel,
         autoCheck,
       }
     }
     return {
       enabled: true,
-      source: source.url,
+      source: source.source,
       channel,
       autoCheck,
       ...(publisherName !== '' ? { publisherName } : {}),
@@ -544,7 +605,7 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       channelPinned: pinnedChannel !== undefined,
       enabled: config.enabled,
       autoCheck: config.autoCheck,
-      ...(config.source ? { source: config.source } : {}),
+      ...(config.source ? { source: config.source.url } : {}),
       ...(state.lastCheckedAt !== undefined ? { lastCheckedAt: state.lastCheckedAt } : {}),
       ...(state.availableVersion ? { availableVersion: state.availableVersion } : {}),
       ...(state.releaseDate !== undefined ? { releaseDate: state.releaseDate } : {}),
@@ -681,7 +742,7 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       const adapter = await updater()
       activeChannel = config.channel
       await adapter.configure({
-        url: config.source!,
+        source: config.source!,
         channel: config.channel,
         allowDevelopment: !options.packaged && allowDevelopment,
       })
@@ -786,7 +847,7 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
     try {
       const adapter = await updater()
       await adapter.configure({
-        url: config.source!,
+        source: config.source!,
         channel: config.channel,
         allowDevelopment: !options.packaged && allowDevelopment,
       })

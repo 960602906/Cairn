@@ -136,7 +136,9 @@ deb:
   depends:
     - default
 
-# M5-06 会替换为真实的公开只读更新源；此处只声明发布器，普通打包使用 --publish never。
+# 普通打包使用 --publish never，app-update.yml 由 afterPack 按构建时的 CAIRN_UPDATE_URL 写入：
+# 静态目录写成 generic，`https://github.com/<owner>/<repo>` 写成 github（公开仓库 Releases）。
+# 这里的占位源只用于没有注入更新源的本地打包。
 publish:
   provider: generic
   url: https://updates.invalid/cairn/
