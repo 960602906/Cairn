@@ -499,7 +499,10 @@ Agents
 | `agent.export` / `agent.import` | 请求 | 导入导出 Markdown |
 | `agent.effectiveConfig` | 请求 | 生效配置预览 |
 | `agent.usage` | 请求 | 使用该 Agent 的会话和运行统计 |
-| `trial.start` / `trial.restart` / `trial.clear` | 请求 | 试运行 |
+| `trial.start` / `trial.restart` / `trial.clear` | 请求 | Agent 试运行 |
+| `team.list` / `team.get` | 请求 | 团队模板列表与详情（含校验结果，M7-09） |
+| `team.saveDraft` / `team.publish` | 请求 | 团队模板草稿与发布（M7-09） |
+| `team.trial.start` / `team.trial.clear` / `team.trial.list` | 请求 | 团队模板试运行：隐藏会话、默认只读（M7-09） |
 | `run.inspect` | 请求 | 检查器数据（时间线、上下文快照、用量） |
 | `run.updateLimits` | 请求 | 临时调整限额 |
 | `activity.subscribe` | 事件流 | 跨会话的运行与审批摘要 |

@@ -17,6 +17,7 @@ import type {
   TeamValidationIssue,
   TeamValidationResult,
 } from '@cairn/protocol'
+import { resolveDelegationPolicy } from './delegation.js'
 
 /** 校验需要的上下文：按 id 取最新的已发布定义（含内置 Agent）。 */
 export interface TeamValidationContext {
@@ -184,4 +185,49 @@ export function validateAgentTeam(
   }
 
   return { ok: errors.length === 0, errors, warnings }
+}
+
+/** 团队模板给模型的协作说明（M7-09）：试运行时接到主控 Agent 的指令后面。 */
+export function teamBrief(team: TeamDraftFields): string {
+  const name = team.name['zh-CN']?.trim() || team.name['en-US']?.trim() || ''
+  const lines = [`# Team${name === '' ? '' : `: ${name}`}`, `Pattern: ${team.pattern}`]
+  lines.push(`Members: ${team.members.length === 0 ? '(none)' : team.members.join(', ')}`)
+  if (team.pattern === 'review-loop' && team.reviewLoop !== undefined) {
+    const { maker, checker, maxRounds } = team.reviewLoop
+    lines.push(`Review loop: maker=${maker}, checker=${checker}, maxRounds=${maxRounds}`)
+    lines.push('Use the review_loop tool to run maker -> checker rounds.')
+  }
+  if (team.pattern === 'pipeline' && team.pipeline !== undefined) {
+    const stages = team.pipeline.map((stage) =>
+      (stage.dependsOn ?? []).length === 0
+        ? `${stage.stage}(${stage.agent})`
+        : `${stage.stage}(${stage.agent} after ${(stage.dependsOn ?? []).join('+')})`,
+    )
+    lines.push(`Pipeline: ${stages.join(' -> ')}`)
+    lines.push('Use the run_pipeline tool to execute the stages above.')
+  }
+  if (team.pattern === 'delegate') lines.push('Delegate sub-tasks with the delegate tool.')
+  return lines.join('\n')
+}
+
+/**
+ * 团队试运行（M7-09）：把模板的委派覆盖与协作说明并进主控 Agent 的草稿定义。
+ * 只影响这一次运行使用的定义，不改写 Agent 本身；模板里省略的策略字段沿用主控的设置。
+ */
+export function applyTeamToAgentDefinition(
+  definition: AgentDefinition,
+  team: TeamDraftFields,
+): AgentDefinition {
+  // 模板的 `delegation` 是部分覆盖；显式去掉 `undefined`，让省略的字段沿用主控的设置。
+  const overrides = Object.fromEntries(
+    Object.entries(team.delegation ?? {}).filter(([, value]) => value !== undefined),
+  )
+  const policy = resolveDelegationPolicy({ ...definition.delegation, ...overrides })
+  const brief = teamBrief(team)
+  const instructions = definition.instructions.trim()
+  return {
+    ...definition,
+    delegation: policy,
+    instructions: instructions === '' ? brief : `${instructions}\n\n${brief}`,
+  }
 }

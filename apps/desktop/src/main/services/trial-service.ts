@@ -48,6 +48,8 @@ export interface TrialCommands {
 }
 
 export interface TrialService extends TrialCommands {
+  /** 团队试运行（M7-09）显式要求 Agent 自己的权限时，登记为已提权。 */
+  markElevated(sessionId: string): void
   /** 试运行的权限规则：默认只读，显式提权后使用草稿 Agent 的权限预设。 */
   permissionRulesFor(
     sessionId: string,
@@ -67,7 +69,9 @@ export function createTrialService(options: TrialServiceOptions): TrialService {
       if (
         session.kind !== 'trial' ||
         session.trialAgentId !== agentId ||
-        session.trialDraftHash === undefined
+        session.trialDraftHash === undefined ||
+        // 团队试运行（M7-09）引用的是模板，不算这个 Agent 自己的试运行记录。
+        session.trialTeamId !== undefined
       ) {
         return []
       }
@@ -174,6 +178,10 @@ export function createTrialService(options: TrialServiceOptions): TrialService {
 
     list({ agentId }) {
       return { trials: trialsOf(agentId) }
+    },
+
+    markElevated(sessionId) {
+      elevated.add(sessionId)
     },
 
     permissionRulesFor(sessionId, agent, rules) {
