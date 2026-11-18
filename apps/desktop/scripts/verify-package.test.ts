@@ -329,7 +329,7 @@ describe('verifyPackage', () => {
     ).resolves.toEqual([])
   })
 
-  it('requires an electron-updater config with an https generic source', async () => {
+  it('requires an electron-updater config with a public read-only source', async () => {
     const missing = await fixture()
     rmSync(path.join(missing.resources, 'app-update.yml'))
     const missingProblems = await verifyPackage({
@@ -354,12 +354,34 @@ describe('verifyPackage', () => {
       runner: successfulRunner(),
       readFuses: async () => [],
     })
-    expect(invalidProblems).toEqual(
-      expect.arrayContaining([
-        'app-update.yml does not use the generic provider',
-        'app-update.yml does not contain an https update URL',
-      ]),
+    expect(invalidProblems).toContain('app-update.yml uses an unsupported provider: s3')
+
+    const github = await fixture()
+    write(
+      path.join(github.resources, 'app-update.yml'),
+      'provider: github\nowner: 960602906\nrepo: Cairn\n',
     )
+    const githubProblems = await verifyPackage({
+      desktopRoot: github.desktopRoot,
+      outputDir: github.outputDir,
+      platform: 'win32',
+      arch: 'x64',
+      runner: successfulRunner(),
+      readFuses: async () => [],
+    })
+    expect(githubProblems.filter((problem) => problem.includes('app-update.yml'))).toEqual([])
+
+    const incomplete = await fixture()
+    write(path.join(incomplete.resources, 'app-update.yml'), 'provider: github\nowner: 960602906\n')
+    const incompleteProblems = await verifyPackage({
+      desktopRoot: incomplete.desktopRoot,
+      outputDir: incomplete.outputDir,
+      platform: 'win32',
+      arch: 'x64',
+      runner: successfulRunner(),
+      readFuses: async () => [],
+    })
+    expect(incompleteProblems).toContain('app-update.yml GitHub provider is missing owner or repo')
   })
 
   it('returns the lookup error when no packaged application exists', async () => {

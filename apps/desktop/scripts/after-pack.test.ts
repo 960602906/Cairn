@@ -46,6 +46,18 @@ describe('appUpdateConfig', () => {
   it('falls back to the packaged placeholder source when the URL is empty', () => {
     expect(afterPack.appUpdateConfig('   ')).toContain(`url: ${afterPack.DEFAULT_UPDATE_URL}`)
   })
+
+  it('writes the GitHub provider for a repository source', () => {
+    expect(afterPack.appUpdateConfig('https://github.com/960602906/Cairn/')).toBe(
+      [
+        'provider: github',
+        'owner: 960602906',
+        'repo: Cairn',
+        'updaterCacheDirName: cairn-updater',
+        '',
+      ].join('\n'),
+    )
+  })
 })
 
 describe('afterPack', () => {

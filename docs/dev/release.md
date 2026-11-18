@@ -105,17 +105,23 @@ PowerShell 生成 PFX 的 Base64（只写入 GitHub secret，不要粘贴到日�
 
 ## 4. 更新源配置
 
-- `CAIRN_UPDATE_URL` 在构建时写入 `out/build-info.json`，客户端按目录读取
+- `CAIRN_UPDATE_URL` 在构建时写入 `out/build-info.json`，客户端读取
   `latest.yml`（stable）或 `beta.yml`（beta）。
 - `scripts/build-info.mjs` 只接受 HTTPS，拒绝用户名/密码、查询串与片段，并补尾部斜杠；
   更新源不能携带令牌，必须允许匿名只读。
-- 静态源目录至少需要：通道元数据、对应版本安装包、blockmap。`release:publish`
-  会把 `dist/release/` 下的全部文件一起上传。
-- 建议给 `*.yml` 设置较短缓存（例如 1–5 分钟），安装包与 blockmap 可以长缓存；
-  撤包后必须刷新 CDN。
-- GitHub Releases 只作为过渡方案：客户端需要固定目录，正式更新源仍应是对象存储。
-  使用 `--method github` 时，发布后从 `https://github.com/<repo>/releases/download/<tag>/`
+- 两种源二选一：
+  - **静态目录**（对象存储/CDN）：形如 `https://updates.example/cairn/`，客户端用 generic
+    provider 按目录拼接文件名；至少需要通道元数据、对应版本安装包与 blockmap。
+  - **公开仓库的 GitHub Releases**：形如 `https://github.com/<owner>/<repo>`，客户端用
+    GitHub provider 读取 `releases.atom` 与 `releases/download/<tag>/`，**不需要也禁止**
+    携带令牌（私有仓库不支持）。beta 版本以 `--prerelease` 发布，`releases/latest`
+    不含预发布，客户端在 beta 通道显式打开 `allowPrerelease` 从 feed 里选择。
+- `release:publish` 会把 `dist/release/` 下的全部文件一起上传；GitHub 方式使用
+  `--method github`，发布后从 `https://github.com/<repo>/releases/download/<tag>/`
   匿名重下并核对 SHA-256。
+- 静态目录建议给 `*.yml` 设置较短缓存（例如 1–5 分钟），安装包与 blockmap 可以长缓存；
+  撤包后必须刷新 CDN。GitHub Releases 无法自定义缓存与可用性，适合没有对象存储时直接
+  发布；对下载速度、CDN 或可用性有要求时仍应使用静态目录。
 
 ## 5. 发布流程
 

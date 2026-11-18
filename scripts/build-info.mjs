@@ -32,7 +32,8 @@ export function resolveChannel(raw, version) {
  * 归一化发布构建注入的更新配置（M5-08）。
  *
  * - 只接受 HTTPS 地址；拒绝用户名/密码、查询串与片段，避免把令牌或临时参数写进构建产物；
- * - 路径补尾部斜杠，`electron-updater` 的 generic provider 按目录拼接文件名；
+ * - 路径补尾部斜杠，客户端按目录拼接文件名；`https://github.com/<owner>/<repo>` 也写成这种
+ *   形式，运行时识别为公开仓库的 GitHub Releases（GitHub provider，不需要令牌）；
  * - publisher 是证书完整 DN，允许为空（unsigned beta），但 stable 构建在 `collectBuildInfo`
  *   中要求非空，失败关闭。
  * @param {Readonly<Record<string, string | undefined>>} env

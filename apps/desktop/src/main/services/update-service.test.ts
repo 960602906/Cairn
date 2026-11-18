@@ -26,6 +26,7 @@ const electronUpdater = vi.hoisted(() => {
     autoDownload: true,
     autoInstallOnAppQuit: true,
     allowDowngrade: true,
+    allowPrerelease: false,
     forceDevUpdateConfig: false,
     verifyUpdateCodeSignature: undefined as
       ((publisherNames: string[], path: string) => Promise<string | null>) | undefined,
@@ -389,6 +390,24 @@ describe('createUpdateService: configuration', () => {
     expect(service.status()).toMatchObject({
       enabled: false,
       disabledReason: 'update.source_missing',
+    })
+  })
+
+  it('recognizes a public GitHub repository as the update source', () => {
+    const { service } = setup({ sourceUrl: 'https://github.com/960602906/Cairn' })
+    expect(service.status()).toMatchObject({
+      enabled: true,
+      source: 'https://github.com/960602906/Cairn/',
+    })
+  })
+
+  it('keeps GitHub subpaths on the generic provider', () => {
+    const { service } = setup({
+      sourceUrl: 'https://github.com/960602906/Cairn/releases/latest/download',
+    })
+    expect(service.status()).toMatchObject({
+      enabled: true,
+      source: 'https://github.com/960602906/Cairn/releases/latest/download/',
     })
   })
 })
@@ -1176,6 +1195,47 @@ describe('createUpdateService: electron-updater adapter', () => {
       phase: 'available',
       availableVersion: '0.1.1',
     })
+  })
+
+  it('uses the GitHub provider with prereleases enabled on the beta channel', async () => {
+    const harness = setup({
+      sourceUrl: 'https://github.com/960602906/Cairn',
+      settings: { updateChannel: 'beta' },
+      defaultUpdater: true,
+    })
+    electronUpdater.autoUpdater.checkForUpdates.mockResolvedValue(null)
+    await expect(harness.service.check({})).resolves.toMatchObject({
+      phase: 'up_to_date',
+      source: 'https://github.com/960602906/Cairn/',
+    })
+    expect(electronUpdater.autoUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: '960602906',
+      repo: 'Cairn',
+      channel: 'beta',
+    })
+    expect(electronUpdater.autoUpdater.allowPrerelease).toBe(true)
+    expect(electronUpdater.autoUpdater.allowDowngrade).toBe(false)
+  })
+
+  it('reads only ordinary releases on the stable channel of a GitHub source', async () => {
+    const harness = setup({
+      sourceUrl: 'https://github.com/960602906/Cairn',
+      settings: { updateChannel: 'stable' },
+      publisherName: 'CN=Cairn, O=Cairn',
+      defaultUpdater: true,
+    })
+    electronUpdater.autoUpdater.checkForUpdates.mockResolvedValue(null)
+    electronUpdater.autoUpdater.allowPrerelease = true
+    await harness.service.check({})
+    expect(electronUpdater.autoUpdater.setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: '960602906',
+      repo: 'Cairn',
+      channel: 'latest',
+    })
+    expect(electronUpdater.autoUpdater.allowPrerelease).toBe(false)
+    expect(electronUpdater.autoUpdater.allowDowngrade).toBe(false)
   })
 
   it('downloads with a cancellation token, forwards progress and installs', async () => {
