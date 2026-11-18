@@ -29,6 +29,7 @@ it('exports the public API', () => {
     'trial-team',
     'provider-catalog',
     'auto-fix',
+    'auto-fix-session-index',
   ])
   expect(storage.StorageErrorCode.SeqConflict).toBe('storage.seq_conflict')
   const error = new storage.StorageError(storage.StorageErrorCode.NotFound)

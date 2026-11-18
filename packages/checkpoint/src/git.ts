@@ -44,6 +44,11 @@ export interface GitRunOptions {
   readonly stdin?: string
   /** 非零退出码时不抛出。 */
   readonly allowFail?: boolean
+  /**
+   * 只对这次调用追加的环境变量（覆盖同名值）。用于把一次性凭据放进子进程环境，
+   * 而不是命令行参数；调用方必须保证它不会进入日志。
+   */
+  readonly env?: Readonly<Record<string, string>>
 }
 
 export interface GitRunner {
@@ -88,13 +93,13 @@ export function createGitRunner(options: GitRunnerOptions): GitRunner {
   const binary = options.binary ?? 'git'
   return {
     binary,
-    run: (args, { cwd, stdin, allowFail = false } = {}) =>
+    run: (args, { cwd, stdin, allowFail = false, env } = {}) =>
       new Promise((resolve, reject) => {
         // 检查点所在的影子仓库由应用自己创建；不做所有权检查（Windows 上项目目录可能属于 Administrators）
         const fullArgs = ['-c', 'safe.directory=*', ...args]
         const child = spawn(binary, fullArgs, {
           ...(cwd !== undefined ? { cwd } : {}),
-          env: options.env,
+          env: env === undefined ? options.env : { ...options.env, ...env },
           windowsHide: true,
           stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
         })

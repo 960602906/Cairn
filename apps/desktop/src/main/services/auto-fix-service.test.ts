@@ -2,9 +2,14 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RpcError, type GithubPullRequest } from '@cairn/protocol'
+import {
+  RpcError,
+  type AutoFixJob,
+  type AutoFixJobStatus,
+  type GithubPullRequest,
+} from '@cairn/protocol'
 import type { GitResult, GitRunner } from '@cairn/checkpoint'
-import { createMemoryStorage, type Storage } from '@cairn/storage'
+import { createMemoryStorage, type PullRequestWatchRecord, type Storage } from '@cairn/storage'
 import {
   createAutoFixService,
   repairBrief,
@@ -24,11 +29,17 @@ const PULL: GithubPullRequest = {
   draft: false,
   headRef: 'fix',
   headSha: 'abcdef1234567890',
+  headRepo: 'o/r',
   baseRef: 'main',
   checks: [
     { id: 1, name: 'test', status: 'completed', conclusion: 'failure' },
     { id: 2, name: 'lint', status: 'completed', conclusion: 'success' },
   ],
+}
+
+const GREEN: GithubPullRequest = {
+  ...PULL,
+  checks: [{ id: 2, name: 'lint', status: 'completed', conclusion: 'success' }],
 }
 
 const projectPath = join(tmpdir(), 'cairn-auto-fix-project')
@@ -47,7 +58,13 @@ function gitResult(code = 0, stderr = ''): GitResult {
   return { code, stdout: Buffer.from(''), stderr }
 }
 
-function setup(overrides: { pull?: GithubPullRequest } = {}) {
+function setup(
+  overrides: {
+    pull?: GithubPullRequest
+    token?: string | undefined
+    onJobFinished?: (job: AutoFixJob, watch: PullRequestWatchRecord) => void
+  } = {},
+) {
   clock = 1_000
   storage = createMemoryStorage({ now: () => clock })
   events = createSessionEventService({ storage })
@@ -69,6 +86,8 @@ function setup(overrides: { pull?: GithubPullRequest } = {}) {
     sessions,
     git,
     worktreesRoot: root,
+    ...(overrides.token === undefined ? {} : { githubToken: async () => overrides.token }),
+    ...(overrides.onJobFinished === undefined ? {} : { onJobFinished: overrides.onJobFinished }),
     now: () => clock,
     createId: (() => {
       let counter = 0
@@ -108,6 +127,48 @@ function seedWatch(
     storage.autoFix.watches.update('w1', { attempts: patch.attempts })
   }
   return service
+}
+
+/** 写入一个自动修复会话的任务，并按需建好它的工作区目录。 */
+function seedSession(
+  service: AutoFixService,
+  options: { status?: AutoFixJobStatus; directory?: boolean } = {},
+) {
+  seedWatch(service)
+  storage.autoFix.jobs.create({
+    jobId: 'j1',
+    watchId: 'w1',
+    trigger: 'ci',
+    signature: 'abcdef1234567890:test',
+    status: options.status ?? 'running',
+    attempt: 1,
+    sessionId: 's1',
+  })
+  const directory = join(root, 'pr-w1')
+  if (options.directory !== false) mkdirSync(directory, { recursive: true })
+  return directory
+}
+
+/** 按 Git 子命令返回预设结果；未列出的步骤视为成功。 */
+function gitByStep(
+  overrides: {
+    fetch?: GitResult
+    catFile?: GitResult
+    ancestor?: GitResult
+    head?: GitResult
+    push?: GitResult
+  } = {},
+) {
+  gitRun.mockImplementation(async (args: string[]) => {
+    if (args.includes('fetch')) return overrides.fetch ?? gitResult()
+    if (args.includes('cat-file')) return overrides.catFile ?? gitResult()
+    if (args.includes('merge-base')) return overrides.ancestor ?? gitResult()
+    if (args.includes('rev-parse')) {
+      return overrides.head ?? { code: 0, stdout: Buffer.from('local123\n'), stderr: '' }
+    }
+    if (args.includes('push')) return overrides.push ?? gitResult()
+    return gitResult()
+  })
 }
 
 beforeEach(() => {
@@ -171,7 +232,9 @@ describe('repairBrief', () => {
     expect(brief).toContain('PR：o/r#12 Fix the thing')
     expect(brief).toContain('失败的检查：test')
     expect(brief).toContain('/tmp/pr-w1')
-    expect(brief).toContain('不要提交、不要推送')
+    expect(brief).toContain('git_commit')
+    expect(brief).toContain('git_push')
+    expect(brief).toContain('不要强制推送')
     expect(brief).toContain('boom')
   })
 })
@@ -227,7 +290,7 @@ describe('auto-fix service', () => {
       expect.objectContaining({
         sessionId: 'id-3',
         content: [
-          expect.objectContaining({ type: 'text', text: expect.stringContaining('不提交') }),
+          expect.objectContaining({ type: 'text', text: expect.stringContaining('git_push') }),
         ],
       }),
     )
@@ -673,5 +736,294 @@ describe('auto-fix service', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('auto-fix git tools (M8-03)', () => {
+  it('exposes the session context only for auto-fix sessions', () => {
+    const service = setup()
+    seedSession(service)
+    expect(service.contextFor('s1')).toEqual({ repo: 'o/r', prNumber: 12 })
+    expect(service.contextFor('missing')).toBeUndefined()
+    storage.autoFix.watches.remove('w1')
+    expect(service.contextFor('s1')).toBeUndefined()
+  })
+
+  it('commits in the watch worktree with the controlled identity', async () => {
+    const service = setup()
+    const directory = seedSession(service)
+    gitByStep({ head: { code: 0, stdout: Buffer.from('abc1234\n'), stderr: '' } })
+
+    await expect(service.commit('s1', { message: 'fix: test' })).resolves.toEqual({
+      sha: 'abc1234',
+    })
+    expect(gitRun).toHaveBeenCalledWith(['-C', directory, 'add', '-A'], { allowFail: true })
+    expect(gitRun).toHaveBeenCalledWith(
+      [
+        '-C',
+        directory,
+        '-c',
+        'user.name=Cairn',
+        '-c',
+        'user.email=cairn@users.noreply.github.com',
+        'commit',
+        '-m',
+        'fix: test',
+      ],
+      { allowFail: true },
+    )
+  })
+
+  it('refuses to commit outside an auto-fix session or without a worktree', async () => {
+    const service = setup()
+    await expect(service.commit('s1', { message: 'x' })).rejects.toThrow(/autofix.not_auto_fix/)
+
+    seedSession(service, { directory: false })
+    await expect(service.commit('s1', { message: 'x' })).rejects.toThrow(/autofix.commit_failed/)
+    expect(gitRun).not.toHaveBeenCalled()
+  })
+
+  it('reports add, commit and head-reading failures', async () => {
+    const service = setup()
+    seedSession(service)
+
+    gitRun.mockResolvedValueOnce(gitResult(1, 'add failed'))
+    await expect(service.commit('s1', { message: 'x' })).rejects.toMatchObject({
+      code: 'autofix.commit_failed',
+    })
+
+    gitRun.mockResolvedValueOnce(gitResult())
+    gitRun.mockResolvedValueOnce(gitResult(1, 'nothing to commit'))
+    await expect(service.commit('s1', { message: 'x' })).rejects.toMatchObject({
+      code: 'autofix.commit_failed',
+    })
+
+    gitRun.mockResolvedValueOnce(gitResult())
+    gitRun.mockResolvedValueOnce(gitResult())
+    gitRun.mockResolvedValueOnce({ code: 0, stdout: Buffer.from('  \n'), stderr: '' })
+    await expect(service.commit('s1', { message: 'x' })).rejects.toMatchObject({
+      code: 'autofix.commit_failed',
+    })
+
+    gitRun.mockResolvedValueOnce(gitResult())
+    gitRun.mockResolvedValueOnce(gitResult())
+    gitRun.mockResolvedValueOnce(gitResult(1, 'no head'))
+    await expect(service.commit('s1', { message: 'x' })).rejects.toMatchObject({
+      code: 'autofix.commit_failed',
+    })
+  })
+
+  it('pushes only the PR head branch and keeps the token out of the arguments', async () => {
+    const service = setup({ token: 'secret-token' })
+    const directory = seedSession(service)
+    gitByStep()
+
+    await expect(service.push('s1')).resolves.toEqual({ sha: 'local123', branch: 'fix' })
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('pushed')
+    expect(gitRun).toHaveBeenCalledWith(['-C', directory, 'fetch', '--no-tags', 'origin'], {
+      allowFail: true,
+    })
+    expect(gitRun).toHaveBeenCalledWith(
+      ['-C', directory, 'merge-base', '--is-ancestor', PULL.headSha, 'HEAD'],
+      { allowFail: true },
+    )
+    const pushCall = gitRun.mock.calls.find(([args]) => (args as string[]).includes('push'))!
+    const argv = pushCall[0] as string[]
+    expect(argv).toEqual([
+      '-C',
+      directory,
+      'push',
+      '--no-verify',
+      'https://github.com/o/r.git',
+      'HEAD:refs/heads/fix',
+    ])
+    expect(argv.join(' ')).not.toContain('secret-token')
+    const env = (pushCall[1] as { env: Record<string, string> }).env
+    const basic = Buffer.from('x-access-token:secret-token').toString('base64')
+    expect(env).toMatchObject({
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+      GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+    })
+  })
+
+  it('denies a closed pull request, a missing head and rewritten history', async () => {
+    const service = setup({ token: 'secret-token' })
+    seedSession(service)
+
+    pulls.mockResolvedValueOnce({ ...PULL, state: 'closed' })
+    gitByStep()
+    await expect(service.push('s1')).rejects.toThrow(/autofix.push_denied/)
+
+    gitByStep({ catFile: gitResult(1) })
+    await expect(service.push('s1')).rejects.toThrow(/autofix.push_denied/)
+
+    gitByStep({ ancestor: gitResult(1) })
+    await expect(service.push('s1')).rejects.toThrow(/autofix.push_denied/)
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('running')
+  })
+
+  it('refuses to push a pull request from a fork', async () => {
+    const service = setup({ token: 'secret-token' })
+    seedSession(service)
+    gitByStep()
+    const { headRepo: _headRepo, ...withoutHeadRepo } = PULL
+
+    pulls.mockResolvedValueOnce({ ...PULL, headRepo: 'someone/o-r' })
+    await expect(service.push('s1')).rejects.toThrow(/autofix.push_denied/)
+
+    pulls.mockResolvedValueOnce(withoutHeadRepo)
+    await expect(service.push('s1')).rejects.toThrow(/autofix.push_denied/)
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('running')
+  })
+
+  it('reports nothing to push and missing credentials', async () => {
+    const withToken = setup({ token: 'secret-token' })
+    seedSession(withToken)
+    gitByStep({ head: { code: 0, stdout: Buffer.from(`${PULL.headSha}\n`), stderr: '' } })
+    await expect(withToken.push('s1')).rejects.toThrow(/autofix.nothing_to_push/)
+
+    const withoutToken = setup()
+    seedSession(withoutToken)
+    gitByStep()
+    await expect(withoutToken.push('s1')).rejects.toMatchObject({
+      code: 'autofix.push_failed',
+      params: { reason: 'GitHub is not connected.' },
+    })
+
+    const brokenToken = setup()
+    seedSession(brokenToken)
+    gitByStep()
+    const failing = createAutoFixService({
+      storage,
+      events,
+      github: { pullRequest: pulls, checkLog: logs } as unknown as Pick<
+        GithubService,
+        'pullRequest' | 'checkLog'
+      >,
+      sessions: { prompt } as unknown as Pick<SessionManager, 'prompt'>,
+      git: { binary: 'git', run: gitRun } as unknown as GitRunner,
+      worktreesRoot: root,
+      githubToken: async () => Promise.reject(new Error('cannot read the key')),
+    })
+    await expect(failing.push('s1')).rejects.toMatchObject({
+      code: 'autofix.push_failed',
+      params: { reason: 'cannot read the key' },
+    })
+  })
+
+  it('reports fetch, GitHub, head-reading and push failures', async () => {
+    const service = setup({ token: 'secret-token' })
+    seedSession(service)
+
+    gitByStep({ fetch: gitResult(1, 'offline') })
+    await expect(service.push('s1')).rejects.toMatchObject({ code: 'autofix.push_failed' })
+
+    gitByStep()
+    pulls.mockRejectedValueOnce(new RpcError('github.network'))
+    await expect(service.push('s1')).rejects.toMatchObject({ code: 'autofix.push_failed' })
+
+    gitByStep({ head: { code: 0, stdout: Buffer.from('\n'), stderr: '' } })
+    await expect(service.push('s1')).rejects.toMatchObject({ code: 'autofix.push_failed' })
+
+    gitByStep({ push: gitResult(1, 'remote rejected') })
+    await expect(service.push('s1')).rejects.toMatchObject({ code: 'autofix.push_failed' })
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('running')
+  })
+
+  it('refuses to push outside an auto-fix session or without a worktree', async () => {
+    const service = setup({ token: 'secret-token' })
+    await expect(service.push('s1')).rejects.toThrow(/autofix.not_auto_fix/)
+    seedSession(service, { directory: false })
+    await expect(service.push('s1')).rejects.toThrow(/autofix.push_failed/)
+  })
+})
+
+describe('auto-fix recheck (M8-03)', () => {
+  it('marks a pushed job passed and notifies when all checks are green', async () => {
+    const onJobFinished = vi.fn()
+    const autoFix = setup({ pull: GREEN, onJobFinished })
+    seedSession(autoFix, { status: 'pushed' })
+
+    await autoFix.poll()
+
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('passed')
+    expect(pulls).toHaveBeenCalledTimes(1)
+    expect(onJobFinished).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: 'j1', status: 'passed' }),
+      expect.objectContaining({ watchId: 'w1' }),
+    )
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('closes out older pushed attempts when the checks pass', async () => {
+    const onJobFinished = vi.fn()
+    const service = setup({ pull: GREEN, onJobFinished })
+    seedSession(service, { status: 'pushed' })
+    storage.autoFix.jobs.create({
+      jobId: 'j2',
+      watchId: 'w1',
+      trigger: 'ci',
+      signature: 'older',
+      status: 'pushed',
+      attempt: 2,
+    })
+
+    await service.poll()
+
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('passed')
+    expect(storage.autoFix.jobs.get('j2')!.status).toBe('passed')
+    expect(onJobFinished).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps waiting while checks are still running or the branch conflicts', async () => {
+    const stillRunning = setup({
+      pull: { ...GREEN, checks: [{ id: 3, name: 'slow', status: 'running' }] },
+    })
+    seedSession(stillRunning, { status: 'pushed' })
+    await stillRunning.poll()
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('pushed')
+
+    const conflicting = setup({ pull: { ...GREEN, mergeableState: 'dirty' } })
+    seedSession(conflicting, { status: 'pushed' })
+    await conflicting.poll()
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('pushed')
+  })
+
+  it('starts another repair when the pushed commit still fails', async () => {
+    const service = setup()
+    seedSession(service, { status: 'pushed' })
+    await service.poll()
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('pushed')
+    expect(
+      storage.autoFix.jobs
+        .list()
+        .map((job) => job.status)
+        .sort(),
+    ).toEqual(['pushed', 'running'])
+  })
+
+  it('does not mark anything passed without a pushed job', async () => {
+    const service = setup({ pull: GREEN })
+    seedSession(service, { status: 'ready' })
+    await service.poll()
+    expect(storage.autoFix.jobs.get('j1')!.status).toBe('ready')
+    expect(storage.autoFix.jobs.list()).toHaveLength(1)
+  })
+
+  it('notifies when giving up and survives a failing notification', async () => {
+    const onJobFinished = vi.fn(() => {
+      throw new Error('notification failed')
+    })
+    const service = seedWatch(setup({ onJobFinished }), { attempts: 3, maxAttempts: 3 })
+    await service.poll()
+
+    const job = storage.autoFix.jobs.list()[0]!
+    expect(job.status).toBe('gave_up')
+    expect(onJobFinished).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: job.jobId, status: 'gave_up' }),
+      expect.objectContaining({ watchId: 'w1' }),
+    )
+    expect(errors).toHaveLength(1)
   })
 })

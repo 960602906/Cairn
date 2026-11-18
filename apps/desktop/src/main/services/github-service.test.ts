@@ -102,7 +102,11 @@ describe('github-service', () => {
             html_url: 'https://github.com/o/r/pull/12',
             state: 'open',
             draft: false,
-            head: { ref: 'fix', sha: 'abcdef1234567890' },
+            head: {
+              ref: 'fix',
+              sha: 'abcdef1234567890',
+              repo: { full_name: 'o/r' },
+            },
             base: { ref: 'main' },
             mergeable_state: 'dirty',
           })
@@ -131,6 +135,7 @@ describe('github-service', () => {
       state: 'open',
       draft: false,
       headRef: 'fix',
+      headRepo: 'o/r',
       baseRef: 'main',
       mergeableState: 'dirty',
     })

@@ -2,7 +2,7 @@
  * GitHub 只读服务（M8-01）：连接、PR 快照与失败检查日志。
  *
  * - 令牌经 `LocalKeyStore`（ADR-0010）加密保存，明文只在本进程的请求里使用；
- * - 不轮询、不订阅、不写回：自动修复的触发与推送在后续阶段接入；
+ * - 不轮询、不订阅、不写回：轮询由自动修复服务负责，推送经受控 Git 工具在主进程执行（M8-03）；
  * - 网络错误统一映射成 `github.*` 错误码，界面按当前语言翻译；
  * - 不在日志或错误参数里带令牌，也不把完整响应体塞进错误。
  *
@@ -12,6 +12,7 @@ import { unzipSync } from 'fflate'
 import {
   GITHUB_CREDENTIAL_REF,
   GITHUB_LOG_MAX_CHARS,
+  GITHUB_REPO_PATTERN,
   GithubCheckConclusion,
   GithubErrorCode,
   RpcError,
@@ -56,7 +57,11 @@ interface PullResponse {
   readonly html_url?: unknown
   readonly state?: unknown
   readonly draft?: unknown
-  readonly head?: { readonly ref?: unknown; readonly sha?: unknown }
+  readonly head?: {
+    readonly ref?: unknown
+    readonly sha?: unknown
+    readonly repo?: { readonly full_name?: unknown } | null
+  }
   readonly base?: { readonly ref?: unknown }
   readonly mergeable_state?: unknown
 }
@@ -223,6 +228,11 @@ export function createGithubService(options: GithubServiceOptions): GithubServic
       const url = text(pull.html_url, 4096)
       const headRef = text(pull.head?.ref, 255)
       const headSha = text(pull.head?.sha, 64)
+      const headRepoName = text(pull.head?.repo?.full_name, 201)
+      const headRepo =
+        headRepoName !== undefined && GITHUB_REPO_PATTERN.test(headRepoName)
+          ? headRepoName
+          : undefined
       const baseRef = text(pull.base?.ref, 255)
       if (
         title === undefined ||
@@ -254,6 +264,7 @@ export function createGithubService(options: GithubServiceOptions): GithubServic
         draft: pull.draft === true,
         headRef,
         headSha,
+        ...(headRepo === undefined ? {} : { headRepo }),
         baseRef,
         ...(mergeableState === undefined ? {} : { mergeableState }),
         checks,

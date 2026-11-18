@@ -124,6 +124,7 @@ import { createHostApprovalGate } from './approval-gate.js'
 import { createHostQuestionGate } from './question-gate.js'
 import { createHostCheckpoints, type OpenShadowRepo } from './checkpoints.js'
 import { createHostChangeRecorder } from './change-recorder.js'
+import { GIT_COMMIT_TOOL, GIT_PUSH_TOOL, registerAutoFixGitTools } from './git-tools.js'
 
 export const AgentHostErrorCode = {
   /** 尚未收到 `host.init`，或重复初始化。 */
@@ -298,6 +299,11 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   }
   /** 当前这一轮是不是计划模式（M3-05）。轮次结束后清掉，权限拦截读它。 */
   let planTurn = false
+  /**
+   * 这个宿主是不是自动修复会话（M8-03）：只有 `host.init.autoFix` 存在时为 true。
+   * `git_commit` / `git_push` 只在这里注册，权限守卫再拒绝一次，避免别的会话误用。
+   */
+  let autoFixSession = false
   /** 正在执行的已批准计划。下一次 `host.prompt` 会换掉或清掉。 */
   let activePlan: ActivePlan | undefined
   /** 本会话未关闭的待办列表（ADR-0038）。下一次 `host.prompt` 用主进程的投影覆盖。 */
@@ -344,6 +350,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       delegationApprovalGuard,
       sandboxGuard(() => sandboxState),
       (request) => rootPathGuard(request),
+      // 自动修复的 Git 工具只在自动修复会话存在；即使将来被错误注册，也不允许在别处执行。
+      (request) =>
+        !autoFixSession &&
+        (request.definition.name === GIT_COMMIT_TOOL || request.definition.name === GIT_PUSH_TOOL)
+          ? {
+              effect: 'deny',
+              reasonCode: PermissionReasonCode.DeniedByRule,
+              reason: 'Git write tools are only available in auto-fix sessions.',
+            }
+          : undefined,
     ],
     ...(options.caseInsensitive !== undefined ? { caseInsensitive: options.caseInsensitive } : {}),
   })
@@ -406,6 +422,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     if (initializing || run) throw new RpcError(AgentHostErrorCode.AlreadyInitialized)
     initializing = true
     if (init.permissionRules) permissionRules = init.permissionRules
+    autoFixSession = init.autoFix !== undefined
     /**
      * 计划模式与只读 Agent 强制只读沙箱（M5-04）：权限预设已经拒绝写入类调用，这里是第二层，
      * 不能靠用户把预设改成“自动”而放宽。
@@ -511,6 +528,13 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           toolSelected(agentDefinition?.tools, definition),
       )
     registerMcpToolsInto(registry, init.mcpTools ?? [])
+    // 自动修复专用（M8-03）：只有主进程明确声明这是自动修复会话时才注册。执行仍由主进程校验。
+    if (hasBuiltinTools && init.autoFix) {
+      registerAutoFixGitTools(registry, {
+        commit: (input) => endpoint.request('host.git.commit', input),
+        push: () => endpoint.request('host.git.push', {}),
+      })
+    }
     /** 本轮启用的技能。`prepareTurn` 每轮替换，`load_skill` 按名称读取。 */
     const skillCatalog: SkillCatalogEntry[] = []
     /** 技能目录只读。与 `skillCatalog` 一起每轮更新。 */
@@ -1438,6 +1462,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           permissions,
           approvals: createHostApprovalGate({
             endpoint,
+            unattended: init.mode !== 'interactive',
             onRule: (rule) => (permissionRules = [...permissionRules, rule]),
             attribution: () => ({
               runId: run?.runId ?? init.runId,

@@ -1130,6 +1130,12 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           const record = live().autoFixJobs.get(jobId)
           return record && copy(record)
         },
+        getBySession(sessionId) {
+          const record = [...live().autoFixJobs.values()]
+            .filter((job) => job.sessionId === sessionId)
+            .sort((a, b) => b.createdAt - a.createdAt)[0]
+          return record && copy(record)
+        },
         list(options = {}) {
           return [...live().autoFixJobs.values()]
             .filter((job) => options.watchId === undefined || job.watchId === options.watchId)

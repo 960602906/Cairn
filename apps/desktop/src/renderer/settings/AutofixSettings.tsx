@@ -3,8 +3,8 @@
  *
  * - 令牌只走 `github.connect`，主进程验证后加密保存，界面没有读取明文的接口；
  * - 仓库 + PR 编号可以直接查询，不需要先打开项目；
- * - 监视列表来自主进程轮询：CI 失败或合并冲突时在独立工作区自动开会话改代码，
- *   当前阶段（M8-02）不会自动提交或推送；变动经 `autofix.changed` 刷新。
+ * - 监视列表来自主进程轮询：CI 失败或合并冲突时在独立工作区自动开会话改代码，修复会话
+ *   经受控工具提交并推送到 PR 的 head 分支（M8-03，ADR-0045）；变动经 `autofix.changed` 刷新。
  */
 import { useEffect, useState } from 'react'
 import { CircleAlert, GitPullRequest, KeyRound, Radar, RefreshCw } from 'lucide-react'

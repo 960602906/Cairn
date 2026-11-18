@@ -56,6 +56,7 @@ describe('openSqliteStorage', () => {
         '0020_trial-team',
         '0021_provider-catalog',
         '0022_auto-fix',
+        '0023_auto-fix-session-index',
       ],
     })
     storage.close()
@@ -150,6 +151,7 @@ describe('openSqliteStorage', () => {
       '0020_trial-team',
       '0021_provider-catalog',
       '0022_auto-fix',
+      '0023_auto-fix-session-index',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

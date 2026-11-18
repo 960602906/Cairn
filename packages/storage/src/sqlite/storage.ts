@@ -1893,6 +1893,14 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
           return autoFixJobById(jobId)!
         },
         get: autoFixJobById,
+        getBySession(sessionId) {
+          const row = db
+            .prepare<[string], AutoFixJobRow>(
+              'SELECT * FROM auto_fix_jobs WHERE session_id = ? ORDER BY created_at DESC LIMIT 1',
+            )
+            .get(sessionId)
+          return row && toAutoFixJob(row)
+        },
         list(options = {}) {
           return db
             .prepare<{ watchId: string | null; limit: number }, AutoFixJobRow>(

@@ -5,9 +5,10 @@
  * - 去重签名（`headSha + 失败检查名` / `headSha`）：同一份提交只修一次，推送或改了检查才进入下一轮；
  * - 每个监视一个独立 worktree（`<worktrees>/pr-<watchId>`），每次修复前重置到 PR 的 head 提交，
  *   不碰用户自己的工作目录；
- * - 修复会话 `kind = 'auto-fix'`，以无人值守方式运行（ADR-0018），完成后把状态记为 `ready`；
- * - **M8-02 不提交、不推送**：改动留在监视工作区，由用户检查后手动处理；
- * - 达到尝试上限时关闭监视并记录 `gave_up`，等待人工介入。
+ * - 修复会话 `kind = 'auto-fix'`，以无人值守方式运行（ADR-0018）；自动修复会话可以用
+ *   `git_commit` / `git_push` 两个受控工具提交并推送到 PR 的 head 分支（M8-03）；
+ * - 推送后下一轮轮询：检查通过记为 `passed`；仍有新的失败则进入下一次尝试；达到尝试上限时
+ *   关闭监视并记录 `gave_up`，同时通知用户。
  *
  * 不依赖 Electron：Git、GitHub、会话与时间来源都由调用方注入。
  */
@@ -17,8 +18,11 @@ import { randomUUID } from 'node:crypto'
 import {
   AUTO_FIX_DEFAULT_ATTEMPTS,
   AUTO_FIX_MAX_WATCHES,
+  AutoFixGitErrorCode,
   RpcError,
   type AutoFixJob,
+  type AutoFixJobStatus,
+  type AutoFixSessionContext,
   type AutoFixStatus,
   type AutoFixTrigger,
   type GithubPullRequest,
@@ -52,6 +56,10 @@ export interface AutoFixServiceOptions {
   readonly git: GitRunner
   /** `<userData>/worktrees`。 */
   readonly worktreesRoot: string
+  /** 读取 GitHub 令牌（M8-03）；只注入一次推送子进程的环境，不经过宿主与日志。 */
+  readonly githubToken?: () => Promise<string | undefined>
+  /** 任务通过或放弃时通知用户（M8-03）；失败不应影响任务本身。 */
+  readonly onJobFinished?: (job: AutoFixJob, watch: PullRequestWatchRecord) => void
   /** 轮询间隔，默认 60 秒。 */
   readonly intervalMs?: number
   readonly now?: () => number
@@ -79,6 +87,12 @@ export interface AutoFixCommands {
 }
 
 export interface AutoFixService extends AutoFixCommands {
+  /** 会话对应的自动修复上下文；不是自动修复会话时为 undefined（宿主据此注册 Git 工具）。 */
+  contextFor(sessionId: string): AutoFixSessionContext | undefined
+  /** 在监视工作区提交（M8-03）。校验会话、监视与工作区，使用受控身份，不接受 amend。 */
+  commit(sessionId: string, input: { message: string }): Promise<{ sha: string }>
+  /** 推送到 PR 的 head 分支（M8-03）：拒绝强制推送、非 PR 分支与分叉历史。 */
+  push(sessionId: string): Promise<{ sha: string; branch: string }>
   /** 启动轮询并清理上次遗留的任务。 */
   start(): void
   stop(): void
@@ -115,7 +129,7 @@ export function repairTrigger(
   return undefined
 }
 
-/** 修复会话的提示：说明范围与禁区，避免它在 M8-02 里提交或推送。 */
+/** 修复会话的提示：说明范围与禁区，以及提交推送的受控方式（M8-03）。 */
 export function repairBrief(input: {
   pull: GithubPullRequest
   trigger: AutoFixTrigger
@@ -125,7 +139,7 @@ export function repairBrief(input: {
 }): string {
   const { pull, trigger, failed, worktree, log } = input
   const lines = [
-    '自动修复任务（只改代码，不提交、不推送）',
+    '自动修复任务（改代码、运行检查、提交并推送到 PR 分支）',
     '',
     `PR：${pull.repo}#${pull.number} ${pull.title}`,
     `地址：${pull.url}`,
@@ -137,10 +151,9 @@ export function repairBrief(input: {
     '请在这个工作区里：',
     '1. 先定位失败原因（失败日志见下）；',
     '2. 修改代码并运行相关检查；',
-    '3. 不要提交、不要推送、不要切换或强制推送分支；',
-    '4. 完成后说明改了什么、运行了哪些检查、结果如何。',
-    '',
-    '改动会留在工作区，由用户检查后手动提交与推送。',
+    '3. 用 git_commit 提交改动，再用 git_push 推送到 PR 的 head 分支；',
+    '4. 不要强制推送、不要合并、不要切换或推送其他分支；',
+    '5. 完成后说明改了什么、运行了哪些检查、结果如何。',
   ]
   if (log !== undefined && log.trim() !== '') {
     lines.push('', '失败日志（末尾）：', '```', log, '```')
@@ -158,6 +171,32 @@ function errorDetail(error: unknown): string {
     '//***@',
   )
   return text.slice(0, DETAIL_MAX)
+}
+
+/**
+ * 推送用的 Git 环境：只对这一次子进程加一个 HTTP 头，令牌不进入命令行参数、事件与日志。
+ * base64 可逆，但只存在于该子进程的环境里。
+ */
+function pushEnv(token: string): Record<string, string> {
+  const basic = Buffer.from(`x-access-token:${token}`).toString('base64')
+  return {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+  }
+}
+
+/** 检查是否全部结束且没有失败；没有检查项时只要求没有合并冲突（冲突修复用）。 */
+function checksGreen(pull: GithubPullRequest): boolean {
+  if (pull.checks.some((check) => check.status !== 'completed')) return false
+  if (
+    pull.checks.some(
+      (check) => check.conclusion !== undefined && FAILED_CONCLUSIONS.has(check.conclusion),
+    )
+  ) {
+    return false
+  }
+  return pull.mergeableState !== 'dirty'
 }
 
 export function createAutoFixService(options: AutoFixServiceOptions): AutoFixService {
@@ -201,6 +240,29 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
     })
     if (job.sessionId !== undefined) jobsBySession.delete(job.sessionId)
     emit()
+  }
+
+  /** 完成或放弃时通知用户；通知本身失败不影响任务。 */
+  const notifyFinished = (jobId: string, status: AutoFixJobStatus) => {
+    if (status !== 'passed' && status !== 'gave_up') return
+    const job = storage.autoFix.jobs.get(jobId)
+    const watch = job === undefined ? undefined : storage.autoFix.watches.get(job.watchId)
+    if (job === undefined || watch === undefined) return
+    try {
+      options.onJobFinished?.(job, watch)
+    } catch (error) {
+      reportError(error)
+    }
+  }
+
+  /** 会话对应的任务与监视；不是自动修复会话时拒绝。 */
+  const jobForSession = (sessionId: string) => {
+    const job = storage.autoFix.jobs.getBySession(sessionId)
+    const watch = job === undefined ? undefined : storage.autoFix.watches.get(job.watchId)
+    if (job === undefined || watch === undefined) {
+      throw new RpcError(AutoFixGitErrorCode.NotAutoFix)
+    }
+    return { job, watch }
   }
 
   const unsubscribeEvents = events.subscribe((sessionId, batch) => {
@@ -368,6 +430,18 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
       return
     }
     const repair = repairTrigger(pull, watch.triggers)
+    // 上一次推送后检查通过：任务记为 passed，不再触发新的修复（M8-03 回检）。
+    const pushed = storage.autoFix.jobs
+      .list({ watchId: watch.watchId })
+      .filter((job) => job.status === 'pushed')
+    if (pushed.length > 0 && repair === undefined && checksGreen(pull)) {
+      // 之前几次推送也都已经通过（新的推送建立在它们之上），一并收尾，状态列表里不留过期的“已推送”。
+      for (const job of pushed) storage.autoFix.jobs.update(job.jobId, { status: 'passed' })
+      storage.autoFix.watches.update(watch.watchId, { lastEvaluatedAt: now() })
+      emit()
+      notifyFinished(pushed[0]!.jobId, 'passed')
+      return
+    }
     if (repair === undefined || repair.signature === watch.lastSignature) {
       storage.autoFix.watches.update(watch.watchId, { lastEvaluatedAt: now() })
       return
@@ -378,8 +452,9 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
         lastSignature: repair.signature,
         lastEvaluatedAt: now(),
       })
+      const gaveUpId = createId()
       storage.autoFix.jobs.create({
-        jobId: createId(),
+        jobId: gaveUpId,
         watchId: watch.watchId,
         trigger: repair.trigger,
         signature: repair.signature,
@@ -387,6 +462,7 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
         attempt: watch.attempts,
       })
       emit()
+      notifyFinished(gaveUpId, 'gave_up')
       return
     }
     await startRepair(watch, pull, repair)
@@ -424,6 +500,147 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
   }
 
   return {
+    contextFor(sessionId) {
+      const job = storage.autoFix.jobs.getBySession(sessionId)
+      const watch = job === undefined ? undefined : storage.autoFix.watches.get(job.watchId)
+      return watch === undefined ? undefined : { repo: watch.repo, prNumber: watch.prNumber }
+    },
+
+    async commit(sessionId, { message }) {
+      const { watch } = jobForSession(sessionId)
+      const directory = worktreeOf(options.worktreesRoot, watch.watchId)
+      if (!existsSync(directory)) {
+        throw new RpcError(AutoFixGitErrorCode.CommitFailed, {
+          reason: 'The auto-fix worktree is missing.',
+        })
+      }
+      const added = await git.run(['-C', directory, 'add', '-A'], { allowFail: true })
+      if (added.code !== 0) {
+        throw new RpcError(AutoFixGitErrorCode.CommitFailed, {
+          reason: errorDetail(new Error(added.stderr)),
+        })
+      }
+      const committed = await git.run(
+        [
+          '-C',
+          directory,
+          '-c',
+          'user.name=Cairn',
+          '-c',
+          'user.email=cairn@users.noreply.github.com',
+          'commit',
+          '-m',
+          message,
+        ],
+        { allowFail: true },
+      )
+      if (committed.code !== 0) {
+        throw new RpcError(AutoFixGitErrorCode.CommitFailed, {
+          reason: errorDetail(new Error(committed.stderr)),
+        })
+      }
+      const head = await git.run(['-C', directory, 'rev-parse', 'HEAD'], { allowFail: true })
+      const sha = head.stdout.toString('utf8').trim()
+      if (head.code !== 0 || sha === '') {
+        throw new RpcError(AutoFixGitErrorCode.CommitFailed, {
+          reason: 'Could not read the new commit.',
+        })
+      }
+      return { sha }
+    },
+
+    async push(sessionId) {
+      const { job, watch } = jobForSession(sessionId)
+      const directory = worktreeOf(options.worktreesRoot, watch.watchId)
+      if (!existsSync(directory)) {
+        throw new RpcError(AutoFixGitErrorCode.PushFailed, {
+          reason: 'The auto-fix worktree is missing.',
+        })
+      }
+      // 先取远端最新状态：推送目标与分叉判断都以这次读取为准。
+      const fetched = await git.run(['-C', directory, 'fetch', '--no-tags', 'origin'], {
+        allowFail: true,
+      })
+      if (fetched.code !== 0) {
+        throw new RpcError(AutoFixGitErrorCode.PushFailed, {
+          reason: errorDetail(new Error(fetched.stderr)),
+        })
+      }
+      let pull: GithubPullRequest
+      try {
+        pull = await github.pullRequest({ repo: watch.repo, number: watch.prNumber })
+      } catch (error) {
+        throw new RpcError(AutoFixGitErrorCode.PushFailed, { reason: errorDetail(error) })
+      }
+      if (pull.state !== 'open') {
+        throw new RpcError(AutoFixGitErrorCode.PushDenied, {
+          reason: 'The pull request is not open.',
+        })
+      }
+      // 只推送与 PR 同仓库的分支：fork 的同名分支（例如也叫 `main`）不能推到基准仓库。
+      if (pull.headRepo !== watch.repo) {
+        throw new RpcError(AutoFixGitErrorCode.PushDenied, {
+          reason: 'The pull request comes from a fork; only same-repository branches are pushed.',
+        })
+      }
+      const present = await git.run(
+        ['-C', directory, 'cat-file', '-e', `${pull.headSha}^{commit}`],
+        { allowFail: true },
+      )
+      if (present.code !== 0) {
+        throw new RpcError(AutoFixGitErrorCode.PushDenied, {
+          reason: 'The current pull request head is not available locally; fetch and retry.',
+        })
+      }
+      // 本地提交必须从 PR 的当前 head 派生：不允许改写已推送的历史，也不允许推别的历史。
+      const ancestor = await git.run(
+        ['-C', directory, 'merge-base', '--is-ancestor', pull.headSha, 'HEAD'],
+        { allowFail: true },
+      )
+      if (ancestor.code !== 0) {
+        throw new RpcError(AutoFixGitErrorCode.PushDenied, {
+          reason:
+            'Local commits do not descend from the pull request head; do not rewrite history.',
+        })
+      }
+      const head = await git.run(['-C', directory, 'rev-parse', 'HEAD'], { allowFail: true })
+      const sha = head.stdout.toString('utf8').trim()
+      if (head.code !== 0 || sha === '') {
+        throw new RpcError(AutoFixGitErrorCode.PushFailed, {
+          reason: 'Could not read the local commit.',
+        })
+      }
+      if (sha === pull.headSha) throw new RpcError(AutoFixGitErrorCode.NothingToPush)
+      let token: string | undefined
+      try {
+        token = await options.githubToken?.()
+      } catch (error) {
+        throw new RpcError(AutoFixGitErrorCode.PushFailed, { reason: errorDetail(error) })
+      }
+      if (token === undefined || token.trim() === '') {
+        throw new RpcError(AutoFixGitErrorCode.PushFailed, { reason: 'GitHub is not connected.' })
+      }
+      const pushed = await git.run(
+        [
+          '-C',
+          directory,
+          'push',
+          '--no-verify',
+          `https://github.com/${watch.repo}.git`,
+          `HEAD:refs/heads/${pull.headRef}`,
+        ],
+        { allowFail: true, env: pushEnv(token) },
+      )
+      if (pushed.code !== 0) {
+        throw new RpcError(AutoFixGitErrorCode.PushFailed, {
+          reason: errorDetail(new Error(pushed.stderr)),
+        })
+      }
+      storage.autoFix.jobs.update(job.jobId, { status: 'pushed' })
+      emit()
+      return { sha, branch: pull.headRef }
+    },
+
     status: snapshot,
 
     addWatch({ repo, prNumber, projectPath, triggers, maxAttempts }) {

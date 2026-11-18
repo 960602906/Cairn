@@ -727,6 +727,10 @@ export type AutoFixJobStatus =
   | 'running'
   /** 修复已完成，改动留在监视工作区，等待人工检查或推送（M8-02 不自动推送）。 */
   | 'ready'
+  /** 已推送到 PR 的 head 分支，等待新一轮检查。 */
+  | 'pushed'
+  /** 推送后的检查通过。 */
+  | 'passed'
   | 'failed'
   | 'gave_up'
   | 'cancelled'
@@ -816,6 +820,8 @@ export interface AutoFixStore {
     /** 不存在时报 `storage.not_found`。 */
     update(jobId: string, patch: UpdateAutoFixJobInput): AutoFixJobRecord
     get(jobId: string): AutoFixJobRecord | undefined
+    /** 会话对应的任务（自动修复会话一个会话只有一个任务）。 */
+    getBySession(sessionId: string): AutoFixJobRecord | undefined
     /** 新的在前；`watchId` 省略时返回全部。 */
     list(options?: { readonly watchId?: string; readonly limit?: number }): AutoFixJobRecord[]
     /** 该监视排队或运行中的任务（每个监视最多一个）。 */

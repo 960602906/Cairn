@@ -28,6 +28,7 @@ import {
   HostForMain,
   type AgentDefinition,
   type AskUserRequest,
+  type AutoFixSessionContext,
   type AskUserResponse,
   type FileChangeInput,
   type HostApprovalRequest,
@@ -334,6 +335,20 @@ export interface HostSupervisorOptions {
     input: Readonly<Record<string, unknown>>,
     maxOutputTokens?: number,
   ) => Promise<{ text: string; isError: boolean }>
+  /**
+   * 自动修复会话的宿主上下文（M8-03）：只有 `kind === 'auto-fix'` 的会话才返回，宿主据此注册
+   * `git_commit` / `git_push`。省略或返回 undefined 表示普通会话。
+   */
+  readonly resolveAutoFix?: (
+    sessionId: string,
+  ) => AutoFixSessionContext | undefined | Promise<AutoFixSessionContext | undefined>
+  /** 在自动修复的监视工作区提交（M8-03）。省略时宿主的 `host.git.commit` 报 `run.unsupported`。 */
+  readonly commitGit?: (
+    sessionId: string,
+    input: { readonly message: string },
+  ) => Promise<{ sha: string }>
+  /** 推送到 PR 的 head 分支（M8-03）。省略时宿主的 `host.git.push` 报 `run.unsupported`。 */
+  readonly pushGit?: (sessionId: string) => Promise<{ sha: string; branch: string }>
 }
 
 export interface HostSupervisor {
@@ -547,6 +562,14 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         })
       })
 
+      endpoint.handle('host.git.commit', async ({ message }) => {
+        if (!options.commitGit) throw new RpcError('run.unsupported')
+        return options.commitGit(sessionId, { message })
+      })
+      endpoint.handle('host.git.push', async () => {
+        if (!options.pushGit) throw new RpcError('run.unsupported')
+        return options.pushGit(sessionId)
+      })
       endpoint.handle('host.snapshot', (snapshot) => {
         if (!options.recordSnapshot) throw new RpcError('run.unsupported')
         options.recordSnapshot(sessionId, snapshot)
@@ -635,10 +658,12 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         const mcpTools = options.resolveMcpTools?.(sessionId, init.agent)
         const agentDefinition = options.resolveAgentDefinition?.(init.agent, sessionId)
         const credential = await options.resolveCredential?.(init.model)
+        const autoFix = await options.resolveAutoFix?.(sessionId)
         await endpoint.request(
           'host.init',
           {
             ...init,
+            ...(autoFix ? { autoFix } : {}),
             ...(agentDefinition ? { agentDefinition } : {}),
             ...(credential ? { credential: { apiKey: credential.apiKey } } : {}),
             ...(modelConfig ? { modelConfig } : {}),

@@ -1901,6 +1901,8 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.autoFix.jobs.get('missing')).toBeUndefined()
         expect(storage.autoFix.jobs.activeForWatch('w1')?.jobId).toBe('j1')
         expect(storage.autoFix.jobs.activeForWatch('w2')).toBeUndefined()
+        expect(storage.autoFix.jobs.getBySession('s1')?.jobId).toBe('j1')
+        expect(storage.autoFix.jobs.getBySession('missing')).toBeUndefined()
 
         clock = 400
         expect(
