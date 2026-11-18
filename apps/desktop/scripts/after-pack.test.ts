@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 interface PackContext {
@@ -61,6 +61,11 @@ describe('appUpdateConfig', () => {
 })
 
 describe('afterPack', () => {
+  // 发布流水线给所有 job 注入 CAIRN_UPDATE_URL；这里显式清空，避免测试依赖外部环境。
+  beforeEach(() => {
+    vi.stubEnv('CAIRN_UPDATE_URL', '')
+  })
+
   it('writes app-update.yml into the packaged resources', async () => {
     vi.stubEnv('CAIRN_UPDATE_URL', 'https://updates.example/beta')
     const appOutDir = temporaryDirectory()
