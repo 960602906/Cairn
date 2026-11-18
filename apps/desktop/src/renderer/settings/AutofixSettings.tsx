@@ -1,12 +1,13 @@
 /**
- * 设置页“自动修复”（M8-01）：先接入 GitHub，再查看一个 PR 的 CI 状态与失败日志。
+ * 设置页“自动修复”：连接 GitHub（M8-01）、查看 PR 的 CI 状态与失败日志，以及管理监视（M8-02）。
  *
- * - M8-01 只是只读：连接、PR 快照、失败检查日志；监听与自动推送在后续阶段接入；
  * - 令牌只走 `github.connect`，主进程验证后加密保存，界面没有读取明文的接口；
- * - 仓库 + PR 编号直接查询，不需要先打开项目，保持这一页可以单独使用。
+ * - 仓库 + PR 编号可以直接查询，不需要先打开项目；
+ * - 监视列表来自主进程轮询：CI 失败或合并冲突时在独立工作区自动开会话改代码，
+ *   当前阶段（M8-02）不会自动提交或推送；变动经 `autofix.changed` 刷新。
  */
 import { useEffect, useState } from 'react'
-import { CircleAlert, GitPullRequest, KeyRound, RefreshCw } from 'lucide-react'
+import { CircleAlert, GitPullRequest, KeyRound, Radar, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { translateError } from '@cairn/i18n'
 import type {
@@ -15,6 +16,7 @@ import type {
   GithubCheckRun,
   GithubPullRequest,
   GithubStatus,
+  PullRequestWatch,
 } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
 import { Button, Spinner } from '../ui/index.js'
@@ -87,6 +89,13 @@ export function AutofixSettings() {
   const checkLog = useSessionStore((s) => s.githubCheckLog)
   const apiError = useSessionStore((s) => s.error)
   const clearError = useSessionStore((s) => s.clearError)
+  const autofix = useSessionStore((s) => s.autofix)
+  const refreshAutofix = useSessionStore((s) => s.refreshAutofix)
+  const addAutoFixWatch = useSessionStore((s) => s.addAutoFixWatch)
+  const updateAutoFixWatch = useSessionStore((s) => s.updateAutoFixWatch)
+  const removeAutoFixWatch = useSessionStore((s) => s.removeAutoFixWatch)
+  const setAutoFixPaused = useSessionStore((s) => s.setAutoFixPaused)
+  const projects = useSessionStore((s) => s.projects)
 
   const [connection, setConnection] = useState<GithubStatus | undefined>(undefined)
   const [token, setToken] = useState('')
@@ -100,14 +109,28 @@ export function AutofixSettings() {
   const [log, setLog] = useState<{ text: string; truncated: boolean } | undefined>(undefined)
   const [logLoading, setLogLoading] = useState(false)
 
+  const [watchRepo, setWatchRepo] = useState('')
+  const [watchNumber, setWatchNumber] = useState('')
+  const [watchPath, setWatchPath] = useState('')
+  const [watchBusy, setWatchBusy] = useState(false)
+  const [pauseBusy, setPauseBusy] = useState(false)
+
   useEffect(() => {
     void status().then((value) => value && setConnection(value))
-  }, [status])
+    void refreshAutofix()
+  }, [status, refreshAutofix])
+
+  useEffect(() => {
+    if (watchPath === '' && projects.length > 0) setWatchPath(projects[0]!.path)
+  }, [projects, watchPath])
 
   const connected = connection?.connected === true
   const repoValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo.trim())
   const number = Number(issueNumber)
   const numberValid = Number.isInteger(number) && number > 0
+  const watchRepoValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(watchRepo.trim())
+  const watchNumberValue = Number(watchNumber)
+  const watchNumberValid = Number.isInteger(watchNumberValue) && watchNumberValue > 0
 
   const connect = async () => {
     if (token.trim() === '') return
@@ -141,6 +164,44 @@ export function AutofixSettings() {
     const next = await pullRequest(repo.trim(), number)
     setQuerying(false)
     if (next) setPull(next)
+  }
+
+  const addWatch = async () => {
+    if (!watchRepoValid || !watchNumberValid || watchPath === '') return
+    clearError()
+    setWatchBusy(true)
+    const next = await addAutoFixWatch({
+      repo: watchRepo.trim(),
+      prNumber: watchNumberValue,
+      projectPath: watchPath,
+    })
+    setWatchBusy(false)
+    if (next) {
+      setWatchRepo('')
+      setWatchNumber('')
+    }
+  }
+
+  const toggleWatch = async (watch: PullRequestWatch) => {
+    clearError()
+    await updateAutoFixWatch({ watchId: watch.watchId, enabled: !watch.enabled })
+  }
+
+  const dropWatch = async (watch: PullRequestWatch) => {
+    clearError()
+    setWatchBusy(true)
+    await removeAutoFixWatch(watch.watchId)
+    setWatchBusy(false)
+  }
+
+  const watches = autofix?.watches ?? []
+  const jobs = autofix?.jobs ?? []
+
+  const togglePause = async () => {
+    clearError()
+    setPauseBusy(true)
+    await setAutoFixPaused(!(autofix?.paused ?? false))
+    setPauseBusy(false)
   }
 
   const openLog = async (forRepo: string, checkId: number) => {
@@ -300,6 +361,130 @@ export function AutofixSettings() {
             )}
           </div>
         )}
+      </SettingsGroup>
+
+      <SettingsGroup
+        icon={<Radar />}
+        title={t('autofix.watch.title')}
+        description={t('autofix.watch.description')}
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-ui text-fg">
+            {autofix?.paused ? t('autofix.watch.paused') : t('autofix.watch.watching')}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={pauseBusy || autofix === undefined}
+            onClick={() => void togglePause()}
+          >
+            {autofix?.paused ? t('autofix.watch.resume') : t('autofix.watch.pause')}
+          </Button>
+        </div>
+
+        {autofix === undefined ? null : watches.length === 0 ? (
+          <p className="text-note text-muted">{t('autofix.watch.empty')}</p>
+        ) : (
+          <ul aria-label={t('autofix.watch.list')} className="flex flex-col gap-2">
+            {watches.map((watch) => {
+              const job = jobs.find((item) => item.watchId === watch.watchId)
+              return (
+                <li
+                  key={watch.watchId}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-card bg-paper px-3 py-2 shadow-hair"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-ui font-medium text-fg">
+                      {watch.repo}#{watch.prNumber}
+                    </p>
+                    <p className="mt-0.5 truncate text-note text-muted">
+                      {watch.triggers.map((trigger) => t(`autofix.trigger.${trigger}`)).join(' · ')}
+                      {' · '}
+                      {t('autofix.watch.attempts', {
+                        attempts: watch.attempts,
+                        max: watch.maxAttempts,
+                      })}
+                      {job === undefined
+                        ? ''
+                        : ` · ${t('autofix.job.latest', {
+                            status: t(`autofix.job.status.${job.status}`),
+                          })}`}
+                    </p>
+                  </div>
+                  <span className="truncate text-note text-muted">{watch.projectPath}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={watchBusy}
+                    onClick={() => void toggleWatch(watch)}
+                  >
+                    {watch.enabled ? t('autofix.watch.disable') : t('autofix.watch.enable')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={watchBusy}
+                    onClick={() => void dropWatch(watch)}
+                  >
+                    {t('autofix.watch.remove')}
+                  </Button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+          <Field label={t('autofix.watch.projectLabel')}>
+            <select
+              aria-label={t('autofix.watch.projectLabel')}
+              className={inputClass}
+              value={watchPath}
+              onChange={(event) => setWatchPath(event.target.value)}
+            >
+              {projects.map((project) => (
+                <option key={project.projectId} value={project.path}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t('autofix.watch.repoLabel')}>
+            <input
+              aria-label={t('autofix.watch.repoLabel')}
+              className={inputClass}
+              value={watchRepo}
+              placeholder={t('autofix.pull.repoPlaceholder')}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setWatchRepo(event.target.value)}
+            />
+          </Field>
+          <Field label={t('autofix.watch.numberLabel')}>
+            <input
+              type="number"
+              min={1}
+              aria-label={t('autofix.watch.numberLabel')}
+              className={inputClass}
+              value={watchNumber}
+              onChange={(event) => setWatchNumber(event.target.value)}
+            />
+          </Field>
+          <div className="flex items-end">
+            <Button
+              disabled={
+                !connected || watchPath === '' || !watchRepoValid || !watchNumberValid || watchBusy
+              }
+              onClick={() => void addWatch()}
+            >
+              {watchBusy ? <Spinner /> : null}
+              {t('autofix.watch.add')}
+            </Button>
+          </div>
+        </div>
+        <p className="text-note text-muted">
+          {connected ? t('autofix.watch.worktreeHint') : t('autofix.watch.needConnection')}
+        </p>
       </SettingsGroup>
     </>
   )

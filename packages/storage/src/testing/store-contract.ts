@@ -7,7 +7,12 @@
  *
  * 工厂每个用例调用一次，必须返回空的存储，并使用传入的时间来源。
  */
-import type { PermissionRule, PersistedEvent } from '@cairn/protocol'
+import type {
+  AutoFixJobStatus,
+  AutoFixTrigger,
+  PermissionRule,
+  PersistedEvent,
+} from '@cairn/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { StorageError, StorageErrorCode, type ProposeMemoryInput, type Storage } from '../types.js'
 
@@ -1799,6 +1804,158 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           () => storage.changeSets.setFileStatus('missing', 'src/a.ts', 'accepted'),
           StorageErrorCode.NotFound,
         )
+      })
+    })
+
+    describe('auto-fix watches and jobs', () => {
+      const watch = (watchId: string, extra: object = {}) => ({
+        watchId,
+        repo: 'o/r',
+        prNumber: 12,
+        projectPath: '/work/demo',
+        triggers: ['ci', 'conflict'] as AutoFixTrigger[],
+        maxAttempts: 3,
+        ...extra,
+      })
+      const job = (jobId: string, extra: object = {}) => ({
+        jobId,
+        watchId: 'w1',
+        trigger: 'ci' as const,
+        signature: 'sha:test',
+        status: 'queued' as AutoFixJobStatus,
+        attempt: 1,
+        ...extra,
+      })
+
+      it('creates a watch with defaults and applies partial updates', () => {
+        const created = storage.autoFix.watches.create(watch('w1'))
+        expect(created).toMatchObject({
+          watchId: 'w1',
+          enabled: true,
+          attempts: 0,
+          triggers: ['ci', 'conflict'],
+          maxAttempts: 3,
+          createdAt: 100,
+        })
+        expect(storage.autoFix.watches.get('w1')).toEqual(created)
+        expect(storage.autoFix.watches.get('missing')).toBeUndefined()
+        expect(storage.autoFix.watches.findByPullRequest('o/r', 12)?.watchId).toBe('w1')
+        expect(storage.autoFix.watches.findByPullRequest('o/r', 13)).toBeUndefined()
+
+        clock = 200
+        const updated = storage.autoFix.watches.update('w1', {
+          enabled: false,
+          triggers: ['ci'],
+          maxAttempts: 5,
+          attempts: 2,
+          lastSignature: 'sha:test',
+          lastEvaluatedAt: 150,
+        })
+        expect(updated).toMatchObject({
+          enabled: false,
+          triggers: ['ci'],
+          maxAttempts: 5,
+          attempts: 2,
+          lastSignature: 'sha:test',
+          lastEvaluatedAt: 150,
+        })
+
+        const cleared = storage.autoFix.watches.update('w1', { lastSignature: null })
+        expect(cleared.lastSignature).toBeUndefined()
+        expect(cleared.enabled).toBe(false)
+        expect(storage.autoFix.watches.update('w1', { enabled: true }).triggers).toEqual(['ci'])
+      })
+
+      it('rejects duplicate watches and missing records', () => {
+        storage.autoFix.watches.create(watch('w1'))
+        expectStorageError(
+          () => storage.autoFix.watches.create(watch('w1', { prNumber: 13 })),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.autoFix.watches.create(watch('w2')),
+          StorageErrorCode.Conflict,
+        )
+        expectStorageError(
+          () => storage.autoFix.watches.update('missing', { enabled: false }),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.autoFix.watches.remove('missing'),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('stores jobs, filters active ones and lists newest first', () => {
+        storage.autoFix.watches.create(watch('w1'))
+        storage.autoFix.watches.create(watch('w2', { prNumber: 13 }))
+        clock = 300
+        const queued = storage.autoFix.jobs.create(job('j1', { sessionId: 's1' }))
+        expect(queued).toMatchObject({
+          sessionId: 's1',
+          status: 'queued',
+          createdAt: 300,
+          updatedAt: 300,
+        })
+        expect(storage.autoFix.jobs.get('j1')).toEqual(queued)
+        expect(storage.autoFix.jobs.get('missing')).toBeUndefined()
+        expect(storage.autoFix.jobs.activeForWatch('w1')?.jobId).toBe('j1')
+        expect(storage.autoFix.jobs.activeForWatch('w2')).toBeUndefined()
+
+        clock = 400
+        expect(
+          storage.autoFix.jobs.update('j1', { status: 'running', detail: 'started' }),
+        ).toMatchObject({ status: 'running', detail: 'started', updatedAt: 400 })
+        clock = 500
+        storage.autoFix.jobs.create(job('j2', { watchId: 'w2' }))
+        expect(storage.autoFix.jobs.list().map((item) => item.jobId)).toEqual(['j2', 'j1'])
+        expect(storage.autoFix.jobs.list({ watchId: 'w2' }).map((item) => item.jobId)).toEqual([
+          'j2',
+        ])
+        expect(storage.autoFix.jobs.list({ limit: 1 }).map((item) => item.jobId)).toEqual(['j2'])
+
+        expect(storage.autoFix.jobs.update('j1', { status: 'failed', detail: null }).detail).toBe(
+          undefined,
+        )
+        expect(storage.autoFix.jobs.activeForWatch('w1')).toBeUndefined()
+        expect(storage.autoFix.jobs.activeForWatch('w2')?.jobId).toBe('j2')
+      })
+
+      it('marks queued and running jobs as interrupted', () => {
+        storage.autoFix.watches.create(watch('w1'))
+        storage.autoFix.jobs.create(job('j1'))
+        storage.autoFix.jobs.create(job('j2', { status: 'ready' }))
+        expect(storage.autoFix.jobs.interruptActive()).toBe(1)
+        expect(storage.autoFix.jobs.get('j1')).toMatchObject({
+          status: 'failed',
+          detail: 'interrupted',
+        })
+        expect(storage.autoFix.jobs.get('j2')!.status).toBe('ready')
+        expect(storage.autoFix.jobs.interruptActive()).toBe(0)
+      })
+
+      it('rejects jobs for unknown watches and duplicate ids', () => {
+        storage.autoFix.watches.create(watch('w1'))
+        storage.autoFix.jobs.create(job('j1'))
+        expectStorageError(() => storage.autoFix.jobs.create(job('j1')), StorageErrorCode.Conflict)
+        expectStorageError(
+          () => storage.autoFix.jobs.create(job('j2', { watchId: 'missing' })),
+          StorageErrorCode.NotFound,
+        )
+        expectStorageError(
+          () => storage.autoFix.jobs.update('missing', { status: 'failed' }),
+          StorageErrorCode.NotFound,
+        )
+      })
+
+      it('removes a watch together with its jobs', () => {
+        storage.autoFix.watches.create(watch('w1'))
+        storage.autoFix.watches.create(watch('w2', { prNumber: 13 }))
+        storage.autoFix.jobs.create(job('j1'))
+        storage.autoFix.jobs.create(job('j2', { watchId: 'w2' }))
+        storage.autoFix.watches.remove('w1')
+        expect(storage.autoFix.watches.list().map((item) => item.watchId)).toEqual(['w2'])
+        expect(storage.autoFix.jobs.list().map((item) => item.jobId)).toEqual(['j2'])
       })
     })
 

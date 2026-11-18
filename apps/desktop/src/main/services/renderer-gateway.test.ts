@@ -34,6 +34,7 @@ import {
   type CommandCommands,
   type InspectCommands,
   type RendererGateway,
+  type RendererGatewayOptions,
   type SandboxCommands,
   type SessionCommands,
   type UpdateCommands,
@@ -132,6 +133,9 @@ const questionListeners = new Set<(sessionId: string) => void>()
 const activityListeners = new Set<() => void>()
 const commandListeners = new Set<(commandId: string) => void>()
 const updateListeners = new Set<(status: UpdateStatus) => void>()
+const autoFixListeners = new Set<() => void>()
+
+const AUTO_FIX_STATUS = { paused: false, watches: [], jobs: [] }
 
 const INSPECT_RESULT: RunInspectResult = {
   tree: {
@@ -542,6 +546,17 @@ function setup(
         checks: [],
       })),
       checkLog: vi.fn(async () => ({ text: 'FAILED', truncated: false })),
+    },
+    autofix: {
+      status: vi.fn(() => AUTO_FIX_STATUS),
+      addWatch: vi.fn(() => AUTO_FIX_STATUS),
+      updateWatch: vi.fn(() => AUTO_FIX_STATUS),
+      removeWatch: vi.fn(async () => AUTO_FIX_STATUS),
+      setPaused: vi.fn(() => AUTO_FIX_STATUS),
+      subscribe: vi.fn((listener: () => void) => {
+        autoFixListeners.add(listener)
+        return () => autoFixListeners.delete(listener)
+      }),
     },
     inspect,
     activity,
@@ -1503,6 +1518,34 @@ describe('createRendererGateway: commands and lifecycle', () => {
     ).resolves.toEqual({ text: 'FAILED', truncated: false })
   })
 
+  it('routes auto-fix watch requests and forwards changes (M8-02)', async () => {
+    const { client } = setup()
+    const changed = vi.fn()
+    client.on('autofix.changed', changed)
+
+    await expect(client.request('autofix.status', {})).resolves.toEqual(AUTO_FIX_STATUS)
+    await expect(
+      client.request('autofix.watch.add', {
+        repo: 'o/r',
+        prNumber: 12,
+        projectPath: '/work/repo',
+      }),
+    ).resolves.toEqual(AUTO_FIX_STATUS)
+    await expect(
+      client.request('autofix.watch.update', { watchId: 'w1', enabled: false }),
+    ).resolves.toEqual(AUTO_FIX_STATUS)
+    await expect(client.request('autofix.watch.remove', { watchId: 'w1' })).resolves.toEqual(
+      AUTO_FIX_STATUS,
+    )
+    await expect(client.request('autofix.pause', { paused: true })).resolves.toEqual(
+      AUTO_FIX_STATUS,
+    )
+
+    for (const listener of autoFixListeners) listener()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(changed).toHaveBeenCalled()
+  })
+
   it('passes protocol errors to the handler', async () => {
     setup()
     const onProtocolError = vi.fn()
@@ -1556,6 +1599,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
           throw new Error('not used')
         },
       },
+      autofix: { subscribe: () => () => undefined } as unknown as RendererGatewayOptions['autofix'],
       inspect: {} as unknown as InspectCommands,
       activity: { subscribe: () => () => undefined } as unknown as ActivityCommands,
       backgroundCommands,

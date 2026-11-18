@@ -33,6 +33,13 @@ import {
   type AgentTeamRecord,
   type AgentTeamVersionRecord,
   type AgentVersionRecord,
+  type AutoFixJobRecord,
+  type AutoFixTrigger,
+  type CreateAutoFixJobInput,
+  type CreateWatchInput,
+  type PullRequestWatchRecord,
+  type UpdateAutoFixJobInput,
+  type UpdateWatchInput,
   type ChangeSetFileRecord,
   type ChangeSetRecord,
   type CreateChangeSetInput,
@@ -487,6 +494,76 @@ const toMcpServer = (row: McpServerRow): McpServerRecord => ({
   updatedAt: row.updated_at,
 })
 
+interface WatchRow {
+  watch_id: string
+  repo: string
+  pr_number: number
+  project_path: string
+  triggers: string
+  max_attempts: number
+  enabled: number
+  attempts: number
+  last_signature: string | null
+  last_evaluated_at: number | null
+  created_at: number
+}
+
+interface AutoFixJobRow {
+  job_id: string
+  watch_id: string
+  session_id: string | null
+  trigger: AutoFixTrigger
+  signature: string
+  status: AutoFixJobRecord['status']
+  attempt: number
+  detail: string | null
+  created_at: number
+  updated_at: number
+}
+
+/** 触发项是 JSON 数组；无法解析时按仅 CI 处理，避免整条监视失效。 */
+const parseTriggers = (value: string): AutoFixTrigger[] => {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (Array.isArray(parsed)) {
+      const triggers = parsed.filter(
+        (item): item is AutoFixTrigger => item === 'ci' || item === 'conflict',
+      )
+      if (triggers.length > 0) return triggers
+    }
+  } catch {
+    // 落到默认值
+  }
+  return ['ci']
+}
+
+const toWatch = (row: WatchRow): PullRequestWatchRecord => ({
+  watchId: row.watch_id,
+  repo: row.repo,
+  prNumber: row.pr_number,
+  projectPath: row.project_path,
+  triggers: parseTriggers(row.triggers),
+  maxAttempts: row.max_attempts,
+  enabled: row.enabled === 1,
+  attempts: row.attempts,
+  ...(row.last_signature === null ? {} : { lastSignature: row.last_signature }),
+  ...(row.last_evaluated_at === null ? {} : { lastEvaluatedAt: row.last_evaluated_at }),
+  createdAt: row.created_at,
+})
+
+const toAutoFixJob = (row: AutoFixJobRow): AutoFixJobRecord => ({
+  jobId: row.job_id,
+  watchId: row.watch_id,
+  ...(row.session_id === null ? {} : { sessionId: row.session_id }),
+  trigger: row.trigger,
+  signature: row.signature,
+  status: row.status,
+  attempt: row.attempt,
+  ...(row.detail === null ? {} : { detail: row.detail }),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+})
+
 const toMcpToolPref = (row: McpToolPrefRow): McpToolPref => ({
   serverId: row.server_id,
   name: row.name,
@@ -541,7 +618,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     >(
       `SELECT * FROM sessions
        WHERE (@includeArchived = 1 OR archived = 0)
-         AND (@includeTrial = 1 OR kind = 'normal')
+         AND (@includeTrial = 1 OR kind <> 'trial')
          AND (@projectId IS NULL OR project_id = @projectId)
        ORDER BY updated_at DESC, session_id`,
     ),
@@ -1105,6 +1182,32 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     })
     return toMemoryEntry(q.memoryById.get(input.memoryId)!)
   })
+
+  const watchById = (watchId: string): PullRequestWatchRecord | undefined => {
+    const row = db
+      .prepare<[string], WatchRow>('SELECT * FROM pull_request_watches WHERE watch_id = ?')
+      .get(watchId)
+    return row && toWatch(row)
+  }
+
+  const watchByPullRequest = (
+    repo: string,
+    prNumber: number,
+  ): PullRequestWatchRecord | undefined => {
+    const row = db
+      .prepare<[string, number], WatchRow>(
+        'SELECT * FROM pull_request_watches WHERE repo = ? AND pr_number = ?',
+      )
+      .get(repo, prNumber)
+    return row && toWatch(row)
+  }
+
+  const autoFixJobById = (jobId: string): AutoFixJobRecord | undefined => {
+    const row = db
+      .prepare<[string], AutoFixJobRow>('SELECT * FROM auto_fix_jobs WHERE job_id = ?')
+      .get(jobId)
+    return row && toAutoFixJob(row)
+  }
 
   const backgroundCommand = (commandId: string): BackgroundCommand | undefined => {
     const row = db
@@ -1687,6 +1790,140 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
           )
           .get(commandId)
         return row?.output ? (JSON.parse(row.output) as BackgroundCommandOutput) : undefined
+      },
+    },
+
+    autoFix: {
+      watches: {
+        list: () =>
+          db
+            .prepare<[], WatchRow>(
+              'SELECT * FROM pull_request_watches ORDER BY created_at, watch_id',
+            )
+            .all()
+            .map(toWatch),
+        get: watchById,
+        findByPullRequest: watchByPullRequest,
+        create(input: CreateWatchInput) {
+          if (watchById(input.watchId) || watchByPullRequest(input.repo, input.prNumber)) {
+            throw new StorageError(StorageErrorCode.Conflict, {
+              watchId: input.watchId,
+              repo: input.repo,
+              prNumber: input.prNumber,
+            })
+          }
+          db.prepare(
+            `INSERT INTO pull_request_watches
+               (watch_id, repo, pr_number, project_path, triggers, max_attempts, enabled,
+                attempts, created_at)
+             VALUES (@watchId, @repo, @prNumber, @projectPath, @triggers, @maxAttempts, 1, 0, @at)`,
+          ).run({ ...input, triggers: JSON.stringify(input.triggers), at: now() })
+          return watchById(input.watchId)!
+        },
+        update(watchId, patch: UpdateWatchInput) {
+          if (!watchById(watchId)) throw new StorageError(StorageErrorCode.NotFound, { watchId })
+          const signatureChanged = patch.lastSignature !== undefined
+          db.prepare(
+            `UPDATE pull_request_watches SET
+               enabled = coalesce(@enabled, enabled),
+               triggers = coalesce(@triggers, triggers),
+               max_attempts = coalesce(@maxAttempts, max_attempts),
+               attempts = coalesce(@attempts, attempts),
+               last_signature = CASE WHEN @signatureChanged = 1 THEN @lastSignature
+                 ELSE last_signature END,
+               last_evaluated_at = coalesce(@lastEvaluatedAt, last_evaluated_at)
+             WHERE watch_id = @watchId`,
+          ).run({
+            watchId,
+            enabled: patch.enabled === undefined ? null : patch.enabled ? 1 : 0,
+            triggers: patch.triggers === undefined ? null : JSON.stringify(patch.triggers),
+            maxAttempts: patch.maxAttempts ?? null,
+            attempts: patch.attempts ?? null,
+            signatureChanged: signatureChanged ? 1 : 0,
+            lastSignature: patch.lastSignature ?? null,
+            lastEvaluatedAt: patch.lastEvaluatedAt ?? null,
+          })
+          return watchById(watchId)!
+        },
+        remove(watchId) {
+          if (!watchById(watchId)) throw new StorageError(StorageErrorCode.NotFound, { watchId })
+          db.transaction(() => {
+            db.prepare('DELETE FROM auto_fix_jobs WHERE watch_id = ?').run(watchId)
+            db.prepare('DELETE FROM pull_request_watches WHERE watch_id = ?').run(watchId)
+          })()
+        },
+      },
+
+      jobs: {
+        create(input: CreateAutoFixJobInput) {
+          if (
+            !db.prepare('SELECT 1 FROM pull_request_watches WHERE watch_id = ?').get(input.watchId)
+          ) {
+            throw new StorageError(StorageErrorCode.NotFound, { watchId: input.watchId })
+          }
+          if (db.prepare('SELECT 1 FROM auto_fix_jobs WHERE job_id = ?').get(input.jobId)) {
+            throw new StorageError(StorageErrorCode.Conflict, { jobId: input.jobId })
+          }
+          db.prepare(
+            `INSERT INTO auto_fix_jobs
+               (job_id, watch_id, session_id, trigger, signature, status, attempt,
+                created_at, updated_at)
+             VALUES (@jobId, @watchId, @sessionId, @trigger, @signature, @status, @attempt, @at, @at)`,
+          ).run({ ...input, sessionId: input.sessionId ?? null, at: now() })
+          return autoFixJobById(input.jobId)!
+        },
+        update(jobId, patch: UpdateAutoFixJobInput) {
+          if (!autoFixJobById(jobId)) throw new StorageError(StorageErrorCode.NotFound, { jobId })
+          const detailChanged = patch.detail !== undefined
+          db.prepare(
+            `UPDATE auto_fix_jobs SET
+               status = coalesce(@status, status),
+               session_id = coalesce(@sessionId, session_id),
+               detail = CASE WHEN @detailChanged = 1 THEN @detail ELSE detail END,
+               updated_at = @at
+             WHERE job_id = @jobId`,
+          ).run({
+            jobId,
+            status: patch.status ?? null,
+            sessionId: patch.sessionId ?? null,
+            detailChanged: detailChanged ? 1 : 0,
+            detail: patch.detail ?? null,
+            at: now(),
+          })
+          return autoFixJobById(jobId)!
+        },
+        get: autoFixJobById,
+        list(options = {}) {
+          return db
+            .prepare<{ watchId: string | null; limit: number }, AutoFixJobRow>(
+              `SELECT * FROM auto_fix_jobs
+               WHERE (@watchId IS NULL OR watch_id = @watchId)
+               ORDER BY created_at DESC, job_id DESC
+               LIMIT @limit`,
+            )
+            .all({ watchId: options.watchId ?? null, limit: options.limit ?? 100 })
+            .map(toAutoFixJob)
+        },
+        activeForWatch(watchId) {
+          const row = db
+            .prepare<[string], AutoFixJobRow>(
+              `SELECT * FROM auto_fix_jobs
+               WHERE watch_id = ? AND status IN ('queued', 'running')
+               ORDER BY created_at DESC LIMIT 1`,
+            )
+            .get(watchId)
+          return row && toAutoFixJob(row)
+        },
+        interruptActive() {
+          const result = db
+            .prepare(
+              `UPDATE auto_fix_jobs SET status = 'failed', detail = 'interrupted',
+                 updated_at = ?
+               WHERE status IN ('queued', 'running')`,
+            )
+            .run(now())
+          return result.changes
+        },
       },
     },
 

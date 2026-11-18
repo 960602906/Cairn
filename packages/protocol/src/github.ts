@@ -90,3 +90,66 @@ export type GithubErrorCode = (typeof GithubErrorCode)[keyof typeof GithubErrorC
 
 /** 保存令牌时使用的凭据引用。 */
 export const GITHUB_CREDENTIAL_REF = 'github'
+
+// ---------- 自动修复监视（M8-02） ----------
+
+/** 会触发修复的情况；评审意见在 M8-04 接入。 */
+export const AutoFixTrigger = z.enum(['ci', 'conflict'])
+export type AutoFixTrigger = z.infer<typeof AutoFixTrigger>
+
+/**
+ * 任务状态。M8-02 不自动推送：`ready` 表示修改已留在监视工作区，等待人工检查或推送；
+ * `pushed` / `passed` 在 M8-03 接入。
+ */
+export const AutoFixJobStatus = z.enum([
+  'queued',
+  'running',
+  'ready',
+  'failed',
+  'gave_up',
+  'cancelled',
+])
+export type AutoFixJobStatus = z.infer<typeof AutoFixJobStatus>
+
+/** 一个被监视的 PR。`attempts` 是已经开始的修复次数。 */
+export const PullRequestWatch = z.object({
+  watchId: z.string().min(1).max(64),
+  repo: GithubRepo,
+  prNumber: z.number().int().positive().max(1_000_000),
+  projectPath: z.string().min(1).max(4096),
+  triggers: z.array(AutoFixTrigger).min(1).max(2),
+  maxAttempts: z.number().int().min(1).max(10),
+  enabled: z.boolean(),
+  attempts: z.number().int().nonnegative().max(1000),
+  lastSignature: z.string().max(1000).optional(),
+  lastEvaluatedAt: Timestamp.optional(),
+  createdAt: Timestamp,
+})
+export type PullRequestWatch = z.infer<typeof PullRequestWatch>
+
+/** 一次修复任务。`sessionId` 在会话创建后才有。 */
+export const AutoFixJob = z.object({
+  jobId: z.string().min(1).max(64),
+  watchId: z.string().min(1).max(64),
+  sessionId: z.string().min(1).max(64).optional(),
+  trigger: AutoFixTrigger,
+  signature: z.string().min(1).max(1000),
+  status: AutoFixJobStatus,
+  attempt: z.number().int().positive().max(1000),
+  detail: z.string().max(2000).optional(),
+  createdAt: Timestamp,
+  updatedAt: Timestamp,
+})
+export type AutoFixJob = z.infer<typeof AutoFixJob>
+
+/** 自动修复设置页的一次快照：全局暂停、监视列表与最近的任务。 */
+export const AutoFixStatus = z.object({
+  paused: z.boolean(),
+  watches: z.array(PullRequestWatch).max(20),
+  jobs: z.array(AutoFixJob).max(100),
+})
+export type AutoFixStatus = z.infer<typeof AutoFixStatus>
+
+/** 监视的上限与默认尝试次数。 */
+export const AUTO_FIX_MAX_WATCHES = 20
+export const AUTO_FIX_DEFAULT_ATTEMPTS = 3

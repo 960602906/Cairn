@@ -244,6 +244,8 @@ describe('translateError', () => {
       'agent.readonly',
       'agent.invalid',
       'agent.in_use',
+      'autofix.duplicate',
+      'autofix.too_many',
       'agent.no_draft',
       'update.not_packaged',
       'update.disabled_by_env',

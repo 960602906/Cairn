@@ -20,6 +20,12 @@ import {
   type AgentTeamVersionRecord,
   type AgentVersionRecord,
   type AddRunSnapshotInput,
+  type AutoFixJobRecord,
+  type CreateAutoFixJobInput,
+  type CreateWatchInput,
+  type PullRequestWatchRecord,
+  type UpdateAutoFixJobInput,
+  type UpdateWatchInput,
   type ChangeSetFileRecord,
   type ChangeSetRecord,
   type CreateChangeSetInput,
@@ -69,6 +75,8 @@ interface State {
   changeSetFiles: Map<string, Map<string, ChangeSetFileRecord>>
   commands: Map<string, BackgroundCommand>
   commandOutputs: Map<string, BackgroundCommandOutput>
+  watches: Map<string, PullRequestWatchRecord>
+  autoFixJobs: Map<string, AutoFixJobRecord>
 }
 
 const prefKey = (scope: string, source: string, name: string) => `${scope}\0${source}\0${name}`
@@ -95,6 +103,8 @@ function cloneState(state: State): State {
     changeSetFiles: new Map([...state.changeSetFiles].map(([id, files]) => [id, new Map(files)])),
     commands: new Map(state.commands),
     commandOutputs: new Map(state.commandOutputs),
+    watches: new Map(state.watches),
+    autoFixJobs: new Map(state.autoFixJobs),
   }
 }
 
@@ -125,6 +135,8 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
     changeSetFiles: new Map(),
     commands: new Map(),
     commandOutputs: new Map(),
+    watches: new Map(),
+    autoFixJobs: new Map(),
   }
   let closed = false
 
@@ -272,7 +284,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
       list(listOptions: ListSessionsOptions = {}) {
         return [...live().sessions.values()]
           .filter((r) => listOptions.includeArchived || !r.archived)
-          .filter((r) => listOptions.includeTrial || r.kind === 'normal')
+          .filter((r) => listOptions.includeTrial || r.kind !== 'trial')
           .filter(
             (r) => listOptions.projectId === undefined || r.projectId === listOptions.projectId,
           )
@@ -1016,6 +1028,137 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
       output(commandId) {
         const result = live().commandOutputs.get(commandId)
         return result && copy(result)
+      },
+    },
+
+    autoFix: {
+      watches: {
+        list: () =>
+          [...live().watches.values()]
+            .sort((a, b) => a.createdAt - b.createdAt || a.watchId.localeCompare(b.watchId))
+            .map(copy),
+        get(watchId) {
+          const record = live().watches.get(watchId)
+          return record && copy(record)
+        },
+        findByPullRequest(repo, prNumber) {
+          const record = [...live().watches.values()].find(
+            (item) => item.repo === repo && item.prNumber === prNumber,
+          )
+          return record && copy(record)
+        },
+        create(input: CreateWatchInput) {
+          const s = live()
+          const duplicate = [...s.watches.values()].some(
+            (item) =>
+              item.watchId === input.watchId ||
+              (item.repo === input.repo && item.prNumber === input.prNumber),
+          )
+          if (duplicate) {
+            throw new StorageError(StorageErrorCode.Conflict, {
+              watchId: input.watchId,
+              repo: input.repo,
+              prNumber: input.prNumber,
+            })
+          }
+          const record: PullRequestWatchRecord = {
+            ...input,
+            triggers: [...input.triggers],
+            enabled: true,
+            attempts: 0,
+            createdAt: now(),
+          }
+          s.watches.set(record.watchId, record)
+          return copy(record)
+        },
+        update(watchId, patch: UpdateWatchInput) {
+          const s = live()
+          const current = s.watches.get(watchId)
+          if (!current) throw new StorageError(StorageErrorCode.NotFound, { watchId })
+          const { lastSignature, triggers, ...rest } = patch
+          const { lastSignature: _previous, ...base } = current
+          const next: PullRequestWatchRecord = {
+            ...base,
+            ...rest,
+            ...(triggers === undefined ? {} : { triggers: [...triggers] }),
+            ...(typeof lastSignature === 'string' ? { lastSignature } : {}),
+          }
+          s.watches.set(watchId, next)
+          return copy(next)
+        },
+        remove(watchId) {
+          const s = live()
+          if (!s.watches.has(watchId)) {
+            throw new StorageError(StorageErrorCode.NotFound, { watchId })
+          }
+          s.watches.delete(watchId)
+          for (const [jobId, job] of s.autoFixJobs) {
+            if (job.watchId === watchId) s.autoFixJobs.delete(jobId)
+          }
+        },
+      },
+      jobs: {
+        create(input: CreateAutoFixJobInput) {
+          const s = live()
+          if (!s.watches.has(input.watchId)) {
+            throw new StorageError(StorageErrorCode.NotFound, { watchId: input.watchId })
+          }
+          if (s.autoFixJobs.has(input.jobId)) {
+            throw new StorageError(StorageErrorCode.Conflict, { jobId: input.jobId })
+          }
+          const at = now()
+          const record: AutoFixJobRecord = { ...input, createdAt: at, updatedAt: at }
+          s.autoFixJobs.set(record.jobId, record)
+          return copy(record)
+        },
+        update(jobId, patch: UpdateAutoFixJobInput) {
+          const s = live()
+          const current = s.autoFixJobs.get(jobId)
+          if (!current) throw new StorageError(StorageErrorCode.NotFound, { jobId })
+          const { detail, ...rest } = patch
+          const { detail: _previous, ...base } = current
+          const next: AutoFixJobRecord = {
+            ...base,
+            ...rest,
+            ...(typeof detail === 'string' ? { detail } : {}),
+            updatedAt: now(),
+          }
+          s.autoFixJobs.set(jobId, next)
+          return copy(next)
+        },
+        get(jobId) {
+          const record = live().autoFixJobs.get(jobId)
+          return record && copy(record)
+        },
+        list(options = {}) {
+          return [...live().autoFixJobs.values()]
+            .filter((job) => options.watchId === undefined || job.watchId === options.watchId)
+            .sort((a, b) => b.createdAt - a.createdAt || b.jobId.localeCompare(a.jobId))
+            .slice(0, options.limit ?? 100)
+            .map(copy)
+        },
+        activeForWatch(watchId) {
+          const record = [...live().autoFixJobs.values()]
+            .filter((job) => job.watchId === watchId)
+            .sort((a, b) => b.createdAt - a.createdAt)
+            .find((job) => job.status === 'queued' || job.status === 'running')
+          return record && copy(record)
+        },
+        interruptActive() {
+          const s = live()
+          let count = 0
+          for (const [jobId, job] of s.autoFixJobs) {
+            if (job.status !== 'queued' && job.status !== 'running') continue
+            s.autoFixJobs.set(jobId, {
+              ...job,
+              status: 'failed',
+              detail: 'interrupted',
+              updatedAt: now(),
+            })
+            count++
+          }
+          return count
+        },
       },
     },
 

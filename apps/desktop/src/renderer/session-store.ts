@@ -60,6 +60,8 @@ import {
   type HubMcpCard,
   type HubSkillCard,
   type FileContent,
+  type AutoFixStatus,
+  type AutoFixTrigger,
   type GithubCheckLog,
   type GithubPullRequest,
   type GithubStatus,
@@ -174,6 +176,8 @@ export interface SessionState {
   readonly activityLoading: boolean
   /** 活动中心最近一次读取失败。 */
   readonly activityError: ErrorInfo | undefined
+  /** 自动修复监视（M8-02）：全局暂停、监视列表与最近的任务；读取之前为 undefined。 */
+  readonly autofix: AutoFixStatus | undefined
   /** 后台命令（M4-14）：跨会话的活动进程与已结束记录。 */
   readonly commands: readonly BackgroundCommand[]
   readonly commandsLoading: boolean
@@ -481,6 +485,27 @@ export interface SessionActions {
   githubPullRequest(repo: string, number: number): Promise<GithubPullRequest | undefined>
   /** 读取一项失败检查的日志（M8-01）；失败时返回 undefined。 */
   githubCheckLog(repo: string, checkRunId: number): Promise<GithubCheckLog | undefined>
+  /** 自动修复监视与任务快照（M8-02）；变化时主进程推送 `autofix.changed`。 */
+  refreshAutofix(): Promise<void>
+  /** 添加一个被监视的 PR（M8-02）；重复或超过上限时返回 undefined（错误写入 `error`）。 */
+  addAutoFixWatch(input: {
+    repo: string
+    prNumber: number
+    projectPath: string
+    triggers?: AutoFixTrigger[]
+    maxAttempts?: number
+  }): Promise<AutoFixStatus | undefined>
+  /** 启停监视、调整触发项或尝试上限（M8-02）。 */
+  updateAutoFixWatch(input: {
+    watchId: string
+    enabled?: boolean
+    triggers?: AutoFixTrigger[]
+    maxAttempts?: number
+  }): Promise<AutoFixStatus | undefined>
+  /** 删除监视并清理它的工作区与任务记录（M8-02）。 */
+  removeAutoFixWatch(watchId: string): Promise<AutoFixStatus | undefined>
+  /** 暂停或恢复全部监视（M8-02）。 */
+  setAutoFixPaused(paused: boolean): Promise<AutoFixStatus | undefined>
   /** 保存的全局与项目权限规则（M2-11）；失败时返回 undefined。 */
   permissionRules(): Promise<PermissionRuleEntry[] | undefined>
   /** 手动添加一条权限规则（M2-11）；失败时返回 undefined。 */
@@ -843,6 +868,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       recentAgents: readRecentAgents(),
       inspections: {},
       activity: undefined,
+      autofix: undefined,
       activityLoading: false,
       activityError: undefined,
       commands: [],
@@ -1482,6 +1508,35 @@ export function createSessionStore(api: MainApi): SessionStore {
         }
       },
 
+      async refreshAutofix() {
+        const result = await run(() => api.request('autofix.status', {}))
+        if (result) set({ autofix: result })
+      },
+
+      async addAutoFixWatch(input) {
+        const result = await run(() => api.request('autofix.watch.add', input))
+        if (result) set({ autofix: result })
+        return result
+      },
+
+      async updateAutoFixWatch(input) {
+        const result = await run(() => api.request('autofix.watch.update', input))
+        if (result) set({ autofix: result })
+        return result
+      },
+
+      async removeAutoFixWatch(watchId) {
+        const result = await run(() => api.request('autofix.watch.remove', { watchId }))
+        if (result) set({ autofix: result })
+        return result
+      },
+
+      async setAutoFixPaused(paused) {
+        const result = await run(() => api.request('autofix.pause', { paused }))
+        if (result) set({ autofix: result })
+        return result
+      },
+
       async refreshActivity() {
         set({ activityLoading: true, activityError: undefined })
         try {
@@ -1760,6 +1815,9 @@ export function createSessionStore(api: MainApi): SessionStore {
   })
   const offActivity = api.on('activity.changed', () => {
     void store.getState().refreshActivity()
+  })
+  const _offAutoFix = api.on('autofix.changed', () => {
+    void store.getState().refreshAutofix()
   })
   const _offUpdate = api.on('update.status', (status) => {
     store.setState({ updateStatus: status })

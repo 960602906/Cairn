@@ -53,6 +53,7 @@ import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
 import { createGithubService } from './services/github-service.js'
+import { createAutoFixService } from './services/auto-fix-service.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createInspectService } from './services/inspect-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
@@ -661,6 +662,19 @@ const projects = createProjectService({
   checkoutGitBranch: (path, branch) => checkoutGitBranch(projectGit, path, branch),
 })
 projects.ensureDefault()
+/**
+ * 自动修复监视（M8-02）：轮询被监视的 PR，CI 失败或合并冲突时在独立工作区开一个无人值守会话；
+ * 只改代码，不提交、不推送。工作区位于 `paths.worktrees/pr-<watchId>`。
+ */
+const autoFix = createAutoFixService({
+  storage,
+  events,
+  github,
+  sessions,
+  git: projectGit,
+  worktreesRoot: paths.worktrees,
+  onError: reportError,
+})
 const files = createFileService({
   storage,
   revealPath: (target) => shell.showItemInFolder(target),
@@ -743,6 +757,14 @@ const gateway = createRendererGateway({
     disconnect: () => github.disconnect(),
     pullRequest: (params) => github.pullRequest(params),
     checkLog: (params) => github.checkLog(params),
+  },
+  autofix: {
+    status: () => autoFix.status(),
+    addWatch: (params) => autoFix.addWatch(params),
+    updateWatch: (params) => autoFix.updateWatch(params),
+    removeWatch: (params) => autoFix.removeWatch(params),
+    setPaused: (params) => autoFix.setPaused(params),
+    subscribe: (listener) => autoFix.subscribe(listener),
   },
   inspect: {
     inspect: (params) =>
@@ -911,6 +933,7 @@ app.on('before-quit', (event) => {
   compaction.stop()
   activityNotifier.close()
   gateway.close()
+  autoFix.stop()
   updates.stop()
   void mcp.close()
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_TIMEOUT_MS))
@@ -1002,6 +1025,7 @@ void app.whenReady().then(() => {
   registerWindowControls()
   void mcp.initialize()
   updates.start()
+  autoFix.start()
   const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {
