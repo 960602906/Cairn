@@ -142,8 +142,9 @@ test('/技能名：从面板选中、写任务，模型收到技能正文', asyn
     await input.click()
     await input.pressSequentially('/')
     const list = window.getByRole('listbox', { name: '输入指令' })
-    await expect(list.getByText('指令')).toBeVisible()
-    await expect(list.getByText('技能')).toBeVisible()
+    // 分组标题与指令说明里都可能出现这两个词，按整段文字匹配。
+    await expect(list.getByText('指令', { exact: true })).toBeVisible()
+    await expect(list.getByText('技能', { exact: true })).toBeVisible()
     await list.getByRole('option', { name: /\/summarize/ }).click()
     await expect(input).toHaveValue('/summarize ')
     await input.pressSequentially('总结一下')

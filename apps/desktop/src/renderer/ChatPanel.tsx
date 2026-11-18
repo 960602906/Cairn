@@ -64,6 +64,7 @@ export function ChatPanel({
   leading,
   onNewChat,
   onOpenSettings,
+  onOpenSearch,
 }: {
   /** 从活动中心等入口打开会话时要直接显示的改动集。 */
   readonly initialChangeSetId?: string | undefined
@@ -78,6 +79,8 @@ export function ChatPanel({
   readonly onNewChat?: (() => void) | undefined
   /** 输入框 `/settings [分区]`。 */
   readonly onOpenSettings?: ((section: SettingsSection) => void) | undefined
+  /** 输入框 `/search`。 */
+  readonly onOpenSearch?: (() => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -475,6 +478,7 @@ export function ChatPanel({
               onOpenPanel={(next) => openPanel(next)}
               onNewChat={onNewChat}
               onOpenSettings={onOpenSettings}
+              onOpenSearch={onOpenSearch}
             />
           </div>
         </div>

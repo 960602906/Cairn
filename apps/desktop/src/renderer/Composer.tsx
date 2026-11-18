@@ -55,8 +55,9 @@ import {
   commandPanel,
   type AvailableComposerCommand,
 } from './composer-shared.js'
+import { CommandHelpDialog } from './CommandHelp.js'
 import { extractAgents, mentionText } from './composer-tokens.js'
-import { AgentPicker } from './agents/AgentPicker.js'
+import { AgentPicker, availableAgents } from './agents/AgentPicker.js'
 import { agentName, localized } from './agents/model.js'
 import { contextBreakdown, latestSnapshot } from './context-breakdown.js'
 import { formatCompactTokens } from './format.js'
@@ -109,6 +110,8 @@ export interface ComposerProps {
   readonly onNewChat?: (() => void) | undefined
   /** `/settings [分区]`；没有时指令不出现。 */
   readonly onOpenSettings?: ((section: SettingsSection) => void) | undefined
+  /** `/search`；没有时指令不出现。 */
+  readonly onOpenSearch?: (() => void) | undefined
 }
 
 type CommandNotice = {
@@ -201,13 +204,20 @@ export function PlanModeChip({
   )
 }
 
-export function PermissionMenu() {
+export function PermissionMenu({
+  open,
+  onOpenChange,
+}: {
+  /** 由 `/permissions` 打开；省略时菜单自己管理开关。 */
+  readonly open?: boolean | undefined
+  readonly onOpenChange?: ((open: boolean) => void) | undefined
+} = {}) {
   const { t } = useTranslation('session')
   const mode = useSessionStore((s) => s.settings?.permissionMode) ?? DEFAULT_PERMISSION_MODE
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const Icon = PERMISSION_ICONS[mode]
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
         aria-label={t('composer.permission.label', { mode: t(`composer.permission.${mode}`) })}
         className="flex h-7 items-center gap-1.5 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent [&_svg]:size-3.5"
@@ -341,10 +351,15 @@ function ContextUsage({
   sessionId,
   model,
   tokens,
+  open,
+  onOpenChange,
 }: {
   readonly sessionId: string
   readonly model: ModelRef | undefined
   readonly tokens: number | undefined
+  /** 由 `/context` 指令与圆环按钮共用，状态由输入框管理。 */
+  readonly open: boolean
+  readonly onOpenChange: (open: boolean) => void
 }) {
   const { t, i18n } = useTranslation('session')
   const providers = useSessionStore((s) => s.settings?.providers)
@@ -371,12 +386,13 @@ function ContextUsage({
   const notFound = inspection?.error?.code === 'run.not_found'
   const error = inspection?.error === undefined || notFound ? undefined : inspection.error
 
-  const openBreakdown = (open: boolean) => {
+  // 无论从圆环还是 `/context` 打开，都在展开时按需读取快照。
+  useEffect(() => {
     if (open) void inspectRun(sessionId)
-  }
+  }, [open, inspectRun, sessionId])
 
   return (
-    <Popover onOpenChange={openBreakdown}>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <Tooltip content={label}>
         <PopoverTrigger asChild>
           <button
@@ -516,6 +532,7 @@ export function Composer({
   onOpenPanel,
   onNewChat,
   onOpenSettings,
+  onOpenSearch,
 }: ComposerProps) {
   const { t, i18n } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -525,6 +542,11 @@ export function Composer({
   const setSessionThinkingLevel = useSessionStore((s) => s.setSessionThinkingLevel)
   const compactSession = useSessionStore((s) => s.compactSession)
   const abort = useSessionStore((s) => s.abort)
+  const updateSettings = useSessionStore((s) => s.updateSettings)
+  const renameSession = useSessionStore((s) => s.renameSession)
+  const setSessionAgent = useSessionStore((s) => s.setSessionAgent)
+  const permissionMode =
+    useSessionStore((s) => s.settings?.permissionMode) ?? DEFAULT_PERMISSION_MODE
   const agents = useSessionStore((s) => s.agents) ?? []
   const listSkills = useSessionStore((s) => s.listSkills)
   const delegationTargets = useSessionStore((s) => s.delegationTargets)
@@ -556,6 +578,10 @@ export function Composer({
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  const [permissionMenuOpen, setPermissionMenuOpen] = useState(false)
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false)
+  const [contextOpen, setContextOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [commandIndex, setCommandIndex] = useState(0)
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null)
@@ -632,6 +658,7 @@ export function Composer({
       ...(onOpenPanel === undefined ? {} : { onOpenPanel }),
       ...(onNewChat === undefined ? {} : { onNewChat }),
       ...(onOpenSettings === undefined ? {} : { onOpenSettings }),
+      ...(onOpenSearch === undefined ? {} : { onOpenSearch }),
     },
     true,
   )
@@ -802,6 +829,90 @@ export function Composer({
         }
         break
       }
+      case 'help':
+        setHelpOpen(true)
+        keepFocus = false
+        break
+      case 'agent': {
+        if (args === '') {
+          setAgentPickerOpen(true)
+          keepFocus = false
+          break
+        }
+        const choice = matchCommandArg(args, availableAgents(agents), (item) => [
+          item.name['zh-CN'] ?? '',
+          item.name['en-US'] ?? '',
+          item.agentId,
+        ])
+        if (choice === undefined) {
+          showNotice('composer.command.agent.notFound', 'muted', 'agent', { query: args })
+          break
+        }
+        const switched = await setSessionAgent(sessionId, {
+          id: choice.agentId,
+          version: choice.version,
+        })
+        showNotice(
+          switched ? 'composer.command.agent.switched' : 'composer.command.agent.switchFailed',
+          switched ? 'ok' : 'muted',
+          'agent',
+          { name: agentName(choice, i18n.language) },
+        )
+        break
+      }
+      case 'permissions': {
+        if (args === '') {
+          setPermissionMenuOpen(true)
+          keepFocus = false
+          break
+        }
+        const mode = matchCommandArg(args, PERMISSION_MODES, (item) => [
+          item,
+          t(`composer.permission.${item}`),
+        ])
+        if (mode === undefined) {
+          showNotice('composer.command.permissions.notFound', 'muted', 'permissions', {
+            query: args,
+          })
+          break
+        }
+        const saved = await updateSettings({ permissionMode: mode })
+        showNotice(
+          saved === undefined
+            ? 'composer.command.permissions.switchFailed'
+            : 'composer.command.permissions.switched',
+          saved === undefined ? 'muted' : 'ok',
+          'permissions',
+          { mode: t(`composer.permission.${mode}`) },
+        )
+        break
+      }
+      case 'context':
+        setContextOpen(true)
+        keepFocus = false
+        break
+      case 'status': {
+        const current =
+          agent === undefined ? undefined : agents.find((item) => item.agentId === agent.id)
+        showNotice('composer.command.status', 'muted', 'status', {
+          model: modelLabels(model, providers).full ?? t('composer.model.none'),
+          agent:
+            agent === undefined
+              ? t('composer.agent.default')
+              : current === undefined
+                ? agent.id
+                : agentName(current, i18n.language),
+          permission: t(`composer.permission.${permissionMode}`),
+          context:
+            contextTokens === undefined
+              ? t('composer.context.noUsage')
+              : formatCompactTokens(contextTokens),
+        })
+        break
+      }
+      case 'stop':
+        await abort()
+        break
       case 'compact': {
         const compacted = await compactNow()
         if (compacted === undefined) restore()
@@ -812,14 +923,37 @@ export function Composer({
         keepFocus = false
         break
       case 'new':
+      case 'clear':
         onNewChat?.()
         keepFocus = false
         break
-      case 'settings': {
+      case 'rename': {
+        if (args === '') {
+          restore()
+          showNotice('composer.command.rename.missing', 'muted', 'rename')
+          break
+        }
+        const renamed = await renameSession(sessionId, args)
+        if (renamed) showNotice('composer.command.rename.done', 'ok', 'rename', { title: args })
+        else {
+          restore()
+          showNotice('composer.command.rename.failed', 'muted', 'rename')
+        }
+        break
+      }
+      case 'search':
+        onOpenSearch?.()
+        keepFocus = false
+        break
+      case 'settings':
+      case 'mcp':
+      case 'skills':
+      case 'providers': {
         const section =
-          args === ''
+          command.settings ??
+          (args === ''
             ? undefined
-            : matchCommandArg(args, SETTINGS_SECTIONS, (id) => [id, ts(`section.${id}.title`)])
+            : matchCommandArg(args, SETTINGS_SECTIONS, (id) => [id, ts(`section.${id}.title`)]))
         onOpenSettings?.(section ?? 'general')
         keepFocus = false
         break
@@ -1109,8 +1243,14 @@ export function Composer({
             />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-1">
-            <AgentPicker sessionId={sessionId} agent={agent} disabled={active} />
-            <PermissionMenu />
+            <AgentPicker
+              sessionId={sessionId}
+              agent={agent}
+              disabled={active}
+              open={agentPickerOpen}
+              onOpenChange={setAgentPickerOpen}
+            />
+            <PermissionMenu open={permissionMenuOpen} onOpenChange={setPermissionMenuOpen} />
             <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
             <div className="ml-auto flex min-w-0 items-center gap-1">
               <ModelPicker
@@ -1127,7 +1267,13 @@ export function Composer({
                 thinkingLevel={view?.info?.thinkingLevel}
                 onSelectThinkingLevel={(level) => void setSessionThinkingLevel(sessionId, level)}
               />
-              <ContextUsage sessionId={sessionId} model={model} tokens={contextTokens} />
+              <ContextUsage
+                sessionId={sessionId}
+                model={model}
+                tokens={contextTokens}
+                open={contextOpen}
+                onOpenChange={setContextOpen}
+              />
               {active && (
                 <button
                   type="button"
@@ -1163,6 +1309,7 @@ export function Composer({
           textarea.current?.focus()
         }}
       />
+      <CommandHelpDialog open={helpOpen} onOpenChange={setHelpOpen} commands={commands} />
     </div>
   )
 }

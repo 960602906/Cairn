@@ -2468,11 +2468,33 @@ describe('Composer (M2-04)', () => {
         .getAllByRole('option')
         .map((option) => option.id),
     ).toEqual(
-      ['plan', 'model', 'compact', 'undo', 'new', 'files', 'diff', 'brief', 'settings'].map(
-        (id) => `composer-command-${id}`,
-      ),
+      [
+        'help',
+        'plan',
+        'model',
+        'agent',
+        'permissions',
+        'context',
+        'status',
+        'stop',
+        'compact',
+        'undo',
+        'new',
+        'clear',
+        'rename',
+        'search',
+        'files',
+        'diff',
+        'brief',
+        'memory',
+        'delegation',
+        'settings',
+        'mcp',
+        'skills',
+        'providers',
+      ].map((id) => `composer-command-${id}`),
     )
-    await userEvent.type(input(), 'mo')
+    await userEvent.type(input(), 'mod')
     const options = within(list).getAllByRole('option')
     expect(options).toHaveLength(1)
     expect(options[0]?.textContent).toContain('/model')
@@ -2587,7 +2609,7 @@ describe('Composer (M2-04)', () => {
     })
     await open()
     await userEvent.type(input(), '/')
-    await userEvent.keyboard('{ArrowDown}{ArrowUp}{Enter}')
+    await userEvent.keyboard('{ArrowDown}{Enter}')
     expect(planOn()).toBe(true)
   })
 
@@ -2648,6 +2670,297 @@ describe('Composer (M2-04)', () => {
 
     await userEvent.type(input(), '/new{Enter}')
     await waitFor(() => expect(screen.queryByRole('heading', { name: '修复登录' })).toBeNull())
+  })
+
+  it('opens the command help from /help', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/help{Enter}')
+    const dialog = await screen.findByRole('dialog', { name: '指令与快捷键' })
+    expect(within(dialog).getByText('/plan')).toBeTruthy()
+    expect(within(dialog).getByText('/memory')).toBeTruthy()
+    expect(within(dialog).getByText('Enter')).toBeTruthy()
+    // 没有可撤销轮次时 /undo 显示为不可用。
+    expect(within(dialog).getByText('没有可以撤销的轮次')).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '指令与快捷键' })).toBeNull())
+  })
+
+  it('opens the context breakdown from /context', async () => {
+    const snapshot = {
+      snapshotId: 'snap1',
+      sessionId: 's1',
+      runId: 'r1',
+      agent: { id: 'builtin.coder', version: 1 },
+      model,
+      createdAt: 8,
+      tokens: 100,
+      systemPrompt: [{ title: 'Base prompt', text: 'base', tokens: 100 }],
+      skills: [],
+      tools: [],
+      history: { messages: 0, tokens: 0, preview: [] },
+    }
+    const { request, open } = setup({
+      history: withModel,
+      handlers: {
+        'settings.get': () => ({ providers }),
+        'run.inspect': () => ({
+          tree: { sessionId: 's1', rootRunId: 'r1', generatedAt: 1, runs: [] },
+          snapshots: [snapshot],
+          settings: { projectPath: '.', workspacePath: '.', permissionRules: [] },
+        }),
+      },
+    })
+    await open()
+    await userEvent.type(input(), '/context{Enter}')
+    expect(await screen.findByText('最近报告的占用')).toBeTruthy()
+    expect(request).toHaveBeenCalledWith('run.inspect', { sessionId: 's1' })
+  })
+
+  it('shows the current model, agent and permission mode from /status', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers, permissionMode: 'auto' }) },
+    })
+    await open()
+    await userEvent.type(input(), '/status{Enter}')
+    expect(await screen.findByText(/模型 测试供应商 · 快 · Agent a · 权限 自动/)).toBeTruthy()
+    expect(screen.getByText(/上下文 25.0K/)).toBeTruthy()
+  })
+
+  it('stops the running reply from /stop', async () => {
+    const { request, open } = setup({ history: RUNNING })
+    await open()
+    await userEvent.type(input(), '/stop{Enter}')
+    await waitFor(() => expect(request).toHaveBeenCalledWith('session.abort', { sessionId: 's1' }))
+  })
+
+  it('starts a new chat from /clear', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/clear{Enter}')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '修复登录' })).toBeNull())
+  })
+
+  it('renames the chat from /rename and keeps the draft without a title', async () => {
+    const { request, open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }), 'session.rename': () => true },
+    })
+    await open()
+    await userEvent.type(input(), '/rename 新的标题{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.rename', {
+        sessionId: 's1',
+        title: '新的标题',
+      }),
+    )
+    expect(await screen.findByText('已重命名为“新的标题”')).toBeTruthy()
+
+    await userEvent.type(input(), '/rename{Enter}')
+    expect(await screen.findByText(/写上新的标题/)).toBeTruthy()
+    expect(input().value).toBe('/rename')
+  })
+
+  it('opens session search from /search', async () => {
+    const { open } = setup({ history: withModel })
+    await open()
+    await userEvent.type(input(), '/search{Enter}')
+    expect(await screen.findByRole('dialog', { name: '搜索对话' })).toBeTruthy()
+  })
+
+  it('opens the memory and delegation panels from commands', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/memory{Enter}')
+    expect(await screen.findByRole('tab', { name: /记忆/, selected: true })).toBeTruthy()
+    await userEvent.type(input(), '/delegation{Enter}')
+    expect(await screen.findByRole('tab', { name: /子 Agent/, selected: true })).toBeTruthy()
+  })
+
+  it('opens settings sections from /mcp, /skills and /providers', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '/mcp{Enter}')
+    expect(await screen.findByRole('heading', { name: 'MCP 服务' })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByLabelText('输入消息')).toBeTruthy())
+
+    await userEvent.type(input(), '/skills{Enter}')
+    expect(await screen.findByRole('heading', { name: '技能' })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByLabelText('输入消息')).toBeTruthy())
+
+    await userEvent.type(input(), '/providers{Enter}')
+    expect(await screen.findByRole('heading', { name: '模型供应商' })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByLabelText('输入消息')).toBeTruthy())
+  })
+
+  it('switches agent and permission mode from commands', async () => {
+    const agents = [
+      {
+        agentId: 'a',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+        description: {},
+        source: 'builtin',
+        archived: false,
+        status: 'published',
+        version: 1,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+      {
+        agentId: 'b',
+        name: { 'zh-CN': '代码审查员', 'en-US': 'Reviewer' },
+        description: {},
+        source: 'builtin',
+        archived: false,
+        status: 'published',
+        version: 2,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ]
+    let settings: object = { providers, permissionMode: 'ask' }
+    const { request, open } = setup({
+      history: HISTORY,
+      handlers: {
+        'agent.list': () => ({ agents }),
+        'settings.get': () => settings,
+        'settings.update': (patch: object) => (settings = { ...settings, ...patch }),
+      },
+    })
+    await open()
+    await userEvent.type(input(), '/agent 代码审查员{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.setAgent', {
+        sessionId: 's1',
+        agent: { id: 'b', version: 2 },
+      }),
+    )
+    expect(await screen.findByText(/已切换到 代码审查员/)).toBeTruthy()
+
+    await userEvent.type(input(), '/agent 不存在{Enter}')
+    expect(await screen.findByText(/没有找到 Agent“不存在”/)).toBeTruthy()
+
+    await userEvent.type(input(), '/agent{Enter}')
+    expect(await screen.findByRole('option', { name: /代码审查员/ })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+
+    await userEvent.type(input(), '/permissions 自动{Enter}')
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('settings.update', { permissionMode: 'auto' }),
+    )
+    expect(await screen.findByText(/权限模式已改为自动/)).toBeTruthy()
+
+    await userEvent.type(input(), '/permissions 不存在{Enter}')
+    expect(await screen.findByText(/没有找到权限模式“不存在”/)).toBeTruthy()
+
+    await userEvent.type(input(), '/permissions{Enter}')
+    expect(await screen.findByRole('menu')).toBeTruthy()
+    expect(await screen.findByRole('menuitem', { name: /只读/ })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+  })
+
+  it('reports a failed agent or permission switch', async () => {
+    const agents = [
+      {
+        agentId: 'a',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+        description: {},
+        source: 'builtin',
+        archived: false,
+        status: 'published',
+        version: 1,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ]
+    const { open } = setup({
+      history: HISTORY,
+      handlers: {
+        'agent.list': () => ({ agents }),
+        'settings.get': () => ({ providers, permissionMode: 'ask' }),
+        'session.setAgent': () => {
+          throw new Error('switch failed')
+        },
+        'settings.update': () => {
+          throw new Error('update failed')
+        },
+      },
+    })
+    await open()
+    await userEvent.type(input(), '/agent 编程助手{Enter}')
+    expect(await screen.findByText('切换 Agent 失败')).toBeTruthy()
+
+    await userEvent.type(input(), '/permissions 自动{Enter}')
+    expect(await screen.findByText('修改权限模式失败')).toBeTruthy()
+  })
+
+  it('shows defaults in /status before anything has run', async () => {
+    const { open } = setup({
+      history: [],
+      handlers: { 'settings.get': () => ({ providers, permissionMode: 'ask' }) },
+    })
+    await open()
+    await userEvent.type(input(), '/status{Enter}')
+    expect(
+      await screen.findByText('模型 未配置模型 · Agent 编程助手 · 权限 询问 · 上下文 尚无用量'),
+    ).toBeTruthy()
+  })
+
+  it('opens the general settings from /settings without a section', async () => {
+    const { open } = setup({
+      history: withModel,
+      handlers: {
+        'settings.get': () => ({ providers }),
+        'settings.shell': () => ({ detected: 'bash', options: ['auto', 'bash'] }),
+      },
+    })
+    await open()
+    await userEvent.type(input(), '/settings{Enter}')
+    expect(await screen.findByRole('heading', { name: '通用与外观', level: 2 })).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByLabelText('输入消息')).toBeTruthy())
+
+    // 未知分类也退回通用设置，而不是停在一个空页面上。
+    await userEvent.type(input(), '/settings 不存在{Enter}')
+    expect(await screen.findByRole('heading', { name: '通用与外观', level: 2 })).toBeTruthy()
+  })
+
+  it('offers a retry when the context snapshot cannot be read', async () => {
+    const { request, open } = setup({
+      history: withModel,
+      handlers: {
+        'settings.get': () => ({ providers }),
+        'run.inspect': () => {
+          throw new Error('inspect failed')
+        },
+      },
+    })
+    await open()
+    await userEvent.type(input(), '/context{Enter}')
+    const retry = await screen.findByRole('button', { name: '重试' })
+    await userEvent.click(retry)
+    await waitFor(() =>
+      expect(request.mock.calls.filter(([method]) => method === 'run.inspect')).toHaveLength(2),
+    )
   })
 
   it('greys out commands that cannot run now and keeps the draft', async () => {

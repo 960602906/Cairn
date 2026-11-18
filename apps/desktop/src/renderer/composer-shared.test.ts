@@ -44,6 +44,31 @@ describe('availableCommands', () => {
     )
   })
 
+  it('only offers commands whose callback or target exists', () => {
+    const bare = availableCommands([], t, {}, true)
+    expect(bare.map((command) => command.id)).toEqual(
+      expect.arrayContaining(['help', 'plan', 'model', 'permissions', 'context', 'status', 'stop']),
+    )
+    expect(bare.map((command) => command.id)).not.toContain('search')
+    expect(bare.map((command) => command.id)).not.toContain('mcp')
+    expect(bare.map((command) => command.id)).not.toContain('memory')
+
+    const withCallbacks = availableCommands(
+      [],
+      t,
+      {
+        onOpenSearch: () => {},
+        onOpenSettings: () => {},
+        onOpenPanel: () => {},
+        onNewChat: () => {},
+      },
+      true,
+    )
+    expect(withCallbacks.map((command) => command.id)).toEqual(
+      expect.arrayContaining(['search', 'mcp', 'skills', 'providers', 'memory', 'delegation']),
+    )
+  })
+
   it('marks unavailable commands while a turn is running', () => {
     const commands = availableCommands(
       [],
@@ -68,6 +93,10 @@ describe('availableCommands', () => {
     expect(commands.find((command) => command.id === 'undo')?.unavailable).toBe(
       'composer.command.unavailable.running',
     )
+    expect(commands.find((command) => command.id === 'agent')?.unavailable).toBe(
+      'composer.command.unavailable.running',
+    )
+    expect(commands.find((command) => command.id === 'stop')?.unavailable).toBeUndefined()
     const idle = availableCommands(
       [],
       t,
@@ -81,6 +110,9 @@ describe('availableCommands', () => {
     )
     expect(idle.find((command) => command.id === 'undo')?.unavailable).toBe(
       'composer.command.unavailable.undo',
+    )
+    expect(idle.find((command) => command.id === 'stop')?.unavailable).toBe(
+      'composer.command.unavailable.idle',
     )
   })
 })
