@@ -929,11 +929,20 @@ export function AgentEditor({
               </section>
             )}
             {view === 'edit' && section === 'memory' && (
-              <section className="flex flex-col gap-2">
-                <span className="inline-flex w-fit rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
-                  {t('memory.coming')}
-                </span>
+              <section className="flex flex-col gap-3">
                 <p className="text-note leading-relaxed text-muted">{t('memory.description')}</p>
+                <dl className="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-note">
+                  <dt className="text-muted">{t('memory.scopes')}</dt>
+                  <dd className="text-fg">
+                    {fields.memory.scopes.length === 0
+                      ? t('memory.scopes.none')
+                      : fields.memory.scopes
+                          .map((scope) => t(`memory.scope.${scope}`))
+                          .join(t('memory.scopes.separator'))}
+                  </dd>
+                  <dt className="text-muted">{t('memory.write')}</dt>
+                  <dd className="text-fg">{t(`memory.write.${fields.memory.write}`)}</dd>
+                </dl>
               </section>
             )}
             {dirtySections.size > 0 && view === 'edit' && (

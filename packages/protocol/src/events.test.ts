@@ -161,6 +161,15 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   },
   'tasklist.item.updated': { listId: 'tl1', itemId: 'read', status: 'done', note: '已修复' },
   'tasklist.closed': { listId: 'tl1' },
+  'memory.proposed': {
+    memoryId: 'm1',
+    scope: 'session',
+    content: '用 pnpm',
+    sourceAgentId: 'builtin.coder',
+  },
+  'memory.accepted': { memoryId: 'm1', scope: 'session', content: '用 pnpm', origin: 'propose' },
+  'memory.rejected': { memoryId: 'm1' },
+  'memory.deleted': { memoryId: 'm1', scope: 'project' },
 }
 
 function envelope(type: string, payload: unknown, extra: Record<string, unknown> = {}) {

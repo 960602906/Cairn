@@ -115,6 +115,7 @@ describe('createSessionView', () => {
       plans: [],
       taskLists: [],
       delegations: [],
+      memoryProposals: [],
     })
   })
 })
@@ -1502,5 +1503,75 @@ describe('reduceSession：待办列表（ADR-0038）', () => {
     ])
     expect(progressTaskList(done)).toBeUndefined()
     expect(activeTaskLists(done)).toHaveLength(1)
+  })
+})
+
+describe('reduceSession：记忆提议（M7-03）', () => {
+  const proposed = (ev: ReturnType<typeof stream>, memoryId: string, scope = 'project') =>
+    ev(
+      'memory.proposed',
+      { memoryId, scope: scope as 'project', content: '提交信息用中文', sourceAgentId: 'a' },
+      { turnId: 't1' },
+    )
+
+  it('按顺序记录提议与来源，重复 id 只记一次', () => {
+    const ev = stream()
+    const view = reduceAll([
+      proposed(ev, 'm1'),
+      proposed(ev, 'm2', 'session' as never),
+      proposed(ev, 'm1'),
+    ])
+    expect(view.memoryProposals).toEqual([
+      {
+        memoryId: 'm1',
+        scope: 'project',
+        content: '提交信息用中文',
+        sourceAgentId: 'a',
+        runId: RUN,
+        createdAt: 10,
+      },
+      {
+        memoryId: 'm2',
+        scope: 'session',
+        content: '提交信息用中文',
+        sourceAgentId: 'a',
+        runId: RUN,
+        createdAt: 20,
+      },
+    ])
+  })
+
+  it('确认、忽略与删除都会移除对应的提议，其余保留', () => {
+    const ev = stream()
+    const base = [proposed(ev, 'm1'), proposed(ev, 'm2'), proposed(ev, 'm3'), proposed(ev, 'm4')]
+    const accepted = reduceAll([
+      ...base,
+      ev('memory.accepted', {
+        memoryId: 'm1',
+        scope: 'project',
+        content: '提交信息用中文',
+        origin: 'propose',
+      }),
+    ])
+    expect(accepted.memoryProposals.map((item) => item.memoryId)).toEqual(['m2', 'm3', 'm4'])
+    const rejected = reduceAll([...base, ev('memory.rejected', { memoryId: 'm2' })])
+    expect(rejected.memoryProposals.map((item) => item.memoryId)).toEqual(['m1', 'm3', 'm4'])
+    const deleted = reduceAll([...base, ev('memory.deleted', { memoryId: 'm3' })])
+    expect(deleted.memoryProposals.map((item) => item.memoryId)).toEqual(['m1', 'm2', 'm4'])
+  })
+
+  it('没有对应提议的确认或删除不改动视图', () => {
+    const ev = stream()
+    const view = reduceAll([
+      proposed(ev, 'm1'),
+      ev('memory.deleted', { memoryId: 'other' }),
+      ev('memory.accepted', {
+        memoryId: 'other',
+        scope: 'project',
+        content: 'x',
+        origin: 'auto',
+      }),
+    ])
+    expect(view.memoryProposals).toHaveLength(1)
   })
 })

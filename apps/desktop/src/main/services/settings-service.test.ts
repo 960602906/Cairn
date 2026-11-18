@@ -539,6 +539,15 @@ describe('model settings', () => {
     expect(settings.get()).not.toHaveProperty('activityNotifications')
   })
 
+  it('stores automatic memory as on only, off by default (M7-03)', () => {
+    const { settings } = setup()
+    expect(settings.get()).not.toHaveProperty('agentAutoMemory')
+    expect(settings.update({ agentAutoMemory: true })).toMatchObject({ agentAutoMemory: true })
+    expect(read()).toEqual({ agentAutoMemory: true })
+    expect(settings.update({ agentAutoMemory: false })).not.toHaveProperty('agentAutoMemory')
+    expect(settings.get()).not.toHaveProperty('agentAutoMemory')
+  })
+
   it('stores update preferences, check time and skipped version (M5-06)', () => {
     const { settings } = setup()
     expect(settings.get()).not.toHaveProperty('updateAutoCheck')

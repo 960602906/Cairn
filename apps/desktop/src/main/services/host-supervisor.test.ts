@@ -780,6 +780,40 @@ describe('startHost', () => {
     expect(onError).toHaveBeenCalled()
   })
 
+  it('forwards host.memory.remember to the memory service (M7-03)', async () => {
+    const host = fakeHost()
+    const rememberMemory = vi.fn(() => ({ memoryId: 'mem-1', status: 'active' as const }))
+    const { supervisor } = setup(host, { rememberMemory })
+    await supervisor.startHost(init)
+    const params = {
+      runId: 'r1',
+      agent: { id: 'default', version: 1 },
+      scope: 'project' as const,
+      content: 'Use pnpm.',
+    }
+    await expect(host.endpoint?.request('host.memory.remember', params)).resolves.toEqual({
+      memoryId: 'mem-1',
+      status: 'active',
+    })
+    expect(rememberMemory).toHaveBeenCalledWith('s1', params)
+
+    const denied = fakeHost()
+    await setup(denied, {
+      rememberMemory: () => {
+        throw new RpcError('memory.scope_not_allowed', { scope: 'project' })
+      },
+    }).supervisor.startHost(init)
+    await expect(denied.endpoint?.request('host.memory.remember', params)).rejects.toMatchObject({
+      code: 'memory.scope_not_allowed',
+    })
+
+    const unsupported = fakeHost()
+    await setup(unsupported).supervisor.startHost(init)
+    await expect(
+      unsupported.endpoint?.request('host.memory.remember', params),
+    ).rejects.toMatchObject({ code: 'run.unsupported' })
+  })
+
   it('passes the shell preference in host.init (M2-09)', async () => {
     const host = fakeHost()
     await setup(host, { resolveShell: () => 'cmd' }).supervisor.startHost(init)

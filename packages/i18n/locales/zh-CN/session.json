@@ -647,5 +647,13 @@
   "changeset.undoTitle": "撤销这次合并？",
   "changeset.undoDescription": "主工作区会恢复到合并前的检查点，对话记录保留。",
   "changeset.undone": "已恢复到合并前的检查点。",
-  "changeset.cancel": "取消"
+  "changeset.cancel": "取消",
+  "memory.region": "待确认的记忆",
+  "memory.title": "把这条记下来？",
+  "memory.scope.session": "本会话",
+  "memory.scope.project": "本项目",
+  "memory.scope.global": "所有项目",
+  "memory.hint": "确认后会在之后的对话里作为背景信息提供给 Agent，不会覆盖安全规则。",
+  "memory.accept": "记住",
+  "memory.reject": "忽略"
 }

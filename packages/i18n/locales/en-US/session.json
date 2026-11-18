@@ -647,5 +647,13 @@
   "changeset.undoTitle": "Undo this merge?",
   "changeset.undoDescription": "The main workspace will return to the checkpoint taken before the merge. The conversation is kept.",
   "changeset.undone": "Restored the pre-merge checkpoint.",
-  "changeset.cancel": "Cancel"
+  "changeset.cancel": "Cancel",
+  "memory.region": "Memory to confirm",
+  "memory.title": "Remember this?",
+  "memory.scope.session": "This session",
+  "memory.scope.project": "This project",
+  "memory.scope.global": "All projects",
+  "memory.hint": "Once confirmed, this is given to the agent as background in later conversations. It never overrides the safety rules.",
+  "memory.accept": "Remember",
+  "memory.reject": "Dismiss"
 }

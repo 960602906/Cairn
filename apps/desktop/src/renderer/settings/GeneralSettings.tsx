@@ -190,6 +190,7 @@ export function GeneralSettings() {
   const { t, i18n } = useTranslation('settings')
   const { t: tc } = useTranslation()
   const sessionBrief = useSessionStore((s) => s.settings?.sessionBrief !== false)
+  const agentAutoMemory = useSessionStore((s) => s.settings?.agentAutoMemory === true)
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const loadSettings = useSessionStore((s) => s.loadSettings)
   const loaded = useSessionStore((s) => s.settings !== undefined)
@@ -245,6 +246,16 @@ export function GeneralSettings() {
             checked={sessionBrief}
             aria-label={t('general.sessionBrief.label')}
             onCheckedChange={(checked) => void updateSettings({ sessionBrief: checked })}
+          />
+        </ToggleRow>
+        <ToggleRow
+          title={t('general.agentAutoMemory.label')}
+          hint={t('general.agentAutoMemory.hint')}
+        >
+          <Switch
+            checked={agentAutoMemory}
+            aria-label={t('general.agentAutoMemory.label')}
+            onCheckedChange={(checked) => void updateSettings({ agentAutoMemory: checked })}
           />
         </ToggleRow>
         <InstructionsField />

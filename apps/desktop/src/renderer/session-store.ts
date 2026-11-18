@@ -248,6 +248,11 @@ export interface SessionActions {
   ): Promise<boolean>
   /** 回答当前会话的一个提问（`ask_user`），或整张取消；成功时返回 true。 */
   resolveQuestion(questionId: string, resolution: AskUserResolution): Promise<boolean>
+  /**
+   * 确认或忽略当前会话里一条 Agent 提议的记忆（M7-03）；成功时返回 true。
+   * 结果由事件投影到 `view.memoryProposals`，卡片随之消失。
+   */
+  resolveMemory(memoryId: string, action: 'accept' | 'reject'): Promise<boolean>
   refreshProjects(): Promise<void>
   /** 用系统对话框选择文件夹作为项目；取消或失败时返回 undefined。 */
   openProject(): Promise<ProjectSummary | undefined>
@@ -1202,6 +1207,15 @@ export function createSessionStore(api: MainApi): SessionStore {
         )
         await loadQuestions(sessionId)
         return resolved !== undefined
+      },
+
+      async resolveMemory(memoryId, action) {
+        const sessionId = get().activeSessionId
+        if (sessionId === undefined) return false
+        const result = await run(() =>
+          api.request('memory.respond', { sessionId, memoryId, action }),
+        )
+        return result !== undefined
       },
 
       async refreshProjects() {

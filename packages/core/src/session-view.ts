@@ -26,6 +26,7 @@ import {
   type EventEnvelope,
   type EventPayload,
   type LiveEvent,
+  type MemoryScope,
   type ModelRef,
   type PersistedEvent,
   type PromptAgent,
@@ -222,6 +223,17 @@ export interface DelegationView {
         readonly issues: readonly string[] | undefined
       }
     | undefined
+}
+
+/** 一条等待用户确认的记忆提议（`memory.proposed`，M7-03）；确认或忽略后从视图里移除。 */
+export interface MemoryProposalView {
+  readonly memoryId: string
+  readonly scope: MemoryScope
+  readonly content: string
+  readonly sourceAgentId: string | undefined
+  /** 提议它的运行；界面用它把提议归到对应的轮次。 */
+  readonly runId: string
+  readonly createdAt: number
 }
 
 /** 会话的一个检查点（`checkpoint.created`，M2-08 的检查点分隔线与历史菜单）。 */
@@ -426,6 +438,8 @@ export interface SessionView {
   readonly taskLists: readonly TaskListView[]
   /** 父运行发起的子任务，按发生顺序（M4-05）。 */
   readonly delegations: readonly DelegationView[]
+  /** 等待用户确认的记忆提议（M7-03），按提议顺序；确认、忽略或删除后移除。 */
+  readonly memoryProposals: readonly MemoryProposalView[]
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -451,6 +465,7 @@ export function createSessionView(sessionId: string): SessionView {
     plans: [],
     taskLists: [],
     delegations: [],
+    memoryProposals: [],
   }
 }
 
@@ -994,6 +1009,36 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return resolveTaskList(view, event.payload.listId, (list) =>
         list.closed ? undefined : { ...list, closed: true },
       )
+
+    case 'memory.proposed': {
+      const { memoryId, scope, content, sourceAgentId } = event.payload
+      if (view.memoryProposals.some((item) => item.memoryId === memoryId)) return undefined
+      return {
+        ...view,
+        memoryProposals: [
+          ...view.memoryProposals,
+          {
+            memoryId,
+            scope,
+            content,
+            sourceAgentId,
+            runId: event.runId,
+            createdAt: event.ts,
+          },
+        ],
+      }
+    }
+    // 确认、忽略、删除都会让提议从界面上消失；`auto` 写入只有 accepted，没有提议可移除。
+    case 'memory.accepted':
+    case 'memory.rejected':
+    case 'memory.deleted': {
+      const remaining = view.memoryProposals.filter(
+        (item) => item.memoryId !== event.payload.memoryId,
+      )
+      return remaining.length === view.memoryProposals.length
+        ? undefined
+        : { ...view, memoryProposals: remaining }
+    }
 
     case 'session.brief.updated': {
       const content = event.payload.content.trim()

@@ -14,7 +14,7 @@ import {
   RunState,
   Timestamp,
 } from '../common.js'
-import { AgentDefinition } from '../agents.js'
+import { AgentDefinition, MemoryScope } from '../agents.js'
 import { FileChangeInput } from '../changes.js'
 import { BackgroundCommand } from '../commands.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
@@ -311,6 +311,23 @@ export const MainForHost = defineSide({
         entries: z.number().int().nonnegative().optional(),
         dropped: z.number().int().nonnegative().optional(),
         truncated: z.boolean().optional(),
+      }),
+    },
+    /**
+     * 写入一条记忆（M7-03，`remember` 工具）。主进程按 Agent 定义决定写入方式与允许的范围：
+     * `propose` 落库为待确认并记 `memory.proposed`，`auto`（且设置允许）直接生效并记
+     * `memory.accepted`；`never`、范围不允许或 Agent 未配置时报错，宿主把原因交给模型。
+     */
+    'host.memory.remember': {
+      params: z.object({
+        runId: Id,
+        agent: RunAgentRef,
+        scope: MemoryScope,
+        content: z.string().min(1).max(2_000),
+      }),
+      result: z.object({
+        memoryId: Id,
+        status: z.enum(['proposed', 'active']),
       }),
     },
     /**

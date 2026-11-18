@@ -129,8 +129,7 @@
   "context.auto": "Automatic",
   "context.off": "Off",
   "context.reserve": "Reserved output tokens",
-  "memory.coming": "Coming soon",
-  "memory.description": "Memory will keep project conventions and preferences across sessions. For now the reserved policy is displayed but never written.",
+  "memory.description": "Memory keeps project conventions and preferences across sessions. This agent reads confirmed notes in the scopes below. Writes are proposed for your confirmation in the chat; read-only agents never write.",
   "versions.title": "Version history",
   "versions.draft": "Draft",
   "versions.current": "Current",
@@ -204,5 +203,15 @@
   "issue.delegation_agent_not_published": "Published agent {{agent}} was not found",
   "issue.schema": "Invalid field format",
   "issue.front_matter": "Missing YAML front matter",
-  "issue.yaml": "Invalid YAML front matter"
+  "issue.yaml": "Invalid YAML front matter",
+  "memory.scopes": "Scopes",
+  "memory.scopes.none": "No memory",
+  "memory.scopes.separator": ", ",
+  "memory.scope.session": "This session",
+  "memory.scope.project": "This project",
+  "memory.scope.global": "All projects",
+  "memory.write": "Writes",
+  "memory.write.never": "Never",
+  "memory.write.propose": "Propose, then wait for your confirmation",
+  "memory.write.auto": "Automatic (allowed in settings)"
 }

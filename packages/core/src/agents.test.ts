@@ -231,7 +231,6 @@ describe('validateAgentDefinition', () => {
       'unknown_skill',
       'unknown_model',
       'unknown_model',
-      'memory_write_reserved',
     ])
   })
 

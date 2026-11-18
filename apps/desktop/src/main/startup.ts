@@ -58,6 +58,7 @@ import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { loadProjectAgentsMd } from './services/agents-md.js'
 import { loadSessionMemory } from './services/session-memory.js'
+import { createMemoryService } from './services/memory-service.js'
 import { createSkillService } from './services/skill-service.js'
 import { createHubService } from './services/hub-service.js'
 import { createMcpService } from './services/mcp-service.js'
@@ -358,6 +359,16 @@ const agents = createAgentService({
   mcp,
   models: { has: (model) => settings.hasModel(model) },
 })
+/**
+ * 记忆写入（M7-03）：`remember` 工具经宿主转交到这里，按 Agent 定义提议或直接生效。
+ * `auto` 还要用户在设置里打开“允许 Agent 自动记忆”，否则退回提议。
+ */
+const memories = createMemoryService({
+  storage,
+  events,
+  definition: (agent) => agents.definition(agent),
+  autoWriteEnabled: () => settings.get().agentAutoMemory === true,
+})
 /** 自动更新服务在会话管理器之后创建；诊断服务只持有闭包，不会在赋值前调用。 */
 const updateRef: { current?: ReturnType<typeof createUpdateService> } = {}
 /** 诊断包（M3-13）：读取日志与事件摘要，统一脱敏后打包；不包含任何凭据。 */
@@ -469,6 +480,8 @@ const supervisor = createHostSupervisor({
   // 记忆（M7-02）：只取该 Agent 声明的范围里已确认的条目；查询层就带项目与会话，跨项目读不到。
   loadMemory: (sessionId, agent) =>
     loadSessionMemory(storage, sessionId, agents.definition(agent)?.memory.scopes ?? []),
+  // 记忆写入（M7-03）：范围与写入方式由 Agent 定义把关，`auto` 还受设置开关限制。
+  rememberMemory: (sessionId, params) => memories.remember({ sessionId, ...params }),
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
   loadSkills: (sessionId, agent) => agents.skillsFor(agent, sessionId),
@@ -694,6 +707,7 @@ const gateway = createRendererGateway({
   changeSets,
   approvals,
   questions,
+  memories,
   activity,
   backgroundCommands: commandService,
   skills,

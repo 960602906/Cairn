@@ -129,8 +129,7 @@
   "context.auto": "自动",
   "context.off": "关闭",
   "context.reserve": "预留输出 tokens",
-  "memory.coming": "即将推出",
-  "memory.description": "记忆会跨会话保留项目约定与偏好。第一版只展示预留的策略，不会写入。",
+  "memory.description": "记忆用于跨会话保留项目约定与偏好。这个 Agent 会按下面的范围读取已确认的记忆；写入时先提议，由你在对话里确认，只读 Agent 不写入。",
   "versions.title": "版本历史",
   "versions.draft": "草稿",
   "versions.current": "当前",
@@ -204,5 +203,15 @@
   "issue.delegation_agent_not_published": "找不到已发布的 Agent {{agent}}",
   "issue.schema": "字段格式不正确",
   "issue.front_matter": "缺少 YAML 头",
-  "issue.yaml": "YAML 头格式错误"
+  "issue.yaml": "YAML 头格式错误",
+  "memory.scopes": "范围",
+  "memory.scopes.none": "不读取记忆",
+  "memory.scopes.separator": "、",
+  "memory.scope.session": "本会话",
+  "memory.scope.project": "本项目",
+  "memory.scope.global": "所有项目",
+  "memory.write": "写入",
+  "memory.write.never": "不写入",
+  "memory.write.propose": "先提议，等你确认",
+  "memory.write.auto": "自动写入（需在设置中允许）"
 }
