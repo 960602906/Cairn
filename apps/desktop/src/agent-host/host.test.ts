@@ -242,6 +242,58 @@ describe('agent host', () => {
     expect(h.onError).not.toHaveBeenCalled()
   })
 
+  it('asks the main process for memory at the start of a turn (M7-02)', async () => {
+    const prompts: string[] = []
+    const agents: unknown[] = []
+    const script: FakeScript = { turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] }
+    const h = setup(script, {
+      createRuntime: (model) => {
+        const fake = new FakeRuntime(script)
+        return {
+          runtime: {
+            id: 'spy',
+            async createSession(sessionInit) {
+              const session = await fake.createSession(sessionInit)
+              return {
+                prompt: (input: Parameters<typeof session.prompt>[0]) => session.prompt(input),
+                steer: (input: Parameters<typeof session.steer>[0]) => session.steer(input),
+                abort: () => session.abort(),
+                onEvent: (listener: Parameters<typeof session.onEvent>[0]) =>
+                  session.onEvent(listener),
+                exportHistory: () => session.exportHistory(),
+                dispose: () => session.dispose(),
+                setSystemPrompt(prompt: string) {
+                  prompts.push(prompt)
+                },
+              }
+            },
+          },
+          model: fakeModel(model),
+        }
+      },
+    })
+    h.main.handle('host.memory', (params) => {
+      agents.push(params.agent)
+      return {
+        text: '## Session\n- 用 pnpm。',
+        entries: 1,
+        dropped: 0,
+        truncated: false,
+      }
+    })
+    await h.main.request('host.init', { ...init, instructions: 'Use pnpm.' })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('hi') })
+    await h.waitFor('turn.completed')
+    expect(agents).toEqual([init.agent])
+    expect(
+      prompts.some((prompt) => prompt.includes('# Memory') && prompt.includes('- 用 pnpm。')),
+    ).toBe(true)
+    // 记忆排在项目说明之后、"User's instructions" 之前。
+    const prompt = prompts.find((item) => item.includes('# Memory'))!
+    expect(prompt.indexOf('# Memory')).toBeLessThan(prompt.indexOf("# User's instructions"))
+    expect(h.onError).not.toHaveBeenCalled()
+  })
+
   it('leaves the shell out of the system prompt without tools', async () => {
     const prompts: string[] = []
     const h = setup(

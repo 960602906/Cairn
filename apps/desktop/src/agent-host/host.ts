@@ -695,6 +695,16 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             createId: options.createId,
           })
         : undefined
+      // 子 Agent 按自己的定义读记忆（M7-02）：只读子 Agent 默认只有会话范围。
+      let childMemory: string | undefined
+      try {
+        const loaded = await endpoint.request('host.memory', {
+          agent: { id: definition.id, version: definition.version },
+        })
+        childMemory = loaded.text
+      } catch (error) {
+        if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+      }
       const prompt = buildSystemPrompt({
         tools: hasTools,
         environment: {
@@ -704,6 +714,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           date: localDate(now()),
         },
         ...(definition.instructions.trim() ? { agentInstructions: definition.instructions } : {}),
+        ...(childMemory ? { memory: childMemory } : {}),
         ...(skills.some((skill) => skill.pinned)
           ? {
               skills: skills.map((skill) => ({
@@ -1049,6 +1060,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
               onError(error)
           }
         }
+        // 记忆（M7-02）：每轮重新取，确认或删除后下一轮就生效；Agent 没有声明范围时主进程回空。
+        let memory: string | undefined
+        try {
+          const loaded = await endpoint.request('host.memory', { agent: init.agent })
+          memory = loaded.text
+        } catch (error) {
+          // 测试里的主进程没有这个接口。其他错误只记日志，这一轮不带记忆。
+          if (!(error instanceof RpcError) || error.code !== 'rpc.method_not_found') onError(error)
+        }
         try {
           const loaded = await endpoint.request('host.skills', {})
           skillCatalog.splice(0, skillCatalog.length, ...loaded.skills)
@@ -1077,6 +1097,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
             tools: promptBase.tools || mode === 'plan' || executing !== undefined,
             environment: { ...promptBase.environment, date: localDate(now()) },
             ...(text ? { projectInstructions: text } : {}),
+            ...(memory ? { memory } : {}),
             ...(skills.length > 0 ? { skills } : {}),
             ...(mode === 'plan'
               ? { plan: { kind: 'propose' as const } }

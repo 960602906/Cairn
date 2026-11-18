@@ -744,6 +744,42 @@ describe('startHost', () => {
     await expect(empty.endpoint?.request('host.agentsMd', {})).resolves.toEqual({})
   })
 
+  it('returns memory for host.memory and hides a read failure (M7-02)', async () => {
+    const host = fakeHost()
+    const loaded = {
+      text: '## Session\n- Use pnpm.',
+      entries: 1,
+      dropped: 0,
+      truncated: false,
+    }
+    const loadMemory = vi.fn(() => loaded)
+    const { supervisor } = setup(host, { loadMemory })
+    await supervisor.startHost(init)
+    await expect(
+      host.endpoint?.request('host.memory', { agent: { id: 'default', version: 1 } }),
+    ).resolves.toEqual(loaded)
+    expect(loadMemory).toHaveBeenCalledWith('s1', { id: 'default', version: 1 })
+
+    const empty = fakeHost()
+    await setup(empty, { loadMemory: () => undefined }).supervisor.startHost(init)
+    await expect(
+      empty.endpoint?.request('host.memory', { agent: { id: 'default', version: 1 } }),
+    ).resolves.toEqual({})
+
+    const broken = fakeHost()
+    const onError = vi.fn()
+    await setup(broken, {
+      onError,
+      loadMemory: () => {
+        throw new Error('memory store unavailable')
+      },
+    }).supervisor.startHost(init)
+    await expect(
+      broken.endpoint?.request('host.memory', { agent: { id: 'default', version: 1 } }),
+    ).resolves.toEqual({})
+    expect(onError).toHaveBeenCalled()
+  })
+
   it('passes the shell preference in host.init (M2-09)', async () => {
     const host = fakeHost()
     await setup(host, { resolveShell: () => 'cmd' }).supervisor.startHost(init)

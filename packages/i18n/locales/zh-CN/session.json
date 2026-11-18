@@ -512,6 +512,7 @@
   "inspector.context.empty": "还没有上下文快照。",
   "inspector.context.system": "系统提示词",
   "inspector.context.skills": "技能",
+  "inspector.context.memory": "记忆",
   "inspector.context.tools": "工具定义",
   "inspector.context.history": "历史消息",
   "inspector.context.compaction": "压缩摘要",

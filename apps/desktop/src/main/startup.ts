@@ -57,6 +57,7 @@ import { createInspectService } from './services/inspect-service.js'
 import { createUtilityHostSpawner } from './services/host-process.js'
 import { createHostSupervisor } from './services/host-supervisor.js'
 import { loadProjectAgentsMd } from './services/agents-md.js'
+import { loadSessionMemory } from './services/session-memory.js'
 import { createSkillService } from './services/skill-service.js'
 import { createHubService } from './services/hub-service.js'
 import { createMcpService } from './services/mcp-service.js'
@@ -465,6 +466,9 @@ const supervisor = createHostSupervisor({
       return undefined
     }
   },
+  // 记忆（M7-02）：只取该 Agent 声明的范围里已确认的条目；查询层就带项目与会话，跨项目读不到。
+  loadMemory: (sessionId, agent) =>
+    loadSessionMemory(storage, sessionId, agents.definition(agent)?.memory.scopes ?? []),
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
   loadSkills: (sessionId, agent) => agents.skillsFor(agent, sessionId),
