@@ -22,6 +22,7 @@ import {
   type PlanView,
   type RestoreView,
   type ReviewLoopView,
+  type PipelineView,
   type SessionView,
 } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
@@ -42,6 +43,7 @@ import { TurnChanges } from './FileChanges.js'
 import { DelegationCard } from './DelegationCard.js'
 import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
+import { PipelineCard } from './PipelineCard.js'
 import { ReviewLoopCard } from './ReviewLoopCard.js'
 import { RunningIndicator } from './RunningIndicator.js'
 import { outcomePresentation, runningActivityKey, TONE_SOFT } from './status-presentation.js'
@@ -563,6 +565,7 @@ function Message({
   footer,
   plans,
   reviewLoops,
+  pipelines,
   sessionId,
   continued,
   restores,
@@ -580,6 +583,8 @@ function Message({
   readonly plans: readonly PlanView[]
   /** 这一轮的审查循环（M7-07）：挂在最后一轮消息后面。 */
   readonly reviewLoops: readonly ReviewLoopView[]
+  /** 这一轮的流水线（M7-08）。 */
+  readonly pipelines: readonly PipelineView[]
   /** 审批状态所属的会话；省略时使用当前选中的会话。 */
   readonly sessionId: string | undefined
   /** 这条消息之后发生的恢复。 */
@@ -610,6 +615,7 @@ function Message({
   const cards = [
     ...plans.map((plan) => <PlanSummaryCard key={plan.planId} plan={plan} onOpen={onOpenPlan} />),
     ...reviewLoops.map((loop) => <ReviewLoopCard key={loop.reviewId} loop={loop} />),
+    ...pipelines.map((pipeline) => <PipelineCard key={pipeline.pipelineId} pipeline={pipeline} />),
   ]
   const marks = (compacted || omitted) && (
     <div className="mb-3.5 flex w-full flex-col gap-2 self-stretch">
@@ -1071,6 +1077,14 @@ export function MessageStream({
         : [],
     ),
   )
+  const anchoredPipelines = new Set(
+    (view?.pipelineRuns ?? []).flatMap((pipeline) =>
+      pipeline.turnId !== undefined &&
+      messages.some((message) => message.turnId === pipeline.turnId)
+        ? [pipeline.pipelineId]
+        : [],
+    ),
+  )
   const restores = view ? restoresByMessage(view) : new Map<string, readonly RestoreView[]>()
   const delegationsByTurn = useMemo(() => {
     const map = new Map<string, DelegationView[]>()
@@ -1140,6 +1154,13 @@ export function MessageStream({
                   reviewLoops={
                     lastOfTurn && message.turnId !== undefined
                       ? (view.reviewLoops ?? []).filter((loop) => loop.turnId === message.turnId)
+                      : []
+                  }
+                  pipelines={
+                    lastOfTurn && message.turnId !== undefined
+                      ? (view.pipelineRuns ?? []).filter(
+                          (pipeline) => pipeline.turnId === message.turnId,
+                        )
                       : []
                   }
                   sessionId={sessionId}
@@ -1227,11 +1248,18 @@ export function MessageStream({
             lastOfTurn && lastMsg.turnId !== undefined
               ? (view.reviewLoops ?? []).filter((loop) => loop.turnId === lastMsg.turnId)
               : []
+          const pipelines =
+            lastOfTurn && lastMsg.turnId !== undefined
+              ? (view.pipelineRuns ?? []).filter((pipeline) => pipeline.turnId === lastMsg.turnId)
+              : []
           const cards = [
             ...plans.map((plan) => (
               <PlanSummaryCard key={plan.planId} plan={plan} onOpen={openPlan} />
             )),
             ...loops.map((loop) => <ReviewLoopCard key={loop.reviewId} loop={loop} />),
+            ...pipelines.map((pipeline) => (
+              <PipelineCard key={pipeline.pipelineId} pipeline={pipeline} />
+            )),
           ]
           const restoresForMsg = restores.get(lastMsg.messageId)
           const footer = footers.get(lastMsg.messageId)
@@ -1316,6 +1344,13 @@ export function MessageStream({
           .map((loop) => (
             <li key={loop.reviewId} className="list-none">
               <ReviewLoopCard loop={loop} />
+            </li>
+          ))}
+        {(view?.pipelineRuns ?? [])
+          .filter((pipeline) => !anchoredPipelines.has(pipeline.pipelineId))
+          .map((pipeline) => (
+            <li key={pipeline.pipelineId} className="list-none">
+              <PipelineCard pipeline={pipeline} />
             </li>
           ))}
         {view?.compaction && afterLast(messages.at(-1)?.seq ?? 0, view.compaction) && (

@@ -477,6 +477,25 @@ const payloadSchemas = {
     rounds: z.number().int().nonnegative(),
     summary: z.string().max(4_000).optional(),
   }),
+  /**
+   * pipeline 的一个阶段结束（M7-08）：阶段 id、实际子运行与结果。
+   * 事件属于父运行，界面按 `turnId` 把整条流水线挂到这一轮。
+   */
+  'team.pipeline.stage': z.object({
+    pipelineId: Id,
+    stage: z.string().min(1).max(200),
+    agentRunId: Id,
+    status: z.enum(['completed', 'failed', 'aborted', 'needs_input', 'limit_reached']),
+    summary: z.string().max(4_000).optional(),
+  }),
+  /** pipeline 的结局（M7-08）：`skipped` 是因前面阶段失败或停止而没有执行的阶段。 */
+  'team.pipeline.completed': z.object({
+    pipelineId: Id,
+    status: z.enum(['completed', 'failed', 'stopped', 'limit_reached']),
+    stages: z.number().int().nonnegative(),
+    skipped: z.array(z.string().min(1).max(200)).max(20),
+    summary: z.string().max(4_000).optional(),
+  }),
 } satisfies Record<string, z.ZodType>
 
 type PayloadSchemas = typeof payloadSchemas

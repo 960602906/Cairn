@@ -42,8 +42,12 @@ import {
   REVIEW_VERDICT_SCHEMA,
   ReviewLoopInput,
   reviewLoopToolSpec,
+  RunPipelineInput,
   runDelegation,
+  runPipelineToolSpec,
   runReviewLoop,
+  runTeamPipeline,
+  validatePipelineStages,
   presetRules,
   buildSystemPrompt,
   buildRunSnapshot,
@@ -812,6 +816,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       const spec = delegateToolSpec(targets)
       if (!spec) return
       const loopSpec = reviewLoopToolSpec(targets)
+      const pipelineSpec = runPipelineToolSpec(targets)
       let session: DelegationSession | undefined
       const delegationSession = (parent: AgentRunHandle): DelegationSession =>
         (session ??= new DelegationSession({ policy, parent, chain }))
@@ -1197,6 +1202,163 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
                 text: JSON.stringify({
                   status: result.outcome,
                   rounds: result.rounds.length,
+                  summary: result.summary,
+                }),
+              },
+            ],
+          }
+        },
+      })
+
+      if (!pipelineSpec) return
+      target.register({
+        name: pipelineSpec.name,
+        description: pipelineSpec.description,
+        inputSchema: pipelineSpec.inputSchema as JsonSchema,
+        category: 'delegate',
+        source: { kind: 'builtin' },
+        trust: 'builtin',
+        // 阶段之间按依赖分波并发，工具本身不能被模型并行重复调用。
+        parallel: false,
+        async execute(raw) {
+          const parsed = RunPipelineInput.safeParse(raw)
+          if (!parsed.success) throw invalidInput('run_pipeline', parsed.error)
+          const input = parsed.data
+          const parent = handleRef.current
+          if (!parent) {
+            throw new ToolError(ToolErrorCode.ExecutionFailed, 'Delegation is not ready yet.')
+          }
+          const problem = validatePipelineStages(input.stages)
+          if (problem !== undefined) throw new ToolError(ToolErrorCode.InvalidInput, problem)
+          const agentIds = [...new Set(input.stages.map((stage) => stage.agent))]
+          for (const agentId of agentIds) {
+            if (!policy.allowedAgents.includes(agentId)) {
+              throw new ToolError(DelegationErrorCode.AgentNotAllowed, agentId, { agent: agentId })
+            }
+          }
+          const resolvedAgents = new Map<string, DelegatedTarget>()
+          for (const agentId of agentIds) {
+            resolvedAgents.set(agentId, await resolveDelegationTarget(agentId))
+          }
+          for (const resolved of resolvedAgents.values()) {
+            if (resolved.definition.permissions !== 'read-only') {
+              throw new ToolError(
+                'review.read_only_required',
+                `The pipeline agent must be read-only: ${resolved.definition.id}`,
+                { agent: resolved.definition.id, role: 'pipeline' },
+              )
+            }
+          }
+          const owner = delegationSession(parent)
+          const slots = policy.maxChildrenPerTurn - owner.childrenThisTurn
+          if (slots < input.stages.length) {
+            throw new ToolError(
+              DelegationErrorCode.ChildrenPerTurnExceeded,
+              DelegationErrorCode.ChildrenPerTurnExceeded,
+              {
+                children: owner.childrenThisTurn + input.stages.length,
+                maxChildrenPerTurn: policy.maxChildrenPerTurn,
+              },
+            )
+          }
+
+          const pipelineId = options.createId()
+          const emitted: string[] = []
+          const stageContext = (...parts: (string | undefined)[]): string | undefined => {
+            const text = parts.filter((part): part is string => !!part).join('\n\n')
+            return text === '' ? undefined : text.slice(0, TASK_BRIEF_CONTEXT_MAX_CHARS)
+          }
+          let result
+          try {
+            result = await runTeamPipeline({
+              stages: input.stages.map((stage) => ({
+                stage: stage.stage,
+                agent: stage.agent,
+                ...(stage.dependsOn === undefined ? {} : { dependsOn: [...stage.dependsOn] }),
+              })),
+              maxParallel: Math.min(
+                input.maxParallel ?? policy.maxParallel,
+                policy.maxParallel,
+                input.stages.length,
+              ),
+              runStage: async ({ stage, upstream }) => {
+                const definition = input.stages.find((item) => item.stage === stage.stage)!
+                const goal = definition.goal ?? input.goal
+                const briefContext = stageContext(
+                  `Stage ${stage.stage}`,
+                  input.context,
+                  ...upstream.map((item) => `Stage ${item.stage} result:\n${item.summary}`),
+                )
+                const child = await runDelegatedChild(
+                  parent,
+                  owner,
+                  {
+                    agent: stage.agent,
+                    task: `Stage ${stage.stage}: ${goal}`.slice(0, DELEGATE_TASK_MAX_CHARS),
+                    brief: {
+                      goal,
+                      deliverable:
+                        definition.deliverable ?? 'A complete result for this pipeline stage.',
+                      ...(briefContext === undefined ? {} : { context: briefContext }),
+                      ...(input.files === undefined ? {} : { files: [...input.files] }),
+                    },
+                  },
+                  resolvedAgents.get(stage.agent),
+                )
+                return {
+                  stage: stage.stage,
+                  runId: child.childRunId,
+                  status: child.status,
+                  summary: child.summary,
+                }
+              },
+              onStage: (outcome) => {
+                emitted.push(outcome.stage)
+                parent.emitEvent('team.pipeline.stage', {
+                  pipelineId,
+                  stage: outcome.stage,
+                  agentRunId: outcome.runId,
+                  status: outcome.status,
+                  summary: outcome.summary.slice(0, 4_000),
+                })
+              },
+              stopped: () =>
+                parent.state === 'aborting' ||
+                parent.state === 'failed' ||
+                parent.state === 'interrupted' ||
+                parent.state === 'disposed',
+            })
+          } catch (error) {
+            // 阶段被硬错误打断（校验、预算、主进程失败）：留下可展示的结局再抛给模型。
+            parent.emitEvent('team.pipeline.completed', {
+              pipelineId,
+              status: 'failed',
+              stages: emitted.length,
+              skipped: [],
+              summary: error instanceof Error ? error.message.slice(0, 4_000) : 'Pipeline failed.',
+            })
+            throw error
+          }
+
+          parent.emitEvent('team.pipeline.completed', {
+            pipelineId,
+            status: result.status,
+            stages: result.stages.length,
+            skipped: [...result.skipped],
+            summary: result.summary.slice(0, 4_000),
+          })
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  status: result.status,
+                  stages: result.stages.map((item) => ({
+                    stage: item.stage,
+                    status: item.status,
+                    summary: item.summary,
+                  })),
+                  skipped: result.skipped,
                   summary: result.summary,
                 }),
               },

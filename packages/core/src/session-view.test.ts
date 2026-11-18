@@ -117,6 +117,7 @@ describe('createSessionView', () => {
       delegations: [],
       memoryProposals: [],
       reviewLoops: [],
+      pipelineRuns: [],
     })
   })
 })
@@ -1557,6 +1558,25 @@ describe('reduceSession：审查循环（M7-07）', () => {
     ])
   })
 
+  it('同一轮里的两段循环互不影响', () => {
+    const ev = stream()
+    const view = reduceAll([
+      round(ev, 'rv1', 1),
+      round(ev, 'rv3', 1),
+      ev('team.review.completed', {
+        reviewId: 'rv3',
+        status: 'exhausted',
+        rounds: 1,
+        summary: '放弃',
+      }),
+    ])
+    expect(view.reviewLoops.map((loop) => [loop.reviewId, loop.rounds.length])).toEqual([
+      ['rv1', 1],
+      ['rv3', 1],
+    ])
+    expect(view.reviewLoops[1]?.status).toBe('exhausted')
+  })
+
   it('第一轮就失败时完成事件仍留下这段循环', () => {
     const ev = stream()
     const view = reduceAll([
@@ -1575,6 +1595,101 @@ describe('reduceSession：审查循环（M7-07）', () => {
         rounds: [],
         status: 'failed',
         summary: 'maker 失败',
+      },
+    ])
+  })
+})
+
+describe('reduceSession：流水线（M7-08）', () => {
+  const stage = (
+    ev: ReturnType<typeof stream>,
+    pipelineId: string,
+    name: string,
+    status = 'completed',
+  ) =>
+    ev(
+      'team.pipeline.stage',
+      {
+        pipelineId,
+        stage: name,
+        agentRunId: `run-${name}`,
+        status: status as 'completed',
+        summary: `${name} 完成`,
+      },
+      { turnId: 't1' },
+    )
+
+  it('按完成顺序累积阶段，重复阶段只记一次，完成事件补上结局与跳过项', () => {
+    const ev = stream()
+    const view = reduceAll([
+      stage(ev, 'pl1', 'build'),
+      stage(ev, 'pl1', 'build'),
+      stage(ev, 'pl1', 'test'),
+      ev(
+        'team.pipeline.completed',
+        { pipelineId: 'pl1', status: 'failed', stages: 2, skipped: ['docs'], summary: 'test 失败' },
+        { turnId: 't1' },
+      ),
+    ])
+    expect(view.pipelineRuns).toEqual([
+      {
+        pipelineId: 'pl1',
+        runId: RUN,
+        turnId: 't1',
+        seq: 1,
+        stages: [
+          { stage: 'build', agentRunId: 'run-build', status: 'completed', summary: 'build 完成' },
+          { stage: 'test', agentRunId: 'run-test', status: 'completed', summary: 'test 完成' },
+        ],
+        status: 'failed',
+        skipped: ['docs'],
+        summary: 'test 失败',
+      },
+    ])
+  })
+
+  it('并行的两条流水线互不影响，没有摘要时不写 summary', () => {
+    const ev = stream()
+    const bare = (pipelineId: string, name: string) =>
+      ev(
+        'team.pipeline.stage',
+        { pipelineId, stage: name, agentRunId: `run-${name}`, status: 'completed' },
+        { turnId: 't1' },
+      )
+    const view = reduceAll([
+      bare('pl3', 'a'),
+      bare('pl4', 'b'),
+      ev(
+        'team.pipeline.completed',
+        { pipelineId: 'pl3', status: 'completed', stages: 1, skipped: [] },
+        { turnId: 't1' },
+      ),
+    ])
+    expect(view.pipelineRuns.map((run) => [run.pipelineId, run.stages, run.summary])).toEqual([
+      ['pl3', [{ stage: 'a', agentRunId: 'run-a', status: 'completed' }], undefined],
+      ['pl4', [{ stage: 'b', agentRunId: 'run-b', status: 'completed' }], undefined],
+    ])
+  })
+
+  it('一个阶段都没跑时完成事件仍留下这条流水线', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev(
+        'team.pipeline.completed',
+        { pipelineId: 'pl2', status: 'failed', stages: 0, skipped: ['a'], summary: '阶段非法' },
+        { turnId: 't1' },
+      ),
+    ])
+    expect(view.pipelineRuns).toEqual([
+      {
+        pipelineId: 'pl2',
+        runId: RUN,
+        turnId: 't1',
+        seq: 1,
+        stages: [],
+        status: 'failed',
+        skipped: ['a'],
+        summary: '阶段非法',
       },
     ])
   })
