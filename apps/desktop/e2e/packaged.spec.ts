@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import { startPackagedApp } from './packaged-app.js'
+import { APP_VERSION } from './version.js'
 
 test('已打包应用启动、读取构建信息并创建项目会话', async () => {
   const userData = mkdtempSync(path.join(tmpdir(), 'cairn-packaged-e2e-'))
@@ -49,7 +50,7 @@ test('已打包应用启动、读取构建信息并创建项目会话', async ()
     expect(info).toMatchObject({
       ok: true,
       result: {
-        version: '0.1.0',
+        version: APP_VERSION,
         appId: 'com.cairn.desktop',
         packaged: true,
         channel: 'beta',

@@ -10,6 +10,7 @@ import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
 import { createSession, projectDir, sendPrompt } from './session.js'
 import { freeLoopbackPort, startUpdateSource, useDevUpdateConfig } from './update-source.js'
+import { APP_VERSION } from './version.js'
 
 const ARTIFACTS = path.resolve(import.meta.dirname, '../../../.cache/cairn-visual-check/update')
 mkdirSync(ARTIFACTS, { recursive: true })
@@ -35,7 +36,7 @@ async function openUpdateSettings(window: Page): Promise<void> {
   const nav = window.getByRole('navigation', { name: '设置分类' })
   await nav.getByRole('button', { name: /^更新/ }).click()
   await expect(window.getByRole('heading', { name: '更新', level: 2 })).toBeVisible()
-  await expect(window.getByText('v0.1.0')).toBeVisible()
+  await expect(window.getByText(`v${APP_VERSION}`)).toBeVisible()
 }
 
 /** 通过设置页切换配色，确保界面真正应用（直接改主进程设置不会刷新 store）。 */
@@ -64,10 +65,14 @@ test('设置页完成检查、下载，并显示重启确认', async ({ launch }
     await openUpdateSettings(window)
 
     await window.getByRole('button', { name: '检查更新' }).click()
-    await expect(window.getByText('新版本 0.1.1 可以下载。')).toBeVisible({ timeout: 30_000 })
+    await expect(window.getByText(`新版本 ${source.version} 可以下载。`)).toBeVisible({
+      timeout: 30_000,
+    })
 
     await window.getByRole('button', { name: '下载更新' }).click()
-    await expect(window.getByText('0.1.1 已下载并通过校验，可以重启安装。')).toBeVisible({
+    await expect(
+      window.getByText(`${source.version} 已下载并通过校验，可以重启安装。`),
+    ).toBeVisible({
       timeout: 90_000,
     })
     await expect(window.getByText(/unsigned beta/)).toBeVisible()
@@ -78,7 +83,7 @@ test('设置页完成检查、下载，并显示重启确认', async ({ launch }
 
     await window.getByRole('button', { name: '重启安装' }).click()
     const dialog = window.getByRole('dialog')
-    await expect(dialog.getByText('安装 0.1.1 并重启？')).toBeVisible()
+    await expect(dialog.getByText(`安装 ${source.version} 并重启？`)).toBeVisible()
     await expect(dialog.getByText(/这个版本没有可验证的发布者签名/)).toBeVisible()
     await window.screenshot({ path: path.join(ARTIFACTS, 'update-restart-dialog-light.png') })
     await dialog.getByRole('button', { name: '稍后' }).click()
@@ -141,7 +146,9 @@ test('有任务运行时重启被阻止', async ({ launch, userData }) => {
     await request<UpdateStatus>(window, 'update.check', { force: true })
     await request<UpdateStatus>(window, 'update.download', {})
     await openUpdateSettings(window)
-    await expect(window.getByText('0.1.1 已下载并通过校验，可以重启安装。')).toBeVisible()
+    await expect(
+      window.getByText(`${source.version} 已下载并通过校验，可以重启安装。`),
+    ).toBeVisible()
     await expect(window.getByText('还有任务在运行；完成或停止后再重启安装。')).toBeVisible()
     const restart = window.getByRole('button', { name: '重启安装' })
     await expect(restart).toBeDisabled()
@@ -180,7 +187,9 @@ test('检查失败后可以在同一个更新源重试', async ({ launch }) => {
 
     source = await startUpdateSource({ port })
     await window.getByRole('button', { name: '重试' }).click()
-    await expect(window.getByText('新版本 0.1.1 可以下载。')).toBeVisible({ timeout: 60_000 })
+    await expect(window.getByText(`新版本 ${source.version} 可以下载。`)).toBeVisible({
+      timeout: 60_000,
+    })
   } finally {
     removeDevConfig()
     await source?.close()

@@ -2,6 +2,7 @@
  * 关于页（M5-01）：`app.info` 与设置页展示同一份版本、通道与构建信息。
  */
 import { expect, test } from './app.js'
+import { APP_VERSION } from './version.js'
 
 test('关于页显示版本、通道与构建信息', async ({ launch }) => {
   const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
@@ -26,7 +27,7 @@ test('关于页显示版本、通道与构建信息', async ({ launch }) => {
   }
   expect(response.ok).toBe(true)
   expect(response.result).toMatchObject({
-    version: '0.1.0',
+    version: APP_VERSION,
     channel: 'beta',
     appId: 'com.cairn.desktop',
     packaged: false,
@@ -37,7 +38,7 @@ test('关于页显示版本、通道与构建信息', async ({ launch }) => {
   const nav = window.getByRole('navigation', { name: '设置分类' })
   await nav.getByRole('button', { name: /^关于 Cairn/ }).click()
   await expect(window.getByRole('heading', { name: '关于 Cairn', level: 2 })).toBeVisible()
-  await expect(window.getByText('0.1.0')).toBeVisible()
+  await expect(window.getByText(APP_VERSION)).toBeVisible()
   await expect(window.getByText('Beta 测试版')).toBeVisible()
   await expect(window.getByText('开发模式')).toBeVisible()
 })
