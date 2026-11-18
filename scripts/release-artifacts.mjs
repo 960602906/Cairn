@@ -33,11 +33,18 @@ import {
   readSigningConfig,
   signatureSummary,
 } from '@cairn/release-tools'
+import {
+  PLATFORM_NOTES_SCHEMA_VERSION,
+  readJson,
+  sha256,
+  writeChecksums,
+} from './release-files.mjs'
+
+export { PLATFORM_NOTES_SCHEMA_VERSION, readJson, sha256, writeChecksums }
 
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..', 'apps/desktop')
 export const PRODUCT_NAME = 'Cairn'
 export const PROVENANCE_SCHEMA_VERSION = 1
-export const PLATFORM_NOTES_SCHEMA_VERSION = 1
 export const RELEASE_PLATFORMS = ['windows', 'mac', 'linux']
 
 /**
@@ -146,27 +153,6 @@ export function platformSigningSummary(platform, env = process.env) {
   if (platform === 'windows') return signatureSummary(readSigningConfig(env))
   if (platform === 'mac') return macSignatureSummary(readMacSigningConfig(env))
   return { mode: 'none', integrity: 'sha256+https' }
-}
-
-/**
- * @param {string} file
- * @returns {string}
- */
-export function sha256(file) {
-  return createHash('sha256').update(readFileSync(file)).digest('hex')
-}
-
-/**
- * 读取 JSON 对象；不是对象时抛出。
- * @param {string} file
- * @returns {Record<string, any>}
- */
-export function readJson(file) {
-  const parsed = JSON.parse(readFileSync(file, 'utf8'))
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${file} is not a JSON object`)
-  }
-  return parsed
 }
 
 /**
@@ -288,23 +274,32 @@ export function parseUpdateMetadata(metadata) {
 
 /**
  * 校验更新元数据与产物一致；返回问题列表。
+ *
+ * electron-builder 26 会把同平台的全部产物写进元数据 `files`（macOS 同时列 dmg，
+ * Linux 同时列 deb），但自动更新只使用 zip 与 AppImage。`allowedExtra` 列出这些
+ * 已知的非更新载体，允许它们出现；`files` 中的文件仍逐个校验哈希与大小。
+ *
  * @param {{
  *   metadata: string;
  *   version: string;
  *   files: readonly { name: string; sha512: string; size: number }[];
+ *   allowedExtra?: readonly string[];
  * }} input
  * @returns {string[]}
  */
-export function validateUpdateMetadataFiles({ metadata, version, files }) {
+export function validateUpdateMetadataFiles({ metadata, version, files, allowedExtra = [] }) {
   const parsed = parseUpdateMetadata(metadata)
   const problems = []
   if (parsed.version !== version) problems.push('update metadata version does not match the build')
   const expected = new Map(files.map((file) => [file.name, file]))
+  const extras = new Set(allowedExtra)
   const seen = new Set()
   for (const entry of parsed.files) {
     const file = expected.get(entry.url)
     if (file === undefined) {
-      problems.push(`update metadata references an unexpected file: ${entry.url}`)
+      if (!extras.has(entry.url)) {
+        problems.push(`update metadata references an unexpected file: ${entry.url}`)
+      }
       continue
     }
     seen.add(entry.url)
@@ -324,18 +319,6 @@ export function validateUpdateMetadataFiles({ metadata, version, files }) {
     problems.push('update metadata top-level sha512 does not match the primary file')
   }
   return problems
-}
-
-/**
- * 写入 `SHA256SUMS`（`<hex>  <file name>`），返回行数。
- * @param {{ directory: string; files: readonly string[] }} input
- * @returns {number}
- */
-export function writeChecksums({ directory, files }) {
-  const names = [...new Set(files.map((file) => path.basename(file)))].sort()
-  const lines = names.map((name) => `${sha256(path.join(directory, name))}  ${name}`)
-  writeFileSync(path.join(directory, 'SHA256SUMS'), `${lines.join('\n')}\n`)
-  return names.length
 }
 
 /**
@@ -679,6 +662,7 @@ export function releaseArtifacts({
     metadata: readFileSync(builderMetadata, 'utf8'),
     version: releaseVersion,
     files: updatable,
+    allowedExtra: artifactNames.filter((name) => !updatableNames.includes(name)),
   })
   if (problems.length > 0) {
     throw new Error(problems.map((problem) => `${spec.builderMetadata}: ${problem}`).join('; '))

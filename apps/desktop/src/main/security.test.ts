@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildContentSecurityPolicy,
@@ -81,7 +86,51 @@ describe('isAppUrl', () => {
     expect(isAppUrl('https://evil.example/', devPolicy)).toBe(false)
     expect(isAppUrl('http://localhost:5173/', { ...policy, devServerUrl: '::bad' })).toBe(false)
   })
+
+  it('rejects file URLs whose path cannot be decoded', () => {
+    expect(isAppUrl('file:///C:/app%2Fout/renderer/index.html', policy)).toBe(false)
+  })
+
+  it('treats aliases of the renderer file as the same page', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'cairn-security-'))
+    try {
+      const rendererDir = path.join(root, 'renderer-directory')
+      mkdirSync(rendererDir)
+      const rendererFile = path.join(rendererDir, 'index.html')
+      writeFileSync(rendererFile, '<html></html>')
+      const rendererUrl = pathToFileURL(rendererFile).href
+
+      const alias = path.join(root, 'renderer-alias')
+      if (process.platform === 'win32') {
+        // Chromium 报告的页面可能用 8.3 短路径，主进程入口用长路径（或反过来）。
+        const shortName = shortWindowsPath(rendererFile)
+        expect(isAppUrl(pathToFileURL(shortName).href, { rendererUrl })).toBe(true)
+        expect(isAppUrl(rendererUrl, { rendererUrl: pathToFileURL(shortName).href })).toBe(true)
+      } else {
+        symlinkSync(rendererDir, alias, 'dir')
+        const aliasUrl = pathToFileURL(path.join(alias, 'index.html')).href
+        expect(isAppUrl(aliasUrl, { rendererUrl })).toBe(true)
+        expect(isAppUrl(rendererUrl, { rendererUrl: aliasUrl })).toBe(true)
+      }
+
+      const sibling = path.join(root, 'other.html')
+      writeFileSync(sibling, '<html></html>')
+      expect(isAppUrl(pathToFileURL(sibling).href, { rendererUrl })).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
+
+/** 用 `cmd` 的 `%~sI` 取 Windows 8.3 短路径；卷上没有短名时返回原路径。 */
+function shortWindowsPath(file: string): string {
+  const result = spawnSync(`for %I in ("${file}") do @echo %~sI`, {
+    shell: true,
+    encoding: 'utf8',
+  })
+  const short = result.stdout.trim()
+  return short === '' ? file : short
+}
 
 describe('isExternalUrl', () => {
   it('allows http and https only', () => {

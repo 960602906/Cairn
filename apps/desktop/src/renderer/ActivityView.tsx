@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   Square,
   Terminal,
+  Wrench,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,7 +23,9 @@ import type {
   ActivityRunning,
   AgentDefinitionRef,
   AgentSummary,
+  AutoFixJob,
   BackgroundCommand,
+  PullRequestWatch,
 } from '@cairn/protocol'
 import { translateError, type TFunction } from '@cairn/i18n'
 import { agentName } from './agents/model.js'
@@ -277,6 +280,67 @@ function CompletedRow({
   )
 }
 
+function autoFixTone(status: AutoFixJob['status']): string {
+  if (status === 'passed') return 'bg-ok-soft text-ok'
+  if (status === 'gave_up' || status === 'failed') return 'bg-danger-soft text-danger'
+  if (status === 'cancelled') return 'bg-sunk text-fg2'
+  if (status === 'queued') return 'bg-sunk2 text-muted'
+  return 'bg-accent-soft text-accent'
+}
+
+function AutoFixRow({
+  job,
+  watch,
+  onOpen,
+}: {
+  readonly job: AutoFixJob
+  readonly watch: PullRequestWatch
+  readonly onOpen: (sessionId: string) => void
+}) {
+  const { t, i18n } = useTranslation('session')
+  const sessionId = job.sessionId
+  return (
+    <article
+      aria-label={t('activity.autoFixItem', { repo: watch.repo, number: watch.prNumber })}
+      className="flex items-start gap-2 rounded-card bg-raise p-3 shadow-1"
+    >
+      <Wrench aria-hidden className="mt-0.5 size-4 shrink-0 text-fg2" />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h4 className="min-w-0 truncate text-ui font-medium text-fg">
+            {watch.repo}#{watch.prNumber}
+          </h4>
+          <span className={cn('rounded-[5px] px-1.5 py-0.5 text-[11px]', autoFixTone(job.status))}>
+            {t(`autofix.job.status.${job.status}`, { ns: 'settings' })}
+          </span>
+        </div>
+        <p className="mt-1 truncate text-note text-fg2">
+          {t('activity.autoFixTrigger', {
+            trigger: t(`autofix.trigger.${job.trigger}`, { ns: 'settings' }),
+          })}
+          {' · '}
+          {t('activity.autoFixAttempt', { attempt: job.attempt, max: watch.maxAttempts })}
+        </p>
+        <time
+          dateTime={new Date(job.updatedAt).toISOString()}
+          className="mt-1 block text-note text-faint"
+        >
+          {t('activity.updatedAt', { time: timeText(job.updatedAt, i18n.language) })}
+        </time>
+      </div>
+      {sessionId !== undefined && (
+        <button
+          type="button"
+          onClick={() => onOpen(sessionId)}
+          className="flex h-7 shrink-0 items-center rounded-item bg-sunk px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          {t('activity.view')}
+        </button>
+      )}
+    </article>
+  )
+}
+
 function CommandRow({ command }: { readonly command: BackgroundCommand }) {
   const { t, i18n } = useTranslation('session')
   const output = useSessionStore((state) => state.commandOutputs[command.commandId])
@@ -392,13 +456,16 @@ export function ActivityContent({
   const commands = useSessionStore((state) => state.commands)
   const refreshCommands = useSessionStore((state) => state.refreshCommands)
   const resolveActivity = useSessionStore((state) => state.resolveActivity)
+  const autofix = useSessionStore((state) => state.autofix)
+  const refreshAutofix = useSessionStore((state) => state.refreshAutofix)
   const agents = useSessionStore((state) => state.agents) ?? []
   const [busy, setBusy] = useState<string | undefined>()
 
   useEffect(() => {
     void refreshActivity()
     void refreshCommands()
-  }, [refreshActivity, refreshCommands])
+    void refreshAutofix()
+  }, [refreshActivity, refreshCommands, refreshAutofix])
 
   const decide = async (
     decision: 'allow_once' | 'allow_session' | 'deny',
@@ -413,9 +480,16 @@ export function ActivityContent({
   const approvals = activity?.approvals ?? []
   const running = activity?.running ?? []
   const completed = activity?.completed ?? []
+  const watches = autofix?.watches ?? []
+  const autoFixRows = (autofix?.jobs ?? []).flatMap((job) => {
+    const watch = watches.find((item) => item.watchId === job.watchId)
+    return watch === undefined ? [] : [{ job, watch }]
+  })
+  const showAutoFix = watches.length > 0 || autoFixRows.length > 0
   const empty =
     activity !== undefined &&
-    approvals.length + running.length + completed.length + commands.length === 0
+    approvals.length + running.length + completed.length + commands.length + autoFixRows.length ===
+      0
   return (
     <div
       className={cn(
@@ -520,6 +594,27 @@ export function ActivityContent({
               ))
             )}
           </Section>
+
+          {showAutoFix && (
+            <Section
+              title={t('activity.autoFixSection')}
+              label={t('activity.autoFixSection')}
+              count={autoFixRows.length}
+            >
+              {autofix?.paused === true && (
+                <p className="text-note text-muted">
+                  {t('autofix.watch.paused', { ns: 'settings' })}
+                </p>
+              )}
+              {autoFixRows.length === 0 ? (
+                <p className="text-note text-faint">{t('activity.noneAutoFix')}</p>
+              ) : (
+                autoFixRows.map(({ job, watch }) => (
+                  <AutoFixRow key={job.jobId} job={job} watch={watch} onOpen={onOpenSession} />
+                ))
+              )}
+            </Section>
+          )}
 
           <Section
             title={t('activity.commandsSection')}

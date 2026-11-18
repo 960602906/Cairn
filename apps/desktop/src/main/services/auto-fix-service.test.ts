@@ -50,6 +50,7 @@ let root: string
 let storage: Storage
 let events: ReturnType<typeof createSessionEventService>
 let prompt: ReturnType<typeof vi.fn>
+let abort: ReturnType<typeof vi.fn>
 let gitRun: ReturnType<typeof vi.fn>
 let pulls: ReturnType<typeof vi.fn>
 let logs: ReturnType<typeof vi.fn>
@@ -73,6 +74,7 @@ function setup(
   storage = createMemoryStorage({ now: () => clock })
   events = createSessionEventService({ storage })
   prompt = vi.fn(() => ({ messageId: 'm1' }))
+  abort = vi.fn(async () => undefined)
   gitRun = vi.fn(async () => gitResult())
   pulls = vi.fn(async () => overrides.pull ?? PULL)
   logs = vi.fn(async () => ({ text: 'TypeError: boom', truncated: false }))
@@ -84,7 +86,7 @@ function setup(
     checkLog: logs,
     reviewComments: comments,
   } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>
-  const sessions = { prompt } as unknown as Pick<SessionManager, 'prompt'>
+  const sessions = { prompt, abort } as unknown as Pick<SessionManager, 'prompt' | 'abort'>
   const service = createAutoFixService({
     storage,
     events,
@@ -484,6 +486,57 @@ describe('auto-fix service', () => {
     expect(storage.autoFix.jobs.list()).toHaveLength(1)
   })
 
+  it('cancels active repairs when paused and gives the attempt back', () => {
+    const service = seedWatch(setup())
+    storage.autoFix.jobs.create({
+      jobId: 'j1',
+      watchId: 'w1',
+      trigger: 'ci',
+      signature: 'abcdef1234567890:test',
+      status: 'running',
+      attempt: 2,
+      sessionId: 's1',
+    })
+    storage.autoFix.watches.update('w1', { attempts: 2, lastSignature: 'abcdef1234567890:test' })
+    const listener = vi.fn()
+    service.subscribe(listener)
+
+    service.setPaused({ paused: true })
+
+    const job = storage.autoFix.jobs.get('j1')!
+    expect(job.status).toBe('cancelled')
+    expect(job.detail).toBe('paused')
+    const watch = storage.autoFix.watches.get('w1')!
+    expect(watch.attempts).toBe(1)
+    expect(watch.lastSignature).toBeUndefined()
+    expect(abort).toHaveBeenCalledWith({ sessionId: 's1' })
+    expect(listener).toHaveBeenCalled()
+  })
+
+  it('does not open a session when paused while preparing the worktree', async () => {
+    const service = seedWatch(setup())
+    gitRun.mockImplementation(async (args: string[]) => {
+      if (args.includes('fetch')) service.setPaused({ paused: true })
+      return gitResult()
+    })
+
+    await service.poll()
+
+    expect(storage.autoFix.jobs.list().map((job) => job.status)).toEqual(['cancelled'])
+    expect(storage.autoFix.watches.get('w1')!.attempts).toBe(0)
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('polls right away when resuming', async () => {
+    const service = seedWatch(setup())
+    service.setPaused({ paused: true })
+    expect(storage.autoFix.jobs.list()).toEqual([])
+
+    service.setPaused({ paused: false })
+
+    await vi.waitFor(() => expect(storage.autoFix.jobs.list()).toHaveLength(1))
+  })
+
   it('re-enables a watch and re-evaluates the same commit', async () => {
     const service = seedWatch(setup())
     service.updateWatch({ watchId: 'w1', enabled: false })
@@ -754,7 +807,10 @@ describe('auto-fix service', () => {
       checkLog: vi.fn(),
       reviewComments: vi.fn(async () => []),
     } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>
-    const sessions = { prompt: vi.fn() } as unknown as Pick<SessionManager, 'prompt'>
+    const sessions = { prompt: vi.fn(), abort: vi.fn() } as unknown as Pick<
+      SessionManager,
+      'prompt' | 'abort'
+    >
     const git = { binary: 'git', run: vi.fn(async () => gitResult()) } as unknown as GitRunner
     const service = createAutoFixService({
       storage,
@@ -793,7 +849,10 @@ describe('auto-fix service', () => {
         checkLog: logs,
         reviewComments: vi.fn(async () => []),
       } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>
-      const sessions = { prompt } as unknown as Pick<SessionManager, 'prompt'>
+      const sessions = { prompt, abort: vi.fn() } as unknown as Pick<
+        SessionManager,
+        'prompt' | 'abort'
+      >
       const service = createAutoFixService({
         storage,
         events,
@@ -1103,7 +1162,7 @@ describe('auto-fix git tools (M8-03)', () => {
         checkLog: logs,
         reviewComments: vi.fn(async () => []),
       } as unknown as Pick<GithubService, 'pullRequest' | 'checkLog' | 'reviewComments'>,
-      sessions: { prompt } as unknown as Pick<SessionManager, 'prompt'>,
+      sessions: { prompt, abort: vi.fn() } as unknown as Pick<SessionManager, 'prompt' | 'abort'>,
       git: { binary: 'git', run: gitRun } as unknown as GitRunner,
       worktreesRoot: root,
       githubToken: async () => Promise.reject(new Error('cannot read the key')),

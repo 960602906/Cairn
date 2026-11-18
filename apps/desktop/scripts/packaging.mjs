@@ -388,7 +388,9 @@ export function runElectronBuilder({
   if (platform === 'darwin') args.push(...macSigningBuilderArgs(macSigning))
   if (target === 'dir') args.push('--dir')
   else if (target === 'nsis') args.push('--win', 'nsis')
-  else if (target === 'mac') args.push('--mac', 'dmg', 'zip')
+  // 命令行的目标名会覆盖配置里的 arch 列表，默认只构建宿主架构；这里显式要求两个架构，
+  // 否则 Apple Silicon 构建机只会产出 arm64，发布校验会因缺 x64 而失败（ADR-0041）。
+  else if (target === 'mac') args.push('--mac', 'dmg', 'zip', '--x64', '--arm64')
   else args.push('--linux', 'AppImage', 'deb')
   const result = runner(process.execPath, args, {
     cwd: desktopRoot,

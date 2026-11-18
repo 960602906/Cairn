@@ -8,6 +8,9 @@
  *
  * 这里只有纯函数与对结构化接口的操作，便于单元测试；Electron 对象由主进程入口传入。
  */
+import { realpathSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export interface SecureWebPreferences {
   readonly preload: string
@@ -77,6 +80,40 @@ function parse(url: string): URL | undefined {
   }
 }
 
+/**
+ * 把 `file:` URL 变成可比较的本地路径。
+ *
+ * Windows 上同一份文件可能以长路径或 8.3 短路径（`C:\Users\RUNNER~1\...`）出现：Chromium
+ * 报告的页面 URL 与主进程用 `import.meta.dirname` 拼出的入口各用其一，直接比较 pathname 会
+ * 把同一页面判成两个。这里解析符号链接与短名，并在 win32 上忽略大小写。
+ *
+ * 页面位于 `app.asar` 内时整条路径可能无法 `realpath`，因此逐级向上找到磁盘上真实存在的
+ * 祖先目录再拼回剩余部分；祖先目录都解析不了时退回绝对路径。
+ */
+function canonicalFilePath(url: URL): string | undefined {
+  let file: string
+  try {
+    file = fileURLToPath(url)
+  } catch {
+    return undefined
+  }
+  const rest: string[] = []
+  let current = path.resolve(file)
+  for (;;) {
+    try {
+      current = realpathSync.native(current)
+      break
+    } catch {
+      const parent = path.dirname(current)
+      if (parent === current) break
+      rest.unshift(path.basename(current))
+      current = parent
+    }
+  }
+  const resolved = rest.length === 0 ? current : path.join(current, ...rest)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
 /** 是否是应用自己的页面（忽略查询参数与 hash）。 */
 export function isAppUrl(url: string, policy: NavigationPolicy): boolean {
   const target = parse(url)
@@ -86,12 +123,16 @@ export function isAppUrl(url: string, policy: NavigationPolicy): boolean {
     if (dev && target.origin === dev.origin && target.protocol.startsWith('http')) return true
   }
   const renderer = parse(policy.rendererUrl)
-  return (
-    renderer !== undefined &&
-    target.protocol === 'file:' &&
-    renderer.protocol === 'file:' &&
-    target.pathname === renderer.pathname
-  )
+  if (renderer === undefined || target.protocol !== 'file:' || renderer.protocol !== 'file:') {
+    return false
+  }
+  const targetPath = canonicalFilePath(target)
+  const rendererPath = canonicalFilePath(renderer)
+  // 不带盘符或含编码斜杠的 file URL 无法转成本地路径；此时退回逐字比较，与旧行为一致。
+  if (targetPath === undefined || rendererPath === undefined) {
+    return target.host === renderer.host && target.pathname === renderer.pathname
+  }
+  return targetPath === rendererPath
 }
 
 /** 可以交给系统浏览器打开的地址。 */

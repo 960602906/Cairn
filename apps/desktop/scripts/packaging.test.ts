@@ -595,7 +595,8 @@ describe('electron-builder invocation', () => {
       },
     })
     const [, args, options] = runner.mock.calls[0]!
-    expect(args).toEqual(expect.arrayContaining(['--mac', 'dmg', 'zip']))
+    // 命令行的目标名会覆盖配置中的 arch 列表，必须显式要求两个架构。
+    expect(args).toEqual(expect.arrayContaining(['--mac', 'dmg', 'zip', '--x64', '--arm64']))
     expect(args).toEqual(
       expect.arrayContaining([
         '--config.mac.identity=Developer ID Application: Cairn (TEAMID)',

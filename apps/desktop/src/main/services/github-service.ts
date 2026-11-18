@@ -4,7 +4,8 @@
  * - 令牌经 `LocalKeyStore`（ADR-0010）加密保存，明文只在本进程的请求里使用；
  * - 不轮询、不订阅、不写回：轮询由自动修复服务负责，推送经受控 Git 工具在主进程执行（M8-03）；
  * - 网络错误统一映射成 `github.*` 错误码，界面按当前语言翻译；
- * - 不在日志或错误参数里带令牌，也不把完整响应体塞进错误。
+ * - 不在日志或错误参数里带令牌，也不把完整响应体塞进错误；
+ * - 端到端测试用 `CAIRN_GITHUB_API_URL` 指向本机假服务（仅开发构建，只接受 HTTPS 或回环 HTTP）。
  *
  * 不依赖 Electron：`fetch` 与凭据存储都由调用方注入，单元测试用假实现。
  */
@@ -33,6 +34,8 @@ export interface GithubServiceOptions {
   readonly credentials: GithubCredentials
   /** 默认使用全局 `fetch`。 */
   readonly fetchImpl?: FetchLike
+  /** API 根地址；默认 GitHub 公共 API。端到端测试用 `CAIRN_GITHUB_API_URL` 指向本机假服务。 */
+  readonly apiBase?: string
 }
 
 export interface GithubService {
@@ -46,6 +49,26 @@ export interface GithubService {
 }
 
 const API = 'https://api.github.com'
+
+/**
+ * 校验并归一化测试用的 API 根地址（M8-05）：只接受 HTTPS 或回环地址上的 HTTP，
+ * 其它值忽略，免得把令牌发到别处。只在开发构建里由启动代码调用。
+ */
+export function normalizeGithubApiBase(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  if (trimmed === undefined || trimmed === '') return undefined
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    return undefined
+  }
+  const loopback =
+    url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]'
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) return undefined
+  if (url.username !== '' || url.password !== '') return undefined
+  return url.origin
+}
 
 /** 详情地址里的 Actions 任务 / 运行 id。 */
 const JOB_IN_URL = /\/job\/(\d+)/
@@ -169,6 +192,7 @@ function decodeLog(bytes: Uint8Array): string {
 export function createGithubService(options: GithubServiceOptions): GithubService {
   const { credentials } = options
   const fetchImpl: FetchLike = options.fetchImpl ?? ((input, init) => fetch(input, init))
+  const api = options.apiBase === undefined ? API : options.apiBase.replace(/\/+$/, '')
   /** 连接后记住登录名；进程重启后第一次 `status` 再向 GitHub 取。 */
   let login: string | undefined
 
@@ -183,7 +207,7 @@ export function createGithubService(options: GithubServiceOptions): GithubServic
   async function call(path: string, token: string): Promise<Response> {
     let response: Response
     try {
-      response = await fetchImpl(`${API}${path}`, {
+      response = await fetchImpl(`${api}${path}`, {
         headers: {
           accept: 'application/vnd.github+json',
           authorization: `Bearer ${token}`,

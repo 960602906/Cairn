@@ -161,7 +161,9 @@ function addPlatformArtifacts(
       writeFileSync(path.join(target.dist, `Cairn-${VERSION}-${arch}.zip.blockmap`), 'blockmap')
     }
   }
-  const files = updatable.map((name) => {
+  // electron-builder 26 把同平台全部产物写进元数据（mac 含 dmg、Linux 含 deb），
+  // 更新载体排在前面；这里按同样的形状生成，才能覆盖真实产物。
+  const files = [...updatable, ...names.filter((name) => !updatable.includes(name))].map((name) => {
     const file = path.join(target.dist, name)
     return {
       name,
@@ -607,6 +609,23 @@ describe('release artifact assembly', () => {
       releaseDate: '2026-11-10T08:30:00.000Z',
     })
     expect(validateUpdateMetadataFiles({ metadata, version: VERSION, files })).toEqual([])
+
+    const withExtra = renderUpdateMetadataFiles({
+      version: VERSION,
+      files: [...files, { name: 'extra.dmg', sha512: 'ddd', size: 4 }],
+      releaseDate: '',
+    })
+    expect(validateUpdateMetadataFiles({ metadata: withExtra, version: VERSION, files })).toEqual([
+      'update metadata references an unexpected file: extra.dmg',
+    ])
+    expect(
+      validateUpdateMetadataFiles({
+        metadata: withExtra,
+        version: VERSION,
+        files,
+        allowedExtra: ['extra.dmg'],
+      }),
+    ).toEqual([])
 
     expect(
       validateUpdateMetadataFiles({
