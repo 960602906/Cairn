@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-18
+
+Beta 版本。Windows x64、macOS arm64/x64 与 Linux x64 的发布产物需通过发布流水线验证；未配置签名时 Windows/macOS 包将标注为 unsigned。
+
 ### Added
 
 - 工具步骤归组显示：一条助手消息中的工具调用自动归组，减少长回复视觉噪音；
@@ -66,6 +70,7 @@
 
 ### Changed
 
+- 模型供应商设置改为单栏：拉取的模型列表持久保存，与已配置模型合并显示并逐项启用；连接测试只测试已启用模型，低频设置按需展开（#201）。
 - 三栏布局重构：去掉图标栏，左栏可拖宽、可收起，会话详情收进右侧工作台，侧栏入口精简
   （#150、#153、#154）。
 - 输入框不再常驻「计划」开关，改为 `/plan` 指令与快捷键（#157）。
@@ -104,5 +109,6 @@
 - 单实例锁在打开数据库之前获取，避免两个实例同时写入。
 - 诊断包导出前统一脱敏用户目录、API Key 与令牌。
 
-[Unreleased]: https://github.com/960602906/Cairn/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/960602906/Cairn/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/960602906/Cairn/releases/tag/v0.1.1
 [0.1.0]: https://github.com/960602906/Cairn/releases/tag/v0.1.0
