@@ -525,6 +525,24 @@ function setup(
     diagnostics,
     sandbox,
     update,
+    github: {
+      status: vi.fn(async () => ({ connected: false })),
+      connect: vi.fn(async () => ({ connected: true, login: 'mrqin' })),
+      disconnect: vi.fn(async () => ({ connected: false })),
+      pullRequest: vi.fn(async () => ({
+        repo: 'o/r',
+        number: 1,
+        title: 'Fix the thing',
+        url: 'https://github.com/o/r/pull/1',
+        state: 'open' as const,
+        draft: false,
+        headRef: 'fix',
+        headSha: 'abcdef1234567890',
+        baseRef: 'main',
+        checks: [],
+      })),
+      checkLog: vi.fn(async () => ({ text: 'FAILED', truncated: false })),
+    },
     inspect,
     activity,
     backgroundCommands,
@@ -1469,6 +1487,22 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(pushed).toEqual([])
   })
 
+  it('routes GitHub connection requests to the service (M8-01)', async () => {
+    const { client } = setup()
+    await expect(client.request('github.status', {})).resolves.toEqual({ connected: false })
+    await expect(client.request('github.connect', { token: 'token' })).resolves.toEqual({
+      connected: true,
+      login: 'mrqin',
+    })
+    await expect(client.request('github.disconnect', {})).resolves.toEqual({ connected: false })
+    await expect(
+      client.request('github.pullRequest', { repo: 'o/r', number: 1 }),
+    ).resolves.toMatchObject({ repo: 'o/r', number: 1, title: 'Fix the thing' })
+    await expect(
+      client.request('github.checkLog', { repo: 'o/r', checkRunId: 3 }),
+    ).resolves.toEqual({ text: 'FAILED', truncated: false })
+  })
+
   it('passes protocol errors to the handler', async () => {
     setup()
     const onProtocolError = vi.fn()
@@ -1511,6 +1545,17 @@ describe('createRendererGateway: commands and lifecycle', () => {
       diagnostics,
       sandbox,
       update,
+      github: {
+        status: async () => ({ connected: false }),
+        connect: async () => ({ connected: true, login: 'mrqin' }),
+        disconnect: async () => ({ connected: false }),
+        pullRequest: async () => {
+          throw new Error('not used')
+        },
+        checkLog: async () => {
+          throw new Error('not used')
+        },
+      },
       inspect: {} as unknown as InspectCommands,
       activity: { subscribe: () => () => undefined } as unknown as ActivityCommands,
       backgroundCommands,

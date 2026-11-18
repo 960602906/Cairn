@@ -7,11 +7,12 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:https'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
+import { nextPatchVersion } from './version.js'
 
 const fixture = (name: string) => readFileSync(path.join(import.meta.dirname, 'fixtures', name))
 
 export interface UpdateSourceOptions {
-  /** 发布版本，默认 `0.1.1`。 */
+  /** 发布版本，默认比当前应用版本高一个补丁版本。 */
   readonly version?: string
   /** 固定端口（错误重试用例需要先失败、再在同一端口启动）；默认随机。 */
   readonly port?: number
@@ -31,7 +32,7 @@ function sha512(data: Buffer): string {
 export async function startUpdateSource(
   options: UpdateSourceOptions = {},
 ): Promise<LocalUpdateSource> {
-  const version = options.version ?? '0.1.1'
+  const version = options.version ?? nextPatchVersion()
   const name = `Cairn Setup ${version}.exe`
   const artifact = Buffer.concat([Buffer.from('MZ fake installer\n'), Buffer.alloc(128 * 1024, 7)])
   const digest = sha512(artifact)

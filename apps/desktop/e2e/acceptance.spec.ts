@@ -21,6 +21,7 @@ import type { UpdateStatus } from '@cairn/protocol'
 import { startMockModel } from '../scripts/mock-model.js'
 import { startUpdateSource } from './update-source.js'
 import { startPackagedApp } from './packaged-app.js'
+import { APP_VERSION } from './version.js'
 import {
   chatRequests,
   configureProvider,
@@ -123,7 +124,7 @@ test('已打包应用完成首次运行到诊断包的全流程验收', async ()
       commit: string
     }>(page, 'app.info', {})
     expect(info).toMatchObject({
-      version: '0.1.0',
+      version: APP_VERSION,
       appId: 'com.cairn.desktop',
       packaged: true,
       channel: 'beta',
@@ -202,12 +203,12 @@ test('已打包应用完成首次运行到诊断包的全流程验收', async ()
     await expect(request<UpdateStatus>(page, 'update.status', {})).resolves.toMatchObject({
       phase: 'idle',
       enabled: true,
-      currentVersion: '0.1.0',
+      currentVersion: APP_VERSION,
       channel: 'beta',
     })
     const checked = await request<UpdateStatus>(page, 'update.check', {})
     expect(checked.phase, JSON.stringify(checked)).toBe('available')
-    expect(checked.availableVersion).toBe('0.1.1')
+    expect(checked.availableVersion).toBe(source.version)
     const downloaded = await request<UpdateStatus>(page, 'update.download', {})
     expect(downloaded.phase, JSON.stringify(downloaded)).toBe('downloaded')
     expect(downloaded).toMatchObject({ requiresRestart: true, signatureVerified: false })

@@ -163,8 +163,17 @@ describe('SettingsPage', () => {
         .getAllByRole('button')
         .map((button) => button.textContent)
     expect(titles(groups[0]!)).toEqual(['通用与外观', '已归档的对话', '更新', '关于 Cairn'])
-    expect(titles(groups[1]!)).toEqual(['模型供应商', '技能', 'MCP 服务', '记忆'])
+    expect(titles(groups[1]!)).toEqual(['模型供应商', '自动修复', '技能', 'MCP 服务', '记忆'])
     expect(titles(groups[2]!)).toEqual(['权限与审批'])
+  })
+
+  it('opens the autofix section from the models group', async () => {
+    setup()
+    await openSettings()
+    const nav = screen.getByRole('navigation', { name: '设置分类' })
+    await userEvent.click(within(nav).getByRole('button', { name: '自动修复' }))
+    expect(await screen.findByRole('heading', { name: '自动修复' })).toBeTruthy()
+    expect(await screen.findByText('GitHub 连接')).toBeTruthy()
   })
 
   it('opens with Ctrl+, and leaves Esc to an open dialog', async () => {

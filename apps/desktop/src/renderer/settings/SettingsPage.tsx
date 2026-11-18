@@ -11,6 +11,7 @@ import {
   Brain,
   ChevronLeft,
   Cpu,
+  GitPullRequest,
   Info,
   Palette,
   PanelLeftClose,
@@ -23,6 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { CairnMark, IconButton, Kbd } from '../ui/index.js'
 import { ArchivedSessionsSettings } from './ArchivedSessionsSettings.js'
+import { AutofixSettings } from './AutofixSettings.js'
 import { GeneralSettings } from './GeneralSettings.js'
 import { AboutSettings } from './AboutSettings.js'
 import { McpSettings } from './McpSettings.js'
@@ -39,6 +41,7 @@ export type SettingsSection =
   | 'archived'
   | 'update'
   | 'providers'
+  | 'autofix'
   | 'skills'
   | 'mcp'
   | 'memory'
@@ -68,6 +71,7 @@ const GROUPS: readonly {
     group: 'modelCapabilities',
     sections: [
       { id: 'providers', icon: <Cpu /> },
+      { id: 'autofix', icon: <GitPullRequest /> },
       { id: 'skills', icon: <SkillGlyph /> },
       { id: 'mcp', icon: <McpGlyph /> },
       { id: 'memory', icon: <Brain /> },
@@ -249,6 +253,7 @@ export function SettingsContent({
           {section === 'archived' && <ArchivedSessionsSettings />}
           {section === 'update' && <UpdateSettings />}
           {section === 'providers' && <ProvidersSettings />}
+          {section === 'autofix' && <AutofixSettings />}
           {section === 'skills' && <SkillsSettings />}
           {section === 'mcp' && <McpSettings />}
           {section === 'memory' && <MemorySettings />}

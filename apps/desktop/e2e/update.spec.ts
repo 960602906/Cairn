@@ -11,6 +11,7 @@ import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
 import { createSession, projectDir, sendPrompt } from './session.js'
 import { startUpdateSource, useDevUpdateConfig } from './update-source.js'
+import { APP_VERSION } from './version.js'
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(
@@ -85,12 +86,12 @@ test('本地静态源：检查、下载，并在任务等待审批时阻止安�
     await expect(request<UpdateStatus>(window, 'update.status', {})).resolves.toMatchObject({
       phase: 'idle',
       enabled: true,
-      currentVersion: '0.1.0',
+      currentVersion: APP_VERSION,
       channel: 'beta',
     })
     const checked = await request<UpdateStatus>(window, 'update.check', {})
     expect(checked.phase, JSON.stringify(checked)).toBe('available')
-    expect(checked.availableVersion).toBe('0.1.1')
+    expect(checked.availableVersion).toBe(source.version)
     const downloaded = await request<UpdateStatus>(window, 'update.download', {})
     expect(downloaded.phase, JSON.stringify(downloaded)).toBe('downloaded')
     expect(downloaded).toMatchObject({ requiresRestart: true, signatureVerified: false })
