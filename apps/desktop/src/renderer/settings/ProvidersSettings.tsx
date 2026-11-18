@@ -137,18 +137,14 @@ function Logo({
   )
 }
 
-function Tag({ tone, children }: { tone?: 'accent' | 'warn' | 'ok'; children: ReactNode }) {
+const TAG_TONE = { ok: 'bg-ok-soft text-ok', warn: 'bg-warn-soft text-warn' } as const
+
+function Tag({ tone, children }: { tone: keyof typeof TAG_TONE; children: ReactNode }) {
   return (
     <span
       className={cn(
         'inline-flex h-[18px] items-center rounded-[5px] px-1.5 text-[11px] font-medium whitespace-nowrap',
-        tone === 'accent'
-          ? 'bg-accent-soft text-accent'
-          : tone === 'warn'
-            ? 'bg-warn-soft text-warn'
-            : tone === 'ok'
-              ? 'bg-ok-soft text-ok'
-              : 'bg-sunk2 text-fg2',
+        TAG_TONE[tone],
       )}
     >
       {children}
@@ -156,15 +152,12 @@ function Tag({ tone, children }: { tone?: 'accent' | 'warn' | 'ok'; children: Re
   )
 }
 
-function Status({ tone, children }: { tone: 'ok' | 'danger' | 'idle'; children: ReactNode }) {
+const STATUS_DOT = { ok: 'bg-ok', danger: 'bg-danger' } as const
+
+function Status({ tone, children }: { tone: keyof typeof STATUS_DOT; children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <i
-        className={cn(
-          'size-1.5 rounded-full',
-          tone === 'ok' ? 'bg-ok' : tone === 'danger' ? 'bg-danger' : 'bg-faint',
-        )}
-      />
+      <i className={cn('size-1.5 rounded-full', STATUS_DOT[tone])} />
       {children}
     </span>
   )

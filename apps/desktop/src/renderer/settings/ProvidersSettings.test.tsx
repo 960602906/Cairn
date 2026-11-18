@@ -440,6 +440,63 @@ describe('ProvidersSettings', () => {
     expect(within(card).getByText('my-model')).toBeTruthy()
   })
 
+  it('shows a cached model list and opens a fetched model by its row', async () => {
+    const cached: ProviderConfig = {
+      ...gateway,
+      catalog: [{ id: 'claude-y', displayName: 'Claude Y', contextWindow: 200_000 }],
+    }
+    const { request } = setup({ providers: [cached] })
+    await open()
+    const card = await editProvider(/^公司网关/)
+    // 上次拉取的结果直接显示，不用再请求一次
+    expect(within(card).getByText('Claude Y')).toBeTruthy()
+    expect(request).not.toHaveBeenCalledWith('provider.models', expect.anything())
+    expect(within(card).getByText('已启用 1 / 2 个模型')).toBeTruthy()
+
+    await userEvent.click(within(card).getByRole('button', { name: /claude-y/ }))
+    expect(within(card).getByText('已启用 2 / 2 个模型')).toBeTruthy()
+    expect(within(card).getByLabelText('上下文长度')).toBeTruthy()
+  })
+
+  it('summarizes a successful multi-model test without a latency', async () => {
+    setup({ providers: [deepseek] }, { 'provider.test': () => ({ ok: true }) })
+    await open()
+    const card = await editProvider(/^DeepSeek/)
+    await userEvent.click(within(card).getByRole('button', { name: '测试连接' }))
+    const bar = (await within(card).findByRole('status')).textContent ?? ''
+    expect(bar).toContain('2 个模型连接正常')
+    expect(bar).toContain('0 ms')
+  })
+
+  it('reports a single failed model', async () => {
+    setup(
+      { providers: [gateway] },
+      {
+        'provider.test': () => ({
+          ok: false,
+          latencyMs: 30,
+          error: { code: 'provider.network' },
+        }),
+      },
+    )
+    await open()
+    const card = await editProvider(/^公司网关/)
+    await userEvent.click(within(card).getByRole('button', { name: '测试连接' }))
+    const bar = (await within(card).findByRole('status')).textContent ?? ''
+    expect(bar).toContain('连接失败')
+    expect(bar).toContain('claude-x')
+  })
+
+  it('closes the editor with Escape without saving', async () => {
+    const { updates } = setup({ providers: [gateway] })
+    await open()
+    const card = await editProvider(/^公司网关/)
+    await userEvent.type(within(card).getByLabelText('名称'), '!')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑供应商' })).toBeNull())
+    expect(updates).toEqual([])
+  })
+
   it('shows a failed connection test and deletes the provider', async () => {
     const { updates } = setup(
       { providers: [deepseek, gateway] },
