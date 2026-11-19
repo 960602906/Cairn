@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-19
+
+Beta 版本。Windows x64、macOS arm64/x64 与 Linux x64 的发布产物由发布流水线构建；未配置签名时 Windows/macOS 包标注为 unsigned。
+
+### Added
+
+- 更新源支持公开仓库的 GitHub Releases：`CAIRN_UPDATE_URL` 写成
+  `https://github.com/<owner>/<repo>` 时，客户端直接读取 release 资产，不需要额外存储、
+  CDN 或令牌；beta 通道能检测到后续版本并显示更新按钮。
+
+### Changed
+
+- beta 版本也创建为正式 GitHub Release，Releases 页面与仓库侧栏直接显示可下载版本，
+  不再因为预发布标记而看起来没有发布。
+
 ## [0.1.2] - 2026-11-18
 
 Beta 版本。Windows x64、macOS arm64/x64 与 Linux x64 的发布产物需通过发布流水线验证；未配置签名时 Windows/macOS 包将标注为 unsigned。
