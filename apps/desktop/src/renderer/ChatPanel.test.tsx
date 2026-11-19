@@ -1115,8 +1115,8 @@ describe('ChatPanel', () => {
   it('streams the live reply and replaces it with the completed message once', async () => {
     const { open, emit } = setup({ history: RUNNING })
     await open()
-    // 运行中发送按钮仍在（发送会作为引导注入当前轮），只是没有输入时禁用
-    expect(sendButton()!.disabled).toBe(true)
+    // 发送与停止共用同一个按钮：运行中它是停止，不再单独出现发送键
+    expect(screen.queryByRole('button', { name: '发送' })).toBeNull()
     expect(stopButton()).toBeTruthy()
 
     emit(
@@ -1126,7 +1126,7 @@ describe('ChatPanel', () => {
     )
     const live = screen.getAllByRole('listitem').at(-1)!
     expect(live.getAttribute('aria-busy')).toBe('true')
-    expect(live.textContent).toBe('助手思考过程想想好的，')
+    expect(live.textContent).toBe('助手思考想想想想好的，')
 
     emit(state(15, 'thinking', 'tooling'))
 
@@ -1157,7 +1157,7 @@ describe('ChatPanel', () => {
       '你你好',
       '助手你好！',
       '你再说一次',
-      '助手思考过程想想好的，\n你好！[图片]已执行 1 个步骤',
+      '助手思考想想想想好的，\n你好！[图片]已执行 1 个步骤',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
     expect(stopButton()).toBeNull()
@@ -1591,8 +1591,10 @@ describe('ChatPanel', () => {
     // 排队或宿主启动中：还没有 turn.started
     expect(stopButton()).toBeTruthy()
     await userEvent.type(input(), '下一句')
-    // 运行中也能发送（作为引导注入当前轮）
-    expect(sendButton()).not.toBeNull()
+    // 发送与停止是同一个按钮：运行中它变成停止，发送仍可走 Enter（引导注入当前轮）
+    expect(screen.queryByRole('button', { name: '发送' })).toBeNull()
+    await userEvent.type(input(), '{Enter}')
+    expect(request.mock.calls.filter(([m]) => m === 'session.prompt')).toHaveLength(2)
     expect(store.getState().sessions[0]?.status).toBe('running')
     // 刷新列表时同样保留
     await act(() => store.getState().refreshSessions())
@@ -1604,7 +1606,7 @@ describe('ChatPanel', () => {
     expect(store.getState().awaitingTurn).toEqual({})
     emit(ev(12, 'turn.completed', { durationMs: 10 }, 't2'), state(13, 'thinking', 'completed'))
     expect(stopButton()).toBeNull()
-    expect(request.mock.calls.filter(([m]) => m === 'session.prompt')).toHaveLength(1)
+    expect(request.mock.calls.filter(([m]) => m === 'session.prompt')).toHaveLength(2)
   })
 
   it('cancels a queued prompt with the stop button', async () => {
@@ -1853,8 +1855,8 @@ describe('tool calls and undo turn', () => {
     })
     await open()
     // 已完成消息的工具步骤汇总默认收起，展开后再检查步骤本身。
-    await userEvent.click(screen.getByRole('button', { name: '已执行 1 个步骤' }))
-    expect(card().textContent).toBe('运行npm test完成 5ms')
+    await userEvent.click(screen.getByRole('button', { name: '思考中' }))
+    expect(card().textContent).toBe('运行 npm test完成 5ms')
     expect(card().dataset.status).toBe('completed')
     const row = within(card()).getByRole('button')
     expect(row.getAttribute('aria-expanded')).toBe('false')

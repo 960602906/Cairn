@@ -303,24 +303,30 @@ describe('ToolStep：ask_user', () => {
 })
 
 describe('ToolStep：完成态', () => {
-  it('完成后的节点是绿色品牌 Logo，不再显示对勾', () => {
+  it('完成后的节点是绿色对勾', () => {
     const { container } = step({ tool: tool({ status: 'completed' }) })
-    const node = container
-      .querySelector('section[data-status="completed"]')!
-      .querySelector('span[aria-hidden]')!
-    expect(node.className).toContain('text-ok')
-    expect(node.querySelector('svg')).toBeTruthy()
-    expect(container.querySelector('svg.lucide-check')).toBeNull()
+    const node = container.querySelector('section[data-status="completed"] svg.lucide-check')!
+    expect(node.getAttribute('class')).toContain('text-ok')
   })
 
-  it('失败节点使用红色品牌 Logo，不再显示红色 X', () => {
+  it('失败节点是红色叉', () => {
     const { container } = step({ tool: tool({ status: 'failed' }) })
-    const node = container
-      .querySelector('section[data-status="failed"]')!
-      .querySelector('span[aria-hidden]')!
-    expect(node.className).toContain('text-danger')
-    expect(node.querySelector('svg')).toBeTruthy()
-    expect(container.querySelector('svg.lucide-x')).toBeNull()
+    const node = container.querySelector('section[data-status="failed"] svg.lucide-x')!
+    expect(node.getAttribute('class')).toContain('text-danger')
+  })
+
+  it('执行中的节点是转圈的缺口圆', () => {
+    const { container } = step({ tool: tool({ status: 'running' }) })
+    const node = container.querySelector('section[data-status="running"] svg.lucide-loader-circle')!
+    expect(node.getAttribute('class')).toContain('animate-spin')
+    expect(node.getAttribute('class')).toContain('text-accent')
+  })
+
+  it('等待中的节点是空心圆', () => {
+    const { container } = step({ tool: tool({ status: 'requested' }) })
+    expect(
+      container.querySelector('section[data-status="requested"] svg.lucide-circle'),
+    ).toBeTruthy()
   })
 
   it('工具列表没有竖线', () => {

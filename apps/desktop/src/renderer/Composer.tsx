@@ -1274,29 +1274,28 @@ export function Composer({
                 open={contextOpen}
                 onOpenChange={setContextOpen}
               />
-              {active && (
+              {active ? (
                 <button
                   type="button"
                   aria-label={tc('action.stop')}
                   title={tc('action.stop')}
                   disabled={stopping || aborting}
                   onClick={() => void stop()}
-                  className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-45',
-                  )}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-45"
                 >
                   <Square className="size-3 fill-current" />
                 </button>
+              ) : (
+                <button
+                  type="submit"
+                  aria-label={t('input.send')}
+                  title={t('input.send')}
+                  disabled={!canSend}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
+                >
+                  <ArrowUp className="size-4" />
+                </button>
               )}
-              <button
-                type="submit"
-                aria-label={t('input.send')}
-                title={t('input.send')}
-                disabled={!canSend}
-                className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"
-              >
-                <ArrowUp className="size-4" />
-              </button>
             </div>
           </div>
         </form>
