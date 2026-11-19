@@ -178,6 +178,7 @@ function DiffPanel({
   view,
   selectedChangeSetId,
   onSelectChangeSet,
+  onOpenFile,
 }: SessionPanelContext) {
   const { t } = useTranslation('session')
   const changeSets = useSessionStore((state) => state.changeSets?.[sessionId] ?? EMPTY_CHANGE_SETS)
@@ -237,7 +238,10 @@ function DiffPanel({
             />
           </div>
         ) : (
-          <SessionChangesPanel sessionId={sessionId} />
+          <SessionChangesPanel
+            sessionId={sessionId}
+            {...(onOpenFile === undefined ? {} : { onOpenFile })}
+          />
         )}
       </div>
     </div>

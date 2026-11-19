@@ -9,7 +9,8 @@ import { I18nextProvider } from 'react-i18next'
 import { createStore } from 'zustand/vanilla'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
-import { codeBlockOf, codePath, inlineCodeCandidates, Markdown } from './Markdown.js'
+import { codeBlockOf, Markdown } from './Markdown.js'
+import { fileRefCandidates, parseFileRef } from './file-refs.js'
 import { MessageStream, turnFooters } from './MessageStream.js'
 
 afterEach(cleanup)
@@ -99,26 +100,32 @@ describe('Markdown（M2-03）', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
   })
 
-  it('recognises relative paths in inline code', () => {
-    expect(codePath('src/a.ts')).toEqual({ path: 'src/a.ts' })
-    expect(codePath('src/a.ts:12')).toEqual({ path: 'src/a.ts', line: 12 })
-    expect(codePath('src/a.ts:12-30')).toEqual({ path: 'src/a.ts', line: 12 })
-    expect(codePath('src/a.ts:0')).toBeUndefined()
-    expect(codePath('a.ts:12')).toBeUndefined()
-    expect(codePath('/abs/a.ts')).toBeUndefined()
-    expect(codePath('./a/b.ts')).toBeUndefined()
-    expect(codePath('../a/b.ts')).toBeUndefined()
-    expect(codePath('https://a.dev/x')).toBeUndefined()
-    expect(codePath('src/a b.ts')).toBeUndefined()
-    expect(codePath(`src/${'a'.repeat(4089)}.ts`)).toEqual({ path: `src/${'a'.repeat(4089)}.ts` })
-    expect(codePath(`src/${'a'.repeat(4090)}.ts`)).toBeUndefined()
-    expect(inlineCodeCandidates('`src/a.ts` 和 ```ts\nsrc/b.ts\n``` 和 `pnpm test`')).toEqual([
-      'src/a.ts',
-    ])
+  it('recognises file references in prose and inline code', () => {
+    expect(parseFileRef('src/a.ts')).toEqual({ path: 'src/a.ts' })
+    expect(parseFileRef('src/a.ts:12')).toEqual({ path: 'src/a.ts', line: 12 })
+    expect(parseFileRef('src/a.ts:12-30')).toEqual({ path: 'src/a.ts', line: 12 })
+    expect(parseFileRef('src/a.ts:0')).toBeUndefined()
+    expect(parseFileRef('a.ts:12')).toEqual({ path: 'a.ts', line: 12 })
+    expect(parseFileRef('Dockerfile')).toEqual({ path: 'Dockerfile' })
+    expect(parseFileRef('/abs/a.ts')).toBeUndefined()
+    expect(parseFileRef('./a/b.ts')).toBeUndefined()
+    expect(parseFileRef('../a/b.ts')).toBeUndefined()
+    expect(parseFileRef('https://a.dev/x')).toBeUndefined()
+    expect(parseFileRef('src/a b.ts')).toBeUndefined()
+    expect(parseFileRef('pnpm test')).toBeUndefined()
+    expect(parseFileRef(`src/${'a'.repeat(4089)}.ts`)).toEqual({
+      path: `src/${'a'.repeat(4089)}.ts`,
+    })
+    expect(parseFileRef(`src/${'a'.repeat(4090)}.ts`)).toBeUndefined()
+    expect(
+      fileRefCandidates('`src/a.ts` 和 ```ts\nsrc/b.ts\n``` 和 `pnpm test`，见 README.md'),
+    ).toEqual(['src/a.ts', 'README.md'])
   })
 
   it('makes an existing inline-code path clickable and leaves the rest alone', async () => {
-    const resolvePaths = vi.fn(async (paths: readonly string[]) => new Set(paths.slice(0, 1)))
+    const resolvePaths = vi.fn(
+      async (paths: readonly string[]) => new Map([[paths[0]!, `apps/${paths[0]}`]]),
+    )
     const onOpenFile = vi.fn()
     render(
       <Markdown
@@ -130,13 +137,13 @@ describe('Markdown（M2-03）', () => {
     const button = await screen.findByRole('button', { name: 'src/a.ts:12' })
     await userEvent.click(button)
     expect(resolvePaths).toHaveBeenCalledWith(['src/a.ts', 'src/missing.ts'])
-    expect(onOpenFile).toHaveBeenCalledWith('src/a.ts', 12)
+    expect(onOpenFile).toHaveBeenCalledWith('apps/src/a.ts', 12)
     expect(screen.getByText('src/missing.ts').tagName).toBe('CODE')
     expect(screen.getByText('pnpm test').tagName).toBe('CODE')
   })
 
   it('does not resolve paths without both props', () => {
-    const resolvePaths = vi.fn(async () => new Set(['src/a.ts']))
+    const resolvePaths = vi.fn(async () => new Map([['src/a.ts', 'src/a.ts']]))
     render(<Markdown text={'`src/a.ts`'} resolvePaths={resolvePaths} />)
     expect(screen.getByText('src/a.ts').tagName).toBe('CODE')
     expect(resolvePaths).not.toHaveBeenCalled()
@@ -417,9 +424,9 @@ describe('MessageStream 渲染', () => {
       ev(6, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
     ])
     const rendered = render(renderStream(base))
-    expect(
-      screen.getByRole('button', { name: /正在读取 a\.ts/ }).getAttribute('aria-expanded'),
-    ).toBe('true')
+    expect(screen.getByRole('button', { name: /读取 a\.ts/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
     const completed = view([
       ...START,
       ev(5, 'message.assistant.completed', {
@@ -438,9 +445,9 @@ describe('MessageStream 渲染', () => {
       ev(8, 'turn.completed', { durationMs: 100 }),
     ])
     rendered.rerender(renderStream(completed))
-    expect(
-      screen.getByRole('button', { name: '已执行 1 个步骤' }).getAttribute('aria-expanded'),
-    ).toBe('false')
+    expect(screen.getByRole('button', { name: /读取 a\.ts/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
     expect(screen.getByText('先检查')).toBeTruthy()
     cleanup()
     const failed = {
@@ -1171,10 +1178,12 @@ describe('MessageStream 状态呈现', () => {
     ])
     const { container } = renderStream(stream)
     expect(container.querySelector('[data-running-status]')).toBeNull()
-    expect(screen.getByText('执行中')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /读取 a\.ts/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
   })
 
-  it('工具都结束了但轮次还在跑时，由组头说出当前阶段，不再另起一行', () => {
+  it('组头折叠时用整组摘要，不再用“思考中”这类状态词，也不另起一行', () => {
     const stream = view([
       ...START,
       ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
@@ -1194,8 +1203,10 @@ describe('MessageStream 状态呈现', () => {
       ev(9, 'run.state.changed', { from: 'tooling', to: 'thinking' }),
     ])
     const { container } = renderStream(stream)
-    // 组头显示当前阶段，且消息列末尾不再补一行同样的运行指示
-    expect(screen.getByRole('button', { name: '思考中' })).toBeTruthy()
+    // 组头折叠成一句摘要，消息列末尾不再补一行运行指示
+    expect(screen.getByRole('button', { name: /读取 a\.ts/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
     expect(container.querySelector('[data-running-status]')).toBeNull()
   })
 
@@ -1453,13 +1464,13 @@ describe('MessageStream 试运行（M4-12）', () => {
       </I18nextProvider>,
     )
 
-    // 折叠状态下，外层卡片汇总展示
-    expect(screen.getByText('已执行 2 个步骤')).toBeTruthy()
+    // 折叠状态下，组头用一句话说清这一组做过的事
+    expect(screen.getByText(/读取 a\.ts、运行 pnpm test/)).toBeTruthy()
     // 最终回复正常显示
     expect(screen.getByText('全部完成')).toBeTruthy()
 
     // 默认完成状态下收起
-    const activityButton = screen.getByRole('button', { name: /已执行 2 个步骤/ })
+    const activityButton = screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test/ })
     expect(activityButton.getAttribute('aria-expanded')).toBe('false')
 
     // 点击展开
@@ -1640,7 +1651,9 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeTruthy()
     expect(screen.getByText('编程助手')).toBeTruthy()
 
-    const activity = screen.getByRole('button', { name: '已执行 3 个步骤' })
+    const activity = screen.getByRole('button', {
+      name: /读取 a\.ts、运行 pnpm test、查看目录 src/,
+    })
     expect(activity.getAttribute('aria-expanded')).toBe('false')
     await userEvent.click(activity)
     expect(activity.getAttribute('aria-expanded')).toBe('true')
@@ -1654,7 +1667,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(screen.getByRole('button', { name: '撤销本轮' })).toBeTruthy()
   })
 
-  it('运行中的归组默认展开，手动收起后状态变化不再自动展开', async () => {
+  it('运行中的归组同样默认收起，用户的展开选择在状态变化后保留', async () => {
     const live = {
       ...base,
       live: {
@@ -1670,13 +1683,13 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView
     const rendered = renderStream(live)
-    const running = screen.getByRole('button', { name: '执行中' })
-    expect(running.getAttribute('aria-expanded')).toBe('true')
-
-    await userEvent.click(running)
+    const running = screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test/ })
     expect(running.getAttribute('aria-expanded')).toBe('false')
 
-    // 本轮结束后标题变成已完成，但用户手动收起后不会被自动展开
+    await userEvent.click(running)
+    expect(running.getAttribute('aria-expanded')).toBe('true')
+
+    // 本轮结束后组头仍折叠，用户手动展开后不会被自动收起
     rendered.rerender(
       <I18nextProvider i18n={createI18n('zh-CN')}>
         <SessionStoreProvider
@@ -1699,10 +1712,10 @@ describe('MessageStream 多步骤归组的细节', () => {
         </SessionStoreProvider>
       </I18nextProvider>,
     )
-    const done = screen.getByRole('button', { name: '已执行 3 个步骤' })
-    expect(done.getAttribute('aria-expanded')).toBe('false')
-    await userEvent.click(done)
+    const done = screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test/ })
     expect(done.getAttribute('aria-expanded')).toBe('true')
+    await userEvent.click(done)
+    expect(done.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('等待审批的归组以需要留意的状态默认展开', () => {
@@ -1796,13 +1809,13 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(activity.getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('非零退出后又有别的步骤跑完，组头回到计数而不是停在失败', () => {
+  it('非零退出后又有别的步骤跑完，组头回到整组摘要而不是停在失败', () => {
     renderStream(failingTurn(true))
-    const activity = screen.getByRole('button', { name: '已执行 3 个步骤' })
+    const activity = screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、读取 b\.ts/ })
     expect(activity.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('加载技能时组头说「正在加载技能」，而不是只剩一个「正在」', () => {
+  it('加载技能时组头把技能名带进摘要', () => {
     const stream = view([
       ...START,
       ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
@@ -1829,7 +1842,7 @@ describe('MessageStream 多步骤归组的细节', () => {
       }),
     ])
     renderStream(stream)
-    expect(screen.getByRole('button', { name: /正在加载技能 debug/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /读取 a\.ts、debug/ })).toBeTruthy()
   })
 
   it('从第一条消息开始的归组与单独的思考步骤', () => {
@@ -1865,7 +1878,7 @@ describe('MessageStream 多步骤归组的细节', () => {
       ],
     } as unknown as SessionView
     renderStream(started)
-    expect(screen.getByRole('button', { name: '已执行 1 个步骤' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /读取 a\.ts/ })).toBeTruthy()
     cleanup()
 
     const single = {
@@ -1927,7 +1940,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(screen.getByRole('button', { name: '复制本轮回复' })).toBeTruthy()
   })
 
-  it('本轮仍在运行时归组标题显示正在执行', () => {
+  it('本轮仍在运行时组头也保持折叠，用摘要而不是状态词', () => {
     const stream = {
       ...base,
       runOrder: ['r1'],
@@ -1937,9 +1950,11 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView
     renderStream(stream)
-    expect(screen.getByRole('button', { name: '执行中' }).getAttribute('aria-expanded')).toBe(
-      'true',
-    )
+    expect(
+      screen
+        .getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ })
+        .getAttribute('aria-expanded'),
+    ).toBe('false')
   })
 
   it('宿主退出导致的中断使用中断文案', () => {
@@ -2040,7 +2055,7 @@ describe('MessageStream 多步骤归组的细节', () => {
       ],
     } as unknown as SessionView
     renderStream(stream, [], vi.fn())
-    expect(screen.getByRole('button', { name: '已执行 2 个步骤' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /读取 a\.ts、查看目录 src/ })).toBeTruthy()
   })
 
   it('失败但没有错误详情时使用未知错误说明', () => {
@@ -2086,7 +2101,9 @@ describe('MessageStream 多步骤归组的细节', () => {
     const initial = { ...base, messages: [base.messages[0]] } as unknown as SessionView
     const rendered = render(tree(initial))
     rendered.rerender(tree(base))
-    expect(screen.getByRole('button', { name: '已执行 3 个步骤' })).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ }),
+    ).toBeTruthy()
     expect(document.querySelector('.animate-message-in')).toBeTruthy()
   })
 
@@ -2104,7 +2121,9 @@ describe('MessageStream 多步骤归组的细节', () => {
         name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
       },
     ])
-    expect(screen.getByRole('button', { name: '已执行 3 个步骤' })).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ }),
+    ).toBeTruthy()
     first.unmount()
 
     // 有 Agent 摘要时使用摘要里的名字
@@ -2114,7 +2133,9 @@ describe('MessageStream 多步骤归组的细节', () => {
         name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
       },
     ])
-    expect(screen.getByRole('button', { name: '已执行 3 个步骤' })).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ }),
+    ).toBeTruthy()
     summary.unmount()
 
     // 只有 Agent id、没有摘要时显示 id
@@ -2126,7 +2147,9 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView
     renderStream(other)
-    expect(screen.getByRole('button', { name: '已执行 3 个步骤' })).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ }),
+    ).toBeTruthy()
   })
 
   it('说明崩溃、等待重试与其他限额', () => {

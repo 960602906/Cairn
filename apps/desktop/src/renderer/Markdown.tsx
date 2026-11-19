@@ -1,14 +1,20 @@
 /**
  * 助手正文的 Markdown 渲染（M2-03，视觉规范 §6）：标题、列表、表格、引用、行内代码与代码块（GFM）。
  * 不渲染原始 HTML（react-markdown 默认转义），链接地址经默认的 urlTransform 过滤（去掉 javascript: 等），
- * 点击后由主进程交给系统浏览器打开（security.ts）。代码块用代码卡片（M2-06）：语言取自 info string，
+ * 点击后由主进程交给系统浏览器打开（security.ts）。
+ *
+ * 正文与行内代码里像文件名的引用（`file-refs.ts`）先批量问主进程是否存在，确认后点击在右侧打开；
+ * 正文里的引用由 remark 插件换成 `#cairn-file=` 链接，再由 `a` / `code` 组件认出来。
+ *
+ * 代码块用代码卡片（M2-06）：语言取自 info string，
  * 重点行写在其后的花括号里（` ```ts {2,4-6} `）。
  */
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { CodeCard, parseLineRanges } from './CodeCard.js'
-import { tokenize } from './composer-tokens.js'
+import { FileTypeIcon } from './file-icons.js'
+import { fileRefCandidates, fileRefsInText, parseFileRef } from './file-refs.js'
 import { languageByName } from './languages.js'
 
 type Element = NonNullable<ExtraProps['node']>
@@ -19,32 +25,75 @@ const textOf = (nodes: readonly ElementContent[]): string =>
     .map((n) => (n.type === 'text' ? n.value : n.type === 'element' ? textOf(n.children) : ''))
     .join('')
 
-/**
- * 行内代码里的相对路径：`src/a.ts` 或 `src/a.ts:12`。只认带 `/` 的相对路径，
- * 排除绝对路径、`./` 与 `../` 开头、网址与带空白的文字。
- */
-export function codePath(
-  text: string,
-): { readonly path: string; readonly line?: number } | undefined {
-  const match =
-    /^(?!\/)(?!\.{1,2}\/)(?!.*:\/\/)([^\s:`"'\\]+\/[^\s:`"'\\]+?)(?::(\d+)(?:-\d+)?)?$/.exec(text)
-  if (match === null) return undefined
-  const path = match[1] as string
-  if (path.length > 4096) return undefined
-  const line = match[2] === undefined ? undefined : Number(match[2])
-  if (line !== undefined && line < 1) return undefined
-  return line === undefined ? { path } : { path, line }
+/** 正文里文件引用链接的地址前缀；`a` 组件据此把自己换成打开文件的按钮。 */
+const FILE_REF_HREF = '#cairn-file='
+
+/** mdast 的最小结构：只用到文本、链接和子节点。 */
+interface MdNode {
+  type: string
+  value?: string
+  url?: string
+  children?: MdNode[]
 }
 
-/** 一段 Markdown 里可能需要确认是否存在的行内代码路径（不含代码块），去重。 */
-export function inlineCodeCandidates(text: string): string[] {
-  const paths = new Set<string>()
-  for (const token of tokenize(text)) {
-    if (token.type !== 'code' || token.text.startsWith('```')) continue
-    const parsed = codePath(token.text.slice(1, -1))
-    if (parsed !== undefined) paths.add(parsed.path)
+/** 把一段文字按文件引用切开：普通文字保持原样，引用换成 `#cairn-file=` 链接。 */
+function splitTextNode(value: string): MdNode[] {
+  const refs = fileRefsInText(value)
+  if (refs.length === 0) return [{ type: 'text', value }]
+  const nodes: MdNode[] = []
+  let cursor = 0
+  for (const { start, end } of refs) {
+    if (start > cursor) nodes.push({ type: 'text', value: value.slice(cursor, start) })
+    nodes.push({
+      type: 'link',
+      url: `${FILE_REF_HREF}${encodeURIComponent(value.slice(start, end))}`,
+      children: [{ type: 'text', value: value.slice(start, end) }],
+    })
+    cursor = end
   }
-  return [...paths]
+  if (cursor < value.length) nodes.push({ type: 'text', value: value.slice(cursor) })
+  return nodes
+}
+
+/** 递归处理整棵树；链接、代码、图片里面不再找。 */
+function linkifyFileRefs(node: MdNode): void {
+  const children = node.children
+  if (children === undefined) return
+  const next: MdNode[] = []
+  for (const child of children) {
+    if (child.type === 'text' && typeof child.value === 'string') {
+      next.push(...splitTextNode(child.value))
+      continue
+    }
+    if (
+      child.type !== 'link' &&
+      child.type !== 'inlineCode' &&
+      child.type !== 'code' &&
+      child.type !== 'html' &&
+      child.type !== 'image'
+    ) {
+      linkifyFileRefs(child)
+    }
+    next.push(child)
+  }
+  node.children = next
+}
+
+/** remark 插件：正文里的文件名换成可识别的链接。 */
+export function remarkFileRefs() {
+  return (tree: unknown) => {
+    linkifyFileRefs(tree as MdNode)
+  }
+}
+
+/** 从链接地址里取出引用原文；不是文件引用链接时返回 undefined。 */
+export function fileRefFromHref(href: string | undefined): string | undefined {
+  if (href === undefined || !href.startsWith(FILE_REF_HREF)) return undefined
+  try {
+    return decodeURIComponent(href.slice(FILE_REF_HREF.length))
+  } catch {
+    return undefined
+  }
 }
 
 /** 代码块的语言、重点行与正文；结构不是 `<pre><code>` 时返回 undefined。 */
@@ -140,33 +189,61 @@ function strip<T extends { node?: unknown }>({ node: _node, ...rest }: T): Omit<
 export interface MarkdownProps {
   readonly text: string
   /**
-   * 批量确认行内代码里的相对路径是否存在。存在时那段行内代码变成可点的路径；
-   * 省略时保持原样（例如设置页预览）。
+   * 批量把正文与行内代码里的文件引用解析成项目内的相对路径（引用 → 真实路径）。
+   * 解析成功的引用变成可点的路径；省略时保持原样（例如设置页预览）。
    */
-  readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
-  /** 点击可点的路径；`line` 是冒号后面的行号。 */
+  readonly resolvePaths?:
+    ((paths: readonly string[]) => Promise<ReadonlyMap<string, string>>) | undefined
+  /** 点击可点的路径；`path` 是项目内的真实路径，`line` 是冒号后面的行号。 */
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
   /** 流式输出时可选的防抖毫秒数，避免每个 token 产生重复 IPC 请求。 */
   readonly debounceMs?: number
 }
 
-const EMPTY_PATHS: ReadonlySet<string> = new Set()
+const EMPTY_RESOLVED: ReadonlyMap<string, string> = new Map()
+const REMARK_PLUGINS = [remarkGfm]
+const REMARK_PLUGINS_WITH_FILES = [remarkGfm, remarkFileRefs]
+
+/** 正文与行内代码里确认过存在的文件引用，点击在右侧打开。 */
+function FileRefLink({
+  raw,
+  target,
+  line,
+  onOpenFile,
+}: {
+  readonly raw: string
+  readonly target: string
+  readonly line: number | undefined
+  readonly onOpenFile: (path: string, line?: number) => void
+}) {
+  return (
+    <button
+      type="button"
+      title={raw}
+      onClick={() => onOpenFile(target, line)}
+      className="inline-flex max-w-full cursor-pointer items-center gap-1 rounded-[2px] text-accent underline decoration-accent/30 underline-offset-2 outline-none hover:decoration-accent focus-visible:ring-1 focus-visible:ring-accent"
+    >
+      <FileTypeIcon name={target} className="size-3" />
+      <span className="truncate">{raw}</span>
+    </button>
+  )
+}
 
 export function Markdown({ text, resolvePaths, onOpenFile, debounceMs = 0 }: MarkdownProps) {
-  const [existing, setExisting] = useState<ReadonlySet<string>>(EMPTY_PATHS)
-  const candidates = useMemo(() => inlineCodeCandidates(text), [text])
+  const [resolved, setResolved] = useState<ReadonlyMap<string, string>>(EMPTY_RESOLVED)
+  const candidates = useMemo(() => fileRefCandidates(text), [text])
   const candidatesKey = useMemo(() => candidates.join('\0'), [candidates])
 
   useEffect(() => {
-    // 没有点击处理时不必问主进程，路径保持普通行内代码。
+    // 没有点击处理时不必问主进程，引用保持普通文字。
     if (resolvePaths === undefined || onOpenFile === undefined || candidates.length === 0) {
-      setExisting(EMPTY_PATHS)
+      setResolved(EMPTY_RESOLVED)
       return
     }
     let alive = true
     const check = () => {
       void resolvePaths(candidates).then((paths) => {
-        if (alive) setExisting(paths)
+        if (alive) setResolved(paths)
       })
     }
     if (debounceMs > 0) {
@@ -186,19 +263,40 @@ export function Markdown({ text, resolvePaths, onOpenFile, debounceMs = 0 }: Mar
     if (resolvePaths === undefined || onOpenFile === undefined) return components
     return {
       ...components,
+      a: ({ node: _node, href, children, ...props }) => {
+        const raw = fileRefFromHref(href)
+        if (raw !== undefined) {
+          const parsed = parseFileRef(raw)
+          const target = parsed === undefined ? undefined : resolved.get(parsed.path)
+          if (parsed !== undefined && target !== undefined) {
+            return (
+              <FileRefLink raw={raw} target={target} line={parsed.line} onOpenFile={onOpenFile} />
+            )
+          }
+          // 解析不到的文件名保持普通文字，不显示成链接。
+          return <span>{children}</span>
+        }
+        return (
+          <a
+            className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+            target="_blank"
+            rel="noreferrer"
+            href={href}
+            {...props}
+          >
+            {children}
+          </a>
+        )
+      },
       code: (props) => {
         const raw = props.node ? textOf(props.node.children) : String(props.children ?? '')
-        const parsed = codePath(raw)
-        if (parsed !== undefined && existing.has(parsed.path)) {
+        const parsed = parseFileRef(raw)
+        const target = parsed === undefined ? undefined : resolved.get(parsed.path)
+        if (parsed !== undefined && target !== undefined) {
           return (
-            <button
-              type="button"
-              title={raw}
-              onClick={() => onOpenFile(parsed.path, parsed.line)}
-              className="cursor-pointer rounded-[5px] bg-sunk px-[5px] py-[1px] font-mono text-[0.87em] text-fg underline decoration-accent/40 underline-offset-2 outline-none hover:decoration-accent focus-visible:ring-1 focus-visible:ring-accent"
-            >
-              {raw}
-            </button>
+            <code className="rounded-[5px] bg-sunk px-[5px] py-[1px] font-mono text-[0.87em]">
+              <FileRefLink raw={raw} target={target} line={parsed.line} onOpenFile={onOpenFile} />
+            </code>
           )
         }
         return (
@@ -209,10 +307,17 @@ export function Markdown({ text, resolvePaths, onOpenFile, debounceMs = 0 }: Mar
         )
       },
     }
-  }, [existing, onOpenFile, resolvePaths])
+  }, [resolved, onOpenFile, resolvePaths])
 
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={activeComponents}>
+    <ReactMarkdown
+      remarkPlugins={
+        resolvePaths === undefined || onOpenFile === undefined
+          ? REMARK_PLUGINS
+          : REMARK_PLUGINS_WITH_FILES
+      }
+      components={activeComponents}
+    >
       {text}
     </ReactMarkdown>
   )

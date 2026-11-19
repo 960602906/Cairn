@@ -423,7 +423,11 @@ describe('ChatPanel', () => {
         }),
         'fs.read': () => ({ content: { kind: 'text', text: 'content\n' } }),
         'fs.exists': (params: { paths: string[] }) => ({
-          existing: params.paths.filter((path) => entries.some((entry) => entry.path === path)),
+          resolved: Object.fromEntries(
+            params.paths
+              .filter((path) => entries.some((entry) => entry.path === path))
+              .map((path) => [path, path]),
+          ),
         }),
         'fs.rename': (params: { from: string; to: string }) => {
           entries.splice(
@@ -617,7 +621,9 @@ describe('ChatPanel', () => {
       history: mentionHistory('见 `src/notes.txt:12`'),
       handlers: {
         'fs.read': () => ({ content: { kind: 'text', text: 'new\n' } }),
-        'fs.exists': (params: { paths: string[] }) => ({ existing: params.paths }),
+        'fs.exists': (params: { paths: string[] }) => ({
+          resolved: Object.fromEntries(params.paths.map((path) => [path, path])),
+        }),
         'changes.content': () => ({
           before: { kind: 'text', text: 'old\n' },
           after: { kind: 'text', text: 'new\n' },
@@ -650,7 +656,9 @@ describe('ChatPanel', () => {
           truncated: false,
         }),
         'fs.read': () => ({ content: { kind: 'text', text: 'new\n' } }),
-        'fs.exists': (params: { paths: string[] }) => ({ existing: params.paths }),
+        'fs.exists': (params: { paths: string[] }) => ({
+          resolved: Object.fromEntries(params.paths.map((path) => [path, path])),
+        }),
         'fs.delete': () => {
           entries.splice(0)
           return {}
@@ -1189,7 +1197,7 @@ describe('ChatPanel', () => {
       '你你好',
       '助手你好！',
       '你再说一次',
-      '助手思考想想想想好的，\n你好！[图片]已执行 1 个步骤',
+      '助手思考想想想想好的，\n你好！[图片]读取 {}',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
     expect(stopButton()).toBeNull()
@@ -1887,7 +1895,7 @@ describe('tool calls and undo turn', () => {
     })
     await open()
     // 已完成消息的工具步骤汇总默认收起，展开后再检查步骤本身。
-    await userEvent.click(screen.getByRole('button', { name: '思考中' }))
+    await userEvent.click(screen.getByRole('button', { name: /运行 npm test/ }))
     expect(card().textContent).toBe('运行 npm test完成 5ms')
     expect(card().dataset.status).toBe('completed')
     const row = within(card()).getByRole('button')
@@ -1906,6 +1914,8 @@ describe('tool calls and undo turn', () => {
   it('shows live output in a terminal card while running and the error when failed', async () => {
     const { open, emit } = setup({ history: toolTurn() })
     await open()
+    // 组头默认折叠：先展开这一组，才能看到正在执行的那一步。
+    await userEvent.click(screen.getByRole('button', { name: /运行 npm test/ }))
     expect(card().textContent).toContain('执行中')
     await userEvent.click(within(card()).getByRole('button'))
     expect(within(card()).getByRole('figure', { name: '终端：npm test' })).toBeTruthy()

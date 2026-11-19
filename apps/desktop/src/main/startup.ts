@@ -762,6 +762,7 @@ autoFixRef.service = autoFix
 const files = createFileService({
   storage,
   revealPath: (target) => shell.showItemInFolder(target),
+  listFiles: ripgrepFileLister(ripgrepPath),
 })
 const gateway = createRendererGateway({
   appInfo: createAppInfoCommands(

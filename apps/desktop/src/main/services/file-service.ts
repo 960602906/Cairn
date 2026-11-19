@@ -35,8 +35,17 @@ export interface FileCommands {
     limit?: number | undefined
   }): Promise<{ entries: FileTreeEntry[]; truncated: boolean }>
   read(input: { projectId: string; path: string }): Promise<{ content: FileContent }>
-  /** 批量确认相对路径在项目里存在且是文件；不存在或越界的直接略过。 */
-  exists(input: { projectId: string; paths: readonly string[] }): Promise<{ existing: string[] }>
+  /**
+   * 把消息里提到的文件引用解析成项目内的相对路径。
+   *
+   * - 带目录的相对路径按原样确认；
+   * - 只有文件名的（`app.tsx`）在项目文件列表里找同名文件，取层级最浅的一个；
+   * - 不存在、越界或不是文件的引用不会出现在结果里。
+   */
+  exists(input: {
+    projectId: string
+    paths: readonly string[]
+  }): Promise<{ resolved: Record<string, string> }>
   create(input: {
     projectId: string
     path: string
@@ -51,10 +60,29 @@ export interface FileServiceOptions {
   readonly storage: Pick<Storage, 'projects'>
   /** 在系统文件管理器中定位路径；测试可注入。 */
   readonly revealPath?: (absolutePath: string) => void
+  /** 列出项目内文件（相对路径，遵守 .gitignore）；用于解析正文里的裸文件名。 */
+  readonly listFiles?: (root: string) => Promise<string[]>
 }
 
 const DEFAULT_LIST_LIMIT = 500
 const MAX_PATH_LENGTH = 4096
+/** 文件列表缓存多久（毫秒）。 */
+const LIST_TTL_MS = 10_000
+/** 最多索引多少个文件；再大的仓库只解析前面这些。 */
+export const MAX_INDEXED_FILES = 50_000
+
+/** 能在右侧直接预览的图片格式。 */
+const IMAGE_MIME: Readonly<Record<string, string>> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  svg: 'image/svg+xml',
+}
 
 const isNotFound = (error: unknown) => {
   const code = (error as NodeJS.ErrnoException).code
@@ -103,6 +131,41 @@ function sameOrInside(root: string, target: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
+/** 路径层级（段数），用来在多个同名文件里挑最浅的。 */
+const depthOf = (file: string) => file.split('/').length
+
+/** 更浅、更短、字典序更小的优先，保证同名文件总取同一个。 */
+function preferredPath(a: string, b: string): string {
+  const byDepth = depthOf(a) - depthOf(b)
+  if (byDepth !== 0) return byDepth < 0 ? a : b
+  if (a.length !== b.length) return a.length < b.length ? a : b
+  return a.localeCompare(b) <= 0 ? a : b
+}
+
+/**
+ * 在项目文件列表里找一个引用对应的文件。
+ *
+ * - `app.tsx` 这种只有名字的，按文件名匹配；
+ * - `src/renderer/app.tsx` 这种带目录的，按路径后缀匹配（消息里常省略前面的目录）。
+ *
+ * 同名时取层级最浅的一个；找不到返回 undefined。
+ */
+export function matchIndexedPath(files: readonly string[], candidate: string): string | undefined {
+  const lower = candidate.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+  if (lower === '') return undefined
+  const needle = lower.toLowerCase()
+  const bare = !needle.includes('/')
+  let best: string | undefined
+  for (const file of files) {
+    const fileLower = file.toLowerCase()
+    const hit = bare
+      ? fileLower.slice(fileLower.lastIndexOf('/') + 1) === needle
+      : fileLower.endsWith(`/${needle}`)
+    if (hit && (best === undefined || preferredPath(file, best) === file)) best = file
+  }
+  return best
+}
+
 export function createFileService(options: FileServiceOptions): FileCommands {
   const { storage } = options
   const revealPath = options.revealPath ?? (() => undefined)
@@ -119,6 +182,31 @@ export function createFileService(options: FileServiceOptions): FileCommands {
         throw new RpcError(FileServiceErrorCode.NotFound, { path: project.path })
       }
       throw new RpcError(FileServiceErrorCode.Failed, { path: project.path })
+    }
+  }
+
+  /** 项目文件列表（按根缓存几秒）：只用来解析消息里的文件引用。 */
+  const listCache = new Map<string, { at: number; files: Promise<readonly string[]> }>()
+  const indexedFiles = async (root: string): Promise<readonly string[] | undefined> => {
+    const listFiles = options.listFiles
+    if (listFiles === undefined) return undefined
+    const cached = listCache.get(root)
+    const entry =
+      cached !== undefined && Date.now() - cached.at < LIST_TTL_MS
+        ? cached
+        : {
+            at: Date.now(),
+            files: listFiles(root).then((list) => list.slice(0, MAX_INDEXED_FILES)),
+          }
+    listCache.set(root, entry)
+    // 列不出来的结果不缓存，下次重新列。
+    entry.files.catch(() => {
+      if (listCache.get(root) === entry) listCache.delete(root)
+    })
+    try {
+      return await entry.files
+    } catch {
+      return undefined
     }
   }
 
@@ -229,20 +317,31 @@ export function createFileService(options: FileServiceOptions): FileCommands {
 
     async exists(input) {
       // 项目不存在时仍然报错；单个路径的问题只影响它自己。
-      await projectRoot(input.projectId)
-      const existing = new Set<string>()
+      const root = await projectRoot(input.projectId)
+      const resolved: Record<string, string> = {}
+      let files: readonly string[] | undefined
       for (const candidate of input.paths) {
+        const ref = candidate.trim()
+        if (ref === '') continue
+        // 先按原样的相对路径确认；它是项目里的真实文件时最准确。
         try {
-          const target = await resolveTarget(input.projectId, candidate, {
+          const target = await resolveTarget(input.projectId, ref, {
             allowRoot: false,
             mustExist: true,
           })
-          if ((await fsp.stat(target.absolute)).isFile()) existing.add(target.relative)
+          if ((await fsp.stat(target.absolute)).isFile()) {
+            resolved[candidate] = target.relative
+            continue
+          }
         } catch {
-          // 不存在、越界或读不了：不在这条消息里变成链接。
+          // 不存在或越界：再按文件名 / 路径后缀在项目文件列表里找。
         }
+        if (path.isAbsolute(ref) || /^[A-Za-z]:[\\/]/.test(ref)) continue
+        files ??= await indexedFiles(root)
+        const match = files === undefined ? undefined : matchIndexedPath(files, ref)
+        if (match !== undefined) resolved[candidate] = match
       }
-      return { existing: [...existing] }
+      return { resolved }
     },
 
     async read(input) {
@@ -277,6 +376,17 @@ export function createFileService(options: FileServiceOptions): FileCommands {
           isNotFound(error) ? FileServiceErrorCode.NotFound : FileServiceErrorCode.Failed,
           { path: displayPath(target.relative) },
         )
+      }
+      // 图片直接给界面一个 data URL，右侧可以看图而不是“二进制文件”。
+      const mime = IMAGE_MIME[path.extname(target.relative).slice(1).toLowerCase()]
+      if (mime !== undefined) {
+        return {
+          content: {
+            kind: 'binary',
+            size: buffer.length,
+            url: `data:${mime};base64,${buffer.toString('base64')}`,
+          },
+        }
       }
       const decoded = decodeFile(buffer)
       if (decoded.binary) return { content: { kind: 'binary', size: buffer.length } }

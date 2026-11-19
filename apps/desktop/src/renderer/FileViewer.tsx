@@ -2,7 +2,7 @@
  * 文件标签：源码预览与这笔文件改动的 diff 两种视图。
  *
  * - **预览**：主进程 `fs.read` 读取内容，Shiki 高亮（`highlight.ts`），行号、换行、复制、刷新与在资源管理器
- *   中显示。超大文件只渲染前 5,000 行。
+ *   中显示。超大文件只渲染前 5,000 行；图片（png、jpg、gif、svg 等）直接显示预览图。
  * - **改动**：文件有改动时（本会话的改动，或子运行待审阅改动集里的文件）默认显示 diff；可以切回预览。
  *   会话改动复用 `FileDiff`（带撤销）；改动集文件复用 `DiffCard`，并给出进入改动集审阅的入口。
  */
@@ -301,7 +301,16 @@ export function FileViewer({
           </div>
         </div>
       )}
-      {showPreview && content?.kind === 'binary' && (
+      {showPreview && content?.kind === 'binary' && content.url !== undefined && (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-sunk p-6">
+          <img
+            src={content.url}
+            alt={name}
+            className="max-h-full max-w-full rounded-[4px] object-contain shadow-hair2"
+          />
+        </div>
+      )}
+      {showPreview && content?.kind === 'binary' && content.url === undefined && (
         <PanelEmpty icon={<TriangleAlert />} hint={formatBytes(content.size)} className="px-4">
           {t('fileViewer.binary')}
         </PanelEmpty>

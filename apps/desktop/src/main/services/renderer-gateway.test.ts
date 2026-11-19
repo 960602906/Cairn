@@ -501,7 +501,7 @@ function setup(
     files: {
       list: vi.fn(async () => ({ entries: [], truncated: false })),
       read: vi.fn(async () => ({ content: { kind: 'text' as const, text: 'hello' } })),
-      exists: vi.fn(async () => ({ existing: [] })),
+      exists: vi.fn(async () => ({ resolved: {} })),
       create: vi.fn(async () => ({ path: '' })),
       rename: vi.fn(async () => ({ path: '' })),
       delete: vi.fn(async () => ({})),
@@ -965,11 +965,11 @@ describe('createRendererGateway: commands and lifecycle', () => {
     })
   })
 
-  it('reports which paths exist for clickable replies', async () => {
+  it('reports the resolved paths for clickable replies', async () => {
     const { client } = setup()
     await expect(
       client.request('fs.exists', { projectId: 'p1', paths: ['a.ts', 'missing.ts'] }),
-    ).resolves.toEqual({ existing: [] })
+    ).resolves.toEqual({ resolved: {} })
     await expect(
       client.request('fs.exists', { projectId: 'p1', paths: ['a'.repeat(4097)] }),
     ).rejects.toMatchObject({ code: 'rpc.invalid_params' })
@@ -1537,7 +1537,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
       files: {
         list: async () => ({ entries: [], truncated: false }),
         read: async () => ({ content: { kind: 'text' as const, text: '' } }),
-        exists: async () => ({ existing: [] }),
+        exists: async () => ({ resolved: {} }),
         create: async () => ({ path: '' }),
         rename: async () => ({ path: '' }),
         delete: async () => ({}),

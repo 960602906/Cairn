@@ -14,13 +14,14 @@ function workspace(): string {
   return dir
 }
 
-function setup() {
+function setup(options: { listFiles?: (root: string) => Promise<string[]> } = {}) {
   const root = workspace()
   const storage = createMemoryStorage()
   storage.projects.create({ projectId: 'p1', name: 'Demo', path: root })
   const reveal = vi.fn()
-  const service = createFileService({ storage, revealPath: reveal })
-  return { root, service, reveal }
+  const listFiles = options.listFiles ?? vi.fn(async () => [])
+  const service = createFileService({ storage, revealPath: reveal, listFiles })
+  return { root, service, reveal, listFiles }
 }
 
 afterEach(() => {
@@ -153,6 +154,18 @@ describe('file service', () => {
     })
   })
 
+  it('gives images a data URL so the side panel can show them', async () => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47])
+    writeFileSync(path.join(ctx.root, 'logo.png'), bytes)
+    expect(await ctx.service.read({ projectId: 'p1', path: 'logo.png' })).toEqual({
+      content: {
+        kind: 'binary',
+        size: 4,
+        url: `data:image/png;base64,${bytes.toString('base64')}`,
+      },
+    })
+  })
+
   it('maps stat and read failures while reading a file', async () => {
     writeFileSync(path.join(ctx.root, 'a.txt'), 'a')
     const denied = Object.assign(new Error('denied'), { code: 'EACCES' })
@@ -281,7 +294,7 @@ describe('file service', () => {
     )
   })
 
-  it('reports which candidate paths exist as files', async () => {
+  it('resolves exact relative paths to themselves', async () => {
     mkdirSync(path.join(ctx.root, 'src'))
     writeFileSync(path.join(ctx.root, 'src', 'a.ts'), 'a')
     writeFileSync(path.join(ctx.root, 'b.md'), 'b')
@@ -289,13 +302,41 @@ describe('file service', () => {
     expect(
       await ctx.service.exists({
         projectId: 'p1',
-        paths: ['src/a.ts', 'b.md', 'missing.ts', 'src', '.', '', '../escape.ts', 'C:/x'],
+        paths: ['src/a.ts', 'b.md', 'src', '.', '', '../escape.ts', 'C:/x'],
       }),
-    ).toEqual({ existing: ['src/a.ts', 'b.md'] })
-    expect(await ctx.service.exists({ projectId: 'p1', paths: [] })).toEqual({ existing: [] })
+    ).toEqual({ resolved: { 'src/a.ts': 'src/a.ts', 'b.md': 'b.md' } })
+    expect(await ctx.service.exists({ projectId: 'p1', paths: [] })).toEqual({ resolved: {} })
     expect(await ctx.service.exists({ projectId: 'p1', paths: ['src/a.ts', 'src/a.ts'] })).toEqual({
-      existing: ['src/a.ts'],
+      resolved: { 'src/a.ts': 'src/a.ts' },
     })
+  })
+
+  it('resolves bare file names and partial paths through the project file list', async () => {
+    const listFiles = vi.fn(async () => [
+      'apps/desktop/src/renderer/Icon.tsx',
+      'apps/desktop/src/main/services/auto-fix-service.ts',
+      'packages/tools/src/auto-fix-service.ts',
+      'deep/packages/tools/src/auto-fix-service.ts',
+    ])
+    const { service } = setup({ listFiles })
+    const paths = [
+      'Icon.tsx',
+      'auto-fix-service.ts',
+      'main/services/auto-fix-service.ts',
+      'missing.ts',
+      'C:/outside.ts',
+    ]
+
+    expect(await service.exists({ projectId: 'p1', paths })).toEqual({
+      resolved: {
+        'Icon.tsx': 'apps/desktop/src/renderer/Icon.tsx',
+        // 同名的取层级最浅的那个。
+        'auto-fix-service.ts': 'packages/tools/src/auto-fix-service.ts',
+        'main/services/auto-fix-service.ts': 'apps/desktop/src/main/services/auto-fix-service.ts',
+      },
+    })
+    // 一次请求只列一遍文件。
+    expect(listFiles).toHaveBeenCalledTimes(1)
   })
 
   it('reports no paths for an unknown project and keeps unreadable ones out', async () => {
@@ -306,7 +347,7 @@ describe('file service', () => {
 
     vi.spyOn(fsp, 'stat').mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'EACCES' }))
     expect(await ctx.service.exists({ projectId: 'p1', paths: ['a.txt'] })).toEqual({
-      existing: [],
+      resolved: {},
     })
   })
 

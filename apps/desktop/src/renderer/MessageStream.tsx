@@ -52,7 +52,9 @@ import { useSessionStore } from './store-context.js'
 import {
   ACTIVITY_TRIGGER_CLASS,
   ActivityGroupHeaderContent,
+  activityDuration,
   describeToolCall,
+  summarizeActivity,
   ToolStep,
   ToolTimeline,
   type ActivityHeadline,
@@ -184,7 +186,8 @@ const AssistantContent = memo(function AssistantContent({
   onOpenFile,
 }: {
   readonly parts: readonly ContentPart[]
-  readonly resolvePaths: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  readonly resolvePaths:
+    ((paths: readonly string[]) => Promise<ReadonlyMap<string, string>>) | undefined
   readonly onOpenFile: ((path: string, line?: number) => void) | undefined
 }) {
   const { t } = useTranslation('session')
@@ -208,24 +211,23 @@ interface TurnActivityGroupProps {
   readonly steps: readonly TurnActivityStep[]
   readonly view: SessionView
   readonly isRunning: boolean
-  /** 轮次还在跑但没有正在执行的工具时，用它告诉用户现在处于哪个阶段（思考中 / 正在调用工具…）。 */
-  readonly phaseKey?: string | undefined
   readonly hasAwaitingApproval: boolean
   readonly awaiting: ReadonlySet<string>
-  readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  readonly resolvePaths?:
+    ((paths: readonly string[]) => Promise<ReadonlyMap<string, string>>) | undefined
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }
 
 /**
- * 组头那句话：优先说“正在做的那一步”，没有正在执行的就退到结果。
+ * 组头里的“卡点”：只有需要用户留意时才点明具体是哪一步。
  *
  * - 有失败：`<命令> 失败`
  * - 有取消：`<命令> 已取消`（用户按了停止，不是失败）
  * - 有等待审批：`等待审批 <命令>`
- * - 有正在执行/排队的调用：`正在运行 <命令>`
  * - 最后一步命令非零退出：`<命令> 失败`（后面又跑了别的步骤，说明模型已经接着处理，
- *   此时交给计数式总结，不让一次旧失败永久占住组头）
- * - 轮次还在跑但工具都结束了（模型在思考）：调用方给阶段文案。
+ *   此时交给整组摘要，不让一次旧失败永久占住组头）
+ *
+ * 其余时候组头用 {@link summaryHeadline} 说这组做过什么，不再显示“正在执行 / 已执行 N 步”。
  */
 function liveHeadline({
   calls,
@@ -268,25 +270,6 @@ function liveHeadline({
     const { object, plain } = describe(waiting)
     return { tone: 'waiting', label: t('tool.group.waiting'), object, plain }
   }
-  let active: ToolCall | undefined
-  for (let index = calls.length - 1; index >= 0; index -= 1) {
-    const call = calls[index]!
-    const status = statusOf(call)
-    if (status === 'running' || status === 'requested') {
-      active = call
-      break
-    }
-  }
-  if (active) {
-    const { action, object, plain } = describe(active)
-    // 技能这类工具没有动作词，组头得有自己的说法，否则只剩一个「正在」。
-    return {
-      tone: 'running',
-      label: action === '' ? t('tool.group.loadingSkill') : t('tool.group.current', { action }),
-      object,
-      plain,
-    }
-  }
   const last = calls.at(-1)
   if (last !== undefined && statusOf(last) === 'completed' && badExit(last)) {
     const { object, plain } = describe(last)
@@ -295,27 +278,42 @@ function liveHeadline({
   return undefined
 }
 
-/** 单条助手消息（没有归组）的组头：和归组一样，优先显示正在做的那一步。 */
+/** 折叠后的组头：把这一组做过的事说成一句话，右侧带上总耗时。 */
+function summaryHeadline({
+  calls,
+  tools,
+  isRunning,
+  t,
+}: {
+  readonly calls: readonly ToolCall[]
+  readonly tools: Readonly<Record<string, ToolCallView>>
+  readonly isRunning: boolean
+  readonly t: TFunction
+}): ActivityHeadline {
+  return {
+    tone: isRunning ? 'running' : 'done',
+    label: summarizeActivity(calls, tools, t) ?? t('tool.group.thinking'),
+    meta: activityDuration(calls, tools),
+  }
+}
+
+/** 单条助手消息（没有归组）的组头：和归组一样，优先点明卡点，否则说做过什么。 */
 function messageHeadline(
   message: AssistantMessageView,
   view: SessionView,
   awaiting: ReadonlySet<string>,
   running: boolean,
   t: TFunction,
-  phaseKey?: string | undefined,
 ): ActivityHeadline {
   const live = liveHeadline({ calls: message.toolCalls, tools: view.tools, awaiting, t })
   if (live) return live
-  if (phaseKey !== undefined) return { tone: 'running', label: t(phaseKey) }
-  if (running) return { tone: 'running', label: t('tool.status.running') }
-  return { tone: 'done', label: t('tool.group.done', { steps: message.toolCalls.length }) }
+  return summaryHeadline({ calls: message.toolCalls, tools: view.tools, isRunning: running, t })
 }
 
 const TurnActivityGroup = memo(function TurnActivityGroup({
   steps,
   view,
   isRunning,
-  phaseKey,
   hasAwaitingApproval,
   awaiting,
   resolvePaths,
@@ -327,30 +325,25 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
   const headline = useMemo<ActivityHeadline>(() => {
     const live = liveHeadline({ calls, tools: view.tools, awaiting, t })
     if (live) return live
-    // 工具都结束了但轮次还在跑：组头自己说阶段，不再在下面另起一行运行指示。
-    if (phaseKey !== undefined && (isRunning || calls.length > 0)) {
-      return { tone: 'running', label: t(phaseKey) }
-    }
-    if (isRunning) return { tone: 'running', label: t('tool.status.running') }
-    return { tone: 'done', label: t('tool.group.done', { steps: calls.length }) }
-  }, [calls, view.tools, awaiting, t, isRunning, phaseKey])
+    return summaryHeadline({ calls, tools: view.tools, isRunning, t })
+  }, [calls, view.tools, awaiting, t, isRunning])
 
-  /** 失败、取消或等待审批时组保持展开，把出错的那一步露在外面；正常结束才自动收起。 */
+  /** 失败、取消或等待审批时组保持展开，把出错的那一步露在外面；其余时候一律折叠。 */
   const needsAttention =
     hasAwaitingApproval ||
     headline.tone === 'attention' ||
     headline.tone === 'cancelled' ||
     headline.tone === 'waiting'
 
-  const [open, setOpen] = useState(isRunning || needsAttention)
+  const [open, setOpen] = useState(needsAttention)
   const [manuallyOpened, setManuallyOpened] = useState(false)
 
   // 状态变化时自动更新展开状态（如果用户没手动操作）
   useEffect(() => {
     if (!manuallyOpened) {
-      setOpen(isRunning || needsAttention)
+      setOpen(needsAttention)
     }
-  }, [isRunning, needsAttention, manuallyOpened])
+  }, [needsAttention, manuallyOpened])
 
   const handleToggle = () => {
     setManuallyOpened(true)
@@ -394,6 +387,7 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
                       tool={view.tools[call.id]}
                       live={view.liveToolOutput[call.id]}
                       awaitingApproval={awaiting.has(call.id)}
+                      onOpenFile={onOpenFile}
                     />
                   ))}
                 </ToolTimeline>
@@ -673,7 +667,6 @@ function Message({
   compacted,
   omitted,
   entering,
-  phaseKey,
   onOpenPlan,
   onOpenChanges,
   resolvePaths,
@@ -699,12 +692,11 @@ function Message({
   readonly omitted: boolean
   /** 本次会话中新出现的消息才播入场动画。 */
   readonly entering: boolean
-  /** 轮次还在跑但没有正在执行的工具时，组头显示的阶段文案（思考中 / 正在调用工具…）。 */
-  readonly phaseKey?: string | undefined
   readonly onOpenPlan: (planId: string) => void
   readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
   /** 行内代码里的项目路径是否存在；助手正文据此变成可点的路径。 */
-  readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  readonly resolvePaths?:
+    ((paths: readonly string[]) => Promise<ReadonlyMap<string, string>>) | undefined
   /** 点击消息里的文件：在右侧打开并定位到行。 */
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
@@ -765,7 +757,7 @@ function Message({
       (status === undefined && view.runs[message.runId]?.turn?.status === 'running')
     )
   })
-  const headline = messageHeadline(message, view, awaiting, messageRunning, t, phaseKey)
+  const headline = messageHeadline(message, view, awaiting, messageRunning, t)
   const messageAttention =
     headline.tone === 'attention' || headline.tone === 'cancelled' || headline.tone === 'waiting'
 
@@ -816,6 +808,7 @@ function Message({
               tool={view.tools[call.id]}
               live={view.liveToolOutput[call.id]}
               awaitingApproval={awaiting.has(call.id)}
+              onOpenFile={onOpenFile}
             />
           ))}
         </ToolTimeline>
@@ -828,6 +821,7 @@ function Message({
           sessionId={view.sessionId}
           turnId={message.turnId}
           {...(onOpenChanges === undefined ? {} : { onOpen: () => onOpenChanges() })}
+          {...(onOpenFile === undefined ? {} : { onOpenFile: (path: string) => onOpenFile(path) })}
         />
       )}
       {footer && (
@@ -880,7 +874,8 @@ function LiveMessage({
   readonly continued: boolean
   /** 新出现的流式消息才播入场动画。 */
   readonly entering: boolean
-  readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
+  readonly resolvePaths?:
+    ((paths: readonly string[]) => Promise<ReadonlyMap<string, string>>) | undefined
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
@@ -1253,9 +1248,7 @@ export function MessageStream({
     <>
       {messages.length === 0 && live.length === 0 && runningKey === undefined && <EmptyStream />}
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
-        {groupedItems.map((item, itemIndex) => {
-          const isTail = itemIndex === groupedItems.length - 1
-          const phaseKey = isTail && tailIsLive ? runningKey : undefined
+        {groupedItems.map((item) => {
           if (item.kind === 'message') {
             const message = item.message
             const previous = messages[item.index - 1]?.seq ?? 0
@@ -1296,7 +1289,6 @@ export function MessageStream({
                   compacted={markBetween(previous, message.seq, view.compaction)}
                   omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
                   entering={enteringIds.has(message.messageId)}
-                  phaseKey={phaseKey}
                   onOpenPlan={openPlan}
                   onOpenChanges={onOpenChanges}
                   resolvePaths={resolvePaths}
@@ -1417,7 +1409,6 @@ export function MessageStream({
                   steps={steps}
                   view={view}
                   isRunning={isTurnRunning}
-                  phaseKey={phaseKey}
                   hasAwaitingApproval={hasAwaitingApproval}
                   awaiting={awaitingApprovalSet}
                   resolvePaths={resolvePaths}
@@ -1433,6 +1424,9 @@ export function MessageStream({
                     sessionId={view.sessionId}
                     turnId={lastMsg.turnId}
                     {...(onOpenChanges === undefined ? {} : { onOpen: () => onOpenChanges() })}
+                    {...(onOpenFile === undefined
+                      ? {}
+                      : { onOpenFile: (path: string) => onOpenFile(path) })}
                   />
                 )}
                 {footer && (

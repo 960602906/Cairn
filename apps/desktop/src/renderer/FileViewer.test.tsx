@@ -166,6 +166,14 @@ describe('FileViewer', () => {
     expect(screen.getByText('10 MB')).toBeTruthy()
   })
 
+  it('shows images instead of the binary placeholder', async () => {
+    const url = 'data:image/png;base64,iVBORw0KGgo='
+    setup({ kind: 'binary', size: 8, url }, 'assets/logo.png')
+    const image = await screen.findByRole('img', { name: 'logo.png' })
+    expect(image.getAttribute('src')).toBe(url)
+    expect(screen.queryByText('二进制文件，无法预览。')).toBeNull()
+  })
+
   it('shows an error and retries the request', async () => {
     const user = userEvent.setup()
     let fail = true

@@ -6,8 +6,10 @@
  * - 点击一行展开详情：参数与完整输出（可滚动）、截断说明、这条命令的沙箱。失败的错误不用展开就显示。
  * - `run_command` 用终端卡片（M2-06）：执行中直接显示实时输出，完成后展开显示；退出码不是 0 时默认展开。
  *   `read_file` 展开后用代码卡片显示读到的内容。其他工具执行中显示实时输出的最后几行。
+ * - 文件类工具（读 / 写 / 编辑）的对象就是路径，点它直接在右侧工作台打开；修改过的文件自动显示 diff。
  * - 状态文字总在（完成时只给读屏），供读屏与测试使用。
- * - 组头只有一句话：正在做的那一步（“正在运行 `npm test`”），完成后才换成计数式总结。
+ * - 组头默认折叠，用一句话说清这一组做过什么（“读取 a.ts、运行 npm test”）并带上总耗时；
+ *   只有失败、取消或等待审批时才展开并点明卡在哪一步。
  *
  * 不使用 `<p>`：消息流的测试按段落读取消息正文。
  */
@@ -26,8 +28,9 @@ import {
   type ToolCallView,
 } from '@cairn/core'
 import { translateError, type TFunction } from '@cairn/i18n'
-import type { ContentPart } from '@cairn/protocol'
+import type { ContentPart, ToolCall } from '@cairn/protocol'
 import { CodeCard } from './CodeCard.js'
+import { FileTypeIcon } from './file-icons.js'
 import { formatDuration } from './format.js'
 import { languageForPath } from './languages.js'
 import { TerminalCard, type TerminalCardProps } from './TerminalCard.js'
@@ -323,6 +326,52 @@ export function describeToolCall(name: string, args: unknown, t: TFunction): Too
   return { action, object, plain: name === 'load_skill' || planTool }
 }
 
+/** 组头摘要最多列出几件事；其余用“等 N 步”带过。 */
+const SUMMARY_STEPS = 3
+
+/** 能点开文件预览的工具：参数里的 `path` 就是右侧要打开的文件。 */
+const FILE_TOOLS: ReadonlySet<string> = new Set(['read_file', 'write_file', 'edit_file'])
+
+/** 这一步对应的文件路径；不是文件类工具时返回 undefined。 */
+export function filePathForTool(name: string, args: unknown): string | undefined {
+  if (!FILE_TOOLS.has(name)) return undefined
+  const record = typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {}
+  const path = record['path']
+  return typeof path === 'string' && path !== '' ? path : undefined
+}
+
+/**
+ * 组头摘要：按顺序说出组里做过的事（最多三件），不用“执行中 / 已执行 N 个步骤”这类状态计数。
+ * 组里只有思考时返回 undefined，由调用方补一句“思考过程”。
+ */
+export function summarizeActivity(
+  calls: readonly ToolCall[],
+  tools: Readonly<Record<string, ToolCallView>>,
+  t: TFunction,
+): string | undefined {
+  if (calls.length === 0) return undefined
+  const shown = calls
+    .slice(0, SUMMARY_STEPS)
+    .map((call) => {
+      const { action, object } = describeToolCall(call.name, tools[call.id]?.input ?? call.input, t)
+      return action === '' ? object : `${action} ${object}`
+    })
+    .filter((text) => text !== '')
+  if (shown.length === 0) return undefined
+  const rest = calls.length - shown.length
+  const joined = shown.join(t('tool.group.summarySeparator'))
+  return rest > 0 ? `${joined} ${t('tool.group.summaryMore', { count: rest })}` : joined
+}
+
+/** 组头右侧的耗时：组内各步耗时相加，没有耗时数据时不显示。 */
+export function activityDuration(
+  calls: readonly ToolCall[],
+  tools: Readonly<Record<string, ToolCallView>>,
+): string | undefined {
+  const total = calls.reduce((sum, call) => sum + (tools[call.id]?.durationMs ?? 0), 0)
+  return total > 0 ? formatDuration(total) : undefined
+}
+
 export interface ToolStepProps {
   readonly name: string
   /** 模型给出的参数（工具事件到达之前使用）。 */
@@ -331,10 +380,19 @@ export interface ToolStepProps {
   readonly live: LiveToolOutputView | undefined
   /** 这一步正在等待审批（右侧显示“等待审批”）。 */
   readonly awaitingApproval?: boolean
+  /** 点击文件类工具的对象：在右侧工作台打开这个文件。 */
+  readonly onOpenFile?: ((path: string) => void) | undefined
 }
 
 /** 时间线中的一步。 */
-export function ToolStep({ name, input, tool, live, awaitingApproval = false }: ToolStepProps) {
+export function ToolStep({
+  name,
+  input,
+  tool,
+  live,
+  awaitingApproval = false,
+  onOpenFile,
+}: ToolStepProps) {
   const { t, i18n } = useTranslation('session')
   const [openState, setOpen] = useState<boolean>()
   const status = tool?.status ?? 'requested'
@@ -353,6 +411,8 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   const liveText = running && live && !terminal ? live.chunks.map((c) => c.text).join('') : ''
   const tail = liveText.trim() === '' ? undefined : previewLines(liveText, 'end')
   const { action, object, plain } = describeToolCall(name, args, t)
+  /** 文件类工具的对象就是路径：点它直接在右侧工作台打开（修改过的文件自动显示 diff）。 */
+  const filePath = filePathForTool(name, args)
   const statusText =
     awaitingApproval && status === 'requested'
       ? t('tool.awaitingApproval')
@@ -371,28 +431,47 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   return (
     <li className="relative">
       <section aria-label={t('message.toolCall', { name })} data-status={status}>
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-          className="group/step -mx-[7px] grid h-7 w-full grid-cols-[18px_auto_minmax(0,1fr)_auto_14px] items-center gap-x-[7px] rounded-[7px] px-[7px] text-left text-ui text-fg2 outline-none hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
-        >
-          <ToolStatusIcon status={status} exitCode={exitCode} />
+        <div className="group/step relative -mx-[7px] grid h-7 w-full grid-cols-[18px_auto_minmax(0,1fr)_auto_14px] items-center gap-x-[7px] rounded-[7px] px-[7px] text-left text-ui text-fg2 hover:bg-hover hover:text-fg">
+          {/* 整行是展开开关；内容层不拦截点击，路径按钮单独浮在上面，点它去右侧打开文件。 */}
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={t('tool.details', { name })}
+            onClick={() => setOpen(!open)}
+            className="absolute inset-0 cursor-pointer rounded-[7px] outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          />
+          <span className="pointer-events-none flex items-center">
+            <ToolStatusIcon status={status} exitCode={exitCode} />
+          </span>
           {/* 动作列始终保留占位，技能这类没有动作词的工具才不会让后面几列整体左移。 */}
-          <span className="shrink-0">
+          <span className="pointer-events-none shrink-0">
             {action !== '' && <>{running ? <Shimmer>{action}</Shimmer> : action} </>}
           </span>
-          <code
-            className={cn(
-              'w-fit min-w-0 max-w-full truncate text-[12px] text-fg2',
-              plain ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
-            )}
-          >
-            {running ? <Shimmer>{object}</Shimmer> : object}
-          </code>
+          {filePath !== undefined && onOpenFile !== undefined ? (
+            <button
+              type="button"
+              title={t('tool.openFile', { path: filePath })}
+              onClick={() => onOpenFile(filePath)}
+              className="relative z-10 flex w-fit min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-[4px] bg-sunk px-1 text-left font-mono text-[12px] text-fg2 outline-none hover:bg-press hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              <FileTypeIcon name={filePath} className="size-3" />
+              <span className="min-w-0 truncate">
+                {running ? <Shimmer>{object}</Shimmer> : object}
+              </span>
+            </button>
+          ) : (
+            <code
+              className={cn(
+                'pointer-events-none w-fit min-w-0 max-w-full truncate text-[12px] text-fg2',
+                plain ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
+              )}
+            >
+              {running ? <Shimmer>{object}</Shimmer> : object}
+            </code>
+          )}
           <span
             className={cn(
-              'tabular shrink-0 text-note',
+              'pointer-events-none tabular shrink-0 text-note',
               status === 'failed' || failedExit ? 'text-danger' : 'text-faint',
             )}
           >
@@ -402,11 +481,11 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
           <ChevronRight
             aria-hidden
             className={cn(
-              'size-3.5 shrink-0 text-faint transition-[transform,opacity] group-hover/step:text-fg',
+              'pointer-events-none size-3.5 shrink-0 text-faint transition-[transform,opacity] group-hover/step:text-fg',
               open ? 'rotate-90 opacity-100 text-fg' : 'opacity-0 group-hover/step:opacity-80',
             )}
           />
-        </button>
+        </div>
         {tool?.error && (
           <div role="note" className="ml-[25px] text-note text-danger">
             {translateError(i18n, tool.error)}
@@ -467,7 +546,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   )
 }
 
-/** 组头的一句话：只说现在在干什么；完成后才换成计数式总结。 */
+/** 组头的一句话：折叠状态下说清这组做过什么；失败/取消/等待审批时点明卡在哪一步。 */
 export interface ActivityHeadline {
   readonly tone: 'running' | 'attention' | 'waiting' | 'cancelled' | 'done'
   readonly label: string
@@ -477,6 +556,8 @@ export interface ActivityHeadline {
   readonly plain?: boolean | undefined
   /** 失败/取消时读作「命令 + 失败」，对象在前。 */
   readonly objectFirst?: boolean | undefined
+  /** 右侧的耗时（如 `8.3s`）。 */
+  readonly meta?: string | undefined
 }
 
 /** 组头（整行、无边框、悬停变底色）：与步骤行共用 18px 图标列与 7px 间距。 */
@@ -537,6 +618,9 @@ export function ActivityGroupHeaderContent({
           </>
         )}
       </span>
+      {headline.meta !== undefined && headline.meta !== '' && (
+        <span className="tabular shrink-0 text-note text-faint">{headline.meta}</span>
+      )}
       <ChevronRight
         aria-hidden
         className={cn(
@@ -566,7 +650,8 @@ export function ToolTimeline({
 }) {
   const { t } = useTranslation('session')
   const [openState, setOpenState] = useState<boolean>()
-  const open = openState ?? (running === true || attention)
+  // 默认折叠：只有需要留意（失败、取消、等待审批）时展开，把出问题的步骤露出来。
+  const open = openState ?? attention
   // 嵌在归组里时不留外边距：每一步 28px，行与行无缝接上（间距由归组容器负责）。
   const steps = <ol className={cn('flex flex-col', count !== undefined && 'mt-0.5')}>{children}</ol>
   if (count === undefined) return steps
