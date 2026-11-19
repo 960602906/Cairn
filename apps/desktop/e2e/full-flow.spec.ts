@@ -29,6 +29,12 @@ const MODEL = {
   supportsReasoning: false,
 }
 
+/** 关掉右侧工作台（窄窗口下是浮层，宽窗口下是停靠栏），让对话列重新可以操作。 */
+async function closeSessionPanel(window: Page) {
+  const close = sessionPanel(window).getByRole('button', { name: '关闭会话信息' })
+  if (await close.isVisible().catch(() => false)) await close.click()
+}
+
 /** 目录中所有文件的相对路径与内容，按路径排序。 */
 function snapshot(dir: string): [string, string][] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -139,8 +145,7 @@ test('修复示例项目的 bug 并运行测试：审阅 diff、撤销单个文�
     const diff = sessionPanel(window).getByRole('figure', { name: '差异：sum.mjs' })
     await expect(diff.locator('[data-type="add"]')).toContainText('let i = 0')
     await expect(diff.locator('[data-type="del"]')).toContainText('let i = 1')
-    // 窄窗口下工作台是浮层：关掉它再继续操作对话列。
-    await window.keyboard.press('Escape')
+    await closeSessionPanel(window)
 
     // 单独撤销新建的文件：只删除 NOTES.md，sum.mjs 的修改保留
     await changes.getByRole('button', { name: /^NOTES\.md/ }).click()
@@ -151,7 +156,7 @@ test('修复示例项目的 bug 并运行测试：审阅 diff、撤销单个文�
     const revert = window.getByRole('dialog', { name: '撤销对这个文件的改动？' })
     await revert.getByRole('button', { name: '撤销此文件' }).click()
     await expect(changes.getByRole('button', { name: /^NOTES\.md/ })).toHaveCount(0)
-    await window.keyboard.press('Escape')
+    await closeSessionPanel(window)
     await expect.poll(() => existsSync(path.join(project, 'NOTES.md'))).toBe(false)
     expect(readFileSync(path.join(project, 'sum.mjs'), 'utf8')).toContain('let i = 0')
 
