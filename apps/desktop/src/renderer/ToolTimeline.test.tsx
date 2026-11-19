@@ -148,6 +148,25 @@ describe('ToolStep：run_command', () => {
     expect(badge.textContent).toBe('沙箱：工作区可写 · 网络未隔离')
   })
 
+  it('展开后沙箱徽标只出现一次', async () => {
+    const user = userEvent.setup()
+    step({
+      tool: tool({
+        display: display({
+          sandbox: {
+            profile: 'workspace-write',
+            network: 'none',
+            mechanism: 'restricted-token',
+            enforced: true,
+            networkIsolated: false,
+          },
+        }),
+      }),
+    })
+    await user.click(toggle())
+    expect(screen.getAllByTestId('sandbox-badge')).toHaveLength(1)
+  })
+
   it('成功后默认收起，点开显示带颜色的 display', async () => {
     const user = userEvent.setup()
     step({ tool: tool({ display: display(), output: text('Exit code: 0') }) })
@@ -303,24 +322,30 @@ describe('ToolStep：ask_user', () => {
 })
 
 describe('ToolStep：完成态', () => {
-  it('完成后的节点是绿色品牌 Logo，不再显示对勾', () => {
+  it('完成后的节点是绿色对勾', () => {
     const { container } = step({ tool: tool({ status: 'completed' }) })
-    const node = container
-      .querySelector('section[data-status="completed"]')!
-      .querySelector('span[aria-hidden]')!
-    expect(node.className).toContain('text-ok')
-    expect(node.querySelector('svg')).toBeTruthy()
-    expect(container.querySelector('svg.lucide-check')).toBeNull()
+    const node = container.querySelector('section[data-status="completed"] svg.lucide-check')!
+    expect(node.getAttribute('class')).toContain('text-ok')
   })
 
-  it('失败节点使用红色品牌 Logo，不再显示红色 X', () => {
+  it('失败节点是红色叉', () => {
     const { container } = step({ tool: tool({ status: 'failed' }) })
-    const node = container
-      .querySelector('section[data-status="failed"]')!
-      .querySelector('span[aria-hidden]')!
-    expect(node.className).toContain('text-danger')
-    expect(node.querySelector('svg')).toBeTruthy()
-    expect(container.querySelector('svg.lucide-x')).toBeNull()
+    const node = container.querySelector('section[data-status="failed"] svg.lucide-x')!
+    expect(node.getAttribute('class')).toContain('text-danger')
+  })
+
+  it('执行中的节点是转圈的缺口圆', () => {
+    const { container } = step({ tool: tool({ status: 'running' }) })
+    const node = container.querySelector('section[data-status="running"] svg.lucide-loader-circle')!
+    expect(node.getAttribute('class')).toContain('animate-spin')
+    expect(node.getAttribute('class')).toContain('text-accent')
+  })
+
+  it('等待中的节点是空心圆', () => {
+    const { container } = step({ tool: tool({ status: 'requested' }) })
+    expect(
+      container.querySelector('section[data-status="requested"] svg.lucide-circle'),
+    ).toBeTruthy()
   })
 
   it('工具列表没有竖线', () => {
@@ -330,7 +355,7 @@ describe('ToolStep：完成态', () => {
   })
 
   it('技能加载只显示技能名，不显示动作词或原始 JSON', () => {
-    render(
+    const { container } = render(
       <I18nextProvider i18n={i18n}>
         <ToolTimeline>
           <ToolStep
@@ -350,6 +375,8 @@ describe('ToolStep：完成态', () => {
     expect(screen.getByText('using-superpowers')).toBeTruthy()
     expect(document.body.textContent).not.toContain('load_skill')
     expect(document.body.textContent).not.toContain('"name"')
+    // 没有动作词也要占住动作列，否则对象、耗时和箭头会整体左移、错位。
+    expect(container.querySelector('button[aria-expanded]')!.children).toHaveLength(5)
   })
 })
 

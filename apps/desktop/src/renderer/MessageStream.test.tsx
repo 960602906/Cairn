@@ -378,8 +378,8 @@ describe('MessageStream 渲染', () => {
         </SessionStoreProvider>
       </I18nextProvider>,
     )
-    expect(screen.getByText('想一想')).toBeTruthy()
-    expect(screen.getByText('正在思考')).toBeTruthy()
+    expect(screen.getAllByText('想一想').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('正在思考').length).toBeGreaterThan(0)
     expect(screen.getByText('完成')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: /较早的对话已压缩/ }))
     expect(screen.getByText('压缩摘要')).toBeTruthy()
@@ -418,7 +418,7 @@ describe('MessageStream 渲染', () => {
     ])
     const rendered = render(renderStream(base))
     expect(
-      screen.getByRole('button', { name: '正在执行 1 个步骤' }).getAttribute('aria-expanded'),
+      screen.getByRole('button', { name: /正在读取 a\.ts/ }).getAttribute('aria-expanded'),
     ).toBe('true')
     const completed = view([
       ...START,
@@ -448,9 +448,9 @@ describe('MessageStream 渲染', () => {
       tools: { ...completed.tools, tc1: { ...completed.tools.tc1!, status: 'failed' as const } },
     }
     render(renderStream(failed))
-    expect(
-      screen.getByRole('button', { name: '1 个步骤 · 需要留意' }).getAttribute('aria-expanded'),
-    ).toBe('true')
+    expect(screen.getByRole('button', { name: /a\.ts 失败/ }).getAttribute('aria-expanded')).toBe(
+      'true',
+    )
   })
 
   it('shows the reasoning as a collapsible card that expands on click', async () => {
@@ -476,7 +476,7 @@ describe('MessageStream 渲染', () => {
     const triggers = screen.getAllByRole('button', { name: '思考过程' })
     expect(triggers.length).toBe(2)
     // 收起时正文仍可读（读屏与流式内容不丢失），点击后展开
-    expect(screen.getByText('想一想')).toBeTruthy()
+    expect(screen.getAllByText('想一想').length).toBeGreaterThan(0)
     expect(triggers[0]!.getAttribute('aria-expanded')).toBe('false')
     await userEvent.click(triggers[0]!)
     expect(triggers[0]!.getAttribute('aria-expanded')).toBe('true')
@@ -1174,6 +1174,31 @@ describe('MessageStream 状态呈现', () => {
     expect(screen.getByText('执行中')).toBeTruthy()
   })
 
+  it('工具都结束了但轮次还在跑时，由组头说出当前阶段，不再另起一行', () => {
+    const stream = view([
+      ...START,
+      ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
+      ev(6, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: [],
+        model,
+        toolCalls: [{ id: 'tc1', name: 'read_file', input: { path: 'a.ts' } }],
+      }),
+      ev(7, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
+      ev(8, 'tool.completed', {
+        toolCallId: 'tc1',
+        output: text('ok'),
+        truncated: false,
+        durationMs: 5,
+      }),
+      ev(9, 'run.state.changed', { from: 'tooling', to: 'thinking' }),
+    ])
+    const { container } = renderStream(stream)
+    // 组头显示当前阶段，且消息列末尾不再补一行同样的运行指示
+    expect(screen.getByRole('button', { name: '思考中' })).toBeTruthy()
+    expect(container.querySelector('[data-running-status]')).toBeNull()
+  })
+
   it('grades an aborted turn as neutral instead of an error', () => {
     const stream = view([...START, ev(5, 'turn.aborted', { reason: 'user' })])
     const { container } = renderStream(stream)
@@ -1261,7 +1286,7 @@ describe('MessageStream 试运行（M4-12）', () => {
       },
       { sessionId: 't1' },
     )
-    expect(screen.getByText('等待审批')).toBeDefined()
+    expect(screen.getAllByText('等待审批').length).toBeGreaterThan(0)
   })
 
   it('uses the supplied continue action instead of the active session', async () => {
@@ -1619,7 +1644,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(activity.getAttribute('aria-expanded')).toBe('false')
     await userEvent.click(activity)
     expect(activity.getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText('想一想')).toBeTruthy()
+    expect(screen.getAllByText('想一想').length).toBeGreaterThan(0)
     expect(screen.getByText('补充说明')).toBeTruthy()
     expect(screen.getByText('a.ts')).toBeTruthy()
     expect(screen.getByText('pnpm test')).toBeTruthy()
@@ -1645,7 +1670,7 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView
     const rendered = renderStream(live)
-    const running = screen.getByRole('button', { name: '正在执行 3 个步骤' })
+    const running = screen.getByRole('button', { name: '执行中' })
     expect(running.getAttribute('aria-expanded')).toBe('true')
 
     await userEvent.click(running)
@@ -1682,8 +1707,129 @@ describe('MessageStream 多步骤归组的细节', () => {
 
   it('等待审批的归组以需要留意的状态默认展开', () => {
     renderStream(base, ['tc2'])
-    const activity = screen.getByRole('button', { name: '3 个步骤 · 需要留意' })
+    const activity = screen.getByRole('button', { name: /等待审批/ })
     expect(activity.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('用户取消的工具在组头显示已取消，而不是失败', () => {
+    const stream = {
+      ...base,
+      runs: { ...base.runs, r1: { ...base.runs.r1, turn: { turnId: 't1', status: 'aborted' } } },
+      tools: { ...base.tools, tc2: { toolCallId: 'tc2', status: 'cancelled', durationMs: 20 } },
+    } as unknown as SessionView
+    renderStream(stream)
+    // 步骤行本身也写着「已取消」，这里要的是组头那一行。
+    const activity = document.querySelector<HTMLElement>('button[data-activity-group]')!
+    expect(activity.textContent).toContain('pnpm test')
+    expect(activity.textContent).toContain('已取消')
+    // 取消用横杠，不用失败的红叉
+    expect(activity.querySelector('svg.lucide-minus')).toBeTruthy()
+    expect(activity.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByRole('button', { name: /失败/ })).toBeNull()
+  })
+
+  /** 一组两步工具，第二步是命令，退出码固定为 1；`recovered` 时再补一步跑成功的步骤。 */
+  const failingTurn = (recovered: boolean) =>
+    view([
+      ...START,
+      ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
+      ev(6, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: [],
+        model,
+        toolCalls: [
+          { id: 'tc1', name: 'read_file', input: { path: 'a.ts' } },
+          { id: 'tc2', name: 'run_command', input: { command: 'pnpm test' } },
+          ...(recovered ? [{ id: 'tc3', name: 'read_file', input: { path: 'b.ts' } }] : []),
+        ],
+      }),
+      ev(7, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
+      ev(8, 'tool.completed', {
+        toolCallId: 'tc1',
+        output: text('ok'),
+        truncated: false,
+        durationMs: 5,
+      }),
+      ev(9, 'tool.requested', {
+        toolCallId: 'tc2',
+        name: 'run_command',
+        input: { command: 'pnpm test' },
+      }),
+      ev(10, 'tool.completed', {
+        toolCallId: 'tc2',
+        output: text('boom'),
+        truncated: false,
+        durationMs: 5,
+        display: {
+          kind: 'terminal',
+          exitCode: 1,
+          timedOut: false,
+          aborted: false,
+          durationMs: 5,
+          shell: 'bash',
+          cwd: '/w',
+          chunks: [],
+          omittedChars: 0,
+        },
+      }),
+      ...(recovered
+        ? [
+            ev(11, 'tool.requested', {
+              toolCallId: 'tc3',
+              name: 'read_file',
+              input: { path: 'b.ts' },
+            }),
+            ev(12, 'tool.completed', {
+              toolCallId: 'tc3',
+              output: text('ok'),
+              truncated: false,
+              durationMs: 5,
+            }),
+          ]
+        : []),
+      ev(recovered ? 13 : 11, 'turn.completed', { durationMs: 20 }),
+    ])
+
+  it('最后一步命令非零退出时组头说失败，并保持展开', () => {
+    renderStream(failingTurn(false))
+    const activity = screen.getByRole('button', { name: /pnpm test 失败/ })
+    expect(activity.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('非零退出后又有别的步骤跑完，组头回到计数而不是停在失败', () => {
+    renderStream(failingTurn(true))
+    const activity = screen.getByRole('button', { name: '已执行 3 个步骤' })
+    expect(activity.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('加载技能时组头说「正在加载技能」，而不是只剩一个「正在」', () => {
+    const stream = view([
+      ...START,
+      ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
+      ev(6, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: [],
+        model,
+        toolCalls: [
+          { id: 'tc1', name: 'read_file', input: { path: 'a.ts' } },
+          { id: 'tc2', name: 'load_skill', input: { name: 'debug' } },
+        ],
+      }),
+      ev(7, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
+      ev(8, 'tool.completed', {
+        toolCallId: 'tc1',
+        output: text('ok'),
+        truncated: false,
+        durationMs: 5,
+      }),
+      ev(9, 'tool.requested', {
+        toolCallId: 'tc2',
+        name: 'load_skill',
+        input: { name: 'debug' },
+      }),
+    ])
+    renderStream(stream)
+    expect(screen.getByRole('button', { name: /正在加载技能 debug/ })).toBeTruthy()
   })
 
   it('从第一条消息开始的归组与单独的思考步骤', () => {
@@ -1751,7 +1897,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     } as unknown as SessionView
     renderStream(single)
     expect(screen.queryByRole('button', { name: /个步骤/ })).toBeNull()
-    expect(screen.getByText('只想一下')).toBeTruthy()
+    expect(screen.getAllByText('只想一下').length).toBeGreaterThan(0)
   })
 
   it('复制本轮回复后显示已复制，剪贴板失败时保持原样', async () => {
@@ -1791,9 +1937,9 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView
     renderStream(stream)
-    expect(
-      screen.getByRole('button', { name: '正在执行 3 个步骤' }).getAttribute('aria-expanded'),
-    ).toBe('true')
+    expect(screen.getByRole('button', { name: '执行中' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    )
   })
 
   it('宿主退出导致的中断使用中断文案', () => {
