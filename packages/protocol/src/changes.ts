@@ -84,10 +84,20 @@ export type FileChangeSummary = z.infer<typeof FileChangeSummary>
 /** 交给界面显示 diff 的文本上限（字符数）；超过时只告诉界面文件太大。 */
 export const FILE_CONTENT_MAX_CHARS = 1_000_000
 
-/** 改动前或改动后的文件内容（`changes.content`，M2-07）。`size` 为字节数。 */
+/** 图片预览的 data URL 上限（字符数）；约合 8 MB 原文件。 */
+export const FILE_PREVIEW_DATA_URL_MAX_CHARS = 16 * 1024 * 1024
+
+/**
+ * 改动前或改动后的文件内容（`changes.content`，M2-07）。`size` 为字节数。
+ * 图片等能直接显示的二进制文件带一个 `url`（data URL），界面据此预览。
+ */
 export const FileContent = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('text'), text: z.string().max(FILE_CONTENT_MAX_CHARS) }),
-  z.object({ kind: z.literal('binary'), size: LineCount }),
+  z.object({
+    kind: z.literal('binary'),
+    size: LineCount,
+    url: z.string().max(FILE_PREVIEW_DATA_URL_MAX_CHARS).optional(),
+  }),
   z.object({ kind: z.literal('too_large'), size: LineCount }),
 ])
 export type FileContent = z.infer<typeof FileContent>

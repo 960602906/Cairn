@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
-import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
+import { createSession, projectDir, runStatus, sendPrompt, sessionPanel } from './session.js'
 
 const LINES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l']
 const BEFORE = `${LINES.join('\n')}\n`
@@ -62,7 +62,8 @@ test('一次改动两处，撤销其中一块只恢复这一块', async ({ launc
 
     const turn = window.getByRole('region', { name: '本轮变更' })
     await turn.getByRole('button', { name: /notes\.txt/ }).click()
-    const diff = window.getByRole('figure', { name: '差异：notes.txt' })
+    // 点击文件在右侧工作台打开（有改动时直接是 diff），不再在对话里行内展开。
+    const diff = sessionPanel(window).getByRole('figure', { name: '差异：notes.txt' })
     await expect(diff).toBeVisible()
     const revertButtons = diff.getByRole('button', { name: '撤销此块' })
     await expect(revertButtons).toHaveCount(2)
@@ -88,13 +89,16 @@ test('一次改动两处，撤销其中一块只恢复这一块', async ({ launc
 
     await revertButtons.first().click()
     await expect(diff.getByText('已撤销 1/2 块')).toBeVisible()
-    await expect(turn.getByRole('button', { name: /已撤销 1\/2 块/ })).toBeVisible()
     await expect(diff.getByText('已撤销', { exact: true })).toBeVisible()
     expect(readFileSync(file, 'utf8')).toBe(ONLY_SECOND)
     await header.hover()
     await diff.screenshot({ path: path.join(artifacts, 'hunk-revert-reverted-dark.png') })
     await setTheme('light')
     await diff.screenshot({ path: path.join(artifacts, 'hunk-revert-reverted-light.png') })
+
+    // 浮层关掉后，「本轮变更」的行里也显示已撤销的块数。
+    await window.keyboard.press('Escape')
+    await expect(turn.getByRole('button', { name: /已撤销 1\/2 块/ })).toBeVisible()
   } finally {
     await mock.close()
   }

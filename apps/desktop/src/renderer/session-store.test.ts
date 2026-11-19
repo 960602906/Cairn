@@ -672,21 +672,25 @@ describe('commands', () => {
     expect(sent.agents).toHaveLength(5)
   })
 
-  it('resolves which paths exist, without failing the reply', async () => {
+  it('resolves file references to project paths, without failing the reply', async () => {
     const { api } = fakeApi({
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),
       'fs.exists': (params: { paths: string[] }) => ({
-        existing: params.paths.filter((path) => path === 'a.ts'),
+        resolved: Object.fromEntries(
+          params.paths.filter((path) => path === 'a.ts').map((path) => [path, 'src/a.ts']),
+        ),
       }),
     })
     const store = createSessionStore(api)
-    expect(await store.getState().pathsExist('p1', [])).toEqual(new Set())
-    expect(await store.getState().pathsExist('p1', ['a.ts', 'b.ts'])).toEqual(new Set(['a.ts']))
+    expect(await store.getState().pathsExist('p1', [])).toEqual(new Map())
+    expect(await store.getState().pathsExist('p1', ['a.ts', 'b.ts'])).toEqual(
+      new Map([['a.ts', 'src/a.ts']]),
+    )
 
     const failing = createSessionStore(
       fakeApi({ 'fs.exists': () => Promise.reject(new RpcError('fs.failed')) }).api,
     )
-    expect(await failing.getState().pathsExist('p1', ['a.ts'])).toEqual(new Set())
+    expect(await failing.getState().pathsExist('p1', ['a.ts'])).toEqual(new Map())
   })
 
   it('sends version and other optional fields only when given', async () => {

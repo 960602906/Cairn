@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import type { LiveToolOutputView, ToolCallView } from '@cairn/core'
 import type { ToolDisplay } from '@cairn/protocol'
@@ -75,7 +75,15 @@ describe('ToolTimeline 汇总折叠', () => {
   const group = (props: { running?: boolean; attention?: boolean } = {}) =>
     render(
       <I18nextProvider i18n={i18n}>
-        <ToolTimeline count={2} {...props}>
+        <ToolTimeline
+          count={2}
+          {...(props.running === undefined ? {} : { running: props.running })}
+          {...(props.attention === undefined ? {} : { attention: props.attention })}
+          headline={{
+            tone: props.running ? 'running' : props.attention ? 'attention' : 'done',
+            label: props.attention ? '2 个步骤 · 需要留意' : '读取 a.ts、运行 npm test',
+          }}
+        >
           {steps}
         </ToolTimeline>
       </I18nextProvider>,
@@ -84,22 +92,22 @@ describe('ToolTimeline 汇总折叠', () => {
   it('正常结束时默认收起，展开后保留逐条工具详情', async () => {
     const user = userEvent.setup()
     group()
-    const summary = screen.getByRole('button', { name: '已执行 2 个步骤' })
+    const summary = screen.getByRole('button', { name: /读取 a\.ts、运行 npm test/ })
     expect(summary.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByRole('button', { name: /读取.*a.ts/ })).toBeNull()
+    expect(screen.queryByText('a.ts')).toBeNull()
     await user.click(summary)
     expect(summary.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText('a.ts')).toBeTruthy()
     expect(screen.getByText('npm test')).toBeTruthy()
   })
 
-  it('运行中或需要留意时默认展开，用户仍可手动收起', async () => {
+  it('运行中也默认收起；需要留意时默认展开，用户仍可手动开合', async () => {
     const user = userEvent.setup()
     const running = group({ running: true })
-    const summary = screen.getByRole('button', { name: '正在执行 2 个步骤' })
-    expect(summary.getAttribute('aria-expanded')).toBe('true')
-    await user.click(summary)
+    const summary = screen.getByRole('button', { name: /读取 a\.ts、运行 npm test/ })
     expect(summary.getAttribute('aria-expanded')).toBe('false')
+    await user.click(summary)
+    expect(summary.getAttribute('aria-expanded')).toBe('true')
     running.rerender(
       <I18nextProvider i18n={i18n}>
         <ToolTimeline count={2} attention>
@@ -107,13 +115,59 @@ describe('ToolTimeline 汇总折叠', () => {
         </ToolTimeline>
       </I18nextProvider>,
     )
-    expect(summary.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.getByRole('button', { name: '2 个步骤 · 需要留意' })).toBeTruthy()
+    expect(summary.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('button', { name: /需要留意/ })).toBeTruthy()
     cleanup()
     group({ attention: true })
-    expect(
-      screen.getByRole('button', { name: '2 个步骤 · 需要留意' }).getAttribute('aria-expanded'),
-    ).toBe('true')
+    expect(screen.getByRole('button', { name: /需要留意/ }).getAttribute('aria-expanded')).toBe(
+      'true',
+    )
+  })
+})
+
+describe('ToolStep：点击文件', () => {
+  it('文件类工具的对象可以点开右侧文件，其余位置仍然只展开详情', async () => {
+    const user = userEvent.setup()
+    const onOpenFile = vi.fn()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ToolTimeline>
+          <ToolStep
+            name="edit_file"
+            input={{ path: 'src/a.ts' }}
+            tool={tool({ name: 'edit_file', input: { path: 'src/a.ts' }, durationMs: 12 })}
+            live={undefined}
+            onOpenFile={onOpenFile}
+          />
+        </ToolTimeline>
+      </I18nextProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: 'src/a.ts' }))
+    expect(onOpenFile).toHaveBeenCalledWith('src/a.ts')
+    const row = toggle()
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+    await user.click(row)
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('非文件类工具的对象保持普通文本', async () => {
+    const onOpenFile = vi.fn()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ToolTimeline>
+          <ToolStep
+            name="run_command"
+            input={{ command: 'npm test' }}
+            tool={tool()}
+            live={undefined}
+            onOpenFile={onOpenFile}
+          />
+        </ToolTimeline>
+      </I18nextProvider>,
+    )
+    expect(screen.queryByRole('button', { name: 'npm test' })).toBeNull()
+    expect(screen.getByText('npm test')).toBeTruthy()
+    expect(onOpenFile).not.toHaveBeenCalled()
   })
 })
 
@@ -376,7 +430,9 @@ describe('ToolStep：完成态', () => {
     expect(document.body.textContent).not.toContain('load_skill')
     expect(document.body.textContent).not.toContain('"name"')
     // 没有动作词也要占住动作列，否则对象、耗时和箭头会整体左移、错位。
-    expect(container.querySelector('button[aria-expanded]')!.children).toHaveLength(5)
+    const row = container.querySelector('[data-status] > div')!
+    const action = row.querySelectorAll(':scope > span')[1]!
+    expect(action.textContent).toBe('')
   })
 })
 
@@ -424,7 +480,7 @@ describe('terminalData', () => {
 })
 
 describe('ToolStep：计划工具', () => {
-  const label = () => toggle().textContent
+  const label = () => document.querySelector('[data-status]')!.textContent
   const code = () => document.querySelector('code')!
 
   it('propose_plan 显示动作与目标，而不是整段 JSON', () => {

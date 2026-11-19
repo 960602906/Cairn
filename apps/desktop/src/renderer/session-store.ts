@@ -241,10 +241,10 @@ export interface SessionActions {
     limit?: number,
   ): Promise<{ entries: FileSearchEntry[]; truncated: boolean }>
   /**
-   * 批量确认这些相对路径在项目里存在（助手消息里的行内代码据此变成可点的路径）。
-   * 失败时返回空集合，不打断渲染。
+   * 把助手消息里的文件引用解析成项目内的相对路径（引用 → 真实路径，正文里的文件名据此变成可点的路径）。
+   * 失败时返回空映射，不打断渲染。
    */
-  pathsExist(projectId: string, paths: readonly string[]): Promise<ReadonlySet<string>>
+  pathsExist(projectId: string, paths: readonly string[]): Promise<ReadonlyMap<string, string>>
   /** 批准待审计划。`steps` 是改过的步骤标题；省略表示按原文执行。 */
   approvePlan(planId: string, steps?: readonly { id: string; title: string }[]): Promise<boolean>
   /** 带着说明重新规划。新的一轮仍是计划模式。 */
@@ -1196,12 +1196,12 @@ export function createSessionStore(api: MainApi): SessionStore {
       },
 
       async pathsExist(projectId, paths) {
-        if (paths.length === 0) return new Set()
+        if (paths.length === 0) return new Map()
         try {
           const result = await api.request('fs.exists', { projectId, paths: [...paths] })
-          return new Set(result.existing)
+          return new Map(Object.entries(result.resolved))
         } catch {
-          return new Set()
+          return new Map()
         }
       },
 

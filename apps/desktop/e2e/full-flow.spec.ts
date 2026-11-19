@@ -10,7 +10,14 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { APP_DIR, expect, test } from './app.js'
-import { chatRequests, createSession, expandToolGroup, runStatus, sendPrompt } from './session.js'
+import {
+  chatRequests,
+  createSession,
+  expandToolGroup,
+  runStatus,
+  sendPrompt,
+  sessionPanel,
+} from './session.js'
 
 const SAMPLE = path.resolve(APP_DIR, '../../fixtures/sample-project')
 const REPLY = 'sum fixed and tests pass'
@@ -20,6 +27,16 @@ const MODEL = {
   supportsTools: true,
   supportsParallelToolCalls: false,
   supportsReasoning: false,
+}
+
+/** 关掉右侧工作台（窄窗口下是浮层，宽窗口下是停靠栏），让对话列重新可以操作。 */
+async function closeSessionPanel(window: Page) {
+  // 撤销改动后面板可能正好重挂载：等它稳定出现再点，别在“那一刻不可见”时跳过。
+  const panel = sessionPanel(window).first()
+  await panel.waitFor({ state: 'visible', timeout: 3000 }).catch(() => undefined)
+  // 两种布局的元素可能同时挂在 DOM 里（一个隐藏），只点看得见的那个。
+  const close = window.getByRole('button', { name: '关闭会话信息' }).filter({ visible: true })
+  if ((await close.count()) > 0) await close.first().click()
 }
 
 /** 目录中所有文件的相对路径与内容，按路径排序。 */
@@ -125,23 +142,25 @@ test('修复示例项目的 bug 并运行测试：审阅 diff、撤销单个文�
     expect(result).toMatch(/pass 2/)
     expect(result).toMatch(/fail 0/)
 
-    // 审阅 diff（M2-07）：本轮变更中点开 sum.mjs
+    // 审阅 diff（M2-07）：本轮变更中点开 sum.mjs，右侧工作台直接显示改动
     const changes = window.getByRole('region', { name: '本轮变更' })
     await expect(changes).toContainText('2 个文件')
     await changes.getByRole('button', { name: /^sum\.mjs/ }).click()
-    const diff = window.getByRole('figure', { name: '差异：sum.mjs' })
+    const diff = sessionPanel(window).getByRole('figure', { name: '差异：sum.mjs' })
     await expect(diff.locator('[data-type="add"]')).toContainText('let i = 0')
     await expect(diff.locator('[data-type="del"]')).toContainText('let i = 1')
+    await closeSessionPanel(window)
 
     // 单独撤销新建的文件：只删除 NOTES.md，sum.mjs 的修改保留
     await changes.getByRole('button', { name: /^NOTES\.md/ }).click()
-    await window
+    await sessionPanel(window)
       .getByRole('figure', { name: '差异：NOTES.md' })
       .getByRole('button', { name: '撤销此文件' })
       .click()
     const revert = window.getByRole('dialog', { name: '撤销对这个文件的改动？' })
     await revert.getByRole('button', { name: '撤销此文件' }).click()
     await expect(changes.getByRole('button', { name: /^NOTES\.md/ })).toHaveCount(0)
+    await closeSessionPanel(window)
     await expect.poll(() => existsSync(path.join(project, 'NOTES.md'))).toBe(false)
     expect(readFileSync(path.join(project, 'sum.mjs'), 'utf8')).toContain('let i = 0')
 

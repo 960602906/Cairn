@@ -149,13 +149,19 @@ export function FileDiff({
   )
 }
 
-/** 按文件列出改动，点击一行展开 diff。 */
+/**
+ * 按文件列出改动。给了 `onOpenFile` 时点击一行直接在右侧打开这个文件（改动视图）；
+ * 省略时退回行内展开 diff（独立预览与旧调用）。
+ */
 export function FileChangeList({
   sessionId,
   entries,
+  onOpenFile,
 }: {
   readonly sessionId: string
   readonly entries: readonly FileEntry[]
+  /** 点击文件：在右侧工作台打开它。 */
+  readonly onOpenFile?: ((path: string) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const canRevert = useCanRevert(sessionId)
@@ -166,18 +172,25 @@ export function FileChangeList({
       if (!next.delete(path)) next.add(path)
       return next
     })
+  /** 有打开回调时整行是“去右侧看”，不再在行内展开。 */
+  const inline = onOpenFile === undefined
   return (
     <ul className="divide-y-[0.5px] divide-hair">
       {entries.map((entry) => {
-        const expanded = open.has(entry.path)
+        const expanded = inline && open.has(entry.path)
         const { dir, name } = splitPath(entry.path)
         return (
           <li key={entry.path}>
             <button
               type="button"
               {...fileDragProps(entry.path, 'file')}
-              aria-expanded={expanded}
-              onClick={() => toggle(entry.path)}
+              {...(inline
+                ? { 'aria-expanded': expanded }
+                : { title: t('tool.openFile', { path: entry.path }) })}
+              onClick={() => {
+                if (onOpenFile === undefined) toggle(entry.path)
+                else onOpenFile(entry.path)
+              }}
               className="group/file flex h-9 w-full items-center gap-2 px-3 text-left text-note hover:bg-hover"
             >
               <FileTypeIcon name={entry.path} />
@@ -223,11 +236,14 @@ export function TurnChanges({
   sessionId,
   turnId,
   onOpen,
+  onOpenFile,
 }: {
   readonly sessionId: string
   readonly turnId: string
   /** 打开右侧工作台的改动页面；省略时标题不可点。 */
   readonly onOpen?: (() => void) | undefined
+  /** 点击文件：在右侧工作台打开这个文件（有改动时直接是 diff）。 */
+  readonly onOpenFile?: ((path: string) => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const changes = useSessionStore((s) => s.changes[sessionId])
@@ -267,13 +283,24 @@ export function TurnChanges({
           </button>
         )}
       </header>
-      <FileChangeList sessionId={sessionId} entries={entries} />
+      <FileChangeList
+        sessionId={sessionId}
+        entries={entries}
+        {...(onOpenFile === undefined ? {} : { onOpenFile })}
+      />
     </section>
   )
 }
 
 /** 右侧会话信息栏中的全部改动。 */
-export function SessionChangesPanel({ sessionId }: { readonly sessionId: string }) {
+export function SessionChangesPanel({
+  sessionId,
+  onOpenFile,
+}: {
+  readonly sessionId: string
+  /** 点击文件：在右侧工作台打开它（切换到这个文件标签）。 */
+  readonly onOpenFile?: ((path: string) => void) | undefined
+}) {
   const { t } = useTranslation('session')
   const changes = useSessionStore((s) => s.changes[sessionId])
   const entries = useMemo(() => (changes ? fileEntries(changes) : []), [changes])
@@ -290,7 +317,11 @@ export function SessionChangesPanel({ sessionId }: { readonly sessionId: string 
         </span>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto border-t-[0.5px] border-hair pb-2">
-        <FileChangeList sessionId={sessionId} entries={entries} />
+        <FileChangeList
+          sessionId={sessionId}
+          entries={entries}
+          {...(onOpenFile === undefined ? {} : { onOpenFile })}
+        />
       </div>
     </section>
   )

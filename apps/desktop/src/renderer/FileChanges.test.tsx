@@ -129,6 +129,16 @@ describe('TurnChanges', () => {
     expect(screen.queryByRole('figure')).toBeNull()
   })
 
+  it('给了 onOpenFile 时点击文件交给右侧打开，不再展开行内 diff', async () => {
+    const { wrap, request } = setup()
+    const onOpenFile = vi.fn()
+    wrap(<TurnChanges sessionId="s1" turnId="t1" onOpenFile={onOpenFile} />)
+    await userEvent.click(rowButton(/^src\/a\.ts/))
+    expect(onOpenFile).toHaveBeenCalledWith('src/a.ts')
+    expect(screen.queryByRole('figure')).toBeNull()
+    expect(request).not.toHaveBeenCalledWith('changes.content', expect.anything())
+  })
+
   it('只有一次改动时只读取一次内容；读取失败时说明', async () => {
     const { wrap, request } = setup({
       fail: { 'changes.content': new RpcError('changes.blob_missing') },

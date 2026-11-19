@@ -526,15 +526,16 @@ export const MainForRenderer = defineSide({
       result: z.object({ entries: z.array(FileSearchEntry), truncated: z.boolean() }),
     },
     /**
-     * 批量确认这些相对路径在项目里存在（助手消息把行内代码里的路径变成可点的链接）。
-     * 不存在、越界或不是文件的路径不会出现在结果里。
+     * 把助手消息里提到的文件引用解析成项目内的相对路径（正文里的文件名因此可以点开）。
+     * 键是消息里写的引用，值是项目内的真实相对路径；只有文件名的引用会按文件名在项目里找。
+     * 不存在、越界或不是文件的引用不会出现在结果里。
      */
     'fs.exists': {
       params: z.object({
         projectId: Id,
         paths: z.array(z.string().min(1).max(4096)).max(MAX_EXISTS_PATHS),
       }),
-      result: z.object({ existing: z.array(z.string()) }),
+      result: z.object({ resolved: z.record(z.string(), z.string()) }),
     },
     /** 新建文件或目录；父目录必须已经存在，目标已存在时报 `fs.conflict`。 */
     'fs.create': {
