@@ -335,6 +335,7 @@
   "skills.uninstall.description": "技能目录会从本机删除。",
   "skills.uninstall.confirm": "卸载技能",
   "group.security": "安全",
+  "group.app": "关于与更新",
   "group.other": "其他",
   "section.permissions.title": "权限与审批",
   "section.permissions.description": "决定 Agent 哪些操作可以直接做，哪些要先问你。",

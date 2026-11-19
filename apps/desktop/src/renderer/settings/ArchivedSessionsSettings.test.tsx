@@ -2,13 +2,14 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import type { SessionSummary } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
 import type { SessionStore } from '../session-store.js'
 import { SessionStoreProvider } from '../store-context.js'
 import { ArchivedSessionsSettings } from './ArchivedSessionsSettings.js'
+import { clearSettingsData } from './settings-data-cache.js'
 
 const i18n = createI18n('zh-CN')
 
@@ -49,6 +50,7 @@ function setup(sessions: SessionSummary[]) {
   return { request, unarchiveSession, deleteSession }
 }
 
+beforeEach(clearSettingsData)
 afterEach(() => {
   cleanup()
   delete (window as { cairn?: unknown }).cairn

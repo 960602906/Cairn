@@ -335,6 +335,7 @@
   "skills.uninstall.description": "The skill folder will be deleted from this computer.",
   "skills.uninstall.confirm": "Uninstall skill",
   "group.security": "Security",
+  "group.app": "About & updates",
   "group.other": "Other",
   "section.permissions.title": "Permissions & approvals",
   "section.permissions.description": "Decide what the agent may do right away and what it must ask you about first.",
