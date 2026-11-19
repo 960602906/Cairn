@@ -18,6 +18,7 @@ import { expect, test } from './app.js'
 import {
   chatRequests,
   createSession,
+  expandToolGroup,
   projectDir,
   runStatus,
   sendPrompt,
@@ -177,6 +178,9 @@ test('自定义 Agent、Skill、MCP、计划模式、压缩与撤销在同一会
 
     // 第一轮：写文件 → 审批 → 撤销本轮
     await sendPrompt(window, '写一个文件')
+    // 分组默认折叠：等审批卡片出现后展开工具分组，步骤卡片才在可访问树里。
+    await expect(window.getByRole('button', { name: '允许一次' })).toBeVisible()
+    await expandToolGroup(window)
     const writeCard = window.getByRole('region', { name: '调用工具：write_file' })
     await expect(writeCard).toContainText('flow.md')
     await window.getByRole('button', { name: '允许一次' }).click()

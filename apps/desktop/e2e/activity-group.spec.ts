@@ -1,6 +1,7 @@
 /**
  * 多步骤工具调用归组（#186、#188）：同一轮的多个工具步骤收进一个活动分组。
- * 默认折叠为一行“做过什么”的摘要；等待审批、失败或取消时自动展开；用户可以手动开合。
+ * 默认折叠为一行“最新一步在做什么”的摘要；等待审批、失败或取消时也不自动展开，
+ * 只有用户点过组头才展开，之后也不再随状态变化翻回去。
  */
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -15,7 +16,7 @@ const PNG = Buffer.from(
   'base64',
 )
 
-test('多步骤工具调用归组：审批时展开，结束后收起，可手动开合', async ({ launch, userData }) => {
+test('多步骤工具调用归组：默认折叠，只有手动展开才显示步骤', async ({ launch, userData }) => {
   const mock = await startMockModel({
     reply: REPLY,
     toolCalls: [
@@ -62,10 +63,15 @@ test('多步骤工具调用归组：审批时展开，结束后收起，可手�
     await createSession(window, dir, '归组测试')
     await sendPrompt(window, '读一下再写一个文件')
 
-    // 等待审批时分组自动展开：已完成的读文件与待审批的写文件都在可访问树里。
+    // 等待审批时分组也不自动展开：审批卡片本身可见，分组仍是一行摘要。
     const approval = window.getByRole('article', { name: '需要审批：write_file' })
     await expect(approval).toBeVisible()
     const group = window.locator('[data-activity-group]')
+    await expect(group).toHaveAttribute('aria-expanded', 'false')
+    await expect(window.getByRole('region', { name: '调用工具：read_file' })).toHaveCount(0)
+
+    // 用户手动展开后，已完成的读文件与待审批的写文件都可见。
+    await group.click()
     await expect(group).toHaveAttribute('aria-expanded', 'true')
     await expect(window.getByRole('region', { name: '调用工具：read_file' })).toBeVisible()
 
@@ -73,13 +79,7 @@ test('多步骤工具调用归组：审批时展开，结束后收起，可手�
     await expect(window.getByText(REPLY)).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲')
 
-    // 轮次正常结束后收起：步骤不再出现在可访问树里，只剩一行分组摘要。
-    await expect(group).toHaveAttribute('aria-expanded', 'false')
-    await expect(window.getByRole('region', { name: '调用工具：read_file' })).toHaveCount(0)
-    await expect(window.getByRole('region', { name: '调用工具：write_file' })).toHaveCount(0)
-
-    // 手动展开后两步都可见；再次点击收起。
-    await group.click()
+    // 用户展开过就保持展开：轮次结束不会把它自动收回去。
     await expect(group).toHaveAttribute('aria-expanded', 'true')
     await expect(window.getByRole('region', { name: '调用工具：read_file' })).toContainText('完成')
     await expect(window.getByRole('region', { name: '调用工具：write_file' })).toContainText('完成')

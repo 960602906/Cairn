@@ -55,7 +55,7 @@ async function expandCollapsed(window: Page, selector: string) {
 
 /**
  * 展开所有已收起的分组：先展开整轮活动分组（多步骤归组），再展开单个助手消息里的工具汇总。
- * 分组默认一律收起，运行中也一样；只有失败、取消或等待审批时展开。
+ * 分组默认一律收起，运行中、失败、等待审批时也一样，只有用户点过组头才展开。
  */
 export async function expandToolGroup(window: Page) {
   await expandCollapsed(window, '[data-activity-group]')
