@@ -6,14 +6,15 @@
  * - 空状态与“没有匹配”分开显示，避免搜索无结果时误以为还没有记忆。
  */
 import { Brain, Search } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { MemoryEntry, MemoryScope } from '@cairn/protocol'
+import type { MemoryScope } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
 import { MemoryEntryCard } from '../MemoryEntryCard.js'
-import { Button, cn } from '../ui/index.js'
+import { Button, cn, Spinner } from '../ui/index.js'
 import { inputClass } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
+import { useSettingsData } from './settings-data-cache.js'
 
 const SCOPE_ORDER: readonly MemoryScope[] = ['session', 'project', 'global']
 
@@ -21,23 +22,8 @@ export function MemorySettings() {
   const { t } = useTranslation('settings')
   const { t: ts } = useTranslation('session')
   const listMemories = useSessionStore((s) => s.listMemories)
-  const [entries, setEntries] = useState<readonly MemoryEntry[]>()
-  const [failed, setFailed] = useState(false)
+  const { value: entries, failed, reload: load } = useSettingsData('settings:memory', listMemories)
   const [query, setQuery] = useState('')
-
-  const load = useCallback(async () => {
-    const result = await listMemories()
-    if (result === undefined) {
-      setFailed(true)
-      return
-    }
-    setFailed(false)
-    setEntries(result)
-  }, [listMemories])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   const normalized = query.trim().toLocaleLowerCase()
   const visible =
@@ -76,6 +62,12 @@ export function MemorySettings() {
           <Button size="sm" onClick={() => void load()}>
             {ts('memory.manage.retry')}
           </Button>
+        </div>
+      )}
+
+      {entries === undefined && !failed && (
+        <div className="flex items-center justify-center py-10 text-muted">
+          <Spinner className="size-4" />
         </div>
       )}
 

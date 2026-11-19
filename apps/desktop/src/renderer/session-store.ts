@@ -272,7 +272,8 @@ export interface SessionActions {
   updateMemory(memoryId: string, content: string): Promise<boolean>
   /** 管理界面：删除一条记忆；给了 `sessionId` 时会话里的提议卡片一起消失。 */
   deleteMemory(memoryId: string, sessionId?: string): Promise<boolean>
-  refreshProjects(): Promise<void>
+  /** 重新读取已打开过的项目；成功时返回最新列表，供需要立即使用的地方。 */
+  refreshProjects(): Promise<readonly ProjectSummary[] | undefined>
   /** 用系统对话框选择文件夹作为项目；取消或失败时返回 undefined。 */
   openProject(): Promise<ProjectSummary | undefined>
   /** 修改项目名称或开关（M3-02）；失败时返回 undefined。 */
@@ -1297,7 +1298,9 @@ export function createSessionStore(api: MainApi): SessionStore {
       async refreshProjects() {
         const result = await run(() => api.request('project.list', {}))
         // 旧版主进程或测试替身可能不返回列表
-        if (result) set({ projects: result.projects ?? [] })
+        if (!result) return undefined
+        set({ projects: result.projects ?? [] })
+        return result.projects ?? []
       },
 
       async openProject() {

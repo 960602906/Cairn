@@ -3,13 +3,14 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import type { MemoryEntry } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
 import type { SessionStore } from '../session-store.js'
 import { SessionStoreProvider } from '../store-context.js'
 import { MemorySettings } from './MemorySettings.js'
+import { clearSettingsData } from './settings-data-cache.js'
 
 const i18n = createI18n('zh-CN')
 
@@ -59,6 +60,7 @@ const wrap = (ui: ReactNode, store = makeStore()) =>
     </I18nextProvider>,
   )
 
+beforeEach(clearSettingsData)
 afterEach(cleanup)
 
 describe('MemorySettings（M7-04）', () => {

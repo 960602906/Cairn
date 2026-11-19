@@ -5,7 +5,7 @@
  * 取消归档或删除之后重新读取。彻底删除不可恢复，删除前先确认。
  */
 import { Archive, ArchiveRestore, Trash2, TriangleAlert } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionSummary } from '@cairn/protocol'
 import { getMainApi } from '../api.js'
@@ -25,6 +25,7 @@ import {
 } from '../ui/index.js'
 import { SettingsCard, SettingsEmpty } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
+import { useSettingsData } from './settings-data-cache.js'
 
 export function ArchivedSessionsSettings() {
   const { t } = useTranslation('settings')
@@ -33,25 +34,20 @@ export function ArchivedSessionsSettings() {
   const projects = useSessionStore((s) => s.projects)
   const unarchiveSession = useSessionStore((s) => s.unarchiveSession)
   const deleteSession = useSessionStore((s) => s.deleteSession)
-  const [sessions, setSessions] = useState<readonly SessionSummary[]>([])
-  const [loading, setLoading] = useState(true)
+  const {
+    value: archived,
+    failed,
+    reload: load,
+  } = useSettingsData('settings:archived', async () => {
+    const api = getMainApi()
+    if (!api) return []
+    const result = await api.request('session.list', { includeArchived: true })
+    return result.sessions.filter((session) => session.status === 'archived')
+  })
+  const sessions = archived ?? []
+  const loading = archived === undefined && !failed
   const [pending, setPending] = useState<string | undefined>()
   const [deleting, setDeleting] = useState<SessionSummary | undefined>()
-
-  const load = useCallback(async () => {
-    const api = getMainApi()
-    if (!api) {
-      setLoading(false)
-      return
-    }
-    const result = await api.request('session.list', { includeArchived: true })
-    setSessions(result.sessions.filter((session) => session.status === 'archived'))
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   const restore = async (sessionId: string) => {
     setPending(sessionId)

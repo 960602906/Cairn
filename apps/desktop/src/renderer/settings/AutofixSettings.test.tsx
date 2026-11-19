@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import {
   RpcError,
@@ -17,8 +17,10 @@ import type { MainApi } from '../api.js'
 import { createSessionStore, type SessionStore } from '../session-store.js'
 import { SessionStoreContext } from '../store-context.js'
 import { AutofixSettings } from './AutofixSettings.js'
+import { clearSettingsData } from './settings-data-cache.js'
 
 afterEach(cleanup)
+beforeEach(clearSettingsData)
 
 const SETTINGS: Settings = { locale: 'zh-CN', providers: [] }
 

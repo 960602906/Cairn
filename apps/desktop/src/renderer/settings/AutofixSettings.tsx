@@ -17,13 +17,13 @@ import type {
   GithubCheckConclusion,
   GithubCheckRun,
   GithubPullRequest,
-  GithubStatus,
   PullRequestWatch,
 } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
 import { Button, Checkbox, Spinner } from '../ui/index.js'
 import { Field, SettingsGroup, inputClass } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
+import { useSettingsData } from './settings-data-cache.js'
 
 function useErrorText() {
   const { i18n } = useTranslation()
@@ -99,7 +99,10 @@ export function AutofixSettings() {
   const setAutoFixPaused = useSessionStore((s) => s.setAutoFixPaused)
   const projects = useSessionStore((s) => s.projects)
 
-  const [connection, setConnection] = useState<GithubStatus | undefined>(undefined)
+  const { value: connection, set: setConnection } = useSettingsData(
+    'settings:github-status',
+    status,
+  )
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -119,9 +122,8 @@ export function AutofixSettings() {
   const [pauseBusy, setPauseBusy] = useState(false)
 
   useEffect(() => {
-    void status().then((value) => value && setConnection(value))
     void refreshAutofix()
-  }, [status, refreshAutofix])
+  }, [refreshAutofix])
 
   useEffect(() => {
     if (watchPath === '' && projects.length > 0) setWatchPath(projects[0]!.path)

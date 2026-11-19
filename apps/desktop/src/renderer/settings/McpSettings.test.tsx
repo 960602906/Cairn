@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import {
   RpcError,
@@ -16,8 +16,10 @@ import {
 import type { MainApi } from '../api.js'
 import { App } from '../App.js'
 import { createSessionStore } from '../session-store.js'
+import { clearSettingsData } from './settings-data-cache.js'
 
 afterEach(cleanup)
+beforeEach(clearSettingsData)
 
 const tool = (patch: Partial<McpToolSummary> = {}): McpToolSummary => ({
   name: 'mcp_fixture_echo',
