@@ -72,17 +72,17 @@ test('设置页完成检查、下载，并显示重启确认', async ({ launch }
       timeout: 30_000,
     })
 
-    await window.getByRole('button', { name: '更新' }).click()
+    await window.getByRole('main').getByRole('button', { name: '更新' }).click()
     await expect(window.getByText(`${source.version} 已下载并通过校验，可以安装。`)).toBeVisible({
       timeout: 90_000,
     })
     await expect(window.getByText(/unsigned beta/)).toBeVisible()
-    await expect(window.getByRole('button', { name: '安装' })).toBeEnabled()
+    await expect(window.getByRole('main').getByRole('button', { name: '安装' })).toBeEnabled()
 
     await setTheme(window, '浅色', 'light')
     await window.screenshot({ path: path.join(ARTIFACTS, 'update-settings-light.png') })
 
-    await window.getByRole('button', { name: '安装' }).click()
+    await window.getByRole('main').getByRole('button', { name: '安装' }).click()
     const dialog = window.getByRole('dialog')
     await expect(dialog.getByText(`安装 ${source.version} 并重启？`)).toBeVisible()
     await expect(dialog.getByText(/这个版本没有可验证的发布者签名/)).toBeVisible()
@@ -149,7 +149,7 @@ test('有任务运行时重启被阻止', async ({ launch, userData }) => {
     await openUpdateSettings(window)
     await expect(window.getByText(`${source.version} 已下载并通过校验，可以安装。`)).toBeVisible()
     await expect(window.getByText('还有任务在运行；完成或停止后再安装。')).toBeVisible()
-    const restart = window.getByRole('button', { name: '安装' })
+    const restart = window.getByRole('main').getByRole('button', { name: '安装' })
     await expect(restart).toBeDisabled()
     await expect(window.getByRole('dialog')).toHaveCount(0)
 
