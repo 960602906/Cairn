@@ -1421,3 +1421,100 @@ describe('trial sessions (M4-12)', () => {
     })
   })
 })
+
+describe('edit and regenerate (ADR-0046)', () => {
+  /** 两轮完整的问答；返回会话、运行 id、两轮的用户消息事件与最后一条助手消息 id。 */
+  async function twoTurns() {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor)
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: text('第一轮') })
+    // 新会话的 runId 由主进程分配并写进用户消息；run.created 随宿主开始这一轮发出。
+    const runId = published.find((event) => event.type === 'message.user')!.runId
+    await flush()
+    startTurn(sessionId, runId, 't1')
+    hostEmits(sessionId, runId, [
+      'message.assistant.completed',
+      { messageId: 'a1', content: text('回复一'), model: defaults.model },
+      { turnId: 't1' },
+    ])
+    finishTurn(sessionId, runId, 't1')
+
+    manager.prompt({ sessionId, content: text('第二轮') })
+    await flush()
+    startTurn(sessionId, runId, 't2', false)
+    hostEmits(sessionId, runId, [
+      'message.assistant.completed',
+      { messageId: 'a2', content: text('回复二'), model: defaults.model },
+      { turnId: 't2' },
+    ])
+    finishTurn(sessionId, runId, 't2')
+    const users = published.filter((event) => event.type === 'message.user')
+    return { manager, hosts, sessionId, runId, user1: users[0]!, user2: users[1]! }
+  }
+
+  it('编辑用户消息：回退到这一轮开头，重启宿主并用新内容重发', async () => {
+    const { manager, hosts, sessionId, user2 } = await twoTurns()
+    const edited = manager.editMessage({
+      sessionId,
+      messageId: user2.payload.messageId,
+      content: text('改过的问题'),
+    })
+    const rewound = published.filter((event) => event.type === 'conversation.rewound').at(-1)
+    expect(rewound?.payload).toEqual({ fromSeq: user2.seq, reason: 'edit' })
+    expect(edited.messageId).not.toBe(user2.payload.messageId)
+
+    await flush()
+    // 旧宿主被停掉，新宿主从事件日志重建历史：只剩第一轮。
+    expect(hosts).toHaveLength(2)
+    expect(hosts[1]?.init.history).toEqual([
+      { role: 'user', content: text('第一轮'), ts: 1_000, turnId: 't1' },
+      { role: 'assistant', content: text('回复一'), model: defaults.model, ts: 1_000 },
+    ])
+    expect(hosts[1]?.prompts).toEqual([edited.messageId])
+    expect(hosts[1]?.inputs[0]).toMatchObject({ content: text('改过的问题') })
+    expect(published.filter((event) => event.type === 'message.user').at(-1)?.payload).toEqual({
+      messageId: edited.messageId,
+      content: text('改过的问题'),
+    })
+  })
+
+  it('重新生成：复用原来的输入和上下文，回退到这一轮开头', async () => {
+    const { manager, hosts, sessionId, user2 } = await twoTurns()
+    manager.regenerate({ sessionId, messageId: 'a2' })
+    const rewound = published.filter((event) => event.type === 'conversation.rewound').at(-1)
+    expect(rewound?.payload).toEqual({ fromSeq: user2.seq, reason: 'regenerate' })
+
+    await flush()
+    expect(hosts).toHaveLength(2)
+    expect(hosts[1]?.init.history).toEqual([
+      { role: 'user', content: text('第一轮'), ts: 1_000, turnId: 't1' },
+      { role: 'assistant', content: text('回复一'), model: defaults.model, ts: 1_000 },
+    ])
+    const resent = published.filter((event) => event.type === 'message.user').at(-1)
+    expect(resent?.payload).toMatchObject({ content: text('第二轮') })
+  })
+
+  it('运行中或目标不是轮次开头时拒绝回退', async () => {
+    const { manager, hosts, sessionId, runId, user1 } = await twoTurns()
+    manager.prompt({ sessionId, content: text('第三轮') })
+    await flush()
+    startTurn(sessionId, runId, 't3', false)
+    expect(() =>
+      manager.editMessage({ sessionId, messageId: user1.payload.messageId, content: text('x') }),
+    ).toThrow(expect.objectContaining({ code: 'run.busy' }))
+    expect(() => manager.regenerate({ sessionId, messageId: 'a1' })).toThrow(
+      expect.objectContaining({ code: 'run.busy' }),
+    )
+    // 运行中再发一条会成为这一轮的引导；它不是轮次开头，结束后不能作为编辑起点。
+    const steer = manager.prompt({ sessionId, content: text('补充') })
+    finishTurn(sessionId, runId, 't3')
+    expect(() =>
+      manager.editMessage({ sessionId, messageId: steer.messageId, content: text('x') }),
+    ).toThrow(expect.objectContaining({ code: 'rpc.invalid_params' }))
+    expect(() =>
+      manager.editMessage({ sessionId, messageId: 'missing', content: text('x') }),
+    ).toThrow(expect.objectContaining({ code: 'rpc.invalid_params' }))
+    expect(hosts.length).toBeGreaterThan(0)
+  })
+})

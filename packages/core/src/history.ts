@@ -14,6 +14,8 @@
  *   这样每个工具调用都恰好有一个结果，满足各家接口"调用必须配对"的要求。
  * - `context.compacted`（M3-03）：最后一次摘要替换它覆盖的轮次；被点名的工具输出换成省略说明。
  *   原始事件仍在日志里，这里只决定发给模型的历史。
+ * - `conversation.rewound`（编辑重发 / 重新生成）：`fromSeq` 到本事件之间的事件退出对话，
+ *   重建时直接跳过；事件之后的输入照常进入历史。
  * - `session.brief.updated`（M3-04）：最新的会话要点放在历史最前面，不按 runId 过滤。
  *   压缩会换掉更早的摘要，要点在最后再放回去，所以不会被摘要吃掉。
  */
@@ -58,6 +60,11 @@ export function rebuildHistory(
   { runId }: RebuildHistoryOptions,
 ): CanonicalMessage[] {
   const history: CanonicalMessage[] = []
+  // 回退区间是 [fromSeq, 回退事件自身)；先收集，避免顺序处理时把已回退的事件再算进历史。
+  const recorded = [...events]
+  const rewinds = recorded.filter((event) => event.type === 'conversation.rewound')
+  const isRewound = (seq: number) =>
+    rewinds.some((rewind) => seq >= rewind.payload.fromSeq && seq < rewind.seq)
   /** 最近一条助手消息中尚未得到结果的调用，按调用顺序。 */
   let pending: ToolCall[] = []
   /** 审批 id → 工具调用 id。 */
@@ -87,8 +94,10 @@ export function rebuildHistory(
     pending = []
   }
 
-  for (const event of events) {
+  for (const event of recorded) {
     if (!isPersistedEvent(event) || event.seq <= lastSeq) continue
+    // 被回退的事件（含被回退的压缩与恢复）不进入历史；回退事件本身也只是控制标记。
+    if (event.type === 'conversation.rewound' || isRewound(event.seq)) continue
     if (event.type === 'session.brief.updated') {
       lastSeq = event.seq
       lastTs = event.ts

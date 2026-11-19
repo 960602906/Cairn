@@ -59,6 +59,14 @@ export interface SessionCommands {
       context?: string | undefined
     },
   ) => z.input<Requests['session.prompt']['result']>
+  /** 编辑重发：引用已在网关里展开，与 `prompt` 相同。 */
+  readonly editMessage: (
+    params: Omit<z.output<Requests['session.editMessage']['params']>, 'mentions'> & {
+      mentions?: ResolvedMention[] | undefined
+      context?: string | undefined
+    },
+  ) => z.input<Requests['session.editMessage']['result']>
+  readonly regenerate: Handler<'session.regenerate'>
   readonly abort: Handler<'session.abort'>
   readonly rename: Handler<'session.rename'>
   readonly archive: Handler<'session.archive'>
@@ -433,6 +441,54 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
         mentions ? mentions.search(params) : { entries: [], truncated: false },
       )
       endpoint.handle('fs.exists', (params) => files.exists(params))
+      /**
+       * 展开一次输入里的引用（ADR-0037）：`@` 文件、`/技能名` 与 `@Agent名`。
+       * 普通发送与编辑重发共用，保证两条路径给模型的上下文一致。
+       */
+      async function expandPromptInput(
+        sessionId: string,
+        requested: Pick<
+          z.output<Requests['session.prompt']['params']>,
+          'mentions' | 'skills' | 'agents'
+        >,
+      ) {
+        const contexts: string[] = []
+        let resolvedMentions: ResolvedMention[] | undefined
+        if (requested.mentions && requested.mentions.length > 0 && mentions) {
+          const expanded = await mentions.expand({ sessionId, mentions: requested.mentions })
+          resolvedMentions = expanded.mentions
+          if (expanded.context !== undefined) contexts.push(expanded.context)
+        }
+
+        const skillExpansion =
+          requested.skills === undefined || requested.skills.length === 0
+            ? { skills: [], context: undefined }
+            : expandPromptSkills(skills.catalog?.(sessionId) ?? [], requested.skills)
+        if (skillExpansion.context !== undefined) contexts.push(skillExpansion.context)
+
+        // 只能点名当前 Agent 的委派白名单里的目标：名单外的名字照旧只是文字，
+        // 不再让模型去调用一个会被拒绝的 delegate。
+        const agentExpansion = expandPromptAgents(
+          requested.agents === undefined || requested.agents.length === 0
+            ? []
+            : agents.list({}).agents,
+          requested.agents ?? [],
+          requested.agents === undefined || requested.agents.length === 0
+            ? undefined
+            : await commands.delegationTargets({ sessionId }),
+        )
+        if (agentExpansion.context !== undefined) contexts.push(agentExpansion.context)
+
+        return {
+          ...(resolvedMentions !== undefined && resolvedMentions.length > 0
+            ? { mentions: resolvedMentions }
+            : {}),
+          ...(skillExpansion.skills.length > 0 ? { skills: skillExpansion.skills } : {}),
+          ...(agentExpansion.agents.length > 0 ? { agents: agentExpansion.agents } : {}),
+          ...(contexts.length > 0 ? { context: contexts.join('\n\n') } : {}),
+        }
+      }
+
       endpoint.handle(
         'session.prompt',
         async ({
@@ -440,48 +496,34 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           skills: requestedSkills,
           agents: requestedAgents,
           ...params
-        }) => {
-          const contexts: string[] = []
-          let resolvedMentions: ResolvedMention[] | undefined
-          if (requested && requested.length > 0 && mentions) {
-            const expanded = await mentions.expand({
-              sessionId: params.sessionId,
-              mentions: requested,
-            })
-            resolvedMentions = expanded.mentions
-            if (expanded.context !== undefined) contexts.push(expanded.context)
-          }
-
-          const skillExpansion =
-            requestedSkills === undefined || requestedSkills.length === 0
-              ? { skills: [], context: undefined }
-              : expandPromptSkills(skills.catalog?.(params.sessionId) ?? [], requestedSkills)
-          if (skillExpansion.context !== undefined) contexts.push(skillExpansion.context)
-
-          // 只能点名当前 Agent 的委派白名单里的目标：名单外的名字照旧只是文字，
-          // 不再让模型去调用一个会被拒绝的 delegate。
-          const agentExpansion = expandPromptAgents(
-            requestedAgents === undefined || requestedAgents.length === 0
-              ? []
-              : agents.list({}).agents,
-            requestedAgents ?? [],
-            requestedAgents === undefined || requestedAgents.length === 0
-              ? undefined
-              : await commands.delegationTargets({ sessionId: params.sessionId }),
-          )
-          if (agentExpansion.context !== undefined) contexts.push(agentExpansion.context)
-
-          return commands.prompt({
+        }) =>
+          commands.prompt({
             ...params,
-            ...(resolvedMentions !== undefined && resolvedMentions.length > 0
-              ? { mentions: resolvedMentions }
-              : {}),
-            ...(skillExpansion.skills.length > 0 ? { skills: skillExpansion.skills } : {}),
-            ...(agentExpansion.agents.length > 0 ? { agents: agentExpansion.agents } : {}),
-            ...(contexts.length > 0 ? { context: contexts.join('\n\n') } : {}),
-          })
-        },
+            ...(await expandPromptInput(params.sessionId, {
+              mentions: requested,
+              skills: requestedSkills,
+              agents: requestedAgents,
+            })),
+          }),
       )
+      endpoint.handle(
+        'session.editMessage',
+        async ({
+          mentions: requested,
+          skills: requestedSkills,
+          agents: requestedAgents,
+          ...params
+        }) =>
+          commands.editMessage({
+            ...params,
+            ...(await expandPromptInput(params.sessionId, {
+              mentions: requested,
+              skills: requestedSkills,
+              agents: requestedAgents,
+            })),
+          }),
+      )
+      endpoint.handle('session.regenerate', (params) => commands.regenerate(params))
       endpoint.handle('plan.approve', (params) => commands.approvePlan(params))
       endpoint.handle('plan.replan', (params) => commands.replan(params))
       endpoint.handle('plan.abandon', (params) => commands.abandonPlan(params))

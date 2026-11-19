@@ -2279,3 +2279,105 @@ describe('MessageStream 流水线（M7-08）', () => {
     expect(cards[1]?.textContent).toContain('失败')
   })
 })
+
+describe('编辑重发与重新生成（ADR-0046）', () => {
+  const finished = () =>
+    view([
+      ...START,
+      ev(5, 'message.assistant.completed', { messageId: 'a1', content: text('回答一'), model }),
+      ev(6, 'turn.completed', { durationMs: 5 }),
+      ev(7, 'message.user', { messageId: 'u2', content: text('第二轮') }, 't2'),
+      ev(8, 'turn.started', {}, 't2'),
+      ev(
+        9,
+        'message.assistant.completed',
+        { messageId: 'a2', content: text('回答二'), model },
+        't2',
+      ),
+      ev(10, 'turn.completed', { durationMs: 5 }, 't2'),
+    ])
+
+  function renderStream(
+    stream: SessionView,
+    actions: { editMessage?: ReturnType<typeof vi.fn>; regenerate?: ReturnType<typeof vi.fn> } = {},
+    awaiting = false,
+  ) {
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: 's1',
+      awaitingTurn: awaiting ? { s1: true } : {},
+      approvals: {},
+      changes: {},
+      projects: [],
+      agents: [],
+      settings: { providers: [] },
+      sendPrompt: vi.fn(),
+      editMessage: actions.editMessage ?? vi.fn(async () => true),
+      regenerate: actions.regenerate ?? vi.fn(async () => true),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={stream} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('编辑轮次开头的用户消息：显示输入框，确认后带新文本重发', async () => {
+    const editMessage = vi.fn(async () => true)
+    renderStream(finished(), { editMessage })
+    // 每一轮开头的用户消息都有编辑入口；中间的引导输入没有。
+    const edits = screen.getAllByRole('button', { name: '编辑消息' })
+    expect(edits).toHaveLength(2)
+    await userEvent.click(edits[0]!)
+
+    const box = screen.getByRole('textbox', { name: '编辑消息' })
+    expect((box as HTMLTextAreaElement).value).toBe('你好')
+    await userEvent.clear(box)
+    await userEvent.type(box, '改过的问题')
+    await userEvent.click(screen.getByRole('button', { name: '保存并重发' }))
+
+    // 后面还有一轮：先确认会丢弃它们。
+    expect(screen.getByText('回退这段对话？')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '回退并重新开始' }))
+    expect(editMessage).toHaveBeenCalledWith('u1', '改过的问题', {
+      agents: [],
+      agentNames: [],
+    })
+  })
+
+  it('取消编辑不发请求', async () => {
+    const editMessage = vi.fn(async () => true)
+    renderStream(finished(), { editMessage })
+    await userEvent.click(screen.getAllByRole('button', { name: '编辑消息' })[1]!)
+    await userEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('textbox', { name: '编辑消息' })).toBeNull()
+    expect(editMessage).not.toHaveBeenCalled()
+  })
+
+  it('重新生成：最后一轮直接重发，较早的轮次先确认', async () => {
+    const regenerate = vi.fn(async () => true)
+    renderStream(finished(), { regenerate })
+    const buttons = screen.getAllByRole('button', { name: '重新生成' })
+    expect(buttons).toHaveLength(2)
+
+    // 最后一轮之后没有别的轮次：直接开始。
+    await userEvent.click(buttons[1]!)
+    expect(regenerate).toHaveBeenCalledWith('a2')
+
+    // 第一轮之后还有一轮：确认后才回退。
+    await userEvent.click(buttons[0]!)
+    expect(screen.getByText('回退这段对话？')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '回退并重新开始' }))
+    expect(regenerate).toHaveBeenCalledWith('a1')
+  })
+
+  it('运行中不可编辑或重新生成', () => {
+    renderStream(finished(), {}, true)
+    for (const name of ['编辑消息', '重新生成']) {
+      for (const button of screen.getAllByRole('button', { name })) {
+        expect((button as HTMLButtonElement).disabled).toBe(true)
+      }
+    }
+  })
+})

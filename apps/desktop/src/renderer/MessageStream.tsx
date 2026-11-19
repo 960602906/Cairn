@@ -10,7 +10,16 @@
  * M2-08：每轮的用户消息上方是检查点分隔线，轮次操作中有“撤销本轮”，恢复之后显示恢复标记
  * （`Checkpoints.tsx`）。
  */
-import { Bot, Check, ChevronRight, Copy, Lightbulb } from 'lucide-react'
+import {
+  Bot,
+  Check,
+  ChevronRight,
+  Copy,
+  Lightbulb,
+  Pencil,
+  RefreshCw,
+  TriangleAlert,
+} from 'lucide-react'
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -25,6 +34,7 @@ import {
   type PipelineView,
   type SessionView,
   type ToolCallView,
+  type UserMessageView,
 } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
 import {
@@ -36,9 +46,9 @@ import {
   type ResolvedMention,
   type ToolCall,
 } from '@cairn/protocol'
-import { RestoreMarks, restoresByMessage, UndoTurnButton } from './Checkpoints.js'
+import { RestoreMarks, restoresByMessage, UndoTurnButton, useCanRestore } from './Checkpoints.js'
 import { COMPOSER_COMMANDS } from './composer-commands.js'
-import { parseMention, tokenize } from './composer-tokens.js'
+import { extractAgents, parseMention, tokenize } from './composer-tokens.js'
 import { FileTypeIcon } from './file-icons.js'
 import { TurnChanges } from './FileChanges.js'
 import { DelegationCard } from './DelegationCard.js'
@@ -64,6 +74,12 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
   IconButton,
   Shimmer,
 } from './ui/index.js'
@@ -559,6 +575,215 @@ const UserContent = memo(function UserContent({
 const textOf = (parts: readonly ContentPart[]) =>
   parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n\n')
 
+/**
+ * 回退对话的确认框（编辑重发 / 重新生成共用）：说明会丢掉这一轮之后的对话，
+ * 并明确工作区文件不会自动撤销（撤销文件仍走轮次操作里的“撤销本轮”）。
+ */
+function RewindDialog({
+  open,
+  later,
+  onClose,
+  onConfirm,
+}: {
+  readonly open: boolean
+  /** 这一轮之后还有几轮会被丢弃；0 表示只重做这一轮。 */
+  readonly later: number
+  readonly onClose: () => void
+  readonly onConfirm: () => void
+}) {
+  const { t } = useTranslation('session')
+  const { t: tc } = useTranslation()
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent tone="danger" icon={<TriangleAlert />}>
+        <DialogTitle>{t('rewind.title')}</DialogTitle>
+        <DialogDescription>
+          {later > 0 ? t('rewind.description', { count: later }) : t('rewind.descriptionLast')}
+        </DialogDescription>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button>{tc('action.cancel')}</Button>
+          </DialogClose>
+          <Button variant="danger" onClick={onConfirm}>
+            {t('rewind.confirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** 轮次操作里的“重新生成”：回退这一轮并按原输入重新开始。 */
+function RegenerateButton({
+  view,
+  messageId,
+  turnNumber,
+  turnCount,
+}: {
+  readonly view: SessionView
+  /** 这一轮最后一条助手消息；主进程据此找到轮次开头。 */
+  readonly messageId: string
+  readonly turnNumber: number | undefined
+  readonly turnCount: number
+}) {
+  const { t } = useTranslation('session')
+  const canRewind = useCanRestore(view)
+  const regenerate = useSessionStore((s) => s.regenerate)
+  const [confirming, setConfirming] = useState(false)
+  const later = turnCount - (turnNumber ?? turnCount)
+  const run = () => void regenerate(messageId)
+  return (
+    <>
+      <IconButton
+        label={t('message.regenerate')}
+        size="icon-sm"
+        disabled={!canRewind}
+        onClick={() => (later > 0 ? setConfirming(true) : run())}
+      >
+        <RefreshCw />
+      </IconButton>
+      <RewindDialog
+        open={confirming}
+        later={later}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false)
+          run()
+        }}
+      />
+    </>
+  )
+}
+
+/**
+ * 用户消息：气泡，以及“编辑并重发”。编辑时气泡换成多行输入框；
+ * 有后续轮次时先确认，避免误删之后的对话。
+ */
+function UserMessage({
+  message,
+  view,
+  canEdit,
+  turnNumber,
+  turnCount,
+  onOpenFile,
+}: {
+  readonly message: UserMessageView
+  readonly view: SessionView
+  readonly canEdit: boolean
+  readonly turnNumber: number | undefined
+  readonly turnCount: number
+  readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
+}) {
+  const { t } = useTranslation('session')
+  const canRewind = useCanRestore(view)
+  const editMessage = useSessionStore((s) => s.editMessage)
+  const agents = useSessionStore((s) => s.agents) ?? []
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const later = turnCount - (turnNumber ?? turnCount)
+
+  const startEditing = () => {
+    setDraft(textOf(message.content))
+    setEditing(true)
+  }
+  const cancelEditing = () => {
+    setEditing(false)
+    setConfirming(false)
+  }
+  const save = async () => {
+    if (draft.trim() === '' || saving) return
+    setSaving(true)
+    // 编辑后的文本可能改动了 `@` 引用：按当前 Agent 名称重新提取，文件引用交给主进程展开。
+    const agentMentions = agents.flatMap((agent) =>
+      [agent.name['zh-CN'], agent.name['en-US']]
+        .map((name) => name?.trim())
+        .filter((name): name is string => name !== undefined && name !== '')
+        .map((name) => ({ agentId: agent.agentId, name })),
+    )
+    const sent = await editMessage(message.messageId, draft, {
+      agents: extractAgents(draft, agentMentions),
+      agentNames: agentMentions.map((item) => item.name),
+    })
+    setSaving(false)
+    if (sent) setEditing(false)
+  }
+  const requestSave = () => {
+    if (later > 0) setConfirming(true)
+    else void save()
+  }
+
+  return (
+    <>
+      {editing ? (
+        <div className="w-full max-w-[78%] rounded-[10px] bg-sunk2 px-3.5 py-2.5 shadow-1">
+          <textarea
+            aria-label={t('message.edit')}
+            autoFocus
+            value={draft}
+            rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                cancelEditing()
+              } else if (
+                event.key === 'Enter' &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault()
+                requestSave()
+              }
+            }}
+            className="block max-h-[45vh] w-full resize-y break-words bg-transparent text-body text-fg caret-fg outline-none placeholder:text-faint"
+          />
+          <div className="mt-2 flex items-center justify-end gap-1.5">
+            <Button size="sm" variant="ghost" disabled={saving} onClick={cancelEditing}>
+              {t('message.edit.cancel')}
+            </Button>
+            <Button size="sm" disabled={saving || draft.trim() === ''} onClick={requestSave}>
+              {t('message.edit.save')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="max-w-[78%] rounded-[10px] bg-sunk2 px-3.5 py-2.5 text-fg shadow-1">
+          <UserContent
+            parts={message.content}
+            mentions={message.mentions ?? []}
+            skills={message.skills ?? []}
+            agents={message.agents ?? []}
+            onOpenFile={onOpenFile}
+          />
+        </div>
+      )}
+      {canEdit && !editing && (
+        <div className="mt-1 flex items-center gap-0.5">
+          <IconButton
+            label={t('message.edit')}
+            size="icon-sm"
+            disabled={!canRewind}
+            onClick={startEditing}
+          >
+            <Pencil />
+          </IconButton>
+        </div>
+      )}
+      <RewindDialog
+        open={confirming}
+        later={later}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false)
+          void save()
+        }}
+      />
+    </>
+  )
+}
+
 export interface TurnFooter {
   readonly text: string
 }
@@ -678,9 +903,17 @@ function Message({
   onOpenChanges,
   resolvePaths,
   onOpenFile,
+  canEdit,
+  turnNumber,
+  turnCount,
 }: {
   readonly message: MessageView
   readonly view: SessionView
+  /** 这条用户消息是所在轮次的第一条（可以编辑重发）。 */
+  readonly canEdit: boolean
+  /** 这条消息所在轮次的序号（从 1 开始）。 */
+  readonly turnNumber: number | undefined
+  readonly turnCount: number
   readonly footer: TurnFooter | undefined
   readonly plans: readonly PlanView[]
   /** 这一轮的审查循环（M7-07）：挂在最后一轮消息后面。 */
@@ -739,15 +972,14 @@ function Message({
       >
         {marks}
         <strong className="sr-only">{t('message.user')}</strong>
-        <div className="max-w-[78%] rounded-[10px] bg-sunk2 px-3.5 py-2.5 text-fg shadow-1">
-          <UserContent
-            parts={message.content}
-            mentions={message.mentions ?? []}
-            skills={message.skills ?? []}
-            agents={message.agents ?? []}
-            onOpenFile={onOpenFile}
-          />
-        </div>
+        <UserMessage
+          message={message}
+          view={view}
+          canEdit={canEdit}
+          turnNumber={turnNumber}
+          turnCount={turnCount}
+          onOpenFile={onOpenFile}
+        />
         {restores && (
           <div className="self-stretch">
             <RestoreMarks view={view} restores={restores} />
@@ -832,7 +1064,17 @@ function Message({
       )}
       {footer && (
         <TurnActions text={footer.text}>
-          {message.turnId !== undefined && <UndoTurnButton view={view} turnId={message.turnId} />}
+          {message.turnId !== undefined && (
+            <>
+              <RegenerateButton
+                view={view}
+                messageId={message.messageId}
+                turnNumber={turnNumber}
+                turnCount={turnCount}
+              />
+              <UndoTurnButton view={view} turnId={message.turnId} />
+            </>
+          )}
         </TurnActions>
       )}
       {cards}
@@ -1101,6 +1343,28 @@ export function MessageStream({
       })
     : []
   const groupedItems = useMemo(() => groupMessages(messages), [messages])
+  /** 轮次序号（编辑 / 重新生成时判断后面还有几轮）；只数顶层运行的消息，子 Agent 的轮次不算。 */
+  const turns = useMemo(() => {
+    const numbers = new Map<string, number>()
+    for (const message of messages) {
+      if (message.turnId !== undefined && !numbers.has(message.turnId)) {
+        numbers.set(message.turnId, numbers.size + 1)
+      }
+    }
+    return numbers
+  }, [messages])
+  /** 每轮的第一条用户消息：只有它能作为编辑重发的起点。 */
+  const turnStarts = useMemo(() => {
+    const seen = new Set<string>()
+    const starts = new Set<string>()
+    for (const message of messages) {
+      if (message.role !== 'user' || message.turnId === undefined) continue
+      if (seen.has(message.turnId)) continue
+      seen.add(message.turnId)
+      starts.add(message.messageId)
+    }
+    return starts
+  }, [messages])
   const live = Object.values(view?.live ?? {})
     .filter((message) => {
       const run = view?.runs[message.runId]
@@ -1301,6 +1565,9 @@ export function MessageStream({
                   onOpenChanges={onOpenChanges}
                   resolvePaths={resolvePaths}
                   onOpenFile={onOpenFile}
+                  canEdit={message.role === 'user' && turnStarts.has(message.messageId)}
+                  turnNumber={message.turnId === undefined ? undefined : turns.get(message.turnId)}
+                  turnCount={turns.size}
                 />
                 {lastOfTurn &&
                   message.turnId !== undefined &&
@@ -1438,7 +1705,15 @@ export function MessageStream({
                 {footer && (
                   <TurnActions text={footer.text}>
                     {lastMsg.turnId !== undefined && (
-                      <UndoTurnButton view={view} turnId={lastMsg.turnId} />
+                      <>
+                        <RegenerateButton
+                          view={view}
+                          messageId={lastMsg.messageId}
+                          turnNumber={turns.get(lastMsg.turnId)}
+                          turnCount={turns.size}
+                        />
+                        <UndoTurnButton view={view} turnId={lastMsg.turnId} />
+                      </>
                     )}
                   </TurnActions>
                 )}

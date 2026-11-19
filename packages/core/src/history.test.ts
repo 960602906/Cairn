@@ -556,3 +556,61 @@ describe('userTurnContent', () => {
     ])
   })
 })
+
+describe('rebuildHistory 与 conversation.rewound', () => {
+  /** 按顺序追加事件；`push` 返回事件，方便引用 seq。 */
+  function streamed() {
+    const ev = stream()
+    const events: EventEnvelope[] = []
+    const push = <T extends EventType>(event: EventEnvelope<T>) => {
+      events.push(event)
+      return event
+    }
+    return { ev, events, push }
+  }
+
+  it('回退点之后的事件不进入历史，回退之后的新输入保留', () => {
+    const { ev, events, push } = streamed()
+    const t1 = { turnId: 't1' }
+    const t2 = { turnId: 't2' }
+    const t3 = { turnId: 't3' }
+    push(ev('message.user', { messageId: 'u1', content: text('第一轮') }, t1))
+    push(ev('turn.started', {}, t1))
+    push(ev('message.assistant.completed', { messageId: 'a1', content: text('回复一'), model }, t1))
+    push(ev('turn.completed', { durationMs: 1 }, t1))
+    const user2 = push(ev('message.user', { messageId: 'u2', content: text('第二轮') }, t2))
+    push(ev('turn.started', {}, t2))
+    push(ev('message.assistant.completed', { messageId: 'a2', content: text('回复二'), model }, t2))
+    push(ev('turn.completed', { durationMs: 1 }, t2))
+    push(ev('conversation.rewound', { fromSeq: user2.seq, reason: 'edit' }))
+    push(ev('message.user', { messageId: 'u3', content: text('改过的问题') }, t3))
+    push(ev('turn.started', {}, t3))
+    push(ev('message.assistant.completed', { messageId: 'a3', content: text('新回复'), model }, t3))
+    push(ev('turn.completed', { durationMs: 1 }, t3))
+
+    const history = rebuild(events)
+    expect(roles(history)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(history[0]).toMatchObject({ role: 'user', content: text('第一轮') })
+    expect(history[2]).toMatchObject({ role: 'user', content: text('改过的问题') })
+  })
+
+  it('被回退的压缩不会吃掉更早的轮次', () => {
+    const { ev, events, push } = streamed()
+    const t1 = { turnId: 't1' }
+    const t2 = { turnId: 't2' }
+    push(ev('message.user', { messageId: 'u1', content: text('第一轮') }, t1))
+    push(ev('turn.started', {}, t1))
+    push(ev('message.assistant.completed', { messageId: 'a1', content: text('回复一'), model }, t1))
+    push(ev('turn.completed', { durationMs: 1 }, t1))
+    const user2 = push(ev('message.user', { messageId: 'u2', content: text('第二轮') }, t2))
+    push(ev('turn.started', {}, t2))
+    push(ev('message.assistant.completed', { messageId: 'a2', content: text('回复二'), model }, t2))
+    push(ev('turn.completed', { durationMs: 1 }, t2))
+    push(ev('context.compacted', { summary: '两轮摘要', coversTurns: ['t1', 't2'] }))
+    push(ev('conversation.rewound', { fromSeq: user2.seq, reason: 'regenerate' }))
+
+    const history = rebuild(events)
+    expect(roles(history)).toEqual(['user', 'assistant'])
+    expect(history[0]).toMatchObject({ role: 'user', content: text('第一轮') })
+  })
+})

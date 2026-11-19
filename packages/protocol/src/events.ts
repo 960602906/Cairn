@@ -222,6 +222,14 @@ const payloadSchemas = {
      */
     incomplete: z.literal(true).optional(),
   }),
+  /**
+   * 回退对话（编辑重发、重新生成）：`fromSeq` 及之后、本事件之前的事件退出当前对话。
+   * 事件仍保留在日志里（ADR-0005 只追加），视图与重建历史都跳过这段区间；工作区文件不受影响。
+   */
+  'conversation.rewound': z.object({
+    fromSeq: z.number().int().positive(),
+    reason: z.enum(['edit', 'regenerate']),
+  }),
 
   // ---------- 工具 ----------
   'tool.requested': z.object({ toolCallId: Id, name: Id, input: z.unknown() }),

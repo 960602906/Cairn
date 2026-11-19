@@ -196,6 +196,8 @@ function setup(
     create: vi.fn(() => ({ sessionId: 'new' })),
     list: vi.fn(() => ({ sessions: [] })),
     prompt: vi.fn(() => ({ messageId: 'm1' })),
+    editMessage: vi.fn(() => ({ messageId: 'm1' })),
+    regenerate: vi.fn(() => ({ messageId: 'm1' })),
     abort: vi.fn(() => ({})),
     rename: vi.fn(() => ({})),
     archive: vi.fn(() => ({})),
