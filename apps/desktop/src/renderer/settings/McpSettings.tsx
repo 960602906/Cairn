@@ -31,6 +31,7 @@ import {
   DialogFooter,
   DialogTitle,
   IconButton,
+  Spinner,
   Switch,
 } from '../ui/index.js'
 import { Field, inputClass, SettingsCard, SettingsEmpty } from './Field.js'
@@ -38,6 +39,7 @@ import { ListFilter } from './ListFilter.js'
 import { SettingsHeader } from './SettingsPage.js'
 import { McpGlyph } from './SettingIcons.js'
 import { McpMarketDialog } from './McpMarketDialog.js'
+import { useSettingsData } from './settings-data-cache.js'
 
 const CATEGORIES: readonly ToolCategory[] = ['read', 'write', 'execute', 'network']
 const EFFECTS: readonly PermissionEffect[] = ['allow', 'ask', 'deny']
@@ -294,7 +296,15 @@ export function McpSettings() {
   const mcpLogs = useSessionStore((s) => s.mcpLogs)
   const onMcpStatus = useSessionStore((s) => s.onMcpStatus)
 
-  const [servers, setServers] = useState<readonly McpServerSummary[]>([])
+  const {
+    value: serverData,
+    failed: serversFailed,
+    reload: reloadServers,
+  } = useSettingsData('settings:mcp', listMcpServers)
+  const servers = serverData ?? []
+  const load = useCallback(async () => {
+    await reloadServers()
+  }, [reloadServers])
   const [form, setForm] = useState<FormState | undefined>()
   const [saving, setSaving] = useState(false)
   const [detail, setDetail] = useState<McpServerDetail | undefined>()
@@ -326,11 +336,6 @@ export function McpSettings() {
   const allVisibleSelected =
     visible.length > 0 && visible.every((server) => selected.includes(server.serverId))
 
-  const load = useCallback(async () => {
-    const result = await listMcpServers()
-    if (result) setServers(result)
-  }, [listMcpServers])
-
   const loadDetail = useCallback(
     async (serverId: string) => {
       const [server, entries] = await Promise.all([getMcpServer(serverId), mcpLogs(serverId)])
@@ -339,10 +344,6 @@ export function McpSettings() {
     },
     [getMcpServer, mcpLogs],
   )
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   useEffect(() => {
     return onMcpStatus((event) => {
@@ -544,7 +545,11 @@ export function McpSettings() {
         </div>
       )}
 
-      {servers.length === 0 ? (
+      {serverData === undefined && !serversFailed ? (
+        <div className="flex items-center justify-center py-10 text-muted">
+          <Spinner className="size-4" />
+        </div>
+      ) : servers.length === 0 ? (
         <SettingsEmpty
           icon={<McpGlyph />}
           title={t('mcp.emptyTitle')}

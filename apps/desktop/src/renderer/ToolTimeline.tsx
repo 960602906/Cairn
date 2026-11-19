@@ -1,16 +1,17 @@
 /**
  * 工具步骤（M2-05，视觉规范 §6；M1-16b 起的工具卡片改写）：助手消息中的工具调用按顺序排成列表。
  *
- * - 每一步一行：左侧是环石 C（执行中旋转、完成绿色、失败红色；等待中空心圆、取消 –），
+ * - 每一步一行：左侧是状态图形（完成对勾、执行中缺口转圈、失败叉、等待空心圆、取消横杠），
  *   无纵向连接线；文字是“动作 + 对象”（如“读取 `src/a.ts`”），进行中的步骤文字流光；右侧是耗时或状态。
- * - 点击一行展开详情：参数与完整输出（可滚动）、截断说明。失败的错误不用展开就显示。
+ * - 点击一行展开详情：参数与完整输出（可滚动）、截断说明、这条命令的沙箱。失败的错误不用展开就显示。
  * - `run_command` 用终端卡片（M2-06）：执行中直接显示实时输出，完成后展开显示；退出码不是 0 时默认展开。
  *   `read_file` 展开后用代码卡片显示读到的内容。其他工具执行中显示实时输出的最后几行。
  * - 状态文字总在（完成时只给读屏），供读屏与测试使用。
+ * - 组头只有一句话：正在做的那一步（“正在运行 `npm test`”），完成后才换成计数式总结。
  *
  * 不使用 `<p>`：消息流的测试按段落读取消息正文。
  */
-import { ChevronRight, Minus } from 'lucide-react'
+import { Check, ChevronRight, Circle, LoaderCircle, Minus, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -24,22 +25,14 @@ import {
   type LiveToolOutputView,
   type ToolCallView,
 } from '@cairn/core'
-import { translateError } from '@cairn/i18n'
+import { translateError, type TFunction } from '@cairn/i18n'
 import type { ContentPart } from '@cairn/protocol'
 import { CodeCard } from './CodeCard.js'
 import { formatDuration } from './format.js'
 import { languageForPath } from './languages.js'
-import { SandboxBadge } from './SandboxBadge.js'
 import { TerminalCard, type TerminalCardProps } from './TerminalCard.js'
 import { parseReadFileOutput, parseRunCommandOutput } from './tool-results.js'
-import {
-  CairnMark,
-  cn,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-  Shimmer,
-} from './ui/index.js'
+import { cn, Collapsible, CollapsibleContent, CollapsibleTrigger, Shimmer } from './ui/index.js'
 
 export { formatDuration }
 
@@ -182,88 +175,90 @@ export function terminalData(
   }
 }
 
-function Node({
+/**
+ * 状态图形：完成是对勾、执行中是缺口转圈、失败是叉、等待是空心圆、取消是横杠。
+ * 形状本身就说明状态，颜色只在完成（绿）和失败（红）上做辅助。
+ */
+export function ToolStatusIcon({
   status,
   exitCode,
+  size = 13,
+  className,
 }: {
   readonly status: ToolCallView['status']
   readonly exitCode?: number | null | undefined
+  readonly size?: number
+  readonly className?: string
 }) {
-  const base = 'flex size-4 shrink-0 items-center justify-center'
+  const box = { width: size, height: size }
   if (exitCode !== undefined && exitCode !== null && exitCode !== 0) {
     return (
-      <span aria-hidden className={cn(base, 'text-danger')}>
-        <CairnMark size={13} />
-      </span>
+      <X
+        aria-hidden
+        style={box}
+        strokeWidth={2.6}
+        className={cn('shrink-0 text-danger', className)}
+      />
     )
   }
   switch (status) {
     case 'completed':
       return (
-        <span aria-hidden className={cn(base, 'text-ok')}>
-          <CairnMark size={13} />
-        </span>
+        <Check
+          aria-hidden
+          style={box}
+          strokeWidth={2.8}
+          className={cn('shrink-0 text-ok opacity-80', className)}
+        />
       )
     case 'running':
       return (
-        <span
+        <LoaderCircle
           aria-hidden
-          className={cn(base, 'animate-spin text-accent')}
-          style={{ animationDuration: '1.4s' }}
-        >
-          <CairnMark size={13} />
-        </span>
+          style={{ ...box, animationDuration: '1.4s' }}
+          strokeWidth={2.4}
+          className={cn('shrink-0 animate-spin text-accent', className)}
+        />
       )
     case 'failed':
       return (
-        <span aria-hidden className={cn(base, 'text-danger')}>
-          <CairnMark size={13} />
-        </span>
+        <X
+          aria-hidden
+          style={box}
+          strokeWidth={2.6}
+          className={cn('shrink-0 text-danger', className)}
+        />
       )
     case 'cancelled':
       return (
-        <span aria-hidden className={cn(base, 'text-faint')}>
-          <Minus className="size-3" />
-        </span>
+        <Minus
+          aria-hidden
+          style={box}
+          strokeWidth={2.4}
+          className={cn('shrink-0 text-faint', className)}
+        />
       )
     default:
       return (
-        <span aria-hidden className={base}>
-          <span className="size-2 rounded-full shadow-[inset_0_0_0_1.5px_var(--faint)]" />
-        </span>
+        <Circle
+          aria-hidden
+          style={box}
+          strokeWidth={2}
+          className={cn('shrink-0 text-faint opacity-55', className)}
+        />
       )
   }
 }
 
-export interface ToolStepProps {
-  readonly name: string
-  /** 模型给出的参数（工具事件到达之前使用）。 */
-  readonly input: unknown
-  readonly tool: ToolCallView | undefined
-  readonly live: LiveToolOutputView | undefined
-  /** 这一步正在等待审批（右侧显示“等待审批”）。 */
-  readonly awaitingApproval?: boolean
+/** 一步工具的“动作 + 对象”，人话优先：参数按语义取字段，取不到才退回单行 JSON。 */
+export interface ToolCallDescription {
+  readonly action: string
+  readonly object: string
+  /** 对象不是路径或命令（计划、技能这类结构化参数），不用等宽字体。 */
+  readonly plain: boolean
 }
 
-/** 时间线中的一步。 */
-export function ToolStep({ name, input, tool, live, awaitingApproval = false }: ToolStepProps) {
-  const { t, i18n } = useTranslation('session')
-  const [openState, setOpen] = useState<boolean>()
-  const status = tool?.status ?? 'requested'
-  const args = tool?.input ?? input
-  const running = status === 'running'
-  const output = tool?.output ? outputText(tool.output) : ''
-  const shownOutput =
-    name === ASK_USER_TOOL
-      ? (formatAskUserAnswers(output) ??
-        (isAskUserCancelled(output) ? t('question.cancelled') : output))
-      : output
-  const terminal = name === 'run_command' ? terminalData(args, tool, live) : undefined
-  const file =
-    name === 'read_file' && status === 'completed' ? parseReadFileOutput(output) : undefined
-  const open = openState ?? false
-  const liveText = running && live && !terminal ? live.chunks.map((c) => c.text).join('') : ''
-  const tail = liveText.trim() === '' ? undefined : previewLines(liveText, 'end')
+export function describeToolCall(name: string, args: unknown, t: TFunction): ToolCallDescription {
   const argsRecord =
     typeof args === 'object' && args !== null ? (args as Record<string, unknown>) : {}
   // 计划与待办列表工具的参数是结构化对象，直接抖 JSON 很丑；用一句人能读懂的话代替。
@@ -325,23 +320,53 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
     action = name === 'load_skill' ? '' : ACTIONS.has(name) ? t(`tool.action.${name}`) : name
     object = summarizeInput(args)
   }
+  return { action, object, plain: name === 'load_skill' || planTool }
+}
+
+export interface ToolStepProps {
+  readonly name: string
+  /** 模型给出的参数（工具事件到达之前使用）。 */
+  readonly input: unknown
+  readonly tool: ToolCallView | undefined
+  readonly live: LiveToolOutputView | undefined
+  /** 这一步正在等待审批（右侧显示“等待审批”）。 */
+  readonly awaitingApproval?: boolean
+}
+
+/** 时间线中的一步。 */
+export function ToolStep({ name, input, tool, live, awaitingApproval = false }: ToolStepProps) {
+  const { t, i18n } = useTranslation('session')
+  const [openState, setOpen] = useState<boolean>()
+  const status = tool?.status ?? 'requested'
+  const args = tool?.input ?? input
+  const running = status === 'running'
+  const output = tool?.output ? outputText(tool.output) : ''
+  const shownOutput =
+    name === ASK_USER_TOOL
+      ? (formatAskUserAnswers(output) ??
+        (isAskUserCancelled(output) ? t('question.cancelled') : output))
+      : output
+  const terminal = name === 'run_command' ? terminalData(args, tool, live) : undefined
+  const file =
+    name === 'read_file' && status === 'completed' ? parseReadFileOutput(output) : undefined
+  const open = openState ?? false
+  const liveText = running && live && !terminal ? live.chunks.map((c) => c.text).join('') : ''
+  const tail = liveText.trim() === '' ? undefined : previewLines(liveText, 'end')
+  const { action, object, plain } = describeToolCall(name, args, t)
   const statusText =
     awaitingApproval && status === 'requested'
       ? t('tool.awaitingApproval')
       : t(`tool.status.${status}`)
-  const label = (
-    <>
-      {action !== '' && <span className="shrink-0">{action}</span>}
-      <code
-        className={cn(
-          'min-w-0 truncate text-[12.5px] text-fg2',
-          name === 'load_skill' || planTool ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
-        )}
-      >
-        {object}
-      </code>
-    </>
-  )
+  const exitCode = terminal?.exitCode
+  const failedExit = exitCode !== undefined && exitCode !== null && exitCode !== 0
+  const duration = tool?.durationMs === undefined ? undefined : formatDuration(tool.durationMs)
+  /** 右侧只有一段灰字：退出码、耗时，或者状态。 */
+  const meta =
+    status === 'completed'
+      ? failedExit
+        ? t('terminal.exitCode', { code: exitCode })
+        : (duration ?? '')
+      : statusText
 
   return (
     <li className="relative">
@@ -350,56 +375,45 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
           type="button"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="group/step flex w-full items-center gap-2.5 rounded-item py-1 text-left text-ui text-fg2 outline-none hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
+          className="group/step -mx-[7px] grid h-7 w-full grid-cols-[18px_auto_minmax(0,1fr)_auto_14px] items-center gap-x-[7px] rounded-[7px] px-[7px] text-left text-ui text-fg2 outline-none hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
         >
-          <Node status={status} exitCode={terminal?.exitCode} />
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            {running ? (
-              <Shimmer className="flex min-w-0 items-center gap-1.5">{label}</Shimmer>
-            ) : (
-              label
-            )}
+          <ToolStatusIcon status={status} exitCode={exitCode} />
+          {/* 动作列始终保留占位，技能这类没有动作词的工具才不会让后面几列整体左移。 */}
+          <span className="shrink-0">
+            {action !== '' && <>{running ? <Shimmer>{action}</Shimmer> : action} </>}
           </span>
-          {terminal?.sandbox && <SandboxBadge execution={terminal.sandbox} compact />}
-          {terminal?.exitCode !== undefined &&
-            terminal.exitCode !== null &&
-            terminal.exitCode !== 0 && (
-              <span className="tabular shrink-0 rounded-[4px] bg-danger/10 px-1.5 py-0.5 text-[11px] font-medium text-danger">
-                {t('terminal.exitCode', { code: terminal.exitCode })}
-              </span>
+          <code
+            className={cn(
+              'w-fit min-w-0 max-w-full truncate text-[12px] text-fg2',
+              plain ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
             )}
+          >
+            {running ? <Shimmer>{object}</Shimmer> : object}
+          </code>
           <span
             className={cn(
               'tabular shrink-0 text-note',
-              status === 'failed' || (terminal?.exitCode !== undefined && terminal.exitCode !== 0)
-                ? 'text-danger'
-                : 'text-muted',
+              status === 'failed' || failedExit ? 'text-danger' : 'text-faint',
             )}
           >
-            {status === 'completed' ? (
-              <>
-                <span className="sr-only">{statusText} </span>
-                {tool?.durationMs !== undefined && formatDuration(tool.durationMs)}
-              </>
-            ) : (
-              statusText
-            )}
+            {status === 'completed' && <span className="sr-only">{statusText} </span>}
+            {meta}
           </span>
           <ChevronRight
             aria-hidden
             className={cn(
               'size-3.5 shrink-0 text-faint transition-[transform,opacity] group-hover/step:text-fg',
-              open ? 'rotate-90 opacity-100 text-fg' : 'opacity-60',
+              open ? 'rotate-90 opacity-100 text-fg' : 'opacity-0 group-hover/step:opacity-80',
             )}
           />
         </button>
         {tool?.error && (
-          <div role="note" className="ml-[26px] text-note text-danger">
+          <div role="note" className="ml-[25px] text-note text-danger">
             {translateError(i18n, tool.error)}
           </div>
         )}
         {tail && (
-          <div className="mt-1 ml-[26px] rounded-item bg-sunk px-3 py-2 font-mono text-[12px] text-fg2">
+          <div className="mt-1 ml-[25px] rounded-item bg-sunk px-3 py-2 font-mono text-[12px] text-fg2">
             {tail.omitted > 0 && (
               <div className="text-faint">{t('tool.earlierLines', { count: tail.omitted })}</div>
             )}
@@ -407,13 +421,13 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
           </div>
         )}
         {open && terminal && (
-          <div className="mt-1 mb-2 ml-[26px] flex flex-col gap-1 text-note">
+          <div className="mt-1 mb-2 ml-[25px] flex flex-col gap-1 text-note">
             <TerminalCard {...terminal} />
             {tool?.truncated && <div className="text-muted">{t('tool.truncated')}</div>}
           </div>
         )}
         {open && file && (
-          <div className="mt-1 mb-2 ml-[26px] flex flex-col gap-1 text-note">
+          <div className="mt-1 mb-2 ml-[25px] flex flex-col gap-1 text-note">
             <CodeCard
               className="my-0"
               code={file.code}
@@ -430,7 +444,7 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
           </div>
         )}
         {open && !terminal && !file && (
-          <div className="mt-1 mb-2 ml-[26px] flex flex-col gap-2 text-note">
+          <div className="mt-1 mb-2 ml-[25px] flex flex-col gap-2 text-note">
             <div>
               <div className="mb-1 text-muted">{t('tool.input')}</div>
               <pre className="max-h-48 overflow-auto rounded-item bg-sunk px-3 py-2 font-mono text-[12px] whitespace-pre-wrap break-all text-fg2">
@@ -453,51 +467,125 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
   )
 }
 
+/** 组头的一句话：只说现在在干什么；完成后才换成计数式总结。 */
+export interface ActivityHeadline {
+  readonly tone: 'running' | 'attention' | 'waiting' | 'cancelled' | 'done'
+  readonly label: string
+  /** 对象（命令、路径、计划目标…）。 */
+  readonly object?: string | undefined
+  /** 对象不是路径或命令（计划、技能这类结构化参数），不用等宽字体。 */
+  readonly plain?: boolean | undefined
+  /** 失败/取消时读作「命令 + 失败」，对象在前。 */
+  readonly objectFirst?: boolean | undefined
+}
+
+/** 组头（整行、无边框、悬停变底色）：与步骤行共用 18px 图标列与 7px 间距。 */
+export const ACTIVITY_TRIGGER_CLASS =
+  '-mx-[7px] flex h-[30px] w-full cursor-pointer select-none items-center gap-x-[7px] rounded-[7px] px-[7px] text-left text-ui text-fg2 outline-none hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent'
+
+export function ActivityGroupHeaderContent({
+  headline,
+  open,
+  shimmer = false,
+}: {
+  readonly headline: ActivityHeadline
+  readonly open: boolean
+  /** 执行中的文字流光。 */
+  readonly shimmer?: boolean
+}) {
+  const status: ToolCallView['status'] =
+    headline.tone === 'done'
+      ? 'completed'
+      : headline.tone === 'attention'
+        ? 'failed'
+        : headline.tone === 'cancelled'
+          ? 'cancelled'
+          : headline.tone === 'waiting'
+            ? 'requested'
+            : 'running'
+  const object =
+    headline.object === undefined || headline.object === '' ? null : (
+      <code
+        className={cn(
+          'min-w-0 truncate text-[12px] text-fg2',
+          headline.plain ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
+        )}
+      >
+        {headline.object}
+      </code>
+    )
+  const label = (
+    <span className={cn('shrink-0 truncate', headline.tone === 'attention' && 'text-danger')}>
+      {shimmer ? <Shimmer>{headline.label}</Shimmer> : headline.label}
+    </span>
+  )
+  return (
+    <>
+      <span className="flex w-[18px] shrink-0 items-center">
+        <ToolStatusIcon status={status} size={15} />
+      </span>
+      <span className="flex min-w-0 flex-1 items-center gap-x-[7px] text-[13px] font-medium">
+        {headline.objectFirst ? (
+          <>
+            {object} {label}
+          </>
+        ) : (
+          <>
+            {label}
+            {object === null ? null : ' '}
+            {object}
+          </>
+        )}
+      </span>
+      <ChevronRight
+        aria-hidden
+        className={cn(
+          'size-3.5 shrink-0 text-faint transition-transform duration-150',
+          open ? 'rotate-90 text-fg2' : 'opacity-70',
+        )}
+      />
+    </>
+  )
+}
+
 /** 一条助手消息中的工具调用：运行中和异常时展示步骤，正常结束后收起为摘要。 */
 export function ToolTimeline({
   children,
   count,
   running,
   attention = false,
+  headline,
 }: {
   readonly children: ReactNode
   /** 省略时保持原来的逐条展示（也供独立工具卡片使用）。 */
   readonly count?: number
   readonly running?: boolean
   readonly attention?: boolean
+  /** 组头的一句话；省略时退回计数式文案。 */
+  readonly headline?: ActivityHeadline | undefined
 }) {
   const { t } = useTranslation('session')
   const [openState, setOpenState] = useState<boolean>()
   const open = openState ?? (running === true || attention)
-  const steps = (
-    <ol className={cn('flex flex-col', count === undefined ? 'my-2' : 'mt-1')}>{children}</ol>
-  )
+  // 嵌在归组里时不留外边距：每一步 28px，行与行无缝接上（间距由归组容器负责）。
+  const steps = <ol className={cn('flex flex-col', count !== undefined && 'mt-0.5')}>{children}</ol>
   if (count === undefined) return steps
+
+  const shown: ActivityHeadline = headline ?? {
+    tone: running ? 'running' : attention ? 'attention' : 'done',
+    label: t(
+      running ? 'tool.group.running' : attention ? 'tool.group.attention' : 'tool.group.done',
+      { steps: count },
+    ),
+  }
 
   return (
     <Collapsible open={open} onOpenChange={setOpenState} className="my-2">
-      <CollapsibleTrigger
-        data-tool-group
-        className="group/tools flex w-full items-center gap-2 rounded-item py-1 text-left text-ui text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
-      >
-        <CairnMark
-          size={15}
-          className={cn(
-            'shrink-0',
-            running ? 'animate-spin text-accent' : attention ? 'text-warn' : 'text-faint',
-          )}
-        />
-        <span className="min-w-0 flex-1">
-          {t(
-            running ? 'tool.group.running' : attention ? 'tool.group.attention' : 'tool.group.done',
-            {
-              steps: count,
-            },
-          )}
-        </span>
-        <ChevronRight
-          aria-hidden
-          className={cn('size-3.5 shrink-0 text-faint transition-transform', open && 'rotate-90')}
+      <CollapsibleTrigger data-tool-group className={ACTIVITY_TRIGGER_CLASS}>
+        <ActivityGroupHeaderContent
+          headline={shown}
+          open={open}
+          shimmer={shown.tone === 'running'}
         />
       </CollapsibleTrigger>
       <CollapsibleContent>{steps}</CollapsibleContent>

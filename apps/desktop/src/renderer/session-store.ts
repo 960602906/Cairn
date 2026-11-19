@@ -61,7 +61,6 @@ import {
   type HubSkillCard,
   type FileContent,
   type AutoFixStatus,
-  type AutoFixTrigger,
   type GithubCheckLog,
   type GithubPullRequest,
   type GithubStatus,
@@ -272,7 +271,8 @@ export interface SessionActions {
   updateMemory(memoryId: string, content: string): Promise<boolean>
   /** 管理界面：删除一条记忆；给了 `sessionId` 时会话里的提议卡片一起消失。 */
   deleteMemory(memoryId: string, sessionId?: string): Promise<boolean>
-  refreshProjects(): Promise<void>
+  /** 重新读取已打开过的项目；成功时返回最新列表，供需要立即使用的地方。 */
+  refreshProjects(): Promise<readonly ProjectSummary[] | undefined>
   /** 用系统对话框选择文件夹作为项目；取消或失败时返回 undefined。 */
   openProject(): Promise<ProjectSummary | undefined>
   /** 修改项目名称或开关（M3-02）；失败时返回 undefined。 */
@@ -487,25 +487,8 @@ export interface SessionActions {
   githubCheckLog(repo: string, checkRunId: number): Promise<GithubCheckLog | undefined>
   /** 自动修复监视与任务快照（M8-02）；变化时主进程推送 `autofix.changed`。 */
   refreshAutofix(): Promise<void>
-  /** 添加一个被监视的 PR（M8-02）；重复或超过上限时返回 undefined（错误写入 `error`）。 */
-  addAutoFixWatch(input: {
-    repo: string
-    prNumber: number
-    projectPath: string
-    triggers?: AutoFixTrigger[]
-    maxAttempts?: number
-  }): Promise<AutoFixStatus | undefined>
-  /** 启停监视、调整触发项或尝试上限（M8-02）。 */
-  updateAutoFixWatch(input: {
-    watchId: string
-    enabled?: boolean
-    triggers?: AutoFixTrigger[]
-    maxAttempts?: number
-  }): Promise<AutoFixStatus | undefined>
-  /** 删除监视并清理它的工作区与任务记录（M8-02）。 */
+  /** 停止监视并清理它的工作区与任务记录（M8-02）；开启由会话里的 Agent 完成。 */
   removeAutoFixWatch(watchId: string): Promise<AutoFixStatus | undefined>
-  /** 暂停或恢复全部监视（M8-02）。 */
-  setAutoFixPaused(paused: boolean): Promise<AutoFixStatus | undefined>
   /** 保存的全局与项目权限规则（M2-11）；失败时返回 undefined。 */
   permissionRules(): Promise<PermissionRuleEntry[] | undefined>
   /** 手动添加一条权限规则（M2-11）；失败时返回 undefined。 */
@@ -1297,7 +1280,9 @@ export function createSessionStore(api: MainApi): SessionStore {
       async refreshProjects() {
         const result = await run(() => api.request('project.list', {}))
         // 旧版主进程或测试替身可能不返回列表
-        if (result) set({ projects: result.projects ?? [] })
+        if (!result) return undefined
+        set({ projects: result.projects ?? [] })
+        return result.projects ?? []
       },
 
       async openProject() {
@@ -1513,26 +1498,8 @@ export function createSessionStore(api: MainApi): SessionStore {
         if (result) set({ autofix: result })
       },
 
-      async addAutoFixWatch(input) {
-        const result = await run(() => api.request('autofix.watch.add', input))
-        if (result) set({ autofix: result })
-        return result
-      },
-
-      async updateAutoFixWatch(input) {
-        const result = await run(() => api.request('autofix.watch.update', input))
-        if (result) set({ autofix: result })
-        return result
-      },
-
       async removeAutoFixWatch(watchId) {
         const result = await run(() => api.request('autofix.watch.remove', { watchId }))
-        if (result) set({ autofix: result })
-        return result
-      },
-
-      async setAutoFixPaused(paused) {
-        const result = await run(() => api.request('autofix.pause', { paused }))
         if (result) set({ autofix: result })
         return result
       },

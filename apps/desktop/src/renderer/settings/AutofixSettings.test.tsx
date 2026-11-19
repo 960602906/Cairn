@@ -2,23 +2,17 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
-import {
-  RpcError,
-  type AutoFixJob,
-  type AutoFixStatus,
-  type GithubPullRequest,
-  type GithubStatus,
-  type PullRequestWatch,
-  type Settings,
-} from '@cairn/protocol'
+import { RpcError, type GithubPullRequest, type GithubStatus, type Settings } from '@cairn/protocol'
 import type { MainApi } from '../api.js'
 import { createSessionStore, type SessionStore } from '../session-store.js'
 import { SessionStoreContext } from '../store-context.js'
 import { AutofixSettings } from './AutofixSettings.js'
+import { clearSettingsData } from './settings-data-cache.js'
 
 afterEach(cleanup)
+beforeEach(clearSettingsData)
 
 const SETTINGS: Settings = { locale: 'zh-CN', providers: [] }
 
@@ -45,31 +39,6 @@ const pull: GithubPullRequest = {
 
 type Handlers = Record<string, ((params: unknown) => unknown) | undefined>
 
-const EMPTY_AUTOFIX: AutoFixStatus = { paused: false, watches: [], jobs: [] }
-
-const WATCH: PullRequestWatch = {
-  watchId: 'w1',
-  repo: '960602906/Cairn',
-  prNumber: 202,
-  projectPath: '/work/cairn',
-  triggers: ['ci', 'conflict'],
-  maxAttempts: 3,
-  enabled: true,
-  attempts: 1,
-  createdAt: 1,
-}
-
-const JOB: AutoFixJob = {
-  jobId: 'j1',
-  watchId: 'w1',
-  trigger: 'ci',
-  signature: 'sha:test',
-  status: 'ready',
-  attempt: 1,
-  createdAt: 2,
-  updatedAt: 3,
-}
-
 function setup(handlers: Handlers = {}): {
   readonly store: SessionStore
   readonly request: ReturnType<typeof vi.fn>
@@ -78,7 +47,6 @@ function setup(handlers: Handlers = {}): {
     const handler = handlers[method]
     if (handler) return handler(params)
     if (method === 'github.status') return { connected: false } satisfies GithubStatus
-    if (method === 'autofix.status') return EMPTY_AUTOFIX satisfies AutoFixStatus
     if (method === 'settings.get') return SETTINGS
     return {}
   })
@@ -260,90 +228,6 @@ describe('AutofixSettings', () => {
     await userEvent.click(screen.getByRole('button', { name: '查询' }))
     expect((await screen.findByRole('alert')).textContent).toBeTruthy()
     expect(screen.queryByRole('list', { name: '检查项' })).toBeNull()
-  })
-
-  it('lists watches, toggles one and removes it', async () => {
-    const { request } = setup({
-      'github.status': () => ({ connected: true, login: 'mrqin' }),
-      'autofix.status': () => ({ paused: false, watches: [WATCH], jobs: [JOB] }),
-      'autofix.watch.update': () => ({
-        paused: false,
-        watches: [{ ...WATCH, enabled: false }],
-        jobs: [JOB],
-      }),
-      'autofix.watch.remove': () => EMPTY_AUTOFIX,
-      'autofix.pause': () => ({ paused: true, watches: [WATCH], jobs: [JOB] }),
-    })
-    expect(await screen.findByText('960602906/Cairn#202')).toBeTruthy()
-    expect(screen.getByText(/CI 失败 · 合并冲突/)).toBeTruthy()
-    expect(screen.getByText(/待检查/)).toBeTruthy()
-
-    await userEvent.click(screen.getByRole('button', { name: '暂停监视' }))
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('autofix.watch.update', {
-        watchId: 'w1',
-        enabled: false,
-      }),
-    )
-    expect(await screen.findByRole('button', { name: '恢复监视' })).toBeTruthy()
-
-    await userEvent.click(screen.getByRole('button', { name: '暂停全部' }))
-    await waitFor(() => expect(request).toHaveBeenCalledWith('autofix.pause', { paused: true }))
-    expect(await screen.findByText('监视已暂停')).toBeTruthy()
-
-    await userEvent.click(screen.getByRole('button', { name: '移除' }))
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('autofix.watch.remove', { watchId: 'w1' }),
-    )
-    expect(screen.queryByText('960602906/Cairn#202')).toBeNull()
-  })
-
-  it('adds a watch for an open project', async () => {
-    const { store, request } = setup({
-      'github.status': () => ({ connected: true, login: 'mrqin' }),
-      'autofix.status': () => EMPTY_AUTOFIX,
-      'autofix.watch.add': () => ({ paused: false, watches: [WATCH], jobs: [] }),
-    })
-    store.setState({
-      projects: [{ projectId: 'p1', name: 'Cairn', path: '/work/cairn', createdAt: 1 }],
-    })
-    expect(await screen.findByText('已连接 mrqin')).toBeTruthy()
-    await userEvent.type(screen.getByLabelText('监视仓库'), '960602906/Cairn')
-    await userEvent.type(screen.getByLabelText('监视 PR 编号'), '202')
-    await userEvent.click(screen.getByRole('button', { name: '添加监视' }))
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('autofix.watch.add', {
-        repo: '960602906/Cairn',
-        prNumber: 202,
-        projectPath: '/work/cairn',
-        triggers: ['ci', 'conflict'],
-      }),
-    )
-    expect(await screen.findByText('960602906/Cairn#202')).toBeTruthy()
-  })
-
-  it('lets a new watch react to new review comments too', async () => {
-    const { store, request } = setup({
-      'github.status': () => ({ connected: true, login: 'mrqin' }),
-      'autofix.status': () => EMPTY_AUTOFIX,
-      'autofix.watch.add': () => ({ paused: false, watches: [WATCH], jobs: [] }),
-    })
-    store.setState({
-      projects: [{ projectId: 'p1', name: 'Cairn', path: '/work/cairn', createdAt: 1 }],
-    })
-    expect(await screen.findByText('已连接 mrqin')).toBeTruthy()
-    await userEvent.type(screen.getByLabelText('监视仓库'), '960602906/Cairn')
-    await userEvent.type(screen.getByLabelText('监视 PR 编号'), '202')
-    await userEvent.click(screen.getByLabelText('新评审意见'))
-    await userEvent.click(screen.getByRole('button', { name: '添加监视' }))
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('autofix.watch.add', {
-        repo: '960602906/Cairn',
-        prNumber: 202,
-        projectPath: '/work/cairn',
-        triggers: ['ci', 'conflict', 'comment'],
-      }),
-    )
   })
 
   it('keeps the pull request when the log cannot be read', async () => {

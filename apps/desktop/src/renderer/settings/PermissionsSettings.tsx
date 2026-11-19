@@ -12,12 +12,13 @@
  */
 import type { PermissionMode, PermissionRule, PermissionRuleEntry } from '@cairn/protocol'
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { projectDisplayName } from '../project-name.js'
 import { useSessionStore } from '../store-context.js'
-import { Button, cn, IconButton, SegmentedControl } from '../ui/index.js'
+import { Button, cn, IconButton, SegmentedControl, Spinner } from '../ui/index.js'
 import { Field, inputClass, SettingsCard } from './Field.js'
+import { useSettingsData } from './settings-data-cache.js'
 import {
   GLOBAL_SCOPE,
   newRuleDraft,
@@ -261,19 +262,16 @@ export function PermissionsSettings() {
   const permissionRules = useSessionStore((s) => s.permissionRules)
   const deletePermissionRule = useSessionStore((s) => s.deletePermissionRule)
   const refreshProjects = useSessionStore((s) => s.refreshProjects)
-  const [entries, setEntries] = useState<readonly PermissionRuleEntry[] | undefined>()
+  const {
+    value: entries,
+    failed: rulesFailed,
+    reload: loadRules,
+  } = useSettingsData('settings:permission-rules', async () => {
+    // 规则的显示名依赖项目，先刷新项目再读规则。
+    await refreshProjects()
+    return permissionRules()
+  })
   const [adding, setAdding] = useState(false)
-
-  useEffect(() => {
-    let active = true
-    void refreshProjects()
-    void permissionRules().then((rules) => {
-      if (active) setEntries(rules ?? [])
-    })
-    return () => {
-      active = false
-    }
-  }, [permissionRules, refreshProjects])
 
   const projectName = (projectId: string) =>
     projectDisplayName(
@@ -284,9 +282,7 @@ export function PermissionsSettings() {
   const rows = ruleRows(presetRows(mode), entries ?? [])
 
   const remove = async (ruleId: string) => {
-    if (await deletePermissionRule(ruleId)) {
-      setEntries((list) => list?.filter((e) => e.rule.id !== ruleId))
-    }
+    if (await deletePermissionRule(ruleId)) await loadRules()
   }
 
   return (
@@ -312,8 +308,8 @@ export function PermissionsSettings() {
       {adding && (
         <RuleForm
           onCancel={() => setAdding(false)}
-          onAdded={(entry) => {
-            setEntries((list) => [...(list ?? []), entry])
+          onAdded={() => {
+            void loadRules()
             setAdding(false)
           }}
         />
@@ -322,7 +318,11 @@ export function PermissionsSettings() {
         aria-label={t('permissions.rules.title')}
         className="overflow-hidden rounded-card bg-raise shadow-[0_0_0_0.5px_var(--hair2),0_1px_2px_rgba(20,22,30,0.03)]"
       >
-        {entries !== undefined && rows.length === 0 ? (
+        {entries === undefined && !rulesFailed ? (
+          <div className="flex items-center justify-center py-6 text-muted">
+            <Spinner className="size-4" />
+          </div>
+        ) : rows.length === 0 ? (
           <p className="px-3.5 py-4 text-ui text-muted">{t('permissions.rules.empty')}</p>
         ) : (
           <ul aria-label={t('permissions.rules.list')}>

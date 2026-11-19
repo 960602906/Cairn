@@ -553,6 +553,17 @@ function setup(
       updateWatch: vi.fn(() => AUTO_FIX_STATUS),
       removeWatch: vi.fn(async () => AUTO_FIX_STATUS),
       setPaused: vi.fn(() => AUTO_FIX_STATUS),
+      watchFromSession: vi.fn(async () => ({
+        watchId: 'w1',
+        repo: 'o/r',
+        prNumber: 1,
+        projectPath: '/work',
+        triggers: ['ci' as const],
+        maxAttempts: 3,
+        enabled: true,
+        attempts: 0,
+        createdAt: 1,
+      })),
       subscribe: vi.fn((listener: () => void) => {
         autoFixListeners.add(listener)
         return () => autoFixListeners.delete(listener)

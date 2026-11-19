@@ -103,6 +103,7 @@ function setup(
   const refreshActivity = vi.fn(async () => {})
   const refreshCommands = vi.fn(async () => {})
   const refreshAutofix = vi.fn(async () => {})
+  const removeAutoFixWatch = vi.fn(async () => undefined)
   const loadCommandOutput = vi.fn(async () => undefined)
   const stopCommand = vi.fn(overrides.stopCommand ?? (async () => true))
   const resolveActivity = vi.fn(overrides.resolveActivity ?? (async () => true))
@@ -121,6 +122,7 @@ function setup(
     resolveActivity,
     autofix: overrides.autofix,
     refreshAutofix,
+    removeAutoFixWatch,
   })) as unknown as SessionStore
   render(
     <I18nextProvider i18n={i18n}>
@@ -133,6 +135,7 @@ function setup(
     refreshActivity,
     refreshCommands,
     refreshAutofix,
+    removeAutoFixWatch,
     loadCommandOutput,
     stopCommand,
     resolveActivity,
@@ -196,6 +199,32 @@ describe('ActivityView', () => {
     expect(within(item).getByText('触发：CI 失败 · 第 1/3 次')).toBeTruthy()
     await user.click(within(item).getByRole('button', { name: '查看' }))
     expect(onOpenSession).toHaveBeenCalledWith('s1')
+  })
+
+  it('stops watching a pull request from the activity row', async () => {
+    const user = userEvent.setup()
+    const { removeAutoFixWatch } = setup({
+      autofix: {
+        paused: false,
+        watches: [
+          {
+            watchId: 'w1',
+            repo: 'o/r',
+            prNumber: 12,
+            projectPath: '/work/demo',
+            triggers: ['ci'],
+            maxAttempts: 3,
+            enabled: true,
+            attempts: 0,
+            createdAt: 1_700_000_000_000,
+          },
+        ],
+        jobs: [],
+      },
+    })
+    const item = screen.getByRole('article', { name: '自动修复：o/r#12' })
+    await user.click(within(item).getByRole('button', { name: '停止监视' }))
+    expect(removeAutoFixWatch).toHaveBeenCalledWith('w1')
   })
 
   it('marks the auto-fix section while watching is paused', () => {

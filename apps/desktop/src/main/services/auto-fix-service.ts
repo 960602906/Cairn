@@ -87,6 +87,14 @@ export interface AutoFixCommands {
   }): AutoFixStatus
   removeWatch(input: { watchId: string }): Promise<AutoFixStatus>
   setPaused(input: { paused: boolean }): AutoFixStatus
+  /**
+   * 由普通会话为刚创建的 PR 开启监视（会话内“开启自动修复”）：本地仓库取自会话，先确认 PR 可读
+   * （同时验证 GitHub 已连接），再建立监视并立即评估一次。
+   */
+  watchFromSession(
+    sessionId: string,
+    input: { repo: string; prNumber: number; triggers?: AutoFixTrigger[] | undefined },
+  ): Promise<PullRequestWatchRecord>
 }
 
 export interface AutoFixService extends AutoFixCommands {
@@ -651,6 +659,36 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
     }
   }
 
+  /** 建立一条监视并立即评估一次；重复与上限在这里统一拒绝。 */
+  const createWatch = (input: {
+    repo: string
+    prNumber: number
+    projectPath: string
+    triggers?: readonly AutoFixTrigger[] | undefined
+    maxAttempts?: number | undefined
+  }): PullRequestWatchRecord => {
+    if (storage.autoFix.watches.findByPullRequest(input.repo, input.prNumber) !== undefined) {
+      throw new RpcError(AutoFixErrorCode.Duplicate, {
+        repo: input.repo,
+        prNumber: input.prNumber,
+      })
+    }
+    if (storage.autoFix.watches.list().length >= AUTO_FIX_MAX_WATCHES) {
+      throw new RpcError(AutoFixErrorCode.TooMany, { max: AUTO_FIX_MAX_WATCHES })
+    }
+    const watch = storage.autoFix.watches.create({
+      watchId: createId(),
+      repo: input.repo,
+      prNumber: input.prNumber,
+      projectPath: input.projectPath,
+      triggers: input.triggers ?? ['ci', 'conflict'],
+      maxAttempts: input.maxAttempts ?? AUTO_FIX_DEFAULT_ATTEMPTS,
+    })
+    emit()
+    void poll()
+    return watch
+  }
+
   return {
     contextFor(sessionId) {
       const job = storage.autoFix.jobs.getBySession(sessionId)
@@ -785,23 +823,23 @@ export function createAutoFixService(options: AutoFixServiceOptions): AutoFixSer
     status: snapshot,
 
     addWatch({ repo, prNumber, projectPath, triggers, maxAttempts }) {
-      if (storage.autoFix.watches.findByPullRequest(repo, prNumber) !== undefined) {
-        throw new RpcError(AutoFixErrorCode.Duplicate, { repo, prNumber })
-      }
-      if (storage.autoFix.watches.list().length >= AUTO_FIX_MAX_WATCHES) {
-        throw new RpcError(AutoFixErrorCode.TooMany, { max: AUTO_FIX_MAX_WATCHES })
-      }
-      storage.autoFix.watches.create({
-        watchId: createId(),
+      createWatch({ repo, prNumber, projectPath, triggers, maxAttempts })
+      return snapshot()
+    },
+
+    async watchFromSession(sessionId, { repo, prNumber, triggers }) {
+      const session = storage.sessions.get(sessionId)
+      if (session === undefined) throw new RpcError('storage.not_found', { sessionId })
+      // 只有用户自己的普通会话能开监视；修复会话与试运行不需要也不应该再开。
+      if (session.kind !== 'normal') throw new RpcError(AutoFixGitErrorCode.NotAutoFix)
+      // 先读一次 PR：令牌无效、仓库或编号不对时直接报错，不留下一个永远触发不了的监视。
+      await github.pullRequest({ repo, number: prNumber })
+      return createWatch({
         repo,
         prNumber,
-        projectPath,
-        triggers: triggers ?? ['ci', 'conflict'],
-        maxAttempts: maxAttempts ?? AUTO_FIX_DEFAULT_ATTEMPTS,
+        projectPath: session.projectPath,
+        ...(triggers === undefined ? {} : { triggers }),
       })
-      emit()
-      void poll()
-      return snapshot()
     },
 
     updateWatch({ watchId, enabled, triggers, maxAttempts }) {

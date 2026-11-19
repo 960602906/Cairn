@@ -20,7 +20,7 @@ import {
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
   HubSkillCard,
@@ -55,6 +55,11 @@ import { inputClass, SettingsCard, SettingsEmpty } from './Field.js'
 import { ListFilter } from './ListFilter.js'
 import { SettingsHeader } from './SettingsPage.js'
 import { SkillGlyph } from './SettingIcons.js'
+import { peekSettingsData, setSettingsData, useSettingsData } from './settings-data-cache.js'
+
+/** 技能页缓存的 key：离开设置再回来先显示上次的列表。 */
+const SKILLS_KEY = 'settings:skills'
+const HUB_SKILLS_KEY = 'settings:hub:skills'
 
 type PickKind = SkillInstallSource['kind']
 
@@ -240,7 +245,30 @@ export function SkillsSettings() {
   const uninstallSkill = useSessionStore((s) => s.uninstallSkill)
   const setSkillEnabled = useSessionStore((s) => s.setSkillEnabled)
 
-  const [skills, setSkills] = useState<readonly SkillSummary[]>([])
+  const {
+    value: skillData,
+    failed: skillsFailed,
+    reload: reloadSkills,
+  } = useSettingsData(SKILLS_KEY, async () => {
+    // 项目内技能是否读取取决于项目设置，先刷新项目，再一次性合并读取。
+    const currentProjects = (await refreshProjects()) ?? projects
+    const base = await listSkills()
+    if (!base) return undefined
+    const enabled = currentProjects.filter((project) => project.enableProjectSkills === true)
+    const extras = await Promise.all(enabled.map((project) => listSkills(project.projectId)))
+    const merged = [...base]
+    const seen = new Set(merged.map(keyOf))
+    for (const skill of extras.flatMap((result) => result ?? [])) {
+      if (skill.source !== 'project' || seen.has(keyOf(skill))) continue
+      seen.add(keyOf(skill))
+      merged.push(skill)
+    }
+    return merged
+  })
+  const skills = skillData ?? []
+  const load = useCallback(async () => {
+    await reloadSkills()
+  }, [reloadSkills])
   const [detail, setDetail] = useState<{ skill: SkillSummary; data?: SkillDetail } | undefined>()
   const [preview, setPreview] = useState<
     { source: SkillInstallSource; skill: SkillDetail } | undefined
@@ -253,7 +281,10 @@ export function SkillsSettings() {
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<'installed' | 'market'>('installed')
   const [hubQuery, setHubQuery] = useState('')
-  const [hubItems, setHubItems] = useState<readonly HubSkillCard[] | undefined>()
+  // 市场列表也缓存：默认浏览结果在离开页面后保留，回来先显示再后台刷新。
+  const [hubItems, setHubItems] = useState<readonly HubSkillCard[] | undefined>(() =>
+    peekSettingsData(HUB_SKILLS_KEY),
+  )
   const [hubLoading, setHubLoading] = useState(false)
   const [hubFailed, setHubFailed] = useState(false)
   const [installingSlug, setInstallingSlug] = useState<string | undefined>()
@@ -284,29 +315,6 @@ export function SkillsSettings() {
   const selectedRemovable = selectedSkills.filter((skill) => skill.source === 'user')
   const allVisibleSelected =
     visible.length > 0 && visible.every((skill) => selected.includes(keyOf(skill)))
-
-  const load = useCallback(async () => {
-    const base = await listSkills()
-    if (!base) return
-    const enabled = projects.filter((project) => project.enableProjectSkills === true)
-    const extras = await Promise.all(enabled.map((project) => listSkills(project.projectId)))
-    const merged = [...base]
-    const seen = new Set(merged.map(keyOf))
-    for (const skill of extras.flatMap((result) => result ?? [])) {
-      if (skill.source !== 'project' || seen.has(keyOf(skill))) continue
-      seen.add(keyOf(skill))
-      merged.push(skill)
-    }
-    setSkills(merged)
-  }, [listSkills, projects])
-
-  useEffect(() => {
-    void refreshProjects()
-  }, [refreshProjects])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   const pick = async (kind: PickKind) => {
     const source = await pickSkillSource(kind)
@@ -395,20 +403,28 @@ export function SkillsSettings() {
     }
   }
 
+  // 进入市场时先显示缓存里的浏览结果，同时后台刷新；用户正在搜索时不覆盖搜索结果。
+  const hubQueryRef = useRef(hubQuery)
+  hubQueryRef.current = hubQuery
   useEffect(() => {
-    if (view !== 'market' || hubItems !== undefined) return
+    if (view !== 'market') return
     let cancelled = false
     setHubLoading(true)
     void searchHubSkills('').then((items) => {
       if (cancelled) return
       setHubLoading(false)
-      if (!items) setHubFailed(true)
-      else setHubItems(items)
+      if (!items) {
+        setHubFailed(true)
+        return
+      }
+      setHubFailed(false)
+      setSettingsData(HUB_SKILLS_KEY, items)
+      if (hubQueryRef.current.trim() === '') setHubItems(items)
     })
     return () => {
       cancelled = true
     }
-  }, [view, hubItems, searchHubSkills])
+  }, [view, searchHubSkills])
 
   return (
     <>
@@ -657,7 +673,11 @@ export function SkillsSettings() {
               )}
             </div>
           )}
-          {skills.length === 0 ? (
+          {skillData === undefined && !skillsFailed ? (
+            <div className="flex items-center justify-center py-10 text-muted">
+              <Spinner className="size-4" />
+            </div>
+          ) : skills.length === 0 ? (
             <SettingsEmpty
               icon={<SkillGlyph />}
               title={t('skills.emptyTitle')}

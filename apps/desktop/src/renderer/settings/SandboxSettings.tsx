@@ -5,7 +5,6 @@
  * - 受限令牌机制不隔离网络；这里必须如实显示“网络未隔离”，不能只按所选策略暗示已隔离。
  * - 能力探测结果来自主进程（`sandbox.status`）；失败时提示导出诊断包，不静默隐藏。
  */
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, ShieldCheck, ShieldOff, X } from 'lucide-react'
 import {
@@ -19,6 +18,7 @@ import { useSessionStore } from '../store-context.js'
 import { sandboxReason } from '../sandbox-labels.js'
 import { cn, SegmentedControl, Spinner } from '../ui/index.js'
 import { Field, SettingsGroup } from './Field.js'
+import { useSettingsData } from './settings-data-cache.js'
 
 const PROFILE_OPTIONS: readonly SandboxDefaultProfile[] = ['read-only', 'workspace-write']
 const NETWORK_OPTIONS: readonly SandboxNetwork[] = ['none', 'internet', 'private']
@@ -136,19 +136,11 @@ export function SandboxSettings() {
   const unavailable = useSessionStore((s) => s.settings?.sandboxUnavailable ?? 'deny')
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const sandboxStatus = useSessionStore((s) => s.sandboxStatus)
-  const [status, setStatus] = useState<SandboxStatus | 'loading' | 'failed'>('loading')
-
-  useEffect(() => {
-    let cancelled = false
-    void sandboxStatus().then((result) => {
-      if (cancelled) return
-      const parsed = SandboxStatusSchema.safeParse(result)
-      setStatus(parsed.success ? parsed.data : 'failed')
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [sandboxStatus])
+  const { value: statusData, failed } = useSettingsData('settings:sandbox-status', async () => {
+    const parsed = SandboxStatusSchema.safeParse(await sandboxStatus())
+    return parsed.success ? parsed.data : undefined
+  })
+  const status: SandboxStatus | 'loading' | 'failed' = statusData ?? (failed ? 'failed' : 'loading')
 
   const mechanism = status === 'loading' || status === 'failed' ? undefined : status.mechanism
 

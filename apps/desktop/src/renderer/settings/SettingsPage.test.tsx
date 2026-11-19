@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import { I18nextProvider } from 'react-i18next'
 import { RpcError, type SandboxStatus, type Settings, type SettingsPatch } from '@cairn/protocol'
@@ -10,7 +10,9 @@ import { App } from '../App.js'
 import { createSessionStore } from '../session-store.js'
 import { SessionStoreProvider } from '../store-context.js'
 import { SettingsNav } from './SettingsPage.js'
+import { clearSettingsData } from './settings-data-cache.js'
 
+beforeEach(clearSettingsData)
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
@@ -147,7 +149,7 @@ describe('SettingsPage', () => {
     expect(screen.queryByRole('heading', { name: '通用与外观' })).toBeNull()
   })
 
-  it('groups categories into general, models & capabilities, and security', async () => {
+  it('groups categories, with update and about in a bottom group', async () => {
     setup()
     await openSettings()
     const nav = screen.getByRole('navigation', { name: '设置分类' })
@@ -157,14 +159,16 @@ describe('SettingsPage', () => {
       'settings-group-general',
       'settings-group-modelCapabilities',
       'settings-group-security',
+      'settings-group-app',
     ])
     const titles = (group: HTMLElement) =>
       within(group)
         .getAllByRole('button')
         .map((button) => button.textContent)
-    expect(titles(groups[0]!)).toEqual(['通用与外观', '已归档的对话', '更新', '关于 Cairn'])
+    expect(titles(groups[0]!)).toEqual(['通用与外观', '已归档的对话'])
     expect(titles(groups[1]!)).toEqual(['模型供应商', '自动修复', '技能', 'MCP 服务', '记忆'])
     expect(titles(groups[2]!)).toEqual(['权限与审批'])
+    expect(titles(groups[3]!)).toEqual(['更新', '关于 Cairn'])
   })
 
   it('opens the autofix section from the models group', async () => {
@@ -174,6 +178,8 @@ describe('SettingsPage', () => {
     await userEvent.click(within(nav).getByRole('button', { name: '自动修复' }))
     expect(await screen.findByRole('heading', { name: '自动修复' })).toBeTruthy()
     expect(await screen.findByText('GitHub 连接')).toBeTruthy()
+    // 监视不在这里配置：没有“添加监视”这类手动入口。
+    expect(screen.queryByRole('button', { name: '添加监视' })).toBeNull()
   })
 
   it('opens with Ctrl+, and leaves Esc to an open dialog', async () => {
@@ -261,6 +267,7 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('自动（bash）')).toBeTruthy()
     expect(screen.queryByRole('radiogroup', { name: '默认 Shell' })).toBeNull()
     cleanup()
+    clearSettingsData()
     setup({}, new Error('probe failed'))
     await openSettings()
     expect(await screen.findByText('自动（无法检测）')).toBeTruthy()

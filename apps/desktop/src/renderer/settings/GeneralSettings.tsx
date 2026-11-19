@@ -24,6 +24,7 @@ import { useSessionStore } from '../store-context.js'
 import { DEFAULT_THEME, THEME_CHOICES, themeChoice } from '../theme.js'
 import { Button, cn, SegmentedControl, Switch } from '../ui/index.js'
 import { Field, inputClass, SettingsGroup, ToggleRow } from './Field.js'
+import { useSettingsData } from './settings-data-cache.js'
 import { SandboxSettings } from './SandboxSettings.js'
 import { SettingsHeader } from './SettingsPage.js'
 
@@ -32,19 +33,9 @@ function ShellField() {
   const shellOptions = useSessionStore((s) => s.shellOptions)
   const preference = useSessionStore((s) => s.settings?.shell ?? 'auto')
   const updateSettings = useSessionStore((s) => s.updateSettings)
-  const [info, setInfo] = useState<
-    { detected: string; options: readonly ShellPreference[] } | 'loading' | 'failed'
-  >('loading')
-
-  useEffect(() => {
-    let cancelled = false
-    void shellOptions().then((result) => {
-      if (!cancelled) setInfo(result ?? 'failed')
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [shellOptions])
+  const { value, failed } = useSettingsData('settings:shell-options', shellOptions)
+  const info: { detected: string; options: readonly ShellPreference[] } | 'loading' | 'failed' =
+    value ?? (failed ? 'failed' : 'loading')
 
   const detected =
     info === 'loading'

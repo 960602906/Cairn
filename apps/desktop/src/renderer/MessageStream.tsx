@@ -10,7 +10,7 @@
  * M2-08：每轮的用户消息上方是检查点分隔线，轮次操作中有“撤销本轮”，恢复之后显示恢复标记
  * （`Checkpoints.tsx`）。
  */
-import { Activity, Bot, Brain, Check, ChevronRight, Copy } from 'lucide-react'
+import { Bot, Check, ChevronRight, Copy, Lightbulb } from 'lucide-react'
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -24,6 +24,7 @@ import {
   type ReviewLoopView,
   type PipelineView,
   type SessionView,
+  type ToolCallView,
 } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
 import {
@@ -48,7 +49,14 @@ import { ReviewLoopCard } from './ReviewLoopCard.js'
 import { RunningIndicator } from './RunningIndicator.js'
 import { outcomePresentation, runningActivityKey, TONE_SOFT } from './status-presentation.js'
 import { useSessionStore } from './store-context.js'
-import { ToolStep, ToolTimeline } from './ToolTimeline.js'
+import {
+  ACTIVITY_TRIGGER_CLASS,
+  ActivityGroupHeaderContent,
+  describeToolCall,
+  ToolStep,
+  ToolTimeline,
+  type ActivityHeadline,
+} from './ToolTimeline.js'
 import {
   Button,
   CairnMark,
@@ -113,9 +121,9 @@ function useEnteringIds(ids: readonly string[]): ReadonlySet<string> {
 }
 
 /**
- * 思考过程：卡片化的折叠容器（视觉规范 §6）。收起时只有一行“大脑图标 + 思考过程 + 展开箭头”，
- * 展开后正文在卡片里，和助手正文用发丝线隔开。流式输出时标签用流光文字。
+ * 思考过程：一行淡字（“思考 · 一句话摘要”），点开看全文。
  *
+ * 它同时充当执行过程的阶段分隔：连续的工具步骤被思考切成几段，扫读时有了停顿。
  * 正文用 `forceMount` 常驻 DOM、收起时靠高度归零（而不是卸载），这样流式内容和按文本查找都不受影响；
  * 收起状态下加 `aria-hidden`，与原生 `<details>` 一样不让读屏读到未展开的正文。
  */
@@ -128,23 +136,40 @@ const Reasoning = memo(function Reasoning({
 }) {
   const { t } = useTranslation('session')
   const [open, setOpen] = useState(false)
+  const firstLine = text.replace(/\s+/g, ' ').trim()
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="my-1.5 max-w-full">
-      <CollapsibleTrigger className="group/reasoning inline-flex items-center gap-1.5 rounded-[6px] px-2 py-0.5 text-left text-ui text-muted outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent">
-        <Brain
-          aria-hidden
-          className="size-3.5 shrink-0 text-faint transition-colors group-hover/reasoning:text-accent"
-        />
-        <span className="text-[12.5px] font-medium">
-          {live ? <Shimmer>{t('message.reasoning')}</Shimmer> : t('message.reasoning')}
+    <Collapsible open={open} onOpenChange={setOpen} className="max-w-full">
+      <CollapsibleTrigger
+        aria-label={t('message.reasoning')}
+        className="group/reasoning -mx-[7px] grid h-[26px] w-full cursor-pointer grid-cols-[18px_auto_minmax(0,1fr)_14px] items-center gap-x-[7px] rounded-[7px] px-[7px] text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+      >
+        <span className="flex w-[18px] items-center">
+          <Lightbulb aria-hidden className="size-[13px] shrink-0 text-faint opacity-55" />
+        </span>
+        <span className="w-[26px] shrink-0 text-[11px] tracking-[.04em] text-faint opacity-80">
+          {t('message.reasoningShort')}
+        </span>
+        <span className="min-w-0 truncate text-[12.5px] text-muted">
+          {firstLine === '' ? (
+            live ? (
+              <Shimmer>{t('message.reasoning')}</Shimmer>
+            ) : (
+              t('message.reasoning')
+            )
+          ) : (
+            firstLine
+          )}
         </span>
         <ChevronRight
           aria-hidden
-          className="size-3 shrink-0 text-faint transition-transform duration-150 group-data-[state=open]/reasoning:rotate-90"
+          className={cn(
+            'size-3.5 shrink-0 text-faint opacity-0 transition-transform duration-150 group-hover/reasoning:opacity-70',
+            open && 'rotate-90 opacity-70',
+          )}
         />
       </CollapsibleTrigger>
       <CollapsibleContent forceMount aria-hidden={!open} className={cn(!open && 'hidden')}>
-        <div className="mt-1 ml-2 border-l-2 border-hair2 py-1 pl-3 text-[13px] leading-relaxed whitespace-pre-wrap text-muted">
+        <div className="mt-1 mb-1.5 ml-[25px] rounded-[8px] bg-sunk px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap text-muted">
           {text}
         </div>
       </CollapsibleContent>
@@ -183,105 +208,181 @@ interface TurnActivityGroupProps {
   readonly steps: readonly TurnActivityStep[]
   readonly view: SessionView
   readonly isRunning: boolean
+  /** 轮次还在跑但没有正在执行的工具时，用它告诉用户现在处于哪个阶段（思考中 / 正在调用工具…）。 */
+  readonly phaseKey?: string | undefined
   readonly hasAwaitingApproval: boolean
   readonly awaiting: ReadonlySet<string>
   readonly resolvePaths?: ((paths: readonly string[]) => Promise<ReadonlySet<string>>) | undefined
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }
 
-function generateActivitySummary(
-  steps: readonly TurnActivityStep[],
-  view: SessionView,
-  isRunning: boolean,
-  hasAwaitingApproval: boolean,
-  t: TFunction,
-): { title: string; tone: 'running' | 'attention' | 'done' } {
-  const toolCalls = steps.flatMap((s) => s.toolCalls ?? [])
-  const hasFailure = toolCalls.some((c) => {
-    const status = view.tools[c.id]?.status
-    return status === 'failed' || status === 'cancelled'
-  })
-  const count = toolCalls.length
+/**
+ * 组头那句话：优先说“正在做的那一步”，没有正在执行的就退到结果。
+ *
+ * - 有失败：`<命令> 失败`
+ * - 有取消：`<命令> 已取消`（用户按了停止，不是失败）
+ * - 有等待审批：`等待审批 <命令>`
+ * - 有正在执行/排队的调用：`正在运行 <命令>`
+ * - 最后一步命令非零退出：`<命令> 失败`（后面又跑了别的步骤，说明模型已经接着处理，
+ *   此时交给计数式总结，不让一次旧失败永久占住组头）
+ * - 轮次还在跑但工具都结束了（模型在思考）：调用方给阶段文案。
+ */
+function liveHeadline({
+  calls,
+  tools,
+  awaiting,
+  t,
+}: {
+  readonly calls: readonly ToolCall[]
+  readonly tools: Readonly<Record<string, ToolCallView>>
+  readonly awaiting: ReadonlySet<string> | undefined
+  readonly t: TFunction
+}): ActivityHeadline | undefined {
+  const statusOf = (call: ToolCall) => tools[call.id]?.status
+  const argsOf = (call: ToolCall) => tools[call.id]?.input ?? call.input
+  const describe = (call: ToolCall) => describeToolCall(call.name, argsOf(call), t)
+  /** 命令跑起来了但退出码不是 0：工具本身“完成”，这一步其实失败了。 */
+  const badExit = (call: ToolCall) => {
+    const code = tools[call.id]?.display?.exitCode
+    return typeof code === 'number' && code !== 0
+  }
 
-  if (isRunning) {
-    return { title: t('tool.group.running', { steps: count }), tone: 'running' }
+  const failed = calls.find((call) => statusOf(call) === 'failed')
+  if (failed) {
+    const { object, plain } = describe(failed)
+    return { tone: 'attention', label: t('tool.group.failed'), object, plain, objectFirst: true }
   }
-  if (hasFailure || hasAwaitingApproval) {
-    return { title: t('tool.group.attention', { steps: count }), tone: 'attention' }
+  const cancelled = calls.find((call) => statusOf(call) === 'cancelled')
+  if (cancelled) {
+    const { object, plain } = describe(cancelled)
+    return {
+      tone: 'cancelled',
+      label: t('tool.group.cancelled'),
+      object,
+      plain,
+      objectFirst: true,
+    }
   }
-  return { title: t('tool.group.done', { steps: count }), tone: 'done' }
+  const waiting = calls.find((call) => awaiting?.has(call.id) === true)
+  if (waiting) {
+    const { object, plain } = describe(waiting)
+    return { tone: 'waiting', label: t('tool.group.waiting'), object, plain }
+  }
+  let active: ToolCall | undefined
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const call = calls[index]!
+    const status = statusOf(call)
+    if (status === 'running' || status === 'requested') {
+      active = call
+      break
+    }
+  }
+  if (active) {
+    const { action, object, plain } = describe(active)
+    // 技能这类工具没有动作词，组头得有自己的说法，否则只剩一个「正在」。
+    return {
+      tone: 'running',
+      label: action === '' ? t('tool.group.loadingSkill') : t('tool.group.current', { action }),
+      object,
+      plain,
+    }
+  }
+  const last = calls.at(-1)
+  if (last !== undefined && statusOf(last) === 'completed' && badExit(last)) {
+    const { object, plain } = describe(last)
+    return { tone: 'attention', label: t('tool.group.failed'), object, plain, objectFirst: true }
+  }
+  return undefined
+}
+
+/** 单条助手消息（没有归组）的组头：和归组一样，优先显示正在做的那一步。 */
+function messageHeadline(
+  message: AssistantMessageView,
+  view: SessionView,
+  awaiting: ReadonlySet<string>,
+  running: boolean,
+  t: TFunction,
+  phaseKey?: string | undefined,
+): ActivityHeadline {
+  const live = liveHeadline({ calls: message.toolCalls, tools: view.tools, awaiting, t })
+  if (live) return live
+  if (phaseKey !== undefined) return { tone: 'running', label: t(phaseKey) }
+  if (running) return { tone: 'running', label: t('tool.status.running') }
+  return { tone: 'done', label: t('tool.group.done', { steps: message.toolCalls.length }) }
 }
 
 const TurnActivityGroup = memo(function TurnActivityGroup({
   steps,
   view,
   isRunning,
+  phaseKey,
   hasAwaitingApproval,
   awaiting,
   resolvePaths,
   onOpenFile,
 }: TurnActivityGroupProps) {
   const { t } = useTranslation('session')
-  const [open, setOpen] = useState(isRunning || hasAwaitingApproval)
+  const calls = useMemo(() => steps.flatMap((step) => step.toolCalls ?? []), [steps])
+
+  const headline = useMemo<ActivityHeadline>(() => {
+    const live = liveHeadline({ calls, tools: view.tools, awaiting, t })
+    if (live) return live
+    // 工具都结束了但轮次还在跑：组头自己说阶段，不再在下面另起一行运行指示。
+    if (phaseKey !== undefined && (isRunning || calls.length > 0)) {
+      return { tone: 'running', label: t(phaseKey) }
+    }
+    if (isRunning) return { tone: 'running', label: t('tool.status.running') }
+    return { tone: 'done', label: t('tool.group.done', { steps: calls.length }) }
+  }, [calls, view.tools, awaiting, t, isRunning, phaseKey])
+
+  /** 失败、取消或等待审批时组保持展开，把出错的那一步露在外面；正常结束才自动收起。 */
+  const needsAttention =
+    hasAwaitingApproval ||
+    headline.tone === 'attention' ||
+    headline.tone === 'cancelled' ||
+    headline.tone === 'waiting'
+
+  const [open, setOpen] = useState(isRunning || needsAttention)
   const [manuallyOpened, setManuallyOpened] = useState(false)
 
   // 状态变化时自动更新展开状态（如果用户没手动操作）
   useEffect(() => {
     if (!manuallyOpened) {
-      setOpen(isRunning || hasAwaitingApproval)
+      setOpen(isRunning || needsAttention)
     }
-  }, [isRunning, hasAwaitingApproval, manuallyOpened])
+  }, [isRunning, needsAttention, manuallyOpened])
 
   const handleToggle = () => {
     setManuallyOpened(true)
     setOpen(!open)
   }
 
-  const { title, tone } = useMemo(
-    () => generateActivitySummary(steps, view, isRunning, !!hasAwaitingApproval, t),
-    [steps, view, isRunning, hasAwaitingApproval, t],
-  )
-
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="my-2 max-w-full">
       <CollapsibleTrigger
         onClick={handleToggle}
         data-activity-group
-        className="group/activity inline-flex max-w-full cursor-pointer select-none items-center gap-2 rounded-[8px] border border-hair/70 bg-sunk/60 px-2.5 py-1.5 text-left text-ui text-fg2 outline-none transition-colors hover:border-hair hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
+        className={ACTIVITY_TRIGGER_CLASS}
       >
-        <Activity
-          aria-hidden
-          className={cn(
-            'size-3.5 shrink-0 transition-colors group-hover/activity:text-accent',
-            tone === 'running'
-              ? 'animate-pulse text-accent'
-              : tone === 'attention'
-                ? 'text-warn'
-                : 'text-faint',
-          )}
-        />
-        <span className="flex min-w-0 items-center gap-1.5 truncate text-[12.5px] font-medium">
-          {tone === 'running' ? <Shimmer>{title}</Shimmer> : title}
-        </span>
-        <ChevronRight
-          aria-hidden
-          className={cn(
-            'size-3.5 shrink-0 text-faint transition-transform duration-150 group-hover/activity:text-fg',
-            open && 'rotate-90 text-fg',
-          )}
+        <ActivityGroupHeaderContent
+          headline={headline}
+          open={open}
+          shimmer={headline.tone === 'running'}
         />
       </CollapsibleTrigger>
       <CollapsibleContent forceMount aria-hidden={!open} className={cn(!open && 'hidden')}>
-        <div className="mt-2 ml-1 flex flex-col gap-1 border-l-2 border-hair2/80 pl-3 pt-0.5 pb-1">
+        <div className="flex flex-col pt-0.5 pb-1">
           {steps.map((step) => (
             <Fragment key={step.key}>
               {step.reasoning && <Reasoning text={step.reasoning} />}
               {step.content && step.content.length > 0 && (
-                <AssistantContent
-                  parts={step.content}
-                  resolvePaths={resolvePaths}
-                  onOpenFile={onOpenFile}
-                />
+                <div className="py-1">
+                  <AssistantContent
+                    parts={step.content}
+                    resolvePaths={resolvePaths}
+                    onOpenFile={onOpenFile}
+                  />
+                </div>
               )}
               {step.toolCalls && step.toolCalls.length > 0 && (
                 <ToolTimeline>
@@ -572,6 +673,7 @@ function Message({
   compacted,
   omitted,
   entering,
+  phaseKey,
   onOpenPlan,
   onOpenChanges,
   resolvePaths,
@@ -597,6 +699,8 @@ function Message({
   readonly omitted: boolean
   /** 本次会话中新出现的消息才播入场动画。 */
   readonly entering: boolean
+  /** 轮次还在跑但没有正在执行的工具时，组头显示的阶段文案（思考中 / 正在调用工具…）。 */
+  readonly phaseKey?: string | undefined
   readonly onOpenPlan: (planId: string) => void
   readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
   /** 行内代码里的项目路径是否存在；助手正文据此变成可点的路径。 */
@@ -653,6 +757,18 @@ function Message({
       </li>
     )
   }
+  const messageRunning = message.toolCalls.some((call) => {
+    const status = view.tools[call.id]?.status
+    return (
+      status === 'requested' ||
+      status === 'running' ||
+      (status === undefined && view.runs[message.runId]?.turn?.status === 'running')
+    )
+  })
+  const headline = messageHeadline(message, view, awaiting, messageRunning, t, phaseKey)
+  const messageAttention =
+    headline.tone === 'attention' || headline.tone === 'cancelled' || headline.tone === 'waiting'
+
   return (
     <li className={cn(continued ? '-mt-3.5 text-fg' : 'text-fg', entering && 'animate-message-in')}>
       {marks}
@@ -688,18 +804,9 @@ function Message({
       {message.toolCalls.length > 0 && (
         <ToolTimeline
           count={message.toolCalls.length}
-          running={message.toolCalls.some((call) => {
-            const status = view.tools[call.id]?.status
-            return (
-              status === 'requested' ||
-              status === 'running' ||
-              (status === undefined && view.runs[message.runId]?.turn?.status === 'running')
-            )
-          })}
-          attention={message.toolCalls.some((call) => {
-            const status = view.tools[call.id]?.status
-            return status === 'failed' || status === 'cancelled' || awaiting.has(call.id)
-          })}
+          running={messageRunning}
+          attention={messageAttention}
+          headline={headline}
         >
           {message.toolCalls.map((call) => (
             <ToolStep
@@ -1124,11 +1231,31 @@ export function MessageStream({
       </>
     )
   }
+  /**
+   * 末尾那一条是否就是正在跑的内容：是的话，状态由它的组头承担（“正在调用工具”），
+   * 下面不再补一行运行指示 —— 两行说同一件事只是噪音。
+   */
+  const rootTurnId = rootRun(view)?.turn?.turnId
+  const tail = groupedItems.at(-1)
+  // 只有末尾这一条自己有组头（归组，或带工具调用的助手消息）时，才由它承担状态。
+  const tailHasHeader =
+    tail?.kind === 'activity_group' ||
+    (tail?.kind === 'message' &&
+      tail.message.role === 'assistant' &&
+      tail.message.toolCalls.length > 0)
+  const tailIsLive =
+    runningKey !== undefined &&
+    tail !== undefined &&
+    tailHasHeader &&
+    (tail.kind === 'activity_group' ? tail.turnId : tail.message.turnId) === rootTurnId
+
   return (
     <>
       {messages.length === 0 && live.length === 0 && runningKey === undefined && <EmptyStream />}
       <ol aria-label={t('chat.messages')} className="flex flex-col gap-7">
-        {groupedItems.map((item) => {
+        {groupedItems.map((item, itemIndex) => {
+          const isTail = itemIndex === groupedItems.length - 1
+          const phaseKey = isTail && tailIsLive ? runningKey : undefined
           if (item.kind === 'message') {
             const message = item.message
             const previous = messages[item.index - 1]?.seq ?? 0
@@ -1169,6 +1296,7 @@ export function MessageStream({
                   compacted={markBetween(previous, message.seq, view.compaction)}
                   omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
                   entering={enteringIds.has(message.messageId)}
+                  phaseKey={phaseKey}
                   onOpenPlan={openPlan}
                   onOpenChanges={onOpenChanges}
                   resolvePaths={resolvePaths}
@@ -1289,6 +1417,7 @@ export function MessageStream({
                   steps={steps}
                   view={view}
                   isRunning={isTurnRunning}
+                  phaseKey={phaseKey}
                   hasAwaitingApproval={hasAwaitingApproval}
                   awaiting={awaitingApprovalSet}
                   resolvePaths={resolvePaths}
@@ -1392,7 +1521,7 @@ export function MessageStream({
           </li>
         ))}
       </ol>
-      {runningKey !== undefined && <RunningIndicator text={t(runningKey)} />}
+      {runningKey !== undefined && !tailIsLive && <RunningIndicator text={t(runningKey)} />}
       {outcome && outcomeStyle && (
         <div
           className={`flex items-center gap-3 rounded-card px-3.5 py-2.5 text-ui ${TONE_SOFT[outcomeStyle.tone]}`}

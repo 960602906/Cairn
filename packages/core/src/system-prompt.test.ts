@@ -66,6 +66,15 @@ describe('buildSystemPrompt', () => {
     expect(buildSystemPrompt({ tools: true, environment })).not.toContain('# Asking the user')
   })
 
+  it('tells the model to offer auto-fix after opening a pull request', () => {
+    const prompt = buildSystemPrompt({ tools: true, pullRequestWatch: true, environment })
+    expect(prompt).toContain('# Pull requests')
+    expect(prompt).toContain('call ask_user')
+    expect(prompt).toContain('watch_pull_request')
+    expect(prompt.indexOf('# Pull requests')).toBeLessThan(prompt.indexOf('# Safety'))
+    expect(buildSystemPrompt({ tools: true, environment })).not.toContain('# Pull requests')
+  })
+
   it('places project instructions after the safety rules (M3-02)', () => {
     const prompt = buildSystemPrompt({
       tools: true,

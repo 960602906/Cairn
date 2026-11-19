@@ -2,8 +2,9 @@
  * 设置页框架（M2-09，视觉规范 §8）：与对话页相同的窗口结构。左侧分类导航（顶部“返回对话 Esc”，铺在窗口
  * 底色上），右侧纸面，内容居中、最大宽度 920px；窄窗口收窄内边距。
  *
- * 分类收敛为三组：常规（通用与外观、更新、关于）、模型与能力（模型供应商、技能、MCP 服务）
- * 与安全（权限与审批）。项目操作在会话栏里，不再占用设置分类。
+ * 分类收敛为四组：常规（通用与外观、已归档的对话）、模型与能力（模型供应商、自动修复、技能、
+ * MCP 服务、记忆）、安全（权限与审批），以及固定在底部的“关于与更新”。项目操作在会话栏里，
+ * 不再占用设置分类。
  * Esc 返回对话（有对话框或菜单打开时不处理）。
  */
 import {
@@ -55,7 +56,7 @@ interface SectionEntry {
 
 /** 分类分组：组名与其中的分类，按显示顺序。 */
 const GROUPS: readonly {
-  readonly group: 'general' | 'modelCapabilities' | 'security'
+  readonly group: 'general' | 'modelCapabilities' | 'security' | 'app'
   readonly sections: readonly SectionEntry[]
 }[] = [
   {
@@ -63,8 +64,6 @@ const GROUPS: readonly {
     sections: [
       { id: 'general', icon: <Palette /> },
       { id: 'archived', icon: <Archive /> },
-      { id: 'update', icon: <RefreshCw /> },
-      { id: 'about', icon: <Info /> },
     ],
   },
   {
@@ -78,6 +77,13 @@ const GROUPS: readonly {
     ],
   },
   { group: 'security', sections: [{ id: 'permissions', icon: <ShieldCheck /> }] },
+  {
+    group: 'app',
+    sections: [
+      { id: 'update', icon: <RefreshCw /> },
+      { id: 'about', icon: <Info /> },
+    ],
+  },
 ]
 
 export function SettingsNav({
@@ -169,7 +175,12 @@ export function SettingsNav({
         </div>
         <nav aria-label={t('page.nav')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           {visibleGroups.map(({ group, sections }) => (
-            <div key={group} role="group" aria-labelledby={`settings-group-${group}`}>
+            <div
+              key={group}
+              role="group"
+              aria-labelledby={`settings-group-${group}`}
+              className={group === 'app' ? 'mt-2 border-t-[0.5px] border-hair pt-0.5' : undefined}
+            >
               <div
                 id={`settings-group-${group}`}
                 className="px-2.5 pt-3.5 pb-1.5 text-[11.5px] font-medium text-muted"
