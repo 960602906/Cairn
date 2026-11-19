@@ -52,7 +52,6 @@ describe('upload commands', () => {
       tag: 'v0.1.1',
       directory,
       notesFile: path.join(directory, 'release-notes.md'),
-      channel: 'stable',
       repo: 'owner/repo',
     })
     expect(stable[0]).toEqual([
@@ -80,10 +79,10 @@ describe('upload commands', () => {
       tag: 'v0.1.2-beta.1',
       directory,
       notesFile: path.join(directory, 'release-notes.md'),
-      channel: 'beta',
       repo: 'owner/repo',
     })
-    expect(beta[0]).toContain('--prerelease')
+    // beta 也发成正式 release，否则 GitHub 的 Latest 与仓库侧栏看不到可下载版本。
+    expect(beta[0]).not.toContain('--prerelease')
     expect(rcloneCommand({ directory, remote: 'r2:cairn/beta' })).toEqual([
       'copy',
       directory,
@@ -155,7 +154,6 @@ describe('publishing', () => {
       tag: 'v0.1.1',
       directory: releaseDirectory(),
       notesFile: path.join(releaseDirectory(), 'release-notes.md'),
-      channel: 'beta' as const,
       repo: 'owner/repo',
       verifyBaseUrl: 'https://updates.example/',
       error,
@@ -180,7 +178,6 @@ describe('publishing', () => {
         tag: 'v0.1.1',
         directory,
         notesFile: path.join(directory, 'release-notes.md'),
-        channel: 'stable',
         repo: 'owner/repo',
         verifyBaseUrl: 'https://updates.example/',
         runner,
@@ -209,7 +206,6 @@ describe('publishing', () => {
         tag: 'v0.1.1',
         directory,
         notesFile: path.join(directory, 'release-notes.md'),
-        channel: 'stable',
         repo: 'owner/repo',
         verifyBaseUrl: 'https://updates.example/',
         runner,
@@ -228,7 +224,6 @@ describe('publishing', () => {
         tag: 'v0.1.1',
         directory,
         notesFile: path.join(directory, 'release-notes.md'),
-        channel: 'stable',
         repo: 'owner/repo',
         verifyBaseUrl: 'https://updates.example/',
         runner: (() => ({ status: 1 })) as never,
@@ -243,7 +238,6 @@ describe('publishing', () => {
         tag: 'v0.1.1',
         directory,
         notesFile: path.join(directory, 'release-notes.md'),
-        channel: 'stable',
         repo: 'owner/repo',
         verifyBaseUrl: 'https://updates.example/',
         runner: (() => ({ status: 0 })) as never,
@@ -263,7 +257,6 @@ describe('publishing', () => {
         tag: 'v0.1.1',
         directory,
         notesFile: path.join(directory, 'release-notes.md'),
-        channel: 'beta',
         repo: 'owner/repo',
         verifyBaseUrl: 'https://updates.example/',
         error,
@@ -278,7 +271,6 @@ describe('publishing', () => {
         tag: 'v0.1.1',
         directory,
         notesFile: path.join(directory, 'release-notes.md'),
-        channel: 'beta',
         repo: 'owner/repo',
         remote: 'r2:bucket',
         verifyBaseUrl: 'https://updates.example/',

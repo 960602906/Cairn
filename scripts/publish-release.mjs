@@ -3,8 +3,7 @@
  * 发布上传与公开可下载校验（M5-08）。
  *
  * 两种上传方式：
- * - `github`：`gh release create/upload`，适合 public release-only 仓库过渡；客户端更新源需要
- *   固定目录，因此正式 stable/beta 仍建议对象存储（`rclone`）。
+ * - `github`：`gh release create/upload`，公开仓库可直接作为客户端更新源（GitHub provider）。
  * - `rclone`：把产物同步到静态源远端（S3/R2/兼容存储），凭据由 CI secrets 提供。
  *
  * 上传后必须从公开 URL 重新下载全部文件并核对 SHA-256；校验失败时发布判为失败，由人工撤包。
@@ -36,16 +35,18 @@ export function githubDownloadBase({ serverUrl, repo, tag }) {
 }
 
 /**
+ * 每次发布都创建正式 release：GitHub 的 Latest 与仓库侧栏不展示预发布，beta 通道的版本
+ * 若标成 prerelease 就会在 Releases 页面“看不见”。客户端按通道元数据（`latest.yml` /
+ * `beta.yml`）选择版本，不依赖 release 的预发布标记。
  * @param {{
  *   tag: string;
  *   directory: string;
  *   notesFile: string;
- *   channel: 'stable' | 'beta';
  *   repo: string;
  * }} input
  * @returns {string[][]}
  */
-export function githubReleaseCommands({ tag, directory, notesFile, channel, repo }) {
+export function githubReleaseCommands({ tag, directory, notesFile, repo }) {
   const files = listFiles(directory)
   return [
     [
@@ -58,7 +59,6 @@ export function githubReleaseCommands({ tag, directory, notesFile, channel, repo
       `Cairn ${tag.replace(/^v/, '')}`,
       '--notes-file',
       notesFile,
-      ...(channel === 'beta' ? ['--prerelease'] : []),
     ],
     ['release', 'upload', tag, ...files, '--repo', repo, '--clobber'],
   ]
@@ -157,7 +157,6 @@ export async function verifyPublishedArtifacts({
  *   tag: string;
  *   directory: string;
  *   notesFile: string;
- *   channel: 'stable' | 'beta';
  *   repo: string;
  *   remote?: string | undefined;
  *   verifyBaseUrl: string;
@@ -173,7 +172,6 @@ export async function publishRelease({
   tag,
   directory,
   notesFile,
-  channel,
   repo,
   remote,
   verifyBaseUrl,
@@ -212,7 +210,6 @@ export async function publishRelease({
         tag,
         directory,
         notesFile,
-        channel,
         repo,
       })
       const [createArgs, uploadArgs] = commands
@@ -316,7 +313,6 @@ export async function main({
     tag,
     directory,
     notesFile,
-    channel,
     repo,
     remote,
     verifyBaseUrl,
