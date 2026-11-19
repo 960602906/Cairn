@@ -750,5 +750,6 @@
   "pipeline.stage.needs_input": "需要输入",
   "pipeline.stage.limit_reached": "触及限额",
   "pipeline.skipped": "跳过：{{stages}}",
-  "tool.action.run_pipeline": "执行流水线"
+  "tool.action.run_pipeline": "执行流水线",
+  "activity.stopWatch": "停止监视"
 }

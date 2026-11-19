@@ -292,10 +292,14 @@ function AutoFixRow({
   job,
   watch,
   onOpen,
+  onStop,
+  busy,
 }: {
   readonly job: AutoFixJob
   readonly watch: PullRequestWatch
   readonly onOpen: (sessionId: string) => void
+  readonly onStop: () => void
+  readonly busy: boolean
 }) {
   const { t, i18n } = useTranslation('session')
   const sessionId = job.sessionId
@@ -337,6 +341,49 @@ function AutoFixRow({
           {t('activity.view')}
         </button>
       )}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onStop}
+        className="flex h-7 shrink-0 items-center rounded-item px-2 text-note text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50"
+      >
+        {t('activity.stopWatch')}
+      </button>
+    </article>
+  )
+}
+
+/** 还没有修复任务的监视：只显示正在监视哪个 PR，并可以停止。 */
+function IdleWatchRow({
+  watch,
+  onStop,
+  busy,
+}: {
+  readonly watch: PullRequestWatch
+  readonly onStop: () => void
+  readonly busy: boolean
+}) {
+  const { t } = useTranslation('session')
+  return (
+    <article
+      aria-label={t('activity.autoFixItem', { repo: watch.repo, number: watch.prNumber })}
+      className="flex items-start gap-2 rounded-card bg-raise p-3 shadow-1"
+    >
+      <Wrench aria-hidden className="mt-0.5 size-4 shrink-0 text-fg2" />
+      <div className="min-w-0 flex-1">
+        <h4 className="min-w-0 truncate text-ui font-medium text-fg">
+          {watch.repo}#{watch.prNumber}
+        </h4>
+        <p className="mt-1 text-note text-fg2">{t('activity.noneAutoFix')}</p>
+      </div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onStop}
+        className="flex h-7 shrink-0 items-center rounded-item px-2 text-note text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50"
+      >
+        {t('activity.stopWatch')}
+      </button>
     </article>
   )
 }
@@ -460,6 +507,7 @@ export function ActivityContent({
   const refreshAutofix = useSessionStore((state) => state.refreshAutofix)
   const agents = useSessionStore((state) => state.agents) ?? []
   const [busy, setBusy] = useState<string | undefined>()
+  const [stoppingWatch, setStoppingWatch] = useState<string | undefined>()
 
   useEffect(() => {
     void refreshActivity()
@@ -480,16 +528,24 @@ export function ActivityContent({
   const approvals = activity?.approvals ?? []
   const running = activity?.running ?? []
   const completed = activity?.completed ?? []
+  const removeAutoFixWatch = useSessionStore((state) => state.removeAutoFixWatch)
   const watches = autofix?.watches ?? []
   const autoFixRows = (autofix?.jobs ?? []).flatMap((job) => {
     const watch = watches.find((item) => item.watchId === job.watchId)
     return watch === undefined ? [] : [{ job, watch }]
   })
+  const busyWatchIds = new Set(autoFixRows.map(({ watch }) => watch.watchId))
+  const idleWatches = watches.filter((watch) => !busyWatchIds.has(watch.watchId))
   const showAutoFix = watches.length > 0 || autoFixRows.length > 0
+  const stopWatch = async (watch: PullRequestWatch) => {
+    if (stoppingWatch !== undefined) return
+    setStoppingWatch(watch.watchId)
+    await removeAutoFixWatch(watch.watchId)
+    setStoppingWatch(undefined)
+  }
   const empty =
     activity !== undefined &&
-    approvals.length + running.length + completed.length + commands.length + autoFixRows.length ===
-      0
+    approvals.length + running.length + completed.length + commands.length + watches.length === 0
   return (
     <div
       className={cn(
@@ -606,13 +662,24 @@ export function ActivityContent({
                   {t('autofix.watch.paused', { ns: 'settings' })}
                 </p>
               )}
-              {autoFixRows.length === 0 ? (
-                <p className="text-note text-faint">{t('activity.noneAutoFix')}</p>
-              ) : (
-                autoFixRows.map(({ job, watch }) => (
-                  <AutoFixRow key={job.jobId} job={job} watch={watch} onOpen={onOpenSession} />
-                ))
-              )}
+              {autoFixRows.map(({ job, watch }) => (
+                <AutoFixRow
+                  key={job.jobId}
+                  job={job}
+                  watch={watch}
+                  onOpen={onOpenSession}
+                  onStop={() => void stopWatch(watch)}
+                  busy={stoppingWatch === watch.watchId}
+                />
+              ))}
+              {idleWatches.map((watch) => (
+                <IdleWatchRow
+                  key={watch.watchId}
+                  watch={watch}
+                  onStop={() => void stopWatch(watch)}
+                  busy={stoppingWatch === watch.watchId}
+                />
+              ))}
             </Section>
           )}
 

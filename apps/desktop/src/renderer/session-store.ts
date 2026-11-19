@@ -61,7 +61,6 @@ import {
   type HubSkillCard,
   type FileContent,
   type AutoFixStatus,
-  type AutoFixTrigger,
   type GithubCheckLog,
   type GithubPullRequest,
   type GithubStatus,
@@ -488,25 +487,8 @@ export interface SessionActions {
   githubCheckLog(repo: string, checkRunId: number): Promise<GithubCheckLog | undefined>
   /** 自动修复监视与任务快照（M8-02）；变化时主进程推送 `autofix.changed`。 */
   refreshAutofix(): Promise<void>
-  /** 添加一个被监视的 PR（M8-02）；重复或超过上限时返回 undefined（错误写入 `error`）。 */
-  addAutoFixWatch(input: {
-    repo: string
-    prNumber: number
-    projectPath: string
-    triggers?: AutoFixTrigger[]
-    maxAttempts?: number
-  }): Promise<AutoFixStatus | undefined>
-  /** 启停监视、调整触发项或尝试上限（M8-02）。 */
-  updateAutoFixWatch(input: {
-    watchId: string
-    enabled?: boolean
-    triggers?: AutoFixTrigger[]
-    maxAttempts?: number
-  }): Promise<AutoFixStatus | undefined>
-  /** 删除监视并清理它的工作区与任务记录（M8-02）。 */
+  /** 停止监视并清理它的工作区与任务记录（M8-02）；开启由会话里的 Agent 完成。 */
   removeAutoFixWatch(watchId: string): Promise<AutoFixStatus | undefined>
-  /** 暂停或恢复全部监视（M8-02）。 */
-  setAutoFixPaused(paused: boolean): Promise<AutoFixStatus | undefined>
   /** 保存的全局与项目权限规则（M2-11）；失败时返回 undefined。 */
   permissionRules(): Promise<PermissionRuleEntry[] | undefined>
   /** 手动添加一条权限规则（M2-11）；失败时返回 undefined。 */
@@ -1516,26 +1498,8 @@ export function createSessionStore(api: MainApi): SessionStore {
         if (result) set({ autofix: result })
       },
 
-      async addAutoFixWatch(input) {
-        const result = await run(() => api.request('autofix.watch.add', input))
-        if (result) set({ autofix: result })
-        return result
-      },
-
-      async updateAutoFixWatch(input) {
-        const result = await run(() => api.request('autofix.watch.update', input))
-        if (result) set({ autofix: result })
-        return result
-      },
-
       async removeAutoFixWatch(watchId) {
         const result = await run(() => api.request('autofix.watch.remove', { watchId }))
-        if (result) set({ autofix: result })
-        return result
-      },
-
-      async setAutoFixPaused(paused) {
-        const result = await run(() => api.request('autofix.pause', { paused }))
         if (result) set({ autofix: result })
         return result
       },

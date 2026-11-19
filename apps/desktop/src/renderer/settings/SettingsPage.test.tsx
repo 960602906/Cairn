@@ -178,6 +178,8 @@ describe('SettingsPage', () => {
     await userEvent.click(within(nav).getByRole('button', { name: '自动修复' }))
     expect(await screen.findByRole('heading', { name: '自动修复' })).toBeTruthy()
     expect(await screen.findByText('GitHub 连接')).toBeTruthy()
+    // 监视不在这里配置：没有“添加监视”这类手动入口。
+    expect(screen.queryByRole('button', { name: '添加监视' })).toBeNull()
   })
 
   it('opens with Ctrl+, and leaves Esc to an open dialog', async () => {

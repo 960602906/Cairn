@@ -29,6 +29,8 @@ import {
   type AgentDefinition,
   type AskUserRequest,
   type AutoFixSessionContext,
+  type AutoFixTrigger,
+  type PullRequestWatch,
   type AskUserResponse,
   type FileChangeInput,
   type HostApprovalRequest,
@@ -349,6 +351,17 @@ export interface HostSupervisorOptions {
   ) => Promise<{ sha: string }>
   /** 推送到 PR 的 head 分支（M8-03）。省略时宿主的 `host.git.push` 报 `run.unsupported`。 */
   readonly pushGit?: (sessionId: string) => Promise<{ sha: string; branch: string }>
+  /**
+   * 普通会话为刚创建的 PR 开启自动修复监视。省略时宿主的 `host.autofix.watch` 报 `run.unsupported`。
+   */
+  readonly watchPullRequest?: (
+    sessionId: string,
+    input: {
+      readonly repo: string
+      readonly prNumber: number
+      readonly triggers?: readonly AutoFixTrigger[] | undefined
+    },
+  ) => Promise<PullRequestWatch>
 }
 
 export interface HostSupervisor {
@@ -569,6 +582,10 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
       endpoint.handle('host.git.push', async () => {
         if (!options.pushGit) throw new RpcError('run.unsupported')
         return options.pushGit(sessionId)
+      })
+      endpoint.handle('host.autofix.watch', async (input) => {
+        if (!options.watchPullRequest) throw new RpcError('run.unsupported')
+        return options.watchPullRequest(sessionId, input)
       })
       endpoint.handle('host.snapshot', (snapshot) => {
         if (!options.recordSnapshot) throw new RpcError('run.unsupported')

@@ -750,5 +750,6 @@
   "pipeline.stage.needs_input": "Needs input",
   "pipeline.stage.limit_reached": "Limit reached",
   "pipeline.skipped": "Skipped: {{stages}}",
-  "tool.action.run_pipeline": "Run pipeline"
+  "tool.action.run_pipeline": "Run pipeline",
+  "activity.stopWatch": "Stop watching"
 }

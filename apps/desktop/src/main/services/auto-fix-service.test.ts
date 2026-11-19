@@ -338,6 +338,45 @@ describe('auto-fix service', () => {
     expect(service.status().paused).toBe(false)
   })
 
+  it('starts a watch for a pull request from a normal session', async () => {
+    const service = setup()
+    storage.projects.create({ projectId: 'p1', name: 'demo', path: projectPath })
+    storage.sessions.create({
+      sessionId: 's1',
+      projectId: 'p1',
+      workspacePath: projectPath,
+      title: 'demo',
+    })
+
+    const watch = await service.watchFromSession('s1', { repo: 'o/r', prNumber: 12 })
+
+    expect(watch).toMatchObject({
+      repo: 'o/r',
+      prNumber: 12,
+      projectPath,
+      triggers: ['ci', 'conflict'],
+    })
+    expect(pulls).toHaveBeenCalledWith({ repo: 'o/r', number: 12 })
+    expect(service.status().watches).toHaveLength(1)
+  })
+
+  it('does not watch when the pull request cannot be read', async () => {
+    const service = setup()
+    pulls.mockRejectedValueOnce(new RpcError('github.not_connected'))
+    storage.projects.create({ projectId: 'p1', name: 'demo', path: projectPath })
+    storage.sessions.create({
+      sessionId: 's1',
+      projectId: 'p1',
+      workspacePath: projectPath,
+      title: 'demo',
+    })
+
+    await expect(service.watchFromSession('s1', { repo: 'o/r', prNumber: 12 })).rejects.toThrow(
+      /github.not_connected/,
+    )
+    expect(service.status().watches).toHaveLength(0)
+  })
+
   it('rejects a duplicate watch and more than the limit', () => {
     const service = setup()
     addWatch(service)
