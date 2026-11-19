@@ -317,6 +317,12 @@ export function ChatPanel({
     view && progressList?.planId
       ? view.plans.find((plan) => plan.planId === progressList.planId)
       : undefined
+  /** 输入框上方是否已有其它悬浮内容（提问、计划、记忆提案、任务进度）。 */
+  const floatingContent =
+    pendingQuestions > 0 ||
+    pendingPlan !== undefined ||
+    pendingMemories > 0 ||
+    progressList !== undefined
   const turnId = run?.turn?.turnId
   const turnChanges =
     turnId === undefined || changes === undefined ? undefined : totals(turnEntries(changes, turnId))
@@ -429,22 +435,6 @@ export function ChatPanel({
             </div>
           </div>
           <TurnRail view={view} />
-          {!isPinned && (
-            <div className="pointer-events-none absolute right-6 bottom-24 z-30">
-              <button
-                type="button"
-                aria-label={t('chat.scrollToBottom')}
-                title={t('chat.scrollToBottom')}
-                onClick={() => scrollToBottom(true)}
-                className="pointer-events-auto flex size-8 items-center justify-center rounded-full border border-hair2 bg-raise text-fg shadow-2 transition-all hover:bg-hover hover:scale-105 active:scale-95 focus-visible:ring-1 focus-visible:ring-accent"
-              >
-                <ArrowDown className="size-4 text-muted" />
-                {status === 'running' && (
-                  <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-accent animate-pulse" />
-                )}
-              </button>
-            </div>
-          )}
           <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
             {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
             <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3">
@@ -465,6 +455,21 @@ export function ChatPanel({
                     }
                   : { labelKey: 'taskList.progress.label' as const })}
               />
+            )}
+            {/* 「回到底部」浮在输入框正上方；有其他悬浮卡片（提问、计划、记忆、任务进度）时让位，优先级最低。 */}
+            {!isPinned && !floatingContent && (
+              <button
+                type="button"
+                aria-label={t('chat.scrollToBottom')}
+                title={t('chat.scrollToBottom')}
+                onClick={() => scrollToBottom(true)}
+                className="absolute bottom-full left-1/2 z-10 mb-3 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-hair2 bg-raise text-fg shadow-2 transition-all hover:bg-hover hover:scale-105 active:scale-95 focus-visible:ring-1 focus-visible:ring-accent"
+              >
+                <ArrowDown className="size-4 text-muted" />
+                {status === 'running' && (
+                  <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-accent animate-pulse" />
+                )}
+              </button>
             )}
             <Composer
               key={sessionId}

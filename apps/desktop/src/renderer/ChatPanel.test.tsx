@@ -934,6 +934,38 @@ describe('ChatPanel', () => {
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
   })
 
+  it('hides the back-to-bottom button while a floating card sits above the composer', async () => {
+    const { open, store } = setup({ history: RUNNING })
+    await open()
+    const scroller = screen
+      .getByRole('list', { name: '消息' })
+      .closest('.overflow-y-auto') as HTMLElement
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 300 })
+    scroller.scrollTop = 100
+    act(() => {
+      scroller.dispatchEvent(new Event('scroll'))
+    })
+    expect(screen.getByRole('button', { name: '回到底部' })).toBeTruthy()
+
+    // 提问卡片浮出时让位，避免两个浮层叠在一起。
+    act(() => {
+      store.setState({
+        awaitingTurn: { s1: true },
+        questions: {
+          s1: [
+            {
+              questionId: 'q1',
+              toolCallId: 'tc1',
+              questions: [{ id: 'a', question: '选哪个？', options: [{ label: 'A' }] }],
+            },
+          ],
+        },
+      })
+    })
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
+  })
+
   it('resets the panel preference when crossing the 1440px dock breakpoint', async () => {
     let wide = false
     const listeners = new Set<() => void>()

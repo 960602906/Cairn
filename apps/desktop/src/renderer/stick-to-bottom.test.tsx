@@ -126,6 +126,86 @@ describe('useStickToBottom', () => {
     expect(getByTestId('scroller').scrollTop).toBe(0)
   })
 
+  it('stays pinned when the content fits and the wheel cannot actually scroll', () => {
+    const callbacks: (() => void)[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          callbacks.push(cb)
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    let pinned: boolean | undefined
+    const Capture = () => {
+      const scroller = useRef<HTMLDivElement>(null)
+      const content = useRef<HTMLDivElement>(null)
+      pinned = useStickToBottom(scroller, content, 'a').isPinned
+      return (
+        <div data-testid="scroller" ref={scroller}>
+          <div ref={content} />
+        </div>
+      )
+    }
+    const { getByTestId } = render(<Capture />)
+    const el = getByTestId('scroller')
+    // 内容不足一屏：没有滚动条。
+    layout(el, { scrollHeight: 300, clientHeight: 300 })
+
+    const wheelEvent = new Event('wheel') as Event & { deltaY: number }
+    Object.defineProperty(wheelEvent, 'deltaY', { value: -50 })
+    act(() => {
+      el.dispatchEvent(wheelEvent)
+    })
+    // 滚轮不会真的滚动，不应该解除贴底（否则会冒出一个没用的“回到底部”按钮）。
+    expect(pinned).toBe(true)
+
+    // 内容长起来后仍然跟着滚到底。
+    layout(el, { scrollHeight: 900, clientHeight: 300 })
+    act(() => callbacks.at(-1)!())
+    expect(el.scrollTop).toBe(900)
+  })
+
+  it('repins when content shrinks back to fit without scrolling', () => {
+    const callbacks: (() => void)[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          callbacks.push(cb)
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    let pinned: boolean | undefined
+    const Capture = () => {
+      const scroller = useRef<HTMLDivElement>(null)
+      const content = useRef<HTMLDivElement>(null)
+      pinned = useStickToBottom(scroller, content, 'a').isPinned
+      return (
+        <div data-testid="scroller" ref={scroller}>
+          <div ref={content} />
+        </div>
+      )
+    }
+    const { getByTestId } = render(<Capture />)
+    const el = getByTestId('scroller')
+    layout(el, { scrollHeight: 1000, clientHeight: 300 })
+    el.scrollTop = 100
+    act(() => {
+      el.dispatchEvent(new Event('scroll'))
+    })
+    expect(pinned).toBe(false)
+
+    // 消息被删掉或会话内容变短：没有可滚的余地了，恢复贴底。
+    layout(el, { scrollHeight: 300, clientHeight: 300 })
+    act(() => callbacks.at(-1)!())
+    expect(pinned).toBe(true)
+  })
+
   it('scrollToBottom prefers smooth scrolling and falls back to scrollTop', () => {
     vi.stubGlobal('ResizeObserver', undefined)
     let scrollToBottom: ((smooth?: boolean) => void) | undefined

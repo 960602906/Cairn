@@ -57,10 +57,11 @@ export function useStickToBottom(
     }
 
     const onWheel = (event: WheelEvent) => {
+      if (event.deltaY >= 0 || !pinned.current) return
+      // 内容不足一屏时滚轮并不会真的滚动，不应因此解除贴底（否则会冒出一个无处可去的“回到底部”按钮）。
+      if (el.scrollHeight - el.clientHeight <= THRESHOLD) return
       // 向上滚动时立即解除贴底，防止流式输出频繁重绘与用户抢滚轮
-      if (event.deltaY < 0 && pinned.current) {
-        updatePinned(false)
-      }
+      updatePinned(false)
     }
 
     el.addEventListener('scroll', onScroll, { passive: true })
@@ -74,7 +75,12 @@ export function useStickToBottom(
     }
 
     const observer = new ResizeObserver(() => {
-      if (pinned.current) toBottom()
+      if (pinned.current) {
+        toBottom()
+      } else if (el.scrollHeight - el.clientHeight <= THRESHOLD) {
+        // 内容缩到不足一屏（例如切换/删除消息）时已经没有可滚的余地，重新贴底。
+        updatePinned(true)
+      }
     })
     observer.observe(inner)
     observer.observe(el)
