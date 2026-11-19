@@ -30,7 +30,6 @@ import type { ContentPart } from '@cairn/protocol'
 import { CodeCard } from './CodeCard.js'
 import { formatDuration } from './format.js'
 import { languageForPath } from './languages.js'
-import { SandboxBadge } from './SandboxBadge.js'
 import { TerminalCard, type TerminalCardProps } from './TerminalCard.js'
 import { parseReadFileOutput, parseRunCommandOutput } from './tool-results.js'
 import { cn, Collapsible, CollapsibleContent, CollapsibleTrigger, Shimmer } from './ui/index.js'
@@ -379,10 +378,10 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
           className="group/step -mx-[7px] grid h-7 w-full grid-cols-[18px_auto_minmax(0,1fr)_auto_14px] items-center gap-x-[7px] rounded-[7px] px-[7px] text-left text-ui text-fg2 outline-none hover:bg-hover hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
         >
           <ToolStatusIcon status={status} exitCode={exitCode} />
-          {action !== '' && (
-            <span className="shrink-0">{running ? <Shimmer>{action}</Shimmer> : action}</span>
-          )}
-          {action !== '' && ' '}
+          {/* 动作列始终保留占位，技能这类没有动作词的工具才不会让后面几列整体左移。 */}
+          <span className="shrink-0">
+            {action !== '' && <>{running ? <Shimmer>{action}</Shimmer> : action} </>}
+          </span>
           <code
             className={cn(
               'w-fit min-w-0 max-w-full truncate text-[12px] text-fg2',
@@ -423,7 +422,6 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
         )}
         {open && terminal && (
           <div className="mt-1 mb-2 ml-[25px] flex flex-col gap-1 text-note">
-            {terminal.sandbox && !terminal.running && <SandboxBadge execution={terminal.sandbox} />}
             <TerminalCard {...terminal} />
             {tool?.truncated && <div className="text-muted">{t('tool.truncated')}</div>}
           </div>
@@ -471,13 +469,14 @@ export function ToolStep({ name, input, tool, live, awaitingApproval = false }: 
 
 /** 组头的一句话：只说现在在干什么；完成后才换成计数式总结。 */
 export interface ActivityHeadline {
-  readonly tone: 'running' | 'attention' | 'waiting' | 'done'
+  readonly tone: 'running' | 'attention' | 'waiting' | 'cancelled' | 'done'
   readonly label: string
-  /** 等宽对象（命令、路径）。 */
+  /** 对象（命令、路径、计划目标…）。 */
   readonly object?: string | undefined
-  /** 失败时读作「命令 + 失败」，对象在前。 */
+  /** 对象不是路径或命令（计划、技能这类结构化参数），不用等宽字体。 */
+  readonly plain?: boolean | undefined
+  /** 失败/取消时读作「命令 + 失败」，对象在前。 */
   readonly objectFirst?: boolean | undefined
-  readonly meta?: string | undefined
 }
 
 /** 组头（整行、无边框、悬停变底色）：与步骤行共用 18px 图标列与 7px 间距。 */
@@ -499,17 +498,24 @@ export function ActivityGroupHeaderContent({
       ? 'completed'
       : headline.tone === 'attention'
         ? 'failed'
-        : headline.tone === 'waiting'
-          ? 'requested'
-          : 'running'
+        : headline.tone === 'cancelled'
+          ? 'cancelled'
+          : headline.tone === 'waiting'
+            ? 'requested'
+            : 'running'
   const object =
     headline.object === undefined || headline.object === '' ? null : (
-      <code className="min-w-0 truncate rounded-[4px] bg-sunk px-1 font-mono text-[12px] text-fg2">
+      <code
+        className={cn(
+          'min-w-0 truncate text-[12px] text-fg2',
+          headline.plain ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
+        )}
+      >
         {headline.object}
       </code>
     )
   const label = (
-    <span className={cn('shrink-0 truncate', headline.objectFirst && 'text-danger')}>
+    <span className={cn('shrink-0 truncate', headline.tone === 'attention' && 'text-danger')}>
       {shimmer ? <Shimmer>{headline.label}</Shimmer> : headline.label}
     </span>
   )
@@ -531,9 +537,6 @@ export function ActivityGroupHeaderContent({
           </>
         )}
       </span>
-      {headline.meta !== undefined && headline.meta !== '' && (
-        <span className="tabular shrink-0 text-[11.5px] text-faint">{headline.meta}</span>
-      )}
       <ChevronRight
         aria-hidden
         className={cn(

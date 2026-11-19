@@ -1711,6 +1711,127 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(activity.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('用户取消的工具在组头显示已取消，而不是失败', () => {
+    const stream = {
+      ...base,
+      runs: { ...base.runs, r1: { ...base.runs.r1, turn: { turnId: 't1', status: 'aborted' } } },
+      tools: { ...base.tools, tc2: { toolCallId: 'tc2', status: 'cancelled', durationMs: 20 } },
+    } as unknown as SessionView
+    renderStream(stream)
+    // 步骤行本身也写着「已取消」，这里要的是组头那一行。
+    const activity = document.querySelector<HTMLElement>('button[data-activity-group]')!
+    expect(activity.textContent).toContain('pnpm test')
+    expect(activity.textContent).toContain('已取消')
+    // 取消用横杠，不用失败的红叉
+    expect(activity.querySelector('svg.lucide-minus')).toBeTruthy()
+    expect(activity.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.queryByRole('button', { name: /失败/ })).toBeNull()
+  })
+
+  /** 一组两步工具，第二步是命令，退出码固定为 1；`recovered` 时再补一步跑成功的步骤。 */
+  const failingTurn = (recovered: boolean) =>
+    view([
+      ...START,
+      ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
+      ev(6, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: [],
+        model,
+        toolCalls: [
+          { id: 'tc1', name: 'read_file', input: { path: 'a.ts' } },
+          { id: 'tc2', name: 'run_command', input: { command: 'pnpm test' } },
+          ...(recovered ? [{ id: 'tc3', name: 'read_file', input: { path: 'b.ts' } }] : []),
+        ],
+      }),
+      ev(7, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
+      ev(8, 'tool.completed', {
+        toolCallId: 'tc1',
+        output: text('ok'),
+        truncated: false,
+        durationMs: 5,
+      }),
+      ev(9, 'tool.requested', {
+        toolCallId: 'tc2',
+        name: 'run_command',
+        input: { command: 'pnpm test' },
+      }),
+      ev(10, 'tool.completed', {
+        toolCallId: 'tc2',
+        output: text('boom'),
+        truncated: false,
+        durationMs: 5,
+        display: {
+          kind: 'terminal',
+          exitCode: 1,
+          timedOut: false,
+          aborted: false,
+          durationMs: 5,
+          shell: 'bash',
+          cwd: '/w',
+          chunks: [],
+          omittedChars: 0,
+        },
+      }),
+      ...(recovered
+        ? [
+            ev(11, 'tool.requested', {
+              toolCallId: 'tc3',
+              name: 'read_file',
+              input: { path: 'b.ts' },
+            }),
+            ev(12, 'tool.completed', {
+              toolCallId: 'tc3',
+              output: text('ok'),
+              truncated: false,
+              durationMs: 5,
+            }),
+          ]
+        : []),
+      ev(recovered ? 13 : 11, 'turn.completed', { durationMs: 20 }),
+    ])
+
+  it('最后一步命令非零退出时组头说失败，并保持展开', () => {
+    renderStream(failingTurn(false))
+    const activity = screen.getByRole('button', { name: /pnpm test 失败/ })
+    expect(activity.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('非零退出后又有别的步骤跑完，组头回到计数而不是停在失败', () => {
+    renderStream(failingTurn(true))
+    const activity = screen.getByRole('button', { name: '已执行 3 个步骤' })
+    expect(activity.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('加载技能时组头说「正在加载技能」，而不是只剩一个「正在」', () => {
+    const stream = view([
+      ...START,
+      ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
+      ev(6, 'message.assistant.completed', {
+        messageId: 'a1',
+        content: [],
+        model,
+        toolCalls: [
+          { id: 'tc1', name: 'read_file', input: { path: 'a.ts' } },
+          { id: 'tc2', name: 'load_skill', input: { name: 'debug' } },
+        ],
+      }),
+      ev(7, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
+      ev(8, 'tool.completed', {
+        toolCallId: 'tc1',
+        output: text('ok'),
+        truncated: false,
+        durationMs: 5,
+      }),
+      ev(9, 'tool.requested', {
+        toolCallId: 'tc2',
+        name: 'load_skill',
+        input: { name: 'debug' },
+      }),
+    ])
+    renderStream(stream)
+    expect(screen.getByRole('button', { name: /正在加载技能 debug/ })).toBeTruthy()
+  })
+
   it('从第一条消息开始的归组与单独的思考步骤', () => {
     const started = {
       ...base,

@@ -219,11 +219,13 @@ interface TurnActivityGroupProps {
 /**
  * 组头那句话：优先说“正在做的那一步”，没有正在执行的就退到结果。
  *
- * - 有失败或取消：`<命令> 失败`
- * - 有等待审批：`等待批准 <命令>`
+ * - 有失败：`<命令> 失败`
+ * - 有取消：`<命令> 已取消`（用户按了停止，不是失败）
+ * - 有等待审批：`等待审批 <命令>`
  * - 有正在执行/排队的调用：`正在运行 <命令>`
- * - 轮次还在跑但工具都结束了（模型在思考）：`执行中`
- * - 否则交给调用方给计数式总结。
+ * - 最后一步命令非零退出：`<命令> 失败`（后面又跑了别的步骤，说明模型已经接着处理，
+ *   此时交给计数式总结，不让一次旧失败永久占住组头）
+ * - 轮次还在跑但工具都结束了（模型在思考）：调用方给阶段文案。
  */
 function liveHeadline({
   calls,
@@ -238,32 +240,33 @@ function liveHeadline({
 }): ActivityHeadline | undefined {
   const statusOf = (call: ToolCall) => tools[call.id]?.status
   const argsOf = (call: ToolCall) => tools[call.id]?.input ?? call.input
-  /** 命令跑起来了但退出码不是 0：工具本身“完成”，这一轮其实失败了。 */
+  const describe = (call: ToolCall) => describeToolCall(call.name, argsOf(call), t)
+  /** 命令跑起来了但退出码不是 0：工具本身“完成”，这一步其实失败了。 */
   const badExit = (call: ToolCall) => {
     const code = tools[call.id]?.display?.exitCode
     return typeof code === 'number' && code !== 0
   }
 
-  const failedByStatus = calls.find((call) => {
-    const status = statusOf(call)
-    return status === 'failed' || status === 'cancelled'
-  })
-  let failedExit: ToolCall | undefined
-  for (let index = calls.length - 1; index >= 0; index -= 1) {
-    if (badExit(calls[index]!)) {
-      failedExit = calls[index]
-      break
-    }
-  }
-  const failed = failedByStatus ?? failedExit
+  const failed = calls.find((call) => statusOf(call) === 'failed')
   if (failed) {
-    const { object } = describeToolCall(failed.name, argsOf(failed), t)
-    return { tone: 'attention', label: t('tool.group.failed'), object, objectFirst: true }
+    const { object, plain } = describe(failed)
+    return { tone: 'attention', label: t('tool.group.failed'), object, plain, objectFirst: true }
+  }
+  const cancelled = calls.find((call) => statusOf(call) === 'cancelled')
+  if (cancelled) {
+    const { object, plain } = describe(cancelled)
+    return {
+      tone: 'cancelled',
+      label: t('tool.group.cancelled'),
+      object,
+      plain,
+      objectFirst: true,
+    }
   }
   const waiting = calls.find((call) => awaiting?.has(call.id) === true)
   if (waiting) {
-    const { object } = describeToolCall(waiting.name, argsOf(waiting), t)
-    return { tone: 'waiting', label: t('tool.group.waiting'), object }
+    const { object, plain } = describe(waiting)
+    return { tone: 'waiting', label: t('tool.group.waiting'), object, plain }
   }
   let active: ToolCall | undefined
   for (let index = calls.length - 1; index >= 0; index -= 1) {
@@ -275,8 +278,19 @@ function liveHeadline({
     }
   }
   if (active) {
-    const { action, object } = describeToolCall(active.name, argsOf(active), t)
-    return { tone: 'running', label: t('tool.group.current', { action }), object }
+    const { action, object, plain } = describe(active)
+    // 技能这类工具没有动作词，组头得有自己的说法，否则只剩一个「正在」。
+    return {
+      tone: 'running',
+      label: action === '' ? t('tool.group.loadingSkill') : t('tool.group.current', { action }),
+      object,
+      plain,
+    }
+  }
+  const last = calls.at(-1)
+  if (last !== undefined && statusOf(last) === 'completed' && badExit(last)) {
+    const { object, plain } = describe(last)
+    return { tone: 'attention', label: t('tool.group.failed'), object, plain, objectFirst: true }
   }
   return undefined
 }
@@ -308,21 +322,6 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
   onOpenFile,
 }: TurnActivityGroupProps) {
   const { t } = useTranslation('session')
-  const [open, setOpen] = useState(isRunning || hasAwaitingApproval)
-  const [manuallyOpened, setManuallyOpened] = useState(false)
-
-  // 状态变化时自动更新展开状态（如果用户没手动操作）
-  useEffect(() => {
-    if (!manuallyOpened) {
-      setOpen(isRunning || hasAwaitingApproval)
-    }
-  }, [isRunning, hasAwaitingApproval, manuallyOpened])
-
-  const handleToggle = () => {
-    setManuallyOpened(true)
-    setOpen(!open)
-  }
-
   const calls = useMemo(() => steps.flatMap((step) => step.toolCalls ?? []), [steps])
 
   const headline = useMemo<ActivityHeadline>(() => {
@@ -335,6 +334,28 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
     if (isRunning) return { tone: 'running', label: t('tool.status.running') }
     return { tone: 'done', label: t('tool.group.done', { steps: calls.length }) }
   }, [calls, view.tools, awaiting, t, isRunning, phaseKey])
+
+  /** 失败、取消或等待审批时组保持展开，把出错的那一步露在外面；正常结束才自动收起。 */
+  const needsAttention =
+    hasAwaitingApproval ||
+    headline.tone === 'attention' ||
+    headline.tone === 'cancelled' ||
+    headline.tone === 'waiting'
+
+  const [open, setOpen] = useState(isRunning || needsAttention)
+  const [manuallyOpened, setManuallyOpened] = useState(false)
+
+  // 状态变化时自动更新展开状态（如果用户没手动操作）
+  useEffect(() => {
+    if (!manuallyOpened) {
+      setOpen(isRunning || needsAttention)
+    }
+  }, [isRunning, needsAttention, manuallyOpened])
+
+  const handleToggle = () => {
+    setManuallyOpened(true)
+    setOpen(!open)
+  }
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="my-2 max-w-full">
@@ -744,10 +765,9 @@ function Message({
       (status === undefined && view.runs[message.runId]?.turn?.status === 'running')
     )
   })
-  const messageAttention = message.toolCalls.some((call) => {
-    const status = view.tools[call.id]?.status
-    return status === 'failed' || status === 'cancelled' || awaiting.has(call.id)
-  })
+  const headline = messageHeadline(message, view, awaiting, messageRunning, t, phaseKey)
+  const messageAttention =
+    headline.tone === 'attention' || headline.tone === 'cancelled' || headline.tone === 'waiting'
 
   return (
     <li className={cn(continued ? '-mt-3.5 text-fg' : 'text-fg', entering && 'animate-message-in')}>
@@ -786,7 +806,7 @@ function Message({
           count={message.toolCalls.length}
           running={messageRunning}
           attention={messageAttention}
-          headline={messageHeadline(message, view, awaiting, messageRunning, t, phaseKey)}
+          headline={headline}
         >
           {message.toolCalls.map((call) => (
             <ToolStep

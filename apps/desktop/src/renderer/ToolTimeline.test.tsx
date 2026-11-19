@@ -148,6 +148,25 @@ describe('ToolStep：run_command', () => {
     expect(badge.textContent).toBe('沙箱：工作区可写 · 网络未隔离')
   })
 
+  it('展开后沙箱徽标只出现一次', async () => {
+    const user = userEvent.setup()
+    step({
+      tool: tool({
+        display: display({
+          sandbox: {
+            profile: 'workspace-write',
+            network: 'none',
+            mechanism: 'restricted-token',
+            enforced: true,
+            networkIsolated: false,
+          },
+        }),
+      }),
+    })
+    await user.click(toggle())
+    expect(screen.getAllByTestId('sandbox-badge')).toHaveLength(1)
+  })
+
   it('成功后默认收起，点开显示带颜色的 display', async () => {
     const user = userEvent.setup()
     step({ tool: tool({ display: display(), output: text('Exit code: 0') }) })
@@ -336,7 +355,7 @@ describe('ToolStep：完成态', () => {
   })
 
   it('技能加载只显示技能名，不显示动作词或原始 JSON', () => {
-    render(
+    const { container } = render(
       <I18nextProvider i18n={i18n}>
         <ToolTimeline>
           <ToolStep
@@ -356,6 +375,8 @@ describe('ToolStep：完成态', () => {
     expect(screen.getByText('using-superpowers')).toBeTruthy()
     expect(document.body.textContent).not.toContain('load_skill')
     expect(document.body.textContent).not.toContain('"name"')
+    // 没有动作词也要占住动作列，否则对象、耗时和箭头会整体左移、错位。
+    expect(container.querySelector('button[aria-expanded]')!.children).toHaveLength(5)
   })
 })
 
