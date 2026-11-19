@@ -494,6 +494,16 @@ const supervisor = createHostSupervisor({
     if (!autoFixRef.service) throw new RpcError('run.unsupported')
     return autoFixRef.service.push(sessionId)
   },
+  // 普通会话为刚创建的 PR 开启监视（会话内提示“开启自动修复”后调用）
+  watchPullRequest: async (sessionId, input) => {
+    if (!autoFixRef.service) throw new RpcError('run.unsupported')
+    const watch = await autoFixRef.service.watchFromSession(sessionId, {
+      repo: input.repo,
+      prNumber: input.prNumber,
+      ...(input.triggers === undefined ? {} : { triggers: [...input.triggers] }),
+    })
+    return { ...watch, triggers: [...watch.triggers] }
+  },
   // 自定义说明（M1-13b）：加入系统提示词；修改后在下次启动宿主时生效
   resolveInstructions: () => settings.instructions(),
   // 默认 Shell（M2-09）：同样在下次启动宿主时生效
@@ -838,6 +848,7 @@ const gateway = createRendererGateway({
     updateWatch: (params) => autoFix.updateWatch(params),
     removeWatch: (params) => autoFix.removeWatch(params),
     setPaused: (params) => autoFix.setPaused(params),
+    watchFromSession: (sessionId, params) => autoFix.watchFromSession(sessionId, params),
     subscribe: (listener) => autoFix.subscribe(listener),
   },
   inspect: {

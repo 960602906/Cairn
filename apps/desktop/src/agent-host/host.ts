@@ -125,6 +125,7 @@ import { createHostQuestionGate } from './question-gate.js'
 import { createHostCheckpoints, type OpenShadowRepo } from './checkpoints.js'
 import { createHostChangeRecorder } from './change-recorder.js'
 import { GIT_COMMIT_TOOL, GIT_PUSH_TOOL, registerAutoFixGitTools } from './git-tools.js'
+import { WATCH_PULL_REQUEST_TOOL, registerPullRequestWatchTool } from './autofix-tools.js'
 
 export const AgentHostErrorCode = {
   /** 尚未收到 `host.init`，或重复初始化。 */
@@ -533,6 +534,12 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       registerAutoFixGitTools(registry, {
         commit: (input) => endpoint.request('host.git.commit', input),
         push: () => endpoint.request('host.git.push', {}),
+      })
+    }
+    // 普通会话的自动修复入口：用户同意后，为刚创建的 PR 开启监视。修复会话自身不再开监视。
+    if (hasBuiltinTools && !init.autoFix) {
+      registerPullRequestWatchTool(registry, {
+        watch: (input) => endpoint.request('host.autofix.watch', input),
       })
     }
     /** 本轮启用的技能。`prepareTurn` 每轮替换，`load_skill` 按名称读取。 */
@@ -1440,10 +1447,13 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     }
     // 系统提示词（M1-13b）：基础提示词、用户的自定义说明与环境信息。项目说明每轮再补（M3-02）。
     const askUserDefinition = registry.get(ASK_USER_TOOL)
+    const watchDefinition = registry.get(WATCH_PULL_REQUEST_TOOL)
     const promptBase = {
       tools: hasTools,
       userQuestions:
         askUserDefinition !== undefined && toolSelected(agentDefinition?.tools, askUserDefinition),
+      pullRequestWatch:
+        watchDefinition !== undefined && toolSelected(agentDefinition?.tools, watchDefinition),
       environment: {
         os: operatingSystemName(options.platform ?? process.platform),
         ...(hasTools && toolEnvironment.shell ? { shell: toolEnvironment.shell } : {}),
@@ -1542,6 +1552,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
           systemPrompt: buildSystemPrompt({
             ...promptBase,
             tools: promptBase.tools || mode === 'plan' || executing !== undefined,
+            // 计划轮只读，也不会注册监视工具；说明一起收起来。
+            pullRequestWatch: promptBase.pullRequestWatch && mode === 'normal',
             environment: { ...promptBase.environment, date: localDate(now()) },
             ...(text ? { projectInstructions: text } : {}),
             ...(memory ? { memory } : {}),

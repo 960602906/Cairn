@@ -41,6 +41,12 @@ const ASK_USER_SECTION = `# Asking the user
 - The user can always type a custom answer, so do not add an "Other" option.
 - The user can dismiss the questions without answering. If that happens, do not ask the same thing again: continue with the most reasonable choice, say which assumption you made, or explain in plain text what you need.`
 
+const PULL_REQUESTS_SECTION = `# Pull requests
+- When the user asks you to commit the work and open a pull request, open it as usual (for example with the GitHub CLI).
+- Once the pull request exists, offer to watch it: call ask_user with one question about enabling auto-fix for it, with options for yes and no. Recommend yes unless the pull request is still a draft.
+- If the user agrees, call watch_pull_request with the repository (owner/name) and the pull request number. The user approves that call before anything is watched.
+- Never call watch_pull_request for a pull request that does not exist yet, and never more than once for the same pull request.`
+
 export interface SystemPromptEnvironment {
   /** 操作系统名称，如 `Windows`、`macOS`、`Linux`。 */
   readonly os: string
@@ -56,6 +62,11 @@ export interface SystemPromptInput {
   readonly tools: boolean
   /** 这一轮有 `ask_user` 工具时加入提问说明。 */
   readonly userQuestions?: boolean
+  /**
+   * 这一轮有 `watch_pull_request` 工具时加入 PR 监视说明：创建 PR 后先问用户是否开启自动修复。
+   * 计划轮与自动修复会话没有这个工具。
+   */
+  readonly pullRequestWatch?: boolean
   readonly environment: SystemPromptEnvironment
   /** Agent 定义中的指令（M3 的自定义 Agent）。 */
   readonly agentInstructions?: string
@@ -155,6 +166,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     BASE_SYSTEM_PROMPT,
     input.tools ? TOOLS_SECTION : undefined,
     input.userQuestions ? ASK_USER_SECTION : undefined,
+    input.pullRequestWatch ? PULL_REQUESTS_SECTION : undefined,
     input.tools ? `# Safety\n- ${TOOL_RESULT_NOTICE}` : undefined,
     section('Agent instructions', input.agentInstructions),
     section(

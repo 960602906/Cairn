@@ -2237,6 +2237,93 @@ describe('auto-fix git tools (M8-03)', () => {
   })
 })
 
+describe('pull request watch tool', () => {
+  const allowNetwork: PermissionRule[] = [
+    {
+      id: 'r1',
+      scope: 'global',
+      effect: 'allow',
+      match: { category: ['network'] },
+      source: 'preset',
+    },
+  ]
+
+  it('registers watch_pull_request in a normal session and proxies it to main', async () => {
+    const h = setup(
+      {
+        turns: [
+          {
+            steps: [
+              {
+                kind: 'tool',
+                name: 'watch_pull_request',
+                input: { repo: 'o/r', prNumber: 12 },
+              },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      { registerTools: (registry) => registry.register(echoTool) },
+    )
+    const watches: unknown[] = []
+    h.main.handle('host.autofix.watch', (input) => {
+      watches.push(input)
+      return {
+        watchId: 'w1',
+        repo: input.repo,
+        prNumber: input.prNumber,
+        projectPath: '/work',
+        triggers: ['ci' as const, 'conflict' as const],
+        maxAttempts: 3,
+        enabled: true,
+        attempts: 0,
+        createdAt: 1,
+      }
+    })
+
+    await h.main.request('host.init', { ...init, permissionRules: allowNetwork })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+
+    expect(watches).toEqual([{ repo: 'o/r', prNumber: 12, triggers: ['ci', 'conflict'] }])
+    const outputs = h.events
+      .filter((event) => event.type === 'tool.completed')
+      .map((event) => (event.payload as { output: unknown }).output)
+    expect(outputs).toEqual([
+      text(
+        'Watching o/r#12: failing checks and merge conflicts will be repaired automatically.',
+      ),
+    ])
+  })
+
+  it('does not register the watch tool in an auto-fix session', async () => {
+    const h = setup(
+      {
+        turns: [
+          {
+            steps: [
+              { kind: 'tool', name: 'watch_pull_request', input: { repo: 'o/r', prNumber: 12 } },
+              { kind: 'reply', text: 'done' },
+            ],
+          },
+        ],
+      },
+      { registerTools: (registry) => registry.register(echoTool) },
+    )
+    await h.main.request('host.init', {
+      ...init,
+      autoFix: { repo: 'o/r', prNumber: 12 },
+      permissionRules: allowNetwork,
+    })
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go') })
+    await h.waitFor('turn.completed')
+    expect(h.events.find((event) => event.type === 'tool.failed')?.payload).toMatchObject({
+      error: { code: 'tool.not_found' },
+    })
+  })
+})
+
 describe('fake model', () => {
   it('builds the default fake runtime', () => {
     const { runtime, model } = createFakeHostRuntime({ providerId: 'fake', modelId: 'm' })

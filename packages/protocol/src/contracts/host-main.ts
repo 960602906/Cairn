@@ -33,7 +33,12 @@ import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.j
 import { defineSide } from '../rpc.js'
 import { SkillCatalogEntry } from '../skills.js'
 import { McpToolExposure } from '../mcp.js'
-import { AutoFixSessionContext } from '../github.js'
+import {
+  AutoFixSessionContext,
+  AutoFixTrigger,
+  GithubRepo,
+  PullRequestWatch,
+} from '../github.js'
 
 /**
  * 宿主构造模型所需的配置（M1-04b）：由主进程按提供方配置给出，不含 Key。
@@ -484,6 +489,18 @@ export const MainForHost = defineSide({
     'host.git.push': {
       params: z.object({}),
       result: z.object({ sha: z.string().min(7).max(64), branch: z.string().min(1).max(255) }),
+    },
+    /**
+     * 为刚创建的 PR 开启自动修复监视（M8-02）。会话由连接确定：主进程用会话的项目目录作为
+     * 监视的本地仓库，先确认 GitHub 已连接、PR 可读，再建立监视。重复监视报 `autofix.duplicate`。
+     */
+    'host.autofix.watch': {
+      params: z.object({
+        repo: GithubRepo,
+        prNumber: z.number().int().positive().max(1_000_000),
+        triggers: z.array(AutoFixTrigger).min(1).max(3).optional(),
+      }),
+      result: PullRequestWatch,
     },
   },
   events: {},
