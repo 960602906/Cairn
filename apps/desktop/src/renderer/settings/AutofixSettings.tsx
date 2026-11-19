@@ -302,7 +302,6 @@ export function AutofixSettings() {
           </div>
         )}
       </SettingsGroup>
-
     </>
   )
 }

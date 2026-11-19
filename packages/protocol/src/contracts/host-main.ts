@@ -33,12 +33,7 @@ import { BaseUrl, ModelCompat, ModelProfile, ProviderKind } from '../providers.j
 import { defineSide } from '../rpc.js'
 import { SkillCatalogEntry } from '../skills.js'
 import { McpToolExposure } from '../mcp.js'
-import {
-  AutoFixSessionContext,
-  AutoFixTrigger,
-  GithubRepo,
-  PullRequestWatch,
-} from '../github.js'
+import { AutoFixSessionContext, AutoFixTrigger, GithubRepo, PullRequestWatch } from '../github.js'
 
 /**
  * 宿主构造模型所需的配置（M1-04b）：由主进程按提供方配置给出，不含 Key。

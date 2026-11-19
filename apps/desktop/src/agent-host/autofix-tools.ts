@@ -24,11 +24,13 @@ export interface PullRequestWatchTools {
 /** 错误码对应的默认说明；主进程给出 `reason` 时优先用它。 */
 const MESSAGES: Readonly<Record<string, string>> = {
   'autofix.duplicate': 'This pull request is already watched; nothing more to do.',
-  'autofix.too_many': 'Too many pull requests are watched already. Ask the user to remove one first.',
+  'autofix.too_many':
+    'Too many pull requests are watched already. Ask the user to remove one first.',
   'github.not_connected':
     'GitHub is not connected in Cairn, so the pull request cannot be watched. Tell the user to connect it in settings.',
   'github.not_found': 'The pull request was not found. Check the repository and number.',
-  'github.auth_failed': 'The saved GitHub token was rejected. Ask the user to connect GitHub again.',
+  'github.auth_failed':
+    'The saved GitHub token was rejected. Ask the user to connect GitHub again.',
   'autofix.not_auto_fix': 'This session cannot start a pull request watch.',
 }
 

@@ -2291,9 +2291,7 @@ describe('pull request watch tool', () => {
       .filter((event) => event.type === 'tool.completed')
       .map((event) => (event.payload as { output: unknown }).output)
     expect(outputs).toEqual([
-      text(
-        'Watching o/r#12: failing checks and merge conflicts will be repaired automatically.',
-      ),
+      text('Watching o/r#12: failing checks and merge conflicts will be repaired automatically.'),
     ])
   })
 

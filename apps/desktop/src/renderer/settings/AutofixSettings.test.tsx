@@ -4,12 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
-import {
-  RpcError,
-  type GithubPullRequest,
-  type GithubStatus,
-  type Settings,
-} from '@cairn/protocol'
+import { RpcError, type GithubPullRequest, type GithubStatus, type Settings } from '@cairn/protocol'
 import type { MainApi } from '../api.js'
 import { createSessionStore, type SessionStore } from '../session-store.js'
 import { SessionStoreContext } from '../store-context.js'
