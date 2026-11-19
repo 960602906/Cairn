@@ -27,10 +27,10 @@ const MESSAGES: Readonly<Record<string, string>> = {
   'autofix.too_many':
     'Too many pull requests are watched already. Ask the user to remove one first.',
   'github.not_connected':
-    'GitHub is not connected in Cairn, so the pull request cannot be watched. Tell the user to connect it in settings.',
+    'No GitHub token is available, so the pull request cannot be watched. Ask the user to run gh auth login or set GH_TOKEN.',
   'github.not_found': 'The pull request was not found. Check the repository and number.',
   'github.auth_failed':
-    'The saved GitHub token was rejected. Ask the user to connect GitHub again.',
+    'The GitHub token from the environment or gh CLI was rejected. Ask the user to check it.',
   'autofix.not_auto_fix': 'This session cannot start a pull request watch.',
 }
 

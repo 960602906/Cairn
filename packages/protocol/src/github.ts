@@ -1,9 +1,9 @@
 /**
  * GitHub 只读接入（M8-01）：PR 状态、检查项与失败日志。
  *
- * - 令牌由主进程的凭据存储加密保存（ADR-0010），界面只能连接、断开与查询是否已连接；
+ * - 令牌由主进程自动解析（环境变量 / 旧版凭据 / 本机 `gh`），界面不提供凭据配置；
  * - 这里只有读取，没有推送或评论：推送经自动修复的受控 Git 工具执行（ADR-0045）；
- * - 所有字段都来自 GitHub REST 的公开结构，错误按固定错误码返回，界面自行翻译。
+ * - 所有字段都来自 GitHub REST 的公开结构，错误按固定错误码返回。
  */
 import { z } from 'zod'
 import { Timestamp } from './common.js'
@@ -13,16 +13,6 @@ export const GITHUB_REPO_PATTERN = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100
 
 export const GithubRepo = z.string().max(201).regex(GITHUB_REPO_PATTERN)
 export type GithubRepo = z.infer<typeof GithubRepo>
-
-/**
- * 连接状态。`login` 只在令牌有效时出现；令牌失效时仍为已连接，但读取会报
- * `github.auth_failed`，界面据此提示重新连接。
- */
-export const GithubStatus = z.object({
-  connected: z.boolean(),
-  login: z.string().min(1).max(120).optional(),
-})
-export type GithubStatus = z.infer<typeof GithubStatus>
 
 /** 检查项结论；`null` 表示还没结束，读取时省略。 */
 export const GithubCheckConclusion = z.enum([
@@ -93,7 +83,7 @@ export const GithubErrorCode = {
 } as const
 export type GithubErrorCode = (typeof GithubErrorCode)[keyof typeof GithubErrorCode]
 
-/** 保存令牌时使用的凭据引用。 */
+/** 旧版设置页保存令牌时使用的凭据引用；现在只作为静默解析的一个来源。 */
 export const GITHUB_CREDENTIAL_REF = 'github'
 
 // ---------- 自动修复监视（M8-02） ----------

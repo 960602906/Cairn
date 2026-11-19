@@ -172,15 +172,6 @@ export interface UpdateCommands {
   readonly subscribe: (listener: (status: UpdateStatus) => void) => () => void
 }
 
-/** GitHub 只读接入（M8-01）：连接状态、PR 快照与失败检查日志。 */
-export interface GithubCommands {
-  readonly status: Handler<'github.status'>
-  readonly connect: Handler<'github.connect'>
-  readonly disconnect: Handler<'github.disconnect'>
-  readonly pullRequest: Handler<'github.pullRequest'>
-  readonly checkLog: Handler<'github.checkLog'>
-}
-
 /** 由设置服务实现的设置命令。 */
 export interface SettingsCommands {
   readonly get: () => z.input<Requests['settings.get']['result']>
@@ -246,8 +237,6 @@ export interface RendererGatewayOptions {
   readonly sandbox: SandboxCommands
   /** 自动更新（M5-06）。 */
   readonly update: UpdateCommands
-  /** GitHub 只读接入（M8-01）。 */
-  readonly github: GithubCommands
   /** 自动修复监视（M8-02）：监视列表、暂停与状态推送。 */
   readonly autofix: AutoFixCommands & {
     readonly subscribe: (listener: () => void) => () => void
@@ -342,7 +331,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   const { hub, mentions } = options
   const { agents, trials, teams, diagnostics, activity, changeSets } = options
   const { sandbox } = options
-  const { update, github, autofix } = options
+  const { update, autofix } = options
   const backgroundCommands = options.backgroundCommands
   const frameMs = options.frameMs ?? DEFAULT_FRAME_MS
   const connections = new Set<{
@@ -595,11 +584,6 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('update.download', (params) => update.download(params))
       endpoint.handle('update.install', (params) => update.install(params))
       endpoint.handle('update.cancel', (params) => update.cancel(params))
-      endpoint.handle('github.status', (params) => github.status(params))
-      endpoint.handle('github.connect', (params) => github.connect(params))
-      endpoint.handle('github.disconnect', (params) => github.disconnect(params))
-      endpoint.handle('github.pullRequest', (params) => github.pullRequest(params))
-      endpoint.handle('github.checkLog', (params) => github.checkLog(params))
 
       endpoint.handle('autofix.status', () => autofix.status())
       endpoint.handle('autofix.watch.add', (params) => autofix.addWatch(params))

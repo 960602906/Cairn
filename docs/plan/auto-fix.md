@@ -48,9 +48,10 @@ GitHub REST ──► github-service (主进程)
 ### 3.2 认证与凭据
 
 使用 GitHub fine-grained PAT，作用域最小化：`Contents: write`（推送）、`Pull requests: read/write`
-（读状态、可选回复评论）、`Checks: read`（检查项日志）。令牌存进现有凭据存储（ADR-0010），
-引用名形如 `github:pat`，绝不写入日志、事件或诊断包。
-可选：检测本机 `gh auth token` 并复用；Cairn 不捆绑 `gh`，因此只作为便捷项。
+（读状态、可选回复评论）、`Checks: read`（检查项日志）。令牌自动解析，不设界面配置：
+先读环境变量 `GH_TOKEN` / `GITHUB_TOKEN`，再读旧版设置页保存的凭据（兼容升级），最后调用本机
+`gh auth token`。令牌绝不写入日志、事件或诊断包。Cairn 不捆绑 `gh`；只要能提交并创建 PR 的
+环境，自动修复就能直接工作。
 
 ### 3.3 修复在哪里执行
 
@@ -188,12 +189,11 @@ CREATE INDEX auto_fix_jobs_by_watch ON auto_fix_jobs (watch_id, created_at DESC)
 
 ### 4.5 界面
 
-- **设置 → 自动修复**（新分类，遵循「少控件」取向）：
-  - 顶部一行：GitHub 连接状态 +「连接 / 断开」；
-  - 主列表：被监视的 PR（仓库、标题、状态、触发项、尝试次数），开关启停；
-  - 底部低强调：「添加监视」——填仓库 + PR 号，或从打开中的 PR 列表里选；
-  - 折叠区：最大尝试次数、触发项勾选、暂停全部。
-- **活动中心**：每个 job 一条状态（排队 / 修复中 / 已推送 / 通过 / 放弃），可跳到会话。
+- **不设设置分类**：GitHub 令牌自动解析，设置页没有「自动修复」入口。
+- **会话内开启**：Agent 提交并创建 PR 后，先问用户是否开启自动修复；同意后调用
+  `watch_pull_request`（调用本身仍走审批）。监视使用会话的项目目录。
+- **活动中心**：每个 job 一条状态（排队 / 修复中 / 已推送 / 通过 / 放弃），可跳到会话；
+  每条监视都可以就地停止。
 - **会话**：`auto-fix` 标记；顶部固定一条触发上下文（PR、失败检查、冲突文件）。
 - 完成或放弃时走现有活动通知（`activity-notifier`）。
 
@@ -232,10 +232,10 @@ CREATE INDEX auto_fix_jobs_by_watch ON auto_fix_jobs (watch_id, created_at DESC)
 - **集成**：本地假 GitHub（HTTP 桩）覆盖快照、检查项、评论；断言失败 → 创建 job → 会话。
 - **工具**：`git_push` 在本地裸仓库上推送成功；拒绝 `--force`、拒绝非 PR 分支。
 - **e2e**：假 GitHub + 一个失败检查，假模型完成一次改动 → 推送 → 检查转绿；再断言达到上限后放弃。
-  已落地的用例（`apps/desktop/e2e/autofix.spec.ts`）覆盖设置页连接与查询、添加监视、自动开修复会话、
-  活动中心列表与跳转、暂停 / 恢复；真实的推送链路由单元测试覆盖（本地假远端无法验证 `git_push`
-  硬编码的 GitHub 目标）。假 GitHub 由 `CAIRN_GITHUB_API_URL` 指向本机回环地址，只在开发构建里生效，
-  且只接受 HTTPS 或回环 HTTP，避免把令牌发到别处。
+  已落地的用例（`apps/desktop/e2e/autofix.spec.ts`）覆盖令牌静默解析（`GH_TOKEN`）、会话开启监视、
+  自动开修复会话、活动中心列表与跳转、停止监视；真实的推送链路由单元测试覆盖（本地假远端无法验证
+  `git_push` 硬编码的 GitHub 目标）。假 GitHub 由 `CAIRN_GITHUB_API_URL` 指向本机回环地址，只在
+  开发构建里生效，且只接受 HTTPS 或回环 HTTP，避免把令牌发到别处。
 - 覆盖率维持现有 ≥ 95% 门槛。
 
 ## 8. 待决问题（后续阶段）

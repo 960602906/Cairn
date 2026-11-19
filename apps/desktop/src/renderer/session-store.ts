@@ -61,9 +61,6 @@ import {
   type HubSkillCard,
   type FileContent,
   type AutoFixStatus,
-  type GithubCheckLog,
-  type GithubPullRequest,
-  type GithubStatus,
   type McpLogEntry,
   type McpServerDetail,
   type McpServerInput,
@@ -475,16 +472,6 @@ export interface SessionActions {
   ): Promise<ProviderTestResult | undefined>
   /** 拉取供应商的模型列表（M2-10）；请求本身失败时返回 undefined。 */
   fetchModels(provider: ProviderConfig, secret?: string): Promise<ProviderModelsResult | undefined>
-  /** GitHub 连接状态（M8-01）；失败时返回 undefined。 */
-  githubStatus(): Promise<GithubStatus | undefined>
-  /** 用令牌连接 GitHub（M8-01）；令牌无效时返回 undefined（错误写入 `error`）。 */
-  githubConnect(token: string): Promise<GithubStatus | undefined>
-  /** 断开 GitHub 并删除保存的令牌（M8-01）。 */
-  githubDisconnect(): Promise<GithubStatus | undefined>
-  /** 读取一个 PR 的只读快照（M8-01）；失败时返回 undefined。 */
-  githubPullRequest(repo: string, number: number): Promise<GithubPullRequest | undefined>
-  /** 读取一项失败检查的日志（M8-01）；失败时返回 undefined。 */
-  githubCheckLog(repo: string, checkRunId: number): Promise<GithubCheckLog | undefined>
   /** 自动修复监视与任务快照（M8-02）；变化时主进程推送 `autofix.changed`。 */
   refreshAutofix(): Promise<void>
   /** 停止监视并清理它的工作区与任务记录（M8-02）；开启由会话里的 Agent 完成。 */
@@ -1628,18 +1615,6 @@ export function createSessionStore(api: MainApi): SessionStore {
       credentialStatus: (ref) => run(() => api.request('credentials.status', { ref })),
 
       shellOptions: () => run(() => api.request('settings.shell', {})),
-
-      githubStatus: () => run(() => api.request('github.status', {})),
-
-      githubConnect: (token) => run(() => api.request('github.connect', { token })),
-
-      githubDisconnect: () => run(() => api.request('github.disconnect', {})),
-
-      githubPullRequest: (repo, number) =>
-        run(() => api.request('github.pullRequest', { repo, number })),
-
-      githubCheckLog: (repo, checkRunId) =>
-        run(() => api.request('github.checkLog', { repo, checkRunId })),
 
       permissionRules: async () => (await run(() => api.request('permissions.list', {})))?.rules,
 
