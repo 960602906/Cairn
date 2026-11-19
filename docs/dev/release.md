@@ -114,8 +114,10 @@ PowerShell 生成 PFX 的 Base64（只写入 GitHub secret，不要粘贴到日�
     provider 按目录拼接文件名；至少需要通道元数据、对应版本安装包与 blockmap。
   - **公开仓库的 GitHub Releases**：形如 `https://github.com/<owner>/<repo>`，客户端用
     GitHub provider 读取 `releases.atom` 与 `releases/download/<tag>/`，**不需要也禁止**
-    携带令牌（私有仓库不支持）。beta 版本以 `--prerelease` 发布，`releases/latest`
-    不含预发布，客户端在 beta 通道显式打开 `allowPrerelease` 从 feed 里选择。
+    携带令牌（私有仓库不支持）。发布一律创建正式 release：GitHub 的 Latest 与仓库侧栏
+    不展示预发布，标成 prerelease 会让 Releases 页面看起来没有可下载版本；版本选择靠
+    通道元数据（`beta.yml` / `latest.yml`），客户端在 beta 通道仍打开 `allowPrerelease`
+    从 Atom feed 取最新版本。
 - `release:publish` 会把 `dist/release/` 下的全部文件一起上传；GitHub 方式使用
   `--method github`，发布后从 `https://github.com/<repo>/releases/download/<tag>/`
   匿名重下并核对 SHA-256。
