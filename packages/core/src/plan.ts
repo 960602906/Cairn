@@ -76,8 +76,8 @@ export function executionPlanInstructions(plan: {
     .map((step, index) => `${index + 1}. ${step.id}: ${step.title}`)
     .join('\n')
   const tracking = plan.listId
-    ? `Progress is tracked in task list "${plan.listId}". As you start, finish, or skip a step, call update_task_item with listId "${plan.listId}" and that step's item id (update_plan_step with the step id works too). If the user changes the task while you work, call revise_task_items with the complete new item list before continuing (or revise_plan_steps); keep ids for retained steps so their progress survives, omit removed steps, and give added steps new ids.`
-    : "Start by marking the first step in_progress with update_plan_step, then work through them. As you start, finish, or skip a step, call update_plan_step with that step's id. If the user changes the task while you work, call revise_plan_steps with the complete new step list before continuing; keep ids for retained steps so their progress survives, omit removed steps, and give added steps new ids."
+    ? `Progress is tracked in task list "${plan.listId}", which the user watches live. Before you start each step, mark it in_progress with update_task_item (listId "${plan.listId}", that step's item id); right after you finish or skip it, mark it done or skipped. Work one step at a time in the listed order, never leave a step in_progress while you work on another, and never batch the updates at the end of the work. If the user changes the task while you work, call revise_task_items with the complete new item list before continuing (or revise_plan_steps); keep ids for retained steps so their progress survives, omit removed steps, and give added steps new ids.`
+    : 'Progress is shown to the user live. Mark the first step in_progress with update_plan_step before you start it; as you finish or skip each step, mark it done or skipped immediately, then mark the next one in_progress before starting it. Work one step at a time in the listed order, never leave a step in_progress while you work on another, and never batch the updates at the end of the work. If the user changes the task while you work, call revise_plan_steps with the complete new step list before continuing; keep ids for retained steps so their progress survives, omit removed steps, and give added steps new ids.'
   return `# Approved plan
 The user approved this plan. Carry it out now — do not stop after presenting or acknowledging it. Use your available tools to execute the steps. ${tracking} If you must deviate, keep going and pass a short note explaining why. A note does not block the work.
 
@@ -130,7 +130,7 @@ export function approvedPlanMessage(original: PlanDocument, approved: PlanDocume
   const markdown = approved.markdown.trim()
   const body = !edited && markdown !== '' ? markdown : renderPlan(approved)
   const firstStepId = approved.steps[0]!.id
-  const directive = `已批准此计划，请立即开始执行。先调用 update_plan_step 把第一步（${firstStepId}）标记为 in_progress，然后按步骤推进，不要停下来等确认。`
+  const directive = `已批准此计划，请立即开始执行。先调用 update_plan_step 把第一步（${firstStepId}）标记为 in_progress，然后按步骤推进；每完成或跳过一步就立刻标记，再开始下一步，不要留到最后一起更新，也不要停下来等确认。`
   return `${directive}\n\n${body}`
 }
 

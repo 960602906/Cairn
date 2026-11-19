@@ -141,7 +141,7 @@ function taskListSection(lists: readonly ActiveTaskList[] | undefined): string |
   })
   return [
     '# Task lists',
-    'The session tracks work in these task lists. Mark an item in_progress, done, or skipped with update_task_item (listId, itemId, status). Use revise_task_items with the complete ordered list to add, rename, remove, or reorder items; keep itemIds for retained items so their progress survives. Use create_task_list to start a new checklist when a task needs multi-step tracking.',
+    'The session tracks work in these task lists. Mark an item in_progress, done, or skipped with update_task_item (listId, itemId, status). The user watches these lists live, so report progress as it happens: mark an item in_progress before you start it and done or skipped immediately after you finish it. Never leave an item in_progress while you work on another one, never batch several updates at the end of the work, and keep at most one item in_progress per list. Work through the items in the order listed unless the user asks for a different order. Use revise_task_items with the complete ordered list to add, rename, remove, or reorder items; keep itemIds for retained items so their progress survives. Use create_task_list to start a new checklist when a task needs multi-step tracking.',
     rendered.join('\n\n'),
   ].join('\n\n')
 }

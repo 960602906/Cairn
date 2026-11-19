@@ -110,3 +110,29 @@
 3. **文件图标**：正文引用、工具步骤里的文件路径都带 `FileTypeIcon`（项目统一的 material 图标）。
 4. **图片预览**：`fs.read` 对 png / jpg / gif / webp / avif / bmp / ico / svg 返回带 data URL 的
    `binary` 内容，右侧直接显示图片；其他二进制文件仍是“二进制文件，无法预览”。
+
+### 第六轮：组头只说最新一步，分组不再自动展开（2026-11-19）
+
+1. **组头摘要**：折叠状态只显示最新一步在做什么，不再罗列多件事、也不再补“等 N 项”；
+   最新一步没有可说的内容时往前找最近一步。
+2. **一律默认折叠**：分组（包括只有一步的、失败 / 取消 / 等待审批的）都默认收起，状态变化也不自动展开，
+   只有用户点过组头才展开。
+3. **组头文字省略**：摘要行改用 `min-w-0 truncate`，长标题在消息列里省略，不再把整列撑出横向滚动条。
+4. **编辑文件显示改动行数**：`edit_file` 完成后从结果里的 unified diff 数出增删行，显示在文件名后面
+   （`+2 −1`）。
+5. **文案**：删除不再使用的 `tool.group.summarySeparator`、`tool.group.summaryMore`。
+
+### 第七轮：待办进度卡实时更新（2026-11-19）
+
+1. **问题定位**：进度卡长时间停在第一项（进行中），接近结束时一次跳到后面几项，看起来顺序也乱。
+   查事件日志（安装版 `cairn.db`）：计划批准时 `tasklist.created` 之后，执行期间只有开始时的一条
+   `update_plan_step`（第一项 in_progress），十余分钟后才在几秒内并行发出九条 `update_plan_step`，
+   其中大部分直接标成 done、测试项反而被标 in_progress。归约与进度卡按事件原样显示，问题在模型
+   没有边做边报，而是攒到最后一次性补。
+2. **提示词**：`system-prompt.ts` 的 `# Task lists`、`plan.ts` 的 `executionPlanInstructions` 与批准指令，
+   以及 `update_task_item` / `update_plan_step` 的工具说明，都明确要求：开始一项前标 `in_progress`、
+   结束或跳过就立刻标 `done` / `skipped`；一次只做一项、每张列表最多一项进行中、按列表顺序推进；
+   不要把多次更新攒到工作结束时批量发送。
+3. **测试**：`system-prompt.test.ts`、`plan.test.ts` 断言上述规则；`session-view.test.ts` 逐条回放
+   `tasklist.item.updated`，断言每一步的中间状态与条目顺序；`PlanCard.test.tsx` 断言进度卡随各阶段
+   更新、行序不重排、收起时标题跟随当前项。

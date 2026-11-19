@@ -262,6 +262,11 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('1. a: 第一步 [in_progress]')
     expect(prompt).toContain('- tl2 — 临时清单 (ad_hoc)')
     expect(prompt).toContain('1. x: 临时项 [pending]')
+    // 清单是实时给用户看的：边做边报、一次一项、按顺序，不能攒到最后一起发。
+    expect(prompt).toContain('report progress as it happens')
+    expect(prompt).toContain('keep at most one item in_progress per list')
+    expect(prompt).toContain('never batch several updates at the end')
+    expect(prompt).toContain('in the order listed')
 
     expect(
       buildSystemPrompt({

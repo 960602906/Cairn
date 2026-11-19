@@ -396,7 +396,7 @@ describe('MessageStream 渲染', () => {
     expect(sendPrompt).toHaveBeenCalled()
   })
 
-  it('已完成消息的工具步骤默认汇总，异常和运行中的步骤保持可见', async () => {
+  it('只有一个工具步骤时也默认折叠，失败也不自动展开', async () => {
     const store = createStore<Record<string, unknown>>(() => ({
       activeSessionId: 's1',
       awaitingTurn: {},
@@ -427,6 +427,7 @@ describe('MessageStream 渲染', () => {
     expect(screen.getByRole('button', { name: /读取 a\.ts/ }).getAttribute('aria-expanded')).toBe(
       'false',
     )
+    expect(screen.queryByText('a.ts')).toBeNull()
     const completed = view([
       ...START,
       ev(5, 'message.assistant.completed', {
@@ -455,8 +456,9 @@ describe('MessageStream 渲染', () => {
       tools: { ...completed.tools, tc1: { ...completed.tools.tc1!, status: 'failed' as const } },
     }
     render(renderStream(failed))
+    // 失败也只写在组头，仍然等用户点开
     expect(screen.getByRole('button', { name: /a\.ts 失败/ }).getAttribute('aria-expanded')).toBe(
-      'true',
+      'false',
     )
   })
 
@@ -1183,7 +1185,7 @@ describe('MessageStream 状态呈现', () => {
     )
   })
 
-  it('组头折叠时用整组摘要，不再用“思考中”这类状态词，也不另起一行', () => {
+  it('只有一个工具步骤时组头也保持折叠，不另起一行运行指示', () => {
     const stream = view([
       ...START,
       ev(5, 'run.state.changed', { from: 'idle', to: 'tooling' }),
@@ -1464,13 +1466,13 @@ describe('MessageStream 试运行（M4-12）', () => {
       </I18nextProvider>,
     )
 
-    // 折叠状态下，组头用一句话说清这一组做过的事
-    expect(screen.getByText(/读取 a\.ts、运行 pnpm test/)).toBeTruthy()
+    // 折叠状态下，组头只说最新一步在做什么
+    expect(screen.getByText(/运行 pnpm test/)).toBeTruthy()
     // 最终回复正常显示
     expect(screen.getByText('全部完成')).toBeTruthy()
 
     // 默认完成状态下收起
-    const activityButton = screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test/ })
+    const activityButton = screen.getByRole('button', { name: /运行 pnpm test/ })
     expect(activityButton.getAttribute('aria-expanded')).toBe('false')
 
     // 点击展开
@@ -1651,9 +1653,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(screen.getByText('较早的工具输出已省略，以腾出上下文。')).toBeTruthy()
     expect(screen.getByText('编程助手')).toBeTruthy()
 
-    const activity = screen.getByRole('button', {
-      name: /读取 a\.ts、运行 pnpm test、查看目录 src/,
-    })
+    const activity = screen.getByRole('button', { name: /查看目录 src/ })
     expect(activity.getAttribute('aria-expanded')).toBe('false')
     await userEvent.click(activity)
     expect(activity.getAttribute('aria-expanded')).toBe('true')
@@ -1683,7 +1683,7 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView
     const rendered = renderStream(live)
-    const running = screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test/ })
+    const running = screen.getByRole('button', { name: /查看目录 src/ })
     expect(running.getAttribute('aria-expanded')).toBe('false')
 
     await userEvent.click(running)
@@ -1712,16 +1712,16 @@ describe('MessageStream 多步骤归组的细节', () => {
         </SessionStoreProvider>
       </I18nextProvider>,
     )
-    const done = screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test/ })
+    const done = screen.getByRole('button', { name: /查看目录 src/ })
     expect(done.getAttribute('aria-expanded')).toBe('true')
     await userEvent.click(done)
     expect(done.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('等待审批的归组以需要留意的状态默认展开', () => {
+  it('等待审批的归组点明卡点，但仍然默认折叠', () => {
     renderStream(base, ['tc2'])
     const activity = screen.getByRole('button', { name: /等待审批/ })
-    expect(activity.getAttribute('aria-expanded')).toBe('true')
+    expect(activity.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('用户取消的工具在组头显示已取消，而不是失败', () => {
@@ -1737,7 +1737,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(activity.textContent).toContain('已取消')
     // 取消用横杠，不用失败的红叉
     expect(activity.querySelector('svg.lucide-minus')).toBeTruthy()
-    expect(activity.getAttribute('aria-expanded')).toBe('true')
+    expect(activity.getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByRole('button', { name: /失败/ })).toBeNull()
   })
 
@@ -1803,15 +1803,15 @@ describe('MessageStream 多步骤归组的细节', () => {
       ev(recovered ? 13 : 11, 'turn.completed', { durationMs: 20 }),
     ])
 
-  it('最后一步命令非零退出时组头说失败，并保持展开', () => {
+  it('最后一步命令非零退出时组头说失败，界面仍保持折叠', () => {
     renderStream(failingTurn(false))
     const activity = screen.getByRole('button', { name: /pnpm test 失败/ })
-    expect(activity.getAttribute('aria-expanded')).toBe('true')
+    expect(activity.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('非零退出后又有别的步骤跑完，组头回到整组摘要而不是停在失败', () => {
+  it('非零退出后又有别的步骤跑完，组头回到最新一步而不是停在失败', () => {
     renderStream(failingTurn(true))
-    const activity = screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、读取 b\.ts/ })
+    const activity = screen.getByRole('button', { name: /读取 b\.ts/ })
     expect(activity.getAttribute('aria-expanded')).toBe('false')
   })
 
@@ -1842,7 +1842,7 @@ describe('MessageStream 多步骤归组的细节', () => {
       }),
     ])
     renderStream(stream)
-    expect(screen.getByRole('button', { name: /读取 a\.ts、debug/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /debug/ })).toBeTruthy()
   })
 
   it('从第一条消息开始的归组与单独的思考步骤', () => {
@@ -1878,7 +1878,10 @@ describe('MessageStream 多步骤归组的细节', () => {
       ],
     } as unknown as SessionView
     renderStream(started)
-    expect(screen.getByRole('button', { name: /读取 a\.ts/ })).toBeTruthy()
+    // 组头只说最新一步，默认折叠
+    expect(screen.getByRole('button', { name: /读取 a\.ts/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
     cleanup()
 
     const single = {
@@ -1950,11 +1953,9 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView
     renderStream(stream)
-    expect(
-      screen
-        .getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ })
-        .getAttribute('aria-expanded'),
-    ).toBe('false')
+    expect(screen.getByRole('button', { name: /查看目录 src/ }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
   })
 
   it('宿主退出导致的中断使用中断文案', () => {
@@ -2055,7 +2056,7 @@ describe('MessageStream 多步骤归组的细节', () => {
       ],
     } as unknown as SessionView
     renderStream(stream, [], vi.fn())
-    expect(screen.getByRole('button', { name: /读取 a\.ts、查看目录 src/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /查看目录 src/ })).toBeTruthy()
   })
 
   it('失败但没有错误详情时使用未知错误说明', () => {
@@ -2101,9 +2102,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     const initial = { ...base, messages: [base.messages[0]] } as unknown as SessionView
     const rendered = render(tree(initial))
     rendered.rerender(tree(base))
-    expect(
-      screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ }),
-    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: /查看目录 src/ })).toBeTruthy()
     expect(document.querySelector('.animate-message-in')).toBeTruthy()
   })
 
@@ -2121,9 +2120,7 @@ describe('MessageStream 多步骤归组的细节', () => {
         name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
       },
     ])
-    expect(
-      screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ }),
-    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: /查看目录 src/ })).toBeTruthy()
     first.unmount()
 
     // 有 Agent 摘要时使用摘要里的名字
@@ -2133,9 +2130,7 @@ describe('MessageStream 多步骤归组的细节', () => {
         name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
       },
     ])
-    expect(
-      screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ }),
-    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: /查看目录 src/ })).toBeTruthy()
     summary.unmount()
 
     // 只有 Agent id、没有摘要时显示 id
@@ -2147,9 +2142,7 @@ describe('MessageStream 多步骤归组的细节', () => {
       },
     } as unknown as SessionView
     renderStream(other)
-    expect(
-      screen.getByRole('button', { name: /读取 a\.ts、运行 pnpm test、查看目录 src/ }),
-    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: /查看目录 src/ })).toBeTruthy()
   })
 
   it('说明崩溃、等待重试与其他限额', () => {

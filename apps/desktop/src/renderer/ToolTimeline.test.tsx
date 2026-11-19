@@ -101,7 +101,7 @@ describe('ToolTimeline 汇总折叠', () => {
     expect(screen.getByText('npm test')).toBeTruthy()
   })
 
-  it('运行中也默认收起；需要留意时默认展开，用户仍可手动开合', async () => {
+  it('运行中和需要留意时都默认收起，用户手动开合后保持', async () => {
     const user = userEvent.setup()
     const running = group({ running: true })
     const summary = screen.getByRole('button', { name: /读取 a\.ts、运行 npm test/ })
@@ -120,7 +120,7 @@ describe('ToolTimeline 汇总折叠', () => {
     cleanup()
     group({ attention: true })
     expect(screen.getByRole('button', { name: /需要留意/ }).getAttribute('aria-expanded')).toBe(
-      'true',
+      'false',
     )
   })
 })
@@ -148,6 +148,38 @@ describe('ToolStep：点击文件', () => {
     expect(row.getAttribute('aria-expanded')).toBe('false')
     await user.click(row)
     expect(row.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('edit_file 完成后在文件名后面显示增删行数', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ToolTimeline>
+          <ToolStep
+            name="edit_file"
+            input={{ path: 'src/a.ts' }}
+            tool={tool({
+              name: 'edit_file',
+              input: { path: 'src/a.ts' },
+              output: text(
+                [
+                  'Edited src/a.ts (+2 -1)',
+                  '--- a/src/a.ts',
+                  '+++ b/src/a.ts',
+                  '@@ -1,2 +1,3 @@',
+                  ' line',
+                  '-old',
+                  '+new',
+                  '+extra',
+                ].join('\n'),
+              ),
+            })}
+            live={undefined}
+          />
+        </ToolTimeline>
+      </I18nextProvider>,
+    )
+    expect(screen.getByText('+2')).toBeTruthy()
+    expect(screen.getByText('−1')).toBeTruthy()
   })
 
   it('非文件类工具的对象保持普通文本', async () => {

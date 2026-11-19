@@ -116,6 +116,33 @@ describe('TurnChanges', () => {
     expect(screen.queryByRole('region')).toBeNull()
   })
 
+  it('文件很多时先列 8 个，可展开其余再收起', async () => {
+    const many = Array.from({ length: 12 }, (_, index) =>
+      change({ changeId: `m${index}`, path: `src/f${index}.ts` }),
+    )
+    const { wrap } = setup({ initial: many })
+    wrap(<TurnChanges sessionId="s1" turnId="t1" />)
+    const card = screen.getByRole('region', { name: '本轮变更' })
+    const fileRows = () =>
+      within(card)
+        .getAllByRole('button')
+        .filter((button) => button.textContent?.startsWith('src/f'))
+    expect(fileRows()).toHaveLength(8)
+    expect(fileRows().at(-1)?.textContent).toContain('src/f7.ts')
+
+    const more = within(card).getByRole('button', { name: '展开其余 4 个文件' })
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(more)
+    expect(fileRows()).toHaveLength(12)
+    expect(fileRows().at(-1)?.textContent).toContain('src/f11.ts')
+
+    const less = within(card).getByRole('button', { name: '收起' })
+    expect(less.getAttribute('aria-expanded')).toBe('true')
+    await userEvent.click(less)
+    expect(fileRows()).toHaveLength(8)
+    expect(within(card).getByRole('button', { name: '展开其余 4 个文件' })).toBeTruthy()
+  })
+
   it('点击文件展开 diff：取最早一次改动之前与最后一次改动之后的内容', async () => {
     const { wrap, request } = setup()
     wrap(<TurnChanges sessionId="s1" turnId="t1" />)

@@ -1894,7 +1894,7 @@ describe('tool calls and undo turn', () => {
       ),
     })
     await open()
-    // 已完成消息的工具步骤汇总默认收起，展开后再检查步骤本身。
+    // 组头默认折叠，点开后检查步骤本身。
     await userEvent.click(screen.getByRole('button', { name: /运行 npm test/ }))
     expect(card().textContent).toBe('运行 npm test完成 5ms')
     expect(card().dataset.status).toBe('completed')

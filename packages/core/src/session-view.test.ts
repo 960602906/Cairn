@@ -1406,6 +1406,46 @@ describe('reduceSession：待办列表（ADR-0038）', () => {
     expect(progressTaskList(finished)?.listId).toBe('tl2')
   })
 
+  it('每一项的开始与完成都单独反映在进度卡上，顺序不变', () => {
+    const ev = stream()
+    let view = reduceAll([
+      ev('tasklist.created', {
+        listId: 'tl1',
+        title: '做点事',
+        source: 'ad_hoc',
+        items: [
+          { itemId: 'a', title: '一' },
+          { itemId: 'b', title: '二' },
+          { itemId: 'c', title: '三' },
+        ],
+      }),
+    ])
+    const stages = [
+      ['a', 'in_progress'],
+      ['a', 'done'],
+      ['b', 'in_progress'],
+      ['b', 'done'],
+      ['c', 'in_progress'],
+    ] as const
+    const seen: string[][] = []
+    for (const [itemId, status] of stages) {
+      view = reduceSession(view, ev('tasklist.item.updated', { listId: 'tl1', itemId, status }))
+      seen.push(progressTaskList(view)!.items.map((item) => `${item.itemId}:${item.status}`))
+    }
+    expect(seen).toEqual([
+      ['a:in_progress', 'b:pending', 'c:pending'],
+      ['a:done', 'b:pending', 'c:pending'],
+      ['a:done', 'b:in_progress', 'c:pending'],
+      ['a:done', 'b:done', 'c:pending'],
+      ['a:done', 'b:done', 'c:in_progress'],
+    ])
+    view = reduceSession(
+      view,
+      ev('tasklist.item.updated', { listId: 'tl1', itemId: 'c', status: 'done' }),
+    )
+    expect(progressTaskList(view)).toBeUndefined()
+  })
+
   it('忽略重复条目、未知列表与已关闭列表的修订', () => {
     const ev = stream()
     const view = reduceAll([

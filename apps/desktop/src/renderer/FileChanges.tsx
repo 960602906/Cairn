@@ -9,7 +9,7 @@
  *   修改过时主进程整体拒绝，错误由错误横幅显示。
  * - **撤销此块**（M3-06）：一项只有一条改动时，diff 里每个对得上的块可以单独撤销。部分撤销时显示“已撤销 1/3 块”。
  */
-import { ChevronRight, FileDiff as FileDiffIcon, TriangleAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileDiff as FileDiffIcon, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sessionStatus } from '@cairn/core'
@@ -153,18 +153,26 @@ export function FileDiff({
  * 按文件列出改动。给了 `onOpenFile` 时点击一行直接在右侧打开这个文件（改动视图）；
  * 省略时退回行内展开 diff（独立预览与旧调用）。
  */
+/** 折叠时最多显示的文件行数；超出部分点“展开”再看。 */
+const COLLAPSED_ROWS = 8
+
 export function FileChangeList({
   sessionId,
   entries,
   onOpenFile,
+  collapsible = false,
 }: {
   readonly sessionId: string
   readonly entries: readonly FileEntry[]
   /** 点击文件：在右侧工作台打开它。 */
   readonly onOpenFile?: ((path: string) => void) | undefined
+  /** 条目多时先列前 8 个，底部给出展开 / 收起。 */
+  readonly collapsible?: boolean | undefined
 }) {
   const { t } = useTranslation('session')
   const canRevert = useCanRevert(sessionId)
+  const [showAll, setShowAll] = useState(false)
+  const visible = collapsible && !showAll ? entries.slice(0, COLLAPSED_ROWS) : entries
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
   const toggle = (path: string) =>
     setOpen((s) => {
@@ -176,7 +184,7 @@ export function FileChangeList({
   const inline = onOpenFile === undefined
   return (
     <ul className="divide-y-[0.5px] divide-hair">
-      {entries.map((entry) => {
+      {visible.map((entry) => {
         const expanded = inline && open.has(entry.path)
         const { dir, name } = splitPath(entry.path)
         return (
@@ -227,6 +235,24 @@ export function FileChangeList({
           </li>
         )
       })}
+      {collapsible && entries.length > COLLAPSED_ROWS && (
+        <li>
+          <button
+            type="button"
+            aria-expanded={showAll}
+            onClick={() => setShowAll((value) => !value)}
+            className="flex h-9 w-full items-center justify-center gap-1.5 text-note text-muted hover:bg-hover"
+          >
+            {showAll
+              ? t('changes.showLess')
+              : t('changes.showMore', { count: entries.length - COLLAPSED_ROWS })}
+            <ChevronDown
+              aria-hidden
+              className={cn('size-3.5 text-faint transition-transform', showAll && 'rotate-180')}
+            />
+          </button>
+        </li>
+      )}
     </ul>
   )
 }
@@ -286,6 +312,7 @@ export function TurnChanges({
       <FileChangeList
         sessionId={sessionId}
         entries={entries}
+        collapsible
         {...(onOpenFile === undefined ? {} : { onOpenFile })}
       />
     </section>
