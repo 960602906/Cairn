@@ -451,6 +451,169 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     return rootRun(getView(sessionId))?.agent ?? options.runDefaults.agent
   }
 
+  type PromptParams = Parameters<SessionCommands['prompt']>[0]
+
+  /** 回退对话后重新开始时，必须先让宿主丢掉内存里的旧历史，下一次输入重建（见 runPrompt）。 */
+  function publishRewind(
+    sessionId: string,
+    runId: string,
+    fromSeq: number,
+    reason: 'edit' | 'regenerate',
+  ) {
+    events.publish([
+      {
+        ...header(sessionId, runId),
+        type: 'conversation.rewound',
+        payload: { fromSeq, reason },
+      },
+    ])
+  }
+
+  /** 一条用户消息是不是它所在轮次的第一条（编辑只允许从轮次开头回退）。 */
+  function isTurnStart(view: SessionView, messageId: string): boolean {
+    const target = view.messages.find((message) => message.messageId === messageId)
+    if (target === undefined || target.role !== 'user') return false
+    const run = view.runs[target.runId]
+    if (run !== undefined && run.parentRunId !== undefined) return false
+    const turn = target.turnId
+    if (turn === undefined) {
+      // 还没有 turnId 的消息只能是最新一条（宿主还没开始这一轮）。
+      return !view.messages.some((message) => message.role === 'user' && message.seq > target.seq)
+    }
+    return !view.messages.some(
+      (message) => message.turnId === turn && message.role === 'user' && message.seq < target.seq,
+    )
+  }
+
+  /**
+   * 会话空闲时才能回退：正在进行的一轮、排队中的输入或撤销锁定都不允许。
+   * 返回根运行的 runId 供回退事件使用。
+   */
+  function requireRewindable(sessionId: string): SessionView {
+    if (closed) throw new RpcError(SessionErrorCode.Closed)
+    requireSession(sessionId)
+    if (options.isLocked?.(sessionId) || sessionBusy(sessionId)) {
+      throw new RpcError(SessionErrorCode.Busy, { sessionId })
+    }
+    return getView(sessionId)
+  }
+
+  /**
+   * 发送一轮输入（原 `session.prompt`）。`rewind` 时即使宿主还空闲在跑，也先停掉它：
+   * 宿主持有内存里的历史，回退后必须按事件日志重建，否则模型会看到被丢弃的轮次。
+   */
+  function runPrompt(
+    params: PromptParams,
+    flags: { readonly rewind?: boolean } = {},
+  ): { messageId: string } {
+    const { sessionId, content: typed, mode = 'normal', mentions, skills, agents, context } = params
+    if (closed) throw new RpcError(SessionErrorCode.Closed)
+    const record = requireSession(sessionId)
+    if (options.isLocked?.(sessionId)) {
+      throw new RpcError(SessionErrorCode.Busy, { sessionId })
+    }
+    const slot = slots.get(sessionId)
+    const running = slot?.handle?.state() === 'running'
+    // 运行中（有进行中的轮次）：把输入作为引导注入当前轮，不打断、不另起一轮（Runtime §9）。
+    // 宿主仍在运行时下面不会写中断标记，这里直接读当前状态。
+    const activeRun = running ? rootRun(getView(sessionId)) : undefined
+    const activeTurn = activeRun !== undefined && isActiveRunState(activeRun.state)
+    if (!activeTurn && sessionBusy(sessionId)) {
+      throw new RpcError(SessionErrorCode.Busy, { sessionId })
+    }
+    // 没有宿主时仍处于运行中的运行，是上一个宿主崩溃留下的
+    if (!running) markInterrupted(sessionId, 'host_lost')
+    const view = getView(sessionId)
+    const root = rootRun(view)
+    if (
+      record.kind === 'trial' &&
+      (record.trialAgentId === undefined || record.trialDraftHash === undefined)
+    ) {
+      throw new RpcError(SessionErrorCode.NotFound, { sessionId })
+    }
+    const agent: RunAgentRef =
+      record.kind === 'trial'
+        ? { id: record.trialAgentId!, draftHash: record.trialDraftHash! }
+        : (root?.agent ?? options.runDefaults.agent)
+    if (record.kind === 'trial' && !options.resolveAgent?.(agent)) {
+      throw new RpcError(SessionErrorCode.DraftChanged, { sessionId })
+    }
+    const next = runConfig(agent, record.model)
+    // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）。
+    // 引导注入当前轮时不换模型，下一轮才换。
+    const modelChanged =
+      !activeTurn && running && next.model !== undefined && !sameModel(next.model, slot!.model)
+    // 回退后旧宿主的历史已失效，同样停掉；新宿主启动时从事件日志重建。
+    const restart = modelChanged || flags.rewind === true
+    if (restart) void slot?.handle?.stop()
+    const hostReady = running && !restart
+    const resume = root !== undefined && root.state !== 'disposed' && acceptsInput(root.state)
+    // 引导沿用当前运行的 runId；其余情况按能否直接继续决定。
+    const runId = activeTurn ? root!.runId : resume ? root.runId : createId()
+    const history = hostReady ? [] : rebuildHistory(events.readAfter(sessionId, 0), { runId })
+
+    const messageId = createId()
+    events.publish([
+      {
+        ...header(sessionId, runId),
+        type: 'message.user',
+        payload: {
+          messageId,
+          content: typed,
+          ...(mentions && mentions.length > 0 ? { mentions } : {}),
+          ...(skills && skills.length > 0 ? { skills } : {}),
+          ...(agents && agents.length > 0 ? { agents } : {}),
+          ...(context !== undefined ? { context } : {}),
+        },
+      },
+    ])
+    // 模型看到的是输入加上展开的引用；界面只显示输入本身。
+    const content = userTurnContent({ content: typed, context })
+
+    if (activeTurn && slot?.handle) {
+      // 引导：注入当前轮，在下一次模型调用前生效。不置 awaitingTurn（不会产生新的 turn.started）。
+      // 活跃计划可能在这轮里刚修订，传递最新步骤供宿主校验后续工具调用。
+      const plan = executionPlan(sessionId, 'normal')
+      const taskLists = executionTaskLists(sessionId, 'normal')
+      slot.handle
+        .prompt({
+          messageId,
+          content,
+          send: 'steer',
+          ...(plan ? { plan } : {}),
+          ...(taskLists ? { taskLists } : {}),
+        })
+        .catch((error) => onError(error))
+    } else if (slot?.handle && hostReady) {
+      send(sessionId, slot, slot.handle, { messageId, content, mode })
+    } else {
+      waiting.set(sessionId, {
+        runId,
+        messageId,
+        content,
+        mode,
+        history,
+        run: resume
+          ? {
+              agent,
+              model: next.model ?? root.model,
+              mode: root.mode,
+              limits: root.limits,
+            }
+          : {
+              agent,
+              model: next.model ?? record.model ?? options.runDefaults.model,
+              mode: runModeOf(record, options.runDefaults.mode),
+              limits: next.limits,
+            },
+        resume: resume ? { state: root.state } : undefined,
+        workspacePath: record.workspacePath,
+      })
+      pump()
+    }
+    return { messageId }
+  }
+
   const manager: SessionManager = {
     create({ projectPath, title, model: requested }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
@@ -624,110 +787,63 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       return {}
     },
 
-    prompt({ sessionId, content: typed, mode = 'normal', mentions, skills, agents, context }) {
-      if (closed) throw new RpcError(SessionErrorCode.Closed)
-      const record = requireSession(sessionId)
-      if (options.isLocked?.(sessionId)) {
-        throw new RpcError(SessionErrorCode.Busy, { sessionId })
-      }
-      const slot = slots.get(sessionId)
-      const running = slot?.handle?.state() === 'running'
-      // 运行中（有进行中的轮次）：把输入作为引导注入当前轮，不打断、不另起一轮（Runtime §9）。
-      // 宿主仍在运行时下面不会写中断标记，这里直接读当前状态。
-      const activeRun = running ? rootRun(getView(sessionId)) : undefined
-      const activeTurn = activeRun !== undefined && isActiveRunState(activeRun.state)
-      if (!activeTurn && sessionBusy(sessionId)) {
-        throw new RpcError(SessionErrorCode.Busy, { sessionId })
-      }
-      // 没有宿主时仍处于运行中的运行，是上一个宿主崩溃留下的
-      if (!running) markInterrupted(sessionId, 'host_lost')
-      const view = getView(sessionId)
-      const root = rootRun(view)
-      if (
-        record.kind === 'trial' &&
-        (record.trialAgentId === undefined || record.trialDraftHash === undefined)
-      ) {
-        throw new RpcError(SessionErrorCode.NotFound, { sessionId })
-      }
-      const agent: RunAgentRef =
-        record.kind === 'trial'
-          ? { id: record.trialAgentId!, draftHash: record.trialDraftHash! }
-          : (root?.agent ?? options.runDefaults.agent)
-      if (record.kind === 'trial' && !options.resolveAgent?.(agent)) {
-        throw new RpcError(SessionErrorCode.DraftChanged, { sessionId })
-      }
-      const next = runConfig(agent, record.model)
-      // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）。
-      // 引导注入当前轮时不换模型，下一轮才换。
-      const modelChanged =
-        !activeTurn && running && next.model !== undefined && !sameModel(next.model, slot!.model)
-      if (modelChanged) void slot!.handle!.stop()
-      const hostReady = running && !modelChanged
-      const resume = root !== undefined && root.state !== 'disposed' && acceptsInput(root.state)
-      // 引导沿用当前运行的 runId；其余情况按能否直接继续决定。
-      const runId = activeTurn ? root!.runId : resume ? root.runId : createId()
-      const history = hostReady ? [] : rebuildHistory(events.readAfter(sessionId, 0), { runId })
+    prompt: (params) => runPrompt(params),
 
-      const messageId = createId()
-      events.publish([
+    editMessage({ sessionId, messageId, content, mentions, skills, agents }) {
+      const view = requireRewindable(sessionId)
+      const target = view.messages.find((message) => message.messageId === messageId)
+      if (target === undefined || !isTurnStart(view, messageId)) {
+        throw new RpcError(SessionErrorCode.InvalidParams, { messageId })
+      }
+      publishRewind(sessionId, target.runId, target.seq, 'edit')
+      // 引用由网关按新内容重算后传入；计划模式不随编辑保留，按普通一轮重新开始。
+      return runPrompt(
         {
-          ...header(sessionId, runId),
-          type: 'message.user',
-          payload: {
-            messageId,
-            content: typed,
-            ...(mentions && mentions.length > 0 ? { mentions } : {}),
-            ...(skills && skills.length > 0 ? { skills } : {}),
-            ...(agents && agents.length > 0 ? { agents } : {}),
-            ...(context !== undefined ? { context } : {}),
-          },
-        },
-      ])
-      // 模型看到的是输入加上展开的引用；界面只显示输入本身。
-      const content = userTurnContent({ content: typed, context })
-
-      if (activeTurn && slot?.handle) {
-        // 引导：注入当前轮，在下一次模型调用前生效。不置 awaitingTurn（不会产生新的 turn.started）。
-        // 活跃计划可能在这轮里刚修订，传递最新步骤供宿主校验后续工具调用。
-        const plan = executionPlan(sessionId, 'normal')
-        const taskLists = executionTaskLists(sessionId, 'normal')
-        slot.handle
-          .prompt({
-            messageId,
-            content,
-            send: 'steer',
-            ...(plan ? { plan } : {}),
-            ...(taskLists ? { taskLists } : {}),
-          })
-          .catch((error) => onError(error))
-      } else if (slot?.handle && hostReady) {
-        send(sessionId, slot, slot.handle, { messageId, content, mode })
-      } else {
-        waiting.set(sessionId, {
-          runId,
-          messageId,
+          sessionId,
           content,
-          mode,
-          history,
-          run: resume
-            ? {
-                agent,
-                model: next.model ?? root.model,
-                mode: root.mode,
-                limits: root.limits,
-              }
-            : {
-                agent,
-                model: next.model ?? record.model ?? options.runDefaults.model,
-                mode: runModeOf(record, options.runDefaults.mode),
-                limits: next.limits,
-              },
-          resume: resume ? { state: root.state } : undefined,
-          workspacePath: record.workspacePath,
-        })
-        pump()
+          ...(mentions && mentions.length > 0 ? { mentions } : {}),
+          ...(skills && skills.length > 0 ? { skills } : {}),
+          ...(agents && agents.length > 0 ? { agents } : {}),
+        },
+        { rewind: true },
+      )
+    },
+
+    regenerate({ sessionId, messageId }) {
+      const view = requireRewindable(sessionId)
+      const target = view.messages.find((message) => message.messageId === messageId)
+      if (target === undefined || target.turnId === undefined) {
+        throw new RpcError(SessionErrorCode.InvalidParams, { messageId })
       }
-      return { messageId }
+      // 用这一轮第一条用户消息作为回退点，并复用原始事件里的完整输入（含 `@` 引用展开的上下文），
+      // 保证模型看到的和上一轮一致。
+      const start = view.messages.find(
+        (message) => message.turnId === target.turnId && message.role === 'user',
+      )
+      if (start === undefined || start.role !== 'user') {
+        throw new RpcError(SessionErrorCode.InvalidParams, { messageId })
+      }
+      const original = events
+        .readAfter(sessionId, start.seq - 1)
+        .find(
+          (event) => event.type === 'message.user' && event.payload.messageId === start.messageId,
+        )
+      if (original === undefined || original.type !== 'message.user') {
+        throw new RpcError(SessionErrorCode.InvalidParams, { messageId })
+      }
+      publishRewind(sessionId, start.runId, start.seq, 'regenerate')
+      const { content, mentions, skills, agents, context } = original.payload
+      return runPrompt(
+        {
+          sessionId,
+          content,
+          ...(mentions && mentions.length > 0 ? { mentions } : {}),
+          ...(skills && skills.length > 0 ? { skills } : {}),
+          ...(agents && agents.length > 0 ? { agents } : {}),
+          ...(context !== undefined ? { context } : {}),
+        },
+        { rewind: true },
+      )
     },
 
     approvePlan({ sessionId, planId, steps }) {

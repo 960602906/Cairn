@@ -589,6 +589,31 @@ export const MainForRenderer = defineSide({
       result: z.object({ messageId: Id }),
     },
     /**
+     * 编辑一条用户消息并重发（ADR-0046）：从这条消息开始回退对话（它之后的轮次一并丢弃），
+     * 再用新的内容开始一轮。工作区文件不自动撤销。只能在该轮的会话空闲时调用。
+     * `mentions` / `skills` / `agents` 与 `session.prompt` 相同，由主进程展开后附给模型。
+     */
+    'session.editMessage': {
+      params: z.object({
+        sessionId: Id,
+        messageId: Id,
+        content: z.array(ContentPart).min(1),
+        mentions: z.array(PromptMention).max(MAX_PROMPT_MENTIONS).optional(),
+        skills: z.array(PromptSkill).max(MAX_PROMPT_SKILLS).optional(),
+        agents: z.array(PromptAgent).max(MAX_PROMPT_AGENTS).optional(),
+      }),
+      result: z.object({ messageId: Id }),
+    },
+    /**
+     * 重新生成：回退到这一轮开始之前，再用用户原来的输入重新开始一轮（ADR-0046）。
+     * `messageId` 是这一轮的任意一条消息（通常是最后一条助手回复）；之后的轮次一并丢弃。
+     * 工作区文件不自动撤销，模型看到的历史与上次相同（含 `@` 引用展开的内容）。
+     */
+    'session.regenerate': {
+      params: z.object({ sessionId: Id, messageId: Id }),
+      result: z.object({ messageId: Id }),
+    },
+    /**
      * 批准一份待审计划并开始执行（M3-05）。`steps` 是用户改过的步骤标题，按 id 对应；
      * 省略表示不改。随后以正常模式开始新的一轮，输入是批准后的计划。
      */

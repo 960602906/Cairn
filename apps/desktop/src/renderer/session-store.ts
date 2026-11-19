@@ -218,6 +218,20 @@ export interface SessionActions {
     },
   ): Promise<boolean>
   /**
+   * 编辑一条用户消息并重发：主进程从这条消息开始回退对话，再用新文本开始一轮。
+   * 引用（`@` 文件、`@Agent`）按新文本重新展开；失败时返回 false，编辑器保持打开。
+   */
+  editMessage(
+    messageId: string,
+    text: string,
+    references?: {
+      readonly agents?: readonly PromptAgent[]
+      readonly agentNames?: readonly string[]
+    },
+  ): Promise<boolean>
+  /** 重新生成这一轮的回复：回退这一轮并按原输入重新开始。失败时返回 false。 */
+  regenerate(messageId: string): Promise<boolean>
+  /**
    * 输入框 `@` 引用的候选（ADR-0037）：在会话工作区或项目目录里按路径搜。
    * 失败时返回空列表，不弹错误：打字过程中的搜索失败不值得打断用户。
    */
@@ -1136,6 +1150,36 @@ export function createSessionStore(api: MainApi): SessionStore {
           }),
         )
         if (sent === undefined && !steering) setAwaiting(sessionId, false)
+        return sent !== undefined
+      },
+
+      async editMessage(messageId, text, references) {
+        const sessionId = get().activeSessionId
+        const trimmed = text.trim()
+        if (sessionId === undefined || trimmed === '') return false
+        // 编辑后的文本可能删掉或新增了 `@` 引用；按新文本重新提取，和输入框发送走同一套展开。
+        const mentions = extractMentions(trimmed, references?.agentNames)
+        const agents = references?.agents ?? []
+        setAwaiting(sessionId, true)
+        const sent = await run(() =>
+          api.request('session.editMessage', {
+            sessionId,
+            messageId,
+            content: [{ type: 'text', text: trimmed }],
+            ...(mentions.length > 0 ? { mentions } : {}),
+            ...(agents.length > 0 ? { agents: agents.slice(0, MAX_PROMPT_AGENTS) } : {}),
+          }),
+        )
+        if (sent === undefined) setAwaiting(sessionId, false)
+        return sent !== undefined
+      },
+
+      async regenerate(messageId) {
+        const sessionId = get().activeSessionId
+        if (sessionId === undefined) return false
+        setAwaiting(sessionId, true)
+        const sent = await run(() => api.request('session.regenerate', { sessionId, messageId }))
+        if (sent === undefined) setAwaiting(sessionId, false)
         return sent !== undefined
       },
 

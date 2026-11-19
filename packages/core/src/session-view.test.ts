@@ -1806,3 +1806,107 @@ describe('reduceSession：记忆提议（M7-03）', () => {
     expect(view.memoryProposals).toHaveLength(1)
   })
 })
+
+describe('conversation.rewound', () => {
+  /** 两轮完整对话，返回事件与第二轮用户消息的 seq（回退点）。 */
+  function twoTurns() {
+    const ev = stream()
+    const t1 = { turnId: 't1' }
+    const t2 = { turnId: 't2' }
+    const events: EventEnvelope[] = [
+      ev('run.created', {
+        agent: { id: 'builtin.coder', version: 1 },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      ev('message.user', { messageId: 'u1', content: text('第一轮') }, t1),
+      ev('turn.started', {}, t1),
+      ev('checkpoint.created', { checkpointId: 'c1', reason: 'turn_start' }, t1),
+      ev('message.assistant.completed', { messageId: 'a1', content: text('回复一'), model }, t1),
+      ev('usage.reported', { model, usage: { inputTokens: 10, outputTokens: 5 } }, t1),
+      ev('turn.completed', { durationMs: 10 }, t1),
+      ev('message.user', { messageId: 'u2', content: text('第二轮') }, t2),
+      ev('turn.started', {}, t2),
+      ev('checkpoint.created', { checkpointId: 'c2', reason: 'turn_start' }, t2),
+      ev('message.assistant.completed', { messageId: 'a2', content: text('回复二'), model }, t2),
+      ev('tool.requested', { toolCallId: 'tool2', name: 'read_file', input: {} }, t2),
+      ev('usage.reported', { model, usage: { inputTokens: 7, outputTokens: 3 } }, t2),
+      ev('turn.completed', { durationMs: 20 }, t2),
+    ]
+    return { ev, events, fromSeq: 8 }
+  }
+
+  it('丢弃回退点及之后的轮次、检查点、工具与用量', () => {
+    const { ev, events, fromSeq } = twoTurns()
+    const before = reduceAll(events)
+    expect(before.messages.map((message) => message.messageId)).toEqual(['u1', 'a1', 'u2', 'a2'])
+    expect(before.usage).toEqual({ inputTokens: 17, outputTokens: 8 })
+
+    const rewound = reduceSession(before, ev('conversation.rewound', { fromSeq, reason: 'edit' }))
+    expect(rewound.messages.map((message) => message.messageId)).toEqual(['u1', 'a1'])
+    expect(rewound.checkpoints.map((checkpoint) => checkpoint.checkpointId)).toEqual(['c1'])
+    expect(rewound.tools).toEqual({})
+    expect(rewound.usage).toEqual({ inputTokens: 10, outputTokens: 5 })
+    expect(Object.keys(rewound.usageByTurn)).toEqual(['t1'])
+    expect(sessionStatus(rewound)).toBe('idle')
+    expect(rootRun(rewound)?.turn).toBeUndefined()
+  })
+
+  it('回退之后的输入进入视图，旧轮次不会回来', () => {
+    const { ev, events, fromSeq } = twoTurns()
+    const rewound = reduceSession(
+      reduceAll(events),
+      ev('conversation.rewound', { fromSeq, reason: 'regenerate' }),
+    )
+    const next = reduceAll([
+      ...events,
+      ev('conversation.rewound', { fromSeq, reason: 'regenerate' }),
+      ev('message.user', { messageId: 'u3', content: text('重新问') }, { turnId: 't3' }),
+      ev('turn.started', {}, { turnId: 't3' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a3', content: text('新回复'), model },
+        { turnId: 't3' },
+      ),
+      ev('turn.completed', { durationMs: 5 }, { turnId: 't3' }),
+    ])
+    expect(next.messages.map((message) => message.messageId)).toEqual(['u1', 'a1', 'u3', 'a3'])
+    expect(rewound.lastSeq).toBeLessThan(next.lastSeq)
+  })
+
+  it('保留回退点之前创建的运行，丢弃之后创建的运行', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('run.created', {
+        agent: { id: 'builtin.coder', version: 1 },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      ev('message.user', { messageId: 'u1', content: text('旧') }, { turnId: 't1' }),
+      ev('turn.started', {}, { turnId: 't1' }),
+      ev(
+        'run.created',
+        {
+          agent: { id: 'user.reviewer', version: 1 },
+          model,
+          mode: 'interactive',
+          limits,
+        },
+        { runId: 'r2', parentRunId: RUN },
+      ),
+      ev('message.user', { messageId: 'u2', content: text('子') }, { turnId: 't2', runId: 'r2' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a2', content: text('子回复'), model },
+        { turnId: 't2', runId: 'r2' },
+      ),
+    ])
+    // 第二个运行（r2）在 seq 4 创建，回退点选在它之前。
+    const rewound = reduceSession(view, ev('conversation.rewound', { fromSeq: 4, reason: 'edit' }))
+    expect(rewound.runOrder).toEqual([RUN])
+    expect(rewound.runs.r2).toBeUndefined()
+    expect(rewound.messages.map((message) => message.messageId)).toEqual(['u1'])
+  })
+})

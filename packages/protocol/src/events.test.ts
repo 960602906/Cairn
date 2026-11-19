@@ -79,6 +79,7 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
     toolCalls: [{ id: 'c1', name: 'read_file', input: { path: 'a.ts' } }],
     model,
   },
+  'conversation.rewound': { fromSeq: 3, reason: 'edit' },
   'tool.requested': { toolCallId: 'c1', name: 'read_file', input: { path: 'a.ts' } },
   'tool.started': { toolCallId: 'c1' },
   'tool.output.delta': { toolCallId: 'c1', stream: 'stdout', text: 'ok\n' },

@@ -49,7 +49,7 @@ import {
   type ToolOutputChunk as ProtocolToolOutputChunk,
 } from '@cairn/protocol'
 import { taskListIdForPlan } from '@cairn/protocol'
-import { canTransition } from './run-state.js'
+import { canTransition, isActiveRunState } from './run-state.js'
 
 /** 会话基本信息（来自 `session.created` / `session.renamed` / `session.model.changed`）。 */
 export interface SessionInfo {
@@ -198,6 +198,8 @@ export interface RunView {
   readonly limits: RunLimits
   readonly state: RunState
   readonly createdAt: number
+  /** `run.created` 的 seq；用来判断运行是否创建于某次回退之后。旧快照可能没有。 */
+  readonly seq?: number
   /** 最近一轮；尚未开始时为 `undefined`。 */
   readonly turn: TurnView | undefined
   readonly usage: TokenUsage
@@ -810,6 +812,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         ...event.payload,
         state: 'idle',
         createdAt: event.ts,
+        seq: event.seq,
         turn: undefined,
         usage: ZERO_USAGE,
       }
@@ -960,6 +963,9 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         incomplete: incomplete ?? false,
       })
     }
+
+    case 'conversation.rewound':
+      return rewindView(view, event)
 
     case 'plan.proposed':
       return proposePlan(view, event)
@@ -1414,6 +1420,150 @@ function upsertMessage(view: SessionView, message: MessageView): SessionView {
   const index = view.messages.findIndex((m) => m.messageId === message.messageId)
   const messages = index === -1 ? [...view.messages, message] : view.messages.with(index, message)
   return { ...view, messages }
+}
+
+function subtractUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  const sum: { -readonly [K in keyof TokenUsage]: TokenUsage[K] } = {
+    inputTokens: Math.max(0, a.inputTokens - b.inputTokens),
+    outputTokens: Math.max(0, a.outputTokens - b.outputTokens),
+  }
+  if (a.cacheReadTokens !== undefined || b.cacheReadTokens !== undefined) {
+    sum.cacheReadTokens = Math.max(0, (a.cacheReadTokens ?? 0) - (b.cacheReadTokens ?? 0))
+  }
+  if (a.reasoningTokens !== undefined || b.reasoningTokens !== undefined) {
+    sum.reasoningTokens = Math.max(0, (a.reasoningTokens ?? 0) - (b.reasoningTokens ?? 0))
+  }
+  return sum
+}
+
+/**
+ * 回退对话（`conversation.rewound`，编辑重发 / 重新生成）：丢掉 `fromSeq` 及之后在投影里的结果。
+ *
+ * - 消息、检查点、恢复、计划、待办、审查循环、流水线与用量按 seq 过滤；轮次相关的条目按
+ *   `turnId` 兜底。被回退的一轮在运行上的 `turn` 一并清掉，新的输入重新开一轮。
+ * - 回退点之后创建的运行（含子运行）移除；保留下来的运行如果仍停在运行中，回到 `idle`。
+ * - 进行中的消息与工具输出只在运行中才有意义，回退时只保留未受影响的那些。
+ * - 工作区文件与检查点日志本身不受影响；这里只改变对话投影。
+ */
+function rewindView(view: SessionView, event: EventEnvelope<'conversation.rewound'>): SessionView {
+  const { fromSeq } = event.payload
+  const removedMessages = view.messages.filter((message) => message.seq >= fromSeq)
+  const removedTurns = new Set(
+    removedMessages.flatMap((message) => (message.turnId === undefined ? [] : [message.turnId])),
+  )
+  // 运行按创建 seq 判断：回退点之前创建的是同一段对话，保留下来重新开始一轮；回退点之后
+  // （含子运行）才移除。不能用“消息被回退”来判断——根运行同时承载被回退与保留的轮次。
+  const messageRuns = new Set(removedMessages.map((message) => message.runId))
+  const removedRuns = new Set<string>()
+  const beforeSeq = <T extends { readonly seq: number }>(items: readonly T[]): readonly T[] =>
+    items.filter((item) => item.seq < fromSeq)
+  const keep = <T>(items: readonly T[], removed: (item: T) => boolean): readonly T[] =>
+    items.filter((item) => !removed(item))
+
+  const runOrder = view.runOrder.filter((runId) => {
+    const run = view.runs[runId]
+    if (run === undefined) return false
+    const removed =
+      run.seq !== undefined
+        ? run.seq >= fromSeq
+        : run.parentRunId !== undefined &&
+          (messageRuns.has(runId) || messageRuns.has(run.parentRunId))
+    if (removed) removedRuns.add(runId)
+    return !removed
+  })
+  const runs: Record<string, RunView> = {}
+  for (const runId of runOrder) {
+    const run = view.runs[runId]!
+    const turn = run.turn !== undefined && removedTurns.has(run.turn.turnId) ? undefined : run.turn
+    const state = isActiveRunState(run.state) ? 'idle' : run.state
+    runs[runId] = turn === run.turn && state === run.state ? run : { ...run, turn, state }
+  }
+
+  const messages = keep(view.messages, (message) => message.seq >= fromSeq)
+  const tools = Object.fromEntries(
+    Object.entries(view.tools).filter(([, tool]) =>
+      tool.turnId === undefined ? tool.requestedAt < event.ts : !removedTurns.has(tool.turnId),
+    ),
+  )
+  const live = Object.fromEntries(
+    Object.entries(view.live).filter(([, message]) =>
+      message.turnId === undefined
+        ? message.startedAt < event.ts
+        : !removedTurns.has(message.turnId),
+    ),
+  )
+  const liveToolOutput = Object.fromEntries(
+    Object.entries(view.liveToolOutput).filter(([toolCallId]) => tools[toolCallId] !== undefined),
+  )
+
+  const usageByTurn: Record<string, TokenUsage> = {}
+  let usage = view.usage
+  for (const [turnId, value] of Object.entries(view.usageByTurn)) {
+    if (removedTurns.has(turnId)) usage = subtractUsage(usage, value)
+    else usageByTurn[turnId] = value
+  }
+
+  const plans = keep(beforeSeq(view.plans), (plan) => isRemovedTurn(plan.turnId, removedTurns))
+  const taskLists = keep(beforeSeq(view.taskLists), (list) =>
+    isRemovedTurn(list.turnId, removedTurns),
+  )
+  const reviewLoops = keep(beforeSeq(view.reviewLoops), (loop) =>
+    isRemovedTurn(loop.turnId, removedTurns),
+  )
+  const pipelineRuns = keep(beforeSeq(view.pipelineRuns), (pipeline) =>
+    isRemovedTurn(pipeline.turnId, removedTurns),
+  )
+  const delegations = keep(
+    view.delegations,
+    (delegation) =>
+      removedRuns.has(delegation.childRunId) ||
+      removedRuns.has(delegation.parentRunId) ||
+      (delegation.turnId === undefined
+        ? delegation.createdAt >= event.ts
+        : removedTurns.has(delegation.turnId)),
+  )
+  const memoryProposals = keep(
+    view.memoryProposals,
+    (proposal) => removedRuns.has(proposal.runId) || proposal.createdAt >= event.ts,
+  )
+
+  // 最近一轮的 AGENTS.md 标记属于被回退的那一轮；下一次输入会重新读取。
+  const {
+    agentsMd: _agentsMd,
+    compaction: _compaction,
+    toolOutputOmitted: _omitted,
+    ...rest
+  } = view
+  return {
+    ...rest,
+    runs,
+    runOrder,
+    messages,
+    tools,
+    live,
+    liveToolOutput,
+    usage,
+    usageByTurn,
+    checkpoints: beforeSeq(view.checkpoints),
+    restores: beforeSeq(view.restores),
+    plans,
+    taskLists,
+    delegations,
+    memoryProposals,
+    reviewLoops,
+    pipelineRuns,
+    crash: undefined,
+    ...(view.compaction !== undefined && view.compaction.seq < fromSeq
+      ? { compaction: view.compaction }
+      : {}),
+    ...(view.toolOutputOmitted !== undefined && view.toolOutputOmitted.seq < fromSeq
+      ? { toolOutputOmitted: view.toolOutputOmitted }
+      : {}),
+  }
+}
+
+function isRemovedTurn(turnId: string | undefined, removed: ReadonlySet<string>): boolean {
+  return turnId !== undefined && removed.has(turnId)
 }
 
 function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
