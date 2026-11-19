@@ -19,6 +19,11 @@ export const BuildInfo = z.object({
   commit: z.string().regex(/^([0-9a-f]{7,40}|unknown)$/),
   /** ISO 8601 构建时间；无法获取时为空串。 */
   buildTime: z.string().regex(/^$|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z?$/),
+  /**
+   * 本次构建对应版本的更新说明（从 CHANGELOG 抽取的 Markdown 正文）。
+   * 开发构建或 CHANGELOG 缺少该版本段落时省略；用于安装重启后的“更新内容”弹窗。
+   */
+  releaseNotes: z.string().min(1).max(20_000).optional(),
   electronVersion: z.string().regex(/^[0-9A-Za-z.+-]*$/),
   nodeVersion: z.string().regex(/^[0-9A-Za-z.+-]*$/),
   /**

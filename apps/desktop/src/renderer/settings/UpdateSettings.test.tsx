@@ -19,7 +19,6 @@ function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
     phase: 'idle',
     currentVersion: '0.1.0',
     channel: 'beta',
-    channelPinned: false,
     enabled: true,
     autoCheck: true,
     source: 'https://updates.example/cairn/',
@@ -86,11 +85,12 @@ function setup(options: {
 }
 
 describe('UpdateSettings', () => {
-  it('shows the version, channel, auto check state and last check time', async () => {
+  it('shows the version, auto check state and last check time', async () => {
     const checkedAt = Date.UTC(2026, 10, 10, 8, 30)
     setup({ update: status({ lastCheckedAt: checkedAt }) })
     expect(await screen.findByText('v0.1.0')).toBeDefined()
-    expect(screen.getByText('Beta 测试版')).toBeDefined()
+    expect(screen.queryByText('Beta 测试版')).toBeNull()
+    expect(screen.queryByRole('radiogroup', { name: '更新通道' })).toBeNull()
     expect(screen.getByRole('switch', { name: '自动检查更新' }).getAttribute('aria-checked')).toBe(
       'true',
     )
@@ -134,19 +134,12 @@ describe('UpdateSettings', () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith('update.status', {}))
   })
 
-  it('changes the channel unless the build pins it', async () => {
-    const user = userEvent.setup()
-    const { request } = setup({ update: status() })
+  it('does not offer a channel selector', async () => {
+    setup({ update: status() })
     await screen.findByText('v0.1.0')
-    await user.click(screen.getByRole('radio', { name: '稳定版' }))
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('settings.update', { updateChannel: 'stable' }),
-    )
-
-    cleanup()
-    setup({ update: status({ channel: 'beta', channelPinned: true }) })
-    expect(await screen.findByText('这个构建的通道已固定，设置中的选择不会生效。')).toBeDefined()
     expect(screen.queryByRole('radiogroup', { name: '更新通道' })).toBeNull()
+    expect(screen.queryByText('稳定版')).toBeNull()
+    expect(screen.queryByText('Beta 测试版')).toBeNull()
   })
 
   it('downloads, shows progress, and cancels a download', async () => {
@@ -171,8 +164,8 @@ describe('UpdateSettings', () => {
           error: { code: 'update.cancelled', message: 'download cancelled', retryable: true },
         }),
     })
-    expect(await screen.findByText('新版本 0.1.1 可以下载。')).toBeDefined()
-    await user.click(screen.getByRole('button', { name: '下载更新' }))
+    expect(await screen.findByText('新版本 0.1.1 可用，点击「更新」在后台下载。')).toBeDefined()
+    await user.click(screen.getByRole('button', { name: '更新' }))
     await waitFor(() => expect(request).toHaveBeenCalledWith('update.download', {}))
     expect(
       (await screen.findByRole('progressbar', { name: '下载进度' })).getAttribute('aria-valuenow'),
@@ -183,12 +176,30 @@ describe('UpdateSettings', () => {
     expect(await screen.findByText('更新下载已取消')).toBeDefined()
   })
 
+  it('turns the update button into install after the download completes', async () => {
+    const user = userEvent.setup()
+    const { request } = setup({
+      update: status({ phase: 'available', availableVersion: '0.1.1' }),
+      download: () =>
+        status({
+          phase: 'downloaded',
+          availableVersion: '0.1.1',
+          requiresRestart: true,
+        }),
+    })
+    await screen.findByText('新版本 0.1.1 可用，点击「更新」在后台下载。')
+    await user.click(screen.getByRole('button', { name: '更新' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('update.download', {}))
+    expect(await screen.findByRole('button', { name: '安装' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: '更新' })).toBeNull()
+  })
+
   it('skips the available version and can stop skipping', async () => {
     const user = userEvent.setup()
     const { request } = setup({
       update: status({ phase: 'available', availableVersion: '0.1.1' }),
     })
-    await screen.findByText('新版本 0.1.1 可以下载。')
+    await screen.findByText('新版本 0.1.1 可用，点击「更新」在后台下载。')
     await user.click(screen.getByRole('button', { name: '跳过此版本' }))
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith('settings.update', {
@@ -212,10 +223,12 @@ describe('UpdateSettings', () => {
   it('shows verifying, installing and up-to-date states', async () => {
     setup({ update: status({ phase: 'verifying' }) })
     expect(await screen.findByText('正在校验下载的安装包…')).toBeDefined()
+    expect(screen.getByRole('button', { name: '正在校验…' })).toHaveProperty('disabled', true)
 
     cleanup()
     setup({ update: status({ phase: 'installing' }) })
     expect(await screen.findByText('正在启动安装程序，应用即将重启…')).toBeDefined()
+    expect(screen.getByRole('button', { name: '正在安装…' })).toHaveProperty('disabled', true)
 
     cleanup()
     setup({ update: status({ phase: 'up_to_date' }) })
@@ -226,6 +239,7 @@ describe('UpdateSettings', () => {
   it('shows the checking state and a release date', async () => {
     setup({ update: status({ phase: 'checking' }) })
     expect(await screen.findByText('正在检查更新…')).toBeDefined()
+    expect(screen.getByRole('button', { name: '正在检查…' })).toHaveProperty('disabled', true)
 
     cleanup()
     const releasedAt = Date.UTC(2026, 10, 1, 9, 0)
@@ -249,7 +263,7 @@ describe('UpdateSettings', () => {
     expect(screen.getByText('还没有检查过')).toBeDefined()
   })
 
-  it('does not reload the status when saving the channel or auto check fails', async () => {
+  it('does not reload the status when saving auto check fails', async () => {
     const user = userEvent.setup()
     const { request } = setup({
       update: status(),
@@ -258,10 +272,9 @@ describe('UpdateSettings', () => {
       },
     })
     await screen.findByText('v0.1.0')
-    await user.click(screen.getByRole('radio', { name: '稳定版' }))
     await user.click(screen.getByRole('switch', { name: '自动检查更新' }))
     await waitFor(() =>
-      expect(request.mock.calls.filter(([method]) => method === 'settings.update')).toHaveLength(2),
+      expect(request.mock.calls.filter(([method]) => method === 'settings.update')).toHaveLength(1),
     )
     expect(request.mock.calls.filter(([method]) => method === 'update.status')).toHaveLength(1)
   })
@@ -275,9 +288,9 @@ describe('UpdateSettings', () => {
         requiresRestart: true,
       }),
     })
-    expect(await screen.findByText('0.1.1 已下载并通过校验，可以重启安装。')).toBeDefined()
+    expect(await screen.findByText('0.1.1 已下载并通过校验，可以安装。')).toBeDefined()
     expect(screen.getByText('未配置发布者签名；这是 unsigned beta，请确认来源可信')).toBeDefined()
-    await user.click(screen.getByRole('button', { name: '重启安装' }))
+    await user.click(screen.getByRole('button', { name: '安装' }))
     expect(await screen.findByRole('dialog')).toBeDefined()
     expect(screen.getByText('安装 0.1.1 并重启？')).toBeDefined()
   })
@@ -293,8 +306,8 @@ describe('UpdateSettings', () => {
       sessions: [runningSession()],
     })
     expect(await screen.findByText('发布者签名已验证')).toBeDefined()
-    expect(screen.getByText('还有任务在运行；完成或停止后再重启安装。')).toBeDefined()
-    expect(screen.getByRole('button', { name: '重启安装' })).toHaveProperty('disabled', true)
+    expect(screen.getByText('还有任务在运行；完成或停止后再安装。')).toBeDefined()
+    expect(screen.getByRole('button', { name: '安装' })).toHaveProperty('disabled', true)
   })
 
   it('shows an error with technical details and retries', async () => {

@@ -63,25 +63,26 @@ test('设置页完成检查、下载，并显示重启确认', async ({ launch }
       args: ['--ignore-certificate-errors'],
     })
     await openUpdateSettings(window)
+    await expect(window.getByRole('radiogroup', { name: '更新通道' })).toHaveCount(0)
 
     await window.getByRole('button', { name: '检查更新' }).click()
-    await expect(window.getByText(`新版本 ${source.version} 可以下载。`)).toBeVisible({
+    await expect(
+      window.getByText(`新版本 ${source.version} 可用，点击「更新」在后台下载。`),
+    ).toBeVisible({
       timeout: 30_000,
     })
 
-    await window.getByRole('button', { name: '下载更新' }).click()
-    await expect(
-      window.getByText(`${source.version} 已下载并通过校验，可以重启安装。`),
-    ).toBeVisible({
+    await window.getByRole('button', { name: '更新' }).click()
+    await expect(window.getByText(`${source.version} 已下载并通过校验，可以安装。`)).toBeVisible({
       timeout: 90_000,
     })
     await expect(window.getByText(/unsigned beta/)).toBeVisible()
-    await expect(window.getByRole('button', { name: '重启安装' })).toBeEnabled()
+    await expect(window.getByRole('button', { name: '安装' })).toBeEnabled()
 
     await setTheme(window, '浅色', 'light')
     await window.screenshot({ path: path.join(ARTIFACTS, 'update-settings-light.png') })
 
-    await window.getByRole('button', { name: '重启安装' }).click()
+    await window.getByRole('button', { name: '安装' }).click()
     const dialog = window.getByRole('dialog')
     await expect(dialog.getByText(`安装 ${source.version} 并重启？`)).toBeVisible()
     await expect(dialog.getByText(/这个版本没有可验证的发布者签名/)).toBeVisible()
@@ -146,11 +147,9 @@ test('有任务运行时重启被阻止', async ({ launch, userData }) => {
     await request<UpdateStatus>(window, 'update.check', { force: true })
     await request<UpdateStatus>(window, 'update.download', {})
     await openUpdateSettings(window)
-    await expect(
-      window.getByText(`${source.version} 已下载并通过校验，可以重启安装。`),
-    ).toBeVisible()
-    await expect(window.getByText('还有任务在运行；完成或停止后再重启安装。')).toBeVisible()
-    const restart = window.getByRole('button', { name: '重启安装' })
+    await expect(window.getByText(`${source.version} 已下载并通过校验，可以安装。`)).toBeVisible()
+    await expect(window.getByText('还有任务在运行；完成或停止后再安装。')).toBeVisible()
+    const restart = window.getByRole('button', { name: '安装' })
     await expect(restart).toBeDisabled()
     await expect(window.getByRole('dialog')).toHaveCount(0)
 
@@ -164,6 +163,34 @@ test('有任务运行时重启被阻止', async ({ launch, userData }) => {
     await mock.close()
     await source.close()
   }
+})
+
+test('安装重启后展示本次版本的更新内容', async ({ launch }) => {
+  test.setTimeout(120_000)
+  const { window } = await launch()
+  await window.evaluate(async (version) => {
+    const cairn = (
+      globalThis as unknown as {
+        cairn: { ready(): Promise<unknown>; request(m: string, p: object): Promise<unknown> }
+      }
+    ).cairn
+    await cairn.ready()
+    // 模拟更新服务在安装前写入的目标版本；同时跳过首次运行欢迎页。
+    await cairn.request('settings.update', {
+      onboardingSeen: true,
+      updateInstalledVersion: version,
+    })
+  }, APP_VERSION)
+
+  await window.reload()
+  const dialog = window.getByRole('dialog')
+  await expect(dialog.getByText(`已更新到 ${APP_VERSION}`)).toBeVisible({ timeout: 30_000 })
+  await dialog.getByRole('button', { name: '知道了' }).click()
+  await expect(dialog).toHaveCount(0)
+
+  // 标记已被消费；再次启动不再弹窗。
+  await window.reload()
+  await expect(window.getByRole('dialog')).toHaveCount(0)
 })
 
 test('检查失败后可以在同一个更新源重试', async ({ launch }) => {
@@ -187,7 +214,9 @@ test('检查失败后可以在同一个更新源重试', async ({ launch }) => {
 
     source = await startUpdateSource({ port })
     await window.getByRole('button', { name: '重试' }).click()
-    await expect(window.getByText(`新版本 ${source.version} 可以下载。`)).toBeVisible({
+    await expect(
+      window.getByText(`新版本 ${source.version} 可用，点击「更新」在后台下载。`),
+    ).toBeVisible({
       timeout: 60_000,
     })
   } finally {

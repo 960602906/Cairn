@@ -10,16 +10,17 @@ import { useEffect, useState } from 'react'
 import { CircleAlert, Download, RefreshCw, RotateCw, ShieldCheck, ShieldX } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { translateError } from '@cairn/i18n'
-import type { UpdateChannel, UpdateStatus } from '@cairn/protocol'
+import type { UpdateStatus } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
 import {
   formatBytes,
   formatSpeed,
   hasRunningSessions,
   installBlocked,
+  primaryAction,
   progressPercent,
 } from '../update-model.js'
-import { Button, SegmentedControl, Spinner, Switch } from '../ui/index.js'
+import { Button, Spinner, Switch } from '../ui/index.js'
 import { Field, SettingsGroup, ToggleRow } from './Field.js'
 import { SettingsHeader } from './SettingsPage.js'
 import { UpdateRestartDialog } from './UpdateRestartDialog.js'
@@ -78,10 +79,6 @@ export function UpdateSettings() {
     if (!settings) void loadSettings()
   }, [loadSettings, settings])
 
-  const changeChannel = async (channel: UpdateChannel) => {
-    if (await updateSettings({ updateChannel: channel })) await loadUpdateStatus()
-  }
-
   const changeAutoCheck = async (checked: boolean) => {
     if (await updateSettings({ updateAutoCheck: checked })) await loadUpdateStatus()
   }
@@ -116,26 +113,6 @@ export function UpdateSettings() {
                   {t(`update.phase.${status.phase}`)}
                 </span>
               </div>
-            </Field>
-            <Field
-              label={t('update.channel.label')}
-              hint={
-                status.channelPinned ? t('update.channel.pinnedHint') : t('update.channel.hint')
-              }
-            >
-              {status.channelPinned ? (
-                <p className="pt-1 text-ui text-fg">{t(`update.channel.${status.channel}`)}</p>
-              ) : (
-                <SegmentedControl
-                  label={t('update.channel.label')}
-                  value={status.channel}
-                  options={[
-                    { value: 'stable', label: t('update.channel.stable') },
-                    { value: 'beta', label: t('update.channel.beta') },
-                  ]}
-                  onChange={(channel) => void changeChannel(channel)}
-                />
-              )}
             </Field>
             <ToggleRow title={t('update.autoCheck.label')} hint={t('update.autoCheck.hint')}>
               <Switch
@@ -196,9 +173,42 @@ function UpdateDetail({
   const speed = formatSpeed(status.progress?.bytesPerSecond)
   const skippedCurrent =
     status.availableVersion !== undefined && status.skippedVersion === status.availableVersion
-  const canCheck = ['idle', 'up_to_date', 'available', 'skipped', 'error'].includes(status.phase)
+  const action = primaryAction(status)
   const release =
     status.releaseDate === undefined ? undefined : formatWhen(status.releaseDate, i18n.language)
+  const primaryLabel =
+    action === 'check'
+      ? t('update.action.check')
+      : action === 'recheck'
+        ? t('update.action.checkAgain')
+        : action === 'retry'
+          ? t('update.action.retry')
+          : action === 'download'
+            ? t('update.action.update')
+            : action === 'install'
+              ? t('update.action.install')
+              : action === 'checking'
+                ? t('update.action.checking')
+                : action === 'downloading'
+                  ? t('update.action.downloading')
+                  : action === 'verifying'
+                    ? t('update.action.verifying')
+                    : action === 'installing'
+                      ? t('update.action.installing')
+                      : undefined
+  const busy =
+    action === 'checking' ||
+    action === 'downloading' ||
+    action === 'verifying' ||
+    action === 'installing'
+  const onPrimary =
+    action === 'download'
+      ? onDownload
+      : action === 'install'
+        ? onRestart
+        : action === 'check' || action === 'recheck' || action === 'retry'
+          ? onCheck
+          : undefined
 
   return (
     <div className="flex flex-col gap-3 rounded-[10px] bg-sunk/60 px-4 py-3.5 shadow-hair">
@@ -316,24 +326,20 @@ function UpdateDetail({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        {canCheck && (
+        {primaryLabel !== undefined && (
           <Button
             size="sm"
-            variant={status.phase === 'idle' || status.phase === 'error' ? 'primary' : 'secondary'}
-            onClick={onCheck}
+            variant="primary"
+            disabled={busy || (action === 'install' && blocked)}
+            title={action === 'install' && blocked ? t('update.action.restartBlocked') : undefined}
+            onClick={onPrimary}
           >
-            {status.phase === 'up_to_date' ||
-            status.phase === 'available' ||
-            status.phase === 'skipped'
-              ? t('update.action.checkAgain')
-              : status.phase === 'error'
-                ? t('update.action.retry')
-                : t('update.action.check')}
-          </Button>
-        )}
-        {status.phase === 'available' && (
-          <Button size="sm" variant="primary" onClick={onDownload}>
-            {t('update.action.download')}
+            {busy ? (
+              <Spinner aria-hidden />
+            ) : action === 'install' ? (
+              <RotateCw aria-hidden />
+            ) : undefined}
+            {primaryLabel}
           </Button>
         )}
         {status.phase === 'available' &&
@@ -354,18 +360,6 @@ function UpdateDetail({
         {status.phase === 'downloading' && (
           <Button size="sm" variant="secondary" onClick={onCancel}>
             {t('update.action.cancel')}
-          </Button>
-        )}
-        {status.phase === 'downloaded' && (
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={blocked}
-            title={blocked ? t('update.action.restartBlocked') : undefined}
-            onClick={onRestart}
-          >
-            <RotateCw aria-hidden />
-            {t('update.action.restart')}
           </Button>
         )}
       </div>

@@ -82,7 +82,7 @@ import {
   TeamTrialStarted,
   TeamTrialSummary,
 } from '../teams.js'
-import { UpdateChannel, UpdateStatus } from '../update.js'
+import { UpdateStatus, UpdateVersion } from '../update.js'
 import { AutoFixStatus, AutoFixTrigger, GithubRepo } from '../github.js'
 
 /** 会话在列表中显示的状态（由运行状态汇总得出）。 */
@@ -241,14 +241,15 @@ export const Settings = z.object({
    * 是否自动检查更新（M5-06）。没有设置时不出现，按开。
    */
   updateAutoCheck: z.boolean().optional(),
-  /**
-   * 更新通道（M5-06）。没有设置时不出现，使用构建通道；构建注入 `CAIRN_UPDATE_CHANNEL` 时以构建为准。
-   */
-  updateChannel: UpdateChannel.optional(),
   /** 上次检查更新的时间（M5-06）；没有检查过时不出现。 */
   updateLastCheckedAt: Timestamp.optional(),
   /** 用户选择跳过的版本（M5-06）；没有跳过时不出现。 */
   updateSkippedVersion: z.string().min(1).max(64).optional(),
+  /**
+   * 刚安装并等待展示更新内容的版本（M5-06）。安装前写入，重启后与当前版本一致时弹窗，
+   * 展示完即清除；没有待展示的更新时不出现。
+   */
+  updateInstalledVersion: UpdateVersion.optional(),
   /** 是否已经看过首次运行说明（M5-09）。省略按 false；关闭欢迎页后保存为 true。 */
   onboardingSeen: z.boolean().optional(),
   /**
@@ -281,11 +282,12 @@ export const SettingsPatch = z.object({
   sandboxUnavailable: SandboxUnavailableBehavior.optional(),
   /** false 关闭自动检查；true 恢复默认（保存时省略）。 */
   updateAutoCheck: z.boolean().optional(),
-  updateChannel: UpdateChannel.optional(),
   /** 检查完成后由更新服务写入。 */
   updateLastCheckedAt: Timestamp.optional(),
   /** null 清除跳过的版本。 */
   updateSkippedVersion: z.string().min(1).max(64).nullable().optional(),
+  /** 安装前写入目标版本；null 表示更新内容已展示或不再需要。 */
+  updateInstalledVersion: UpdateVersion.nullable().optional(),
   /** true 表示已经看过首次运行说明；false 恢复为显示欢迎页。 */
   onboardingSeen: z.boolean().optional(),
   /** true 允许自动记忆；false 关闭（保存时省略，与没设置一样）。 */

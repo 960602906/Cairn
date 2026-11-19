@@ -33,6 +33,7 @@ import {
   readSigningConfig,
   signatureSummary,
 } from '@cairn/release-tools'
+import { extractChangelogSection } from './changelog.mjs'
 import {
   PLATFORM_NOTES_SCHEMA_VERSION,
   readJson,
@@ -41,6 +42,7 @@ import {
 } from './release-files.mjs'
 
 export { PLATFORM_NOTES_SCHEMA_VERSION, readJson, sha256, writeChecksums }
+export { extractChangelogSection }
 
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..', 'apps/desktop')
 export const PRODUCT_NAME = 'Cairn'
@@ -153,26 +155,6 @@ export function platformSigningSummary(platform, env = process.env) {
   if (platform === 'windows') return signatureSummary(readSigningConfig(env))
   if (platform === 'mac') return macSignatureSummary(readMacSigningConfig(env))
   return { mode: 'none', integrity: 'sha256+https' }
-}
-
-/**
- * 从 CHANGELOG 中抽取指定版本的正文；找不到或正文为空时抛错。
- * @param {string} changelog
- * @param {string} version
- * @returns {string}
- */
-export function extractChangelogSection(changelog, version) {
-  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  // 标题行只允许行内空白：`\s` 会跨行吞掉空行与正文，导致 section 变空。
-  const heading = new RegExp(`^## \\[${escaped}\\](?:[ \\t]+-[ \\t]+[^\\n]*)?[ \\t]*$`, 'm')
-  const match = heading.exec(changelog)
-  if (match === null) throw new Error(`CHANGELOG.md has no section for ${version}`)
-  const start = match.index + match[0].length
-  const rest = changelog.slice(start)
-  const next = /^## \[/m.exec(rest)
-  const section = (next === null ? rest : rest.slice(0, next.index)).trim()
-  if (section === '') throw new Error(`CHANGELOG.md section for ${version} is empty`)
-  return section
 }
 
 /**

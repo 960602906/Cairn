@@ -7,15 +7,19 @@
  * `@cairn/storage` 的迁移列表给出，不写死在构建产物里。
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { extractChangelogSection } from './changelog.mjs'
 import { readVersion } from './sync-version.mjs'
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..')
 
 /** 构建信息文件的格式版本。 */
 export const BUILD_INFO_SCHEMA_VERSION = 1
+
+/** 更新说明的长度上限；与 `@cairn/protocol` 的 `BuildInfo.releaseNotes` 保持一致。 */
+export const RELEASE_NOTES_MAX_LENGTH = 20_000
 
 /**
  * 解析更新通道：显式 `stable` / `beta` 优先，否则 0.x 视为 beta，1.0 起视为 stable。
@@ -104,6 +108,28 @@ export function readElectronVersion(root) {
 }
 
 /**
+ * 读取当前版本的更新说明（CHANGELOG 的该版本段落）。
+ *
+ * - 开发检出或打包时没有 CHANGELOG 时返回 undefined，不影响构建；
+ * - 段落超过协议上限时截断，避免整个 build-info.json 校验失败。
+ * @param {string} root
+ * @param {string} version
+ * @returns {string | undefined}
+ */
+export function readReleaseNotes(root, version) {
+  const file = path.join(root, 'CHANGELOG.md')
+  if (!existsSync(file)) return undefined
+  try {
+    const section = extractChangelogSection(readFileSync(file, 'utf8'), version)
+    return section.length > RELEASE_NOTES_MAX_LENGTH
+      ? `${section.slice(0, RELEASE_NOTES_MAX_LENGTH - 1)}…`
+      : section
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * 组装构建信息。纯函数，便于测试。
  * @param {{
  *   root: string;
@@ -113,6 +139,7 @@ export function readElectronVersion(root) {
  *   electronVersion: string;
  *   nodeVersion: string;
  *   update?: { source: string; publisher?: string } | undefined;
+ *   releaseNotes?: string | undefined;
  * }} input
  */
 export function collectBuildInfo({
@@ -123,6 +150,7 @@ export function collectBuildInfo({
   electronVersion,
   nodeVersion,
   update,
+  releaseNotes,
 }) {
   const version = readVersion(path.join(root, 'package.json'))
   const resolvedChannel = resolveChannel(channel, version)
@@ -143,6 +171,7 @@ export function collectBuildInfo({
     buildTime: now.toISOString(),
     electronVersion: electronVersion.trim(),
     nodeVersion: nodeVersion.trim().replace(/^v/, ''),
+    ...(releaseNotes === undefined ? {} : { releaseNotes }),
     ...(update === undefined ? {} : { update }),
   }
 }
@@ -178,6 +207,7 @@ export function writeBuildInfo({
     electronVersion: readElectronVersion(root),
     nodeVersion: process.version,
     update: resolveUpdateConfig(env),
+    releaseNotes: readReleaseNotes(root, rootVersion),
   })
   mkdirSync(outDir, { recursive: true })
   writeFileSync(path.join(outDir, 'build-info.json'), `${JSON.stringify(info, null, 2)}\n`)

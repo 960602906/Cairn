@@ -76,6 +76,7 @@ export function readAppInfo({
     channel: resolveChannel(env['CAIRN_CHANNEL'] ?? build?.channel, version),
     commit: build?.commit ?? 'unknown',
     buildTime: build?.buildTime ?? '',
+    ...(build?.releaseNotes ? { releaseNotes: build.releaseNotes } : {}),
     electronVersion: runtime.electronVersion || build?.electronVersion || '',
     nodeVersion: runtime.nodeVersion || build?.nodeVersion || '',
     name: APP_IDENTITY.productName,

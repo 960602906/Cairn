@@ -450,7 +450,6 @@ function setup(
     phase: 'idle',
     currentVersion: '0.1.0',
     channel: 'beta',
-    channelPinned: false,
     enabled: true,
     autoCheck: true,
     source: 'https://updates.example/cairn/',

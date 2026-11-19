@@ -257,7 +257,6 @@ describe('translateError', () => {
       'update.platform_unsupported',
       'update.source_missing',
       'update.source_insecure',
-      'update.channel_invalid',
       'update.publisher_missing',
       'update.check_failed',
       'update.not_found',

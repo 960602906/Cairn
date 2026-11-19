@@ -1,8 +1,50 @@
-/**
- * 更新界面的纯派生逻辑（M5-07）：提示何时出现、是否允许重启安装、进度与字节格式化。
+/** 更新界面的纯派生逻辑（M5-07）：提示何时出现、是否允许重启安装、进度与字节格式化。
  * 不依赖 React 与 DOM，组件与测试共用。
  */
 import type { UpdateStatus } from '@cairn/protocol'
+
+/**
+ * 设置页主按钮的动作。用户不再选择通道，也不再有单独的“下载 / 重启”按钮：
+ * 有更新时是“更新”，下载完成后变成“安装”。
+ */
+export type UpdatePrimaryAction =
+  | 'none'
+  | 'check'
+  | 'recheck'
+  | 'retry'
+  | 'download'
+  | 'checking'
+  | 'downloading'
+  | 'verifying'
+  | 'install'
+  | 'installing'
+
+/** 当前阶段对应的主按钮动作；`disabled` 是构建结论，不提供操作。 */
+export function primaryAction(status: UpdateStatus): UpdatePrimaryAction {
+  switch (status.phase) {
+    case 'idle':
+      return 'check'
+    case 'up_to_date':
+    case 'skipped':
+      return 'recheck'
+    case 'error':
+      return 'retry'
+    case 'available':
+      return 'download'
+    case 'checking':
+      return 'checking'
+    case 'downloading':
+      return 'downloading'
+    case 'verifying':
+      return 'verifying'
+    case 'downloaded':
+      return 'install'
+    case 'installing':
+      return 'installing'
+    default:
+      return 'none'
+  }
+}
 
 /** 非模态提示的形态；`downloaded` 时还要看 `installBlocked` 决定是否提示延迟。 */
 export type UpdateNoticeKind = 'available' | 'downloading' | 'downloaded'

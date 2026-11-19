@@ -2,15 +2,24 @@
  * 自动更新（M5-06，ADR-0036）：主进程更新服务的状态与错误码。
  *
  * - 更新源是公开只读的 generic HTTPS 静态源；客户端不携带仓库令牌或签名密码。
- * - 状态只描述更新器实际知道的事实：当前版本、通道、可用版本、下载进度、错误与是否需要重启。
+ * - 状态只描述更新器实际知道的事实：当前版本、构建通道、可用版本、下载进度、错误与是否需要重启。
+ * - 用户界面不再区分稳定版与 Beta；`channel` 只反映构建通道（用于诊断与选择更新清单）。
  * - `signatureVerified` 为 false 时只允许 unsigned beta（ADR-0036）；stable 构建必须配置发布者 DN。
  */
 import { z } from 'zod'
 import { Timestamp } from './common.js'
 
-/** 更新通道（ADR-0036）。`stable` 读取 `latest.yml`，`beta` 读取 `beta.yml`。 */
+/** 构建通道（ADR-0036）。`stable` 读取 `latest.yml`，`beta` 读取 `beta.yml`。不作为用户设置。 */
 export const UpdateChannel = z.enum(['stable', 'beta'])
 export type UpdateChannel = z.infer<typeof UpdateChannel>
+
+/** 更新目标版本（语义化版本，不含 `v` 前缀）；设置里的“刚安装版本”也用它校验。 */
+export const UpdateVersion = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/)
+export type UpdateVersion = z.infer<typeof UpdateVersion>
 
 /** 更新器状态。`disabled` 是构建配置结论，不是运行失败。 */
 export const UpdatePhase = z.enum([
@@ -35,7 +44,6 @@ export const UpdateDisabledReason = z.enum([
   'update.platform_unsupported',
   'update.source_missing',
   'update.source_insecure',
-  'update.channel_invalid',
   'update.publisher_missing',
 ])
 export type UpdateDisabledReason = z.infer<typeof UpdateDisabledReason>
@@ -47,7 +55,6 @@ export const UpdateErrorCode = {
   PlatformUnsupported: 'update.platform_unsupported',
   SourceMissing: 'update.source_missing',
   SourceInsecure: 'update.source_insecure',
-  ChannelInvalid: 'update.channel_invalid',
   PublisherMissing: 'update.publisher_missing',
   CheckFailed: 'update.check_failed',
   NotFound: 'update.not_found',
@@ -90,9 +97,8 @@ export type UpdateProgress = z.infer<typeof UpdateProgress>
 export const UpdateStatus = z.object({
   phase: UpdatePhase,
   currentVersion: z.string().min(1),
+  /** 构建通道，只用于诊断与选择更新清单；用户界面不展示、不能修改。 */
   channel: UpdateChannel,
-  /** 通道由构建（`CAIRN_UPDATE_CHANNEL`）固定时，设置里的选择不会生效。 */
-  channelPinned: z.boolean(),
   enabled: z.boolean(),
   autoCheck: z.boolean(),
   /** 公开只读更新源（不含查询串、用户名或密码）。 */

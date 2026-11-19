@@ -548,44 +548,50 @@ describe('model settings', () => {
     expect(settings.get()).not.toHaveProperty('agentAutoMemory')
   })
 
-  it('stores update preferences, check time and skipped version (M5-06)', () => {
+  it('stores update preferences, check time and skipped/installed versions (M5-06)', () => {
     const { settings } = setup()
     expect(settings.get()).not.toHaveProperty('updateAutoCheck')
     expect(settings.get()).not.toHaveProperty('updateChannel')
     expect(settings.get()).not.toHaveProperty('updateLastCheckedAt')
     expect(settings.get()).not.toHaveProperty('updateSkippedVersion')
+    expect(settings.get()).not.toHaveProperty('updateInstalledVersion')
 
     expect(
       settings.update({
         updateAutoCheck: false,
-        updateChannel: 'beta',
         updateLastCheckedAt: 1234,
         updateSkippedVersion: '0.1.1',
+        updateInstalledVersion: '0.1.2',
       }),
     ).toMatchObject({
       updateAutoCheck: false,
-      updateChannel: 'beta',
       updateLastCheckedAt: 1234,
       updateSkippedVersion: '0.1.1',
+      updateInstalledVersion: '0.1.2',
     })
     expect(read()).toEqual({
       updateAutoCheck: false,
-      updateChannel: 'beta',
       updateLastCheckedAt: 1234,
       updateSkippedVersion: '0.1.1',
+      updateInstalledVersion: '0.1.2',
     })
     expect(settings.update({ updateAutoCheck: true })).not.toHaveProperty('updateAutoCheck')
     expect(settings.update({ updateSkippedVersion: null })).not.toHaveProperty(
       'updateSkippedVersion',
     )
-    expect(read()).toEqual({ updateChannel: 'beta', updateLastCheckedAt: 1234 })
+    expect(settings.update({ updateInstalledVersion: null })).not.toHaveProperty(
+      'updateInstalledVersion',
+    )
+    expect(read()).toEqual({ updateLastCheckedAt: 1234 })
 
+    // 旧版本写入的 updateChannel 已不再读取。
     writeFileSync(
       file,
       JSON.stringify({
         updateChannel: 'nightly',
         updateLastCheckedAt: -1,
         updateSkippedVersion: 7,
+        updateInstalledVersion: '../../evil',
       }),
     )
     const reloaded = createSettingsService({
@@ -596,5 +602,6 @@ describe('model settings', () => {
     expect(reloaded.get()).not.toHaveProperty('updateChannel')
     expect(reloaded.get()).not.toHaveProperty('updateLastCheckedAt')
     expect(reloaded.get()).not.toHaveProperty('updateSkippedVersion')
+    expect(reloaded.get()).not.toHaveProperty('updateInstalledVersion')
   })
 })
