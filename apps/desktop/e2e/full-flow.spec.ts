@@ -31,8 +31,12 @@ const MODEL = {
 
 /** 关掉右侧工作台（窄窗口下是浮层，宽窗口下是停靠栏），让对话列重新可以操作。 */
 async function closeSessionPanel(window: Page) {
-  const close = sessionPanel(window).getByRole('button', { name: '关闭会话信息' })
-  if (await close.isVisible().catch(() => false)) await close.click()
+  // 撤销改动后面板可能正好重挂载：等它稳定出现再点，别在“那一刻不可见”时跳过。
+  const panel = sessionPanel(window).first()
+  await panel.waitFor({ state: 'visible', timeout: 3000 }).catch(() => undefined)
+  // 两种布局的元素可能同时挂在 DOM 里（一个隐藏），只点看得见的那个。
+  const close = window.getByRole('button', { name: '关闭会话信息' }).filter({ visible: true })
+  if ((await close.count()) > 0) await close.first().click()
 }
 
 /** 目录中所有文件的相对路径与内容，按路径排序。 */
