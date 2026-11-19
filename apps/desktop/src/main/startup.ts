@@ -11,13 +11,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createGitRunner, isolatedGitEnv, openShadowRepo } from '@cairn/checkpoint'
 import { BUILTIN_CODER_ID, redact } from '@cairn/core'
-import {
-  GITHUB_CREDENTIAL_REF,
-  RpcError,
-  type McpStatusEvent,
-  type PermissionRule,
-  type Theme,
-} from '@cairn/protocol'
+import { RpcError, type McpStatusEvent, type PermissionRule, type Theme } from '@cairn/protocol'
 import { createJobObject, loadKernel32 } from '@cairn/shell'
 import { bundledRipgrepPath } from '@cairn/tools'
 import { MIGRATIONS, openSqliteStorage } from '@cairn/storage'
@@ -58,7 +52,11 @@ import { createCommandService } from './services/command-service.js'
 import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
 import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
-import { createGithubService, normalizeGithubApiBase } from './services/github-service.js'
+import {
+  createGithubService,
+  createGithubTokenResolver,
+  normalizeGithubApiBase,
+} from './services/github-service.js'
 import { createAutoFixService } from './services/auto-fix-service.js'
 import { createSessionEventService } from './services/event-service.js'
 import { createInspectService } from './services/inspect-service.js'
@@ -217,12 +215,14 @@ const credentials = createLocalKeyStore({
   onError: reportError,
 })
 knownSecrets = () => credentials.knownSecrets()
-/** GitHub 只读接入（M8-01）：令牌与模型 Key 共用凭据存储，界面只能连接、断开与读取。 */
+/** GitHub 只读接入（M8-01）：令牌自动解析，界面不提供凭据配置。 */
 const githubApiBase = app.isPackaged
   ? undefined
   : normalizeGithubApiBase(process.env['CAIRN_GITHUB_API_URL'])
+/** 令牌静默解析：GH_TOKEN / GITHUB_TOKEN → 旧版保存的凭据 → 本机 `gh auth token`。 */
+const resolveGithubToken = createGithubTokenResolver({ credentials })
 const github = createGithubService({
-  credentials,
+  resolveToken: resolveGithubToken,
   ...(githubApiBase === undefined ? {} : { apiBase: githubApiBase }),
 })
 const settings = createSettingsService({
@@ -732,7 +732,7 @@ const autoFix = createAutoFixService({
   sessions,
   git: projectGit,
   worktreesRoot: paths.worktrees,
-  githubToken: async () => (await credentials.resolve(GITHUB_CREDENTIAL_REF))?.apiKey,
+  githubToken: resolveGithubToken,
   onJobFinished: (job, watch) => {
     if (settings.get().activityNotifications === false) return
     if (BrowserWindow.getAllWindows().some((window) => window.isVisible() && window.isFocused())) {
@@ -834,13 +834,6 @@ const gateway = createRendererGateway({
     install: () => updates.install(),
     cancel: () => updates.cancel(),
     subscribe: (listener) => updates.subscribe(listener),
-  },
-  github: {
-    status: () => github.status(),
-    connect: (params) => github.connect(params),
-    disconnect: () => github.disconnect(),
-    pullRequest: (params) => github.pullRequest(params),
-    checkLog: (params) => github.checkLog(params),
   },
   autofix: {
     status: () => autoFix.status(),

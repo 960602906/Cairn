@@ -1,7 +1,7 @@
 /**
- * 自动修复的 GitHub 设置与活动中心（M8-05）：假 GitHub + 模拟模型跑通「CI 失败 → 开修复会话 →
- * 活动中心可见并可跳转」的整条界面链路。监视由会话里的 Agent 开启（`watch_pull_request`），
- * 设置页只负责连接 GitHub 和查看 PR 状态。
+ * 自动修复的触发与活动中心（M8-05）：假 GitHub + 模拟模型跑通「CI 失败 → 开修复会话 →
+ * 活动中心可见并可跳转」的整条界面链路。监视由会话里的 Agent 开启（`watch_pull_request`）；
+ * GitHub 令牌经 `GH_TOKEN` 静默解析，设置页不再有自动修复分类。
  *
  * 推送需要真实的 GitHub 远端，这里不覆盖；推送与分支守卫由 `auto-fix-service` /
  * `git-tools` 的单元测试覆盖。
@@ -51,8 +51,6 @@ function prepareRepo(userData: string): { projectPath: string; headSha: string }
   return { projectPath, headSha }
 }
 
-test.skip(process.platform === 'linux', 'GitHub 令牌需要系统密钥环')
-
 test('自动修复：CI 失败触发修复会话，活动中心可查看并暂停', async ({ launch, userData }) => {
   test.setTimeout(120_000)
   const { projectPath, headSha } = prepareRepo(userData)
@@ -69,34 +67,20 @@ test('自动修复：CI 失败触发修复会话，活动中心可查看并暂�
     toolCalls: [{ name: 'write_file', arguments: { path: 'app.txt', content: 'three\n' } }],
   })
   try {
-    const { window } = await launch({ env: { CAIRN_GITHUB_API_URL: github.baseUrl } })
+    const { window } = await launch({
+      env: { CAIRN_GITHUB_API_URL: github.baseUrl, GH_TOKEN: 'e2e-token' },
+    })
     await configureProvider(window, mock.baseUrl, 'e2e-key')
     // 注册项目，添加监视时可以从「本地仓库」里选到它。
     await rpc(window, 'session.create', { projectPath })
     await window.reload()
     await window.waitForLoadState('domcontentloaded')
 
+    // 设置页没有自动修复分类：令牌自动解析，监视由会话开启。
     await window.getByRole('button', { name: /^设置/ }).click()
     const nav = window.getByRole('navigation', { name: '设置分类' })
-    await nav.getByRole('button', { name: '自动修复' }).click()
-    await expect(window.getByRole('heading', { name: '自动修复' })).toBeVisible()
-
-    // 连接 GitHub（假服务接受任何令牌），再查一次 PR。
-    await window.getByRole('textbox', { name: 'GitHub 令牌' }).fill('e2e-token')
-    await window.getByRole('button', { name: '连接', exact: true }).click()
-    await expect(window.getByText('已连接 e2e-user')).toBeVisible()
-
-    await window.getByRole('textbox', { name: '仓库', exact: true }).fill('o/r')
-    await window.getByRole('spinbutton', { name: 'PR 编号', exact: true }).fill('1')
-    await window.getByRole('button', { name: '查询' }).click()
-    await expect(window.getByText('Fix the failing check')).toBeVisible()
-    const checks = window.getByRole('list', { name: '检查项' })
-    await expect(checks.getByText('失败', { exact: true })).toBeVisible()
-    await checks.getByRole('button', { name: '查看日志' }).click()
-    await expect(window.getByText(/boom in the login flow/)).toBeVisible()
-
-    // 设置页不再有手动监视入口：确认没有“添加监视”。
-    await expect(window.getByRole('button', { name: '添加监视' })).toHaveCount(0)
+    await expect(nav.getByRole('button', { name: '自动修复' })).toHaveCount(0)
+    await window.keyboard.press('Escape')
 
     // 会话里开启监视（Agent 的 watch_pull_request 走同一个入口）：立即评估一次，开出修复会话。
     await rpc(window, 'autofix.watch.add', {

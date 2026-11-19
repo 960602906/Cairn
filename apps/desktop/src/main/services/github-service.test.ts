@@ -3,32 +3,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { GITHUB_CREDENTIAL_REF, GITHUB_LOG_MAX_CHARS, RpcError } from '@cairn/protocol'
 import {
   createGithubService,
+  createGithubTokenResolver,
   normalizeGithubApiBase,
   type FetchLike,
   type GithubCredentials,
 } from './github-service.js'
 
-function memoryCredentials(
-  initial?: string,
-): GithubCredentials & { current(): string | undefined } {
-  const keys = new Map<string, string>(
-    initial === undefined ? [] : [[GITHUB_CREDENTIAL_REF, initial]],
-  )
+function tokenResolver(token?: string): () => Promise<string | undefined> {
+  return async () => token
+}
+
+function storedCredentials(token?: string): GithubCredentials {
   return {
     async resolve(ref) {
-      const key = keys.get(ref)
-      return key === undefined ? undefined : { apiKey: key }
+      return ref === GITHUB_CREDENTIAL_REF && token !== undefined ? { apiKey: token } : undefined
     },
-    async set(ref, secret) {
-      keys.set(ref, secret)
-    },
-    async delete(ref) {
-      return keys.delete(ref)
-    },
-    has(ref) {
-      return keys.has(ref)
-    },
-    current: () => keys.get(GITHUB_CREDENTIAL_REF),
   }
 }
 
@@ -39,67 +28,84 @@ function json(body: unknown, status = 200, headers: Record<string, string> = {})
   })
 }
 
-const user = { login: 'mrqin' }
+describe('github token resolution', () => {
+  it('prefers GH_TOKEN, then GITHUB_TOKEN', async () => {
+    const readGhToken = vi.fn(async () => 'gh-token')
+    const ghToken = createGithubTokenResolver({
+      credentials: storedCredentials('stored-token'),
+      env: { GH_TOKEN: 'GH_TOKEN-value', GITHUB_TOKEN: 'github-token-value' },
+      readGhToken,
+    })
+    expect(await ghToken()).toBe('GH_TOKEN-value')
+
+    const gitHubToken = createGithubTokenResolver({
+      credentials: storedCredentials('stored-token'),
+      env: { GITHUB_TOKEN: 'github-token-value' },
+      readGhToken,
+    })
+    expect(await gitHubToken()).toBe('github-token-value')
+    expect(readGhToken).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the token saved by the old settings page', async () => {
+    const readGhToken = vi.fn(async () => 'gh-token')
+    const resolve = createGithubTokenResolver({
+      credentials: storedCredentials('stored-token'),
+      env: {},
+      readGhToken,
+    })
+    expect(await resolve()).toBe('stored-token')
+    expect(readGhToken).not.toHaveBeenCalled()
+  })
+
+  it('caches the gh auth token and its absence', async () => {
+    const readGhToken = vi.fn(async () => 'gh-token')
+    const resolve = createGithubTokenResolver({
+      credentials: storedCredentials(),
+      env: {},
+      readGhToken,
+    })
+    expect(await resolve()).toBe('gh-token')
+    expect(await resolve()).toBe('gh-token')
+    expect(readGhToken).toHaveBeenCalledTimes(1)
+
+    const missing = vi.fn(async () => undefined)
+    const resolveMissing = createGithubTokenResolver({
+      credentials: storedCredentials(),
+      env: {},
+      readGhToken: missing,
+    })
+    expect(await resolveMissing()).toBeUndefined()
+    expect(await resolveMissing()).toBeUndefined()
+    expect(missing).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores blank environment values and survives a failing credential store', async () => {
+    const readGhToken = vi.fn(async () => 'gh-token')
+    const resolve = createGithubTokenResolver({
+      credentials: {
+        async resolve() {
+          throw new Error('no keyring')
+        },
+      },
+      env: { GH_TOKEN: '  ' },
+      readGhToken,
+    })
+    expect(await resolve()).toBe('gh-token')
+  })
+})
 
 describe('github-service', () => {
-  it('reports disconnected when no token is saved', async () => {
-    const service = createGithubService({ credentials: memoryCredentials() })
-    expect(await service.status()).toEqual({ connected: false })
-  })
-
-  it('validates then saves a token, and reports it as connected', async () => {
-    const credentials = memoryCredentials()
-    const fetchImpl = vi.fn<FetchLike>(async () => json(user))
-    const service = createGithubService({ credentials, fetchImpl })
-    expect(await service.connect({ token: ' ghp_example ' })).toEqual({
-      connected: true,
-      login: 'mrqin',
+  it('reports not connected when no token can be resolved', async () => {
+    const service = createGithubService({ resolveToken: tokenResolver() })
+    await expect(service.pullRequest({ repo: 'o/r', number: 1 })).rejects.toMatchObject({
+      code: 'github.not_connected',
     })
-    expect(credentials.current()).toBe('ghp_example')
-    expect(fetchImpl).toHaveBeenCalledWith(
-      'https://api.github.com/user',
-      expect.objectContaining({
-        headers: expect.objectContaining({ authorization: 'Bearer ghp_example' }),
-      }),
-    )
-    expect(await service.status()).toMatchObject({ connected: true, login: 'mrqin' })
-  })
-
-  it('does not overwrite the saved token when validation fails', async () => {
-    const credentials = memoryCredentials('old-token')
-    const service = createGithubService({
-      credentials,
-      fetchImpl: async () => json({ message: 'Bad credentials' }, 401),
-    })
-    await expect(service.connect({ token: 'new-token' })).rejects.toMatchObject({
-      code: 'github.auth_failed',
-    })
-    expect(credentials.current()).toBe('old-token')
-  })
-
-  it('keeps the connection when the token cannot be checked offline', async () => {
-    const service = createGithubService({
-      credentials: memoryCredentials('token'),
-      fetchImpl: async () => {
-        throw new Error('offline')
-      },
-    })
-    expect(await service.status()).toEqual({ connected: true })
-  })
-
-  it('disconnects and deletes the token', async () => {
-    const credentials = memoryCredentials('token')
-    const service = createGithubService({
-      credentials,
-      fetchImpl: async () => json(user),
-    })
-    expect(await service.disconnect()).toEqual({ connected: false })
-    expect(credentials.current()).toBeUndefined()
   })
 
   it('maps a pull request and sorts its checks', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) => {
         if (input.endsWith('/pulls/12')) {
           return json({
@@ -151,7 +157,7 @@ describe('github-service', () => {
   it('maps GitHub errors to stable codes', async () => {
     const failing = (status: number, headers: Record<string, string> = {}) =>
       createGithubService({
-        credentials: memoryCredentials('token'),
+        resolveToken: tokenResolver('token'),
         fetchImpl: async () => json({}, status, headers),
       })
     await expect(failing(404).pullRequest({ repo: 'o/r', number: 1 })).rejects.toMatchObject({
@@ -165,7 +171,7 @@ describe('github-service', () => {
     })
     await expect(
       createGithubService({
-        credentials: memoryCredentials('token'),
+        resolveToken: tokenResolver('token'),
         fetchImpl: async () => {
           throw new Error('offline')
         },
@@ -176,7 +182,7 @@ describe('github-service', () => {
   it('maps review comments oldest first and drops invalid entries', async () => {
     const calls: string[] = []
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) => {
         calls.push(input)
         return json([
@@ -200,13 +206,13 @@ describe('github-service', () => {
 
   it('treats an unexpected comment list as empty and maps errors', async () => {
     const unexpected = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async () => json({ message: 'not a list' }),
     })
     await expect(unexpected.reviewComments({ repo: 'o/r', number: 12 })).resolves.toEqual([])
 
     const missing = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) =>
         json(
           {},
@@ -219,7 +225,7 @@ describe('github-service', () => {
   })
 
   it('requires a token for reads', async () => {
-    const service = createGithubService({ credentials: memoryCredentials() })
+    const service = createGithubService({ resolveToken: tokenResolver() })
     await expect(service.pullRequest({ repo: 'o/r', number: 1 })).rejects.toBeInstanceOf(RpcError)
     await expect(service.pullRequest({ repo: 'o/r', number: 1 })).rejects.toMatchObject({
       code: 'github.not_connected',
@@ -230,7 +236,7 @@ describe('github-service', () => {
     const log = `${'x'.repeat(200)}FAILED at the end`
     const archive = zipSync({ 'job.txt': strToU8(log) })
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) => {
         if (input.includes('/check-runs/7')) {
           return json({
@@ -252,7 +258,7 @@ describe('github-service', () => {
 
     const long = `${'y'.repeat(GITHUB_LOG_MAX_CHARS + 10)}TAIL`
     const truncating = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) =>
         input.includes('/check-runs/7')
           ? json({ details_url: 'https://github.com/o/r/actions/runs/55/job/99' })
@@ -266,7 +272,7 @@ describe('github-service', () => {
 
   it('reports a missing log address', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async () => json({ id: 7, details_url: 'https://example.com/nothing' }),
     })
     await expect(service.checkLog({ repo: 'o/r', checkRunId: 7 })).rejects.toMatchObject({
@@ -276,7 +282,7 @@ describe('github-service', () => {
 
   it('reports a check run that has no address at all', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async () => json({ id: 7 }),
     })
     await expect(service.checkLog({ repo: 'o/r', checkRunId: 7 })).rejects.toMatchObject({
@@ -286,7 +292,7 @@ describe('github-service', () => {
 
   it('falls back to the run log when the address names a run', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) =>
         input.includes('/check-runs/7')
           ? json({ details_url: 'https://github.com/o/r/actions/runs/55' })
@@ -300,7 +306,7 @@ describe('github-service', () => {
 
   it('reports a log body that cannot be read', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) =>
         input.includes('/check-runs/7')
           ? json({ details_url: 'https://github.com/o/r/actions/runs/55/job/99' })
@@ -312,38 +318,34 @@ describe('github-service', () => {
   })
 
   it('falls back to the global fetch without an injected client', async () => {
-    const stub = vi.fn(async () => json(user))
+    const stub = vi.fn(async (input: string) =>
+      input.endsWith('/pulls/12')
+        ? json({
+            title: 'Fix',
+            html_url: 'https://github.com/o/r/pull/12',
+            state: 'open',
+            head: { ref: 'fix', sha: 'abcdef1234567890' },
+            base: { ref: 'main' },
+          })
+        : json({ check_runs: [] }),
+    )
     vi.stubGlobal('fetch', stub)
     try {
-      const service = createGithubService({ credentials: memoryCredentials('token') })
-      expect(await service.status()).toEqual({ connected: true, login: 'mrqin' })
-      expect(stub).toHaveBeenCalledWith('https://api.github.com/user', expect.any(Object))
+      const service = createGithubService({ resolveToken: tokenResolver('token') })
+      const pull = await service.pullRequest({ repo: 'o/r', number: 12 })
+      expect(pull.title).toBe('Fix')
+      expect(stub).toHaveBeenCalledWith(
+        'https://api.github.com/repos/o/r/pulls/12',
+        expect.any(Object),
+      )
     } finally {
       vi.unstubAllGlobals()
     }
   })
 
-  it('keeps a saved connection whose profile has no login', async () => {
-    const service = createGithubService({
-      credentials: memoryCredentials('token'),
-      fetchImpl: async () => json({}),
-    })
-    expect(await service.status()).toEqual({ connected: true })
-  })
-
-  it('rejects a connection whose profile has no login', async () => {
-    const service = createGithubService({
-      credentials: memoryCredentials(),
-      fetchImpl: async () => json({}),
-    })
-    await expect(service.connect({ token: 'token' })).rejects.toMatchObject({
-      code: 'github.invalid_response',
-    })
-  })
-
   it('reports a network failure that is not an Error', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: () => Promise.reject('offline'),
     })
     await expect(service.pullRequest({ repo: 'o/r', number: 1 })).rejects.toMatchObject({
@@ -353,7 +355,7 @@ describe('github-service', () => {
 
   it('rejects a pull request without the needed fields', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async () => json({ title: '', html_url: 'x', head: {}, base: {} }),
     })
     await expect(service.pullRequest({ repo: 'o/r', number: 1 })).rejects.toMatchObject({
@@ -363,7 +365,7 @@ describe('github-service', () => {
 
   it('maps a closed draft without mergeable state or checks', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) =>
         input.endsWith('/pulls/12')
           ? json({
@@ -383,7 +385,7 @@ describe('github-service', () => {
 
   it('drops checks with unknown conclusions or unusable fields', async () => {
     const service = createGithubService({
-      credentials: memoryCredentials('token'),
+      resolveToken: tokenResolver('token'),
       fetchImpl: async (input) =>
         input.endsWith('/pulls/12')
           ? json({
@@ -426,15 +428,25 @@ describe('github API base for tests (M8-05)', () => {
   })
 
   it('routes API calls to the configured base', async () => {
-    const fetchImpl = vi.fn<FetchLike>(async () => json(user))
+    const fetchImpl = vi.fn<FetchLike>(async (input) =>
+      input.endsWith('/pulls/1')
+        ? json({
+            title: 'Fix',
+            html_url: 'https://github.com/o/r/pull/1',
+            state: 'open',
+            head: { ref: 'fix', sha: 'abcdef1234567890' },
+            base: { ref: 'main' },
+          })
+        : json({ check_runs: [] }),
+    )
     const service = createGithubService({
-      credentials: memoryCredentials(),
+      resolveToken: tokenResolver('token'),
       fetchImpl,
       apiBase: 'http://127.0.0.1:4321/',
     })
-    await service.connect({ token: 'token' })
+    await service.pullRequest({ repo: 'o/r', number: 1 })
     expect(fetchImpl).toHaveBeenCalledWith(
-      'http://127.0.0.1:4321/user',
+      'http://127.0.0.1:4321/repos/o/r/pulls/1',
       expect.objectContaining({ headers: expect.anything() }),
     )
   })

@@ -2,9 +2,9 @@
  * 设置页框架（M2-09，视觉规范 §8）：与对话页相同的窗口结构。左侧分类导航（顶部“返回对话 Esc”，铺在窗口
  * 底色上），右侧纸面，内容居中、最大宽度 920px；窄窗口收窄内边距。
  *
- * 分类收敛为四组：常规（通用与外观、已归档的对话）、模型与能力（模型供应商、自动修复、技能、
+ * 分类收敛为四组：常规（通用与外观、已归档的对话）、模型与能力（模型供应商、技能、
  * MCP 服务、记忆）、安全（权限与审批），以及固定在底部的“关于与更新”。项目操作在会话栏里，
- * 不再占用设置分类。
+ * 不再占用设置分类；自动修复不设分类，由会话按需开启。
  * Esc 返回对话（有对话框或菜单打开时不处理）。
  */
 import {
@@ -12,7 +12,6 @@ import {
   Brain,
   ChevronLeft,
   Cpu,
-  GitPullRequest,
   Info,
   Palette,
   PanelLeftClose,
@@ -25,7 +24,6 @@ import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { CairnMark, IconButton, Kbd } from '../ui/index.js'
 import { ArchivedSessionsSettings } from './ArchivedSessionsSettings.js'
-import { AutofixSettings } from './AutofixSettings.js'
 import { GeneralSettings } from './GeneralSettings.js'
 import { AboutSettings } from './AboutSettings.js'
 import { McpSettings } from './McpSettings.js'
@@ -42,7 +40,6 @@ export type SettingsSection =
   | 'archived'
   | 'update'
   | 'providers'
-  | 'autofix'
   | 'skills'
   | 'mcp'
   | 'memory'
@@ -70,7 +67,6 @@ const GROUPS: readonly {
     group: 'modelCapabilities',
     sections: [
       { id: 'providers', icon: <Cpu /> },
-      { id: 'autofix', icon: <GitPullRequest /> },
       { id: 'skills', icon: <SkillGlyph /> },
       { id: 'mcp', icon: <McpGlyph /> },
       { id: 'memory', icon: <Brain /> },
@@ -264,7 +260,6 @@ export function SettingsContent({
           {section === 'archived' && <ArchivedSessionsSettings />}
           {section === 'update' && <UpdateSettings />}
           {section === 'providers' && <ProvidersSettings />}
-          {section === 'autofix' && <AutofixSettings />}
           {section === 'skills' && <SkillsSettings />}
           {section === 'mcp' && <McpSettings />}
           {section === 'memory' && <MemorySettings />}
