@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSessionView, reduceSessionEvents, type SessionView } from '@cairn/core'
@@ -2153,30 +2153,42 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(screen.getByText('Agent 进程意外退出，可以从最后保存的位置继续。')).toBeTruthy()
     crash.unmount()
 
-    const retrying = renderStream({
-      ...base,
-      runOrder: ['r1'],
-      runs: {
-        ...base.runs,
-        r1: {
-          ...base.runs.r1,
-          turn: {
-            turnId: 't1',
-            status: 'running',
-            retry: {
-              attempt: 1,
-              maxRetries: 3,
-              delayMs: 5000,
-              error: { code: 'model.error' },
-              at: 1,
+    // 重试等待按秒倒数：计时用假时钟，避免真的等 5 秒
+    const retryAt = Date.now()
+    vi.useFakeTimers()
+    vi.setSystemTime(retryAt)
+    try {
+      const retrying = renderStream({
+        ...base,
+        runOrder: ['r1'],
+        runs: {
+          ...base.runs,
+          r1: {
+            ...base.runs.r1,
+            turn: {
+              turnId: 't1',
+              status: 'running',
+              retry: {
+                attempt: 1,
+                maxRetries: 3,
+                delayMs: 5000,
+                error: { code: 'model.error' },
+                at: retryAt,
+              },
             },
           },
         },
-      },
-    } as unknown as SessionView)
-    expect(screen.getByText(/模型请求失败/)).toBeTruthy()
-    expect(screen.getByText(/5 秒后重试/)).toBeTruthy()
-    retrying.unmount()
+      } as unknown as SessionView)
+      expect(screen.getByText(/模型请求失败/)).toBeTruthy()
+      expect(screen.getByText(/5 秒后重试/)).toBeTruthy()
+      act(() => vi.advanceTimersByTime(1000))
+      expect(screen.getByText(/4 秒后重试/)).toBeTruthy()
+      act(() => vi.advanceTimersByTime(3000))
+      expect(screen.getByText(/1 秒后重试/)).toBeTruthy()
+      retrying.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
 
     renderStream({
       ...base,
