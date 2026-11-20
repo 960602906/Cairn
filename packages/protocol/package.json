@@ -7,7 +7,6 @@
     ".": "./src/index.ts",
     "./runtime": "./src/runtime.ts"
   },
-  "sideEffects": false,
   "dependencies": {
     "zod": "4.6.6"
   }
