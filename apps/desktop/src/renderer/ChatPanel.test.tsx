@@ -1840,7 +1840,8 @@ describe('ChatPanel', () => {
       delayMs: 1500,
       error: { code: 'model.rate_limited' },
     }
-    emit(ev(12, 'model.retry', retry, 't2'))
+    // 剩余秒数按事件时间算，用真实时间戳，否则倒计时已经是 0
+    emit({ ...ev(12, 'model.retry', retry, 't2'), ts: Date.now() } as EventEnvelope)
     const note = '模型请求失败（请求过于频繁，已被模型服务限流），2 秒后重试（第 1/3 次）'
     expect(screen.getByText(note)).toBeTruthy()
     expect(stopButton()).toBeTruthy()

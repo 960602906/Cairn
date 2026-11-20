@@ -30,6 +30,7 @@ import {
   type MessageView,
   type PlanView,
   type RestoreView,
+  type RetryView,
   type ReviewLoopView,
   type PipelineView,
   type SessionView,
@@ -1151,21 +1152,48 @@ function LiveMessage({
   )
 }
 
+/**
+ * 等待重试时的剩余秒数。`model.retry` 只给出这一次的等待时长，界面上要自己按秒倒数；
+ * 计时放在这一行里，避免整段对话每秒重渲染一次。
+ */
+function RetryNotice({
+  retry,
+  t,
+  i18n,
+}: {
+  readonly retry: RetryView
+  readonly t: TFunction
+  readonly i18n: I18nInstance
+}): ReactNode {
+  const deadline = retry.at + retry.delayMs
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    setNow(Date.now())
+    if (deadline <= Date.now()) return undefined
+    const timer = setInterval(() => {
+      setNow(Date.now())
+      if (Date.now() >= deadline) clearInterval(timer)
+    }, 250)
+    return () => clearInterval(timer)
+  }, [deadline])
+  const seconds = Math.max(0, Math.ceil((deadline - now) / 1000))
+  return t('turn.retrying', {
+    reason: translateError(i18n, retry.error),
+    seconds,
+    attempt: retry.attempt,
+    maxRetries: retry.maxRetries,
+  })
+}
+
 /** 上一轮没有正常完成、或正在等待重试时的说明；正常完成或仍在进行时为 undefined。 */
-function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): string | undefined {
+function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): ReactNode {
   if (view.crash) return t('crashed.message')
   const turn = rootRun(view)?.turn
   if (turn?.status === 'aborted') {
     return t(turn.abortReason === 'shutdown' ? 'turn.interrupted' : 'turn.aborted')
   }
   if (turn?.status === 'running' && turn.retry) {
-    const { retry } = turn
-    return t('turn.retrying', {
-      reason: translateError(i18n, retry.error),
-      seconds: Math.ceil(retry.delayMs / 1000),
-      attempt: retry.attempt,
-      maxRetries: retry.maxRetries,
-    })
+    return <RetryNotice retry={turn.retry} t={t} i18n={i18n} />
   }
   if (turn?.status !== 'failed') return undefined
   const limit = turn.limitReached

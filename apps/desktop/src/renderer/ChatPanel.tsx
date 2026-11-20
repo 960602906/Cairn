@@ -390,7 +390,8 @@ export function ChatPanel({
           inert={overlayOpen}
           className="relative flex min-w-0 flex-1 flex-col"
         >
-          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+          {/* 滚动位置由 useStickToBottom 自己维护：关掉浏览器的滚动锚定，否则新内容插入会打断平滑滚动 */}
+          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
             <div
               ref={content}
               className={cn(

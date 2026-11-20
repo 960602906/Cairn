@@ -20,6 +20,13 @@ function Harness({ id }: { readonly id: string }) {
   )
 }
 
+/** 等贴底的缓动跑完（jsdom 的 requestAnimationFrame 走定时器，约 16ms 一帧）。 */
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+  })
+}
+
 /** jsdom 没有布局：用可写的尺寸模拟滚动容器。 */
 function layout(el: HTMLElement, size: { scrollHeight: number; clientHeight: number }) {
   Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => size.scrollHeight })
@@ -27,7 +34,7 @@ function layout(el: HTMLElement, size: { scrollHeight: number; clientHeight: num
 }
 
 describe('useStickToBottom', () => {
-  it('follows growing content while at the bottom, not after scrolling up', () => {
+  it('follows growing content while at the bottom, not after scrolling up', async () => {
     const callbacks: (() => void)[] = []
     vi.stubGlobal(
       'ResizeObserver',
@@ -55,6 +62,9 @@ describe('useStickToBottom', () => {
         act(() => callbacks.at(-1)!())
       }
       grow(1000)
+      // 一次长了一大块：缓动过去，而不是瞬移
+      expect(el.scrollTop).toBe(0)
+      await settle()
       expect(el.scrollTop).toBe(1000)
 
       // 往上翻看：内容再变高也不动
@@ -67,6 +77,7 @@ describe('useStickToBottom', () => {
       el.scrollTop = 1200 - 300 - 20
       el.dispatchEvent(new Event('scroll'))
       grow(1500)
+      await settle()
       expect(el.scrollTop).toBe(1500)
 
       // 切换会话回到底部
@@ -126,7 +137,7 @@ describe('useStickToBottom', () => {
     expect(getByTestId('scroller').scrollTop).toBe(0)
   })
 
-  it('stays pinned when the content fits and the wheel cannot actually scroll', () => {
+  it('stays pinned when the content fits and the wheel cannot actually scroll', async () => {
     const callbacks: (() => void)[] = []
     vi.stubGlobal(
       'ResizeObserver',
@@ -165,6 +176,7 @@ describe('useStickToBottom', () => {
     // 内容长起来后仍然跟着滚到底。
     layout(el, { scrollHeight: 900, clientHeight: 300 })
     act(() => callbacks.at(-1)!())
+    await settle()
     expect(el.scrollTop).toBe(900)
   })
 
