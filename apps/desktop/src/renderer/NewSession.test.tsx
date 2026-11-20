@@ -450,6 +450,55 @@ describe('NewSession controls', () => {
     )
   })
 
+  it('keeps the draft and plan mode when the page remounts', async () => {
+    setup()
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.type(input, '这段还没发出')
+    fireEvent.keyDown(document.body, { key: 'P', ctrlKey: true, shiftKey: true })
+    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
+
+    // 打开设置再回来时新对话页整体重新挂载。
+    cleanup()
+    setup()
+    const again = (await screen.findByPlaceholderText(
+      '描述要做的事。这一轮只会阅读项目并提出计划',
+    )) as HTMLTextAreaElement
+    expect(again.value).toBe('这段还没发出')
+  })
+
+  it('remembers each workspace model and the last workspace', async () => {
+    const projects = [
+      { projectId: 'p1', name: 'work', path: '/work', createdAt: 1 },
+      { projectId: 'p2', name: 'side', path: '/side', createdAt: 2 },
+    ]
+    const listProjects = { 'project.list': () => ({ projects }) }
+    setup({}, undefined, undefined, listProjects)
+    const user = userEvent.setup()
+    expect(await screen.findByRole('button', { name: '模型：测试供应商 · 快' })).toBeTruthy()
+
+    // 在 work 里换成强模型。
+    await user.click(screen.getByRole('button', { name: '模型：测试供应商 · 快' }))
+    await user.click(await screen.findByRole('menuitem', { name: /强/ }))
+    expect(screen.getByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
+
+    // 另一个工作空间仍用默认模型。
+    await user.click(screen.getByRole('button', { name: '工作空间：work' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'side' }))
+    expect(await screen.findByRole('button', { name: '模型：测试供应商 · 快' })).toBeTruthy()
+
+    // 切回 work 时恢复它自己的选择。
+    await user.click(screen.getByRole('button', { name: '工作空间：side' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'work' }))
+    expect(await screen.findByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
+
+    // 重新进入页面：回到上次的工作空间，模型也在。
+    cleanup()
+    setup({}, undefined, undefined, listProjects)
+    expect(await screen.findByRole('button', { name: '工作空间：work' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
+  })
+
   it('keeps the default model when it is already selected and switches the permission mode', async () => {
     const { request } = setup()
     const user = userEvent.setup()
