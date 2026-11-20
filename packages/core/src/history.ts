@@ -20,13 +20,13 @@
  *   压缩会换掉更早的摘要，要点在最后再放回去，所以不会被摘要吃掉。
  */
 import {
-  isPersistedEvent,
   type CanonicalMessage,
   type ContentPart,
   type ErrorInfo,
   type EventEnvelope,
   type ToolCall,
 } from '@cairn/protocol'
+import { isPersistedEvent } from '@cairn/protocol/runtime'
 import { sessionBriefMessage } from './brief.js'
 import { OMITTED_TOOL_OUTPUT } from './compaction.js'
 

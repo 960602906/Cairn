@@ -223,6 +223,8 @@ describe('事件类型登记', () => {
       expect(isLiveEventType(type)).toBe(type.endsWith('.delta'))
     }
     expect(LIVE_EVENT_TYPES).toHaveLength(4)
+    // 清单在 event-kinds.ts（没有 zod），这里确认每一条都真的登记了 schema。
+    for (const type of LIVE_EVENT_TYPES) expect(EVENT_TYPES).toContain(type)
   })
 })
 

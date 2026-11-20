@@ -3,6 +3,16 @@
  * 渲染进程只调用主进程的请求、接收主进程的事件；渲染进程自身不提供接口。
  */
 import { z } from 'zod'
+import {
+  APPROVAL_FEEDBACK_MAX_LENGTH,
+  INSTRUCTIONS_MAX_LENGTH,
+  MAX_EXISTS_PATHS,
+  MAX_PROMPT_AGENTS,
+  MAX_PROMPT_MENTIONS,
+  MAX_PROMPT_SKILLS,
+  PROJECT_NAME_MAX_LENGTH,
+  SESSION_TITLE_MAX_LENGTH,
+} from '../limits.js'
 import { AppInfo, AppLicenses } from '../app-info.js'
 import { FileChangeSummary, FileContent } from '../changes.js'
 import { ActivityDecision, ActivityListResult } from '../activity.js'
@@ -110,14 +120,13 @@ export const SessionSummary = z.object({
 })
 export type SessionSummary = z.infer<typeof SessionSummary>
 
-/** 项目名称的长度上限（字符，M3-02）。 */
-export const PROJECT_NAME_MAX_LENGTH = 200
-
-/** 首次启动时自动创建、不可移除的默认项目（稳定 id）。 */
-export const DEFAULT_PROJECT_ID = 'default-project'
-
-/** 默认项目的兜底名称；界面按当前语言显示本地化名称。 */
-export const DEFAULT_PROJECT_NAME = 'Default Project'
+export {
+  DEFAULT_PROJECT_ID,
+  DEFAULT_PROJECT_NAME,
+  INSTRUCTIONS_MAX_LENGTH,
+  PROJECT_NAME_MAX_LENGTH,
+  SESSION_TITLE_MAX_LENGTH,
+} from '../limits.js'
 
 /**
  * 已打开过的项目（M1-16a，M3-02 补上会话数、最近使用和两个开关）。
@@ -166,20 +175,14 @@ export type FileTreeEntry = z.infer<typeof FileTreeEntry>
 export const FileSearchEntry = z.object({ path: z.string().min(1), kind: FileTreeEntryKind })
 export type FileSearchEntry = z.infer<typeof FileSearchEntry>
 
-/** 一条输入最多带几个 `@` 引用（ADR-0037）。 */
-export const MAX_PROMPT_MENTIONS = 20
-/** 一条输入最多使用几个技能。 */
-export const MAX_PROMPT_SKILLS = 5
-/** 一条输入最多点名几个要委派的 Agent。 */
-export const MAX_PROMPT_AGENTS = 5
-/** 一次批量检查多少个路径是否存在（助手消息里的行内代码）。 */
-export const MAX_EXISTS_PATHS = 200
-
-/** 会话标题的长度上限（字符，M2-02）。 */
-export const SESSION_TITLE_MAX_LENGTH = 200
-
-/** 自定义说明的长度上限（字符）。 */
-export const INSTRUCTIONS_MAX_LENGTH = 10_000
+/** 输入与审批的长度上限在 `../limits.js`；这里按原路径继续导出。 */
+export {
+  APPROVAL_FEEDBACK_MAX_LENGTH,
+  MAX_EXISTS_PATHS,
+  MAX_PROMPT_AGENTS,
+  MAX_PROMPT_MENTIONS,
+  MAX_PROMPT_SKILLS,
+} from '../limits.js'
 
 /** 界面语言（ADR-0013）；与 `@cairn/i18n` 的 `SUPPORTED_LOCALES` 一致。 */
 export const Locale = z.enum(['zh-CN', 'en-US'])
@@ -302,9 +305,6 @@ export type PendingApproval = HostApprovalRequest
 /** 等待用户回答的提问：内容与宿主的 `host.question.request` 相同。 */
 export const PendingQuestion = AskUserRequest
 export type PendingQuestion = AskUserRequest
-
-/** 拒绝时附加的说明的长度上限（交给模型）。 */
-export const APPROVAL_FEEDBACK_MAX_LENGTH = 2000
 
 /** 凭据引用（ADR-0010）：字母、数字、`.`、`_`、`-`，1～128 个字符（例如提供方 id）。 */
 export const CREDENTIAL_REF_PATTERN = CONFIG_ID_PATTERN
