@@ -149,7 +149,7 @@ describe('SettingsPage', () => {
     expect(screen.queryByRole('heading', { name: '通用与外观' })).toBeNull()
   })
 
-  it('groups categories, with update and about in a bottom group', async () => {
+  it('groups categories, with about in a bottom group', async () => {
     setup()
     await openSettings()
     const nav = screen.getByRole('navigation', { name: '设置分类' })
@@ -168,7 +168,7 @@ describe('SettingsPage', () => {
     expect(titles(groups[0]!)).toEqual(['通用与外观', '已归档的对话'])
     expect(titles(groups[1]!)).toEqual(['模型供应商', '技能', 'MCP 服务', '记忆'])
     expect(titles(groups[2]!)).toEqual(['权限与审批'])
-    expect(titles(groups[3]!)).toEqual(['更新', '关于 Cairn'])
+    expect(titles(groups[3]!)).toEqual(['关于 Cairn'])
     // 自动修复没有设置分类：由会话按需开启。
     expect(within(nav).queryByRole('button', { name: '自动修复' })).toBeNull()
   })

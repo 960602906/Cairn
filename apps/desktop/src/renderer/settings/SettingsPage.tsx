@@ -3,7 +3,7 @@
  * 底色上），右侧纸面，内容居中、最大宽度 920px；窄窗口收窄内边距。
  *
  * 分类收敛为四组：常规（通用与外观、已归档的对话）、模型与能力（模型供应商、技能、
- * MCP 服务、记忆）、安全（权限与审批），以及固定在底部的“关于与更新”。项目操作在会话栏里，
+ * MCP 服务、记忆）、安全（权限与审批），以及固定在底部的“关于 Cairn”。项目操作在会话栏里，
  * 不再占用设置分类；自动修复不设分类，由会话按需开启。
  * Esc 返回对话（有对话框或菜单打开时不处理）。
  */
@@ -15,7 +15,6 @@ import {
   Info,
   Palette,
   PanelLeftClose,
-  RefreshCw,
   Search,
   ShieldCheck,
 } from 'lucide-react'
@@ -32,19 +31,10 @@ import { PermissionsSettings } from './PermissionsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
 import { McpGlyph, SkillGlyph } from './SettingIcons.js'
 import { SkillsSettings } from './SkillsSettings.js'
-import { UpdateSettings } from './UpdateSettings.js'
 import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
-  | 'general'
-  | 'archived'
-  | 'update'
-  | 'providers'
-  | 'skills'
-  | 'mcp'
-  | 'memory'
-  | 'permissions'
-  | 'about'
+  'general' | 'archived' | 'providers' | 'skills' | 'mcp' | 'memory' | 'permissions' | 'about'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -75,10 +65,7 @@ const GROUPS: readonly {
   { group: 'security', sections: [{ id: 'permissions', icon: <ShieldCheck /> }] },
   {
     group: 'app',
-    sections: [
-      { id: 'update', icon: <RefreshCw /> },
-      { id: 'about', icon: <Info /> },
-    ],
+    sections: [{ id: 'about', icon: <Info /> }],
   },
 ]
 
@@ -258,7 +245,6 @@ export function SettingsContent({
         <div className="mx-auto flex max-w-[920px] flex-col gap-6 px-8 pt-6 pb-16 max-[640px]:px-4">
           {section === 'general' && <GeneralSettings />}
           {section === 'archived' && <ArchivedSessionsSettings />}
-          {section === 'update' && <UpdateSettings />}
           {section === 'providers' && <ProvidersSettings />}
           {section === 'skills' && <SkillsSettings />}
           {section === 'mcp' && <McpSettings />}

@@ -255,6 +255,5 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   'skills',
   'mcp',
   'permissions',
-  'update',
   'about',
 ]

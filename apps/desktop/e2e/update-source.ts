@@ -2,10 +2,11 @@
  * 本地 HTTPS 静态更新源（M5-06/M5-07 e2e 共用）：只提供版本描述与完整安装包，
  * blockmap 返回 404 以走完整下载。自签名证书只用于本机回环地址。
  */
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:https'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPatchVersion } from './version.js'
 
@@ -16,6 +17,8 @@ export interface UpdateSourceOptions {
   readonly version?: string
   /** 固定端口（错误重试用例需要先失败、再在同一端口启动）；默认随机。 */
   readonly port?: number
+  /** 分块发送安装包，块间停顿；用于截取下载中的进度界面。 */
+  readonly throttleMs?: number
 }
 
 export interface LocalUpdateSource {
@@ -52,7 +55,7 @@ export async function startUpdateSource(
       key: fixture('localhost-key.pem'),
       cert: fixture('localhost-cert.pem'),
     },
-    (incoming, response) => {
+    async (incoming, response) => {
       const pathname = decodeURIComponent(
         new URL(incoming.url ?? '/', 'https://localhost').pathname,
       )
@@ -66,7 +69,14 @@ export async function startUpdateSource(
           'content-type': 'application/octet-stream',
           'content-length': artifact.length,
         })
-        response.end(artifact)
+        if (options.throttleMs) {
+          const chunk = 16 * 1024
+          for (let offset = 0; offset < artifact.length; offset += chunk) {
+            response.write(artifact.subarray(offset, offset + chunk))
+            await new Promise((resolve) => setTimeout(resolve, options.throttleMs))
+          }
+        }
+        response.end(options.throttleMs ? undefined : artifact)
         return
       }
       response.writeHead(404).end('not found')
@@ -114,9 +124,15 @@ export async function freeLoopbackPort(): Promise<number> {
  */
 export function useDevUpdateConfig(url: string): () => void {
   const file = path.resolve(import.meta.dirname, '..', 'dev-app-update.yml')
+  // 每次用新的缓存目录：electron-updater 把它放在 userData 的上一级（系统临时目录），
+  // 复用会让第二次运行直接命中缓存的安装包，跳过大半下载过程。
+  const cacheDirName = `cairn-e2e-updater-${randomUUID().slice(0, 8)}`
   writeFileSync(
     file,
-    ['provider: generic', `url: ${url}`, 'updaterCacheDirName: cairn-e2e-updater', ''].join('\n'),
+    ['provider: generic', `url: ${url}`, `updaterCacheDirName: ${cacheDirName}`, ''].join('\n'),
   )
-  return () => rmSync(file, { force: true })
+  return () => {
+    rmSync(file, { force: true })
+    rmSync(path.join(tmpdir(), cacheDirName), { recursive: true, force: true })
+  }
 }

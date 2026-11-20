@@ -39,8 +39,6 @@ export function AboutSettings() {
   const { t, i18n } = useTranslation('settings')
   const info = useSessionStore((s) => s.appInfo)
   const loadAppInfo = useSessionStore((s) => s.loadAppInfo)
-  const update = useSessionStore((s) => s.updateStatus)
-  const loadUpdateStatus = useSessionStore((s) => s.loadUpdateStatus)
   const [licensesOpen, setLicensesOpen] = useState(false)
   const [welcomeOpen, setWelcomeOpen] = useState(false)
   const [privacyOpen, setPrivacyOpen] = useState(false)
@@ -50,10 +48,6 @@ export function AboutSettings() {
   useEffect(() => {
     if (!info) void loadAppInfo()
   }, [info, loadAppInfo])
-
-  useEffect(() => {
-    if (!update) void loadUpdateStatus()
-  }, [update, loadUpdateStatus])
 
   return (
     <>
@@ -72,22 +66,6 @@ export function AboutSettings() {
         ) : (
           <p className="text-ui text-muted">{t('about.loading')}</p>
         )}
-      </SettingsGroup>
-      <SettingsGroup
-        icon={<ScrollText />}
-        title={t('about.update.title')}
-        description={t('about.update.description')}
-      >
-        <Field label={t('about.update.source')}>
-          <Mono>{update?.source ?? t('about.unknown')}</Mono>
-        </Field>
-        <Field label={t('about.licenses.label')}>
-          <Button size="sm" variant="secondary" onClick={() => setLicensesOpen(true)}>
-            <ScrollText aria-hidden />
-            {t('about.licenses.open')}
-          </Button>
-        </Field>
-        <p className="text-note leading-relaxed text-muted">{t('about.licenses.hint')}</p>
       </SettingsGroup>
       <SettingsGroup
         icon={<ShieldCheck />}
@@ -110,6 +88,12 @@ export function AboutSettings() {
           <Button size="sm" variant="secondary" onClick={() => setGplOpen(true)}>
             <ScrollText aria-hidden />
             {t('about.legal.gplOpen')}
+          </Button>
+        </Field>
+        <Field label={t('about.licenses.label')}>
+          <Button size="sm" variant="secondary" onClick={() => setLicensesOpen(true)}>
+            <ScrollText aria-hidden />
+            {t('about.licenses.open')}
           </Button>
         </Field>
         <Field label={t('about.legal.diagnostics')}>
