@@ -18,6 +18,7 @@ import {
   Sun,
 } from 'lucide-react'
 import { DiagnosticsExportDialog } from './DiagnosticsExportDialog.js'
+import { switchLocale } from '../locale.js'
 import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
 import { INSTRUCTIONS_MAX_LENGTH, type ShellPreference } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
@@ -191,7 +192,7 @@ export function GeneralSettings() {
   }, [loaded, loadSettings])
 
   const changeLocale = (locale: Locale) => {
-    void i18n.changeLanguage(locale)
+    void switchLocale(i18n, locale)
     void updateSettings({ locale })
   }
 

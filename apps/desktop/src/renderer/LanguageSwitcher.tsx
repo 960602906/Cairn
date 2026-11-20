@@ -4,6 +4,7 @@
  */
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
+import { switchLocale } from './locale.js'
 
 export function LanguageSwitcher() {
   const { t, i18n } = useTranslation()
@@ -13,7 +14,7 @@ export function LanguageSwitcher() {
       {/* 选项只有支持的语言 */}
       <select
         value={i18n.language}
-        onChange={(e) => void i18n.changeLanguage(e.target.value as Locale)}
+        onChange={(e) => void switchLocale(i18n, e.target.value as Locale)}
       >
         {SUPPORTED_LOCALES.map((locale) => (
           <option key={locale} value={locale} lang={locale}>

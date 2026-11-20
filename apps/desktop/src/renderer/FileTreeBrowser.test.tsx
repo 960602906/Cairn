@@ -121,11 +121,14 @@ describe('FileTreeBrowser', () => {
 
     const icons = [...container.querySelectorAll('img')]
     expect(icons).toHaveLength(3)
-    expect(icons.map((icon) => icon.getAttribute('src'))).toEqual([
-      './folder-src.svg',
-      './typescript.svg',
-      './nodejs.svg',
-    ])
+    // 图标映射在首次渲染之后异步加载。
+    await waitFor(() =>
+      expect(icons.map((icon) => icon.getAttribute('src'))).toEqual([
+        './folder-src.svg',
+        './typescript.svg',
+        './nodejs.svg',
+      ]),
+    )
 
     await userEvent.click(screen.getByText('index.ts'))
     expect(onOpenFile).toHaveBeenCalledWith('index.ts')
@@ -135,7 +138,9 @@ describe('FileTreeBrowser', () => {
 
     const srcRow = screen.getByText('src').parentElement!
     await userEvent.click(within(srcRow).getByRole('button', { name: '展开目录' }))
-    expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src-open.svg')
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src-open.svg'),
+    )
   })
 
   it('syncs renamed and deleted files with open tabs', async () => {

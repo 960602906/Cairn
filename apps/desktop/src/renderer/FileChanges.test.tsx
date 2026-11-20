@@ -94,7 +94,7 @@ function setup({ busy = false, fail = {} as Record<string, unknown>, initial = C
 const rowButton = (name: RegExp) => screen.getByRole('button', { name })
 
 describe('TurnChanges', () => {
-  it('列出这一轮改动的文件与合计；没有改动时不显示', () => {
+  it('列出这一轮改动的文件与合计；没有改动时不显示', async () => {
     const { wrap } = setup()
     const { rerender } = wrap(<TurnChanges sessionId="s1" turnId="t1" />)
     const card = screen.getByRole('region', { name: '本轮变更' })
@@ -102,10 +102,13 @@ describe('TurnChanges', () => {
     expect(card.querySelector('header')!.textContent).toContain('+4 −1')
     const rows = within(card).getAllByRole('button')
     expect(rows.map((r) => r.textContent)).toEqual(['src/a.ts+2 −1', 'src/new.ts新文件+2 −0'])
-    expect([...card.querySelectorAll('img')].map((icon) => icon.getAttribute('src'))).toEqual([
-      './typescript.svg',
-      './typescript.svg',
-    ])
+    // 图标映射在首次渲染之后异步加载。
+    await waitFor(() =>
+      expect([...card.querySelectorAll('img')].map((icon) => icon.getAttribute('src'))).toEqual([
+        './typescript.svg',
+        './typescript.svg',
+      ]),
+    )
     rerender(
       <I18nextProvider i18n={i18n}>
         <SessionStoreProvider store={setup().store}>

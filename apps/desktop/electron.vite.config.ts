@@ -38,6 +38,14 @@ const workspacePackages = [
   '@cairn/mcp',
 ]
 
+/** 工作区包里纯 TypeScript、可以安全摇树的包（首屏只用到其中很少一部分）。 */
+const TREESHAKE_SAFE_PACKAGES = ['protocol', 'core', 'i18n']
+
+function isTreeshakeSafeSource(id: string): boolean {
+  const normalized = id.replaceAll('\\', '/')
+  return TREESHAKE_SAFE_PACKAGES.some((pkg) => normalized.includes(`/packages/${pkg}/src/`))
+}
+
 /** 把 CSP 以 `<meta>` 写入界面 HTML（`file:` 加载时没有响应头）。开发服务器使用放宽的版本。 */
 function contentSecurityPolicy(): Plugin {
   let dev = false
@@ -119,6 +127,13 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: resolve(root, 'src/renderer/index.html') },
+        /**
+         * 工作区包没有导入副作用，但 `export *` 桶会把 zod 与全部协议 schema 一起带进首屏，
+         * 只有把它们标成"无副作用"才摇得掉。只在渲染进程构建里这么做：主进程与 agent 宿主
+         * 共用一次构建、多个入口，改掉摇树策略后共享分块会反向引用宿主入口（`agent-host.js`
+         * 会被拉进主进程求值，`process.parentPort` 因此崩掉）。
+         */
+        treeshake: { moduleSideEffects: (id) => !isTreeshakeSafeSource(id) },
       },
     },
   },
