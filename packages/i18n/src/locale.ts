@@ -1,4 +1,4 @@
-import { SUPPORTED_LOCALES, type Locale } from './resources.js'
+import { SUPPORTED_LOCALES, type Locale } from './namespaces.js'
 
 export function isLocale(value: unknown): value is Locale {
   return typeof value === 'string' && (SUPPORTED_LOCALES as readonly string[]).includes(value)

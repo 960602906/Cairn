@@ -39,7 +39,7 @@ const workspacePackages = [
 ]
 
 /** 工作区包里纯 TypeScript、可以安全摇树的包（首屏只用到其中很少一部分）。 */
-const TREESHAKE_SAFE_PACKAGES = ['protocol', 'core']
+const TREESHAKE_SAFE_PACKAGES = ['protocol', 'core', 'i18n']
 
 function isTreeshakeSafeSource(id: string): boolean {
   const normalized = id.replaceAll('\\', '/')

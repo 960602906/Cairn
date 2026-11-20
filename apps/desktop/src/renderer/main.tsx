@@ -5,10 +5,10 @@
 import './styles/index.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createI18n, detectLocale, type Locale } from '@cairn/i18n'
+import { createI18nInstance, detectLocale, loadMessages, type Locale } from '@cairn/i18n'
 import { getMainApi } from './api.js'
 import { App } from './App.js'
-import { syncDocumentLang } from './locale.js'
+import { switchLocale, syncDocumentLang } from './locale.js'
 import { createSessionStore } from './session-store.js'
 import { instrumentRequests, mark, markFirstPaint, observeLongTasks } from './startup-trace.js'
 import { applyTheme } from './theme.js'
@@ -37,28 +37,31 @@ if (dev && location.hash === '#preview') {
 
   // 先用系统语言渲染。设置里的语言在首帧之后到达，再与当前语言比较后校正。
   const initial = detectLocale(navigator.languages)
-  const i18n = createI18n(initial)
-  syncDocumentLang(i18n)
-  mark('i18n_ready')
+  // 只取当前语言的文案：另一种在切换语言时按需加载，首屏不再解析两份。
+  void loadMessages(initial).then(({ messages }) => {
+    const i18n = createI18nInstance(initial, { [initial]: messages })
+    syncDocumentLang(i18n)
+    mark('i18n_ready')
 
-  createRoot(root).render(
-    <StrictMode>
-      <App i18n={i18n} {...(store ? { store } : {})} />
-    </StrictMode>,
-  )
-  mark('render_called')
-  markFirstPaint()
+    createRoot(root).render(
+      <StrictMode>
+        <App i18n={i18n} {...(store ? { store } : {})} />
+      </StrictMode>,
+    )
+    mark('render_called')
+    markFirstPaint()
 
-  if (store) {
-    const applySavedLocale = (saved: Locale | undefined): void => {
-      // 用户已经手动切换过语言时不再覆盖。
-      if (saved === undefined || saved === i18n.resolvedLanguage) return
-      if (i18n.resolvedLanguage !== initial) return
-      void i18n.changeLanguage(saved)
+    if (store) {
+      const applySavedLocale = (saved: Locale | undefined): void => {
+        // 用户已经手动切换过语言时不再覆盖。
+        if (saved === undefined || saved === i18n.resolvedLanguage) return
+        if (i18n.resolvedLanguage !== initial) return
+        void switchLocale(i18n, saved)
+      }
+      void store
+        .getState()
+        .loadSettings()
+        .then((settings) => applySavedLocale(settings?.locale))
     }
-    void store
-      .getState()
-      .loadSettings()
-      .then((settings) => applySavedLocale(settings?.locale))
-  }
+  })
 }
