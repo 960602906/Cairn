@@ -310,6 +310,50 @@ describe('PlanProgress', () => {
     expect(within(card).getAllByRole('listitem')).toHaveLength(4)
   })
 
+  it('follows each item as it starts and finishes, keeping the list order', () => {
+    const stages: PlanView['steps'][] = [
+      [
+        { id: 'a', title: '读入口', status: 'in_progress' },
+        { id: 'b', title: '改实现', status: 'pending' },
+        { id: 'c', title: '跑测试', status: 'pending' },
+      ],
+      [
+        { id: 'a', title: '读入口', status: 'done' },
+        { id: 'b', title: '改实现', status: 'in_progress' },
+        { id: 'c', title: '跑测试', status: 'pending' },
+      ],
+      [
+        { id: 'a', title: '读入口', status: 'done' },
+        { id: 'b', title: '改实现', status: 'done' },
+        { id: 'c', title: '跑测试', status: 'in_progress' },
+      ],
+    ]
+    const statusText: Record<string, string> = {
+      pending: '未开始',
+      in_progress: '进行中',
+      done: '已完成',
+      skipped: '已跳过',
+    }
+    stages.forEach((steps, index) => {
+      const view = wrap(<PlanProgress plan={{ ...running, steps }} onOpen={() => {}} />)
+      const card = screen.getByRole('region', { name: '计划进度' })
+      // 行序就是计划顺序，不会因为进度变化重排。
+      const rows = within(card).getAllByRole('listitem')
+      rows.forEach((row, rowIndex) => {
+        expect(within(row).getByText(steps[rowIndex]!.title)).toBeTruthy()
+        expect(row.textContent).toContain(statusText[steps[rowIndex]!.status])
+      })
+      // 每次只有当前这一项在进行中，不是跳到最后一项。
+      expect(rows[index]!.textContent).toContain('进行中')
+      expect(rows.filter((row) => row.textContent?.includes('进行中'))).toHaveLength(1)
+      expect(within(card).getByText(`${index} / 3`)).toBeTruthy()
+      // 收起时标题行跟着当前步骤走。
+      fireEvent.click(within(card).getByRole('button', { name: '收起计划步骤' }))
+      expect(within(card).getByRole('button', { name: steps[index]!.title })).toBeTruthy()
+      view.unmount()
+    })
+  })
+
   it('shows a running badge and spinner only while the session is running', () => {
     const view = wrap(<PlanProgress plan={running} onOpen={() => {}} />)
     expect(screen.queryByText('执行中')).toBeNull()

@@ -14,6 +14,7 @@ import {
   buildSystemPrompt,
   createToolRegistry,
   decidePermission,
+  executionPlanInstructions,
   planModeGuard,
   planToolVisible,
   presetRules,
@@ -226,8 +227,33 @@ describe('plan text', () => {
     const approved = approvedPlanMessage(doc, doc)
     expect(approved).toContain('已批准此计划')
     expect(approved).toContain('update_plan_step')
+    expect(approved).toContain('不要留到最后一起更新')
     expect(approved).toContain('read')
     expect(approved).toContain(doc.markdown)
+  })
+
+  it('asks for progress step by step instead of batched at the end', () => {
+    const withList = executionPlanInstructions({
+      goal: '做点事',
+      listId: 'plan-pl1',
+      steps: [
+        { id: 'a', title: '第一步' },
+        { id: 'b', title: '第二步' },
+      ],
+    })
+    expect(withList).toContain('the user watches live')
+    expect(withList).toContain('update_task_item (listId "plan-pl1"')
+    expect(withList).toContain('Work one step at a time in the listed order')
+    expect(withList).toContain('never leave a step in_progress while you work on another')
+    expect(withList).toContain('never batch the updates at the end')
+
+    const legacy = executionPlanInstructions({
+      goal: '做点事',
+      steps: [{ id: 'a', title: '第一步' }],
+    })
+    expect(legacy).toContain('update_plan_step')
+    expect(legacy).toContain('Work one step at a time in the listed order')
+    expect(legacy).toContain('never batch the updates at the end')
   })
 
   it('rewrites edited step titles in the approval message', () => {

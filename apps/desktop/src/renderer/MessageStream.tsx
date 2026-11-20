@@ -227,7 +227,6 @@ interface TurnActivityGroupProps {
   readonly steps: readonly TurnActivityStep[]
   readonly view: SessionView
   readonly isRunning: boolean
-  readonly hasAwaitingApproval: boolean
   readonly awaiting: ReadonlySet<string>
   readonly resolvePaths?:
     ((paths: readonly string[]) => Promise<ReadonlyMap<string, string>>) | undefined
@@ -294,7 +293,7 @@ function liveHeadline({
   return undefined
 }
 
-/** 折叠后的组头：把这一组做过的事说成一句话，右侧带上总耗时。 */
+/** 折叠后的组头：只说最新一步在做什么，右侧带上总耗时。 */
 function summaryHeadline({
   calls,
   tools,
@@ -330,7 +329,6 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
   steps,
   view,
   isRunning,
-  hasAwaitingApproval,
   awaiting,
   resolvePaths,
   onOpenFile,
@@ -344,27 +342,42 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
     return summaryHeadline({ calls, tools: view.tools, isRunning, t })
   }, [calls, view.tools, awaiting, t, isRunning])
 
-  /** 失败、取消或等待审批时组保持展开，把出错的那一步露在外面；其余时候一律折叠。 */
-  const needsAttention =
-    hasAwaitingApproval ||
-    headline.tone === 'attention' ||
-    headline.tone === 'cancelled' ||
-    headline.tone === 'waiting'
-
-  const [open, setOpen] = useState(needsAttention)
-  const [manuallyOpened, setManuallyOpened] = useState(false)
-
-  // 状态变化时自动更新展开状态（如果用户没手动操作）
-  useEffect(() => {
-    if (!manuallyOpened) {
-      setOpen(needsAttention)
-    }
-  }, [needsAttention, manuallyOpened])
+  // 一律默认折叠，状态变化也不自动展开：只有用户点过组头才展开。
+  const [open, setOpen] = useState(false)
 
   const handleToggle = () => {
-    setManuallyOpened(true)
     setOpen(!open)
   }
+
+  const body = steps.map((step) => (
+    <Fragment key={step.key}>
+      {step.reasoning && <Reasoning text={step.reasoning} />}
+      {step.content && step.content.length > 0 && (
+        <div className="py-1">
+          <AssistantContent
+            parts={step.content}
+            resolvePaths={resolvePaths}
+            onOpenFile={onOpenFile}
+          />
+        </div>
+      )}
+      {step.toolCalls && step.toolCalls.length > 0 && (
+        <ToolTimeline>
+          {step.toolCalls.map((call) => (
+            <ToolStep
+              key={call.id}
+              name={call.name}
+              input={call.input}
+              tool={view.tools[call.id]}
+              live={view.liveToolOutput[call.id]}
+              awaitingApproval={awaiting.has(call.id)}
+              onOpenFile={onOpenFile}
+            />
+          ))}
+        </ToolTimeline>
+      )}
+    </Fragment>
+  ))
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="my-2 max-w-full">
@@ -380,37 +393,7 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
         />
       </CollapsibleTrigger>
       <CollapsibleContent forceMount aria-hidden={!open} className={cn(!open && 'hidden')}>
-        <div className="flex flex-col pt-0.5 pb-1">
-          {steps.map((step) => (
-            <Fragment key={step.key}>
-              {step.reasoning && <Reasoning text={step.reasoning} />}
-              {step.content && step.content.length > 0 && (
-                <div className="py-1">
-                  <AssistantContent
-                    parts={step.content}
-                    resolvePaths={resolvePaths}
-                    onOpenFile={onOpenFile}
-                  />
-                </div>
-              )}
-              {step.toolCalls && step.toolCalls.length > 0 && (
-                <ToolTimeline>
-                  {step.toolCalls.map((call) => (
-                    <ToolStep
-                      key={call.id}
-                      name={call.name}
-                      input={call.input}
-                      tool={view.tools[call.id]}
-                      live={view.liveToolOutput[call.id]}
-                      awaitingApproval={awaiting.has(call.id)}
-                      onOpenFile={onOpenFile}
-                    />
-                  ))}
-                </ToolTimeline>
-              )}
-            </Fragment>
-          ))}
-        </div>
+        <div className="flex flex-col pt-0.5 pb-1">{body}</div>
       </CollapsibleContent>
     </Collapsible>
   )
@@ -1602,10 +1585,6 @@ export function MessageStream({
             (rootRun(view)?.turn?.status === 'running' &&
               rootRun(view)?.turn?.turnId === item.turnId) ||
             Object.values(view?.live ?? {}).some((l) => l.turnId === item.turnId)
-          const hasAwaitingApproval = group.some((m) =>
-            m.toolCalls.some((c) => awaitingApprovalSet.has(c.id)),
-          )
-
           const compacted = markBetween(previous, firstMsg.seq, view.compaction)
           const omitted = markBetween(previous, firstMsg.seq, view.toolOutputOmitted)
           const marks = (compacted || omitted) && (
@@ -1676,7 +1655,6 @@ export function MessageStream({
                   steps={steps}
                   view={view}
                   isRunning={isTurnRunning}
-                  hasAwaitingApproval={hasAwaitingApproval}
                   awaiting={awaitingApprovalSet}
                   resolvePaths={resolvePaths}
                   onOpenFile={onOpenFile}

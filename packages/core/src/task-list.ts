@@ -360,7 +360,7 @@ function updateTaskItemTool(deps: TaskListToolDeps): ToolDefinition {
   return {
     name: UPDATE_TASK_ITEM_TOOL,
     description:
-      'Update one item of a task list. Use the listId and itemId from the task list section. A note explains a deviation and does not block the work.',
+      'Update one item of a task list. Use the listId and itemId from the task list section. Call it as you work: in_progress right before you start the item, done or skipped right after you finish it — one item at a time, in list order, never batched at the end. A note explains a deviation and does not block the work.',
     inputSchema: UPDATE_SCHEMA,
     category: 'read',
     source: { kind: 'builtin' },
@@ -411,7 +411,7 @@ function updatePlanStepTool(deps: TaskListToolDeps): ToolDefinition {
   return {
     name: UPDATE_PLAN_STEP_TOOL,
     description:
-      'Update one step of the approved plan. Use the step id. A note explains a deviation and does not block the work.',
+      'Update one step of the approved plan. Use the step id. Call it as you work: in_progress right before you start the step, done or skipped right after you finish it — one step at a time, in the approved order, never batched at the end. A note explains a deviation and does not block the work.',
     inputSchema: {
       type: 'object',
       properties: {

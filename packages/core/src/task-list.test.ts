@@ -101,6 +101,16 @@ const planList: ActiveTaskList = {
 }
 
 describe('task list tools', () => {
+  it('tells the model to report progress as it works instead of at the end', () => {
+    const h = harness()
+    for (const name of [UPDATE_TASK_ITEM_TOOL, UPDATE_PLAN_STEP_TOOL]) {
+      const description = h.registry.get(name)!.description
+      expect(description).toContain('in_progress right before you start')
+      expect(description).toContain('done or skipped right after you finish it')
+      expect(description).toContain('never batched at the end')
+    }
+  })
+
   it('creates an ad-hoc list with generated ids and pending items', async () => {
     const h = harness()
     const output = await h.run(CREATE_TASK_LIST_TOOL, {

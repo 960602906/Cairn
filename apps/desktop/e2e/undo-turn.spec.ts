@@ -54,12 +54,14 @@ test('消息流显示工具调用，撤销本轮恢复项目文件', async ({ la
 
     await createSession(window, dir, '写文件')
     await sendPrompt(window, '写一个文件')
+    // 分组默认折叠：等审批卡片出现后展开工具分组，步骤卡片才在可访问树里。
+    await expect(window.getByRole('button', { name: '允许一次' })).toBeVisible()
+    await expandToolGroup(window)
     const card = window.getByRole('region', { name: '调用工具：write_file' })
     await expect(card).toContainText('hello.txt')
     await window.getByRole('button', { name: '允许一次' }).click()
     await expect(window.getByText(REPLY)).toBeVisible()
     await expect(runStatus(window)).toHaveText('空闲')
-    await expandToolGroup(window)
     await expect(card).toContainText('完成')
     expect(readFileSync(created, 'utf8')).toBe('hi\n')
 

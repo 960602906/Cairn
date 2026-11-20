@@ -8,8 +8,9 @@
  *   `read_file` 展开后用代码卡片显示读到的内容。其他工具执行中显示实时输出的最后几行。
  * - 文件类工具（读 / 写 / 编辑）的对象就是路径，点它直接在右侧工作台打开；修改过的文件自动显示 diff。
  * - 状态文字总在（完成时只给读屏），供读屏与测试使用。
- * - 组头默认折叠，用一句话说清这一组做过什么（“读取 a.ts、运行 npm test”）并带上总耗时；
- *   只有失败、取消或等待审批时才展开并点明卡在哪一步。
+ * - 组头默认折叠，只说最新一步在做什么（“运行 npm test”）并带上总耗时；
+ *   失败、取消或等待审批时在组头点明卡在哪一步，但同样不自动展开。
+ * - `edit_file` 完成后在文件名后面显示增删行数（`+2 −1`）。
  *
  * 不使用 `<p>`：消息流的测试按段落读取消息正文。
  */
@@ -30,6 +31,7 @@ import {
 import { translateError, type TFunction } from '@cairn/i18n'
 import type { ContentPart, ToolCall } from '@cairn/protocol'
 import { CodeCard } from './CodeCard.js'
+import { ChangeCounts } from './DiffCard.js'
 import { FileTypeIcon } from './file-icons.js'
 import { formatDuration } from './format.js'
 import { languageForPath } from './languages.js'
@@ -326,11 +328,30 @@ export function describeToolCall(name: string, args: unknown, t: TFunction): Too
   return { action, object, plain: name === 'load_skill' || planTool }
 }
 
-/** 组头摘要最多列出几件事；其余用“等 N 步”带过。 */
-const SUMMARY_STEPS = 3
-
 /** 能点开文件预览的工具：参数里的 `path` 就是右侧要打开的文件。 */
 const FILE_TOOLS: ReadonlySet<string> = new Set(['read_file', 'write_file', 'edit_file'])
+
+/**
+ * `edit_file` 的结果里带着统一 diff：数出新增与删除的行，显示在文件名后面。
+ * 只看 hunk 内部，`---` / `+++` 这类文件头不算改动。
+ */
+export function diffLineCounts(
+  output: string,
+): { readonly added: number; readonly removed: number } | undefined {
+  let added = 0
+  let removed = 0
+  let inHunk = false
+  for (const line of output.split('\n')) {
+    if (line.startsWith('@@')) {
+      inHunk = true
+    } else if (inHunk && line.startsWith('+')) {
+      added += 1
+    } else if (inHunk && line.startsWith('-')) {
+      removed += 1
+    }
+  }
+  return inHunk ? { added, removed } : undefined
+}
 
 /** 这一步对应的文件路径；不是文件类工具时返回 undefined。 */
 export function filePathForTool(name: string, args: unknown): string | undefined {
@@ -341,26 +362,22 @@ export function filePathForTool(name: string, args: unknown): string | undefined
 }
 
 /**
- * 组头摘要：按顺序说出组里做过的事（最多三件），不用“执行中 / 已执行 N 个步骤”这类状态计数。
- * 组里只有思考时返回 undefined，由调用方补一句“思考过程”。
+ * 组头摘要：只说组里最新的一步在做什么，不罗列整组、也不补“等 N 项”。
+ * 最新一步没有可说的内容时往前找最近一步；组里只有思考时返回 undefined，由调用方补一句“思考过程”。
  */
 export function summarizeActivity(
   calls: readonly ToolCall[],
   tools: Readonly<Record<string, ToolCallView>>,
   t: TFunction,
 ): string | undefined {
-  if (calls.length === 0) return undefined
-  const shown = calls
-    .slice(0, SUMMARY_STEPS)
-    .map((call) => {
-      const { action, object } = describeToolCall(call.name, tools[call.id]?.input ?? call.input, t)
-      return action === '' ? object : `${action} ${object}`
-    })
-    .filter((text) => text !== '')
-  if (shown.length === 0) return undefined
-  const rest = calls.length - shown.length
-  const joined = shown.join(t('tool.group.summarySeparator'))
-  return rest > 0 ? `${joined} ${t('tool.group.summaryMore', { count: rest })}` : joined
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const call = calls[index]
+    if (call === undefined) continue
+    const { action, object } = describeToolCall(call.name, tools[call.id]?.input ?? call.input, t)
+    const text = action === '' ? object : `${action} ${object}`
+    if (text !== '') return text
+  }
+  return undefined
 }
 
 /** 组头右侧的耗时：组内各步耗时相加，没有耗时数据时不显示。 */
@@ -413,6 +430,9 @@ export function ToolStep({
   const { action, object, plain } = describeToolCall(name, args, t)
   /** 文件类工具的对象就是路径：点它直接在右侧工作台打开（修改过的文件自动显示 diff）。 */
   const filePath = filePathForTool(name, args)
+  /** 编辑完成后的增删行数，跟在文件名后面。 */
+  const changeStat =
+    name === 'edit_file' && status === 'completed' ? diffLineCounts(output) : undefined
   const statusText =
     awaitingApproval && status === 'requested'
       ? t('tool.awaitingApproval')
@@ -447,28 +467,31 @@ export function ToolStep({
           <span className="pointer-events-none shrink-0">
             {action !== '' && <>{running ? <Shimmer>{action}</Shimmer> : action} </>}
           </span>
-          {filePath !== undefined && onOpenFile !== undefined ? (
-            <button
-              type="button"
-              title={t('tool.openFile', { path: filePath })}
-              onClick={() => onOpenFile(filePath)}
-              className="relative z-10 flex w-fit min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-[4px] bg-sunk px-1 text-left font-mono text-[12px] text-fg2 outline-none hover:bg-press hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
-            >
-              <FileTypeIcon name={filePath} className="size-3" />
-              <span className="min-w-0 truncate">
+          <div className="pointer-events-none flex min-w-0 items-center gap-1.5">
+            {filePath !== undefined && onOpenFile !== undefined ? (
+              <button
+                type="button"
+                title={t('tool.openFile', { path: filePath })}
+                onClick={() => onOpenFile(filePath)}
+                className="pointer-events-auto relative z-10 flex w-fit min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-[4px] bg-sunk px-1 text-left font-mono text-[12px] text-fg2 outline-none hover:bg-press hover:text-fg focus-visible:ring-1 focus-visible:ring-accent"
+              >
+                <FileTypeIcon name={filePath} className="size-3" />
+                <span className="min-w-0 truncate">
+                  {running ? <Shimmer>{object}</Shimmer> : object}
+                </span>
+              </button>
+            ) : (
+              <code
+                className={cn(
+                  'pointer-events-none w-fit min-w-0 max-w-full truncate text-[12px] text-fg2',
+                  plain ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
+                )}
+              >
                 {running ? <Shimmer>{object}</Shimmer> : object}
-              </span>
-            </button>
-          ) : (
-            <code
-              className={cn(
-                'pointer-events-none w-fit min-w-0 max-w-full truncate text-[12px] text-fg2',
-                plain ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
-              )}
-            >
-              {running ? <Shimmer>{object}</Shimmer> : object}
-            </code>
-          )}
+              </code>
+            )}
+            {changeStat && <ChangeCounts added={changeStat.added} removed={changeStat.removed} />}
+          </div>
           <span
             className={cn(
               'pointer-events-none tabular shrink-0 text-note',
@@ -596,7 +619,7 @@ export function ActivityGroupHeaderContent({
       </code>
     )
   const label = (
-    <span className={cn('shrink-0 truncate', headline.tone === 'attention' && 'text-danger')}>
+    <span className={cn('min-w-0 truncate', headline.tone === 'attention' && 'text-danger')}>
       {shimmer ? <Shimmer>{headline.label}</Shimmer> : headline.label}
     </span>
   )
@@ -650,8 +673,8 @@ export function ToolTimeline({
 }) {
   const { t } = useTranslation('session')
   const [openState, setOpenState] = useState<boolean>()
-  // 默认折叠：只有需要留意（失败、取消、等待审批）时展开，把出问题的步骤露出来。
-  const open = openState ?? attention
+  // 一律默认折叠，状态变化也不自动展开：只有用户点过组头才展开。
+  const open = openState ?? false
   // 嵌在归组里时不留外边距：每一步 28px，行与行无缝接上（间距由归组容器负责）。
   const steps = <ol className={cn('flex flex-col', count !== undefined && 'mt-0.5')}>{children}</ol>
   if (count === undefined) return steps
