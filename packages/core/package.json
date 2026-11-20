@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "sideEffects": false,
   "dependencies": {
     "@cairn/protocol": "workspace:*",
     "zod": "4.6.6"

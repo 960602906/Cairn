@@ -9,7 +9,8 @@
  */
 import type { z } from 'zod'
 import type { ErrorInfo } from './common.js'
-import { RpcError, RpcErrorCode, type RequestOptions, type RpcEndpoint, type Side } from './rpc.js'
+import { RpcError, RpcErrorCode } from './errors.js'
+import type { RequestOptions, RpcEndpoint, Side } from './rpc.js'
 
 export type BridgeResult =
   | { readonly ok: true; readonly result: unknown }

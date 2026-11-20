@@ -51,7 +51,8 @@ const NODE_BUILTINS = builtinModules.filter((m) => !m.startsWith('_'))
  */
 function restrictedImports(pkg, extra = {}) {
   const allowed = ALLOWED_CAIRN_DEPS[/** @type {keyof typeof ALLOWED_CAIRN_DEPS} */ (pkg)] ?? []
-  const cairnRegex = allowed.length ? `^@cairn/(?!(${allowed.join('|')})$)` : '^@cairn/'
+  // 允许子路径入口（如 `@cairn/protocol/runtime`）：包名之后是 `/` 或结束都算同一依赖。
+  const cairnRegex = allowed.length ? `^@cairn/(?!(${allowed.join('|')})(/|$))` : '^@cairn/'
   /** @type {{ regex: string, message: string }[]} */
   const patterns = [
     {

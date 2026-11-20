@@ -10,34 +10,12 @@
  */
 import { z } from 'zod'
 import { ErrorInfo, Id } from './common.js'
+import { RpcError, RpcErrorCode } from './errors.js'
+
+export { RpcError, RpcErrorCode } from './errors.js'
 
 /** IPC 协议版本。消息定义出现不兼容变化时提升。 */
 export const PROTOCOL_VERSION = 1
-
-export const RpcErrorCode = {
-  Timeout: 'rpc.timeout',
-  InvalidParams: 'rpc.invalid_params',
-  InvalidResult: 'rpc.invalid_result',
-  MethodNotFound: 'rpc.method_not_found',
-  Internal: 'rpc.internal',
-  ProtocolMismatch: 'rpc.protocol_mismatch',
-  Closed: 'rpc.closed',
-} as const
-
-/** 带错误码的错误。处理函数抛出它时，错误码与参数原样返回给调用方。 */
-export class RpcError extends Error {
-  constructor(
-    readonly code: string,
-    readonly params?: ErrorInfo['params'],
-  ) {
-    super(code)
-    this.name = 'RpcError'
-  }
-
-  toInfo(): ErrorInfo {
-    return this.params ? { code: this.code, params: this.params } : { code: this.code }
-  }
-}
 
 // ---------- 消息定义 ----------
 

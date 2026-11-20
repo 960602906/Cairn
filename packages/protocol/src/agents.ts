@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { Id, ModelRef, RunLimits } from './common.js'
 import { DelegationPolicy } from './delegation.js'
 import { PermissionMode, PermissionRule, ToolCategory } from './permissions.js'
+import { AGENT_INSTRUCTIONS_MAX_CHARS } from './limits.js'
 
 /** 名称与描述，至少一种语言。显示时回退到另一种。 */
 export const LocalizedText = z
@@ -106,8 +107,7 @@ export const AgentPathPolicy = z
   .strict()
 export type AgentPathPolicy = z.infer<typeof AgentPathPolicy>
 
-/** 指令长度上限：超过会挤占上下文，保存时报错。 */
-export const AGENT_INSTRUCTIONS_MAX_CHARS = 64_000
+export { AGENT_INSTRUCTIONS_MAX_CHARS } from './limits.js'
 
 const draftFields = {
   name: LocalizedText,

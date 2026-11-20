@@ -77,10 +77,5 @@ export const ActiveTaskList = z.object({
 })
 export type ActiveTaskList = z.infer<typeof ActiveTaskList>
 
-/**
- * 计划关联列表的确定性 id（计划批准时使用）。
- * 旧会话没有 `tasklist.created`，投影据此合成同一份列表供进度卡显示。
- */
-export function taskListIdForPlan(planId: string): string {
-  return `plan-${planId}`
-}
+/** 计划关联列表的确定性 id：旧会话没有 `tasklist.created`，投影据此合成同一份列表供进度卡显示。 */
+export { taskListIdForPlan } from './task-list-id.js'

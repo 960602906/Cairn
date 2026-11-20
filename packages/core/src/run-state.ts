@@ -5,10 +5,14 @@
  * 每次成功转换后发出 `run.state.changed` 事件。非法转换返回错误而不抛出，
  * 调用方记录日志并忽略，运行不会进入未定义状态（Runtime §5.2）。
  */
-import { RunState, type ErrorInfo } from '@cairn/protocol'
+import type { ErrorInfo, RunState } from '@cairn/protocol'
+import { RUN_STATES } from '@cairn/protocol/runtime'
 
-/** 全部运行状态，顺序与 protocol 中的定义一致。 */
-export const RUN_STATES: readonly RunState[] = RunState.options
+/**
+ * 全部运行状态，顺序与 protocol 中的定义一致。取自轻量入口而不是 `RunState.options`：
+ * 这里只是列表，读 schema 会把 zod 带进渲染进程首包。
+ */
+export { RUN_STATES }
 
 /**
  * 运行中状态：一轮正在进行，可被用户停止、因错误失败或因进程退出中断。

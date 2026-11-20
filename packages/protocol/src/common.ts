@@ -6,6 +6,9 @@
  * 只能向后兼容地追加字段（架构 §7.3）。
  */
 import { z } from 'zod'
+import { RUN_STATES } from './run-states.js'
+
+export { RUN_STATES } from './run-states.js'
 
 export const Id = z.string().min(1)
 
@@ -46,7 +49,7 @@ export type AgentDraftRef = z.infer<typeof AgentDraftRef>
 export const RunAgentRef = z.union([AgentDefinitionRef, AgentDraftRef])
 export type RunAgentRef = z.infer<typeof RunAgentRef>
 
-export const isAgentDraftRef = (agent: RunAgentRef): agent is AgentDraftRef => 'draftHash' in agent
+export { isAgentDraftRef } from './agent-ref.js'
 
 /** 消息内容片段（Runtime §17）。图片为预留。 */
 export const ContentPart = z.discriminatedUnion('type', [
@@ -135,19 +138,8 @@ export const TokenUsage = z.object({
 })
 export type TokenUsage = z.infer<typeof TokenUsage>
 
-/** 运行状态（Runtime §5.1）。 */
-export const RunState = z.enum([
-  'idle',
-  'thinking',
-  'tooling',
-  'awaiting_approval',
-  'awaiting_children',
-  'completed',
-  'aborting',
-  'failed',
-  'interrupted',
-  'disposed',
-])
+/** 运行状态（Runtime §5.1）。取值在 `run-states.ts`，界面与状态机从轻量入口读取。 */
+export const RunState = z.enum(RUN_STATES)
 export type RunState = z.infer<typeof RunState>
 
 /** 运行模式（ADR-0018）。 */
