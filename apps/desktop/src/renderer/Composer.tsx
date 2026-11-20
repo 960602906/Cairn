@@ -35,6 +35,7 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type SetStateAction,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { RunView, SessionView } from '@cairn/core'
@@ -50,6 +51,7 @@ import type {
 } from '@cairn/protocol'
 import { matchCommandArg, parseComposerCommand, SETTINGS_SECTIONS } from './composer-commands.js'
 import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
+import { readComposerDraft, sessionDraftKey, writeComposerDraft } from './composer-drafts.js'
 import {
   availableCommands,
   commandPanel,
@@ -561,7 +563,30 @@ export function Composer({
   const [restoreTarget, setRestoreTarget] = useState<RestoreTarget>()
   const fixedAgentModel =
     agent !== undefined && agents.find((item) => item.agentId === agent.id)?.modelMode === 'fixed'
-  const [text, setText] = useState('')
+  /** 组件按会话重建（ChatPanel 用 sessionId 作 key），草稿从这里恢复。 */
+  const draftKey = sessionDraftKey(sessionId)
+  const [savedDraft] = useState(() => readComposerDraft(draftKey))
+  const [text, setTextState] = useState(savedDraft.text)
+  const [planMode, setPlanModeState] = useState(savedDraft.planMode)
+  /**
+   * 草稿在 setter 里同步写入，而不是等 effect：`/settings` 等指令会立刻切走页面，
+   * 组件在 effect 之前就卸载了，晚一步写会把已经清空的输入框又留成旧草稿。
+   */
+  const draftState = useRef({ text, planMode })
+  const writeDraft = (next: { text: string; planMode: boolean }) => {
+    draftState.current = next
+    writeComposerDraft(draftKey, next)
+  }
+  const setText = (next: SetStateAction<string>) => {
+    const value = typeof next === 'function' ? next(draftState.current.text) : next
+    writeDraft({ text: value, planMode: draftState.current.planMode })
+    setTextState(value)
+  }
+  const setPlanMode = (next: SetStateAction<boolean>) => {
+    const value = typeof next === 'function' ? next(draftState.current.planMode) : next
+    writeDraft({ text: draftState.current.text, planMode: value })
+    setPlanModeState(value)
+  }
   const promptHistory = useRef<string[]>([])
   const historyIndex = useRef<number>(-1)
   const draftBeforeHistory = useRef<string>('')
@@ -575,7 +600,6 @@ export function Composer({
     if (promptHistory.current.length > 50) promptHistory.current.pop()
     historyIndex.current = -1
   }
-  const [planMode, setPlanMode] = useState(false)
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)

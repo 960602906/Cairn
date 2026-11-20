@@ -2479,6 +2479,25 @@ describe('Composer (M2-04)', () => {
     expect(pressed()).toBe('false')
   })
 
+  it('keeps the draft and plan mode when the composer remounts', async () => {
+    const { store, open } = setup({
+      history: withModel,
+      handlers: { 'settings.get': () => ({ providers }) },
+    })
+    await open()
+    await userEvent.type(input(), '这段还没发出')
+    fireEvent.keyDown(document.body, { key: 'P', ctrlKey: true, shiftKey: true })
+    expect(planOn()).toBe(true)
+
+    // 打开设置再回来时会话页整体重新挂载，输入框是新的组件实例。
+    cleanup()
+    render(<App i18n={createI18n('zh-CN')} store={store} />)
+    await open()
+
+    expect(input().value).toBe('这段还没发出')
+    expect(planOn()).toBe(true)
+  })
+
   it('uses warning and danger context tones and falls back to the model id', async () => {
     const unnamed = [
       {

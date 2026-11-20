@@ -7,7 +7,15 @@
  * 指令面板、高亮层、拖入文件引用；区别只是会话还不存在，所以只有 `/plan` 和技能出现在面板里。
  */
 import { ArrowUp } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ModelRef, SkillSummary } from '@cairn/protocol'
 import {
@@ -19,6 +27,16 @@ import {
   PlanModeChip,
 } from './Composer.js'
 import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
+import {
+  clearComposerDraft,
+  NEW_SESSION_DRAFT_KEY,
+  readComposerDraft,
+  readNewSessionModel,
+  readNewSessionProject,
+  writeComposerDraft,
+  writeNewSessionModel,
+  writeNewSessionProject,
+} from './composer-drafts.js'
 import { ComposerHighlight } from './ComposerHighlight.js'
 import {
   availableCommands,
@@ -100,11 +118,23 @@ export function NewSession({
   const providers = useSessionStore((s) => s.settings?.providers) ?? []
   const defaultModel = useSessionStore((s) => s.settings?.defaultModel)
   const hasModel = enabledModelChoices(providers).length > 0
-  const [projectPath, setProjectPath] = useState(initialProjectPath ?? projects[0]?.path ?? '')
-  const [selectedModel, setSelectedModel] = useState<ModelRef | undefined>()
+  /**
+   * 进入页面时恢复上次的状态：显式指定的工作空间优先，其次是上次用过的，最后是项目列表里
+   * 第一个；模型按工作空间分别记住，草稿与计划模式整页共用。
+   */
+  const [restored] = useState(() => {
+    const path = initialProjectPath ?? readNewSessionProject() ?? projects[0]?.path ?? ''
+    return {
+      path,
+      model: readNewSessionModel(path),
+      draft: readComposerDraft(NEW_SESSION_DRAFT_KEY),
+    }
+  })
+  const [projectPath, setProjectPath] = useState(restored.path)
+  const [selectedModel, setSelectedModel] = useState<ModelRef | undefined>(restored.model)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
-  const [planMode, setPlanMode] = useState(false)
-  const [text, setText] = useState('')
+  const [planMode, setPlanMode] = useState(restored.draft.planMode)
+  const [text, setText] = useState(restored.draft.text)
   const [busy, setBusy] = useState(false)
   const [skills, setSkills] = useState<readonly SkillSummary[]>([])
   const [commandIndex, setCommandIndex] = useState(0)
@@ -157,7 +187,8 @@ export function NewSession({
     disabled: busy,
   })
   const period = useGreetingPeriod()
-  const model = selectedModel ?? resolveDefaultModel(providers, defaultModel)
+  // 上次选的模型可能已被停用：校验不通过时退回设置里的默认模型（或第一个可用模型）。
+  const model = resolveDefaultModel(providers, selectedModel ?? defaultModel)
   /** 欢迎页的建议提示词。 */
   const suggestions = [1, 2, 3].map((index) => t(`new.suggestion.${index}`))
 
@@ -206,15 +237,28 @@ export function NewSession({
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
   }, [text])
 
-  useEffect(() => {
-    if (initialProjectPath !== undefined) setProjectPath(initialProjectPath)
-  }, [initialProjectPath])
+  /** 切换工作空间：模型也换成那个工作空间上次选的，并记住这次的选择。 */
+  const changeProject = useCallback((path: string) => {
+    setProjectPath(path)
+    setSelectedModel(readNewSessionModel(path))
+    writeNewSessionProject(path)
+  }, [])
 
-  // 项目列表比页面晚到时补上默认目录；已经选中的内容不覆盖。
   useEffect(() => {
-    if (initialProjectPath !== undefined) return
-    setProjectPath((current) => (current === '' ? (projects[0]?.path ?? '') : current))
-  }, [initialProjectPath, projects])
+    if (initialProjectPath !== undefined) changeProject(initialProjectPath)
+  }, [initialProjectPath, changeProject])
+
+  // 项目列表比页面晚到时补上默认目录；上次用过的目录已不在列表里时也退回第一个。
+  useEffect(() => {
+    if (initialProjectPath !== undefined || projects.length === 0) return
+    if (projectPath !== '' && projects.some((project) => project.path === projectPath)) return
+    changeProject(projects[0]!.path)
+  }, [changeProject, initialProjectPath, projects, projectPath])
+
+  // 草稿与计划模式随输入实时记下：去设置页再回来时输入框是重新挂载的，据此恢复。
+  useEffect(() => {
+    writeComposerDraft(NEW_SESSION_DRAFT_KEY, { text, planMode })
+  }, [text, planMode])
 
   useEffect(() => {
     setCommandIndex(0)
@@ -236,7 +280,7 @@ export function NewSession({
 
   const chooseFolder = async () => {
     const project = await openProject()
-    if (project) setProjectPath(project.path)
+    if (project) changeProject(project.path)
   }
 
   /** 把拖进来的文件插到光标处，等同于选中一个 `@` 候选。 */
@@ -274,6 +318,10 @@ export function NewSession({
       agentNames: agentMentions.map((item) => item.name),
       skills: [...parsed.skills],
     })
+    // 这条草稿已经发出去了：清掉，免得下次回到新对话页又出现一遍。
+    setText('')
+    setPlanMode(false)
+    clearComposerDraft(NEW_SESSION_DRAFT_KEY)
     setBusy(false)
     onCreatingChange?.(false)
     onDone()
@@ -419,7 +467,7 @@ export function NewSession({
         <WorkspaceGitBar
           projectPath={projectPath === '' ? undefined : projectPath}
           projects={projects}
-          onSelectProject={setProjectPath}
+          onSelectProject={changeProject}
           onOpenFolder={() => void chooseFolder()}
         />
         <div ref={box} className="relative">
@@ -502,7 +550,10 @@ export function NewSession({
                   disabled={!hasModel}
                   open={modelMenuOpen}
                   onOpenChange={setModelMenuOpen}
-                  onSelect={setSelectedModel}
+                  onSelect={(next) => {
+                    setSelectedModel(next)
+                    writeNewSessionModel(projectPath.trim(), next)
+                  }}
                 />
                 <button
                   type="button"
