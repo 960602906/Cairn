@@ -1171,7 +1171,6 @@ describe('updates (M5-07)', () => {
     phase: 'idle' as const,
     currentVersion: '0.1.0',
     channel: 'beta' as const,
-    channelPinned: false,
     enabled: true,
     autoCheck: true,
     signatureVerified: false,

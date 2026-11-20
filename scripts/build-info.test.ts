@@ -4,10 +4,12 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   BUILD_INFO_SCHEMA_VERSION,
+  RELEASE_NOTES_MAX_LENGTH,
   collectBuildInfo,
   main,
   readElectronVersion,
   readGitCommit,
+  readReleaseNotes,
   resolveChannel,
   resolveUpdateConfig,
   writeBuildInfo,
@@ -61,6 +63,59 @@ describe('build channel and commit resolution', () => {
 
   it('returns an empty Electron version when it cannot be resolved', () => {
     expect(readElectronVersion(workspace())).toBe('')
+  })
+})
+
+describe('release notes', () => {
+  it('extracts the current version section and omits missing sections', () => {
+    const root = workspace('0.1.4')
+    writeFileSync(
+      path.join(root, 'CHANGELOG.md'),
+      '# Changelog\n\n## [0.1.4] - 2026-11-19\n\n### Added\n\n- thing\n\n## [0.1.3]\n\n- old\n',
+    )
+    expect(readReleaseNotes(root, '0.1.4')).toBe('### Added\n\n- thing')
+    expect(readReleaseNotes(root, '9.9.9')).toBeUndefined()
+  })
+
+  it('returns undefined when the changelog is missing', () => {
+    expect(readReleaseNotes(workspace('0.1.0'), '0.1.0')).toBeUndefined()
+  })
+
+  it('truncates oversized sections to the protocol limit', () => {
+    const root = workspace('0.1.4')
+    const longNotes = 'x'.repeat(RELEASE_NOTES_MAX_LENGTH + 100)
+    writeFileSync(path.join(root, 'CHANGELOG.md'), `## [0.1.4]\n\n${longNotes}\n`)
+    const notes = readReleaseNotes(root, '0.1.4')
+    expect(notes).toBeDefined()
+    expect(notes!.length).toBe(RELEASE_NOTES_MAX_LENGTH)
+    expect(notes!.endsWith('…')).toBe(true)
+  })
+
+  it('passes release notes through build info and build-info.json', () => {
+    const root = workspace('0.1.0')
+    writeFileSync(path.join(root, 'CHANGELOG.md'), '## [0.1.0]\n\n- first\n')
+    expect(
+      collectBuildInfo({
+        root,
+        commit: 'abcdef1',
+        now: new Date('2026-11-10T00:00:00.000Z'),
+        electronVersion: '',
+        nodeVersion: 'v24.11.0',
+        releaseNotes: '- first',
+      }).releaseNotes,
+    ).toBe('- first')
+
+    const outDir = path.join(root, 'apps/desktop/out')
+    const info = writeBuildInfo({
+      root,
+      outDir,
+      env: { GITHUB_SHA: 'abcdef1234567890' },
+      now: new Date('2026-11-10T00:00:00.000Z'),
+    })
+    expect(info.releaseNotes).toBe('- first')
+    expect(JSON.parse(readFileSync(path.join(outDir, 'build-info.json'), 'utf8'))).toMatchObject({
+      releaseNotes: '- first',
+    })
   })
 })
 

@@ -215,7 +215,6 @@ describe('DiagnosticsService zip generation and export', () => {
       phase: 'downloaded' as const,
       currentVersion: '0.1.0',
       channel: 'beta' as const,
-      channelPinned: false,
       enabled: true,
       autoCheck: true,
       source: 'https://updates.example/cairn/',

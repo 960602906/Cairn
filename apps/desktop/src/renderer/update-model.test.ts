@@ -7,6 +7,7 @@ import {
   installBlocked,
   noticeKey,
   noticeKind,
+  primaryAction,
   progressPercent,
 } from './update-model.js'
 
@@ -15,7 +16,6 @@ function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
     phase: 'idle',
     currentVersion: '0.1.0',
     channel: 'beta',
-    channelPinned: false,
     enabled: true,
     autoCheck: true,
     signatureVerified: false,
@@ -87,6 +87,22 @@ describe('installBlocked', () => {
       installBlocked(status({ phase: 'downloaded', blockedReason: 'update.busy' }), false),
     ).toBe(true)
     expect(installBlocked(status({ phase: 'downloaded' }), true)).toBe(true)
+  })
+})
+
+describe('primaryAction', () => {
+  it('maps each phase to a single primary action', () => {
+    expect(primaryAction(status({ phase: 'idle' }))).toBe('check')
+    expect(primaryAction(status({ phase: 'up_to_date' }))).toBe('recheck')
+    expect(primaryAction(status({ phase: 'skipped' }))).toBe('recheck')
+    expect(primaryAction(status({ phase: 'error' }))).toBe('retry')
+    expect(primaryAction(status({ phase: 'available' }))).toBe('download')
+    expect(primaryAction(status({ phase: 'checking' }))).toBe('checking')
+    expect(primaryAction(status({ phase: 'downloading' }))).toBe('downloading')
+    expect(primaryAction(status({ phase: 'verifying' }))).toBe('verifying')
+    expect(primaryAction(status({ phase: 'downloaded' }))).toBe('install')
+    expect(primaryAction(status({ phase: 'installing' }))).toBe('installing')
+    expect(primaryAction(status({ phase: 'disabled' }))).toBe('none')
   })
 })
 

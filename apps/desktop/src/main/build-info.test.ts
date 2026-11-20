@@ -189,6 +189,27 @@ describe('build info parsing', () => {
     })
   })
 
+  it('exposes release notes baked into the build', () => {
+    const info = readAppInfo({
+      file: 'build-info.json',
+      runtime,
+      readFile: () => buildFile({ releaseNotes: '### Added\n\n- a feature' }),
+    })
+    expect(info.releaseNotes).toBe('### Added\n\n- a feature')
+  })
+
+  it('drops release notes that exceed the protocol limit', () => {
+    const onError = vi.fn()
+    const info = readAppInfo({
+      file: 'build-info.json',
+      runtime,
+      readFile: () => buildFile({ releaseNotes: 'x'.repeat(20_001) }),
+      onError,
+    })
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(info.releaseNotes).toBeUndefined()
+  })
+
   it('drops an invalid update configuration without leaking it', () => {
     for (const update of [
       { source: 'http://updates.example/cairn/' },

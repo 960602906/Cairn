@@ -19,7 +19,6 @@ function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
     phase: 'idle',
     currentVersion: '0.1.0',
     channel: 'beta',
-    channelPinned: false,
     enabled: true,
     autoCheck: true,
     signatureVerified: false,

@@ -97,7 +97,6 @@ export interface UpdateBusyState {
 export interface UpdateSettings {
   get(): {
     readonly updateAutoCheck?: boolean | undefined
-    readonly updateChannel?: UpdateChannel | undefined
     readonly updateLastCheckedAt?: number | undefined
     readonly updateSkippedVersion?: string | undefined
   }
@@ -145,8 +144,8 @@ export interface UpdateService {
   download(): Promise<UpdateStatus>
   install(): Promise<UpdateStatus>
   cancel(): Promise<UpdateStatus>
-  /** 设置变化后重新读取通道与自动检查开关。 */
-  applySettings(patch?: SettingsPatch): UpdateStatus
+  /** 设置变化后重新读取自动检查开关并刷新状态。 */
+  applySettings(): UpdateStatus
   subscribe(listener: (status: UpdateStatus) => void): () => void
   start(): void
   stop(): void
@@ -173,8 +172,6 @@ interface InternalState {
   stagingPercentage?: number | undefined
   lastCheckedAt?: number | undefined
 }
-
-const SUPPORTED_CHANNELS: readonly UpdateChannel[] = ['stable', 'beta']
 
 const VERSION_PATTERN = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
 
@@ -501,7 +498,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
   let checkPromise: Promise<UpdateStatus> | undefined
   let downloadPromise: Promise<UpdateStatus> | undefined
   let downloadGeneration = 0
-  let activeChannel: UpdateChannel | undefined
   let downloadedFiles: string[] = []
   let checkInfo: UpdateInfoLike | undefined
   let cancelToken: (() => void) | undefined
@@ -515,7 +511,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
 
   const envDisabled = env['CAIRN_UPDATE_DISABLE'] === '1'
   const allowDevelopment = options.allowDevelopment === true
-  const pinnedChannel = env['CAIRN_UPDATE_CHANNEL']
 
   const configuration = (): Configuration => {
     const settings = options.settings.get()
@@ -524,14 +519,14 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       return {
         enabled: false,
         disabledReason: 'update.disabled_by_env',
-        channel: 'stable',
+        channel: options.buildChannel,
         autoCheck,
       }
     if (platform !== 'win32') {
       return {
         enabled: false,
         disabledReason: 'update.platform_unsupported',
-        channel: 'stable',
+        channel: options.buildChannel,
         autoCheck,
       }
     }
@@ -539,24 +534,12 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       return {
         enabled: false,
         disabledReason: 'update.not_packaged',
-        channel: 'stable',
+        channel: options.buildChannel,
         autoCheck,
       }
     }
-    let channel: UpdateChannel
-    if (pinnedChannel !== undefined) {
-      if (!SUPPORTED_CHANNELS.includes(pinnedChannel as UpdateChannel)) {
-        return {
-          enabled: false,
-          disabledReason: 'update.channel_invalid',
-          channel: 'stable',
-          autoCheck,
-        }
-      }
-      channel = pinnedChannel as UpdateChannel
-    } else {
-      channel = settings.updateChannel ?? options.buildChannel
-    }
+    // 用户界面不再提供通道选择；更新源始终由构建通道决定。
+    const channel = options.buildChannel
     const source = normalizeSource(options.sourceUrl ?? env['CAIRN_UPDATE_URL'])
     if (!source.ok) {
       return { enabled: false, disabledReason: source.reason, channel, autoCheck }
@@ -602,7 +585,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       phase,
       currentVersion: options.currentVersion,
       channel: config.channel,
-      channelPinned: pinnedChannel !== undefined,
       enabled: config.enabled,
       autoCheck: config.autoCheck,
       ...(config.source ? { source: config.source.url } : {}),
@@ -740,7 +722,6 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
         return snapshot()
       }
       const adapter = await updater()
-      activeChannel = config.channel
       await adapter.configure({
         source: config.source!,
         channel: config.channel,
@@ -961,6 +942,12 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
     }
     state.backupPath = backup.path
     emit()
+    // 重启后的“更新内容”弹窗据此判断本次启动是否是刚安装的版本；写失败不影响安装。
+    try {
+      options.settings.update({ updateInstalledVersion: state.availableVersion })
+    } catch (error) {
+      options.onError?.(error)
+    }
     try {
       const adapter = await updater()
       adapter.quitAndInstall()
@@ -970,15 +957,8 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
     }
   }
 
-  const applySettings = (patch?: SettingsPatch): UpdateStatus => {
+  const applySettings = (): UpdateStatus => {
     const next = configuration()
-    if (patch?.updateChannel !== undefined || pinnedChannel !== undefined) {
-      if (activeChannel !== undefined && activeChannel !== next.channel) {
-        resetAvailable(true)
-        emit()
-      }
-    }
-    activeChannel = next.channel
     if (state.availableVersion && (state.phase === 'available' || state.phase === 'skipped')) {
       const skipped = options.settings.get().updateSkippedVersion
       state.phase = skipped === state.availableVersion ? 'skipped' : 'available'

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SettingsPatch, UpdateChannel } from '@cairn/protocol'
+import type { SettingsPatch } from '@cairn/protocol'
 import {
   AUTO_CHECK_INITIAL_MS,
   AUTO_CHECK_INTERVAL_MS,
@@ -90,12 +90,14 @@ interface HarnessOptions {
   readonly sourceUrl?: string
   /** 让配置在运行时读取 `CAIRN_UPDATE_URL`，便于测试环境变化。 */
   readonly sourceFromEnv?: boolean
+  /** 构建通道；默认 beta，用户界面不再提供通道设置。 */
+  readonly channel?: 'stable' | 'beta'
   readonly publisherName?: string
   readonly settings?: {
     updateAutoCheck?: boolean
-    updateChannel?: UpdateChannel
     updateLastCheckedAt?: number
     updateSkippedVersion?: string
+    updateInstalledVersion?: string
   }
   readonly busy?: Partial<UpdateBusyState>
   readonly free?: number | undefined
@@ -128,9 +130,9 @@ function setup(options: HarnessOptions = {}) {
 
   const settingsState: {
     updateAutoCheck?: boolean
-    updateChannel?: UpdateChannel
     updateLastCheckedAt?: number
     updateSkippedVersion?: string | undefined
+    updateInstalledVersion?: string | undefined
   } = { ...options.settings }
   const settings = {
     get: vi.fn(() => ({ ...settingsState })),
@@ -138,9 +140,11 @@ function setup(options: HarnessOptions = {}) {
       if (patch.updateLastCheckedAt !== undefined) {
         settingsState.updateLastCheckedAt = patch.updateLastCheckedAt
       }
-      if (patch.updateChannel !== undefined) settingsState.updateChannel = patch.updateChannel
       if (patch.updateSkippedVersion !== undefined) {
         settingsState.updateSkippedVersion = patch.updateSkippedVersion ?? undefined
+      }
+      if (patch.updateInstalledVersion !== undefined) {
+        settingsState.updateInstalledVersion = patch.updateInstalledVersion ?? undefined
       }
       return settingsState
     }),
@@ -152,7 +156,7 @@ function setup(options: HarnessOptions = {}) {
   let time = 1_000
   const service = createUpdateService({
     currentVersion: '0.1.0',
-    buildChannel: 'beta',
+    buildChannel: options.channel ?? 'beta',
     packaged: options.packaged ?? true,
     platform: options.platform ?? 'win32',
     env: options.env ?? {},
@@ -335,41 +339,30 @@ describe('createUpdateService: configuration', () => {
     }
   })
 
-  it('validates the channel and requires a publisher DN for stable', () => {
-    expect(setup({ env: { CAIRN_UPDATE_CHANNEL: 'nightly' } }).service.status()).toMatchObject({
-      enabled: false,
-      disabledReason: 'update.channel_invalid',
-    })
-    expect(setup({ settings: { updateChannel: 'stable' } }).service.status()).toMatchObject({
+  it('requires a publisher DN for stable builds', () => {
+    expect(setup({ channel: 'stable' }).service.status()).toMatchObject({
       enabled: false,
       disabledReason: 'update.publisher_missing',
     })
     expect(
       setup({
-        settings: { updateChannel: 'stable' },
+        channel: 'stable',
         publisherName: 'CN=Cairn, O=Cairn',
       }).service.status(),
     ).toMatchObject({ enabled: true, channel: 'stable' })
   })
 
-  it('normalizes the source and respects a pinned environment channel', () => {
+  it('normalizes the source and uses the build channel', () => {
     const { service } = setup({
       sourceUrl: 'https://updates.example/cairn',
-      env: { CAIRN_UPDATE_CHANNEL: 'beta' },
-      settings: { updateChannel: 'stable' },
+      channel: 'beta',
     })
     expect(service.status()).toMatchObject({
       enabled: true,
       channel: 'beta',
-      channelPinned: true,
       source: 'https://updates.example/cairn/',
       autoCheck: true,
     })
-  })
-
-  it('marks the channel as not pinned when settings choose it', () => {
-    const { service } = setup({ settings: { updateChannel: 'beta' } })
-    expect(service.status()).toMatchObject({ channel: 'beta', channelPinned: false })
   })
 
   it('reads the source from the environment and keeps the persisted check time', () => {
@@ -544,7 +537,7 @@ describe('createUpdateService: checking', () => {
   it('ignores checks while verifying or installing', async () => {
     let resolveSignature: ((value: string | null) => void) | undefined
     const verifying = setup({
-      settings: { updateChannel: 'stable' },
+      channel: 'stable',
       publisherName: 'CN=Cairn',
       verifier: () =>
         new Promise<string | null>((resolve) => {
@@ -620,7 +613,7 @@ describe('createUpdateService: downloading', () => {
   it('verifies Authenticode when a publisher is configured', async () => {
     const verifier = vi.fn(async () => null)
     const { service, updater, root } = setup({
-      settings: { updateChannel: 'stable' },
+      channel: 'stable',
       publisherName: 'CN=Cairn, O=Cairn',
       verifier,
     })
@@ -638,7 +631,7 @@ describe('createUpdateService: downloading', () => {
 
   it('deletes the package and fails closed on a bad signature', async () => {
     const { service, updater, root } = setup({
-      settings: { updateChannel: 'stable' },
+      channel: 'stable',
       publisherName: 'CN=Cairn',
       verifier: async () => 'certificate mismatch',
     })
@@ -657,7 +650,7 @@ describe('createUpdateService: downloading', () => {
 
   it('rejects a package without an executable when a publisher is configured', async () => {
     const { service, updater, root } = setup({
-      settings: { updateChannel: 'stable' },
+      channel: 'stable',
       publisherName: 'CN=Cairn',
     })
     const file = join(root, 'package.zip')
@@ -892,6 +885,14 @@ describe('createUpdateService: installing', () => {
       blockedReason: 'update.busy',
     })
     expect(harness.updater.quitAndInstall).not.toHaveBeenCalled()
+    expect(harness.settingsState.updateInstalledVersion).toBeUndefined()
+  })
+
+  it('records the target version for the post-restart what’s-new dialog', async () => {
+    const harness = await downloaded()
+    await expect(harness.service.install()).resolves.toMatchObject({ phase: 'installing' })
+    expect(harness.settings.update).toHaveBeenCalledWith({ updateInstalledVersion: '0.1.1' })
+    expect(harness.settingsState.updateInstalledVersion).toBe('0.1.1')
   })
 
   it('backs up the database, settings and credential metadata before install', async () => {
@@ -968,19 +969,20 @@ describe('createUpdateService: installing', () => {
 })
 
 describe('createUpdateService: settings and scheduling', () => {
-  it('reschedules when settings change and resets a channel switch', async () => {
-    const { service, updater, settingsState, scheduled } = setup({
-      settings: { updateChannel: 'stable' },
+  it('reschedules when settings change without resetting a downloaded update', async () => {
+    const { service, updater, scheduled, root } = setup({
+      channel: 'stable',
       publisherName: 'CN=Cairn',
     })
+    const file = join(root, 'Cairn-0.1.1.exe')
+    writeFileSync(file, 'package')
     service.start()
     updater.check.mockResolvedValue(available())
+    updater.download.mockResolvedValue([file])
     await service.check({})
     await service.download()
-    settingsState.updateChannel = 'beta'
-    const status = service.applySettings({ updateChannel: 'beta' })
-    expect(status).toMatchObject({ phase: 'idle', channel: 'beta' })
-    expect(status.availableVersion).toBeUndefined()
+    const status = service.applySettings()
+    expect(status).toMatchObject({ phase: 'downloaded', channel: 'stable' })
     expect(scheduled.at(-1)?.ms).toBe(AUTO_CHECK_INITIAL_MS)
   })
 
@@ -989,11 +991,11 @@ describe('createUpdateService: settings and scheduling', () => {
     updater.check.mockResolvedValue(available())
     await service.check({})
     settingsState.updateSkippedVersion = '0.1.1'
-    expect(service.applySettings({ updateSkippedVersion: '0.1.1' })).toMatchObject({
+    expect(service.applySettings()).toMatchObject({
       phase: 'skipped',
     })
     settingsState.updateSkippedVersion = undefined
-    expect(service.applySettings({ updateSkippedVersion: null })).toMatchObject({
+    expect(service.applySettings()).toMatchObject({
       phase: 'available',
     })
   })
@@ -1027,28 +1029,6 @@ describe('createUpdateService: settings and scheduling', () => {
     })
     env['CAIRN_UPDATE_URL'] = 'https://updates.example/cairn/'
     expect(service.applySettings()).toMatchObject({ enabled: true, phase: 'idle' })
-  })
-
-  it('applies a pinned channel without resetting before the first check', () => {
-    const { service } = setup({ env: { CAIRN_UPDATE_CHANNEL: 'beta' } })
-    expect(service.applySettings()).toMatchObject({ channel: 'beta', phase: 'idle' })
-  })
-
-  it('resets a pending check when the channel changes', async () => {
-    const harness = setup({ publisherName: 'CN=Cairn' })
-    let resolveCheck: ((value: unknown) => void) | undefined
-    harness.updater.check.mockImplementation(
-      () => new Promise((resolve) => (resolveCheck = resolve)),
-    )
-    const pending = harness.service.check({})
-    await vi.waitFor(() => expect(harness.updater.configure).toHaveBeenCalled())
-    harness.settingsState.updateChannel = 'stable'
-    expect(harness.service.applySettings({ updateChannel: 'stable' })).toMatchObject({
-      phase: 'idle',
-      channel: 'stable',
-    })
-    resolveCheck?.(available())
-    await expect(pending).resolves.toMatchObject({ phase: 'available', channel: 'stable' })
   })
 
   it('starts only once and uses the default timer functions', async () => {
@@ -1172,7 +1152,7 @@ describe('createUpdateService: electron-updater adapter', () => {
 
   it('disables automatic behavior, configures the stable feed and maps check results', async () => {
     const harness = setup({
-      settings: { updateChannel: 'stable' },
+      channel: 'stable',
       publisherName: 'CN=Cairn, O=Cairn',
       defaultUpdater: true,
     })
@@ -1200,7 +1180,7 @@ describe('createUpdateService: electron-updater adapter', () => {
   it('uses the GitHub provider with prereleases enabled on the beta channel', async () => {
     const harness = setup({
       sourceUrl: 'https://github.com/960602906/Cairn',
-      settings: { updateChannel: 'beta' },
+      channel: 'beta',
       defaultUpdater: true,
     })
     electronUpdater.autoUpdater.checkForUpdates.mockResolvedValue(null)
@@ -1221,7 +1201,7 @@ describe('createUpdateService: electron-updater adapter', () => {
   it('reads only ordinary releases on the stable channel of a GitHub source', async () => {
     const harness = setup({
       sourceUrl: 'https://github.com/960602906/Cairn',
-      settings: { updateChannel: 'stable' },
+      channel: 'stable',
       publisherName: 'CN=Cairn, O=Cairn',
       defaultUpdater: true,
     })
@@ -1275,7 +1255,7 @@ describe('createUpdateService: electron-updater adapter', () => {
   it('installs the Authenticode verifier and deletes packages that fail it', async () => {
     const verifier = vi.fn(async () => 'certificate mismatch')
     const harness = setup({
-      settings: { updateChannel: 'stable' },
+      channel: 'stable',
       publisherName: 'CN=Cairn, O=Cairn',
       verifier,
       defaultUpdater: true,

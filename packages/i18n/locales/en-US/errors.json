@@ -157,7 +157,6 @@
   "update.platform_unsupported": "Automatic updates are not supported on this platform",
   "update.source_missing": "No update source is configured",
   "update.source_insecure": "The update source must be an HTTPS URL without credentials or query parameters",
-  "update.channel_invalid": "The update channel is invalid",
   "update.publisher_missing": "Stable releases require a publisher certificate name",
   "update.check_failed": "Could not check for updates",
   "update.not_found": "The update source has no version information",

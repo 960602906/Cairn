@@ -129,3 +129,17 @@ M5 需要让已安装的 `0.1.0` beta 能收到 `0.1.1`，同时满足：
 - 运行中任务阻止安装、失败重试、哈希/签名/磁盘等失败模式仍由 M5-06 单测与 dev e2e 覆盖。
 - **未执行**：真实 0.1.0→0.1.1 安装升级、签名包校验、断网/代理/低磁盘的真实网络演练与撤包演练；
   stable 发布仍由 M5-08 的签名与发布门禁阻塞。
+
+## 修订：用户界面不再区分更新通道（2026-11-19）
+
+- 设置页移除“稳定版 / Beta”选择与 `channelPinned` 提示；`Settings` / `SettingsPatch` 删除
+  `updateChannel`，更新服务只使用构建信息里的通道选择 `latest.yml` / `beta.yml`。发布流水线不变，
+  `UpdateStatus.channel` 仅作为诊断信息保留。
+- 设置页的更新区域改为单一主按钮：`idle / up_to_date / error / skipped` 为检查或重试，
+  `available` 为“更新”（后台下载），`downloading` 显示进度并可取消，`downloaded` 变为“安装”。
+  “跳过此版本”仍作为次操作保留。
+- 新增 `updateInstalledVersion` 设置：安装前由更新服务写入目标版本；重启后与 `AppInfo.version`
+  一致时展示更新内容，关闭后清除；版本不一致则静默清除，避免安装失败时误弹。
+- `build-info.json` 增加可选 `releaseNotes`：构建时用 `scripts/changelog.mjs` 抽取
+  `CHANGELOG.md` 的当前版本段落，经 `AppInfo` 提供给渲染进程；缺失或超长时降级，不影响构建。
+- 顶部非模态提示条与安装前的“安装并重启？”确认保留；有运行中任务时仍阻止安装。

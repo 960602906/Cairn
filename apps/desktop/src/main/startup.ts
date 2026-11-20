@@ -787,10 +787,10 @@ const gateway = createRendererGateway({
       }
       if (
         patch.updateAutoCheck !== undefined ||
-        patch.updateChannel !== undefined ||
-        patch.updateSkippedVersion !== undefined
+        patch.updateSkippedVersion !== undefined ||
+        patch.updateInstalledVersion !== undefined
       ) {
-        updates.applySettings(patch)
+        updates.applySettings()
       }
       return next
     },

@@ -157,7 +157,6 @@
   "update.platform_unsupported": "当前平台不支持自动更新",
   "update.source_missing": "没有配置更新源",
   "update.source_insecure": "更新源必须是不带凭据或查询串的 HTTPS 地址",
-  "update.channel_invalid": "更新通道无效",
   "update.publisher_missing": "稳定版必须配置发布者证书名称",
   "update.check_failed": "检查更新失败",
   "update.not_found": "更新源上找不到版本信息",

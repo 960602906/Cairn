@@ -31,6 +31,7 @@ import { SessionStoreProvider, useSessionStore } from './store-context.js'
 import { ThemeSync } from './ThemeSync.js'
 import { UpdateNotice } from './UpdateNotice.js'
 import { CairnAppMark, IconButton, TooltipProvider } from './ui/index.js'
+import { WhatsNewDialog } from './WhatsNewDialog.js'
 
 export interface AppProps {
   readonly i18n: I18nInstance
@@ -422,6 +423,7 @@ function Shell({ store }: Omit<AppProps, 'i18n'>) {
     <SessionStoreProvider store={store}>
       <ThemeSync />
       <Workspace />
+      <WhatsNewDialog />
     </SessionStoreProvider>
   )
 }
