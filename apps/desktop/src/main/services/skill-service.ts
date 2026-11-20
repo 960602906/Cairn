@@ -63,6 +63,12 @@ export interface SkillServiceOptions {
   readonly userDir: string
   /** 让用户选择技能来源（M3-08）；取消时返回 undefined。没提供时 `pickSource` 视为取消。 */
   readonly pickSource?: (kind: SkillPickKind) => Promise<string | undefined>
+  /** 扫描实现（测试注入，默认 `scanSkillRoot`）。 */
+  readonly scan?: typeof scanSkillRoot
+  /** 时钟（测试注入）。 */
+  readonly now?: () => number
+  /** 扫描结果缓存有效期；根目录 mtime 变化或安装/卸载后立即失效。 */
+  readonly scanCacheTtlMs?: number
 }
 
 export interface SkillCommands {
@@ -178,6 +184,34 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
   catalog(sessionId: string): SkillCatalogEntry[]
 } {
   const { storage } = options
+  const scan = options.scan ?? scanSkillRoot
+  const now = options.now ?? Date.now
+  const scanCacheTtlMs = options.scanCacheTtlMs ?? 30_000
+  /**
+   * 按根目录缓存扫描结果：`~/.agents/skills` 可能有近百个技能、上千个文件，每次 `list` 都
+   * 同步递归 stat/open 会卡住主进程。根目录 mtime 变化、安装/卸载或 TTL 到期后重新扫描。
+   */
+  const scans = new Map<string, { mtimeMs: number; at: number; result: ReturnType<typeof scan> }>()
+
+  const rootMtime = (root: string): number => {
+    try {
+      return fs.statSync(root).mtimeMs
+    } catch {
+      return -1
+    }
+  }
+
+  const scanRootCached = (root: string): ReturnType<typeof scan> => {
+    const mtimeMs = rootMtime(root)
+    const cached = scans.get(root)
+    const at = now()
+    if (cached !== undefined && cached.mtimeMs === mtimeMs && at - cached.at < scanCacheTtlMs) {
+      return cached.result
+    }
+    const result = scan(root)
+    scans.set(root, { mtimeMs, at, result })
+    return result
+  }
 
   const scopeOf = (source: SkillSource, projectId: string | undefined) =>
     source === 'project' ? (projectId ?? '') : 'global'
@@ -190,7 +224,7 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
       priority: number,
       owner: string | undefined,
     ) => {
-      for (const found of scanSkillRoot(root).skills) {
+      for (const found of scanRootCached(root).skills) {
         raw.push({
           source,
           ...(owner !== undefined ? { projectId: owner } : {}),
@@ -276,6 +310,7 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
       if (input.confirm !== true && fs.existsSync(path.join(options.userDir, skill.name))) {
         throw new RpcError(SkillServiceErrorCode.Duplicate, { name: skill.name })
       }
+      if (input.confirm === true) scans.delete(options.userDir)
       return { installed: input.confirm === true, skill: installedDetail(skill) }
     },
 
@@ -305,6 +340,7 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
         } catch (error) {
           rethrow(error)
         }
+        scans.delete(options.userDir)
         return { installed: true, skill: installedDetail(skill) }
       } finally {
         fs.rmSync(dir, { recursive: true, force: true })
@@ -329,10 +365,11 @@ export function createSkillService(options: SkillServiceOptions): SkillCommands 
       ) {
         fs.rmSync(dest, { recursive: true })
         storage.skillPrefs.delete('global', 'user', name)
+        scans.delete(options.userDir)
         return {}
       }
       const named = (root: string) =>
-        scanSkillRoot(root).skills.some((found) => found.skill.name === name)
+        scanRootCached(root).skills.some((found) => found.skill.name === name)
       if (
         named(options.builtinDir) ||
         named(options.agentsDir) ||

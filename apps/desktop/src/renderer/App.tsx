@@ -9,28 +9,61 @@
  * 主题跟随设置（M2-01，`ThemeSync`）。
  */
 import { PanelLeftOpen } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import type { ProjectSummary } from '@cairn/protocol'
-import { ActivityView } from './ActivityView.js'
-import { AgentsView } from './agents/AgentsView.js'
-import { ChatPanel, TopBar } from './ChatPanel.js'
 import { ErrorBanner } from './ErrorBanner.js'
+import { onIdle } from './idle.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
 import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
+import { TopBar } from './layout/TopBar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
 import { WindowControls } from './layout/WindowControls.js'
 import { NewSession } from './NewSession.js'
-import { WelcomeDialog } from './onboarding/WelcomeDialog.js'
-import { SessionSearch } from './SessionSearch.js'
 import type { SessionStore } from './session-store.js'
-import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
+import type { SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
 import { ThemeSync } from './ThemeSync.js'
 import { CairnAppMark, IconButton, TooltipProvider } from './ui/index.js'
-import { WhatsNewDialog } from './WhatsNewDialog.js'
+
+/**
+ * 首屏只显示侧栏与新对话页；对话页、设置、活动、Agents、搜索与欢迎框按需加载。
+ * 对话页会带出 Markdown、Shiki、diff 与右侧工作台，是首屏最大的一块。
+ */
+const ChatPanel = lazy(() =>
+  import('./ChatPanel.js').then((module) => ({ default: module.ChatPanel })),
+)
+const SettingsNav = lazy(() =>
+  import('./settings/SettingsPage.js').then((module) => ({ default: module.SettingsNav })),
+)
+const SettingsContent = lazy(() =>
+  import('./settings/SettingsPage.js').then((module) => ({ default: module.SettingsContent })),
+)
+const ActivityView = lazy(() =>
+  import('./ActivityView.js').then((module) => ({ default: module.ActivityView })),
+)
+const AgentsView = lazy(() =>
+  import('./agents/AgentsView.js').then((module) => ({ default: module.AgentsView })),
+)
+const SessionSearch = lazy(() =>
+  import('./SessionSearch.js').then((module) => ({ default: module.SessionSearch })),
+)
+const WelcomeDialog = lazy(() =>
+  import('./onboarding/WelcomeDialog.js').then((module) => ({ default: module.WelcomeDialog })),
+)
+const WhatsNewDialog = lazy(() =>
+  import('./WhatsNewDialog.js').then((module) => ({ default: module.WhatsNewDialog })),
+)
 
 export interface AppProps {
   readonly i18n: I18nInstance
@@ -147,19 +180,23 @@ function Workspace() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [startNewChat])
 
-  useEffect(() => {
-    void refreshActivity()
-  }, [refreshActivity])
+  // 活动角标不参与首屏：首帧之后再读，避免主进程在首屏同时重扫全部会话。
+  useEffect(() => onIdle(() => void refreshActivity(), 1000), [refreshActivity])
 
-  // 启动后读取一次更新状态；之后的检查与下载结果经 update.status 推送。
-  useEffect(() => {
-    void loadUpdateStatus()
-  }, [loadUpdateStatus])
+  // 启动后读取一次更新状态；之后的检查与下载结果经 update.status 推送。首帧之后再做。
+  useEffect(() => onIdle(() => void loadUpdateStatus(), 1000), [loadUpdateStatus])
 
   // 委派卡片、检查器与 Agents 页都需要 Agent 名称，启动时读一次列表。
   useEffect(() => {
     void refreshAgents()
   }, [refreshAgents])
+
+  // 首屏之后预取对话页 chunk：点开会话时无需再等模块加载，也不占用首帧。
+  // 测试环境不预取：用例结束后的动态 import 会落在已销毁的环境里。
+  useEffect(() => {
+    if (import.meta.env.MODE === 'test') return
+    return onIdle(() => void import('./ChatPanel.js'), 2000)
+  }, [])
 
   useEffect(
     () =>
@@ -224,15 +261,17 @@ function Workspace() {
     void updateSettings({ onboardingSeen: true })
   }, [updateSettings])
 
-  const welcome = (
-    <WelcomeDialog
-      open={showWelcome}
-      onOpenChange={(next) => {
-        if (!next) closeWelcome()
-      }}
-      onConfigure={configureModels}
-    />
-  )
+  const welcome = showWelcome ? (
+    <Suspense fallback={null}>
+      <WelcomeDialog
+        open
+        onOpenChange={(next) => {
+          if (!next) closeWelcome()
+        }}
+        onConfigure={configureModels}
+      />
+    </Suspense>
+  ) : null
 
   const sidebarProps = {
     onClose: () => setSessionsOpen(false),
@@ -276,19 +315,21 @@ function Workspace() {
     </div>
   )
 
-  const search = (
-    <SessionSearch
-      open={searching}
-      onOpenChange={setSearching}
-      onSelect={() => {
-        setSettings(undefined)
-        setActivity(false)
-        setAgentsView(false)
-        setComposing(false)
-        setSessionsOpen(false)
-      }}
-    />
-  )
+  const search = searching ? (
+    <Suspense fallback={null}>
+      <SessionSearch
+        open
+        onOpenChange={setSearching}
+        onSelect={() => {
+          setSettings(undefined)
+          setActivity(false)
+          setAgentsView(false)
+          setComposing(false)
+          setSessionsOpen(false)
+        }}
+      />
+    </Suspense>
+  ) : null
 
   const drawer =
     narrow && sessionsOpen ? (
@@ -308,17 +349,21 @@ function Workspace() {
     return (
       <div className={SHELL} style={chromeStyle}>
         <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        <SettingsNav
-          open
-          collapsible={false}
-          section={settings}
-          onSelect={setSettings}
-          onBack={closeSettings}
-          onCollapse={closeSettings}
-        />
+        <Suspense fallback={<div className="h-full w-[252px] shrink-0 bg-chrome" />}>
+          <SettingsNav
+            open
+            collapsible={false}
+            section={settings}
+            onSelect={setSettings}
+            onBack={closeSettings}
+            onCollapse={closeSettings}
+          />
+        </Suspense>
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
-          <SettingsContent section={settings} onBack={closeSettings} />
+          <Suspense fallback={<div className="flex-1 bg-paper" />}>
+            <SettingsContent section={settings} onBack={closeSettings} />
+          </Suspense>
         </main>
         {drawer}
         {search}
@@ -335,7 +380,9 @@ function Workspace() {
         {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
-          <ActivityView leading={reveal} onOpenSession={openSessionFromActivity} />
+          <Suspense fallback={<div className="flex-1 bg-paper" />}>
+            <ActivityView leading={reveal} onOpenSession={openSessionFromActivity} />
+          </Suspense>
         </main>
         {drawer}
         {search}
@@ -352,7 +399,9 @@ function Workspace() {
         {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
-          <AgentsView leading={reveal} />
+          <Suspense fallback={<div className="flex-1 bg-paper" />}>
+            <AgentsView leading={reveal} />
+          </Suspense>
         </main>
         {drawer}
         {search}
@@ -381,19 +430,21 @@ function Workspace() {
             />
           </>
         ) : (
-          <ChatPanel
-            leading={reveal}
-            onNewChat={startNewChat}
-            onOpenSettings={setSettings}
-            onOpenSearch={() => setSearching(true)}
-            {...(pendingChangeSet === undefined
-              ? {}
-              : {
-                  initialChangeSetId: pendingChangeSet.changeSetId,
-                  initialChangeSetSessionId: pendingChangeSet.sessionId,
-                })}
-            onInitialChangeSetOpened={() => setPendingChangeSet(undefined)}
-          />
+          <Suspense fallback={<div className="flex-1 bg-paper" />}>
+            <ChatPanel
+              leading={reveal}
+              onNewChat={startNewChat}
+              onOpenSettings={setSettings}
+              onOpenSearch={() => setSearching(true)}
+              {...(pendingChangeSet === undefined
+                ? {}
+                : {
+                    initialChangeSetId: pendingChangeSet.changeSetId,
+                    initialChangeSetSessionId: pendingChangeSet.sessionId,
+                  })}
+              onInitialChangeSetOpened={() => setPendingChangeSet(undefined)}
+            />
+          </Suspense>
         )}
       </main>
       {drawer}
@@ -406,6 +457,12 @@ function Workspace() {
 
 function Shell({ store }: Omit<AppProps, 'i18n'>) {
   const { t } = useTranslation()
+  // 欢迎/更新对话框不参与首屏：首帧之后才挂载并加载模块。测试环境直接挂载，与用例原有行为一致。
+  const [extrasReady, setExtrasReady] = useState(import.meta.env.MODE === 'test')
+  useEffect(() => {
+    if (extrasReady) return
+    return onIdle(() => setExtrasReady(true), 1500)
+  }, [extrasReady])
   if (!store) {
     return (
       <main className="flex h-full flex-col items-center justify-center gap-3 bg-chrome">
@@ -419,7 +476,11 @@ function Shell({ store }: Omit<AppProps, 'i18n'>) {
     <SessionStoreProvider store={store}>
       <ThemeSync />
       <Workspace />
-      <WhatsNewDialog />
+      {extrasReady && (
+        <Suspense fallback={null}>
+          <WhatsNewDialog />
+        </Suspense>
+      )}
     </SessionStoreProvider>
   )
 }

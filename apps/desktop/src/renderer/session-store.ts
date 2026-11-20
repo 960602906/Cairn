@@ -675,6 +675,14 @@ export function createSessionStore(api: MainApi): SessionStore {
   const changeSetRequests = new Map<string, number>()
   /** 按需读取改动集的进行中请求：同一改动集只请求一次。 */
   const changeSetLoads = new Map<string, Promise<ChangeSetInfo | undefined>>()
+  /** 首屏多处同时读取的全局数据：进行中请求复用，避免重复 IPC。 */
+  let settingsLoad: Promise<Settings | undefined> | undefined
+  let projectsLoad: Promise<readonly ProjectSummary[] | undefined> | undefined
+  /** 技能列表按项目复用进行中的请求（`''` 表示不带项目）。 */
+  const skillLoads = new Map<string, Promise<SkillSummary[] | undefined>>()
+  /** 活动列表：进行中请求复用，期间的再次请求合并为完成后的一次刷新。 */
+  let activityLoad: Promise<void> | undefined
+  let activityRefreshQueued = false
   /** 检查器请求序号：切换标签后较早的响应不应覆盖新结果。 */
   const inspectionRequests = new Map<string, number>()
   const store = createStore<SessionState & SessionActions>()((set, get) => {
@@ -1309,11 +1317,19 @@ export function createSessionStore(api: MainApi): SessionStore {
       },
 
       async refreshProjects() {
-        const result = await run(() => api.request('project.list', {}))
-        // 旧版主进程或测试替身可能不返回列表
-        if (!result) return undefined
-        set({ projects: result.projects ?? [] })
-        return result.projects ?? []
+        // 首屏 WorkspaceList 与 NewSession 会同时读取；列表为空时复用进行中的请求。
+        if (get().projects.length === 0 && projectsLoad !== undefined) return projectsLoad
+        const request = (async () => {
+          const result = await run(() => api.request('project.list', {}))
+          // 旧版主进程或测试替身可能不返回列表
+          if (!result) return undefined
+          set({ projects: result.projects ?? [] })
+          return result.projects ?? []
+        })().finally(() => {
+          projectsLoad = undefined
+        })
+        projectsLoad = request
+        return request
       },
 
       async openProject() {
@@ -1346,9 +1362,20 @@ export function createSessionStore(api: MainApi): SessionStore {
         return true
       },
 
-      listSkills: async (projectId) =>
-        (await run(() => api.request('skill.list', projectId === undefined ? {} : { projectId })))
-          ?.skills,
+      listSkills: async (projectId) => {
+        const key = projectId ?? ''
+        const inflight = skillLoads.get(key)
+        if (inflight !== undefined) return inflight
+        const request = run(() =>
+          api.request('skill.list', projectId === undefined ? {} : { projectId }),
+        )
+          .then((result) => result?.skills)
+          .finally(() => {
+            skillLoads.delete(key)
+          })
+        skillLoads.set(key, request)
+        return request
+      },
 
       getSkill: (input) => run(() => api.request('skill.get', input)),
 
@@ -1536,12 +1563,27 @@ export function createSessionStore(api: MainApi): SessionStore {
       },
 
       async refreshActivity() {
-        set({ activityLoading: true, activityError: undefined })
-        try {
-          const result = await api.request('activity.list', {})
-          set({ activity: result, activityLoading: false })
-        } catch (error) {
-          set({ activityLoading: false, activityError: toError(error) })
+        // 活动事件可能密集到达：进行中只记一次“再刷新”，避免请求风暴。
+        if (activityLoad !== undefined) {
+          activityRefreshQueued = true
+          return activityLoad
+        }
+        activityLoad = (async () => {
+          set({ activityLoading: true, activityError: undefined })
+          try {
+            const result = await api.request('activity.list', {})
+            set({ activity: result, activityLoading: false })
+          } catch (error) {
+            set({ activityLoading: false, activityError: toError(error) })
+          }
+        })().finally(() => {
+          activityLoad = undefined
+        })
+        const current = activityLoad
+        await current
+        if (activityRefreshQueued) {
+          activityRefreshQueued = false
+          void get().refreshActivity()
         }
       },
 
@@ -1587,9 +1629,17 @@ export function createSessionStore(api: MainApi): SessionStore {
       onActivityOpen: (listener) => api.on('activity.open', listener),
 
       async loadSettings() {
-        const result = await run(() => api.request('settings.get', {}))
-        if (result) set({ settings: result })
-        return result
+        // 首屏 main.tsx 的语言读取与 ThemeSync/WhatsNew 会同时触发；未读到时复用进行中的请求。
+        if (get().settings === undefined && settingsLoad !== undefined) return settingsLoad
+        const request = (async () => {
+          const result = await run(() => api.request('settings.get', {}))
+          if (result) set({ settings: result })
+          return result
+        })().finally(() => {
+          settingsLoad = undefined
+        })
+        settingsLoad = request
+        return request
       },
 
       async loadAppInfo() {

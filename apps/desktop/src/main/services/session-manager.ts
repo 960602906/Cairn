@@ -198,6 +198,8 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
   /** 等待宿主的输入；Map 保持插入顺序，即排队顺序。 */
   const waiting = new Map<string, PendingPrompt>()
   let closed = false
+  /** 恢复只做一次：窗口创建后调用，重复调用不应再次重放全部历史。 */
+  let recovered = false
 
   const unsubscribe = events.subscribe((sessionId, batch) => {
     const view = views.get(sessionId)
@@ -997,6 +999,8 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     isBusy: sessionBusy,
 
     recoverInterrupted() {
+      if (recovered) return 0
+      recovered = true
       let count = 0
       for (const session of storage.sessions.list({
         includeArchived: true,

@@ -97,6 +97,7 @@ import { createProviderService } from './services/provider-service.js'
 import { createAppInfoCommands } from './services/app-info-service.js'
 import { readLicenseNotices } from './services/licenses-service.js'
 import { createGitLocator, gitRuntimeInfo } from './services/git-locator.js'
+import { isTracing, mark } from './startup-trace.js'
 import { hostEnvironment } from '../shared/host-trace.js'
 import { checkBundledSearch } from './smoke-search.js'
 import {
@@ -115,6 +116,7 @@ const paths = resolveAppPaths({
   env: process.env,
 })
 for (const dir of requiredDirectories(paths)) mkdirSync(dir, { recursive: true })
+mark('paths_ready')
 
 /**
  * 检查点使用的 Git（M5-03）：本机优先，其次随包 MinGit。整个进程只探测一次，
@@ -126,6 +128,7 @@ const gitLocation = await createGitLocator({
     : join(import.meta.dirname, '../../resources/git'),
   env: process.env,
 }).locate()
+mark('git_located')
 /** 交给 `openShadowRepo` 与工作区服务的 Git 参数；不可用时为空（回退到 PATH 中的 `git`）。 */
 const gitOptions: { gitBinary?: string; gitEnv?: Readonly<Record<string, string>> } =
   gitLocation.available
@@ -208,6 +211,7 @@ function readLogFile(file: string): string {
 }
 
 const storage = openSqliteStorage({ file: paths.database })
+mark('storage_open')
 /** 凭据（ADR-0010）：界面经 IPC 写入，启动宿主时按提供方配置的凭据引用解析后经 `host.init` 传入。 */
 const credentials = createLocalKeyStore({
   file: paths.credentials,
@@ -263,13 +267,12 @@ const checkpoints = createCheckpointService({
   open: (options) => openShadowRepo({ ...options, ...gitOptions }),
   isBusy: (sessionId) => sessions.isBusy(sessionId) || changes.isReverting(sessionId),
 })
-/** 隔离工作区（M4-08）：写入类子运行的独立副本，启动时清扫上次留下的目录。 */
+/** 隔离工作区（M4-08）：写入类子运行的独立副本，窗口显示后再清扫上次留下的目录。 */
 const workspaces = createWorkspaceService({
   root: paths.worktrees,
   onError: reportError,
   ...gitOptions,
 })
-void workspaces.sweep().catch(reportError)
 /** 改动集（M4-09）：隔离工作区里的改动与主工作区合并，合并前先建检查点。 */
 const changeSets = createChangeSetService({
   storage,
@@ -324,6 +327,7 @@ const questions = createQuestionService()
 const activity = createActivityService({
   storage,
   events,
+  lastSeq: (sessionId) => events.lastSeq(sessionId),
   approvals,
   homeDirs: [homedir()],
   secrets: () => credentials.knownSecrets(),
@@ -650,7 +654,6 @@ refreshIdleHosts = () => sessions.refreshTools()
 const trials = createTrialService({ storage, events, agents, sessions })
 /** 团队模板（M7-09）：草稿、发布与试运行；试运行沿用 Agent 试运行的隐藏会话与只读默认。 */
 const teams = createTeamService({ storage, events, agents, sessions, trials })
-sessions.recoverInterrupted()
 /**
  * 自动更新（M5-06，ADR-0036）：公开只读 HTTPS 静态源；开发模式默认关闭。
  * `CAIRN_UPDATE_*` 由构建/测试注入；安装前要求没有运行中任务并备份数据。
@@ -997,6 +1000,25 @@ function createWindow(): BrowserWindow {
   return window
 }
 
+/**
+ * 开发期计时：等界面写出 `data-cairn-ready`（新对话页可输入），记下真正可交互的时间。
+ * 只在开启启动计时时轮询，生产构建完全不执行。
+ */
+async function markRendererReady(window: BrowserWindow): Promise<void> {
+  if (!isTracing()) return
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline && !window.isDestroyed()) {
+    const ready = (await window.webContents
+      .executeJavaScript("document.documentElement.dataset.cairnReady ?? ''")
+      .catch(() => '')) as string
+    if (ready !== '') {
+      mark(`renderer_ready=${ready}ms`)
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+}
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
@@ -1095,17 +1117,40 @@ async function smokeCredentials(): Promise<CredentialCheck> {
   return 'stored'
 }
 
+mark('services_ready')
+
 void app.whenReady().then(() => {
+  mark('when_ready')
   restrictPermissions(session.defaultSession)
   if (shouldInstallApplicationMenu()) {
     Menu.setApplicationMenu(Menu.buildFromTemplate(macApplicationMenu()))
   }
   followThemeSetting()
   registerWindowControls()
+  const window = createWindow()
+  mark('window_created')
+  window.webContents.once('did-finish-load', () => {
+    mark('did_finish_load')
+    void markRendererReady(window)
+  })
+  window.once('ready-to-show', () => {
+    mark('window_shown')
+    // 清扫只和首屏抢磁盘，不参与首屏；窗口显示后再做。
+    setTimeout(() => void workspaces.sweep().catch(reportError), 0)
+  })
+  /**
+   * 恢复上次未结束的运行。放在窗口创建之后：`loadURL` 已异步启动渲染进程，重放与首屏加载
+   * 在不同进程并行；本调用仍在同一 tick 完成，早于任何 IPC 处理，因此会话列表不会短暂显示 running。
+   */
+  try {
+    sessions.recoverInterrupted()
+  } catch (error) {
+    reportError(error)
+  }
+  mark('recovery_done')
   void mcp.initialize()
   updates.start()
   autoFix.start()
-  const window = createWindow()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

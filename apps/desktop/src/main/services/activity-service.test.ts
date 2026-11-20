@@ -558,3 +558,91 @@ describe('createActivityService', () => {
     expect(onError).toHaveBeenCalled()
   })
 })
+
+describe('createActivityService 投影缓存', () => {
+  /** 计数版事件服务：统计 `readAfter` 次数，用来确认缓存是否真的跳过了重放。 */
+  function cachedSetup(options: { lastSeq: boolean }) {
+    const now = 1_000
+    const storage = createMemoryStorage({ now: () => now })
+    storage.projects.create({ projectId: 'p1', name: 'demo', path: '/work' })
+    storage.sessions.create({
+      sessionId: 's1',
+      projectId: 'p1',
+      workspacePath: '/work',
+      title: '重构 utils',
+    })
+    const events = createSessionEventService({ storage })
+    const approvals = createApprovalService({
+      permissions: { addRule: (_sessionId, rule) => rule },
+      now: () => now,
+    })
+    const reads: string[] = []
+    const activity = createActivityService({
+      storage,
+      events: {
+        readAfter: (sessionId, afterSeq, limit) => {
+          reads.push(sessionId)
+          return events.readAfter(sessionId, afterSeq, limit)
+        },
+        subscribe: events.subscribe,
+      },
+      approvals,
+      ...(options.lastSeq ? { lastSeq: events.lastSeq } : {}),
+    })
+    return { activity, events, storage, reads }
+  }
+
+  it('按 lastSeq 复用投影，没有新事件时不再重放', () => {
+    const { activity, events, reads } = cachedSetup({ lastSeq: true })
+    events.publish([
+      created('s1', 10),
+      user('s1', '重构 JSON 解析', 't1', 11),
+      event('s1', 'turn.completed', { durationMs: 5 }, { turnId: 't1', ts: 12 }),
+    ])
+
+    expect(activity.list().completed).toHaveLength(1)
+    expect(reads).toEqual(['s1'])
+    // 没有新事件：直接命中缓存。
+    expect(activity.list().completed).toHaveLength(1)
+    expect(reads).toEqual(['s1'])
+
+    // 有新事件（lastSeq 变化）：重新投影，并带上新的完成记录。
+    events.publish([
+      created('s1', 20),
+      user('s1', '再加测试', 't2', 21),
+      event('s1', 'turn.completed', { durationMs: 5 }, { turnId: 't2', ts: 22 }),
+    ])
+    const list = activity.list()
+    expect(reads).toEqual(['s1', 's1'])
+    expect(list.completed.map((item) => item.turnId)).toEqual(['t2', 't1'])
+    expect(list.completed[0]?.summary).toBe('再加测试')
+  })
+
+  it('会话改名后重新投影，标题随之更新', () => {
+    const { activity, events, storage, reads } = cachedSetup({ lastSeq: true })
+    events.publish([
+      created('s1', 10),
+      user('s1', '重构 JSON 解析', 't1', 11),
+      event('s1', 'turn.completed', { durationMs: 5 }, { turnId: 't1', ts: 12 }),
+    ])
+    expect(activity.list().completed[0]?.sessionTitle).toBe('重构 utils')
+    expect(reads).toEqual(['s1'])
+
+    storage.sessions.rename('s1', '重构 YAML')
+    expect(activity.list().completed[0]?.sessionTitle).toBe('重构 YAML')
+    expect(reads).toEqual(['s1', 's1'])
+  })
+
+  it('没有 lastSeq 时每次都重放（测试替身或旧调用方）', () => {
+    const { activity, events, reads } = cachedSetup({ lastSeq: false })
+    events.publish([
+      created('s1', 10),
+      user('s1', '重构 JSON 解析', 't1', 11),
+      event('s1', 'turn.completed', { durationMs: 5 }, { turnId: 't1', ts: 12 }),
+    ])
+    expect(activity.list().completed).toHaveLength(1)
+    const afterFirst = reads.length
+    expect(activity.list().completed).toHaveLength(1)
+    expect(reads.length).toBe(afterFirst + 1)
+  })
+})
