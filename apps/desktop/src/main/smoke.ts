@@ -32,8 +32,15 @@ export interface RendererProbe {
   readonly ipcError: string | null
 }
 
-/** 在界面中执行的检查脚本（`webContents.executeJavaScript`），返回 `RendererProbe`。 */
+/**
+ * 在界面中执行的检查脚本（`webContents.executeJavaScript`），返回 `RendererProbe`。
+ * 先等界面自己标记可交互（`cairnReady`）：`did-finish-load` 只代表页面加载完，首屏语言包等资源
+ * 是之后异步取的，这时 `#root` 可能还是空的。
+ */
 export const RENDERER_PROBE_SCRIPT = `(async () => {
+  for (let waited = 0; document.documentElement.dataset.cairnReady === undefined && waited < 15000; waited += 50) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
   const nodeGlobals = ['require', 'process', 'module', 'exports', 'Buffer', 'global', '__dirname']
     .filter((name) => typeof globalThis[name] !== 'undefined')
   const cairn = globalThis.cairn
