@@ -7,6 +7,8 @@
 import { z } from 'zod'
 import { Id } from './common.js'
 
+export { PLAN_FEEDBACK_MAX } from './limits.js'
+
 /** 这一轮怎么工作：正常执行，或只读地提出计划。 */
 export const PromptMode = z.enum(['normal', 'plan'])
 export type PromptMode = z.infer<typeof PromptMode>
@@ -22,7 +24,6 @@ export const PLAN_FILE_MAX = 50
 export const PLAN_STEP_MAX = 20
 export const PLAN_TITLE_MAX = 200
 export const PLAN_NOTE_MAX = 2_000
-export const PLAN_FEEDBACK_MAX = 4_000
 
 export const PlanStep = z.object({
   id: z.string().regex(PLAN_STEP_ID_PATTERN),

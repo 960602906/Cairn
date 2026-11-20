@@ -18,7 +18,6 @@
  * - 状态以不可变方式更新：只替换发生变化的部分，便于界面按引用比较。
  */
 import {
-  isPersistedEvent,
   type AgentDefinitionRef,
   type RunAgentRef,
   type ContentPart,
@@ -48,7 +47,7 @@ import {
   type ToolDisplay,
   type ToolOutputChunk as ProtocolToolOutputChunk,
 } from '@cairn/protocol'
-import { taskListIdForPlan } from '@cairn/protocol'
+import { isPersistedEvent, taskListIdForPlan } from '@cairn/protocol/runtime'
 import { canTransition, isActiveRunState } from './run-state.js'
 
 /** 会话基本信息（来自 `session.created` / `session.renamed` / `session.model.changed`）。 */

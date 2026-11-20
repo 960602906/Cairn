@@ -9,6 +9,7 @@
  * - 宿主发出的事件没有 seq（UnsequencedEvent），由主进程分配 seq 后成为 EventEnvelope。
  */
 import { z } from 'zod'
+import type { LiveEventType } from './event-kinds.js'
 import { PLAN_STEP_MAX, PlanDocument, PlanStep, PlanStepStatus } from './plan.js'
 import {
   TASK_ITEM_ID_PATTERN,
@@ -513,22 +514,15 @@ export type EventPayload<T extends EventType> = z.infer<PayloadSchemas[T]>
 
 export const EVENT_TYPES = Object.keys(payloadSchemas) as EventType[]
 
-/** 只用于实时显示、不写数据库的增量事件（架构 §7.3）。 */
-export const LIVE_EVENT_TYPES = [
-  'message.assistant.delta',
-  'message.reasoning.delta',
-  'tool.output.delta',
-  'command.output.delta',
-] as const satisfies readonly EventType[]
-
-export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number]
 export type PersistedEventType = Exclude<EventType, LiveEventType>
 
-const liveTypes: ReadonlySet<string> = new Set(LIVE_EVENT_TYPES)
-
-export function isLiveEventType(type: EventType): type is LiveEventType {
-  return liveTypes.has(type)
-}
+// 增量事件的清单与判定在 `event-kinds.ts`（界面只用到它们，不该加载 zod）；这里保持原有导出。
+export {
+  LIVE_EVENT_TYPES,
+  isLiveEventType,
+  isPersistedEvent,
+  type LiveEventType,
+} from './event-kinds.js'
 
 // ---------- 信封 ----------
 
@@ -570,10 +564,6 @@ export type UnsequencedEvent<T extends EventType = EventType> = T extends EventT
 /** 会写入数据库的事件。增量事件在类型上无法赋值给它。 */
 export type PersistedEvent = EventEnvelope<PersistedEventType>
 export type LiveEvent = EventEnvelope<LiveEventType>
-
-export function isPersistedEvent(event: EventEnvelope): event is PersistedEvent {
-  return !isLiveEventType(event.type)
-}
 
 function buildUnion(withSeq: boolean) {
   const variants = EVENT_TYPES.map((type) =>
