@@ -2231,3 +2231,103 @@ describe('memory management (M7-04)', () => {
     expect(await store.getState().deleteMemory('m1')).toBe(false)
   })
 })
+
+describe('首屏请求合并（single-flight）', () => {
+  /** 手动控制返回时机，用来观察同一 tick 里的并发调用。 */
+  function deferred<T>() {
+    let settle!: (value: T) => void
+    const promise = new Promise<T>((resolve) => {
+      settle = resolve
+    })
+    return { promise, settle }
+  }
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('settings.get 并发只发一次，读到的设置写入状态', async () => {
+    const gate = deferred<unknown>()
+    const { api, calls } = fakeApi({ 'settings.get': () => gate.promise })
+    const store = createSessionStore(api)
+
+    const first = store.getState().loadSettings()
+    const second = store.getState().loadSettings()
+    gate.settle({ locale: 'zh-CN' })
+    await Promise.all([first, second])
+
+    expect(calls.filter(([method]) => method === 'settings.get')).toHaveLength(1)
+    expect(store.getState().settings).toEqual({ locale: 'zh-CN' })
+  })
+
+  it('project.list 在列表为空时并发只发一次，之后仍可重新读取', async () => {
+    const gate = deferred<unknown>()
+    let requests = 0
+    const { api, calls } = fakeApi({
+      'project.list': () => {
+        requests += 1
+        return requests === 1
+          ? gate.promise
+          : { projects: [{ projectId: 'p1', name: 'P', path: '/' }] }
+      },
+    })
+    const store = createSessionStore(api)
+
+    const first = store.getState().refreshProjects()
+    const second = store.getState().refreshProjects()
+    gate.settle({ projects: [{ projectId: 'p0', name: 'P0', path: '/' }] })
+    await Promise.all([first, second])
+    expect(calls.filter(([method]) => method === 'project.list')).toHaveLength(1)
+
+    // 列表非空后的刷新仍会重新请求（mutation 后需要最新数据）。
+    await store.getState().refreshProjects()
+    expect(calls.filter(([method]) => method === 'project.list')).toHaveLength(2)
+    expect(store.getState().projects.map((project) => project.projectId)).toEqual(['p1'])
+  })
+
+  it('skill.list 同一项目并发只发一次，不同项目分别请求', async () => {
+    const gate = deferred<unknown>()
+    const { api, calls } = fakeApi({ 'skill.list': () => gate.promise })
+    const store = createSessionStore(api)
+
+    const first = store.getState().listSkills('p1')
+    const second = store.getState().listSkills('p1')
+    const other = store.getState().listSkills('p2')
+    gate.settle({ skills: [] })
+    await Promise.all([first, second, other])
+
+    const methods = calls.filter(([method]) => method === 'skill.list')
+    expect(methods).toHaveLength(2)
+    expect(methods).toContainEqual(['skill.list', { projectId: 'p1' }])
+    expect(methods).toContainEqual(['skill.list', { projectId: 'p2' }])
+  })
+
+  it('activity.list 并发时合并，并在完成后补一次刷新', async () => {
+    const gates = [deferred<unknown>(), deferred<unknown>()]
+    let requests = 0
+    const { api, calls } = fakeApi({
+      'activity.list': () => {
+        const gate = gates[requests]!
+        requests += 1
+        return gate.promise
+      },
+    })
+    const store = createSessionStore(api)
+    const empty = {
+      approvals: [],
+      running: [],
+      completed: [],
+      counts: { approvals: 0, running: 0 },
+    }
+
+    const first = store.getState().refreshActivity()
+    const second = store.getState().refreshActivity()
+    gates[0]!.settle(empty)
+    await Promise.all([first, second])
+    // 进行中的再次请求不会立刻发，而是在完成后补一次。
+    await flush()
+    expect(calls.filter(([method]) => method === 'activity.list')).toHaveLength(2)
+    gates[1]!.settle(empty)
+    await flush()
+    expect(calls.filter(([method]) => method === 'activity.list')).toHaveLength(2)
+    expect(store.getState().activityLoading).toBe(false)
+  })
+})

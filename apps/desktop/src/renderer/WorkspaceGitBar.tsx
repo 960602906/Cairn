@@ -12,6 +12,7 @@ import { translateError } from '@cairn/i18n'
 import { RpcError, type ProjectSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
 import { FolderTypeIcon } from './file-icons.js'
+import { onIdle } from './idle.js'
 import { lastSegment } from './paths.js'
 import { projectDisplayName, projectNameForPath } from './project-name.js'
 import {
@@ -65,10 +66,12 @@ export function WorkspaceGitBar({
         .then(update)
         .catch(() => update({}))
     }
-    load()
+    // 分支读取会 spawn 两个 git 进程：首帧之后再做，切回窗口时仍立即刷新。
+    const cancel = onIdle(load, 800)
     window.addEventListener('focus', load)
     return () => {
       live = false
+      cancel()
       window.removeEventListener('focus', load)
     }
   }, [projectPath])

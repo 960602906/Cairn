@@ -109,6 +109,13 @@ export default defineConfig({
     // 文件树图标按需从静态资源加载，避免把整套 SVG 打进 JS。
     publicDir: resolve(root, 'node_modules/vscode-material-icons/generated/icons'),
     plugins: [contentSecurityPolicy(), react(), tailwindcss()],
+    server: {
+      /**
+       * 在 dev server 启动时就转换首屏模块（入口及其静态依赖），与主进程启动、Electron 开窗并行，
+       * 界面请求这些模块时直接命中缓存。按需加载的视图不在静态图里，不会被预热。
+       */
+      warmup: { clientFiles: ['./main.tsx'] },
+    },
     build: {
       rollupOptions: {
         input: { index: resolve(root, 'src/renderer/index.html') },

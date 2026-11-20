@@ -10,7 +10,10 @@ import { app } from 'electron'
 import { resolveAppPaths } from './app-paths.js'
 import { appUserModelId } from './app-identity.js'
 import { configureElectronRuntime } from './electron-runtime.js'
+import { configureStartupTrace, mark, shouldTraceStartup } from './startup-trace.js'
 
+configureStartupTrace(shouldTraceStartup(process.env, app.isPackaged))
+mark('process_start')
 configureElectronRuntime(process.env, app.commandLine)
 
 const paths = resolveAppPaths({
@@ -27,7 +30,12 @@ app.setAppUserModelId(appUserModelId(app.isPackaged))
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  mark('lock_acquired')
   const startup = import('./startup.js')
+  void startup.then(
+    () => mark('startup_import_done'),
+    () => undefined,
+  )
   startup.catch((error: unknown) => {
     console.error('[cairn]', redact(error, { homeDirs: [homedir()], secrets: [] }))
     app.quit()

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RpcError } from '@cairn/protocol'
+import { scanSkillRoot } from '@cairn/skills'
 import { createMemoryStorage } from '@cairn/storage'
 import { createSkillService, skillReadPath } from './skill-service.js'
 
@@ -377,5 +378,81 @@ describe('skill service', () => {
     )
     skills.setEnabled({ name: 'marker', source: 'user', enabled: false })
     expect(skills.catalog('s1').some((skill) => skill.name === 'marker')).toBe(false)
+  })
+})
+
+describe('skill 扫描缓存', () => {
+  const roots: string[] = []
+  afterEach(() => {
+    for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  function setupCached(options: { ttl?: number } = {}) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-skill-cache-'))
+    roots.push(root)
+    const builtin = path.join(root, 'builtin')
+    const agents = path.join(root, 'agents')
+    const user = path.join(root, 'user')
+    for (const dir of [builtin, agents, user]) fs.mkdirSync(dir)
+    writeSkill(agents, 'machine')
+    let now = 1_000
+    const scan = vi.fn(scanSkillRoot)
+    const skills = createSkillService({
+      storage: createMemoryStorage(),
+      builtinDir: builtin,
+      agentsDir: agents,
+      userDir: user,
+      scan,
+      now: () => now,
+      scanCacheTtlMs: options.ttl ?? 30_000,
+    })
+    return {
+      skills,
+      root,
+      user,
+      agents,
+      scan,
+      advance: (ms: number) => {
+        now += ms
+      },
+    }
+  }
+
+  it('重复 list / get 不会重复扫描同样的根目录', () => {
+    const { skills, scan } = setupCached()
+    expect(skills.list({}).skills.map((skill) => skill.name)).toEqual(['machine'])
+    const calls = scan.mock.calls.length
+    // 三个根目录各扫一次（内置与本机可能为空，同样按目录缓存）。
+    expect(calls).toBe(3)
+    expect(skills.list({}).skills.map((skill) => skill.name)).toEqual(['machine'])
+    expect(skills.get({ name: 'machine', source: 'agents' }).name).toBe('machine')
+    expect(scan.mock.calls.length).toBe(calls)
+  })
+
+  it('TTL 到期后重新扫描，能看到技能目录里的新增文件', () => {
+    const { skills, agents, scan, advance } = setupCached({ ttl: 1_000 })
+    const files = () =>
+      skills
+        .get({ name: 'machine', source: 'agents' })
+        .files.map((file) => file.path)
+        .sort()
+    expect(files()).toEqual([])
+    // 只改技能目录内的文件：根目录 mtime 没变，缓存继续命中到 TTL 到期。
+    fs.writeFileSync(path.join(agents, 'machine', 'notes.md'), 'hello')
+    expect(files()).toEqual([])
+    const calls = scan.mock.calls.length
+    advance(1_000)
+    expect(files()).toEqual(['notes.md'])
+    expect(scan.mock.calls.length).toBeGreaterThan(calls)
+  })
+
+  it('安装后立即重新扫描，不需要等 TTL', () => {
+    const { skills, root, scan } = setupCached({ ttl: 60_000 })
+    skills.list({})
+    const calls = scan.mock.calls.length
+    const source = writeSkill(path.join(root, 'incoming'), 'marker')
+    skills.install({ source: { kind: 'directory', path: source }, confirm: true })
+    expect(skills.list({}).skills.map((skill) => skill.name)).toEqual(['machine', 'marker'])
+    expect(scan.mock.calls.length).toBeGreaterThan(calls)
   })
 })

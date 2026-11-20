@@ -36,6 +36,8 @@ export interface ActivityChange {
 export interface ActivityServiceOptions {
   readonly storage: Pick<Storage, 'sessions'>
   readonly events: Pick<SessionEventService, 'readAfter' | 'subscribe'>
+  /** 会话当前的最大事件序号；提供时按序号缓存单会话投影，避免每次 list 全量重放。 */
+  readonly lastSeq?: (sessionId: string) => number
   readonly approvals: Pick<ApprovalService, 'list' | 'resolve' | 'subscribe'>
   readonly now?: () => number
   readonly homeDirs?: readonly string[]
@@ -151,10 +153,11 @@ export function createActivityService(options: ActivityServiceOptions): Activity
     })
   })
 
-  const scanSession = (
-    sessionId: string,
-    title: string,
-  ): { running?: ActivityRunning; completed: ActivityCompleted[] } => {
+  /** 单会话的事件投影结果（不含审批，审批另取）。 */
+  type SessionScan = { running?: ActivityRunning; completed: ActivityCompleted[] }
+  const scanCache = new Map<string, { seq: number; title: string; result: SessionScan }>()
+
+  const scanSessionUncached = (sessionId: string, title: string): SessionScan => {
     const events = options.events.readAfter(sessionId, 0)
     if (events.length === 0) return { completed: [] }
     if (events.some((event) => event.type === 'session.archived')) return { completed: [] }
@@ -263,11 +266,28 @@ export function createActivityService(options: ActivityServiceOptions): Activity
     return { ...(running ? { running } : {}), completed: [...terminal.values()] }
   }
 
+  /**
+   * 按 `lastSeq` 缓存单会话投影：没有新事件时直接复用，避免首屏与每次 `activity.changed`
+   * 都把全部会话的事件日志重放一遍。序号在扫描前读取，只会多扫一次，不会返回过期结果。
+   */
+  const scanSession = (sessionId: string, title: string): SessionScan => {
+    const lastSeq = options.lastSeq
+    if (lastSeq === undefined) return scanSessionUncached(sessionId, title)
+    const seq = lastSeq(sessionId)
+    const cached = scanCache.get(sessionId)
+    if (cached !== undefined && cached.seq === seq && cached.title === title) return cached.result
+    const result = scanSessionUncached(sessionId, title)
+    scanCache.set(sessionId, { seq, title, result })
+    return result
+  }
+
   const snapshot = (): ActivityListResult => {
     const approvals = currentApprovals()
     const running: ActivityRunning[] = []
     const completed: ActivityCompleted[] = []
+    const live = new Set<string>()
     for (const session of sessions()) {
+      live.add(session.sessionId)
       try {
         const result = scanSession(session.sessionId, session.title)
         if (result.running) running.push(result.running)
@@ -275,6 +295,10 @@ export function createActivityService(options: ActivityServiceOptions): Activity
       } catch (error) {
         options.onError?.(error)
       }
+    }
+    // 归档/删除的会话不再保留缓存。
+    for (const sessionId of scanCache.keys()) {
+      if (!live.has(sessionId)) scanCache.delete(sessionId)
     }
     running.sort((a, b) => b.updatedAt - a.updatedAt)
     completed.sort((a, b) => b.completedAt - a.completedAt)

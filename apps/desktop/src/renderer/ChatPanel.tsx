@@ -33,28 +33,11 @@ import type { SettingsSection } from './settings/SettingsPage.js'
 import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { useMediaQuery } from './layout/use-media-query.js'
-import { TITLE_BAR_INSET } from './layout/WindowControls.js'
+import { TopBar } from './layout/TopBar.js'
 import { cn, IconButton } from './ui/index.js'
 
 /** 工作台从浮层切到常驻列的宽度；1280/1366 下仍保持浮层，避免把正文挤到 600px 以下。 */
 const PANEL_DOCK_QUERY = '(min-width: 1440px)'
-
-/** 纸面顶栏（48px）：和对话同一底色，左侧是项目 / 会话面包屑，右侧是会话信息栏开关。 */
-export function TopBar({ children }: { readonly children?: ReactNode }) {
-  return (
-    <header
-      className="drag relative flex h-12 shrink-0 items-center gap-1.5 bg-paper pr-3 pl-5"
-      style={TITLE_BAR_INSET}
-    >
-      {children}
-      {/* 线条放在顶栏之外，避免被窗口按钮或拖拽区裁切。 */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-full z-[5] block h-[0.5px] bg-hair"
-      />
-    </header>
-  )
-}
 
 export function ChatPanel({
   initialChangeSetId,

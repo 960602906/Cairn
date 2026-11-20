@@ -111,6 +111,8 @@ function setup({
     const [item] = await screen.findAllByRole('listitem')
     await userEvent.click(within(item!).getAllByRole('button')[0]!)
     await waitFor(() => expect(store.getState().views.s1).toBeDefined())
+    // 对话页是按需加载的：等它真正渲染出来（会话标题）再让用例查询内部元素。
+    await waitFor(() => expect(document.getElementById('chat-title')).not.toBeNull())
   }
   return { request, store, emit, open }
 }

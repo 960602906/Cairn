@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -229,7 +229,8 @@ describe('FileTreeBrowser', () => {
     await userEvent.click(screen.getByRole('button', { name: '显示隐藏文件' }))
     expect(await screen.findByText('.env')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '隐藏隐藏文件' }))
-    await expect(screen.findByText('.env')).rejects.toThrow()
+    // 负向断言用短超时：全局 asyncUtilTimeout 是 5 秒，和用例超时一样长会直接拖超时。
+    await waitFor(() => expect(screen.queryByText('.env')).toBeNull(), { timeout: 1_000 })
 
     const srcRow = screen.getByText('src').parentElement!
     await userEvent.dblClick(srcRow)

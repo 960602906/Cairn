@@ -62,6 +62,7 @@ import { agentName, localized } from './agents/model.js'
 import { contextBreakdown, latestSnapshot } from './context-breakdown.js'
 import { formatCompactTokens } from './format.js'
 import { FILE_DRAG_TYPE, draggedFile } from './file-drag.js'
+import { onIdle } from './idle.js'
 import {
   RestoreDialog,
   turnCheckpoints,
@@ -598,17 +599,29 @@ export function Composer({
   const modelMenuDisabled = fixedModel || enabledModelCount === 0
   const undoTarget = lastTurnTarget(view)
   const projectId = projects?.find((project) => project.path === projectPath)?.projectId
+  /** 用户在空闲加载前输入 `/` 时立即补一次技能列表。 */
+  const skillsRequestedFor = useRef<string | undefined>(undefined)
+  const ensureSkills = () => {
+    if (projectId === undefined || skills.length > 0) return
+    if (skillsRequestedFor.current === projectId) return
+    skillsRequestedFor.current = projectId
+    void listSkills(projectId).then((list) => setSkills(list ?? []))
+  }
   useEffect(() => {
     if (projectId === undefined) {
       setSkills([])
       return
     }
     let alive = true
-    void listSkills(projectId).then((list) => {
-      if (alive) setSkills(list ?? [])
-    })
+    // 打开会话后不急着扫技能：先让消息区渲染，空闲时再读。
+    const cancel = onIdle(() => {
+      void listSkills(projectId).then((list) => {
+        if (alive) setSkills(list ?? [])
+      })
+    }, 600)
     return () => {
       alive = false
+      cancel()
     }
   }, [listSkills, projectId])
 
@@ -1226,9 +1239,11 @@ export function Composer({
               placeholder={planMode ? t('composer.plan.placeholder') : t('input.placeholder')}
               value={text}
               onChange={(e) => {
-                setText(e.target.value)
+                const next = e.target.value
+                setText(next)
                 setCommandNotice(null)
                 if (historyIndex.current !== -1) historyIndex.current = -1
+                if (next.trimStart().startsWith('/')) ensureSkills()
               }}
               onKeyDown={keyDown}
               onSelect={mention.onCaret}

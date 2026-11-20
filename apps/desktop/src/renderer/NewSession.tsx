@@ -30,8 +30,10 @@ import {
 } from './composer-shared.js'
 import { extractAgents } from './composer-tokens.js'
 import { FILE_DRAG_TYPE, draggedFile } from './file-drag.js'
+import { onIdle } from './idle.js'
 import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMentions.js'
 import { agentName, localized } from './agents/model.js'
+import { mark, markReady } from './startup-trace.js'
 import { isPlanModeKey } from './layout/shortcuts.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
@@ -173,16 +175,27 @@ export function NewSession({
 
   useEffect(() => {
     textarea.current?.focus()
+    // 首屏可交互：输入框已获得焦点。e2e 依赖这个属性等待启动完成。
+    mark('new_session_ready')
+    markReady()
   }, [])
 
-  // 技能列表：项目里的技能随工作空间变化，本机与全局技能始终可用。
+  /** 技能列表只在输入 `/` 或空闲时才需要；首帧不扫描磁盘。 */
+  const requestSkills = () => {
+    void listSkills(projectId).then((list) => setSkills(list ?? []))
+  }
+
+  // 技能列表：项目里的技能随工作空间变化，本机与全局技能始终可用。首帧之后读取。
   useEffect(() => {
     let alive = true
-    void listSkills(projectId).then((list) => {
-      if (alive) setSkills(list ?? [])
-    })
+    const cancel = onIdle(() => {
+      void listSkills(projectId).then((list) => {
+        if (alive) setSkills(list ?? [])
+      })
+    }, 1000)
     return () => {
       alive = false
+      cancel()
     }
   }, [listSkills, projectId])
 
@@ -449,7 +462,12 @@ export function NewSession({
                 aria-label={t('input.label')}
                 placeholder={planMode ? t('composer.plan.placeholder') : t('new.placeholder')}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setText(next)
+                  // 用户可能在空闲加载前就输入 `/`：立即补一次（store 会复用进行中的请求）。
+                  if (next.trimStart().startsWith('/')) requestSkills()
+                }}
                 onKeyDown={keyDown}
                 onSelect={mention.onCaret}
                 aria-expanded={commandPanelOpen || mention.open}
