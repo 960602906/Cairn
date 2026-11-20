@@ -109,12 +109,14 @@ import {
 } from './smoke.js'
 
 configureElectronRuntime(process.env, app.commandLine)
+mark('electron_runtime_ready')
 
 const paths = resolveAppPaths({
   appData: app.getPath('appData'),
   dev: !app.isPackaged,
   env: process.env,
 })
+mark('paths_resolved')
 for (const dir of requiredDirectories(paths)) mkdirSync(dir, { recursive: true })
 mark('paths_ready')
 
@@ -122,12 +124,17 @@ mark('paths_ready')
  * 检查点使用的 Git（M5-03）：本机优先，其次随包 MinGit。整个进程只探测一次，
  * 检查点、改动集、隔离工作区与宿主共用同一结果。
  */
-const gitLocation = await createGitLocator({
+// 探测会 spawn 一次 `<git> --version`：先发起，等数据库打开之后再取结果，两段耗时重叠。
+const locatingGit = createGitLocator({
   bundledDir: app.isPackaged
     ? join(process.resourcesPath, 'git')
     : join(import.meta.dirname, '../../resources/git'),
   env: process.env,
 }).locate()
+// 打开数据库是同步的：先开库，再取 Git 探测结果，让子进程探测与建库/迁移重叠。
+const storage = openSqliteStorage({ file: paths.database })
+mark('storage_open')
+const gitLocation = await locatingGit
 mark('git_located')
 /** 交给 `openShadowRepo` 与工作区服务的 Git 参数；不可用时为空（回退到 PATH 中的 `git`）。 */
 const gitOptions: { gitBinary?: string; gitEnv?: Readonly<Record<string, string>> } =
@@ -210,8 +217,6 @@ function readLogFile(file: string): string {
   }
 }
 
-const storage = openSqliteStorage({ file: paths.database })
-mark('storage_open')
 /** 凭据（ADR-0010）：界面经 IPC 写入，启动宿主时按提供方配置的凭据引用解析后经 `host.init` 传入。 */
 const credentials = createLocalKeyStore({
   file: paths.credentials,
