@@ -45,7 +45,7 @@ describe('parseLineRanges', () => {
 })
 
 describe('CodeCard', () => {
-  it('标题栏：路径（目录与文件名）、新文件、增删数；行号从 startLine 开始', () => {
+  it('标题栏：路径（目录与文件名）、新文件、增删数；行号从 startLine 开始', async () => {
     wrap(
       <CodeCard
         code={'a\r\nb\n'}
@@ -63,7 +63,10 @@ describe('CodeCard', () => {
     expect(within(card).getByText('新文件')).toBeTruthy()
     expect(within(card).getByText('+3')).toBeTruthy()
     expect(within(card).getByText('−1')).toBeTruthy()
-    expect(card.querySelector('img')?.getAttribute('src')).toBe('./typescript.svg')
+    // 图标映射在首次渲染之后异步加载。
+    await waitFor(() =>
+      expect(card.querySelector('img')?.getAttribute('src')).toBe('./typescript.svg'),
+    )
     expect(lineNumbers(card)).toEqual(['9', '10'])
   })
 

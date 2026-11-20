@@ -53,11 +53,14 @@ afterEach(() => {
 })
 
 describe('WorkspaceGitBar', () => {
-  it('shows the current directory with its material folder icon', () => {
+  it('shows the current directory with its material folder icon', async () => {
     const { container } = render(view('/work/src'))
 
     expect(screen.getByLabelText('当前目录：/work/src')).toBeTruthy()
-    expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src.svg')
+    // 图标映射在首次渲染之后异步加载，首帧是通用目录图标。
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src.svg'),
+    )
   })
 
   it('shows the workspace name and its current branch', async () => {

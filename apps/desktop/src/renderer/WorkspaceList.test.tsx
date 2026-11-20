@@ -92,10 +92,15 @@ describe('WorkspaceList', () => {
   it('uses the material folder icon and its open variant', async () => {
     const { container } = setup([project({ path: '/work/src' })])
     const section = screen.getByRole('region', { name: '工作空间' })
-    expect(section.querySelector('img')?.getAttribute('src')).toBe('./folder-src-open.svg')
+    // 图标映射在首次渲染之后异步加载，首帧是通用目录图标。
+    await waitFor(() =>
+      expect(section.querySelector('img')?.getAttribute('src')).toBe('./folder-src-open.svg'),
+    )
 
     await userEvent.click(within(section).getByRole('button', { name: 'demo 的会话' }))
-    expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src.svg')
+    await waitFor(() =>
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src.svg'),
+    )
   })
 
   it('sorts pinned first, archived last, then by activity', () => {
