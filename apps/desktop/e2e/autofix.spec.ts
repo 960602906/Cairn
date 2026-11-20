@@ -12,7 +12,13 @@ import path from 'node:path'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
 import { startFakeGithub } from './fake-github.js'
-import { configureProvider, rpc } from './session.js'
+import { configureProvider, rpc, sessionPanel } from './session.js'
+
+const ARTIFACTS = path.resolve(
+  import.meta.dirname,
+  '../../../.cache/cairn-visual-check/background-tasks',
+)
+mkdirSync(ARTIFACTS, { recursive: true })
 
 const AUTHOR = { name: 'Cairn E2E', email: 'e2e@example.com' }
 
@@ -80,6 +86,8 @@ test('自动修复：CI 失败触发修复会话，活动中心可查看并暂�
     await window.getByRole('button', { name: /^设置/ }).click()
     const nav = window.getByRole('navigation', { name: '设置分类' })
     await expect(nav.getByRole('button', { name: '自动修复' })).toHaveCount(0)
+    // Esc 的处理挂在设置内容上；等内容加载完再按，避免落在 Suspense 占位骨架里。
+    await expect(window.getByRole('heading', { level: 2, name: '通用与外观' })).toBeVisible()
     await window.keyboard.press('Escape')
 
     // 会话里开启监视（Agent 的 watch_pull_request 走同一个入口）：立即评估一次，开出修复会话。
@@ -102,6 +110,18 @@ test('自动修复：CI 失败触发修复会话，活动中心可查看并暂�
     await item.getByRole('button', { name: '查看' }).click()
     await expect(window.getByRole('heading', { level: 2, name: '自动修复 o/r#1' })).toBeVisible()
     await expect(window.getByText(/失败的检查：test/)).toBeVisible()
+
+    // 修复会话的工作台里，这次自动修复同样列在「后台任务」。
+    const toggle = window.getByRole('button', { name: '会话信息' })
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+    const panel = sessionPanel(window)
+    await panel.getByRole('button', { name: '打开其他面板' }).click()
+    await window.getByRole('menuitem', { name: '后台' }).click()
+    const finished = panel.getByRole('region', { name: '已完成' })
+    await expect(finished).toContainText('o/r#1')
+    await expect(finished).toContainText('待检查')
+    await window.mouse.move(900, 400)
+    await window.screenshot({ path: path.join(ARTIFACTS, 'autofix-light.png') })
 
     // 回到活动中心，可以停止监视。
     await window.getByRole('button', { name: '活动', exact: true }).click()

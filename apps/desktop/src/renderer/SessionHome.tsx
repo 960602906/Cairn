@@ -1,14 +1,15 @@
 /**
- * 右侧工作台首页：只保留当前项目文件树的紧凑预览。
+ * 右侧工作台首页：当前项目文件树的紧凑预览，以及这一会话的后台任务概览。
  *
  * 上下文用量已移到输入框的圆环弹层，检查器和运行统计卡片不再占用右栏。
  */
-import { FolderTree } from 'lucide-react'
+import { Activity, FolderTree } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
 import type { FileTreeEntry, ProjectSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
+import { backgroundTaskTitle, useBackgroundTasks } from './BackgroundTasksPanel.js'
 import { FileTypeIcon, FolderTypeIcon } from './file-icons.js'
 import { lastSegment } from './paths.js'
 import { projectDisplayName } from './project-name.js'
@@ -49,10 +50,14 @@ function HomeCard({
 
 export function SessionHome({
   view,
+  sessionId = '',
   onOpenFiles,
+  onOpenBackground,
 }: {
   readonly view: SessionView | undefined
+  readonly sessionId?: string
   readonly onOpenFiles: () => void
+  readonly onOpenBackground?: () => void
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -71,6 +76,7 @@ export function SessionHome({
     tc('project.defaultName'),
     projectPath === undefined ? '' : lastSegment(projectPath),
   )
+  const background = useBackgroundTasks(view, sessionId)
 
   useEffect(() => {
     if (project === undefined) {
@@ -140,6 +146,31 @@ export function SessionHome({
             ))
           )}
         </HomeCard>
+        {onOpenBackground !== undefined && (
+          <HomeCard
+            icon={<Activity />}
+            title={t('sidePanel.background')}
+            onClick={onOpenBackground}
+          >
+            {background.running.length + background.finished.length === 0 ? (
+              <span className="text-faint">{t('background.empty')}</span>
+            ) : (
+              <>
+                <span className="text-muted">
+                  {t('background.summary', {
+                    running: background.running.length,
+                    finished: background.finished.length,
+                  })}
+                </span>
+                {background.running.slice(0, 2).map((task) => (
+                  <span key={task.key} className="truncate text-fg2">
+                    {backgroundTaskTitle(task)}
+                  </span>
+                ))}
+              </>
+            )}
+          </HomeCard>
+        )}
       </div>
     </div>
   )

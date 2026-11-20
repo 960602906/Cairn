@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { useTranslation } from 'react-i18next'
 import { planProgressSteps, type SessionView } from '@cairn/core'
 import type { ChangeSetSummary, ProjectSummary, SessionStatus } from '@cairn/protocol'
+import { BackgroundTasksPanel } from './BackgroundTasksPanel.js'
 import { ChangeSetReview } from './ChangeSetReview.js'
 import { DelegationPanel } from './DelegationPanel.js'
 import { MemoryPanel } from './MemoryPanel.js'
@@ -21,7 +22,8 @@ import { SessionBriefPanel } from './SessionBrief.js'
 import { useSessionStore } from './store-context.js'
 import { cn, PanelEmpty, SegmentedControl } from './ui/index.js'
 
-export type SessionPanel = 'files' | 'diff' | 'brief' | 'plan' | 'delegation' | 'memory'
+export type SessionPanel =
+  'files' | 'background' | 'diff' | 'brief' | 'plan' | 'delegation' | 'memory'
 /** 文件预览标签的标识：`file:` + 相对项目根的路径。 */
 export type FileTabId = `file:${string}`
 /** 标签栏里的一项：固定面板或一个文件。 */
@@ -283,6 +285,13 @@ export const SESSION_PANEL_DEFINITIONS: readonly SessionPanelDefinition[] = [
     label: 'sidePanel.files',
     addable: true,
     content: FilesPanel,
+  },
+  {
+    id: 'background',
+    shortLabel: 'sidePanel.backgroundShort',
+    label: 'sidePanel.background',
+    addable: true,
+    content: BackgroundTasksPanel,
   },
   {
     id: 'diff',
