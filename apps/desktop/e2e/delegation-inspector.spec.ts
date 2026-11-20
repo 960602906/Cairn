@@ -2,6 +2,8 @@
  * 多 Agent 委派界面（M4-05）：父运行并行派出两个只读子运行，对话里显示委派卡片；
  * 点击卡片在右侧工作台打开子 Agent 详情，按需读取该子运行的只读过程树。
  */
+import { mkdirSync } from 'node:fs'
+import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
@@ -13,6 +15,12 @@ import {
   sessionPanel,
   setAgentOnSession,
 } from './session.js'
+
+const ARTIFACTS = path.resolve(
+  import.meta.dirname,
+  '../../../.cache/cairn-visual-check/background-tasks',
+)
+mkdirSync(ARTIFACTS, { recursive: true })
 
 async function request<T>(window: Page, method: string, params: object): Promise<T> {
   const reply = (await window.evaluate(
@@ -164,6 +172,19 @@ test('并行子运行的委派卡片与运行树', async ({ launch, userData }) 
     await expect(detail.getByText('只读检查员').first()).toBeVisible()
     await expect(detail.getByRole('button', { name: /第 1 轮/ })).toBeVisible()
     await expect(loginCard.getByRole('list', { name: '运行树' })).toHaveCount(0)
+
+    // 同一批子运行也出现在工作台的「后台任务」里。
+    await sessionPanel(window).getByRole('button', { name: '打开其他面板' }).click()
+    await window.getByRole('menuitem', { name: '后台' }).click()
+    const finished = sessionPanel(window).getByRole('region', { name: '已完成' })
+    await expect(finished).toContainText('检查登录流程')
+    await expect(finished).toContainText('检查权限规则')
+    await window.mouse.move(900, 400)
+    await window.screenshot({ path: path.join(ARTIFACTS, 'delegation-light.png') })
+    await window.screenshot({
+      clip: { x: 850, y: 80, width: 350, height: 260 },
+      path: path.join(ARTIFACTS, 'delegation-zoom.png'),
+    })
   } finally {
     await mock?.close()
   }
