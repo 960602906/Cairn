@@ -20,10 +20,7 @@ const marks: StartupMark[] = []
 let enabled = false
 
 /** 开发版始终记录；打包版只在显式要求时记录。 */
-export function shouldTraceStartup(
-  env: NodeJS.ProcessEnv = process.env,
-  packaged = true,
-): boolean {
+export function shouldTraceStartup(env: NodeJS.ProcessEnv = process.env, packaged = true): boolean {
   return !packaged || env['CAIRN_STARTUP_TRACE'] === '1'
 }
 

@@ -9,15 +9,7 @@
  * 主题跟随设置（M2-01，`ThemeSync`）。
  */
 import { PanelLeftOpen } from 'lucide-react'
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { I18nextProvider, useTranslation } from 'react-i18next'
 import type { I18nInstance } from '@cairn/i18n'
 import type { ProjectSummary } from '@cairn/protocol'

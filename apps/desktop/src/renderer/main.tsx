@@ -10,12 +10,7 @@ import { getMainApi } from './api.js'
 import { App } from './App.js'
 import { syncDocumentLang } from './locale.js'
 import { createSessionStore } from './session-store.js'
-import {
-  instrumentRequests,
-  mark,
-  markFirstPaint,
-  observeLongTasks,
-} from './startup-trace.js'
+import { instrumentRequests, mark, markFirstPaint, observeLongTasks } from './startup-trace.js'
 import { applyTheme } from './theme.js'
 
 const root = document.getElementById('root')

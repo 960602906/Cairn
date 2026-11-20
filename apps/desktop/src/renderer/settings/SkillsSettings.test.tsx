@@ -17,7 +17,6 @@ import { App } from '../App.js'
 import { createSessionStore } from '../session-store.js'
 import { clearSettingsData } from './settings-data-cache.js'
 
-
 afterEach(cleanup)
 beforeEach(clearSettingsData)
 

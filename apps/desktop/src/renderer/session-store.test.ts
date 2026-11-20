@@ -2264,7 +2264,9 @@ describe('首屏请求合并（single-flight）', () => {
     const { api, calls } = fakeApi({
       'project.list': () => {
         requests += 1
-        return requests === 1 ? gate.promise : { projects: [{ projectId: 'p1', name: 'P', path: '/' }] }
+        return requests === 1
+          ? gate.promise
+          : { projects: [{ projectId: 'p1', name: 'P', path: '/' }] }
       },
     })
     const store = createSessionStore(api)
@@ -2309,7 +2311,12 @@ describe('首屏请求合并（single-flight）', () => {
       },
     })
     const store = createSessionStore(api)
-    const empty = { approvals: [], running: [], completed: [], counts: { approvals: 0, running: 0 } }
+    const empty = {
+      approvals: [],
+      running: [],
+      completed: [],
+      counts: { approvals: 0, running: 0 },
+    }
 
     const first = store.getState().refreshActivity()
     const second = store.getState().refreshActivity()

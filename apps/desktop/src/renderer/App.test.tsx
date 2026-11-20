@@ -1,12 +1,5 @@
 // @vitest-environment jsdom
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,7 +8,6 @@ import { App } from './App.js'
 import { createSessionStore } from './session-store.js'
 import type { MainApi } from './api.js'
 import type { ActivityListResult } from '@cairn/protocol'
-
 
 afterEach(() => {
   cleanup()
