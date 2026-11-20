@@ -60,7 +60,6 @@ export function ChatPanel({
   initialChangeSetId,
   initialChangeSetSessionId,
   onInitialChangeSetOpened,
-  notice,
   leading,
   onNewChat,
   onOpenSettings,
@@ -71,8 +70,6 @@ export function ChatPanel({
   /** 请求打开改动集的会话；当前会话不同时不打开。 */
   readonly initialChangeSetSessionId?: string | undefined
   readonly onInitialChangeSetOpened?: (() => void) | undefined
-  /** 会话标题栏下方的非模态提示（M5-07 的更新提示）。 */
-  readonly notice?: ReactNode
   /** 顶栏最左侧的内容：左栏收起时的展开与新对话按钮。 */
   readonly leading?: ReactNode
   /** 输入框 `/new`。 */
@@ -396,7 +393,6 @@ export function ChatPanel({
           </IconButton>
         </div>
       </TopBar>
-      {notice}
       <div className="relative flex min-h-0 flex-1">
         {overlayOpen && (
           <div

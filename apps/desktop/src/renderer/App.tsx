@@ -29,7 +29,6 @@ import type { SessionStore } from './session-store.js'
 import { SettingsContent, SettingsNav, type SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
 import { ThemeSync } from './ThemeSync.js'
-import { UpdateNotice } from './UpdateNotice.js'
 import { CairnAppMark, IconButton, TooltipProvider } from './ui/index.js'
 import { WhatsNewDialog } from './WhatsNewDialog.js'
 
@@ -85,7 +84,6 @@ function Workspace() {
   const selectSession = useSessionStore((s) => s.selectSession)
   const activityBadge = useSessionStore((s) => s.activity?.counts?.approvals ?? 0)
   const chromeStyle = windowControlsStyle()
-  const updateNotice = <UpdateNotice onOpenSettings={() => setSettings('update')} />
   const [welcomeDismissed, setWelcomeDismissed] = useState(false)
   const showWelcome = userSettings?.onboardingSeen === false && !welcomeDismissed
 
@@ -374,7 +372,6 @@ function Workspace() {
         {composing ? (
           <>
             <TopBar>{reveal}</TopBar>
-            {updateNotice}
             <NewSession
               initialProjectPath={newChatProjectPath}
               onCreatingChange={(creating) => {
@@ -386,7 +383,6 @@ function Workspace() {
         ) : (
           <ChatPanel
             leading={reveal}
-            notice={updateNotice}
             onNewChat={startNewChat}
             onOpenSettings={setSettings}
             onOpenSearch={() => setSearching(true)}

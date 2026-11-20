@@ -31,18 +31,6 @@ const info: AppInfo = {
 function setup(value: AppInfo | (() => Promise<AppInfo>)) {
   const request = vi.fn(async (method: string) => {
     if (method === 'app.info') return typeof value === 'function' ? value() : value
-    if (method === 'update.status') {
-      return {
-        phase: 'idle',
-        currentVersion: '0.1.0',
-        channel: 'beta',
-        enabled: true,
-        autoCheck: true,
-        source: 'https://updates.example/cairn/',
-        signatureVerified: false,
-        requiresRestart: false,
-      }
-    }
     if (method === 'app.licenses') {
       return { available: true, text: 'MIT — demo', truncated: false }
     }
@@ -127,9 +115,9 @@ describe('AboutSettings', () => {
     expect(screen.getByText('正在读取构建信息…')).toBeDefined()
   })
 
-  it('shows the update source and opens the third-party notices', async () => {
+  it('opens the third-party notices', async () => {
     setup(info)
-    expect(await screen.findByText('https://updates.example/cairn/')).toBeDefined()
+    await waitFor(() => expect(screen.getByText('0.1.0')).toBeDefined())
     await userEvent.click(screen.getByRole('button', { name: '查看许可' }))
     expect(await screen.findByText('MIT — demo')).toBeDefined()
   })

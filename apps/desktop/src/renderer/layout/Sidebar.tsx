@@ -12,6 +12,7 @@ import { SessionList } from '../SessionList.js'
 import { CairnMark, cn, IconButton, Kbd } from '../ui/index.js'
 import { WorkspaceList } from '../WorkspaceList.js'
 import { ResizeHandle, useResizableWidth } from './resize.js'
+import { UpdateButton } from './UpdateButton.js'
 import { newChatShortcut, searchShortcut, settingsShortcut } from './shortcuts.js'
 
 /** 左栏默认宽度；可以拖动右边缘调整。 */
@@ -160,6 +161,7 @@ export function Sidebar({
             </>
           )}
           <div className="no-drag ml-auto flex items-center gap-0.5">
+            <UpdateButton />
             {onActivity && (
               <ActivityIconButton
                 active={activityActive}
