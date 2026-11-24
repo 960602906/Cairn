@@ -232,8 +232,8 @@ describe('PlanDetails', () => {
       expect(within(card).getByText(label)).toBeTruthy()
     }
     expect(within(card).getByText('说明：入口在 main.ts')).toBeTruthy()
-    expect(card.querySelector('.text-ok svg path')).toBeTruthy()
-    expect(card.querySelector('.animate-spin svg path')).toBeTruthy()
+    expect(card.querySelector('svg.lucide-circle-check')).toBeTruthy()
+    expect(card.querySelector('svg.lucide-loader-circle.animate-spin')).toBeTruthy()
     expect(within(card).getByText('执行中')).toBeTruthy()
   })
 
@@ -294,9 +294,10 @@ describe('PlanProgress', () => {
     expect(within(card).getByText('2 / 4')).toBeTruthy()
     expect(within(card).getAllByRole('listitem')).toHaveLength(4)
     expect(within(card).getByText('进行中')).toBeTruthy()
+    expect(card.querySelector('svg.lucide-list-todo')).toBeTruthy()
     const rows = within(card).getAllByRole('listitem')
-    expect(rows[0]!.querySelector('.text-ok svg path')).toBeTruthy()
-    expect(rows[1]!.querySelector('.animate-spin svg path')).toBeTruthy()
+    expect(rows[0]!.querySelector('svg.lucide-circle-check')).toBeTruthy()
+    expect(rows[1]!.querySelector('svg.lucide-loader-circle.animate-spin')).toBeTruthy()
     expect(rows[2]!.querySelector('svg.text-faint')).toBeTruthy()
     expect(rows[3]!.querySelector('svg.text-faint')).toBeTruthy()
 

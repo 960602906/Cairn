@@ -424,10 +424,10 @@ describe('MessageStream 渲染', () => {
       ev(6, 'tool.requested', { toolCallId: 'tc1', name: 'read_file', input: { path: 'a.ts' } }),
     ])
     const rendered = render(renderStream(base))
-    expect(screen.getByRole('button', { name: /读取 a\.ts/ }).getAttribute('aria-expanded')).toBe(
-      'false',
-    )
-    expect(screen.queryByText('a.ts')).toBeNull()
+    const trigger = screen.getByRole('button', { name: /读取 a\.ts/ })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    // 组头已经说了对象，步骤正文在折叠容器里
+    expect(trigger.nextElementSibling?.getAttribute('aria-hidden')).toBe('true')
     const completed = view([
       ...START,
       ev(5, 'message.assistant.completed', {
@@ -456,10 +456,12 @@ describe('MessageStream 渲染', () => {
       tools: { ...completed.tools, tc1: { ...completed.tools.tc1!, status: 'failed' as const } },
     }
     render(renderStream(failed))
-    // 失败也只写在组头，仍然等用户点开
-    expect(screen.getByRole('button', { name: /a\.ts 失败/ }).getAttribute('aria-expanded')).toBe(
-      'false',
-    )
+    // 组头仍只说最新一步，失败只体现在图标颜色上，仍然等用户点开
+    const failedTrigger = screen.getByRole('button', { name: /读取 a\.ts/ })
+    expect(failedTrigger.getAttribute('aria-expanded')).toBe('false')
+    expect(
+      failedTrigger.querySelector('svg[data-tool-icon="read_file"]')?.getAttribute('class'),
+    ).toContain('text-danger')
   })
 
   it('shows the reasoning as a collapsible card that expands on click', async () => {
@@ -1467,12 +1469,12 @@ describe('MessageStream 试运行（M4-12）', () => {
     )
 
     // 折叠状态下，组头只说最新一步在做什么
-    expect(screen.getByText(/运行 pnpm test/)).toBeTruthy()
+    const activityButton = screen.getByRole('button', { name: /运行 pnpm test/ })
+    expect(activityButton).toBeTruthy()
     // 最终回复正常显示
     expect(screen.getByText('全部完成')).toBeTruthy()
 
     // 默认完成状态下收起
-    const activityButton = screen.getByRole('button', { name: /运行 pnpm test/ })
     expect(activityButton.getAttribute('aria-expanded')).toBe('false')
 
     // 点击展开
@@ -1659,7 +1661,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(activity.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getAllByText('想一想').length).toBeGreaterThan(0)
     expect(screen.getByText('补充说明')).toBeTruthy()
-    expect(screen.getByText('a.ts')).toBeTruthy()
+    expect(screen.getAllByText('a.ts').length).toBeGreaterThan(0)
     expect(screen.getByText('pnpm test')).toBeTruthy()
     expect(screen.getByText('（回复未完成）')).toBeTruthy()
     expect(screen.getByText('计划')).toBeTruthy()
@@ -1718,26 +1720,77 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(done.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('等待审批的归组点明卡点，但仍然默认折叠', () => {
-    renderStream(base, ['tc2'])
-    const activity = screen.getByRole('button', { name: /等待审批/ })
-    expect(activity.getAttribute('aria-expanded')).toBe('false')
+  it('已经结束的轮次组头不闪，图标是完成的弱色', () => {
+    renderStream(base)
+    const done = screen.getByRole('button', { name: /查看目录 src/ })
+    expect(done.querySelector('.animate-shimmer')).toBeNull()
+    expect(done.querySelector('svg[data-tool-icon="list_dir"]')?.getAttribute('class')).toContain(
+      'text-muted',
+    )
   })
 
-  it('用户取消的工具在组头显示已取消，而不是失败', () => {
+  it('正在运行的这一轮，只有末尾的活动组在闪', () => {
+    const stream = {
+      ...base,
+      runs: {
+        r1: {
+          ...base.runs.r1,
+          turn: { turnId: 't1', status: 'running' },
+          state: 'thinking',
+        },
+      },
+      runOrder: ['r1'],
+    } as unknown as SessionView
+    renderStream(stream)
+    // 前面的组不闪，只有末尾组承担“这一轮还在进行”
+    expect(
+      screen.getByRole('button', { name: /读取 a\.ts/ }).querySelector('.animate-shimmer'),
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', { name: /查看目录 src/ }).querySelector('.animate-shimmer'),
+    ).toBeTruthy()
+  })
+
+  it('组里有没跑完的工具时，即使不是末尾也闪', () => {
+    const stream = {
+      ...base,
+      tools: { ...base.tools, tc1: { ...base.tools.tc1!, status: 'running' } },
+    } as unknown as SessionView
+    renderStream(stream)
+    expect(
+      screen.getByRole('button', { name: /读取 a\.ts/ }).querySelector('.animate-shimmer'),
+    ).toBeTruthy()
+  })
+
+  it('等待审批的步骤不改变组头，也不自动展开', async () => {
+    const stream = {
+      ...base,
+      tools: { ...base.tools, tc2: { ...base.tools.tc2!, status: 'requested' as const } },
+    } as unknown as SessionView
+    renderStream(stream, ['tc2'])
+    const activity = screen.getByRole('button', { name: /查看目录 src/ })
+    expect(activity.getAttribute('aria-expanded')).toBe('false')
+    expect(activity.textContent).not.toContain('等待审批')
+    // 展开后，等待审批写在步骤行本身
+    await userEvent.click(activity)
+    expect(screen.getByText('等待审批')).toBeTruthy()
+  })
+
+  it('用户取消的工具不改变组头，也不使用失败或横杠图形', async () => {
     const stream = {
       ...base,
       runs: { ...base.runs, r1: { ...base.runs.r1, turn: { turnId: 't1', status: 'aborted' } } },
       tools: { ...base.tools, tc2: { toolCallId: 'tc2', status: 'cancelled', durationMs: 20 } },
     } as unknown as SessionView
     renderStream(stream)
-    // 步骤行本身也写着「已取消」，这里要的是组头那一行。
-    const activity = document.querySelector<HTMLElement>('button[data-activity-group]')!
-    expect(activity.textContent).toContain('pnpm test')
-    expect(activity.textContent).toContain('已取消')
-    // 取消用横杠，不用失败的红叉
-    expect(activity.querySelector('svg.lucide-minus')).toBeTruthy()
+    // 组头只说最新一步，取消状态写在步骤行里。
+    const activity = screen.getByRole('button', { name: /查看目录 src/ })
+    expect(activity.textContent).not.toContain('已取消')
+    expect(activity.querySelector('svg.lucide-minus')).toBeNull()
+    expect(activity.querySelector('svg[data-tool-icon="list_dir"]')).toBeTruthy()
     expect(activity.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(activity)
+    expect(screen.getByText('已取消')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /失败/ })).toBeNull()
   })
 
@@ -1803,10 +1856,13 @@ describe('MessageStream 多步骤归组的细节', () => {
       ev(recovered ? 13 : 11, 'turn.completed', { durationMs: 20 }),
     ])
 
-  it('最后一步命令非零退出时组头说失败，界面仍保持折叠', () => {
+  it('最后一步命令非零退出时组头仍说最新一步，图标标红，界面保持折叠', () => {
     renderStream(failingTurn(false))
-    const activity = screen.getByRole('button', { name: /pnpm test 失败/ })
+    const activity = screen.getByRole('button', { name: /运行 pnpm test/ })
     expect(activity.getAttribute('aria-expanded')).toBe('false')
+    expect(activity.textContent).not.toContain('失败')
+    const icon = activity.querySelector('svg[data-tool-icon="run_command"]')!
+    expect(icon.getAttribute('class')).toContain('text-danger')
   })
 
   it('非零退出后又有别的步骤跑完，组头回到最新一步而不是停在失败', () => {

@@ -1,16 +1,21 @@
 /**
  * 计划卡片（M3-05）：对话里显示摘要与审批操作，右侧栏只展示完整内容。
+ *
+ * 步骤与待办条目的图标：未开始空心圆、进行中转圈、完成绿色对勾圆、跳过划线圆；执行中的标记也用转圈，
+ * 不用品牌图形。
  */
 import {
   Check,
   ChevronRight,
   Circle,
+  CircleCheck,
   CircleSlash,
   Copy,
   ChevronDown,
   ListTodo,
   Download,
   Lightbulb,
+  LoaderCircle,
   Maximize2,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -18,7 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { sessionStatus, type PlanView, type TaskItemView, type TaskListView } from '@cairn/core'
 import { PLAN_FEEDBACK_MAX } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
-import { Button, CairnMark, cn, IconButton } from './ui/index.js'
+import { Button, cn, IconButton } from './ui/index.js'
 
 /** 下载与复制使用的完整计划文本。 */
 export function planDocument(plan: PlanView): string {
@@ -44,6 +49,18 @@ export function planPreview(plan: PlanView): string {
   const lines = markdown.split('\n')
   if (lines[0]?.replace(/^#+\s*/, '').trim() === plan.content.goal.trim()) lines.shift()
   return lines.join('\n').trim()
+}
+
+/** 执行中的转圈（计划状态、进度卡的“执行中”标记）。 */
+function Spinner({ size }: { readonly size: number }) {
+  return (
+    <LoaderCircle
+      aria-hidden
+      style={{ width: size, height: size, animationDuration: '1.4s' }}
+      strokeWidth={2.4}
+      className="shrink-0 animate-spin"
+    />
+  )
 }
 
 /**
@@ -181,11 +198,7 @@ export function PlanSummaryCard({
             plan.status === 'approved' ? 'bg-accent-soft text-accent' : 'bg-sunk text-muted',
           )}
         >
-          {plan.status === 'approved' && (
-            <span aria-hidden className="animate-spin" style={{ animationDuration: '1.4s' }}>
-              <CairnMark size={11} />
-            </span>
-          )}
+          {plan.status === 'approved' && <Spinner size={11} />}
           {status}
         </span>
         <span className="ml-auto flex shrink-0 items-center">
@@ -219,23 +232,25 @@ export function PlanSummaryCard({
   )
 }
 
+/** 步骤与待办条目的图标：未开始空心圆、进行中转圈、完成绿色对勾圆、跳过划线圆。 */
 function StepIcon({ status }: { readonly status: PlanView['steps'][number]['status'] }) {
-  if (status === 'done' || status === 'in_progress') {
-    return (
-      <span
-        aria-hidden
-        className={cn(
-          'grid size-3.5 shrink-0 place-items-center',
-          status === 'done' ? 'text-ok' : 'animate-spin text-accent',
-        )}
-        {...(status === 'in_progress' ? { style: { animationDuration: '1.4s' } } : {})}
-      >
-        <CairnMark size={13} />
-      </span>
-    )
+  switch (status) {
+    case 'in_progress':
+      return (
+        <LoaderCircle
+          aria-hidden
+          strokeWidth={2.4}
+          style={{ animationDuration: '1.4s' }}
+          className="size-3.5 shrink-0 animate-spin text-accent"
+        />
+      )
+    case 'done':
+      return <CircleCheck aria-hidden className="size-3.5 shrink-0 text-ok" />
+    case 'skipped':
+      return <CircleSlash aria-hidden className="size-3.5 shrink-0 text-faint" />
+    default:
+      return <Circle aria-hidden className="size-3.5 shrink-0 text-faint" />
   }
-  const Icon = status === 'skipped' ? CircleSlash : Circle
-  return <Icon aria-hidden className="size-3.5 shrink-0 text-faint" />
 }
 
 /** 计划还有没做完的步骤。 */
@@ -278,13 +293,10 @@ export function TaskProgress({
       className="mb-2 overflow-hidden rounded-card bg-raise shadow-2"
     >
       <div className="flex h-9 items-center gap-2 pr-1.5 pl-3">
-        {running ? (
-          <span className="animate-spin text-accent" style={{ animationDuration: '1.4s' }}>
-            <CairnMark size={14} />
-          </span>
-        ) : (
-          <ListTodo aria-hidden className="size-3.5 shrink-0 text-muted" />
-        )}
+        <ListTodo
+          aria-hidden
+          className={cn('size-3.5 shrink-0', running ? 'text-accent' : 'text-muted')}
+        />
         {onOpen ? (
           <button
             type="button"
@@ -299,9 +311,7 @@ export function TaskProgress({
         )}
         {running && (
           <span className="flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent">
-            <span className="animate-spin" style={{ animationDuration: '1.4s' }}>
-              <CairnMark size={10} />
-            </span>
+            <Spinner size={10} />
             {t('plan.progress.running')}
           </span>
         )}
@@ -397,9 +407,7 @@ export function PlanDetails({
         <h3 className="text-heading leading-snug text-fg">{plan.content.goal}</h3>
         {running && (
           <span className="mt-1 flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent">
-            <span className="animate-spin" style={{ animationDuration: '1.4s' }}>
-              <CairnMark size={10} />
-            </span>
+            <Spinner size={10} />
             {t('plan.progress.running')}
           </span>
         )}

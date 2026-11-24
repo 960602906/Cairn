@@ -408,30 +408,38 @@ describe('ToolStep：ask_user', () => {
 })
 
 describe('ToolStep：完成态', () => {
-  it('完成后的节点是绿色对勾', () => {
+  it('完成后显示操作图标，颜色变淡', () => {
     const { container } = step({ tool: tool({ status: 'completed' }) })
-    const node = container.querySelector('section[data-status="completed"] svg.lucide-check')!
-    expect(node.getAttribute('class')).toContain('text-ok')
+    const node = container.querySelector(
+      'section[data-status="completed"] svg[data-tool-icon="run_command"]',
+    )!
+    expect(node.getAttribute('class')).toContain('text-muted')
   })
 
-  it('失败节点是红色叉', () => {
+  it('失败节点显示操作图标并标红', () => {
     const { container } = step({ tool: tool({ status: 'failed' }) })
-    const node = container.querySelector('section[data-status="failed"] svg.lucide-x')!
+    const node = container.querySelector(
+      'section[data-status="failed"] svg[data-tool-icon="run_command"]',
+    )!
     expect(node.getAttribute('class')).toContain('text-danger')
   })
 
-  it('执行中的节点是转圈的缺口圆', () => {
+  it('执行中的节点用强调色并轻微闪烁', () => {
     const { container } = step({ tool: tool({ status: 'running' }) })
-    const node = container.querySelector('section[data-status="running"] svg.lucide-loader-circle')!
-    expect(node.getAttribute('class')).toContain('animate-spin')
+    const node = container.querySelector(
+      'section[data-status="running"] svg[data-tool-icon="run_command"]',
+    )!
+    expect(node.getAttribute('class')).toContain('animate-pulse')
     expect(node.getAttribute('class')).toContain('text-accent')
   })
 
-  it('等待中的节点是空心圆', () => {
+  it('等待中的节点用操作图标，颜色更淡', () => {
     const { container } = step({ tool: tool({ status: 'requested' }) })
-    expect(
-      container.querySelector('section[data-status="requested"] svg.lucide-circle'),
-    ).toBeTruthy()
+    const node = container.querySelector(
+      'section[data-status="requested"] svg[data-tool-icon="run_command"]',
+    )!
+    expect(node.getAttribute('class')).toContain('text-faint')
+    expect(node.getAttribute('class')).toContain('opacity-55')
   })
 
   it('工具列表没有竖线', () => {

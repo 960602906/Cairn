@@ -1200,7 +1200,8 @@ describe('ChatPanel', () => {
       '你你好',
       '助手你好！',
       '你再说一次',
-      '助手思考想想想想好的，\n你好！[图片]读取 {}',
+      '助手思考想想想想好的，\n你好！[图片]',
+      '助手读取 {}读取 {}等待执行',
     ])
     expect(screen.queryByRole('listitem', { busy: true })).toBeNull()
     expect(stopButton()).toBeNull()
