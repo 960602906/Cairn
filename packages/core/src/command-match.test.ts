@@ -22,7 +22,8 @@ describe('parseCommand', () => {
     ['diff <(ls a) b', ['diff <(ls a) b'], false],
     ['tee >(cat)', ['tee >(cat)'], false],
     ['echo "unclosed', ['echo "unclosed'], false],
-    ['echo $HOME > out.txt', ['echo $HOME > out.txt'], true],
+    // 重定向目标不经过路径检查，allow 规则不能匹配
+    ['echo $HOME > out.txt', ['echo $HOME > out.txt'], false],
     ['', [], true],
   ])('%j', (command, segments, reliable) => {
     expect(parseCommand(command)).toEqual({

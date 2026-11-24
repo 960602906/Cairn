@@ -117,13 +117,24 @@ export const sensitivePathGuard: PermissionGuard = (request) => {
 
 // ---------- 危险命令 ----------
 
-/** 按空白拆分一段命令，去掉引号（引号内的空白不拆）。 */
-export function tokenize(segment: string): string[] {
+/** 按空白拆分一段命令，去掉引号（引号内的空白不拆）。`escapes` 为 false 时把 `\` 当字面字符。 */
+function splitTokens(segment: string, escapes: boolean): string[] {
   const tokens: string[] = []
   let current = ''
   let quote: string | undefined
   let has = false
-  for (const char of segment) {
+  for (let i = 0; i < segment.length; i++) {
+    const char = segment[i]!
+    // 与 parseCommand 一致：引号外与双引号内的 `\x` 是字面的 x（单引号内不转义）
+    if (escapes && char === '\\' && quote !== "'" && i + 1 < segment.length) {
+      const next = segment[i + 1]!
+      if (quote === undefined || /["`$\\]/.test(next)) {
+        current += next
+        has = true
+        i++
+        continue
+      }
+    }
     if (quote) {
       if (char === quote) quote = undefined
       else current += char
@@ -146,6 +157,14 @@ export function tokenize(segment: string): string[] {
   if (has || current !== '') tokens.push(current)
   return tokens
 }
+
+/** POSIX 解释：引号外与双引号内的 `\x` 是字面的 x（单引号内不转义）。 */
+export function tokenize(segment: string): string[] {
+  return splitTokens(segment, true)
+}
+
+/** cmd / PowerShell 解释：`\` 是字面字符（路径分隔符），仍按空白拆分。 */
+const tokenizeLiteralBackslashes = (segment: string) => splitTokens(segment, false)
 
 /** 命令名：去掉路径与扩展名，小写。 */
 /* v8 ignore next -- split 至少返回一个元素，pop 不会为 undefined */
@@ -341,11 +360,14 @@ export function assessCommand(command: string, depth = 0): GuardResult | undefin
   let result: GuardResult | undefined
   if (DOWNLOAD_AND_RUN.test(normalized)) result = dangerous
   for (const segment of parseCommand(command).segments) {
-    const tokens = tokenize(segment)
-    result = stricter(result, assessTokens(tokens, depth))
-    if (result?.effect === 'deny') return result
-    // 命令中出现的敏感文件（如 `cat .env`、`type C:\Users\me\.ssh\id_rsa`）
-    if (tokens.slice(1).some((t) => isSensitivePath(t))) result = stricter(result, sensitive)
+    // `\` 在 POSIX shell 是转义、在 cmd / PowerShell 是路径分隔符。同一条命令两种解释都检查，
+    // 否则 `C:\Windows`、`C:\ -Recurse` 这类写法会绕过危险命令与敏感文件检查。
+    for (const tokens of [tokenize(segment), tokenizeLiteralBackslashes(segment)]) {
+      result = stricter(result, assessTokens(tokens, depth))
+      if (result?.effect === 'deny') return result
+      // 命令中出现的敏感文件（如 `cat .env`、`type C:\Users\me\.ssh\id_rsa`）
+      if (tokens.slice(1).some((t) => isSensitivePath(t))) result = stricter(result, sensitive)
+    }
   }
   if (depth < MAX_DEPTH) {
     for (const inner of substitutions(command)) {
