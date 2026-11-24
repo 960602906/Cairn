@@ -2,6 +2,9 @@
  * 语法高亮（M2-06，视觉规范 §7.1）：Shiki 细粒度用法，JavaScript 正则引擎（不用 WASM），语言按需加载。
  * 主题的颜色全部是 `var(--tk-*)`，浅色 / 深色由令牌切换，同一份结果两套主题通用。
  * 高亮结果按（语言、代码）缓存；代码过长时不高亮。
+ *
+ * 流式输出中的代码块（`useHighlight` 的 `streaming`）每次增量都是一段新代码：高亮节流、长度上限更小、
+ * 中间结果不写缓存（否则会挤掉已完成消息的结果）。
  */
 import {
   createHighlighterCore,
@@ -10,13 +13,24 @@ import {
   type ThemedToken,
 } from '@shikijs/core'
 import { createJavaScriptRegexEngine } from '@shikijs/engine-javascript'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LanguageInfo } from './languages.js'
 
 export const THEME_NAME = 'cairn'
 /** 超过这么多字符不高亮（tokenize 是同步的，太长会卡住界面）。 */
 export const HIGHLIGHT_MAX_CHARS = 200_000
 const CACHE_SIZE = 64
+/** 流式输出中的代码块超过这么多字符先不高亮（每次都要从头 tokenize，同步执行）。 */
+export const STREAMING_HIGHLIGHT_MAX_CHARS = 20_000
+/** 流式输出中的代码块两次高亮之间至少间隔这么久（毫秒）。 */
+export const STREAMING_HIGHLIGHT_INTERVAL_MS = 250
+
+export interface HighlightOptions {
+  /** 是否写入缓存，默认写入；流式输出的中间结果不写。 */
+  readonly cache?: boolean
+  /** 超过这么多字符不高亮，默认 {@link HIGHLIGHT_MAX_CHARS}。 */
+  readonly maxChars?: number
+}
 
 const tk = (name: string) => `var(--tk-${name})`
 
@@ -167,8 +181,9 @@ export function cachedHighlight(
 export async function highlight(
   code: string,
   language: LanguageInfo,
+  options: HighlightOptions = {},
 ): Promise<HighlightedLines | undefined> {
-  if (code.length > HIGHLIGHT_MAX_CHARS) return undefined
+  if (code.length > (options.maxChars ?? HIGHLIGHT_MAX_CHARS)) return undefined
   const key = `${language.id}\0${code}`
   const hit = cache.get(key)
   if (hit) return hit
@@ -178,32 +193,79 @@ export async function highlight(
     const lines = core
       .codeToTokensBase(code, { lang: language.id, theme: THEME_NAME })
       .map((line) => line.map(toToken))
-    cache.set(key, lines)
-    if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!)
+    if (options.cache !== false) {
+      cache.set(key, lines)
+      if (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value!)
+    }
     return lines
   } catch {
     return undefined
   }
 }
 
+export interface UseHighlightOptions {
+  /**
+   * 代码还在流式输出：每 {@link STREAMING_HIGHLIGHT_INTERVAL_MS} 至多高亮一次，结果不写缓存。新结果出来之前，
+   * 如果上一次高亮的代码是现在的前缀，沿用它除最后一行外的结果（最后一行可能还在变长），其余行先显示纯文本。
+   */
+  readonly streaming?: boolean
+}
+
+interface HighlightResult {
+  readonly key: string
+  readonly languageId: string
+  readonly code: string
+  readonly lines: HighlightedLines
+}
+
 /** 高亮结果；还没好（或不高亮）时是 undefined，调用方先显示纯文本。 */
 export function useHighlight(
   code: string,
   language: LanguageInfo | undefined,
+  options: UseHighlightOptions = {},
 ): HighlightedLines | undefined {
+  const streaming = options.streaming ?? false
   const cached = language ? cachedHighlight(code, language) : undefined
-  const [result, setResult] = useState<{ key: string; lines: HighlightedLines } | undefined>()
+  const [result, setResult] = useState<HighlightResult | undefined>()
+  /** 上一次开始高亮的时间（流式节流用）。 */
+  const lastRun = useRef(0)
   const key = language ? `${language.id}\0${code}` : ''
   useEffect(() => {
     if (!language || cached) return
+    const lang = language
     let alive = true
-    void highlight(code, language).then((lines) => {
-      if (alive && lines) setResult({ key, lines })
-    })
+    const run = () => {
+      lastRun.current = Date.now()
+      const highlightOptions: HighlightOptions = streaming
+        ? { cache: false, maxChars: STREAMING_HIGHLIGHT_MAX_CHARS }
+        : {}
+      void highlight(code, lang, highlightOptions).then((lines) => {
+        if (alive && lines) setResult({ key, languageId: lang.id, code, lines })
+      })
+    }
+    const wait = streaming ? lastRun.current + STREAMING_HIGHLIGHT_INTERVAL_MS - Date.now() : 0
+    if (wait <= 0) {
+      run()
+      return () => {
+        alive = false
+      }
+    }
+    const timer = setTimeout(run, wait)
     return () => {
       alive = false
+      clearTimeout(timer)
     }
-  }, [code, language, cached, key])
+  }, [code, language, cached, key, streaming])
   if (cached) return cached
-  return result?.key === key ? result.lines : undefined
+  if (result === undefined) return undefined
+  if (result.key === key) return result.lines
+  if (
+    streaming &&
+    result.languageId === language?.id &&
+    code.length > result.code.length &&
+    code.startsWith(result.code)
+  ) {
+    return result.lines.slice(0, -1)
+  }
+  return undefined
 }

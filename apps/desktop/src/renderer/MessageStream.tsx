@@ -9,6 +9,9 @@
  * M2-07：这一轮有文件改动时，轮次操作上面是“本轮变更”（`FileChanges.tsx`）。
  * M2-08：每轮的用户消息上方是检查点分隔线，轮次操作中有“撤销本轮”，恢复之后显示恢复标记
  * （`Checkpoints.tsx`）。
+ *
+ * 性能：流式增量只改投影的 `live`，其余字段保持引用不变。已完成的消息与归组按 `propsEqualExceptLive`
+ * 跳过重渲染（它们及子组件不读取 `live`），进行中的回复按块渲染 Markdown（`Markdown` 的 `streaming`）。
  */
 import {
   Bot,
@@ -20,7 +23,16 @@ import {
   RefreshCw,
   TriangleAlert,
 } from 'lucide-react'
-import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   rootRun,
@@ -131,6 +143,86 @@ function TurnActions({
 const COPIED_MS = 1600
 
 const noopPlan = () => undefined
+
+const NO_MESSAGES: readonly MessageView[] = []
+const NONE: readonly never[] = []
+const NO_FOOTERS: ReadonlyMap<string, TurnFooter> = new Map()
+const NO_RESTORES: ReadonlyMap<string, readonly RestoreView[]> = new Map()
+
+/**
+ * 两个会话投影除进行中的消息（`live`）外是否相同。流式增量只改 `live`，`reduceSession` 让其余字段保持
+ * 引用不变，因此已完成的消息可以据此跳过重渲染。
+ */
+export function sameViewExceptLive(a: SessionView, b: SessionView): boolean {
+  if (a === b) return true
+  const keys = Object.keys(b) as (keyof SessionView)[]
+  if (Object.keys(a).length !== keys.length) return false
+  return keys.every((key) => key === 'live' || a[key] === b[key])
+}
+
+/** `memo` 的比较：`view` 按 {@link sameViewExceptLive}，其余属性按引用。组件及其子组件不能读取 `view.live`。 */
+export function propsEqualExceptLive<P extends { readonly view: SessionView }>(
+  prev: Readonly<P>,
+  next: Readonly<P>,
+): boolean {
+  const keys = Object.keys(next) as (keyof P)[]
+  if (Object.keys(prev).length !== keys.length) return false
+  return keys.every((key) =>
+    key === 'view' ? sameViewExceptLive(prev.view, next.view) : Object.is(prev[key], next[key]),
+  )
+}
+
+/** 父组件每次渲染都传入新的回调时，换成引用稳定的包装（调用最新的回调），不打断子组件的 memo。 */
+function useStableCallback<A extends unknown[], R>(
+  fn: ((...args: A) => R) | undefined,
+): ((...args: A) => R) | undefined {
+  const ref = useRef(fn)
+  useLayoutEffect(() => {
+    ref.current = fn
+  })
+  const defined = fn !== undefined
+  return useMemo(() => (defined ? (...args: A) => ref.current!(...args) : undefined), [defined])
+}
+
+/** 按轮次分组（保持原顺序）；没有轮次的条目不收。 */
+function byTurn<T extends { readonly turnId?: string | undefined }>(
+  items: readonly T[] | undefined,
+): ReadonlyMap<string, readonly T[]> {
+  const map = new Map<string, T[]>()
+  for (const item of items ?? []) {
+    if (item.turnId === undefined) continue
+    const list = map.get(item.turnId)
+    if (list) list.push(item)
+    else map.set(item.turnId, [item])
+  }
+  return map
+}
+
+/** 挂在一轮最后一条消息后面的卡片（计划、审查循环、流水线）；其余位置为空。 */
+function turnItems<T>(
+  map: ReadonlyMap<string, readonly T[]>,
+  lastOfTurn: boolean,
+  turnId: string | undefined,
+): readonly T[] {
+  return lastOfTurn && turnId !== undefined ? (map.get(turnId) ?? NONE) : NONE
+}
+
+/** 归组的步骤按组缓存：组来自随消息列表缓存的 `groupMessages`，`TurnActivityGroup` 因此拿到同一个数组。 */
+const stepsCache = new WeakMap<readonly AssistantMessageView[], readonly TurnActivityStep[]>()
+
+function stepsOf(group: readonly AssistantMessageView[]): readonly TurnActivityStep[] {
+  let steps = stepsCache.get(group)
+  if (steps === undefined) {
+    steps = group.map((m) => ({
+      key: m.messageId,
+      reasoning: m.reasoning?.text,
+      content: m.content.length > 0 ? m.content : undefined,
+      toolCalls: m.toolCalls,
+    }))
+    stepsCache.set(group, steps)
+  }
+  return steps
+}
 
 /** 本次会话挂载时不播动画；之后新出现的消息才淡入。 */
 function useEnteringIds(ids: readonly string[]): ReadonlySet<string> {
@@ -398,7 +490,7 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
       </CollapsibleContent>
     </Collapsible>
   )
-})
+}, propsEqualExceptLive)
 
 const COMMAND_NAMES = COMPOSER_COMMANDS.map((command) => command.name)
 
@@ -1061,6 +1153,9 @@ function Message({
   )
 }
 
+/** 已完成的消息：流式增量（只改 `view.live`）不触发重渲染。 */
+const MemoMessage = memo(Message, propsEqualExceptLive)
+
 /**
  * 空会话：品牌图形加一句引导，避免消息区只剩一条空白。
  *
@@ -1138,6 +1233,7 @@ function LiveMessage({
             resolvePaths={resolvePaths}
             onOpenFile={onOpenFile}
             debounceMs={300}
+            streaming
           />
           <span aria-hidden className="stream-caret" />
         </div>
@@ -1331,7 +1427,8 @@ export function MessageStream({
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
-  const openPlan = onOpenPlan ?? noopPlan
+  const openPlan = useStableCallback(onOpenPlan) ?? noopPlan
+  const openChanges = useStableCallback(onOpenChanges)
   const projects = useSessionStore((s) => s.projects)
   const pathsExist = useSessionStore((s) => s.pathsExist)
   const approvals = useSessionStore((s) => {
@@ -1342,12 +1439,18 @@ export function MessageStream({
     () => new Set(approvals?.map((a) => a.toolCallId)),
     [approvals],
   )
-  const messages = view
-    ? view.messages.filter((message) => {
-        const run = view.runs[message.runId]
+  const viewMessages = view?.messages
+  const viewRuns = view?.runs
+  const viewRunOrder = view?.runOrder
+  // 流式增量不改消息与运行：按它们缓存，下面依赖 `messages` 的 useMemo 才能命中
+  const messages = useMemo<readonly MessageView[]>(
+    () =>
+      viewMessages?.filter((message) => {
+        const run = viewRuns?.[message.runId]
         return run === undefined || run.parentRunId === undefined
-      })
-    : []
+      }) ?? NO_MESSAGES,
+    [viewMessages, viewRuns],
+  )
   const groupedItems = useMemo(() => groupMessages(messages), [messages])
   /** 轮次序号（编辑 / 重新生成时判断后面还有几轮）；只数顶层运行的消息，子 Agent 的轮次不算。 */
   const turns = useMemo(() => {
@@ -1392,7 +1495,12 @@ export function MessageStream({
   const agents = useSessionStore((s) => s.agents) ?? []
   /** 上一轮因限额停下时，可以一键接着做（Runtime §10.3：开始新的一轮，计数重新开始）。 */
   const canContinue = view !== undefined && rootRun(view)?.turn?.limitReached !== undefined
-  const footers = view ? turnFooters(view) : new Map<string, TurnFooter>()
+  const hasLive = view !== undefined && Object.keys(view.live).length > 0
+  // turnFooters 只读消息、运行与“有没有进行中的消息”
+  const footers = useMemo(
+    () => (view ? turnFooters(view) : NO_FOOTERS),
+    [viewMessages, viewRuns, viewRunOrder, hasLive],
+  )
   const switchedRuns = useMemo(() => {
     if (!view || view.runOrder.length <= 1)
       return new Map<string, { name: string; version: number | undefined }>()
@@ -1417,7 +1525,7 @@ export function MessageStream({
       }
     }
     return map
-  }, [view, agents, i18n.language, t])
+  }, [viewRunOrder, viewRuns, viewMessages, agents, i18n.language, t])
   const liveSwitch = useMemo(() => {
     if (!view || view.runOrder.length <= 1 || live.length === 0) return undefined
     const firstLive = live[0]
@@ -1462,7 +1570,18 @@ export function MessageStream({
         : [],
     ),
   )
-  const restores = view ? restoresByMessage(view) : new Map<string, readonly RestoreView[]>()
+  const viewRestores = view?.restores
+  // restoresByMessage 只读恢复记录与消息
+  const restores = useMemo(
+    () => (view ? restoresByMessage(view) : NO_RESTORES),
+    [viewRestores, viewMessages],
+  )
+  const viewPlans = view?.plans
+  const viewLoops = view?.reviewLoops
+  const viewPipelines = view?.pipelineRuns
+  const plansByTurn = useMemo(() => byTurn(viewPlans), [viewPlans])
+  const loopsByTurn = useMemo(() => byTurn(viewLoops), [viewLoops])
+  const pipelinesByTurn = useMemo(() => byTurn(viewPipelines), [viewPipelines])
   const delegationsByTurn = useMemo(() => {
     const map = new Map<string, DelegationView[]>()
     for (const delegation of view?.delegations ?? []) {
@@ -1472,7 +1591,7 @@ export function MessageStream({
       map.set(delegation.turnId, list)
     }
     return map
-  }, [view])
+  }, [view?.delegations])
   // 没有落到任何一轮消息末尾的委派：还没有轮次归属、本轮的完成消息尚未到达（只有 live 消息），
   // 或者这一轮没有可挂靠的消息。它们排在流末尾，保证运行中的子 Agent 也能看到。
   const turnsWithMessages = useMemo(
@@ -1537,27 +1656,13 @@ export function MessageStream({
                     <AgentSwitchDivider name={switchInfo.name} version={switchInfo.version} />
                   </li>
                 )}
-                <Message
+                <MemoMessage
                   message={message}
                   view={view}
                   footer={footers.get(message.messageId)}
-                  plans={
-                    lastOfTurn && message.turnId !== undefined
-                      ? view.plans.filter((plan) => plan.turnId === message.turnId)
-                      : []
-                  }
-                  reviewLoops={
-                    lastOfTurn && message.turnId !== undefined
-                      ? (view.reviewLoops ?? []).filter((loop) => loop.turnId === message.turnId)
-                      : []
-                  }
-                  pipelines={
-                    lastOfTurn && message.turnId !== undefined
-                      ? (view.pipelineRuns ?? []).filter(
-                          (pipeline) => pipeline.turnId === message.turnId,
-                        )
-                      : []
-                  }
+                  plans={turnItems(plansByTurn, lastOfTurn, message.turnId)}
+                  reviewLoops={turnItems(loopsByTurn, lastOfTurn, message.turnId)}
+                  pipelines={turnItems(pipelinesByTurn, lastOfTurn, message.turnId)}
                   sessionId={sessionId}
                   continued={continues(messages[item.index - 1], message)}
                   restores={restores.get(message.messageId)}
@@ -1565,7 +1670,7 @@ export function MessageStream({
                   omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
                   entering={enteringIds.has(message.messageId)}
                   onOpenPlan={openPlan}
-                  onOpenChanges={onOpenChanges}
+                  onOpenChanges={openChanges}
                   resolvePaths={resolvePaths}
                   onOpenFile={onOpenFile}
                   canEdit={message.role === 'user' && turnStarts.has(message.messageId)}
@@ -1580,7 +1685,7 @@ export function MessageStream({
                         sessionId={view.sessionId}
                         view={view}
                         delegation={delegation}
-                        onOpenChanges={onOpenChanges}
+                        onOpenChanges={openChanges}
                         {...(onOpenRun === undefined ? {} : { onOpenRun })}
                       />
                     </li>
@@ -1602,12 +1707,7 @@ export function MessageStream({
           const continued = continues(messages[firstIndex - 1], firstMsg)
           const entering = group.some((m) => enteringIds.has(m.messageId))
 
-          const steps: TurnActivityStep[] = group.map((m) => ({
-            key: m.messageId,
-            reasoning: m.reasoning?.text,
-            content: m.content.length > 0 ? m.content : undefined,
-            toolCalls: m.toolCalls,
-          }))
+          const steps = stepsOf(group)
 
           const isTurnRunning =
             (rootRun(view)?.turn?.status === 'running' &&
@@ -1634,18 +1734,9 @@ export function MessageStream({
               ? t('composer.agent.default')
               : agent?.id
 
-          const plans =
-            lastOfTurn && lastMsg.turnId !== undefined
-              ? view.plans.filter((plan) => plan.turnId === lastMsg.turnId)
-              : []
-          const loops =
-            lastOfTurn && lastMsg.turnId !== undefined
-              ? (view.reviewLoops ?? []).filter((loop) => loop.turnId === lastMsg.turnId)
-              : []
-          const pipelines =
-            lastOfTurn && lastMsg.turnId !== undefined
-              ? (view.pipelineRuns ?? []).filter((pipeline) => pipeline.turnId === lastMsg.turnId)
-              : []
+          const plans = turnItems(plansByTurn, lastOfTurn, lastMsg.turnId)
+          const loops = turnItems(loopsByTurn, lastOfTurn, lastMsg.turnId)
+          const pipelines = turnItems(pipelinesByTurn, lastOfTurn, lastMsg.turnId)
           const cards = [
             ...plans.map((plan) => (
               <PlanSummaryCard key={plan.planId} plan={plan} onOpen={openPlan} />
@@ -1696,7 +1787,7 @@ export function MessageStream({
                   <TurnChanges
                     sessionId={view.sessionId}
                     turnId={lastMsg.turnId}
-                    {...(onOpenChanges === undefined ? {} : { onOpen: () => onOpenChanges() })}
+                    {...(openChanges === undefined ? {} : { onOpen: () => openChanges() })}
                     {...(onOpenFile === undefined
                       ? {}
                       : { onOpenFile: (path: string) => onOpenFile(path) })}
@@ -1728,7 +1819,7 @@ export function MessageStream({
                       sessionId={view.sessionId}
                       view={view}
                       delegation={delegation}
-                      onOpenChanges={onOpenChanges}
+                      onOpenChanges={openChanges}
                       {...(onOpenRun === undefined ? {} : { onOpenRun })}
                     />
                   </li>
@@ -1790,7 +1881,7 @@ export function MessageStream({
               sessionId={view.sessionId}
               view={view}
               delegation={delegation}
-              onOpenChanges={onOpenChanges}
+              onOpenChanges={openChanges}
               {...(onOpenRun === undefined ? {} : { onOpenRun })}
             />
           </li>
