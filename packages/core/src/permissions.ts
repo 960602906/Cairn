@@ -102,6 +102,18 @@ export function ruleMatches(
   return true
 }
 
+/**
+ * 能取消危险命令询问的命令模式：第一个 `*` 之前至少有命令名和一个子命令/参数（如 `git push*`、
+ * `npm publish`），只写命令名的宽泛模式（`*`、`git *`、`sudo*`）不算对危险操作的明确放行。
+ */
+export function isSpecificCommandPattern(pattern: string): boolean {
+  const literal = pattern
+    .trim()
+    .split(/(?<!\\)\*/)[0]!
+    .trim()
+  return literal.split(/\s+/).filter((w) => w !== '').length >= 2
+}
+
 const DENY_REASON = 'This tool call is not allowed by the permission rules set by the user.'
 
 /** 判定一次调用（纯函数）。 */
@@ -142,7 +154,7 @@ export function decidePermission(
       (r) =>
         r.source !== 'preset' &&
         r.match.command !== undefined &&
-        r.match.command.every((p) => p.trim() !== '*'),
+        r.match.command.every(isSpecificCommandPattern),
     )
   if (explicitlyAllowed) return { decision: 'allow' }
 

@@ -32,6 +32,16 @@ export function parseCommand(command: string): ParsedCommand {
   }
   for (let i = 0; i < command.length; i++) {
     const char = command[i]!
+    // 反斜杠转义（POSIX）：`\'`、`\;` 等是字面字符，不开始引号、不拆分。
+    // PowerShell / cmd 不把 `\` 当转义，两种解释可能不同：转义的是引号或连接符时视为不可靠拆分。
+    if (char === '\\' && quote !== "'" && i + 1 < command.length) {
+      const next = command[i + 1]!
+      if (quote === undefined && /['"`;|&<>()$\s]/.test(next)) reliable = false
+      if (quote === '"' && /["`$]/.test(next)) reliable = false
+      current += char + next
+      i++
+      continue
+    }
     if (quote) {
       // 双引号内的 $( 与反引号同样会执行
       if (quote === '"' && (char === '`' || (char === '$' && command[i + 1] === '('))) {
@@ -51,6 +61,23 @@ export function parseCommand(command: string): ParsedCommand {
       ((char === '$' || char === '<' || char === '>') && command[i + 1] === '(')
     ) {
       reliable = false
+    }
+    // 重定向：目标路径不经过路径检查，`allow` 规则不匹配。只放过文件描述符复制
+    // （`2>&1`、`>&2`）与丢弃输出（`>/dev/null`、`2> /dev/null`、`>$null`、`>NUL`）。
+    if (char === '>' || char === '<') {
+      const dup = /^[<>]&\d/.exec(command.slice(i))
+      if (dup) {
+        current += dup[0]
+        i += dup[0].length - 1
+        continue
+      }
+      const sink = /^>{1,2}\s*(\/dev\/null|\$null|nul)(?=$|[\s;|&])/i.exec(command.slice(i))
+      if (sink) {
+        current += sink[0]
+        i += sink[0].length - 1
+        continue
+      }
+      if (command[i + 1] !== '(') reliable = false
     }
     if (char === ';' || char === '|' || char === '&' || char === '\n' || char === '\r') {
       flush()
