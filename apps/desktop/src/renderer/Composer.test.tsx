@@ -263,12 +263,12 @@ describe('Composer /goal', () => {
       resumeGoal?: (sessionId: string) => Promise<unknown>
       clearGoal?: (sessionId: string) => Promise<unknown>
     } = {},
+    onOpenPanel?: ((panel: string) => void) | undefined,
   ) {
     const setGoal = goalActions.setGoal ?? vi.fn(async () => ({ ok: true }))
     const pauseGoal = goalActions.pauseGoal ?? vi.fn(async () => ({ ok: true }))
     const resumeGoal = goalActions.resumeGoal ?? vi.fn(async () => ({ ok: true }))
     const clearGoal = goalActions.clearGoal ?? vi.fn(async () => ({ ok: true }))
-    const onOpenPanel = vi.fn()
     const store = createStore<Record<string, unknown>>(() => ({
       sendPrompt: vi.fn(async () => true),
       setSessionModel: vi.fn(async () => true),
@@ -348,7 +348,7 @@ describe('Composer /goal', () => {
 
   it('opens the goal panel for /goal status and notices when there is no goal', async () => {
     const user = userEvent.setup()
-    const { onOpenPanel } = renderComposer(activeGoal())
+    const { onOpenPanel } = renderComposer(activeGoal(), {}, vi.fn())
     await user.type(input(), '/goal status{Enter}')
     await waitFor(() => expect(onOpenPanel).toHaveBeenCalledWith('goal'))
 
@@ -387,5 +387,44 @@ describe('Composer /goal', () => {
     await waitFor(() => expect(resumeGoal).toHaveBeenCalledWith('s1'))
     await screen.findByText(/目标已恢复/)
     expect(input().value).toBe('')
+  })
+
+  it('explains a goal pause failure', async () => {
+    const user = userEvent.setup()
+    renderComposer(pausedGoal(), {
+      pauseGoal: vi.fn(async () => ({ ok: false, code: 'goal.not_found' })),
+    })
+    await user.type(input(), '/goal pause{Enter}')
+    await screen.findByText(/当前会话没有未结束的目标/)
+    expect(input().value).toBe('/goal pause')
+  })
+
+  it('explains a goal clear failure', async () => {
+    const user = userEvent.setup()
+    renderComposer(activeGoal(), {
+      clearGoal: vi.fn(async () => ({ ok: false, code: 'goal.not_found' })),
+    })
+    await user.type(input(), '/goal clear{Enter}')
+    await screen.findByText(/当前会话没有未结束的目标/)
+    expect(input().value).toBe('/goal clear')
+  })
+
+  it('explains a goal resume failure', async () => {
+    const user = userEvent.setup()
+    renderComposer(pausedGoal(), {
+      resumeGoal: vi.fn(async () => ({ ok: false, code: 'goal.not_found' })),
+    })
+    await user.type(input(), '/goal resume{Enter}')
+    await screen.findByText(/当前会话没有未结束的目标/)
+    expect(input().value).toBe('/goal resume')
+  })
+
+  it('notices when /goal status has a goal but no panel target', async () => {
+    const user = userEvent.setup()
+    const { onOpenPanel } = renderComposer(activeGoal(), {}, undefined)
+    await user.type(input(), '/goal status{Enter}')
+    await screen.findByText(/当前会话没有未结束的目标/)
+    expect(onOpenPanel).toBeUndefined()
+    expect(input().value).toBe('/goal status')
   })
 })

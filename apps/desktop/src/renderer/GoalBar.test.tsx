@@ -159,6 +159,60 @@ describe('useGoalElapsed', () => {
     })
     expect(result.current).toBe(initial + 5_000)
   })
+
+  it('stops the timer when the document is hidden', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    const original =
+      Object.getOwnPropertyDescriptor(document, 'hidden') ??
+      Object.getOwnPropertyDescriptor(Document.prototype, 'hidden')
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+    try {
+      const goal = runningView().goals.g1!
+      const { result } = renderHook(() => useGoalElapsed(goal))
+      const initial = result.current
+      act(() => {
+        vi.advanceTimersByTime(5_000)
+      })
+      expect(result.current).toBe(initial)
+    } finally {
+      if (original !== undefined) Object.defineProperty(document, 'hidden', original)
+      else delete (document as { hidden?: boolean }).hidden
+    }
+  })
+
+  it('reacts to visibility changes by stopping and starting the timer', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    const original =
+      Object.getOwnPropertyDescriptor(document, 'hidden') ??
+      Object.getOwnPropertyDescriptor(Document.prototype, 'hidden')
+    try {
+      const goal = runningView().goals.g1!
+      const { result } = renderHook(() => useGoalElapsed(goal))
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      const afterHide = result.current
+      act(() => {
+        vi.advanceTimersByTime(5_000)
+      })
+      expect(result.current).toBe(afterHide)
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true })
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      const afterShow = result.current
+      act(() => {
+        vi.advanceTimersByTime(5_000)
+      })
+      expect(result.current).toBeGreaterThan(afterShow)
+    } finally {
+      if (original !== undefined) Object.defineProperty(document, 'hidden', original)
+      else delete (document as { hidden?: boolean }).hidden
+    }
+  })
 })
 
 describe('GoalBar', () => {
@@ -208,5 +262,16 @@ describe('GoalBar', () => {
   it('renders nothing without an open goal', () => {
     const { rendered } = wrap(createSessionView('s1'))
     expect(rendered.container.firstChild).toBeNull()
+  })
+
+  it('shows the active state when idle and already judged', () => {
+    wrap(metView(), 'idle')
+    expect(screen.getAllByText('目标进行中').length).toBeGreaterThan(0)
+  })
+
+  it('resumes a paused goal from the bar', () => {
+    const { resumeGoal } = wrap(pausedView(), 'idle')
+    fireEvent.click(screen.getByRole('button', { name: '继续目标' }))
+    expect(resumeGoal).toHaveBeenCalledWith('s1')
   })
 })

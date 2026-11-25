@@ -75,12 +75,17 @@ const endedGoal = () =>
   ])
 
 function wrap(
-  view: ReturnType<typeof activeGoal>,
+  view: ReturnType<typeof activeGoal> | undefined,
   status: 'idle' | 'running' | 'waiting_approval' | 'waiting_input' = 'idle',
+  actions: {
+    pauseGoal?: (sessionId: string) => Promise<{ ok: boolean; code?: string }>
+    resumeGoal?: (sessionId: string) => Promise<{ ok: boolean; code?: string }>
+    clearGoal?: (sessionId: string) => Promise<{ ok: boolean; code?: string }>
+  } = {},
 ) {
-  const pauseGoal = vi.fn(async () => ({ ok: true as const }))
-  const resumeGoal = vi.fn(async () => ({ ok: true as const }))
-  const clearGoal = vi.fn(async () => ({ ok: true as const }))
+  const pauseGoal = actions.pauseGoal ?? vi.fn(async () => ({ ok: true as const }))
+  const resumeGoal = actions.resumeGoal ?? vi.fn(async () => ({ ok: true as const }))
+  const clearGoal = actions.clearGoal ?? vi.fn(async () => ({ ok: true as const }))
   const store = createStore<Record<string, unknown>>(() => ({
     pauseGoal,
     resumeGoal,
@@ -119,6 +124,11 @@ describe('GoalPanel', () => {
     wrap(createSessionView('s1'))
     expect(screen.getByText('还没有目标。')).toBeTruthy()
     expect(screen.getByText(/用 `\/goal <条件>` 新建目标/)).toBeTruthy()
+  })
+
+  it('shows the empty state when the view is missing', () => {
+    wrap(undefined)
+    expect(screen.getByText('还没有目标。')).toBeTruthy()
   })
 
   it('shows condition, status, budget and the judgment timeline', () => {
@@ -160,5 +170,14 @@ describe('GoalPanel', () => {
     expect(screen.getByRole('region', { name: '历史目标' })).toBeTruthy()
     expect(screen.getByText('目标已达成')).toBeTruthy()
     expect(screen.getByText('1 轮 · 活动 0:09')).toBeTruthy()
+  })
+
+  it('shows an error notice when an action fails', async () => {
+    const user = userEvent.setup()
+    wrap(activeGoal(), 'idle', {
+      clearGoal: vi.fn(async () => ({ ok: false, code: 'goal.exists' })),
+    })
+    await user.click(screen.getByRole('button', { name: '清除目标' }))
+    expect(await screen.findByText('这个会话已有目标，请先暂停或清除')).toBeTruthy()
   })
 })

@@ -620,6 +620,62 @@ describe('buildGoalEvidence', () => {
     expect(evidence.progress).toBe(false)
   })
 
+  it('drops child turn events and an orphan child summary', () => {
+    const ev = stream()
+    const events = [
+      ev('goal.created', { goalId: 'g1', condition: '测试全部通过', limits }),
+      // 不属于任何根轮次的子运行摘要：无 parentRunId，但 seq 落在轮次区间之外。
+      ev('run.child.completed', { childRunId: 'orphan', status: 'completed' }),
+      ev('message.user', { messageId: 'm1', content: text('修好测试') }),
+      ev('turn.started', {}, { turnId: 't1' }),
+      // 子运行的轮次事件一律不进入证据。
+      ev(
+        'tool.completed',
+        { toolCallId: 'tc-child', output: text('x'), durationMs: 1 },
+        { turnId: 't1', runId: 'child1', parentRunId: 'r1' },
+      ),
+      ev(
+        'tool.failed',
+        { toolCallId: 'tf-child', error: { code: 'tool.error' } },
+        { turnId: 't1', runId: 'child1', parentRunId: 'r1' },
+      ),
+      ev(
+        'tool.cancelled',
+        { toolCallId: 'tcancel-child', reason: 'user' },
+        { turnId: 't1', runId: 'child1', parentRunId: 'r1' },
+      ),
+      ev(
+        'approval.resolved',
+        { approvalId: 'ap-child', decision: 'deny', decidedBy: 'user' },
+        { turnId: 't1', runId: 'child1', parentRunId: 'r1' },
+      ),
+      ev(
+        'command.started',
+        { commandId: 'bg-child', command: 'echo', cwd: '/work' },
+        { turnId: 't1', runId: 'child1', parentRunId: 'r1' },
+      ),
+      ev(
+        'command.stopped',
+        { commandId: 'bg-child2' },
+        { turnId: 't1', runId: 'child1', parentRunId: 'r1' },
+      ),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't1' }),
+    ]
+    const goal = reducedGoal(events)
+    const evidence = buildGoalEvidence({
+      goal,
+      events: events as readonly PersistedEvent[],
+      turnId: 't1',
+      now: 9_000,
+    })
+    expect(evidence.text).not.toContain('tc-child')
+    expect(evidence.text).not.toContain('tf-child')
+    expect(evidence.text).not.toContain('tcancel-child')
+    expect(evidence.text).not.toContain('ap-child')
+    expect(evidence.text).not.toContain('bg-child')
+    expect(evidence.text).not.toContain('orphan')
+  })
+
   it('handles a judged turn that is no longer in the goal', () => {
     const ev = stream()
     const events = [
