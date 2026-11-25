@@ -4,7 +4,9 @@ import {
   activeExecutionPlan,
   activeTaskLists,
   createSessionView,
+  isAwaitingGoalEvaluation,
   MAX_LIVE_TOOL_OUTPUT_CHARS,
+  openGoal,
   planProgressSteps,
   progressTaskList,
   proposedPlan,
@@ -115,6 +117,10 @@ describe('createSessionView', () => {
       restores: [],
       plans: [],
       taskLists: [],
+      goals: {},
+      goalOrder: [],
+      latestGoalId: undefined,
+      openGoalId: undefined,
       delegations: [],
       memoryProposals: [],
       reviewLoops: [],
@@ -1948,5 +1954,412 @@ describe('conversation.rewound', () => {
     expect(rewound.runOrder).toEqual([RUN])
     expect(rewound.runs.r2).toBeUndefined()
     expect(rewound.messages.map((message) => message.messageId)).toEqual(['u1'])
+  })
+})
+
+describe('reduceSession：目标（ADR-0047）', () => {
+  const goalLimits = { maxTurns: 20, maxDurationMs: 7_200_000 }
+
+  /** 目标 + 一轮完成：目标活动，轮次 t1 已结束，等待判定。 */
+  function begin() {
+    const ev = stream()
+    const events: EventEnvelope[] = [
+      ev('run.created', {
+        agent: { id: 'builtin.coder', version: 1 },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      ev('goal.created', { goalId: 'g1', condition: '测试通过', limits: goalLimits }),
+      ev('message.user', { messageId: 'u1', content: text('做到测试通过') }, { turnId: 't1' }),
+      ev('turn.started', {}, { turnId: 't1' }),
+      ev('run.state.changed', { from: 'idle', to: 'thinking' }, { turnId: 't1' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'a1', content: text('好'), model },
+        { turnId: 't1' },
+      ),
+      ev('run.state.changed', { from: 'thinking', to: 'completed' }, { turnId: 't1' }),
+      ev('turn.completed', { durationMs: 70 }, { turnId: 't1' }),
+    ]
+    return { ev, events, view: reduceAll(events) }
+  }
+
+  it('创建目标、锚定首条消息并统计根运行轮次', () => {
+    const { view } = begin()
+    expect(openGoal(view)).toMatchObject({
+      goalId: 'g1',
+      condition: '测试通过',
+      limits: goalLimits,
+      status: 'active',
+      seq: 2,
+      createdAt: 20,
+      initialMessageSeq: 3,
+      activeSince: 20,
+      activeMs: 0,
+      turnIds: ['t1'],
+      pauseReason: undefined,
+      endReason: undefined,
+    })
+    expect(view.latestGoalId).toBe('g1')
+    expect(view.openGoalId).toBe('g1')
+    expect(isAwaitingGoalEvaluation(view)).toBe(true)
+  })
+
+  it('运行仍在进行时不算判定中', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('run.created', {
+        agent: { id: 'builtin.coder', version: 1 },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      ev('goal.created', { goalId: 'g1', condition: '测试通过', limits: goalLimits }),
+      ev('message.user', { messageId: 'u1', content: text('开始') }, { turnId: 't1' }),
+      ev('turn.started', {}, { turnId: 't1' }),
+      ev('run.state.changed', { from: 'idle', to: 'thinking' }, { turnId: 't1' }),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't1' }),
+    ])
+    expect(view.goals.g1!.turnIds).toEqual(['t1'])
+    expect(isAwaitingGoalEvaluation(view)).toBe(false)
+  })
+
+  it('目标自动续轮与子运行的轮次不锚定首条消息，稍后的用户消息才锚定', () => {
+    const { ev, events } = begin()
+    const view = reduceAll([
+      ...events,
+      ev(
+        'message.user',
+        { messageId: 'm-goal', content: text('继续'), origin: 'goal', goalId: 'g1' },
+        { turnId: 't2' },
+      ),
+    ])
+    expect(view.goals.g1!.initialMessageSeq).toBe(3)
+    expect(view.messages.at(-1)).toMatchObject({ origin: 'goal', goalId: 'g1' })
+  })
+
+  it('自动续轮不算首条消息', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('run.created', {
+        agent: { id: 'builtin.coder', version: 1 },
+        model,
+        mode: 'interactive',
+        limits,
+      }),
+      ev('goal.created', { goalId: 'g1', condition: '测试通过', limits: goalLimits }),
+      ev('message.user', {
+        messageId: 'm-goal',
+        content: text('继续'),
+        origin: 'goal',
+        goalId: 'g1',
+      }),
+    ])
+    expect(view.goals.g1!.initialMessageSeq).toBeUndefined()
+  })
+
+  it('同轮判定只记一次，判定后不再处于判定中', () => {
+    const { ev, events } = begin()
+    const view = reduceAll([
+      ...events,
+      ev(
+        'goal.evaluated',
+        { goalId: 'g1', verdict: 'met', reason: '测试通过', model },
+        { turnId: 't1' },
+      ),
+      ev(
+        'goal.evaluated',
+        { goalId: 'g1', verdict: 'not_met', reason: '重复', model },
+        { turnId: 't1' },
+      ),
+    ])
+    expect(view.goals.g1!.evaluations).toEqual([
+      { turnId: 't1', verdict: 'met', reason: '测试通过', evidence: [], model, seq: 9, at: 90 },
+    ])
+    expect(isAwaitingGoalEvaluation(view)).toBe(false)
+  })
+
+  it('暂停累计活动时长，恢复重新计时', () => {
+    const paused = begin()
+    const afterPause = reduceAll([
+      ...paused.events,
+      paused.ev('goal.paused', { goalId: 'g1', reason: 'user', detail: '等一下' }),
+    ])
+    expect(afterPause.goals.g1).toMatchObject({
+      status: 'paused',
+      activeMs: 70,
+      activeSince: undefined,
+      pauseReason: 'user',
+      pauseDetail: '等一下',
+    })
+    expect(openGoal(afterPause)?.goalId).toBe('g1')
+    expect(isAwaitingGoalEvaluation(afterPause)).toBe(false)
+
+    const resumed = begin()
+    const afterResume = reduceAll([
+      ...resumed.events,
+      resumed.ev('goal.paused', { goalId: 'g1', reason: 'user' }),
+      resumed.ev('goal.resumed', { goalId: 'g1' }),
+    ])
+    expect(afterResume.goals.g1).toMatchObject({
+      status: 'active',
+      activeMs: 70,
+      activeSince: 100,
+      pauseReason: undefined,
+      pauseDetail: undefined,
+    })
+  })
+
+  it('结束后目标关闭，结束卡挂在结束事件的轮次上', () => {
+    const { ev, events } = begin()
+    const ended = reduceAll([
+      ...events,
+      ev('goal.paused', { goalId: 'g1', reason: 'user' }),
+      ev('goal.resumed', { goalId: 'g1' }),
+      ev(
+        'goal.ended',
+        { goalId: 'g1', reason: 'met', turns: 1, durationMs: 5_000 },
+        { turnId: 't1' },
+      ),
+    ])
+    expect(ended.goals.g1).toMatchObject({
+      status: 'ended',
+      activeMs: 5_000,
+      activeSince: undefined,
+      endReason: 'met',
+      endedAt: 110,
+      endedTurnId: 't1',
+    })
+    expect(openGoal(ended)).toBeUndefined()
+    expect(ended.latestGoalId).toBe('g1')
+    expect(ended.openGoalId).toBeUndefined()
+  })
+
+  it('暂停期间的轮次与子运行的轮次不计数，重复的 turn.started 不重复计', () => {
+    const child = begin()
+    const withChild = reduceAll([
+      ...child.events,
+      child.ev('turn.started', {}, { turnId: 't2', runId: 'r2', parentRunId: RUN }),
+    ])
+    expect(withChild.goals.g1!.turnIds).toEqual(['t1'])
+
+    const pausedTurn = begin()
+    const afterTurns = reduceAll([
+      ...pausedTurn.events,
+      pausedTurn.ev('goal.paused', { goalId: 'g1', reason: 'user' }),
+      pausedTurn.ev('turn.started', {}, { turnId: 't2' }),
+      pausedTurn.ev('goal.resumed', { goalId: 'g1' }),
+      pausedTurn.ev('turn.started', {}, { turnId: 't3' }),
+      pausedTurn.ev('turn.started', {}, { turnId: 't3' }),
+      pausedTurn.ev('turn.started', {}, { turnId: 't4' }),
+    ])
+    expect(afterTurns.goals.g1!.turnIds).toEqual(['t1', 't3', 't4'])
+    expect(pausedTurn.view.goals.g1!.turnIds).toEqual(['t1'])
+  })
+
+  it('已有未结束目标时忽略新目标，重复暂停与结束不重复生效', () => {
+    const { ev, events } = begin()
+    const view = reduceAll([
+      ...events,
+      ev('goal.created', { goalId: 'g2', condition: '另一个', limits: goalLimits }),
+      ev('goal.paused', { goalId: 'g1', reason: 'user' }),
+      ev('goal.paused', { goalId: 'g1', reason: 'restart' }),
+      ev('goal.ended', { goalId: 'g1', reason: 'user', turns: 1, durationMs: 100 }),
+      ev('goal.ended', { goalId: 'g1', reason: 'met', turns: 1, durationMs: 200 }),
+    ])
+    expect(view.goals.g2).toBeUndefined()
+    expect(view.goalOrder).toEqual(['g1'])
+    expect(view.goals.g1).toMatchObject({
+      status: 'ended',
+      pauseReason: 'user',
+      endReason: 'user',
+      activeMs: 100,
+    })
+  })
+
+  it('最多保留 20 个目标，只淘汰最早的已结束目标', () => {
+    const ev = stream()
+    const events: EventEnvelope[] = []
+    for (let index = 1; index <= 21; index += 1) {
+      events.push(
+        ev('goal.created', { goalId: `g${index}`, condition: `条件${index}`, limits: goalLimits }),
+      )
+      if (index < 21) {
+        events.push(
+          ev('goal.ended', { goalId: `g${index}`, reason: 'user', turns: 1, durationMs: 1 }),
+        )
+      }
+    }
+    const view = reduceAll(events)
+    expect(view.goalOrder).toHaveLength(20)
+    expect(view.goalOrder[0]).toBe('g2')
+    expect(view.goals.g1).toBeUndefined()
+    expect(openGoal(view)?.goalId).toBe('g21')
+    expect(view.latestGoalId).toBe('g21')
+  })
+
+  describe('回退', () => {
+    /** 目标 + 两轮：第一轮有判定，第二轮开始后暂停再恢复。 */
+    function goalTurns() {
+      const ev = stream()
+      const events: EventEnvelope[] = [
+        ev('run.created', {
+          agent: { id: 'builtin.coder', version: 1 },
+          model,
+          mode: 'interactive',
+          limits,
+        }),
+        ev('goal.created', { goalId: 'g1', condition: '测试通过', limits: goalLimits }),
+        ev('message.user', { messageId: 'u1', content: text('开始') }, { turnId: 't1' }),
+        ev('turn.started', {}, { turnId: 't1' }),
+        ev('turn.completed', { durationMs: 10 }, { turnId: 't1' }),
+        ev(
+          'goal.evaluated',
+          { goalId: 'g1', verdict: 'not_met', reason: '还差点', model },
+          { turnId: 't1' },
+        ),
+        ev('message.user', { messageId: 'u2', content: text('继续') }, { turnId: 't2' }),
+        ev('turn.started', {}, { turnId: 't2' }),
+        ev('goal.paused', { goalId: 'g1', reason: 'user' }),
+        ev('goal.resumed', { goalId: 'g1' }),
+      ]
+      return { ev, events, view: reduceAll(events) }
+    }
+
+    it('保留目标，按 seq 过滤生命周期与判定，按轮次过滤计数', () => {
+      const { ev, view } = goalTurns()
+      const rewound = reduceSession(
+        view,
+        ev('conversation.rewound', { fromSeq: 7, reason: 'regenerate' }),
+      )
+      const goal = rewound.goals.g1!
+      expect(goal.status).toBe('active')
+      expect(goal.activeMs).toBe(0)
+      expect(goal.activeSince).toBe(20)
+      expect(goal.pauseReason).toBeUndefined()
+      expect(goal.initialMessageSeq).toBe(3)
+      expect(goal.turnIds).toEqual(['t1'])
+      expect(goal.evaluations.map((evaluation) => evaluation.turnId)).toEqual(['t1'])
+      expect(goal.lifecycle.map((entry) => entry.kind)).toEqual(['created'])
+      expect(openGoal(rewound)?.goalId).toBe('g1')
+    })
+
+    it('保留的暂停与恢复按 seq 重放', () => {
+      const ev = stream()
+      const view = reduceAll([
+        ev('run.created', {
+          agent: { id: 'builtin.coder', version: 1 },
+          model,
+          mode: 'interactive',
+          limits,
+        }),
+        ev('goal.created', { goalId: 'g1', condition: '测试通过', limits: goalLimits }),
+        ev('goal.paused', { goalId: 'g1', reason: 'user' }),
+        ev('goal.resumed', { goalId: 'g1' }),
+        ev('goal.paused', { goalId: 'g1', reason: 'interrupted' }),
+        ev('message.user', { messageId: 'u1', content: text('开始') }, { turnId: 't1' }),
+      ])
+      const rewound = reduceSession(
+        view,
+        ev('conversation.rewound', { fromSeq: 5, reason: 'regenerate' }),
+      )
+      expect(rewound.goals.g1).toMatchObject({
+        status: 'active',
+        activeMs: 10,
+        activeSince: 40,
+        pauseReason: undefined,
+        initialMessageSeq: undefined,
+      })
+      expect(rewound.goals.g1!.lifecycle.map((entry) => entry.kind)).toEqual([
+        'created',
+        'paused',
+        'resumed',
+      ])
+    })
+
+    it('目标创建于回退区间时移除', () => {
+      const { ev, view } = goalTurns()
+      const rewound = reduceSession(
+        view,
+        ev('conversation.rewound', { fromSeq: 2, reason: 'regenerate' }),
+      )
+      expect(rewound.goals).toEqual({})
+      expect(rewound.goalOrder).toEqual([])
+      expect(rewound.latestGoalId).toBeUndefined()
+      expect(rewound.openGoalId).toBeUndefined()
+    })
+
+    it('编辑到目标首条消息时移除目标', () => {
+      const { ev, view } = goalTurns()
+      const rewound = reduceSession(
+        view,
+        ev('conversation.rewound', { fromSeq: 3, reason: 'edit' }),
+      )
+      expect(rewound.goals).toEqual({})
+      expect(openGoal(rewound)).toBeUndefined()
+    })
+
+    it('已结束的目标不因回退复活，结束卡挂载的轮次被回退时清空', () => {
+      const ev = stream()
+      const view = reduceAll([
+        ev('run.created', {
+          agent: { id: 'builtin.coder', version: 1 },
+          model,
+          mode: 'interactive',
+          limits,
+        }),
+        ev('goal.created', { goalId: 'g1', condition: '测试通过', limits: goalLimits }),
+        ev('message.user', { messageId: 'u1', content: text('开始') }, { turnId: 't1' }),
+        ev('turn.started', {}, { turnId: 't1' }),
+        ev('turn.completed', { durationMs: 10 }, { turnId: 't1' }),
+        ev(
+          'goal.ended',
+          { goalId: 'g1', reason: 'met', turns: 1, durationMs: 1_000 },
+          { turnId: 't1' },
+        ),
+      ])
+      const rewound = reduceSession(
+        view,
+        ev('conversation.rewound', { fromSeq: 3, reason: 'regenerate' }),
+      )
+      expect(rewound.goals.g1).toMatchObject({
+        status: 'ended',
+        endReason: 'met',
+        endedTurnId: undefined,
+        turnIds: [],
+        initialMessageSeq: undefined,
+      })
+      expect(rewound.goals.g1!.lifecycle.some((entry) => entry.kind === 'ended')).toBe(true)
+      expect(openGoal(rewound)).toBeUndefined()
+      expect(rewound.latestGoalId).toBe('g1')
+    })
+
+    it('暂停后重新生成首条消息，重发会重新锚定', () => {
+      const ev = stream()
+      const view = reduceAll([
+        ev('run.created', {
+          agent: { id: 'builtin.coder', version: 1 },
+          model,
+          mode: 'interactive',
+          limits,
+        }),
+        ev('goal.created', { goalId: 'g1', condition: '测试通过', limits: goalLimits }),
+        ev('goal.paused', { goalId: 'g1', reason: 'user' }),
+        ev('message.user', { messageId: 'u1', content: text('开始') }, { turnId: 't1' }),
+      ])
+      const rewound = reduceSession(
+        view,
+        ev('conversation.rewound', { fromSeq: 4, reason: 'regenerate' }),
+      )
+      expect(rewound.goals.g1!.status).toBe('paused')
+      expect(rewound.goals.g1!.initialMessageSeq).toBeUndefined()
+
+      const next = reduceSession(
+        rewound,
+        ev('message.user', { messageId: 'u2', content: text('重新问') }, { turnId: 't2' }),
+      )
+      expect(next.goals.g1!.initialMessageSeq).toBe(6)
+    })
   })
 })

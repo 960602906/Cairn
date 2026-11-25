@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   EVENT_SCHEMA_VERSION,
   EVENT_TYPES,
+  GOAL_MAX_TURNS_LIMIT,
   LIVE_EVENT_TYPES,
   isLiveEventType,
   isPersistedEvent,
@@ -162,6 +163,21 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   },
   'tasklist.item.updated': { listId: 'tl1', itemId: 'read', status: 'done', note: '已修复' },
   'tasklist.closed': { listId: 'tl1' },
+  'goal.created': {
+    goalId: 'g1',
+    condition: '测试通过',
+    limits: { maxTurns: 20, maxDurationMs: 7_200_000 },
+  },
+  'goal.paused': { goalId: 'g1', reason: 'user' },
+  'goal.resumed': { goalId: 'g1' },
+  'goal.evaluated': {
+    goalId: 'g1',
+    verdict: 'met',
+    reason: '测试通过',
+    evidence: [{ kind: 'tool', ref: 'tool:c1', note: 'pnpm test' }],
+    model,
+  },
+  'goal.ended': { goalId: 'g1', reason: 'met', turns: 2, durationMs: 1_000 },
   'memory.proposed': {
     memoryId: 'm1',
     scope: 'session',
@@ -233,6 +249,35 @@ describe('parseEvent', () => {
     const result = parseEvent(envelope(type, payload))
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.value.type).toBe(type)
+  })
+
+  it('保留目标续轮消息的来源字段', () => {
+    const result = parseEvent(
+      envelope('message.user', {
+        messageId: 'm1',
+        content: text,
+        origin: 'goal',
+        goalId: 'g1',
+      }),
+    )
+    expect(result.ok && result.value.payload).toMatchObject({ origin: 'goal', goalId: 'g1' })
+  })
+
+  it('目标预算拒绝超过上限', () => {
+    const schema = payloadSchemaOf('goal.created')
+    const base = { goalId: 'g1', condition: '测试通过' }
+    expect(
+      schema.safeParse({
+        ...base,
+        limits: { maxTurns: GOAL_MAX_TURNS_LIMIT, maxDurationMs: 7_200_000 },
+      }).success,
+    ).toBe(true)
+    expect(
+      schema.safeParse({
+        ...base,
+        limits: { maxTurns: GOAL_MAX_TURNS_LIMIT + 1, maxDurationMs: 7_200_000 },
+      }).success,
+    ).toBe(false)
   })
 
   it('保留可选的信封字段', () => {

@@ -10,6 +10,16 @@
  */
 import { z } from 'zod'
 import type { LiveEventType } from './event-kinds.js'
+import {
+  GOAL_CONDITION_MAX,
+  GOAL_EVIDENCE_MAX,
+  GOAL_REASON_MAX,
+  GoalEndReason,
+  GoalEvidence,
+  GoalLimits,
+  GoalPauseReason,
+  GoalVerdict,
+} from './goal.js'
 import { PLAN_STEP_MAX, PlanDocument, PlanStep, PlanStepStatus } from './plan.js'
 import {
   TASK_ITEM_ID_PATTERN,
@@ -195,6 +205,10 @@ const payloadSchemas = {
   'message.user': z.object({
     messageId: Id,
     content: z.array(ContentPart),
+    /** 自动续轮消息的来源（ADR-0047）；省略或 `user` 是用户自己发送的。 */
+    origin: z.enum(['user', 'goal']).optional(),
+    /** `origin === 'goal'` 时指向目标。 */
+    goalId: Id.optional(),
     /** 展开成功的 `@` 引用（ADR-0037），界面用它高亮消息里的引用。 */
     mentions: z.array(ResolvedMention).optional(),
     /** 这一轮使用的技能（`/技能名`）；界面在消息气泡里显示标记。 */
@@ -439,6 +453,38 @@ const payloadSchemas = {
   'tasklist.closed': z.object({
     listId: Id,
     reason: z.string().optional(),
+  }),
+
+  // ---------- 目标模式（ADR-0047） ----------
+  /** 新建目标。`limits` 是解析后的实际预算，以后改默认值不影响已有目标。 */
+  'goal.created': z.object({
+    goalId: Id,
+    condition: z.string().trim().min(1).max(GOAL_CONDITION_MAX),
+    limits: GoalLimits,
+  }),
+  /** 暂停自动续轮，保留目标与预算。重复暂停由投影忽略。 */
+  'goal.paused': z.object({
+    goalId: Id,
+    reason: GoalPauseReason,
+    detail: z.string().max(GOAL_REASON_MAX).optional(),
+  }),
+  /** 从暂停恢复；恢复后主进程立即开始一轮继续。 */
+  'goal.resumed': z.object({ goalId: Id }),
+  /** 一次独立判定的结果。`turnId` 取事件信封，界面按它把判定挂到轮次。 */
+  'goal.evaluated': z.object({
+    goalId: Id,
+    verdict: GoalVerdict,
+    reason: z.string().min(1).max(GOAL_REASON_MAX),
+    evidence: z.array(GoalEvidence).max(GOAL_EVIDENCE_MAX).optional(),
+    model: ModelRef,
+  }),
+  /** 目标结束；`turns` / `durationMs` 是主进程结束时结算好的值。 */
+  'goal.ended': z.object({
+    goalId: Id,
+    reason: GoalEndReason,
+    detail: z.string().max(GOAL_REASON_MAX).optional(),
+    turns: z.number().int().nonnegative(),
+    durationMs: DurationMs,
   }),
 
   // ---------- 记忆（M7-03，ADR-0019） ----------

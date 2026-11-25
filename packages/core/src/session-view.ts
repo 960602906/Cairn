@@ -24,6 +24,11 @@ import {
   type ErrorInfo,
   type EventEnvelope,
   type EventPayload,
+  type GoalEndReason,
+  type GoalEvidence,
+  type GoalLimits,
+  type GoalPauseReason,
+  type GoalVerdict,
   type LiveEvent,
   type MemoryScope,
   type ModelRef,
@@ -74,6 +79,10 @@ interface MessageMeta {
 export interface UserMessageView extends MessageMeta {
   readonly role: 'user'
   readonly content: readonly ContentPart[]
+  /** 自动续轮消息的来源（ADR-0047）；省略或 `user` 是用户自己发送的。 */
+  readonly origin?: 'user' | 'goal'
+  /** `origin === 'goal'` 时指向目标。 */
+  readonly goalId?: string
   /** 用 `@` 引用的文件与文件夹（ADR-0037）。展开的内容只给模型，不在这里。 */
   readonly mentions: readonly ResolvedMention[]
   /** `/技能名` 指定的技能。展开的正文只给模型，不在这里。 */
@@ -411,6 +420,58 @@ function synthesizedPlanList(plan: PlanView): TaskListView {
   }
 }
 
+/** 一次目标判定（`goal.evaluated`）。`turnId` 取事件信封，界面按它挂到轮次。 */
+export interface GoalEvaluationView {
+  readonly turnId: string | undefined
+  readonly verdict: GoalVerdict
+  readonly reason: string
+  readonly evidence: readonly GoalEvidence[]
+  readonly model: ModelRef
+  readonly seq: number
+  readonly at: number
+}
+
+/** 影响目标状态的生命周期事件；回退时按 seq 过滤后重放。 */
+export interface GoalLifecycleView {
+  readonly seq: number
+  readonly at: number
+  readonly kind: 'created' | 'paused' | 'resumed' | 'ended'
+  readonly reason?: GoalPauseReason | GoalEndReason
+  readonly detail?: string
+  readonly turns?: number
+  readonly durationMs?: number
+}
+
+export type GoalStatus = 'active' | 'paused' | 'ended'
+
+/** 会话里的一次目标（ADR-0047）。一个会话最多一个未结束目标。 */
+export interface GoalView {
+  readonly goalId: string
+  readonly condition: string
+  readonly limits: GoalLimits
+  readonly status: GoalStatus
+  /** `goal.created` 的 seq。 */
+  readonly seq: number
+  readonly createdAt: number
+  /** 目标第一条用户消息的 seq；编辑到它时目标不再代表用户意图。 */
+  readonly initialMessageSeq: number | undefined
+  /** 已结束的活动区间之和；结束时取 `goal.ended.durationMs`。 */
+  readonly activeMs: number
+  /** 活动时当前区间的起点。 */
+  readonly activeSince: number | undefined
+  /** 目标 `active` 时开始的根运行轮次；回退时按 `turnId` 过滤。 */
+  readonly turnIds: readonly string[]
+  readonly evaluations: readonly GoalEvaluationView[]
+  readonly lifecycle: readonly GoalLifecycleView[]
+  readonly pauseReason: GoalPauseReason | undefined
+  readonly pauseDetail: string | undefined
+  readonly endReason: GoalEndReason | undefined
+  readonly endDetail: string | undefined
+  readonly endedAt: number | undefined
+  /** 结果卡挂在哪个轮次。 */
+  readonly endedTurnId: string | undefined
+}
+
 /**
  * 浮动进度卡显示的列表：执行中的计划优先（旧会话用合成列表），
  * 否则最近一个仍有未完成项的临时列表；都完成时不显示。
@@ -483,6 +544,14 @@ export interface SessionView {
   readonly plans: readonly PlanView[]
   /** 会话里的待办列表，按创建顺序（ADR-0038）。 */
   readonly taskLists: readonly TaskListView[]
+  /** 目标模式（ADR-0047），按 goalId 索引。 */
+  readonly goals: Readonly<Record<string, GoalView>>
+  /** 目标的创建顺序；视图只保留最近 20 个。 */
+  readonly goalOrder: readonly string[]
+  /** 最近创建、仍在视图里的目标。 */
+  readonly latestGoalId: string | undefined
+  /** 最近创建、仍未结束的目标；最多一个。 */
+  readonly openGoalId: string | undefined
   /** 父运行发起的子任务，按发生顺序（M4-05）。 */
   readonly delegations: readonly DelegationView[]
   /** 等待用户确认的记忆提议（M7-03），按提议顺序；确认、忽略或删除后移除。 */
@@ -490,6 +559,26 @@ export interface SessionView {
   readonly reviewLoops: readonly ReviewLoopView[]
   /** 会话里执行过的流水线（M7-08），按发生顺序。 */
   readonly pipelineRuns: readonly PipelineView[]
+}
+
+/** 当前未结束的目标（`active` 或 `paused`）。 */
+export function openGoal(view: SessionView): GoalView | undefined {
+  return view.openGoalId === undefined ? undefined : view.goals[view.openGoalId]
+}
+
+/**
+ * 目标 `active`、最后一轮已完成、该轮还没有判定、会话没有活动运行。
+ * 界面据此显示“判定中”；主进程的状态机不依赖它。
+ */
+export function isAwaitingGoalEvaluation(view: SessionView): boolean {
+  const goal = openGoal(view)
+  if (!goal || goal.status !== 'active') return false
+  const turnId = goal.turnIds.at(-1)
+  if (turnId === undefined) return false
+  const run = rootRun(view)
+  if (run === undefined || isActiveRunState(run.state)) return false
+  if (run.turn?.turnId !== turnId || run.turn.status !== 'completed') return false
+  return !goal.evaluations.some((evaluation) => evaluation.turnId === turnId)
 }
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
@@ -514,6 +603,10 @@ export function createSessionView(sessionId: string): SessionView {
     restores: [],
     plans: [],
     taskLists: [],
+    goals: {},
+    goalOrder: [],
+    latestGoalId: undefined,
+    openGoalId: undefined,
     delegations: [],
     memoryProposals: [],
     reviewLoops: [],
@@ -877,14 +970,17 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         run.turn?.turnId === turnId ? undefined : { ...run, turn: newTurn(turnId, event.ts) },
       )
       const next = attachPendingUserMessage(withTurn ?? view, event.runId, turnId)
+      let result: SessionView | undefined
       // 重复的 turn.started，而且标记不用变：只推进 seq
-      if (next === view && view.agentsMd === undefined && loaded === undefined) return undefined
-      const { agentsMd: _previous, ...rest } = next
-      return {
-        ...rest,
-        crash: undefined,
-        ...(loaded ? { agentsMd: { lines: loaded.lines, truncated: loaded.truncated } } : {}),
+      if (next !== view || view.agentsMd !== undefined || loaded !== undefined) {
+        const { agentsMd: _previous, ...rest } = next
+        result = {
+          ...rest,
+          crash: undefined,
+          ...(loaded ? { agentsMd: { lines: loaded.lines, truncated: loaded.truncated } } : {}),
+        }
       }
+      return trackGoalTurn(result ?? view, event) ?? result
     }
     case 'turn.completed':
       return endTurn(view, event, { status: 'completed', durationMs: event.payload.durationMs })
@@ -941,14 +1037,17 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       // 正常顺序是 message.user 先落库、turn.started 后到；宿主恢复等情况下也可能反过来。
       const run = view.runs[event.runId]
       const turnId = event.turnId ?? (run?.turn?.status === 'running' ? run.turn.turnId : undefined)
-      return upsertMessage(view, {
+      const next = upsertMessage(view, {
         role: 'user',
         ...meta(event, event.payload.messageId, turnId),
         content: event.payload.content,
+        ...(event.payload.origin !== undefined ? { origin: event.payload.origin } : {}),
+        ...(event.payload.goalId !== undefined ? { goalId: event.payload.goalId } : {}),
         mentions: event.payload.mentions ?? [],
         skills: event.payload.skills ?? [],
         agents: event.payload.agents ?? [],
       })
+      return anchorGoalMessage(next, event.seq, event.payload.origin)
     }
     case 'message.assistant.completed': {
       const { messageId, content, reasoning, toolCalls, model, incomplete } = event.payload
@@ -1065,6 +1164,124 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return resolveTaskList(view, event.payload.listId, (list) =>
         list.closed ? undefined : { ...list, closed: true },
       )
+
+    case 'goal.created': {
+      const { goalId, condition, limits } = event.payload
+      if (view.goals[goalId] !== undefined || openGoal(view) !== undefined) return undefined
+      const goal: GoalView = {
+        goalId,
+        condition,
+        limits,
+        status: 'active',
+        seq: event.seq,
+        createdAt: event.ts,
+        initialMessageSeq: undefined,
+        activeMs: 0,
+        activeSince: event.ts,
+        turnIds: [],
+        evaluations: [],
+        lifecycle: [{ seq: event.seq, at: event.ts, kind: 'created' }],
+        pauseReason: undefined,
+        pauseDetail: undefined,
+        endReason: undefined,
+        endDetail: undefined,
+        endedAt: undefined,
+        endedTurnId: undefined,
+      }
+      return addGoal(view, goal)
+    }
+    case 'goal.paused': {
+      const { reason, detail } = event.payload
+      return updateGoal(view, event.payload.goalId, (goal) => {
+        if (goal.status !== 'active') return undefined
+        const elapsed =
+          goal.activeSince === undefined ? 0 : Math.max(0, event.ts - goal.activeSince)
+        return {
+          ...goal,
+          status: 'paused',
+          activeMs: goal.activeMs + elapsed,
+          activeSince: undefined,
+          pauseReason: reason,
+          pauseDetail: detail,
+          lifecycle: [
+            ...goal.lifecycle,
+            {
+              seq: event.seq,
+              at: event.ts,
+              kind: 'paused',
+              reason,
+              ...(detail !== undefined ? { detail } : {}),
+            },
+          ],
+        }
+      })
+    }
+    case 'goal.resumed':
+      return updateGoal(view, event.payload.goalId, (goal) => {
+        if (goal.status !== 'paused') return undefined
+        return {
+          ...goal,
+          status: 'active',
+          activeSince: event.ts,
+          pauseReason: undefined,
+          pauseDetail: undefined,
+          lifecycle: [...goal.lifecycle, { seq: event.seq, at: event.ts, kind: 'resumed' }],
+        }
+      })
+    case 'goal.evaluated': {
+      const { goalId, verdict, reason, evidence, model } = event.payload
+      return updateGoal(view, goalId, (goal) => {
+        if (goal.status === 'ended') return undefined
+        if (
+          event.turnId !== undefined &&
+          goal.evaluations.some((item) => item.turnId === event.turnId)
+        ) {
+          return undefined
+        }
+        return {
+          ...goal,
+          evaluations: [
+            ...goal.evaluations,
+            {
+              turnId: event.turnId,
+              verdict,
+              reason,
+              evidence: evidence ?? [],
+              model,
+              seq: event.seq,
+              at: event.ts,
+            },
+          ],
+        }
+      })
+    }
+    case 'goal.ended':
+      return updateGoal(view, event.payload.goalId, (goal) => {
+        if (goal.status === 'ended') return undefined
+        const { reason, detail, turns, durationMs } = event.payload
+        return {
+          ...goal,
+          status: 'ended',
+          activeMs: durationMs,
+          activeSince: undefined,
+          endReason: reason,
+          endDetail: detail,
+          endedAt: event.ts,
+          endedTurnId: event.turnId,
+          lifecycle: [
+            ...goal.lifecycle,
+            {
+              seq: event.seq,
+              at: event.ts,
+              kind: 'ended',
+              reason,
+              turns,
+              durationMs,
+              ...(detail !== undefined ? { detail } : {}),
+            },
+          ],
+        }
+      })
 
     case 'memory.proposed': {
       const { memoryId, scope, content, sourceAgentId } = event.payload
@@ -1421,6 +1638,89 @@ function upsertMessage(view: SessionView, message: MessageView): SessionView {
   return { ...view, messages }
 }
 
+/** 投影最多保留的目标数；超出的只淘汰最早结束的目标。 */
+const GOAL_VIEW_LIMIT = 20
+
+/** 由目标表与顺序重算派生 id，并裁掉过期的已结束目标。 */
+function syncGoals(
+  goals: Readonly<Record<string, GoalView>>,
+  order: readonly string[],
+): Pick<SessionView, 'goals' | 'goalOrder' | 'latestGoalId' | 'openGoalId'> {
+  const goalOrder = order.filter((goalId) => goals[goalId] !== undefined)
+  while (goalOrder.length > GOAL_VIEW_LIMIT) {
+    const index = goalOrder.findIndex((goalId) => goals[goalId]?.status === 'ended')
+    if (index < 0) break
+    goalOrder.splice(index, 1)
+  }
+  const kept: Record<string, GoalView> = {}
+  let latestGoalId: string | undefined
+  let openGoalId: string | undefined
+  for (const goalId of goalOrder) {
+    const goal = goals[goalId]
+    if (goal === undefined) continue
+    kept[goalId] = goal
+    latestGoalId = goalId
+    if (goal.status !== 'ended') openGoalId = goalId
+  }
+  return { goals: kept, goalOrder, latestGoalId, openGoalId }
+}
+
+function addGoal(view: SessionView, goal: GoalView): SessionView {
+  return {
+    ...view,
+    ...syncGoals({ ...view.goals, [goal.goalId]: goal }, [...view.goalOrder, goal.goalId]),
+  }
+}
+
+function updateGoal(
+  view: SessionView,
+  goalId: string,
+  fn: (goal: GoalView) => GoalView | undefined,
+): SessionView | undefined {
+  const goal = view.goals[goalId]
+  if (goal === undefined) return undefined
+  const next = fn(goal)
+  if (next === undefined) return undefined
+  return { ...view, ...syncGoals({ ...view.goals, [goalId]: next }, view.goalOrder) }
+}
+
+/**
+ * 目标的第一个用户输入决定目标代表哪段对话（ADR-0047）。自动续轮不锚定；
+ * 重新生成首条消息后投影清空了字段，紧随其后的重发会重新锚定（即使目标已暂停）。
+ */
+function anchorGoalMessage(
+  view: SessionView,
+  seq: number,
+  origin: 'user' | 'goal' | undefined,
+): SessionView {
+  if (origin === 'goal') return view
+  const goal = openGoal(view)
+  if (goal === undefined || goal.initialMessageSeq !== undefined) return view
+  return (
+    updateGoal(view, goal.goalId, (current) =>
+      current.initialMessageSeq === undefined ? { ...current, initialMessageSeq: seq } : undefined,
+    ) ?? view
+  )
+}
+
+/** 根运行开始的轮次计入目标预算；暂停期间与子运行的轮次不计数。 */
+function trackGoalTurn(
+  view: SessionView,
+  event: EventEnvelope<'turn.started'>,
+): SessionView | undefined {
+  if (event.parentRunId !== undefined || event.turnId === undefined) return undefined
+  const goal = openGoal(view)
+  if (goal === undefined || goal.status !== 'active' || goal.turnIds.includes(event.turnId)) {
+    return undefined
+  }
+  const turnId = event.turnId
+  return updateGoal(view, goal.goalId, (current) =>
+    current.status === 'active' && !current.turnIds.includes(turnId)
+      ? { ...current, turnIds: [...current.turnIds, turnId] }
+      : undefined,
+  )
+}
+
 function subtractUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   const sum: { -readonly [K in keyof TokenUsage]: TokenUsage[K] } = {
     inputTokens: Math.max(0, a.inputTokens - b.inputTokens),
@@ -1433,6 +1733,99 @@ function subtractUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
     sum.reasoningTokens = Math.max(0, (a.reasoningTokens ?? 0) - (b.reasoningTokens ?? 0))
   }
   return sum
+}
+
+/**
+ * 回退对目标的影响（ADR-0047）：
+ * - 目标创建于回退区间，或编辑到目标首条消息：目标从投影移除。
+ * - 已结束的目标不因回退复活；结束卡挂载的轮次被回退时清空挂载点。
+ * - 其余目标按 `seq` 过滤生命周期事件后重放，重算活动时长与暂停原因；回退区间内的判定与
+ *   轮次一并过滤，首条消息被回退时清空锚点。
+ * - 保留下来的目标若仍 `active`，由主进程在回退的同一同步段写 `paused(rewind)`。
+ */
+function rewindGoals(
+  view: SessionView,
+  event: EventEnvelope<'conversation.rewound'>,
+  removedTurns: ReadonlySet<string>,
+): Pick<SessionView, 'goals' | 'goalOrder' | 'latestGoalId' | 'openGoalId'> {
+  const { fromSeq } = event.payload
+  const goals: Record<string, GoalView> = {}
+  const goalOrder: string[] = []
+  for (const goalId of view.goalOrder) {
+    const goal = view.goals[goalId]
+    if (goal === undefined || goal.seq >= fromSeq) continue
+    if (
+      event.payload.reason === 'edit' &&
+      goal.initialMessageSeq !== undefined &&
+      goal.initialMessageSeq >= fromSeq
+    ) {
+      continue
+    }
+    goals[goalId] = rewindGoal(goal, fromSeq, removedTurns)
+    goalOrder.push(goalId)
+  }
+  return syncGoals(goals, goalOrder)
+}
+
+function rewindGoal(goal: GoalView, fromSeq: number, removedTurns: ReadonlySet<string>): GoalView {
+  const lifecycle = goal.lifecycle.filter((entry) => entry.seq < fromSeq)
+  const turnIds = goal.turnIds.filter((turnId) => !removedTurns.has(turnId))
+  const evaluations = goal.evaluations.filter((evaluation) => evaluation.seq < fromSeq)
+  const initialMessageSeq =
+    goal.initialMessageSeq !== undefined && goal.initialMessageSeq < fromSeq
+      ? goal.initialMessageSeq
+      : undefined
+  const endedTurnId =
+    goal.endedTurnId !== undefined && !removedTurns.has(goal.endedTurnId)
+      ? goal.endedTurnId
+      : undefined
+
+  if (goal.status === 'ended') {
+    // 结束不因回退撤销；即使 goal.ended 落在回退区间，也保留在生命周期里。
+    const ended = goal.lifecycle.findLast((entry) => entry.kind === 'ended')
+    return {
+      ...goal,
+      lifecycle:
+        ended === undefined || lifecycle.includes(ended) ? lifecycle : [...lifecycle, ended],
+      turnIds,
+      evaluations,
+      initialMessageSeq,
+      endedTurnId,
+    }
+  }
+
+  let status: GoalStatus = 'active'
+  let activeMs = 0
+  let activeSince: number | undefined = goal.createdAt
+  let pauseReason: GoalPauseReason | undefined
+  let pauseDetail: string | undefined
+  for (const entry of lifecycle) {
+    if (entry.kind === 'paused' && status === 'active') {
+      activeMs += Math.max(0, entry.at - (activeSince ?? entry.at))
+      activeSince = undefined
+      status = 'paused'
+      pauseReason = entry.reason as GoalPauseReason | undefined
+      pauseDetail = entry.detail
+    } else if (entry.kind === 'resumed' && status === 'paused') {
+      status = 'active'
+      activeSince = entry.at
+      pauseReason = undefined
+      pauseDetail = undefined
+    }
+  }
+  return {
+    ...goal,
+    status,
+    activeMs,
+    activeSince,
+    pauseReason,
+    pauseDetail,
+    lifecycle,
+    turnIds,
+    evaluations,
+    initialMessageSeq,
+    endedTurnId,
+  }
 }
 
 /**
@@ -1535,6 +1928,7 @@ function rewindView(view: SessionView, event: EventEnvelope<'conversation.rewoun
   } = view
   return {
     ...rest,
+    ...rewindGoals(view, event, removedTurns),
     runs,
     runOrder,
     messages,
