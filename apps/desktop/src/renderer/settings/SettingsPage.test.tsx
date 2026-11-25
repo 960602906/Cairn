@@ -466,6 +466,46 @@ describe('SettingsPage', () => {
     expect(onCollapse).toHaveBeenCalledTimes(1)
   })
 
+  it('leaves room for the traffic lights on macOS', async () => {
+    vi.stubGlobal('cairn', { windowControls: { platform: 'darwin' } })
+    const i18n = createI18n('zh-CN')
+    const api = {
+      ready: async () => {},
+      request: async () => ({ locale: 'zh-CN', providers: [] }),
+      on: () => () => {},
+    } as unknown as MainApi
+    const store = createSessionStore(api)
+    const onCollapse = vi.fn()
+    const nav = (collapsible: boolean) => (
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreProvider store={store}>
+          <SettingsNav
+            collapsible={collapsible}
+            section="general"
+            onSelect={() => {}}
+            onBack={() => {}}
+            onCollapse={onCollapse}
+          />
+        </SessionStoreProvider>
+      </I18nextProvider>
+    )
+    const { container, rerender } = render(nav(false))
+    const titlebar = container.querySelector<HTMLElement>('[data-mac-titlebar]')!
+    // 应用名在 48px 的拖拽行里，向右让出红绿灯的位置
+    expect(titlebar.className).toContain('h-12')
+    expect(titlebar.className).toContain('pl-[84px]')
+    expect(within(titlebar).getByText('Cairn')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '收起侧栏' })).toBeNull()
+
+    rerender(nav(true))
+    const collapse = within(container.querySelector<HTMLElement>('[data-mac-titlebar]')!).getByRole(
+      'button',
+      { name: '收起侧栏' },
+    )
+    await userEvent.click(collapse)
+    expect(onCollapse).toHaveBeenCalledTimes(1)
+  })
+
   it('filters the category list by title, description and keywords', async () => {
     setup({
       providers: [

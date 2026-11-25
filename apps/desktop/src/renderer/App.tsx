@@ -26,7 +26,7 @@ import type { SessionStore } from './session-store.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
 import { SessionStoreProvider, useSessionStore } from './store-context.js'
 import { ThemeSync } from './ThemeSync.js'
-import { CairnAppMark, IconButton, TooltipProvider } from './ui/index.js'
+import { CairnAppMark, cn, IconButton, TooltipProvider } from './ui/index.js'
 
 /**
  * 首屏只显示侧栏与新对话页；对话页、设置、活动、Agents、搜索与欢迎框按需加载。
@@ -298,9 +298,16 @@ function Workspace() {
     },
   } as const
 
-  /** 左栏收起（或窄窗口）时，顶栏左侧提供展开入口。 */
+  /**
+   * 左栏收起（或窄窗口）时，顶栏左侧提供展开入口。macOS 上这时红绿灯落在纸面左上角，
+   * 按钮向右让出位置（顶栏左内边距 12～20px，再加 64px，越过红绿灯）。
+   */
+  const mac = window.cairn?.windowControls?.platform === 'darwin'
   const reveal = sessionsOpen ? null : (
-    <div className="no-drag mr-1 flex shrink-0 items-center gap-0.5">
+    <div
+      data-sidebar-reveal
+      className={cn('no-drag mr-1 flex shrink-0 items-center gap-0.5', mac && 'ml-16')}
+    >
       <IconButton label={t('sidebar.expand')} size="icon-sm" onClick={openSessions}>
         <PanelLeftOpen />
       </IconButton>
