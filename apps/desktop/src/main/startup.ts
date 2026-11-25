@@ -35,6 +35,7 @@ import { requiredDirectories, resolveAppPaths } from './app-paths.js'
 import { readAppInfo } from './build-info.js'
 import { resolveBuiltinSkillsDir } from './builtin-skills.js'
 import { configureElectronRuntime } from './electron-runtime.js'
+import { createQuitGuard } from './quit-guard.js'
 import { resolveChromeTheme, windowChromeOptions } from './window-chrome.js'
 import { WINDOW_CONTROLS_CHANNEL } from '../shared/window-controls.js'
 import {
@@ -992,7 +993,8 @@ export function focusPrimaryWindow(): void {
   window.focus()
 }
 
-function createWindow(): BrowserWindow {
+function createWindow(): BrowserWindow | undefined {
+  if (!quitGuard.canCreateWindow()) return undefined
   const theme = resolveChromeTheme(settings.get().theme, nativeTheme.shouldUseDarkColors)
   const window = new BrowserWindow({
     width: 1200,
@@ -1047,7 +1049,10 @@ app.on('window-all-closed', () => {
 
 // 退出前停止所有宿主（各自收到 host.shutdown），再关闭数据库
 let servicesClosed = false
+/** 一旦开始退出就不再建窗口，见 `quit-guard.ts`。 */
+const quitGuard = createQuitGuard()
 app.on('before-quit', (event) => {
+  quitGuard.begin()
   if (servicesClosed) return
   event.preventDefault()
   servicesClosed = true
@@ -1153,6 +1158,7 @@ void app.whenReady().then(() => {
   followThemeSetting()
   registerWindowControls()
   const window = createWindow()
+  if (!window) return
   mark('window_created')
   window.webContents.once('did-finish-load', () => {
     mark('did_finish_load')
@@ -1180,6 +1186,6 @@ void app.whenReady().then(() => {
   autoFix.start()
   if (isSmokeRun(process.env)) startSmoke(window)
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (quitGuard.shouldCreateOnActivate(BrowserWindow.getAllWindows().length)) createWindow()
   })
 })
