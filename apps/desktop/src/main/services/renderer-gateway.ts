@@ -83,6 +83,11 @@ export interface SessionCommands {
   readonly approvePlan: Handler<'plan.approve'>
   readonly replan: Handler<'plan.replan'>
   readonly abandonPlan: Handler<'plan.abandon'>
+  /** 目标模式（ADR-0047）。 */
+  readonly setGoal: Handler<'goal.set'>
+  readonly pauseGoal: Handler<'goal.pause'>
+  readonly resumeGoal: Handler<'goal.resume'>
+  readonly clearGoal: Handler<'goal.clear'>
 }
 
 /** 由改动服务实现的改动命令（M1-08b）。 */
@@ -527,6 +532,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('plan.approve', (params) => commands.approvePlan(params))
       endpoint.handle('plan.replan', (params) => commands.replan(params))
       endpoint.handle('plan.abandon', (params) => commands.abandonPlan(params))
+      endpoint.handle('goal.set', (params) => commands.setGoal(params))
+      endpoint.handle('goal.pause', (params) => commands.pauseGoal(params))
+      endpoint.handle('goal.resume', (params) => commands.resumeGoal(params))
+      endpoint.handle('goal.clear', (params) => commands.clearGoal(params))
       endpoint.handle('session.compact', (params) => commands.compact(params))
       endpoint.handle('session.brief.update', (params) => commands.updateBrief(params))
       endpoint.handle('session.abort', (params) => commands.abort(params))

@@ -89,6 +89,7 @@ import { latestBrief } from './services/brief.js'
 import { createBriefService } from './services/brief-service.js'
 import { createCompactService } from './services/compact-service.js'
 import { createTitleService } from './services/title-service.js'
+import { createGoalService, type GoalService } from './services/goal-service.js'
 import { createSafeStorageCipher } from './services/safe-storage-cipher.js'
 import { createSettingsService } from './services/settings-service.js'
 import { createSandboxService } from './services/sandbox-service.js'
@@ -369,6 +370,8 @@ const hub = createHubService()
 const mcpStatusListeners = new Set<(event: McpStatusEvent) => void>()
 /** MCP 工具清单或工具权限变了：让空闲的宿主重启（会话管理器创建后接上）。 */
 let refreshIdleHosts: () => void = () => undefined
+/** 目标服务（ADR-0047）：在 sessions 之后装配，会话管理器通过闭包回调使用。 */
+let goals: GoalService | undefined = undefined
 const mcp = createMcpService({
   storage,
   credentials,
@@ -645,6 +648,8 @@ const sessions = createSessionManager({
   resolveAgent: (agent) => agents.definition(agent),
   models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
   isLocked: (sessionId) => changes.isReverting(sessionId) || checkpoints.isRestoring(sessionId),
+  finishGoalBudget: (sessionId) => goals?.finishBudget(sessionId),
+  onSessionDeleted: (sessionId) => goals?.forget(sessionId),
   summarize: (sessionId, transcript) => compaction.summarize(sessionId, transcript),
   contextBudget: (sessionId) => {
     const session = storage.sessions.get(sessionId)
@@ -659,6 +664,15 @@ const sessions = createSessionManager({
   onError: reportError,
 })
 refreshIdleHosts = () => sessions.refreshTools()
+/** 目标模式（ADR-0047）：监听根轮次的完成事件，判定未达成时自动续轮。 */
+goals = createGoalService({
+  events,
+  storage,
+  sessions,
+  settings,
+  credentials,
+  onError: reportError,
+})
 const trials = createTrialService({ storage, events, agents, sessions })
 /** 团队模板（M7-09）：草稿、发布与试运行；试运行沿用 Agent 试运行的隐藏会话与只读默认。 */
 const teams = createTeamService({ storage, events, agents, sessions, trials })
@@ -1040,6 +1054,7 @@ app.on('before-quit', (event) => {
   titles.stop()
   briefs.stop()
   compaction.stop()
+  goals?.stop()
   activityNotifier.close()
   gateway.close()
   autoFix.stop()
@@ -1157,6 +1172,8 @@ void app.whenReady().then(() => {
   } catch (error) {
     reportError(error)
   }
+  // 恢复之后再订阅并扫描：启动扫描把仍 active 的目标暂停为 restart，不自动续跑。
+  void goals?.start().catch(reportError)
   mark('recovery_done')
   void mcp.initialize()
   updates.start()

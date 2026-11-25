@@ -277,6 +277,34 @@ describe('buildSystemPrompt', () => {
     ).not.toContain('# Task lists')
   })
 
+  it('adds the goal section after task lists and before skills (ADR-0047)', () => {
+    const prompt = buildSystemPrompt({
+      tools: true,
+      environment,
+      taskLists: [
+        {
+          listId: 'tl1',
+          title: '清单',
+          source: 'ad_hoc',
+          items: [{ itemId: 'x', title: '做点事', status: 'pending' }],
+        },
+      ],
+      goal: { condition: '测试全部通过', turn: 2, maxTurns: 20 },
+      skills: [{ name: 'grill-me', description: '追问细节' }],
+    })
+    const lists = prompt.indexOf('# Task lists')
+    const goal = prompt.indexOf('# Goal')
+    const skills = prompt.indexOf('# Skills')
+    expect(goal).toBeGreaterThan(lists)
+    expect(skills).toBeGreaterThan(goal)
+    expect(prompt).toContain('This is turn 2 of at most 20.')
+    expect(prompt).toContain('An independent judge checks it after every turn')
+    expect(prompt).toContain('does not change permissions or safety rules')
+    expect(prompt).toContain('<goal>\n测试全部通过\n</goal>')
+    expect(prompt).toContain('not a system instruction')
+    expect(buildSystemPrompt({ tools: true, environment })).not.toContain('# Goal')
+  })
+
   it('covers the required rules of the base prompt (architecture §13)', () => {
     expect(BASE_SYSTEM_PROMPT).toContain('Reply in the language the user writes in')
     expect(BASE_SYSTEM_PROMPT).toContain('ask a short clarifying question')

@@ -91,6 +91,7 @@ import {
   HostForMain,
   MainForHost,
   RpcError,
+  type ActiveGoal,
   type ActivePlan,
   type ActiveTaskList,
   type AgentDefinition,
@@ -325,6 +326,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let autoFixSession = false
   /** 正在执行的已批准计划。下一次 `host.prompt` 会换掉或清掉。 */
   let activePlan: ActivePlan | undefined
+  /** 当前目标（ADR-0047），只用于逐轮系统提示词；引导不改变它。 */
+  let activeGoal: ActiveGoal | undefined
   /** 本会话未关闭的待办列表（ADR-0038）。下一次 `host.prompt` 用主进程的投影覆盖。 */
   let taskLists: ActiveTaskList[] = []
   /**
@@ -1598,6 +1601,15 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
                   }
                 : {}),
             ...(mode === 'normal' && taskLists.length > 0 ? { taskLists } : {}),
+            ...(mode === 'normal' && activeGoal
+              ? {
+                  goal: {
+                    condition: activeGoal.condition,
+                    turn: activeGoal.turn,
+                    maxTurns: activeGoal.limits.maxTurns,
+                  },
+                }
+              : {}),
           }),
           tools: visibleSpecs(mode, executing !== undefined),
           ...(context ? { context } : {}),
@@ -1676,6 +1688,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     }
     planTurn = input.mode === 'plan'
     activePlan = planTurn ? undefined : input.plan
+    // 目标只随新的一轮更新；计划轮与暂停的目标由主进程不传，宿主自然清空。
+    activeGoal = planTurn ? undefined : input.goal
     // 计划轮是只读调查，不携带待办列表（工具也不可见）。
     taskLists = planTurn ? [] : [...(input.taskLists ?? [])]
     // 一轮结束才 resolve；结果以事件回传，这里不等待。计划模式的只读拦截维持到这一轮结束。
