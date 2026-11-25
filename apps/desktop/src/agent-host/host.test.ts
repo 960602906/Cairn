@@ -557,6 +557,49 @@ describe('agent host', () => {
     expect(await decide(ruled, 'rm -rf /')).toMatchObject({ decision: 'deny' })
   })
 
+  it('skips forced guards in full-access mode and restores them when the mode changes', async () => {
+    const definition = {
+      name: 'run_command',
+      description: 'Run a command',
+      category: 'execute' as const,
+      inputSchema: { type: 'object' },
+      execute: () => Promise.resolve({ content: [] }),
+    }
+    const request = (command: string) => ({
+      definition,
+      input: { command },
+      targets: { command },
+      toolCallId: 'call1',
+    })
+    const decide = (h: ReturnType<typeof setup>, command: string) =>
+      h.host.permissions.decide(request(command) as never)
+
+    const askRule = {
+      id: 'user.ask-all',
+      scope: 'global' as const,
+      effect: 'ask' as const,
+      match: {},
+      source: 'user' as const,
+    }
+    const fullAccess = setup()
+    await fullAccess.main.request('host.init', {
+      ...init,
+      permissionRules: [...presetRules('full-access'), askRule],
+      permissionMode: 'full-access',
+    })
+    // 危险命令、会被直接拒绝的破坏性命令，以及保存的“询问”规则都不再拦截
+    expect(await decide(fullAccess, 'git push --force')).toEqual({ decision: 'allow' })
+    expect(await decide(fullAccess, 'rm -rf /')).toEqual({ decision: 'allow' })
+
+    // 切回“询问”模式后恢复强制拦截与保存的询问规则
+    await fullAccess.main.request('host.permissions.update', {
+      rules: [...presetRules('ask'), askRule],
+      permissionMode: 'ask',
+    })
+    expect(await decide(fullAccess, 'npm test')).toMatchObject({ decision: 'ask' })
+    expect(await decide(fullAccess, 'rm -rf /')).toMatchObject({ decision: 'deny' })
+  })
+
   it('enforces the Agent write path policy from host.init (M4-11)', async () => {
     const write = {
       name: 'write_file',
@@ -583,6 +626,18 @@ describe('agent host', () => {
     expect(await h.host.permissions.decide(request('src/a.ts') as never)).toMatchObject({
       decision: 'deny',
       reasonCode: 'permission.agent_path_denied',
+    })
+
+    // 完全访问也跳过 Agent 的写入路径限制（ADR-0048）
+    const fullAccess = setup()
+    await fullAccess.main.request('host.init', {
+      ...init,
+      agentDefinition: BUILTIN_TESTER,
+      permissionRules: presetRules('full-access'),
+      permissionMode: 'full-access',
+    })
+    expect(await fullAccess.host.permissions.decide(request('src/a.ts') as never)).toEqual({
+      decision: 'allow',
     })
   })
 

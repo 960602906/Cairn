@@ -1,12 +1,12 @@
 /**
  * 设置页“权限与审批”（M2-11，视觉规范 §8）。
  *
- * - 权限模式：只读 / 询问 / 自动三张卡片，选择后立即保存（与输入框下方的切换相同）。
+ * - 权限模式：只读 / 询问 / 自动 / 完全访问四张卡片，选择后立即保存（与输入框下方的切换相同）。
  * - 规则：当前模式的预设（内置，不能删除），再是保存的全局与项目规则（手动添加或在审批卡片中“始终允许”），
  *   每行是效果、规则（工具与路径或命令）、来源与范围，可以删除。同时匹配多条规则时取最严格的结果（拒绝 >
  *   询问 > 允许，权限引擎 M1-10a），顺序不影响结果，因此不提供调整顺序。
  * - 添加规则：效果、工具（或不限工具）、路径或命令模式、范围（全局或某个项目）。
- * - 底部说明哪些操作无论规则如何都会再次询问（强制拦截，M1-10b）。
+ * - 底部说明哪些操作无论规则如何都会再次询问（强制拦截，M1-10b）；完全访问会跳过它们，底部改为风险提示。
  *
  * 增删规则后，运行中的会话立即改用新规则（主进程通知宿主）。
  */
@@ -36,7 +36,7 @@ import {
 } from './permissions-model.js'
 import { SettingsHeader } from './SettingsPage.js'
 
-const MODES: readonly PermissionMode[] = ['read-only', 'ask', 'auto']
+const MODES: readonly PermissionMode[] = ['read-only', 'ask', 'auto', 'full-access']
 const DEFAULT_MODE: PermissionMode = 'ask'
 
 function ModeCards() {
@@ -47,7 +47,7 @@ function ModeCards() {
     <div
       role="radiogroup"
       aria-label={t('permissions.mode.label')}
-      className="grid grid-cols-3 gap-2 max-[640px]:grid-cols-1"
+      className="grid grid-cols-4 gap-2 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1"
     >
       {MODES.map((option) => (
         <button
@@ -340,10 +340,17 @@ export function PermissionsSettings() {
       </section>
       <div className="flex items-start gap-2.5 rounded-[12px] bg-sunk px-3.5 py-3 text-[12.5px] text-fg2 [&_svg]:mt-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted">
         <ShieldCheck />
-        <div className="flex flex-col gap-1">
-          <p>{t('permissions.guard.ask')}</p>
-          <p className="text-muted">{t('permissions.guard.deny')}</p>
-        </div>
+        {mode === 'full-access' ? (
+          <div className="flex flex-col gap-1">
+            <p className="text-danger">{t('permissions.guard.fullAccess')}</p>
+            <p className="text-muted">{t('permissions.guard.fullAccessHint')}</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <p>{t('permissions.guard.ask')}</p>
+            <p className="text-muted">{t('permissions.guard.deny')}</p>
+          </div>
+        )}
       </div>
     </>
   )

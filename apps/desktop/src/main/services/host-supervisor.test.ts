@@ -6,6 +6,7 @@ import {
   MainForHost,
   PROTOCOL_VERSION,
   type EventEnvelope,
+  type PermissionMode,
   type RunSnapshotInput,
   type RpcChannel,
   type UnsequencedEvent,
@@ -494,6 +495,25 @@ describe('refreshPermissions（M1-11b）', () => {
     const handle = await supervisor.startHost(init)
     await expect(handle.refreshPermissions()).resolves.toBeUndefined()
   })
+
+  it('切换模式时把权限模式一并下发', async () => {
+    const host = fakeHost()
+    const updates: unknown[] = []
+    host.endpoint!.handle('host.permissions.update', (params) => {
+      updates.push(params)
+      return {}
+    })
+    let permissionMode: PermissionMode = 'ask'
+    const { supervisor } = setup(host, {
+      resolvePermissionRules: () => [],
+      resolvePermissionMode: () => permissionMode,
+    })
+    const handle = await supervisor.startHost(init)
+    permissionMode = 'full-access'
+    await handle.refreshPermissions()
+    expect(updates).toEqual([{ rules: [], permissionMode: 'full-access' }])
+    await handle.stop()
+  })
 })
 
 describe('host.approval.request（M1-11a）', () => {
@@ -693,6 +713,15 @@ describe('startHost', () => {
     await supervisor.startHost(init)
     expect(resolvePermissionRules).toHaveBeenCalledWith(init.sessionId, init.agent)
     expect(host.inits).toEqual([{ ...init, permissionRules }])
+  })
+
+  it('passes the permission mode in host.init (ADR-0048)', async () => {
+    const host = fakeHost()
+    const resolvePermissionMode = vi.fn(() => 'full-access' as const)
+    const { supervisor } = setup(host, { resolvePermissionMode })
+    await supervisor.startHost(init)
+    expect(resolvePermissionMode).toHaveBeenCalled()
+    expect(host.inits).toEqual([{ ...init, permissionMode: 'full-access' }])
   })
 
   it('passes the checkpoint location in host.init (M1-12b)', async () => {

@@ -54,3 +54,4 @@
 | [0044](0044-user-questions.md) | 用户提问：`ask_user` 工具与选项卡片 | 已接受 |
 | [0045](0045-auto-fix-push-boundary.md) | 自动修复的推送边界：受控 Git 工具与分支守卫 | 已接受 |
 | [0046](0046-message-edit-and-regenerate.md) | 消息编辑重发与重新生成：追加式回退事件 | 已接受 |
+| [0048](0048-full-access-permission-mode.md) | 完全访问权限模式 | 已接受 |

@@ -563,6 +563,13 @@ describe('agent-service runtime helpers', () => {
     expect(rules.some((entry) => entry.effect === 'deny')).toBe(true)
   })
 
+  it('does not widen the global mode for a full-access agent', () => {
+    const { service } = setup()
+    const created = service.saveDraft({ definition: draft({ permissions: 'full-access' }) })
+    service.publish({ agentId: created.agentId })
+    expect(service.permissionRulesFor({ id: created.agentId, version: 1 }, [rule])).toEqual([rule])
+  })
+
   it('resolves unpublished drafts by content hash for trial runs', () => {
     const { service } = setup()
     const created = service.saveDraft({

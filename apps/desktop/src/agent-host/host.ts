@@ -289,6 +289,24 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   let initializing = false
   let permissionRules: readonly PermissionRule[] = presetRules('ask')
   /**
+   * 当前的权限模式（ADR-0048）：`host.init` 与 `host.permissions.update` 下发。“完全访问”跳过强制
+   * 拦截，但计划模式仍然只读。
+   */
+  let permissionMode: PermissionMode = 'ask'
+  const fullAccess = () => permissionMode === 'full-access'
+  /** 完全访问时跳过这道守卫；计划模式的守卫不经过这里。 */
+  const unlessFullAccess =
+    (guard: PermissionGuard): PermissionGuard =>
+    (request) =>
+      fullAccess() ? undefined : guard(request)
+  const unlessFullAccessAll = (guards: readonly PermissionGuard[]): PermissionGuard[] =>
+    guards.map(unlessFullAccess)
+  /**
+   * 完全访问下连保存的“询问”规则也不再生效（否则仍会弹审批）；“拒绝”规则仍然保留。
+   */
+  const rulesForDecision = (): readonly PermissionRule[] =>
+    fullAccess() ? permissionRules.filter((rule) => rule.effect !== 'ask') : permissionRules
+  /**
    * 命令沙箱状态（M5-04）：`host.init` 之前按“平台不支持”处理，不拦截测试中的直接调用；
    * 初始化后按实际能力与策略判定。
    */
@@ -335,9 +353,8 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     return { effect: 'ask', reasonCode: PermissionReasonCode.DelegationTarget }
   }
   const permissions = createPermissionEngine({
-    rules: () => permissionRules,
+    rules: rulesForDecision,
     guards: [
-      ...DEFAULT_PERMISSION_GUARDS,
       planModeGuard(() => planTurn),
       // 待办列表工具与兼容别名类别是 `read`，只靠 visibleSpecs 隐藏不够：计划轮直接拒绝执行。
       (request) =>
@@ -348,19 +365,23 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
               reason: PLAN_MODE_DENY_REASON,
             }
           : undefined,
-      delegationApprovalGuard,
-      sandboxGuard(() => sandboxState),
-      (request) => rootPathGuard(request),
-      // 自动修复的 Git 工具只在自动修复会话存在；即使将来被错误注册，也不允许在别处执行。
-      (request) =>
-        !autoFixSession &&
-        (request.definition.name === GIT_COMMIT_TOOL || request.definition.name === GIT_PUSH_TOOL)
-          ? {
-              effect: 'deny',
-              reasonCode: PermissionReasonCode.DeniedByRule,
-              reason: 'Git write tools are only available in auto-fix sessions.',
-            }
-          : undefined,
+      // 完全访问跳过其余强制拦截：危险命令、敏感文件、沙箱、委派与 Agent 路径白名单。
+      ...unlessFullAccessAll([
+        ...DEFAULT_PERMISSION_GUARDS,
+        delegationApprovalGuard,
+        sandboxGuard(() => sandboxState),
+        (request) => rootPathGuard(request),
+        // 自动修复的 Git 工具只在自动修复会话存在；即使将来被错误注册，也不允许在别处执行。
+        (request) =>
+          !autoFixSession &&
+          (request.definition.name === GIT_COMMIT_TOOL || request.definition.name === GIT_PUSH_TOOL)
+            ? {
+                effect: 'deny',
+                reasonCode: PermissionReasonCode.DeniedByRule,
+                reason: 'Git write tools are only available in auto-fix sessions.',
+              }
+            : undefined,
+      ]),
     ],
     ...(options.caseInsensitive !== undefined ? { caseInsensitive: options.caseInsensitive } : {}),
   })
@@ -422,6 +443,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
   endpoint.handle('host.init', async (init) => {
     if (initializing || run) throw new RpcError(AgentHostErrorCode.AlreadyInitialized)
     initializing = true
+    if (init.permissionMode) permissionMode = init.permissionMode
     if (init.permissionRules) permissionRules = init.permissionRules
     autoFixSession = init.autoFix !== undefined
     /**
@@ -717,9 +739,11 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
       }
       const policy = resolveDelegationPolicy(definition.delegation)
       let rules: readonly PermissionRule[] = [...resolved.permissionRules]
+      const childRules = (): readonly PermissionRule[] =>
+        fullAccess() ? rules.filter((rule) => rule.effect !== 'ask') : rules
       const childPermissions = createPermissionEngine({
-        rules: () => rules,
-        guards: [
+        rules: childRules,
+        guards: unlessFullAccessAll([
           ...DEFAULT_PERMISSION_GUARDS,
           delegationApprovalGuard,
           createAgentPathGuard(definition.pathPolicy, {
@@ -727,7 +751,7 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
               ? { caseInsensitive: options.caseInsensitive }
               : {}),
           }),
-        ],
+        ]),
         ...(options.caseInsensitive !== undefined
           ? { caseInsensitive: options.caseInsensitive }
           : {}),
@@ -1682,8 +1706,9 @@ export function createAgentHost(options: AgentHostOptions): AgentHost {
     return {}
   })
 
-  endpoint.handle('host.permissions.update', ({ rules }) => {
+  endpoint.handle('host.permissions.update', ({ rules, permissionMode: mode }) => {
     permissionRules = rules
+    if (mode) permissionMode = mode
     return {}
   })
 

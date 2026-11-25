@@ -54,7 +54,7 @@ import { AgentEffectiveConfig } from './AgentEffectiveConfig.js'
 type View = 'edit' | 'versions' | 'effective'
 
 const CATEGORIES = ['read', 'write', 'execute', 'network'] as const
-const MODES = ['read-only', 'ask', 'auto'] as const
+const MODES = ['read-only', 'ask', 'auto', 'full-access'] as const
 
 const estimateTokens = (text: string) => Math.ceil([...text].length / 4)
 

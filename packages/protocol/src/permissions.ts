@@ -48,6 +48,9 @@ export const PermissionRule = z.object({
 })
 export type PermissionRule = z.infer<typeof PermissionRule>
 
-/** 三种权限模式（架构 §10.3）：只是三组预设规则。 */
-export const PermissionMode = z.enum(['read-only', 'ask', 'auto'])
+/**
+ * 四种权限模式（架构 §10.3，ADR-0048）：前三种只是预设规则；“完全访问”另有一组放行所有工具的预设，
+ * 并跳过强制拦截（计划模式除外）。
+ */
+export const PermissionMode = z.enum(['read-only', 'ask', 'auto', 'full-access'])
 export type PermissionMode = z.infer<typeof PermissionMode>

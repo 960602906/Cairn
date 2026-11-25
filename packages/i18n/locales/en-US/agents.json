@@ -118,6 +118,8 @@
   "permissions.ask.hint": "Ask before changing files or running commands.",
   "permissions.auto": "Auto",
   "permissions.auto.hint": "Never looser than the global permission mode: routine work runs directly only when that is Auto too; dangerous actions still ask.",
+  "permissions.full-access": "Full access",
+  "permissions.full-access.hint": "Never looser than the global permission mode: it never asks only when that is Full access too; dangerous actions are no longer blocked.",
   "limits.intro": "Leave blank to use the app defaults.",
   "limits.steps": "Max steps per turn",
   "limits.duration": "Max turn duration (minutes)",

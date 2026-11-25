@@ -120,6 +120,15 @@ describe('PermissionsSettings', () => {
     // 已选中的模式不重复保存
     await userEvent.click(within(modes).getByRole('radio', { name: /^只读/ }))
     expect(updates).toHaveLength(2)
+
+    await userEvent.click(within(modes).getByRole('radio', { name: /^完全访问/ }))
+    await waitFor(() => expect(updates).toContainEqual({ permissionMode: 'full-access' }))
+    expect(
+      within(rules())
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['允许任意工具内置 · 完全访问模式'])
+    expect(screen.getByText(/完全访问会跳过所有强制拦截/)).toBeTruthy()
   })
 
   it('lists saved rules with their source and scope, and deletes them', async () => {
