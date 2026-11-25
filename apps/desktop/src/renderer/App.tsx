@@ -361,7 +361,7 @@ function Workspace() {
         <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
           <ErrorBanner />
           <Suspense fallback={<div className="flex-1 bg-paper" />}>
-            <SettingsContent section={settings} onBack={closeSettings} />
+            <SettingsContent section={settings} onBack={closeSettings} onNavigate={setSettings} />
           </Suspense>
         </main>
         {drawer}

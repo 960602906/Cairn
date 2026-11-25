@@ -240,10 +240,13 @@ export function SettingsContent({
   section,
   leading,
   onBack,
+  onNavigate,
 }: {
   readonly section: SettingsSection
   readonly leading?: ReactNode
   readonly onBack: () => void
+  /** 内容里的链接跳转到另一个分类（例如技能页的“查看权限设置”）。 */
+  readonly onNavigate?: (section: SettingsSection) => void
 }) {
   // Esc 返回对话；对话框或菜单打开时交给它们
   useEffect(() => {
@@ -275,7 +278,9 @@ export function SettingsContent({
           {section === 'general' && <GeneralSettings />}
           {section === 'archived' && <ArchivedSessionsSettings />}
           {section === 'providers' && <ProvidersSettings />}
-          {section === 'skills' && <SkillsSettings />}
+          {section === 'skills' && (
+            <SkillsSettings onOpenPermissions={() => onNavigate?.('permissions')} />
+          )}
           {section === 'mcp' && <McpSettings />}
           {section === 'memory' && <MemorySettings />}
           {section === 'permissions' && <PermissionsSettings />}

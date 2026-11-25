@@ -61,7 +61,7 @@ test('从技能市场下载并安装', async ({ launch }) => {
   await market.getByRole('button', { name: '下载并安装' }).click()
 
   await expect(window.getByRole('tab', { name: '已安装' })).toHaveAttribute('aria-selected', 'true')
-  const installed = window.getByRole('list', { name: '技能' })
+  const installed = window.getByRole('region', { name: /已安装/ })
   await expect(installed.getByText('market-demo')).toBeVisible()
   await expect(installed.getByText('From the market.')).toBeVisible()
 })
