@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { BUILTIN_SMOKE_SKILL } from './builtin-skill.mjs'
 import {
   checkInstalledLayout,
   decodeConsoleOutput,
@@ -288,8 +289,7 @@ describe('smokeInstalled', () => {
   })
 })
 
-const SMOKE_RESULT =
-  'CAIRN_SMOKE_RESULT {"ok":true,"turnCompleted":true,"search":"hit","skills":["example"],"native":"job-object"}\n'
+const SMOKE_RESULT = `CAIRN_SMOKE_RESULT {"ok":true,"turnCompleted":true,"search":"hit","skills":["${BUILTIN_SMOKE_SKILL}"],"native":"job-object"}\n`
 const verifyGit = () => ({ version: 'git version 2.56.0', files: 1, bytes: 1 })
 
 function createInstallation(installDir: string): ReturnType<typeof installedArtifacts> {
@@ -299,7 +299,7 @@ function createInstallation(installDir: string): ReturnType<typeof installedArti
     artifacts.uninstaller,
     path.join(artifacts.resources, 'app.asar'),
     path.join(artifacts.resources, 'app.asar.unpacked/out/bin/rg.exe'),
-    path.join(artifacts.resources, 'skills/example/SKILL.md'),
+    path.join(artifacts.resources, 'skills', BUILTIN_SMOKE_SKILL, 'SKILL.md'),
     ...artifacts.shortcuts,
   ]) {
     write(file)

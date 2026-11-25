@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { BUILTIN_SMOKE_SKILL } from './builtin-skill.mjs'
 import {
   applicationEnvironment,
   checkPackagedResult,
@@ -27,7 +28,7 @@ function result(overrides: Record<string, unknown> = {}): string {
     ok: true,
     turnCompleted: true,
     search: 'ripgrep 15.0.0',
-    skills: ['example'],
+    skills: [BUILTIN_SMOKE_SKILL],
     native: 'job-object',
     ...overrides,
   })}\n`
@@ -99,7 +100,7 @@ describe('parseSmokeResult', () => {
       ok: true,
       turnCompleted: true,
       search: 'ripgrep 15.0.0',
-      skills: ['example'],
+      skills: [BUILTIN_SMOKE_SKILL],
       native: 'job-object',
     })
   })
@@ -150,7 +151,7 @@ describe('checkPackagedResult', () => {
         error: 'renderer failed',
         turnCompleted: false,
         search: null,
-        skills: 'example',
+        skills: BUILTIN_SMOKE_SKILL,
         native: null,
       }),
       exitCode: 1,
@@ -163,7 +164,7 @@ describe('checkPackagedResult', () => {
       'smoke checks failed: renderer failed',
       'agent host did not complete a turn',
       'bundled ripgrep was not exercised',
-      'built-in skill example was not loaded',
+      `built-in skill ${BUILTIN_SMOKE_SKILL} was not loaded`,
       'koffi Job Object was not loaded: null',
       'application exited with 1 (SIGTERM)',
       'missing data/cairn.db',
@@ -186,7 +187,7 @@ describe('checkPackagedResult', () => {
     ).toContain('no valid smoke result was printed')
   })
 
-  it('rejects a skills value that is not a list containing example', () => {
+  it('rejects a skills value that is not a list containing the built-in skill', () => {
     expect(
       checkPackagedResult({
         output: result({ skills: ['other'] }),
@@ -196,7 +197,7 @@ describe('checkPackagedResult', () => {
         exists,
         platform: 'linux',
       }),
-    ).toEqual(['built-in skill example was not loaded'])
+    ).toEqual([`built-in skill ${BUILTIN_SMOKE_SKILL} was not loaded`])
   })
 })
 

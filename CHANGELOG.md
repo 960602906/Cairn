@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 内置技能由示例 `example` 换成 `grill-me`：逐个问题地追问，在写代码前把计划、设计或决策的风险
+  问清楚；旧版对 `example` 的启用与固定偏好会被忽略。
+  The built-in `example` skill is replaced by `grill-me`, which interviews the user one question
+  at a time to stress-test a plan, design or decision before any code is written. Preferences
+  saved for `example` are ignored.
+
 ## [0.1.5] - 2026-11-20
 
 Beta 版本。Windows x64、macOS arm64/x64 与 Linux x64 的发布产物由发布流水线构建；未配置签名时 Windows/macOS 包标注为 unsigned。

@@ -25,6 +25,7 @@ import {
   smokeEnvironment,
 } from './packaged-app.mjs'
 import { verifyBundledGit } from './bundled-git.mjs'
+import { BUILTIN_SMOKE_SKILL } from './builtin-skill.mjs'
 import { readSigningConfig, verifyReleaseSignatures } from '@cairn/release-tools'
 
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
@@ -137,7 +138,7 @@ export function checkInstalledLayout({
     },
     {
       label: 'built-in skills',
-      file: path.join(artifacts.resources, 'skills/example/SKILL.md'),
+      file: path.join(artifacts.resources, 'skills', BUILTIN_SMOKE_SKILL, 'SKILL.md'),
     },
   ]) {
     if (!exists(file)) problems.push(`installed app is missing ${label}: ${file}`)

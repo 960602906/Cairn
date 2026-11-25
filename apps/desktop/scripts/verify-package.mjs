@@ -14,6 +14,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { extractFile, listPackage } from '@electron/asar'
 import { FuseState, FuseV1Options, getCurrentFuseWire } from '@electron/fuses'
+import { BUILTIN_SMOKE_SKILL } from './builtin-skill.mjs'
 
 export const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
 export const DEFAULT_OUTPUT_DIR = path.join(DESKTOP_ROOT, 'dist')
@@ -279,7 +280,10 @@ export async function verifyPackage({
   for (const { file, label } of [
     { file: app.executable, label: 'main executable' },
     { file: appAsar, label: 'app.asar' },
-    { file: path.join(resourcesDir, 'skills/example/SKILL.md'), label: 'resources/skills' },
+    {
+      file: path.join(resourcesDir, 'skills', BUILTIN_SMOKE_SKILL, 'SKILL.md'),
+      label: 'resources/skills',
+    },
     { file: path.join(resourcesDir, 'app-update.yml'), label: 'app-update.yml' },
     // 随包 MinGit 只在 Windows 上分发（ADR-0008）。
     ...(platform === 'win32'
