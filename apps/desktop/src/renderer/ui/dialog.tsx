@@ -47,6 +47,30 @@ export function DialogContent({
   )
 }
 
+/**
+ * 右侧抽屉（技能详情）：铺满窗口高度，不带遮罩，由调用方用 `modal={false}` 打开，
+ * 这样左侧列表仍然可以点击、切换内容。顶部留出 48px 避开 macOS 拖拽行与 Windows/Linux 的窗口按钮。
+ */
+export function DrawerContent({
+  className,
+  children,
+  ...props
+}: ComponentProps<typeof DialogPrimitive.Content>) {
+  return (
+    <DialogPrimitive.Portal>
+      <DialogPrimitive.Content
+        className={cn(
+          'no-drag fixed inset-y-0 right-0 z-50 flex h-full w-[min(480px,calc(100vw-32px))] flex-col bg-raise px-6 pt-12 pb-6 text-fg shadow-3 outline-none motion-safe:animate-drawer-in',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Portal>
+  )
+}
+
 export function DialogTitle({ className, ...props }: ComponentProps<typeof DialogPrimitive.Title>) {
   return <DialogPrimitive.Title className={cn('text-dialog text-fg', className)} {...props} />
 }

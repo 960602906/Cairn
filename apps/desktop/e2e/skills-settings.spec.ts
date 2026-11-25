@@ -1,6 +1,7 @@
 /**
- * 设置页“技能”（M3-08）：用系统对话框选择文件夹，先预览再安装；固定后在列表里显示正文占用的 token，
- * 详情里有正文与附带文件；最后卸载。对话框在主进程中替换为固定返回（与项目选择的 e2e 相同）。
+ * 设置页“技能”（M3-08）：用系统对话框选择文件夹，先预览再安装；安装后在按来源分组的列表里显示
+ * token 估算；点卡片打开右侧抽屉，正文与附带文件、脚本提示都在抽屉里；最后卸载。
+ * 对话框在主进程中替换为固定返回（与项目选择的 e2e 相同）。
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -9,7 +10,7 @@ import { expect, test } from './app.js'
 
 const BODY = 'The reviewer skill says reviewed-in-e2e.'
 
-test('从文件夹安装技能，固定、查看详情后卸载', async ({ launch, userData }) => {
+test('从文件夹安装技能，在抽屉里查看详情后卸载', async ({ launch, userData }) => {
   const source = path.join(userData, 'skill-src')
   mkdirSync(source, { recursive: true })
   writeFileSync(
@@ -28,9 +29,8 @@ test('从文件夹安装技能，固定、查看详情后卸载', async ({ launc
   const nav = window.getByRole('navigation', { name: '设置分类' })
   await nav.getByRole('button', { name: '技能' }).click()
   await expect(window.getByRole('heading', { name: '技能' })).toBeVisible()
-  const list = window.getByRole('list', { name: '技能' })
-  await expect(list).toContainText(BUILTIN_SMOKE_SKILL)
-  await expect(list).toContainText('内置')
+  const builtin = window.getByRole('region', { name: /内置/ })
+  await expect(builtin).toContainText(BUILTIN_SMOKE_SKILL)
 
   // 预览：读到了名称、描述、正文和附带文件，但还没有写盘
   await window.getByRole('button', { name: '安装技能' }).click()
@@ -45,19 +45,16 @@ test('从文件夹安装技能，固定、查看详情后卸载', async ({ launc
 
   await preview.getByRole('button', { name: '安装' }).click()
   await expect(preview).toBeHidden()
-  await expect(list).toContainText('reviewer')
-  await expect(list).toContainText('已安装')
+  const installed = window.getByRole('region', { name: /已安装/ })
+  await expect(installed).toContainText('reviewer')
   expect(existsSync(path.join(userData, 'skills', 'reviewer', 'SKILL.md'))).toBe(true)
 
-  // 固定后索引行加上正文的估算
-  const card = list.getByRole('region', { name: 'reviewer' })
+  const card = window.getByRole('region', { name: 'reviewer' })
   await expect(card).toContainText(/约 \d+ tokens/)
-  const pinned = list.getByRole('switch', { name: '始终加载 reviewer' })
-  await pinned.click()
-  await expect(pinned).toHaveAttribute('aria-checked', 'true')
-  await expect(card).toContainText(/约 \d+ tokens/)
+  // 只剩启用开关，没有“始终加载”。
+  await expect(card.getByRole('switch')).toHaveCount(1)
 
-  const artifacts = '/opt/cursor/artifacts'
+  const artifacts = process.env['CAIRN_E2E_ARTIFACTS'] ?? '/opt/cursor/artifacts'
   mkdirSync(artifacts, { recursive: true })
   const setTheme = (theme: 'light' | 'dark') =>
     window.evaluate((value) => {
@@ -73,20 +70,25 @@ test('从文件夹安装技能，固定、查看详情后卸载', async ({ launc
   await setTheme('dark')
   await window.screenshot({ path: path.join(artifacts, 'skills-settings-dark.png') })
 
-  await card.getByRole('button', { name: '查看 reviewer 的详情' }).click()
+  // 点卡片打开右侧抽屉；正文和脚本提示在抽屉里，附带文件默认收起。
+  await card.click()
   const detail = window.getByRole('dialog')
   await expect(detail).toContainText(BODY)
+  await expect(detail).toContainText('取决于当前的权限设置')
+  await expect(detail).not.toContainText('notes.md')
+  await detail.getByRole('button', { name: /包含 \d+ 个脚本/ }).click()
   await expect(detail).toContainText('notes.md')
   await expect(detail).toContainText('脚本')
   await detail.screenshot({ path: path.join(artifacts, 'skills-detail-dark.png') })
   await detail.getByRole('button', { name: '关闭' }).click()
   await expect(detail).toBeHidden()
 
-  await list.getByRole('button', { name: '卸载 reviewer' }).click()
+  await card.getByRole('button', { name: '卸载 reviewer' }).click()
   const confirm = window.getByRole('dialog')
   await expect(confirm.getByRole('heading', { name: '卸载“reviewer”？' })).toBeVisible()
   await confirm.getByRole('button', { name: '卸载技能' }).click()
   await expect(confirm).toBeHidden()
-  await expect(list).not.toContainText('reviewer')
+  // 最后一个已安装技能卸载后整组隐藏，所以断言卡片消失而不是组里没有文字。
+  await expect(window.getByRole('region', { name: 'reviewer' })).toHaveCount(0)
   expect(existsSync(path.join(userData, 'skills', 'reviewer'))).toBe(false)
 })

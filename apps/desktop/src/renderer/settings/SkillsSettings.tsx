@@ -1,10 +1,13 @@
 /**
  * 设置页“技能”（M3-08，capabilities 组）：列出内置、本机 `.agents`、已安装和已开启项目的技能。
  *
- * - 每份技能显示来源、描述、约占用多少 token，可以启用、改“始终加载”、查看详情；用户安装的技能可以卸载。
+ * - 列表按来源分组（内置 / 本机 / 已安装 / 每个项目）；卡片只显示名称、描述与 token，操作只有启用开关和
+ *   卸载（用户安装的技能），点卡片打开右侧抽屉看详情。
+ *   不再提供“始终加载”：需要时用 `/技能名` 只为这一轮注入正文。旧版留下的始终加载在下一次切换启用时清掉。
+ * - 详情是右侧抽屉：顶部固定名称、来源、启用与卸载，正文在自己的区域滚动，附带文件默认收起。
  * - 安装时先用系统对话框选择文件夹或 zip（`skill.pickSource`），主进程只读取并返回预览，确认后才写盘。
  * - 项目内技能只为开启了“启用项目内技能”的项目读取，合并到列表里；内置与已安装的技能只读一次。
- * - 脚本不会自动执行：预览与详情都会标出，执行时仍走审批。
+ * - 脚本不会自动运行：预览与详情都会标出；是否审批取决于权限设置（默认每次询问）。
  */
 import {
   ChevronRight,
@@ -14,11 +17,11 @@ import {
   ExternalLink,
   FileCode2,
   ListChecks,
-  Pin,
   Plus,
   Search,
   Trash2,
   TriangleAlert,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -29,6 +32,7 @@ import type {
   SkillInstallSource,
   SkillSummary,
 } from '@cairn/protocol'
+import { CopyButton } from '../CopyButton.js'
 import { FileTypeIcon } from '../file-icons.js'
 import { Markdown } from '../Markdown.js'
 import { projectDisplayName } from '../project-name.js'
@@ -37,6 +41,9 @@ import {
   Button,
   Checkbox,
   cn,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   Dialog,
   DialogClose,
   DialogContent,
@@ -47,6 +54,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DrawerContent,
   IconButton,
   Spinner,
   Switch,
@@ -84,7 +92,11 @@ function FileList({
     <>
       <ul className="flex flex-col gap-1">
         {files.map((file) => (
-          <li key={file.path} className="flex min-w-0 items-center gap-2 text-[12.5px] text-fg2">
+          <li
+            key={file.path}
+            data-script-file={file.script ? '' : undefined}
+            className="flex min-w-0 items-center gap-2 text-[12.5px] text-fg2"
+          >
             <FileTypeIcon name={file.path} />
             <span className="truncate font-mono [font-variant-ligatures:none]">{file.path}</span>
             {file.script && (
@@ -105,7 +117,6 @@ function FileList({
 
 function SkillCard({
   skill,
-  source,
   selectionMode = false,
   selected = false,
   onSelect,
@@ -114,12 +125,12 @@ function SkillCard({
   onUninstall,
 }: {
   readonly skill: SkillSummary
-  readonly source: string
   readonly selectionMode?: boolean
   readonly selected?: boolean
   readonly onSelect?: (selected: boolean) => void
   readonly onChanged: () => Promise<void>
-  readonly onOpen: (skill: SkillSummary) => void
+  /** 点卡片打开详情；`element` 用来在抽屉关闭后把焦点还回来。 */
+  readonly onOpen: (skill: SkillSummary, element: HTMLElement) => void
   readonly onUninstall: (skill: SkillSummary) => void
 }) {
   const { t, i18n } = useTranslation('settings')
@@ -127,12 +138,14 @@ function SkillCard({
   const tokens = new Intl.NumberFormat(i18n.language).format(
     !skill.enabled || skill.shadowed ? 0 : skill.pinned ? skill.tokens.pinned : skill.tokens.index,
   )
-  const toggle = (patch: { enabled?: boolean; pinned?: boolean }) => {
+  const toggle = (enabled: boolean) => {
     void setSkillEnabled({
       name: skill.name,
       source: skill.source,
       ...(skill.projectId !== undefined ? { projectId: skill.projectId } : {}),
-      ...patch,
+      enabled,
+      // 界面已不提供“始终加载”，旧版设过的随这次切换一起清掉
+      ...(skill.pinned ? { pinned: false } : {}),
     }).then((updated) => {
       if (updated) void onChanged()
     })
@@ -141,11 +154,21 @@ function SkillCard({
     <li>
       <SettingsCard
         aria-label={skill.name}
+        tabIndex={0}
         className={cn(
-          'cursor-pointer gap-2 px-4 py-3',
+          'cursor-pointer gap-2 px-4 py-3 outline-none focus-visible:ring-1 focus-visible:ring-accent',
           selected && 'shadow-[0_0_0_1.5px_var(--accent)]',
         )}
-        onClick={() => (selectionMode ? onSelect?.(!selected) : onOpen(skill))}
+        onClick={(event) =>
+          selectionMode ? onSelect?.(!selected) : onOpen(skill, event.currentTarget)
+        }
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          if (selectionMode) onSelect?.(!selected)
+          else onOpen(skill, event.currentTarget)
+        }}
       >
         <div className="flex min-w-0 items-center gap-3">
           {selectionMode && (
@@ -160,9 +183,6 @@ function SkillCard({
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <p className="truncate text-[14px] font-medium text-fg">{skill.name}</p>
-              <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11px] text-muted">
-                {source}
-              </span>
               {skill.shadowed && (
                 <span
                   title={t('skills.shadowed.hint')}
@@ -191,28 +211,12 @@ function SkillCard({
               className="flex shrink-0 items-center gap-1.5"
               onClick={(event) => event.stopPropagation()}
             >
-              <span className="flex items-center gap-1 text-faint" title={t('skills.pinned.hint')}>
-                <Pin aria-hidden className="size-3.5" />
-                <Switch
-                  checked={skill.pinned}
-                  aria-label={t('skills.pinnedAria', { name: skill.name })}
-                  title={t('skills.pinned')}
-                  onCheckedChange={(pinned) => toggle({ pinned })}
-                />
-              </span>
               <Switch
                 checked={skill.enabled}
                 aria-label={t('skills.enabledAria', { name: skill.name })}
                 title={t('skills.enabled')}
-                onCheckedChange={(enabled) => toggle({ enabled })}
+                onCheckedChange={toggle}
               />
-              <IconButton
-                label={t('skills.detailAria', { name: skill.name })}
-                size="icon-sm"
-                onClick={() => onOpen(skill)}
-              >
-                <ChevronRight />
-              </IconButton>
               {skill.source === 'user' && (
                 <IconButton
                   label={t('skills.uninstallAria', { name: skill.name })}
@@ -231,7 +235,9 @@ function SkillCard({
   )
 }
 
-export function SkillsSettings() {
+export function SkillsSettings({
+  onOpenPermissions,
+}: { readonly onOpenPermissions?: () => void } = {}) {
   const { t } = useTranslation('settings')
   const { t: tc } = useTranslation()
   const projects = useSessionStore((s) => s.projects)
@@ -270,6 +276,11 @@ export function SkillsSettings() {
     await reloadSkills()
   }, [reloadSkills])
   const [detail, setDetail] = useState<{ skill: SkillSummary; data?: SkillDetail } | undefined>()
+  /** 打开抽屉的那张卡片，关闭后把焦点还回去。 */
+  const detailTrigger = useRef<HTMLElement | undefined>(undefined)
+  /** 关闭抽屉是否要把焦点还给卡片（卸载确认、进入批量时不需要）。 */
+  const restoreFocus = useRef(false)
+  const filesRef = useRef<HTMLDivElement | null>(null)
   const [preview, setPreview] = useState<
     { source: SkillInstallSource; skill: SkillDetail } | undefined
   >()
@@ -316,6 +327,50 @@ export function SkillsSettings() {
   const allVisibleSelected =
     visible.length > 0 && visible.every((skill) => selected.includes(keyOf(skill)))
 
+  /** 按来源分组：内置 → 本机 → 已安装 → 每个项目；搜索后没有内容的组不显示。 */
+  const projectIds: string[] = []
+  for (const item of skills) {
+    if (
+      item.source === 'project' &&
+      item.projectId !== undefined &&
+      !projectIds.includes(item.projectId)
+    ) {
+      projectIds.push(item.projectId)
+    }
+  }
+  const visibleKeys = new Set(visible.map(keyOf))
+  const groups = [
+    {
+      key: 'builtin',
+      label: t('skills.source.builtin'),
+      skills: skills.filter((skill) => skill.source === 'builtin'),
+    },
+    {
+      key: 'agents',
+      label: t('skills.source.agents'),
+      skills: skills.filter((skill) => skill.source === 'agents'),
+    },
+    {
+      key: 'user',
+      label: t('skills.source.user'),
+      skills: skills.filter((skill) => skill.source === 'user'),
+    },
+    ...projectIds.map((projectId) => ({
+      key: `project:${projectId}`,
+      label: projectDisplayName(
+        projects.find((project) => project.projectId === projectId),
+        tc('project.defaultName'),
+        projectId,
+      ),
+      skills: skills.filter((skill) => skill.source === 'project' && skill.projectId === projectId),
+    })),
+  ]
+    .map((group) => ({
+      ...group,
+      skills: group.skills.filter((skill) => visibleKeys.has(keyOf(skill))),
+    }))
+    .filter((group) => group.skills.length > 0)
+
   const pick = async (kind: PickKind) => {
     const source = await pickSkillSource(kind)
     if (!source) return
@@ -334,7 +389,12 @@ export function SkillsSettings() {
     }
   }
 
-  const openDetail = async (skill: SkillSummary) => {
+  const [filesOpen, setFilesOpen] = useState(false)
+
+  const openDetail = async (skill: SkillSummary, element?: HTMLElement) => {
+    if (element !== undefined) detailTrigger.current = element
+    restoreFocus.current = true
+    setFilesOpen(false)
     setDetail({ skill })
     const data = await getSkill({
       name: skill.name,
@@ -348,6 +408,90 @@ export function SkillsSettings() {
     )
   }
 
+  /** 关闭抽屉；`restore` 为 false 时（卸载确认、进入批量）不把焦点还给卡片。 */
+  const closeDetail = (restore = true) => {
+    restoreFocus.current = restore
+    setDetail(undefined)
+  }
+
+  /** 详情抽屉里的启用开关：与卡片相同，顺带清掉旧版的“始终加载”。 */
+  const toggleDetail = async (enabled: boolean) => {
+    if (detail === undefined) return
+    const skill = detail.skill
+    const updated = await setSkillEnabled({
+      name: skill.name,
+      source: skill.source,
+      ...(skill.projectId !== undefined ? { projectId: skill.projectId } : {}),
+      enabled,
+      ...(skill.pinned ? { pinned: false } : {}),
+    })
+    if (!updated) return
+    setDetail((current) =>
+      current !== undefined && keyOf(current.skill) === keyOf(skill)
+        ? { ...current, skill: { ...current.skill, enabled, pinned: false } }
+        : current,
+    )
+    await load()
+  }
+
+  /** 列表刷新后把抽屉里的启用/覆盖状态同步过来（例如刚启用就变成被覆盖）。 */
+  useEffect(() => {
+    setDetail((current) => {
+      if (current === undefined) return current
+      const fresh = skills.find((skill) => keyOf(skill) === keyOf(current.skill))
+      if (
+        fresh === undefined ||
+        (fresh.enabled === current.skill.enabled &&
+          fresh.shadowed === current.skill.shadowed &&
+          fresh.pinned === current.skill.pinned)
+      ) {
+        return current
+      }
+      return {
+        ...current,
+        skill: {
+          ...current.skill,
+          enabled: fresh.enabled,
+          shadowed: fresh.shadowed,
+          pinned: fresh.pinned,
+        },
+      }
+    })
+  }, [skills])
+
+  /** 点脚本提示条：展开附带文件并滚到第一个脚本。 */
+  const expandScripts = () => {
+    setFilesOpen(true)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        filesRef.current
+          ?.querySelector<HTMLElement>('[data-script-file]')
+          ?.scrollIntoView?.({ block: 'nearest' })
+      })
+    })
+  }
+
+  const detailSkill = detail?.skill
+  const scriptFiles = detail?.data?.files.filter((file) => file.script) ?? []
+  /** 被覆盖时胜出的那份：同名、已启用、没有被覆盖。 */
+  const shadowWinner =
+    detailSkill?.shadowed === true
+      ? skills.find((skill) => skill.name === detailSkill.name && skill.enabled && !skill.shadowed)
+      : undefined
+  const usage =
+    detailSkill === undefined
+      ? undefined
+      : detailSkill.shadowed
+        ? shadowWinner !== undefined
+          ? t('skills.usage.shadowed', {
+              name: detailSkill.name,
+              winner: sourceLabel(shadowWinner),
+            })
+          : t('skills.usage.shadowedFallback', { name: detailSkill.name })
+        : detailSkill.enabled
+          ? t('skills.usage.enabled', { name: detailSkill.name })
+          : t('skills.usage.disabled', { name: detailSkill.name })
+
   const confirmUninstall = async () => {
     if (uninstalling.length === 0) return
     const names = uninstalling.map((skill) => skill.name)
@@ -356,7 +500,7 @@ export function SkillsSettings() {
     await load()
   }
 
-  const applyBatch = async (patch: { enabled?: boolean; pinned?: boolean }) => {
+  const applyBatch = async (patch: { enabled: boolean }) => {
     if (busy || selectedSkills.length === 0) return
     setBusy(true)
     await Promise.all(
@@ -366,6 +510,7 @@ export function SkillsSettings() {
           source: skill.source,
           ...(skill.projectId !== undefined ? { projectId: skill.projectId } : {}),
           ...patch,
+          ...(skill.pinned ? { pinned: false } : {}),
         }),
       ),
     )
@@ -376,6 +521,7 @@ export function SkillsSettings() {
   }
 
   const toggleBatch = () => {
+    if (!batchMode) closeDetail(false)
     setBatchMode(!batchMode)
     setSelected([])
   }
@@ -642,20 +788,6 @@ export function SkillsSettings() {
               </Button>
               <Button
                 size="sm"
-                disabled={selectedSkills.length === 0 || busy}
-                onClick={() => void applyBatch({ pinned: true })}
-              >
-                {t('skills.batch.pin')}
-              </Button>
-              <Button
-                size="sm"
-                disabled={selectedSkills.length === 0 || busy}
-                onClick={() => void applyBatch({ pinned: false })}
-              >
-                {t('skills.batch.unpin')}
-              </Button>
-              <Button
-                size="sm"
                 variant="ghost"
                 className="text-danger hover:bg-danger-soft hover:text-danger"
                 disabled={selectedRemovable.length === 0 || busy}
@@ -688,77 +820,180 @@ export function SkillsSettings() {
               <p className="text-note text-muted">{t('skills.searchEmpty')}</p>
             </SettingsCard>
           ) : (
-            <ul aria-label={t('skills.list')} className="flex flex-col gap-3">
-              {visible.map((skill) => (
-                <SkillCard
-                  key={keyOf(skill)}
-                  skill={skill}
-                  source={sourceLabel(skill)}
-                  selectionMode={batchMode}
-                  selected={selected.includes(keyOf(skill))}
-                  onSelect={(next) =>
-                    setSelected((current) =>
-                      next
-                        ? [...current.filter((key) => key !== keyOf(skill)), keyOf(skill)]
-                        : current.filter((key) => key !== keyOf(skill)),
-                    )
-                  }
-                  onChanged={load}
-                  onOpen={(item) => void openDetail(item)}
-                  onUninstall={(item) => setUninstalling([item])}
-                />
+            <div className="flex flex-col gap-6">
+              {groups.map((group) => (
+                <section
+                  key={group.key}
+                  aria-labelledby={`skills-group-${group.key}`}
+                  className="flex flex-col gap-2.5"
+                >
+                  <h3
+                    id={`skills-group-${group.key}`}
+                    className="flex items-center gap-2 text-[12.5px] font-medium text-muted"
+                  >
+                    <span>{group.label}</span>
+                    <span className="tabular text-[11.5px] font-normal text-faint">
+                      {group.skills.length}
+                    </span>
+                  </h3>
+                  <ul className="flex flex-col gap-3">
+                    {group.skills.map((skill) => (
+                      <SkillCard
+                        key={keyOf(skill)}
+                        skill={skill}
+                        selectionMode={batchMode}
+                        selected={selected.includes(keyOf(skill))}
+                        onSelect={(next) =>
+                          setSelected((current) =>
+                            next
+                              ? [...current.filter((key) => key !== keyOf(skill)), keyOf(skill)]
+                              : current.filter((key) => key !== keyOf(skill)),
+                          )
+                        }
+                        onChanged={load}
+                        onOpen={(item, element) => void openDetail(item, element)}
+                        onUninstall={(item) => setUninstalling([item])}
+                      />
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           )}
         </>
       )}
 
       <Dialog
         open={detail !== undefined}
+        modal={false}
         onOpenChange={(open) => {
-          if (!open) setDetail(undefined)
+          if (!open) closeDetail()
         }}
       >
         {detail && (
-          <DialogContent className="w-[min(600px,calc(100vw-32px))]">
-            <DialogTitle>{detail.skill.name}</DialogTitle>
-            <DialogDescription>
-              {t('skills.detail.description', {
-                source: sourceLabel(detail.skill),
-                sha: detail.skill.sha256.slice(0, 8),
-              })}
-            </DialogDescription>
-            {detail.skill.source === 'user' && (
-              <div className="mt-3">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-danger hover:bg-danger-soft hover:text-danger"
-                  onClick={() => {
-                    setUninstalling([detail.skill])
-                    setDetail(undefined)
-                  }}
-                >
-                  <Trash2 />
-                  {t('skills.uninstall')}
-                </Button>
+          // 右侧抽屉：标题行固定，正文在自己的区域滚动；不锁滚动、不加遮罩，左侧列表仍可点击。
+          <DrawerContent
+            aria-label={t('skills.drawerAria', { name: detail.skill.name })}
+            onPointerDownOutside={(event) => event.preventDefault()}
+            onFocusOutside={(event) => event.preventDefault()}
+            onInteractOutside={(event) => event.preventDefault()}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              if (!restoreFocus.current) return
+              const target = detailTrigger.current
+              if (target !== undefined && target.isConnected) target.focus()
+            }}
+          >
+            <div className="flex shrink-0 items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="truncate">{detail.skill.name}</DialogTitle>
+                <DialogDescription>
+                  {t('skills.detail.description', {
+                    source: sourceLabel(detail.skill),
+                    sha: detail.skill.sha256.slice(0, 8),
+                  })}
+                </DialogDescription>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 pt-1">
+                <Switch
+                  checked={detail.skill.enabled}
+                  aria-label={t('skills.enabledAria', { name: detail.skill.name })}
+                  title={t('skills.enabled')}
+                  onCheckedChange={(enabled) => void toggleDetail(enabled)}
+                />
+                {detail.skill.source === 'user' && (
+                  <IconButton
+                    label={t('skills.uninstallAria', { name: detail.skill.name })}
+                    size="icon-sm"
+                    className="hover:bg-danger-soft hover:text-danger"
+                    onClick={() => {
+                      setUninstalling([detail.skill])
+                      closeDetail(false)
+                    }}
+                  >
+                    <Trash2 />
+                  </IconButton>
+                )}
+                <DialogClose asChild>
+                  <IconButton label={tc('action.close')} size="icon-sm">
+                    <X />
+                  </IconButton>
+                </DialogClose>
+              </div>
+            </div>
+
+            {scriptFiles.length > 0 && (
+              <div className="mt-4 flex shrink-0 items-start gap-2 rounded-card bg-warn-soft px-3 py-2 text-warn">
+                <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={expandScripts}
+                    className="block w-full cursor-pointer text-left text-note leading-relaxed outline-none hover:opacity-90 focus-visible:ring-1 focus-visible:ring-warn"
+                  >
+                    {t(
+                      scriptFiles.length === 1
+                        ? 'skills.scripts.hintOne'
+                        : 'skills.scripts.hintOther',
+                      { n: scriptFiles.length },
+                    )}
+                  </button>
+                  {onOpenPermissions !== undefined && (
+                    <button
+                      type="button"
+                      onClick={onOpenPermissions}
+                      className="mt-1 cursor-pointer text-note font-medium underline underline-offset-2 outline-none focus-visible:ring-1 focus-visible:ring-warn"
+                    >
+                      {t('skills.scripts.permissions')}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
-            <div className="mt-4 max-h-[45vh] overflow-y-auto rounded-card bg-paper px-4 py-3 text-[13.5px] text-fg2 shadow-hair2">
+
+            <div className="mt-4 flex shrink-0 items-start gap-1.5" data-skill-usage>
+              <p className="min-w-0 flex-1 text-note leading-relaxed text-fg2">{usage}</p>
+              {detailSkill !== undefined && detailSkill.enabled && !detailSkill.shadowed && (
+                <CopyButton
+                  text={`/${detailSkill.name} `}
+                  className="ml-0.5 text-muted hover:bg-hover hover:text-fg"
+                />
+              )}
+            </div>
+
+            <div
+              data-skill-body
+              className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-card bg-paper px-4 py-3 text-[13.5px] text-fg2 shadow-hair2"
+            >
               {detail.data ? (
                 <Markdown text={detail.data.body} />
               ) : (
                 <p className="text-note text-muted">{t('skills.detail.loading')}</p>
               )}
             </div>
-            <h3 className="mt-4 mb-2 text-[13px] font-medium text-fg">{t('skills.files')}</h3>
-            <FileList files={detail.data?.files ?? []} truncated={detail.skill.filesTruncated} />
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button size="lg">{tc('action.close')}</Button>
-              </DialogClose>
-            </DialogFooter>
-          </DialogContent>
+            {detail.data && (
+              <Collapsible open={filesOpen} onOpenChange={setFilesOpen} className="mt-3 shrink-0">
+                <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-1.5 rounded-item py-1 text-left text-[13px] font-medium text-fg outline-none hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent">
+                  <ChevronRight
+                    aria-hidden
+                    className={cn(
+                      'size-3.5 shrink-0 text-faint transition-transform',
+                      filesOpen && 'rotate-90',
+                    )}
+                  />
+                  {t('skills.files')}
+                  <span className="tabular text-[12px] font-normal text-faint">
+                    {detail.data.files.length}
+                  </span>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div ref={filesRef} className="mt-1.5 max-h-40 overflow-y-auto pr-1">
+                    <FileList files={detail.data.files} truncated={detail.skill.filesTruncated} />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+          </DrawerContent>
         )}
       </Dialog>
 

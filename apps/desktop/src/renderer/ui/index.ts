@@ -12,6 +12,7 @@ export {
   DialogFooter,
   DialogTitle,
   DialogTrigger,
+  DrawerContent,
 } from './dialog.js'
 export {
   DropdownMenu,
