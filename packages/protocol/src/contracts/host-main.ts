@@ -18,6 +18,7 @@ import { AgentDefinition, MemoryScope } from '../agents.js'
 import { FileChangeInput } from '../changes.js'
 import { BackgroundCommand } from '../commands.js'
 import { AgentsMdContext, ApprovalDecision, UnsequencedEventSchema } from '../events.js'
+import { ActiveGoal } from '../goal.js'
 import { RunSnapshotInput } from '../inspect.js'
 import { ActivePlan, PromptMode } from '../plan.js'
 import { AskUserRequest, AskUserResponse } from '../questions.js'
@@ -223,6 +224,8 @@ export const HostForMain = defineSide({
         mode: PromptMode.optional(),
         plan: ActivePlan.optional(),
         taskLists: z.array(ActiveTaskList).optional(),
+        /** 目标活动时的当前目标（ADR-0047）；计划轮与暂停的目标不传。 */
+        goal: ActiveGoal.optional(),
         /**
          * 发送方式（Runtime §9）：`queue` 默认，排到当前轮之后作为新一轮；
          * `steer` 引导，注入当前轮、在下一次模型调用前生效；`interrupt` 先中止当前轮再发送。

@@ -27,6 +27,7 @@ import { RunInspectResult } from '../inspect.js'
 import {
   AgentDefinitionRef,
   ContentPart,
+  DurationMs,
   ErrorInfo,
   Id,
   ModelRef,
@@ -49,6 +50,7 @@ import {
   MemoryScope,
 } from '../agents.js'
 import { ApprovalDecision, EventEnvelopeSchema } from '../events.js'
+import { GOAL_CONDITION_MAX, GOAL_MAX_DURATION_MS_LIMIT, GOAL_MAX_TURNS_LIMIT } from '../goal.js'
 import { MEMORY_CONTENT_MAX, MemoryEntry, MemoryStatus } from '../memory.js'
 import {
   ChangeSetApplyResult,
@@ -642,6 +644,31 @@ export const MainForRenderer = defineSide({
       params: z.object({ sessionId: Id, planId: Id }),
       result: z.object({}),
     },
+    /**
+     * 新建目标并立即开始第一轮（ADR-0047）。要求会话空闲、没有未结束目标与待审计划。
+     * `maxTurns` / `maxDurationMs` 省略时使用默认预算；v1 界面只使用默认值。
+     */
+    'goal.set': {
+      params: z.object({
+        sessionId: Id,
+        condition: z.string().trim().min(1).max(GOAL_CONDITION_MAX),
+        maxTurns: z.number().int().min(1).max(GOAL_MAX_TURNS_LIMIT).optional(),
+        maxDurationMs: DurationMs.min(60_000).max(GOAL_MAX_DURATION_MS_LIMIT).optional(),
+      }),
+      result: z.object({ goalId: Id, messageId: Id }),
+    },
+    /** 暂停自动续轮；不中止正在跑的一轮。已经暂停时无操作。 */
+    'goal.pause': { params: z.object({ sessionId: Id }), result: z.object({}) },
+    /**
+     * 恢复暂停的目标并立即继续。已经 active 时无操作，因此没有 `messageId`；
+     * 预算耗尽时只触发最终判定、不开始新轮，同样没有 `messageId`。
+     */
+    'goal.resume': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ messageId: Id.optional() }),
+    },
+    /** 结束目标；不中止正在跑的一轮。对已结束目标幂等。 */
+    'goal.clear': { params: z.object({ sessionId: Id }), result: z.object({}) },
     /** 立刻压缩这个会话的上下文（M3-03）。不是一轮对话，不写用户消息。 */
     'session.compact': {
       params: z.object({ sessionId: Id }),
