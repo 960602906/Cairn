@@ -9,6 +9,12 @@
  * M2-07：这一轮有文件改动时，轮次操作上面是“本轮变更”（`FileChanges.tsx`）。
  * M2-08：每轮的用户消息上方是检查点分隔线，轮次操作中有“撤销本轮”，恢复之后显示恢复标记
  * （`Checkpoints.tsx`）。
+ *
+ * 执行过程（`groupMessages`）：同一轮里连续的思考与工具调用归成一个活动组，默认折叠，组头说最新一步；
+ * 助手写的正文（包括中途的说明）一律在折叠之外，按时间顺序穿插在活动组之间。单步工具调用同样走活动组。
+ *
+ * 性能：流式增量只改投影的 `live`，其余字段保持引用不变。已完成的消息与归组按 `propsEqualExceptLive`
+ * 跳过重渲染（它们及子组件不读取 `live`），进行中的回复按块渲染 Markdown（`Markdown` 的 `streaming`）。
  */
 import {
   Bot,
@@ -20,7 +26,16 @@ import {
   RefreshCw,
   TriangleAlert,
 } from 'lucide-react'
-import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   rootRun,
@@ -34,7 +49,6 @@ import {
   type ReviewLoopView,
   type PipelineView,
   type SessionView,
-  type ToolCallView,
   type UserMessageView,
 } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
@@ -63,9 +77,7 @@ import { useSessionStore } from './store-context.js'
 import {
   ACTIVITY_TRIGGER_CLASS,
   ActivityGroupHeaderContent,
-  activityDuration,
-  describeToolCall,
-  summarizeActivity,
+  latestActivityHeadline,
   ToolStep,
   ToolTimeline,
   type ActivityHeadline,
@@ -131,6 +143,69 @@ function TurnActions({
 const COPIED_MS = 1600
 
 const noopPlan = () => undefined
+
+const NO_MESSAGES: readonly MessageView[] = []
+const NONE: readonly never[] = []
+const NO_FOOTERS: ReadonlyMap<string, TurnFooter> = new Map()
+const NO_RESTORES: ReadonlyMap<string, readonly RestoreView[]> = new Map()
+
+/**
+ * 两个会话投影除进行中的消息（`live`）外是否相同。流式增量只改 `live`，`reduceSession` 让其余字段保持
+ * 引用不变，因此已完成的消息可以据此跳过重渲染。
+ */
+export function sameViewExceptLive(a: SessionView, b: SessionView): boolean {
+  if (a === b) return true
+  const keys = Object.keys(b) as (keyof SessionView)[]
+  if (Object.keys(a).length !== keys.length) return false
+  return keys.every((key) => key === 'live' || a[key] === b[key])
+}
+
+/** `memo` 的比较：`view` 按 {@link sameViewExceptLive}，其余属性按引用。组件及其子组件不能读取 `view.live`。 */
+export function propsEqualExceptLive<P extends { readonly view: SessionView }>(
+  prev: Readonly<P>,
+  next: Readonly<P>,
+): boolean {
+  const keys = Object.keys(next) as (keyof P)[]
+  if (Object.keys(prev).length !== keys.length) return false
+  return keys.every((key) =>
+    key === 'view' ? sameViewExceptLive(prev.view, next.view) : Object.is(prev[key], next[key]),
+  )
+}
+
+/** 父组件每次渲染都传入新的回调时，换成引用稳定的包装（调用最新的回调），不打断子组件的 memo。 */
+function useStableCallback<A extends unknown[], R>(
+  fn: ((...args: A) => R) | undefined,
+): ((...args: A) => R) | undefined {
+  const ref = useRef(fn)
+  useLayoutEffect(() => {
+    ref.current = fn
+  })
+  const defined = fn !== undefined
+  return useMemo(() => (defined ? (...args: A) => ref.current!(...args) : undefined), [defined])
+}
+
+/** 按轮次分组（保持原顺序）；没有轮次的条目不收。 */
+function byTurn<T extends { readonly turnId?: string | undefined }>(
+  items: readonly T[] | undefined,
+): ReadonlyMap<string, readonly T[]> {
+  const map = new Map<string, T[]>()
+  for (const item of items ?? []) {
+    if (item.turnId === undefined) continue
+    const list = map.get(item.turnId)
+    if (list) list.push(item)
+    else map.set(item.turnId, [item])
+  }
+  return map
+}
+
+/** 挂在一轮最后一条消息后面的卡片（计划、审查循环、流水线）；其余位置为空。 */
+function turnItems<T>(
+  map: ReadonlyMap<string, readonly T[]>,
+  lastOfTurn: boolean,
+  turnId: string | undefined,
+): readonly T[] {
+  return lastOfTurn && turnId !== undefined ? (map.get(turnId) ?? NONE) : NONE
+}
 
 /** 本次会话挂载时不播动画；之后新出现的消息才淡入。 */
 function useEnteringIds(ids: readonly string[]): ReadonlySet<string> {
@@ -217,10 +292,10 @@ const AssistantContent = memo(function AssistantContent({
   )
 })
 
+/** 活动组里的一步：一条助手消息的思考与工具调用（正文在组外）。 */
 export interface TurnActivityStep {
   readonly key: string
   readonly reasoning?: string | undefined
-  readonly content?: readonly ContentPart[] | undefined
   readonly toolCalls?: readonly ToolCall[] | undefined
 }
 
@@ -229,139 +304,33 @@ interface TurnActivityGroupProps {
   readonly view: SessionView
   readonly isRunning: boolean
   readonly awaiting: ReadonlySet<string>
-  readonly resolvePaths?:
-    ((paths: readonly string[]) => Promise<ReadonlyMap<string, string>>) | undefined
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }
 
 /**
- * 组头里的“卡点”：只有需要用户留意时才点明具体是哪一步。
- *
- * - 有失败：`<命令> 失败`
- * - 有取消：`<命令> 已取消`（用户按了停止，不是失败）
- * - 有等待审批：`等待审批 <命令>`
- * - 最后一步命令非零退出：`<命令> 失败`（后面又跑了别的步骤，说明模型已经接着处理，
- *   此时交给整组摘要，不让一次旧失败永久占住组头）
- *
- * 其余时候组头用 {@link summaryHeadline} 说这组做过什么，不再显示“正在执行 / 已执行 N 步”。
+ * 活动组：同一轮里连续的思考与工具调用，默认折叠。组头只说最新一步（图标是它的操作图标）并带上总耗时，
+ * 不因失败、取消或等待审批改口；状态变化也不自动展开，只有用户点过组头才展开。
  */
-function liveHeadline({
-  calls,
-  tools,
-  awaiting,
-  t,
-}: {
-  readonly calls: readonly ToolCall[]
-  readonly tools: Readonly<Record<string, ToolCallView>>
-  readonly awaiting: ReadonlySet<string> | undefined
-  readonly t: TFunction
-}): ActivityHeadline | undefined {
-  const statusOf = (call: ToolCall) => tools[call.id]?.status
-  const argsOf = (call: ToolCall) => tools[call.id]?.input ?? call.input
-  const describe = (call: ToolCall) => describeToolCall(call.name, argsOf(call), t)
-  /** 命令跑起来了但退出码不是 0：工具本身“完成”，这一步其实失败了。 */
-  const badExit = (call: ToolCall) => {
-    const code = tools[call.id]?.display?.exitCode
-    return typeof code === 'number' && code !== 0
-  }
-
-  const failed = calls.find((call) => statusOf(call) === 'failed')
-  if (failed) {
-    const { object, plain } = describe(failed)
-    return { tone: 'attention', label: t('tool.group.failed'), object, plain, objectFirst: true }
-  }
-  const cancelled = calls.find((call) => statusOf(call) === 'cancelled')
-  if (cancelled) {
-    const { object, plain } = describe(cancelled)
-    return {
-      tone: 'cancelled',
-      label: t('tool.group.cancelled'),
-      object,
-      plain,
-      objectFirst: true,
-    }
-  }
-  const waiting = calls.find((call) => awaiting?.has(call.id) === true)
-  if (waiting) {
-    const { object, plain } = describe(waiting)
-    return { tone: 'waiting', label: t('tool.group.waiting'), object, plain }
-  }
-  const last = calls.at(-1)
-  if (last !== undefined && statusOf(last) === 'completed' && badExit(last)) {
-    const { object, plain } = describe(last)
-    return { tone: 'attention', label: t('tool.group.failed'), object, plain, objectFirst: true }
-  }
-  return undefined
-}
-
-/** 折叠后的组头：只说最新一步在做什么，右侧带上总耗时。 */
-function summaryHeadline({
-  calls,
-  tools,
-  isRunning,
-  t,
-}: {
-  readonly calls: readonly ToolCall[]
-  readonly tools: Readonly<Record<string, ToolCallView>>
-  readonly isRunning: boolean
-  readonly t: TFunction
-}): ActivityHeadline {
-  return {
-    tone: isRunning ? 'running' : 'done',
-    label: summarizeActivity(calls, tools, t) ?? t('tool.group.thinking'),
-    meta: activityDuration(calls, tools),
-  }
-}
-
-/** 单条助手消息（没有归组）的组头：和归组一样，优先点明卡点，否则说做过什么。 */
-function messageHeadline(
-  message: AssistantMessageView,
-  view: SessionView,
-  awaiting: ReadonlySet<string>,
-  running: boolean,
-  t: TFunction,
-): ActivityHeadline {
-  const live = liveHeadline({ calls: message.toolCalls, tools: view.tools, awaiting, t })
-  if (live) return live
-  return summaryHeadline({ calls: message.toolCalls, tools: view.tools, isRunning: running, t })
-}
-
 const TurnActivityGroup = memo(function TurnActivityGroup({
   steps,
   view,
   isRunning,
   awaiting,
-  resolvePaths,
   onOpenFile,
 }: TurnActivityGroupProps) {
   const { t } = useTranslation('session')
   const calls = useMemo(() => steps.flatMap((step) => step.toolCalls ?? []), [steps])
 
-  const headline = useMemo<ActivityHeadline>(() => {
-    const live = liveHeadline({ calls, tools: view.tools, awaiting, t })
-    if (live) return live
-    return summaryHeadline({ calls, tools: view.tools, isRunning, t })
-  }, [calls, view.tools, awaiting, t, isRunning])
+  const headline = useMemo<ActivityHeadline>(
+    () => latestActivityHeadline({ calls, tools: view.tools, isRunning, t }),
+    [calls, view.tools, isRunning, t],
+  )
 
-  // 一律默认折叠，状态变化也不自动展开：只有用户点过组头才展开。
   const [open, setOpen] = useState(false)
-
-  const handleToggle = () => {
-    setOpen(!open)
-  }
 
   const body = steps.map((step) => (
     <Fragment key={step.key}>
       {step.reasoning && <Reasoning text={step.reasoning} />}
-      {step.content && step.content.length > 0 && (
-        <div className="py-1">
-          <AssistantContent
-            parts={step.content}
-            resolvePaths={resolvePaths}
-            onOpenFile={onOpenFile}
-          />
-        </div>
-      )}
       {step.toolCalls && step.toolCalls.length > 0 && (
         <ToolTimeline>
           {step.toolCalls.map((call) => (
@@ -382,11 +351,7 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="my-2 max-w-full">
-      <CollapsibleTrigger
-        onClick={handleToggle}
-        data-activity-group
-        className={ACTIVITY_TRIGGER_CLASS}
-      >
+      <CollapsibleTrigger data-activity-group className={ACTIVITY_TRIGGER_CLASS}>
         <ActivityGroupHeaderContent
           headline={headline}
           open={open}
@@ -398,7 +363,7 @@ const TurnActivityGroup = memo(function TurnActivityGroup({
       </CollapsibleContent>
     </Collapsible>
   )
-})
+}, propsEqualExceptLive)
 
 const COMMAND_NAMES = COMPOSER_COMMANDS.map((command) => command.name)
 
@@ -870,7 +835,6 @@ function Message({
   plans,
   reviewLoops,
   pipelines,
-  sessionId,
   continued,
   restores,
   compacted,
@@ -883,9 +847,15 @@ function Message({
   canEdit,
   turnNumber,
   turnCount,
+  toolsFollow = false,
 }: {
   readonly message: MessageView
   readonly view: SessionView
+  /**
+   * 这条助手消息的工具调用由紧跟着的活动组显示：这里只显示思考与正文，未完成标记与轮次末尾的内容
+   * （本轮变更、轮次操作、卡片）也交给活动组，免得出现在工具步骤前面。
+   */
+  readonly toolsFollow?: boolean
   /** 这条用户消息是所在轮次的第一条（可以编辑重发）。 */
   readonly canEdit: boolean
   /** 这条消息所在轮次的序号（从 1 开始）。 */
@@ -897,8 +867,6 @@ function Message({
   readonly reviewLoops: readonly ReviewLoopView[]
   /** 这一轮的流水线（M7-08）。 */
   readonly pipelines: readonly PipelineView[]
-  /** 审批状态所属的会话；省略时使用当前选中的会话。 */
-  readonly sessionId: string | undefined
   /** 这条消息之后发生的恢复。 */
   readonly restores: readonly RestoreView[] | undefined
   /** 紧跟在同一轮的上一条助手消息之后：间距收紧为块间距（14px）。 */
@@ -918,13 +886,8 @@ function Message({
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
   const { t } = useTranslation('session')
-  const approvals = useSessionStore((s) => {
-    const id = sessionId ?? s.activeSessionId
-    return id === undefined ? undefined : s.approvals[id]
-  })
   const agents = useSessionStore((s) => s.agents) ?? []
   const { i18n } = useTranslation('session')
-  const awaiting = new Set(approvals?.map((a) => a.toolCallId))
   const cards = [
     ...plans.map((plan) => <PlanSummaryCard key={plan.planId} plan={plan} onOpen={onOpenPlan} />),
     ...reviewLoops.map((loop) => <ReviewLoopCard key={loop.reviewId} loop={loop} />),
@@ -965,18 +928,6 @@ function Message({
       </li>
     )
   }
-  const messageRunning = message.toolCalls.some((call) => {
-    const status = view.tools[call.id]?.status
-    return (
-      status === 'requested' ||
-      status === 'running' ||
-      (status === undefined && view.runs[message.runId]?.turn?.status === 'running')
-    )
-  })
-  const headline = messageHeadline(message, view, awaiting, messageRunning, t)
-  const messageAttention =
-    headline.tone === 'attention' || headline.tone === 'cancelled' || headline.tone === 'waiting'
-
   return (
     <li className={cn(continued ? '-mt-3.5 text-fg' : 'text-fg', entering && 'animate-message-in')}>
       {marks}
@@ -1009,27 +960,7 @@ function Message({
         resolvePaths={resolvePaths}
         onOpenFile={onOpenFile}
       />
-      {message.toolCalls.length > 0 && (
-        <ToolTimeline
-          count={message.toolCalls.length}
-          running={messageRunning}
-          attention={messageAttention}
-          headline={headline}
-        >
-          {message.toolCalls.map((call) => (
-            <ToolStep
-              key={call.id}
-              name={call.name}
-              input={call.input}
-              tool={view.tools[call.id]}
-              live={view.liveToolOutput[call.id]}
-              awaitingApproval={awaiting.has(call.id)}
-              onOpenFile={onOpenFile}
-            />
-          ))}
-        </ToolTimeline>
-      )}
-      {message.incomplete && (
+      {message.incomplete && !toolsFollow && (
         <em className="mt-1.5 block text-note text-muted not-italic">{t('message.incomplete')}</em>
       )}
       {footer && message.turnId !== undefined && (
@@ -1060,6 +991,9 @@ function Message({
     </li>
   )
 }
+
+/** 已完成的消息：流式增量（只改 `view.live`）不触发重渲染。 */
+const MemoMessage = memo(Message, propsEqualExceptLive)
 
 /**
  * 空会话：品牌图形加一句引导，避免消息区只剩一条空白。
@@ -1138,6 +1072,7 @@ function LiveMessage({
             resolvePaths={resolvePaths}
             onOpenFile={onOpenFile}
             debounceMs={300}
+            streaming
           />
           <span aria-hidden className="stream-caret" />
         </div>
@@ -1205,108 +1140,147 @@ function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): React
   return t('turn.failed', { reason: translateError(i18n, turn.error ?? { code: 'unknown' }) })
 }
 
-type RenderItem =
+export type RenderItem =
   | {
       readonly kind: 'message'
       readonly message: MessageView
       readonly index: number
+      /** 这条助手消息的工具调用在紧跟着的活动组里（本条只显示思考与正文）。 */
+      readonly toolsFollow?: boolean
     }
   | {
       readonly kind: 'activity_group'
+      /** React key：第一步所在的消息，后面追加步骤时不变（展开状态得以保留）。 */
+      readonly key: string
       readonly turnId: string | undefined
       readonly messages: readonly AssistantMessageView[]
       readonly indices: readonly number[]
+      readonly steps: readonly TurnActivityStep[]
+      /** 第一步来自上一条已经显示了正文的消息：标记、Agent 名与切换分隔线已经随正文显示过。 */
+      readonly afterProse: boolean
     }
 
-function groupMessages(messages: readonly MessageView[]): RenderItem[] {
+interface OpenGroup {
+  readonly key: string
+  readonly turnId: string | undefined
+  readonly runId: string
+  readonly messages: AssistantMessageView[]
+  readonly indices: number[]
+  readonly steps: TurnActivityStep[]
+  readonly afterProse: boolean
+}
+
+/**
+ * 消息流的条目，单遍扫描、只看已经出现的消息：
+ * - 用户消息、带正文的助手消息各自一条：正文（包括中途的说明）一律在折叠之外；
+ * - 同一轮、同一个运行里连续的思考与工具调用归成一个活动组，被正文、用户消息、轮次或运行切开；
+ * - 带正文又调用了工具的助手消息：正文单独一条，它的工具调用开启紧跟着的活动组；
+ * - 只有思考、没有工具调用的一段不归组，照常显示（思考本身就是一行可展开的淡字）。
+ * 新消息只会追加条目或延长最后一个组，已有的条目不变，因此流式过程中不会跳动。
+ */
+export function groupMessages(messages: readonly MessageView[]): RenderItem[] {
   const items: RenderItem[] = []
-  let i = 0
-
-  while (i < messages.length) {
-    const msg = messages[i]!
-    const isAssistant = msg.role === 'assistant'
-    const hasToolsLaterInTurn =
-      isAssistant &&
-      msg.turnId !== undefined &&
-      messages
-        .slice(i + 1)
-        .some((m) => m.role === 'assistant' && m.turnId === msg.turnId && m.toolCalls.length > 0)
-
-    const isFinalResponse = isAssistant && msg.content.length > 0 && !hasToolsLaterInTurn
-    const isActivityStep =
-      isAssistant &&
-      !isFinalResponse &&
-      (msg.toolCalls.length > 0 ||
-        (msg.reasoning !== undefined && msg.reasoning.text !== '') ||
-        hasToolsLaterInTurn)
-
-    if (!isActivityStep) {
-      items.push({ kind: 'message', message: msg, index: i })
-      i++
-      continue
-    }
-
-    // 收集同一轮内连续的中间工具/思考步骤
-    const activityGroup: AssistantMessageView[] = [msg as AssistantMessageView]
-    const indices: number[] = [i]
-    let j = i + 1
-    while (j < messages.length) {
-      const next = messages[j]!
-      const nextHasToolsLater =
-        next.role === 'assistant' &&
-        next.turnId !== undefined &&
-        messages
-          .slice(j + 1)
-          .some((m) => m.role === 'assistant' && m.turnId === next.turnId && m.toolCalls.length > 0)
-      const nextIsFinalResponse =
-        next.role === 'assistant' && next.content.length > 0 && !nextHasToolsLater
-
-      if (
-        next.role === 'assistant' &&
-        next.turnId !== undefined &&
-        next.turnId === msg.turnId &&
-        !nextIsFinalResponse &&
-        (next.toolCalls.length > 0 ||
-          (next.reasoning !== undefined && next.reasoning.text !== '') ||
-          nextHasToolsLater)
-      ) {
-        activityGroup.push(next as AssistantMessageView)
-        indices.push(j)
-        j++
-      } else {
-        break
-      }
-    }
-
-    const totalToolCalls = activityGroup.reduce((sum, m) => sum + m.toolCalls.length, 0)
-    const totalReasonings = activityGroup.filter(
-      (m) => m.reasoning !== undefined && m.reasoning.text !== '',
-    ).length
-    const isMultiStep =
-      activityGroup.length > 1 ||
-      totalToolCalls >= 2 ||
-      (totalToolCalls >= 1 && totalReasonings >= 1)
-
-    if (isMultiStep) {
+  let group: OpenGroup | undefined
+  const close = () => {
+    const current = group
+    group = undefined
+    if (current === undefined) return
+    if (current.steps.some((step) => (step.toolCalls?.length ?? 0) > 0)) {
       items.push({
         kind: 'activity_group',
-        turnId: msg.turnId,
-        messages: activityGroup,
-        indices,
+        key: current.key,
+        turnId: current.turnId,
+        messages: current.messages,
+        indices: current.indices,
+        steps: current.steps,
+        afterProse: current.afterProse,
       })
-    } else {
-      for (let k = 0; k < activityGroup.length; k++) {
-        items.push({
-          kind: 'message',
-          message: activityGroup[k]!,
-          index: indices[k]!,
-        })
-      }
+      return
     }
-    i = j
+    current.messages.forEach((message, k) =>
+      items.push({ kind: 'message', message, index: current.indices[k]! }),
+    )
   }
 
+  messages.forEach((message, index) => {
+    if (message.role !== 'assistant') {
+      close()
+      items.push({ kind: 'message', message, index })
+      return
+    }
+    const joinable =
+      group !== undefined &&
+      message.turnId !== undefined &&
+      group.turnId === message.turnId &&
+      group.runId === message.runId
+    if (!joinable) close()
+    const hasTools = message.toolCalls.length > 0
+    if (message.content.length > 0) {
+      close()
+      items.push({ kind: 'message', message, index, ...(hasTools ? { toolsFollow: true } : {}) })
+      if (hasTools) {
+        group = {
+          key: `${message.messageId}:tools`,
+          turnId: message.turnId,
+          runId: message.runId,
+          messages: [message],
+          indices: [index],
+          steps: [{ key: message.messageId, toolCalls: message.toolCalls }],
+          afterProse: true,
+        }
+      }
+      return
+    }
+    const reasoning = message.reasoning?.text ?? ''
+    if (!hasTools && reasoning === '') {
+      // 没有正文、思考与工具调用（例如被打断的空回复）：照常一条，显示未完成标记
+      close()
+      items.push({ kind: 'message', message, index })
+      return
+    }
+    const step: TurnActivityStep = {
+      key: message.messageId,
+      ...(reasoning === '' ? {} : { reasoning }),
+      ...(hasTools ? { toolCalls: message.toolCalls } : {}),
+    }
+    if (group === undefined) {
+      group = {
+        key: message.messageId,
+        turnId: message.turnId,
+        runId: message.runId,
+        messages: [message],
+        indices: [index],
+        steps: [step],
+        afterProse: false,
+      }
+    } else {
+      group.messages.push(message)
+      group.indices.push(index)
+      group.steps.push(step)
+    }
+  })
+  close()
   return items
+}
+
+/** 活动组里还有没跑完的工具：已请求（含等待审批）、执行中，或者运行还在这一轮且工具事件尚未到达。 */
+function groupHasActiveTools(
+  view: SessionView,
+  item: {
+    readonly steps: readonly TurnActivityStep[]
+    readonly messages: readonly AssistantMessageView[]
+  },
+): boolean {
+  return item.messages.some((message, k) =>
+    (item.steps[k]?.toolCalls ?? []).some((call) => {
+      const status = view.tools[call.id]?.status
+      return (
+        status === 'requested' ||
+        status === 'running' ||
+        (status === undefined && view.runs[message.runId]?.turn?.status === 'running')
+      )
+    }),
+  )
 }
 
 export function MessageStream({
@@ -1331,7 +1305,8 @@ export function MessageStream({
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
-  const openPlan = onOpenPlan ?? noopPlan
+  const openPlan = useStableCallback(onOpenPlan) ?? noopPlan
+  const openChanges = useStableCallback(onOpenChanges)
   const projects = useSessionStore((s) => s.projects)
   const pathsExist = useSessionStore((s) => s.pathsExist)
   const approvals = useSessionStore((s) => {
@@ -1342,12 +1317,18 @@ export function MessageStream({
     () => new Set(approvals?.map((a) => a.toolCallId)),
     [approvals],
   )
-  const messages = view
-    ? view.messages.filter((message) => {
-        const run = view.runs[message.runId]
+  const viewMessages = view?.messages
+  const viewRuns = view?.runs
+  const viewRunOrder = view?.runOrder
+  // 流式增量不改消息与运行：按它们缓存，下面依赖 `messages` 的 useMemo 才能命中
+  const messages = useMemo<readonly MessageView[]>(
+    () =>
+      viewMessages?.filter((message) => {
+        const run = viewRuns?.[message.runId]
         return run === undefined || run.parentRunId === undefined
-      })
-    : []
+      }) ?? NO_MESSAGES,
+    [viewMessages, viewRuns],
+  )
   const groupedItems = useMemo(() => groupMessages(messages), [messages])
   /** 轮次序号（编辑 / 重新生成时判断后面还有几轮）；只数顶层运行的消息，子 Agent 的轮次不算。 */
   const turns = useMemo(() => {
@@ -1392,7 +1373,12 @@ export function MessageStream({
   const agents = useSessionStore((s) => s.agents) ?? []
   /** 上一轮因限额停下时，可以一键接着做（Runtime §10.3：开始新的一轮，计数重新开始）。 */
   const canContinue = view !== undefined && rootRun(view)?.turn?.limitReached !== undefined
-  const footers = view ? turnFooters(view) : new Map<string, TurnFooter>()
+  const hasLive = view !== undefined && Object.keys(view.live).length > 0
+  // turnFooters 只读消息、运行与“有没有进行中的消息”
+  const footers = useMemo(
+    () => (view ? turnFooters(view) : NO_FOOTERS),
+    [viewMessages, viewRuns, viewRunOrder, hasLive],
+  )
   const switchedRuns = useMemo(() => {
     if (!view || view.runOrder.length <= 1)
       return new Map<string, { name: string; version: number | undefined }>()
@@ -1417,7 +1403,7 @@ export function MessageStream({
       }
     }
     return map
-  }, [view, agents, i18n.language, t])
+  }, [viewRunOrder, viewRuns, viewMessages, agents, i18n.language, t])
   const liveSwitch = useMemo(() => {
     if (!view || view.runOrder.length <= 1 || live.length === 0) return undefined
     const firstLive = live[0]
@@ -1462,7 +1448,18 @@ export function MessageStream({
         : [],
     ),
   )
-  const restores = view ? restoresByMessage(view) : new Map<string, readonly RestoreView[]>()
+  const viewRestores = view?.restores
+  // restoresByMessage 只读恢复记录与消息
+  const restores = useMemo(
+    () => (view ? restoresByMessage(view) : NO_RESTORES),
+    [viewRestores, viewMessages],
+  )
+  const viewPlans = view?.plans
+  const viewLoops = view?.reviewLoops
+  const viewPipelines = view?.pipelineRuns
+  const plansByTurn = useMemo(() => byTurn(viewPlans), [viewPlans])
+  const loopsByTurn = useMemo(() => byTurn(viewLoops), [viewLoops])
+  const pipelinesByTurn = useMemo(() => byTurn(viewPipelines), [viewPipelines])
   const delegationsByTurn = useMemo(() => {
     const map = new Map<string, DelegationView[]>()
     for (const delegation of view?.delegations ?? []) {
@@ -1472,7 +1469,7 @@ export function MessageStream({
       map.set(delegation.turnId, list)
     }
     return map
-  }, [view])
+  }, [view?.delegations])
   // 没有落到任何一轮消息末尾的委派：还没有轮次归属、本轮的完成消息尚未到达（只有 live 消息），
   // 或者这一轮没有可挂靠的消息。它们排在流末尾，保证运行中的子 Agent 也能看到。
   const turnsWithMessages = useMemo(
@@ -1507,17 +1504,9 @@ export function MessageStream({
    */
   const rootTurnId = rootRun(view)?.turn?.turnId
   const tail = groupedItems.at(-1)
-  // 只有末尾这一条自己有组头（归组，或带工具调用的助手消息）时，才由它承担状态。
-  const tailHasHeader =
-    tail?.kind === 'activity_group' ||
-    (tail?.kind === 'message' &&
-      tail.message.role === 'assistant' &&
-      tail.message.toolCalls.length > 0)
+  // 只有末尾是活动组（它有组头）时，才由它承担状态；工具调用一律在活动组里。
   const tailIsLive =
-    runningKey !== undefined &&
-    tail !== undefined &&
-    tailHasHeader &&
-    (tail.kind === 'activity_group' ? tail.turnId : tail.message.turnId) === rootTurnId
+    runningKey !== undefined && tail?.kind === 'activity_group' && tail.turnId === rootTurnId
 
   return (
     <>
@@ -1528,7 +1517,10 @@ export function MessageStream({
             const message = item.message
             const previous = messages[item.index - 1]?.seq ?? 0
             const next = messages[item.index + 1]
-            const lastOfTurn = next === undefined || next.turnId !== message.turnId
+            // 工具调用在后面的活动组里时，轮次末尾的内容由活动组显示
+            const toolsFollow = item.toolsFollow === true
+            const lastOfTurn =
+              !toolsFollow && (next === undefined || next.turnId !== message.turnId)
             const switchInfo = switchedRuns.get(message.messageId)
             return (
               <Fragment key={message.messageId}>
@@ -1537,40 +1529,26 @@ export function MessageStream({
                     <AgentSwitchDivider name={switchInfo.name} version={switchInfo.version} />
                   </li>
                 )}
-                <Message
+                <MemoMessage
                   message={message}
                   view={view}
-                  footer={footers.get(message.messageId)}
-                  plans={
-                    lastOfTurn && message.turnId !== undefined
-                      ? view.plans.filter((plan) => plan.turnId === message.turnId)
-                      : []
-                  }
-                  reviewLoops={
-                    lastOfTurn && message.turnId !== undefined
-                      ? (view.reviewLoops ?? []).filter((loop) => loop.turnId === message.turnId)
-                      : []
-                  }
-                  pipelines={
-                    lastOfTurn && message.turnId !== undefined
-                      ? (view.pipelineRuns ?? []).filter(
-                          (pipeline) => pipeline.turnId === message.turnId,
-                        )
-                      : []
-                  }
-                  sessionId={sessionId}
+                  footer={toolsFollow ? undefined : footers.get(message.messageId)}
+                  plans={turnItems(plansByTurn, lastOfTurn, message.turnId)}
+                  reviewLoops={turnItems(loopsByTurn, lastOfTurn, message.turnId)}
+                  pipelines={turnItems(pipelinesByTurn, lastOfTurn, message.turnId)}
                   continued={continues(messages[item.index - 1], message)}
-                  restores={restores.get(message.messageId)}
+                  restores={toolsFollow ? undefined : restores.get(message.messageId)}
                   compacted={markBetween(previous, message.seq, view.compaction)}
                   omitted={markBetween(previous, message.seq, view.toolOutputOmitted)}
                   entering={enteringIds.has(message.messageId)}
                   onOpenPlan={openPlan}
-                  onOpenChanges={onOpenChanges}
+                  onOpenChanges={openChanges}
                   resolvePaths={resolvePaths}
                   onOpenFile={onOpenFile}
                   canEdit={message.role === 'user' && turnStarts.has(message.messageId)}
                   turnNumber={message.turnId === undefined ? undefined : turns.get(message.turnId)}
                   turnCount={turns.size}
+                  toolsFollow={toolsFollow}
                 />
                 {lastOfTurn &&
                   message.turnId !== undefined &&
@@ -1580,7 +1558,7 @@ export function MessageStream({
                         sessionId={view.sessionId}
                         view={view}
                         delegation={delegation}
-                        onOpenChanges={onOpenChanges}
+                        onOpenChanges={openChanges}
                         {...(onOpenRun === undefined ? {} : { onOpenRun })}
                       />
                     </li>
@@ -1589,7 +1567,7 @@ export function MessageStream({
             )
           }
 
-          // activity_group: 同一轮中连续的多个工具调用/思考步骤
+          // activity_group: 同一轮中连续的思考与工具调用
           const group = item.messages
           const firstMsg = group[0]!
           const lastMsg = group[group.length - 1]!
@@ -1598,23 +1576,16 @@ export function MessageStream({
           const previous = messages[firstIndex - 1]?.seq ?? 0
           const nextMsg = messages[lastIndex + 1]
           const lastOfTurn = nextMsg === undefined || nextMsg.turnId !== item.turnId
-          const switchInfo = switchedRuns.get(firstMsg.messageId)
-          const continued = continues(messages[firstIndex - 1], firstMsg)
+          // 接在同一条消息的正文后面：切换分隔线、标记与 Agent 名已经随正文显示过
+          const switchInfo = item.afterProse ? undefined : switchedRuns.get(firstMsg.messageId)
+          const continued = item.afterProse || continues(messages[firstIndex - 1], firstMsg)
           const entering = group.some((m) => enteringIds.has(m.messageId))
 
-          const steps: TurnActivityStep[] = group.map((m) => ({
-            key: m.messageId,
-            reasoning: m.reasoning?.text,
-            content: m.content.length > 0 ? m.content : undefined,
-            toolCalls: m.toolCalls,
-          }))
-
-          const isTurnRunning =
-            (rootRun(view)?.turn?.status === 'running' &&
-              rootRun(view)?.turn?.turnId === item.turnId) ||
-            Object.values(view?.live ?? {}).some((l) => l.turnId === item.turnId)
-          const compacted = markBetween(previous, firstMsg.seq, view.compaction)
-          const omitted = markBetween(previous, firstMsg.seq, view.toolOutputOmitted)
+          // 有工具没跑完，或者它是正在进行的这一轮的末尾（工具都跑完了、模型还在想）
+          const isRunning = groupHasActiveTools(view, item) || (item === tail && tailIsLive)
+          const compacted = !item.afterProse && markBetween(previous, firstMsg.seq, view.compaction)
+          const omitted =
+            !item.afterProse && markBetween(previous, firstMsg.seq, view.toolOutputOmitted)
           const marks = (compacted || omitted) && (
             <div className="mb-3.5 flex w-full flex-col gap-2 self-stretch">
               {compacted && view.compaction && <CompactionMark summary={view.compaction.summary} />}
@@ -1634,18 +1605,9 @@ export function MessageStream({
               ? t('composer.agent.default')
               : agent?.id
 
-          const plans =
-            lastOfTurn && lastMsg.turnId !== undefined
-              ? view.plans.filter((plan) => plan.turnId === lastMsg.turnId)
-              : []
-          const loops =
-            lastOfTurn && lastMsg.turnId !== undefined
-              ? (view.reviewLoops ?? []).filter((loop) => loop.turnId === lastMsg.turnId)
-              : []
-          const pipelines =
-            lastOfTurn && lastMsg.turnId !== undefined
-              ? (view.pipelineRuns ?? []).filter((pipeline) => pipeline.turnId === lastMsg.turnId)
-              : []
+          const plans = turnItems(plansByTurn, lastOfTurn, lastMsg.turnId)
+          const loops = turnItems(loopsByTurn, lastOfTurn, lastMsg.turnId)
+          const pipelines = turnItems(pipelinesByTurn, lastOfTurn, lastMsg.turnId)
           const cards = [
             ...plans.map((plan) => (
               <PlanSummaryCard key={plan.planId} plan={plan} onOpen={openPlan} />
@@ -1659,7 +1621,7 @@ export function MessageStream({
           const footer = footers.get(lastMsg.messageId)
 
           return (
-            <Fragment key={firstMsg.messageId}>
+            <Fragment key={item.key}>
               {switchInfo && (
                 <li className="list-none">
                   <AgentSwitchDivider name={switchInfo.name} version={switchInfo.version} />
@@ -1680,11 +1642,10 @@ export function MessageStream({
                   </div>
                 )}
                 <TurnActivityGroup
-                  steps={steps}
+                  steps={item.steps}
                   view={view}
-                  isRunning={isTurnRunning}
+                  isRunning={isRunning}
                   awaiting={awaitingApprovalSet}
-                  resolvePaths={resolvePaths}
                   onOpenFile={onOpenFile}
                 />
                 {lastMsg.incomplete && (
@@ -1696,7 +1657,7 @@ export function MessageStream({
                   <TurnChanges
                     sessionId={view.sessionId}
                     turnId={lastMsg.turnId}
-                    {...(onOpenChanges === undefined ? {} : { onOpen: () => onOpenChanges() })}
+                    {...(openChanges === undefined ? {} : { onOpen: () => openChanges() })}
                     {...(onOpenFile === undefined
                       ? {}
                       : { onOpenFile: (path: string) => onOpenFile(path) })}
@@ -1728,7 +1689,7 @@ export function MessageStream({
                       sessionId={view.sessionId}
                       view={view}
                       delegation={delegation}
-                      onOpenChanges={onOpenChanges}
+                      onOpenChanges={openChanges}
                       {...(onOpenRun === undefined ? {} : { onOpenRun })}
                     />
                   </li>
@@ -1790,7 +1751,7 @@ export function MessageStream({
               sessionId={view.sessionId}
               view={view}
               delegation={delegation}
-              onOpenChanges={onOpenChanges}
+              onOpenChanges={openChanges}
               {...(onOpenRun === undefined ? {} : { onOpenRun })}
             />
           </li>

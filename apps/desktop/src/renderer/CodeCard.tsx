@@ -3,7 +3,7 @@
  *
  * - 标题栏 38px：文件类型图标、路径（目录灰、文件名加粗）或语言名、“新文件”标记、增删行数；右侧换行与复制。
  * - 正文：行号列 46px，不可选中，复制时不带行号；重点行用浅蓝底、左侧强调色竖线，行号变为强调色。
- * - 高亮在渲染后异步完成（Shiki，`highlight.ts`），之前先显示纯文本。
+ * - 高亮在渲染后异步完成（Shiki，`highlight.ts`），之前先显示纯文本；流式输出中的代码块高亮节流（`streaming`）。
  */
 import { WrapText } from 'lucide-react'
 import { useMemo, useState, type CSSProperties } from 'react'
@@ -31,6 +31,8 @@ export interface CodeCardProps {
   /** 正文的最大高度（像素），超出后内部滚动。 */
   readonly maxHeight?: number
   readonly className?: string
+  /** 代码还在流式输出（进行中的回复）：高亮节流，只用到已经写完的行。 */
+  readonly streaming?: boolean
 }
 
 /** 解析代码块 info string 中的重点行，例如 `ts {2,4-6}`。 */
@@ -89,12 +91,13 @@ export function CodeCard({
   removed,
   maxHeight,
   className,
+  streaming = false,
 }: CodeCardProps) {
   const { t } = useTranslation('session')
   const [wrap, setWrap] = useState(false)
   const text = useMemo(() => code.replace(/\r\n?/g, '\n').replace(/\n$/, ''), [code])
   const lines = useMemo(() => text.split('\n'), [text])
-  const tokens = useHighlight(text, language)
+  const tokens = useHighlight(text, language, { streaming })
   const { dir, name } = path ? splitPath(path) : { dir: '', name: '' }
   const title = path ?? (languageName?.trim() || language?.id || t('code.plainText'))
   const gutter = String(startLine + lines.length - 1).length > 4 ? 'w-[58px]' : 'w-[46px]'

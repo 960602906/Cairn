@@ -1,20 +1,50 @@
 /**
  * 工具步骤（M2-05，视觉规范 §6；M1-16b 起的工具卡片改写）：助手消息中的工具调用按顺序排成列表。
  *
- * - 每一步一行：左侧是状态图形（完成对勾、执行中缺口转圈、失败叉、等待空心圆、取消横杠），
- *   无纵向连接线；文字是“动作 + 对象”（如“读取 `src/a.ts`”），进行中的步骤文字流光；右侧是耗时或状态。
+ * - 每一步一行：左侧是这一步操作的图标（读文件、改文件、运行命令、搜索……，`ToolKindIcon`），颜色跟随状态
+ *   （执行中强调色并轻微闪烁、失败红色、完成弱化、等待与取消更淡），无纵向连接线；文字是“动作 + 对象”
+ *   （如“读取 `src/a.ts`”），进行中的步骤文字流光；右侧是耗时或状态文字，状态不只靠颜色区分。
  * - 点击一行展开详情：参数与完整输出（可滚动）、截断说明、这条命令的沙箱。失败的错误不用展开就显示。
  * - `run_command` 用终端卡片（M2-06）：执行中直接显示实时输出，完成后展开显示；退出码不是 0 时默认展开。
  *   `read_file` 展开后用代码卡片显示读到的内容。其他工具执行中显示实时输出的最后几行。
  * - 文件类工具（读 / 写 / 编辑）的对象就是路径，点它直接在右侧工作台打开；修改过的文件自动显示 diff。
  * - 状态文字总在（完成时只给读屏），供读屏与测试使用。
- * - 组头默认折叠，只说最新一步在做什么（“运行 npm test”）并带上总耗时；
- *   失败、取消或等待审批时在组头点明卡在哪一步，但同样不自动展开。
+ * - 组头默认折叠，只说最新一步在做什么（“运行 npm test”），图标是这一步的操作图标，右侧是总耗时；
+ *   不另外报失败、取消或等待审批（这些看步骤本身），也不自动展开。
  * - `edit_file` 完成后在文件名后面显示增删行数（`+2 −1`）。
  *
  * 不使用 `<p>`：消息流的测试按段落读取消息正文。
  */
-import { Check, ChevronRight, Circle, LoaderCircle, Minus, X } from 'lucide-react'
+import {
+  BookmarkPlus,
+  BookOpen,
+  Bot,
+  Check,
+  ChevronRight,
+  Circle,
+  FilePenLine,
+  FilePlusCorner,
+  FileText,
+  FolderOpen,
+  GitCommitHorizontal,
+  GitPullRequest,
+  Lightbulb,
+  ListChecks,
+  ListRestart,
+  ListTodo,
+  LoaderCircle,
+  MessageCircleQuestionMark,
+  Minus,
+  Play,
+  Repeat,
+  Search,
+  SquareTerminal,
+  Upload,
+  Workflow,
+  Wrench,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -255,6 +285,82 @@ export function ToolStatusIcon({
   }
 }
 
+/** 每种工具的操作图标；不认识的工具（MCP 等第三方工具）用扳手。 */
+const TOOL_ICONS: Readonly<Record<string, LucideIcon>> = {
+  read_file: FileText,
+  write_file: FilePlusCorner,
+  edit_file: FilePenLine,
+  list_dir: FolderOpen,
+  search: Search,
+  run_command: SquareTerminal,
+  start_command: Play,
+  load_skill: BookOpen,
+  [ASK_USER_TOOL]: MessageCircleQuestionMark,
+  [PROPOSE_PLAN_TOOL]: Lightbulb,
+  [REVISE_PLAN_STEPS_TOOL]: ListRestart,
+  [UPDATE_PLAN_STEP_TOOL]: ListChecks,
+  [CREATE_TASK_LIST_TOOL]: ListTodo,
+  [REVISE_TASK_ITEMS_TOOL]: ListRestart,
+  [UPDATE_TASK_ITEM_TOOL]: ListChecks,
+  delegate: Bot,
+  review_loop: Repeat,
+  run_pipeline: Workflow,
+  remember: BookmarkPlus,
+  git_commit: GitCommitHorizontal,
+  git_push: Upload,
+  watch_pull_request: GitPullRequest,
+}
+
+export function toolIconFor(name: string): LucideIcon {
+  return TOOL_ICONS[name] ?? Wrench
+}
+
+/** 操作图标的颜色：跟随状态，具体状态另有右侧文字说明。 */
+function toolIconTone(status: ToolCallView['status'], failed: boolean): string {
+  if (failed) return 'text-danger'
+  switch (status) {
+    case 'running':
+      return 'text-accent motion-safe:animate-pulse'
+    case 'completed':
+      return 'text-muted'
+    case 'cancelled':
+      return 'text-faint opacity-60'
+    default:
+      return 'text-faint opacity-55'
+  }
+}
+
+/**
+ * 一步操作的图标（读文件、改文件、运行命令……），颜色跟随状态：执行中强调色并轻微闪烁、失败（含命令非零退出）
+ * 红色、完成弱化、等待与取消更淡。
+ */
+export function ToolKindIcon({
+  name,
+  status,
+  exitCode,
+  size = 13,
+  className,
+}: {
+  readonly name: string
+  readonly status: ToolCallView['status']
+  readonly exitCode?: number | null | undefined
+  readonly size?: number
+  readonly className?: string
+}) {
+  const Icon = toolIconFor(name)
+  const failed =
+    status === 'failed' || (exitCode !== undefined && exitCode !== null && exitCode !== 0)
+  return (
+    <Icon
+      aria-hidden
+      data-tool-icon={name}
+      style={{ width: size, height: size }}
+      strokeWidth={2.2}
+      className={cn('shrink-0', toolIconTone(status, failed), className)}
+    />
+  )
+}
+
 /** 一步工具的“动作 + 对象”，人话优先：参数按语义取字段，取不到才退回单行 JSON。 */
 export interface ToolCallDescription {
   readonly action: string
@@ -361,23 +467,75 @@ export function filePathForTool(name: string, args: unknown): string | undefined
   return typeof path === 'string' && path !== '' ? path : undefined
 }
 
+/** 组里最新的一步与它的说法。 */
+export interface LatestActivityStep extends ToolCallDescription {
+  readonly call: ToolCall
+}
+
 /**
- * 组头摘要：只说组里最新的一步在做什么，不罗列整组、也不补“等 N 项”。
- * 最新一步没有可说的内容时往前找最近一步；组里只有思考时返回 undefined，由调用方补一句“思考过程”。
+ * 组里最新的一步：最后一次调用没有可说的内容时往前找最近一步；组里没有工具调用时返回 undefined。
+ */
+export function latestActivityStep(
+  calls: readonly ToolCall[],
+  tools: Readonly<Record<string, ToolCallView>>,
+  t: TFunction,
+): LatestActivityStep | undefined {
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const call = calls[index]
+    if (call === undefined) continue
+    const description = describeToolCall(call.name, tools[call.id]?.input ?? call.input, t)
+    if (description.action !== '' || description.object !== '') return { ...description, call }
+  }
+  return undefined
+}
+
+/**
+ * 组头摘要：只说组里最新的一步在做什么，不罗列整组、也不补“等 N 项”；组里只有思考时返回 undefined，
+ * 由调用方补一句“思考过程”。
  */
 export function summarizeActivity(
   calls: readonly ToolCall[],
   tools: Readonly<Record<string, ToolCallView>>,
   t: TFunction,
 ): string | undefined {
-  for (let index = calls.length - 1; index >= 0; index -= 1) {
-    const call = calls[index]
-    if (call === undefined) continue
-    const { action, object } = describeToolCall(call.name, tools[call.id]?.input ?? call.input, t)
-    const text = action === '' ? object : `${action} ${object}`
-    if (text !== '') return text
+  const latest = latestActivityStep(calls, tools, t)
+  if (latest === undefined) return undefined
+  return latest.action === '' ? latest.object : `${latest.action} ${latest.object}`
+}
+
+/**
+ * 活动组的组头：一律说最新一步（动作 + 对象），图标是这一步的操作图标，右侧是组内总耗时。
+ * 不因为组里有失败、取消或等待审批的步骤换成别的说法；那些状态看步骤本身。
+ */
+export function latestActivityHeadline({
+  calls,
+  tools,
+  isRunning,
+  t,
+}: {
+  readonly calls: readonly ToolCall[]
+  readonly tools: Readonly<Record<string, ToolCallView>>
+  readonly isRunning: boolean
+  readonly t: TFunction
+}): ActivityHeadline {
+  const latest = latestActivityStep(calls, tools, t)
+  const meta = activityDuration(calls, tools)
+  const tone = isRunning ? 'running' : 'done'
+  if (latest === undefined) {
+    return { tone, label: t('tool.group.thinking'), ...(meta === undefined ? {} : { meta }) }
   }
-  return undefined
+  const view = tools[latest.call.id]
+  return {
+    tone,
+    label: latest.action,
+    ...(latest.object === '' ? {} : { object: latest.object, plain: latest.plain }),
+    tool: {
+      name: latest.call.name,
+      status: view?.status ?? 'requested',
+      exitCode: view?.display?.exitCode,
+    },
+    ...(meta === undefined ? {} : { meta }),
+  }
 }
 
 /** 组头右侧的耗时：组内各步耗时相加，没有耗时数据时不显示。 */
@@ -461,7 +619,7 @@ export function ToolStep({
             className="absolute inset-0 cursor-pointer rounded-[7px] outline-none focus-visible:ring-1 focus-visible:ring-accent"
           />
           <span className="pointer-events-none flex items-center">
-            <ToolStatusIcon status={status} exitCode={exitCode} />
+            <ToolKindIcon name={name} status={status} exitCode={exitCode} />
           </span>
           {/* 动作列始终保留占位，技能这类没有动作词的工具才不会让后面几列整体左移。 */}
           <span className="pointer-events-none shrink-0">
@@ -569,7 +727,7 @@ export function ToolStep({
   )
 }
 
-/** 组头的一句话：折叠状态下说清这组做过什么；失败/取消/等待审批时点明卡在哪一步。 */
+/** 组头的一句话：折叠状态下说这组最新一步在做什么。 */
 export interface ActivityHeadline {
   readonly tone: 'running' | 'attention' | 'waiting' | 'cancelled' | 'done'
   readonly label: string
@@ -581,6 +739,14 @@ export interface ActivityHeadline {
   readonly objectFirst?: boolean | undefined
   /** 右侧的耗时（如 `8.3s`）。 */
   readonly meta?: string | undefined
+  /** 组头说的那一步：图标用它的操作图标；省略时按 `tone` 用状态图形。 */
+  readonly tool?:
+    | {
+        readonly name: string
+        readonly status: ToolCallView['status']
+        readonly exitCode?: number | null | undefined
+      }
+    | undefined
 }
 
 /** 组头（整行、无边框、悬停变底色）：与步骤行共用 18px 图标列与 7px 间距。 */
@@ -615,18 +781,28 @@ export function ActivityGroupHeaderContent({
           headline.plain ? 'font-sans' : 'rounded-[4px] bg-sunk px-1 font-mono',
         )}
       >
-        {headline.object}
+        {shimmer ? <Shimmer>{headline.object}</Shimmer> : headline.object}
       </code>
     )
-  const label = (
-    <span className={cn('min-w-0 truncate', headline.tone === 'attention' && 'text-danger')}>
-      {shimmer ? <Shimmer>{headline.label}</Shimmer> : headline.label}
-    </span>
-  )
+  const label =
+    headline.label === '' ? null : (
+      <span className={cn('min-w-0 truncate', headline.tone === 'attention' && 'text-danger')}>
+        {shimmer ? <Shimmer>{headline.label}</Shimmer> : headline.label}
+      </span>
+    )
   return (
     <>
       <span className="flex w-[18px] shrink-0 items-center">
-        <ToolStatusIcon status={status} size={15} />
+        {headline.tool ? (
+          <ToolKindIcon
+            name={headline.tool.name}
+            status={headline.tool.status}
+            exitCode={headline.tool.exitCode}
+            size={15}
+          />
+        ) : (
+          <ToolStatusIcon status={status} size={15} />
+        )}
       </span>
       <span className="flex min-w-0 flex-1 items-center gap-x-[7px] text-[13px] font-medium">
         {headline.objectFirst ? (
@@ -636,7 +812,7 @@ export function ActivityGroupHeaderContent({
         ) : (
           <>
             {label}
-            {object === null ? null : ' '}
+            {object === null || label === null ? null : ' '}
             {object}
           </>
         )}

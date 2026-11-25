@@ -8,14 +8,18 @@
  *
  * 代码块用代码卡片（M2-06）：语言取自 info string，
  * 重点行写在其后的花括号里（` ```ts {2,4-6} `）。
+ *
+ * 进行中的回复（`streaming`）按 `splitStableBlocks` 切块：已经写完的块缓存渲染结果，每次增量只重新解析
+ * 最后一块；最后一块里的代码块高亮节流。回复完成后由已完成的消息按整段重新渲染。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, memo, useContext, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { CodeCard, parseLineRanges } from './CodeCard.js'
 import { FileTypeIcon } from './file-icons.js'
 import { fileRefCandidates, fileRefsInText, parseFileRef } from './file-refs.js'
 import { languageByName } from './languages.js'
+import { splitStableBlocks } from './markdown-blocks.js'
 
 type Element = NonNullable<ExtraProps['node']>
 type ElementContent = Element['children'][number]
@@ -113,6 +117,9 @@ export function codeBlockOf(pre: Element | undefined) {
   }
 }
 
+/** 所在的块还在流式输出：代码块交给 `CodeCard` 的 `streaming`。 */
+const StreamingContext = createContext(false)
+
 const components: Components = {
   h1: (props) => <h3 className="mt-5 mb-2 text-heading text-fg first:mt-0" {...strip(props)} />,
   h2: (props) => <h3 className="mt-5 mb-2 text-heading text-fg first:mt-0" {...strip(props)} />,
@@ -155,6 +162,7 @@ const components: Components = {
     <td className="border-b-[0.5px] border-hair px-3 py-2 align-top" {...strip(props)} />
   ),
   pre: (props) => {
+    const streaming = useContext(StreamingContext)
     const block = codeBlockOf(props.node)
     if (!block) {
       return (
@@ -170,6 +178,7 @@ const components: Components = {
         language={languageByName(block.lang)}
         languageName={block.lang}
         highlightLines={block.highlightLines}
+        streaming={streaming}
       />
     )
   },
@@ -198,6 +207,11 @@ export interface MarkdownProps {
   readonly onOpenFile?: ((path: string, line?: number) => void) | undefined
   /** 流式输出时可选的防抖毫秒数，避免每个 token 产生重复 IPC 请求。 */
   readonly debounceMs?: number
+  /**
+   * 进行中的回复（性能）：文本每次增量都会变长，按块渲染，已经写完的块不再重新解析；
+   * 最后一块里的代码块高亮节流。
+   */
+  readonly streaming?: boolean
 }
 
 const EMPTY_RESOLVED: ReadonlyMap<string, string> = new Map()
@@ -229,7 +243,13 @@ function FileRefLink({
   )
 }
 
-export function Markdown({ text, resolvePaths, onOpenFile, debounceMs = 0 }: MarkdownProps) {
+const MarkdownBody = memo(function MarkdownBody({
+  text,
+  resolvePaths,
+  onOpenFile,
+  debounceMs = 0,
+  streaming = false,
+}: MarkdownProps) {
   const [resolved, setResolved] = useState<ReadonlyMap<string, string>>(EMPTY_RESOLVED)
   const candidates = useMemo(() => fileRefCandidates(text), [text])
   const candidatesKey = useMemo(() => candidates.join('\0'), [candidates])
@@ -310,15 +330,28 @@ export function Markdown({ text, resolvePaths, onOpenFile, debounceMs = 0 }: Mar
   }, [resolved, onOpenFile, resolvePaths])
 
   return (
-    <ReactMarkdown
-      remarkPlugins={
-        resolvePaths === undefined || onOpenFile === undefined
-          ? REMARK_PLUGINS
-          : REMARK_PLUGINS_WITH_FILES
-      }
-      components={activeComponents}
-    >
-      {text}
-    </ReactMarkdown>
+    <StreamingContext.Provider value={streaming}>
+      <ReactMarkdown
+        remarkPlugins={
+          resolvePaths === undefined || onOpenFile === undefined
+            ? REMARK_PLUGINS
+            : REMARK_PLUGINS_WITH_FILES
+        }
+        components={activeComponents}
+      >
+        {text}
+      </ReactMarkdown>
+    </StreamingContext.Provider>
   )
+})
+
+export function Markdown(props: MarkdownProps) {
+  const { text, streaming = false } = props
+  const blocks = useMemo(() => (streaming ? splitStableBlocks(text) : undefined), [streaming, text])
+  if (blocks === undefined) return <MarkdownBody {...props} />
+  // 前面的块写完后文本不再变化，`MarkdownBody` 的 memo 让它们跳过重渲染；只有最后一块还在流式输出。
+  const last = blocks.length - 1
+  return blocks.map((block, index) => (
+    <MarkdownBody key={index} {...props} text={block} streaming={index === last} />
+  ))
 }
