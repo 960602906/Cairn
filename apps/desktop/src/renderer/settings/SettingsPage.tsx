@@ -6,6 +6,9 @@
  * MCP 服务、记忆）、安全（权限与审批），以及固定在底部的“关于 Cairn”。项目操作在会话栏里，
  * 不再占用设置分类；自动修复不设分类，由会话按需开启。
  * Esc 返回对话（有对话框或菜单打开时不处理）。
+ *
+ * macOS 的红绿灯压在左上角：导航顶部是 48px 的拖拽行，应用名在红绿灯右边（与会话栏同样让出 84px），
+ * 收起按钮在同一行右侧。
  */
 import {
   Archive,
@@ -89,6 +92,7 @@ export function SettingsNav({
   const { t: ts } = useTranslation('session')
   const { t: tc } = useTranslation()
   const providerCount = useSessionStore((s) => s.settings?.providers.length ?? 0)
+  const mac = window.cairn?.windowControls?.platform === 'darwin'
   const [query, setQuery] = useState('')
   const normalized = query.trim().toLocaleLowerCase()
   const matches = (id: SettingsSection) =>
@@ -113,26 +117,51 @@ export function SettingsNav({
           open ? 'translate-x-0' : '-translate-x-3'
         }`}
       >
-        {collapsible ? (
-          <div className="drag flex h-10 shrink-0 items-center justify-end px-2">
-            <IconButton
-              label={ts('sidebar.collapse')}
-              size="icon-sm"
-              className="no-drag"
-              onClick={onCollapse}
-            >
-              <PanelLeftClose />
-            </IconButton>
+        {mac ? (
+          // 红绿灯在这一行的左边，应用名与收起按钮排在它右边，不再被压住。
+          <div
+            data-mac-titlebar
+            className="drag flex h-12 shrink-0 items-center gap-2 pr-2 pl-[84px]"
+          >
+            <CairnMark size={18} className="shrink-0 text-fg" />
+            <span className="truncate text-[14px] font-semibold tracking-[-0.01em] text-fg">
+              {tc('app.name')}
+            </span>
+            {collapsible && (
+              <IconButton
+                label={ts('sidebar.collapse')}
+                size="icon-sm"
+                className="no-drag ml-auto"
+                onClick={onCollapse}
+              >
+                <PanelLeftClose />
+              </IconButton>
+            )}
           </div>
         ) : (
-          <div className="drag h-3 shrink-0" />
+          <>
+            {collapsible ? (
+              <div className="drag flex h-10 shrink-0 items-center justify-end px-2">
+                <IconButton
+                  label={ts('sidebar.collapse')}
+                  size="icon-sm"
+                  className="no-drag"
+                  onClick={onCollapse}
+                >
+                  <PanelLeftClose />
+                </IconButton>
+              </div>
+            ) : (
+              <div className="drag h-3 shrink-0" />
+            )}
+            <div className="drag flex h-9 shrink-0 items-center gap-2 px-2.5 pb-1">
+              <CairnMark size={22} className="text-fg" />
+              <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg">
+                {tc('app.name')}
+              </span>
+            </div>
+          </>
         )}
-        <div className="drag flex h-9 shrink-0 items-center gap-2 px-2.5 pb-1">
-          <CairnMark size={22} className="text-fg" />
-          <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg">
-            {tc('app.name')}
-          </span>
-        </div>
         <div className="px-2 pb-1">
           <button
             type="button"
