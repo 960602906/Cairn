@@ -29,6 +29,7 @@ import {
   shell,
   utilityProcess,
 } from 'electron'
+import { BUILTIN_SMOKE_SKILL } from '../../scripts/builtin-skill.mjs'
 import { macApplicationMenu, shouldInstallApplicationMenu } from './app-menu.js'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
 import { readAppInfo } from './build-info.js'
@@ -1088,7 +1089,9 @@ function startSmoke(window: BrowserWindow): void {
         .list({})
         .skills.filter((skill) => skill.source === 'builtin')
         .map((skill) => skill.name)
-      if (!names.includes('example')) throw new Error('built-in skill example not found')
+      if (!names.includes(BUILTIN_SMOKE_SKILL)) {
+        throw new Error(`built-in skill ${BUILTIN_SMOKE_SKILL} not found`)
+      }
       return names
     },
     expectedText: 'Cairn',

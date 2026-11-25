@@ -4,6 +4,7 @@
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { BUILTIN_SMOKE_SKILL } from '../scripts/builtin-skill.mjs'
 import { expect, test } from './app.js'
 
 const BODY = 'The reviewer skill says reviewed-in-e2e.'
@@ -28,7 +29,7 @@ test('从文件夹安装技能，固定、查看详情后卸载', async ({ launc
   await nav.getByRole('button', { name: '技能' }).click()
   await expect(window.getByRole('heading', { name: '技能' })).toBeVisible()
   const list = window.getByRole('list', { name: '技能' })
-  await expect(list).toContainText('example')
+  await expect(list).toContainText(BUILTIN_SMOKE_SKILL)
   await expect(list).toContainText('内置')
 
   // 预览：读到了名称、描述、正文和附带文件，但还没有写盘

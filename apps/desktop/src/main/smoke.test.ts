@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { BUILTIN_SMOKE_SKILL } from '../../scripts/builtin-skill.mjs'
 import {
   checkRendererProbe,
   isSmokeRun,
@@ -28,7 +29,7 @@ function deps(overrides: Partial<SmokeDeps> = {}) {
     credentialsRequired: true,
     checkSearch: () => Promise.resolve('ripgrep 15.0.0'),
     checkNative: () => Promise.resolve('job-object'),
-    checkSkills: () => Promise.resolve(['example']),
+    checkSkills: () => Promise.resolve([BUILTIN_SMOKE_SKILL]),
     expectedText: 'Cairn',
     userData: '/data',
     report,
@@ -94,7 +95,7 @@ describe('runSmokeChecks', () => {
       credentials: 'stored',
       search: 'ripgrep 15.0.0',
       native: 'job-object',
-      skills: ['example'],
+      skills: [BUILTIN_SMOKE_SKILL],
       userData: '/data',
     })
     expect(reported(report)).toEqual(result)
@@ -175,14 +176,15 @@ describe('runSmokeChecks', () => {
       error: 'no koffi binary',
     })
 
+    const missingSkillError = `built-in skill ${BUILTIN_SMOKE_SKILL} not found`
     const { all: missingSkill } = deps({
-      checkSkills: () => Promise.reject(new Error('built-in skill example not found')),
+      checkSkills: () => Promise.reject(new Error(missingSkillError)),
     })
     expect(await runSmokeChecks(missingSkill)).toMatchObject({
       ok: false,
       native: 'job-object',
       skills: null,
-      error: 'built-in skill example not found',
+      error: missingSkillError,
     })
   })
 

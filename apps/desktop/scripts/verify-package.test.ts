@@ -6,6 +6,7 @@ import path from 'node:path'
 import { FuseState, FuseV1Options } from '@electron/fuses'
 import { createPackage } from '@electron/asar'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { BUILTIN_SMOKE_SKILL } from './builtin-skill.mjs'
 import {
   findUnpackedApp,
   errorMessage,
@@ -64,7 +65,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
     JSON.stringify({ name: '@cairn/desktop', version: options.desktopVersion ?? '0.1.0' }),
   )
   write(executable, 'exe')
-  write(path.join(resources, 'skills/example/SKILL.md'), '# Example\n')
+  write(path.join(resources, 'skills', BUILTIN_SMOKE_SKILL, 'SKILL.md'), '# Built-in\n')
   write(path.join(resources, 'git/LICENSE.txt'), 'GPLv2\n')
   write(path.join(resources, 'git/ucrt64/bin/git.exe'), 'git')
   write(
@@ -149,7 +150,7 @@ async function macFixture(): Promise<MacFixture> {
   }
   await createPackage(asarSource, path.join(resources, 'app.asar'))
   write(path.join(appRoot, 'Contents/MacOS/Cairn'), 'mach-o')
-  write(path.join(resources, 'skills/example/SKILL.md'), '# Example\n')
+  write(path.join(resources, 'skills', BUILTIN_SMOKE_SKILL, 'SKILL.md'), '# Built-in\n')
   write(
     path.join(resources, 'app-update.yml'),
     'provider: generic\nurl: https://updates.invalid/cairn/\n',
@@ -408,7 +409,12 @@ describe('verifyPackage', () => {
     expect(problems).toEqual(
       expect.arrayContaining([
         `missing app.asar: ${missingAsar.appAsar}`,
-        `missing resources/skills: ${path.join(missingAsar.resources, 'skills/example/SKILL.md')}`,
+        `missing resources/skills: ${path.join(
+          missingAsar.resources,
+          'skills',
+          BUILTIN_SMOKE_SKILL,
+          'SKILL.md',
+        )}`,
       ]),
     )
 

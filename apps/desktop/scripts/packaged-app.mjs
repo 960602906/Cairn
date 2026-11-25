@@ -5,6 +5,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { BUILTIN_SMOKE_SKILL } from './builtin-skill.mjs'
 import { findUnpackedApp } from './verify-package.mjs'
 
 export const DEFAULT_OUTPUT_DIR = path.resolve(import.meta.dirname, '../dist')
@@ -101,8 +102,8 @@ export function checkPackagedResult({
     if (result['search'] === null || result['search'] === undefined) {
       problems.push('bundled ripgrep was not exercised')
     }
-    if (!Array.isArray(result['skills']) || !result['skills'].includes('example')) {
-      problems.push('built-in skill example was not loaded')
+    if (!Array.isArray(result['skills']) || !result['skills'].includes(BUILTIN_SMOKE_SKILL)) {
+      problems.push(`built-in skill ${BUILTIN_SMOKE_SKILL} was not loaded`)
     }
     if (platform === 'win32' && result['native'] !== 'job-object') {
       problems.push(`koffi Job Object was not loaded: ${String(result['native'])}`)

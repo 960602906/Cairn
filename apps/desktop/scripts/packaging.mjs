@@ -35,6 +35,7 @@ import {
   signingBuilderArgs,
   signingEnvironment,
 } from '@cairn/release-tools'
+import { BUILTIN_SMOKE_SKILL } from './builtin-skill.mjs'
 import { verifyPackage } from './verify-package.mjs'
 
 const THIS_DIR = import.meta.dirname
@@ -221,7 +222,7 @@ export function stageApplication({
       throw new Error(`apps/desktop/out/${required} is missing; run \`pnpm build\` first`)
     }
   }
-  const skills = path.join(desktopRoot, 'resources/skills/example/SKILL.md')
+  const skills = path.join(desktopRoot, 'resources/skills', BUILTIN_SMOKE_SKILL, 'SKILL.md')
   if (!existsSync(skills)) throw new Error(`built-in skills are missing: ${skills}`)
 
   const desktopManifest = readJsonFile(path.join(desktopRoot, 'package.json'))

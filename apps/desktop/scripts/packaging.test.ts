@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { BUILTIN_SMOKE_SKILL } from './builtin-skill.mjs'
 import {
   AFTER_PACK_HOOK,
   createStagedManifest,
@@ -56,7 +57,7 @@ function desktopFixture(): string {
     write(path.join(root, file))
   }
   write(path.join(root, 'out/main/index.js'), "import { z } from 'zod'\n")
-  write(path.join(root, 'resources/skills/example/SKILL.md'), '# Example\n')
+  write(path.join(root, 'resources/skills', BUILTIN_SMOKE_SKILL, 'SKILL.md'), '# Built-in\n')
   write(path.join(root, 'build/icons/icon.ico'))
   write(
     path.join(root, 'package.json'),
@@ -254,7 +255,9 @@ describe('stageApplication', () => {
     })
     expect(result.modules).toEqual(['zod'])
     expect(existsSync(path.join(stage, 'out/renderer/index.html'))).toBe(true)
-    expect(existsSync(path.join(stage, 'resources/skills/example/SKILL.md'))).toBe(true)
+    expect(existsSync(path.join(stage, 'resources/skills', BUILTIN_SMOKE_SKILL, 'SKILL.md'))).toBe(
+      true,
+    )
     expect(existsSync(path.join(stage, 'build/icons/icon.ico'))).toBe(true)
     expect(JSON.parse(readFileSync(path.join(stage, 'package.json'), 'utf8'))).toMatchObject({
       name: '@cairn/desktop',

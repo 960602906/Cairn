@@ -107,6 +107,40 @@ describe('skill service', () => {
     expect(names).toContain('project:agents')
   })
 
+  it('ignores preferences left over for a built-in skill that is no longer shipped', () => {
+    const { storage, builtin, agents, user } = setup()
+    // 升级后旧内置技能 example 已从 resources 移除，但 skill_prefs 里可能还留着它的记录。
+    fs.rmSync(path.join(builtin, 'example'), { recursive: true, force: true })
+    storage.skillPrefs.set({
+      scope: 'global',
+      source: 'builtin',
+      name: 'example',
+      enabled: false,
+      pinned: true,
+    })
+    storage.skillPrefs.set({
+      scope: 'global',
+      source: 'builtin',
+      name: 'shared',
+      enabled: true,
+      pinned: true,
+    })
+    const skills = createSkillService({
+      storage,
+      builtinDir: builtin,
+      agentsDir: agents,
+      userDir: user,
+    })
+
+    const listed = skills.list({}).skills
+    expect(listed.map((skill) => skill.name)).not.toContain('example')
+    expect(listed.find((skill) => skill.name === 'shared')).toMatchObject({ pinned: true })
+
+    const catalog = skills.catalog('s1')
+    expect(catalog.map((skill) => skill.name)).not.toContain('example')
+    expect(catalog.find((skill) => skill.name === 'shared')).toMatchObject({ source: 'builtin' })
+  })
+
   it('rejects an unknown project', () => {
     const { skills } = setup()
     expect(() => skills.list({ projectId: 'missing' })).toThrow(RpcError)
