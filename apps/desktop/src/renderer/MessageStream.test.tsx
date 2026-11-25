@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSessionView, reduceSessionEvents, type SessionView } from '@cairn/core'
@@ -2463,5 +2463,94 @@ describe('编辑重发与重新生成（ADR-0046）', () => {
         expect((button as HTMLButtonElement).disabled).toBe(true)
       }
     }
+  })
+})
+
+describe('目标续轮与结束卡（ADR-0047）', () => {
+  const goalLimits = { maxTurns: 20, maxDurationMs: 3_600_000 }
+  const goalModel = { providerId: 'fake', modelId: 'judge' }
+  const goalBase = () => [
+    ev(1, 'session.created', {
+      projectId: 'p1',
+      projectPath: '/w',
+      workspacePath: '/w',
+      title: 'x',
+    }),
+    ev(2, 'run.created', { agent: { id: 'a', version: 1 }, model, mode: 'interactive', limits }),
+    ev(3, 'goal.created', { goalId: 'g1', condition: '测试全部通过', limits: goalLimits }),
+    ev(4, 'message.user', { messageId: 'u1', content: text('测试全部通过') }),
+  ]
+
+  const renderGoal = (stream: SessionView, onOpenGoal?: () => void) => {
+    const store = createStore<Record<string, unknown>>(() => ({
+      activeSessionId: 's1',
+      awaitingTurn: {},
+      approvals: {},
+      changes: {},
+      changeSets: {},
+      inspections: {},
+      settings: { providers: [] },
+      agents: [],
+      projects: [],
+      sendPrompt: vi.fn(),
+      editMessage: vi.fn(async () => true),
+      regenerate: vi.fn(async () => true),
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <MessageStream view={stream} onOpenGoal={onOpenGoal} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('把自动续轮消息折叠成目标继续行，不提供编辑入口', () => {
+    const stream = reduceSessionEvents(createSessionView('s1'), [
+      ...goalBase(),
+      ev(5, 'turn.started', {}),
+      ev(6, 'message.assistant.completed', { messageId: 'a1', content: text('先看看'), model }),
+      ev(7, 'goal.evaluated', {
+        goalId: 'g1',
+        verdict: 'not_met',
+        reason: '还差测试',
+        evidence: [],
+        model: goalModel,
+      }),
+      ev(8, 'turn.completed', { durationMs: 10 }),
+      ev(9, 'message.user', {
+        messageId: 'u2',
+        content: text('The goal is not yet met. Continue working toward it.'),
+        origin: 'goal',
+        goalId: 'g1',
+      }),
+      ev(10, 'turn.started', {}, 't2'),
+    ])
+    renderGoal(stream)
+    const row = screen.getByText('目标继续').closest('div')
+    expect(row).toBeTruthy()
+    expect(screen.getByText('还差测试')).toBeTruthy()
+    expect(within(row!).queryByRole('button', { name: '编辑消息' })).toBeNull()
+
+    const expand = screen.getByRole('button', { name: '展开继续说明' })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(expand)
+    expect(screen.getByText('The goal is not yet met. Continue working toward it.')).toBeTruthy()
+  })
+
+  it('在结束那一轮之后插入结果卡，并可从卡片打开目标面板', () => {
+    const stream = reduceSessionEvents(createSessionView('s1'), [
+      ...goalBase(),
+      ev(5, 'turn.started', {}),
+      ev(6, 'message.assistant.completed', { messageId: 'a1', content: text('做完了'), model }),
+      ev(7, 'turn.completed', { durationMs: 10 }),
+      ev(8, 'goal.ended', { goalId: 'g1', reason: 'met', turns: 1, durationMs: 9_000 }),
+    ])
+    const onOpenGoal = vi.fn()
+    renderGoal(stream, onOpenGoal)
+    expect(screen.getByText('目标已达成')).toBeTruthy()
+    expect(screen.getByText('1 轮 · 活动 0:09')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '查看目标' }))
+    expect(onOpenGoal).toHaveBeenCalled()
   })
 })

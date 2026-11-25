@@ -141,6 +141,15 @@ export interface ParsedPrompt {
 }
 
 /**
+ * 新对话页能识别但还不能执行的会话内指令。`/goal` 登记在完整指令表里，
+ * 但新会话还没创建，先提示用户发一条消息再设目标，而不是把它当普通消息发给模型。
+ */
+export function sessionOnlyCommand(text: string): 'goal' | undefined {
+  const parsed = parseComposerCommand(text, COMPOSER_COMMANDS)
+  return parsed?.command.id === 'goal' ? 'goal' : undefined
+}
+
+/**
  * 解析发送动作：普通草稿、`/plan 任务`、`/技能名 任务`。未知 `/xxx` 按普通消息发送。
  * 新对话页传递 `planMode`，会话页由指令执行器处理其余指令。
  */

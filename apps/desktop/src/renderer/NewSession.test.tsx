@@ -601,4 +601,15 @@ describe('NewSession controls', () => {
     await user.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
     await waitFor(() => expect(request).toHaveBeenCalledWith('project.open', {}))
   })
+
+  it('recognizes /goal but asks to create a session first', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await user.type(input, '/goal 测试通过')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    expect(await screen.findByText(/先发送一条消息创建会话/)).toBeTruthy()
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+    expect(input.value).toBe('/goal 测试通过')
+  })
 })

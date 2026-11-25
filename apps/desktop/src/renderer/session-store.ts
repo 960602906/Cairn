@@ -108,6 +108,13 @@ export type ProviderModelsResult = z.output<Requests['provider.models']['result'
 /** 凭据状态（M6-04）：不可用时带上原因，界面据此给出具体说明。 */
 export type CredentialStatus = z.output<Requests['credentials.status']['result']>
 
+/**
+ * 目标命令的结果（ADR-0047）。失败时带回错误码而不写全局 `error`：
+ * 指令与目标面板按错误码给具体提示（例如已有目标、运行中、待审计划）。
+ */
+export type GoalActionOutcome =
+  { readonly ok: true } | { readonly ok: false; readonly code: string }
+
 export interface InspectionState {
   readonly loading: boolean
   readonly result: RunInspectResult | undefined
@@ -231,6 +238,14 @@ export interface SessionActions {
   ): Promise<boolean>
   /** 重新生成这一轮的回复：回退这一轮并按原输入重新开始。失败时返回 false。 */
   regenerate(messageId: string): Promise<boolean>
+  /** 新建目标并立即开始第一轮（ADR-0047）；失败时返回错误码。 */
+  setGoal(sessionId: string, condition: string): Promise<GoalActionOutcome>
+  /** 暂停目标的自动续轮；不中止正在跑的一轮。 */
+  pauseGoal(sessionId: string): Promise<GoalActionOutcome>
+  /** 恢复暂停的目标；预算耗尽时只触发最终判定，不开始新轮。 */
+  resumeGoal(sessionId: string): Promise<GoalActionOutcome>
+  /** 结束目标；对已结束的目标幂等。 */
+  clearGoal(sessionId: string): Promise<GoalActionOutcome>
   /**
    * 输入框 `@` 引用的候选（ADR-0037）：在会话工作区或项目目录里按路径搜。
    * 失败时返回空列表，不弹错误：打字过程中的搜索失败不值得打断用户。
@@ -1189,6 +1204,49 @@ export function createSessionStore(api: MainApi): SessionStore {
         const sent = await run(() => api.request('session.regenerate', { sessionId, messageId }))
         if (sent === undefined) setAwaiting(sessionId, false)
         return sent !== undefined
+      },
+
+      async setGoal(sessionId, condition) {
+        // 主进程会立即开始第一轮；先标记等待，turn.started 到达时由事件清除。
+        setAwaiting(sessionId, true)
+        try {
+          await api.request('goal.set', { sessionId, condition })
+          return { ok: true }
+        } catch (error) {
+          setAwaiting(sessionId, false)
+          return { ok: false, code: toError(error).code }
+        }
+      },
+
+      async pauseGoal(sessionId) {
+        try {
+          await api.request('goal.pause', { sessionId })
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, code: toError(error).code }
+        }
+      },
+
+      async resumeGoal(sessionId) {
+        setAwaiting(sessionId, true)
+        try {
+          const result = await api.request('goal.resume', { sessionId })
+          // 已经 active 或预算耗尽时不会开新轮，也就没有 turn.started 来清除等待标记。
+          if (result.messageId === undefined) setAwaiting(sessionId, false)
+          return { ok: true }
+        } catch (error) {
+          setAwaiting(sessionId, false)
+          return { ok: false, code: toError(error).code }
+        }
+      },
+
+      async clearGoal(sessionId) {
+        try {
+          await api.request('goal.clear', { sessionId })
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, code: toError(error).code }
+        }
       },
 
       async searchFiles(scope, query, limit) {

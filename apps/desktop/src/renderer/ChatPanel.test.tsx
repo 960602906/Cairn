@@ -80,6 +80,28 @@ const RUNNING: EventEnvelope[] = [
   state(11, 'completed', 'thinking'),
 ]
 
+/** 一个未结束、刚被判定为“未达成”的目标（显示目标条与面板）。 */
+const GOAL_HISTORY: EventEnvelope[] = [
+  created('修复登录'),
+  runCreated(2),
+  ev(3, 'goal.created', {
+    goalId: 'g1',
+    condition: '测试全部通过',
+    limits: { maxTurns: 20, maxDurationMs: 3_600_000 },
+  }),
+  userMessage(4, 'm1', '测试全部通过'),
+  ev(5, 'turn.started', {}),
+  completed(6, 'm2', '做完了'),
+  ev(7, 'goal.evaluated', {
+    goalId: 'g1',
+    verdict: 'not_met',
+    reason: '还差测试',
+    evidence: [],
+    model: { providerId: 'fake', modelId: 'judge' },
+  }),
+  ev(8, 'turn.completed', { durationMs: 10 }),
+]
+
 function setup({
   history = [] as EventEnvelope[],
   title = '修复登录',
@@ -2539,6 +2561,7 @@ describe('Composer (M2-04)', () => {
       [
         'help',
         'plan',
+        'goal',
         'model',
         'agent',
         'permissions',
@@ -3227,5 +3250,19 @@ describe('delegation cards', () => {
     expect(within(card).getByRole('article', { name: '需要审批：write_file' })).toBeTruthy()
     expect(screen.queryByText('子任务输入')).toBeNull()
     expect(screen.getAllByRole('article', { name: '需要审批：write_file' })).toHaveLength(1)
+  })
+
+  it('shows the goal bar above the composer and opens the goal panel', async () => {
+    const user = userEvent.setup()
+    const { open } = setup({ history: GOAL_HISTORY })
+    await open()
+    expect(screen.getByRole('button', { name: '测试全部通过' })).toBeTruthy()
+    expect(screen.getAllByText('准备继续…').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('button', { name: '测试全部通过' }))
+    const panel = await screen.findByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getByText('测试全部通过')).toBeTruthy()
+    expect(within(panel).getByText('1 / 20 轮')).toBeTruthy()
+    expect(within(panel).getByText('还差测试')).toBeTruthy()
   })
 })
