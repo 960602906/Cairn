@@ -13,6 +13,7 @@ import type { ChangeSetSummary, ProjectSummary, SessionStatus } from '@cairn/pro
 import { BackgroundTasksPanel } from './BackgroundTasksPanel.js'
 import { ChangeSetReview } from './ChangeSetReview.js'
 import { DelegationPanel } from './DelegationPanel.js'
+import { GoalPanel } from './GoalPanel.js'
 import { MemoryPanel } from './MemoryPanel.js'
 import { ChangeCounts } from './DiffCard.js'
 import { SessionChangesPanel } from './FileChanges.js'
@@ -23,7 +24,7 @@ import { useSessionStore } from './store-context.js'
 import { cn, PanelEmpty, SegmentedControl } from './ui/index.js'
 
 export type SessionPanel =
-  'files' | 'background' | 'diff' | 'brief' | 'plan' | 'delegation' | 'memory'
+  'files' | 'background' | 'diff' | 'brief' | 'plan' | 'goal' | 'delegation' | 'memory'
 /** 文件预览标签的标识：`file:` + 相对项目根的路径。 */
 export type FileTabId = `file:${string}`
 /** 标签栏里的一项：固定面板或一个文件。 */
@@ -313,6 +314,13 @@ export const SESSION_PANEL_DEFINITIONS: readonly SessionPanelDefinition[] = [
     label: 'sidePanel.plan',
     addable: false,
     content: PlanPanel,
+  },
+  {
+    id: 'goal',
+    shortLabel: 'sidePanel.goalShort',
+    label: 'sidePanel.goal',
+    addable: false,
+    content: GoalPanel,
   },
   {
     id: 'delegation',

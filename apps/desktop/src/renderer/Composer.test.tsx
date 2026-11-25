@@ -1,17 +1,23 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
-import type { ProviderConfig } from '@cairn/protocol'
+import { createSessionView, reduceSessionEvents } from '@cairn/core'
+import type { EventEnvelope, ProviderConfig } from '@cairn/protocol'
+import { createStore } from 'zustand/vanilla'
 import {
+  Composer,
   enabledModelChoices,
   modelLabels,
   ModelPicker,
   resolveDefaultModel,
   sameModel,
 } from './Composer.js'
+import type { SessionStore } from './session-store.js'
+import { SessionStoreProvider } from './store-context.js'
+import { TooltipProvider } from './ui/index.js'
 
 afterEach(cleanup)
 
@@ -209,5 +215,177 @@ describe('Composer model helpers', () => {
     const trigger = screen.getByRole('button', { name: '模型：未配置模型' }) as HTMLButtonElement
     expect(trigger.disabled).toBe(true)
     expect(trigger.getAttribute('title')).toBeNull()
+  })
+})
+
+describe('Composer /goal', () => {
+  const runLimits = {
+    maxStepsPerTurn: 50,
+    maxTurnDurationMs: 1_800_000,
+    maxConsecutiveToolErrors: 5,
+  }
+  const goalLimits = { maxTurns: 20, maxDurationMs: 3_600_000 }
+  const mainModel = { providerId: 'p1', modelId: 'fast' }
+  const ev = (seq: number, type: string, payload: object, turnId = 't1'): EventEnvelope =>
+    ({ v: 1, sessionId: 's1', runId: 'r1', turnId, ts: seq, seq, type, payload }) as EventEnvelope
+
+  const goalView = (extra: EventEnvelope[] = []) =>
+    reduceSessionEvents(createSessionView('s1'), [
+      ev(1, 'session.created', {
+        projectId: 'p1',
+        projectPath: '/w',
+        workspacePath: '/w',
+        title: 'x',
+      }),
+      ev(2, 'run.created', {
+        agent: { id: 'a', version: 1 },
+        model: mainModel,
+        mode: 'interactive',
+        limits: runLimits,
+      }),
+      ev(3, 'goal.created', { goalId: 'g1', condition: '测试全部通过', limits: goalLimits }),
+      ev(4, 'message.user', {
+        messageId: 'u1',
+        content: [{ type: 'text', text: '测试全部通过' }],
+      }),
+      ...extra,
+    ])
+
+  const activeGoal = () => goalView([ev(5, 'turn.started', {})])
+  const pausedGoal = () =>
+    goalView([ev(5, 'turn.started', {}), ev(6, 'goal.paused', { goalId: 'g1', reason: 'user' })])
+
+  function renderComposer(
+    view = createSessionView('s1'),
+    goalActions: {
+      setGoal?: (sessionId: string, condition: string) => Promise<unknown>
+      pauseGoal?: (sessionId: string) => Promise<unknown>
+      resumeGoal?: (sessionId: string) => Promise<unknown>
+      clearGoal?: (sessionId: string) => Promise<unknown>
+    } = {},
+  ) {
+    const setGoal = goalActions.setGoal ?? vi.fn(async () => ({ ok: true }))
+    const pauseGoal = goalActions.pauseGoal ?? vi.fn(async () => ({ ok: true }))
+    const resumeGoal = goalActions.resumeGoal ?? vi.fn(async () => ({ ok: true }))
+    const clearGoal = goalActions.clearGoal ?? vi.fn(async () => ({ ok: true }))
+    const onOpenPanel = vi.fn()
+    const store = createStore<Record<string, unknown>>(() => ({
+      sendPrompt: vi.fn(async () => true),
+      setSessionModel: vi.fn(async () => true),
+      setSessionThinkingLevel: vi.fn(async () => true),
+      compactSession: vi.fn(async () => undefined),
+      abort: vi.fn(async () => {}),
+      updateSettings: vi.fn(async () => ({ permissionMode: 'ask' })),
+      renameSession: vi.fn(async () => true),
+      setSessionAgent: vi.fn(async () => true),
+      inspectRun: vi.fn(async () => undefined),
+      listSkills: vi.fn(async () => []),
+      delegationTargets: vi.fn(async () => undefined),
+      setGoal,
+      pauseGoal,
+      resumeGoal,
+      clearGoal,
+      inspections: {},
+      settings: { providers, permissionMode: 'ask' },
+      agents: [],
+      projects: [],
+      views: { s1: view },
+      awaitingTurn: {},
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <TooltipProvider>
+          <SessionStoreProvider store={store}>
+            <Composer
+              sessionId="s1"
+              status="idle"
+              run={undefined}
+              agent={undefined}
+              model={mainModel}
+              projectPath="/w"
+              contextTokens={undefined}
+              onOpenPanel={onOpenPanel}
+              onNewChat={vi.fn()}
+              onOpenSettings={vi.fn()}
+              onOpenSearch={vi.fn()}
+            />
+          </SessionStoreProvider>
+        </TooltipProvider>
+      </I18nextProvider>,
+    )
+    return { setGoal, pauseGoal, resumeGoal, clearGoal, onOpenPanel }
+  }
+
+  const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
+
+  it('starts a goal and clears the draft on success', async () => {
+    const user = userEvent.setup()
+    const { setGoal } = renderComposer()
+    await user.type(input(), '/goal 测试全部通过{Enter}')
+    await waitFor(() => expect(setGoal).toHaveBeenCalledWith('s1', '测试全部通过'))
+    await screen.findByText(/已开始目标/)
+    expect(input().value).toBe('')
+  })
+
+  it('keeps the draft and explains when the session already has a goal', async () => {
+    const user = userEvent.setup()
+    renderComposer(activeGoal(), {
+      setGoal: vi.fn(async () => ({ ok: false, code: 'goal.exists' })),
+    })
+    await user.type(input(), '/goal 再来一个{Enter}')
+    await screen.findByText(/已有目标/)
+    expect(input().value).toBe('/goal 再来一个')
+  })
+
+  it('rejects an empty condition without calling the API', async () => {
+    const user = userEvent.setup()
+    const { setGoal } = renderComposer()
+    await user.type(input(), '/goal set{Enter}')
+    await screen.findByText(/请写下可验证的完成条件/)
+    expect(setGoal).not.toHaveBeenCalled()
+    expect(input().value).toBe('/goal set')
+  })
+
+  it('opens the goal panel for /goal status and notices when there is no goal', async () => {
+    const user = userEvent.setup()
+    const { onOpenPanel } = renderComposer(activeGoal())
+    await user.type(input(), '/goal status{Enter}')
+    await waitFor(() => expect(onOpenPanel).toHaveBeenCalledWith('goal'))
+
+    cleanup()
+    renderComposer()
+    await user.type(input(), '/goal status{Enter}')
+    await screen.findByText(/当前会话没有未结束的目标/)
+  })
+
+  it('pauses and clears without clearing the draft', async () => {
+    const user = userEvent.setup()
+    const { pauseGoal, clearGoal } = renderComposer(activeGoal())
+    await user.type(input(), '/goal pause{Enter}')
+    await waitFor(() => expect(pauseGoal).toHaveBeenCalledWith('s1'))
+    expect(input().value).toBe('/goal pause')
+
+    await user.clear(input())
+    await user.type(input(), '/goal clear{Enter}')
+    await waitFor(() => expect(clearGoal).toHaveBeenCalledWith('s1'))
+    expect(input().value).toBe('/goal clear')
+  })
+
+  it('does not resume an active goal', async () => {
+    const user = userEvent.setup()
+    const { resumeGoal } = renderComposer(activeGoal())
+    await user.type(input(), '/goal resume{Enter}')
+    await screen.findByText(/目标正在运行/)
+    expect(resumeGoal).not.toHaveBeenCalled()
+    expect(input().value).toBe('/goal resume')
+  })
+
+  it('resumes a paused goal', async () => {
+    const user = userEvent.setup()
+    const { resumeGoal } = renderComposer(pausedGoal())
+    await user.type(input(), '/goal resume{Enter}')
+    await waitFor(() => expect(resumeGoal).toHaveBeenCalledWith('s1'))
+    await screen.findByText(/目标已恢复/)
+    expect(input().value).toBe('')
   })
 })

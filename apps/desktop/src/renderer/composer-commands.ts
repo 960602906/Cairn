@@ -11,6 +11,7 @@ import type { SettingsSection } from './settings/SettingsPage.js'
 export type ComposerCommandId =
   | 'help'
   | 'plan'
+  | 'goal'
   | 'model'
   | 'agent'
   | 'permissions'
@@ -55,6 +56,7 @@ export interface ComposerCommandDefinition {
 export const COMPOSER_COMMANDS: readonly ComposerCommandDefinition[] = [
   { id: 'help', name: 'help', descriptionKey: 'composer.command.help.hint', args: 'none' },
   { id: 'plan', name: 'plan', descriptionKey: 'composer.command.plan.hint', args: 'text' },
+  { id: 'goal', name: 'goal', descriptionKey: 'composer.command.goal.hint', args: 'text' },
   { id: 'model', name: 'model', descriptionKey: 'composer.command.model.hint', args: 'model' },
   {
     id: 'agent',
@@ -195,6 +197,47 @@ export function parseComposerCommand<T extends { readonly name: string; readonly
 export interface FilterableComposerCommand {
   readonly name: string
   readonly description: string
+}
+
+/**
+ * `/goal` 后面的文字：空是查看状态；恰好是 `status|pause|resume|clear` 是对应的操作；
+ * 恰好是 `set` 表示条件为空的新建；以 `set ` 开头时去掉前缀；其余整段都是完成条件。
+ * 因此“clear the cache”仍然是一个条件，不会被误认成子命令。
+ */
+export type GoalCommandAction =
+  | { readonly action: 'set'; readonly condition: string }
+  | { readonly action: 'status' }
+  | { readonly action: 'pause' }
+  | { readonly action: 'resume' }
+  | { readonly action: 'clear' }
+
+export function parseGoalCommand(args: string): GoalCommandAction {
+  const text = args.trim()
+  if (text === '' || text === 'status') return { action: 'status' }
+  if (text === 'pause') return { action: 'pause' }
+  if (text === 'resume') return { action: 'resume' }
+  if (text === 'clear') return { action: 'clear' }
+  if (text === 'set') return { action: 'set', condition: '' }
+  if (text.startsWith('set ')) return { action: 'set', condition: text.slice('set '.length).trim() }
+  return { action: 'set', condition: text }
+}
+
+/** 目标命令失败时指令提示用的 i18n key；未知错误落到通用提示。 */
+export function goalErrorNoticeKey(code: string): string {
+  switch (code) {
+    case 'goal.exists':
+      return 'composer.command.goal.exists'
+    case 'run.busy':
+      return 'composer.command.goal.busy'
+    case 'goal.plan_pending':
+      return 'composer.command.goal.planPending'
+    case 'goal.not_available':
+      return 'composer.command.goal.unavailable'
+    case 'goal.not_found':
+      return 'composer.command.goal.none'
+    default:
+      return 'composer.command.goal.failed'
+  }
 }
 
 /** 按名称前缀、名称包含、描述包含排序，返回名次；不匹配返回 -1。 */

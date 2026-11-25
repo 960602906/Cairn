@@ -618,6 +618,21 @@ describe('SessionSidePanel', () => {
     expect(await within(panel).findByText('还没有记忆')).toBeTruthy()
   })
 
+  it('registers the goal panel without offering it in the add menu', async () => {
+    const user = userEvent.setup()
+    expect(SESSION_PANELS).toContain('goal')
+    wrap(<Harness initialPanel="home" initialTabs={[]} />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '打开其他面板' }))
+    expect(await screen.findByRole('menuitem', { name: '文件' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: '目标' })).toBeNull()
+  })
+
+  it('renders the goal panel empty state', () => {
+    wrap(<Harness initialPanel="goal" initialTabs={['goal']} />)
+    expect(screen.getByText('还没有目标。')).toBeTruthy()
+  })
+
   it('renders the sub-agent panel for the selected run', () => {
     wrap(
       <Harness

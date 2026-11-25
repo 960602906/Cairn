@@ -231,6 +231,48 @@ describe('agent actions in session store', () => {
   })
 })
 
+describe('goal actions in session store', () => {
+  it('sets, pauses, resumes and clears goals through IPC', async () => {
+    const { api, calls } = fakeApi({
+      'goal.set': () => ({ goalId: 'g1', messageId: 'm1' }),
+      'goal.pause': () => ({}),
+      'goal.resume': () => ({}),
+      'goal.clear': () => ({}),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().setGoal('s1', '测试全部通过')).resolves.toEqual({ ok: true })
+    expect(calls.at(-1)).toEqual(['goal.set', { sessionId: 's1', condition: '测试全部通过' }])
+    await expect(store.getState().pauseGoal('s1')).resolves.toEqual({ ok: true })
+    await expect(store.getState().resumeGoal('s1')).resolves.toEqual({ ok: true })
+    await expect(store.getState().clearGoal('s1')).resolves.toEqual({ ok: true })
+    expect(calls.at(-1)).toEqual(['goal.clear', { sessionId: 's1' }])
+  })
+
+  it('returns the error code without writing a global error', async () => {
+    const { api } = fakeApi({
+      'goal.set': () => {
+        throw new RpcError('goal.exists')
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().setGoal('s1', 'x')).resolves.toEqual({
+      ok: false,
+      code: 'goal.exists',
+    })
+    expect(store.getState().error).toBeUndefined()
+    expect(store.getState().awaitingTurn.s1).toBeUndefined()
+  })
+
+  it('clears awaiting when resume returns no turn (already active or budget exhausted)', async () => {
+    const { api } = fakeApi({
+      'goal.resume': () => ({}),
+    })
+    const store = createSessionStore(api)
+    await store.getState().resumeGoal('s1')
+    expect(store.getState().awaitingTurn.s1).toBeUndefined()
+  })
+})
+
 describe('run inspector in session store', () => {
   it('loads an inspection on demand and caches it by session and run', async () => {
     const result = {

@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import type { SkillSummary } from '@cairn/protocol'
-import { availableCommands, commandPanel, parsePrompt } from './composer-shared.js'
+import {
+  availableCommands,
+  commandPanel,
+  parsePrompt,
+  sessionOnlyCommand,
+} from './composer-shared.js'
 
 const skill = (name: string, enabled = true): SkillSummary => ({
   name,
@@ -114,6 +119,21 @@ describe('availableCommands', () => {
     expect(idle.find((command) => command.id === 'stop')?.unavailable).toBe(
       'composer.command.unavailable.idle',
     )
+  })
+})
+
+describe('sessionOnlyCommand', () => {
+  it('recognizes /goal before a session exists, with or without arguments', () => {
+    expect(sessionOnlyCommand('/goal')).toBe('goal')
+    expect(sessionOnlyCommand('  /goal status ')).toBe('goal')
+    expect(sessionOnlyCommand('/goal 测试全部通过')).toBe('goal')
+  })
+
+  it('leaves other commands, unknown names and plain text alone', () => {
+    expect(sessionOnlyCommand('/plan 做点事')).toBeUndefined()
+    expect(sessionOnlyCommand('/goals')).toBeUndefined()
+    expect(sessionOnlyCommand('先说 /goal')).toBeUndefined()
+    expect(sessionOnlyCommand('')).toBeUndefined()
   })
 })
 
