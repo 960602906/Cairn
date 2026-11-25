@@ -28,8 +28,11 @@ import {
   compactionEventPayload,
   compactConversation,
   coveredSeqRange,
+  buildGoalContinuation,
   createSessionView,
   isActiveRunState,
+  openGoal,
+  proposedPlan,
   rebuildHistory,
   reduceSessionEvents,
   resolveDelegationPolicy,
@@ -37,11 +40,15 @@ import {
   sessionStatus,
   userTurnContent,
   type CompactionBudget,
+  type GoalView,
   type RunView,
   type SessionView,
 } from '@cairn/core'
 import {
+  GOAL_MAX_DURATION_MS_DEFAULT,
+  GOAL_MAX_TURNS_DEFAULT,
   RpcError,
+  type ActiveGoal,
   type ActivePlan,
   type ActiveTaskList,
   type AgentDefinition,
@@ -77,6 +84,14 @@ export const SessionErrorCode = {
   DraftChanged: 'trial.draft_changed',
   /** 只有已归档的会话能彻底删除。 */
   NotArchived: 'session.not_archived',
+  /** 会话已有未结束的目标（ADR-0047）。 */
+  GoalExists: 'goal.exists',
+  /** 没有可暂停 / 恢复 / 清除的目标。 */
+  GoalNotFound: 'goal.not_found',
+  /** 试运行、自动修复或已归档的会话不能使用目标。 */
+  GoalUnavailable: 'goal.not_available',
+  /** 存在待审计划；先批准或取消计划，再设置 / 恢复目标。 */
+  GoalPlanPending: 'goal.plan_pending',
 } as const
 
 /** 新运行使用的配置。 */
@@ -108,6 +123,13 @@ export interface SessionManagerOptions {
   readonly summarize?: (sessionId: string, transcript: string) => Promise<string | undefined>
   /** 这个会话的压缩预算。省略时用一个很大的窗口，手动压缩仍会总结更早的轮次。 */
   readonly contextBudget?: (sessionId: string) => CompactionBudget
+  /**
+   * 恢复一个预算已耗尽的目标时做最终判定（ADR-0047）。由 `GoalService` 提供；
+   * 省略时直接结束为 `budget`，不会留下 active 但没有轮次的目标。
+   */
+  readonly finishGoalBudget?: (sessionId: string) => void | Promise<void>
+  /** 会话被彻底删除：目标服务据此清空内存里的判定状态。 */
+  readonly onSessionDeleted?: (sessionId: string) => void
   readonly createId?: () => string
   readonly now?: () => number
   readonly onError?: (error: unknown) => void
@@ -126,6 +148,22 @@ export interface SessionManager extends SessionCommands {
   readonly archive: Sync<SessionCommands['archive']>
   readonly setModel: Sync<SessionCommands['setModel']>
   readonly setAgent: SessionCommands['setAgent']
+  /** 目标命令（ADR-0047）。 */
+  readonly setGoal: SessionCommands['setGoal']
+  readonly pauseGoal: SessionCommands['pauseGoal']
+  readonly resumeGoal: SessionCommands['resumeGoal']
+  readonly clearGoal: SessionCommands['clearGoal']
+  /** 自动续轮的内部入口：会话忙或目标已不是 active 时返回 undefined，绝不 steer。 */
+  promptGoal(
+    sessionId: string,
+    input: { readonly text: string; readonly goalId: string },
+  ): { messageId: string } | undefined
+  /** 会话空闲、未归档且目标 active 时才能自动续轮。 */
+  canAutoContinue(sessionId: string): boolean
+  /** 当前会话投影里的目标（未结束优先，否则最近结束的那个）。 */
+  goalView(sessionId: string): GoalView | undefined
+  /** 每会话一条串行队列：目标命令、事件处理与判定结果落库共用。 */
+  withGoalLock<T>(sessionId: string, fn: () => T | Promise<T>): Promise<T>
   /** 会话是否正在运行：排队、宿主启动中，或运行处于活动状态（撤销改动前检查，M1-08b）。 */
   isBusy(sessionId: string): boolean
   /** 启动时调用：把仍处于运行中的运行标记为中断，返回标记的运行数。 */
@@ -270,6 +308,26 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     return slot.handle.state() === 'running' && isBusy(sessionId, slot)
   }
 
+  const goalLocks = new Map<string, Promise<unknown>>()
+
+  /**
+   * 每会话一条 promise 链（ADR-0047）。目标命令、`GoalService` 的事件处理、启动扫描与判定结果
+   * 落库共用；锁只覆盖同步的读取、校验与写入，判定模型调用在锁外进行。
+   */
+  function withGoalLock<T>(sessionId: string, fn: () => T | Promise<T>): Promise<T> {
+    const previous = goalLocks.get(sessionId) ?? Promise.resolve()
+    const next = previous.then(fn, fn)
+    const tail = next.then(
+      () => undefined,
+      () => undefined,
+    )
+    goalLocks.set(sessionId, tail)
+    void tail.then(() => {
+      if (goalLocks.get(sessionId) === tail) goalLocks.delete(sessionId)
+    })
+    return next
+  }
+
   function updateIdle(sessionId: string, slot: Slot) {
     if (!slot.handle || slot.handle.state() !== 'running') return
     if (isBusy(sessionId, slot)) {
@@ -325,6 +383,22 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
   }
 
   /**
+   * 目标活动时的当前目标（ADR-0047）。计划轮与暂停 / 结束的目标不传；`turn` 从 1 起，
+   * 由目标已经开始的根轮次推出。
+   */
+  function executionGoal(sessionId: string, mode: PromptMode): ActiveGoal | undefined {
+    if (mode === 'plan') return undefined
+    const goal = openGoal(getView(sessionId))
+    if (!goal || goal.status !== 'active') return undefined
+    return {
+      goalId: goal.goalId,
+      condition: goal.condition,
+      limits: goal.limits,
+      turn: goal.turnIds.length + 1,
+    }
+  }
+
+  /**
    * Agent 定义决定运行用的模型与限额（M3-11）：`mode: 'fixed'` 时忽略会话模型；限额在
    * `runDefaults.limits` 之上覆盖。没有固定模型时用会话模型，再回退到已配置的默认模型；
    * 没有注入 `resolveAgent`（或未发布）时用默认配置。
@@ -352,6 +426,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     updateIdle(sessionId, slot)
     const plan = executionPlan(sessionId, pending.mode)
     const taskLists = executionTaskLists(sessionId, pending.mode)
+    const goal = executionGoal(sessionId, pending.mode)
     handle
       .prompt({
         messageId: pending.messageId,
@@ -359,6 +434,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
         ...(pending.mode === 'plan' ? { mode: 'plan' as const } : {}),
         ...(plan ? { plan } : {}),
         ...(taskLists ? { taskLists } : {}),
+        ...(goal ? { goal } : {}),
       })
       .catch((error: unknown) => {
         onError(error)
@@ -506,8 +582,16 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
    */
   function runPrompt(
     params: PromptParams,
-    flags: { readonly rewind?: boolean } = {},
-  ): { messageId: string } {
+    flags?: { readonly rewind?: 'edit' | 'regenerate' },
+  ): { messageId: string }
+  function runPrompt(
+    params: PromptParams,
+    flags: { readonly goalId: string; readonly rewind?: 'edit' | 'regenerate' },
+  ): { messageId: string } | undefined
+  function runPrompt(
+    params: PromptParams,
+    flags: { readonly rewind?: 'edit' | 'regenerate'; readonly goalId?: string } = {},
+  ): { messageId: string } | undefined {
     const { sessionId, content: typed, mode = 'normal', mentions, skills, agents, context } = params
     if (closed) throw new RpcError(SessionErrorCode.Closed)
     const record = requireSession(sessionId)
@@ -523,6 +607,8 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     if (!activeTurn && sessionBusy(sessionId)) {
       throw new RpcError(SessionErrorCode.Busy, { sessionId })
     }
+    // 自动续轮只排队，绝不 steer 正在运行的一轮（ADR-0047）。
+    if (flags.goalId !== undefined && (activeTurn || sessionBusy(sessionId))) return undefined
     // 没有宿主时仍处于运行中的运行，是上一个宿主崩溃留下的
     if (!running) markInterrupted(sessionId, 'host_lost')
     const view = getView(sessionId)
@@ -546,7 +632,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     const modelChanged =
       !activeTurn && running && next.model !== undefined && !sameModel(next.model, slot!.model)
     // 回退后旧宿主的历史已失效，同样停掉；新宿主启动时从事件日志重建。
-    const restart = modelChanged || flags.rewind === true
+    const restart = modelChanged || flags.rewind !== undefined
     if (restart) void slot?.handle?.stop()
     const hostReady = running && !restart
     const resume = root !== undefined && root.state !== 'disposed' && acceptsInput(root.state)
@@ -555,20 +641,43 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     const history = hostReady ? [] : rebuildHistory(events.readAfter(sessionId, 0), { runId })
 
     const messageId = createId()
-    events.publish([
-      {
-        ...header(sessionId, runId),
-        type: 'message.user',
-        payload: {
-          messageId,
-          content: typed,
-          ...(mentions && mentions.length > 0 ? { mentions } : {}),
-          ...(skills && skills.length > 0 ? { skills } : {}),
-          ...(agents && agents.length > 0 ? { agents } : {}),
-          ...(context !== undefined ? { context } : {}),
-        },
+    const batch: UnsequencedEvent[] = []
+    // 目标与只读计划轮互斥（ADR-0047）：开始计划轮前先暂停，保证计划轮不计入目标轮次。
+    if (mode === 'plan' && !activeTurn) {
+      const goal = openGoal(view)
+      if (goal?.status === 'active') {
+        batch.push({
+          ...header(sessionId, sessionId),
+          type: 'goal.paused',
+          payload: { goalId: goal.goalId, reason: 'plan_mode' },
+        })
+      }
+    }
+    // 回退会在同一同步段暂停仍然活动的目标；重发轮不计入目标预算，也不注入目标。
+    if (flags.rewind !== undefined) {
+      const goal = openGoal(view)
+      if (goal?.status === 'active') {
+        batch.push({
+          ...header(sessionId, sessionId),
+          type: 'goal.paused',
+          payload: { goalId: goal.goalId, reason: 'rewind', detail: flags.rewind },
+        })
+      }
+    }
+    batch.push({
+      ...header(sessionId, runId),
+      type: 'message.user',
+      payload: {
+        messageId,
+        content: typed,
+        ...(flags.goalId !== undefined ? { origin: 'goal' as const, goalId: flags.goalId } : {}),
+        ...(mentions && mentions.length > 0 ? { mentions } : {}),
+        ...(skills && skills.length > 0 ? { skills } : {}),
+        ...(agents && agents.length > 0 ? { agents } : {}),
+        ...(context !== undefined ? { context } : {}),
       },
-    ])
+    })
+    events.publish(batch)
     // 模型看到的是输入加上展开的引用；界面只显示输入本身。
     const content = userTurnContent({ content: typed, context })
 
@@ -614,6 +723,245 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       pump()
     }
     return { messageId }
+  }
+
+  /**
+   * 目标只对普通会话开放（ADR-0047）：试运行与自动修复会话没有 `/goal` 入口；
+   * 已归档的会话要先取消归档。
+   */
+  function requireGoalCapable(sessionId: string): SessionRecord {
+    const record = requireSession(sessionId)
+    if (record.kind !== 'normal' || record.archived) {
+      throw new RpcError(SessionErrorCode.GoalUnavailable, { sessionId })
+    }
+    return record
+  }
+
+  const elapsedMs = (goal: GoalView): number =>
+    goal.activeMs +
+    (goal.status === 'active' && goal.activeSince !== undefined
+      ? Math.max(0, now() - goal.activeSince)
+      : 0)
+
+  const budgetExhausted = (goal: GoalView): boolean =>
+    goal.turnIds.length >= goal.limits.maxTurns || elapsedMs(goal) >= goal.limits.maxDurationMs
+
+  /** 暂停仍活动的目标；已暂停 / 已结束的不重复写（幂等）。 */
+  function pauseActiveGoal(
+    sessionId: string,
+    reason: 'user' | 'turn_failed',
+    detail?: string,
+  ): boolean {
+    const goal = openGoal(getView(sessionId))
+    if (goal?.status !== 'active') return false
+    events.publish([
+      {
+        ...header(sessionId, sessionId),
+        type: 'goal.paused',
+        payload: { goalId: goal.goalId, reason, ...(detail !== undefined ? { detail } : {}) },
+      },
+    ])
+    return true
+  }
+
+  /**
+   * 自动续轮的内部入口（ADR-0047）。会话忙、目标已不是 active 时返回 undefined；
+   * 绝不 steer：只在空闲时排队一轮。调用方负责在自己那一段同步代码里先确认条件。
+   */
+  function promptGoal(
+    sessionId: string,
+    input: { readonly text: string; readonly goalId: string },
+  ): { messageId: string } | undefined {
+    if (closed) return undefined
+    const record = storage.sessions.get(sessionId)
+    if (!record || record.archived) return undefined
+    if (options.isLocked?.(sessionId) || sessionBusy(sessionId)) return undefined
+    const goal = openGoal(getView(sessionId))
+    if (!goal || goal.status !== 'active' || goal.goalId !== input.goalId) return undefined
+    try {
+      return runPrompt(
+        { sessionId, content: [{ type: 'text', text: input.text }] },
+        { goalId: input.goalId },
+      )
+    } catch (error) {
+      onError(error)
+      return undefined
+    }
+  }
+
+  function canAutoContinue(sessionId: string): boolean {
+    if (closed) return false
+    const record = storage.sessions.get(sessionId)
+    if (!record || record.archived) return false
+    if (options.isLocked?.(sessionId) || sessionBusy(sessionId)) return false
+    const view = getView(sessionId)
+    const goal = openGoal(view)
+    if (!goal || goal.status !== 'active') return false
+    const root = rootRun(view)
+    return root === undefined || !isActiveRunState(root.state)
+  }
+
+  function goalView(sessionId: string): GoalView | undefined {
+    const view = getView(sessionId)
+    return view.latestGoalId === undefined ? undefined : view.goals[view.latestGoalId]
+  }
+
+  async function setGoal(
+    params: Parameters<SessionCommands['setGoal']>[0],
+  ): Promise<{ goalId: string; messageId: string }> {
+    const { sessionId, condition } = params
+    return withGoalLock(sessionId, () => {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      requireGoalCapable(sessionId)
+      if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      const view = getView(sessionId)
+      if (openGoal(view) !== undefined) {
+        throw new RpcError(SessionErrorCode.GoalExists, { sessionId })
+      }
+      if (proposedPlan(view) !== undefined) {
+        throw new RpcError(SessionErrorCode.GoalPlanPending, { sessionId })
+      }
+      const goalId = createId()
+      const limits = {
+        maxTurns: params.maxTurns ?? GOAL_MAX_TURNS_DEFAULT,
+        maxDurationMs: params.maxDurationMs ?? GOAL_MAX_DURATION_MS_DEFAULT,
+      }
+      // 检查与开始第一轮之间不放 await：goal.created 一定先于 turn.started 落库。
+      events.publish([
+        {
+          ...header(sessionId, sessionId),
+          type: 'goal.created',
+          payload: { goalId, condition, limits },
+        },
+      ])
+      try {
+        const started = runPrompt({
+          sessionId,
+          content: [{ type: 'text', text: condition }],
+        })
+        if (started === undefined) throw new RpcError(SessionErrorCode.Busy, { sessionId })
+        return { goalId, messageId: started.messageId }
+      } catch (error) {
+        pauseActiveGoal(sessionId, 'turn_failed', 'start_failed')
+        throw error
+      }
+    })
+  }
+
+  async function pauseGoal(params: { readonly sessionId: string }): Promise<Record<string, never>> {
+    const { sessionId } = params
+    return withGoalLock(sessionId, () => {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      requireGoalCapable(sessionId)
+      const goal = openGoal(getView(sessionId))
+      if (goal === undefined) throw new RpcError(SessionErrorCode.GoalNotFound, { sessionId })
+      // 已经暂停时无操作；暂停不中止正在跑的一轮。
+      if (goal.status === 'active') pauseActiveGoal(sessionId, 'user')
+      return {}
+    })
+  }
+
+  async function resumeGoal(params: {
+    readonly sessionId: string
+  }): Promise<{ messageId?: string }> {
+    const { sessionId } = params
+    const outcome = await withGoalLock(sessionId, () => {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      requireGoalCapable(sessionId)
+      const view = getView(sessionId)
+      const goal = openGoal(view)
+      if (goal === undefined) throw new RpcError(SessionErrorCode.GoalNotFound, { sessionId })
+      if (goal.status === 'active') return { kind: 'noop' as const }
+      if (proposedPlan(view) !== undefined) {
+        throw new RpcError(SessionErrorCode.GoalPlanPending, { sessionId })
+      }
+      if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      events.publish([
+        {
+          ...header(sessionId, sessionId),
+          type: 'goal.resumed',
+          payload: { goalId: goal.goalId },
+        },
+      ])
+      // 预算已耗尽：先写 resumed，再在锁外做最终判定（不启动新轮）。
+      if (budgetExhausted(goal)) {
+        return {
+          kind: 'budget' as const,
+          goalId: goal.goalId,
+          turns: goal.turnIds.length,
+          durationMs: elapsedMs(goal),
+        }
+      }
+      const started = promptGoal(sessionId, {
+        goalId: goal.goalId,
+        text: buildGoalContinuation({
+          condition: goal.condition,
+          turn: goal.turnIds.length + 1,
+          maxTurns: goal.limits.maxTurns,
+          resumed: true,
+        }),
+      })
+      if (started === undefined) {
+        pauseActiveGoal(sessionId, 'turn_failed', 'start_failed')
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      return { kind: 'started' as const, messageId: started.messageId }
+    })
+    if (outcome.kind === 'budget') {
+      const finish = options.finishGoalBudget
+      if (finish !== undefined) {
+        void Promise.resolve(finish(sessionId)).catch(onError)
+      } else {
+        events.publish([
+          {
+            ...header(sessionId, sessionId),
+            type: 'goal.ended',
+            payload: {
+              goalId: outcome.goalId,
+              reason: 'budget',
+              turns: outcome.turns,
+              durationMs: outcome.durationMs,
+            },
+          },
+        ])
+      }
+      return {}
+    }
+    return outcome.kind === 'started' ? { messageId: outcome.messageId } : {}
+  }
+
+  async function clearGoal(params: { readonly sessionId: string }): Promise<Record<string, never>> {
+    const { sessionId } = params
+    return withGoalLock(sessionId, () => {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      requireGoalCapable(sessionId)
+      const view = getView(sessionId)
+      const goal = openGoal(view)
+      if (goal === undefined) {
+        // 会话从未有过目标才报 not_found；对已结束的目标幂等成功。
+        if (view.latestGoalId === undefined) {
+          throw new RpcError(SessionErrorCode.GoalNotFound, { sessionId })
+        }
+        return {}
+      }
+      events.publish([
+        {
+          ...header(sessionId, sessionId),
+          type: 'goal.ended',
+          payload: {
+            goalId: goal.goalId,
+            reason: 'user',
+            turns: goal.turnIds.length,
+            durationMs: elapsedMs(goal),
+          },
+        },
+      ])
+      return {}
+    })
   }
 
   const manager: SessionManager = {
@@ -728,6 +1076,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       }
       if (!record.archived) throw new RpcError(SessionErrorCode.NotArchived, { sessionId })
       storage.sessions.remove(sessionId)
+      options.onSessionDeleted?.(sessionId)
       return {}
     },
 
@@ -791,6 +1140,15 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
     prompt: (params) => runPrompt(params),
 
+    setGoal,
+    pauseGoal,
+    resumeGoal,
+    clearGoal,
+    promptGoal,
+    canAutoContinue,
+    goalView,
+    withGoalLock,
+
     editMessage({ sessionId, messageId, content, mentions, skills, agents }) {
       const view = requireRewindable(sessionId)
       const target = view.messages.find((message) => message.messageId === messageId)
@@ -807,7 +1165,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           ...(skills && skills.length > 0 ? { skills } : {}),
           ...(agents && agents.length > 0 ? { agents } : {}),
         },
-        { rewind: true },
+        { rewind: 'edit' },
       )
     },
 
@@ -844,7 +1202,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           ...(agents && agents.length > 0 ? { agents } : {}),
           ...(context !== undefined ? { context } : {}),
         },
-        { rewind: true },
+        { rewind: 'regenerate' },
       )
     },
 
@@ -984,15 +1342,27 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
     async abort({ sessionId }) {
       requireSession(sessionId)
-      // 排队中的输入直接取消（用户消息保留在历史中）
-      if (waiting.delete(sessionId)) return {}
-      const slot = slots.get(sessionId)
-      if (!slot) return {}
-      if (!slot.handle) {
-        slot.cancelled = true
+      // 排队中的输入直接取消（用户消息保留在历史中）；这一轮不会产生 turn.aborted，
+      // 因此要在目标锁内暂停活动目标，避免目标停在“active 但没有轮次”（ADR-0047）。
+      if (waiting.delete(sessionId)) {
+        await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
         return {}
       }
-      if (slot.handle.state() === 'running') await slot.handle.abort('user')
+      const slot = slots.get(sessionId)
+      if (slot && !slot.handle) slot.cancelled = true
+      if (slot?.handle?.state() === 'running') {
+        const root = rootRun(getView(sessionId))
+        const activeTurn = root !== undefined && isActiveRunState(root.state)
+        await slot.handle.abort('user')
+        // 运行中的轮次由 GoalService 监听 turn.aborted(user) 后统一暂停，避免两条暂停事件；
+        // 宿主空闲或正在判定时不会产生轮次事件，这里直接暂停。
+        if (!activeTurn) {
+          await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
+        }
+        return {}
+      }
+      // 宿主还没启动或已经退出：没有轮次事件，直接暂停。
+      await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
       return {}
     },
 

@@ -112,6 +112,75 @@ describe('agent host', () => {
     expect(snapshots[0]!.history.preview.at(-1)).toMatchObject({ role: 'user', text: 'hello' })
   })
 
+  it('injects the goal only into normal turns (ADR-0047)', async () => {
+    const prompts: string[] = []
+    // FakeRuntime 不发模型请求，`setSystemPrompt` 是空实现；这里用 Proxy 收下每轮的系统提示词。
+    const h = setup(
+      { turns: [] },
+      {
+        createRuntime: (ref) => {
+          const fake = new FakeRuntime({
+            turns: [
+              { steps: [{ kind: 'reply', text: 'one' }] },
+              { steps: [{ kind: 'reply', text: 'plan' }] },
+              { steps: [{ kind: 'reply', text: 'after' }] },
+            ],
+          })
+          return {
+            runtime: {
+              id: 'spy',
+              async createSession(sessionInit) {
+                const session = await fake.createSession(sessionInit)
+                return new Proxy(session, {
+                  get(target, prop, receiver) {
+                    if (prop === 'setSystemPrompt') {
+                      return (prompt: string) => prompts.push(prompt)
+                    }
+                    const value = Reflect.get(target, prop, receiver)
+                    return typeof value === 'function' ? value.bind(target) : value
+                  },
+                })
+              },
+            },
+            model: fakeModel(ref),
+          }
+        },
+      },
+    )
+    await h.main.request('host.init', init)
+    const goal = {
+      goalId: 'g1',
+      condition: '测试全部通过',
+      limits: { maxTurns: 20, maxDurationMs: 7_200_000 },
+      turn: 1,
+    }
+    await h.main.request('host.prompt', { messageId: 'm1', content: text('go'), goal })
+    await vi.waitFor(() =>
+      expect(h.events.filter((event) => event.type === 'turn.completed')).toHaveLength(1),
+    )
+    // 主进程不会给计划轮传目标；即使传了，宿主也强制不带。
+    await h.main.request('host.prompt', {
+      messageId: 'm2',
+      content: text('plan'),
+      mode: 'plan',
+      goal,
+    })
+    await vi.waitFor(() =>
+      expect(h.events.filter((event) => event.type === 'turn.completed')).toHaveLength(2),
+    )
+    // 新的一轮没有目标：宿主自然清空，不会沿用上一轮的条件。
+    await h.main.request('host.prompt', { messageId: 'm3', content: text('after') })
+    await vi.waitFor(() =>
+      expect(h.events.filter((event) => event.type === 'turn.completed')).toHaveLength(3),
+    )
+    await vi.waitFor(() => expect(prompts).toHaveLength(3))
+    expect(prompts[0]).toContain('# Goal')
+    expect(prompts[0]).toContain('This is turn 1 of at most 20.')
+    expect(prompts[0]).toContain('测试全部通过')
+    expect(prompts[1]).not.toContain('# Goal')
+    expect(prompts[2]).not.toContain('# Goal')
+  })
+
   it('does not fail a turn when snapshot reporting fails', async () => {
     const h = setup({ turns: [{ steps: [{ kind: 'reply', text: 'ok' }] }] })
     h.main.handle('host.snapshot', () => {

@@ -1518,3 +1518,259 @@ describe('edit and regenerate (ADR-0046)', () => {
     expect(hosts.length).toBeGreaterThan(0)
   })
 })
+
+describe('goal mode (ADR-0047)', () => {
+  const planContent = {
+    goal: '读代码',
+    files: ['a.ts'],
+    steps: [{ id: 'read', title: '读 a.ts' }],
+    risks: '',
+    verification: '单测',
+    markdown: '1. 读 a.ts',
+  }
+
+  async function started(
+    extra: Partial<SessionManagerOptions> = {},
+    limits: { maxTurns?: number; maxDurationMs?: number } = {},
+  ) {
+    const fake = fakeSupervisor()
+    const { manager, onError } = setup(fake.supervisor, extra)
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    const goal = await manager.setGoal({ sessionId, condition: '测试全部通过', ...limits })
+    await flush()
+    return { ...fake, manager, onError, sessionId, goal, host: fake.hosts[0]! }
+  }
+
+  it('creates the goal before the first message and injects it into the turn', async () => {
+    const { manager, sessionId, host, goal } = await started()
+    const created = published.find((event) => event.type === 'goal.created')
+    const user = published.find((event) => event.type === 'message.user')
+    expect(created?.seq).toBeLessThan(user?.seq ?? 0)
+    expect(user).toMatchObject({ payload: { content: text('测试全部通过') } })
+    expect(host.inputs[0]).toMatchObject({
+      goal: {
+        goalId: goal.goalId,
+        condition: '测试全部通过',
+        limits: { maxTurns: 20, maxDurationMs: 7_200_000 },
+        turn: 1,
+      },
+    })
+
+    startTurn(sessionId, host.runId, 't1')
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    expect(manager.goalView(sessionId)).toMatchObject({ status: 'active', turnIds: ['t1'] })
+    await expect(manager.setGoal({ sessionId, condition: '另一个目标' })).rejects.toMatchObject({
+      code: 'goal.exists',
+    })
+  })
+
+  it('rejects goal commands without an open goal and on unsupported sessions', async () => {
+    const { manager } = setup(fakeSupervisor().supervisor)
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    await expect(manager.pauseGoal({ sessionId })).rejects.toMatchObject({
+      code: 'goal.not_found',
+    })
+    await expect(manager.resumeGoal({ sessionId })).rejects.toMatchObject({
+      code: 'goal.not_found',
+    })
+    await expect(manager.clearGoal({ sessionId })).rejects.toMatchObject({
+      code: 'goal.not_found',
+    })
+
+    const projectId = storage.projects.list()[0]!.projectId
+    storage.sessions.create({
+      sessionId: 'trial',
+      projectId,
+      workspacePath: '/work',
+      title: '',
+      kind: 'trial',
+      trialAgentId: 'a',
+      trialDraftHash: 'h',
+    })
+    await expect(
+      manager.setGoal({ sessionId: 'trial', condition: '测试通过' }),
+    ).rejects.toMatchObject({ code: 'goal.not_available' })
+  })
+
+  it('pauses without stopping the running turn, and resume continues with the next turn number', async () => {
+    const { manager, sessionId, host, goal } = await started()
+    startTurn(sessionId, host.runId, 't1')
+    await manager.pauseGoal({ sessionId })
+    await flush()
+    expect(host.abort).not.toHaveBeenCalled()
+    expect(published.find((event) => event.type === 'goal.paused')).toMatchObject({
+      payload: { goalId: goal.goalId, reason: 'user' },
+    })
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    expect(manager.goalView(sessionId)).toMatchObject({ status: 'paused', turnIds: ['t1'] })
+
+    const resumed = await manager.resumeGoal({ sessionId })
+    await flush()
+    expect(resumed.messageId).toBeDefined()
+    const continuation = published.filter((event) => event.type === 'message.user').at(-1)
+    expect(continuation).toMatchObject({
+      payload: { origin: 'goal', goalId: goal.goalId },
+    })
+    expect(continuation?.payload.content?.[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('The goal was paused'),
+    })
+    expect(host.inputs.at(-1)).toMatchObject({ goal: { turn: 2 } })
+
+    // 已经 active 时 resume 不新建轮次。
+    const before = published.filter((event) => event.type === 'message.user').length
+    await expect(manager.resumeGoal({ sessionId })).resolves.toEqual({})
+    expect(published.filter((event) => event.type === 'message.user')).toHaveLength(before)
+  })
+
+  it('ends a budget-exhausted resume without starting another turn', async () => {
+    const finishGoalBudget = vi.fn()
+    const { manager, sessionId, host } = await started({ finishGoalBudget }, { maxTurns: 1 })
+    startTurn(sessionId, host.runId, 't1')
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    await manager.pauseGoal({ sessionId })
+    await flush()
+    const before = published.filter((event) => event.type === 'message.user').length
+    await expect(manager.resumeGoal({ sessionId })).resolves.toEqual({})
+    expect(finishGoalBudget).toHaveBeenCalledWith(sessionId)
+    expect(published.filter((event) => event.type === 'message.user')).toHaveLength(before)
+    expect(published.some((event) => event.type === 'goal.ended')).toBe(false)
+  })
+
+  it('writes budget ended directly when no final judge is wired', async () => {
+    const { manager, sessionId, host } = await started({}, { maxTurns: 1 })
+    startTurn(sessionId, host.runId, 't1')
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    await manager.pauseGoal({ sessionId })
+    await flush()
+    await expect(manager.resumeGoal({ sessionId })).resolves.toEqual({})
+    expect(published.find((event) => event.type === 'goal.ended')).toMatchObject({
+      payload: { reason: 'budget', turns: 1 },
+    })
+  })
+
+  it('pauses the goal before a plan turn and never injects it', async () => {
+    const { manager, sessionId, host } = await started()
+    startTurn(sessionId, host.runId, 't1')
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    manager.prompt({ sessionId, content: text('计划一下'), mode: 'plan' })
+    await flush()
+    const paused = published.find((event) => event.type === 'goal.paused')
+    const planned = published.filter((event) => event.type === 'message.user').at(-1)
+    expect(paused).toMatchObject({ payload: { reason: 'plan_mode' } })
+    expect(paused?.seq).toBeLessThan(planned?.seq ?? 0)
+    expect(host.inputs.at(-1)).not.toHaveProperty('goal')
+    startTurn(sessionId, host.runId, 't2', false)
+    finishTurn(sessionId, host.runId, 't2')
+    await flush()
+    expect(manager.goalView(sessionId)).toMatchObject({
+      status: 'paused',
+      turnIds: ['t1'],
+      pauseReason: 'plan_mode',
+    })
+  })
+
+  it('pauses on a rewind and the resent turn does not carry the goal', async () => {
+    const { manager, sessionId, hosts } = await started()
+    const host = hosts[0]!
+    startTurn(sessionId, host.runId, 't1')
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    // 编辑目标的首条消息会移除目标；这里编辑之后的一条用户消息，目标保留但暂停。
+    const later = manager.prompt({ sessionId, content: text('换个文件先看') })
+    await flush()
+    startTurn(sessionId, host.runId, 't2', false)
+    finishTurn(sessionId, host.runId, 't2')
+    await flush()
+    manager.editMessage({ sessionId, messageId: later.messageId, content: text('改一下') })
+    await flush()
+    await flush()
+    expect(manager.goalView(sessionId)).toMatchObject({
+      status: 'paused',
+      pauseReason: 'rewind',
+      pauseDetail: 'edit',
+    })
+    const resent = hosts.at(-1)!.inputs.at(-1)
+    expect(resent).not.toHaveProperty('goal')
+    expect(
+      published.filter((event) => event.type === 'message.user').at(-1)?.payload,
+    ).not.toHaveProperty('origin')
+  })
+
+  it('never steers a goal continuation into a running turn', async () => {
+    const { manager, sessionId, host, goal } = await started()
+    startTurn(sessionId, host.runId, 't1')
+    const before = published.filter((event) => event.type === 'message.user').length
+    expect(manager.canAutoContinue(sessionId)).toBe(false)
+    expect(manager.promptGoal(sessionId, { text: '继续', goalId: goal.goalId })).toBeUndefined()
+    expect(published.filter((event) => event.type === 'message.user')).toHaveLength(before)
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    expect(manager.canAutoContinue(sessionId)).toBe(true)
+  })
+
+  it('pauses an active goal when the user stops with nothing running', async () => {
+    const { manager, sessionId, host } = await started()
+    startTurn(sessionId, host.runId, 't1')
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    await manager.abort({ sessionId })
+    expect(published.filter((event) => event.type === 'goal.paused')).toMatchObject([
+      { payload: { reason: 'user' } },
+    ])
+  })
+
+  it('rejects set and resume while a plan is pending', async () => {
+    const { manager, sessionId, host } = await started()
+    startTurn(sessionId, host.runId, 't1')
+    hostEmits(sessionId, host.runId, [
+      'plan.proposed',
+      { planId: 'pl1', content: planContent },
+      { turnId: 't1' },
+    ])
+    finishTurn(sessionId, host.runId, 't1')
+    await flush()
+    await manager.pauseGoal({ sessionId })
+    await expect(manager.resumeGoal({ sessionId })).rejects.toMatchObject({
+      code: 'goal.plan_pending',
+    })
+
+    const freshFake = fakeSupervisor()
+    const fresh = setup(freshFake.supervisor).manager
+    const other = fresh.create({ projectPath: '/other' }).sessionId
+    fresh.prompt({ sessionId: other, content: text('计划'), mode: 'plan' })
+    await flush()
+    const otherHost = freshFake.hosts[0]!
+    startTurn(other, otherHost.runId, 't1')
+    hostEmits(other, otherHost.runId, [
+      'plan.proposed',
+      { planId: 'pl2', content: planContent },
+      { turnId: 't1' },
+    ])
+    finishTurn(other, otherHost.runId, 't1')
+    await flush()
+    await expect(fresh.setGoal({ sessionId: other, condition: '测试通过' })).rejects.toMatchObject({
+      code: 'goal.plan_pending',
+    })
+  })
+
+  it('clears the goal and stays idempotent', async () => {
+    const { manager, sessionId } = await started()
+    await expect(manager.clearGoal({ sessionId })).resolves.toEqual({})
+    expect(published.find((event) => event.type === 'goal.ended')).toMatchObject({
+      payload: { reason: 'user', turns: 0 },
+    })
+    await expect(manager.clearGoal({ sessionId })).resolves.toEqual({})
+    await expect(manager.pauseGoal({ sessionId })).rejects.toMatchObject({
+      code: 'goal.not_found',
+    })
+    await expect(manager.resumeGoal({ sessionId })).rejects.toMatchObject({
+      code: 'goal.not_found',
+    })
+  })
+})
