@@ -12,7 +12,7 @@ import {
 
 describe('permissions model', () => {
   it('matches the presets of the permission engine', () => {
-    for (const mode of ['read-only', 'ask', 'auto'] as const) {
+    for (const mode of ['read-only', 'ask', 'auto', 'full-access'] as const) {
       expect(presetRows(mode)).toEqual(presetRules(mode))
     }
   })

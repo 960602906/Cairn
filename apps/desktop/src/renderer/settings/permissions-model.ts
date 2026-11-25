@@ -78,10 +78,21 @@ export function ruleRows(
 }
 
 /**
- * 当前模式的预设（与 `@cairn/core` 的 `presetRules` 一致：只读拒绝、自动放行写入、执行与联网；询问模式没有
- * 预设）。界面不依赖 core，这里只用于显示。
+ * 当前模式的预设（与 `@cairn/core` 的 `presetRules` 一致：只读拒绝、自动放行写入、执行与联网；“询问”模式
+ * 没有预设；“完全访问”一条放行所有调用的规则）。界面不依赖 core，这里只用于显示。
  */
 export function presetRows(mode: PermissionMode): PermissionRule[] {
+  if (mode === 'full-access') {
+    return [
+      {
+        id: 'preset.full-access.all',
+        scope: 'global',
+        effect: 'allow',
+        match: {},
+        source: 'preset',
+      },
+    ]
+  }
   const effect = mode === 'read-only' ? 'deny' : mode === 'auto' ? 'allow' : undefined
   if (!effect) return []
   return (['write', 'execute', 'network'] as const).map((category) => ({

@@ -34,6 +34,6 @@ describe('PermissionRule', () => {
   })
 
   it('PermissionMode', () => {
-    expect(PermissionMode.options).toEqual(['read-only', 'ask', 'auto'])
+    expect(PermissionMode.options).toEqual(['read-only', 'ask', 'auto', 'full-access'])
   })
 })

@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- 权限模式新增“完全访问”：不再询问，危险命令、敏感文件与沙箱不可用时的拦截也会跳过；计划模式仍然
+  只读，沙箱档位与你手动添加的拒绝规则仍然生效。输入框、设置页与 Agent 权限都可以选择（ADR-0048）。
+  Adds a Full access permission mode that never asks, including for dangerous commands, sensitive
+  files and sandbox-unavailable cases. Plan mode stays read-only, the sandbox profile and your own
+  deny rules still apply. Available from the composer, settings and agent permissions.
+
 ### Changed
 
 - 内置技能由示例 `example` 换成 `grill-me`：逐个问题地追问，在写代码前把计划、设计或决策的风险

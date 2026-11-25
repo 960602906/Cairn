@@ -297,6 +297,7 @@ describe('预设', () => {
     ['read-only', 'deny', 'allow'],
     ['ask', 'ask', 'allow'],
     ['auto', 'allow', 'allow'],
+    ['full-access', 'allow', 'allow'],
   ] as const)('%s', (mode, changing, read) => {
     const rules = presetRules(mode)
     for (const r of rules) expect(PermissionRuleSchema.parse(r)).toEqual(r)
@@ -323,6 +324,29 @@ describe('预设', () => {
     expect(decidePermission(req(tools.run, { command: 'npm test' }), readOnly).decision).toBe(
       'deny',
     )
+  })
+
+  it('完全访问只有一条放行所有调用的预设，第三方工具与委派也包括在内', () => {
+    const rules = presetRules('full-access')
+    expect(rules).toEqual([
+      {
+        id: 'preset.full-access.all',
+        scope: 'global',
+        effect: 'allow',
+        match: {},
+        source: 'preset',
+      },
+    ])
+    for (const definition of [tools.write, tools.run, tools.fetch, tools.mcpRead, tools.task]) {
+      expect(decidePermission(req(definition, { command: 'x' }), rules).decision).toBe('allow')
+    }
+    // 用户明确添加的拒绝规则仍然生效
+    expect(
+      decidePermission(req(tools.write, { paths: ['src/a.ts'] }), [
+        ...rules,
+        rule('deny', { tool: 'write_file' }),
+      ]).decision,
+    ).toBe('deny')
   })
 
   it('切换模式替换预设、保留其他规则', () => {

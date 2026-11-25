@@ -494,6 +494,8 @@ const supervisor = createHostSupervisor({
       ? trials.permissionRulesFor(sessionId, agent, rules)
       : agents.permissionRulesFor(agent, rules)
   },
+  // 权限模式（ADR-0048）：宿主只在“完全访问”时跳过强制拦截；规则仍按上面的汇总下发
+  resolvePermissionMode: () => settings.permissionMode(),
   // 自动修复会话（M8-03）：宿主据此注册受控的 git_commit / git_push
   resolveAutoFix: (sessionId) => autoFixRef.service?.contextFor(sessionId),
   commitGit: (sessionId, input) => {

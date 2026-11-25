@@ -155,6 +155,11 @@ export const HostForMain = defineSide({
          * 省略时按“询问”模式的预设判定。
          */
         permissionRules: z.array(PermissionRule).optional(),
+        /**
+         * 当前的权限模式（ADR-0048）。规则已经包含模式的预设；“完全访问”时宿主还据此跳过强制拦截
+         * （计划模式除外）。省略时按“询问”处理，与旧主进程兼容。
+         */
+        permissionMode: PermissionMode.optional(),
         /** 用户的自定义说明（M1-13b，设置中的 `instructions`），加入系统提示词。省略表示没有。 */
         instructions: z.string().min(1).optional(),
         /** 命令执行使用的 shell（M2-09，设置中的 `shell`）。省略时按 `auto`。 */
@@ -244,7 +249,11 @@ export const HostForMain = defineSide({
      * 内容与 `host.init.permissionRules` 相同。
      */
     'host.permissions.update': {
-      params: z.object({ rules: z.array(PermissionRule) }),
+      params: z.object({
+        rules: z.array(PermissionRule),
+        /** 切换权限模式时一并下发（ADR-0048）；省略表示模式不变。 */
+        permissionMode: PermissionMode.optional(),
+      }),
       result: z.object({}),
     },
     /** 心跳：主进程定期请求，超时视为宿主卡死（架构 §21）。 */

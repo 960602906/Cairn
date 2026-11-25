@@ -177,6 +177,11 @@ export interface HostSupervisorOptions {
    * 的预设判定。
    */
   readonly resolvePermissionRules?: (sessionId: string, agent: RunAgentRef) => PermissionRule[]
+  /**
+   * 当前的权限模式（ADR-0048，设置服务）。规则里已经带有模式的预设；宿主另据此决定“完全访问”时是否
+   * 跳过强制拦截。省略时不传，宿主按“询问”处理。
+   */
+  readonly resolvePermissionMode?: () => PermissionMode
   /** 用户的自定义说明（M1-13b，设置服务）；省略或返回 undefined 时不传。 */
   readonly resolveInstructions?: () => string | undefined
   /** 命令执行使用的 shell（M2-09，设置服务）；省略或返回 undefined 时不传（宿主按 `auto`）。 */
@@ -667,6 +672,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         await endpoint.ready
         const modelConfig = options.resolveModelConfig?.(init.model, sessionId)
         const permissionRules = options.resolvePermissionRules?.(sessionId, init.agent)
+        const permissionMode = options.resolvePermissionMode?.()
         const checkpoints = options.resolveCheckpoints?.(sessionId)
         const git = options.resolveGit?.()
         const instructions = options.resolveInstructions?.()
@@ -685,6 +691,7 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
             ...(credential ? { credential: { apiKey: credential.apiKey } } : {}),
             ...(modelConfig ? { modelConfig } : {}),
             ...(permissionRules ? { permissionRules } : {}),
+            ...(permissionMode ? { permissionMode } : {}),
             ...(checkpoints ? { checkpoints } : {}),
             ...(git ? { git: { binary: git.binary, ...(git.env ? { env: git.env } : {}) } } : {}),
             ...(instructions ? { instructions } : {}),
@@ -744,8 +751,10 @@ export function createHostSupervisor(options: HostSupervisorOptions): HostSuperv
         },
         async refreshPermissions() {
           if (state !== 'running' || !options.resolvePermissionRules) return
+          const permissionMode = options.resolvePermissionMode?.()
           await endpoint.request('host.permissions.update', {
             rules: options.resolvePermissionRules(sessionId, init.agent),
+            ...(permissionMode ? { permissionMode } : {}),
           })
         },
         exited,

@@ -204,10 +204,13 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
 }
 
 /**
- * 三种模式的预设规则（架构 §10.3）：范围为 global，来源为 preset。
+ * 各模式的预设规则（架构 §10.3；范围为 global，来源为 preset）。
  *
  * “询问”模式没有预设规则，即按类别默认值（write、execute、network 询问）：如果写成 `ask` 规则，按
  * deny > ask > allow 它会压过审批时生成的 `allow` 规则，“始终允许”就不起作用了（M1-10c 修正）。
+ *
+ * “完全访问”（ADR-0048）放行所有工具与类别，包括第三方工具与委派；强制拦截另由宿主按模式跳过
+ * （计划模式除外），不在这里表达。
  */
 export function presetRules(mode: PermissionMode): PermissionRule[] {
   const rule = (category: ToolCategory, effect: PermissionEffect): PermissionRule => ({
@@ -225,6 +228,17 @@ export function presetRules(mode: PermissionMode): PermissionRule[] {
       return []
     case 'auto':
       return changing.map((c) => rule(c, 'allow'))
+    case 'full-access':
+      return [
+        // 空条件匹配所有调用：写入、执行、联网与第三方工具都不再询问
+        {
+          id: 'preset.full-access.all',
+          scope: 'global',
+          effect: 'allow',
+          match: {},
+          source: 'preset',
+        },
+      ]
   }
 }
 
