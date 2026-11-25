@@ -341,6 +341,303 @@ describe('buildGoalEvidence', () => {
     expect(evidence.refs.map((ref) => ref.ref)).toContain('tool:tc-current')
     expect(evidence.refs.map((ref) => ref.ref)).not.toContain('tool:old0')
   })
+
+  it('summarizes commands, failures, approvals and child results', () => {
+    const ev = stream()
+    const circular: Record<string, unknown> = {}
+    circular.self = circular
+    const longPath = `src/${'a'.repeat(230)}.ts`
+    const events = [
+      ...goalStart(ev),
+      ev('goal.paused', { goalId: 'g1', reason: 'user', detail: 'manual' }),
+      ev('goal.resumed', { goalId: 'g1' }),
+      // 子运行的事件不进入证据，但 target 轮次仍是 t1。
+      ev('turn.started', {}, { turnId: 't1', runId: 'child1', parentRunId: 'r1' }),
+      ev('turn.completed', { durationMs: 1 }, { turnId: 't1', runId: 'child1', parentRunId: 'r1' }),
+      ev(
+        'message.user',
+        { messageId: 'm-child', content: text('子运行') },
+        { turnId: 't1', runId: 'child1', parentRunId: 'r1' },
+      ),
+      ev(
+        'message.user',
+        { messageId: 'm-img', content: [{ type: 'image', blobRef: 'b1', mimeType: 'image/png' }] },
+        { turnId: 't1' },
+      ),
+      ev(
+        'file.changed',
+        { changeId: 'c1', path: longPath, kind: 'delete', revertOf: 'c0' },
+        { turnId: 't1' },
+      ),
+      ev(
+        'checkpoint.restored',
+        { checkpointId: 'cp1', truncateConversation: false },
+        { turnId: 't1' },
+      ),
+      ev(
+        'changeset.created',
+        { changeSetId: 'cs1', childRunId: 'child1', files: 2, added: 3, removed: 1 },
+        { turnId: 't1' },
+      ),
+      ev('changeset.rejected', { changeSetId: 'cs2' }, { turnId: 't1' }),
+      ev('changeset.applied', { changeSetId: 'cs3', paths: [] }, { turnId: 't1' }),
+      ev('changeset.applied', { changeSetId: 'cs4', paths: ['src/b.ts'] }, { turnId: 't1' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'm2', content: text('做完了'), model, incomplete: true },
+        { turnId: 't1' },
+      ),
+      ev(
+        'tool.requested',
+        { toolCallId: 'tc1', name: 'run_command', input: 'pnpm test' },
+        { turnId: 't1' },
+      ),
+      ev('tool.requested', { toolCallId: 'tc2', name: 'todo', input: 42 }, { turnId: 't1' }),
+      ev('tool.requested', { toolCallId: 'tc3', name: 'noop', input: null }, { turnId: 't1' }),
+      ev('tool.requested', { toolCallId: 'tc4', name: 'cycle', input: circular }, { turnId: 't1' }),
+      ev('tool.failed', { toolCallId: 'tc5', error: { code: 'tool.error' } }, { turnId: 't1' }),
+      ev('tool.cancelled', { toolCallId: 'tc6', reason: 'user' }, { turnId: 't1' }),
+      ev(
+        'approval.resolved',
+        { approvalId: 'ap1', decision: 'deny', decidedBy: 'user', feedback: '不要' },
+        { turnId: 't1' },
+      ),
+      ev(
+        'approval.resolved',
+        { approvalId: 'ap2', decision: 'allow_once', decidedBy: 'user' },
+        { turnId: 't1' },
+      ),
+      ev(
+        'command.started',
+        { commandId: 'bg1', command: 'pnpm dev', cwd: '/work' },
+        { turnId: 't1' },
+      ),
+      ev(
+        'command.started',
+        { commandId: 'bg2', command: 'pnpm watch', cwd: '/work' },
+        { turnId: 't1' },
+      ),
+      ev('command.exited', { commandId: 'bg1', status: 'exited', exitCode: 0 }, { turnId: 't1' }),
+      ev('command.stopped', { commandId: 'bg2' }, { turnId: 't1' }),
+      ev(
+        'run.child.completed',
+        { childRunId: 'child2', status: 'failed', summary: '子任务失败' },
+        { turnId: 't1' },
+      ),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't1' }),
+    ]
+    const goal = reducedGoal(events)
+    const evidence = buildGoalEvidence({
+      goal,
+      events: events as readonly PersistedEvent[],
+      turnId: 't1',
+      now: 9_000,
+    })
+    expect(evidence.text).toContain('goal paused: user (manual)')
+    expect(evidence.text).toContain('goal resumed')
+    expect(evidence.text).toContain(`file ${longPath} delete (revert)`)
+    expect(evidence.text).toContain('workspace restored to checkpoint cp1')
+    expect(evidence.text).toContain('change set cs1: 2 files (+3/-1)')
+    expect(evidence.text).toContain('change set rejected: cs2')
+    expect(evidence.text).toContain('change set applied: (no paths)')
+    expect(evidence.text).toContain('change set applied: src/b.ts')
+    expect(evidence.text).toContain('assistant message m2 (incomplete)')
+    expect(evidence.text).toContain('user message m-img: [image]')
+    expect(evidence.text).toContain('tool tc1 run_command input: pnpm test')
+    expect(evidence.text).toContain('tool tc2 todo input: 42')
+    expect(evidence.text).toContain('tool tc3 noop')
+    expect(evidence.text).toContain('tool tc4 cycle')
+    expect(evidence.text).toContain('tool tc5 failed: tool.error')
+    expect(evidence.text).toContain('tool tc6 cancelled: user')
+    expect(evidence.text).toContain('approval approval:ap1 deny: 不要')
+    expect(evidence.text).not.toContain('approval:ap2')
+    expect(evidence.text).toContain('background command bg1 started: pnpm dev')
+    expect(evidence.text).toContain('background command bg1 exited with exit code 0')
+    expect(evidence.text).toContain('background command bg2 stopped')
+    expect(evidence.text).toContain('child run child2 failed: 子任务失败')
+    expect(evidence.text).not.toContain('子运行')
+    expect(evidence.progress).toBe(true)
+    expect(
+      evidence.refs.some((ref) => ref.ref.startsWith('…') && ref.note?.includes('revertOf c0')),
+    ).toBe(true)
+  })
+
+  it('labels failed, aborted and limit-reached turns', () => {
+    const ev = stream()
+    const events = [
+      ev('goal.created', { goalId: 'g1', condition: '测试全部通过', limits }),
+      ev('message.user', { messageId: 'm0', content: text('修好测试') }),
+      ev('turn.started', {}, { turnId: 't1' }),
+      ev('turn.failed', { error: { code: 'provider.error' }, retryable: false }, { turnId: 't1' }),
+      ev('message.user', { messageId: 'm1', content: text('再试一次') }),
+      ev('turn.started', {}, { turnId: 't2' }),
+      ev('turn.aborted', { reason: 'user' }, { turnId: 't2' }),
+      ev('message.user', { messageId: 'm2', content: text('继续') }),
+      ev('turn.started', {}, { turnId: 't3' }),
+      ev('turn.limit_reached', { limit: 'maxStepsPerTurn', value: 10 }, { turnId: 't3' }),
+      ev('message.user', { messageId: 'm3', content: text('继续'), origin: 'goal', goalId: 'g1' }),
+      ev('turn.started', {}, { turnId: 't4' }),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't4' }),
+      // 没有用户消息直接开始的一轮：起点消息为空。
+      ev('turn.started', {}, { turnId: 't5' }),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't5' }),
+    ]
+    const goal = reducedGoal(events)
+    const build = (turnId: string) =>
+      buildGoalEvidence({
+        goal,
+        events: events as readonly PersistedEvent[],
+        turnId,
+        now: 9_000,
+      })
+    expect(build('t1').text).toContain('turn failed: provider.error')
+    expect(build('t2').text).toContain('turn aborted: user')
+    expect(build('t3').text).toContain('turn limit reached: maxStepsPerTurn')
+    expect(build('t4').text).toContain('turn completed')
+    expect(build('t4').continued).toBe(true)
+    expect(build('t5').text).toContain('This is turn 5 of 20')
+    expect(build('t5').continued).toBe(false)
+  })
+
+  it('includes earlier verdicts and drops the verdict of the judged turn', () => {
+    const ev = stream()
+    const events = [
+      ev('goal.created', { goalId: 'g1', condition: '测试全部通过', limits }),
+      ev('message.user', { messageId: 'm0', content: text('修好测试') }),
+      ev('turn.started', {}, { turnId: 't1' }),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't1' }),
+      ev(
+        'goal.evaluated',
+        { goalId: 'g1', verdict: 'not_met', reason: '还缺测试', model },
+        { turnId: 't1' },
+      ),
+      ev('message.user', { messageId: 'm1', content: text('继续'), origin: 'goal', goalId: 'g1' }),
+      ev('turn.started', {}, { turnId: 't2' }),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't2' }),
+    ]
+    const goal = reducedGoal(events)
+    const first = buildGoalEvidence({
+      goal,
+      events: events as readonly PersistedEvent[],
+      turnId: 't1',
+      now: 9_000,
+    })
+    expect(first.text).toContain('This turn already has a verdict: not_met')
+    expect(first.text).not.toContain('previous verdict judge:1')
+    const second = buildGoalEvidence({
+      goal,
+      events: events as readonly PersistedEvent[],
+      turnId: 't2',
+      now: 9_000,
+    })
+    expect(second.text).toContain('This is turn 2 of 20')
+    expect(second.text).toContain('previous verdict judge:1 not_met: 还缺测试')
+    expect(second.refs.map((ref) => ref.ref)).toContain('judge:1')
+  })
+
+  it('covers paused-period commands, child events and empty messages', () => {
+    const ev = stream()
+    const events = [
+      ...goalStart(ev),
+      ev('message.user', { messageId: 'empty', content: [] }, { turnId: 't1' }),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'empty-a', content: [], model },
+        { turnId: 't1' },
+      ),
+      ev(
+        'message.assistant.completed',
+        { messageId: 'long', content: text('z'.repeat(2_100)), model },
+        { turnId: 't1' },
+      ),
+      ev(
+        'tool.completed',
+        {
+          toolCallId: 'tc-timeout',
+          output: text('partial'),
+          durationMs: 5,
+          display: {
+            kind: 'terminal',
+            exitCode: null,
+            timedOut: true,
+            aborted: true,
+            durationMs: 5,
+            shell: 'bash',
+            cwd: '/work',
+            chunks: [],
+            omittedChars: 0,
+          },
+        },
+        { turnId: 't1' },
+      ),
+      ev('tool.completed', { toolCallId: 'tc-empty', output: [], durationMs: 1 }, { turnId: 't1' }),
+      ev('goal.paused', { goalId: 'another-goal', reason: 'user' }, { turnId: 't1' }),
+      ev(
+        'command.started',
+        { commandId: 'bg0', command: 'pnpm test', cwd: '/work' },
+        { turnId: 't1' },
+      ),
+      ev('command.exited', { commandId: 'bg0', status: 'failed', exitCode: 1 }, { turnId: 't1' }),
+      ev(
+        'command.started',
+        { commandId: 'bg1', command: 'pnpm dev', cwd: '/work' },
+        { turnId: 't1' },
+      ),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't1' }),
+      // 暂停期间退出的后台命令不属于目标活动窗口。
+      ev('goal.paused', { goalId: 'g1', reason: 'user' }),
+      ev('command.exited', { commandId: 'bg1', status: 'exited', exitCode: 0 }, { turnId: 't1' }),
+      ev('goal.resumed', { goalId: 'g1' }),
+      ev('message.user', { messageId: 'm1', content: text('继续'), origin: 'goal', goalId: 'g1' }),
+      ev('turn.started', {}, { turnId: 't2' }),
+      ev(
+        'command.exited',
+        { commandId: 'bg0', status: 'exited', exitCode: 0 },
+        { turnId: 't1', runId: 'child', parentRunId: 'r1' },
+      ),
+      ev(
+        'run.child.completed',
+        { childRunId: 'child1', status: 'completed' },
+        { turnId: 't1', runId: 'child', parentRunId: 'r1' },
+      ),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't2' }),
+    ]
+    const goal = reducedGoal(events)
+    const evidence = buildGoalEvidence({
+      goal,
+      events: events as readonly PersistedEvent[],
+      turnId: 't2',
+      now: 9_000,
+    })
+    expect(evidence.text).toContain('tool tc-timeout completed: exit signal (timed out) (aborted)')
+    expect(evidence.text).toContain('tool tc-empty completed')
+    expect(evidence.text).toContain('background command bg0 started: pnpm test')
+    expect(evidence.text).toContain('background command bg0 failed with exit code 1')
+    expect(evidence.text).not.toContain('background command bg1 exited')
+    expect(evidence.text).not.toContain('another-goal')
+    expect(evidence.text).toContain('[truncated]')
+    // 失败的后台命令不算进展；t1 的改动/成功命令也不能算到 t2 的判定窗口里。
+    expect(evidence.progress).toBe(false)
+  })
+
+  it('handles a judged turn that is no longer in the goal', () => {
+    const ev = stream()
+    const events = [
+      ...goalStart(ev),
+      ev('file.changed', { changeId: 'c1', path: 'src/a.ts', kind: 'modify' }, { turnId: 't1' }),
+      ev('turn.completed', { durationMs: 10 }, { turnId: 't1' }),
+    ]
+    const goal = reducedGoal(events)
+    const evidence = buildGoalEvidence({
+      goal,
+      events: events as readonly PersistedEvent[],
+      turnId: 'missing',
+      now: 9_000,
+    })
+    expect(evidence.text).toContain('This is turn ? of 20')
+    expect(evidence.text).toContain('file src/a.ts modify')
+    expect(evidence.refs.map((ref) => ref.ref)).toContain('file:src/a.ts')
+  })
 })
 
 describe('parseGoalEvaluation', () => {
@@ -400,6 +697,16 @@ describe('parseGoalEvaluation', () => {
       parseGoalEvaluation(JSON.stringify({ verdict: 'done', reason: 'x' }), refs),
     ).toBeUndefined()
   })
+
+  it('handles escaped quotes and rejects an unterminated object', () => {
+    expect(
+      parseGoalEvaluation(
+        'Verdict: {"verdict":"not_met","reason":"需要先跑 \\"pnpm test\\" 和 C:\\\\work"}',
+        refs,
+      ),
+    ).toMatchObject({ verdict: 'not_met', reason: '需要先跑 "pnpm test" 和 C:\\work' })
+    expect(parseGoalEvaluation('{"verdict":"not_met","reason":"没有结尾"', refs)).toBeUndefined()
+  })
 })
 
 describe('buildGoalContinuation', () => {
@@ -426,5 +733,28 @@ describe('buildGoalContinuation', () => {
     expect(message).toContain('The goal was paused before it could be evaluated.')
     expect(message).toContain('[truncated]')
     expect(message).not.toContain('x'.repeat(501))
+  })
+
+  it('marks a resumed goal with the previous judge reason', () => {
+    const message = buildGoalContinuation({
+      condition: '测试通过',
+      reason: '上一轮还没有跑测试',
+      turn: 3,
+      maxTurns: 20,
+      resumed: true,
+    })
+    expect(message).toContain('The goal was paused. Continue working toward it.')
+    expect(message).toContain('上一轮还没有跑测试')
+  })
+
+  it('truncates a long judge reason', () => {
+    const message = buildGoalContinuation({
+      condition: '测试通过',
+      reason: 'y'.repeat(1_200),
+      turn: 2,
+      maxTurns: 20,
+    })
+    expect(message).toContain('[truncated]')
+    expect(message).not.toContain('y'.repeat(985))
   })
 })
