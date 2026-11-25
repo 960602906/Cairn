@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COMPOSER_COMMANDS,
   composerCommandQuery,
   filterComposerCommands,
+  goalErrorNoticeKey,
   matchCommandArg,
   parseComposerCommand,
+  parseGoalCommand,
 } from './composer-commands.js'
 
 describe('composerCommandQuery', () => {
@@ -78,6 +81,53 @@ describe('parseComposerCommand', () => {
     expect(parseComposerCommand('/files 在哪', commands)).toBeUndefined()
     expect(parseComposerCommand('先 /plan', commands)).toBeUndefined()
     expect(parseComposerCommand('', commands)).toBeUndefined()
+  })
+})
+
+describe('parseGoalCommand (ADR-0047)', () => {
+  it('opens status without arguments and recognizes the control words exactly', () => {
+    expect(parseGoalCommand('')).toEqual({ action: 'status' })
+    expect(parseGoalCommand('  status ')).toEqual({ action: 'status' })
+    expect(parseGoalCommand('pause')).toEqual({ action: 'pause' })
+    expect(parseGoalCommand('resume')).toEqual({ action: 'resume' })
+    expect(parseGoalCommand('clear')).toEqual({ action: 'clear' })
+  })
+
+  it('treats `set` as an empty condition and strips the prefix only for `set `', () => {
+    expect(parseGoalCommand('set')).toEqual({ action: 'set', condition: '' })
+    expect(parseGoalCommand('set   测试全部通过 ')).toEqual({
+      action: 'set',
+      condition: '测试全部通过',
+    })
+    expect(parseGoalCommand('set\n第二行')).toEqual({ action: 'set', condition: 'set\n第二行' })
+  })
+
+  it('keeps other text as the condition, including words that look like controls', () => {
+    expect(parseGoalCommand('测试全部通过')).toEqual({ action: 'set', condition: '测试全部通过' })
+    expect(parseGoalCommand('clear the cache')).toEqual({
+      action: 'set',
+      condition: 'clear the cache',
+    })
+    expect(parseGoalCommand('Clear')).toEqual({ action: 'set', condition: 'Clear' })
+    expect(parseGoalCommand('resume the migration')).toEqual({
+      action: 'set',
+      condition: 'resume the migration',
+    })
+  })
+
+  it('registers /goal with a text argument and maps failures to notices', () => {
+    const goal = COMPOSER_COMMANDS.find((command) => command.id === 'goal')
+    expect(goal).toMatchObject({
+      name: 'goal',
+      args: 'text',
+      descriptionKey: 'composer.command.goal.hint',
+    })
+    expect(goalErrorNoticeKey('goal.exists')).toBe('composer.command.goal.exists')
+    expect(goalErrorNoticeKey('run.busy')).toBe('composer.command.goal.busy')
+    expect(goalErrorNoticeKey('goal.plan_pending')).toBe('composer.command.goal.planPending')
+    expect(goalErrorNoticeKey('goal.not_available')).toBe('composer.command.goal.unavailable')
+    expect(goalErrorNoticeKey('goal.not_found')).toBe('composer.command.goal.none')
+    expect(goalErrorNoticeKey('storage.not_found')).toBe('composer.command.goal.failed')
   })
 })
 

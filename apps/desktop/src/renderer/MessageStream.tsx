@@ -20,10 +20,12 @@ import {
   Bot,
   Check,
   ChevronRight,
+  CircleCheck,
   Copy,
   Lightbulb,
   Pencil,
   RefreshCw,
+  Target,
   TriangleAlert,
 } from 'lucide-react'
 import {
@@ -41,6 +43,7 @@ import {
   rootRun,
   type AssistantMessageView,
   type DelegationView,
+  type GoalView,
   type LiveMessageView,
   type MessageView,
   type PlanView,
@@ -66,6 +69,7 @@ import { COMPOSER_COMMANDS } from './composer-commands.js'
 import { extractAgents, parseMention, tokenize } from './composer-tokens.js'
 import { FileTypeIcon } from './file-icons.js'
 import { TurnChanges } from './FileChanges.js'
+import { formatGoalDuration } from './GoalBar.js'
 import { DelegationCard } from './DelegationCard.js'
 import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
@@ -519,6 +523,104 @@ const textOf = (parts: readonly ContentPart[]) =>
   parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n\n')
 
 /**
+ * 自动续轮消息（ADR-0047）：不显示成用户气泡，也不提供编辑 / 重新生成。
+ * 默认只显示“目标继续”和触发它的判定理由；展开后是完整消息（条件与理由），长文本可滚动。
+ */
+function GoalContinuationRow({
+  message,
+  view,
+}: {
+  readonly message: UserMessageView
+  readonly view: SessionView
+}) {
+  const { t } = useTranslation('session')
+  const [open, setOpen] = useState(false)
+  const goal = message.goalId === undefined ? undefined : view.goals[message.goalId]
+  const reason = goal?.evaluations.filter((item) => item.seq < message.seq).at(-1)?.reason
+  return (
+    <div className="w-full self-stretch rounded-card border-[0.5px] border-hair bg-sunk px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <CairnMark size={16} className="shrink-0 text-accent" />
+        <span className="shrink-0 text-note font-medium text-fg2">
+          {t('goal.continuation.label')}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-note text-muted" title={reason}>
+          {reason ?? t('goal.continuation.fallback')}
+        </span>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={t(open ? 'goal.continuation.collapse' : 'goal.continuation.expand')}
+          onClick={() => setOpen((value) => !value)}
+          className="grid size-6 shrink-0 place-items-center rounded-[5px] text-muted outline-none hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          <ChevronRight
+            aria-hidden
+            className={cn('size-3.5 transition-transform', open && 'rotate-90')}
+          />
+        </button>
+      </div>
+      {open && (
+        <p className="mt-2 max-h-60 overflow-y-auto rounded-item bg-raise px-2.5 py-2 text-note whitespace-pre-wrap break-words text-fg2">
+          {textOf(message.content)}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** 目标结束卡：挂在结束那一轮的消息后面，只在有 `endedTurnId` 时显示。 */
+function GoalEndedCard({
+  goal,
+  onOpen,
+}: {
+  readonly goal: GoalView
+  readonly onOpen?: (() => void) | undefined
+}) {
+  const { t } = useTranslation('session')
+  const met = goal.endReason === 'met'
+  const ended = goal.lifecycle.find((item) => item.kind === 'ended')
+  return (
+    <section
+      aria-label={t('goal.endedCard.label')}
+      data-goal={goal.goalId}
+      className={cn(
+        'flex flex-col gap-1.5 rounded-card border-[0.5px] px-3.5 py-3',
+        met ? 'border-ok/40 bg-ok-soft' : 'border-hair bg-sunk',
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        {met ? (
+          <CircleCheck aria-hidden className="size-4 shrink-0 text-ok" />
+        ) : (
+          <Target aria-hidden className="size-4 shrink-0 text-warn" />
+        )}
+        <span className="min-w-0 flex-1 truncate text-note font-medium text-fg">
+          {t(`goal.end.${goal.endReason ?? 'user'}`)}
+        </span>
+        <span className="shrink-0 text-[11px] text-muted">
+          {t('goal.panel.endedSummary', {
+            turns: ended?.turns ?? goal.turnIds.length,
+            duration: formatGoalDuration(ended?.durationMs ?? goal.activeMs),
+          })}
+        </span>
+      </div>
+      <p className="line-clamp-2 text-note text-fg2" title={goal.condition}>
+        {goal.condition}
+      </p>
+      {goal.endDetail !== undefined && goal.endDetail !== '' && (
+        <p className="text-note whitespace-pre-wrap break-words text-muted">{goal.endDetail}</p>
+      )}
+      {onOpen !== undefined && (
+        <Button size="sm" variant="ghost" className="self-start" onClick={onOpen}>
+          {t('goal.endedCard.open')}
+        </Button>
+      )}
+    </section>
+  )
+}
+
+/**
  * 回退对话的确认框（编辑重发 / 重新生成共用）：说明会丢掉这一轮之后的对话，
  * 并明确工作区文件不会自动撤销（撤销文件仍走轮次操作里的“撤销本轮”）。
  */
@@ -911,14 +1013,18 @@ function Message({
       >
         {marks}
         <strong className="sr-only">{t('message.user')}</strong>
-        <UserMessage
-          message={message}
-          view={view}
-          canEdit={canEdit}
-          turnNumber={turnNumber}
-          turnCount={turnCount}
-          onOpenFile={onOpenFile}
-        />
+        {message.origin === 'goal' ? (
+          <GoalContinuationRow message={message} view={view} />
+        ) : (
+          <UserMessage
+            message={message}
+            view={view}
+            canEdit={canEdit}
+            turnNumber={turnNumber}
+            turnCount={turnCount}
+            onOpenFile={onOpenFile}
+          />
+        )}
         {restores && (
           <div className="self-stretch">
             <RestoreMarks view={view} restores={restores} />
@@ -1291,10 +1397,13 @@ export function MessageStream({
   onContinue,
   onOpenFile,
   onOpenRun,
+  onOpenGoal,
 }: {
   readonly view: SessionView | undefined
   readonly onOpenPlan?: ((planId: string) => void) | undefined
   readonly onOpenChanges?: ((changeSetId?: string) => void) | undefined
+  /** 点击目标结束卡的“查看目标”：在右侧工作台打开目标面板。 */
+  readonly onOpenGoal?: (() => void) | undefined
   /** 点击委派卡片：在右侧工作台打开子 Agent 详情。 */
   readonly onOpenRun?: ((runId: string) => void) | undefined
   /** 审批状态所属的会话；省略时使用当前选中的会话。 */
@@ -1470,6 +1579,18 @@ export function MessageStream({
     }
     return map
   }, [view?.delegations])
+  /** 结束了、且有可挂靠轮次的目标：在该轮消息后插入结果卡。 */
+  const endedGoalsByTurn = useMemo(() => {
+    const map = new Map<string, GoalView[]>()
+    for (const goalId of view?.goalOrder ?? []) {
+      const goal = view?.goals[goalId]
+      if (goal?.status !== 'ended' || goal.endedTurnId === undefined) continue
+      const list = map.get(goal.endedTurnId) ?? []
+      list.push(goal)
+      map.set(goal.endedTurnId, list)
+    }
+    return map
+  }, [view?.goalOrder, view?.goals])
   // 没有落到任何一轮消息末尾的委派：还没有轮次归属、本轮的完成消息尚未到达（只有 live 消息），
   // 或者这一轮没有可挂靠的消息。它们排在流末尾，保证运行中的子 Agent 也能看到。
   const turnsWithMessages = useMemo(
@@ -1561,6 +1682,13 @@ export function MessageStream({
                         onOpenChanges={openChanges}
                         {...(onOpenRun === undefined ? {} : { onOpenRun })}
                       />
+                    </li>
+                  ))}
+                {lastOfTurn &&
+                  message.turnId !== undefined &&
+                  (endedGoalsByTurn.get(message.turnId) ?? []).map((goal) => (
+                    <li key={`goal-${goal.goalId}`} className="list-none">
+                      <GoalEndedCard goal={goal} onOpen={onOpenGoal} />
                     </li>
                   ))}
               </Fragment>
@@ -1692,6 +1820,13 @@ export function MessageStream({
                       onOpenChanges={openChanges}
                       {...(onOpenRun === undefined ? {} : { onOpenRun })}
                     />
+                  </li>
+                ))}
+              {lastOfTurn &&
+                lastMsg.turnId !== undefined &&
+                (endedGoalsByTurn.get(lastMsg.turnId) ?? []).map((goal) => (
+                  <li key={`goal-${goal.goalId}`} className="list-none">
+                    <GoalEndedCard goal={goal} onOpen={onOpenGoal} />
                   </li>
                 ))}
             </Fragment>

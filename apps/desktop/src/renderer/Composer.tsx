@@ -39,8 +39,9 @@ import {
   type SetStateAction,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { RunView, SessionView } from '@cairn/core'
+import { openGoal, type RunView, type SessionView } from '@cairn/core'
 import { translateError } from '@cairn/i18n'
+import { GOAL_CONDITION_MAX } from '@cairn/protocol'
 import type {
   AgentDefinitionRef,
   ModelRef,
@@ -50,7 +51,13 @@ import type {
   SessionStatus,
   SkillSummary,
 } from '@cairn/protocol'
-import { matchCommandArg, parseComposerCommand, SETTINGS_SECTIONS } from './composer-commands.js'
+import {
+  goalErrorNoticeKey,
+  matchCommandArg,
+  parseComposerCommand,
+  parseGoalCommand,
+  SETTINGS_SECTIONS,
+} from './composer-commands.js'
 import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
 import { readComposerDraft, sessionDraftKey, writeComposerDraft } from './composer-drafts.js'
 import {
@@ -554,6 +561,10 @@ export function Composer({
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const renameSession = useSessionStore((s) => s.renameSession)
   const setSessionAgent = useSessionStore((s) => s.setSessionAgent)
+  const setGoal = useSessionStore((s) => s.setGoal)
+  const pauseGoal = useSessionStore((s) => s.pauseGoal)
+  const resumeGoal = useSessionStore((s) => s.resumeGoal)
+  const clearGoal = useSessionStore((s) => s.clearGoal)
   const permissionMode =
     useSessionStore((s) => s.settings?.permissionMode) ?? DEFAULT_PERMISSION_MODE
   const agents = useSessionStore((s) => s.agents) ?? []
@@ -852,6 +863,93 @@ export function Composer({
           if (!sent) restore()
         }
         break
+      case 'goal': {
+        const action = parseGoalCommand(args)
+        const current = view === undefined ? undefined : openGoal(view)
+        if (action.action === 'status') {
+          if (current === undefined) {
+            restore()
+            showNotice('composer.command.goal.none', 'muted', 'goal')
+          } else if (onOpenPanel !== undefined) {
+            onOpenPanel('goal')
+            keepFocus = false
+          } else {
+            restore()
+            showNotice('composer.command.goal.none', 'muted', 'goal')
+          }
+          break
+        }
+        if (action.action === 'pause') {
+          // 暂停 / 清除不清空草稿：用户往往还要接着用 `/goal` 查看或恢复。
+          restore()
+          if (current === undefined) {
+            showNotice('composer.command.goal.none', 'muted', 'goal')
+            break
+          }
+          const outcome = await pauseGoal(sessionId)
+          showNotice(
+            outcome.ok ? 'composer.command.goal.paused' : goalErrorNoticeKey(outcome.code),
+            outcome.ok ? 'ok' : 'muted',
+            'goal',
+          )
+          break
+        }
+        if (action.action === 'clear') {
+          restore()
+          if (current === undefined) {
+            showNotice('composer.command.goal.none', 'muted', 'goal')
+            break
+          }
+          const outcome = await clearGoal(sessionId)
+          showNotice(
+            outcome.ok ? 'composer.command.goal.cleared' : goalErrorNoticeKey(outcome.code),
+            outcome.ok ? 'ok' : 'muted',
+            'goal',
+          )
+          break
+        }
+        if (action.action === 'resume') {
+          if (current === undefined) {
+            restore()
+            showNotice('composer.command.goal.none', 'muted', 'goal')
+            break
+          }
+          if (current.status === 'active') {
+            restore()
+            showNotice('composer.command.goal.active', 'muted', 'goal')
+            break
+          }
+          const outcome = await resumeGoal(sessionId)
+          if (outcome.ok) showNotice('composer.command.goal.resumed', 'ok', 'goal')
+          else {
+            restore()
+            showNotice(goalErrorNoticeKey(outcome.code), 'muted', 'goal')
+          }
+          break
+        }
+        const condition = action.condition.trim()
+        if (condition === '') {
+          restore()
+          showNotice('composer.command.goal.empty', 'muted', 'goal')
+          break
+        }
+        if (condition.length > GOAL_CONDITION_MAX) {
+          restore()
+          showNotice('composer.command.goal.tooLong', 'muted', 'goal', {
+            max: String(GOAL_CONDITION_MAX),
+          })
+          break
+        }
+        const outcome = await setGoal(sessionId, condition)
+        if (outcome.ok) {
+          setPlanMode(false)
+          showNotice('composer.command.goal.started', 'ok', 'goal')
+        } else {
+          restore()
+          showNotice(goalErrorNoticeKey(outcome.code), 'muted', 'goal')
+        }
+        break
+      }
       case 'model': {
         const choice =
           args === ''

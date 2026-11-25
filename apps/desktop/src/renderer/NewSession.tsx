@@ -43,6 +43,7 @@ import {
   commandPanel,
   insertMention,
   parsePrompt,
+  sessionOnlyCommand,
   type AvailableComposerCommand,
   type ParsedPrompt,
 } from './composer-shared.js'
@@ -140,6 +141,8 @@ export function NewSession({
   const [commandIndex, setCommandIndex] = useState(0)
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  /** 输入了只有会话内才能用的 `/goal`：提示先创建会话，不发送。 */
+  const [sessionOnlyNotice, setSessionOnlyNotice] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const box = useRef<HTMLDivElement>(null)
   const projectId = projects.find((project) => project.path === projectPath.trim())?.projectId
@@ -328,6 +331,12 @@ export function NewSession({
   }
 
   const send = async () => {
+    // `/goal` 要用会话里的目标，新会话还没创建：提示而不是把命令当普通消息发给模型。
+    if (sessionOnlyCommand(text) !== undefined) {
+      setSessionOnlyNotice(true)
+      return
+    }
+    setSessionOnlyNotice(false)
     const parsed = parsePrompt(text, commands, planMode)
     // `/plan` 单独出现只切换计划模式，`/技能名` 单独出现只补全，都不创建会话。
     if (parsed.toggleOnly) {
@@ -464,6 +473,11 @@ export function NewSession({
       </div>
 
       <div className="mx-auto w-full max-w-[880px] shrink-0 px-5 pb-4 min-[1200px]:px-8">
+        {sessionOnlyNotice && (
+          <p role="status" className="px-1 pb-2 text-note text-muted">
+            {t('composer.command.goal.needsSession')}
+          </p>
+        )}
         <WorkspaceGitBar
           projectPath={projectPath === '' ? undefined : projectPath}
           projects={projects}
@@ -513,6 +527,7 @@ export function NewSession({
                 onChange={(e) => {
                   const next = e.target.value
                   setText(next)
+                  if (sessionOnlyNotice) setSessionOnlyNotice(false)
                   // 用户可能在空闲加载前就输入 `/`：立即补一次（store 会复用进行中的请求）。
                   if (next.trimStart().startsWith('/')) requestSkills()
                 }}

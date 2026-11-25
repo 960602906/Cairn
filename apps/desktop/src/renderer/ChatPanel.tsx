@@ -8,7 +8,7 @@
 import { ArrowDown, FileDiff, PanelRight } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { progressTaskList, proposedPlan, rootRun, sessionStatus } from '@cairn/core'
+import { openGoal, progressTaskList, proposedPlan, rootRun, sessionStatus } from '@cairn/core'
 import { isAgentDraftRef } from '@cairn/protocol'
 import { ApprovalList } from './ApprovalCard.js'
 import { MemoryProposalList } from './MemoryProposalCard.js'
@@ -16,6 +16,7 @@ import { QuestionList } from './QuestionCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { totals, turnEntries, type FileDiffMode } from './file-changes.js'
+import { GoalBar } from './GoalBar.js'
 import { MessageStream } from './MessageStream.js'
 import { PlanActions, TaskProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
@@ -297,12 +298,14 @@ export function ChatPanel({
     view && progressList?.planId
       ? view.plans.find((plan) => plan.planId === progressList.planId)
       : undefined
-  /** 输入框上方是否已有其它悬浮内容（提问、计划、记忆提案、任务进度）。 */
+  const goal = view === undefined ? undefined : openGoal(view)
+  /** 输入框上方是否已有其它悬浮内容（提问、计划、记忆提案、任务进度、目标条）。 */
   const floatingContent =
     pendingQuestions > 0 ||
     pendingPlan !== undefined ||
     pendingMemories > 0 ||
-    progressList !== undefined
+    progressList !== undefined ||
+    goal !== undefined
   const turnId = run?.turn?.turnId
   const turnChanges =
     turnId === undefined || changes === undefined ? undefined : totals(turnEntries(changes, turnId))
@@ -422,6 +425,9 @@ export function ChatPanel({
                 <PlanActions plan={pendingPlan} />
                 <QuestionList />
                 <MemoryProposalList />
+                {view !== undefined && goal !== undefined && (
+                  <GoalBar view={view} status={status} onOpen={() => openPanel('goal')} />
+                )}
               </div>
             </div>
             {progressList && (

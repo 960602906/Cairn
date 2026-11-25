@@ -231,6 +231,84 @@ describe('agent actions in session store', () => {
   })
 })
 
+describe('goal actions in session store', () => {
+  it('sets, pauses, resumes and clears goals through IPC', async () => {
+    const { api, calls } = fakeApi({
+      'goal.set': () => ({ goalId: 'g1', messageId: 'm1' }),
+      'goal.pause': () => ({}),
+      'goal.resume': () => ({}),
+      'goal.clear': () => ({}),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().setGoal('s1', '测试全部通过')).resolves.toEqual({ ok: true })
+    expect(calls.at(-1)).toEqual(['goal.set', { sessionId: 's1', condition: '测试全部通过' }])
+    await expect(store.getState().pauseGoal('s1')).resolves.toEqual({ ok: true })
+    await expect(store.getState().resumeGoal('s1')).resolves.toEqual({ ok: true })
+    await expect(store.getState().clearGoal('s1')).resolves.toEqual({ ok: true })
+    expect(calls.at(-1)).toEqual(['goal.clear', { sessionId: 's1' }])
+  })
+
+  it('returns the error code without writing a global error', async () => {
+    const { api } = fakeApi({
+      'goal.set': () => {
+        throw new RpcError('goal.exists')
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().setGoal('s1', 'x')).resolves.toEqual({
+      ok: false,
+      code: 'goal.exists',
+    })
+    expect(store.getState().error).toBeUndefined()
+    expect(store.getState().awaitingTurn.s1).toBeUndefined()
+  })
+
+  it('clears awaiting when resume returns no turn (already active or budget exhausted)', async () => {
+    const { api } = fakeApi({
+      'goal.resume': () => ({}),
+    })
+    const store = createSessionStore(api)
+    await store.getState().resumeGoal('s1')
+    expect(store.getState().awaitingTurn.s1).toBeUndefined()
+  })
+
+  it('keeps awaiting when resume returns a new turn', async () => {
+    const { api } = fakeApi({
+      'goal.resume': () => ({ messageId: 'm1' }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().resumeGoal('s1')
+    expect(store.getState().awaitingTurn.s1).toBe(true)
+  })
+
+  it('returns error codes for pause, resume and clear failures', async () => {
+    const { api } = fakeApi({
+      'goal.pause': () => {
+        throw new RpcError('goal.not_found')
+      },
+      'goal.resume': () => {
+        throw new RpcError('goal.not_found')
+      },
+      'goal.clear': () => {
+        throw new RpcError('goal.not_found')
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().pauseGoal('s1')).resolves.toEqual({
+      ok: false,
+      code: 'goal.not_found',
+    })
+    await expect(store.getState().resumeGoal('s1')).resolves.toEqual({
+      ok: false,
+      code: 'goal.not_found',
+    })
+    await expect(store.getState().clearGoal('s1')).resolves.toEqual({
+      ok: false,
+      code: 'goal.not_found',
+    })
+  })
+})
+
 describe('run inspector in session store', () => {
   it('loads an inspection on demand and caches it by session and run', async () => {
     const result = {
@@ -533,6 +611,35 @@ describe('subscription', () => {
     const store = createSessionStore(api)
     await store.getState().selectSession('s1')
     expect(store.getState().views['s1']?.messages.map((m) => m.seq)).toEqual([2, 3])
+  })
+
+  it('reloads approvals for the subscribed session and refreshes autofix on pushes', async () => {
+    const { api, calls, emitChannel } = fakeApi({
+      'session.list': () => ({ sessions: [summary('s1')] }),
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+      'approval.pending': () => ({ approvals: [] }),
+      'autofix.status': () => ({ running: false }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshSessions()
+    await store.getState().selectSession('s1')
+
+    const beforeApproval = calls.filter(([m]) => m === 'approval.pending').length
+    emitChannel('approval.changed', { sessionId: 's1' })
+    await vi.waitFor(() =>
+      expect(calls.filter(([m]) => m === 'approval.pending').length).toBe(beforeApproval + 1),
+    )
+
+    // 非订阅会话的审批变化不触发重载。
+    emitChannel('approval.changed', { sessionId: 'other' })
+    await Promise.resolve()
+    expect(calls.filter(([m]) => m === 'approval.pending').length).toBe(beforeApproval + 1)
+
+    const beforeAutofix = calls.filter(([m]) => m === 'autofix.status').length
+    emitChannel('autofix.changed', {})
+    await vi.waitFor(() =>
+      expect(calls.filter(([m]) => m === 'autofix.status').length).toBe(beforeAutofix + 1),
+    )
   })
 
   it('unsubscribes when switching and resumes from lastSeq when switching back', async () => {
