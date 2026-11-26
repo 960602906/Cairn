@@ -114,6 +114,11 @@
 
 ### Changed
 
+- 会话要点的编辑框打开后自动聚焦并把光标放到末尾，`⌘Enter` / `Ctrl+Enter` 保存、Esc 取消，
+  结束后焦点回到「编辑」按钮。
+  The session brief editor now focuses automatically with the caret at the end, saves with
+  ⌘Enter / Ctrl+Enter, cancels with Escape, and returns focus to the Edit button.
+
 - Agent 选择器打开时高亮当前使用的 Agent 或团队，直接按 Enter 不会换成列表第一项。
   The agent picker highlights the current agent or team when opened, so pressing Enter no
   longer switches to the first item by accident.

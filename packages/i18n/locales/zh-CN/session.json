@@ -67,6 +67,7 @@
   "brief.edit": "编辑",
   "brief.save": "保存",
   "brief.cancel": "取消",
+  "brief.shortcut": "{{save}} 保存 · Esc 取消",
   "brief.close": "关闭",
   "chat.messages": "消息",
   "chat.compacted": "较早的对话已压缩",
