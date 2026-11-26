@@ -114,6 +114,12 @@
 
 ### Changed
 
+- 权限 / 计划模式菜单打开时聚焦当前权限模式，直接按 Enter 不会换成列表第一项；选择当前项
+  不再重复写入设置。
+  The permission and plan menu focuses the current permission mode when opened, so pressing
+  Enter no longer switches to the first mode; choosing the current mode no longer writes the
+  setting again.
+
 - 输入框的模型选择器打开时聚焦当前模型，直接按 Enter 不会换成列表第一项。
   The composer's model picker focuses the current model when opened, so pressing Enter no
   longer switches to the first model in the list.
