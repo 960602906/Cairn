@@ -316,6 +316,8 @@ export function TrialPanel({
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => {
+                    // 输入法组字时的 Ctrl+Enter 属于候选词操作，不发送。
+                    if (e.nativeEvent.isComposing) return
                     if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return
                     e.preventDefault()
                     void send()

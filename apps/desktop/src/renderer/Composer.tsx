@@ -1313,8 +1313,8 @@ export function Composer({
   }, [commandNotice])
 
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // 输入法组字时的 Enter 属于候选词确认，不执行命令、也不发送。
-    if (event.key === 'Enter' && event.nativeEvent.isComposing) return
+    // 输入法组字时的按键（Enter、方向键等）属于候选词操作，不执行命令、也不发送。
+    if (event.nativeEvent.isComposing) return
     if (mention.onKeyDown(event)) return
     if (commandPanelOpen) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

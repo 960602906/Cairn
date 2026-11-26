@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useRef } from 'react'
 import { I18nextProvider } from 'react-i18next'
@@ -60,6 +60,10 @@ describe('FindBar', () => {
 
     await user.type(input, 'cairn')
     await waitFor(() => expect(screen.getByText('1/2')).toBeTruthy())
+
+    // 输入法组字时的 Enter 属于候选词确认，不跳到下一处。
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(screen.getByText('1/2')).toBeTruthy()
 
     await user.keyboard('{Enter}')
     expect(screen.getByText('2/2')).toBeTruthy()
