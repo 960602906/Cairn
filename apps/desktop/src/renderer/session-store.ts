@@ -713,9 +713,16 @@ function reduceInto(
       if (session.sessionId !== sessionId) return session
       const status = displayStatus({ awaitingTurn }, view)
       const title = view.info ? view.info.title : session.title
-      return session.status === status && session.title === title
-        ? session
-        : { ...session, status, title }
+      const team = view.info?.team
+      if (
+        session.status === status &&
+        session.title === title &&
+        session.team?.teamId === team?.teamId &&
+        session.team?.version === team?.version
+      )
+        return session
+      const { team: _team, ...rest } = session
+      return { ...rest, status, title, ...(team ? { team } : {}) }
     }),
   }
 }

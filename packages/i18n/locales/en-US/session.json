@@ -326,6 +326,7 @@
   "item.pin": "Pin",
   "item.unpin": "Unpin",
   "item.pinned": "Pinned",
+  "item.team": "Team: {{name}}",
   "item.copyTranscript": "Copy conversation",
   "item.exportTranscript": "Export as Markdown…",
   "item.copied": "Copied",

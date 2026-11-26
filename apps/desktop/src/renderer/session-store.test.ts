@@ -650,6 +650,27 @@ describe('subscription', () => {
     expect(store.getState().sessions[0]?.title).toBe('整理日志')
   })
 
+  it('updates the list team when the session switches teams', async () => {
+    const { api, emit } = fakeApi({
+      'session.list': () => ({ sessions: [summary('s1')] }),
+      'session.subscribe': () => ({ events: [created('s1')], lastSeq: 1 }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshSessions()
+    await store.getState().selectSession('s1')
+    expect(store.getState().sessions[0]?.team).toBeUndefined()
+    const binding = {
+      teamId: 'user.team-1',
+      name: { 'zh-CN': '日常协作' },
+      version: 2,
+      pattern: 'delegate',
+    }
+    emit('s1', [ev('s1', 2, 'session.team.changed', { team: binding })])
+    expect(store.getState().sessions[0]?.team).toEqual(binding)
+    emit('s1', [ev('s1', 3, 'session.team.changed', {})])
+    expect(store.getState().sessions[0]?.team).toBeUndefined()
+  })
+
   it('applies live events that arrive before the backfill after it', async () => {
     let emitLive = () => {}
     const { api, emit } = fakeApi({
