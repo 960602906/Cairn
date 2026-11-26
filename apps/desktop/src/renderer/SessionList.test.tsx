@@ -130,6 +130,8 @@ describe('SessionList', () => {
     ])
     expect(screen.getByRole('region', { name: '项目 work' })).toBeTruthy()
     expect(screen.getByRole('region', { name: '项目 other' })).toBeTruthy()
+    // 标题被侧栏截断时，悬停仍能看到完整标题。
+    expect(within(items[1]!).getByTitle('修复登录')).toBeTruthy()
     expect(
       screen.getByRole('region', { name: '项目 work' }).querySelector('img')?.getAttribute('src'),
     ).toBe('./folder-open.svg')
@@ -360,7 +362,7 @@ describe('SessionList', () => {
     expect(within(item).queryByText('已导出')).toBeNull()
   })
 
-  it('deletes a session after confirming', async () => {
+  it('archives a session after confirming', async () => {
     let sessions = [summary('s1', '要删除的'), summary('s2', '保留')]
     const { request } = setup({
       'session.list': () => ({ sessions }),
@@ -372,8 +374,8 @@ describe('SessionList', () => {
     const item = (await screen.findAllByRole('listitem'))[0]!
     const askDelete = async () => {
       await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
-      await userEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
-      return screen.findByRole('dialog', { name: '删除会话“要删除的”？' })
+      await userEvent.click(await screen.findByRole('menuitem', { name: '归档' }))
+      return screen.findByRole('dialog', { name: '归档会话“要删除的”？' })
     }
 
     let dialog = await askDelete()
@@ -381,7 +383,7 @@ describe('SessionList', () => {
     expect(request.mock.calls.some(([m]) => m === 'session.archive')).toBe(false)
 
     dialog = await askDelete()
-    await userEvent.click(within(dialog).getByRole('button', { name: '删除会话' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: '归档会话' }))
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
     expect(request).toHaveBeenCalledWith('session.archive', { sessionId: 's1' })
   })

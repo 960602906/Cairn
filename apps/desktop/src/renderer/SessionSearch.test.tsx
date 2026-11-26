@@ -107,6 +107,7 @@ describe('SessionSearch', () => {
       '未命名会话API 服务',
     ])
     expect(options()[0]!.getAttribute('aria-selected')).toBe('true')
+    expect(within(options()[1]!).getByTitle('Refactor parser')).toBeTruthy()
 
     await press('{ArrowDown}')
     expect(options()[1]!.getAttribute('aria-selected')).toBe('true')
