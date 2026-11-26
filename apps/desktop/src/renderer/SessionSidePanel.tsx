@@ -120,6 +120,11 @@ export function SessionSidePanel({
   const tablistRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef(new Map<string, HTMLButtonElement>())
   const closingTab = useRef(false)
+  // Esc 关闭浮层时调用最新的 onClose，又不让它的身份变化重建焦点循环。
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = onClose
+  }, [onClose])
   const { width, dragging, handleProps } = useResizableWidth({
     storageKey: 'cairn.sessionPanelWidth',
     initial: 348,
@@ -142,6 +147,20 @@ export function SessionSidePanel({
       ].filter((element) => element.tabIndex >= 0 && element.getAttribute('aria-hidden') !== 'true')
     focusable()[0]?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
+      // 浮层是模态的，Esc 收起；正在输入或已有内层浮层处理时让给它。
+      if (event.key === 'Escape') {
+        const close = closeRef.current
+        if (close === undefined || event.defaultPrevented) return
+        const target = event.target
+        if (
+          target instanceof HTMLElement &&
+          target.closest('input, textarea, select, [contenteditable="true"]') !== null
+        )
+          return
+        event.preventDefault()
+        close()
+        return
+      }
       if (event.key !== 'Tab') return
       if (
         document.querySelector(

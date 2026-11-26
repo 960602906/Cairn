@@ -629,6 +629,22 @@ describe('SessionSidePanel', () => {
     expect(onCloseTab).toHaveBeenCalledTimes(1)
   })
 
+  it('closes the floating panel with Escape, but not while editing text', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    wrap(<Harness initialPanel="brief" onClose={onClose} />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '编辑' }))
+    const editor = within(panel).getByRole('textbox', { name: '编辑' })
+    // 文本域自己用 Esc 退出编辑，浮层不跟着关。
+    fireEvent.keyDown(editor, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(within(panel).queryByRole('textbox')).toBeNull()
+
+    fireEvent.keyDown(panel, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('hides the add menu when every tab is open', () => {
     wrap(
       <SessionSidePanel
