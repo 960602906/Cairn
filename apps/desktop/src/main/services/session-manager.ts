@@ -56,13 +56,16 @@ import {
   type ActivePlan,
   type ActiveTaskList,
   type AgentDefinition,
+  type AgentDefinitionRef,
   type ContentPart,
   type ModelRef,
   type PromptMode,
   type RunAgentRef,
   type RunLimits,
   type RunMode,
+  type SessionTeamBinding,
   type UnsequencedEvent,
+  isAgentDraftRef,
   taskListIdForPlan,
 } from '@cairn/protocol'
 import type { SessionRecord, Storage } from '@cairn/storage'
@@ -84,6 +87,8 @@ export const SessionErrorCode = {
   UnknownStep: 'plan.unknown_step',
   /** 会话要用的 Agent 不存在，或还没有发布过。 */
   AgentNotFound: 'agent.not_found',
+  /** 团队模板不可用：没有已发布版本、已归档，或主控 Agent 还没有发布。 */
+  TeamUnavailable: 'team.unavailable',
   /** 试运行开始后草稿又改过；必须用新配置重新开始。 */
   DraftChanged: 'trial.draft_changed',
   /** 只有已归档的会话能彻底删除。 */
@@ -101,6 +106,12 @@ export const SessionErrorCode = {
 /** 新运行使用的配置。 */
 export type RunDefaults = Pick<HostInit, 'agent' | 'model' | 'mode' | 'limits'>
 
+/** 会话可用的团队模板：写进会话的展示信息与运行使用的主控引用。 */
+export interface SessionTeamResolution {
+  readonly team: SessionTeamBinding
+  readonly coordinator: AgentDefinitionRef
+}
+
 export interface SessionManagerOptions {
   readonly storage: Pick<Storage, 'projects' | 'sessions'>
   readonly events: Pick<SessionEventService, 'publish' | 'readAfter' | 'subscribe'>
@@ -117,6 +128,19 @@ export interface SessionManagerOptions {
    * 模型与限额，以及 `session.setAgent` 的校验。
    */
   readonly resolveAgent?: (agent: RunAgentRef) => AgentDefinition | undefined
+  /**
+   * 按会话取合并了团队模板的 Agent 定义（M7-09）；用于输入框的委派候选，让模板的委派覆盖
+   * 与运行时一致。省略时退回 `resolveAgent`。
+   */
+  readonly resolveSessionAgent?: (
+    sessionId: string,
+    agent: RunAgentRef,
+  ) => AgentDefinition | undefined
+  /**
+   * 按 id 取会话可用的团队模板（M7-09）：已发布、未归档，且主控 Agent 已发布。省略时
+   * `session.setTeam` 一律拒绝；每次运行合并协作说明时由 `applySessionTeam` 读取最新版本。
+   */
+  readonly resolveTeam?: (teamId: string) => SessionTeamResolution | undefined
   /** 会话是否暂时不接受输入（如正在撤销改动，M1-08b），此时输入报 `run.busy`。 */
   readonly isLocked?: (sessionId: string) => boolean
   /** 同时存在的宿主上限，默认 3。 */
@@ -163,6 +187,7 @@ export interface SessionManager extends SessionCommands {
   readonly archive: Sync<SessionCommands['archive']>
   readonly setModel: Sync<SessionCommands['setModel']>
   readonly setAgent: SessionCommands['setAgent']
+  readonly setTeam: SessionCommands['setTeam']
   /** 目标命令（ADR-0047）。 */
   readonly setGoal: SessionCommands['setGoal']
   readonly pauseGoal: SessionCommands['pauseGoal']
@@ -197,6 +222,11 @@ export interface SessionManager extends SessionCommands {
    * 忙着的等这一轮结束再停；下一次输入重新启动宿主，拿到新的清单。
    */
   refreshTools(): void
+  /**
+   * 团队模板发布了新版本（M7-09）：绑定了它的会话在空闲时停掉宿主，下一次输入按新版本
+   * 重建协作说明；正在进行的轮次等结束后再停。
+   */
+  refreshTeam(teamId: string): void
   /** 应用退出时调用：清空队列、停止所有宿主并等待退出。之后的输入报 `run.disposed`。 */
   shutdown(): Promise<void>
 }
@@ -1163,7 +1193,11 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     /** 当前 Agent 的委派范围（M4-02）：`@Agent` 候选与展开都只认这份名单。 */
     delegationTargets({ sessionId }) {
       const ref = sessionId === undefined ? options.runDefaults.agent : currentAgent(sessionId)
-      const policy = resolveDelegationPolicy(options.resolveAgent?.(ref)?.delegation)
+      const definition =
+        sessionId === undefined
+          ? options.resolveAgent?.(ref)
+          : (options.resolveSessionAgent?.(sessionId, ref) ?? options.resolveAgent?.(ref))
+      const policy = resolveDelegationPolicy(definition?.delegation)
       return { enabled: policy.enabled, agentIds: [...policy.allowedAgents] }
     },
 
@@ -1182,7 +1216,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       const model = next.model ?? record.model ?? options.runDefaults.model
       if (!model) throw new RpcError(SessionErrorCode.UnknownModel)
       const runId = createId()
-      events.publish([
+      const batch: UnsequencedEvent[] = [
         {
           ...header(sessionId, runId),
           type: 'run.created',
@@ -1193,7 +1227,85 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
             limits: next.limits,
           },
         },
-      ])
+      ]
+      // 换回普通 Agent 就离开团队：协作说明不再并入之后的每一轮。
+      if (getView(sessionId).info?.team !== undefined) {
+        batch.push({
+          ...header(sessionId, runId),
+          type: 'session.team.changed',
+          payload: {},
+        })
+      }
+      events.publish(batch)
+      return {}
+    },
+
+    /**
+     * 选用团队模板（M7-09）：以主控 Agent 为根新建运行，并记下模板；之后每一轮并入
+     * 最新已发布版本的委派覆盖与协作说明。`null` 取消绑定，当前 Agent 保持不变
+     * （要换回某个 Agent 用 `setAgent`，它会一并离开团队）。
+     */
+    async setTeam({ sessionId, teamId }) {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      const record = requireSession(sessionId)
+      if (record.kind !== 'normal') {
+        throw new RpcError(SessionErrorCode.TeamUnavailable, { sessionId })
+      }
+      if (sessionBusy(sessionId) || options.isLocked?.(sessionId)) {
+        throw new RpcError(SessionErrorCode.Busy, { sessionId })
+      }
+      const view = getView(sessionId)
+      const current = view.info?.team
+      const slot = slots.get(sessionId)
+      const stopIdleHost = async () => {
+        if (slot?.handle && slot.handle.state() === 'running') await slot.handle.stop()
+      }
+      if (teamId === null) {
+        if (current === undefined) return {}
+        // 宿主空闲时仍带着团队说明：停掉它，下一次输入按普通 Agent 重新启动。
+        await stopIdleHost()
+        events.publish([
+          { ...header(sessionId, sessionId), type: 'session.team.changed', payload: {} },
+        ])
+        return {}
+      }
+      const resolved = options.resolveTeam?.(teamId)
+      if (!resolved) throw new RpcError(SessionErrorCode.TeamUnavailable, { teamId })
+      // 同一个模板的同一个版本已经在用：不打断宿主，也不制造重复的运行分隔。
+      if (current?.teamId === teamId && current.version === resolved.team.version) return {}
+      await stopIdleHost()
+      // 根 Agent 没变（例如只更新了模板版本）时保留原来的运行，下一轮照常重建宿主；
+      // 还没有运行、或换到了另一个主控时才新建运行。
+      const root = rootRun(view)
+      const restart =
+        root === undefined ||
+        isAgentDraftRef(root.agent) ||
+        root.agent.id !== resolved.coordinator.id ||
+        root.agent.version !== resolved.coordinator.version
+      const runId = restart ? createId() : sessionId
+      const batch: UnsequencedEvent[] = [
+        {
+          ...header(sessionId, runId),
+          type: 'session.team.changed',
+          payload: { team: resolved.team },
+        },
+      ]
+      if (restart) {
+        const next = runConfig(resolved.coordinator, record.model)
+        const model = next.model ?? record.model ?? options.runDefaults.model
+        if (!model) throw new RpcError(SessionErrorCode.UnknownModel)
+        batch.push({
+          ...header(sessionId, runId),
+          type: 'run.created',
+          payload: {
+            agent: resolved.coordinator,
+            model,
+            mode: runModeOf(record, options.runDefaults.mode),
+            limits: next.limits,
+          },
+        })
+      }
+      events.publish(batch)
       return {}
     },
 
@@ -1457,6 +1569,14 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
     refreshTools() {
       for (const [sessionId, slot] of slots) {
+        slot.stale = true
+        updateIdle(sessionId, slot)
+      }
+    },
+
+    refreshTeam(teamId) {
+      for (const [sessionId, slot] of slots) {
+        if (getView(sessionId).info?.team?.teamId !== teamId) continue
         slot.stale = true
         updateIdle(sessionId, slot)
       }

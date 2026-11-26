@@ -513,6 +513,7 @@ Agents
 | `team.saveDraft` / `team.publish` | 请求 | 团队模板草稿与发布（M7-09） |
 | `team.archive` / `team.unarchive` | 请求 | 团队模板归档与恢复：归档后只读、默认列表隐藏（M7-09） |
 | `team.trial.start` / `team.trial.clear` / `team.trial.list` | 请求 | 团队模板试运行：隐藏会话、默认只读（M7-09） |
+| `session.setTeam` | 请求 | 普通会话选用 / 取消团队模板：主控为根、每轮并入最新已发布版本（M7-09） |
 | `run.inspect` | 请求 | 检查器数据（时间线、上下文快照、用量） |
 | `run.updateLimits` | 请求 | 临时调整限额 |
 | `activity.subscribe` | 事件流 | 跨会话的运行与审批摘要 |

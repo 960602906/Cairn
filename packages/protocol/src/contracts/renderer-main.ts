@@ -736,6 +736,15 @@ export const MainForRenderer = defineSide({
       result: z.object({}),
     },
     /**
+     * 在会话中选用团队模板（多 Agent 协作 §15）：以主控 Agent 为根新建运行，
+     * 之后每一轮并入模板的委派覆盖与协作说明。传 `null` 改回普通 Agent。
+     * 运行中不能切换；草稿、未发布或已归档的模板不能选用。
+     */
+    'session.setTeam': {
+      params: z.object({ sessionId: Id, teamId: Id.nullable() }),
+      result: z.object({}),
+    },
+    /**
      * 用当前草稿开始一次试运行（M4-12）。试运行会话不出现在 `session.list` 中，默认只读；
      * 草稿不需要发布。项目目录不存在时会像普通会话一样创建项目记录。
      */

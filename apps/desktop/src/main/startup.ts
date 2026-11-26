@@ -572,11 +572,11 @@ const supervisor = createHostSupervisor({
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
   loadSkills: (sessionId, agent) => agents.skillsFor(agent, sessionId),
   resolveMcpTools: (_sessionId, agent) => agents.mcpToolsFor(agent),
-  // 团队试运行时把模板的委派覆盖与协作说明并入主控定义（M7-09）。
+  // 团队模板（M7-09）：试运行并入草稿，普通会话并入选中的模板（最新已发布版本）。
   resolveAgentDefinition: (agent, sessionId) => {
     const definition = agents.definition(agent)
     return definition && sessionId !== undefined
-      ? teams.applyTrial(sessionId, definition)
+      ? teams.applySessionTeam(sessionId, definition)
       : definition
   },
   // 委派目标（M4-02）：已发布定义、模型、凭据、工具与工作区方式。凭据只经私有接口传回宿主内存。
@@ -654,6 +654,11 @@ const sessions = createSessionManager({
   supervisor,
   runDefaults: RUN_DEFAULTS,
   resolveAgent: (agent) => agents.definition(agent),
+  resolveSessionAgent: (sessionId, agent) => {
+    const definition = agents.definition(agent)
+    return definition && teams.applySessionTeam(sessionId, definition)
+  },
+  resolveTeam: (teamId) => teams.resolveTeam(teamId),
   models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
   isLocked: (sessionId) => changes.isReverting(sessionId) || checkpoints.isRestoring(sessionId),
   finishGoalBudget: (sessionId) => goals?.finishBudget(sessionId),

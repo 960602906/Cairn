@@ -241,7 +241,7 @@ interface EventEnvelope<T extends EventType = EventType> {
 
 | 分类 | 事件 | 说明 |
 |---|---|---|
-| 会话 | `session.created` `session.renamed` `session.crashed` `session.archived` | 生命周期 |
+| 会话 | `session.created` `session.renamed` `session.team.changed` `session.crashed` `session.archived` | 生命周期；团队绑定记录所选模板与版本 |
 | 运行 | `run.created` `run.state.changed` `run.disposed` `run.delegated` `run.child.completed` | 运行生命周期与委派 |
 | 步骤 | `step.started` `step.completed` | 每次模型调用的边界 |
 | 轮次 | `turn.started` `turn.completed` `turn.aborted` `turn.failed` | 一次任务的边界 |

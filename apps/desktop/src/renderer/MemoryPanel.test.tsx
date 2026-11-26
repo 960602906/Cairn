@@ -23,6 +23,7 @@ const view = {
     title: 'A',
     model: undefined,
     thinkingLevel: undefined,
+    team: undefined,
     createdAt: 0,
   },
 }

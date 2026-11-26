@@ -109,6 +109,7 @@ function Workspace() {
   const [newChatProjectPath, setNewChatProjectPath] = useState<string | undefined>()
   const refreshActivity = useSessionStore((s) => s.refreshActivity)
   const refreshAgents = useSessionStore((s) => s.refreshAgents)
+  const refreshTeams = useSessionStore((s) => s.refreshTeams)
   const loadUpdateStatus = useSessionStore((s) => s.loadUpdateStatus)
   const userSettings = useSessionStore((s) => s.settings)
   const updateSettings = useSessionStore((s) => s.updateSettings)
@@ -230,10 +231,11 @@ function Workspace() {
   useEffect(() => onIdle(() => void loadUpdateStatus(), 1000), [loadUpdateStatus])
 
   // 委派卡片、检查器、设置与输入框都需要 Agent 名称；带上已归档的，会话里正在用的 Agent
-  // 归档后仍能显示原来的名称。
+  // 归档后仍能显示原来的名称。团队模板随输入框选择器一起读取，设置页改动后会再刷新。
   useEffect(() => {
     void refreshAgents({ includeArchived: true })
-  }, [refreshAgents])
+    void refreshTeams()
+  }, [refreshAgents, refreshTeams])
 
   // 首屏之后预取对话页 chunk：点开会话时无需再等模块加载，也不占用首帧。
   // 测试环境不预取：用例结束后的动态 import 会落在已销毁的环境里。

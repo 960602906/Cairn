@@ -17,6 +17,7 @@ export function TeamsSettings() {
   const { t } = useTranslation('settings')
   const { t: tt } = useTranslation('teams')
   const refreshAgents = useSessionStore((s) => s.refreshAgents)
+  const refreshTeams = useSessionStore((s) => s.refreshTeams)
   /** `undefined` 为列表；`'new'` 为空白草稿；其他为团队 id。 */
   const [open, setOpen] = useState<string | 'new' | undefined>(undefined)
 
@@ -52,7 +53,7 @@ export function TeamsSettings() {
       key={open}
       teamId={open === 'new' ? undefined : open}
       onBack={() => setOpen(undefined)}
-      onChanged={() => undefined}
+      onChanged={() => void refreshTeams()}
       onOpenTeam={setOpen}
     />
   )

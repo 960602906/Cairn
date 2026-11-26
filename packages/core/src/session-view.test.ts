@@ -441,20 +441,32 @@ describe('reduceSession：会话事件', () => {
       ev('session.renamed', { title: '新' }),
       ev('session.model.changed', { model: { providerId: 'p', modelId: 'm2' } }),
       ev('session.thinkingLevel.changed', { thinkingLevel: 'low' }),
+      ev('session.team.changed', {
+        team: {
+          teamId: 'user.team-1',
+          name: { 'zh-CN': '日常协作' },
+          version: 2,
+          pattern: 'delegate',
+        },
+      }),
       ev('session.archived', {}),
     ])
     expect(view.info?.title).toBe('新')
     expect(view.info?.model).toEqual({ providerId: 'p', modelId: 'm2' })
     expect(view.info?.thinkingLevel).toBe('low')
+    expect(view.info?.team).toMatchObject({ teamId: 'user.team-1', version: 2 })
     expect(view.info?.createdAt).toBe(20)
     expect(view.archived).toBe(true)
     expect(sessionStatus(view)).toBe('archived')
     const restored = reduceSession(view, ev('session.unarchived', {}))
     expect(restored.archived).toBe(false)
     expect(sessionStatus(restored)).not.toBe('archived')
+    // 省略 team 表示改回普通 Agent。
+    expect(reduceSession(view, ev('session.team.changed', {})).info?.team).toBeUndefined()
     const early = reduceAll([
       ev('session.model.changed', { model: { providerId: 'p', modelId: 'm' } }),
       ev('session.thinkingLevel.changed', { thinkingLevel: 'high' }),
+      ev('session.team.changed', {}),
     ])
     expect(early.info).toBeUndefined()
   })

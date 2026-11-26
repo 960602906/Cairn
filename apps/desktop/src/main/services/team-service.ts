@@ -19,6 +19,7 @@ import {
   type AgentTeamDetail,
   type AgentTeamSummary,
   type AgentTeamVersionSummary,
+  type SessionTeamBinding,
   type TeamDraftFields,
   type TeamDraftInput,
   type TeamTrialStarted,
@@ -27,7 +28,7 @@ import {
 import type { SessionRecord, Storage } from '@cairn/storage'
 import type { AgentService } from './agent-service.js'
 import type { SessionEventService } from './event-service.js'
-import type { SessionManager } from './session-manager.js'
+import type { SessionManager, SessionTeamResolution } from './session-manager.js'
 import type { TrialService } from './trial-service.js'
 
 /** 每个模板保留的试运行条数。 */
@@ -41,9 +42,9 @@ export const TeamErrorCode = {
 
 export interface TeamServiceOptions {
   readonly storage: Pick<Storage, 'teams' | 'sessions' | 'projects'>
-  readonly events: Pick<SessionEventService, 'publish'>
+  readonly events: Pick<SessionEventService, 'publish' | 'readAfter'>
   readonly agents: Pick<AgentService, 'get' | 'trialDraft'>
-  readonly sessions: Pick<SessionManager, 'isBusy'>
+  readonly sessions: Pick<SessionManager, 'isBusy' | 'refreshTeam'>
   readonly trials: Pick<TrialService, 'markElevated'>
   readonly createId?: () => string
   readonly now?: () => number
@@ -68,8 +69,13 @@ export interface TeamCommands {
 }
 
 export interface TeamService extends TeamCommands {
-  /** 在团队试运行会话里，把模板的委派覆盖与协作说明并入这一轮使用的定义。 */
-  applyTrial(sessionId: string, definition: AgentDefinition): AgentDefinition
+  /**
+   * 普通会话可以选用的模板：需已发布、未归档，且主控 Agent 有已发布版本。
+   * 返回会话要记下的绑定信息与运行使用的主控引用；不可用时返回 undefined。
+   */
+  resolveTeam(teamId: string): SessionTeamResolution | undefined
+  /** 把会话绑定的团队并入这一轮使用的定义（试运行用草稿，普通会话用最新的已发布版本）。 */
+  applySessionTeam(sessionId: string, definition: AgentDefinition): AgentDefinition
 }
 
 const canonicalJson = (value: unknown): unknown => {
@@ -113,6 +119,15 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     const record = storage.teams.get(teamId)
     if (!record || record.draft === undefined) return undefined
     return TeamDraft.parse(record.draft)
+  }
+
+  /** 普通会话最近一次选用的模板；取消选用或从未选过时返回 undefined。 */
+  const latestTeamBinding = (sessionId: string): SessionTeamBinding | undefined => {
+    let binding: SessionTeamBinding | undefined
+    for (const event of events.readAfter(sessionId, 0)) {
+      if (event.type === 'session.team.changed') binding = event.payload.team
+    }
+    return binding
   }
 
   /** 校验上下文：按 id 取最新的已发布 Agent（含内置）；不存在时返回 `undefined`。 */
@@ -331,6 +346,8 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
         },
       })
       storage.teams.clearDraft(teamId)
+      // 已绑定这个模板的会话从下一轮起用新版本：空闲的宿主就此重建。
+      sessions.refreshTeam(teamId)
       return detailOf(teamId)
     },
 
@@ -373,14 +390,33 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
       return { trials }
     },
 
-    applyTrial(sessionId, definition) {
-      const session = storage.sessions.get(sessionId)
-      if (!session || session.kind !== 'trial' || session.trialTeamId === undefined) {
-        return definition
+    resolveTeam(teamId) {
+      const record = storage.teams.get(teamId)
+      if (!record || record.archived) return undefined
+      const team = publishedOf(teamId)
+      if (!team) return undefined
+      const coordinator = validationContext.agent(team.coordinator)
+      if (!coordinator) return undefined
+      return {
+        team: { teamId, name: team.name, version: team.version, pattern: team.pattern },
+        coordinator: { id: coordinator.id, version: coordinator.version },
       }
-      const fields = draftOf(session.trialTeamId)
-      if (!fields) return definition
-      return applyTeamToAgentDefinition(definition, fields)
+    },
+
+    applySessionTeam(sessionId, definition) {
+      const session = storage.sessions.get(sessionId)
+      if (!session) return definition
+      if (session.kind === 'trial') {
+        if (session.trialTeamId === undefined) return definition
+        const fields = draftOf(session.trialTeamId)
+        return fields ? applyTeamToAgentDefinition(definition, fields) : definition
+      }
+      if (session.kind !== 'normal') return definition
+      const binding = latestTeamBinding(sessionId)
+      if (binding === undefined) return definition
+      // 选中的是模板这个身份，不是某一版：之后发布的修订从下一轮起生效。
+      const team = publishedOf(binding.teamId)
+      return team ? applyTeamToAgentDefinition(definition, team) : definition
     },
   }
 }

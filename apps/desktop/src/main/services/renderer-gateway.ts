@@ -81,6 +81,8 @@ export interface SessionCommands {
   readonly setModel: Handler<'session.setModel'>
   readonly setThinkingLevel: Handler<'session.setThinkingLevel'>
   readonly setAgent: Handler<'session.setAgent'>
+  /** 在会话里选用团队模板，或传 null 改回普通 Agent（M7-09）。 */
+  readonly setTeam: Handler<'session.setTeam'>
   /** 当前 Agent 允许委派的目标（M4-02）：`@Agent` 候选与发送时展开共用。 */
   readonly delegationTargets: Handler<'agent.delegationTargets'>
   readonly compact: Handler<'session.compact'>
@@ -555,6 +557,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.setModel', (params) => commands.setModel(params))
       endpoint.handle('session.setThinkingLevel', (params) => commands.setThinkingLevel(params))
       endpoint.handle('session.setAgent', (params) => commands.setAgent(params))
+      endpoint.handle('session.setTeam', (params) => commands.setTeam(params))
       endpoint.handle('agent.delegationTargets', (params) => commands.delegationTargets(params))
       endpoint.handle('settings.get', () => settings.get())
       endpoint.handle('settings.update', (patch) => settings.update(patch))

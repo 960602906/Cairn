@@ -54,6 +54,7 @@ import { CheckpointReason } from './checkpoints.js'
 import { BackgroundCommandStatus } from './commands.js'
 import { SandboxExecution } from './sandbox.js'
 import { ReasoningEffort } from './providers.js'
+import { SessionTeamBinding } from './teams.js'
 
 /** 事件信封的 schema 版本（架构 §7.1 `EventEnvelope.v`）。 */
 export const EVENT_SCHEMA_VERSION = 1 as const
@@ -131,6 +132,8 @@ const payloadSchemas = {
   }),
   /** 会话换了模型（M2-04），从下一轮起使用。 */
   'session.model.changed': z.object({ model: ModelRef }),
+  /** 会话绑定的团队模板（多 Agent 协作 §15）；省略 `team` 表示改回普通 Agent。 */
+  'session.team.changed': z.object({ team: SessionTeamBinding.optional() }),
   'session.crashed': z.object({ error: ErrorInfo }),
   'session.archived': z.object({}),
   /** 取消归档：会话重新出现在默认列表里。 */

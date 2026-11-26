@@ -46,6 +46,7 @@ import {
   type PlanDocument,
   type PlanStepStatus,
   type SessionStatus,
+  type SessionTeamBinding,
   type TaskListSource,
   type TokenUsage,
   type ToolCall,
@@ -65,6 +66,8 @@ export interface SessionInfo {
   readonly model: ModelRef | undefined
   /** 本会话的思考强度（下一轮起）；没有设置时用模型配置里的默认值。 */
   readonly thinkingLevel: ReasoningEffort | undefined
+  /** 绑定的团队模板（多 Agent 协作 §15）；普通 Agent 会话为 undefined。 */
+  readonly team: SessionTeamBinding | undefined
   readonly createdAt: number
 }
 
@@ -858,6 +861,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
           title,
           model,
           thinkingLevel: undefined,
+          team: undefined,
           createdAt: event.ts,
         },
       }
@@ -866,6 +870,8 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return view.info ? { ...view, info: { ...view.info, title: event.payload.title } } : undefined
     case 'session.model.changed':
       return view.info ? { ...view, info: { ...view.info, model: event.payload.model } } : undefined
+    case 'session.team.changed':
+      return view.info ? { ...view, info: { ...view.info, team: event.payload.team } } : undefined
     case 'session.thinkingLevel.changed':
       return view.info
         ? { ...view, info: { ...view.info, thinkingLevel: event.payload.thinkingLevel } }

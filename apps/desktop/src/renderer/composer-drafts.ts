@@ -20,6 +20,7 @@ const DRAFT_PREFIX = 'cairn.composerDraft:'
 const NEW_SESSION_PROJECT_KEY = 'cairn.newSession.project'
 const NEW_SESSION_MODEL_PREFIX = 'cairn.newSession.model:'
 const NEW_SESSION_AGENT_PREFIX = 'cairn.newSession.agent:'
+const NEW_SESSION_TEAM_PREFIX = 'cairn.newSession.team:'
 
 const EMPTY_DRAFT: ComposerDraft = { text: '', planMode: false }
 
@@ -104,7 +105,22 @@ export function readNewSessionAgent(projectPath: string): string | undefined {
   return read(NEW_SESSION_AGENT_PREFIX + projectPath) || undefined
 }
 
+/** 选中 Agent 就离开团队：两者只记一个，进入页面时不会带着旧团队。 */
 export function writeNewSessionAgent(projectPath: string, agentId: string): void {
   if (projectPath === '') return
   write(NEW_SESSION_AGENT_PREFIX + projectPath, agentId === '' ? null : agentId)
+  if (agentId !== '') write(NEW_SESSION_TEAM_PREFIX + projectPath, null)
+}
+
+/** 某个工作空间上次在新对话页选中的团队模板 id；没有记录或记录损坏时为 undefined。 */
+export function readNewSessionTeam(projectPath: string): string | undefined {
+  if (projectPath === '') return undefined
+  return read(NEW_SESSION_TEAM_PREFIX + projectPath) || undefined
+}
+
+/** 选中团队就离开单个 Agent：两者只记一个，进入页面时不会带着旧 Agent。 */
+export function writeNewSessionTeam(projectPath: string, teamId: string | null): void {
+  if (projectPath === '') return
+  write(NEW_SESSION_TEAM_PREFIX + projectPath, teamId)
+  if (teamId !== null) write(NEW_SESSION_AGENT_PREFIX + projectPath, null)
 }
