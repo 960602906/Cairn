@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   adjacentSessionId,
   agentPickerShortcut,
+  findShortcut,
   focusComposerShortcut,
   isAgentPickerKey,
+  isFindKey,
   isFocusComposerKey,
   isMacPlatform,
   isNewChatKey,
@@ -71,6 +73,17 @@ describe('shortcuts', () => {
     expect(isSearchKey(key({ key: 'K', ctrlKey: true }), 'Win32')).toBe(true)
     expect(isSearchKey(key({ key: 'k', ctrlKey: true, altKey: true }), 'Win32')).toBe(false)
     expect(isSearchKey(key({ key: 'k' }), 'Win32')).toBe(false)
+  })
+
+  it('finds in the conversation with ⌘F or Ctrl+F', () => {
+    expect(findShortcut('MacIntel')).toBe('⌘F')
+    expect(findShortcut('Win32')).toBe('Ctrl F')
+    expect(isFindKey(key({ key: 'f', metaKey: true }), 'MacIntel')).toBe(true)
+    expect(isFindKey(key({ key: 'F', ctrlKey: true }), 'Win32')).toBe(true)
+    expect(isFindKey(key({ key: 'f', ctrlKey: true }), 'MacIntel')).toBe(false)
+    expect(isFindKey(key({ key: 'f', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(false)
+    expect(isFindKey(key({ key: 'f', ctrlKey: true, altKey: true }), 'Win32')).toBe(false)
+    expect(isFindKey(key({ key: 'g', ctrlKey: true }), 'Win32')).toBe(false)
   })
 
   it('toggles plan mode with ⌘⇧P or Ctrl+Shift+P', () => {

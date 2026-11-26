@@ -58,6 +58,19 @@ export function isSearchKey(
   return mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k'
 }
 
+/** “在对话中查找”的快捷键提示。 */
+export const findShortcut = (platform?: string): string =>
+  isMacPlatform(platform) ? '⌘F' : 'Ctrl F'
+
+/** 按键是否为“在对话中查找”（⌘F / Ctrl+F，不带 Shift 与 Alt）。 */
+export function isFindKey(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
+  platform?: string,
+): boolean {
+  const mod = isMacPlatform(platform) ? event.metaKey : event.ctrlKey
+  return mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'f'
+}
+
 /** “切换计划模式”的快捷键提示（⌘⇧P / Ctrl+Shift+P）。 */
 export const planShortcut = (platform?: string): string =>
   isMacPlatform(platform) ? '⌘⇧P' : 'Ctrl Shift P'

@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import type { AvailableComposerCommand } from './composer-shared.js'
 import {
   agentPickerShortcut,
+  findShortcut,
   focusComposerShortcut,
   newChatShortcut,
   planShortcut,
@@ -44,6 +45,7 @@ export function CommandHelpDialog({
   const shortcuts = [
     { label: t('composer.help.shortcut.newChat'), keys: newChatShortcut() },
     { label: t('composer.help.shortcut.search'), keys: searchShortcut() },
+    { label: t('composer.help.shortcut.find'), keys: findShortcut() },
     { label: t('composer.help.shortcut.settings'), keys: settingsShortcut() },
     { label: t('composer.help.shortcut.agent'), keys: agentPickerShortcut() },
     { label: t('composer.help.shortcut.plan'), keys: planShortcut() },
