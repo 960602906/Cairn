@@ -114,6 +114,13 @@
 
 ### Changed
 
+- 关闭输入框工具栏的 Agent、权限 / 计划与模型菜单后，焦点回到输入框，可以接着打字；点菜单
+  外面关闭时不抢焦点。`/` 指令或 `@` 候选打开时，⌘⇧P / Ctrl+Shift+P 仍可切换计划模式。
+  Closing the agent, permission/plan or model menu in the composer toolbar now returns focus to
+  the input so typing can continue; dismissing a menu by clicking elsewhere leaves focus alone.
+  The plan-mode shortcut (⌘⇧P / Ctrl+Shift+P) also works while the `/` command or `@` mention
+  list is open.
+
 - 会话操作菜单里的「删除」改为「归档」：确认框说明会话可以在设置 → 已归档的对话里恢复，
   不再使用危险操作的红色样式，避免把可恢复的归档当成永久删除。侧栏、搜索结果与已归档列表里
   被截断的会话标题，悬停可以看到完整标题。
