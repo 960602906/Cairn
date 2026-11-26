@@ -1,16 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import {
+  adjacentSessionId,
   agentPickerShortcut,
+  focusComposerShortcut,
   isAgentPickerKey,
+  isFocusComposerKey,
   isMacPlatform,
   isNewChatKey,
+  isNextSessionKey,
   isPlanModeKey,
+  isPreviousSessionKey,
   isSearchKey,
   isSettingsKey,
+  isToggleSidebarKey,
+  isToggleWorkbenchKey,
   newChatShortcut,
   planShortcut,
   searchShortcut,
+  sessionCycleShortcut,
   settingsShortcut,
+  toggleSidebarShortcut,
+  toggleWorkbenchShortcut,
+  zoomShortcut,
 } from './shortcuts.js'
 
 const key = (init: Partial<KeyboardEvent>) => ({
@@ -72,5 +83,60 @@ describe('shortcuts', () => {
       isPlanModeKey(key({ key: 'p', ctrlKey: true, shiftKey: true, altKey: true }), 'Win32'),
     ).toBe(false)
     expect(isPlanModeKey(key({ key: 'p', metaKey: true, shiftKey: true }), 'Win32')).toBe(false)
+  })
+
+  it('focuses the composer (⌘L), toggles the sidebar (⌘B) and workbench (⌘J)', () => {
+    expect(focusComposerShortcut('MacIntel')).toBe('⌘L')
+    expect(focusComposerShortcut('Win32')).toBe('Ctrl L')
+    expect(isFocusComposerKey(key({ key: 'l', metaKey: true }), 'MacIntel')).toBe(true)
+    expect(isFocusComposerKey(key({ key: 'L', ctrlKey: true }), 'Win32')).toBe(true)
+    expect(isFocusComposerKey(key({ key: 'l', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(
+      false,
+    )
+
+    expect(toggleSidebarShortcut('MacIntel')).toBe('⌘B')
+    expect(toggleSidebarShortcut('Win32')).toBe('Ctrl B')
+    expect(isToggleSidebarKey(key({ key: 'b', metaKey: true }), 'MacIntel')).toBe(true)
+    expect(isToggleSidebarKey(key({ key: 'b', ctrlKey: true }), 'Win32')).toBe(true)
+    expect(isToggleSidebarKey(key({ key: 'b', ctrlKey: true, altKey: true }), 'Win32')).toBe(false)
+
+    expect(toggleWorkbenchShortcut('MacIntel')).toBe('⌘J')
+    expect(toggleWorkbenchShortcut('Win32')).toBe('Ctrl J')
+    expect(isToggleWorkbenchKey(key({ key: 'j', metaKey: true }), 'MacIntel')).toBe(true)
+    expect(isToggleWorkbenchKey(key({ key: 'j', ctrlKey: true }), 'Win32')).toBe(true)
+    expect(isToggleWorkbenchKey(key({ key: 'j', ctrlKey: true, altKey: true }), 'Win32')).toBe(
+      false,
+    )
+  })
+
+  it('switches sessions with ⌘⇧[ / ⌘⇧] and wraps around', () => {
+    expect(sessionCycleShortcut('MacIntel')).toBe('⌘⇧[ / ⌘⇧]')
+    expect(sessionCycleShortcut('Win32')).toBe('Ctrl Shift [ / ]')
+    // 带 Shift 时多数布局给出花括号，同样要认
+    expect(isPreviousSessionKey(key({ key: '{', metaKey: true, shiftKey: true }), 'MacIntel')).toBe(
+      true,
+    )
+    expect(isPreviousSessionKey(key({ key: '[', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(
+      true,
+    )
+    expect(isNextSessionKey(key({ key: '}', ctrlKey: true, shiftKey: true }), 'Win32')).toBe(true)
+    expect(isNextSessionKey(key({ key: ']', metaKey: true, shiftKey: true }), 'MacIntel')).toBe(
+      true,
+    )
+    expect(isNextSessionKey(key({ key: ']', metaKey: true }), 'MacIntel')).toBe(false)
+    expect(isPreviousSessionKey(key({ key: '[', ctrlKey: true }), 'Win32')).toBe(false)
+
+    const sessions = [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }]
+    expect(adjacentSessionId(sessions, 'b', 1)).toBe('c')
+    expect(adjacentSessionId(sessions, 'c', 1)).toBe('a')
+    expect(adjacentSessionId(sessions, 'a', -1)).toBe('c')
+    expect(adjacentSessionId(sessions, undefined, -1)).toBe('a')
+    expect(adjacentSessionId(sessions, 'gone', 1)).toBe('a')
+    expect(adjacentSessionId([], 'a', 1)).toBeUndefined()
+  })
+
+  it('shows the zoom shortcuts for help', () => {
+    expect(zoomShortcut('MacIntel')).toBe('⌘+ / ⌘- / ⌘0')
+    expect(zoomShortcut('Win32')).toBe('Ctrl + / - / 0')
   })
 })

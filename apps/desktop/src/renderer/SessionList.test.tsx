@@ -16,6 +16,7 @@ const summary = (
   title: string,
   status: SessionSummary['status'] = 'idle',
   projectPath = '/work',
+  pinned = false,
 ): SessionSummary => ({
   sessionId,
   title,
@@ -23,6 +24,7 @@ const summary = (
   status,
   createdAt: 1,
   updatedAt: 1,
+  ...(pinned ? { pinned: true } : {}),
 })
 
 function setup(overrides: Record<string, (params: never) => unknown> = {}) {
@@ -140,6 +142,29 @@ describe('SessionList', () => {
     expect(sessionButton(items[0]!).getAttribute('aria-current')).toBeNull()
   })
 
+  it('cycles through sessions with Ctrl+Shift+] and Ctrl+Shift+[ and wraps around', async () => {
+    const { store } = setup({
+      'session.list': () => ({
+        sessions: [summary('s1', '一'), summary('s2', '二'), summary('s3', '三')],
+      }),
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+    })
+    await screen.findAllByRole('listitem')
+    const next = () => fireEvent.keyDown(window, { key: '}', ctrlKey: true, shiftKey: true })
+    const previous = () => fireEvent.keyDown(window, { key: '{', ctrlKey: true, shiftKey: true })
+
+    next()
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
+    next()
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s2'))
+    next()
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s3'))
+    next()
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
+    previous()
+    await waitFor(() => expect(store.getState().activeSessionId).toBe('s3'))
+  })
+
   it('collapses a project group and swaps its folder icon', async () => {
     setup({
       'session.list': () => ({
@@ -217,6 +242,40 @@ describe('SessionList', () => {
     expect(await screen.findByRole('button', { name: /^新标题/ })).toBeTruthy()
   })
 
+  it('pins and unpins a session from its menu and shows the pinned mark', async () => {
+    let sessions = [summary('s1', '要置顶的'), summary('s2', '普通会话')]
+    const { request } = setup({
+      'session.list': () => ({ sessions }),
+      'session.setPinned': ({ sessionId, pinned }: { sessionId: string; pinned: boolean }) => {
+        sessions = sessions.map((s) =>
+          s.sessionId === sessionId
+            ? { ...s, ...(pinned ? { pinned: true } : { pinned: false }) }
+            : s,
+        )
+        return {}
+      },
+    })
+    const item = (await screen.findAllByRole('listitem'))[0]!
+    expect(within(item).queryByText('已置顶')).toBeNull()
+
+    const choosePin = async () => {
+      await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+      return screen.findByRole('menuitem', { name: '置顶' })
+    }
+    await userEvent.click(await choosePin())
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.setPinned', { sessionId: 's1', pinned: true }),
+    )
+    await waitFor(() => expect(within(item).getByText('已置顶')).toBeTruthy())
+
+    await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '取消置顶' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.setPinned', { sessionId: 's1', pinned: false }),
+    )
+    await waitFor(() => expect(within(item).queryByText('已置顶')).toBeNull())
+  })
+
   it('deletes a session after confirming', async () => {
     let sessions = [summary('s1', '要删除的'), summary('s2', '保留')]
     const { request } = setup({
@@ -254,6 +313,7 @@ describe('SessionList', () => {
     })
     const item = (await screen.findAllByRole('listitem'))[0]!
     await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+    expect(screen.queryByRole('menuitem', { name: '置顶' })).toBeNull()
     await userEvent.click(await screen.findByRole('menuitem', { name: '取消归档' }))
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith('session.unarchive', { sessionId: 's1' }),

@@ -58,6 +58,7 @@ describe('openSqliteStorage', () => {
         '0022_auto-fix',
         '0023_auto-fix-session-index',
         '0024_auto-fix-last-comment',
+        '0025_session-pinning',
       ],
     })
     storage.close()
@@ -154,6 +155,7 @@ describe('openSqliteStorage', () => {
       '0022_auto-fix',
       '0023_auto-fix-session-index',
       '0024_auto-fix-last-comment',
+      '0025_session-pinning',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

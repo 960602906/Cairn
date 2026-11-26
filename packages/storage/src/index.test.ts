@@ -31,6 +31,7 @@ it('exports the public API', () => {
     'auto-fix',
     'auto-fix-session-index',
     'auto-fix-last-comment',
+    'session-pinning',
   ])
   expect(storage.StorageErrorCode.SeqConflict).toBe('storage.seq_conflict')
   const error = new storage.StorageError(storage.StorageErrorCode.NotFound)

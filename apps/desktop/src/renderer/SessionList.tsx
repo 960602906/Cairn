@@ -2,13 +2,15 @@
  * 侧栏里不属于任何已打开工作空间的会话（工作空间行已经列出各自的会话，这里只做兜底）。
  * 按项目分组，项目按最近更新的会话排在前面。
  * 每一项显示运行状态（运行中转圈、等待审批与失败用彩色圆点，并有读屏文字），悬停时出现“会话操作”菜单：
- * 重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
+ * 置顶、重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
 import {
   ArchiveRestore,
   ChevronRight,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
@@ -137,6 +139,7 @@ export function SessionItem({
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
   const renameSession = useSessionStore((s) => s.renameSession)
+  const setSessionPinned = useSessionStore((s) => s.setSessionPinned)
   const archiveSession = useSessionStore((s) => s.archiveSession)
   const unarchiveSession = useSessionStore((s) => s.unarchiveSession)
   const deleteSession = useSessionStore((s) => s.deleteSession)
@@ -144,6 +147,7 @@ export function SessionItem({
   const [confirming, setConfirming] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const archived = session.status === 'archived'
+  const pinned = session.pinned === true
   const title = session.title === '' ? t('title.untitled') : session.title
   const time = formatSessionTime(session.updatedAt, t('list.yesterday'))
 
@@ -182,6 +186,12 @@ export function SessionItem({
         )}
         <StatusMark status={session.status} />
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        {pinned && (
+          <span className="shrink-0 text-accent" title={t('item.pinned')}>
+            <Pin aria-hidden className="size-3" />
+            <span className="sr-only">{t('item.pinned')}</span>
+          </span>
+        )}
         {time !== '' && (
           <span className="shrink-0 text-[11px] text-faint transition-opacity group-hover:opacity-0">
             {time}
@@ -203,6 +213,12 @@ export function SessionItem({
         </DropdownMenuTrigger>
         {/* 关闭菜单时不把焦点还给按钮，否则重命名输入框一出现就失去焦点 */}
         <DropdownMenuContent align="start" onCloseAutoFocus={(e) => e.preventDefault()}>
+          {!archived && (
+            <DropdownMenuItem onSelect={() => void setSessionPinned(session.sessionId, !pinned)}>
+              {pinned ? <PinOff /> : <Pin />}
+              {t(pinned ? 'item.unpin' : 'item.pin')}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={() => setRenaming(true)}>
             <Pencil />
             {t('item.rename')}

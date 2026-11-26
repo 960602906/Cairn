@@ -271,6 +271,7 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           ...(trialTeamDraftHash === undefined ? {} : { trialTeamDraftHash }),
           projectPath: project.path,
           archived: false,
+          pinned: false,
           createdAt: at,
           updatedAt: at,
         }
@@ -288,7 +289,12 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
           .filter(
             (r) => listOptions.projectId === undefined || r.projectId === listOptions.projectId,
           )
-          .sort((a, b) => b.updatedAt - a.updatedAt || a.sessionId.localeCompare(b.sessionId))
+          .sort(
+            (a, b) =>
+              Number(b.pinned) - Number(a.pinned) ||
+              b.updatedAt - a.updatedAt ||
+              a.sessionId.localeCompare(b.sessionId),
+          )
           .map(copy)
       },
       remove(sessionId) {
@@ -318,6 +324,12 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
         }
       },
       rename: (sessionId, title) => updateSession(sessionId, { title }),
+      setPinned(sessionId, pinned) {
+        // 置顶不更新 updatedAt：列表顺序按置顶优先、其余按最近使用。
+        const next = { ...requireSession(sessionId), pinned }
+        live().sessions.set(sessionId, next)
+        return copy(next)
+      },
       archive: (sessionId) => updateSession(sessionId, { archived: true }),
       unarchive: (sessionId) => updateSession(sessionId, { archived: false }),
       setModel: (sessionId, model) => updateSession(sessionId, { model: { ...model } }),

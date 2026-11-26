@@ -82,7 +82,7 @@ import {
 } from './Checkpoints.js'
 import { ComposerHighlight } from './ComposerHighlight.js'
 import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMentions.js'
-import { isPlanModeKey, planShortcut } from './layout/shortcuts.js'
+import { COMPOSER_FOCUS_EVENT, isPlanModeKey, planShortcut } from './layout/shortcuts.js'
 import { inspectionKey } from './session-store.js'
 import type { SessionPanel } from './SessionPanels.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
@@ -773,6 +773,13 @@ export function Composer({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
   }, [text])
+
+  // ⌘L：根组件派发聚焦请求，由当前挂载的输入框响应。
+  useEffect(() => {
+    const onFocus = () => textarea.current?.focus()
+    window.addEventListener(COMPOSER_FOCUS_EVENT, onFocus)
+    return () => window.removeEventListener(COMPOSER_FOCUS_EVENT, onFocus)
+  }, [])
 
   const compactNow = async (): Promise<boolean | undefined> => {
     setSending(true)

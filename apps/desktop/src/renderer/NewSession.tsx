@@ -57,7 +57,7 @@ import { onIdle } from './idle.js'
 import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMentions.js'
 import { agentName, localized } from './agents/model.js'
 import { mark, markReady } from './startup-trace.js'
-import { isPlanModeKey } from './layout/shortcuts.js'
+import { COMPOSER_FOCUS_EVENT, isPlanModeKey } from './layout/shortcuts.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
@@ -235,6 +235,13 @@ export function NewSession({
     // 首屏可交互：输入框已获得焦点。e2e 依赖这个属性等待启动完成。
     mark('new_session_ready')
     markReady()
+  }, [])
+
+  // ⌘L：根组件派发聚焦请求，由当前挂载的输入框响应。
+  useEffect(() => {
+    const onFocus = () => textarea.current?.focus()
+    window.addEventListener(COMPOSER_FOCUS_EVENT, onFocus)
+    return () => window.removeEventListener(COMPOSER_FOCUS_EVENT, onFocus)
   }, [])
 
   /** 技能列表只在输入 `/` 或空闲时才需要；首帧不扫描磁盘。 */

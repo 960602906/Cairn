@@ -9,10 +9,15 @@ import { useTranslation } from 'react-i18next'
 import type { AvailableComposerCommand } from './composer-shared.js'
 import {
   agentPickerShortcut,
+  focusComposerShortcut,
   newChatShortcut,
   planShortcut,
   searchShortcut,
+  sessionCycleShortcut,
   settingsShortcut,
+  toggleSidebarShortcut,
+  toggleWorkbenchShortcut,
+  zoomShortcut,
 } from './layout/shortcuts.js'
 import {
   Button,
@@ -42,6 +47,11 @@ export function CommandHelpDialog({
     { label: t('composer.help.shortcut.settings'), keys: settingsShortcut() },
     { label: t('composer.help.shortcut.agent'), keys: agentPickerShortcut() },
     { label: t('composer.help.shortcut.plan'), keys: planShortcut() },
+    { label: t('composer.help.shortcut.focusComposer'), keys: focusComposerShortcut() },
+    { label: t('composer.help.shortcut.sidebar'), keys: toggleSidebarShortcut() },
+    { label: t('composer.help.shortcut.workbench'), keys: toggleWorkbenchShortcut() },
+    { label: t('composer.help.shortcut.sessionCycle'), keys: sessionCycleShortcut() },
+    { label: t('composer.help.shortcut.zoom'), keys: zoomShortcut() },
     { label: t('composer.help.shortcut.send'), keys: 'Enter' },
     { label: t('composer.help.shortcut.newline'), keys: 'Shift Enter' },
     { label: t('composer.help.shortcut.stop'), keys: 'Esc' },

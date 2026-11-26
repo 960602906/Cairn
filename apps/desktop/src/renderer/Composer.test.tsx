@@ -15,6 +15,7 @@ import {
   resolveDefaultModel,
   sameModel,
 } from './Composer.js'
+import { COMPOSER_FOCUS_EVENT } from './layout/shortcuts.js'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 import { TooltipProvider } from './ui/index.js'
@@ -317,6 +318,15 @@ describe('Composer /goal', () => {
   }
 
   const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
+
+  it('focuses the input when the app dispatches the focus event', () => {
+    renderComposer()
+    const textarea = input()
+    textarea.blur()
+    expect(document.activeElement).not.toBe(textarea)
+    window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))
+    expect(document.activeElement).toBe(textarea)
+  })
 
   it('starts a goal and clears the draft on success', async () => {
     const user = userEvent.setup()

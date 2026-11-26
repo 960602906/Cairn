@@ -23,6 +23,8 @@ export interface AppPaths {
   /** 隔离工作区（M4-08）：`<root>/worktrees/<sessionId>/<runId>`。 */
   readonly worktrees: string
   readonly settings: string
+  /** 窗口大小、位置、最大化与缩放级别（桌面手感）；与用户设置分开。 */
+  readonly windowState: string
   /** 默认项目目录；没有可用项目时创建并登记为项目。 */
   readonly defaultProject: string
   /** 加密保存的凭据（M1-03，ADR-0010）。 */
@@ -54,6 +56,7 @@ export function resolveAppPaths({ appData, dev, env = {} }: ResolveAppPathsOptio
     checkpoints: join(root, 'checkpoints'),
     worktrees: join(root, 'worktrees'),
     settings: join(root, 'settings.json'),
+    windowState: join(root, 'window-state.json'),
     defaultProject: join(root, DEFAULT_PROJECT_DIRNAME),
     credentials: join(root, 'credentials.json'),
     updateBackups: join(root, 'backups'),

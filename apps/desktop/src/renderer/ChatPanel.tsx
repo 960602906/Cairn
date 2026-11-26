@@ -34,6 +34,7 @@ import type { SettingsSection } from './settings/SettingsPage.js'
 import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { useMediaQuery } from './layout/use-media-query.js'
+import { isToggleWorkbenchKey, toggleWorkbenchShortcut } from './layout/shortcuts.js'
 import { TopBar } from './layout/TopBar.js'
 import { cn, IconButton } from './ui/index.js'
 
@@ -241,6 +242,23 @@ export function ChatPanel({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [overlayOpen])
 
+  // ⌘J：收起或展开工作台；对话框 / 菜单打开时让给它们。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isToggleWorkbenchKey(event)) return
+      if (
+        document.querySelector(
+          '[role="menu"], [role="listbox"], [role="dialog"]:not([aria-hidden="true"])',
+        )
+      )
+        return
+      event.preventDefault()
+      setPanelPreference((current) => !(current ?? docked))
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [docked])
+
   useEffect(() => {
     setSelectedPlanId(undefined)
     setSelectedChangeSetId(undefined)
@@ -370,6 +388,7 @@ export function ChatPanel({
           )}
           <IconButton
             label={t('sidePanel.label')}
+            title={`${t('sidePanel.label')} (${toggleWorkbenchShortcut()})`}
             size="icon-sm"
             aria-expanded={panelOpen}
             aria-controls="session-side-panel"

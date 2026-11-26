@@ -97,6 +97,7 @@ interface SessionRow {
   workspace_path: string
   title: string
   archived: number
+  pinned: number
   kind: SessionRecord['kind']
   trial_agent_id: string | null
   trial_draft_hash: string | null
@@ -434,6 +435,7 @@ const toSession = (row: SessionRow): SessionRecord => ({
   workspacePath: row.workspace_path,
   title: row.title,
   archived: row.archived === 1,
+  pinned: row.pinned === 1,
   kind: row.kind,
   ...(row.trial_agent_id === null ? {} : { trialAgentId: row.trial_agent_id }),
   ...(row.trial_draft_hash === null ? {} : { trialDraftHash: row.trial_draft_hash }),
@@ -623,7 +625,7 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
        WHERE (@includeArchived = 1 OR archived = 0)
          AND (@includeTrial = 1 OR kind <> 'trial')
          AND (@projectId IS NULL OR project_id = @projectId)
-       ORDER BY updated_at DESC, session_id`,
+       ORDER BY pinned DESC, updated_at DESC, session_id`,
     ),
     insertSession: db.prepare(
       `INSERT INTO sessions
@@ -652,6 +654,10 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
     // 取消归档要能把 archived 归零，updateSession 的 max(archived, @archived) 做不到
     unarchiveSession: db.prepare(
       'UPDATE sessions SET archived = 0, updated_at = @at WHERE session_id = @sessionId',
+    ),
+    // 置顶不碰 updated_at：列表先按置顶、再按最近使用排，置顶本身不算“刚用过”。
+    setSessionPinned: db.prepare(
+      'UPDATE sessions SET pinned = @pinned WHERE session_id = @sessionId',
     ),
     deleteSessionEvents: db.prepare('DELETE FROM events WHERE session_id = ?'),
     deleteSessionFileChanges: db.prepare('DELETE FROM file_changes WHERE session_id = ?'),
@@ -1358,6 +1364,11 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         })()
       },
       rename: (sessionId, title) => updateSession(sessionId, title, 0),
+      setPinned(sessionId, pinned) {
+        const { changes } = q.setSessionPinned.run({ sessionId, pinned: pinned ? 1 : 0 })
+        if (changes === 0) throw new StorageError(StorageErrorCode.NotFound, { sessionId })
+        return toSession(q.sessionById.get(sessionId)!)
+      },
       archive: (sessionId) => updateSession(sessionId, null, 1),
       unarchive(sessionId) {
         const { changes } = q.unarchiveSession.run({ sessionId, at: now() })

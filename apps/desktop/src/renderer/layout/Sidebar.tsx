@@ -13,7 +13,12 @@ import { CairnMark, cn, IconButton, Kbd } from '../ui/index.js'
 import { WorkspaceList } from '../WorkspaceList.js'
 import { ResizeHandle, useResizableWidth } from './resize.js'
 import { UpdateButton } from './UpdateButton.js'
-import { newChatShortcut, searchShortcut, settingsShortcut } from './shortcuts.js'
+import {
+  newChatShortcut,
+  searchShortcut,
+  settingsShortcut,
+  toggleSidebarShortcut,
+} from './shortcuts.js'
 
 /** 左栏默认宽度；可以拖动右边缘调整。 */
 export const SIDEBAR_WIDTH = 252
@@ -165,7 +170,12 @@ export function Sidebar({
                 onClick={onActivity}
               />
             )}
-            <IconButton label={t('sidebar.collapse')} size="icon-sm" onClick={onClose}>
+            <IconButton
+              label={t('sidebar.collapse')}
+              title={`${t('sidebar.collapse')} (${toggleSidebarShortcut()})`}
+              size="icon-sm"
+              onClick={onClose}
+            >
               <PanelLeftClose />
             </IconButton>
           </div>

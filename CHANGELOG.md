@@ -7,6 +7,24 @@
 
 ### Added
 
+- 新增一组桌面快捷键：⌘L 聚焦输入框、⌘B 收起或展开侧栏、⌘J 收起或展开工作台、⌘⇧[ / ⌘⇧]
+  切换上一个或下一个会话，以及 ⌘+ / ⌘- / ⌘0 缩放界面；Windows / Linux 使用 Ctrl。帮助面板同步列出。
+  Adds desktop shortcuts: ⌘L focuses the composer, ⌘B toggles the sidebar, ⌘J toggles the
+  workbench, ⌘⇧[ / ⌘⇧] switch to the previous or next session, and ⌘+ / ⌘- / ⌘0 zoom the
+  interface, with Ctrl on Windows and Linux. The help panel lists them too.
+
+- 窗口会记住大小、位置、最大化状态与缩放比例，下次启动时恢复；显示器变化后不会恢复到屏幕外。
+  The window remembers its size, position, maximized state and zoom level across launches, and
+  never reopens fully off-screen after displays change.
+
+- 会话可以置顶：在会话操作菜单里选择「置顶」，置顶的会话排在列表最前，且不会因为置顶改变最近
+  更新时间；归档的会话不显示置顶操作。
+  Sessions can be pinned from the session menu and sort to the top without changing their updated
+  time; archived sessions do not offer pinning.
+
+- 在 Windows / Linux 上，有会话正在运行时关闭窗口会先确认，避免误关中断回复。
+  On Windows and Linux, closing the window while chats are running asks for confirmation first.
+
 - 新对话页可以选择 Agent：输入框左下新增 Agent 选择器，选中的 Agent 在创建会话时生效，并按工作
   空间记住上次的选择；菜单底部「管理 Agents」直达设置。
   The new-chat composer gains an agent picker: the chosen agent applies when the session is created

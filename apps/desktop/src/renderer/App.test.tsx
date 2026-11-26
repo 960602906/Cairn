@@ -183,6 +183,22 @@ describe('App', () => {
     expect(screen.queryByRole('navigation', { name: '会话' })).toBeNull()
   })
 
+  it('toggles the sidebar with Ctrl+B and focuses the composer with Ctrl+L', async () => {
+    render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
+    expect(await screen.findByRole('button', { name: '收起侧栏' })).toBeTruthy()
+    const composer = screen.getByPlaceholderText('有什么可以帮你？')
+
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true })
+    expect(await screen.findByRole('button', { name: '展开侧栏' })).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true })
+    expect(await screen.findByRole('button', { name: '收起侧栏' })).toBeTruthy()
+
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(document.activeElement).not.toBe(composer)
+    fireEvent.keyDown(window, { key: 'l', ctrlKey: true })
+    await waitFor(() => expect(document.activeElement).toBe(composer))
+  })
+
   it('closes the narrow drawer with Escape unless another dialog is open', async () => {
     stubMedia(true)
     render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
