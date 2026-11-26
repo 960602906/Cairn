@@ -203,6 +203,27 @@ describe('AgentPicker', () => {
     expect(options()[0]!.getAttribute('aria-selected')).toBe('true')
   })
 
+  it('highlights the current agent when opened so Enter does not switch', async () => {
+    const { request, trigger } = setup({ current: { id: 'builtin.reviewer', version: 3 } })
+    await userEvent.click(trigger())
+    expect(
+      options().find((item) => item.getAttribute('data-active') === 'true')?.textContent,
+    ).toContain('代码审查员')
+    await userEvent.type(screen.getByRole('combobox', { name: '搜索 Agent' }), '{Enter}')
+    expect(request).not.toHaveBeenCalledWith('session.setAgent', expect.anything())
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('highlights the bound team when opened', async () => {
+    const { trigger } = setup({
+      teams: [team()],
+      team: { teamId: 'user.team-1', name: { 'zh-CN': '日常协作' } },
+    })
+    await userEvent.click(trigger())
+    const rows = within(screen.getByRole('listbox')).getAllByRole('option')
+    expect(rows[0]!.getAttribute('data-active')).toBe('true')
+  })
+
   it('lists only usable agents, marking the current one', async () => {
     const { trigger } = setup()
     await userEvent.click(trigger())
