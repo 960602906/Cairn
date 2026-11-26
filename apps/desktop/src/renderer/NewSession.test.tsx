@@ -602,6 +602,38 @@ describe('NewSession controls', () => {
     )
   })
 
+  it('returns focus to the input after picking a model or mode', async () => {
+    setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await user.click(screen.getByRole('button', { name: '模型：测试供应商 · 快' }))
+    await user.click(await screen.findByRole('menuitem', { name: /强/ }))
+    await waitFor(() => expect(document.activeElement).toBe(input))
+
+    await user.click(screen.getByRole('button', { name: '权限模式：询问' }))
+    await user.click(await screen.findByRole('menuitem', { name: /计划模式/ }))
+    await waitFor(() => expect(document.activeElement).toBe(input))
+    expect(planOn()).toBe(true)
+  })
+
+  it('toggles plan mode with the shortcut while the mention list is open', async () => {
+    setup(
+      {},
+      { sessionId: 's1' },
+      { skills: [] },
+      {
+        'agent.list': () => ({ agents: [agentFixture('builtin.explorer', '探索员')] }),
+        'agent.delegationTargets': () => ({ enabled: true, agentIds: ['builtin.explorer'] }),
+      },
+    )
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.type(input, '看看 @探')
+    await screen.findByRole('listbox', { name: '引用文件' })
+    fireEvent.keyDown(input, { key: 'P', ctrlKey: true, shiftKey: true })
+    expect(planOn()).toBe(true)
+  })
+
   it('keeps the draft and plan mode when the page remounts', async () => {
     setup()
     const user = userEvent.setup()

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
@@ -465,6 +465,63 @@ describe('Composer /goal', () => {
 
     await user.click(screen.getByRole('button', { name: /计划模式已开启/ }))
     await user.click(await screen.findByRole('menuitem', { name: /计划模式/ }))
+    expect(screen.getByRole('button', { name: '权限模式：询问' })).toBeTruthy()
+  })
+
+  it('returns focus to the input after picking a mode or pressing Escape', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const textarea = input()
+    await user.click(screen.getByRole('button', { name: '权限模式：询问' }))
+    await user.click(await screen.findByRole('menuitem', { name: /计划模式/ }))
+    await waitFor(() => expect(document.activeElement).toBe(textarea))
+
+    await user.click(screen.getByRole('button', { name: /计划模式已开启/ }))
+    await screen.findByRole('menuitem', { name: /计划模式/ })
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(document.activeElement).toBe(textarea))
+  })
+
+  it('does not pull focus back to the input when the menu is dismissed elsewhere', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const textarea = input()
+    await user.click(screen.getByRole('button', { name: '权限模式：询问' }))
+    await screen.findByRole('menuitem', { name: /计划模式/ })
+    // 模态菜单会给 body 加上 pointer-events: none，用事件模拟点在菜单外面。
+    fireEvent.pointerDown(document.body)
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: /计划模式/ })).toBeNull())
+    await waitFor(() => expect(document.activeElement).not.toBe(textarea))
+  })
+
+  it('returns focus to the input after switching models', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const textarea = input()
+    await user.click(screen.getByRole('button', { name: '模型：供应商一 · fast' }))
+    await user.click(await screen.findByRole('menuitem', { name: /强/ }))
+    await waitFor(() => expect(document.activeElement).toBe(textarea))
+  })
+
+  it('returns focus to the input after closing the agent picker', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const textarea = input()
+    await user.type(textarea, '/agent{Enter}')
+    await screen.findByRole('listbox', { name: '选择 Agent' })
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(document.activeElement).toBe(textarea))
+  })
+
+  it('toggles plan mode with the shortcut while the command list is open', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const textarea = input()
+    await user.type(textarea, '/')
+    await screen.findByRole('listbox', { name: '输入指令' })
+    fireEvent.keyDown(textarea, { key: 'P', ctrlKey: true, shiftKey: true })
+    expect(screen.getByRole('button', { name: /计划模式已开启/ })).toBeTruthy()
+    fireEvent.keyDown(textarea, { key: 'P', ctrlKey: true, shiftKey: true })
     expect(screen.getByRole('button', { name: '权限模式：询问' })).toBeTruthy()
   })
 })

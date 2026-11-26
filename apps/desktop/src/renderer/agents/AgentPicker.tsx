@@ -116,6 +116,7 @@ export function AgentPicker({
   onSelectTeam,
   onManage,
   onManageTeams,
+  returnFocus,
 }: {
   /** 已有会话：选中后直接切换这个会话的 Agent / 团队；新对话页省略。 */
   readonly sessionId?: string | undefined
@@ -136,6 +137,8 @@ export function AgentPicker({
   readonly onManage?: (() => void) | undefined
   /** 菜单底部的“管理团队”；省略时不显示。 */
   readonly onManageTeams?: (() => void) | undefined
+  /** 选中或 Esc 关闭时把焦点还给这里（通常是输入框）；省略时回到触发按钮。 */
+  readonly returnFocus?: (() => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const { t: tt } = useTranslation('teams')
@@ -227,7 +230,9 @@ export function AgentPicker({
   const close = (focusTrigger: boolean) => {
     setOpen(false)
     setQuery('')
-    if (focusTrigger) trigger.current?.focus()
+    if (!focusTrigger) return
+    if (returnFocus !== undefined) returnFocus()
+    else trigger.current?.focus()
   }
 
   const choose = (next: AgentSummary | undefined) => {

@@ -209,20 +209,30 @@ export function ModeMenu({
   onTogglePlan,
   open,
   onOpenChange,
+  returnFocus,
 }: {
   readonly planMode: boolean
   readonly onTogglePlan: () => void
   /** 由 `/permissions` 打开；省略时菜单自己管理开关。 */
   readonly open?: boolean | undefined
   readonly onOpenChange?: ((open: boolean) => void) | undefined
+  /** 关闭时把焦点还给这里（通常是输入框）；省略时交给 Radix 还到触发按钮。 */
+  readonly returnFocus?: (() => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const mode = useSessionStore((s) => s.settings?.permissionMode) ?? DEFAULT_PERMISSION_MODE
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const Icon = PERMISSION_ICONS[mode]
   const modeLabel = t(`composer.permission.${mode}`)
+  const interactedOutside = useRef(false)
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        if (next) interactedOutside.current = false
+        onOpenChange?.(next)
+      }}
+    >
       <DropdownMenuTrigger
         aria-label={
           planMode
@@ -244,7 +254,20 @@ export function ModeMenu({
         )}
         <ChevronDown className="text-faint" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-72">
+      <DropdownMenuContent
+        align="start"
+        side="top"
+        className="w-72"
+        onInteractOutside={() => {
+          interactedOutside.current = true
+        }}
+        onCloseAutoFocus={(event) => {
+          if (returnFocus === undefined || interactedOutside.current) return
+          // 选中项或 Esc 关闭时，把焦点交还给调用方而不是触发按钮。
+          event.preventDefault()
+          returnFocus()
+        }}
+      >
         <DropdownMenuLabel>{t('composer.permission.title')}</DropdownMenuLabel>
         {PERMISSION_MODES.map((option) => {
           const OptionIcon = PERMISSION_ICONS[option]
@@ -295,6 +318,7 @@ export function ModelPicker({
   thinkingLevel,
   onSelectThinkingLevel,
   align = 'end',
+  returnFocus,
 }: {
   readonly providers: readonly ProviderConfig[]
   readonly model: ModelRef | undefined
@@ -310,6 +334,8 @@ export function ModelPicker({
   /** 给出时才能改思考强度；没有会话（新会话页）时不显示这一段。 */
   readonly onSelectThinkingLevel?: ((level: ReasoningEffort) => void) | undefined
   readonly align?: 'start' | 'end'
+  /** 关闭时把焦点还给这里（通常是输入框）；省略时交给 Radix 还到触发按钮。 */
+  readonly returnFocus?: (() => void) | undefined
 }) {
   const { t } = useTranslation('session')
   // 停用的模型不列出（M2-10）；会话正在用的仍显示它的名称。
@@ -320,8 +346,15 @@ export function ModelPicker({
     .find((provider) => provider.id === model?.providerId)
     ?.models.find((item) => item.id === model?.modelId)
   const level = thinkingLevel ?? current?.thinkingLevel ?? 'high'
+  const interactedOutside = useRef(false)
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        if (next) interactedOutside.current = false
+        onOpenChange(next)
+      }}
+    >
       <DropdownMenuTrigger
         disabled={disabled}
         aria-label={t('composer.model.label', { model: label })}
@@ -331,7 +364,19 @@ export function ModelPicker({
         <span className="truncate">{label}</span>
         <ChevronDown className="shrink-0 text-faint" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} side="top" className="max-h-80 w-64 overflow-y-auto">
+      <DropdownMenuContent
+        align={align}
+        side="top"
+        className="max-h-80 w-64 overflow-y-auto"
+        onInteractOutside={() => {
+          interactedOutside.current = true
+        }}
+        onCloseAutoFocus={(event) => {
+          if (returnFocus === undefined || interactedOutside.current) return
+          event.preventDefault()
+          returnFocus()
+        }}
+      >
         <DropdownMenuLabel className="text-faint">{t('composer.model.title')}</DropdownMenuLabel>
         {options.map((option, index) => (
           <Fragment key={`${option.ref.providerId}/${option.ref.modelId}`}>
@@ -1198,12 +1243,14 @@ export function Composer({
   }, [canStop])
 
   // Ctrl+Shift+P / ⌘⇧P 在正常 / 计划之间切换；对话框与菜单打开时交给它们。
+  // `/` 与 `@` 候选列表只用方向键、Enter、Tab、Esc，快捷键仍然可用；其他列表（如 Agent 选择器）留给它们。
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!isPlanModeKey(event) || event.defaultPrevented) return
       if (
         document.querySelector(
-          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], [role="listbox"]',
+          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], ' +
+            `[role="listbox"]:not(#${COMMAND_LIST_ID}):not(#${MENTION_LIST_ID})`,
         )
       )
         return
@@ -1473,6 +1520,7 @@ export function Composer({
               disabled={active}
               open={agentPickerOpen}
               onOpenChange={setAgentPickerOpen}
+              returnFocus={() => textarea.current?.focus()}
               onManage={onOpenSettings === undefined ? undefined : () => onOpenSettings('agents')}
               onManageTeams={
                 onOpenSettings === undefined ? undefined : () => onOpenSettings('teams')
@@ -1483,6 +1531,7 @@ export function Composer({
               onTogglePlan={() => setPlanMode((on) => !on)}
               open={modeMenuOpen}
               onOpenChange={setModeMenuOpen}
+              returnFocus={() => textarea.current?.focus()}
             />
             <div className="ml-auto flex min-w-0 items-center gap-1">
               <ModelPicker
@@ -1491,10 +1540,8 @@ export function Composer({
                 fixed={fixedModel}
                 disabled={modelMenuDisabled}
                 open={modelMenuOpen}
-                onOpenChange={(next) => {
-                  setModelMenuOpen(next)
-                  if (!next) textarea.current?.focus()
-                }}
+                onOpenChange={setModelMenuOpen}
+                returnFocus={() => textarea.current?.focus()}
                 onSelect={(next) => void setSessionModel(sessionId, next)}
                 thinkingLevel={view?.info?.thinkingLevel}
                 onSelectThinkingLevel={(level) => void setSessionThinkingLevel(sessionId, level)}

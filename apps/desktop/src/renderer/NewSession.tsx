@@ -500,12 +500,14 @@ export function NewSession({
   }
 
   // Ctrl+Shift+P / ⌘⇧P 与会话输入框一致：切换计划模式；对话框和菜单打开时交给它们。
+  // `/` 与 `@` 候选列表只用方向键、Enter、Tab、Esc，快捷键仍然可用；其他列表留给它们。
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!isPlanModeKey(event) || event.defaultPrevented) return
       if (
         document.querySelector(
-          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], [role="listbox"]',
+          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], ' +
+            `[role="listbox"]:not(#${COMMAND_LIST_ID}):not(#${MENTION_LIST_ID})`,
         )
       )
         return
@@ -724,6 +726,7 @@ export function NewSession({
                     : { id: selectedAgent.agentId, version: selectedAgent.version }
                 }
                 team={selectedTeam}
+                returnFocus={() => textarea.current?.focus()}
                 onSelect={(next) => {
                   setSelectedAgentId(next.agentId)
                   setSelectedTeamId(undefined)
@@ -739,7 +742,11 @@ export function NewSession({
                   onOpenSettings === undefined ? undefined : () => onOpenSettings('teams')
                 }
               />
-              <ModeMenu planMode={planMode} onTogglePlan={() => setPlanMode((on) => !on)} />
+              <ModeMenu
+                planMode={planMode}
+                onTogglePlan={() => setPlanMode((on) => !on)}
+                returnFocus={() => textarea.current?.focus()}
+              />
               <div className="ml-auto flex min-w-0 items-center gap-1">
                 <ModelPicker
                   providers={providers}
@@ -748,6 +755,7 @@ export function NewSession({
                   disabled={fixedModel !== undefined || !hasModel}
                   open={modelMenuOpen}
                   onOpenChange={setModelMenuOpen}
+                  returnFocus={() => textarea.current?.focus()}
                   onSelect={(next) => {
                     setSelectedModel(next)
                     writeNewSessionModel(projectPath.trim(), next)

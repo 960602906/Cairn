@@ -145,6 +145,7 @@ function setup({
   onManageTeams = undefined as (() => void) | undefined,
   onSelect = undefined as ((agent: AgentSummary) => void) | undefined,
   onSelectTeam = undefined as ((team: AgentTeamSummary) => void) | undefined,
+  returnFocus = undefined as (() => void) | undefined,
 } = {}) {
   const request = vi.fn(async () => {
     return {}
@@ -168,6 +169,7 @@ function setup({
           onManageTeams={onManageTeams}
           onSelect={onSelect}
           onSelectTeam={onSelectTeam}
+          returnFocus={returnFocus}
         />
       </SessionStoreProvider>
     </I18nextProvider>,
@@ -266,6 +268,19 @@ describe('AgentPicker', () => {
     await userEvent.type(screen.getByRole('combobox', { name: '搜索 Agent' }), '{Escape}')
     expect(screen.queryByRole('listbox')).toBeNull()
     expect(document.activeElement).toBe(trigger())
+  })
+
+  it('hands focus to the given target after choosing and after Escape', async () => {
+    const returnFocus = vi.fn()
+    const { trigger } = setup({ returnFocus })
+    await userEvent.click(trigger())
+    await userEvent.click(within(listbox()).getByText('代码审查员'))
+    expect(returnFocus).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(trigger())
+    await userEvent.type(screen.getByRole('combobox', { name: '搜索 Agent' }), '{Escape}')
+    expect(returnFocus).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).not.toBe(trigger())
   })
 
   it('closes when clicking outside', async () => {
