@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -66,6 +66,17 @@ describe('SessionBriefPanel', () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole('button', { name: '编辑' })),
     )
+  })
+
+  it('ignores Escape and Ctrl+Enter while the input method is composing', async () => {
+    const { updateBrief } = setup('旧要点')
+    await userEvent.click(screen.getByRole('button', { name: '编辑' }))
+    const editor = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '编辑' })
+    fireEvent.keyDown(editor, { key: 'Escape', isComposing: true })
+    expect(screen.getByRole('textbox')).toBeTruthy()
+    fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true, isComposing: true })
+    expect(updateBrief).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox')).toBeTruthy()
   })
 
   it('cancels with Escape and returns focus to Edit', async () => {

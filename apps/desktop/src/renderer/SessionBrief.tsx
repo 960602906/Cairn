@@ -52,6 +52,8 @@ export function SessionBriefPanel({ sessionId }: { readonly sessionId: string })
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
+              // 输入法组字时的 Esc / Ctrl+Enter 属于候选词操作，不取消编辑、也不保存。
+              if (event.nativeEvent.isComposing) return
               if (event.key === 'Escape') {
                 event.preventDefault()
                 cancel()

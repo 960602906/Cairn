@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -365,6 +365,16 @@ describe('FileTreeBrowser', () => {
     expect(request.mock.calls.filter(([method]) => method === 'fs.list').length).toBeGreaterThan(
       lists,
     )
+  })
+
+  it('does not submit a new file name on Enter while the input method is composing', async () => {
+    const { request } = setup([])
+    await userEvent.click(screen.getByRole('button', { name: /^新建文件$/ }))
+    const input = screen.getByLabelText('名称')
+    await userEvent.type(input, 'a.txt')
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(request).not.toHaveBeenCalledWith('fs.create', expect.anything())
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
   it('validates empty names, reports Error action failures and cancels dialogs', async () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -290,6 +290,18 @@ describe('WorkspaceList', () => {
     await userEvent.click(within(rename).getByRole('button', { name: '保存' }))
     expect(updateProject).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('does not submit a rename on Enter while the input method is composing', async () => {
+    const { updateProject } = setup([project()])
+    await userEvent.click(screen.getByRole('button', { name: '工作空间操作' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: '重命名' }))
+    const input = screen.getByLabelText('名称')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'demo-2')
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(updateProject).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
   it('keeps the rename dialog open and reports a failed rename', async () => {

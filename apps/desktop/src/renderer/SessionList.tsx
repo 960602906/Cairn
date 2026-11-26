@@ -113,6 +113,8 @@ function RenameInput({
     ref.current?.select()
   }, [])
   const keyDown = (event: KeyboardEvent) => {
+    // 输入法组字时的 Enter 属于候选词确认，不保存。
+    if (event.nativeEvent.isComposing) return
     if (event.key === 'Enter') {
       event.preventDefault()
       onSave(value, true)
