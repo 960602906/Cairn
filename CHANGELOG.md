@@ -114,6 +114,10 @@
 
 ### Changed
 
+- 从工作台首页卡片打开文件树或后台任务后，焦点落到刚打开的标签上。
+  Opening the file tree or background tasks from a workbench home card now moves focus to the
+  newly opened tab.
+
 - 浮层模式的会话信息栏支持 Esc 收起，焦点回到打开它的按钮；正在输入或内层菜单处理 Esc
   时不受影响。
   The floating session info panel can be dismissed with Escape, returning focus to the button

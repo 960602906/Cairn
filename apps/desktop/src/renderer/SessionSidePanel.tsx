@@ -120,6 +120,8 @@ export function SessionSidePanel({
   const tablistRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef(new Map<string, HTMLButtonElement>())
   const closingTab = useRef(false)
+  /** 从首页卡片打开的页面：卡片随即消失，焦点交给新标签。 */
+  const pendingPanelFocus = useRef<SessionPanelView | null>(null)
   // Esc 关闭浮层时调用最新的 onClose，又不让它的身份变化重建焦点循环。
   const closeRef = useRef(onClose)
   useEffect(() => {
@@ -204,6 +206,12 @@ export function SessionSidePanel({
     const target = tabRefs.current.get(panel) ?? tabRefs.current.get('home')
     target?.focus()
   }, [panel, tabs])
+  // 从首页卡片打开的页面会顶掉卡片，把焦点交给刚打开的标签。
+  useEffect(() => {
+    if (pendingPanelFocus.current !== panel) return
+    pendingPanelFocus.current = null
+    tabRefs.current.get(panel)?.focus()
+  }, [panel])
   // 标签栏按 WAI-ARIA 的 tabs 模式走：← / → 在标签间移动并选中，Home / End 跳到两端。
   const onTablistKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -232,6 +240,10 @@ export function SessionSidePanel({
   const closeTab = (id: SessionTab) => {
     closingTab.current = true
     onCloseTab(id)
+  }
+  const openFromHome = (target: SessionPanel) => {
+    pendingPanelFocus.current = target
+    onOpenPanel(target)
   }
   return (
     <aside
@@ -386,8 +398,8 @@ export function SessionSidePanel({
             <SessionHome
               view={view}
               sessionId={sessionId}
-              onOpenFiles={() => onOpenPanel('files')}
-              onOpenBackground={() => onOpenPanel('background')}
+              onOpenFiles={() => openFromHome('files')}
+              onOpenBackground={() => openFromHome('background')}
             />
           )}
           {panel !== 'home' && !isFileTab(panel) && panel !== 'files' && (
