@@ -114,6 +114,11 @@
 
 ### Changed
 
+- 目标判定记录、运行时间线和 Agents 列表里的模型改为显示设置中配置的供应商与模型名称，
+  配置缺失时退回原始 id，不再直接露出 `providerId · modelId`。
+  Models in goal evaluations, the run timeline, and the agents list now show the provider and
+  model names configured in Settings, falling back to raw ids when the configuration is missing.
+
 - 会话信息栏的标签支持 ← / → 与 Home / End 切换并直接选中；非当前标签和它的关闭按钮不再占
   Tab 顺序，关闭标签后焦点落到新选中的标签，关掉最后一个回到首页。
   Side panel tabs now switch and activate with ← / → and Home / End; only the current tab and

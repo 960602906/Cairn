@@ -9,6 +9,7 @@ import { Search } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentSource, AgentSummary } from '@cairn/protocol'
+import { modelLabel } from '../model-labels.js'
 import { useSessionStore } from '../store-context.js'
 import { cn, SegmentedControl } from '../ui/index.js'
 import { AgentAvatar } from './AgentAvatar.js'
@@ -59,6 +60,7 @@ function AgentRow({
   readonly onOpen: (agent: AgentSummary) => void
 }) {
   const { t, i18n } = useTranslation('agents')
+  const providers = useSessionStore((s) => s.settings?.providers) ?? []
   const status = agentStatus(agent)
   const name = agentName(agent, i18n.language)
   const description = localized(agent.description, i18n.language, t('list.open', { name }))
@@ -98,7 +100,7 @@ function AgentRow({
           </span>
           <span className="mt-1 block text-note text-faint">
             {agent.modelMode === 'fixed' && agent.model
-              ? `${agent.model.providerId} · ${agent.model.modelId}`
+              ? modelLabel(agent.model, providers)
               : t('model.follow')}
           </span>
         </span>

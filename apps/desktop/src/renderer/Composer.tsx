@@ -89,6 +89,7 @@ import {
 import { ComposerHighlight } from './ComposerHighlight.js'
 import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMentions.js'
 import { COMPOSER_FOCUS_EVENT, isPlanModeKey, planShortcut } from './layout/shortcuts.js'
+import { enabledModelChoices, modelLabels, sameModel } from './model-labels.js'
 import { inspectionKey } from './session-store.js'
 import type { SessionPanel } from './SessionPanels.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
@@ -153,51 +154,6 @@ const PERMISSION_ICONS = {
   auto: Zap,
   'full-access': ShieldOff,
 } as const
-
-export const sameModel = (a: ModelRef | undefined, b: ModelRef | undefined) =>
-  a !== undefined && b !== undefined && a.providerId === b.providerId && a.modelId === b.modelId
-
-/** 模型选择项：供应商名称用于分组，模型短名称用于按钮与菜单。 */
-export interface ModelChoice {
-  readonly ref: ModelRef
-  readonly provider: string
-  readonly name: string
-}
-
-/** 把设置里的供应商列表摊平成可选模型；停用的模型不列出。 */
-export function enabledModelChoices(providers: readonly ProviderConfig[]): readonly ModelChoice[] {
-  return providers.flatMap((provider) =>
-    provider.models
-      .filter((model) => model.enabled !== false)
-      .map((model) => ({
-        ref: { providerId: provider.id, modelId: model.id },
-        provider: provider.displayName,
-        name: model.displayName ?? model.id,
-      })),
-  )
-}
-
-/** 新会话的默认模型：优先设置里的默认模型，否则用第一个启用的模型。 */
-export function resolveDefaultModel(
-  providers: readonly ProviderConfig[],
-  preferred: ModelRef | undefined,
-): ModelRef | undefined {
-  const choices = enabledModelChoices(providers)
-  return (choices.find((choice) => sameModel(preferred, choice.ref)) ?? choices[0])?.ref
-}
-
-/** 当前模型的短名称与“供应商 · 模型”全名。 */
-export function modelLabels(
-  model: ModelRef | undefined,
-  providers: readonly ProviderConfig[],
-): { readonly short: string | undefined; readonly full: string | undefined } {
-  if (model === undefined) return { short: undefined, full: undefined }
-  const provider = providers.find((item) => item.id === model.providerId)
-  const configured = provider?.models.find((item) => item.id === model.modelId)
-  const short = configured?.displayName ?? configured?.id ?? model.modelId
-  const full = provider === undefined ? model.modelId : `${provider.displayName} · ${short}`
-  return { short, full }
-}
 
 /**
  * 权限与计划模式的合并菜单：三个控件收成两个。

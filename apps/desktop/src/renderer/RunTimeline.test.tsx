@@ -83,6 +83,28 @@ function setup(options: { tree?: RunTree; delegations?: readonly DelegationView[
     agents: [],
     inspections: {},
     inspectRun: vi.fn(),
+    settings: {
+      locale: 'zh-CN',
+      providers: [
+        {
+          id: 'fake',
+          kind: 'openai',
+          displayName: '测试供应商',
+          baseUrl: 'https://example.com',
+          models: [
+            {
+              id: 'fake-1',
+              displayName: '测试模型',
+              contextWindow: 100_000,
+              maxOutputTokens: 8_000,
+              supportsTools: true,
+              supportsParallelToolCalls: true,
+              supportsReasoning: false,
+            },
+          ],
+        },
+      ],
+    },
   })) as unknown as SessionStore
   const onLocate = vi.fn()
   const onOpenChanges = vi.fn()
@@ -163,6 +185,7 @@ describe('RunTimeline', () => {
     await user.click(turn)
     expect(turn.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText('步骤 1')).toBeTruthy()
+    expect(screen.getByText('测试供应商 · 测试模型')).toBeTruthy()
     expect(screen.getByText('read_file')).toBeTruthy()
     await user.click(turn)
     expect(screen.queryByText('步骤 1')).toBeNull()

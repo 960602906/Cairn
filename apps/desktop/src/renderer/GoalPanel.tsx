@@ -11,6 +11,7 @@ import { openGoal, type GoalView } from '@cairn/core'
 import type { GoalVerdict } from '@cairn/protocol'
 import { goalErrorNoticeKey } from './composer-commands.js'
 import { formatGoalDuration, goalSessionBusy, useGoalElapsed } from './GoalBar.js'
+import { modelLabel } from './model-labels.js'
 import type { SessionPanelContext } from './SessionPanels.js'
 import { useSessionStore } from './store-context.js'
 import { Button, cn, PanelEmpty } from './ui/index.js'
@@ -39,6 +40,7 @@ export function reasonText(goal: GoalView, t: (key: string) => string): string |
 
 function GoalEvaluations({ goal }: { readonly goal: GoalView }) {
   const { t } = useTranslation('session')
+  const providers = useSessionStore((s) => s.settings?.providers) ?? []
   return (
     <section aria-label={t('goal.panel.evaluations')} className="border-t-[0.5px] border-hair p-3">
       <h3 className="text-note font-medium text-fg2">{t('goal.panel.evaluations')}</h3>
@@ -61,8 +63,7 @@ function GoalEvaluations({ goal }: { readonly goal: GoalView }) {
                   {t(`goal.verdict.${evaluation.verdict}`)}
                 </span>
                 <span className="text-[11px] text-muted">
-                  {t('goal.panel.model')}：{evaluation.model.providerId} ·{' '}
-                  {evaluation.model.modelId}
+                  {t('goal.panel.model')}：{modelLabel(evaluation.model, providers)}
                 </span>
               </div>
               <p className="mt-1.5 whitespace-pre-wrap break-words text-fg2">{evaluation.reason}</p>

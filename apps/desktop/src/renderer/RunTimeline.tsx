@@ -10,6 +10,7 @@ import type { DelegationView } from '@cairn/core'
 import { isAgentDraftRef, type RunTree, type RunTreeNode } from '@cairn/protocol'
 import { agentName } from './agents/model.js'
 import { formatCompactTokens as compactTokens, formatDuration } from './format.js'
+import { modelLabel } from './model-labels.js'
 import { useSessionStore as useStore } from './store-context.js'
 import { cn, IconButton } from './ui/index.js'
 
@@ -32,6 +33,7 @@ function RunNodeView({
 }) {
   const { t, i18n } = useTranslation('session')
   const agents = useStore((state) => state.agents) ?? []
+  const providers = useStore((state) => state.settings?.providers) ?? []
   const [expanded, setExpanded] = useState(node.runId === rootRunId)
   const [openTurn, setOpenTurn] = useState<string | undefined>()
   const summary = agents.find((agent) => agent.agentId === node.agent.id)
@@ -162,8 +164,8 @@ function RunNodeView({
                                   {compactTokens(step.usage.inputTokens + step.usage.outputTokens)}
                                 </span>
                               </div>
-                              <p className="truncate font-mono text-[11px] text-faint">
-                                {step.model.providerId} · {step.model.modelId}
+                              <p className="truncate text-[11px] text-faint">
+                                {modelLabel(step.model, providers)}
                               </p>
                               {step.toolCalls.length > 0 && (
                                 <ul className="mt-1 flex flex-col gap-0.5">
