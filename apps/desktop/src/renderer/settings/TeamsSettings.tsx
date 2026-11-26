@@ -53,6 +53,7 @@ export function TeamsSettings() {
       teamId={open === 'new' ? undefined : open}
       onBack={() => setOpen(undefined)}
       onChanged={() => undefined}
+      onOpenTeam={setOpen}
     />
   )
 }

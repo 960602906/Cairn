@@ -9,6 +9,7 @@ import {
   Archive,
   ArrowLeft,
   Check,
+  Copy,
   FileText,
   MoreHorizontal,
   Play,
@@ -45,6 +46,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   IconButton,
   SegmentedControl,
@@ -111,11 +113,14 @@ export function TeamEditor({
   teamId,
   onBack,
   onChanged,
+  onOpenTeam,
 }: {
   /** 已有模板的 id；新建时为 undefined。 */
   readonly teamId: string | undefined
   readonly onBack: () => void
   readonly onChanged: () => void
+  /** 复制为副本后打开新模板；由设置页切换编辑器。 */
+  readonly onOpenTeam: (teamId: string) => void
 }) {
   const { t, i18n } = useTranslation('teams')
   const agents = useSessionStore((s) => s.agents)
@@ -345,6 +350,23 @@ export function TeamEditor({
     onChanged()
   }
 
+  /** 以当前编辑内容另存为副本：字段全部保留，只替换名称并生成新 id。 */
+  const duplicate = async () => {
+    if (!fields) return
+    setBusy(true)
+    const next = await saveTeamDraft({
+      ...fields,
+      name: {
+        'zh-CN': `${localized(fields.name, 'zh-CN', t('editor.untitled'))} 副本`,
+        'en-US': `${localized(fields.name, 'en-US', 'Team')} copy`,
+      },
+    })
+    setBusy(false)
+    if (!next) return
+    onChanged()
+    onOpenTeam(next.teamId)
+  }
+
   /** 把旧版本恢复为草稿：读取该版本的完整字段，覆盖当前草稿并同步基线。 */
   const restoreVersion = async (version: number): Promise<boolean> => {
     if (currentId === undefined) return false
@@ -531,6 +553,11 @@ export function TeamEditor({
                     </IconButton>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    <DropdownMenuItem disabled={busy} onSelect={() => void duplicate()}>
+                      <Copy />
+                      {t('editor.duplicate')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem disabled={busy} onSelect={() => void archive()}>
                       <Archive />
                       {t('editor.archive')}

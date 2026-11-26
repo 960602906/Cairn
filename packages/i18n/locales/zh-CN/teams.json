@@ -34,6 +34,7 @@
   "editor.publish": "发布 v{{version}}",
   "editor.more": "更多操作",
   "editor.archive": "归档",
+  "editor.duplicate": "复制为副本",
   "editor.unarchive": "取消归档",
   "editor.archivedHint": "已归档的模板只读；取消归档后可以继续编辑、发布与试运行。",
   "editor.noChanges": "当前内容与已发布版本一致。",
