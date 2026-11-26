@@ -103,6 +103,10 @@ const withLocalized = (
 const toggleInList = (list: readonly string[], value: string): string[] =>
   list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
 
+/** 另一种语言是否填了名称或描述：只在打开 / 切换 Agent 时用来决定是否展开。 */
+const hasOtherLanguage = (fields: AgentDraftFields, language: 'zh-CN' | 'en-US'): boolean =>
+  (fields.name[language] ?? '') !== '' || (fields.description[language] ?? '') !== ''
+
 function Issues({
   list,
   tone,
@@ -318,6 +322,9 @@ export function AgentEditor({
       setFields(next)
       setBaseline(next)
       setValidation(loaded?.validation)
+      // 只在打开编辑器或切换 Agent 时判断一次；之后展开 / 收起完全由用户决定，
+      // 编辑字段不会再把用户收起的另一种语言重新展开。
+      setShowOtherLanguage(hasOtherLanguage(next, otherLanguage))
     }
     void load()
     return () => {
@@ -325,14 +332,6 @@ export function AgentEditor({
     }
     // store 是稳定的 API 集合，按 agentId 载入
   }, [agentId])
-
-  // 另一种语言已有内容时自动展开，避免编辑时看不到已填的翻译。
-  useEffect(() => {
-    const filled =
-      (fields?.name[otherLanguage] ?? '') !== '' ||
-      (fields?.description[otherLanguage] ?? '') !== ''
-    if (filled) setShowOtherLanguage(true)
-  }, [fields, otherLanguage])
 
   const readonly = detail?.source === 'builtin' || detail?.archived === true
   const published = detail?.published

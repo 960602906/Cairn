@@ -430,6 +430,60 @@ describe('AgentEditor basic info and top bar', () => {
     )
   })
 
+  it('keeps the other language collapsed after the user collapses it', async () => {
+    const store = makeStore({ 'agent.get': () => mockDetail })
+    renderEditor(store)
+    await screen.findByText('测试助手')
+    expect(screen.getByText('英文名称')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: '收起英文' }))
+    expect(screen.queryByText('英文名称')).toBeNull()
+
+    // 编辑当前语言字段不会再触发自动展开。
+    fireEvent.change(screen.getByDisplayValue('测试助手'), { target: { value: '改名' } })
+    expect(screen.queryByText('英文名称')).toBeNull()
+    expect(screen.getByRole('button', { name: '添加英文' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
+  })
+
+  it('re-judges the other language when switching to another agent', async () => {
+    const zhOnly: AgentDetail = {
+      ...mockDetail,
+      agentId: 'user.zhonly',
+      published: undefined,
+      draft: {
+        ...mockDetail.draft!,
+        name: { 'zh-CN': '仅中文' },
+        description: { 'zh-CN': '仅中文描述' },
+      },
+    }
+    const store = makeStore({
+      'agent.get': (params) =>
+        (params as { agentId?: string }).agentId === 'user.zhonly' ? zhOnly : mockDetail,
+    })
+    const tree = (agentId: string, initial: AgentDetail) => (
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreContext.Provider value={store}>
+          <AgentEditor agentId={agentId} initial={initial} onBack={vi.fn()} onChanged={vi.fn()} />
+        </SessionStoreContext.Provider>
+      </I18nextProvider>
+    )
+    const { rerender } = render(tree('user.custom', mockDetail))
+    await screen.findByText('测试助手')
+    expect(screen.getByText('英文名称')).toBeDefined()
+
+    // 切到没有英文内容的 Agent：重新判断后收起。
+    rerender(tree('user.zhonly', zhOnly))
+    await screen.findByText('仅中文')
+    expect(screen.queryByText('英文名称')).toBeNull()
+
+    // 切回有英文内容的 Agent：重新判断后展开。
+    rerender(tree('user.custom', mockDetail))
+    await screen.findByText('测试助手')
+    expect(screen.getByText('英文名称')).toBeDefined()
+  })
+
   it('adds Chinese fields from an English UI', async () => {
     const en = createI18n('en-US')
     const enOnly: AgentDetail = {
