@@ -274,9 +274,12 @@ describe('WorkspaceList', () => {
     })
     await userEvent.click(screen.getByRole('button', { name: '展开剩余 2 个' }))
     expect(screen.getAllByRole('listitem')).toHaveLength(11)
+    // 原按钮消失后焦点交给新出现的「收起」。
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '收起' }))
 
     await userEvent.click(screen.getByRole('button', { name: '收起' }))
     expect(screen.getAllByRole('listitem')).toHaveLength(9)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '展开剩余 2 个' }))
   })
 
   it('closes the rename dialog without saving the same name', async () => {

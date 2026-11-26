@@ -114,6 +114,10 @@
 
 ### Changed
 
+- 侧栏工作空间的会话列表点「展开剩余」或「收起」后，焦点同样落在新出现的那个按钮上。
+  After expanding or collapsing a workspace's session list in the sidebar, focus likewise moves
+  to the button that replaces the one you pressed.
+
 - 会话信息栏的标签支持鼠标中键关闭，和桌面浏览器的标签一致；中键不会先切换到该标签，
   也不会触发自动滚动。
   Tabs in the session info panel can be closed with the middle mouse button, matching desktop
