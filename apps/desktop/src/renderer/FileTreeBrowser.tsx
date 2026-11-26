@@ -473,7 +473,8 @@ export function FileTreeBrowser({
               setDraft((current) => (current ? { ...current, value: event.target.value } : current))
             }
             onKeyDown={(event) => {
-              if (event.key === 'Enter') void submitDraft()
+              // 输入法组字时的 Enter 属于候选词确认，不提交。
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) void submitDraft()
             }}
           />
           <DialogFooter>
@@ -498,7 +499,8 @@ export function FileTreeBrowser({
             value={renameValue}
             onChange={(event) => setRenameValue(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') void submitRename()
+              // 输入法组字时的 Enter 属于候选词确认，不提交。
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) void submitRename()
             }}
           />
           <DialogFooter>

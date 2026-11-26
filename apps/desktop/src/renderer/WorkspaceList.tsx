@@ -274,6 +274,10 @@ function WorkspaceRow({
                 value={nameDraft}
                 maxLength={PROJECT_NAME_MAX_LENGTH}
                 onChange={(event) => setNameDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  // 输入法组字时的 Enter 属于候选词确认，不提交表单。
+                  if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault()
+                }}
                 className="h-9 w-full rounded-item bg-raise px-3 text-ui text-fg shadow-hair2 outline-none placeholder:text-faint focus:shadow-[0_0_0_1.5px_var(--accent)]"
               />
             </label>

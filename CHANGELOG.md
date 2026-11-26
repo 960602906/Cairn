@@ -246,6 +246,12 @@
 
 ### Fixed
 
+- 用输入法打字时，按 Enter 确认候选词不再误触发提交：会话重命名、搜索对话、文件树的新建 /
+  重命名、工作空间重命名和会话要点的 Esc / Ctrl+Enter 都会等组字结束再响应。
+  Confirming an input-method candidate with Enter no longer triggers the surrounding action:
+  session rename, conversation search, file-tree create/rename, workspace rename, and the brief
+  editor's Esc / Ctrl+Enter all wait until composition ends.
+
 - 对话里切换团队现在显示「已切换到团队 名称 v版本」的分隔提示，不再只显示主控 Agent 或
   完全看不出切换；开场时绑定的团队不算切换，离开团队仍由随后换 Agent 的提示说明。
   Switching teams in a conversation now shows a "Switched to team name vN" divider instead of

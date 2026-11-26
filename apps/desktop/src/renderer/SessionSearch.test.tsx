@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
@@ -119,6 +119,21 @@ describe('SessionSearch', () => {
     await press('{Enter}')
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(store.getState().activeSessionId).toBe('b')
+  })
+
+  it('ignores Enter and arrows while the input method is composing', async () => {
+    const { store } = setup()
+    await press('{Control>}k{/Control}')
+    const dialog = await screen.findByRole('dialog', { name: '搜索对话' })
+    const options = () => within(dialog).getAllByRole('option')
+    await waitFor(() => expect(options()).toHaveLength(3))
+    const before = store.getState().activeSessionId
+    const input = within(dialog).getByRole('combobox')
+    fireEvent.keyDown(input, { key: 'ArrowDown', isComposing: true })
+    expect(options()[0]!.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(screen.queryByRole('dialog')).not.toBeNull()
+    expect(store.getState().activeSessionId).toBe(before)
   })
 
   it('keeps the active result in view while navigating with the keyboard', async () => {

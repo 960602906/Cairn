@@ -297,6 +297,21 @@ describe('SessionList', () => {
     )
   })
 
+  it('does not save a rename on Enter while the input method is composing', async () => {
+    const { request } = setup({
+      'session.list': () => ({ sessions: [summary('s1', '旧标题')] }),
+    })
+    const item = (await screen.findAllByRole('listitem'))[0]!
+    await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '重命名' }))
+    const input = screen.getByLabelText('会话标题') as HTMLInputElement
+    await userEvent.clear(input)
+    await userEvent.type(input, '新标题')
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(screen.getByLabelText('会话标题')).toBeTruthy()
+    expect(request.mock.calls.some(([m]) => m === 'session.rename')).toBe(false)
+  })
+
   it('returns focus to the actions button after a menu action', async () => {
     let sessions = [summary('s1', '旧标题')]
     setup({

@@ -131,6 +131,8 @@ export function SessionSearch({
   }
 
   const onKeyDown = (event: KeyboardEvent) => {
+    // 输入法组字时的 Enter / 方向键属于候选词操作，不打开会话、也不移动选择。
+    if (event.nativeEvent.isComposing) return
     const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
     if (step !== 0 && results.length > 0) {
       event.preventDefault()
