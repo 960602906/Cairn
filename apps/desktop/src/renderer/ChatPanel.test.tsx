@@ -2422,6 +2422,35 @@ describe('Composer (M2-04)', () => {
     expect(await screen.findByRole('heading', { name: 'Agents' })).toBeTruthy()
   })
 
+  it('opens Teams settings from the picker footer', async () => {
+    const agents = [
+      {
+        agentId: 'a',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+        description: {},
+        source: 'builtin',
+        archived: false,
+        status: 'published',
+        version: 1,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ]
+    const { open } = setup({
+      history: HISTORY,
+      handlers: {
+        'agent.list': () => ({ agents }),
+        'team.list': () => ({ teams: [] }),
+        'settings.get': () => ({ providers, permissionMode: 'ask' }),
+      },
+    })
+    await open()
+    await userEvent.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    await userEvent.click(await screen.findByRole('button', { name: '管理团队' }))
+    expect(await screen.findByRole('heading', { name: '团队模板' })).toBeTruthy()
+  })
+
   it('cannot switch the agent while the session is running', async () => {
     const agents = [
       {

@@ -385,6 +385,8 @@
   "composer.team.label": "Switch team: {{name}}",
   "composer.team.section": "Team templates",
   "composer.team.meta": "{{pattern}} · {{count}} members",
+  "composer.team.manage": "Manage teams",
+  "composer.team.unavailable": "Archived or unavailable",
   "chat.agentSwitched": "Switched to {{name}} v{{version}}",
   "chat.agentSwitchedDraft": "Switched to {{name}} draft",
   "composer.context": "Context used {{percent}}% ({{used}} / {{total}} tokens)",

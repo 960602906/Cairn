@@ -798,6 +798,19 @@ describe('NewSession controls', () => {
     expect(await screen.findByRole('heading', { name: 'Agents' })).toBeTruthy()
   })
 
+  it('opens Teams settings from the new-session picker', async () => {
+    const agents = [agentFixture('builtin.coder', '编程助手')]
+    setup({}, undefined, undefined, {
+      'agent.list': () => ({ agents }),
+      'team.list': () => ({ teams: [] }),
+    })
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    await user.click(await screen.findByRole('button', { name: '管理团队' }))
+    expect(await screen.findByRole('heading', { name: '团队模板' })).toBeTruthy()
+  })
+
   it('remembers the selected agent per workspace', async () => {
     const projects = [
       { projectId: 'p1', name: 'work', path: '/work', createdAt: 1 },
