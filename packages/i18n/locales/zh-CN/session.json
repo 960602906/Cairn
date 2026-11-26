@@ -389,6 +389,7 @@
   "composer.team.unavailable": "已归档或不可用",
   "chat.agentSwitched": "已切换到 {{name}} v{{version}}",
   "chat.agentSwitchedDraft": "已切换到 {{name}} 草稿",
+  "chat.teamSwitched": "已切换到团队 {{name}} v{{version}}",
   "composer.context": "上下文已用 {{percent}}%（{{used}} / {{total}} tokens）",
   "composer.context.open": "查看上下文用量",
   "composer.context.breakdown": "上下文用量",

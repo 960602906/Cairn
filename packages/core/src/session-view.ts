@@ -71,6 +71,12 @@ export interface SessionInfo {
   readonly createdAt: number
 }
 
+/** 一次团队绑定的变化（`session.team.changed`）；`team` 为 undefined 表示回到普通 Agent。 */
+export interface TeamChangeView {
+  readonly seq: number
+  readonly team: SessionTeamBinding | undefined
+}
+
 interface MessageMeta {
   readonly messageId: string
   readonly runId: string
@@ -539,6 +545,11 @@ export interface SessionView {
    */
   readonly toolOutputOmitted?: { readonly seq: number }
   /**
+   * 团队绑定的变化（M7-09），按 seq 顺序；界面只在下一条消息上方显示最后一条，
+   * 连续的相同绑定合并不重复记录。开场前的绑定没有“切换”含义，不显示。
+   */
+  readonly teamChanges?: readonly TeamChangeView[]
+  /**
    * 最新的会话要点（M3-04）。只来自 `session.brief.updated`，不放进 `messages`。
    * 后面的轮次不会清掉它；空内容表示用户把它清空了。
    */
@@ -870,8 +881,22 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       return view.info ? { ...view, info: { ...view.info, title: event.payload.title } } : undefined
     case 'session.model.changed':
       return view.info ? { ...view, info: { ...view.info, model: event.payload.model } } : undefined
-    case 'session.team.changed':
-      return view.info ? { ...view, info: { ...view.info, team: event.payload.team } } : undefined
+    case 'session.team.changed': {
+      if (!view.info) return undefined
+      const team = event.payload.team
+      const previous = view.teamChanges?.at(-1)?.team
+      const unchanged =
+        previous === undefined || team === undefined
+          ? previous === team
+          : previous.teamId === team.teamId && previous.version === team.version
+      return {
+        ...view,
+        info: { ...view.info, team },
+        ...(unchanged
+          ? {}
+          : { teamChanges: [...(view.teamChanges ?? []), { seq: event.seq, team }] }),
+      }
+    }
     case 'session.thinkingLevel.changed':
       return view.info
         ? { ...view, info: { ...view.info, thinkingLevel: event.payload.thinkingLevel } }
@@ -1930,6 +1955,7 @@ function rewindView(view: SessionView, event: EventEnvelope<'conversation.rewoun
     agentsMd: _agentsMd,
     compaction: _compaction,
     toolOutputOmitted: _omitted,
+    teamChanges: _teamChanges,
     ...rest
   } = view
   return {
@@ -1957,6 +1983,9 @@ function rewindView(view: SessionView, event: EventEnvelope<'conversation.rewoun
       : {}),
     ...(view.toolOutputOmitted !== undefined && view.toolOutputOmitted.seq < fromSeq
       ? { toolOutputOmitted: view.toolOutputOmitted }
+      : {}),
+    ...(view.teamChanges !== undefined && view.teamChanges.some((change) => change.seq < fromSeq)
+      ? { teamChanges: view.teamChanges.filter((change) => change.seq < fromSeq) }
       : {}),
   }
 }

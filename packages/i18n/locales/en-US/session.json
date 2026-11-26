@@ -389,6 +389,7 @@
   "composer.team.unavailable": "Archived or unavailable",
   "chat.agentSwitched": "Switched to {{name}} v{{version}}",
   "chat.agentSwitchedDraft": "Switched to {{name}} draft",
+  "chat.teamSwitched": "Switched to team {{name}} v{{version}}",
   "composer.context": "Context used {{percent}}% ({{used}} / {{total}} tokens)",
   "composer.context.open": "View context usage",
   "composer.context.breakdown": "Context usage",

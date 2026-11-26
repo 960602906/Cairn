@@ -874,7 +874,88 @@ describe('MessageStream Agent 标记', () => {
     expect(screen.getByText('user.custom')).toBeDefined()
   })
 
-  it('shows a switch divider before a live message from a later run', () => {
+  const teamBinding = {
+    teamId: 'user.team-1',
+    name: { 'zh-CN': '日常协作', 'en-US': 'Daily pair' },
+    version: 2,
+    pattern: 'delegate' as const,
+  }
+
+  it('shows a team switch divider instead of the agent divider for the next message', () => {
+    const view = {
+      ...multiRun,
+      messages: [
+        user('u1', 'r1', 't1', 1),
+        assistant('a1', 'r1', 't1', 2),
+        user('u2', 'r2', 't2', 4),
+        assistant('a2', 'r2', 't2', 5),
+      ],
+      teamChanges: [{ seq: 3, team: teamBinding }],
+    } as unknown as SessionView
+    renderStream(view, [])
+    expect(screen.getByText('已切换到团队 日常协作 v2')).toBeDefined()
+    expect(screen.queryByText('已切换到 user.custom v3')).toBeNull()
+  })
+
+  it('ignores team bindings from before the first message and keeps the latest switch', () => {
+    const initial = {
+      ...multiRun,
+      messages: [user('u1', 'r1', 't1', 5), assistant('a1', 'r1', 't1', 6)],
+      teamChanges: [{ seq: 2, team: teamBinding }],
+    } as unknown as SessionView
+    renderStream(initial, [])
+    expect(screen.queryByText(/已切换到团队/)).toBeNull()
+    cleanup()
+
+    const switched = {
+      ...multiRun,
+      messages: [user('u1', 'r1', 't1', 5), assistant('a1', 'r1', 't1', 6)],
+      teamChanges: [
+        { seq: 2, team: teamBinding },
+        { seq: 7, team: { ...teamBinding, version: 3 } },
+      ],
+    } as unknown as SessionView
+    renderStream(switched, [])
+    expect(screen.getByText('已切换到团队 日常协作 v3')).toBeDefined()
+    expect(screen.queryByText('已切换到团队 日常协作 v2')).toBeNull()
+  })
+
+  it('shows a team switch before a live message and the agent divider when leaving', () => {
+    const live = {
+      ...multiRun,
+      runOrder: ['r1', 'r3'],
+      messages: [user('u1', 'r1', 't1', 1), assistant('a1', 'r1', 't1', 2)],
+      teamChanges: [{ seq: 3, team: teamBinding }],
+      live: {
+        l3: {
+          messageId: 'l3',
+          runId: 'r3',
+          turnId: 't3',
+          text: '',
+          reasoning: 'thinking',
+          lastDeltaSeq: 5,
+          startedAt: 3,
+        },
+      },
+    } as unknown as SessionView
+    renderStream(live, [])
+    expect(screen.getByText('已切换到团队 日常协作 v2')).toBeDefined()
+    expect(screen.queryByText('已切换到 user.unknown v1')).toBeNull()
+    cleanup()
+
+    const left = {
+      ...live,
+      teamChanges: [
+        { seq: 3, team: teamBinding },
+        { seq: 4, team: undefined },
+      ],
+    } as unknown as SessionView
+    renderStream(left, [])
+    expect(screen.queryByText(/已切换到团队/)).toBeNull()
+    expect(screen.getByText('已切换到 user.unknown v1')).toBeDefined()
+  })
+
+  it('shows a team switch divider before a live message from a later run', () => {
     const live = {
       ...multiRun,
       runOrder: ['r1', 'r3'],

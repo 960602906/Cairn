@@ -434,6 +434,12 @@ describe('reduceSession：会话事件', () => {
       workspacePath: '/a',
       title: '旧',
     }
+    const binding = {
+      teamId: 'user.team-1',
+      name: { 'zh-CN': '日常协作' },
+      version: 2,
+      pattern: 'delegate' as const,
+    }
     const view = reduceAll([
       ev('session.renamed', { title: '太早' }),
       ev('session.created', created),
@@ -441,34 +447,37 @@ describe('reduceSession：会话事件', () => {
       ev('session.renamed', { title: '新' }),
       ev('session.model.changed', { model: { providerId: 'p', modelId: 'm2' } }),
       ev('session.thinkingLevel.changed', { thinkingLevel: 'low' }),
-      ev('session.team.changed', {
-        team: {
-          teamId: 'user.team-1',
-          name: { 'zh-CN': '日常协作' },
-          version: 2,
-          pattern: 'delegate',
-        },
-      }),
+      ev('session.team.changed', { team: binding }),
       ev('session.archived', {}),
     ])
     expect(view.info?.title).toBe('新')
     expect(view.info?.model).toEqual({ providerId: 'p', modelId: 'm2' })
     expect(view.info?.thinkingLevel).toBe('low')
     expect(view.info?.team).toMatchObject({ teamId: 'user.team-1', version: 2 })
+    expect(view.teamChanges).toEqual([{ seq: 7, team: binding }])
     expect(view.info?.createdAt).toBe(20)
     expect(view.archived).toBe(true)
     expect(sessionStatus(view)).toBe('archived')
     const restored = reduceSession(view, ev('session.unarchived', {}))
     expect(restored.archived).toBe(false)
     expect(sessionStatus(restored)).not.toBe('archived')
-    // 省略 team 表示改回普通 Agent。
-    expect(reduceSession(view, ev('session.team.changed', {})).info?.team).toBeUndefined()
+    // 省略 team 表示改回普通 Agent；同样记一条变化，界面据此不再显示团队分隔。
+    const cleared = reduceSession(view, ev('session.team.changed', {}))
+    expect(cleared.info?.team).toBeUndefined()
+    expect(cleared.teamChanges?.at(-1)).toEqual({ seq: 10, team: undefined })
+    // 相同的绑定重复送达时不重复记录。
+    const again = reduceSession(
+      reduceSession(cleared, ev('session.team.changed', { team: binding })),
+      ev('session.team.changed', { team: binding }),
+    )
+    expect(again.teamChanges).toHaveLength(3)
     const early = reduceAll([
       ev('session.model.changed', { model: { providerId: 'p', modelId: 'm' } }),
       ev('session.thinkingLevel.changed', { thinkingLevel: 'high' }),
       ev('session.team.changed', {}),
     ])
     expect(early.info).toBeUndefined()
+    expect(early.teamChanges).toBeUndefined()
   })
 
   it('崩溃后显示 crashed，开始新一轮时清除', () => {
@@ -1909,6 +1918,36 @@ describe('conversation.rewound', () => {
     expect(Object.keys(rewound.usageByTurn)).toEqual(['t1'])
     expect(sessionStatus(rewound)).toBe('idle')
     expect(rootRun(rewound)?.turn).toBeUndefined()
+  })
+
+  it('回退时丢掉回退点及之后的团队变化记录', () => {
+    const ev = stream()
+    const view = reduceAll([
+      ev('session.created', {
+        projectId: 'p1',
+        projectPath: '/code/demo',
+        workspacePath: '/code/demo',
+        title: '新会话',
+      }),
+      ev('session.team.changed', {
+        team: {
+          teamId: 'user.team-1',
+          name: { 'zh-CN': '日常协作' },
+          version: 1,
+          pattern: 'delegate',
+        },
+      }),
+      ev('message.user', { messageId: 'u1', content: text('继续') }, { turnId: 't1' }),
+    ])
+    expect(view.teamChanges).toHaveLength(1)
+    // 回退到切换团队之前：分隔提示一并消失。
+    expect(
+      reduceSession(view, ev('conversation.rewound', { fromSeq: 2, reason: 'edit' })).teamChanges,
+    ).toBeUndefined()
+    // 回退点仍在切换之后：保留分隔提示。
+    expect(
+      reduceSession(view, ev('conversation.rewound', { fromSeq: 3, reason: 'edit' })).teamChanges,
+    ).toHaveLength(1)
   })
 
   it('回退之后的输入进入视图，旧轮次不会回来', () => {
