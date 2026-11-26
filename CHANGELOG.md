@@ -114,6 +114,12 @@
 
 ### Changed
 
+- 关闭输入框上方的上下文用量浮层后，焦点回到输入框；Agent 选择器用键盘上下移动时，高亮项
+  会自动滚入可视范围，点外面关闭后下次打开回到完整列表，不再沿用上次的搜索词。
+  Closing the context usage popover returns focus to the composer. The agent picker keeps the
+  highlighted row in view when navigating with the keyboard, and reopening it after an
+  outside click starts from the full list instead of the last search.
+
 - 关闭输入框工具栏的 Agent、权限 / 计划与模型菜单后，焦点回到输入框，可以接着打字；点菜单
   外面关闭时不抢焦点。`/` 指令或 `@` 候选打开时，⌘⇧P / Ctrl+Shift+P 仍可切换计划模式。
   Closing the agent, permission/plan or model menu in the composer toolbar now returns focus to

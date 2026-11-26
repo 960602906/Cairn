@@ -503,6 +503,16 @@ describe('Composer /goal', () => {
     await waitFor(() => expect(document.activeElement).toBe(textarea))
   })
 
+  it('returns focus to the input after closing the context popover', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const textarea = input()
+    await user.type(textarea, '/context{Enter}')
+    await screen.findByLabelText('上下文用量')
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(document.activeElement).toBe(textarea))
+  })
+
   it('returns focus to the input after closing the agent picker', async () => {
     const user = userEvent.setup()
     renderComposer()

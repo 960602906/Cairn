@@ -156,6 +156,7 @@ export function AgentPicker({
   const trigger = useRef<HTMLButtonElement>(null)
   const search = useRef<HTMLInputElement>(null)
   const root = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
   const listId = useId()
 
   // 绑定了团队时显示团队名称；否则按主进程的默认 Agent（内置编程助手）显示，避免“没有选中项”。
@@ -197,6 +198,8 @@ export function AgentPicker({
       if (!(event.target instanceof Node)) return
       if (root.current?.contains(event.target) === true) return
       setOpen(false)
+      // 下次打开回到完整列表，不沿用这次的搜索词。
+      setQuery('')
     }
     document.addEventListener('mousedown', onPointer)
     return () => document.removeEventListener('mousedown', onPointer)
@@ -205,9 +208,19 @@ export function AgentPicker({
   // 换了搜索词就回到第一项，避免高亮停在用户已经看不到的位置。
   useEffect(() => setActive(0), [query])
 
+  // 键盘上下选择时让高亮项保持在可视范围内；测试环境没有 scrollIntoView 时跳过。
+  useEffect(() => {
+    if (!open) return
+    listRef.current
+      ?.querySelector<HTMLElement>('[data-active="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, active, entries.length])
+
   // 运行开始后立刻收起：切换请求会被主进程拒绝，留着面板只会让用户困惑。
   useEffect(() => {
-    if (disabled) setOpen(false)
+    if (!disabled) return
+    setOpen(false)
+    setQuery('')
   }, [disabled])
 
   // ⌘. / Ctrl+. 打开；对话框、菜单或候选列表打开时交给它们。
@@ -342,6 +355,7 @@ export function AgentPicker({
             <Kbd aria-hidden>{agentPickerShortcut()}</Kbd>
           </label>
           <ul
+            ref={listRef}
             id={listId}
             role="listbox"
             aria-label={hasTeams ? t('composer.picker.title') : t('composer.agent.title')}
@@ -404,6 +418,7 @@ export function AgentPicker({
                     id={`${listId}-${entry.key}`}
                     role="option"
                     aria-selected={isCurrent}
+                    data-active={isActive}
                     onMouseEnter={() => setActive(index)}
                     onMouseDown={(event) => {
                       event.preventDefault()
@@ -452,6 +467,7 @@ export function AgentPicker({
                     id={`${listId}-${entry.key}`}
                     role="option"
                     aria-selected={isCurrent}
+                    data-active={isActive}
                     onMouseEnter={() => setActive(index)}
                     onMouseDown={(event) => {
                       event.preventDefault()
