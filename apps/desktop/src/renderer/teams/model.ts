@@ -208,6 +208,45 @@ export function sameTeamFields(a: TeamDraftFields, b: TeamDraftFields): boolean 
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+/** 版本对比的一行：字段路径与两侧的原始值。 */
+export interface TeamFieldDiff {
+  readonly path: TeamFieldDiffPath
+  readonly from: unknown
+  readonly to: unknown
+}
+
+export type TeamFieldDiffPath =
+  | 'nameZh'
+  | 'nameEn'
+  | 'descriptionZh'
+  | 'descriptionEn'
+  | 'coordinator'
+  | 'members'
+  | 'pattern'
+  | 'reviewLoop'
+  | 'pipeline'
+  | 'delegation'
+
+/** 比较一个已发布版本与当前草稿；只返回有变化的字段，值的格式化交给界面。 */
+export function teamFieldDiffs(from: TeamDraftFields, to: TeamDraftFields): TeamFieldDiff[] {
+  const rows: TeamFieldDiff[] = []
+  const push = (path: TeamFieldDiffPath, left: unknown, right: unknown) => {
+    if (JSON.stringify(left) === JSON.stringify(right)) return
+    rows.push({ path, from: left, to: right })
+  }
+  push('nameZh', from.name['zh-CN'], to.name['zh-CN'])
+  push('nameEn', from.name['en-US'], to.name['en-US'])
+  push('descriptionZh', from.description['zh-CN'], to.description['zh-CN'])
+  push('descriptionEn', from.description['en-US'], to.description['en-US'])
+  push('coordinator', from.coordinator, to.coordinator)
+  push('members', from.members, to.members)
+  push('pattern', from.pattern, to.pattern)
+  push('reviewLoop', from.reviewLoop, to.reviewLoop)
+  push('pipeline', from.pipeline, to.pipeline)
+  push('delegation', from.delegation, to.delegation)
+  return rows
+}
+
 /** 从详情里取出可编辑字段：草稿优先，其次最新的已发布版本。 */
 export function teamFieldsOf(detail: {
   readonly draft?: TeamDraft | undefined

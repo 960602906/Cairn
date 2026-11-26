@@ -39,6 +39,7 @@ import {
   type AgentSummary,
   type AgentTeamDetail,
   type AgentTeamSummary,
+  type AgentTeamVersionSummary,
   type AgentVersionSummary,
   type ActivityDecision,
   type ActivityListResult,
@@ -465,6 +466,8 @@ export interface SessionActions {
   listTeams(includeArchived?: boolean): Promise<AgentTeamSummary[] | undefined>
   /** 一份团队模板的当前状态（草稿优先）；失败时返回 undefined。 */
   getTeam(teamId: string, version?: number): Promise<AgentTeamDetail | undefined>
+  /** 团队模板的已发布版本历史，按版本号升序；失败时返回 undefined。 */
+  teamVersions(teamId: string): Promise<AgentTeamVersionSummary[] | undefined>
   /** 保存团队模板草稿；校验结果在返回的 detail 里。 */
   saveTeamDraft(definition: TeamDraftInput): Promise<AgentTeamDetail | undefined>
   publishTeam(teamId: string): Promise<AgentTeamDetail | undefined>
@@ -1221,6 +1224,9 @@ export function createSessionStore(api: MainApi): SessionStore {
         run(() =>
           api.request('team.get', version === undefined ? { teamId } : { teamId, version }),
         ),
+
+      teamVersions: async (teamId) =>
+        (await run(() => api.request('team.versions', { teamId })))?.versions,
 
       saveTeamDraft: (definition) => run(() => api.request('team.saveDraft', { definition })),
 

@@ -380,6 +380,7 @@ function setup(
   teams = {
     list: vi.fn(() => ({ teams: [] })),
     get: vi.fn(),
+    versions: vi.fn(() => ({ versions: [] })),
     saveDraft: vi.fn(),
     publish: vi.fn(),
     trialStart: vi.fn(() => ({
@@ -780,6 +781,10 @@ describe('createRendererGateway: commands and lifecycle', () => {
   it('routes team template commands and trial commands (M7-09)', async () => {
     const { client } = setup()
     await expect(client.request('team.list', {})).resolves.toEqual({ teams: [] })
+    await expect(client.request('team.versions', { teamId: 't1' })).resolves.toEqual({
+      versions: [],
+    })
+    expect(teams.versions).toHaveBeenCalledWith({ teamId: 't1' })
     await expect(
       client.request('team.trial.start', { teamId: 't1', projectPath: '/work' }),
     ).resolves.toMatchObject({ sessionId: 'tt-1', teamId: 't1' })

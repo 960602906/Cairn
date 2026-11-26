@@ -44,6 +44,7 @@ import {
   cn,
 } from '../ui/index.js'
 import { TeamTrial } from './TeamTrial.js'
+import { TeamVersions } from './TeamVersions.js'
 import {
   appendStage,
   coordinatorCandidates,
@@ -310,6 +311,23 @@ export function TeamEditor({
     }
     setSavedAt(true)
     onChanged()
+  }
+
+  /** 把旧版本恢复为草稿：读取该版本的完整字段，覆盖当前草稿并同步基线。 */
+  const restoreVersion = async (version: number): Promise<boolean> => {
+    if (currentId === undefined) return false
+    const detail = await getTeam(currentId, version)
+    const restored = detail ? teamFieldsOf({ published: detail.published }) : undefined
+    if (!restored) return false
+    const saved = await saveTeamDraft({ ...restored, id: currentId })
+    if (!saved) return false
+    setDetail(saved)
+    const next = teamFieldsOf(saved) ?? restored
+    setFields(next)
+    setBaseline(next)
+    setSavedAt(true)
+    onChanged()
+    return true
   }
 
   if (loading || fields === undefined) {
@@ -803,6 +821,16 @@ export function TeamEditor({
           <p className="text-note text-muted">{t('editor.pattern.ignoredHint')}</p>
         )}
       </SettingsGroup>
+
+      {currentId !== undefined && (
+        <TeamVersions
+          // 发布后重新读取版本列表；恢复草稿不会产生新版本，不需要重挂载。
+          key={detail?.published?.version ?? 0}
+          teamId={currentId}
+          current={fields}
+          onRestore={restoreVersion}
+        />
+      )}
 
       <SettingsCard className="gap-2 bg-sunk/60 py-4">
         <p className="text-note leading-relaxed text-muted">{t('editor.footer')}</p>

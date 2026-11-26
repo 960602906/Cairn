@@ -90,6 +90,7 @@ import { TrialStarted, TrialSummary } from '../trial.js'
 import {
   AgentTeamDetail,
   AgentTeamSummary,
+  AgentTeamVersionSummary,
   TeamDraftInput,
   TeamTrialStarted,
   TeamTrialSummary,
@@ -773,6 +774,11 @@ export const MainForRenderer = defineSide({
     'team.get': {
       params: z.object({ teamId: Id, version: z.number().int().positive().optional() }),
       result: AgentTeamDetail,
+    },
+    /** 团队模板的已发布版本历史，按版本号升序；用于对比与恢复为草稿。 */
+    'team.versions': {
+      params: z.object({ teamId: Id }),
+      result: z.object({ versions: z.array(AgentTeamVersionSummary) }),
     },
     /** 保存团队模板草稿：新模板可以不给 id；校验有问题时仍然保存，界面负责展示。 */
     'team.saveDraft': {

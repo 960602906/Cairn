@@ -1298,6 +1298,18 @@ describe('team actions (M7-09)', () => {
     const { api, calls } = fakeApi({
       'team.list': () => ({ teams: [{ teamId: 'user.team-1' }] }),
       'team.get': () => teamDetail,
+      'team.versions': () => ({
+        versions: [
+          {
+            version: 1,
+            publishedAt: 1,
+            name: { 'zh-CN': '团队' },
+            description: {},
+            pattern: 'delegate',
+            memberCount: 1,
+          },
+        ],
+      }),
       'team.saveDraft': () => teamDetail,
       'team.publish': () => teamDetail,
     })
@@ -1312,6 +1324,9 @@ describe('team actions (M7-09)', () => {
     expect(await store.getState().getTeam('user.team-1', 2)).toEqual(teamDetail)
     expect(calls).toContainEqual(['team.get', { teamId: 'user.team-1' }])
     expect(calls).toContainEqual(['team.get', { teamId: 'user.team-1', version: 2 }])
+
+    expect(await store.getState().teamVersions('user.team-1')).toHaveLength(1)
+    expect(calls).toContainEqual(['team.versions', { teamId: 'user.team-1' }])
 
     const definition = {
       name: { 'zh-CN': '团队' },
@@ -1433,6 +1448,9 @@ describe('team actions (M7-09)', () => {
       'team.get': () => {
         throw new RpcError('team.not_found', { teamId: 'missing' })
       },
+      'team.versions': () => {
+        throw new RpcError('team.not_found', { teamId: 'missing' })
+      },
       'team.saveDraft': () => {
         throw new RpcError('team.invalid', { teamId: 'missing' })
       },
@@ -1457,6 +1475,7 @@ describe('team actions (M7-09)', () => {
 
     expect(await store.getState().listTeams()).toBeUndefined()
     expect(await store.getState().getTeam('missing')).toBeUndefined()
+    expect(await store.getState().teamVersions('missing')).toBeUndefined()
     expect(await store.getState().saveTeamDraft(definition)).toBeUndefined()
     expect(await store.getState().publishTeam('missing')).toBeUndefined()
     expect(await store.getState().listTeamTrials('missing')).toBeUndefined()
