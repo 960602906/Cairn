@@ -7,6 +7,17 @@
 
 ### Added
 
+- 团队模板：设置里新增「团队模板」页，可新建、搜索并按状态筛选；编辑器配置中英文名称与描述、
+  主控与成员，以及协作模式（自由委派 / 审查循环 / 流水线）。流水线阶段只能依赖排在它前面的
+  阶段，审查循环会自动保证 maker / checker 在成员里；保存草稿与发布前实时校验，问题直接标在
+  对应的分区。编辑器里可以用当前草稿直接试运行，草稿改动后提示重新开始，试运行历史可清除。
+  Team templates get a Settings page with search and status filters, plus an editor for
+  bilingual names and descriptions, coordinator and members, and collaboration patterns
+  (delegate, review loop, pipeline). Pipeline stages can only depend on earlier stages, and
+  review loops keep maker and checker inside the team. Validation runs while editing and
+  before publishing, with issues attached to their section. A team can be trialled from the
+  editor with the current draft; changes prompt a restart, and trial history can be cleared.
+
 - 输入框支持从操作系统（Finder / 资源管理器）拖入或粘贴文件与文件夹：会转成工作空间内的 `@` 引用，
   一次可多个；工作空间外的文件会提示并忽略，未选择工作空间时先提示。拖动时输入框显示“松开以引用文件”。
   The composer accepts files and folders dragged from Finder or Explorer, or pasted after copying:

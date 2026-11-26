@@ -1286,6 +1286,185 @@ describe('trial sessions (M4-12)', () => {
   })
 })
 
+describe('team actions (M7-09)', () => {
+  const teamDetail = {
+    teamId: 'user.team-1',
+    archived: false,
+    draft: { id: 'user.team-1', name: { 'zh-CN': '团队' } },
+    validation: { ok: true, errors: [], warnings: [] },
+  }
+
+  it('forwards team list, get, save, and publish', async () => {
+    const { api, calls } = fakeApi({
+      'team.list': () => ({ teams: [{ teamId: 'user.team-1' }] }),
+      'team.get': () => teamDetail,
+      'team.saveDraft': () => teamDetail,
+      'team.publish': () => teamDetail,
+    })
+    const store = createSessionStore(api)
+
+    expect(await store.getState().listTeams()).toHaveLength(1)
+    await store.getState().listTeams(true)
+    expect(calls).toContainEqual(['team.list', {}])
+    expect(calls).toContainEqual(['team.list', { includeArchived: true }])
+
+    expect(await store.getState().getTeam('user.team-1')).toEqual(teamDetail)
+    expect(await store.getState().getTeam('user.team-1', 2)).toEqual(teamDetail)
+    expect(calls).toContainEqual(['team.get', { teamId: 'user.team-1' }])
+    expect(calls).toContainEqual(['team.get', { teamId: 'user.team-1', version: 2 }])
+
+    const definition = {
+      name: { 'zh-CN': '团队' },
+      description: {},
+      coordinator: 'builtin.coder',
+      members: [],
+      pattern: 'delegate' as const,
+    }
+    await store.getState().saveTeamDraft(definition)
+    expect(calls).toContainEqual(['team.saveDraft', { definition }])
+    await store.getState().publishTeam('user.team-1')
+    expect(calls).toContainEqual(['team.publish', { teamId: 'user.team-1' }])
+  })
+
+  it('starts a team trial, maps the team draft hash, and routes events', async () => {
+    const { api, calls, emit } = fakeApi({
+      'team.trial.start': () => ({
+        sessionId: 'tt1',
+        teamId: 'team-1',
+        teamDraftHash: 'h1',
+        agent: { id: 'builtin.coder', draftHash: 'a1' },
+        useAgentPermissions: true,
+      }),
+      'session.subscribe': ({ sessionId }: { sessionId: string }) => ({
+        events: [created(sessionId)],
+        lastSeq: 1,
+      }),
+      'approval.pending': () => ({ approvals: [] }),
+      'question.pending': () => ({ questions: [] }),
+    })
+    const store = createSessionStore(api)
+    const started = await store.getState().startTeamTrial({
+      teamId: 'team-1',
+      projectPath: '/work',
+      useAgentPermissions: true,
+      configKey: 'draft-1',
+    })
+    expect(started?.teamId).toBe('team-1')
+    expect(store.getState().trial).toEqual({
+      sessionId: 'tt1',
+      agent: { id: 'builtin.coder', draftHash: 'a1' },
+      draftHash: 'h1',
+      projectPath: '/work',
+      useAgentPermissions: true,
+      configKey: 'draft-1',
+      teamId: 'team-1',
+    })
+    expect(calls).toContainEqual([
+      'team.trial.start',
+      { teamId: 'team-1', projectPath: '/work', useAgentPermissions: true },
+    ])
+    expect(calls).toContainEqual(['session.subscribe', { sessionId: 'tt1', afterSeq: 0 }])
+
+    emit('tt1', [user('tt1', 2, 'team trial')])
+    expect(store.getState().views['tt1']?.messages).toHaveLength(1)
+    // 团队试运行没有 trial.restart：重新开始走 team.trial.start。
+    expect(await store.getState().restartTrial()).toBeUndefined()
+    expect(calls.some(([method]) => method === 'trial.restart')).toBe(false)
+  })
+
+  it('lists and clears team trial history and reports failures', async () => {
+    const { api, calls } = fakeApi({
+      'team.trial.list': () => ({
+        trials: [
+          {
+            sessionId: 'tt1',
+            teamId: 'team-1',
+            agent: { id: 'builtin.coder', draftHash: 'a1' },
+            projectPath: '/work',
+            title: '',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      }),
+      'team.trial.clear': () => ({ cleared: 2 }),
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().listTeamTrials('team-1')).toHaveLength(1)
+    expect(await store.getState().clearTeamTrials('team-1')).toBe(2)
+    expect(calls).toContainEqual(['team.trial.list', { teamId: 'team-1' }])
+    expect(calls).toContainEqual(['team.trial.clear', { teamId: 'team-1' }])
+
+    const failing = fakeApi({
+      'team.trial.start': () => {
+        throw new RpcError('team.invalid', { teamId: 'team-1' })
+      },
+    })
+    const failedStore = createSessionStore(failing.api)
+    expect(
+      await failedStore.getState().startTeamTrial({ teamId: 'team-1', projectPath: '/work' }),
+    ).toBeUndefined()
+    expect(failedStore.getState().error?.code).toBe('team.invalid')
+
+    const noSubscribe = fakeApi({
+      'team.trial.start': () => ({
+        sessionId: 'tt2',
+        teamId: 'team-1',
+        teamDraftHash: 'h2',
+        agent: { id: 'builtin.coder', draftHash: 'a2' },
+        useAgentPermissions: false,
+      }),
+      'session.subscribe': () => {
+        throw new RpcError('rpc.closed')
+      },
+    })
+    const second = createSessionStore(noSubscribe.api)
+    expect(
+      await second.getState().startTeamTrial({ teamId: 'team-1', projectPath: '/work' }),
+    ).toBeUndefined()
+    expect(second.getState().trial).toBeUndefined()
+  })
+
+  it('reports failures from every team action', async () => {
+    const failing = fakeApi({
+      'team.list': () => {
+        throw new RpcError('team.not_found', { teamId: 'missing' })
+      },
+      'team.get': () => {
+        throw new RpcError('team.not_found', { teamId: 'missing' })
+      },
+      'team.saveDraft': () => {
+        throw new RpcError('team.invalid', { teamId: 'missing' })
+      },
+      'team.publish': () => {
+        throw new RpcError('team.no_draft', { teamId: 'missing' })
+      },
+      'team.trial.list': () => {
+        throw new RpcError('team.not_found', { teamId: 'missing' })
+      },
+      'team.trial.clear': () => {
+        throw new RpcError('team.not_found', { teamId: 'missing' })
+      },
+    })
+    const store = createSessionStore(failing.api)
+    const definition = {
+      name: { 'zh-CN': '团队' },
+      description: {},
+      coordinator: 'builtin.coder',
+      members: [],
+      pattern: 'delegate' as const,
+    }
+
+    expect(await store.getState().listTeams()).toBeUndefined()
+    expect(await store.getState().getTeam('missing')).toBeUndefined()
+    expect(await store.getState().saveTeamDraft(definition)).toBeUndefined()
+    expect(await store.getState().publishTeam('missing')).toBeUndefined()
+    expect(await store.getState().listTeamTrials('missing')).toBeUndefined()
+    expect(await store.getState().clearTeamTrials('missing')).toBeUndefined()
+    expect(store.getState().error?.code).toBe('team.not_found')
+  })
+})
+
 describe('settings', () => {
   it('saves settings and records failures', async () => {
     let fail = false

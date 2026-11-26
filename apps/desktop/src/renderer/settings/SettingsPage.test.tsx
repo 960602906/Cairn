@@ -66,6 +66,8 @@ function setup(
     }
     if (method === 'session.list') return { sessions: [] }
     if (method === 'project.list') return { projects: [] }
+    if (method === 'agent.list') return { agents: [] }
+    if (method === 'team.list') return { teams: [] }
     if (method === 'diagnostics.summary') {
       return {
         appVersion: '0.1.0',
@@ -166,7 +168,14 @@ describe('SettingsPage', () => {
         .getAllByRole('button')
         .map((button) => button.textContent)
     expect(titles(groups[0]!)).toEqual(['通用与外观', '已归档的对话'])
-    expect(titles(groups[1]!)).toEqual(['Agents', '模型供应商', '技能', 'MCP 服务', '记忆'])
+    expect(titles(groups[1]!)).toEqual([
+      'Agents',
+      '团队模板',
+      '模型供应商',
+      '技能',
+      'MCP 服务',
+      '记忆',
+    ])
     expect(titles(groups[2]!)).toEqual(['权限与审批'])
     expect(titles(groups[3]!)).toEqual(['关于 Cairn'])
     // 自动修复没有设置分类：由会话按需开启。
@@ -504,6 +513,16 @@ describe('SettingsPage', () => {
     )
     await userEvent.click(collapse)
     expect(onCollapse).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the team templates section from the categories', async () => {
+    setup()
+    await openSettings()
+    await userEvent.click(screen.getByRole('button', { name: '团队模板' }))
+    expect(await screen.findByRole('heading', { name: '团队模板' })).toBeTruthy()
+    expect(await screen.findByText(/还没有团队模板/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '新建团队' }))
+    expect(await screen.findByLabelText('中文名称')).toBeTruthy()
   })
 
   it('filters the category list by title, description and keywords', async () => {
