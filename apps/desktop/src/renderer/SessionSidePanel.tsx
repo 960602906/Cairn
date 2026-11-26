@@ -288,6 +288,16 @@ export function SessionSidePanel({
               return (
                 <div
                   key={id}
+                  // 和桌面浏览器的标签一样，鼠标中键直接关闭，不切换过去。
+                  onAuxClick={(event) => {
+                    if (event.button !== 1) return
+                    event.preventDefault()
+                    closeTab(id)
+                  }}
+                  onMouseDown={(event) => {
+                    // 中键按下会触发自动滚动，拦截掉。
+                    if (event.button === 1) event.preventDefault()
+                  }}
                   className={cn(
                     'group/tab flex h-7 min-w-0 shrink-0 items-center rounded-item transition-colors',
                     selected ? 'bg-sunk text-fg' : 'text-muted hover:bg-hover hover:text-fg2',
