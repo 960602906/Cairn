@@ -3,10 +3,26 @@
  *
  * - 只编辑草稿字段；保存走 `agent.saveDraft`，发布在草稿有校验错误时被阻止。
  * - 左侧导航显示未保存 / 警告 / 错误；离开时若有改动先确认。
- * - 内置 Agent 只读，只能“复制为新 Agent”。
+ * - 顶部操作栏保持一行：试运行 / 保存草稿 / 发布，复制、导出、归档收进「⋯」菜单。
+ * - 内置 Agent 只读，只能“复制为新 Agent”和试运行。
+ * - 基本信息默认只填当前界面语言，另一种语言按需展开；图标与颜色用可键盘操作的选择器。
  * - 指令区实时估算 token 与占上下文的比例（按主模型或固定模型的上下文窗口）。
  */
-import { ArrowLeft, Check, Copy, Download, Play, Save, Upload } from 'lucide-react'
+import {
+  Archive,
+  ArrowLeft,
+  Ban,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  MoreHorizontal,
+  Play,
+  Plus,
+  Save,
+  Upload,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -21,7 +37,13 @@ import {
   type DelegationPolicy,
   type LocalizedText,
 } from '@cairn/protocol'
-import { AGENT_COLOR_NAMES, AGENT_ICON_NAMES, AgentAvatar } from './AgentAvatar.js'
+import {
+  AGENT_COLOR_NAMES,
+  AGENT_COLOR_SWATCHES,
+  AGENT_ICON_NAMES,
+  AGENT_ICONS,
+  AgentAvatar,
+} from './AgentAvatar.js'
 import {
   AGENT_SECTIONS,
   type AgentSection,
@@ -44,6 +66,12 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  IconButton,
   SegmentedControl,
   Switch,
 } from '../ui/index.js'
@@ -64,8 +92,20 @@ const update = <K extends keyof AgentDraftFields>(
   value: AgentDraftFields[K],
 ): AgentDraftFields => ({ ...fields, [key]: value })
 
+/** 只改一种语言，保留另一种；分开写避免计算属性把 LocalizedText 推成宽泛的索引类型。 */
+const withLocalized = (
+  value: LocalizedText,
+  language: 'zh-CN' | 'en-US',
+  text: string,
+): LocalizedText =>
+  language === 'zh-CN' ? { ...value, 'zh-CN': text } : { ...value, 'en-US': text }
+
 const toggleInList = (list: readonly string[], value: string): string[] =>
   list.includes(value) ? list.filter((item) => item !== value) : [...list, value]
+
+/** 另一种语言是否填了名称或描述：只在打开 / 切换 Agent 时用来决定是否展开。 */
+const hasOtherLanguage = (fields: AgentDraftFields, language: 'zh-CN' | 'en-US'): boolean =>
+  (fields.name[language] ?? '') !== '' || (fields.description[language] ?? '') !== ''
 
 function Issues({
   list,
@@ -92,42 +132,15 @@ function Issues({
   )
 }
 
-function LocalizedFields({
-  idPrefix,
-  labelZh,
-  labelEn,
-  value,
-  onChange,
-}: {
-  readonly idPrefix: string
-  readonly labelZh: string
-  readonly labelEn: string
-  readonly value: LocalizedText
-  readonly onChange: (next: LocalizedText) => void
-}) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <label className="block">
-        <span className="mb-1 block text-[13px] text-fg2">{labelZh}</span>
-        <input
-          id={`${idPrefix}-zh`}
-          className={inputClass}
-          value={value['zh-CN'] ?? ''}
-          onChange={(e) => onChange({ ...value, 'zh-CN': e.target.value })}
-        />
-      </label>
-      <label className="block">
-        <span className="mb-1 block text-[13px] text-fg2">{labelEn}</span>
-        <input
-          id={`${idPrefix}-en`}
-          className={inputClass}
-          value={value['en-US'] ?? ''}
-          onChange={(e) => onChange({ ...value, 'en-US': e.target.value })}
-        />
-      </label>
-    </div>
-  )
-}
+/** 默认只露出必要分区；其余收进「高级」折叠组，需要时再展开。 */
+const PRIMARY_SECTIONS: readonly AgentSection[] = ['basic', 'instructions', 'model', 'permissions']
+const ADVANCED_SECTIONS: readonly AgentSection[] = [
+  'capabilities',
+  'limits',
+  'context',
+  'memory',
+  'delegation',
+]
 
 function SectionNav({
   section,
@@ -148,42 +161,81 @@ function SectionNav({
 }) {
   const { t } = useTranslation('agents')
   const marks = sectionMarks(validation)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const advancedVisible = advancedOpen || ADVANCED_SECTIONS.includes(section)
+  const advancedErrors = ADVANCED_SECTIONS.reduce((sum, id) => sum + marks[id].errors, 0)
+  const advancedWarnings = ADVANCED_SECTIONS.reduce((sum, id) => sum + marks[id].warnings, 0)
+  const advancedChanged = ADVANCED_SECTIONS.some((id) => sectionChanged(baseline, fields, id))
+
+  const sectionButton = (id: AgentSection) => {
+    const current = view === 'edit' && id === section
+    const changed = sectionChanged(baseline, fields, id)
+    const mark = marks[id]
+    return (
+      <button
+        key={id}
+        type="button"
+        aria-current={current ? 'page' : undefined}
+        onClick={() => {
+          onView('edit')
+          onSelect(id)
+        }}
+        className={`flex h-8 items-center gap-2 rounded-item px-2.5 text-left text-ui transition-colors ${
+          current ? 'bg-raise font-medium text-fg shadow-1' : 'text-fg2 hover:bg-hover'
+        }`}
+      >
+        <span className="flex-1">{t(`section.${id}`)}</span>
+        {mark.errors > 0 ? (
+          <span
+            aria-label={t('section.errors', { count: mark.errors })}
+            className="size-1.5 rounded-full bg-danger"
+          />
+        ) : mark.warnings > 0 ? (
+          <span
+            aria-label={t('section.warnings', { count: mark.warnings })}
+            className="size-1.5 rounded-full bg-warn"
+          />
+        ) : changed ? (
+          <span aria-label={t('section.pending')} className="size-1.5 rounded-full bg-accent" />
+        ) : null}
+      </button>
+    )
+  }
+
   return (
     <nav aria-label={t('page.title')} className="flex w-[176px] shrink-0 flex-col gap-0.5">
-      {AGENT_SECTIONS.map((id) => {
-        const current = view === 'edit' && id === section
-        const changed = sectionChanged(baseline, fields, id)
-        const mark = marks[id]
-        return (
-          <button
-            key={id}
-            type="button"
-            aria-current={current ? 'page' : undefined}
-            onClick={() => {
-              onView('edit')
-              onSelect(id)
-            }}
-            className={`flex h-8 items-center gap-2 rounded-item px-2.5 text-left text-ui transition-colors ${
-              current ? 'bg-raise font-medium text-fg shadow-1' : 'text-fg2 hover:bg-hover'
-            }`}
-          >
-            <span className="flex-1">{t(`section.${id}`)}</span>
-            {mark.errors > 0 ? (
-              <span
-                aria-label={t('section.errors', { count: mark.errors })}
-                className="size-1.5 rounded-full bg-danger"
-              />
-            ) : mark.warnings > 0 ? (
-              <span
-                aria-label={t('section.warnings', { count: mark.warnings })}
-                className="size-1.5 rounded-full bg-warn"
-              />
-            ) : changed ? (
-              <span aria-label={t('section.pending')} className="size-1.5 rounded-full bg-accent" />
-            ) : null}
-          </button>
-        )
-      })}
+      {PRIMARY_SECTIONS.map(sectionButton)}
+      <button
+        type="button"
+        aria-expanded={advancedVisible}
+        onClick={() => setAdvancedOpen((value) => !value)}
+        className="flex h-8 items-center gap-2 rounded-item px-2.5 text-left text-ui text-fg2 transition-colors hover:bg-hover hover:text-fg"
+      >
+        {advancedVisible ? (
+          <ChevronDown className="size-3.5 text-muted" />
+        ) : (
+          <ChevronRight className="size-3.5 text-muted" />
+        )}
+        <span className="flex-1">{t('section.advanced')}</span>
+        {advancedErrors > 0 ? (
+          <span
+            aria-label={t('section.errors', { count: advancedErrors })}
+            className="size-1.5 rounded-full bg-danger"
+          />
+        ) : advancedWarnings > 0 ? (
+          <span
+            aria-label={t('section.warnings', { count: advancedWarnings })}
+            className="size-1.5 rounded-full bg-warn"
+          />
+        ) : advancedChanged ? (
+          <span aria-label={t('section.pending')} className="size-1.5 rounded-full bg-accent" />
+        ) : null}
+      </button>
+      {advancedVisible && (
+        <div className="flex flex-col gap-0.5 border-l-[0.5px] border-hair pl-2">
+          {ADVANCED_SECTIONS.map(sectionButton)}
+        </div>
+      )}
       <div className="my-1.5 h-px bg-hair" />
       <button
         type="button"
@@ -243,6 +295,9 @@ export function AgentEditor({
   const [confirmPublish, setConfirmPublish] = useState(false)
   const [busy, setBusy] = useState(false)
   const [trialOpen, setTrialOpen] = useState(false)
+  const [showOtherLanguage, setShowOtherLanguage] = useState(false)
+  const currentLanguage = i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US'
+  const otherLanguage = currentLanguage === 'zh-CN' ? 'en-US' : 'zh-CN'
   const dirty =
     fields !== undefined &&
     baseline !== undefined &&
@@ -267,6 +322,9 @@ export function AgentEditor({
       setFields(next)
       setBaseline(next)
       setValidation(loaded?.validation)
+      // 只在打开编辑器或切换 Agent 时判断一次；之后展开 / 收起完全由用户决定，
+      // 编辑字段不会再把用户收起的另一种语言重新展开。
+      setShowOtherLanguage(hasOtherLanguage(next, otherLanguage))
     }
     void load()
     return () => {
@@ -324,6 +382,25 @@ export function AgentEditor({
     if (dirty) setConfirmLeave(true)
     else onBack()
   }
+
+  // 编辑器里的 Esc 先回到列表（并走未保存确认），不冒泡给设置页的 Esc 返回对话，
+  // 避免带着未保存修改直接退回对话。对话框 / 菜单打开时交给它们自己处理。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], [role="listbox"]',
+        )
+      )
+        return
+      event.preventDefault()
+      event.stopPropagation()
+      back()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [back])
 
   /** 试运行读取已保存的草稿，所以先保存编辑中的改动，面板里的配置才和界面一致。 */
   const openTrial = async () => {
@@ -442,8 +519,14 @@ export function AgentEditor({
     )?.contextWindow ?? 128_000
   const percent = Math.min(100, Math.round((tokenCount / contextWindow) * 100))
   const nextVersion = (published?.version ?? 0) + 1
-  const title =
-    fields.name[i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US'] || t('editor.untitled')
+  const title = fields.name[currentLanguage] || t('editor.untitled')
+  const otherLanguageAction = showOtherLanguage
+    ? otherLanguage === 'en-US'
+      ? t('basic.hideEnglish')
+      : t('basic.hideChinese')
+    : otherLanguage === 'en-US'
+      ? t('basic.addEnglish')
+      : t('basic.addChinese')
 
   const modelSelect = (
     label: string,
@@ -478,36 +561,68 @@ export function AgentEditor({
     issuesAt(validation, 'description', 'errors'),
   )
 
+  // 复制 / 导出 / 归档不常点，收进「⋯」菜单；Radix 菜单自带键盘导航与焦点回收。
+  const moreActions = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <IconButton label={t('editor.more')} size="icon-sm" disabled={busy}>
+          <MoreHorizontal />
+        </IconButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem disabled={busy} onSelect={() => void duplicate()}>
+          <Copy />
+          {t('editor.duplicate')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void exportAgent()}>
+          <Download />
+          {t('editor.export')}
+        </DropdownMenuItem>
+        {detail?.archived !== true && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={busy} onSelect={() => void archive()}>
+              <Archive />
+              {t('editor.archive')}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-2 border-b-[0.5px] border-hair px-8 py-3">
-        <Button variant="ghost" size="sm" onClick={back}>
+      <header className="flex items-center gap-2 border-b-[0.5px] border-hair px-8 py-3">
+        <Button variant="ghost" size="sm" className="shrink-0" onClick={back}>
           <ArrowLeft />
           {t('action.back')}
         </Button>
-        <AgentAvatar icon={fields.icon} color={fields.color} size={26} />
-        <h2 className="min-w-0 truncate text-ui font-medium text-fg">{title}</h2>
-        {published && (
-          <span className="tabular rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
-            {t('version', { version: published.version })}
-          </span>
-        )}
-        {detail?.source && (
-          <span className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
-            {t(`source.${detail.source}`)}
-          </span>
-        )}
-        <span
-          className={cn(
-            'rounded-full px-2 py-0.5 text-[11.5px]',
-            published && !dirty && 'bg-ok-soft text-ok',
-            !published && 'bg-warn-soft text-warn',
-            dirty && 'bg-accent-soft text-accent',
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <AgentAvatar icon={fields.icon} color={fields.color} size={26} />
+          <h2 className="min-w-0 truncate text-ui font-medium text-fg">{title}</h2>
+          {published && (
+            <span className="tabular shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+              {t('version', { version: published.version })}
+            </span>
           )}
-        >
-          {dirty ? t('status.dirty') : published ? t('status.published') : t('status.draft')}
-        </span>
-        <div className="ml-auto flex items-center gap-1.5">
+          {detail?.source && (
+            <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+              {t(`source.${detail.source}`)}
+            </span>
+          )}
+          <span
+            className={cn(
+              'shrink-0 rounded-full px-2 py-0.5 text-[11.5px]',
+              published && !dirty && 'bg-ok-soft text-ok',
+              !published && 'bg-warn-soft text-warn',
+              dirty && 'bg-accent-soft text-accent',
+            )}
+          >
+            {dirty ? t('status.dirty') : published ? t('status.published') : t('status.draft')}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
           {savedAt && !dirty && <Check aria-label={t('editor.saved')} className="size-4 text-ok" />}
           <Button
             variant="ghost"
@@ -521,22 +636,15 @@ export function AgentEditor({
           {detail?.source === 'builtin' ? (
             <Button variant="primary" size="sm" disabled={busy} onClick={() => void duplicate()}>
               <Copy />
-              {t('new.copy')}
+              {t('editor.duplicateAsNew')}
             </Button>
           ) : detail?.archived ? (
             <>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void duplicate()}>
-                <Copy />
-                {t('editor.duplicate')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => void exportAgent()}>
-                <Download />
-                {t('editor.export')}
-              </Button>
               <Button variant="primary" size="sm" disabled={busy} onClick={() => void unarchive()}>
                 <Upload />
                 {t('editor.unarchive')}
               </Button>
+              {moreActions}
             </>
           ) : (
             <>
@@ -557,17 +665,7 @@ export function AgentEditor({
               >
                 {t('editor.publishVersion', { version: nextVersion })}
               </Button>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void duplicate()}>
-                <Copy />
-                {t('editor.duplicate')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => void exportAgent()}>
-                <Download />
-                {t('editor.export')}
-              </Button>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void archive()}>
-                {t('editor.archive')}
-              </Button>
+              {moreActions}
             </>
           )}
         </div>
@@ -612,59 +710,199 @@ export function AgentEditor({
             )}
             {view === 'edit' && section === 'basic' && (
               <section className="flex flex-col gap-4">
-                <LocalizedFields
-                  idPrefix="agent-name"
-                  labelZh={t('basic.nameZh')}
-                  labelEn={t('basic.nameEn')}
-                  value={fields.name}
-                  onChange={(name) => setFields(update(fields, 'name', name))}
-                />
-                <LocalizedFields
-                  idPrefix="agent-description"
-                  labelZh={t('basic.descriptionZh')}
-                  labelEn={t('basic.descriptionEn')}
-                  value={fields.description}
-                  onChange={(description) => setFields(update(fields, 'description', description))}
-                />
+                <label className="block">
+                  <span className="mb-1 block text-[13px] text-fg2">
+                    {currentLanguage === 'zh-CN' ? t('basic.nameZh') : t('basic.nameEn')}
+                  </span>
+                  <input
+                    id={`agent-name-${currentLanguage}`}
+                    className={inputClass}
+                    value={fields.name[currentLanguage] ?? ''}
+                    onChange={(e) =>
+                      setFields(
+                        update(
+                          fields,
+                          'name',
+                          withLocalized(fields.name, currentLanguage, e.target.value),
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[13px] text-fg2">
+                    {currentLanguage === 'zh-CN'
+                      ? t('basic.descriptionZh')
+                      : t('basic.descriptionEn')}
+                  </span>
+                  <input
+                    id={`agent-description-${currentLanguage}`}
+                    className={inputClass}
+                    value={fields.description[currentLanguage] ?? ''}
+                    onChange={(e) =>
+                      setFields(
+                        update(
+                          fields,
+                          'description',
+                          withLocalized(fields.description, currentLanguage, e.target.value),
+                        ),
+                      )
+                    }
+                  />
+                </label>
+                <div className="flex flex-col items-start gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="-ml-1.5 text-muted"
+                    aria-expanded={showOtherLanguage}
+                    aria-controls={showOtherLanguage ? 'agent-other-language' : undefined}
+                    onClick={() => setShowOtherLanguage((value) => !value)}
+                  >
+                    {showOtherLanguage ? <ChevronDown /> : <Plus />}
+                    {otherLanguageAction}
+                  </Button>
+                  {showOtherLanguage && (
+                    <div id="agent-other-language" className="grid w-full gap-3 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-1 block text-[13px] text-fg2">
+                          {otherLanguage === 'zh-CN' ? t('basic.nameZh') : t('basic.nameEn')}
+                        </span>
+                        <input
+                          id={`agent-name-${otherLanguage}`}
+                          className={inputClass}
+                          value={fields.name[otherLanguage] ?? ''}
+                          onChange={(e) =>
+                            setFields(
+                              update(
+                                fields,
+                                'name',
+                                withLocalized(fields.name, otherLanguage, e.target.value),
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-[13px] text-fg2">
+                          {otherLanguage === 'zh-CN'
+                            ? t('basic.descriptionZh')
+                            : t('basic.descriptionEn')}
+                        </span>
+                        <input
+                          id={`agent-description-${otherLanguage}`}
+                          className={inputClass}
+                          value={fields.description[otherLanguage] ?? ''}
+                          onChange={(e) =>
+                            setFields(
+                              update(
+                                fields,
+                                'description',
+                                withLocalized(fields.description, otherLanguage, e.target.value),
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                    </div>
+                  )}
+                </div>
                 <p className="text-note text-muted">{t('basic.languageHint')}</p>
                 <Issues list={errorsAtBasic} tone="error" />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-1 block text-[13px] text-fg2">{t('basic.icon')}</span>
-                    <select
-                      aria-label={t('basic.icon')}
-                      className={inputClass}
-                      value={fields.icon ?? ''}
-                      onChange={(e) =>
-                        setFields(update(fields, 'icon', e.target.value || undefined))
-                      }
+                <div>
+                  <span className="mb-1.5 block text-[13px] text-fg2">{t('basic.icon')}</span>
+                  <div
+                    role="radiogroup"
+                    aria-label={t('basic.icon')}
+                    className="flex flex-wrap items-center gap-1.5"
+                  >
+                    {AGENT_ICON_NAMES.map((name) => {
+                      const Icon = AGENT_ICONS[name]
+                      return (
+                        <label
+                          key={name}
+                          className={cn(
+                            'flex size-8 cursor-pointer items-center justify-center rounded-item bg-raise text-fg2 shadow-hair2 transition-[background-color,color,box-shadow] hover:bg-hover focus-within:shadow-[0_0_0_2px_var(--accent)]',
+                            fields.icon === name &&
+                              'bg-accent-soft text-accent shadow-[0_0_0_1.5px_var(--accent)]',
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="agent-icon"
+                            className="sr-only"
+                            aria-label={t(`icon.${name}`)}
+                            checked={fields.icon === name}
+                            onChange={() => setFields(update(fields, 'icon', name))}
+                          />
+                          <Icon className="size-4" />
+                        </label>
+                      )
+                    })}
+                    <label
+                      className={cn(
+                        'flex size-8 cursor-pointer items-center justify-center rounded-item text-faint transition-[background-color,color,box-shadow] hover:bg-hover hover:text-fg2 focus-within:shadow-[0_0_0_2px_var(--accent)]',
+                        fields.icon === undefined && 'bg-sunk text-fg2',
+                      )}
                     >
-                      <option value="">—</option>
-                      {AGENT_ICON_NAMES.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-[13px] text-fg2">{t('basic.color')}</span>
-                    <select
-                      aria-label={t('basic.color')}
-                      className={inputClass}
-                      value={fields.color ?? ''}
-                      onChange={(e) =>
-                        setFields(update(fields, 'color', e.target.value || undefined))
-                      }
+                      <input
+                        type="radio"
+                        name="agent-icon"
+                        className="sr-only"
+                        aria-label={t('icon.none')}
+                        checked={fields.icon === undefined}
+                        onChange={() => setFields(update(fields, 'icon', undefined))}
+                      />
+                      <Ban className="size-4" />
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-[13px] text-fg2">{t('basic.color')}</span>
+                  <div
+                    role="radiogroup"
+                    aria-label={t('basic.color')}
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    {AGENT_COLOR_NAMES.map((name) => (
+                      <label
+                        key={name}
+                        className={cn(
+                          'flex size-7 cursor-pointer items-center justify-center rounded-full transition-shadow hover:shadow-[0_0_0_2px_var(--hair2)] focus-within:shadow-[0_0_0_2px_var(--accent)]',
+                          fields.color === name && 'shadow-[0_0_0_2px_var(--accent)]',
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="agent-color"
+                          className="sr-only"
+                          aria-label={t(`color.${name}`)}
+                          checked={fields.color === name}
+                          onChange={() => setFields(update(fields, 'color', name))}
+                        />
+                        <span
+                          aria-hidden
+                          className={cn('size-5 rounded-full', AGENT_COLOR_SWATCHES[name])}
+                        />
+                      </label>
+                    ))}
+                    <label
+                      className={cn(
+                        'flex size-7 cursor-pointer items-center justify-center rounded-full text-faint transition-[background-color,color,box-shadow] hover:bg-hover hover:text-fg2 focus-within:shadow-[0_0_0_2px_var(--accent)]',
+                        fields.color === undefined && 'bg-sunk text-fg2',
+                      )}
                     >
-                      <option value="">—</option>
-                      {AGENT_COLOR_NAMES.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      <input
+                        type="radio"
+                        name="agent-color"
+                        className="sr-only"
+                        aria-label={t('color.none')}
+                        checked={fields.color === undefined}
+                        onChange={() => setFields(update(fields, 'color', undefined))}
+                      />
+                      <Ban className="size-4" />
+                    </label>
+                  </div>
                 </div>
                 <label className="block">
                   <span className="mb-1 block text-[13px] text-fg2">{t('basic.tags')}</span>

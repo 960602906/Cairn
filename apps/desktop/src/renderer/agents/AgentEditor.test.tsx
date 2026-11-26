@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
@@ -155,6 +156,12 @@ function renderEditor(
   return { onBack, onChanged }
 }
 
+/** 打开顶部「⋯」菜单并点其中一项；菜单内容由 Radix 渲染在 portal 里。 */
+async function chooseMoreAction(label: string) {
+  await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name: label }))
+}
+
 describe('AgentEditor sections and actions', () => {
   it('navigates every section and edits fields', async () => {
     const store = makeStore({
@@ -180,8 +187,8 @@ describe('AgentEditor sections and actions', () => {
     // 基本信息：名称、图标、颜色、标签
     const nameZh = screen.getByDisplayValue('测试助手')
     fireEvent.change(nameZh, { target: { value: '新名字' } })
-    fireEvent.change(screen.getByLabelText('图标'), { target: { value: 'bot' } })
-    fireEvent.change(screen.getByLabelText('颜色'), { target: { value: 'agent-blue' } })
+    fireEvent.click(screen.getByRole('radio', { name: '机器人' }))
+    fireEvent.click(screen.getByRole('radio', { name: '蓝色' }))
     const basicInputs = screen.getAllByRole('textbox')
     fireEvent.change(basicInputs[basicInputs.length - 1]!, { target: { value: 'a, b' } })
 
@@ -203,7 +210,8 @@ describe('AgentEditor sections and actions', () => {
     fireEvent.click(screen.getByRole('button', { name: /^指令/ }))
     expect(screen.getByText(/指令较长/)).toBeDefined()
 
-    // 能力：全部工具开关、分类、Skills、MCP
+    // 能力：全部工具开关、分类、Skills、MCP（先展开「高级」）
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^能力/ }))
     expect(await screen.findByText('tdd')).toBeDefined()
     expect(screen.getByText('Fixture')).toBeDefined()
@@ -273,17 +281,17 @@ describe('AgentEditor sections and actions', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
 
     // 复制
-    fireEvent.click(screen.getByRole('button', { name: '复制' }))
+    await chooseMoreAction('复制')
     await waitFor(() => expect(onOpenAgent).toHaveBeenCalledWith('user.copy'))
 
     // 导出
-    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    await chooseMoreAction('导出')
     await waitFor(() => expect(click).toHaveBeenCalled())
     expect(createObjectURL).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalled()
 
     // 归档
-    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    await chooseMoreAction('归档')
     await waitFor(() => expect(onBack).toHaveBeenCalled())
     click.mockRestore()
   })
@@ -302,7 +310,12 @@ describe('AgentEditor sections and actions', () => {
     renderEditor(store, { agentId: 'builtin.coder', initial: builtin, onOpenAgent })
 
     expect(await screen.findByText(/内置 Agent 只读/)).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: '基于编程助手复制' }))
+    // 只读栏只剩试运行与复制为新 Agent：没有保存、发布和「⋯」。
+    expect(screen.getByRole('button', { name: /试运行/ })).toBeDefined()
+    expect(screen.queryByRole('button', { name: '保存草稿' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^发布/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '复制为新 Agent' }))
     await waitFor(() => expect(onOpenAgent).toHaveBeenCalledWith('user.copy'))
   })
 
@@ -378,6 +391,178 @@ describe('AgentEditor sections and actions', () => {
   })
 })
 
+describe('AgentEditor basic info and top bar', () => {
+  it('shows only the current UI language and adds the other one on demand', async () => {
+    const zhOnly: AgentDetail = {
+      ...mockDetail,
+      published: undefined,
+      draft: {
+        ...mockDetail.draft!,
+        name: { 'zh-CN': '仅中文' },
+        description: { 'zh-CN': '仅中文描述' },
+      },
+    }
+    const store = makeStore({ 'agent.get': () => zhOnly })
+    renderEditor(store, { initial: zhOnly })
+    await screen.findByText('仅中文')
+
+    expect(screen.getByText('中文名称')).toBeDefined()
+    expect(screen.queryByText('英文名称')).toBeNull()
+    const add = screen.getByRole('button', { name: '添加英文' })
+    expect(add.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(add)
+    const hide = screen.getByRole('button', { name: '收起英文' })
+    expect(hide.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('英文名称')).toBeDefined()
+    fireEvent.change(screen.getByLabelText('英文名称'), { target: { value: 'Only English' } })
+    expect((screen.getByLabelText('英文名称') as HTMLInputElement).value).toBe('Only English')
+  })
+
+  it('auto-expands the other language when it already has content', async () => {
+    const store = makeStore({ 'agent.get': () => mockDetail })
+    renderEditor(store)
+    await screen.findByText('测试助手')
+    // mockDetail 有英文名称：默认展开，按钮显示 aria-expanded。
+    expect(screen.getByText('英文名称')).toBeDefined()
+    expect(screen.getByRole('button', { name: '收起英文' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    )
+  })
+
+  it('keeps the other language collapsed after the user collapses it', async () => {
+    const store = makeStore({ 'agent.get': () => mockDetail })
+    renderEditor(store)
+    await screen.findByText('测试助手')
+    expect(screen.getByText('英文名称')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: '收起英文' }))
+    expect(screen.queryByText('英文名称')).toBeNull()
+
+    // 编辑当前语言字段不会再触发自动展开。
+    fireEvent.change(screen.getByDisplayValue('测试助手'), { target: { value: '改名' } })
+    expect(screen.queryByText('英文名称')).toBeNull()
+    expect(screen.getByRole('button', { name: '添加英文' }).getAttribute('aria-expanded')).toBe(
+      'false',
+    )
+  })
+
+  it('re-judges the other language when switching to another agent', async () => {
+    const zhOnly: AgentDetail = {
+      ...mockDetail,
+      agentId: 'user.zhonly',
+      published: undefined,
+      draft: {
+        ...mockDetail.draft!,
+        name: { 'zh-CN': '仅中文' },
+        description: { 'zh-CN': '仅中文描述' },
+      },
+    }
+    const store = makeStore({
+      'agent.get': (params) =>
+        (params as { agentId?: string }).agentId === 'user.zhonly' ? zhOnly : mockDetail,
+    })
+    const tree = (agentId: string, initial: AgentDetail) => (
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreContext.Provider value={store}>
+          <AgentEditor agentId={agentId} initial={initial} onBack={vi.fn()} onChanged={vi.fn()} />
+        </SessionStoreContext.Provider>
+      </I18nextProvider>
+    )
+    const { rerender } = render(tree('user.custom', mockDetail))
+    await screen.findByText('测试助手')
+    expect(screen.getByText('英文名称')).toBeDefined()
+
+    // 切到没有英文内容的 Agent：重新判断后收起。
+    rerender(tree('user.zhonly', zhOnly))
+    await screen.findByText('仅中文')
+    expect(screen.queryByText('英文名称')).toBeNull()
+
+    // 切回有英文内容的 Agent：重新判断后展开。
+    rerender(tree('user.custom', mockDetail))
+    await screen.findByText('测试助手')
+    expect(screen.getByText('英文名称')).toBeDefined()
+  })
+
+  it('adds Chinese fields from an English UI', async () => {
+    const en = createI18n('en-US')
+    const enOnly: AgentDetail = {
+      ...mockDetail,
+      published: undefined,
+      draft: {
+        ...mockDetail.draft!,
+        name: { 'en-US': 'English Only' },
+        description: { 'en-US': 'English description' },
+      },
+    }
+    const store = makeStore({ 'agent.get': () => enOnly })
+    render(
+      <I18nextProvider i18n={en}>
+        <SessionStoreContext.Provider value={store}>
+          <AgentEditor
+            agentId="user.custom"
+            initial={enOnly}
+            onBack={vi.fn()}
+            onChanged={vi.fn()}
+          />
+        </SessionStoreContext.Provider>
+      </I18nextProvider>,
+    )
+    await screen.findByText('English Only')
+    expect(screen.getByText('Name (English)')).toBeDefined()
+    expect(screen.queryByText('Name (Chinese)')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Chinese' }))
+    expect(screen.getByText('Name (Chinese)')).toBeDefined()
+    expect(screen.getByText('Description (Chinese)')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Hide Chinese' })).toBeDefined()
+  })
+
+  it('picks and clears the icon and color from the existing libraries', async () => {
+    let saved: { icon?: string; color?: string } | undefined
+    const store = makeStore({
+      'agent.get': () => mockDetail,
+      'agent.saveDraft': (params) => {
+        saved = (params as { definition: { icon?: string; color?: string } }).definition
+        return { ...mockDetail, draft: { ...mockDetail.draft, ...saved } }
+      },
+    })
+    renderEditor(store)
+    await screen.findByText('测试助手')
+
+    fireEvent.click(screen.getByRole('radio', { name: '机器人' }))
+    fireEvent.click(screen.getByRole('radio', { name: '绿色' }))
+    expect((screen.getByRole('radio', { name: '机器人' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('radio', { name: '绿色' }) as HTMLInputElement).checked).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+    await waitFor(() => expect(saved).toMatchObject({ icon: 'bot', color: 'agent-green' }))
+
+    fireEvent.click(screen.getByRole('radio', { name: '无图标' }))
+    fireEvent.click(screen.getByRole('radio', { name: '无颜色' }))
+    expect((screen.getByRole('radio', { name: '无图标' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('radio', { name: '无颜色' }) as HTMLInputElement).checked).toBe(true)
+    expect((screen.getByRole('radio', { name: '机器人' }) as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('opens the more menu from the keyboard and hides archive for archived agents', async () => {
+    const archived: AgentDetail = { ...mockDetail, archived: true }
+    const store = makeStore({ 'agent.get': () => archived })
+    renderEditor(store, { initial: archived })
+    await screen.findByText('测试助手')
+
+    const trigger = screen.getByRole('button', { name: '更多操作' })
+    trigger.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByRole('menuitem', { name: '复制' })).toBeDefined()
+    expect(screen.getByRole('menuitem', { name: '导出' })).toBeDefined()
+    expect(screen.queryByRole('menuitem', { name: '归档' })).toBeNull()
+
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menuitem')).toBeNull())
+  })
+})
+
 const validationDetail: AgentDetail = {
   ...mockDetail,
   validation: {
@@ -412,6 +597,7 @@ describe('AgentEditor edge paths', () => {
     await waitFor(() => expect(screen.getAllByLabelText('1 个错误').length).toBeGreaterThan(0))
     expect(screen.getAllByLabelText('1 个警告').length).toBeGreaterThan(0)
 
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^能力/ }))
     expect(screen.getByText('找不到工具 nope')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: /^基本信息/ }))
@@ -476,9 +662,9 @@ describe('AgentEditor edge paths', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
     await waitFor(() => expect(screen.queryByLabelText('草稿已保存')).toBeNull())
 
-    fireEvent.click(screen.getByRole('button', { name: '复制' }))
-    fireEvent.click(screen.getByRole('button', { name: '导出' }))
-    fireEvent.click(screen.getByRole('button', { name: '归档' }))
+    await chooseMoreAction('复制')
+    await chooseMoreAction('导出')
+    await chooseMoreAction('归档')
     expect(onBack).not.toHaveBeenCalled()
   })
 
@@ -552,6 +738,7 @@ describe('AgentEditor edge paths', () => {
     fireEvent.change(screen.getByLabelText('最大输出 tokens'), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('辅助模型'), { target: { value: 'p1/m1' } })
 
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^限额/ }))
     fireEvent.change(screen.getByLabelText('每轮最大步数'), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('每轮最长时间（分钟）'), { target: { value: '' } })
@@ -562,8 +749,8 @@ describe('AgentEditor edge paths', () => {
     fireEvent.change(screen.getByLabelText('预留输出 tokens'), { target: { value: '' } })
 
     fireEvent.click(screen.getByRole('button', { name: /^基本信息/ }))
-    fireEvent.change(screen.getByLabelText('图标'), { target: { value: '' } })
-    fireEvent.change(screen.getByLabelText('颜色'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('radio', { name: '无图标' }))
+    fireEvent.click(screen.getByRole('radio', { name: '无颜色' }))
     const tagInputs = screen.getAllByRole('textbox')
     expect((tagInputs[tagInputs.length - 1] as HTMLInputElement).value).toBe('')
   })
@@ -576,6 +763,7 @@ describe('AgentEditor edge paths', () => {
     })
     renderEditor(store)
     await screen.findByText('测试助手')
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^能力/ }))
     expect(await screen.findByText('还没有安装 Skills。')).toBeDefined()
     expect(screen.getByText('还没有配置 MCP 服务。')).toBeDefined()
@@ -635,6 +823,7 @@ describe('AgentEditor edge paths', () => {
     const store = makeStore({ 'agent.get': () => detail })
     renderEditor(store, { initial: detail })
     await screen.findByText('测试助手')
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^能力/ }))
     fireEvent.click(screen.getByRole('checkbox', { name: '读取' }))
     fireEvent.click(screen.getByRole('switch', { name: '全部工具' }))
@@ -766,7 +955,7 @@ describe('AgentEditor edge paths', () => {
     })
     renderEditor(store, { onBack })
     await screen.findByText('测试助手')
-    fireEvent.click(screen.getByRole('button', { name: '复制' }))
+    await chooseMoreAction('复制')
     await waitFor(() => expect(onBack).toHaveBeenCalled())
   })
 
@@ -825,6 +1014,7 @@ describe('AgentEditor edge paths', () => {
     renderEditor(store)
     await screen.findByText('测试助手')
 
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^委派/ }))
     expect(screen.getByText(/未启用委派/)).toBeDefined()
     fireEvent.click(screen.getByRole('switch', { name: '允许委派' }))
@@ -859,6 +1049,7 @@ describe('AgentEditor edge paths', () => {
     const store = makeStore({ 'agent.get': () => mockDetail })
     renderEditor(store)
     await screen.findByText('测试助手')
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^委派/ }))
     fireEvent.click(screen.getByRole('switch', { name: '允许委派' }))
     expect(screen.getByText('还没有可委派的已发布 Agent。')).toBeDefined()

@@ -127,14 +127,17 @@ describe('App', () => {
     await waitFor(() => expect(screen.queryByRole('heading', { name: '活动' })).toBeNull())
   })
 
-  it('opens the Agents page from the sidebar and returns to a new chat', async () => {
+  it('opens the Agents section in settings and returns to a new chat', async () => {
     const { store } = makeActivityStore()
     render(<App i18n={createI18n('zh-CN')} store={store} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Agents' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^设置$/ }))
+    const nav = await screen.findByRole('navigation', { name: '设置分类' })
+    fireEvent.click(within(nav).getByRole('button', { name: 'Agents' }))
     expect(await screen.findByRole('heading', { name: 'Agents' })).toBeDefined()
-    // 入口标成当前页，左栏仍在。
-    expect(screen.getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe('page')
-    expect(screen.getByRole('navigation', { name: '会话' })).toBeTruthy()
+    // 分区在设置导航里标成当前页。
+    expect(within(nav).getByRole('button', { name: 'Agents' }).getAttribute('aria-current')).toBe(
+      'page',
+    )
 
     fireEvent.keyDown(window, { key: 'n', ctrlKey: true })
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Agents' })).toBeNull())

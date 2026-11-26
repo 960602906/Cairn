@@ -294,6 +294,7 @@ export function matchCommandArg<T>(
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   'general',
   'archived',
+  'agents',
   'providers',
   'skills',
   'mcp',

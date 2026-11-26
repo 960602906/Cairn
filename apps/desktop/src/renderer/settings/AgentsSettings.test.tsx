@@ -4,7 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import type { AgentDetail, AgentSummary } from '@cairn/protocol'
-import { AgentsView } from './AgentsView.js'
+import { AgentsSettings } from './AgentsSettings.js'
 import { SessionStoreContext } from '../store-context.js'
 import { createSessionStore } from '../session-store.js'
 import type { MainApi } from '../api.js'
@@ -68,52 +68,55 @@ function makeStore(agents: AgentSummary[]) {
   return createSessionStore(fakeApi as unknown as MainApi)
 }
 
-function renderView(store: ReturnType<typeof createSessionStore>) {
+function renderSettings(store: ReturnType<typeof createSessionStore>) {
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreContext.Provider value={store}>
-        <AgentsView />
+        <AgentsSettings />
       </SessionStoreContext.Provider>
     </I18nextProvider>,
   )
 }
 
-describe('AgentsView', () => {
+describe('AgentsSettings', () => {
   it('lists agents and opens the editor for a row', async () => {
     const store = makeStore([builtin])
-    renderView(store)
+    renderSettings(store)
     fireEvent.click(await screen.findByText('编程助手'))
     expect(await screen.findByText(/内置 Agent 只读/)).toBeDefined()
   })
 
   it('creates a blank agent draft', async () => {
     const store = makeStore([])
-    renderView(store)
-    fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
+    renderSettings(store)
+    fireEvent.click(await screen.findByRole('button', { name: '从空白开始' }))
     expect(await screen.findByText('未命名 Agent')).toBeDefined()
   })
 
-  it('copies the builtin agent and opens the copy', async () => {
+  it('creates a new agent by copying the builtin in one step', async () => {
     const store = makeStore([builtin])
-    renderView(store)
-    fireEvent.click(await screen.findByRole('button', { name: '基于编程助手复制' }))
+    renderSettings(store)
+    fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
     await waitFor(() => expect(screen.getByText('复制的助手')).toBeDefined())
   })
 
   it('returns to the list from the editor', async () => {
     const store = makeStore([builtin])
-    renderView(store)
+    renderSettings(store)
     fireEvent.click(await screen.findByText('编程助手'))
     await screen.findByText(/内置 Agent 只读/)
     fireEvent.click(screen.getByRole('button', { name: '返回列表' }))
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Agents' })).toBeDefined())
   })
 
-  it('shows the empty state and creates from it', async () => {
+  it('shows a light empty hint without a duplicate create button', async () => {
     const store = makeStore([])
-    renderView(store)
-    fireEvent.click(await screen.findByRole('button', { name: '基于编程助手创建' }))
-    await waitFor(() => expect(screen.getByText('复制的助手')).toBeDefined())
+    renderSettings(store)
+    expect(await screen.findByText(/还没有自定义 Agent/)).toBeDefined()
+    expect(screen.queryByRole('button', { name: '基于编程助手创建' })).toBeNull()
+    // 创建入口仍只有设置页头部的两个。
+    expect(screen.getByRole('button', { name: '新建 Agent' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '从空白开始' })).toBeDefined()
   })
 
   it('falls back to a blank draft when copying fails', async () => {
@@ -125,20 +128,8 @@ describe('AgentsView', () => {
       on: () => () => {},
     }
     const store = createSessionStore(fakeApi as unknown as MainApi)
-    renderView(store)
-    fireEvent.click(await screen.findByRole('button', { name: '基于编程助手复制' }))
+    renderSettings(store)
+    fireEvent.click(await screen.findByRole('button', { name: '新建 Agent' }))
     await waitFor(() => expect(screen.getByText('未命名 Agent')).toBeDefined())
-  })
-
-  it('renders the leading slot', async () => {
-    const store = makeStore([])
-    render(
-      <I18nextProvider i18n={i18n}>
-        <SessionStoreContext.Provider value={store}>
-          <AgentsView leading={<span>标题栏</span>} />
-        </SessionStoreContext.Provider>
-      </I18nextProvider>,
-    )
-    expect(await screen.findByText('标题栏')).toBeDefined()
   })
 })

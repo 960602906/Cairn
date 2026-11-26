@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
 import type { AgentSummary } from '@cairn/protocol'
 import { agentStatus, filterAgents, AgentsPage } from './AgentsPage.js'
@@ -11,6 +11,8 @@ import { createSessionStore } from '../session-store.js'
 import type { MainApi } from '../api.js'
 
 const i18n = createI18n('zh-CN')
+
+afterEach(cleanup)
 
 const mockAgents: AgentSummary[] = [
   {
@@ -112,7 +114,6 @@ describe('AgentsPage utilities', () => {
 describe('AgentsPage component', () => {
   it('renders list of agents and handles actions', async () => {
     const onOpen = vi.fn()
-    const onCreate = vi.fn()
     const fakeApi = {
       request: async (method: string) => {
         if (method === 'agent.list') return { agents: mockAgents }
@@ -126,7 +127,7 @@ describe('AgentsPage component', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <SessionStoreContext.Provider value={store}>
-          <AgentsPage onOpen={onOpen} onCreate={onCreate} />
+          <AgentsPage onOpen={onOpen} />
         </SessionStoreContext.Provider>
       </I18nextProvider>,
     )
@@ -153,5 +154,28 @@ describe('AgentsPage component', () => {
     fireEvent.click(screen.getByRole('radio', { name: '已归档' }))
     expect(screen.getAllByText('已归档').length).toBeGreaterThan(0)
     expect(screen.queryByText('编程助手')).toBeNull()
+  })
+
+  it('shows a light empty hint without an extra create button', async () => {
+    const fakeApi = {
+      request: async (method: string) => {
+        if (method === 'agent.list') return { agents: [] }
+        return undefined
+      },
+      on: () => () => {},
+    }
+    const store = createSessionStore(fakeApi as unknown as MainApi)
+    await store.getState().refreshAgents()
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <SessionStoreContext.Provider value={store}>
+          <AgentsPage onOpen={vi.fn()} />
+        </SessionStoreContext.Provider>
+      </I18nextProvider>,
+    )
+
+    expect(screen.getByText(/还没有自定义 Agent/)).toBeDefined()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 })
