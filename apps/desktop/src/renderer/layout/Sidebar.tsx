@@ -4,7 +4,7 @@
  * 三栏布局里它是唯一的左栏，原来 60px 的图标栏已经并进来。宽窗口常驻，可以收成 0 宽
  * （收起后由顶栏的按钮展开）；窄窗口由 App 放进抽屉。
  */
-import { Activity, Bot, PanelLeftClose, Search, Settings, SquarePen } from 'lucide-react'
+import { Activity, PanelLeftClose, Search, Settings, SquarePen } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary } from '@cairn/protocol'
@@ -94,10 +94,8 @@ export function Sidebar({
   onSelect,
   onNewChat,
   onActivity,
-  onAgents,
   onSettings,
   activityActive = false,
-  agentsActive = false,
   activityBadge = 0,
   onNewConversationProject,
 }: {
@@ -107,10 +105,8 @@ export function Sidebar({
   readonly onSelect: () => void
   readonly onNewChat?: () => void
   readonly onActivity?: () => void
-  readonly onAgents?: () => void
   readonly onSettings?: () => void
   readonly activityActive?: boolean
-  readonly agentsActive?: boolean
   readonly activityBadge?: number
   readonly onNewConversationProject?: (project: ProjectSummary) => void
 }) {
@@ -190,14 +186,6 @@ export function Sidebar({
             trailing={<Kbd aria-hidden>{searchShortcut()}</Kbd>}
             onClick={onSearch}
           />
-          {onAgents && (
-            <NavRow
-              icon={<Bot />}
-              label={t('sidebar.agents')}
-              active={agentsActive}
-              onClick={onAgents}
-            />
-          )}
         </div>
 
         <nav aria-label={t('list.title')} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">

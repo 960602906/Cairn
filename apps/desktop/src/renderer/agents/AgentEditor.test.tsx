@@ -203,7 +203,8 @@ describe('AgentEditor sections and actions', () => {
     fireEvent.click(screen.getByRole('button', { name: /^指令/ }))
     expect(screen.getByText(/指令较长/)).toBeDefined()
 
-    // 能力：全部工具开关、分类、Skills、MCP
+    // 能力：全部工具开关、分类、Skills、MCP（先展开「高级」）
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^能力/ }))
     expect(await screen.findByText('tdd')).toBeDefined()
     expect(screen.getByText('Fixture')).toBeDefined()
@@ -412,6 +413,7 @@ describe('AgentEditor edge paths', () => {
     await waitFor(() => expect(screen.getAllByLabelText('1 个错误').length).toBeGreaterThan(0))
     expect(screen.getAllByLabelText('1 个警告').length).toBeGreaterThan(0)
 
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^能力/ }))
     expect(screen.getByText('找不到工具 nope')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: /^基本信息/ }))
@@ -552,6 +554,7 @@ describe('AgentEditor edge paths', () => {
     fireEvent.change(screen.getByLabelText('最大输出 tokens'), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('辅助模型'), { target: { value: 'p1/m1' } })
 
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^限额/ }))
     fireEvent.change(screen.getByLabelText('每轮最大步数'), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('每轮最长时间（分钟）'), { target: { value: '' } })
@@ -576,6 +579,7 @@ describe('AgentEditor edge paths', () => {
     })
     renderEditor(store)
     await screen.findByText('测试助手')
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^能力/ }))
     expect(await screen.findByText('还没有安装 Skills。')).toBeDefined()
     expect(screen.getByText('还没有配置 MCP 服务。')).toBeDefined()
@@ -635,6 +639,7 @@ describe('AgentEditor edge paths', () => {
     const store = makeStore({ 'agent.get': () => detail })
     renderEditor(store, { initial: detail })
     await screen.findByText('测试助手')
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^能力/ }))
     fireEvent.click(screen.getByRole('checkbox', { name: '读取' }))
     fireEvent.click(screen.getByRole('switch', { name: '全部工具' }))
@@ -825,6 +830,7 @@ describe('AgentEditor edge paths', () => {
     renderEditor(store)
     await screen.findByText('测试助手')
 
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^委派/ }))
     expect(screen.getByText(/未启用委派/)).toBeDefined()
     fireEvent.click(screen.getByRole('switch', { name: '允许委派' }))
@@ -859,6 +865,7 @@ describe('AgentEditor edge paths', () => {
     const store = makeStore({ 'agent.get': () => mockDetail })
     renderEditor(store)
     await screen.findByText('测试助手')
+    fireEvent.click(screen.getByRole('button', { name: /^高级/ }))
     fireEvent.click(screen.getByRole('button', { name: /^委派/ }))
     fireEvent.click(screen.getByRole('switch', { name: '允许委派' }))
     expect(screen.getByText('还没有可委派的已发布 Agent。')).toBeDefined()

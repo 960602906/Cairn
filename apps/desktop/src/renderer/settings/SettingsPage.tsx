@@ -12,6 +12,7 @@
  */
 import {
   Archive,
+  Bot,
   Brain,
   ChevronLeft,
   Cpu,
@@ -26,6 +27,7 @@ import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { CairnMark, IconButton, Kbd } from '../ui/index.js'
 import { ArchivedSessionsSettings } from './ArchivedSessionsSettings.js'
+import { AgentsSettings } from './AgentsSettings.js'
 import { GeneralSettings } from './GeneralSettings.js'
 import { AboutSettings } from './AboutSettings.js'
 import { McpSettings } from './McpSettings.js'
@@ -37,7 +39,15 @@ import { SkillsSettings } from './SkillsSettings.js'
 import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
-  'general' | 'archived' | 'providers' | 'skills' | 'mcp' | 'memory' | 'permissions' | 'about'
+  | 'general'
+  | 'archived'
+  | 'agents'
+  | 'providers'
+  | 'skills'
+  | 'mcp'
+  | 'memory'
+  | 'permissions'
+  | 'about'
 
 interface SectionEntry {
   readonly id: SettingsSection
@@ -59,6 +69,7 @@ const GROUPS: readonly {
   {
     group: 'modelCapabilities',
     sections: [
+      { id: 'agents', icon: <Bot /> },
       { id: 'providers', icon: <Cpu /> },
       { id: 'skills', icon: <SkillGlyph /> },
       { id: 'mcp', icon: <McpGlyph /> },
@@ -277,6 +288,7 @@ export function SettingsContent({
         <div className="mx-auto flex max-w-[920px] flex-col gap-6 px-8 pt-6 pb-16 max-[640px]:px-4">
           {section === 'general' && <GeneralSettings />}
           {section === 'archived' && <ArchivedSessionsSettings />}
+          {section === 'agents' && <AgentsSettings />}
           {section === 'providers' && <ProvidersSettings />}
           {section === 'skills' && (
             <SkillsSettings onOpenPermissions={() => onNavigate?.('permissions')} />

@@ -29,7 +29,7 @@ import { ThemeSync } from './ThemeSync.js'
 import { CairnAppMark, cn, IconButton, TooltipProvider } from './ui/index.js'
 
 /**
- * 首屏只显示侧栏与新对话页；对话页、设置、活动、Agents、搜索与欢迎框按需加载。
+ * 首屏只显示侧栏与新对话页；对话页、设置、活动、搜索与欢迎框按需加载。
  * 对话页会带出 Markdown、Shiki、diff 与右侧工作台，是首屏最大的一块。
  */
 const ChatPanel = lazy(() =>
@@ -43,9 +43,6 @@ const SettingsContent = lazy(() =>
 )
 const ActivityView = lazy(() =>
   import('./ActivityView.js').then((module) => ({ default: module.ActivityView })),
-)
-const AgentsView = lazy(() =>
-  import('./agents/AgentsView.js').then((module) => ({ default: module.AgentsView })),
 )
 const SessionSearch = lazy(() =>
   import('./SessionSearch.js').then((module) => ({ default: module.SessionSearch })),
@@ -93,7 +90,6 @@ function Workspace() {
   const creatingSession = useRef(false)
   const [settings, setSettings] = useState<SettingsSection | undefined>(undefined)
   const [activity, setActivity] = useState(false)
-  const [agentsView, setAgentsView] = useState(false)
   const [searching, setSearching] = useState(false)
   /** 活动中心要求打开的改动集；`ChatPanel` 打开后清空。 */
   const [pendingChangeSet, setPendingChangeSet] = useState<
@@ -116,7 +112,6 @@ function Workspace() {
   const startNewChat = useCallback(() => {
     setSettings(undefined)
     setActivity(false)
-    setAgentsView(false)
     setComposing(true)
     setNewChatProjectPath(undefined)
     setPendingChangeSet(undefined)
@@ -160,7 +155,6 @@ function Workspace() {
       if (isSettingsKey(event)) {
         event.preventDefault()
         setSessionsOpen(false)
-        setAgentsView(false)
         setSettings((current) => current ?? 'general')
         return
       }
@@ -178,7 +172,7 @@ function Workspace() {
   // 启动后读取一次更新状态；之后的检查与下载结果经 update.status 推送。首帧之后再做。
   useEffect(() => onIdle(() => void loadUpdateStatus(), 1000), [loadUpdateStatus])
 
-  // 委派卡片、检查器与 Agents 页都需要 Agent 名称，启动时读一次列表。
+  // 委派卡片、检查器与设置里的 Agents 分区都需要 Agent 名称，启动时读一次列表。
   useEffect(() => {
     void refreshAgents()
   }, [refreshAgents])
@@ -195,7 +189,6 @@ function Workspace() {
       onActivityOpen(({ sessionId }) => {
         setSettings(undefined)
         setActivity(false)
-        setAgentsView(false)
         setComposing(false)
         void selectSession(sessionId)
         if (narrow) setSessionsOpen(false)
@@ -211,7 +204,6 @@ function Workspace() {
 
   const openActivity = useCallback(() => {
     setSettings(undefined)
-    setAgentsView(false)
     setComposing(false)
     if (narrow) setSessionsOpen(false)
     setActivity(true)
@@ -220,18 +212,9 @@ function Workspace() {
   /** 左栏收起后，从顶栏按钮展开；不离开当前页面。 */
   const openSessions = useCallback(() => setSessionsOpen(true), [])
 
-  const openAgents = useCallback(() => {
-    setSettings(undefined)
-    setActivity(false)
-    setComposing(false)
-    setAgentsView(true)
-    if (narrow) setSessionsOpen(false)
-  }, [narrow])
-
   const openSessionFromActivity = useCallback(
     (sessionId: string, changeSetId?: string) => {
       setActivity(false)
-      setAgentsView(false)
       setComposing(false)
       setPendingChangeSet(changeSetId === undefined ? undefined : { sessionId, changeSetId })
       void selectSession(sessionId)
@@ -243,7 +226,6 @@ function Workspace() {
   const configureModels = useCallback(() => {
     setSettings('providers')
     setActivity(false)
-    setAgentsView(false)
     setComposing(false)
     setSessionsOpen(false)
   }, [])
@@ -275,24 +257,19 @@ function Workspace() {
       if (narrow) setSessionsOpen(false)
       setComposing(false)
       setActivity(false)
-      setAgentsView(false)
     },
     onNewChat: startNewChat,
     onActivity: openActivity,
-    onAgents: openAgents,
     onSettings: () => {
       setSessionsOpen(false)
-      setAgentsView(false)
       setSettings('general')
     },
     activityActive: activity,
-    agentsActive: agentsView,
     activityBadge,
     onNewConversationProject: (project: ProjectSummary) => {
       if (narrow) setSessionsOpen(false)
       setSettings(undefined)
       setActivity(false)
-      setAgentsView(false)
       setNewChatProjectPath(project.path)
       setComposing(true)
     },
@@ -322,7 +299,6 @@ function Workspace() {
         onSelect={() => {
           setSettings(undefined)
           setActivity(false)
-          setAgentsView(false)
           setComposing(false)
           setSessionsOpen(false)
         }}
@@ -381,25 +357,6 @@ function Workspace() {
           <ErrorBanner />
           <Suspense fallback={<div className="flex-1 bg-paper" />}>
             <ActivityView leading={reveal} onOpenSession={openSessionFromActivity} />
-          </Suspense>
-        </main>
-        {drawer}
-        {search}
-        {welcome}
-        <WindowControls />
-      </div>
-    )
-  }
-
-  if (agentsView) {
-    return (
-      <div className={SHELL} style={chromeStyle}>
-        <h1 className="sr-only">{t('app.name', { ns: 'common' })}</h1>
-        {!narrow && <Sidebar open={sessionsOpen} {...sidebarProps} />}
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
-          <ErrorBanner />
-          <Suspense fallback={<div className="flex-1 bg-paper" />}>
-            <AgentsView leading={reveal} />
           </Suspense>
         </main>
         {drawer}

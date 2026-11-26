@@ -6,7 +6,17 @@
  * - 内置 Agent 只读，只能“复制为新 Agent”。
  * - 指令区实时估算 token 与占上下文的比例（按主模型或固定模型的上下文窗口）。
  */
-import { ArrowLeft, Check, Copy, Download, Play, Save, Upload } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  Play,
+  Save,
+  Upload,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -129,6 +139,16 @@ function LocalizedFields({
   )
 }
 
+/** 默认只露出必要分区；其余收进「高级」折叠组，需要时再展开。 */
+const PRIMARY_SECTIONS: readonly AgentSection[] = ['basic', 'instructions', 'model', 'permissions']
+const ADVANCED_SECTIONS: readonly AgentSection[] = [
+  'capabilities',
+  'limits',
+  'context',
+  'memory',
+  'delegation',
+]
+
 function SectionNav({
   section,
   onSelect,
@@ -148,42 +168,81 @@ function SectionNav({
 }) {
   const { t } = useTranslation('agents')
   const marks = sectionMarks(validation)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const advancedVisible = advancedOpen || ADVANCED_SECTIONS.includes(section)
+  const advancedErrors = ADVANCED_SECTIONS.reduce((sum, id) => sum + marks[id].errors, 0)
+  const advancedWarnings = ADVANCED_SECTIONS.reduce((sum, id) => sum + marks[id].warnings, 0)
+  const advancedChanged = ADVANCED_SECTIONS.some((id) => sectionChanged(baseline, fields, id))
+
+  const sectionButton = (id: AgentSection) => {
+    const current = view === 'edit' && id === section
+    const changed = sectionChanged(baseline, fields, id)
+    const mark = marks[id]
+    return (
+      <button
+        key={id}
+        type="button"
+        aria-current={current ? 'page' : undefined}
+        onClick={() => {
+          onView('edit')
+          onSelect(id)
+        }}
+        className={`flex h-8 items-center gap-2 rounded-item px-2.5 text-left text-ui transition-colors ${
+          current ? 'bg-raise font-medium text-fg shadow-1' : 'text-fg2 hover:bg-hover'
+        }`}
+      >
+        <span className="flex-1">{t(`section.${id}`)}</span>
+        {mark.errors > 0 ? (
+          <span
+            aria-label={t('section.errors', { count: mark.errors })}
+            className="size-1.5 rounded-full bg-danger"
+          />
+        ) : mark.warnings > 0 ? (
+          <span
+            aria-label={t('section.warnings', { count: mark.warnings })}
+            className="size-1.5 rounded-full bg-warn"
+          />
+        ) : changed ? (
+          <span aria-label={t('section.pending')} className="size-1.5 rounded-full bg-accent" />
+        ) : null}
+      </button>
+    )
+  }
+
   return (
     <nav aria-label={t('page.title')} className="flex w-[176px] shrink-0 flex-col gap-0.5">
-      {AGENT_SECTIONS.map((id) => {
-        const current = view === 'edit' && id === section
-        const changed = sectionChanged(baseline, fields, id)
-        const mark = marks[id]
-        return (
-          <button
-            key={id}
-            type="button"
-            aria-current={current ? 'page' : undefined}
-            onClick={() => {
-              onView('edit')
-              onSelect(id)
-            }}
-            className={`flex h-8 items-center gap-2 rounded-item px-2.5 text-left text-ui transition-colors ${
-              current ? 'bg-raise font-medium text-fg shadow-1' : 'text-fg2 hover:bg-hover'
-            }`}
-          >
-            <span className="flex-1">{t(`section.${id}`)}</span>
-            {mark.errors > 0 ? (
-              <span
-                aria-label={t('section.errors', { count: mark.errors })}
-                className="size-1.5 rounded-full bg-danger"
-              />
-            ) : mark.warnings > 0 ? (
-              <span
-                aria-label={t('section.warnings', { count: mark.warnings })}
-                className="size-1.5 rounded-full bg-warn"
-              />
-            ) : changed ? (
-              <span aria-label={t('section.pending')} className="size-1.5 rounded-full bg-accent" />
-            ) : null}
-          </button>
-        )
-      })}
+      {PRIMARY_SECTIONS.map(sectionButton)}
+      <button
+        type="button"
+        aria-expanded={advancedVisible}
+        onClick={() => setAdvancedOpen((value) => !value)}
+        className="flex h-8 items-center gap-2 rounded-item px-2.5 text-left text-ui text-fg2 transition-colors hover:bg-hover hover:text-fg"
+      >
+        {advancedVisible ? (
+          <ChevronDown className="size-3.5 text-muted" />
+        ) : (
+          <ChevronRight className="size-3.5 text-muted" />
+        )}
+        <span className="flex-1">{t('section.advanced')}</span>
+        {advancedErrors > 0 ? (
+          <span
+            aria-label={t('section.errors', { count: advancedErrors })}
+            className="size-1.5 rounded-full bg-danger"
+          />
+        ) : advancedWarnings > 0 ? (
+          <span
+            aria-label={t('section.warnings', { count: advancedWarnings })}
+            className="size-1.5 rounded-full bg-warn"
+          />
+        ) : advancedChanged ? (
+          <span aria-label={t('section.pending')} className="size-1.5 rounded-full bg-accent" />
+        ) : null}
+      </button>
+      {advancedVisible && (
+        <div className="flex flex-col gap-0.5 border-l-[0.5px] border-hair pl-2">
+          {ADVANCED_SECTIONS.map(sectionButton)}
+        </div>
+      )}
       <div className="my-1.5 h-px bg-hair" />
       <button
         type="button"
@@ -324,6 +383,25 @@ export function AgentEditor({
     if (dirty) setConfirmLeave(true)
     else onBack()
   }
+
+  // 编辑器里的 Esc 先回到列表（并走未保存确认），不冒泡给设置页的 Esc 返回对话，
+  // 避免带着未保存修改直接退回对话。对话框 / 菜单打开时交给它们自己处理。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], [role="listbox"]',
+        )
+      )
+        return
+      event.preventDefault()
+      event.stopPropagation()
+      back()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [back])
 
   /** 试运行读取已保存的草稿，所以先保存编辑中的改动，面板里的配置才和界面一致。 */
   const openTrial = async () => {

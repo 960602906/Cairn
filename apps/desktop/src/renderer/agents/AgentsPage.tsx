@@ -5,7 +5,7 @@
  * - 内置 Agent 不能编辑，只能复制；复制后直接进入新草稿的编辑器。
  * - 还没有自定义 Agent 时显示“基于编程助手创建”的引导。
  */
-import { Plus, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentSource, AgentSummary } from '@cairn/protocol'
@@ -113,8 +113,8 @@ export function AgentsPage({
 }: {
   /** 打开编辑器。`agentId` 为空时创建新草稿。 */
   readonly onOpen: (agentId: string) => void
-  /** 从空白开始或复制编程助手。 */
-  readonly onCreate: (mode: 'blank' | 'copy') => void
+  /** 空状态里“基于编程助手创建”：一步复制内置编程助手并进入编辑器。 */
+  readonly onCreate: () => void
 }) {
   const { t } = useTranslation('agents')
   const agents = useSessionStore((s) => s.agents)
@@ -131,23 +131,7 @@ export function AgentsPage({
   const custom = agents.filter((agent) => agent.source !== 'builtin' && !agent.archived)
 
   return (
-    <div className="mx-auto flex w-full max-w-[860px] flex-col gap-5 px-8 pt-6 pb-16">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-page tracking-[-0.01em] text-fg">{t('page.title')}</h2>
-          <p className="mt-1 text-ui leading-relaxed text-muted">{t('page.description')}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => onCreate('copy')}>
-            {t('new.copy')}
-          </Button>
-          <Button variant="primary" onClick={() => onCreate('blank')}>
-            <Plus />
-            {t('action.new')}
-          </Button>
-        </div>
-      </header>
-
+    <div className="flex w-full flex-col gap-5">
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex h-8 min-w-[220px] flex-1 items-center gap-2 rounded-item bg-raise px-2.5 text-ui shadow-hair2 focus-within:shadow-[0_0_0_1.5px_var(--accent)]">
           <Search className="size-3.5 shrink-0 text-faint" />
@@ -171,7 +155,7 @@ export function AgentsPage({
         <section className="flex flex-col items-start gap-3 rounded-card bg-sunk px-5 py-6">
           <AgentAvatar icon="code" color="agent-blue" size={40} />
           <p className="text-ui text-fg2">{t('list.empty')}</p>
-          <Button variant="primary" onClick={() => onCreate('copy')}>
+          <Button variant="primary" onClick={onCreate}>
             {t('list.emptyAction')}
           </Button>
         </section>

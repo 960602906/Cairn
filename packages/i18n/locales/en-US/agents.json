@@ -56,6 +56,7 @@
   "section.limits": "Limits",
   "section.context": "Context",
   "section.memory": "Memory",
+  "section.advanced": "Advanced",
   "section.pending": "Unsaved changes",
   "section.errors": "{{count}} errors",
   "section.warnings": "{{count}} warnings",
