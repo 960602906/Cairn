@@ -7,6 +7,12 @@
 
 ### Added
 
+- 会话导出：会话操作菜单可以把整段对话复制为 Markdown，或导出为 `.md` 文件（系统另存对话框）。
+  导出包含用户与助手的正文、图片占位与工具调用名称，不包含推理与工具输出。
+  Export a chat as Markdown from the session menu: copy the whole conversation or save a `.md`
+  file through the system save dialog. The export includes user and assistant text, image
+  placeholders and tool call names, but not reasoning or tool output.
+
 - 会话内查找：⌘F（Windows / Linux 为 Ctrl+F）在对话正文里查找，显示当前第几处与总数，
   Enter / Shift+Enter 或按钮跳到下一处 / 上一处，Esc 关闭；高亮覆盖 Markdown、代码与工具输出。
   Find in conversation: ⌘F (Ctrl+F on Windows and Linux) searches the rendered chat, shows the

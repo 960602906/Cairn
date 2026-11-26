@@ -670,6 +670,19 @@ const sessions = createSessionManager({
     }
   },
   onError: reportError,
+  // 会话导出（回顾能力）：标题按界面语言选择，文件由主进程弹保存对话框写入。
+  transcriptLocale: () => (settings.get().locale === 'en-US' ? 'en-US' : 'zh-CN'),
+  showSaveDialog: async (defaultName) => {
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const options: Electron.SaveDialogOptions = {
+      defaultPath: join(app.getPath('downloads'), defaultName),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    }
+    const result = parent
+      ? await dialog.showSaveDialog(parent, options)
+      : await dialog.showSaveDialog(options)
+    return result.canceled ? undefined : result.filePath
+  },
 })
 refreshIdleHosts = () => sessions.refreshTools()
 /** 目标模式（ADR-0047）：监听根轮次的完成事件，判定未达成时自动续轮。 */

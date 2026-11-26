@@ -18,6 +18,7 @@
  * 会话级事件在还没有运行时以 `sessionId` 作为 `runId`。不依赖 Electron。
  */
 import { randomUUID } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 import { basename, isAbsolute } from 'node:path'
 import {
   acceptsInput,
@@ -38,11 +39,14 @@ import {
   resolveDelegationPolicy,
   rootRun,
   sessionStatus,
+  transcriptFileName,
+  transcriptMarkdown,
   userTurnContent,
   type CompactionBudget,
   type GoalView,
   type RunView,
   type SessionView,
+  type TranscriptLocale,
 } from '@cairn/core'
 import {
   GOAL_MAX_DURATION_MS_DEFAULT,
@@ -133,6 +137,12 @@ export interface SessionManagerOptions {
   readonly createId?: () => string
   readonly now?: () => number
   readonly onError?: (error: unknown) => void
+  /** 导出对话的标题语言；省略时用中文。 */
+  readonly transcriptLocale?: () => TranscriptLocale
+  /** 导出对话时选择保存位置；省略时按用户取消处理（测试）。 */
+  readonly showSaveDialog?: (defaultName: string) => Promise<string | undefined>
+  /** 写入导出文件；测试可替换。 */
+  readonly writeFile?: (path: string, text: string) => void
 }
 
 type Sync<F> = F extends (params: infer P) => infer R
@@ -146,6 +156,9 @@ export interface SessionManager extends SessionCommands {
   readonly prompt: Sync<SessionCommands['prompt']>
   readonly rename: Sync<SessionCommands['rename']>
   readonly setPinned: Sync<SessionCommands['setPinned']>
+  readonly transcript: Sync<SessionCommands['transcript']>
+  /** 保存对话框是异步的。 */
+  readonly exportTranscript: SessionCommands['exportTranscript']
   readonly archive: Sync<SessionCommands['archive']>
   readonly setModel: Sync<SessionCommands['setModel']>
   readonly setAgent: SessionCommands['setAgent']
@@ -514,6 +527,16 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     const record = storage.sessions.get(sessionId)
     if (!record) throw new RpcError(SessionErrorCode.NotFound, { sessionId })
     return record
+  }
+
+  /** 会话导出的 Markdown：只含已完成的消息，标题与项目路径来自会话记录。 */
+  function transcriptFor(sessionId: string): string {
+    const session = requireSession(sessionId)
+    return transcriptMarkdown(getView(sessionId).messages, {
+      title: session.title,
+      projectPath: session.projectPath,
+      locale: options.transcriptLocale?.() ?? 'zh-CN',
+    })
   }
 
   /**
@@ -1028,6 +1051,24 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       requireSession(sessionId)
       storage.sessions.setPinned(sessionId, pinned)
       return {}
+    },
+
+    transcript({ sessionId }) {
+      return { markdown: transcriptFor(sessionId) }
+    },
+
+    async exportTranscript({ sessionId }) {
+      const session = requireSession(sessionId)
+      const markdown = transcriptFor(sessionId)
+      const target = await options.showSaveDialog?.(transcriptFileName(session.title))
+      if (target === undefined) return { cancelled: true }
+      try {
+        ;(options.writeFile ?? writeFileSync)(target, markdown)
+      } catch (error) {
+        onError(error)
+        throw new RpcError('fs.failed')
+      }
+      return { cancelled: false, path: target }
     },
 
     rename({ sessionId, title }) {

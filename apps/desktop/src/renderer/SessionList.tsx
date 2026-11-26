@@ -7,6 +7,8 @@
 import {
   ArchiveRestore,
   ChevronRight,
+  Copy,
+  Download,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -140,12 +142,23 @@ export function SessionItem({
   const { t: tc } = useTranslation()
   const renameSession = useSessionStore((s) => s.renameSession)
   const setSessionPinned = useSessionStore((s) => s.setSessionPinned)
+  const copyTranscript = useSessionStore((s) => s.copyTranscript)
+  const exportTranscript = useSessionStore((s) => s.exportTranscript)
   const archiveSession = useSessionStore((s) => s.archiveSession)
   const unarchiveSession = useSessionStore((s) => s.unarchiveSession)
   const deleteSession = useSessionStore((s) => s.deleteSession)
   const [renaming, setRenaming] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  /** 复制 / 导出成功后的短暂提示，占用时间的位置。 */
+  const [notice, setNotice] = useState<'copied' | 'exported' | undefined>()
+  const noticeTimer = useRef<number | undefined>(undefined)
+  const announce = (kind: 'copied' | 'exported') => {
+    setNotice(kind)
+    window.clearTimeout(noticeTimer.current)
+    noticeTimer.current = window.setTimeout(() => setNotice(undefined), 1600)
+  }
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), [])
   const archived = session.status === 'archived'
   const pinned = session.pinned === true
   const title = session.title === '' ? t('title.untitled') : session.title
@@ -192,10 +205,16 @@ export function SessionItem({
             <span className="sr-only">{t('item.pinned')}</span>
           </span>
         )}
-        {time !== '' && (
-          <span className="shrink-0 text-[11px] text-faint transition-opacity group-hover:opacity-0">
-            {time}
+        {notice !== undefined ? (
+          <span aria-live="polite" className="shrink-0 text-[11px] text-ok">
+            {t(notice === 'copied' ? 'item.copied' : 'item.exported')}
           </span>
+        ) : (
+          time !== '' && (
+            <span className="shrink-0 text-[11px] text-faint transition-opacity group-hover:opacity-0">
+              {time}
+            </span>
+          )
         )}
         {session.status !== 'idle' && (
           <span className="sr-only">{t(`status.${session.status}`)}</span>
@@ -219,6 +238,26 @@ export function SessionItem({
               {t(pinned ? 'item.unpin' : 'item.pin')}
             </DropdownMenuItem>
           )}
+          <DropdownMenuItem
+            onSelect={() =>
+              void copyTranscript(session.sessionId).then((done) => {
+                if (done) announce('copied')
+              })
+            }
+          >
+            <Copy />
+            {t('item.copyTranscript')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() =>
+              void exportTranscript(session.sessionId).then((done) => {
+                if (done) announce('exported')
+              })
+            }
+          >
+            <Download />
+            {t('item.exportTranscript')}
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setRenaming(true)}>
             <Pencil />
             {t('item.rename')}

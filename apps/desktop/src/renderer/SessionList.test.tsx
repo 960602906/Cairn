@@ -276,6 +276,48 @@ describe('SessionList', () => {
     await waitFor(() => expect(within(item).queryByText('已置顶')).toBeNull())
   })
 
+  it('copies and exports a transcript from the session menu', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+    const { request } = setup({
+      'session.list': () => ({ sessions: [summary('s1', '要导出的会话')] }),
+      'session.transcript': () => ({ markdown: '# 要导出的会话\n' }),
+      'session.exportTranscript': () => ({ cancelled: false, path: '/tmp/chat.md' }),
+    })
+    const item = (await screen.findAllByRole('listitem'))[0]!
+    await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '复制对话' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.transcript', { sessionId: 's1' }),
+    )
+    expect(writeText).toHaveBeenCalledWith('# 要导出的会话\n')
+    expect(await within(item).findByText('已复制')).toBeTruthy()
+
+    await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '导出为 Markdown…' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.exportTranscript', { sessionId: 's1' }),
+    )
+    expect(await within(item).findByText('已导出')).toBeTruthy()
+  })
+
+  it('keeps quiet when the export dialog is cancelled', async () => {
+    const { request } = setup({
+      'session.list': () => ({ sessions: [summary('s1', '取消导出')] }),
+      'session.exportTranscript': () => ({ cancelled: true }),
+    })
+    const item = (await screen.findAllByRole('listitem'))[0]!
+    await userEvent.click(within(item).getByRole('button', { name: '会话操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '导出为 Markdown…' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.exportTranscript', { sessionId: 's1' }),
+    )
+    expect(within(item).queryByText('已导出')).toBeNull()
+  })
+
   it('deletes a session after confirming', async () => {
     let sessions = [summary('s1', '要删除的'), summary('s2', '保留')]
     const { request } = setup({

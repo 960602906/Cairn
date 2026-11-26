@@ -292,6 +292,81 @@ describe('create and list', () => {
     )
   })
 
+  it('exports a Markdown transcript and saves it through the dialog', async () => {
+    const showSaveDialog = vi.fn(async () => '/tmp/chat.md')
+    const writeFile = vi.fn()
+    const { manager } = setup(fakeSupervisor().supervisor, {
+      showSaveDialog,
+      writeFile,
+      transcriptLocale: () => 'zh-CN',
+    })
+    const { sessionId } = manager.create({ projectPath: '/work', title: '修复/登录' })
+    hostEmits(
+      sessionId,
+      'run-1',
+      ['message.user', { messageId: 'm1', content: [{ type: 'text', text: '你好' }] }],
+      [
+        'message.assistant.completed',
+        {
+          messageId: 'm2',
+          content: [{ type: 'text', text: '你好！' }],
+          model: { providerId: 'p', modelId: 'm' },
+        },
+      ],
+    )
+
+    const { markdown } = manager.transcript({ sessionId })
+    expect(markdown).toBe(
+      [
+        '# 修复/登录',
+        '',
+        '> /work',
+        '',
+        '## 用户',
+        '',
+        '你好',
+        '',
+        '## 助手',
+        '',
+        '你好！',
+        '',
+      ].join('\n'),
+    )
+    await expect(manager.exportTranscript({ sessionId })).resolves.toEqual({
+      cancelled: false,
+      path: '/tmp/chat.md',
+    })
+    expect(showSaveDialog).toHaveBeenCalledWith('修复 登录.md')
+    expect(writeFile).toHaveBeenCalledWith('/tmp/chat.md', markdown)
+
+    expect(() => manager.transcript({ sessionId: 'missing' })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+  })
+
+  it('skips the file when the export dialog is cancelled and reports write failures', async () => {
+    const writeFile = vi.fn()
+    const { manager } = setup(fakeSupervisor().supervisor, {
+      showSaveDialog: async () => undefined,
+      writeFile,
+    })
+    const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })
+    await expect(manager.exportTranscript({ sessionId })).resolves.toEqual({ cancelled: true })
+    expect(writeFile).not.toHaveBeenCalled()
+
+    const failing = setup(fakeSupervisor().supervisor, {
+      showSaveDialog: async () => '/tmp/chat.md',
+      writeFile: () => {
+        throw new Error('disk full')
+      },
+    })
+    const other = failing.manager.create({ projectPath: '/work', title: 'Demo' })
+    await expect(
+      failing.manager.exportTranscript({ sessionId: other.sessionId }),
+    ).rejects.toMatchObject({ code: 'fs.failed' })
+    expect(failing.onError).toHaveBeenCalled()
+  })
+
   it('restores an archived session (M2-02)', () => {
     const { manager } = setup(fakeSupervisor().supervisor)
     const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })
