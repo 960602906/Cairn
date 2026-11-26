@@ -114,6 +114,10 @@
 
 ### Changed
 
+- 从文件树点开文件后，焦点落到新打开的文件标签上，不再随被藏起的文件树一起失焦。
+  Opening a file from the file tree now moves focus to the newly opened file tab instead of
+  losing it together with the hidden tree.
+
 - 从搜索、快捷键或新建会话切换过去时，侧栏会把当前会话行滚进可见区域。
   When switching sessions from search, keyboard shortcuts, or a newly created session, the
   sidebar scrolls the active session row into view.
