@@ -65,6 +65,7 @@ export const RENDERER_PROBE_SCRIPT = `(async () => {
 })()`
 
 const EXPECTED_API = {
+  filePaths: 'object',
   on: 'function',
   ready: 'function',
   request: 'function',

@@ -52,7 +52,14 @@ import {
   type ParsedPrompt,
 } from './composer-shared.js'
 import { extractAgents } from './composer-tokens.js'
-import { FILE_DRAG_TYPE, draggedFile } from './file-drag.js'
+import {
+  FILE_DRAG_TYPE,
+  draggedFile,
+  externalDroppedFiles,
+  pastedFilePaths,
+  relativeMentionPath,
+  type ExternalFile,
+} from './file-drag.js'
 import { onIdle } from './idle.js'
 import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMentions.js'
 import { agentName, localized } from './agents/model.js'
@@ -154,6 +161,8 @@ export function NewSession({
   const [dragging, setDragging] = useState(false)
   /** 输入了只有会话内才能用的 `/goal`：提示先创建会话，不发送。 */
   const [sessionOnlyNotice, setSessionOnlyNotice] = useState(false)
+  /** 拖入 / 粘贴文件的提示（工作空间外、未选工作空间等）。 */
+  const [dropNotice, setDropNotice] = useState<string | null>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const box = useRef<HTMLDivElement>(null)
   const projectId = projects.find((project) => project.path === projectPath.trim())?.projectId
@@ -289,6 +298,13 @@ export function NewSession({
     changeProject(projects[0]!.path)
   }, [changeProject, initialProjectPath, projects, projectPath])
 
+  // 拖入 / 粘贴文件的提示自动消失。
+  useEffect(() => {
+    if (dropNotice === null) return
+    const timer = setTimeout(() => setDropNotice(null), 3_500)
+    return () => clearTimeout(timer)
+  }, [dropNotice])
+
   // 草稿与计划模式随输入实时记下：去设置页再回来时输入框是重新挂载的，据此恢复。
   useEffect(() => {
     writeComposerDraft(NEW_SESSION_DRAFT_KEY, { text, planMode })
@@ -327,6 +343,42 @@ export function NewSession({
     requestAnimationFrame(() => {
       element?.focus()
       element?.setSelectionRange(next.caret, next.caret)
+    })
+  }
+
+  /** 把外部拖入 / 粘贴的绝对路径转成相对引用，插到光标处。 */
+  const insertExternalFiles = (files: readonly ExternalFile[]) => {
+    const root = projectPath.trim()
+    if (root === '') {
+      setDropNotice('input.needWorkspace')
+      return
+    }
+    const platform = window.cairn?.windowControls?.platform
+    const references: { path: string; kind: 'file' | 'dir' }[] = []
+    for (const file of files) {
+      const relative = relativeMentionPath(root, file.path, platform)
+      if (relative === undefined) continue
+      references.push({ path: relative, kind: file.kind })
+    }
+    if (references.length === 0) {
+      setDropNotice('input.outsideWorkspace')
+      return
+    }
+    if (references.length < files.length) setDropNotice('input.someOutsideWorkspace')
+    const element = textarea.current
+    let current = text
+    let start = element?.selectionStart ?? current.length
+    let end = element?.selectionEnd ?? start
+    for (const file of references) {
+      const next = insertMention(current, start, end, file.path, file.kind)
+      current = next.text
+      start = next.caret
+      end = next.caret
+    }
+    setText(current)
+    requestAnimationFrame(() => {
+      element?.focus()
+      element?.setSelectionRange(start, start)
     })
   }
 
@@ -516,6 +568,11 @@ export function NewSession({
             {t('composer.command.goal.needsSession')}
           </p>
         )}
+        {dropNotice && (
+          <p role="status" className="px-1 pb-2 text-note text-muted">
+            {t(dropNotice)}
+          </p>
+        )}
         <WorkspaceGitBar
           projectPath={projectPath === '' ? undefined : projectPath}
           projects={projects}
@@ -534,7 +591,13 @@ export function NewSession({
           )}
           <div
             onDragOver={(event) => {
-              if (busy || !event.dataTransfer.types.includes(FILE_DRAG_TYPE)) return
+              if (
+                busy ||
+                (!event.dataTransfer.types.includes(FILE_DRAG_TYPE) &&
+                  !event.dataTransfer.types.includes('Files'))
+              ) {
+                return
+              }
               event.preventDefault()
               event.dataTransfer.dropEffect = 'copy'
               setDragging(true)
@@ -545,16 +608,37 @@ export function NewSession({
             }}
             onDrop={(event) => {
               setDragging(false)
-              const file = draggedFile(event)
-              if (busy || file === undefined) return
+              if (busy) return
+              const internal = draggedFile(event)
+              if (internal !== undefined) {
+                event.preventDefault()
+                insertReference(internal.path, internal.kind)
+                return
+              }
+              // 其它拖入（如选中的文字）保持浏览器默认行为。
+              if (!event.dataTransfer.types.includes('Files')) return
               event.preventDefault()
-              insertReference(file.path, file.kind)
+              insertExternalFiles(externalDroppedFiles(event, window.cairn?.filePaths?.fromFile))
+            }}
+            onPaste={(event) => {
+              const files = pastedFilePaths(event, window.cairn?.filePaths?.fromFile)
+              if (files.length === 0) return
+              event.preventDefault()
+              insertExternalFiles(files)
             }}
             className={cn(
               'rounded-[16px] border border-hair2 bg-raise px-4 pt-3.5 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
               dragging && 'border-accent ring-2 ring-accent/20',
             )}
           >
+            {dragging && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[16px] border-2 border-dashed border-accent bg-accent/5 text-note text-accent"
+              >
+                {t('input.dropFiles')}
+              </div>
+            )}
             <div className="relative">
               <textarea
                 ref={textarea}

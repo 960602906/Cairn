@@ -5,12 +5,16 @@
 import {
   createBridgeClient,
   type BridgeClient,
+  type FilePathsApi,
   type MainForRenderer,
   type RpcBridge,
   type WindowControlsApi,
 } from '@cairn/protocol'
 
-export type CairnBridge = RpcBridge & { readonly windowControls?: WindowControlsApi }
+export type CairnBridge = RpcBridge & {
+  readonly windowControls?: WindowControlsApi
+  readonly filePaths?: FilePathsApi
+}
 
 declare global {
   interface Window {

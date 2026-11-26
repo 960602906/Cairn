@@ -10,6 +10,7 @@ import {
   RendererForMain,
   createEndpoint,
   exposeEndpoint,
+  type FilePathsApi,
   type RpcBridge,
   type RpcChannel,
   type WindowControlsApi,
@@ -45,7 +46,12 @@ export function exposeRendererApi(deps: {
   readonly contextBridge: ContextBridgeLike
   readonly ipcRenderer: IpcRendererLike
   readonly platform: string
-}): RpcBridge & { readonly windowControls: WindowControlsApi } {
+  /** Electron `webUtils`；省略时（如在测试里）不暴露 `filePaths`。 */
+  readonly webUtils?: { readonly getPathForFile: (file: File) => string }
+}): RpcBridge & {
+  readonly windowControls: WindowControlsApi
+  readonly filePaths?: FilePathsApi
+} {
   const endpoint = createEndpoint(createIpcChannel(deps.ipcRenderer), {
     local: RendererForMain,
     remote: MainForRenderer,
@@ -72,7 +78,18 @@ export function exposeRendererApi(deps: {
         deps.ipcRenderer.removeListener(WINDOW_CONTROLS_CHANNEL.maximizedChanged, handler)
     },
   }
-  const exposed = { ...api, windowControls }
+  const filePaths = deps.webUtils
+    ? {
+        fromFile: (file: unknown) => {
+          try {
+            return deps.webUtils!.getPathForFile(file as File)
+          } catch {
+            return ''
+          }
+        },
+      }
+    : undefined
+  const exposed = { ...api, windowControls, ...(filePaths ? { filePaths } : {}) }
   deps.contextBridge.exposeInMainWorld(API_KEY, exposed)
   return exposed
 }
