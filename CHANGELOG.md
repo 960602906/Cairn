@@ -114,6 +114,11 @@
 
 ### Changed
 
+- 运行时间线的步骤结束原因改为可读说明（正常结束 / 继续调用工具 / 达到长度上限等），
+  不再直接显示 `stop`、`tool_calls` 这类原始枚举值。
+  Step finish reasons in the run timeline are now explained in plain language instead of
+  showing raw enum values such as `stop` or `tool_calls`.
+
 - 目标判定记录、运行时间线和 Agents 列表里的模型改为显示设置中配置的供应商与模型名称，
   配置缺失时退回原始 id，不再直接露出 `providerId · modelId`。
   Models in goal evaluations, the run timeline, and the agents list now show the provider and

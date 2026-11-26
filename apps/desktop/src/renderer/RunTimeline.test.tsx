@@ -191,6 +191,38 @@ describe('RunTimeline', () => {
     expect(screen.queryByText('步骤 1')).toBeNull()
   })
 
+  it('translates every step finish reason', async () => {
+    const user = userEvent.setup()
+    const root = tree.runs[0]!
+    const turn = root.turns[0]!
+    const step = turn.steps[0]!
+    const reasons = ['stop', 'tool_calls', 'length', 'aborted', 'error'] as const
+    setup({
+      tree: {
+        ...tree,
+        runs: [
+          {
+            ...root,
+            turns: [
+              {
+                ...turn,
+                steps: reasons.map((finishReason, index) => ({
+                  ...step,
+                  stepId: `step-${index}`,
+                  finishReason,
+                })),
+              },
+            ],
+          },
+        ],
+      },
+    })
+    await user.click(screen.getByRole('button', { name: /^第 1 轮/ }))
+    for (const label of ['正常结束', '继续调用工具', '达到长度上限', '已中止', '出错']) {
+      expect(screen.getByText(label)).toBeTruthy()
+    }
+  })
+
   it('falls back to the first run and shows runs without turns or steps', async () => {
     const user = userEvent.setup()
     const root = tree.runs[0]!
