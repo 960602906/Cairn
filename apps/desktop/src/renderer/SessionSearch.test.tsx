@@ -9,7 +9,10 @@ import { App } from './App.js'
 import { createSessionStore } from './session-store.js'
 import { SEARCH_LIMIT, searchSessions } from './SessionSearch.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
 
 const summary = (sessionId: string, title: string, projectPath = '/work/api'): SessionSummary => ({
   sessionId,
@@ -115,6 +118,20 @@ describe('SessionSearch', () => {
     await press('{Enter}')
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(store.getState().activeSessionId).toBe('b')
+  })
+
+  it('keeps the active result in view while navigating with the keyboard', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    setup()
+    await press('{Control>}k{/Control}')
+    const dialog = await screen.findByRole('dialog', { name: '搜索对话' })
+    await waitFor(() => expect(within(dialog).getAllByRole('option')).toHaveLength(3))
+    scrollIntoView.mockClear()
+
+    await press('{ArrowDown}')
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(within(dialog).getAllByRole('option')[1])
   })
 
   it('finds sessions by message text and shows the matching snippet', async () => {

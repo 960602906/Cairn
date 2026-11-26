@@ -92,6 +92,7 @@ export function useMentionMenu({
   const [results, setResults] = useState<Results>()
   const [dismissed, setDismissed] = useState<string>()
   const pendingCaret = useRef<number | undefined>(undefined)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const scopeKey =
     scope === undefined ? undefined : 'sessionId' in scope ? scope.sessionId : scope.projectId
@@ -137,6 +138,13 @@ export function useMentionMenu({
   }, [text, textarea])
 
   useEffect(() => setIndex(0), [key])
+
+  // 键盘上下选择时让当前候选保持在可视范围内；测试环境没有 scrollIntoView 时跳过。
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' })
+  }, [open, active, key, options.length])
 
   const query = mention?.query
   useEffect(() => {
@@ -208,6 +216,7 @@ export function useMentionMenu({
 
   const list = open ? (
     <div
+      ref={listRef}
       id={MENTION_LIST_ID}
       role="listbox"
       aria-label={t('composer.mention.label')}

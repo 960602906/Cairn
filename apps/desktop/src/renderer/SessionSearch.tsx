@@ -6,7 +6,7 @@
  */
 import type { ProjectSummary, SessionSummary } from '@cairn/protocol'
 import { Search } from 'lucide-react'
-import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { lastSegment } from './paths.js'
 import { projectDisplayName } from './project-name.js'
@@ -141,6 +141,14 @@ export function SessionSearch({
     }
   }
 
+  const listRef = useRef<HTMLUListElement>(null)
+  // 键盘上下选择时让当前结果保持在可视范围内；测试环境没有 scrollIntoView 时跳过。
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' })
+  }, [active, results])
+
   const optionId = (index: number) => `${listId}-${index}`
 
   return (
@@ -181,6 +189,7 @@ export function SessionSearch({
           </p>
         ) : (
           <ul
+            ref={listRef}
             id={listId}
             role="listbox"
             aria-label={t('search.results')}

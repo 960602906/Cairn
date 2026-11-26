@@ -15,6 +15,7 @@ import { readNewSessionTeam, writeNewSessionTeam } from './composer-drafts.js'
 afterEach(() => {
   cleanup()
   delete (window as { cairn?: unknown }).cairn
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
 })
 
 const capabilities = {
@@ -509,6 +510,34 @@ describe('NewSession controls', () => {
         content: [{ type: 'text', text: '看 @src/a.ts' }],
         mentions: [{ path: 'src/a.ts' }],
       }),
+    )
+  })
+
+  it('keeps the active @ mention in view while navigating with the keyboard', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    setup({}, undefined, undefined, {
+      'fs.search': () => ({
+        entries: [
+          { path: 'src/a.ts', kind: 'file' },
+          { path: 'src/b.ts', kind: 'file' },
+        ],
+        truncated: false,
+      }),
+    })
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.type(input, '看 @a')
+    const list = await screen.findByRole('listbox', { name: '引用文件' })
+    await within(list).findByText('b.ts')
+    scrollIntoView.mockClear()
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(
+      within(list)
+        .getAllByRole('option')
+        .find((option) => option.getAttribute('aria-selected') === 'true'),
     )
   })
 
