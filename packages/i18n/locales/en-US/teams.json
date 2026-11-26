@@ -34,6 +34,7 @@
   "editor.publish": "Publish v{{version}}",
   "editor.more": "More actions",
   "editor.archive": "Archive",
+  "editor.duplicate": "Duplicate",
   "editor.unarchive": "Unarchive",
   "editor.archivedHint": "Archived templates are read-only. Unarchive to edit, publish or trial again.",
   "editor.noChanges": "The current content matches the published version.",

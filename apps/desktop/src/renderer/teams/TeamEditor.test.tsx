@@ -161,20 +161,31 @@ function setup(
 
 async function renderEditor(
   store: ReturnType<typeof createSessionStore>,
-  props: { teamId?: string; onBack?: () => void; onChanged?: () => void } = {},
+  props: {
+    teamId?: string
+    onBack?: () => void
+    onChanged?: () => void
+    onOpenTeam?: (teamId: string) => void
+  } = {},
 ) {
   const onBack = props.onBack ?? vi.fn()
   const onChanged = props.onChanged ?? vi.fn()
+  const onOpenTeam = props.onOpenTeam ?? vi.fn()
   await store.getState().refreshAgents({ includeArchived: true })
   await store.getState().refreshProjects()
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreContext.Provider value={store}>
-        <TeamEditor teamId={props.teamId} onBack={onBack} onChanged={onChanged} />
+        <TeamEditor
+          teamId={props.teamId}
+          onBack={onBack}
+          onChanged={onChanged}
+          onOpenTeam={onOpenTeam}
+        />
       </SessionStoreContext.Provider>
     </I18nextProvider>,
   )
-  return { onBack, onChanged }
+  return { onBack, onChanged, onOpenTeam }
 }
 
 describe('TeamEditor', () => {
@@ -881,6 +892,106 @@ describe('TeamEditor', () => {
     )
     await waitFor(() => expect(screen.getByRole('button', { name: '保存草稿' })).toBeDefined())
     expect(archivedResult.onChanged).toHaveBeenCalled()
+  })
+
+  it('duplicates the current team as a new draft', async () => {
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      archived: false,
+      draft: draft(),
+      published: published({}, 2),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+    const { store, calls } = setup({ team })
+    const { onChanged, onOpenTeam } = await renderEditor(store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
+
+    await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '复制为副本' }))
+    await waitFor(() => expect(onOpenTeam).toHaveBeenCalledWith('user.team-new'))
+    expect(onChanged).toHaveBeenCalled()
+    const save = calls.find((call) => call.method === 'team.saveDraft')
+    expect(save?.params).toMatchObject({
+      definition: {
+        name: { 'zh-CN': '发布团队 副本', 'en-US': '发布团队 copy' },
+        description: fields().description,
+        coordinator: fields().coordinator,
+        members: fields().members,
+        pattern: fields().pattern,
+      },
+    })
+    expect((save?.params as { definition: { id?: string } }).definition.id).toBeUndefined()
+
+    // 保存失败时留在原模板，不打开副本。
+    cleanup()
+    const failing = setup({ team, saveFails: true })
+    const failed = await renderEditor(failing.store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
+    await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '复制为副本' }))
+    await waitFor(() => expect(failing.store.getState().error?.code).toBe('team.invalid'))
+    expect(failed.onOpenTeam).not.toHaveBeenCalled()
+    expect(screen.getByText('发布团队')).toBeDefined()
+  })
+
+  it('stops publishing when the draft cannot be saved first', async () => {
+    const { store, calls } = setup({ team: undefined, saveFails: true })
+    await renderEditor(store)
+    fireEvent.change(screen.getByLabelText('中文名称'), { target: { value: '新团队' } })
+    fireEvent.change(screen.getByLabelText('中文描述'), { target: { value: '说明' } })
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: '发布 v1' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    )
+    fireEvent.click(screen.getByRole('button', { name: '发布 v1' }))
+    fireEvent.click(screen.getByRole('button', { name: /^发布$/ }))
+    await waitFor(() => expect(store.getState().error?.code).toBe('team.invalid'))
+    expect(calls.some((call) => call.method === 'team.publish')).toBe(false)
+    // 保存失败时发布对话框不关闭，等用户处理。
+    expect(screen.getByText('发布 v1？')).toBeDefined()
+  })
+
+  it('duplicates with a fallback name when the draft has no localized name', async () => {
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      archived: false,
+      draft: draft({ name: {} }),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+    const { store, calls } = setup({ team })
+    const { onOpenTeam } = await renderEditor(store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText('未命名团队')).toBeDefined())
+    await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '复制为副本' }))
+    await waitFor(() => expect(onOpenTeam).toHaveBeenCalled())
+    const save = calls.find((call) => call.method === 'team.saveDraft')
+    expect((save?.params as { definition: TeamDraftFields }).definition.name).toEqual({
+      'zh-CN': '未命名团队 副本',
+      'en-US': 'Team copy',
+    })
+  })
+
+  it('opens the more menu from the keyboard and lets Escape close it', async () => {
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      archived: false,
+      draft: draft(),
+      published: published({}, 2),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+    const { store } = setup({ team })
+    await renderEditor(store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
+
+    const trigger = screen.getByRole('button', { name: '更多操作' })
+    trigger.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByRole('menuitem', { name: '复制为副本' })).toBeDefined()
+    expect(screen.getByRole('menuitem', { name: '归档' })).toBeDefined()
+
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menuitem')).toBeNull())
   })
 
   it('keeps the team state when archiving or unarchiving fails', async () => {

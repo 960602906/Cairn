@@ -7,6 +7,12 @@
 
 ### Added
 
+- 团队模板支持「复制为副本」：编辑器「⋯」菜单会用当前内容另存为新模板，名称追加「副本」，
+  字段全部保留，原模板与版本历史不受影响。
+  Duplicate a team template from the editor's "⋯" menu: the current content is saved as a new
+  template with "copy" appended to the name, keeping every field and leaving the original and
+  its version history untouched.
+
 - 团队模板可以归档：归档后从默认列表隐藏，草稿、已发布版本与试运行历史都保留；在「已归档」
   筛选里可以找到并取消归档。归档期间模板只读，不再提供保存、发布、试运行与恢复旧版本。
   Team templates can be archived: an archived template leaves the default list but keeps its
