@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
@@ -138,6 +139,36 @@ describe('Composer model helpers', () => {
     )
     await user.click(screen.getByRole('menuitem', { name: /强/ }))
     expect(onSelect).toHaveBeenCalledWith(strong)
+  })
+
+  it('focuses the current model when the menu opens', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    function PickerHarness() {
+      const [open, setOpen] = useState(false)
+      return (
+        <ModelPicker
+          providers={providers}
+          model={strong}
+          fixed={false}
+          disabled={false}
+          open={open}
+          onOpenChange={setOpen}
+          onSelect={onSelect}
+        />
+      )
+    }
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <PickerHarness />
+      </I18nextProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: '模型：供应商二 · 强' }))
+    const current = await screen.findByRole('menuitem', { name: /强/ })
+    await waitFor(() => expect(document.activeElement).toBe(current))
+    // 直接按 Enter 保持当前模型，不会换成列表第一项。
+    await user.keyboard('{Enter}')
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
   it('picks the thinking level of the current model', async () => {
