@@ -13,6 +13,14 @@
   files and sandbox-unavailable cases. Plan mode stays read-only, the sandbox profile and your own
   deny rules still apply. Available from the composer, settings and agent permissions.
 
+- 新增目标模式：`/goal <条件>` 创建目标，每轮结束后由独立判定者检查，未达成自动续轮，直到达成、
+  判定不可能、预算耗尽或用户停止。输入框上方显示目标条，工作台新增目标面板，自动续轮显示为目标
+  继续条，目标结束时显示结果卡（ADR-0047）。
+  Adds goal mode: `/goal <condition>` starts a goal that an independent judge checks after each
+  turn, auto-continuing until met, impossible, budget exhausted or stopped. A goal bar appears
+  above the composer, a goal panel joins the workspace, auto-continuations render as a goal
+  continuation row, and a result card marks the end (ADR-0047).
+
 ### Changed
 
 - 内置技能由示例 `example` 换成 `grill-me`：逐个问题地追问，在写代码前把计划、设计或决策的风险

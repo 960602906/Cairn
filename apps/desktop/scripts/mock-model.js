@@ -20,7 +20,8 @@ import { createServer } from 'node:http'
  * `summary`（M3-03）：请求内容里带有压缩摘要的系统提示时，改回这段文字。
  * `brief`（M3-04）：请求内容里带有会话要点的系统提示时，改回这段文字。
  * `parallelToolCalls`（M4-05）：第一次对话请求同时返回多个工具调用，用于端到端验证并行委派。
- * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], parallelToolCalls?: readonly MockToolCall[], toolCallsByPrompt?: Readonly<Record<string, readonly MockToolCall[]>>, replyByPrompt?: Readonly<Record<string, string>>, failByPrompt?: Readonly<Record<string, boolean>>, title?: string, summary?: string, brief?: string }} options
+ * `delayByPrompt`（ADR-0047）：命中最后一条用户消息的请求延迟返回（毫秒），用于端到端验证「判定中暂停」。
+ * @param {{ apiKey?: string, reply: string, toolCall?: MockToolCall, toolCalls?: readonly MockToolCall[], parallelToolCalls?: readonly MockToolCall[], toolCallsByPrompt?: Readonly<Record<string, readonly MockToolCall[]>>, replyByPrompt?: Readonly<Record<string, string>>, failByPrompt?: Readonly<Record<string, boolean>>, delayByPrompt?: Readonly<Record<string, number>>, title?: string, summary?: string, brief?: string }} options
  * @returns {Promise<{ baseUrl: string, requests: MockModelRequest[], close: () => Promise<void> }>}
  */
 export async function startMockModel({
@@ -32,6 +33,7 @@ export async function startMockModel({
   toolCallsByPrompt,
   replyByPrompt,
   failByPrompt,
+  delayByPrompt,
   title,
   summary,
   brief,
@@ -200,15 +202,26 @@ export async function startMockModel({
         return
       }
       const text = promptReply(Array.isArray(body.messages) ? body.messages : []) ?? reply
-      for (const piece of text.split(' ')) {
-        res.write(`data: ${JSON.stringify(chunk({ role: 'assistant', content: `${piece} ` }))}\n\n`)
+      const writeReply = () => {
+        for (const piece of text.split(' ')) {
+          res.write(
+            `data: ${JSON.stringify(chunk({ role: 'assistant', content: `${piece} ` }))}\n\n`,
+          )
+        }
+        const done = {
+          ...chunk({}, 'stop'),
+          usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 },
+        }
+        res.write(`data: ${JSON.stringify(done)}\n\n`)
+        res.end('data: [DONE]\n\n')
       }
-      const done = {
-        ...chunk({}, 'stop'),
-        usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 },
+      let delayMs = 0
+      if (delayByPrompt !== undefined) {
+        const delayKey = promptMatches(delayByPrompt)
+        if (delayKey !== undefined) delayMs = delayByPrompt[delayKey] ?? 0
       }
-      res.write(`data: ${JSON.stringify(done)}\n\n`)
-      res.end('data: [DONE]\n\n')
+      if (delayMs > 0) setTimeout(writeReply, delayMs)
+      else writeReply()
     })
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)))
