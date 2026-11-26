@@ -214,6 +214,11 @@ describe('NewSession composer parity', () => {
     expect(skillDescription.className).toContain('truncate')
     expect(skillDescription.getAttribute('title')).toBe('review 的说明')
 
+    // 输入法组字时的方向键属于候选词操作，不移动面板选择。
+    const initialActive = input.getAttribute('aria-activedescendant')
+    fireEvent.keyDown(input, { key: 'ArrowDown', isComposing: true })
+    expect(input.getAttribute('aria-activedescendant')).toBe(initialActive)
+
     // ↑ 回到最后一项，Tab 把 `/review` 补全成可以接着写任务的样子。
     fireEvent.keyDown(input, { key: 'ArrowUp' })
     expect(input.getAttribute('aria-activedescendant')).toBe('composer-command-skill:review')

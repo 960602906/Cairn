@@ -585,6 +585,20 @@ describe('Composer /goal', () => {
     await waitFor(() => expect(document.activeElement).toBe(textarea))
   })
 
+  it('ignores arrows and Enter while the input method is composing', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const textarea = input()
+    await user.type(textarea, '/')
+    await screen.findByRole('listbox', { name: '输入指令' })
+    const active = textarea.getAttribute('aria-activedescendant')
+    fireEvent.keyDown(textarea, { key: 'ArrowDown', isComposing: true })
+    expect(textarea.getAttribute('aria-activedescendant')).toBe(active)
+    fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true })
+    expect(textarea.value).toBe('/')
+    expect(screen.getByRole('listbox', { name: '输入指令' })).toBeTruthy()
+  })
+
   it('toggles plan mode with the shortcut while the command list is open', async () => {
     const user = userEvent.setup()
     renderComposer()

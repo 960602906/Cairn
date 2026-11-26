@@ -254,6 +254,12 @@
 
 ### Fixed
 
+- 输入法组字时的方向键、Enter 和 Esc 不再被输入框工具栏或查找条抢走：`/` 指令与 `@` 引用
+  候选不会移动，查找不会跳转或关闭，试验面板不会发送。
+  While an input method is composing, arrow keys, Enter, and Esc are no longer taken by the
+  composer's command / mention panels or the find bar: candidates stay put, find does not jump
+  or close, and the trial panel does not send.
+
 - 用输入法打字时，按 Enter 确认候选词不再误触发提交：会话重命名、搜索对话、文件树的新建 /
   重命名、工作空间重命名和会话要点的 Esc / Ctrl+Enter 都会等组字结束再响应。
   Confirming an input-method candidate with Enter no longer triggers the surrounding action:

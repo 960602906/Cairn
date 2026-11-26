@@ -128,6 +128,8 @@ export function FindBar({
           setActive(0)
         }}
         onKeyDown={(event) => {
+          // 输入法组字时的 Esc / Enter 属于候选词操作，不关闭、也不跳转。
+          if (event.nativeEvent.isComposing) return
           if (event.key === 'Escape') {
             event.preventDefault()
             onClose()
