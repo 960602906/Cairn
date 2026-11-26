@@ -361,6 +361,61 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         expect(storage.sessions.list().map((s) => s.sessionId)).toEqual(['s2', 's1'])
       })
 
+      it('searches message text across sessions, with snippets and case-insensitive terms', () => {
+        seed()
+        storage.events.append([
+          userEvent('s1', 1, '请帮我修复登录问题'),
+          {
+            v: 1,
+            sessionId: 's1',
+            runId: 'run-1',
+            ts: 1_001,
+            seq: 2,
+            type: 'message.assistant.completed',
+            payload: {
+              messageId: 'msg-2',
+              content: [{ type: 'text', text: '已经修好登录问题了' }],
+              model: { providerId: 'p', modelId: 'm' },
+            },
+          },
+        ])
+        clock = 200
+        storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p1',
+          workspacePath: '/work/demo',
+          title: '另一个会话',
+        })
+        storage.events.append([userEvent('s2', 1, 'Fix Login Bug in the parser')])
+
+        const hits = storage.sessions.searchText('登录')
+        expect(hits.map((hit) => hit.sessionId)).toEqual(['s1'])
+        expect(hits[0]?.snippet).toContain('登录')
+        expect(storage.sessions.searchText('已经 修好').map((hit) => hit.sessionId)).toEqual(['s1'])
+        expect(storage.sessions.searchText('LOGIN bug').map((hit) => hit.sessionId)).toEqual(['s2'])
+        expect(storage.sessions.searchText('没有这句话')).toEqual([])
+        expect(storage.sessions.searchText('   ')).toEqual([])
+        expect(storage.sessions.searchText('登录', { limit: 1 })).toHaveLength(1)
+      })
+
+      it('excludes archived sessions from search unless asked, and forgets deleted ones', () => {
+        seed()
+        storage.events.append([userEvent('s1', 1, '需要记住的关键词')])
+        expect(storage.sessions.searchText('关键词').map((hit) => hit.sessionId)).toEqual(['s1'])
+
+        clock = 200
+        storage.sessions.archive('s1')
+        expect(storage.sessions.searchText('关键词')).toEqual([])
+        expect(
+          storage.sessions
+            .searchText('关键词', { includeArchived: true })
+            .map((hit) => hit.sessionId),
+        ).toEqual(['s1'])
+
+        storage.sessions.remove('s1')
+        expect(storage.sessions.searchText('关键词', { includeArchived: true })).toEqual([])
+      })
+
       it('reports missing sessions on update', () => {
         expectStorageError(() => storage.sessions.rename('nope', 't'), StorageErrorCode.NotFound)
         expectStorageError(

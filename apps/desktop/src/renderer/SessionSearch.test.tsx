@@ -7,7 +7,7 @@ import type { ProjectSummary, SessionSummary, Settings } from '@cairn/protocol'
 import type { MainApi } from './api.js'
 import { App } from './App.js'
 import { createSessionStore } from './session-store.js'
-import { searchSessions } from './SessionSearch.js'
+import { SEARCH_LIMIT, searchSessions } from './SessionSearch.js'
 
 afterEach(cleanup)
 
@@ -34,7 +34,7 @@ function setup(
   settings: Partial<Settings> = { providers: [] },
   projects: ProjectSummary[] = PROJECTS,
 ) {
-  const request = vi.fn(async (method: string) => {
+  const request = vi.fn(async (method: string, params?: { query?: string }) => {
     switch (method) {
       case 'session.list':
         return { sessions }
@@ -46,6 +46,12 @@ function setup(
         return { detected: 'bash', options: ['auto'] }
       case 'session.subscribe':
         return { events: [], lastSeq: 0 }
+      case 'session.searchText':
+        if (params?.query === 'boom') throw new Error('boom')
+        return {
+          hits:
+            params?.query === '登录' ? [{ sessionId: 'c', snippet: '…用旧版登录接口举例…' }] : [],
+        }
       default:
         return {}
     }
@@ -72,6 +78,16 @@ describe('searchSessions', () => {
     expect(names('PARSER web')).toEqual([['b', 'web']])
     expect(names('parser api')).toEqual([])
     expect(names('', 2)).toHaveLength(2)
+  })
+
+  it('includes sessions whose messages match and attaches their snippet', () => {
+    const snippets = new Map([['c', '…用旧版登录接口举例…']])
+    const results = searchSessions(SESSIONS, PROJECTS, '登录', SEARCH_LIMIT, undefined, snippets)
+    expect(results.map((result) => [result.session.sessionId, result.snippet])).toEqual([
+      ['a', undefined],
+      ['c', '…用旧版登录接口举例…'],
+    ])
+    expect(results[1]?.project).toBe('API 服务')
   })
 })
 
@@ -101,6 +117,40 @@ describe('SessionSearch', () => {
     expect(store.getState().activeSessionId).toBe('b')
   })
 
+  it('finds sessions by message text and shows the matching snippet', async () => {
+    const { request } = setup()
+    await press('{Control>}k{/Control}')
+    const dialog = await screen.findByRole('dialog', { name: '搜索对话' })
+    await userEvent.type(within(dialog).getByRole('combobox'), '登录')
+
+    // 标题命中的 a 在前，只在消息正文里命中的 c 在后（按会话列表顺序）
+    await waitFor(() => expect(within(dialog).getAllByRole('option')).toHaveLength(2))
+    expect(
+      within(dialog)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['修复登录失败API 服务', '未命名会话API 服务…用旧版登录接口举例…'])
+    expect(request).toHaveBeenCalledWith('session.searchText', { query: '登录' })
+
+    // 没有消息命中的输入不会留下上一次的片段
+    await userEvent.clear(within(dialog).getByRole('combobox'))
+    await userEvent.type(within(dialog).getByRole('combobox'), 'parser')
+    expect(
+      within(dialog)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Refactor parserweb'])
+    expect(within(dialog).queryByText('…用旧版登录接口举例…')).toBeNull()
+  })
+
+  it('stops the searching state when the message search fails', async () => {
+    setup()
+    await press('{Control>}k{/Control}')
+    const dialog = await screen.findByRole('dialog', { name: '搜索对话' })
+    await userEvent.type(within(dialog).getByRole('combobox'), 'boom')
+    expect(await within(dialog).findByText('没有找到匹配的对话')).toBeTruthy()
+  })
+
   it('opens with Ctrl+K, also from the settings page, and returns to the conversation', async () => {
     const { store } = setup()
     await userEvent.click(await screen.findByRole('button', { name: /^设置/ }))
@@ -108,7 +158,7 @@ describe('SessionSearch', () => {
     await press('{Control>}k{/Control}')
     const dialog = await screen.findByRole('dialog', { name: '搜索对话' })
     await userEvent.type(within(dialog).getByRole('combobox'), 'xyz')
-    expect(within(dialog).getByText('没有找到匹配的对话')).toBeTruthy()
+    expect(await within(dialog).findByText('没有找到匹配的对话')).toBeTruthy()
     await userEvent.clear(within(dialog).getByRole('combobox'))
     await userEvent.click(within(dialog).getAllByRole('option')[0]!)
     expect(store.getState().activeSessionId).toBe('a')

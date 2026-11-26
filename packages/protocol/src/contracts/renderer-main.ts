@@ -698,6 +698,16 @@ export const MainForRenderer = defineSide({
       params: z.object({ sessionId: Id, pinned: z.boolean() }),
       result: z.object({}),
     },
+    /** 在消息正文里搜索（⌘K 的全文模式）：每个会话最多一条，带命中附近的片段。 */
+    'session.searchText': {
+      params: z.object({
+        query: z.string().trim().min(1).max(200),
+        includeArchived: z.boolean().optional(),
+      }),
+      result: z.object({
+        hits: z.array(z.object({ sessionId: Id, snippet: z.string() })),
+      }),
+    },
     /** 会话导出为 Markdown（桌面手感）：返回正文，界面复制到剪贴板。 */
     'session.transcript': {
       params: z.object({ sessionId: Id }),

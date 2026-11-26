@@ -159,6 +159,7 @@ export interface SessionManager extends SessionCommands {
   readonly transcript: Sync<SessionCommands['transcript']>
   /** 保存对话框是异步的。 */
   readonly exportTranscript: SessionCommands['exportTranscript']
+  readonly searchText: Sync<SessionCommands['searchText']>
   readonly archive: Sync<SessionCommands['archive']>
   readonly setModel: Sync<SessionCommands['setModel']>
   readonly setAgent: SessionCommands['setAgent']
@@ -1055,6 +1056,15 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
 
     transcript({ sessionId }) {
       return { markdown: transcriptFor(sessionId) }
+    },
+
+    searchText({ query, includeArchived }) {
+      return {
+        hits: storage.sessions.searchText(query.trim(), {
+          limit: 100,
+          ...(includeArchived === true ? { includeArchived: true } : {}),
+        }),
+      }
     },
 
     async exportTranscript({ sessionId }) {

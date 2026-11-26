@@ -202,6 +202,14 @@ export interface SessionActions {
   copyTranscript(sessionId: string): Promise<boolean>
   /** 导出为 `.md` 文件（主进程弹保存对话框）；返回是否写入（用户取消时为 false）。 */
   exportTranscript(sessionId: string): Promise<boolean>
+  /**
+   * 在消息正文里搜索（⌘K 的全文模式）：每个会话最多一条结果，`snippet` 是命中附近的片段。
+   * 失败时返回 undefined。
+   */
+  searchMessages(
+    query: string,
+    includeArchived: boolean,
+  ): Promise<readonly { readonly sessionId: string; readonly snippet: string }[] | undefined>
   /** 删除（归档）会话（M2-02）：是当前会话时先取消选中；成功后刷新列表。 */
   archiveSession(sessionId: string): Promise<boolean>
   /** 取消归档（M2-02）：会话重新出现在默认列表里；成功后刷新列表。 */
@@ -946,6 +954,16 @@ export function createSessionStore(api: MainApi): SessionStore {
       async exportTranscript(sessionId) {
         const done = await run(() => api.request('session.exportTranscript', { sessionId }))
         return done !== undefined && !done.cancelled
+      },
+
+      async searchMessages(query, includeArchived) {
+        const result = await run(() =>
+          api.request(
+            'session.searchText',
+            includeArchived ? { query, includeArchived: true } : { query },
+          ),
+        )
+        return result?.hits
       },
 
       async archiveSession(sessionId) {

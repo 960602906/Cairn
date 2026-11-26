@@ -367,6 +367,37 @@ describe('create and list', () => {
     expect(failing.onError).toHaveBeenCalled()
   })
 
+  it('searches message text for the command palette, skipping archived sessions', () => {
+    const { manager } = setup(fakeSupervisor().supervisor)
+    const first = manager.create({ projectPath: '/work', title: 'First' })
+    const second = manager.create({ projectPath: '/work', title: 'Second' })
+    hostEmits(first.sessionId, 'run-1', [
+      'message.user',
+      { messageId: 'm1', content: [{ type: 'text', text: '修复登录问题' }] },
+    ])
+    hostEmits(second.sessionId, 'run-1', [
+      'message.user',
+      { messageId: 'm1', content: [{ type: 'text', text: '写登录页' }] },
+    ])
+
+    expect(manager.searchText({ query: ' 登录 ' }).hits).toEqual([
+      expect.objectContaining({
+        sessionId: first.sessionId,
+        snippet: expect.stringContaining('登录'),
+      }),
+      expect.objectContaining({ sessionId: second.sessionId }),
+    ])
+
+    manager.archive({ sessionId: second.sessionId })
+    expect(manager.searchText({ query: '登录' }).hits.map((hit) => hit.sessionId)).toEqual([
+      first.sessionId,
+    ])
+    expect(
+      manager.searchText({ query: '登录', includeArchived: true }).hits.map((hit) => hit.sessionId),
+    ).toEqual([first.sessionId, second.sessionId])
+    expect(manager.searchText({ query: '找不到的词' }).hits).toEqual([])
+  })
+
   it('restores an archived session (M2-02)', () => {
     const { manager } = setup(fakeSupervisor().supervisor)
     const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })

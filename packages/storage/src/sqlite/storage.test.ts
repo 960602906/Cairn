@@ -59,6 +59,7 @@ describe('openSqliteStorage', () => {
         '0023_auto-fix-session-index',
         '0024_auto-fix-last-comment',
         '0025_session-pinning',
+        '0026_session-search',
       ],
     })
     storage.close()
@@ -91,6 +92,12 @@ describe('openSqliteStorage', () => {
       'pull_request_watches',
       'run_snapshots',
       'schema_meta',
+      'session_search_fts',
+      'session_search_fts_config',
+      'session_search_fts_data',
+      'session_search_fts_docsize',
+      'session_search_fts_idx',
+      'session_search_text',
       'sessions',
       'skill_prefs',
     ])
@@ -127,6 +134,33 @@ describe('openSqliteStorage', () => {
     second.close()
   })
 
+  it('backfills the message search index for databases written before it existed', () => {
+    const first = openSqliteStorage({ file, now: () => 1 })
+    first.projects.create({ projectId: 'p1', name: 'Demo', path: '/work/demo' })
+    first.sessions.create({
+      sessionId: 's1',
+      projectId: 'p1',
+      workspacePath: '/work/demo',
+      title: '会话',
+    })
+    first.events.append([userEvent('s1', 1, '修复登录问题')])
+    expect(first.sessions.searchText('修复登录')).toEqual([
+      { sessionId: 's1', snippet: '修复登录问题' },
+    ])
+    first.close()
+
+    // 模拟升级前的数据库：没有搜索正文，重新打开时由 TypeScript 回填。
+    const db = new Database(file)
+    db.exec('DELETE FROM session_search_text')
+    db.close()
+
+    const second = openSqliteStorage({ file })
+    expect(second.sessions.searchText('修复登录')).toEqual([
+      { sessionId: 's1', snippet: '修复登录问题' },
+    ])
+    second.close()
+  })
+
   it('turns project skills on for projects created before they became the default', () => {
     migrateDatabase({ file, migrations: MIGRATIONS.slice(0, 7) })
     const db = new Database(file)
@@ -156,6 +190,7 @@ describe('openSqliteStorage', () => {
       '0023_auto-fix-session-index',
       '0024_auto-fix-last-comment',
       '0025_session-pinning',
+      '0026_session-search',
     ])
     expect(storage.projects.get('p1')?.enableProjectSkills).toBe(true)
     storage.close()

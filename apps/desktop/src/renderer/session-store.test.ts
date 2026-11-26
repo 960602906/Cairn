@@ -486,6 +486,41 @@ describe('session list', () => {
     expect(store.getState().showArchivedSessions).toBe(true)
   })
 
+  it('searches message text through IPC and forwards the archived filter', async () => {
+    const { api, calls } = fakeApi({
+      'session.searchText': ({ includeArchived }: { includeArchived?: boolean }) => ({
+        hits: [
+          {
+            sessionId: includeArchived ? 's2' : 's1',
+            snippet: '…登录…',
+          },
+        ],
+      }),
+    })
+    const store = createSessionStore(api)
+
+    await expect(store.getState().searchMessages('登录', false)).resolves.toEqual([
+      { sessionId: 's1', snippet: '…登录…' },
+    ])
+    expect(calls).toContainEqual(['session.searchText', { query: '登录' }])
+
+    await expect(store.getState().searchMessages('登录', true)).resolves.toEqual([
+      { sessionId: 's2', snippet: '…登录…' },
+    ])
+    expect(calls).toContainEqual(['session.searchText', { query: '登录', includeArchived: true }])
+  })
+
+  it('returns undefined when the message search fails', async () => {
+    const { api } = fakeApi({
+      'session.searchText': () => {
+        throw new RpcError('storage.not_found')
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().searchMessages('登录', false)).resolves.toBeUndefined()
+    expect(store.getState().error?.code).toBe('storage.not_found')
+  })
+
   it('deletes an archived session and sets the thinking level of a session', async () => {
     let sessions = [summary('s1'), summary('s2', 'archived')]
     const { api, calls } = fakeApi({
