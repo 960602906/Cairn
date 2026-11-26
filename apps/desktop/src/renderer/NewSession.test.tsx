@@ -299,6 +299,57 @@ describe('NewSession composer parity', () => {
     expect(screen.queryByText('探索员')).toBeNull()
   })
 
+  it('follows the selected team or agent when suggesting @agents', async () => {
+    const agents = [
+      agentFixture('builtin.coder', '编程助手'),
+      agentFixture('builtin.explorer', '探索员'),
+      agentFixture('user.checker', '审查员'),
+    ]
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      { skills: [] },
+      {
+        'agent.list': () => ({ agents }),
+        'team.list': () => ({ teams: [teamFixture('user.team-1', '日常协作')] }),
+        'agent.delegationTargets': (params) => {
+          const selection = params as { teamId?: string; agent?: { id: string } }
+          // 团队主控与选中的探索员各自允许审查员；默认 Agent 只允许探索员。
+          return selection.teamId === 'user.team-1' || selection.agent?.id === 'builtin.explorer'
+            ? { enabled: true, agentIds: ['user.checker'] }
+            : { enabled: true, agentIds: ['builtin.explorer'] }
+        },
+      },
+    )
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+
+    await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    const picker = await screen.findByRole('listbox', { name: '选择 Agent 或团队' })
+    await user.click(within(picker).getByText('日常协作'))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('agent.delegationTargets', {
+        teamId: 'user.team-1',
+      }),
+    )
+    await user.type(input, '请 @审')
+    const list = await screen.findByRole('listbox', { name: '引用文件' })
+    await within(list).findByText('审查员')
+    expect(within(list).queryByText('探索员')).toBeNull()
+    await user.keyboard('{Escape}')
+
+    // 改选单个 Agent：候选跟着它的委派名单走。
+    await user.click(screen.getByRole('button', { name: '切换团队：日常协作' }))
+    const again = await screen.findByRole('listbox', { name: '选择 Agent 或团队' })
+    await user.click(within(again).getByText('探索员'))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('agent.delegationTargets', {
+        agent: { id: 'builtin.explorer', version: 1 },
+      }),
+    )
+    expect(screen.getByRole('button', { name: '切换 Agent：探索员' })).toBeTruthy()
+  })
+
   it('completes a dismissed skill name instead of sending it', async () => {
     const { request } = setup({}, { sessionId: 's1' }, { skills: [skill('review')] })
     const user = userEvent.setup()

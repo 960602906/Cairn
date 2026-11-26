@@ -74,6 +74,11 @@ export interface TeamService extends TeamCommands {
    * 返回会话要记下的绑定信息与运行使用的主控引用；不可用时返回 undefined。
    */
   resolveTeam(teamId: string): SessionTeamResolution | undefined
+  /**
+   * 已发布模板的主控定义（合并模板的委派覆盖与协作说明），供新对话页按所选团队过滤
+   * `@Agent` 候选；模板不可用时返回 undefined。
+   */
+  definitionForTeam(teamId: string): AgentDefinition | undefined
   /** 把会话绑定的团队并入这一轮使用的定义（试运行用草稿，普通会话用最新的已发布版本）。 */
   applySessionTeam(sessionId: string, definition: AgentDefinition): AgentDefinition
 }
@@ -139,6 +144,19 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
         return undefined
       }
     },
+  }
+
+  /** 可用模板（已发布、未归档）与它的主控已发布定义；任一条件不满足时返回 `undefined`。 */
+  const publishedTeamWithCoordinator = (
+    teamId: string,
+  ): { team: AgentTeam; coordinator: AgentDefinition } | undefined => {
+    const record = storage.teams.get(teamId)
+    if (!record || record.archived) return undefined
+    const team = publishedOf(teamId)
+    if (!team) return undefined
+    const coordinator = validationContext.agent(team.coordinator)
+    if (!coordinator) return undefined
+    return { team, coordinator }
   }
 
   const validate = (fields: TeamDraftFields) => validateAgentTeam(fields, validationContext)
@@ -391,16 +409,22 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     },
 
     resolveTeam(teamId) {
-      const record = storage.teams.get(teamId)
-      if (!record || record.archived) return undefined
-      const team = publishedOf(teamId)
-      if (!team) return undefined
-      const coordinator = validationContext.agent(team.coordinator)
-      if (!coordinator) return undefined
+      const resolved = publishedTeamWithCoordinator(teamId)
+      if (!resolved) return undefined
       return {
-        team: { teamId, name: team.name, version: team.version, pattern: team.pattern },
-        coordinator: { id: coordinator.id, version: coordinator.version },
+        team: {
+          teamId,
+          name: resolved.team.name,
+          version: resolved.team.version,
+          pattern: resolved.team.pattern,
+        },
+        coordinator: { id: resolved.coordinator.id, version: resolved.coordinator.version },
       }
+    },
+
+    definitionForTeam(teamId) {
+      const resolved = publishedTeamWithCoordinator(teamId)
+      return resolved && applyTeamToAgentDefinition(resolved.coordinator, resolved.team)
     },
 
     applySessionTeam(sessionId, definition) {

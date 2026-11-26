@@ -100,6 +100,11 @@
 
 ### Changed
 
+- 新对话页的 `@Agent` 候选跟随所选团队主控或 Agent 的委派名单，不再固定用默认 Agent；
+  选团队时模板的委派覆盖一并生效。
+  The new-session page now suggests @agent targets from the selected team's coordinator or the
+  selected agent instead of always using the default agent; team delegation overrides apply.
+
 - 团队模板归档前会确认，草稿有未保存修改时明确提示会丢失；当所有模板都已归档时，列表会引导
   切换到「已归档」而不是显示“没有匹配”。
   Archiving a team template now asks for confirmation and warns when the draft has unsaved

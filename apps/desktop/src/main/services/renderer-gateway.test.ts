@@ -1030,6 +1030,22 @@ describe('createRendererGateway: commands and lifecycle', () => {
       enabled: false,
       agentIds: [],
     })
+    // 新对话页可以按所选团队或 Agent 查询。
+    vi.mocked(commands.delegationTargets).mockReturnValueOnce({
+      enabled: true,
+      agentIds: ['user.maker'],
+    })
+    await expect(
+      client.request('agent.delegationTargets', { teamId: 'user.team-1' }),
+    ).resolves.toEqual({ enabled: true, agentIds: ['user.maker'] })
+    expect(commands.delegationTargets).toHaveBeenCalledWith({ teamId: 'user.team-1' })
+    vi.mocked(commands.delegationTargets).mockReturnValueOnce({ enabled: false, agentIds: [] })
+    await client.request('agent.delegationTargets', {
+      agent: { id: 'user.checker', version: 2 },
+    })
+    expect(commands.delegationTargets).toHaveBeenCalledWith({
+      agent: { id: 'user.checker', version: 2 },
+    })
   })
 
   it('reports the resolved paths for clickable replies', async () => {
