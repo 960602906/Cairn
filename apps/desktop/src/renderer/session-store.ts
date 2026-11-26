@@ -37,6 +37,8 @@ import {
   type AgentEffectiveConfig,
   type AgentSource,
   type AgentSummary,
+  type AgentTeamDetail,
+  type AgentTeamSummary,
   type AgentVersionSummary,
   type ActivityDecision,
   type ActivityListResult,
@@ -91,6 +93,9 @@ import {
   type SkillInstallSource,
   type SkillSource,
   type SkillSummary,
+  type TeamDraftInput,
+  type TeamTrialStarted,
+  type TeamTrialSummary,
   type ToolCategory,
   type TrialStarted,
   type TrialSummary,
@@ -129,6 +134,8 @@ export interface TrialState {
   readonly useAgentPermissions: boolean
   /** 界面草稿的稳定序列化，用于提示“配置已变化”。 */
   readonly configKey: string
+  /** 团队试运行（M7-09）的来源模板；Agent 试运行时没有这一项。 */
+  readonly teamId?: string
 }
 
 export interface SessionState {
@@ -454,6 +461,24 @@ export interface SessionActions {
   listTrials(agentId: string): Promise<TrialSummary[] | undefined>
   /** 清除一个 Agent 的全部试运行记录；返回清除条数。 */
   clearTrials(agentId: string): Promise<number | undefined>
+  /** 团队模板列表（M7-09）；失败时返回 undefined。 */
+  listTeams(includeArchived?: boolean): Promise<AgentTeamSummary[] | undefined>
+  /** 一份团队模板的当前状态（草稿优先）；失败时返回 undefined。 */
+  getTeam(teamId: string, version?: number): Promise<AgentTeamDetail | undefined>
+  /** 保存团队模板草稿；校验结果在返回的 detail 里。 */
+  saveTeamDraft(definition: TeamDraftInput): Promise<AgentTeamDetail | undefined>
+  publishTeam(teamId: string): Promise<AgentTeamDetail | undefined>
+  /** 用团队模板草稿开一次试运行并订阅它；失败时返回 undefined。 */
+  startTeamTrial(input: {
+    teamId: string
+    projectPath: string
+    useAgentPermissions?: boolean
+    configKey?: string
+  }): Promise<TeamTrialStarted | undefined>
+  /** 读取一个团队模板的试运行历史。 */
+  listTeamTrials(teamId: string): Promise<TeamTrialSummary[] | undefined>
+  /** 清除一个团队模板的全部试运行记录；返回清除条数。 */
+  clearTeamTrials(teamId: string): Promise<number | undefined>
   /** 获取诊断包导出前清单（M3-13）。 */
   diagnosticsSummary(input?: DiagnosticsExportInput): Promise<DiagnosticsSummary | undefined>
   /** 命令沙箱的当前配置与能力（M5-05）。 */
@@ -866,6 +891,32 @@ export function createSessionStore(api: MainApi): SessionStore {
       await run(() => api.request('session.unsubscribe', { sessionId }))
     }
 
+    /**
+     * 订阅一次试运行（Agent 或团队）：先退掉上一个试运行会话，再补发事件。
+     * 失败时清空 `trial`，界面不会停留在看不见的会话上。
+     */
+    const subscribeTrial = async (trial: TrialState): Promise<boolean> => {
+      const previous = get().trial
+      if (previous && previous.sessionId !== trial.sessionId) {
+        await unsubscribe(previous.sessionId)
+      }
+      set({ trial })
+      const { sessionId } = trial
+      pending.set(sessionId, [])
+      const afterSeq = get().views[sessionId]?.lastSeq ?? 0
+      const result = await run(() => api.request('session.subscribe', { sessionId, afterSeq }))
+      const buffered = pending.get(sessionId)
+      pending.delete(sessionId)
+      if (!result) {
+        set({ trial: undefined })
+        return false
+      }
+      trialSubscribed = sessionId
+      set((state) => receive(state, sessionId, [...result.events, ...(buffered ?? [])]))
+      await Promise.all([loadApprovals(sessionId), loadQuestions(sessionId)])
+      return true
+    }
+
     return {
       sessions: [],
       showArchivedSessions: false,
@@ -1041,40 +1092,20 @@ export function createSessionStore(api: MainApi): SessionStore {
           }),
         )
         if (!started) return undefined
-        const previous = get().trial
-        if (previous && previous.sessionId !== started.sessionId) {
-          await unsubscribe(previous.sessionId)
-        }
-        set({
-          trial: {
-            sessionId: started.sessionId,
-            agent: started.agent,
-            draftHash: started.draftHash,
-            projectPath,
-            useAgentPermissions: started.useAgentPermissions,
-            configKey,
-          },
+        const subscribed = await subscribeTrial({
+          sessionId: started.sessionId,
+          agent: started.agent,
+          draftHash: started.draftHash,
+          projectPath,
+          useAgentPermissions: started.useAgentPermissions,
+          configKey,
         })
-        pending.set(started.sessionId, [])
-        const afterSeq = get().views[started.sessionId]?.lastSeq ?? 0
-        const result = await run(() =>
-          api.request('session.subscribe', { sessionId: started.sessionId, afterSeq }),
-        )
-        const buffered = pending.get(started.sessionId)
-        pending.delete(started.sessionId)
-        if (!result) {
-          set({ trial: undefined })
-          return undefined
-        }
-        trialSubscribed = started.sessionId
-        set((state) => receive(state, started.sessionId, [...result.events, ...(buffered ?? [])]))
-        await Promise.all([loadApprovals(started.sessionId), loadQuestions(started.sessionId)])
-        return started
+        return subscribed ? started : undefined
       },
 
       async restartTrial(useAgentPermissions, configKey) {
         const current = get().trial
-        if (!current) return undefined
+        if (!current || current.teamId !== undefined) return undefined
         const started = await run(() =>
           api.request('trial.restart', {
             sessionId: current.sessionId,
@@ -1082,32 +1113,32 @@ export function createSessionStore(api: MainApi): SessionStore {
           }),
         )
         if (!started) return undefined
-        await unsubscribe(current.sessionId)
-        set({
-          trial: {
-            sessionId: started.sessionId,
-            agent: started.agent,
-            draftHash: started.draftHash,
-            projectPath: current.projectPath,
-            useAgentPermissions: started.useAgentPermissions,
-            configKey: configKey ?? current.configKey,
-          },
+        const subscribed = await subscribeTrial({
+          sessionId: started.sessionId,
+          agent: started.agent,
+          draftHash: started.draftHash,
+          projectPath: current.projectPath,
+          useAgentPermissions: started.useAgentPermissions,
+          configKey: configKey ?? current.configKey,
         })
-        pending.set(started.sessionId, [])
-        const afterSeq = get().views[started.sessionId]?.lastSeq ?? 0
-        const result = await run(() =>
-          api.request('session.subscribe', { sessionId: started.sessionId, afterSeq }),
+        return subscribed ? started : undefined
+      },
+
+      async startTeamTrial({ teamId, projectPath, useAgentPermissions = false, configKey = '' }) {
+        const started = await run(() =>
+          api.request('team.trial.start', { teamId, projectPath, useAgentPermissions }),
         )
-        const buffered = pending.get(started.sessionId)
-        pending.delete(started.sessionId)
-        if (!result) {
-          set({ trial: undefined })
-          return undefined
-        }
-        trialSubscribed = started.sessionId
-        set((state) => receive(state, started.sessionId, [...result.events, ...(buffered ?? [])]))
-        await Promise.all([loadApprovals(started.sessionId), loadQuestions(started.sessionId)])
-        return started
+        if (!started) return undefined
+        const subscribed = await subscribeTrial({
+          sessionId: started.sessionId,
+          agent: started.agent,
+          draftHash: started.teamDraftHash,
+          projectPath,
+          useAgentPermissions: started.useAgentPermissions,
+          configKey,
+          teamId: started.teamId,
+        })
+        return subscribed ? started : undefined
       },
 
       async sendTrialPrompt(text) {
@@ -1176,6 +1207,30 @@ export function createSessionStore(api: MainApi): SessionStore {
 
       clearTrials: async (agentId) => {
         const result = await run(() => api.request('trial.clear', { agentId }))
+        return result?.cleared
+      },
+
+      listTeams: async (includeArchived) =>
+        (
+          await run(() =>
+            api.request('team.list', includeArchived === true ? { includeArchived: true } : {}),
+          )
+        )?.teams,
+
+      getTeam: (teamId, version) =>
+        run(() =>
+          api.request('team.get', version === undefined ? { teamId } : { teamId, version }),
+        ),
+
+      saveTeamDraft: (definition) => run(() => api.request('team.saveDraft', { definition })),
+
+      publishTeam: (teamId) => run(() => api.request('team.publish', { teamId })),
+
+      listTeamTrials: async (teamId) =>
+        (await run(() => api.request('team.trial.list', { teamId })))?.trials,
+
+      clearTeamTrials: async (teamId) => {
+        const result = await run(() => api.request('team.trial.clear', { teamId }))
         return result?.cleared
       },
 

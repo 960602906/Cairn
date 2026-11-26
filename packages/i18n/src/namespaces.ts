@@ -9,6 +9,7 @@ export const NAMESPACES = [
   'session',
   'settings',
   'agents',
+  'teams',
   'trial',
   'onboarding',
   'errors',

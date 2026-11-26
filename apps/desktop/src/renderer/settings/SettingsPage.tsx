@@ -21,6 +21,7 @@ import {
   PanelLeftClose,
   Search,
   ShieldCheck,
+  UsersRound,
 } from 'lucide-react'
 import { useEffect, type ReactNode, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -36,12 +37,14 @@ import { PermissionsSettings } from './PermissionsSettings.js'
 import { ProvidersSettings } from './ProvidersSettings.js'
 import { McpGlyph, SkillGlyph } from './SettingIcons.js'
 import { SkillsSettings } from './SkillsSettings.js'
+import { TeamsSettings } from './TeamsSettings.js'
 import { TITLE_BAR_INSET } from '../layout/WindowControls.js'
 
 export type SettingsSection =
   | 'general'
   | 'archived'
   | 'agents'
+  | 'teams'
   | 'providers'
   | 'skills'
   | 'mcp'
@@ -70,6 +73,7 @@ const GROUPS: readonly {
     group: 'modelCapabilities',
     sections: [
       { id: 'agents', icon: <Bot /> },
+      { id: 'teams', icon: <UsersRound /> },
       { id: 'providers', icon: <Cpu /> },
       { id: 'skills', icon: <SkillGlyph /> },
       { id: 'mcp', icon: <McpGlyph /> },
@@ -289,6 +293,7 @@ export function SettingsContent({
           {section === 'general' && <GeneralSettings />}
           {section === 'archived' && <ArchivedSessionsSettings />}
           {section === 'agents' && <AgentsSettings />}
+          {section === 'teams' && <TeamsSettings />}
           {section === 'providers' && <ProvidersSettings />}
           {section === 'skills' && (
             <SkillsSettings onOpenPermissions={() => onNavigate?.('permissions')} />
