@@ -114,6 +114,10 @@
 
 ### Changed
 
+- 侧栏会话分组点「展开剩余」或「收起」后，焦点落在新出现的那个按钮上，不再掉到页面。
+  After expanding or collapsing a session group in the sidebar, focus moves to the button that
+  replaces the one you pressed.
+
 - 设置 → 模型供应商的「接口格式」分段控件支持 ← / → 与 Home / End 切换，只有当前格式
   留在 Tab 顺序里。
   The provider-format tabs in Settings → Model providers now switch with ← / → and Home / End,

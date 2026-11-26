@@ -247,9 +247,14 @@ describe('SessionList', () => {
 
     await userEvent.click(within(group).getByRole('button', { name: '展开剩余 2 个' }))
     expect(within(group).getAllByRole('listitem')).toHaveLength(10)
+    // 原按钮消失后，焦点落在新出现的「收起」上。
+    expect(document.activeElement).toBe(within(group).getByRole('button', { name: '收起' }))
 
     await userEvent.click(within(group).getByRole('button', { name: '收起' }))
     expect(within(group).getAllByRole('listitem')).toHaveLength(8)
+    expect(document.activeElement).toBe(
+      within(group).getByRole('button', { name: '展开剩余 2 个' }),
+    )
   })
 
   it('renames a session in place; Esc cancels and unchanged titles are not saved', async () => {

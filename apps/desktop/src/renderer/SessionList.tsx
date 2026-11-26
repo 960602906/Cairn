@@ -386,6 +386,24 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
   const selectSession = useSessionStore((s) => s.selectSession)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
   const [showAll, setShowAll] = useState<ReadonlySet<string>>(() => new Set())
+  const toggleRefs = useRef(new Map<string, HTMLButtonElement>())
+  const pendingToggle = useRef<string | null>(null)
+  // 展开 / 收起后原按钮消失，把焦点交给新出现的那个按钮。
+  useEffect(() => {
+    const path = pendingToggle.current
+    if (path === null) return
+    pendingToggle.current = null
+    toggleRefs.current.get(path)?.focus()
+  }, [showAll])
+  const toggleShowAll = (path: string, show: boolean) => {
+    pendingToggle.current = path
+    setShowAll((current) => {
+      const next = new Set(current)
+      if (show) next.add(path)
+      else next.delete(path)
+      return next
+    })
+  }
 
   // 项目名默认就是目录名（project-service），项目列表还没读取时用路径最后一段
   useEffect(() => {
@@ -454,8 +472,12 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
                 </ul>
                 {remaining > 0 && (
                   <button
+                    ref={(node) => {
+                      if (node) toggleRefs.current.set(group.projectPath, node)
+                      else toggleRefs.current.delete(group.projectPath)
+                    }}
                     type="button"
-                    onClick={() => setShowAll((current) => new Set(current).add(group.projectPath))}
+                    onClick={() => toggleShowAll(group.projectPath, true)}
                     className="mt-0.5 flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[10.5px] text-faint transition-colors hover:bg-hover hover:text-fg2"
                   >
                     {t('list.showMore', { count: remaining })}
@@ -465,14 +487,12 @@ export function SessionList({ onSelect }: { readonly onSelect?: () => void }) {
                   showAll.has(group.projectPath) &&
                   group.sessions.length > SESSION_GROUP_PREVIEW && (
                     <button
+                      ref={(node) => {
+                        if (node) toggleRefs.current.set(group.projectPath, node)
+                        else toggleRefs.current.delete(group.projectPath)
+                      }}
                       type="button"
-                      onClick={() =>
-                        setShowAll((current) => {
-                          const next = new Set(current)
-                          next.delete(group.projectPath)
-                          return next
-                        })
-                      }
+                      onClick={() => toggleShowAll(group.projectPath, false)}
                       className="mt-0.5 flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[10.5px] text-faint transition-colors hover:bg-hover hover:text-fg2"
                     >
                       {t('list.showLess')}
