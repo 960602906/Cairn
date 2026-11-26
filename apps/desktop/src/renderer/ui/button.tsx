@@ -3,7 +3,7 @@
  * 圆角 8px，悬停与按下用叠加层，150ms 过渡。
  */
 import { cva, type VariantProps } from 'class-variance-authority'
-import type { ButtonHTMLAttributes } from 'react'
+import type { ComponentPropsWithRef } from 'react'
 import { Slot } from 'radix-ui'
 import { cn } from './cn.js'
 
@@ -30,7 +30,7 @@ export const buttonVariants = cva(
 )
 
 export interface ButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+  extends ComponentPropsWithRef<'button'>, VariantProps<typeof buttonVariants> {
   /** 把样式交给唯一的子元素（例如链接），不渲染 <button>。 */
   readonly asChild?: boolean
 }

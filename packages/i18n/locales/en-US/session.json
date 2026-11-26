@@ -67,6 +67,7 @@
   "brief.edit": "Edit",
   "brief.save": "Save",
   "brief.cancel": "Cancel",
+  "brief.shortcut": "{{save}} to save · Esc to cancel",
   "brief.close": "Close",
   "chat.messages": "Messages",
   "chat.compacted": "Earlier conversation compacted",

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -49,5 +49,30 @@ describe('SessionBriefPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: '保存' }))
     expect(updateBrief).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('textbox')).toBeTruthy()
+  })
+
+  it('focuses the editor and saves with Ctrl+Enter, then returns to Edit', async () => {
+    const { updateBrief } = setup('旧要点')
+    await userEvent.click(screen.getByRole('button', { name: '编辑' }))
+    const editor = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '编辑' })
+    await waitFor(() => expect(document.activeElement).toBe(editor))
+    expect(editor.selectionStart).toBe(editor.value.length)
+
+    await userEvent.clear(editor)
+    await userEvent.type(editor, '新要点')
+    await userEvent.keyboard('{Control>}{Enter}{/Control}')
+    await waitFor(() => expect(updateBrief).toHaveBeenCalledWith('s1', '新要点'))
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: '编辑' })),
+    )
+  })
+
+  it('cancels with Escape and returns focus to Edit', async () => {
+    setup('旧要点')
+    await userEvent.click(screen.getByRole('button', { name: '编辑' }))
+    await userEvent.type(screen.getByRole('textbox'), '{Escape}')
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '编辑' }))
   })
 })
