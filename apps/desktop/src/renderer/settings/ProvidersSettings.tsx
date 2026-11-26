@@ -35,7 +35,7 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react'
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { translateError } from '@cairn/i18n'
 import { useTranslation } from 'react-i18next'
 import type { CredentialStatus, ProviderTestResult } from '../session-store.js'
@@ -315,10 +315,32 @@ function KindTabs({
   readonly onChange: (kind: ProviderKind) => void
 }) {
   const { t } = useTranslation('settings')
+  // 按 WAI-ARIA 的 tabs 模式：← / → 在接口格式间移动并切换，Home / End 跳到两端。
+  const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    if (buttons.length === 0) return
+    event.preventDefault()
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    const selected = buttons.findIndex((button) => button.getAttribute('aria-selected') === 'true')
+    const from = current === -1 ? Math.max(selected, 0) : current
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? buttons.length - 1
+          : event.key === 'ArrowLeft'
+            ? (from - 1 + buttons.length) % buttons.length
+            : (from + 1) % buttons.length
+    buttons[next]?.focus()
+    const kind = KINDS[next]
+    if (kind !== undefined && kind !== value) onChange(kind)
+  }
   return (
     <div
       role="tablist"
       aria-label={t('providers.field.kind')}
+      onKeyDown={keyDown}
       className="flex min-w-0 flex-wrap items-center gap-1 rounded-item bg-sunk2 p-0.5"
     >
       {KINDS.map((kind) => {
@@ -329,6 +351,7 @@ function KindTabs({
             type="button"
             role="tab"
             aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
             onClick={() => onChange(kind)}
             className={cn(
               'inline-flex h-8 items-center gap-2 rounded-[7px] px-3 text-[12.5px] text-muted transition-colors hover:text-fg',
