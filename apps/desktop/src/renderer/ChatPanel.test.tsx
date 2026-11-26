@@ -350,6 +350,10 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('tab', { name: 'notes.txt' }).getAttribute('aria-selected')).toBe(
       'true',
     )
+    // 文件树被藏起来后，焦点落到刚打开的文件标签上。
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'notes.txt' })),
+    )
     expect(screen.getByRole('region', { name: '文件预览：notes.txt' }).textContent).toContain(
       'notes',
     )

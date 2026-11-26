@@ -18,6 +18,7 @@ import { FileViewer } from './FileViewer.js'
 import { ResizeHandle, useResizableWidth } from './layout/resize.js'
 import { SessionHome } from './SessionHome.js'
 import {
+  fileTabId,
   fileTabPath,
   isFileTab,
   SESSION_PANEL_DEFINITIONS,
@@ -245,6 +246,11 @@ export function SessionSidePanel({
     pendingPanelFocus.current = target
     onOpenPanel(target)
   }
+  // 点开文件后文件树被藏起来，焦点交给对应的文件标签。
+  const openFile = (path: string) => {
+    pendingPanelFocus.current = fileTabId(path)
+    onOpenFile?.(path)
+  }
   return (
     <aside
       ref={panelRef}
@@ -409,7 +415,7 @@ export function SessionSidePanel({
               view={view}
               status={status}
               active
-              {...(onOpenFile === undefined ? {} : { onOpenFile })}
+              {...(onOpenFile === undefined ? {} : { onOpenFile: openFile })}
               {...(onFileRenamed === undefined ? {} : { onFileRenamed })}
               {...(onFileDeleted === undefined ? {} : { onFileDeleted })}
               selectedPlanId={selectedPlanId}
@@ -442,7 +448,7 @@ export function SessionSidePanel({
                 view={view}
                 status={status}
                 active={panel === 'files'}
-                {...(onOpenFile === undefined ? {} : { onOpenFile })}
+                {...(onOpenFile === undefined ? {} : { onOpenFile: openFile })}
                 {...(onFileRenamed === undefined ? {} : { onFileRenamed })}
                 {...(onFileDeleted === undefined ? {} : { onFileDeleted })}
                 selectedPlanId={selectedPlanId}
