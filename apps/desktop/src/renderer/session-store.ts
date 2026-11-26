@@ -178,7 +178,7 @@ export interface SessionState {
   /** 已保存的 Agent（M3-12）：内置编程助手加上用户与导入的 Agent。 */
   readonly agents: readonly AgentSummary[]
   /** 团队模板（M7-09）：输入框选择器用；应用启动时读取，设置页改动后刷新。 */
-  readonly teams: readonly AgentTeamSummary[]
+  readonly teams: readonly AgentTeamSummary[] | undefined
   /** 最近在会话里选用过的 Agent，最近的在前。 */
   readonly recentAgents: readonly string[]
   /** 运行检查器的按需结果，键为 `inspectionKey(sessionId, runId)`。 */
@@ -954,7 +954,8 @@ export function createSessionStore(api: MainApi): SessionStore {
       updateStatus: undefined,
       error: undefined,
       agents: [],
-      teams: [],
+      // 还没读回来；`undefined` 与“确实没有模板”区分开，新对话页据此决定是否清掉记住的选择。
+      teams: undefined,
       recentAgents: readRecentAgents(),
       inspections: {},
       activity: undefined,

@@ -132,7 +132,7 @@ export function NewSession({
   const listSkills = useSessionStore((s) => s.listSkills)
   const projects = useSessionStore((s) => s.projects)
   const agents = useSessionStore((s) => s.agents) ?? []
-  const teams = useSessionStore((s) => s.teams) ?? []
+  const teams = useSessionStore((s) => s.teams)
   const delegationTargets = useSessionStore((s) => s.delegationTargets)
   const refreshProjects = useSessionStore((s) => s.refreshProjects)
   const openProject = useSessionStore((s) => s.openProject)
@@ -219,12 +219,18 @@ export function NewSession({
     [selectableAgents, selectedAgentId],
   )
   // 团队模板由应用启动时读入；主控的固定模型要在发送前生效。
-  const selectableTeams = useMemo(() => availableTeams(teams), [teams])
+  const selectableTeams = useMemo(() => availableTeams(teams ?? []), [teams])
   // 记住的团队可能已经归档、删除或不再有已发布版本：找不到就回到单个 Agent。
   const selectedTeam = useMemo(
     () => selectableTeams.find((team) => team.teamId === selectedTeamId),
     [selectableTeams, selectedTeamId],
   )
+  // 模板列表读回来后，记住的团队已不可用就清掉选择与记录，避免发送时静默失败。
+  useEffect(() => {
+    if (teams === undefined || selectedTeamId === undefined || selectedTeam !== undefined) return
+    setSelectedTeamId(undefined)
+    writeNewSessionTeam(projectPath.trim(), null)
+  }, [projectPath, selectedTeam, selectedTeamId, teams])
   // 还没创建会话：按选中的团队主控 / Agent 计算 `@Agent` 候选；都没选时用默认 Agent。
   useEffect(() => {
     let alive = true

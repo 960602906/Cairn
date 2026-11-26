@@ -10,6 +10,7 @@ import { greetingPeriod, NewSession } from './NewSession.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 import { FILE_DRAG_TYPE } from './file-drag.js'
+import { readNewSessionTeam, writeNewSessionTeam } from './composer-drafts.js'
 
 afterEach(() => {
   cleanup()
@@ -762,6 +763,29 @@ describe('NewSession controls', () => {
     cleanup()
     setup({}, undefined, undefined, handlers)
     expect(await screen.findByRole('button', { name: '切换团队：日常协作' })).toBeTruthy()
+  })
+
+  it('drops a remembered team that is no longer available', async () => {
+    writeNewSessionTeam('/work', 'user.team-gone')
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      { skills: [] },
+      {
+        'agent.list': () => ({ agents: [agentFixture('builtin.coder', '编程助手')] }),
+        'team.list': () => ({ teams: [] }),
+      },
+    )
+    // 模板列表读回来后清掉记录，输入框回到默认 Agent。
+    await waitFor(() => expect(readNewSessionTeam('/work')).toBeUndefined())
+    expect(screen.getByRole('button', { name: '切换 Agent：编程助手' })).toBeTruthy()
+
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+    await user.type(input, '做点事')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('session.prompt', expect.anything()))
+    expect(request).not.toHaveBeenCalledWith('session.setTeam', expect.anything())
   })
 
   it('opens Agents settings from the new-session picker', async () => {

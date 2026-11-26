@@ -117,6 +117,14 @@
   for each, and supports search. An archived current agent keeps its name and is marked "Archived";
   while running, the picker says you can switch after the run ends.
 
+### Fixed
+
+- 新对话页记住的团队模板如果已被归档或删除，模板列表读回来后会自动清掉这个选择并回到默认
+  Agent，不再在发送时静默失败。
+  If a remembered team template on the new-session page has been archived or deleted, the page
+  clears the selection once the template list loads and falls back to the default agent instead
+  of failing silently when sending.
+
 ## [0.1.6] - 2026-11-26
 
 ### Added
