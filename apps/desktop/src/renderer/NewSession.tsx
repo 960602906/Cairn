@@ -17,6 +17,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import { BUILTIN_CODER_ID } from '@cairn/core'
 import type { ModelRef, SkillSummary } from '@cairn/protocol'
 import {
   enabledModelChoices,
@@ -26,14 +27,17 @@ import {
   sameModel,
   PlanModeChip,
 } from './Composer.js'
+import { AgentPicker, availableAgents } from './agents/AgentPicker.js'
 import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
 import {
   clearComposerDraft,
   NEW_SESSION_DRAFT_KEY,
   readComposerDraft,
+  readNewSessionAgent,
   readNewSessionModel,
   readNewSessionProject,
   writeComposerDraft,
+  writeNewSessionAgent,
   writeNewSessionModel,
   writeNewSessionProject,
 } from './composer-drafts.js'
@@ -54,6 +58,7 @@ import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMe
 import { agentName, localized } from './agents/model.js'
 import { mark, markReady } from './startup-trace.js'
 import { isPlanModeKey } from './layout/shortcuts.js'
+import type { SettingsSection } from './settings/SettingsPage.js'
 import { useSessionStore } from './store-context.js'
 import { WorkspaceGitBar } from './WorkspaceGitBar.js'
 import { CairnMark, cn } from './ui/index.js'
@@ -94,6 +99,7 @@ function titleFromPrompt(text: string): string {
 export function NewSession({
   initialProjectPath,
   onCreatingChange,
+  onOpenSettings,
   onDone,
 }: {
   /** 从某个工作空间的“新建会话”进入时预先选中的项目路径。 */
@@ -103,12 +109,15 @@ export function NewSession({
    * 外层据此留在这一页，避免闪一下空的消息区。
    */
   readonly onCreatingChange?: ((creating: boolean) => void) | undefined
+  /** 选择器底部的“管理 Agents”跳到设置；没有时入口不显示。 */
+  readonly onOpenSettings?: ((section: SettingsSection) => void) | undefined
   /** 会话创建并发出第一条消息后离开新对话页。 */
   readonly onDone: () => void
 }) {
   const { t, i18n } = useTranslation('session')
   const createSession = useSessionStore((s) => s.createSession)
   const setSessionModel = useSessionStore((s) => s.setSessionModel)
+  const setSessionAgent = useSessionStore((s) => s.setSessionAgent)
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const listSkills = useSessionStore((s) => s.listSkills)
   const projects = useSessionStore((s) => s.projects)
@@ -121,18 +130,20 @@ export function NewSession({
   const hasModel = enabledModelChoices(providers).length > 0
   /**
    * 进入页面时恢复上次的状态：显式指定的工作空间优先，其次是上次用过的，最后是项目列表里
-   * 第一个；模型按工作空间分别记住，草稿与计划模式整页共用。
+   * 第一个；模型与 Agent 按工作空间分别记住，草稿与计划模式整页共用。
    */
   const [restored] = useState(() => {
     const path = initialProjectPath ?? readNewSessionProject() ?? projects[0]?.path ?? ''
     return {
       path,
       model: readNewSessionModel(path),
+      agentId: readNewSessionAgent(path),
       draft: readComposerDraft(NEW_SESSION_DRAFT_KEY),
     }
   })
   const [projectPath, setProjectPath] = useState(restored.path)
   const [selectedModel, setSelectedModel] = useState<ModelRef | undefined>(restored.model)
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(restored.agentId)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [planMode, setPlanMode] = useState(restored.draft.planMode)
   const [text, setText] = useState(restored.draft.text)
@@ -161,7 +172,10 @@ export function NewSession({
   const agentOptions = useMemo<MentionAgent[]>(
     () =>
       agents
-        .filter((agent) => delegateIds === undefined || delegateIds.includes(agent.agentId))
+        .filter(
+          (agent) =>
+            !agent.archived && (delegateIds === undefined || delegateIds.includes(agent.agentId)),
+        )
         .map((agent) => ({
           agentId: agent.agentId,
           name: agentName(agent, i18n.language),
@@ -172,6 +186,7 @@ export function NewSession({
   const agentMentions = useMemo(() => {
     const byName = new Map<string, { agentId: string; name: string }>()
     for (const agent of agents) {
+      if (agent.archived) continue
       if (delegateIds !== undefined && !delegateIds.includes(agent.agentId)) continue
       for (const candidate of [agent.name['zh-CN'], agent.name['en-US']]) {
         const name = candidate?.trim()
@@ -190,8 +205,16 @@ export function NewSession({
     disabled: busy,
   })
   const period = useGreetingPeriod()
+  const selectableAgents = useMemo(() => availableAgents(agents), [agents])
+  // 记住的 Agent 可能已经归档或删除：找不到就回到主进程的默认 Agent（内置编程助手）。
+  const selectedAgent = useMemo(
+    () => selectableAgents.find((agent) => agent.agentId === selectedAgentId),
+    [selectableAgents, selectedAgentId],
+  )
+  /** 固定模型的 Agent 由它决定模型，选择器显示该模型并禁用（与会话内一致）。 */
+  const fixedModel = selectedAgent?.modelMode === 'fixed' ? selectedAgent.model : undefined
   // 上次选的模型可能已被停用：校验不通过时退回设置里的默认模型（或第一个可用模型）。
-  const model = resolveDefaultModel(providers, selectedModel ?? defaultModel)
+  const model = fixedModel ?? resolveDefaultModel(providers, selectedModel ?? defaultModel)
   /** 欢迎页的建议提示词。 */
   const suggestions = [1, 2, 3].map((index) => t(`new.suggestion.${index}`))
 
@@ -240,10 +263,11 @@ export function NewSession({
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
   }, [text])
 
-  /** 切换工作空间：模型也换成那个工作空间上次选的，并记住这次的选择。 */
+  /** 切换工作空间：模型与 Agent 也换成那个工作空间上次选的，并记住这次的工作空间。 */
   const changeProject = useCallback((path: string) => {
     setProjectPath(path)
     setSelectedModel(readNewSessionModel(path))
+    setSelectedAgentId(readNewSessionAgent(path))
     writeNewSessionProject(path)
   }, [])
 
@@ -314,8 +338,15 @@ export function NewSession({
       onCreatingChange?.(false)
       return
     }
-    // 新会话先按模型创建，再切换用户选的模型，最后才发出第一轮。
+    // 新会话先按模型创建，再切换用户选的模型与 Agent，最后才发出第一轮。
     if (!sameModel(model, defaultModel)) await setSessionModel(sessionId, model)
+    // 默认 Agent 由主进程决定，不用再切；其余在第一次运行前应用，复用会话内的切换接口。
+    if (selectedAgent !== undefined && selectedAgent.agentId !== BUILTIN_CODER_ID) {
+      await setSessionAgent(sessionId, {
+        id: selectedAgent.agentId,
+        version: selectedAgent.version,
+      })
+    }
     await sendPrompt(draft, parsed.plan ? 'plan' : 'normal', {
       agents: extractAgents(draft, agentMentions),
       agentNames: agentMentions.map((item) => item.name),
@@ -555,14 +586,26 @@ export function NewSession({
               />
             </div>
             <div className="mt-2 flex items-center gap-1">
+              <AgentPicker
+                agent={
+                  selectedAgent === undefined
+                    ? undefined
+                    : { id: selectedAgent.agentId, version: selectedAgent.version }
+                }
+                onSelect={(next) => {
+                  setSelectedAgentId(next.agentId)
+                  writeNewSessionAgent(projectPath.trim(), next.agentId)
+                }}
+                onManage={onOpenSettings === undefined ? undefined : () => onOpenSettings('agents')}
+              />
               <PermissionMenu />
               <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
               <div className="ml-auto flex min-w-0 items-center gap-1">
                 <ModelPicker
                   providers={providers}
                   model={model}
-                  fixed={false}
-                  disabled={!hasModel}
+                  fixed={fixedModel !== undefined}
+                  disabled={fixedModel !== undefined || !hasModel}
                   open={modelMenuOpen}
                   onOpenChange={setModelMenuOpen}
                   onSelect={(next) => {

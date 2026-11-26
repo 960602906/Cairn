@@ -172,9 +172,10 @@ function Workspace() {
   // 启动后读取一次更新状态；之后的检查与下载结果经 update.status 推送。首帧之后再做。
   useEffect(() => onIdle(() => void loadUpdateStatus(), 1000), [loadUpdateStatus])
 
-  // 委派卡片、检查器与设置里的 Agents 分区都需要 Agent 名称，启动时读一次列表。
+  // 委派卡片、检查器、设置与输入框都需要 Agent 名称；带上已归档的，会话里正在用的 Agent
+  // 归档后仍能显示原来的名称。
   useEffect(() => {
-    void refreshAgents()
+    void refreshAgents({ includeArchived: true })
   }, [refreshAgents])
 
   // 首屏之后预取对话页 chunk：点开会话时无需再等模块加载，也不占用首帧。
@@ -382,6 +383,7 @@ function Workspace() {
               onCreatingChange={(creating) => {
                 creatingSession.current = creating
               }}
+              onOpenSettings={setSettings}
               onDone={() => setComposing(false)}
             />
           </>
