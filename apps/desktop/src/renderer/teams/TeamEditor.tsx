@@ -146,6 +146,7 @@ export function TeamEditor({
   const [savedAt, setSavedAt] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmPublish, setConfirmPublish] = useState(false)
+  const [confirmArchive, setConfirmArchive] = useState(false)
   const [trialOpen, setTrialOpen] = useState(false)
   const [definitions, setDefinitions] = useState<Readonly<Record<string, AgentDefinition>>>({})
   const [pendingAgents, setPendingAgents] = useState(0)
@@ -331,6 +332,7 @@ export function TeamEditor({
   /** 归档后回到列表；草稿、版本与试运行历史都保留，取消归档即可继续编辑。 */
   const archive = async () => {
     if (currentId === undefined) return
+    setConfirmArchive(false)
     setBusy(true)
     const next = await archiveTeam(currentId)
     setBusy(false)
@@ -558,7 +560,7 @@ export function TeamEditor({
                       {t('editor.duplicate')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem disabled={busy} onSelect={() => void archive()}>
+                    <DropdownMenuItem disabled={busy} onSelect={() => setConfirmArchive(true)}>
                       <Archive />
                       {t('editor.archive')}
                     </DropdownMenuItem>
@@ -968,6 +970,22 @@ export function TeamEditor({
             </DialogClose>
             <Button variant="primary" disabled={busy} onClick={() => void publish()}>
               {t('editor.publishConfirm.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmArchive} onOpenChange={setConfirmArchive}>
+        <DialogContent>
+          <DialogTitle>{t('editor.archiveConfirm.title')}</DialogTitle>
+          <DialogDescription>{t('editor.archiveConfirm.description')}</DialogDescription>
+          {dirty && <p className="text-note text-warn">{t('editor.archiveConfirm.dirty')}</p>}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="secondary">{t('editor.archiveConfirm.cancel')}</Button>
+            </DialogClose>
+            <Button variant="primary" disabled={busy} onClick={() => void archive()}>
+              {t('editor.archiveConfirm.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

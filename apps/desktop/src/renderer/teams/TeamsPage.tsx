@@ -134,6 +134,12 @@ export function TeamsPage({
   const open = useCallback((team: AgentTeamSummary) => onOpen(team.teamId), [onOpen])
   const loaded = teams ?? []
   const visible = filterTeams(loaded, filter, query)
+  // 默认视图下全部模板都已归档时，引导用户切到「已归档」，而不是说“没有匹配”。
+  const onlyArchived =
+    filter !== 'archived' &&
+    query.trim() === '' &&
+    loaded.length > 0 &&
+    loaded.every((team) => team.archived)
   const coordinatorName = (team: AgentTeamSummary): string => {
     const agent = agents.find((candidate) => candidate.agentId === team.coordinator)
     return agent ? agentName(agent, i18n.language) : team.coordinator
@@ -165,7 +171,9 @@ export function TeamsPage({
       ) : null}
 
       {teams !== undefined && visible.length === 0 && loaded.length > 0 ? (
-        <p className="text-ui text-muted">{t('list.noMatch')}</p>
+        <p className="text-ui text-muted">
+          {t(onlyArchived ? 'list.onlyArchived' : 'list.noMatch')}
+        </p>
       ) : (
         <ul aria-label={t('page.title')} className="flex flex-col gap-2.5">
           {visible.map((team) => (

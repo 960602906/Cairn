@@ -207,6 +207,15 @@ describe('TeamsPage', () => {
     ).toBeDefined()
   })
 
+  it('points to the archived filter when every team is archived', async () => {
+    renderPage([team({ archived: true })])
+    await waitFor(() => expect(screen.getByText(/全部团队模板都已归档/)).toBeDefined())
+    expect(screen.queryByText('没有匹配的团队模板。')).toBeNull()
+
+    fireEvent.click(screen.getByRole('radio', { name: '已归档' }))
+    expect(screen.getByText('日常协作')).toBeDefined()
+  })
+
   it('falls back to an empty list when listing fails', async () => {
     const api = {
       request: async (method: string) => {
