@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-26
+
 ### Added
 
 - 权限模式新增“完全访问”：不再询问，危险命令、敏感文件与沙箱不可用时的拦截也会跳过；计划模式仍然
@@ -234,7 +236,8 @@ Beta 版本。Windows x64、macOS arm64/x64 与 Linux x64 的发布产物需通�
 - 单实例锁在打开数据库之前获取，避免两个实例同时写入。
 - 诊断包导出前统一脱敏用户目录、API Key 与令牌。
 
-[Unreleased]: https://github.com/960602906/Cairn/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/960602906/Cairn/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/960602906/Cairn/releases/tag/v0.1.6
 [0.1.2]: https://github.com/960602906/Cairn/releases/tag/v0.1.2
 [0.1.1]: https://github.com/960602906/Cairn/releases/tag/v0.1.1
 [0.1.0]: https://github.com/960602906/Cairn/releases/tag/v0.1.0
