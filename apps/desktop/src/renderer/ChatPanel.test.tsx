@@ -1507,11 +1507,23 @@ describe('ChatPanel', () => {
               modelMode: 'inherit',
               updatedAt: 1,
             },
+            {
+              agentId: 'user.old',
+              name: { 'zh-CN': '旧审查员' },
+              description: {},
+              source: 'user',
+              archived: true,
+              status: 'published',
+              version: 1,
+              hasDraft: false,
+              modelMode: 'inherit',
+              updatedAt: 1,
+            },
           ],
         }),
       },
     })
-    await waitFor(() => expect(store.getState().agents).toHaveLength(2))
+    await waitFor(() => expect(store.getState().agents).toHaveLength(3))
     await open()
     // 说明里的字也能搜到
     await userEvent.type(input(), '看 @逐条')
@@ -1524,8 +1536,11 @@ describe('ChatPanel', () => {
     await userEvent.type(input(), '看 @审')
     const list = await screen.findByRole('listbox', { name: '引用文件' })
     const options = within(list).getAllByRole('option')
+    expect(options).toHaveLength(2)
     expect(options[0]?.textContent).toContain('审查员')
     expect(options[1]?.textContent).toBe('审查助手')
+    // 已归档的 Agent 不再出现在 @ 候选里。
+    expect(within(list).queryByText('旧审查员')).toBeNull()
     // 鼠标移过某一行时它成为选中行，再移回第一行选它
     fireEvent.mouseOver(options[1]!)
     expect(options[1]!.getAttribute('aria-selected')).toBe('true')
@@ -2276,12 +2291,65 @@ describe('Composer (M2-04)', () => {
       handlers: { 'agent.list': () => ({ agents }) },
     })
     await open()
-    await userEvent.click(await screen.findByRole('button', { name: 'Agent：编程助手' }))
+    await userEvent.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
     await userEvent.click(await screen.findByRole('option', { name: /代码审查员/ }))
     expect(request).toHaveBeenCalledWith('session.setAgent', {
       sessionId: 's1',
       agent: { id: 'b', version: 2 },
     })
+  })
+
+  it('keeps an archived current agent visible in the picker', async () => {
+    const agents = [
+      {
+        agentId: 'a',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+        description: {},
+        source: 'builtin',
+        archived: true,
+        status: 'published',
+        version: 1,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ]
+    const { open } = setup({
+      history: HISTORY,
+      handlers: { 'agent.list': () => ({ agents }) },
+    })
+    await open()
+    await userEvent.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    expect(await screen.findByRole('option', { name: /编程助手/ })).toBeTruthy()
+    expect(screen.getByText('已归档')).toBeTruthy()
+  })
+
+  it('opens Agents settings from the picker footer', async () => {
+    const agents = [
+      {
+        agentId: 'a',
+        name: { 'zh-CN': '编程助手', 'en-US': 'Coder' },
+        description: {},
+        source: 'builtin',
+        archived: false,
+        status: 'published',
+        version: 1,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+    ]
+    const { open } = setup({
+      history: HISTORY,
+      handlers: {
+        'agent.list': () => ({ agents }),
+        'settings.get': () => ({ providers, permissionMode: 'ask' }),
+      },
+    })
+    await open()
+    await userEvent.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    await userEvent.click(await screen.findByRole('button', { name: '管理 Agents' }))
+    expect(await screen.findByRole('heading', { name: 'Agents' })).toBeTruthy()
   })
 
   it('cannot switch the agent while the session is running', async () => {
@@ -2305,9 +2373,9 @@ describe('Composer (M2-04)', () => {
       handlers: { 'agent.list': () => ({ agents }) },
     })
     await open()
-    const trigger = await screen.findByRole('button', { name: 'Agent：编程助手' })
+    const trigger = await screen.findByRole('button', { name: '切换 Agent：编程助手' })
     expect((trigger as HTMLButtonElement).disabled).toBe(true)
-    expect(trigger.getAttribute('title')).toBe('运行中不能切换 Agent')
+    expect(trigger.getAttribute('title')).toBe('运行结束后可切换')
   })
 
   it('sets the session thinking level from the model menu', async () => {

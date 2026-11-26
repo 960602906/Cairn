@@ -127,6 +127,8 @@ describe('AgentTrial', () => {
     // 试运行开始后可以输入任务；审批来自试运行会话。
     const input = await screen.findByLabelText('试运行输入')
     expect(await screen.findByText('待审批')).toBeDefined()
+    // 试运行的 Agent 固定，不显示会话里的 Agent 选择器。
+    expect(screen.queryByRole('button', { name: /^切换 Agent：/ })).toBeNull()
     // 空输入与 Ctrl+Enter 都不发送。
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
     expect(calls.some((call) => call.method === 'session.prompt')).toBe(false)

@@ -1,8 +1,7 @@
 /**
- * 会话内的 Agent 选择器（M6-08）：输入框左下角显示当前 Agent；只列已发布且未归档的 Agent，
- * 可搜索，最近使用过的排在前面；切换后对话里出现“已切换到 …”的分隔提示。
- * 运行中不可切换由组件测试覆盖（fake 运行时的轮次结束得太快，e2e 观察不到）。
- * 另存浅色 / 深色截图。
+ * 会话内与新对话页的 Agent 选择器（M6-08、管理界面 §7）：输入框左下角显示当前 Agent；
+ * 只列已发布且未归档的 Agent，内置在前、自定义在后，可搜索；切换后对话里出现“已切换到 …”的
+ * 分隔提示；运行中禁用并提示“运行结束后可切换”。另存浅色 / 深色截图。
  */
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
@@ -27,12 +26,26 @@ async function setTheme(window: Page, theme: 'light' | 'dark') {
   }, theme)
 }
 
-test('在输入框里切换 Agent', async ({ launch, userData }) => {
+async function shot(window: Page, name: string) {
+  await setTheme(window, 'light')
+  await window.screenshot({ path: path.join(ARTIFACTS, `${name}-light.png`) })
+  await setTheme(window, 'dark')
+  await window.screenshot({ path: path.join(ARTIFACTS, `${name}-dark.png`) })
+  await setTheme(window, 'light')
+}
+
+test('在新对话页与会话里选择 Agent', async ({ launch, userData }) => {
   const { window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
+
+  // 新对话页：还没有会话，选择器显示默认 Agent。
+  const newSessionTrigger = window.getByRole('button', { name: '切换 Agent：编程助手' })
+  await expect(newSessionTrigger).toBeVisible()
+  await shot(window, 'new-session')
+
   await createSession(window, projectDir(userData), '切换 Agent')
   const before = await converse(window, '你好')
 
-  const trigger = window.getByRole('button', { name: 'Agent：编程助手' })
+  const trigger = window.getByRole('button', { name: '切换 Agent：编程助手' })
   await expect(trigger).toBeVisible()
   await trigger.click()
 
@@ -43,27 +56,37 @@ test('在输入框里切换 Agent', async ({ launch, userData }) => {
     'aria-selected',
     'true',
   )
+  await expect(window.getByRole('button', { name: '管理 Agents' })).toBeVisible()
+  await shot(window, 'menu-open')
 
   const search = window.getByRole('combobox', { name: '搜索 Agent' })
   await expect(search).toBeFocused()
   await search.fill('审查')
   await expect(list.getByRole('option')).toHaveCount(1)
-
-  await setTheme(window, 'light')
-  await window.screenshot({ path: path.join(ARTIFACTS, 'agent-picker-light.png') })
-  await setTheme(window, 'dark')
-  await window.screenshot({ path: path.join(ARTIFACTS, 'agent-picker-dark.png') })
-  await setTheme(window, 'light')
+  await search.fill('')
 
   await list.getByRole('option', { name: /代码审查员/ }).click()
-  await expect(window.getByRole('button', { name: 'Agent：代码审查员' })).toBeVisible()
+  await expect(window.getByRole('button', { name: '切换 Agent：代码审查员' })).toBeVisible()
 
   // 新运行从下一轮开始：分隔提示出现在那一轮的第一条消息之前。
   await converse(window, '第二轮', before)
   await expect(window.getByText('已切换到 代码审查员 v1')).toBeVisible()
+  await shot(window, 'switched')
 
-  // 最近使用的排在前面
-  await window.getByRole('button', { name: 'Agent：代码审查员' }).click()
+  // 运行中禁用：fake 运行时逐字回显，输入足够长就能停在运行中截图。
+  const input = window.getByLabel('输入消息')
+  await input.fill('慢慢回答 '.repeat(200))
+  await window.getByRole('button', { name: '发送' }).click()
+  await expect(window.getByRole('button', { name: '停止' })).toBeVisible()
+  const runningTrigger = window.getByRole('button', { name: '切换 Agent：代码审查员' })
+  await expect(runningTrigger).toBeDisabled()
+  await expect(runningTrigger).toHaveAttribute('title', '运行结束后可切换')
+  await shot(window, 'running-disabled')
+  await window.getByRole('button', { name: '停止' }).click()
+  await expect(runningTrigger).toBeEnabled()
+
+  // 最近使用的排在前面（同一组内）。
+  await runningTrigger.click()
   await expect(list.getByRole('option').first()).toContainText('代码审查员')
   await window.keyboard.press('Escape')
   await expect(list).toBeHidden()

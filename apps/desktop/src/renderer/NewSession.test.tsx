@@ -34,6 +34,20 @@ const providers = [
   },
 ]
 
+const agentFixture = (agentId: string, name: string, extra: object = {}) => ({
+  agentId,
+  name: { 'zh-CN': name },
+  description: {},
+  source: 'builtin',
+  archived: false,
+  status: 'published',
+  version: 1,
+  hasDraft: false,
+  modelMode: 'inherit',
+  updatedAt: 1,
+  ...extra,
+})
+
 function setup(
   settings: object = {},
   sessionCreate: unknown = { sessionId: 's1' },
@@ -497,6 +511,101 @@ describe('NewSession controls', () => {
     setup({}, undefined, undefined, listProjects)
     expect(await screen.findByRole('button', { name: '工作空间：work' })).toBeTruthy()
     expect(await screen.findByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
+  })
+
+  it('applies the selected agent when the session is created', async () => {
+    const agents = [
+      agentFixture('builtin.coder', '编程助手'),
+      agentFixture('builtin.reviewer', '代码审查员', {
+        version: 2,
+        description: { 'zh-CN': '审查改动的正确性' },
+      }),
+      agentFixture('user.draft', '草稿', { source: 'user', status: 'draft', version: 0 }),
+      agentFixture('user.old', '旧助手', { source: 'user', archived: true }),
+    ]
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      { skills: [] },
+      {
+        'agent.list': () => ({ agents }),
+      },
+    )
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+
+    await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    const list = await screen.findByRole('listbox', { name: '选择 Agent' })
+    expect(within(list).getByText('审查改动的正确性')).toBeTruthy()
+    // 草稿与已归档的不出现在可选列表里。
+    expect(within(list).queryByText('草稿')).toBeNull()
+    expect(within(list).queryByText('旧助手')).toBeNull()
+    await user.click(within(list).getByText('代码审查员'))
+    expect(screen.getByRole('button', { name: '切换 Agent：代码审查员' })).toBeTruthy()
+
+    await user.type(input, '做点事')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.setAgent', {
+        sessionId: 's1',
+        agent: { id: 'builtin.reviewer', version: 2 },
+      }),
+    )
+    const calls = request.mock.calls
+      .map(([method]) => method)
+      .filter((method) =>
+        ['session.create', 'session.setAgent', 'session.prompt'].includes(method as string),
+      )
+    expect(calls).toEqual(['session.create', 'session.setAgent', 'session.prompt'])
+  })
+
+  it('opens Agents settings from the new-session picker', async () => {
+    const agents = [agentFixture('builtin.coder', '编程助手')]
+    setup({}, undefined, undefined, { 'agent.list': () => ({ agents }) })
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    await user.click(await screen.findByRole('button', { name: '管理 Agents' }))
+    expect(await screen.findByRole('heading', { name: 'Agents' })).toBeTruthy()
+  })
+
+  it('remembers the selected agent per workspace', async () => {
+    const projects = [
+      { projectId: 'p1', name: 'work', path: '/work', createdAt: 1 },
+      { projectId: 'p2', name: 'side', path: '/side', createdAt: 2 },
+    ]
+    const agents = [
+      agentFixture('builtin.coder', '编程助手'),
+      agentFixture('builtin.reviewer', '代码审查员'),
+    ]
+    const handlers = {
+      'project.list': () => ({ projects }),
+      'agent.list': () => ({ agents }),
+    }
+    setup({}, undefined, undefined, handlers)
+    const user = userEvent.setup()
+    expect(await screen.findByRole('button', { name: '工作空间：work' })).toBeTruthy()
+
+    // 在 work 里换成代码审查员。
+    await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    await user.click(await screen.findByRole('option', { name: /代码审查员/ }))
+    expect(screen.getByRole('button', { name: '切换 Agent：代码审查员' })).toBeTruthy()
+
+    // 另一个工作空间仍用默认 Agent。
+    await user.click(screen.getByRole('button', { name: '工作空间：work' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'side' }))
+    expect(await screen.findByRole('button', { name: '切换 Agent：编程助手' })).toBeTruthy()
+
+    // 切回 work 时恢复它自己的选择。
+    await user.click(screen.getByRole('button', { name: '工作空间：side' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'work' }))
+    expect(await screen.findByRole('button', { name: '切换 Agent：代码审查员' })).toBeTruthy()
+
+    // 重新进入页面：回到上次的工作空间，Agent 也在。
+    cleanup()
+    setup({}, undefined, undefined, handlers)
+    expect(await screen.findByRole('button', { name: '工作空间：work' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '切换 Agent：代码审查员' })).toBeTruthy()
   })
 
   it('keeps the default model when it is already selected and switches the permission mode', async () => {

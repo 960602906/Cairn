@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新对话页可以选择 Agent：输入框左下新增 Agent 选择器，选中的 Agent 在创建会话时生效，并按工作
+  空间记住上次的选择；菜单底部「管理 Agents」直达设置。
+  The new-chat composer gains an agent picker: the chosen agent applies when the session is created
+  and is remembered per workspace. "Manage agents" at the bottom opens Settings.
+
+### Changed
+
+- 会话输入框的 Agent 选择器按内置在前、自定义在后排列，每项显示一行描述并支持搜索；当前 Agent
+  归档后仍显示名称并在菜单中标记「已归档」，运行中禁用时提示「运行结束后可切换」。
+  The session composer's agent picker lists built-in agents before custom ones, shows a description
+  for each, and supports search. An archived current agent keeps its name and is marked "Archived";
+  while running, the picker says you can switch after the run ends.
+
 ## [0.1.6] - 2026-11-26
 
 ### Added

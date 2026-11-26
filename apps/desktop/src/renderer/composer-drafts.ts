@@ -2,7 +2,7 @@
  * 输入框草稿与新建会话的工作空间偏好（localStorage，只是界面偏好，不进设置）。
  *
  * 打开设置、活动中心或 Agents 页时会话页整体卸载，输入框组件随之销毁；草稿存在这里，
- * 切换回来时能接着写。新对话页的模型按工作空间分别记住：同一个工作空间下次进入仍用它。
+ * 切换回来时能接着写。新对话页的模型与 Agent 按工作空间分别记住：同一个工作空间下次进入仍用它。
  *
  * 存储不可用（隐私模式、测试环境）时全部退化为空草稿，不影响输入。
  */
@@ -19,6 +19,7 @@ export const NEW_SESSION_DRAFT_KEY = 'new'
 const DRAFT_PREFIX = 'cairn.composerDraft:'
 const NEW_SESSION_PROJECT_KEY = 'cairn.newSession.project'
 const NEW_SESSION_MODEL_PREFIX = 'cairn.newSession.model:'
+const NEW_SESSION_AGENT_PREFIX = 'cairn.newSession.agent:'
 
 const EMPTY_DRAFT: ComposerDraft = { text: '', planMode: false }
 
@@ -95,4 +96,15 @@ export function writeNewSessionModel(projectPath: string, model: ModelRef): void
     NEW_SESSION_MODEL_PREFIX + projectPath,
     JSON.stringify({ providerId: model.providerId, modelId: model.modelId }),
   )
+}
+
+/** 某个工作空间上次在新对话页选中的 Agent id；没有记录或记录损坏时为 undefined。 */
+export function readNewSessionAgent(projectPath: string): string | undefined {
+  if (projectPath === '') return undefined
+  return read(NEW_SESSION_AGENT_PREFIX + projectPath) || undefined
+}
+
+export function writeNewSessionAgent(projectPath: string, agentId: string): void {
+  if (projectPath === '') return
+  write(NEW_SESSION_AGENT_PREFIX + projectPath, agentId === '' ? null : agentId)
 }

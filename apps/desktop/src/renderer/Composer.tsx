@@ -681,7 +681,10 @@ export function Composer({
   const agentOptions = useMemo<MentionAgent[]>(
     () =>
       agents
-        .filter((item) => delegateIds === undefined || delegateIds.includes(item.agentId))
+        .filter(
+          (item) =>
+            !item.archived && (delegateIds === undefined || delegateIds.includes(item.agentId)),
+        )
         .map((item) => ({
           agentId: item.agentId,
           name: agentName(item, i18n.language),
@@ -693,6 +696,7 @@ export function Composer({
   const agentMentions = useMemo(() => {
     const byName = new Map<string, { agentId: string; name: string }>()
     for (const item of agents) {
+      if (item.archived) continue
       if (delegateIds !== undefined && !delegateIds.includes(item.agentId)) continue
       for (const candidate of [item.name['zh-CN'], item.name['en-US']]) {
         const name = candidate?.trim()
@@ -1392,6 +1396,7 @@ export function Composer({
               disabled={active}
               open={agentPickerOpen}
               onOpenChange={setAgentPickerOpen}
+              onManage={onOpenSettings === undefined ? undefined : () => onOpenSettings('agents')}
             />
             <PermissionMenu open={permissionMenuOpen} onOpenChange={setPermissionMenuOpen} />
             <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />

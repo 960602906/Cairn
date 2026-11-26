@@ -4,10 +4,12 @@ import {
   clearComposerDraft,
   NEW_SESSION_DRAFT_KEY,
   readComposerDraft,
+  readNewSessionAgent,
   readNewSessionModel,
   readNewSessionProject,
   sessionDraftKey,
   writeComposerDraft,
+  writeNewSessionAgent,
   writeNewSessionModel,
   writeNewSessionProject,
 } from './composer-drafts.js'
@@ -73,6 +75,21 @@ describe('composer drafts', () => {
     expect(readNewSessionProject()).toBeUndefined()
   })
 
+  it('remembers the new-session agent per workspace', () => {
+    expect(readNewSessionAgent('/agent-work')).toBeUndefined()
+
+    writeNewSessionAgent('/agent-work', 'builtin.reviewer')
+    expect(readNewSessionAgent('/agent-work')).toBe('builtin.reviewer')
+    expect(readNewSessionAgent('/other')).toBeUndefined()
+    expect(readNewSessionAgent('')).toBeUndefined()
+
+    // 还没有工作空间时不记 Agent；空 id 等同于清除。
+    writeNewSessionAgent('', 'builtin.coder')
+    expect(localStorage.getItem('cairn.newSession.agent:')).toBeNull()
+    writeNewSessionAgent('/agent-work', '')
+    expect(readNewSessionAgent('/agent-work')).toBeUndefined()
+  })
+
   it('ignores broken model records', () => {
     localStorage.setItem('cairn.newSession.model:/work', 'oops')
     expect(readNewSessionModel('/work')).toBeUndefined()
@@ -91,8 +108,10 @@ describe('composer drafts', () => {
     expect(readComposerDraft('x')).toEqual({ text: '', planMode: false })
     expect(readNewSessionProject()).toBeUndefined()
     expect(readNewSessionModel('/work')).toBeUndefined()
+    expect(readNewSessionAgent('/work')).toBeUndefined()
     expect(() => writeComposerDraft('x', { text: 'a', planMode: false })).not.toThrow()
     expect(() => writeNewSessionModel('/work', { providerId: 'p', modelId: 'm' })).not.toThrow()
+    expect(() => writeNewSessionAgent('/work', 'builtin.coder')).not.toThrow()
     expect(() => writeNewSessionProject('/work')).not.toThrow()
     expect(() => clearComposerDraft('x')).not.toThrow()
   })
