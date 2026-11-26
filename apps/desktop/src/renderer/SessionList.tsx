@@ -160,6 +160,12 @@ export function SessionItem({
   const [confirming, setConfirming] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const rowRef = useRef<HTMLButtonElement>(null)
+  // 选中可能来自搜索或快捷键，把会话行带进侧栏可见区域。
+  useEffect(() => {
+    if (!active) return
+    const node = rowRef.current
+    if (typeof node?.scrollIntoView === 'function') node.scrollIntoView({ block: 'nearest' })
+  }, [active])
   const restoreRowFocus = useRef(false)
   const renamingFromMenu = useRef(false)
   // 重命名按 Enter / Esc 结束后，焦点回到会话行；点到别处保存时不抢焦点。
