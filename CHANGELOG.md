@@ -114,6 +114,11 @@
 
 ### Changed
 
+- 设置 → 模型供应商的「接口格式」分段控件支持 ← / → 与 Home / End 切换，只有当前格式
+  留在 Tab 顺序里。
+  The provider-format tabs in Settings → Model providers now switch with ← / → and Home / End,
+  and only the current format stays in the Tab order.
+
 - 权限 / 计划模式菜单打开时聚焦当前权限模式，直接按 Enter 不会换成列表第一项；选择当前项
   不再重复写入设置。
   The permission and plan menu focuses the current permission mode when opened, so pressing

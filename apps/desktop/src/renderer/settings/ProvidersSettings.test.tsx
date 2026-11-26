@@ -221,6 +221,31 @@ describe('ProvidersSettings', () => {
     expect(screen.getByText('这个接口格式还没有供应商。')).toBeTruthy()
   })
 
+  it('switches provider formats with arrow keys, Home, and End', async () => {
+    setup({ providers: [deepseek, gateway] })
+    await open()
+    const anthropic = screen.getByRole('tab', { name: /Anthropic/ })
+    const openai = screen.getByRole('tab', { name: /OpenAI/ })
+    const gemini = screen.getByRole('tab', { name: /Gemini/ })
+    await userEvent.click(anthropic)
+    expect(anthropic.getAttribute('aria-selected')).toBe('true')
+
+    await userEvent.keyboard('{ArrowRight}')
+    expect(document.activeElement).toBe(openai)
+    expect(openai.getAttribute('aria-selected')).toBe('true')
+
+    await userEvent.keyboard('{End}')
+    expect(document.activeElement).toBe(gemini)
+    expect(gemini.getAttribute('aria-selected')).toBe('true')
+
+    await userEvent.keyboard('{ArrowRight}')
+    expect(document.activeElement).toBe(anthropic)
+    expect(anthropic.getAttribute('aria-selected')).toBe('true')
+
+    await userEvent.keyboard('{Home}')
+    expect(document.activeElement).toBe(anthropic)
+  })
+
   it('edits a model, changes the default and replaces the key', async () => {
     const { updates, request } = setup({
       providers: [deepseek],
