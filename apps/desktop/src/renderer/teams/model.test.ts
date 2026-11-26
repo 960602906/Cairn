@@ -21,6 +21,7 @@ import {
   seedPipeline,
   setStageDependencies,
   stageDependencyOptions,
+  teamFieldDiffs,
   teamFieldsOf,
   teamIssues,
   teamSectionOf,
@@ -298,6 +299,40 @@ describe('team model', () => {
     expect(toggleMember(['user.a'], 'user.a')).toEqual([])
     expect(sameTeamFields(fields(), fields())).toBe(true)
     expect(sameTeamFields(fields(), fields({ members: [] }))).toBe(false)
+  })
+
+  it('diffs a published version against the current draft', () => {
+    expect(teamFieldDiffs(fields(), fields())).toEqual([])
+    const current = fields({
+      name: { 'zh-CN': '新名字', 'en-US': 'New name' },
+      description: { 'en-US': 'English only' },
+      coordinator: BUILTIN_TESTER.id,
+      members: [BUILTIN_REVIEWER.id],
+      pattern: 'review-loop',
+      reviewLoop: { maker: BUILTIN_REVIEWER.id, checker: BUILTIN_REVIEWER.id, maxRounds: 2 },
+      pipeline: [stage('stage-1', BUILTIN_CODER.id)],
+      delegation: { maxDepth: 2 },
+    })
+    const rows = teamFieldDiffs(fields(), current)
+    expect(rows.map((row) => row.path)).toEqual([
+      'nameZh',
+      'nameEn',
+      'descriptionZh',
+      'descriptionEn',
+      'coordinator',
+      'members',
+      'pattern',
+      'reviewLoop',
+      'pipeline',
+      'delegation',
+    ])
+    expect(rows[0]).toEqual({ path: 'nameZh', from: '日常协作', to: '新名字' })
+    expect(rows[4]).toEqual({
+      path: 'coordinator',
+      from: BUILTIN_CODER.id,
+      to: BUILTIN_TESTER.id,
+    })
+    expect(rows[9]).toEqual({ path: 'delegation', from: undefined, to: { maxDepth: 2 } })
   })
 
   it('extracts editable fields from a draft or the published version', () => {

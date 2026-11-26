@@ -165,6 +165,36 @@ describe('团队模板命令（M7-09）', () => {
     )
   })
 
+  it('按版本号升序列出已发布版本，并带上发布时间与摘要', () => {
+    const { service, advance } = setup()
+    const created = service.saveDraft({ definition: draft() })
+    expect(service.versions({ teamId: created.teamId })).toEqual({ versions: [] })
+
+    advance()
+    const first = service.publish({ teamId: created.teamId })
+    advance()
+    service.saveDraft({
+      definition: { ...draft({ description: { 'zh-CN': '第二版' } }), id: created.teamId },
+    })
+    const second = service.publish({ teamId: created.teamId })
+
+    const { versions } = service.versions({ teamId: created.teamId })
+    expect(versions.map((version) => version.version)).toEqual([1, 2])
+    expect(versions[0]).toMatchObject({
+      publishedAt: first.published?.createdAt,
+      pattern: 'review-loop',
+      memberCount: 2,
+    })
+    expect(versions[1]).toMatchObject({
+      publishedAt: second.published?.createdAt,
+      memberCount: 2,
+      description: { 'zh-CN': '第二版' },
+    })
+    expect(() => service.versions({ teamId: 'missing' })).toThrowError(
+      expect.objectContaining({ code: 'team.not_found' }),
+    )
+  })
+
   it('没有草稿或模板不存在时报错', () => {
     const { service } = setup()
     expect(() => service.get({ teamId: 'missing' })).toThrowError(

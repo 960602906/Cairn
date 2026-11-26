@@ -18,6 +18,7 @@ import {
   type AgentDefinition,
   type AgentTeamDetail,
   type AgentTeamSummary,
+  type AgentTeamVersionSummary,
   type TeamDraftFields,
   type TeamDraftInput,
   type TeamTrialStarted,
@@ -52,6 +53,7 @@ export interface TeamServiceOptions {
 export interface TeamCommands {
   list(input: { includeArchived?: boolean | undefined }): { teams: AgentTeamSummary[] }
   get(input: { teamId: string; version?: number | undefined }): AgentTeamDetail
+  versions(input: { teamId: string }): { versions: AgentTeamVersionSummary[] }
   saveDraft(input: { definition: TeamDraftInput }): AgentTeamDetail
   publish(input: { teamId: string }): AgentTeamDetail
   trialStart(input: {
@@ -264,6 +266,22 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
 
     get({ teamId, version }) {
       return detailOf(teamId, version)
+    },
+
+    versions({ teamId }) {
+      requireRecord(teamId)
+      const versions = storage.teams.versions(teamId).map((entry) => {
+        const team = AgentTeam.parse(entry.definition)
+        return {
+          version: team.version,
+          publishedAt: team.createdAt,
+          name: team.name,
+          description: team.description,
+          pattern: team.pattern,
+          memberCount: team.members.length,
+        }
+      })
+      return { versions }
     },
 
     saveDraft({ definition }) {

@@ -7,6 +7,13 @@
 
 ### Added
 
+- 团队模板版本历史：编辑器下方列出每次发布的版本（时间、协作模式与成员数），可以与当前草稿
+  逐字段对比；确认后把旧版本恢复为草稿，继续编辑并发布后成为新版本，不会改写历史。
+  Team template version history: the editor lists every published version with its time,
+  collaboration pattern and member count. Any version can be compared field by field with the
+  current draft, then restored as the draft after confirmation; publishing it creates a new
+  version without rewriting history.
+
 - 团队模板：设置里新增「团队模板」页，可新建、搜索并按状态筛选；编辑器配置中英文名称与描述、
   主控与成员，以及协作模式（自由委派 / 审查循环 / 流水线）。流水线阶段只能依赖排在它前面的
   阶段，审查循环会自动保证 maker / checker 在成员里；保存草稿与发布前实时校验，问题直接标在

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { BUILTIN_CODER, BUILTIN_EXPLORER, BUILTIN_REVIEWER, BUILTIN_TESTER } from '@cairn/core'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
@@ -10,6 +10,7 @@ import {
   type AgentDetail,
   type AgentSummary,
   type AgentTeamDetail,
+  type AgentTeamVersionSummary,
   type TeamDraftFields,
 } from '@cairn/protocol'
 import type { MainApi } from '../api.js'
@@ -69,6 +70,9 @@ const published = (overrides: Partial<TeamDraftFields> = {}, version = 2) => ({
 function setup(
   options: {
     readonly team?: AgentTeamDetail | undefined
+    readonly versions?: readonly AgentTeamVersionSummary[]
+    readonly versionDetail?: (version: number) => AgentTeamDetail
+    readonly versionGetFails?: boolean
     readonly saveFails?: boolean
     readonly publishFails?: boolean
   } = {},
@@ -85,7 +89,16 @@ function setup(
         const agent = builtin.find((candidate) => candidate.id === agentId)
         return agent ? detailOf(agent) : { agentId, source: 'user', archived: false }
       }
-      if (method === 'team.get') return teamDetail
+      if (method === 'team.get') {
+        const { version } = params as { version?: number }
+        if (version !== undefined) {
+          if (options.versionGetFails)
+            throw new RpcError('team.not_found', { teamId: 'user.team-1' })
+          if (options.versionDetail) return options.versionDetail(version)
+        }
+        return teamDetail
+      }
+      if (method === 'team.versions') return { versions: options.versions ?? [] }
       if (method === 'team.saveDraft') {
         if (options.saveFails) throw new RpcError('team.invalid', { teamId: 'user.team-1' })
         const definition = (params as { definition: TeamDraftFields }).definition
@@ -699,6 +712,107 @@ describe('TeamEditor', () => {
     )
     const save = calls.find((call) => call.method === 'team.saveDraft')
     expect((save!.params as { definition: TeamDraftFields }).definition).not.toHaveProperty('id')
+  })
+
+  it('restores a published version as the draft', async () => {
+    const oldFields = fields({
+      name: { 'zh-CN': '旧版' },
+      description: { 'zh-CN': '旧说明' },
+    })
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      archived: false,
+      draft: draft(),
+      published: published({}, 2),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+    const versionSummary = (
+      version: number,
+      name: TeamDraftFields['name'],
+    ): AgentTeamVersionSummary => ({
+      version,
+      publishedAt: 1_700_000_000_000 + version,
+      name,
+      description: oldFields.description,
+      pattern: oldFields.pattern,
+      memberCount: oldFields.members.length,
+    })
+    const { store, calls } = setup({
+      team,
+      versions: [versionSummary(1, oldFields.name), versionSummary(2, fields().name)],
+      versionDetail: (version) => ({
+        teamId: 'user.team-1',
+        archived: false,
+        published: published(oldFields, version),
+        validation: { ok: true, errors: [], warnings: [] },
+      }),
+    })
+    const { onChanged } = await renderEditor(store, { teamId: 'user.team-1' })
+
+    const list = await screen.findByRole('list', { name: '版本历史' })
+    const row = within(list)
+      .getAllByRole('listitem')
+      .find((item) => within(item).queryByText('v1') !== null)!
+    fireEvent.click(within(row).getByRole('button', { name: '恢复为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '恢复' }))
+
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'team.saveDraft',
+        params: { definition: { id: 'user.team-1', ...oldFields } },
+      }),
+    )
+    await waitFor(() =>
+      expect((screen.getByLabelText('中文名称') as HTMLInputElement).value).toBe('旧版'),
+    )
+    expect(screen.getByLabelText('已保存')).toBeDefined()
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('keeps the draft unchanged when a version cannot be restored', async () => {
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      archived: false,
+      draft: draft(),
+      published: published({}, 2),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+    const summary: AgentTeamVersionSummary = {
+      version: 1,
+      publishedAt: 1,
+      name: fields().name,
+      description: fields().description,
+      pattern: fields().pattern,
+      memberCount: fields().members.length,
+    }
+
+    // 读取旧版本失败：不写草稿，错误进入 store。
+    cleanup()
+    const getFails = setup({ team, versions: [summary], versionGetFails: true })
+    await renderEditor(getFails.store, { teamId: 'user.team-1' })
+    const list = await screen.findByRole('list', { name: '版本历史' })
+    fireEvent.click(within(list).getByRole('button', { name: '恢复为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '恢复' }))
+    await waitFor(() => expect(getFails.store.getState().error?.code).toBe('team.not_found'))
+    expect(getFails.calls.some((call) => call.method === 'team.saveDraft')).toBe(false)
+    expect((screen.getByLabelText('中文名称') as HTMLInputElement).value).toBe('发布团队')
+
+    // 保存成草稿失败：字段保持当前值，也不标记已保存。
+    cleanup()
+    const saveFails = setup({
+      team,
+      versions: [summary],
+      versionDetail: () => ({ ...team, published: published({}, 1) }),
+      saveFails: true,
+    })
+    await renderEditor(saveFails.store, { teamId: 'user.team-1' })
+    const failList = await screen.findByRole('list', { name: '版本历史' })
+    fireEvent.click(within(failList).getByRole('button', { name: '恢复为草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '恢复' }))
+    await waitFor(() => expect(saveFails.store.getState().error?.code).toBe('team.invalid'))
+    expect(saveFails.calls.some((call) => call.method === 'team.saveDraft')).toBe(true)
+    expect((screen.getByLabelText('中文名称') as HTMLInputElement).value).toBe('发布团队')
+    expect(screen.queryByLabelText('已保存')).toBeNull()
   })
 
   it('handles a new team without any published agents', async () => {
