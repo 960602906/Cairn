@@ -114,6 +114,11 @@
 
 ### Changed
 
+- 浮层模式的会话信息栏支持 Esc 收起，焦点回到打开它的按钮；正在输入或内层菜单处理 Esc
+  时不受影响。
+  The floating session info panel can be dismissed with Escape, returning focus to the button
+  that opened it; typing and inner menus keep their own Escape handling.
+
 - 侧栏工作空间的会话列表点「展开剩余」或「收起」后，焦点同样落在新出现的那个按钮上。
   After expanding or collapsing a workspace's session list in the sidebar, focus likewise moves
   to the button that replaces the one you pressed.
