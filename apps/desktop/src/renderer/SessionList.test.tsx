@@ -142,29 +142,46 @@ describe('SessionList', () => {
     expect(sessionButton(items[0]!).getAttribute('aria-current')).toBeNull()
   })
 
-  it('marks sessions that use a team template', async () => {
+  it('marks sessions that use a team template, preferring the latest team name', async () => {
+    const binding = {
+      teamId: 'user.team-1',
+      name: { 'zh-CN': '日常协作', 'en-US': 'Daily pair' },
+      version: 2,
+      pattern: 'delegate' as const,
+    }
     setup({
+      'team.list': () => ({
+        teams: [
+          {
+            ...binding,
+            name: { 'zh-CN': '改名后的团队', 'en-US': 'Renamed team' },
+            description: {},
+            coordinator: 'builtin.coder',
+            memberCount: 2,
+            archived: false,
+            status: 'published',
+            hasDraft: false,
+            updatedAt: 1,
+          },
+        ],
+      }),
       'session.list': () => ({
         sessions: [
+          { ...summary('s1', '团队会话'), team: binding },
           {
-            ...summary('s1', '团队会话'),
-            team: {
-              teamId: 'user.team-1',
-              name: { 'zh-CN': '日常协作', 'en-US': 'Daily pair' },
-              version: 2,
-              pattern: 'delegate',
-            },
+            ...summary('s2', '未在列表里的团队'),
+            team: { ...binding, teamId: 'user.team-gone', name: { 'zh-CN': '已归档团队' } },
           },
-          summary('s2', '普通会话'),
+          summary('s3', '普通会话'),
         ],
       }),
     })
-    expect(await screen.findByText('团队：日常协作')).toBeTruthy()
+    expect(await screen.findByText('团队：改名后的团队')).toBeTruthy()
+    expect(screen.getByText('团队：已归档团队')).toBeTruthy()
     const items = await screen.findAllByRole('listitem')
-    const teamRow = items.find((li) => sessionButton(li).textContent?.includes('团队会话'))
-    const plainRow = items.find((li) => sessionButton(li).textContent?.includes('普通会话'))
-    expect(within(teamRow!).getByTitle('团队：日常协作')).toBeTruthy()
-    expect(within(plainRow!).queryByText(/团队：/)).toBeNull()
+    const row = (text: string) => items.find((li) => sessionButton(li).textContent?.includes(text))
+    expect(within(row('团队会话')!).getByTitle('团队：改名后的团队')).toBeTruthy()
+    expect(within(row('普通会话')!).queryByText(/团队：/)).toBeNull()
   })
 
   it('cycles through sessions with Ctrl+Shift+] and Ctrl+Shift+[ and wraps around', async () => {
