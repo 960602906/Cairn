@@ -24,13 +24,14 @@ import type {
 } from '@cairn/protocol'
 import { validateAgentTeam } from '@cairn/core'
 
-export type TeamStatus = 'draft' | 'dirty' | 'published'
+export type TeamStatus = 'archived' | 'draft' | 'dirty' | 'published'
 export type TeamSection = 'basic' | 'members' | 'pattern'
 
 export const TEAM_PATTERNS: readonly TeamPattern[] = ['delegate', 'review-loop', 'pipeline']
 
-/** 列表状态：归档优先（将来有归档入口时），其次草稿 / 有未发布修改 / 已发布。 */
+/** 列表状态：归档优先，其次草稿 / 有未发布修改 / 已发布。 */
 export function teamStatus(team: AgentTeamSummary): TeamStatus {
+  if (team.archived) return 'archived'
   if (team.status === 'draft') return 'draft'
   return team.hasDraft ? 'dirty' : 'published'
 }

@@ -633,6 +633,8 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('team.versions', (params) => teams.versions(params))
       endpoint.handle('team.saveDraft', (params) => teams.saveDraft(params))
       endpoint.handle('team.publish', (params) => teams.publish(params))
+      endpoint.handle('team.archive', (params) => teams.archive(params))
+      endpoint.handle('team.unarchive', (params) => teams.unarchive(params))
       endpoint.handle('team.trial.start', (params) => teams.trialStart(params))
       endpoint.handle('team.trial.clear', (params) => teams.trialClear(params))
       endpoint.handle('team.trial.list', (params) => teams.trialList(params))

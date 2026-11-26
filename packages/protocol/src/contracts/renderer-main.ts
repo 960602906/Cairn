@@ -790,6 +790,16 @@ export const MainForRenderer = defineSide({
       params: z.object({ teamId: Id }),
       result: AgentTeamDetail,
     },
+    /** 归档团队模板：从默认列表隐藏，保留草稿、版本与试运行历史。 */
+    'team.archive': {
+      params: z.object({ teamId: Id }),
+      result: AgentTeamDetail,
+    },
+    /** 取消归档：模板重新出现在默认列表里，可继续编辑与发布。 */
+    'team.unarchive': {
+      params: z.object({ teamId: Id }),
+      result: AgentTeamDetail,
+    },
     /**
      * 团队试运行（M7-09）：用草稿模板开一个隐藏会话，以主控 Agent 的草稿运行，
      * 模板的委派覆盖与协作说明并入这一轮使用的定义；默认只读。

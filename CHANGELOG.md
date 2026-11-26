@@ -7,6 +7,13 @@
 
 ### Added
 
+- 团队模板可以归档：归档后从默认列表隐藏，草稿、已发布版本与试运行历史都保留；在「已归档」
+  筛选里可以找到并取消归档。归档期间模板只读，不再提供保存、发布、试运行与恢复旧版本。
+  Team templates can be archived: an archived template leaves the default list but keeps its
+  drafts, published versions and trial history, appears under the "Archived" filter, and can be
+  unarchived. While archived the template is read-only: saving, publishing, trialling and
+  restoring an old version are unavailable.
+
 - 团队模板版本历史：编辑器下方列出每次发布的版本（时间、协作模式与成员数），可以与当前草稿
   逐字段对比；确认后把旧版本恢复为草稿，继续编辑并发布后成为新版本，不会改写历史。
   Team template version history: the editor lists every published version with its time,

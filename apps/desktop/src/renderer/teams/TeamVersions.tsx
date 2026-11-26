@@ -32,11 +32,14 @@ const NONE_VERSIONS: readonly AgentTeamVersionSummary[] = []
 export function TeamVersions({
   teamId,
   current,
+  readonly = false,
   onRestore,
 }: {
   readonly teamId: string
   /** 当前编辑器里的草稿字段；用于和选中的版本对比。 */
   readonly current: TeamDraftFields
+  /** 归档的模板只读：仍可查看与对比，但不能恢复为草稿。 */
+  readonly readonly?: boolean
   /** 把某个版本恢复为草稿；成功后返回 true。 */
   readonly onRestore: (version: number) => Promise<boolean>
 }) {
@@ -163,14 +166,16 @@ export function TeamVersions({
                   <Button size="sm" variant="ghost" onClick={() => void compare(version.version)}>
                     {t('versions.compare')}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() => setConfirm(version)}
-                  >
-                    {t('versions.restore')}
-                  </Button>
+                  {!readonly && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setConfirm(version)}
+                    >
+                      {t('versions.restore')}
+                    </Button>
+                  )}
                 </span>
               </li>
             )

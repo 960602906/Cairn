@@ -12,9 +12,9 @@ import { useSessionStore } from '../store-context.js'
 import { cn, SegmentedControl } from '../ui/index.js'
 import { teamStatus, type TeamStatus } from './model.js'
 
-type Filter = 'all' | 'published' | 'draft'
+type Filter = 'all' | 'published' | 'draft' | 'archived'
 
-const FILTERS: readonly Filter[] = ['all', 'published', 'draft']
+const FILTERS: readonly Filter[] = ['all', 'published', 'draft', 'archived']
 
 export function filterTeams(
   teams: readonly AgentTeamSummary[],
@@ -24,6 +24,7 @@ export function filterTeams(
   const text = query.trim().toLowerCase()
   return teams.filter((team) => {
     const status = teamStatus(team)
+    if (filter === 'archived' ? !team.archived : team.archived) return false
     if (filter === 'published' && status === 'draft') return false
     if (filter === 'draft' && status !== 'draft') return false
     if (text === '') return true
@@ -84,6 +85,7 @@ function TeamRow({
                 status === 'published' && 'bg-ok-soft text-ok',
                 status === 'draft' && 'bg-warn-soft text-warn',
                 status === 'dirty' && 'bg-accent-soft text-accent',
+                status === 'archived' && 'bg-sunk text-muted',
               )}
             >
               {t(`status.${status}`)}
@@ -121,7 +123,7 @@ export function TeamsPage({
 
   useEffect(() => {
     let cancelled = false
-    void listTeams().then((list) => {
+    void listTeams(true).then((list) => {
       if (!cancelled) setTeams(list ?? [])
     })
     return () => {

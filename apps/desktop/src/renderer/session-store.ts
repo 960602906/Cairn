@@ -471,6 +471,10 @@ export interface SessionActions {
   /** 保存团队模板草稿；校验结果在返回的 detail 里。 */
   saveTeamDraft(definition: TeamDraftInput): Promise<AgentTeamDetail | undefined>
   publishTeam(teamId: string): Promise<AgentTeamDetail | undefined>
+  /** 归档团队模板：从默认列表隐藏；失败时返回 undefined。 */
+  archiveTeam(teamId: string): Promise<AgentTeamDetail | undefined>
+  /** 取消归档团队模板；失败时返回 undefined。 */
+  unarchiveTeam(teamId: string): Promise<AgentTeamDetail | undefined>
   /** 用团队模板草稿开一次试运行并订阅它；失败时返回 undefined。 */
   startTeamTrial(input: {
     teamId: string
@@ -1231,6 +1235,10 @@ export function createSessionStore(api: MainApi): SessionStore {
       saveTeamDraft: (definition) => run(() => api.request('team.saveDraft', { definition })),
 
       publishTeam: (teamId) => run(() => api.request('team.publish', { teamId })),
+
+      archiveTeam: (teamId) => run(() => api.request('team.archive', { teamId })),
+
+      unarchiveTeam: (teamId) => run(() => api.request('team.unarchive', { teamId })),
 
       listTeamTrials: async (teamId) =>
         (await run(() => api.request('team.trial.list', { teamId })))?.trials,
