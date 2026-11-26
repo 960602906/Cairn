@@ -114,6 +114,10 @@
 
 ### Changed
 
+- 输入框的模型选择器打开时聚焦当前模型，直接按 Enter 不会换成列表第一项。
+  The composer's model picker focuses the current model when opened, so pressing Enter no
+  longer switches to the first model in the list.
+
 - 会话操作菜单执行置顶、复制、导出等操作后，焦点回到「会话操作」按钮；重命名按 Enter / Esc
   结束后焦点回到会话行，点到别处保存时不抢焦点。
   After pinning, copying, exporting, or other actions in the session menu, focus returns to the

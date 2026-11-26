@@ -303,6 +303,21 @@ export function ModelPicker({
     ?.models.find((item) => item.id === model?.modelId)
   const level = thinkingLevel ?? current?.thinkingLevel ?? 'high'
   const interactedOutside = useRef(false)
+  const currentItem = useRef<HTMLDivElement>(null)
+  // 打开时聚焦当前模型：直接按 Enter 不会换成列表第一项。
+  // Radix 的公开类型没有暴露 onOpenAutoFocus，等菜单挂载、FocusScope 先聚焦容器后再把焦点放到当前项。
+  useEffect(() => {
+    if (!open) return
+    const timer = window.setTimeout(() => {
+      const node = currentItem.current
+      if (node === null) return
+      node.focus({ preventScroll: true })
+      if (typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ block: 'nearest' })
+      }
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [open])
   return (
     <DropdownMenu
       open={open}
@@ -334,21 +349,25 @@ export function ModelPicker({
         }}
       >
         <DropdownMenuLabel className="text-faint">{t('composer.model.title')}</DropdownMenuLabel>
-        {options.map((option, index) => (
-          <Fragment key={`${option.ref.providerId}/${option.ref.modelId}`}>
-            {options[index - 1]?.ref.providerId !== option.ref.providerId && (
-              <DropdownMenuLabel className="pt-2">{option.provider}</DropdownMenuLabel>
-            )}
-            <DropdownMenuItem
-              onSelect={() => {
-                if (!sameModel(model, option.ref)) onSelect(option.ref)
-              }}
-            >
-              <span className="min-w-0 flex-1 truncate">{option.name}</span>
-              {sameModel(model, option.ref) && <Check className="text-fg!" />}
-            </DropdownMenuItem>
-          </Fragment>
-        ))}
+        {options.map((option, index) => {
+          const selected = sameModel(model, option.ref)
+          return (
+            <Fragment key={`${option.ref.providerId}/${option.ref.modelId}`}>
+              {options[index - 1]?.ref.providerId !== option.ref.providerId && (
+                <DropdownMenuLabel className="pt-2">{option.provider}</DropdownMenuLabel>
+              )}
+              <DropdownMenuItem
+                ref={selected ? currentItem : undefined}
+                onSelect={() => {
+                  if (!selected) onSelect(option.ref)
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                {selected && <Check className="text-fg!" />}
+              </DropdownMenuItem>
+            </Fragment>
+          )
+        })}
         {onSelectThinkingLevel && current && (
           <>
             <DropdownMenuSeparator />
