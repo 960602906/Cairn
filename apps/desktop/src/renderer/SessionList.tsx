@@ -5,6 +5,7 @@
  * 置顶、重命名（就地编辑，Enter 保存、Esc 取消）与删除（确认后归档）。
  */
 import {
+  Archive,
   ArchiveRestore,
   ChevronRight,
   Copy,
@@ -209,7 +210,9 @@ export function SessionItem({
           />
         )}
         <StatusMark status={session.status} />
-        <span className="min-w-0 flex-1 truncate">{title}</span>
+        <span title={title} className="min-w-0 flex-1 truncate">
+          {title}
+        </span>
         {teamName !== undefined && (
           <span className="shrink-0 text-accent" title={t('item.team', { name: teamName })}>
             <UsersRound aria-hidden className="size-3" />
@@ -292,30 +295,30 @@ export function SessionItem({
               </DropdownMenuItem>
             </>
           ) : (
-            <DropdownMenuItem tone="danger" onSelect={() => setConfirming(true)}>
-              <Trash2 />
-              {t('item.delete')}
+            <DropdownMenuItem onSelect={() => setConfirming(true)}>
+              <Archive />
+              {t('item.archive')}
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
       <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent tone="danger" icon={<TriangleAlert />}>
-          <DialogTitle>{t('delete.title', { title })}</DialogTitle>
-          <DialogDescription>{t('delete.description')}</DialogDescription>
+        <DialogContent icon={<Archive />}>
+          <DialogTitle>{t('archive.title', { title })}</DialogTitle>
+          <DialogDescription>{t('archive.description')}</DialogDescription>
           <DialogFooter>
             <DialogClose asChild>
               <Button size="lg">{tc('action.cancel')}</Button>
             </DialogClose>
             <Button
               size="lg"
-              variant="danger"
+              variant="primary"
               onClick={() => {
                 setConfirming(false)
                 void archiveSession(session.sessionId)
               }}
             >
-              {t('delete.confirm')}
+              {t('archive.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

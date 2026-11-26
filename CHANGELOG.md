@@ -114,6 +114,15 @@
 
 ### Changed
 
+- 会话操作菜单里的「删除」改为「归档」：确认框说明会话可以在设置 → 已归档的对话里恢复，
+  不再使用危险操作的红色样式，避免把可恢复的归档当成永久删除。侧栏、搜索结果与已归档列表里
+  被截断的会话标题，悬停可以看到完整标题。
+  The session menu now says "Archive" instead of "Delete": the confirmation explains that the
+  session can be restored in Settings → Archived conversations and no longer uses the red
+  danger styling, so a reversible archive is not mistaken for permanent deletion. Truncated
+  session titles in the sidebar, search results and the archived list show their full text on
+  hover.
+
 - 用鼠标点发送或停止后，焦点会回到输入框，接着打字不用再点一下；用键盘浏览 `/` 指令、`@` 候选
   与搜索会话的结果时，当前项会自动滚入可视范围。
   After clicking send or stop, focus returns to the composer so typing can continue immediately.

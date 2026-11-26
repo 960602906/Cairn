@@ -209,15 +209,23 @@ export function SessionSearch({
                 )}
               >
                 <span className="flex items-center gap-3">
-                  <span className="min-w-0 flex-1 truncate">
+                  <span
+                    title={result.session.title === '' ? t('title.untitled') : result.session.title}
+                    className="min-w-0 flex-1 truncate"
+                  >
                     {result.session.title === '' ? t('title.untitled') : result.session.title}
                   </span>
-                  <span className="max-w-[40%] shrink-0 truncate text-note text-muted">
+                  <span
+                    title={result.project}
+                    className="max-w-[40%] shrink-0 truncate text-note text-muted"
+                  >
                     {result.project}
                   </span>
                 </span>
                 {result.snippet !== undefined && (
-                  <span className="truncate text-note text-muted">{result.snippet}</span>
+                  <span title={result.snippet} className="truncate text-note text-muted">
+                    {result.snippet}
+                  </span>
                 )}
               </li>
             ))}

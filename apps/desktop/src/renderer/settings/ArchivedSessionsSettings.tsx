@@ -98,8 +98,10 @@ export function ArchivedSessionsSettings() {
                   }`}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-ui text-fg">{title}</p>
-                    <p className="mt-0.5 truncate text-note text-muted">
+                    <p title={title} className="truncate text-ui text-fg">
+                      {title}
+                    </p>
+                    <p title={name} className="mt-0.5 truncate text-note text-muted">
                       {name}
                       {time !== '' && <span className="text-faint"> · {time}</span>}
                     </p>
