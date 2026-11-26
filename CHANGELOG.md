@@ -114,6 +114,18 @@
 
 ### Changed
 
+- 输入框的权限模式与计划模式合成一个下拉：触发按钮显示当前权限，计划模式开启时追加「· 计划」；
+  点开后上半部分选权限，下半部分切换计划模式。工具栏从三个控件减为两个，`/plan`、快捷键和
+  `/permissions` 的行为不变。
+  The composer's permission and plan controls now share one dropdown: the trigger shows the
+  current permission mode and appends "· Plan" while plan mode is on; the menu selects a
+  permission mode above and toggles plan mode below. This reduces the toolbar from three
+  controls to two, while `/plan`, its shortcut and `/permissions` behave as before.
+
+- `/` 指令面板里的技能说明只显示一行，放不下时截断，悬停可看完整说明。
+  Skill descriptions in the `/` command panel now occupy a single line and truncate when too
+  long, with the full text on hover.
+
 - 团队选择器每项注明主控 Agent，并改用模板的最新名称；模板改名后触发按钮不再停留在旧名称。
   The team picker lists each template's coordinator and uses its latest name, so the trigger no
   longer keeps an old name after a rename.

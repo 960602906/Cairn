@@ -437,4 +437,16 @@ describe('Composer /goal', () => {
     expect(onOpenPanel).toBeUndefined()
     expect(input().value).toBe('/goal status')
   })
+
+  it('merges plan mode into the permission menu and shows it on the trigger', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    await user.click(screen.getByRole('button', { name: '权限模式：询问' }))
+    await user.click(await screen.findByRole('menuitem', { name: /计划模式/ }))
+    expect(screen.getByRole('button', { name: '权限模式：询问，计划模式已开启' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: /计划模式已开启/ }))
+    await user.click(await screen.findByRole('menuitem', { name: /计划模式/ }))
+    expect(screen.getByRole('button', { name: '权限模式：询问' })).toBeTruthy()
+  })
 })
