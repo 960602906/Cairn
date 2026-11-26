@@ -231,6 +231,35 @@ describe('WorkspaceGitBar', () => {
     expect(onOpenFolder).toHaveBeenCalledOnce()
   })
 
+  it('hands focus to the given target after choosing a workspace or branch', async () => {
+    installBridge(async () => ({ branch: 'main', branches: ['main', 'feature/x'] }))
+    const onSelectProject = vi.fn()
+    const returnFocus = vi.fn()
+    render(
+      view('/work/demo', {
+        projects: [
+          { projectId: 'p1', name: 'demo', path: '/work/demo', createdAt: 1 },
+          { projectId: 'p2', name: 'other', path: '/work/other', createdAt: 2 },
+        ],
+        onSelectProject,
+        returnFocus,
+      }),
+    )
+
+    await userEvent.click(await screen.findByLabelText('当前分支：main'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'feature/x' }))
+    await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(1))
+
+    await userEvent.click(screen.getByLabelText('工作空间：demo'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'other' }))
+    expect(onSelectProject).toHaveBeenCalledWith('/work/other')
+    await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(2))
+
+    await userEvent.click(screen.getByLabelText('工作空间：demo'))
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(3))
+  })
+
   it('offers the folder dialog before a workspace is chosen', async () => {
     const onSelectProject = vi.fn()
     const onOpenFolder = vi.fn()

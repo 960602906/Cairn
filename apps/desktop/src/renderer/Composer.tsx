@@ -1413,7 +1413,7 @@ export function Composer({
 
   return (
     <div ref={root}>
-      <WorkspaceGitBar projectPath={projectPath} />
+      <WorkspaceGitBar projectPath={projectPath} returnFocus={() => textarea.current?.focus()} />
       <div className="relative">
         {mention.list}
         {commandPanelOpen && (

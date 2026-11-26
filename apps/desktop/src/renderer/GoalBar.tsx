@@ -85,11 +85,14 @@ export function GoalBar({
   view,
   status,
   onOpen,
+  returnFocus,
 }: {
   readonly view: SessionView
   /** 会话的显示状态；运行中禁用「继续」。 */
   readonly status: SessionStatus
   readonly onOpen: () => void
+  /** 暂停 / 继续结束后把焦点还给这里（通常是输入框）。 */
+  readonly returnFocus?: (() => void) | undefined
 }) {
   const { t } = useTranslation('session')
   const pauseGoal = useSessionStore((s) => s.pauseGoal)
@@ -123,6 +126,8 @@ export function GoalBar({
     setPending(true)
     await action()
     setPending(false)
+    // 暂停 / 继续成功后按钮会换成另一个，原按钮消失，焦点交给输入框。
+    returnFocus?.()
   }
   return (
     <section
