@@ -52,6 +52,7 @@ import {
   type ReviewLoopView,
   type PipelineView,
   type SessionView,
+  type TeamChangeView,
   type UserMessageView,
 } from '@cairn/core'
 import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
@@ -103,7 +104,7 @@ import {
   Shimmer,
 } from './ui/index.js'
 import { AgentAvatar } from './agents/AgentAvatar.js'
-import { agentName } from './agents/model.js'
+import { agentName, localized } from './agents/model.js'
 
 /** 本轮结束后，最后一条助手消息下面的操作：复制本轮回复、撤销本轮。 */
 function TurnActions({
@@ -925,6 +926,17 @@ function AgentSwitchDivider({
   )
 }
 
+function TeamSwitchDivider({ name, version }: { readonly name: string; readonly version: number }) {
+  const { t } = useTranslation('session')
+  return (
+    <div className="flex items-center gap-3 text-note text-faint">
+      <span aria-hidden className="h-px flex-1 bg-hair" />
+      <span className="shrink-0">{t('chat.teamSwitched', { name, version })}</span>
+      <span aria-hidden className="h-px flex-1 bg-hair" />
+    </div>
+  )
+}
+
 function OmissionNote() {
   const { t } = useTranslation('session')
   return <p className="text-note text-faint">{t('chat.toolOutputOmitted')}</p>
@@ -1535,6 +1547,41 @@ export function MessageStream({
     }
     return undefined
   }, [view, live, messages, agents, i18n.language, t])
+  /**
+   * 团队切换的分隔提示：只取每条消息之前最后一条团队变化；最后一条是“离开团队”时不显示，
+   * 交给随后换 Agent 的运行分隔。第一条消息之前的变化属于开场配置，不算切换。
+   */
+  const teamDividers = useMemo(() => {
+    const byMessage = new Map<string, TeamChangeView>()
+    const changes = view?.teamChanges
+    const first = messages[0]
+    if (changes === undefined || changes.length === 0 || first === undefined) {
+      return { byMessage, live: undefined as TeamChangeView | undefined }
+    }
+    let cursor = 0
+    while (cursor < changes.length && changes[cursor]!.seq <= first.seq) cursor += 1
+    for (let index = 1; index < messages.length; index++) {
+      const from = messages[index - 1]!.seq
+      const to = messages[index]!.seq
+      let latest: TeamChangeView | undefined
+      while (cursor < changes.length && changes[cursor]!.seq <= to) {
+        const change = changes[cursor]!
+        if (change.seq > from) latest = change
+        cursor += 1
+      }
+      if (latest?.team !== undefined) byMessage.set(messages[index]!.messageId, latest)
+    }
+    let latest: TeamChangeView | undefined
+    while (cursor < changes.length) {
+      latest = changes[cursor]
+      cursor += 1
+    }
+    const lastSeq = messages.at(-1)!.seq
+    const liveChange =
+      latest !== undefined && latest.seq > lastSeq && latest.team !== undefined ? latest : undefined
+    return { byMessage, live: liveChange }
+  }, [view?.teamChanges, messages])
+  const liveTeamChange = teamDividers.live
   const anchored = new Set(
     (view?.plans ?? []).flatMap((plan) =>
       plan.turnId !== undefined && messages.some((message) => message.turnId === plan.turnId)
@@ -1642,9 +1689,19 @@ export function MessageStream({
             const toolsFollow = item.toolsFollow === true
             const lastOfTurn =
               !toolsFollow && (next === undefined || next.turnId !== message.turnId)
-            const switchInfo = switchedRuns.get(message.messageId)
+            const teamChange = teamDividers.byMessage.get(message.messageId)
+            const switchInfo =
+              teamChange === undefined ? switchedRuns.get(message.messageId) : undefined
             return (
               <Fragment key={message.messageId}>
+                {teamChange?.team !== undefined && (
+                  <li className="list-none">
+                    <TeamSwitchDivider
+                      name={localized(teamChange.team.name, i18n.language, teamChange.team.teamId)}
+                      version={teamChange.team.version}
+                    />
+                  </li>
+                )}
                 {switchInfo && (
                   <li className="list-none">
                     <AgentSwitchDivider name={switchInfo.name} version={switchInfo.version} />
@@ -1705,7 +1762,11 @@ export function MessageStream({
           const nextMsg = messages[lastIndex + 1]
           const lastOfTurn = nextMsg === undefined || nextMsg.turnId !== item.turnId
           // 接在同一条消息的正文后面：切换分隔线、标记与 Agent 名已经随正文显示过
-          const switchInfo = item.afterProse ? undefined : switchedRuns.get(firstMsg.messageId)
+          const teamChange = teamDividers.byMessage.get(firstMsg.messageId)
+          const switchInfo =
+            item.afterProse || teamChange !== undefined
+              ? undefined
+              : switchedRuns.get(firstMsg.messageId)
           const continued = item.afterProse || continues(messages[firstIndex - 1], firstMsg)
           const entering = group.some((m) => enteringIds.has(m.messageId))
 
@@ -1750,6 +1811,14 @@ export function MessageStream({
 
           return (
             <Fragment key={item.key}>
+              {teamChange?.team !== undefined && !item.afterProse && (
+                <li className="list-none">
+                  <TeamSwitchDivider
+                    name={localized(teamChange.team.name, i18n.language, teamChange.team.teamId)}
+                    version={teamChange.team.version}
+                  />
+                </li>
+              )}
               {switchInfo && (
                 <li className="list-none">
                   <AgentSwitchDivider name={switchInfo.name} version={switchInfo.version} />
@@ -1864,7 +1933,15 @@ export function MessageStream({
               <OmissionNote />
             </li>
           )}
-        {liveSwitch && (
+        {liveTeamChange?.team !== undefined && (
+          <li className="list-none">
+            <TeamSwitchDivider
+              name={localized(liveTeamChange.team.name, i18n.language, liveTeamChange.team.teamId)}
+              version={liveTeamChange.team.version}
+            />
+          </li>
+        )}
+        {liveTeamChange === undefined && liveSwitch && (
           <li className="list-none">
             <AgentSwitchDivider name={liveSwitch.name} version={liveSwitch.version} />
           </li>

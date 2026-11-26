@@ -127,6 +127,12 @@
 
 ### Fixed
 
+- 对话里切换团队现在显示「已切换到团队 名称 v版本」的分隔提示，不再只显示主控 Agent 或
+  完全看不出切换；开场时绑定的团队不算切换，离开团队仍由随后换 Agent 的提示说明。
+  Switching teams in a conversation now shows a "Switched to team name vN" divider instead of
+  only naming the coordinator agent or showing nothing. The team bound when the session starts
+  is not treated as a switch, and leaving a team is still announced by the next agent divider.
+
 - 新对话页记住的团队模板如果已被归档或删除，模板列表读回来后会自动清掉这个选择并回到默认
   Agent，不再在发送时静默失败。
   If a remembered team template on the new-session page has been archived or deleted, the page
