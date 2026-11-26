@@ -52,7 +52,7 @@ export function AgentsSettings() {
             </Button>
           </div>
         </div>
-        <AgentsPage onOpen={setOpen} onCreate={() => void create('copy')} />
+        <AgentsPage onOpen={setOpen} />
       </>
     )
   }

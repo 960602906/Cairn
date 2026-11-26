@@ -49,5 +49,19 @@ export function AgentAvatar({
   )
 }
 
-export const AGENT_ICON_NAMES = Object.keys(ICONS)
-export const AGENT_COLOR_NAMES = Object.keys(COLORS)
+/** 色块预览用的实心分类色；值仍只来自设计令牌里的分类名。 */
+const COLOR_SWATCHES: Readonly<Record<string, string>> = {
+  'agent-blue': 'bg-accent',
+  'agent-green': 'bg-ok',
+  'agent-amber': 'bg-warn',
+  'agent-red': 'bg-danger',
+}
+
+export type AgentIconName = keyof typeof ICONS
+export type AgentColorName = keyof typeof COLORS
+
+export const AGENT_ICON_NAMES = Object.keys(ICONS) as AgentIconName[]
+export const AGENT_COLOR_NAMES = Object.keys(COLORS) as AgentColorName[]
+/** 供图标选择器渲染可选图标，避免再维护一份图标库。 */
+export const AGENT_ICONS = ICONS
+export const AGENT_COLOR_SWATCHES = COLOR_SWATCHES as Readonly<Record<AgentColorName, string>>

@@ -109,11 +109,14 @@ describe('AgentsSettings', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Agents' })).toBeDefined())
   })
 
-  it('shows the empty state and creates from it', async () => {
+  it('shows a light empty hint without a duplicate create button', async () => {
     const store = makeStore([])
     renderSettings(store)
-    fireEvent.click(await screen.findByRole('button', { name: '基于编程助手创建' }))
-    await waitFor(() => expect(screen.getByText('复制的助手')).toBeDefined())
+    expect(await screen.findByText(/还没有自定义 Agent/)).toBeDefined()
+    expect(screen.queryByRole('button', { name: '基于编程助手创建' })).toBeNull()
+    // 创建入口仍只有设置页头部的两个。
+    expect(screen.getByRole('button', { name: '新建 Agent' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '从空白开始' })).toBeDefined()
   })
 
   it('falls back to a blank draft when copying fails', async () => {

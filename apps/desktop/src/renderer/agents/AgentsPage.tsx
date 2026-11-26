@@ -3,14 +3,14 @@
  *
  * - 列表行显示图标、名称、描述、来源、版本与状态（已发布 / 有未发布修改 / 草稿 / 已归档）。
  * - 内置 Agent 不能编辑，只能复制；复制后直接进入新草稿的编辑器。
- * - 还没有自定义 Agent 时显示“基于编程助手创建”的引导。
+ * - 还没有自定义 Agent 时只留一句轻提示，创建入口统一放在设置页头部。
  */
 import { Search } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentSource, AgentSummary } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
-import { Button, cn, SegmentedControl } from '../ui/index.js'
+import { cn, SegmentedControl } from '../ui/index.js'
 import { AgentAvatar } from './AgentAvatar.js'
 import { agentName, localized } from './model.js'
 
@@ -109,12 +109,9 @@ function AgentRow({
 
 export function AgentsPage({
   onOpen,
-  onCreate,
 }: {
   /** 打开编辑器。`agentId` 为空时创建新草稿。 */
   readonly onOpen: (agentId: string) => void
-  /** 空状态里“基于编程助手创建”：一步复制内置编程助手并进入编辑器。 */
-  readonly onCreate: () => void
 }) {
   const { t } = useTranslation('agents')
   const agents = useSessionStore((s) => s.agents)
@@ -152,13 +149,7 @@ export function AgentsPage({
       </div>
 
       {custom.length === 0 && filter !== 'archived' && query.trim() === '' ? (
-        <section className="flex flex-col items-start gap-3 rounded-card bg-sunk px-5 py-6">
-          <AgentAvatar icon="code" color="agent-blue" size={40} />
-          <p className="text-ui text-fg2">{t('list.empty')}</p>
-          <Button variant="primary" onClick={onCreate}>
-            {t('list.emptyAction')}
-          </Button>
-        </section>
+        <p className="text-ui leading-relaxed text-muted">{t('list.empty')}</p>
       ) : null}
 
       {visible.length === 0 ? (
