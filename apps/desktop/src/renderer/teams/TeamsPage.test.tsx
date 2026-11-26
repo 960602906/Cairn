@@ -71,6 +71,12 @@ describe('filterTeams', () => {
       pattern: 'pipeline',
       hasDraft: true,
     }),
+    team({
+      teamId: 'user.team-4',
+      name: { 'zh-CN': '归档小组' },
+      description: { 'zh-CN': '已归档的模板' },
+      archived: true,
+    }),
   ]
 
   it('filters by status and searches both languages', () => {
@@ -87,6 +93,11 @@ describe('filterTeams', () => {
     expect(filterTeams(teams, 'all', 'review').map((item) => item.teamId)).toEqual(['user.team-2'])
     expect(filterTeams(teams, 'all', '协作').map((item) => item.teamId)).toEqual(['user.team-1'])
     expect(filterTeams(teams, 'all', 'team-3').map((item) => item.teamId)).toEqual(['user.team-3'])
+    // 归档的模板只出现在「已归档」筛选里。
+    expect(filterTeams(teams, 'all', '').map((item) => item.teamId)).not.toContain('user.team-4')
+    expect(filterTeams(teams, 'archived', '').map((item) => item.teamId)).toEqual(['user.team-4'])
+    expect(filterTeams(teams, 'all', '归档小组')).toEqual([])
+    expect(filterTeams(teams, 'published', '')).not.toContain('user.team-4')
     expect(filterTeams(teams, 'all', 'missing')).toEqual([])
   })
 })
@@ -178,6 +189,22 @@ describe('TeamsPage', () => {
     await waitFor(() => expect(screen.getByText('日常协作')).toBeDefined())
     const row = screen.getByRole('button', { name: /日常协作/ })
     expect(within(row).getByText('有未发布修改')).toBeDefined()
+  })
+
+  it('shows archived teams only under the archived filter', async () => {
+    renderPage([
+      team(),
+      team({ teamId: 'user.team-9', name: { 'zh-CN': '归档小组' }, archived: true }),
+    ])
+    await waitFor(() => expect(screen.getByText('日常协作')).toBeDefined())
+    expect(screen.queryByText('归档小组')).toBeNull()
+
+    fireEvent.click(screen.getByRole('radio', { name: '已归档' }))
+    expect(screen.getByText('归档小组')).toBeDefined()
+    expect(screen.queryByText('日常协作')).toBeNull()
+    expect(
+      within(screen.getByRole('button', { name: /归档小组/ })).getByText('已归档'),
+    ).toBeDefined()
   })
 
   it('falls back to an empty list when listing fails', async () => {

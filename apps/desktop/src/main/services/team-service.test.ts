@@ -195,6 +195,34 @@ describe('团队模板命令（M7-09）', () => {
     )
   })
 
+  it('归档后从默认列表隐藏，取消归档后恢复，草稿与版本都保留', () => {
+    const { service } = setup()
+    const created = service.saveDraft({ definition: draft() })
+    service.publish({ teamId: created.teamId })
+    service.saveDraft({
+      definition: { ...draft({ description: { 'zh-CN': '新草稿' } }), id: created.teamId },
+    })
+
+    const archived = service.archive({ teamId: created.teamId })
+    expect(archived.archived).toBe(true)
+    expect(archived.published?.version).toBe(1)
+    expect(archived.draft?.description).toEqual({ 'zh-CN': '新草稿' })
+    expect(service.list({}).teams).toEqual([])
+    expect(service.list({ includeArchived: true }).teams).toEqual([
+      expect.objectContaining({ teamId: created.teamId, archived: true }),
+    ])
+
+    const restored = service.unarchive({ teamId: created.teamId })
+    expect(restored.archived).toBe(false)
+    expect(service.list({}).teams.map((team) => team.teamId)).toEqual([created.teamId])
+    expect(() => service.archive({ teamId: 'missing' })).toThrowError(
+      expect.objectContaining({ code: 'team.not_found' }),
+    )
+    expect(() => service.unarchive({ teamId: 'missing' })).toThrowError(
+      expect.objectContaining({ code: 'team.not_found' }),
+    )
+  })
+
   it('没有草稿或模板不存在时报错', () => {
     const { service } = setup()
     expect(() => service.get({ teamId: 'missing' })).toThrowError(

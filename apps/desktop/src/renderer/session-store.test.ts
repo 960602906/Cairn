@@ -1312,6 +1312,8 @@ describe('team actions (M7-09)', () => {
       }),
       'team.saveDraft': () => teamDetail,
       'team.publish': () => teamDetail,
+      'team.archive': () => ({ ...teamDetail, archived: true }),
+      'team.unarchive': () => teamDetail,
     })
     const store = createSessionStore(api)
 
@@ -1339,6 +1341,10 @@ describe('team actions (M7-09)', () => {
     expect(calls).toContainEqual(['team.saveDraft', { definition }])
     await store.getState().publishTeam('user.team-1')
     expect(calls).toContainEqual(['team.publish', { teamId: 'user.team-1' }])
+    expect(await store.getState().archiveTeam('user.team-1')).toMatchObject({ archived: true })
+    expect(calls).toContainEqual(['team.archive', { teamId: 'user.team-1' }])
+    expect(await store.getState().unarchiveTeam('user.team-1')).toEqual(teamDetail)
+    expect(calls).toContainEqual(['team.unarchive', { teamId: 'user.team-1' }])
   })
 
   it('starts a team trial, maps the team draft hash, and routes events', async () => {
@@ -1457,6 +1463,12 @@ describe('team actions (M7-09)', () => {
       'team.publish': () => {
         throw new RpcError('team.no_draft', { teamId: 'missing' })
       },
+      'team.archive': () => {
+        throw new RpcError('team.not_found', { teamId: 'missing' })
+      },
+      'team.unarchive': () => {
+        throw new RpcError('team.not_found', { teamId: 'missing' })
+      },
       'team.trial.list': () => {
         throw new RpcError('team.not_found', { teamId: 'missing' })
       },
@@ -1478,6 +1490,8 @@ describe('team actions (M7-09)', () => {
     expect(await store.getState().teamVersions('missing')).toBeUndefined()
     expect(await store.getState().saveTeamDraft(definition)).toBeUndefined()
     expect(await store.getState().publishTeam('missing')).toBeUndefined()
+    expect(await store.getState().archiveTeam('missing')).toBeUndefined()
+    expect(await store.getState().unarchiveTeam('missing')).toBeUndefined()
     expect(await store.getState().listTeamTrials('missing')).toBeUndefined()
     expect(await store.getState().clearTeamTrials('missing')).toBeUndefined()
     expect(store.getState().error?.code).toBe('team.not_found')

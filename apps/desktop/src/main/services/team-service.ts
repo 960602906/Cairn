@@ -56,6 +56,8 @@ export interface TeamCommands {
   versions(input: { teamId: string }): { versions: AgentTeamVersionSummary[] }
   saveDraft(input: { definition: TeamDraftInput }): AgentTeamDetail
   publish(input: { teamId: string }): AgentTeamDetail
+  archive(input: { teamId: string }): AgentTeamDetail
+  unarchive(input: { teamId: string }): AgentTeamDetail
   trialStart(input: {
     teamId: string
     projectPath: string
@@ -329,6 +331,18 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
         },
       })
       storage.teams.clearDraft(teamId)
+      return detailOf(teamId)
+    },
+
+    archive({ teamId }) {
+      requireRecord(teamId)
+      storage.teams.setArchived(teamId, true)
+      return detailOf(teamId)
+    },
+
+    unarchive({ teamId }) {
+      requireRecord(teamId)
+      storage.teams.setArchived(teamId, false)
       return detailOf(teamId)
     },
 

@@ -106,6 +106,7 @@ describe('team model', () => {
     expect(teamStatus(teamSummary({ status: 'draft', hasDraft: true }))).toBe('draft')
     expect(teamStatus(teamSummary({ hasDraft: true }))).toBe('dirty')
     expect(teamStatus(teamSummary())).toBe('published')
+    expect(teamStatus(teamSummary({ archived: true, hasDraft: true }))).toBe('archived')
   })
 
   it('builds a default draft from the built-in agents', () => {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { BUILTIN_CODER, BUILTIN_EXPLORER, BUILTIN_REVIEWER, BUILTIN_TESTER } from '@cairn/core'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
@@ -75,6 +76,8 @@ function setup(
     readonly versionGetFails?: boolean
     readonly saveFails?: boolean
     readonly publishFails?: boolean
+    readonly archiveFails?: boolean
+    readonly unarchiveFails?: boolean
   } = {},
 ) {
   const calls: { method: string; params: unknown }[] = []
@@ -119,6 +122,18 @@ function setup(
           archived: false,
           published: published(latest ?? fields(), 3),
           validation: { ok: true, errors: [], warnings: [] },
+        } satisfies AgentTeamDetail
+      }
+      if (method === 'team.archive' || method === 'team.unarchive') {
+        const archive = method === 'team.archive'
+        if (archive ? options.archiveFails : options.unarchiveFails) {
+          throw new RpcError('team.not_found', { teamId: 'user.team-1' })
+        }
+        return {
+          ...(teamDetail ?? {}),
+          teamId: 'user.team-1',
+          archived: archive,
+          validation: teamDetail?.validation ?? { ok: true, errors: [], warnings: [] },
         } satisfies AgentTeamDetail
       }
       if (method === 'team.trial.start') {
@@ -813,6 +828,86 @@ describe('TeamEditor', () => {
     expect(saveFails.calls.some((call) => call.method === 'team.saveDraft')).toBe(true)
     expect((screen.getByLabelText('中文名称') as HTMLInputElement).value).toBe('发布团队')
     expect(screen.queryByLabelText('已保存')).toBeNull()
+  })
+
+  it('archives a team and unarchives it again', async () => {
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      archived: false,
+      draft: draft(),
+      published: published({}, 2),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+    const versions: AgentTeamVersionSummary[] = [
+      {
+        version: 2,
+        publishedAt: 1,
+        name: fields().name,
+        description: fields().description,
+        pattern: fields().pattern,
+        memberCount: fields().members.length,
+      },
+    ]
+    const { store, calls } = setup({ team, versions })
+    const { onBack, onChanged } = await renderEditor(store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
+
+    await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '归档' }))
+    await waitFor(() =>
+      expect(calls).toContainEqual({ method: 'team.archive', params: { teamId: 'user.team-1' } }),
+    )
+    expect(onBack).toHaveBeenCalled()
+    expect(onChanged).toHaveBeenCalled()
+
+    // 归档后只读：没有保存 / 发布 / 试运行与归档菜单，也不能恢复旧版本。
+    cleanup()
+    const archived = setup({ team: { ...team, archived: true }, versions })
+    const archivedResult = await renderEditor(archived.store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText(/已归档的模板只读/)).toBeDefined())
+    await screen.findByRole('list', { name: '版本历史' })
+    expect(screen.queryByRole('button', { name: '保存草稿' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^发布 v/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: '试运行' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '恢复为草稿' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '取消归档' }))
+    await waitFor(() =>
+      expect(archived.calls).toContainEqual({
+        method: 'team.unarchive',
+        params: { teamId: 'user.team-1' },
+      }),
+    )
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存草稿' })).toBeDefined())
+    expect(archivedResult.onChanged).toHaveBeenCalled()
+  })
+
+  it('keeps the team state when archiving or unarchiving fails', async () => {
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      archived: false,
+      draft: draft(),
+      published: published({}, 2),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+
+    const failing = setup({ team, archiveFails: true })
+    const result = await renderEditor(failing.store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
+    await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '归档' }))
+    await waitFor(() => expect(failing.store.getState().error?.code).toBe('team.not_found'))
+    expect(result.onBack).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '保存草稿' })).toBeDefined()
+
+    cleanup()
+    const unarchiveFails = setup({ team: { ...team, archived: true }, unarchiveFails: true })
+    await renderEditor(unarchiveFails.store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByRole('button', { name: '取消归档' })).toBeDefined())
+    fireEvent.click(screen.getByRole('button', { name: '取消归档' }))
+    await waitFor(() => expect(unarchiveFails.store.getState().error?.code).toBe('team.not_found'))
+    expect(screen.getByText(/已归档的模板只读/)).toBeDefined()
   })
 
   it('handles a new team without any published agents', async () => {

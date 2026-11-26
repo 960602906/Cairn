@@ -383,6 +383,16 @@ function setup(
     versions: vi.fn(() => ({ versions: [] })),
     saveDraft: vi.fn(),
     publish: vi.fn(),
+    archive: vi.fn(() => ({
+      teamId: 't1',
+      archived: true,
+      validation: { ok: true, errors: [], warnings: [] },
+    })),
+    unarchive: vi.fn(() => ({
+      teamId: 't1',
+      archived: false,
+      validation: { ok: true, errors: [], warnings: [] },
+    })),
     trialStart: vi.fn(() => ({
       sessionId: 'tt-1',
       teamId: 't1',
@@ -785,6 +795,10 @@ describe('createRendererGateway: commands and lifecycle', () => {
       versions: [],
     })
     expect(teams.versions).toHaveBeenCalledWith({ teamId: 't1' })
+    await client.request('team.archive', { teamId: 't1' })
+    await client.request('team.unarchive', { teamId: 't1' })
+    expect(teams.archive).toHaveBeenCalledWith({ teamId: 't1' })
+    expect(teams.unarchive).toHaveBeenCalledWith({ teamId: 't1' })
     await expect(
       client.request('team.trial.start', { teamId: 't1', projectPath: '/work' }),
     ).resolves.toMatchObject({ sessionId: 'tt-1', teamId: 't1' })

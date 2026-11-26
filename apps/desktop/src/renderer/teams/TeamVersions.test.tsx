@@ -127,12 +127,18 @@ function setup(
 async function renderVersions(
   store: ReturnType<typeof createSessionStore>,
   onRestore: (version: number) => Promise<boolean> = vi.fn(async () => true),
+  readonly = false,
 ) {
   await store.getState().refreshAgents({ includeArchived: true })
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreContext.Provider value={store}>
-        <TeamVersions teamId="user.team-1" current={current} onRestore={onRestore} />
+        <TeamVersions
+          teamId="user.team-1"
+          current={current}
+          readonly={readonly}
+          onRestore={onRestore}
+        />
       </SessionStoreContext.Provider>
     </I18nextProvider>,
   )
@@ -219,6 +225,16 @@ describe('TeamVersions', () => {
     fireEvent.click(screen.getByRole('button', { name: '恢复' }))
     await waitFor(() => expect(onRestore).toHaveBeenCalledWith(2))
     await waitFor(() => expect(screen.getByText('已把 v2 恢复为草稿。')).toBeDefined())
+  })
+
+  it('hides restore for archived templates but still compares', async () => {
+    const { store } = setup()
+    await renderVersions(store, undefined, true)
+    await waitFor(() => expect(list()).toBeDefined())
+    expect(within(list()).queryByRole('button', { name: '恢复为草稿' })).toBeNull()
+
+    fireEvent.click(within(rowOf(2)).getByRole('button', { name: '对比' }))
+    await waitFor(() => expect(screen.getByText('v2 与当前草稿')).toBeDefined())
   })
 
   it('cancels or reports a failed restore', async () => {

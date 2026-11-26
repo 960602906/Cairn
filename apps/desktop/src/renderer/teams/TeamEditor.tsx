@@ -6,14 +6,17 @@
  */
 import {
   AlertCircle,
+  Archive,
   ArrowLeft,
   Check,
   FileText,
+  MoreHorizontal,
   Play,
   Plus,
   Save,
   Trash2,
   TriangleAlert,
+  Upload,
   UsersRound,
   Workflow,
 } from 'lucide-react'
@@ -39,6 +42,10 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   IconButton,
   SegmentedControl,
   cn,
@@ -116,6 +123,8 @@ export function TeamEditor({
   const getTeam = useSessionStore((s) => s.getTeam)
   const saveTeamDraft = useSessionStore((s) => s.saveTeamDraft)
   const publishTeam = useSessionStore((s) => s.publishTeam)
+  const archiveTeam = useSessionStore((s) => s.archiveTeam)
+  const unarchiveTeam = useSessionStore((s) => s.unarchiveTeam)
   const getAgent = useSessionStore((s) => s.getAgent)
 
   // 新建草稿只初始化一次；已有模板等 `getTeam` 读取后再填。
@@ -190,7 +199,8 @@ export function TeamEditor({
   const validation = pendingAgents === 0 ? localValidation : detail?.validation
   const dirty = fields !== undefined && baseline !== undefined && !sameTeamFields(fields, baseline)
   const published = detail?.published
-  const status = dirty ? 'dirty' : published ? 'published' : 'draft'
+  const archived = detail?.archived === true
+  const status = archived ? 'archived' : dirty ? 'dirty' : published ? 'published' : 'draft'
   const nextVersion = (published?.version ?? 0) + 1
   const title =
     fields === undefined
@@ -204,7 +214,7 @@ export function TeamEditor({
   }, [])
 
   const save = useCallback(async (): Promise<string | undefined> => {
-    if (!fields || saving) return undefined
+    if (!fields || saving || archived) return undefined
     setSaving(true)
     const next = await saveTeamDraft({
       ...fields,
@@ -220,7 +230,7 @@ export function TeamEditor({
     setSavedAt(true)
     onChanged()
     return next.teamId
-  }, [currentId, fields, onChanged, saveTeamDraft, saving])
+  }, [archived, currentId, fields, onChanged, saveTeamDraft, saving])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -313,6 +323,28 @@ export function TeamEditor({
     onChanged()
   }
 
+  /** 归档后回到列表；草稿、版本与试运行历史都保留，取消归档即可继续编辑。 */
+  const archive = async () => {
+    if (currentId === undefined) return
+    setBusy(true)
+    const next = await archiveTeam(currentId)
+    setBusy(false)
+    if (!next) return
+    setDetail(next)
+    onChanged()
+    onBack()
+  }
+
+  const unarchive = async () => {
+    if (currentId === undefined) return
+    setBusy(true)
+    const next = await unarchiveTeam(currentId)
+    setBusy(false)
+    if (!next) return
+    setDetail(next)
+    onChanged()
+  }
+
   /** 把旧版本恢复为草稿：读取该版本的完整字段，覆盖当前草稿并同步基线。 */
   const restoreVersion = async (version: number): Promise<boolean> => {
     if (currentId === undefined) return false
@@ -363,7 +395,12 @@ export function TeamEditor({
     teamIssues(validation, section, kind)
   const invalid = validation?.ok === false || pendingAgents > 0
   const canTrial =
-    !busy && !saving && fields.coordinator !== '' && invalid === false && agents.length > 0
+    !archived &&
+    !busy &&
+    !saving &&
+    fields.coordinator !== '' &&
+    invalid === false &&
+    agents.length > 0
 
   const updateName = (language: 'zh-CN' | 'en-US', value: string) =>
     change({ name: { ...fields.name, [language]: value } })
@@ -442,6 +479,7 @@ export function TeamEditor({
               status === 'published' && 'bg-ok-soft text-ok',
               status === 'draft' && 'bg-warn-soft text-warn',
               status === 'dirty' && 'bg-accent-soft text-accent',
+              status === 'archived' && 'bg-sunk text-muted',
             )}
           >
             {t(`status.${status}`)}
@@ -449,35 +487,63 @@ export function TeamEditor({
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {savedAt && !dirty && <Check aria-label={t('editor.saved')} className="size-4 text-ok" />}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!canTrial}
-            title={invalid ? t('editor.fixBeforeTrial') : undefined}
-            onClick={() => void openTrial()}
-          >
-            <Play />
-            {t('editor.trial')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={saving || fields.coordinator === '' || (currentId !== undefined && !dirty)}
-            onClick={() => void save()}
-          >
-            <Save />
-            {t('editor.save')}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={busy || saving || invalid || fields.coordinator === ''}
-            onClick={() => setConfirmPublish(true)}
-          >
-            {t('editor.publish', { version: nextVersion })}
-          </Button>
+          {archived ? (
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => void unarchive()}>
+              <Upload />
+              {t('editor.unarchive')}
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!canTrial}
+                title={invalid ? t('editor.fixBeforeTrial') : undefined}
+                onClick={() => void openTrial()}
+              >
+                <Play />
+                {t('editor.trial')}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={
+                  saving || fields.coordinator === '' || (currentId !== undefined && !dirty)
+                }
+                onClick={() => void save()}
+              >
+                <Save />
+                {t('editor.save')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={busy || saving || invalid || fields.coordinator === ''}
+                onClick={() => setConfirmPublish(true)}
+              >
+                {t('editor.publish', { version: nextVersion })}
+              </Button>
+              {currentId !== undefined && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <IconButton label={t('editor.more')} size="icon-sm" disabled={busy}>
+                      <MoreHorizontal />
+                    </IconButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem disabled={busy} onSelect={() => void archive()}>
+                      <Archive />
+                      {t('editor.archive')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </>
+          )}
         </div>
       </header>
+
+      {archived && <p className="text-note text-muted">{t('editor.archivedHint')}</p>}
 
       {validationIssues('basic', 'errors').length === 0 &&
         validationIssues('members', 'errors').length === 0 &&
@@ -828,6 +894,7 @@ export function TeamEditor({
           key={detail?.published?.version ?? 0}
           teamId={currentId}
           current={fields}
+          readonly={archived}
           onRestore={restoreVersion}
         />
       )}
