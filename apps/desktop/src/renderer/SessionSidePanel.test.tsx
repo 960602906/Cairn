@@ -629,6 +629,22 @@ describe('SessionSidePanel', () => {
     expect(onCloseTab).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps focus outside the panel when a background tab is closed with the middle button', () => {
+    wrap(
+      <>
+        <button type="button">面板外</button>
+        <Harness />
+      </>,
+    )
+    const outside = screen.getByRole('button', { name: '面板外' })
+    outside.focus()
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    const tab = within(panel).getByRole('tab', { name: '计划' })
+    fireEvent(tab, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+    expect(screen.queryByRole('tab', { name: '计划' })).toBeNull()
+    expect(document.activeElement).toBe(outside)
+  })
+
   it('focuses the opened tab after choosing a home card', async () => {
     const user = userEvent.setup()
     wrap(<Harness initialPanel="home" />)

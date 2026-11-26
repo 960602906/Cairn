@@ -239,7 +239,10 @@ export function SessionSidePanel({
     else if (tab !== undefined) onActivateTab(tab as SessionTab)
   }
   const closeTab = (id: SessionTab) => {
-    closingTab.current = true
+    // 只有关闭动作来自面板内部时才把焦点交给新选中的标签；中键关闭时焦点可能还在对话里。
+    const active = document.activeElement
+    closingTab.current =
+      active instanceof HTMLElement && panelRef.current?.contains(active) === true
     onCloseTab(id)
   }
   const openFromHome = (target: SessionPanel) => {

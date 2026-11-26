@@ -258,6 +258,12 @@
 
 ### Fixed
 
+- 中键关闭会话信息栏的后台标签时，不再把焦点从对话里抢到标签栏；只有关闭动作发生在面板
+  内部时，焦点才跟随新选中的标签。
+  Middle-clicking a background tab in the session info panel no longer pulls focus away from
+  the conversation; focus only follows the newly selected tab when the close came from inside
+  the panel.
+
 - 输入法组字时的方向键、Enter 和 Esc 不再被输入框工具栏或查找条抢走：`/` 指令与 `@` 引用
   候选不会移动，查找不会跳转或关闭，试验面板不会发送。
   While an input method is composing, arrow keys, Enter, and Esc are no longer taken by the
