@@ -1067,19 +1067,25 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     list({ includeArchived }) {
       const sessions = storage.sessions
         .list(includeArchived ? { includeArchived } : {})
-        .map((s) => ({
-          sessionId: s.sessionId,
-          title: s.title,
-          projectPath: s.projectPath,
-          status:
-            waiting.has(s.sessionId) || (slots.has(s.sessionId) && !slots.get(s.sessionId)?.handle)
-              ? ('running' as const)
-              : sessionStatus(getView(s.sessionId)),
-          createdAt: s.createdAt,
-          updatedAt: s.updatedAt,
-          ...(s.model ? { model: s.model } : {}),
-          ...(s.pinned ? { pinned: true } : {}),
-        }))
+        .map((s) => {
+          const view = getView(s.sessionId)
+          const team = view.info?.team
+          return {
+            sessionId: s.sessionId,
+            title: s.title,
+            projectPath: s.projectPath,
+            status:
+              waiting.has(s.sessionId) ||
+              (slots.has(s.sessionId) && !slots.get(s.sessionId)?.handle)
+                ? ('running' as const)
+                : sessionStatus(view),
+            createdAt: s.createdAt,
+            updatedAt: s.updatedAt,
+            ...(s.model ? { model: s.model } : {}),
+            ...(s.pinned ? { pinned: true } : {}),
+            ...(team ? { team } : {}),
+          }
+        })
       return { sessions }
     },
 

@@ -15,10 +15,12 @@ import {
   PinOff,
   Trash2,
   TriangleAlert,
+  UsersRound,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ProjectSummary, SessionStatus, SessionSummary } from '@cairn/protocol'
+import { localized } from './agents/model.js'
 import { FolderTypeIcon } from './file-icons.js'
 import { lastSegment } from './paths.js'
 import { statusPresentation, TONE_DOT } from './status-presentation.js'
@@ -138,7 +140,7 @@ export function SessionItem({
   readonly active: boolean
   readonly onSelect: () => void
 }) {
-  const { t } = useTranslation('session')
+  const { t, i18n } = useTranslation('session')
   const { t: tc } = useTranslation()
   const renameSession = useSessionStore((s) => s.renameSession)
   const setSessionPinned = useSessionStore((s) => s.setSessionPinned)
@@ -163,6 +165,10 @@ export function SessionItem({
   const pinned = session.pinned === true
   const title = session.title === '' ? t('title.untitled') : session.title
   const time = formatSessionTime(session.updatedAt, t('list.yesterday'))
+  const teamName =
+    session.team === undefined
+      ? undefined
+      : localized(session.team.name, i18n.language, session.team.teamId)
 
   if (renaming) {
     return (
@@ -199,6 +205,12 @@ export function SessionItem({
         )}
         <StatusMark status={session.status} />
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        {teamName !== undefined && (
+          <span className="shrink-0 text-accent" title={t('item.team', { name: teamName })}>
+            <UsersRound aria-hidden className="size-3" />
+            <span className="sr-only">{t('item.team', { name: teamName })}</span>
+          </span>
+        )}
         {pinned && (
           <span className="shrink-0 text-accent" title={t('item.pinned')}>
             <Pin aria-hidden className="size-3" />

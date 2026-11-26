@@ -326,6 +326,7 @@
   "item.pin": "置顶",
   "item.unpin": "取消置顶",
   "item.pinned": "已置顶",
+  "item.team": "团队：{{name}}",
   "item.copyTranscript": "复制对话",
   "item.exportTranscript": "导出为 Markdown…",
   "item.copied": "已复制",

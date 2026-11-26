@@ -24,6 +24,7 @@ import {
   DiagnosticsSummary,
 } from '../diagnostics.js'
 import { RunInspectResult } from '../inspect.js'
+import { SessionTeamBinding } from '../teams.js'
 import {
   AgentDefinitionRef,
   ContentPart,
@@ -122,6 +123,8 @@ export const SessionSummary = z.object({
   model: ModelRef.optional(),
   /** 是否置顶（桌面手感）；省略表示未置顶。 */
   pinned: z.boolean().optional(),
+  /** 当前绑定的团队模板（M7-09）；省略表示普通 Agent 会话。 */
+  team: SessionTeamBinding.optional(),
 })
 export type SessionSummary = z.infer<typeof SessionSummary>
 

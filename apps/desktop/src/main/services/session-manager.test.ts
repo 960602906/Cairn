@@ -1485,6 +1485,8 @@ describe('team binding (M7-09)', () => {
         },
       },
     ])
+    const listed = () => manager.list({}).sessions.find((s) => s.sessionId === sessionId)
+    expect(listed()?.team).toEqual(binding)
 
     // 同一个模板的同一个版本已经在用：不重复发事件。
     const settled = published.length
@@ -1499,10 +1501,12 @@ describe('team binding (M7-09)', () => {
       payload: { team: secondBinding },
     })
     expect(published.filter((event) => event.type === 'run.created')).toHaveLength(runs)
+    expect(listed()?.team).toEqual(secondBinding)
 
     // null 取消绑定，当前 Agent 保持不变；没有绑定时不再发事件。
     await manager.setTeam({ sessionId, teamId: null })
     expect(published.at(-1)).toMatchObject({ type: 'session.team.changed', payload: {} })
+    expect(listed()?.team).toBeUndefined()
     const cleared = published.length
     await manager.setTeam({ sessionId, teamId: null })
     expect(published).toHaveLength(cleared)
