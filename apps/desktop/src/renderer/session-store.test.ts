@@ -2734,6 +2734,8 @@ describe('team selection in session store', () => {
   it('refreshes teams for the picker', async () => {
     const { api, calls } = fakeApi({ 'team.list': () => ({ teams }) })
     const store = createSessionStore(api)
+    // 还没读回来：与“确实没有模板”区分开。
+    expect(store.getState().teams).toBeUndefined()
     expect(await store.getState().refreshTeams()).toEqual(teams)
     expect(store.getState().teams).toEqual(teams)
     expect(calls).toContainEqual(['team.list', {}])
