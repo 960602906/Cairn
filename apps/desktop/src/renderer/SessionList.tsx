@@ -100,7 +100,9 @@ function RenameInput({
   onCancel,
 }: {
   readonly initial: string
-  readonly onSave: (title: string) => void
+  /** 保存；`returnFocus` 表示按了 Enter，结束后焦点回到会话行。 */
+  readonly onSave: (title: string, returnFocus: boolean) => void
+  /** 按 Esc 取消，焦点回到会话行。 */
   readonly onCancel: () => void
 }) {
   const { t } = useTranslation('session')
@@ -113,7 +115,7 @@ function RenameInput({
   const keyDown = (event: KeyboardEvent) => {
     if (event.key === 'Enter') {
       event.preventDefault()
-      onSave(value)
+      onSave(value, true)
     } else if (event.key === 'Escape') {
       event.preventDefault()
       onCancel()
@@ -127,7 +129,8 @@ function RenameInput({
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={keyDown}
-      onBlur={() => onSave(value)}
+      // 点到别处时保存，但焦点跟着用户点击的位置走，不抢回来。
+      onBlur={() => onSave(value, false)}
     />
   )
 }
@@ -154,6 +157,15 @@ export function SessionItem({
   const [renaming, setRenaming] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const rowRef = useRef<HTMLButtonElement>(null)
+  const restoreRowFocus = useRef(false)
+  const renamingFromMenu = useRef(false)
+  // 重命名按 Enter / Esc 结束后，焦点回到会话行；点到别处保存时不抢焦点。
+  useEffect(() => {
+    if (renaming || !restoreRowFocus.current) return
+    restoreRowFocus.current = false
+    rowRef.current?.focus()
+  }, [renaming])
   /** 复制 / 导出成功后的短暂提示，占用时间的位置。 */
   const [notice, setNotice] = useState<'copied' | 'exported' | undefined>()
   const noticeTimer = useRef<number | undefined>(undefined)
@@ -181,8 +193,12 @@ export function SessionItem({
       <li className="px-0.5 py-px">
         <RenameInput
           initial={session.title}
-          onCancel={() => setRenaming(false)}
-          onSave={(next) => {
+          onCancel={() => {
+            restoreRowFocus.current = true
+            setRenaming(false)
+          }}
+          onSave={(next, returnFocus) => {
+            restoreRowFocus.current = returnFocus
             setRenaming(false)
             if (next.trim() !== session.title) void renameSession(session.sessionId, next)
           }}
@@ -194,6 +210,7 @@ export function SessionItem({
   return (
     <li className="group relative">
       <button
+        ref={rowRef}
         type="button"
         aria-current={active ? 'true' : undefined}
         onClick={onSelect}
@@ -250,8 +267,15 @@ export function SessionItem({
             <MoreHorizontal />
           </button>
         </DropdownMenuTrigger>
-        {/* 关闭菜单时不把焦点还给按钮，否则重命名输入框一出现就失去焦点 */}
-        <DropdownMenuContent align="start" onCloseAutoFocus={(e) => e.preventDefault()}>
+        {/* 选择重命名时输入框会自己聚焦，不能让菜单把焦点抢回按钮；其余操作正常归还。 */}
+        <DropdownMenuContent
+          align="start"
+          onCloseAutoFocus={(event) => {
+            if (!renamingFromMenu.current) return
+            renamingFromMenu.current = false
+            event.preventDefault()
+          }}
+        >
           {!archived && (
             <DropdownMenuItem onSelect={() => void setSessionPinned(session.sessionId, !pinned)}>
               {pinned ? <PinOff /> : <Pin />}
@@ -278,7 +302,12 @@ export function SessionItem({
             <Download />
             {t('item.exportTranscript')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setRenaming(true)}>
+          <DropdownMenuItem
+            onSelect={() => {
+              renamingFromMenu.current = true
+              setRenaming(true)
+            }}
+          >
             <Pencil />
             {t('item.rename')}
           </DropdownMenuItem>

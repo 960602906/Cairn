@@ -114,6 +114,12 @@
 
 ### Changed
 
+- 会话操作菜单执行置顶、复制、导出等操作后，焦点回到「会话操作」按钮；重命名按 Enter / Esc
+  结束后焦点回到会话行，点到别处保存时不抢焦点。
+  After pinning, copying, exporting, or other actions in the session menu, focus returns to the
+  actions button; finishing a rename with Enter or Esc returns focus to the session row, while
+  clicking elsewhere saves without moving focus back.
+
 - 运行时间线的步骤结束原因改为可读说明（正常结束 / 继续调用工具 / 达到长度上限等），
   不再直接显示 `stop`、`tool_calls` 这类原始枚举值。
   Step finish reasons in the run timeline are now explained in plain language instead of
