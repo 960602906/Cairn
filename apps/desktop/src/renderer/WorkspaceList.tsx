@@ -17,7 +17,7 @@ import {
   SquarePen,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PROJECT_NAME_MAX_LENGTH, type ProjectSummary, type SessionSummary } from '@cairn/protocol'
 import { getMainApi } from './api.js'
@@ -86,6 +86,15 @@ function WorkspaceRow({
   const [nameDraft, setNameDraft] = useState(displayName)
   const [savingName, setSavingName] = useState(false)
   const [renameFailed, setRenameFailed] = useState(false)
+  const showMoreRef = useRef<HTMLButtonElement>(null)
+  const showLessRef = useRef<HTMLButtonElement>(null)
+  const pendingToggle = useRef(false)
+  // 展开 / 收起后原按钮消失，把焦点交给新出现的那个按钮。
+  useEffect(() => {
+    if (!pendingToggle.current) return
+    pendingToggle.current = false
+    ;(showAll ? showLessRef : showMoreRef).current?.focus()
+  }, [showAll])
   const archived = project.archivedAt !== undefined
   const pinned = project.isPinned === true
   const visible = showAll ? sessions : sessions.slice(0, WORKSPACE_SESSION_PREVIEW)
@@ -167,7 +176,11 @@ function WorkspaceRow({
           {remaining > 0 && (
             <button
               type="button"
-              onClick={() => setShowAll(true)}
+              ref={showMoreRef}
+              onClick={() => {
+                pendingToggle.current = true
+                setShowAll(true)
+              }}
               className="flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[11px] text-faint outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
             >
               {t('list.showMore', { count: remaining })}
@@ -176,7 +189,11 @@ function WorkspaceRow({
           {remaining === 0 && showAll && sessions.length > WORKSPACE_SESSION_PREVIEW && (
             <button
               type="button"
-              onClick={() => setShowAll(false)}
+              ref={showLessRef}
+              onClick={() => {
+                pendingToggle.current = true
+                setShowAll(false)
+              }}
               className="flex h-6 w-full items-center rounded-[6px] px-2 text-left text-[11px] text-faint outline-none transition-colors hover:bg-hover hover:text-fg2 focus-visible:ring-1 focus-visible:ring-accent"
             >
               {t('list.showLess')}
