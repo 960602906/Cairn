@@ -198,6 +198,10 @@ export interface SessionActions {
   renameSession(sessionId: string, title: string): Promise<boolean>
   /** 置顶 / 取消置顶会话，成功后刷新列表；返回是否成功。 */
   setSessionPinned(sessionId: string, pinned: boolean): Promise<boolean>
+  /** 把整个会话导出为 Markdown 复制到剪贴板；返回是否成功。 */
+  copyTranscript(sessionId: string): Promise<boolean>
+  /** 导出为 `.md` 文件（主进程弹保存对话框）；返回是否写入（用户取消时为 false）。 */
+  exportTranscript(sessionId: string): Promise<boolean>
   /** 删除（归档）会话（M2-02）：是当前会话时先取消选中；成功后刷新列表。 */
   archiveSession(sessionId: string): Promise<boolean>
   /** 取消归档（M2-02）：会话重新出现在默认列表里；成功后刷新列表。 */
@@ -926,6 +930,22 @@ export function createSessionStore(api: MainApi): SessionStore {
         if (done === undefined) return false
         await get().refreshSessions()
         return true
+      },
+
+      async copyTranscript(sessionId) {
+        const result = await run(() => api.request('session.transcript', { sessionId }))
+        if (result === undefined) return false
+        try {
+          await navigator.clipboard.writeText(result.markdown)
+          return true
+        } catch {
+          return false
+        }
+      },
+
+      async exportTranscript(sessionId) {
+        const done = await run(() => api.request('session.exportTranscript', { sessionId }))
+        return done !== undefined && !done.cancelled
       },
 
       async archiveSession(sessionId) {

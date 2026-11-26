@@ -201,6 +201,8 @@ function setup(
     abort: vi.fn(() => ({})),
     rename: vi.fn(() => ({})),
     setPinned: vi.fn(() => ({})),
+    transcript: vi.fn(() => ({ markdown: '# demo\n' })),
+    exportTranscript: vi.fn(async () => ({ cancelled: false, path: '/tmp/demo.md' })),
     archive: vi.fn(() => ({})),
     unarchive: vi.fn(() => ({})),
     delete: vi.fn(() => ({})),
@@ -811,9 +813,18 @@ describe('createRendererGateway: commands and lifecycle', () => {
     await expect(
       client.request('session.setPinned', { sessionId: 's1', pinned: true }),
     ).resolves.toEqual({})
+    await expect(client.request('session.transcript', { sessionId: 's1' })).resolves.toEqual({
+      markdown: '# demo\n',
+    })
+    await expect(client.request('session.exportTranscript', { sessionId: 's1' })).resolves.toEqual({
+      cancelled: false,
+      path: '/tmp/demo.md',
+    })
     await expect(client.request('session.archive', { sessionId: 's2' })).resolves.toEqual({})
     expect(commands.rename).toHaveBeenCalledWith({ sessionId: 's1', title: 'New name' })
     expect(commands.setPinned).toHaveBeenCalledWith({ sessionId: 's1', pinned: true })
+    expect(commands.transcript).toHaveBeenCalledWith({ sessionId: 's1' })
+    expect(commands.exportTranscript).toHaveBeenCalledWith({ sessionId: 's1' })
     expect(commands.archive).toHaveBeenCalledWith({ sessionId: 's2' })
     const model = { providerId: 'p', modelId: 'm' }
     await expect(client.request('session.setModel', { sessionId: 's1', model })).resolves.toEqual(

@@ -698,6 +698,16 @@ export const MainForRenderer = defineSide({
       params: z.object({ sessionId: Id, pinned: z.boolean() }),
       result: z.object({}),
     },
+    /** 会话导出为 Markdown（桌面手感）：返回正文，界面复制到剪贴板。 */
+    'session.transcript': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ markdown: z.string() }),
+    },
+    /** 会话导出为 Markdown 文件：主进程弹保存对话框并写入；`cancelled` 表示用户取消。 */
+    'session.exportTranscript': {
+      params: z.object({ sessionId: Id }),
+      result: z.object({ cancelled: z.boolean(), path: z.string().optional() }),
+    },
     /**
      * 更换会话的模型（M2-04），写入 `session.model.changed`，从下一轮起生效（正在进行的一轮不受影响）。
      * 模型必须已配置，否则报 `session.unknown_model`。
