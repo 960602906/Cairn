@@ -5,7 +5,7 @@
  * 500px 以下。正文最大 840px，输入框最大 880px。会话切换、订阅恢复、审批与检查器行为沿用
  * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
-import { ArrowDown, FileDiff, PanelRight } from 'lucide-react'
+import { ArrowDown, FileDiff, PanelRight, Search } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { openGoal, progressTaskList, proposedPlan, rootRun, sessionStatus } from '@cairn/core'
@@ -16,6 +16,7 @@ import { QuestionList } from './QuestionCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { totals, turnEntries, type FileDiffMode } from './file-changes.js'
+import { FindBar } from './FindBar.js'
 import { GoalBar } from './GoalBar.js'
 import { MessageStream } from './MessageStream.js'
 import { PlanActions, TaskProgress } from './PlanCard.js'
@@ -34,7 +35,12 @@ import type { SettingsSection } from './settings/SettingsPage.js'
 import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { useMediaQuery } from './layout/use-media-query.js'
-import { isToggleWorkbenchKey, toggleWorkbenchShortcut } from './layout/shortcuts.js'
+import {
+  findShortcut,
+  isFindKey,
+  isToggleWorkbenchKey,
+  toggleWorkbenchShortcut,
+} from './layout/shortcuts.js'
 import { TopBar } from './layout/TopBar.js'
 import { cn, IconButton } from './ui/index.js'
 
@@ -103,6 +109,9 @@ export function ChatPanel({
   const [panelPreference, setPanelPreference] = useState<boolean>()
   const panelOpen = panelPreference ?? docked
   const overlayOpen = !docked && panelOpen
+  /** 会话内查找（⌘F）；`findToken` 让再次按快捷键时焦点回到输入框。 */
+  const [findOpen, setFindOpen] = useState(false)
+  const [findToken, setFindToken] = useState(0)
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const { isPinned, scrollToBottom } = useStickToBottom(scroller, content, sessionId ?? '')
@@ -242,16 +251,23 @@ export function ChatPanel({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [overlayOpen])
 
-  // ⌘J：收起或展开工作台；对话框 / 菜单打开时让给它们。
+  // ⌘F 查找、⌘J 收起或展开工作台；对话框 / 菜单打开时让给它们。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || !isToggleWorkbenchKey(event)) return
+      if (event.defaultPrevented) return
       if (
         document.querySelector(
           '[role="menu"], [role="listbox"], [role="dialog"]:not([aria-hidden="true"])',
         )
       )
         return
+      if (isFindKey(event)) {
+        event.preventDefault()
+        setFindOpen(true)
+        setFindToken((token) => token + 1)
+        return
+      }
+      if (!isToggleWorkbenchKey(event)) return
       event.preventDefault()
       setPanelPreference((current) => !(current ?? docked))
     }
@@ -266,6 +282,7 @@ export function ChatPanel({
     setFileModes({})
     setTabs([])
     setPanelState('home')
+    setFindOpen(false)
   }, [sessionId])
 
   useEffect(() => {
@@ -387,6 +404,18 @@ export function ChatPanel({
             </button>
           )}
           <IconButton
+            label={t('find.open')}
+            title={`${t('find.open')} (${findShortcut()})`}
+            size="icon-sm"
+            aria-expanded={findOpen}
+            onClick={() => {
+              setFindOpen(true)
+              setFindToken((token) => token + 1)
+            }}
+          >
+            <Search />
+          </IconButton>
+          <IconButton
             label={t('sidePanel.label')}
             title={`${t('sidePanel.label')} (${toggleWorkbenchShortcut()})`}
             size="icon-sm"
@@ -412,6 +441,13 @@ export function ChatPanel({
           inert={overlayOpen}
           className="relative flex min-w-0 flex-1 flex-col"
         >
+          <FindBar
+            open={findOpen}
+            root={content}
+            revision={view}
+            focusToken={findToken}
+            onClose={() => setFindOpen(false)}
+          />
           {/* 滚动位置由 useStickToBottom 自己维护：关掉浏览器的滚动锚定，否则新内容插入会打断平滑滚动 */}
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
             <div

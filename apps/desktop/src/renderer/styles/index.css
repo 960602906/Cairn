@@ -271,6 +271,16 @@
   app-region: no-drag;
 }
 
+/* 会话内查找（⌘F）：CSS Custom Highlight API 的命中与当前命中 */
+::highlight(cairn-find) {
+  background-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+::highlight(cairn-find-active) {
+  background-color: var(--accent);
+  color: var(--ink-fg);
+}
+
 /*
  * 流式光标：跟在流式 Markdown 之后（视觉规范 §5 动效）。
  * 最后一块是普通段落时，用 ::after 把光标接在段末，段落仍是块级，间距不跳；

@@ -212,6 +212,22 @@ describe('ChatPanel', () => {
     expect(opened).toHaveBeenCalled()
   })
 
+  it('finds text in the conversation with Ctrl+F and clears it with Escape', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+    const findInput = screen.getByRole('textbox', { name: '在对话中查找' })
+    expect(document.activeElement).toBe(findInput)
+
+    await userEvent.type(findInput, '你好')
+    await waitFor(() => expect(screen.getByText('1/2')).toBeTruthy())
+    fireEvent.keyDown(findInput, { key: 'Enter' })
+    expect(screen.getByText('2/2')).toBeTruthy()
+
+    fireEvent.keyDown(findInput, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '在对话中查找' })).toBeNull())
+  })
+
   it('shows the new chat page until a session is picked', async () => {
     setup()
     expect(await screen.findByPlaceholderText('有什么可以帮你？')).toBeTruthy()

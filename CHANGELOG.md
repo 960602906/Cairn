@@ -7,6 +7,12 @@
 
 ### Added
 
+- 会话内查找：⌘F（Windows / Linux 为 Ctrl+F）在对话正文里查找，显示当前第几处与总数，
+  Enter / Shift+Enter 或按钮跳到下一处 / 上一处，Esc 关闭；高亮覆盖 Markdown、代码与工具输出。
+  Find in conversation: ⌘F (Ctrl+F on Windows and Linux) searches the rendered chat, shows the
+  current match and total, steps with Enter / Shift+Enter or the arrow buttons, and closes with
+  Escape. Highlights cover Markdown, code and tool output.
+
 - 新增一组桌面快捷键：⌘L 聚焦输入框、⌘B 收起或展开侧栏、⌘J 收起或展开工作台、⌘⇧[ / ⌘⇧]
   切换上一个或下一个会话，以及 ⌘+ / ⌘- / ⌘0 缩放界面；Windows / Linux 使用 Ctrl。帮助面板同步列出。
   Adds desktop shortcuts: ⌘L focuses the composer, ⌘B toggles the sidebar, ⌘J toggles the
