@@ -427,6 +427,7 @@ function ContextUsage({
   tokens,
   open,
   onOpenChange,
+  returnFocus,
 }: {
   readonly sessionId: string
   readonly model: ModelRef | undefined
@@ -434,6 +435,8 @@ function ContextUsage({
   /** 由 `/context` 指令与圆环按钮共用，状态由输入框管理。 */
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
+  /** 关闭时把焦点还给这里（通常是输入框）；省略时交给 Radix 还到触发按钮。 */
+  readonly returnFocus?: (() => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const providers = useSessionStore((s) => s.settings?.providers)
@@ -459,6 +462,7 @@ function ContextUsage({
   const breakdown = contextBreakdown(snapshot)
   const notFound = inspection?.error?.code === 'run.not_found'
   const error = inspection?.error === undefined || notFound ? undefined : inspection.error
+  const interactedOutside = useRef(false)
 
   // 无论从圆环还是 `/context` 打开，都在展开时按需读取快照。
   useEffect(() => {
@@ -466,7 +470,13 @@ function ContextUsage({
   }, [open, inspectRun, sessionId])
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) interactedOutside.current = false
+        onOpenChange(next)
+      }}
+    >
       <Tooltip content={label}>
         <PopoverTrigger asChild>
           <button
@@ -494,7 +504,17 @@ function ContextUsage({
           </button>
         </PopoverTrigger>
       </Tooltip>
-      <PopoverContent aria-label={t('composer.context.breakdown')}>
+      <PopoverContent
+        aria-label={t('composer.context.breakdown')}
+        onInteractOutside={() => {
+          interactedOutside.current = true
+        }}
+        onCloseAutoFocus={(event) => {
+          if (returnFocus === undefined || interactedOutside.current) return
+          event.preventDefault()
+          returnFocus()
+        }}
+      >
         <div className="flex flex-col gap-3">
           <PopoverTitle>{t('composer.context.breakdown')}</PopoverTitle>
           <section className="rounded-item bg-sunk px-2.5 py-2">
@@ -1552,6 +1572,7 @@ export function Composer({
                 tokens={contextTokens}
                 open={contextOpen}
                 onOpenChange={setContextOpen}
+                returnFocus={() => textarea.current?.focus()}
               />
               {active ? (
                 <button

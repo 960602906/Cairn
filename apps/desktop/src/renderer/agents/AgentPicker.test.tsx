@@ -17,7 +17,10 @@ import {
   type CurrentTeam,
 } from './AgentPicker.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
 
 const agent = (agentId: string, name: string, extra: Partial<AgentSummary> = {}): AgentSummary => ({
   agentId,
@@ -262,6 +265,17 @@ describe('AgentPicker', () => {
     expect(document.activeElement).toBe(trigger())
   })
 
+  it('keeps the highlighted agent in view while navigating with the keyboard', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    const { trigger } = setup()
+    await userEvent.click(trigger())
+    scrollIntoView.mockClear()
+    await userEvent.type(screen.getByRole('combobox', { name: '搜索 Agent' }), '{ArrowDown}')
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(options()[1])
+  })
+
   it('closes on Escape and returns focus to the trigger', async () => {
     const { trigger } = setup()
     await userEvent.click(trigger())
@@ -288,6 +302,20 @@ describe('AgentPicker', () => {
     await userEvent.click(screen.getByRole('button', { name: /^切换 Agent：/ }))
     fireEvent.mouseDown(document.body)
     expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('resets the search when closed by clicking outside', async () => {
+    const { trigger } = setup()
+    await userEvent.click(trigger())
+    await userEvent.type(screen.getByRole('combobox', { name: '搜索 Agent' }), '审查')
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    await userEvent.click(trigger())
+    expect((screen.getByRole('combobox', { name: '搜索 Agent' }) as HTMLInputElement).value).toBe(
+      '',
+    )
+    expect(options()).toHaveLength(3)
   })
 
   it('opens with Ctrl+. and does not open while running', async () => {
