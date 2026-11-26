@@ -2,7 +2,7 @@
  * `/` 指令面板的列表部分：会话输入框与新对话页共用（对齐两者的输入体验）。
  * 只负责渲染，键盘与执行逻辑在调用方。
  */
-import { Fragment } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AvailableComposerCommand } from './composer-shared.js'
 import { cn } from './ui/index.js'
@@ -26,8 +26,17 @@ export function ComposerCommandList({
   onHover,
 }: ComposerCommandListProps) {
   const { t } = useTranslation('session')
+  const listRef = useRef<HTMLDivElement>(null)
+  const activeId = commands[activeIndex]?.id
+  // 键盘上下选择时让当前项保持在可视范围内；测试环境没有 scrollIntoView 时跳过。
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: 'nearest' })
+  }, [activeIndex, activeId, commands.length])
   return (
     <div
+      ref={listRef}
       id={COMMAND_LIST_ID}
       role="listbox"
       aria-label={t('composer.command.label')}

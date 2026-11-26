@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
 import { createSessionView, reduceSessionEvents } from '@cairn/core'
-import type { EventEnvelope, ProviderConfig } from '@cairn/protocol'
+import type { EventEnvelope, ProviderConfig, SessionStatus } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
 import {
   Composer,
@@ -265,6 +265,7 @@ describe('Composer /goal', () => {
       clearGoal?: (sessionId: string) => Promise<unknown>
     } = {},
     onOpenPanel?: ((panel: string) => void) | undefined,
+    status: SessionStatus = 'idle',
   ) {
     const setGoal = goalActions.setGoal ?? vi.fn(async () => ({ ok: true }))
     const pauseGoal = goalActions.pauseGoal ?? vi.fn(async () => ({ ok: true }))
@@ -299,7 +300,7 @@ describe('Composer /goal', () => {
           <SessionStoreProvider store={store}>
             <Composer
               sessionId="s1"
-              status="idle"
+              status={status}
               run={undefined}
               agent={undefined}
               model={mainModel}
@@ -326,6 +327,23 @@ describe('Composer /goal', () => {
     expect(document.activeElement).not.toBe(textarea)
     window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))
     expect(document.activeElement).toBe(textarea)
+  })
+
+  it('returns focus to the input after sending with the button', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    const textarea = input()
+    await user.type(textarea, '发出去')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(document.activeElement).toBe(textarea))
+  })
+
+  it('returns focus to the input after stopping', async () => {
+    const user = userEvent.setup()
+    renderComposer(createSessionView('s1'), {}, undefined, 'running')
+    const textarea = input()
+    await user.click(screen.getByRole('button', { name: '停止' }))
+    await waitFor(() => expect(document.activeElement).toBe(textarea))
   })
 
   it('starts a goal and clears the draft on success', async () => {

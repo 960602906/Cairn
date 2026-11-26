@@ -114,6 +114,12 @@
 
 ### Changed
 
+- 用鼠标点发送或停止后，焦点会回到输入框，接着打字不用再点一下；用键盘浏览 `/` 指令、`@` 候选
+  与搜索会话的结果时，当前项会自动滚入可视范围。
+  After clicking send or stop, focus returns to the composer so typing can continue immediately.
+  When browsing `/` commands, `@` mentions or session search results with the keyboard, the
+  active item now scrolls into view.
+
 - 输入框的权限模式与计划模式合成一个下拉：触发按钮显示当前权限，计划模式开启时追加「· 计划」；
   点开后上半部分选权限，下半部分切换计划模式。工具栏从三个控件减为两个，`/plan`、快捷键和
   `/permissions` 的行为不变。

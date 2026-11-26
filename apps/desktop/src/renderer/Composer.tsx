@@ -855,6 +855,18 @@ export function Composer({
     })
   }
 
+  /**
+   * 发送 / 停止后把焦点还给输入框，接着打字不用再点一下。
+   * 如果用户已经点到输入框外面（侧栏、设置等），不把焦点抢回来。
+   */
+  const restoreComposerFocus = () => {
+    const active = document.activeElement
+    if (active !== null && active !== document.body && root.current?.contains(active) !== true) {
+      return
+    }
+    textarea.current?.focus()
+  }
+
   const send = async () => {
     if (!canSend) return
     const draft = text
@@ -870,6 +882,7 @@ export function Composer({
     // 计划模式只对这一轮生效，发出后立即退出，避免后续消息仍被当作只读计划拦截。
     if (sent) setPlanMode(false)
     if (!sent) setText((current) => (current === '' ? draft : current))
+    restoreComposerFocus()
   }
 
   const runCommand = async (command: AvailableCommand, args = '') => {
@@ -1165,6 +1178,7 @@ export function Composer({
     setAborting(true)
     await abort()
     setAborting(false)
+    restoreComposerFocus()
   }
 
   // 运行中按 Esc 停止（对话框或菜单打开时由它们处理 Esc）

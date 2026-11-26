@@ -3068,6 +3068,7 @@ describe('Composer (M2-04)', () => {
     await waitFor(() => expect(screen.getByLabelText('输入消息')).toBeTruthy())
   })
 
+  // 这个用例连续执行多条指令，全量并行时偶尔超过默认的 5 秒。
   it('switches agent and permission mode from commands', async () => {
     const agents = [
       {
@@ -3136,7 +3137,7 @@ describe('Composer (M2-04)', () => {
     // 计划模式并进了同一个菜单，`/permissions` 打开后也能直接切换。
     expect(screen.getByRole('menuitem', { name: /计划模式/ })).toBeTruthy()
     await userEvent.keyboard('{Escape}')
-  })
+  }, 15_000)
 
   it('reports a failed agent or permission switch', async () => {
     const agents = [
