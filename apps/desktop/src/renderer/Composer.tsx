@@ -181,11 +181,28 @@ export function ModeMenu({
   const Icon = PERMISSION_ICONS[mode]
   const modeLabel = t(`composer.permission.${mode}`)
   const interactedOutside = useRef(false)
+  const currentItem = useRef<HTMLDivElement>(null)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isOpen = open ?? internalOpen
+  // 打开时聚焦当前权限模式：直接按 Enter 不会换成列表第一项。
+  useEffect(() => {
+    if (!isOpen) return
+    const timer = window.setTimeout(() => {
+      const node = currentItem.current
+      if (node === null) return
+      node.focus({ preventScroll: true })
+      if (typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ block: 'nearest' })
+      }
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [isOpen])
   return (
     <DropdownMenu
-      open={open}
+      open={isOpen}
       onOpenChange={(next) => {
         if (next) interactedOutside.current = false
+        setInternalOpen(next)
         onOpenChange?.(next)
       }}
     >
@@ -230,8 +247,11 @@ export function ModeMenu({
           return (
             <DropdownMenuItem
               key={option}
+              ref={option === mode ? currentItem : undefined}
               className="h-auto items-start py-1.5"
-              onSelect={() => void updateSettings({ permissionMode: option })}
+              onSelect={() => {
+                if (option !== mode) void updateSettings({ permissionMode: option })
+              }}
             >
               <OptionIcon className="mt-0.5" />
               <span className="flex flex-1 flex-col">

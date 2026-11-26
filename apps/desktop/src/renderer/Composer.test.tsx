@@ -8,7 +8,7 @@ import { createI18n } from '@cairn/i18n'
 import { createSessionView, reduceSessionEvents } from '@cairn/core'
 import type { EventEnvelope, ProviderConfig, SessionStatus } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
-import { Composer, ModelPicker } from './Composer.js'
+import { Composer, ModeMenu, ModelPicker } from './Composer.js'
 import { COMPOSER_FOCUS_EVENT } from './layout/shortcuts.js'
 import {
   enabledModelChoices,
@@ -254,6 +254,30 @@ describe('Composer model helpers', () => {
     const trigger = screen.getByRole('button', { name: '模型：未配置模型' }) as HTMLButtonElement
     expect(trigger.disabled).toBe(true)
     expect(trigger.getAttribute('title')).toBeNull()
+  })
+})
+
+describe('ModeMenu', () => {
+  it('focuses the current permission mode when the menu opens', async () => {
+    const user = userEvent.setup()
+    const updateSettings = vi.fn(async () => ({ permissionMode: 'ask' as const }))
+    const store = createStore<Record<string, unknown>>(() => ({
+      settings: { providers, permissionMode: 'ask' },
+      updateSettings,
+    })) as unknown as SessionStore
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreProvider store={store}>
+          <ModeMenu planMode={false} onTogglePlan={() => {}} />
+        </SessionStoreProvider>
+      </I18nextProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: '权限模式：询问' }))
+    const current = await screen.findByRole('menuitem', { name: /^询问/ })
+    await waitFor(() => expect(document.activeElement).toBe(current))
+    // 直接按 Enter 保持当前权限模式，不会换成列表第一项。
+    await user.keyboard('{Enter}')
+    expect(updateSettings).not.toHaveBeenCalled()
   })
 })
 
