@@ -114,6 +114,10 @@
 
 ### Changed
 
+- 从搜索、快捷键或新建会话切换过去时，侧栏会把当前会话行滚进可见区域。
+  When switching sessions from search, keyboard shortcuts, or a newly created session, the
+  sidebar scrolls the active session row into view.
+
 - 从工作台首页卡片打开文件树或后台任务后，焦点落到刚打开的标签上。
   Opening the file tree or background tasks from a workbench home card now moves focus to the
   newly opened tab.

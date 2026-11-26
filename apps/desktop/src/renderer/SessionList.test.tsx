@@ -9,7 +9,10 @@ import { App } from './App.js'
 import { createSessionStore } from './session-store.js'
 import { formatSessionTime, groupSessions } from './SessionList.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
 
 const summary = (
   sessionId: string,
@@ -207,6 +210,22 @@ describe('SessionList', () => {
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s1'))
     previous()
     await waitFor(() => expect(store.getState().activeSessionId).toBe('s3'))
+  })
+
+  it('scrolls the active session row into view when selection changes', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    setup({
+      'session.list': () => ({
+        sessions: [summary('s1', '一'), summary('s2', '二')],
+      }),
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+    })
+    const items = await screen.findAllByRole('listitem')
+    scrollIntoView.mockClear()
+    await userEvent.click(sessionButton(items[1]!))
+    await waitFor(() => expect(scrollIntoView.mock.contexts).toContain(sessionButton(items[1]!)))
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
   })
 
   it('collapses a project group and swaps its folder icon', async () => {
