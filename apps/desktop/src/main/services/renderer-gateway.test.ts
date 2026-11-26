@@ -219,6 +219,7 @@ function setup(
     resumeGoal: vi.fn(() => ({})),
     clearGoal: vi.fn(() => ({})),
     setAgent: vi.fn(() => ({})),
+    setTeam: vi.fn(() => ({})),
     delegationTargets: vi.fn(() => ({ enabled: true, agentIds: ['user.review'] })),
   }
   projects = {
@@ -1387,6 +1388,17 @@ describe('createRendererGateway: commands and lifecycle', () => {
       sessionId: 's1',
       agent: { id: 'user.x', version: 1 },
     })
+    await expect(
+      client.request('session.setTeam', { sessionId: 's1', teamId: 'user.team-1' }),
+    ).resolves.toEqual({})
+    expect(commands.setTeam).toHaveBeenCalledWith({
+      sessionId: 's1',
+      teamId: 'user.team-1',
+    })
+    await expect(
+      client.request('session.setTeam', { sessionId: 's1', teamId: null }),
+    ).resolves.toEqual({})
+    expect(commands.setTeam).toHaveBeenLastCalledWith({ sessionId: 's1', teamId: null })
   })
 
   it('delegates run.inspect requests to the inspect service (M4-04)', async () => {

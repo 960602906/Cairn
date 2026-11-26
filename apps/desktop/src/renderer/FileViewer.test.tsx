@@ -57,6 +57,7 @@ const view: SessionView = {
     title: '预览',
     model: undefined,
     thinkingLevel: undefined,
+    team: undefined,
     createdAt: 1,
   },
 }

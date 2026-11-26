@@ -138,6 +138,9 @@ describe('agent actions in session store', () => {
         if (method === 'session.setAgent') {
           return {}
         }
+        if (method === 'session.setTeam') {
+          return {}
+        }
         if (method === 'diagnostics.summary') {
           return { appVersion: '1.0.0', exportItems: ['manifest.json'] }
         }
@@ -209,6 +212,19 @@ describe('agent actions in session store', () => {
       .getState()
       .setSessionAgent('session-1', { id: 'agent.custom', version: 1 })
     expect(setOk).toBe(true)
+    expect(store.getState().recentAgents).toContain('agent.custom')
+
+    // 选用 / 取消团队模板走 session.setTeam，不改变最近使用的 Agent。
+    expect(await store.getState().setSessionTeam('session-1', 'user.team-1')).toBe(true)
+    expect(await store.getState().setSessionTeam('session-1', null)).toBe(true)
+    expect(calls).toContainEqual({
+      method: 'session.setTeam',
+      params: { sessionId: 'session-1', teamId: 'user.team-1' },
+    })
+    expect(calls).toContainEqual({
+      method: 'session.setTeam',
+      params: { sessionId: 'session-1', teamId: null },
+    })
     expect(store.getState().recentAgents).toContain('agent.custom')
 
     // Diagnostics actions
@@ -2683,5 +2699,57 @@ describe('首屏请求合并（single-flight）', () => {
     await flush()
     expect(calls.filter(([method]) => method === 'activity.list')).toHaveLength(2)
     expect(store.getState().activityLoading).toBe(false)
+  })
+})
+
+describe('team selection in session store', () => {
+  const teams = [
+    {
+      teamId: 'user.team-1',
+      name: { 'zh-CN': '日常协作' },
+      description: {},
+      pattern: 'delegate' as const,
+      coordinator: 'builtin.coder',
+      memberCount: 2,
+      archived: false,
+      status: 'published' as const,
+      version: 1,
+      hasDraft: false,
+      updatedAt: 1,
+    },
+  ]
+
+  it('refreshes teams for the picker', async () => {
+    const { api, calls } = fakeApi({ 'team.list': () => ({ teams }) })
+    const store = createSessionStore(api)
+    expect(await store.getState().refreshTeams()).toEqual(teams)
+    expect(store.getState().teams).toEqual(teams)
+    expect(calls).toContainEqual(['team.list', {}])
+
+    expect(await store.getState().refreshTeams(true)).toEqual(teams)
+    expect(calls).toContainEqual(['team.list', { includeArchived: true }])
+  })
+
+  it('keeps the previous teams when refreshing fails', async () => {
+    const { api } = fakeApi({
+      'team.list': () => {
+        throw new RpcError('storage.error', {})
+      },
+    })
+    const store = createSessionStore(api)
+    const previous = store.getState().teams
+    expect(await store.getState().refreshTeams()).toBeUndefined()
+    expect(store.getState().teams).toBe(previous)
+  })
+
+  it('reports failure when the main process rejects the team change', async () => {
+    const { api, calls } = fakeApi({
+      'session.setTeam': () => {
+        throw new RpcError('run.busy', { sessionId: 's1' })
+      },
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().setSessionTeam('s1', 'user.team-1')).toBe(false)
+    expect(calls).toContainEqual(['session.setTeam', { sessionId: 's1', teamId: 'user.team-1' }])
   })
 })

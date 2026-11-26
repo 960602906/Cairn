@@ -177,6 +177,8 @@ export interface SessionState {
   readonly error: ErrorInfo | undefined
   /** 已保存的 Agent（M3-12）：内置编程助手加上用户与导入的 Agent。 */
   readonly agents: readonly AgentSummary[]
+  /** 团队模板（M7-09）：输入框选择器用；应用启动时读取，设置页改动后刷新。 */
+  readonly teams: readonly AgentTeamSummary[]
   /** 最近在会话里选用过的 Agent，最近的在前。 */
   readonly recentAgents: readonly string[]
   /** 运行检查器的按需结果，键为 `inspectionKey(sessionId, runId)`。 */
@@ -405,6 +407,8 @@ export interface SessionActions {
     status?: 'draft' | 'published'
     query?: string
   }): Promise<AgentSummary[] | undefined>
+  /** 重新读取团队模板（M7-09），供输入框选择器使用；失败时返回 undefined。 */
+  refreshTeams(includeArchived?: boolean): Promise<AgentTeamSummary[] | undefined>
   /** 一份 Agent 的当前状态（草稿优先）；失败时返回 undefined。 */
   getAgent(agentId: string, version?: number): Promise<AgentDetail | undefined>
   /**
@@ -496,6 +500,8 @@ export interface SessionActions {
   showDiagnosticsInFolder(path: string): Promise<boolean>
   /** 在会话中切换 Agent（新建一个运行）；运行中会失败。 */
   setSessionAgent(sessionId: string, agent: AgentDefinitionRef): Promise<boolean>
+  /** 在会话中选用团队模板（传 null 取消选用）；运行中会失败。 */
+  setSessionTeam(sessionId: string, teamId: string | null): Promise<boolean>
   /** 按需读取运行检查器；`runId` 省略时读取会话当前根运行。 */
   inspectRun(sessionId: string, runId?: string): Promise<RunInspectResult | undefined>
   /** 重新读取活动中心快照（M4-07）。 */
@@ -944,6 +950,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       updateStatus: undefined,
       error: undefined,
       agents: [],
+      teams: [],
       recentAgents: readRecentAgents(),
       inspections: {},
       activity: undefined,
@@ -1612,6 +1619,15 @@ export function createSessionStore(api: MainApi): SessionStore {
         return result.agents
       },
 
+      async refreshTeams(includeArchived = false) {
+        const result = await run(() =>
+          api.request('team.list', includeArchived ? { includeArchived: true } : {}),
+        )
+        if (!result) return undefined
+        set({ teams: result.teams })
+        return result.teams
+      },
+
       getAgent: (agentId, version) =>
         run(() =>
           api.request('agent.get', version === undefined ? { agentId } : { agentId, version }),
@@ -1682,6 +1698,11 @@ export function createSessionStore(api: MainApi): SessionStore {
         }))
         writeRecentAgents(get().recentAgents)
         return true
+      },
+
+      async setSessionTeam(sessionId, teamId) {
+        const done = await run(() => api.request('session.setTeam', { sessionId, teamId }))
+        return done !== undefined
       },
 
       async inspectRun(sessionId, runId) {

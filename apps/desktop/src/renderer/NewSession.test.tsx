@@ -51,6 +51,21 @@ const agentFixture = (agentId: string, name: string, extra: object = {}) => ({
   ...extra,
 })
 
+const teamFixture = (teamId: string, name: string, extra: object = {}) => ({
+  teamId,
+  name: { 'zh-CN': name },
+  description: {},
+  pattern: 'delegate',
+  coordinator: 'builtin.coder',
+  memberCount: 2,
+  archived: false,
+  status: 'published',
+  version: 1,
+  hasDraft: false,
+  updatedAt: 1,
+  ...extra,
+})
+
 function setup(
   settings: object = {},
   sessionCreate: unknown = { sessionId: 's1' },
@@ -591,6 +606,111 @@ describe('NewSession controls', () => {
         ['session.create', 'session.setAgent', 'session.prompt'].includes(method as string),
       )
     expect(calls).toEqual(['session.create', 'session.setAgent', 'session.prompt'])
+  })
+
+  it('applies the selected team when the session is created', async () => {
+    const agents = [
+      agentFixture('builtin.coder', '编程助手'),
+      agentFixture('builtin.reviewer', '代码审查员'),
+    ]
+    const teams = [
+      teamFixture('user.team-1', '日常协作'),
+      teamFixture('user.team-draft', '草稿团队', { status: 'draft', version: 0 }),
+    ]
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      { skills: [] },
+      {
+        'agent.list': () => ({ agents }),
+        'team.list': () => ({ teams }),
+      },
+    )
+    const user = userEvent.setup()
+    const input = await screen.findByPlaceholderText('有什么可以帮你？')
+
+    await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    const list = await screen.findByRole('listbox', { name: '选择 Agent 或团队' })
+    // 没有发布版本的团队不能选。
+    expect(within(list).queryByText('草稿团队')).toBeNull()
+    await user.click(within(list).getByText('日常协作'))
+    expect(screen.getByRole('button', { name: '切换团队：日常协作' })).toBeTruthy()
+
+    await user.type(input, '做点事')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.setTeam', {
+        sessionId: 's1',
+        teamId: 'user.team-1',
+      }),
+    )
+    expect(request).not.toHaveBeenCalledWith('session.setAgent', expect.anything())
+    const calls = request.mock.calls
+      .map(([method]) => method)
+      .filter((method) =>
+        ['session.create', 'session.setTeam', 'session.setAgent', 'session.prompt'].includes(
+          method as string,
+        ),
+      )
+    expect(calls).toEqual(['session.create', 'session.setTeam', 'session.prompt'])
+  })
+
+  it('uses the coordinator fixed model for a selected team', async () => {
+    const agents = [
+      agentFixture('builtin.coder', '编程助手'),
+      agentFixture('user.fixed', '固定模型助手', {
+        source: 'user',
+        modelMode: 'fixed',
+        model: { providerId: 'fake', modelId: 'strong' },
+      }),
+    ]
+    const teams = [teamFixture('user.team-1', '日常协作', { coordinator: 'user.fixed' })]
+    setup({}, undefined, undefined, {
+      'agent.list': () => ({ agents }),
+      'team.list': () => ({ teams }),
+    })
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    await user.click(await screen.findByRole('option', { name: /日常协作/ }))
+    expect(screen.getByRole('button', { name: '切换团队：日常协作' })).toBeTruthy()
+    const model = screen.getByRole('button', { name: '模型：测试供应商 · 强' })
+    expect((model as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('remembers the selected team per workspace', async () => {
+    const projects = [
+      { projectId: 'p1', name: 'work', path: '/work', createdAt: 1 },
+      { projectId: 'p2', name: 'side', path: '/side', createdAt: 2 },
+    ]
+    const teams = [teamFixture('user.team-1', '日常协作')]
+    const agents = [agentFixture('builtin.coder', '编程助手')]
+    const handlers = {
+      'project.list': () => ({ projects }),
+      'agent.list': () => ({ agents }),
+      'team.list': () => ({ teams }),
+    }
+    setup({}, undefined, undefined, handlers)
+    const user = userEvent.setup()
+    expect(await screen.findByRole('button', { name: '工作空间：work' })).toBeTruthy()
+
+    await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
+    await user.click(await screen.findByRole('option', { name: /日常协作/ }))
+    expect(screen.getByRole('button', { name: '切换团队：日常协作' })).toBeTruthy()
+
+    // 另一个工作空间仍用默认 Agent。
+    await user.click(screen.getByRole('button', { name: '工作空间：work' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'side' }))
+    expect(await screen.findByRole('button', { name: '切换 Agent：编程助手' })).toBeTruthy()
+
+    // 切回 work 时恢复它自己的团队。
+    await user.click(screen.getByRole('button', { name: '工作空间：side' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'work' }))
+    expect(await screen.findByRole('button', { name: '切换团队：日常协作' })).toBeTruthy()
+
+    // 重新进入页面：回到上次的工作空间，团队也在。
+    cleanup()
+    setup({}, undefined, undefined, handlers)
+    expect(await screen.findByRole('button', { name: '切换团队：日常协作' })).toBeTruthy()
   })
 
   it('opens Agents settings from the new-session picker', async () => {

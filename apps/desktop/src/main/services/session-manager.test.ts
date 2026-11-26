@@ -1385,6 +1385,195 @@ describe('agent switching (M3-11)', () => {
   })
 })
 
+describe('team binding (M7-09)', () => {
+  const coordinator: AgentDefinition = {
+    id: 'user.coordinator',
+    version: 2,
+    source: 'user',
+    status: 'published',
+    name: { 'en-US': 'Coordinator' },
+    description: { 'en-US': 'Runs the team' },
+    instructions: 'Coordinate.',
+    model: { mode: 'fixed', primary: { providerId: 'openai', modelId: 'gpt' } },
+    tools: { allow: ['read_file'] },
+    skills: { allow: [] },
+    permissions: 'ask',
+    limits: { maxStepsPerTurn: 4 },
+    context: { includeProjectInstructions: true, compaction: 'auto' },
+    memory: { scopes: ['session'], write: 'never' },
+    createdAt: 1,
+    updatedAt: 1,
+    schemaVersion: 1,
+  }
+  const binding = {
+    teamId: 'user.team-1',
+    name: { 'en-US': 'Review team' },
+    version: 1,
+    pattern: 'review-loop' as const,
+  }
+  const resolution = { team: binding, coordinator: { id: coordinator.id, version: 2 } }
+  const secondBinding = { ...binding, teamId: 'user.team-2', name: { 'en-US': 'Second team' } }
+  const secondResolution = { team: secondBinding, coordinator: resolution.coordinator }
+  const options = (): Partial<SessionManagerOptions> => ({
+    resolveAgent: (agent) => (agent.id === coordinator.id ? coordinator : undefined),
+    resolveTeam: (teamId) =>
+      teamId === binding.teamId
+        ? resolution
+        : teamId === secondBinding.teamId
+          ? secondResolution
+          : undefined,
+  })
+
+  it('binds a published team and starts a coordinator run', async () => {
+    const { supervisor } = fakeSupervisor()
+    const { manager } = setup(supervisor, options())
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    const before = published.length
+
+    await manager.setTeam({ sessionId, teamId: binding.teamId })
+    expect(published.slice(before)).toMatchObject([
+      { type: 'session.team.changed', payload: { team: binding } },
+      {
+        type: 'run.created',
+        payload: {
+          agent: { id: 'user.coordinator', version: 2 },
+          model: { providerId: 'openai', modelId: 'gpt' },
+          limits: { maxStepsPerTurn: 4 },
+        },
+      },
+    ])
+
+    // 同一个模板的同一个版本已经在用：不重复发事件。
+    const settled = published.length
+    await manager.setTeam({ sessionId, teamId: binding.teamId })
+    expect(published).toHaveLength(settled)
+
+    // 换成另一个模板但主控相同：只更新绑定，不新建运行。
+    const runs = published.filter((event) => event.type === 'run.created').length
+    await manager.setTeam({ sessionId, teamId: secondBinding.teamId })
+    expect(published.at(-1)).toMatchObject({
+      type: 'session.team.changed',
+      payload: { team: secondBinding },
+    })
+    expect(published.filter((event) => event.type === 'run.created')).toHaveLength(runs)
+
+    // null 取消绑定，当前 Agent 保持不变；没有绑定时不再发事件。
+    await manager.setTeam({ sessionId, teamId: null })
+    expect(published.at(-1)).toMatchObject({ type: 'session.team.changed', payload: {} })
+    const cleared = published.length
+    await manager.setTeam({ sessionId, teamId: null })
+    expect(published).toHaveLength(cleared)
+  })
+
+  it('leaves the team when another agent is chosen', async () => {
+    const { supervisor } = fakeSupervisor()
+    const { manager } = setup(supervisor, options())
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    await manager.setTeam({ sessionId, teamId: binding.teamId })
+    await manager.setAgent({ sessionId, agent: { id: coordinator.id, version: 2 } })
+    expect(published.slice(-2)).toMatchObject([
+      { type: 'run.created', payload: { agent: { id: 'user.coordinator', version: 2 } } },
+      { type: 'session.team.changed', payload: {} },
+    ])
+  })
+
+  it('stops an idle host so clearing the team takes effect next turn', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, options())
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    await manager.setTeam({ sessionId, teamId: binding.teamId })
+    manager.prompt({ sessionId, content: text('hi') })
+    await flush()
+    const host = hosts[0]!
+    hostEmits(
+      sessionId,
+      host.runId,
+      ['turn.started', {}, { turnId: 't1' }],
+      ['run.state.changed', { from: 'idle', to: 'thinking' }],
+    )
+    finishTurn(sessionId, host.runId, 't1')
+
+    await manager.setTeam({ sessionId, teamId: null })
+    expect(host.stop).toHaveBeenCalled()
+  })
+
+  it('restarts idle hosts only for the published team they are bound to', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, options())
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    await manager.setTeam({ sessionId, teamId: binding.teamId })
+    manager.prompt({ sessionId, content: text('hi') })
+    await flush()
+    const host = hosts[0]!
+    hostEmits(
+      sessionId,
+      host.runId,
+      ['turn.started', {}, { turnId: 't1' }],
+      ['run.state.changed', { from: 'idle', to: 'thinking' }],
+    )
+    finishTurn(sessionId, host.runId, 't1')
+
+    manager.refreshTeam('user.other')
+    expect(host.stop).not.toHaveBeenCalled()
+    manager.refreshTeam(binding.teamId)
+    expect(host.stop).toHaveBeenCalled()
+  })
+
+  it('rejects unavailable teams, trial sessions and busy sessions', async () => {
+    const { supervisor } = fakeSupervisor()
+    const { manager } = setup(supervisor, options())
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    await expect(manager.setTeam({ sessionId, teamId: 'user.missing' })).rejects.toMatchObject({
+      code: 'team.unavailable',
+    })
+
+    storage.sessions.create({
+      sessionId: 'trial-1',
+      projectId: storage.projects.list()[0]!.projectId,
+      workspacePath: '/work',
+      title: '',
+      kind: 'trial',
+      trialAgentId: coordinator.id,
+      trialDraftHash: 'hash',
+      trialTeamId: binding.teamId,
+    })
+    await expect(
+      manager.setTeam({ sessionId: 'trial-1', teamId: binding.teamId }),
+    ).rejects.toMatchObject({ code: 'team.unavailable' })
+
+    manager.prompt({ sessionId, content: text('hi') })
+    await expect(manager.setTeam({ sessionId, teamId: binding.teamId })).rejects.toMatchObject({
+      code: 'run.busy',
+    })
+  })
+
+  it('uses the team-merged definition for delegation targets', async () => {
+    const { supervisor } = fakeSupervisor()
+    const merged: AgentDefinition = {
+      ...coordinator,
+      delegation: {
+        enabled: true,
+        allowedAgents: ['builtin.explorer'],
+        maxDepth: 1,
+        maxChildrenPerTurn: 2,
+        maxParallel: 1,
+        childBudgetShare: 0.5,
+        defaultWorkspace: 'shared',
+        mergeReview: 'user',
+      },
+    }
+    const { manager } = setup(supervisor, {
+      ...options(),
+      resolveSessionAgent: () => merged,
+    })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    expect(manager.delegationTargets({ sessionId })).toEqual({
+      enabled: true,
+      agentIds: ['builtin.explorer'],
+    })
+  })
+})
+
 describe('trial sessions (M4-12)', () => {
   const draftDefinition = (): AgentDefinition => ({
     id: 'user.reviewer',

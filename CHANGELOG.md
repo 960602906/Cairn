@@ -7,6 +7,18 @@
 
 ### Added
 
+- 会话里可以直接使用团队模板：输入框的 Agent 选择器把已发布、未归档的模板排在单个 Agent
+  前面，选中后以主控 Agent 为根运行，之后每一轮都并入模板的委派覆盖与协作说明，发布的新
+  版本从下一轮起生效。运行中不能切换；草稿、未发布或主控不可用的模板会明确提示。改选单个
+  Agent 即离开团队，新对话页会按工作空间记住上次选的团队。
+  Team templates can be used directly in conversations: the composer's picker lists published,
+  unarchived templates above single agents. Choosing one runs the template's coordinator as the
+  root and merges the template's delegation overrides and collaboration brief into every later
+  turn; newly published versions take effect from the next turn. Switching is unavailable while
+  running, and drafts, unpublished templates or unavailable coordinators are rejected with a
+  clear message. Picking a single agent leaves the team, and the new-session page remembers the
+  last team per workspace.
+
 - 团队模板支持「复制为副本」：编辑器「⋯」菜单会用当前内容另存为新模板，名称追加「副本」，
   字段全部保留，原模板与版本历史不受影响。
   Duplicate a team template from the editor's "⋯" menu: the current content is saved as a new

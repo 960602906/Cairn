@@ -1449,6 +1449,7 @@ export function Composer({
             <AgentPicker
               sessionId={sessionId}
               agent={agent}
+              team={view?.info?.team}
               disabled={active}
               open={agentPickerOpen}
               onOpenChange={setAgentPickerOpen}

@@ -7,11 +7,13 @@ import {
   readNewSessionAgent,
   readNewSessionModel,
   readNewSessionProject,
+  readNewSessionTeam,
   sessionDraftKey,
   writeComposerDraft,
   writeNewSessionAgent,
   writeNewSessionModel,
   writeNewSessionProject,
+  writeNewSessionTeam,
 } from './composer-drafts.js'
 
 afterEach(() => {
@@ -90,6 +92,29 @@ describe('composer drafts', () => {
     expect(readNewSessionAgent('/agent-work')).toBeUndefined()
   })
 
+  it('remembers the new-session team per workspace and keeps it exclusive with an agent', () => {
+    expect(readNewSessionTeam('/team-work')).toBeUndefined()
+    writeNewSessionAgent('/team-work', 'builtin.reviewer')
+    writeNewSessionTeam('/team-work', 'user.team-1')
+    expect(readNewSessionTeam('/team-work')).toBe('user.team-1')
+    // 选中团队后不再记着旧的单个 Agent。
+    expect(readNewSessionAgent('/team-work')).toBeUndefined()
+    expect(readNewSessionTeam('/other')).toBeUndefined()
+    expect(readNewSessionTeam('')).toBeUndefined()
+
+    // 再选 Agent 就离开团队。
+    writeNewSessionAgent('/team-work', 'builtin.coder')
+    expect(readNewSessionTeam('/team-work')).toBeUndefined()
+    expect(readNewSessionAgent('/team-work')).toBe('builtin.coder')
+
+    // 还没有工作空间时不记团队；null 等同于清除。
+    writeNewSessionTeam('', 'user.team-1')
+    expect(localStorage.getItem('cairn.newSession.team:')).toBeNull()
+    writeNewSessionTeam('/team-work', 'user.team-1')
+    writeNewSessionTeam('/team-work', null)
+    expect(readNewSessionTeam('/team-work')).toBeUndefined()
+  })
+
   it('ignores broken model records', () => {
     localStorage.setItem('cairn.newSession.model:/work', 'oops')
     expect(readNewSessionModel('/work')).toBeUndefined()
@@ -109,9 +134,11 @@ describe('composer drafts', () => {
     expect(readNewSessionProject()).toBeUndefined()
     expect(readNewSessionModel('/work')).toBeUndefined()
     expect(readNewSessionAgent('/work')).toBeUndefined()
+    expect(readNewSessionTeam('/work')).toBeUndefined()
     expect(() => writeComposerDraft('x', { text: 'a', planMode: false })).not.toThrow()
     expect(() => writeNewSessionModel('/work', { providerId: 'p', modelId: 'm' })).not.toThrow()
     expect(() => writeNewSessionAgent('/work', 'builtin.coder')).not.toThrow()
+    expect(() => writeNewSessionTeam('/work', 'user.team-1')).not.toThrow()
     expect(() => writeNewSessionProject('/work')).not.toThrow()
     expect(() => clearComposerDraft('x')).not.toThrow()
   })

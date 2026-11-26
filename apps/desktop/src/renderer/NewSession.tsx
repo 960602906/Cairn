@@ -27,7 +27,7 @@ import {
   sameModel,
   PlanModeChip,
 } from './Composer.js'
-import { AgentPicker, availableAgents } from './agents/AgentPicker.js'
+import { AgentPicker, availableAgents, availableTeams } from './agents/AgentPicker.js'
 import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
 import {
   clearComposerDraft,
@@ -36,10 +36,12 @@ import {
   readNewSessionAgent,
   readNewSessionModel,
   readNewSessionProject,
+  readNewSessionTeam,
   writeComposerDraft,
   writeNewSessionAgent,
   writeNewSessionModel,
   writeNewSessionProject,
+  writeNewSessionTeam,
 } from './composer-drafts.js'
 import { ComposerHighlight } from './ComposerHighlight.js'
 import {
@@ -125,10 +127,12 @@ export function NewSession({
   const createSession = useSessionStore((s) => s.createSession)
   const setSessionModel = useSessionStore((s) => s.setSessionModel)
   const setSessionAgent = useSessionStore((s) => s.setSessionAgent)
+  const setSessionTeam = useSessionStore((s) => s.setSessionTeam)
   const sendPrompt = useSessionStore((s) => s.sendPrompt)
   const listSkills = useSessionStore((s) => s.listSkills)
   const projects = useSessionStore((s) => s.projects)
   const agents = useSessionStore((s) => s.agents) ?? []
+  const teams = useSessionStore((s) => s.teams) ?? []
   const delegationTargets = useSessionStore((s) => s.delegationTargets)
   const refreshProjects = useSessionStore((s) => s.refreshProjects)
   const openProject = useSessionStore((s) => s.openProject)
@@ -141,16 +145,20 @@ export function NewSession({
    */
   const [restored] = useState(() => {
     const path = initialProjectPath ?? readNewSessionProject() ?? projects[0]?.path ?? ''
+    const teamId = readNewSessionTeam(path)
     return {
       path,
       model: readNewSessionModel(path),
-      agentId: readNewSessionAgent(path),
+      // 团队与单个 Agent 只记一个：选中团队时忽略旧的 Agent。
+      teamId,
+      agentId: teamId === undefined ? readNewSessionAgent(path) : undefined,
       draft: readComposerDraft(NEW_SESSION_DRAFT_KEY),
     }
   })
   const [projectPath, setProjectPath] = useState(restored.path)
   const [selectedModel, setSelectedModel] = useState<ModelRef | undefined>(restored.model)
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(restored.agentId)
+  const [selectedTeamId, setSelectedTeamId] = useState<string | undefined>(restored.teamId)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [planMode, setPlanMode] = useState(restored.draft.planMode)
   const [text, setText] = useState(restored.draft.text)
@@ -220,8 +228,23 @@ export function NewSession({
     () => selectableAgents.find((agent) => agent.agentId === selectedAgentId),
     [selectableAgents, selectedAgentId],
   )
-  /** 固定模型的 Agent 由它决定模型，选择器显示该模型并禁用（与会话内一致）。 */
-  const fixedModel = selectedAgent?.modelMode === 'fixed' ? selectedAgent.model : undefined
+  // 团队模板由应用启动时读入；主控的固定模型要在发送前生效。
+  const selectableTeams = useMemo(() => availableTeams(teams), [teams])
+  // 记住的团队可能已经归档、删除或不再有已发布版本：找不到就回到单个 Agent。
+  const selectedTeam = useMemo(
+    () => selectableTeams.find((team) => team.teamId === selectedTeamId),
+    [selectableTeams, selectedTeamId],
+  )
+  /** 固定模型的 Agent 由它决定模型；选中团队时按主控 Agent 算。 */
+  const selectedDefinition = useMemo(
+    () =>
+      selectedTeam === undefined
+        ? selectedAgent
+        : agents.find((agent) => agent.agentId === selectedTeam.coordinator),
+    [agents, selectedAgent, selectedTeam],
+  )
+  const fixedModel =
+    selectedDefinition?.modelMode === 'fixed' ? selectedDefinition.model : undefined
   // 上次选的模型可能已被停用：校验不通过时退回设置里的默认模型（或第一个可用模型）。
   const model = fixedModel ?? resolveDefaultModel(providers, selectedModel ?? defaultModel)
   /** 欢迎页的建议提示词。 */
@@ -279,11 +302,13 @@ export function NewSession({
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
   }, [text])
 
-  /** 切换工作空间：模型与 Agent 也换成那个工作空间上次选的，并记住这次的工作空间。 */
+  /** 切换工作空间：模型、Agent 与团队也换成那个工作空间上次选的，并记住这次的工作空间。 */
   const changeProject = useCallback((path: string) => {
+    const teamId = readNewSessionTeam(path)
     setProjectPath(path)
     setSelectedModel(readNewSessionModel(path))
-    setSelectedAgentId(readNewSessionAgent(path))
+    setSelectedTeamId(teamId)
+    setSelectedAgentId(teamId === undefined ? readNewSessionAgent(path) : undefined)
     writeNewSessionProject(path)
   }, [])
 
@@ -397,10 +422,13 @@ export function NewSession({
       onCreatingChange?.(false)
       return
     }
-    // 新会话先按模型创建，再切换用户选的模型与 Agent，最后才发出第一轮。
+    // 新会话先按模型创建，再切换用户选的模型、Agent 或团队，最后才发出第一轮。
     if (!sameModel(model, defaultModel)) await setSessionModel(sessionId, model)
     // 默认 Agent 由主进程决定，不用再切；其余在第一次运行前应用，复用会话内的切换接口。
-    if (selectedAgent !== undefined && selectedAgent.agentId !== BUILTIN_CODER_ID) {
+    // 团队列表可能还没读回来：按记住的 id 交给主进程校验，选中团队时不再单独设 Agent。
+    if (selectedTeamId !== undefined) {
+      await setSessionTeam(sessionId, selectedTeamId)
+    } else if (selectedAgent !== undefined && selectedAgent.agentId !== BUILTIN_CODER_ID) {
       await setSessionAgent(sessionId, {
         id: selectedAgent.agentId,
         version: selectedAgent.version,
@@ -683,9 +711,16 @@ export function NewSession({
                     ? undefined
                     : { id: selectedAgent.agentId, version: selectedAgent.version }
                 }
+                team={selectedTeam}
                 onSelect={(next) => {
                   setSelectedAgentId(next.agentId)
+                  setSelectedTeamId(undefined)
                   writeNewSessionAgent(projectPath.trim(), next.agentId)
+                }}
+                onSelectTeam={(next) => {
+                  setSelectedTeamId(next.teamId)
+                  setSelectedAgentId(undefined)
+                  writeNewSessionTeam(projectPath.trim(), next.teamId)
                 }}
                 onManage={onOpenSettings === undefined ? undefined : () => onOpenSettings('agents')}
               />

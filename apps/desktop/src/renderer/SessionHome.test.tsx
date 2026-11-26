@@ -51,6 +51,7 @@ const view: SessionView = {
     title: '修复登录',
     model: undefined,
     thinkingLevel: undefined,
+    team: undefined,
     createdAt: 1,
   },
   brief: { content: '## 目标\n修复登录\n- 不要改 API', editedBy: 'user' as const },
@@ -143,6 +144,7 @@ describe('SessionHome', () => {
         title: '',
         model: undefined,
         thinkingLevel: undefined,
+        team: undefined,
         createdAt: 1,
       },
     }

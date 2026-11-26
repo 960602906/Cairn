@@ -95,6 +95,15 @@ export const AgentTeamSummary = z.object({
 })
 export type AgentTeamSummary = z.infer<typeof AgentTeamSummary>
 
+/** 普通会话绑定的团队模板：以这个已发布版本的主控为根运行，每一轮并入协作说明。 */
+export const SessionTeamBinding = z.object({
+  teamId: Id,
+  name: LocalizedText,
+  version: z.number().int().positive(),
+  pattern: TeamPattern,
+})
+export type SessionTeamBinding = z.infer<typeof SessionTeamBinding>
+
 /** 校验问题：`path` 指向字段，`code` 由界面翻译。 */
 export const TeamValidationIssue = z.object({
   path: z.string().min(1),

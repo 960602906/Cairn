@@ -30,6 +30,14 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   },
   'session.renamed': { title: '重命名' },
   'session.model.changed': { model },
+  'session.team.changed': {
+    team: {
+      teamId: 'user.team-1',
+      name: { 'zh-CN': '日常协作' },
+      version: 1,
+      pattern: 'delegate',
+    },
+  },
   'session.thinkingLevel.changed': { thinkingLevel: 'high' },
   'session.crashed': { error: { code: 'host.crashed' } },
   'session.archived': {},

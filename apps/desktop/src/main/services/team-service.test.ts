@@ -85,11 +85,15 @@ function setup() {
     }),
   }
   const elevated: string[] = []
+  const refreshed: string[] = []
   const service = createTeamService({
     storage,
     events,
     agents: agents as never,
-    sessions: { isBusy: (sessionId) => busy.has(sessionId) },
+    sessions: {
+      isBusy: (sessionId) => busy.has(sessionId),
+      refreshTeam: (teamId) => refreshed.push(teamId),
+    },
     trials: { markElevated: (sessionId) => elevated.push(sessionId) },
     createId: () => `${++counter}`,
     now: () => clock,
@@ -101,6 +105,7 @@ function setup() {
     service,
     busy,
     elevated,
+    refreshed,
     advance: () => {
       clock += 1
     },
@@ -137,7 +142,7 @@ describe('团队模板命令（M7-09）', () => {
   })
 
   it('发布校验通过的草稿，版本号自增并清掉草稿', () => {
-    const { service } = setup()
+    const { service, refreshed } = setup()
     const created = service.saveDraft({ definition: draft() })
     const published = service.publish({ teamId: created.teamId })
     expect(published.draft).toBeUndefined()
@@ -147,6 +152,8 @@ describe('团队模板命令（M7-09）', () => {
       pattern: 'review-loop',
       schemaVersion: 1,
     })
+    // 已绑定这个模板的会话要重建宿主，下一轮用新版本。
+    expect(refreshed).toEqual([created.teamId])
     service.saveDraft({
       definition: { ...draft({ description: { 'zh-CN': '第二版' } }), id: created.teamId },
     })
@@ -335,12 +342,12 @@ describe('团队模板命令（M7-09）', () => {
       definition: draft({ delegation: { maxChildrenPerTurn: 3 } }),
     })
     const started = service.trialStart({ teamId: created.teamId, projectPath })
-    const merged = service.applyTrial(started.sessionId, coordinator)
+    const merged = service.applySessionTeam(started.sessionId, coordinator)
     expect(merged.delegation).toMatchObject({ maxChildrenPerTurn: 3, enabled: true })
     expect(merged.instructions).toContain('# Team: 审查小组')
     expect(merged.instructions).toContain('review_loop')
     // 普通会话不受影响
-    expect(service.applyTrial('missing', coordinator)).toBe(coordinator)
+    expect(service.applySessionTeam('missing', coordinator)).toBe(coordinator)
   })
 
   it('模板发布后草稿清空，之前的试运行沿用主控定义', () => {
@@ -348,7 +355,106 @@ describe('团队模板命令（M7-09）', () => {
     const created = service.saveDraft({ definition: draft() })
     const started = service.trialStart({ teamId: created.teamId, projectPath })
     service.publish({ teamId: created.teamId })
-    expect(service.applyTrial(started.sessionId, coordinator)).toBe(coordinator)
+    expect(service.applySessionTeam(started.sessionId, coordinator)).toBe(coordinator)
+  })
+
+  it('普通会话选用已发布模板后，每轮并入最新已发布版本', () => {
+    const { storage, events, service } = setup()
+    storage.projects.create({ projectId: 'p1', name: 'Team', path: projectPath })
+    storage.sessions.create({
+      sessionId: 's1',
+      projectId: 'p1',
+      workspacePath: projectPath,
+      title: '',
+    })
+    const created = service.saveDraft({
+      definition: draft({ delegation: { maxChildrenPerTurn: 3 } }),
+    })
+    service.publish({ teamId: created.teamId })
+    // 还没有绑定：原样返回。
+    expect(service.applySessionTeam('s1', coordinator)).toBe(coordinator)
+    const bind = (teamId: string) =>
+      events.publish([
+        {
+          v: 1,
+          sessionId: 's1',
+          runId: 's1',
+          ts: 1,
+          type: 'session.team.changed',
+          payload: { team: { teamId, name: draft().name, version: 1, pattern: 'review-loop' } },
+        },
+      ])
+    bind(created.teamId)
+    const merged = service.applySessionTeam('s1', coordinator)
+    expect(merged.delegation).toMatchObject({ maxChildrenPerTurn: 3, enabled: true })
+    expect(merged.instructions).toContain('# Team: 审查小组')
+    // 之后发布的新版本从下一轮起生效，不需要重新绑定。
+    service.saveDraft({
+      definition: draft({ id: created.teamId, delegation: { maxChildrenPerTurn: 5 } }),
+    })
+    service.publish({ teamId: created.teamId })
+    expect(service.applySessionTeam('s1', coordinator).delegation).toMatchObject({
+      maxChildrenPerTurn: 5,
+    })
+    // 取消选用（省略 team）后回到主控定义。
+    events.publish([
+      { v: 1, sessionId: 's1', runId: 's1', ts: 2, type: 'session.team.changed', payload: {} },
+    ])
+    expect(service.applySessionTeam('s1', coordinator)).toBe(coordinator)
+  })
+
+  it('自动修复会话不并入团队说明', () => {
+    const { storage, events, service } = setup()
+    storage.projects.create({ projectId: 'p1', name: 'Team', path: projectPath })
+    storage.sessions.create({
+      sessionId: 's1',
+      projectId: 'p1',
+      workspacePath: projectPath,
+      title: '',
+      kind: 'auto-fix',
+    })
+    const created = service.saveDraft({ definition: draft() })
+    service.publish({ teamId: created.teamId })
+    events.publish([
+      {
+        v: 1,
+        sessionId: 's1',
+        runId: 's1',
+        ts: 1,
+        type: 'session.team.changed',
+        payload: {
+          team: { teamId: created.teamId, name: draft().name, version: 1, pattern: 'review-loop' },
+        },
+      },
+    ])
+    expect(service.applySessionTeam('s1', coordinator)).toBe(coordinator)
+  })
+
+  it('resolveTeam 只返回已发布、未归档且主控可用的模板', () => {
+    const { agents, service } = setup()
+    const created = service.saveDraft({ definition: draft() })
+    expect(service.resolveTeam(created.teamId)).toBeUndefined()
+    service.publish({ teamId: created.teamId })
+    expect(service.resolveTeam(created.teamId)).toEqual({
+      team: {
+        teamId: created.teamId,
+        name: draft().name,
+        version: 1,
+        pattern: 'review-loop',
+      },
+      coordinator: { id: coordinator.id, version: coordinator.version },
+    })
+    // 主控 Agent 找不到（例如之后被删除）时不能选用。
+    agents.get.mockImplementationOnce(() => {
+      throw new RpcError('agent.not_found', { agentId: coordinator.id })
+    })
+    expect(service.resolveTeam(created.teamId)).toBeUndefined()
+    // 归档后不再出现在选择器里；取消归档后恢复。
+    service.archive({ teamId: created.teamId })
+    expect(service.resolveTeam(created.teamId)).toBeUndefined()
+    service.unarchive({ teamId: created.teamId })
+    expect(service.resolveTeam(created.teamId)).toBeDefined()
+    expect(service.resolveTeam('missing')).toBeUndefined()
   })
 
   it('清理最旧试运行时跳过仍在运行的会话', () => {
@@ -397,7 +503,7 @@ describe('团队模板命令（M7-09）', () => {
       storage,
       events,
       agents: { get: () => undefined, trialDraft: () => ({}) } as never,
-      sessions: { isBusy: () => false },
+      sessions: { isBusy: () => false, refreshTeam: () => undefined },
       trials: { markElevated: () => undefined },
     })
     const detail = service.saveDraft({ definition: draft() })
