@@ -19,13 +19,8 @@ import {
 import { useTranslation } from 'react-i18next'
 import { BUILTIN_CODER_ID } from '@cairn/core'
 import type { ModelRef, SkillSummary } from '@cairn/protocol'
-import {
-  enabledModelChoices,
-  ModelPicker,
-  ModeMenu,
-  resolveDefaultModel,
-  sameModel,
-} from './Composer.js'
+import { ModelPicker, ModeMenu } from './Composer.js'
+import { enabledModelChoices, resolveDefaultModel, sameModel } from './model-labels.js'
 import { AgentPicker, availableAgents, availableTeams } from './agents/AgentPicker.js'
 import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
 import {

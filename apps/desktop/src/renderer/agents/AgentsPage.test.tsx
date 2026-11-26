@@ -122,6 +122,31 @@ describe('AgentsPage component', () => {
       on: () => () => {},
     }
     const store = createSessionStore(fakeApi as unknown as MainApi)
+    // 固定模型按设置里的显示名展示。
+    store.setState({
+      settings: {
+        locale: 'zh-CN',
+        providers: [
+          {
+            id: 'deepseek',
+            kind: 'openai',
+            displayName: 'DeepSeek',
+            baseUrl: 'https://api.deepseek.com',
+            models: [
+              {
+                id: 'deepseek-chat',
+                displayName: 'DeepSeek Chat',
+                contextWindow: 64_000,
+                maxOutputTokens: 8_000,
+                supportsTools: true,
+                supportsParallelToolCalls: true,
+                supportsReasoning: false,
+              },
+            ],
+          },
+        ],
+      },
+    })
     await store.getState().refreshAgents()
 
     render(
@@ -134,6 +159,7 @@ describe('AgentsPage component', () => {
 
     expect(screen.getByText('编程助手')).toBeDefined()
     expect(screen.getByText('代码审查员')).toBeDefined()
+    expect(screen.getByText('DeepSeek · DeepSeek Chat')).toBeDefined()
 
     // Click card opens editor
     fireEvent.click(screen.getByText('代码审查员'))

@@ -90,6 +90,28 @@ function wrap(
     pauseGoal,
     resumeGoal,
     clearGoal,
+    settings: {
+      locale: 'zh-CN',
+      providers: [
+        {
+          id: 'fake',
+          kind: 'openai',
+          displayName: '评测供应商',
+          baseUrl: 'https://example.com',
+          models: [
+            {
+              id: 'judge',
+              displayName: '判定模型',
+              contextWindow: 100_000,
+              maxOutputTokens: 8_000,
+              supportsTools: true,
+              supportsParallelToolCalls: true,
+              supportsReasoning: false,
+            },
+          ],
+        },
+      ],
+    },
   })) as unknown as SessionStore
   const rendered = render(
     <I18nextProvider i18n={i18n}>
@@ -138,6 +160,8 @@ describe('GoalPanel', () => {
     expect(screen.getByText('进行中')).toBeTruthy()
     expect(screen.getByText(/1 \/ 20 轮/)).toBeTruthy()
     expect(within(region).getByText('已达成')).toBeTruthy()
+    // 判定模型显示供应商与模型的名称，不露原始 id。
+    expect(within(region).getByText(/评测供应商 · 判定模型/)).toBeTruthy()
     expect(within(region).getByText('测试全部通过')).toBeTruthy()
     expect(within(region).getByText(/工具 · tool:t1/)).toBeTruthy()
     expect(within(region).getByText(/文件 · file:src\/a.ts/)).toBeTruthy()

@@ -7,15 +7,15 @@ import { createI18n } from '@cairn/i18n'
 import { createSessionView, reduceSessionEvents } from '@cairn/core'
 import type { EventEnvelope, ProviderConfig, SessionStatus } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
+import { Composer, ModelPicker } from './Composer.js'
+import { COMPOSER_FOCUS_EVENT } from './layout/shortcuts.js'
 import {
-  Composer,
   enabledModelChoices,
+  modelLabel,
   modelLabels,
-  ModelPicker,
   resolveDefaultModel,
   sameModel,
-} from './Composer.js'
-import { COMPOSER_FOCUS_EVENT } from './layout/shortcuts.js'
+} from './model-labels.js'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 import { TooltipProvider } from './ui/index.js'
@@ -75,6 +75,13 @@ describe('Composer model helpers', () => {
       full: '供应商一 · unknown',
     })
     expect(modelLabels(undefined, providers)).toEqual({ short: undefined, full: undefined })
+    // 面板里的全名在配置缺失时保留原始 id，不丢供应商信息。
+    expect(modelLabel(fast, providers)).toBe('供应商一 · fast')
+    expect(modelLabel(strong, providers)).toBe('供应商二 · 强')
+    expect(modelLabel({ providerId: 'p1', modelId: 'unknown' }, providers)).toBe(
+      '供应商一 · unknown',
+    )
+    expect(modelLabel({ providerId: 'missing', modelId: 'raw' }, providers)).toBe('missing · raw')
   })
 
   it('marks a fixed model', () => {
