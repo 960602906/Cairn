@@ -736,6 +736,9 @@ export function NewSession({
                   writeNewSessionTeam(projectPath.trim(), next.teamId)
                 }}
                 onManage={onOpenSettings === undefined ? undefined : () => onOpenSettings('agents')}
+                onManageTeams={
+                  onOpenSettings === undefined ? undefined : () => onOpenSettings('teams')
+                }
               />
               <PermissionMenu />
               <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />

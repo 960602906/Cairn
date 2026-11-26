@@ -134,12 +134,15 @@ describe('pickerTeams', () => {
 function setup({
   agents = [coder, explorer, reviewer, draft, archived],
   teams = [] as AgentTeamSummary[],
+  // `false` 表示模板列表还没读回来（store 里仍是 undefined），与“确实没有模板”区分开。
+  teamsLoaded = true,
   recent = [] as string[],
   // `null` 表示会话还没有运行（主进程 Default 是内置编程助手）。
   current = { id: 'builtin.coder', version: 1 } as { id: string; version: number } | null,
   team = undefined as CurrentTeam | undefined,
   disabled = false,
   onManage = undefined as (() => void) | undefined,
+  onManageTeams = undefined as (() => void) | undefined,
   onSelect = undefined as ((agent: AgentSummary) => void) | undefined,
   onSelectTeam = undefined as ((team: AgentTeamSummary) => void) | undefined,
 } = {}) {
@@ -152,7 +155,7 @@ function setup({
     on: () => () => undefined,
   } as unknown as MainApi
   const store = createSessionStore(api)
-  store.setState({ agents, teams, recentAgents: recent })
+  store.setState({ agents, teams: teamsLoaded ? teams : undefined, recentAgents: recent })
   render(
     <I18nextProvider i18n={createI18n('zh-CN')}>
       <SessionStoreProvider store={store}>
@@ -162,6 +165,7 @@ function setup({
           team={team}
           disabled={disabled}
           onManage={onManage}
+          onManageTeams={onManageTeams}
           onSelect={onSelect}
           onSelectTeam={onSelectTeam}
         />
@@ -301,6 +305,30 @@ describe('AgentPicker', () => {
     expect(request).not.toHaveBeenCalledWith('session.setAgent', expect.anything())
   })
 
+  it('keeps an unavailable bound team visible but not selectable', async () => {
+    const archivedTeam = team({ archived: true })
+    const { request, trigger } = setup({
+      teams: [archivedTeam],
+      team: { teamId: archivedTeam.teamId, name: archivedTeam.name },
+    })
+    expect(screen.getByRole('button', { name: '切换团队：日常协作' })).toBeTruthy()
+    await userEvent.click(trigger())
+    const box = await screen.findByRole('listbox', { name: '选择 Agent 或团队' })
+    const row = within(box).getByRole('option', { name: /日常协作/ })
+    expect(row.getAttribute('aria-disabled')).toBe('true')
+    expect(row.getAttribute('aria-selected')).toBe('true')
+    expect(within(row).getByText('已归档或不可用')).toBeTruthy()
+    await userEvent.click(row)
+    expect(request).not.toHaveBeenCalledWith('session.setTeam', expect.anything())
+  })
+
+  it('does not treat a bound team as unavailable before the list loads', async () => {
+    setup({ teams: [team()], teamsLoaded: false, team: team() })
+    await userEvent.click(screen.getByRole('button', { name: '切换团队：日常协作' }))
+    expect(await screen.findByRole('listbox', { name: '选择 Agent 或团队' })).toBeTruthy()
+    expect(screen.queryByText('已归档或不可用')).toBeNull()
+  })
+
   it('hands the choice to the caller in new-session mode', async () => {
     const onSelect = vi.fn()
     const { request, trigger } = setup({ onSelect })
@@ -329,6 +357,35 @@ describe('AgentPicker', () => {
     expect(onManage).not.toHaveBeenCalled()
     expect(screen.queryByRole('listbox')).toBeNull()
     expect(document.activeElement).toBe(trigger())
+  })
+
+  it('opens Manage teams from the menu footer and supports Escape', async () => {
+    const onManageTeams = vi.fn()
+    const { trigger } = setup({ onManageTeams })
+    await userEvent.click(trigger())
+    const manage = screen.getByRole('button', { name: '管理团队' })
+    manage.focus()
+    await userEvent.keyboard('{Escape}')
+    expect(onManageTeams).not.toHaveBeenCalled()
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(document.activeElement).toBe(trigger())
+
+    await userEvent.click(trigger())
+    await userEvent.click(screen.getByRole('button', { name: '管理团队' }))
+    expect(onManageTeams).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('shows both manage entries when both callbacks are provided', async () => {
+    const onManage = vi.fn()
+    const onManageTeams = vi.fn()
+    setup({ onManage, onManageTeams })
+    await userEvent.click(screen.getByRole('button', { name: /^切换 Agent：/ }))
+    await userEvent.click(screen.getByRole('button', { name: '管理 Agents' }))
+    expect(onManage).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: /^切换 Agent：/ }))
+    await userEvent.click(screen.getByRole('button', { name: '管理团队' }))
+    expect(onManageTeams).toHaveBeenCalledTimes(1)
   })
 
   it('toggles from the trigger', async () => {

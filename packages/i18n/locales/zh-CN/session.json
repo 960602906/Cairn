@@ -385,6 +385,8 @@
   "composer.team.label": "切换团队：{{name}}",
   "composer.team.section": "团队模板",
   "composer.team.meta": "{{pattern}} · {{count}} 名成员",
+  "composer.team.manage": "管理团队",
+  "composer.team.unavailable": "已归档或不可用",
   "chat.agentSwitched": "已切换到 {{name}} v{{version}}",
   "chat.agentSwitchedDraft": "已切换到 {{name}} 草稿",
   "composer.context": "上下文已用 {{percent}}%（{{used}} / {{total}} tokens）",

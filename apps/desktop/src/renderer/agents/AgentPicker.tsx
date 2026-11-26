@@ -115,6 +115,7 @@ export function AgentPicker({
   onSelect,
   onSelectTeam,
   onManage,
+  onManageTeams,
 }: {
   /** 已有会话：选中后直接切换这个会话的 Agent / 团队；新对话页省略。 */
   readonly sessionId?: string | undefined
@@ -133,11 +134,14 @@ export function AgentPicker({
   readonly onSelectTeam?: ((team: AgentTeamSummary) => void) | undefined
   /** 菜单底部的“管理 Agents”；省略时不显示。 */
   readonly onManage?: (() => void) | undefined
+  /** 菜单底部的“管理团队”；省略时不显示。 */
+  readonly onManageTeams?: (() => void) | undefined
 }) {
   const { t, i18n } = useTranslation('session')
   const { t: tt } = useTranslation('teams')
   const agents = useSessionStore((s) => s.agents) ?? []
   const teams = useSessionStore((s) => s.teams) ?? []
+  const teamsLoaded = useSessionStore((s) => s.teams !== undefined)
   const recent = useSessionStore((s) => s.recentAgents) ?? []
   const setSessionAgent = useSessionStore((s) => s.setSessionAgent)
   const setSessionTeam = useSessionStore((s) => s.setSessionTeam)
@@ -160,6 +164,11 @@ export function AgentPicker({
   const label = teamLabel ?? (current ? agentName(current, i18n.language) : currentId)
   /** 当前 Agent 已归档：菜单里保留一行，标出来但不能再选。 */
   const archivedCurrent = team === undefined && current?.archived === true
+  const usableTeams = useMemo(() => availableTeams(teams), [teams])
+  /** 绑定的团队已归档或不再可用：列表里保留一行提示，选择单个 Agent 即可离开。 */
+  const boundTeam =
+    team === undefined ? undefined : usableTeams.find((item) => item.teamId === team.teamId)
+  const unavailableTeam = team !== undefined && teamsLoaded && boundTeam === undefined
   const teamOptions = useMemo(() => pickerTeams(teams, query), [teams, query])
   const agentOptions = useMemo(() => pickerAgents(agents, recent, query), [agents, recent, query])
   const entries = useMemo<PickerEntry[]>(
@@ -174,7 +183,7 @@ export function AgentPicker({
     [teamOptions, agentOptions],
   )
   const selected = entries[Math.min(active, entries.length - 1)]
-  const hasTeams = team !== undefined || availableTeams(teams).length > 0
+  const hasTeams = team !== undefined || usableTeams.length > 0
 
   useEffect(() => {
     if (!open) return
@@ -349,6 +358,25 @@ export function AgentPicker({
                 <Check aria-hidden className="size-3.5 shrink-0 text-fg" />
               </li>
             )}
+            {unavailableTeam && (
+              <li
+                role="option"
+                aria-selected={true}
+                aria-disabled={true}
+                className="flex cursor-default select-none items-center gap-2 rounded-[7px] px-2 py-1.5 opacity-60"
+              >
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-[6px] bg-accent-soft text-accent">
+                  <UsersRound aria-hidden className="size-3" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] text-fg">{label}</span>
+                  <span className="block text-[11px] text-faint">
+                    {t('composer.team.unavailable')}
+                  </span>
+                </span>
+                <Check aria-hidden className="size-3.5 shrink-0 text-fg" />
+              </li>
+            )}
             {teamOptions.length > 0 && (
               <li
                 role="presentation"
@@ -446,24 +474,44 @@ export function AgentPicker({
               {hasTeams ? t('composer.picker.empty') : t('composer.agent.empty')}
             </p>
           )}
-          {onManage !== undefined && (
-            <div className="mt-1 border-t border-hair pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  close(false)
-                  onManage()
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Escape') return
-                  event.preventDefault()
-                  close(true)
-                }}
-                className="flex h-8 w-full items-center gap-2 rounded-[7px] px-2 text-left text-[13px] text-fg2 outline-none hover:bg-hover focus-visible:bg-hover"
-              >
-                <Settings2 aria-hidden className="size-4 shrink-0 text-muted" />
-                {t('composer.agent.manage')}
-              </button>
+          {(onManage !== undefined || onManageTeams !== undefined) && (
+            <div className="mt-1 flex gap-1 border-t border-hair pt-1">
+              {onManage !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    close(false)
+                    onManage()
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape') return
+                    event.preventDefault()
+                    close(true)
+                  }}
+                  className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[7px] px-2 text-left text-[13px] text-fg2 outline-none hover:bg-hover focus-visible:bg-hover"
+                >
+                  <Settings2 aria-hidden className="size-4 shrink-0 text-muted" />
+                  <span className="truncate">{t('composer.agent.manage')}</span>
+                </button>
+              )}
+              {onManageTeams !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    close(false)
+                    onManageTeams()
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape') return
+                    event.preventDefault()
+                    close(true)
+                  }}
+                  className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-[7px] px-2 text-left text-[13px] text-fg2 outline-none hover:bg-hover focus-visible:bg-hover"
+                >
+                  <UsersRound aria-hidden className="size-4 shrink-0 text-muted" />
+                  <span className="truncate">{t('composer.team.manage')}</span>
+                </button>
+              )}
             </div>
           )}
         </div>

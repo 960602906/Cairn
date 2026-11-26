@@ -1454,6 +1454,9 @@ export function Composer({
               open={agentPickerOpen}
               onOpenChange={setAgentPickerOpen}
               onManage={onOpenSettings === undefined ? undefined : () => onOpenSettings('agents')}
+              onManageTeams={
+                onOpenSettings === undefined ? undefined : () => onOpenSettings('teams')
+              }
             />
             <PermissionMenu open={permissionMenuOpen} onOpenChange={setPermissionMenuOpen} />
             <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />

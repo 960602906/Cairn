@@ -7,6 +7,14 @@
 
 ### Added
 
+- Agent 选择器底部新增「管理团队」入口，与「管理 Agents」并排，直接跳到设置 → 团队模板。
+  会话绑定的团队归档或不再可用时，菜单保留一行「已归档或不可用」，不能再选；换选一个单个
+  Agent 即离开团队。
+  The agent picker gains a "Manage teams" footer entry next to "Manage agents", opening
+  Settings → Team templates. A bound team that was archived or became unavailable stays
+  visible as an "Archived or unavailable" row that cannot be selected; choosing a single agent
+  leaves it.
+
 - 会话里可以直接使用团队模板：输入框的 Agent 选择器把已发布、未归档的模板排在单个 Agent
   前面，选中后以主控 Agent 为根运行，之后每一轮都并入模板的委派覆盖与协作说明，发布的新
   版本从下一轮起生效。运行中不能切换；草稿、未发布或主控不可用的模板会明确提示。改选单个
