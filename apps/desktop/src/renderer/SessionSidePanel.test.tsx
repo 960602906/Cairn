@@ -629,6 +629,16 @@ describe('SessionSidePanel', () => {
     expect(onCloseTab).toHaveBeenCalledTimes(1)
   })
 
+  it('focuses the opened tab after choosing a home card', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness initialPanel="home" />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '打开文件树' }))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(panel).getByRole('tab', { name: '文件树' })),
+    )
+  })
+
   it('closes the floating panel with Escape, but not while editing text', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
