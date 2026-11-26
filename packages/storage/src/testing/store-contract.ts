@@ -249,6 +249,7 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
           workspacePath: '/work/demo',
           title: '第一个会话',
           archived: false,
+          pinned: false,
           kind: 'normal',
           createdAt: 100,
           updatedAt: 100,
@@ -339,8 +340,33 @@ export function describeStorageContract(name: string, factory: StorageFactory): 
         })
       })
 
+      it('pins sessions without touching updatedAt and lists pinned first', () => {
+        seed()
+        clock = 200
+        storage.sessions.create({
+          sessionId: 's2',
+          projectId: 'p1',
+          workspacePath: '/work/demo',
+          title: '第二个会话',
+        })
+        expect(storage.sessions.list().map((s) => s.sessionId)).toEqual(['s2', 's1'])
+
+        clock = 300
+        const pinned = storage.sessions.setPinned('s1', true)
+        expect(pinned).toMatchObject({ sessionId: 's1', pinned: true, updatedAt: 100 })
+        expect(storage.sessions.get('s1')?.pinned).toBe(true)
+        expect(storage.sessions.list().map((s) => s.sessionId)).toEqual(['s1', 's2'])
+
+        expect(storage.sessions.setPinned('s1', false).pinned).toBe(false)
+        expect(storage.sessions.list().map((s) => s.sessionId)).toEqual(['s2', 's1'])
+      })
+
       it('reports missing sessions on update', () => {
         expectStorageError(() => storage.sessions.rename('nope', 't'), StorageErrorCode.NotFound)
+        expectStorageError(
+          () => storage.sessions.setPinned('nope', true),
+          StorageErrorCode.NotFound,
+        )
         expectStorageError(() => storage.sessions.archive('nope'), StorageErrorCode.NotFound)
         expectStorageError(() => storage.sessions.unarchive('nope'), StorageErrorCode.NotFound)
         expectStorageError(

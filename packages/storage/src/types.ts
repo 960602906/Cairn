@@ -119,6 +119,8 @@ export interface SessionRecord {
   readonly workspacePath: string
   readonly title: string
   readonly archived: boolean
+  /** 置顶：在列表里排到同组最前（桌面手感）。 */
+  readonly pinned: boolean
   /** 普通会话或 Agent 试运行（M4-12）。 */
   readonly kind: SessionKind
   /** 试运行引用的 Agent；普通会话没有。 */
@@ -167,6 +169,8 @@ export interface SessionStore {
   /** 删除会话及其事件、改动、快照与权限规则；不存在时报 `storage.not_found`。 */
   remove(sessionId: string): void
   rename(sessionId: string, title: string): SessionRecord
+  /** 置顶 / 取消置顶；不改变 `updatedAt`，避免置顶本身把会话当成“刚用过”。 */
+  setPinned(sessionId: string, pinned: boolean): SessionRecord
   archive(sessionId: string): SessionRecord
   /** 取消归档：会话重新出现在默认列表里。不存在时报 `storage.not_found`。 */
   unarchive(sessionId: string): SessionRecord

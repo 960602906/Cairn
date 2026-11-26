@@ -145,6 +145,7 @@ export interface SessionManager extends SessionCommands {
   readonly list: Sync<SessionCommands['list']>
   readonly prompt: Sync<SessionCommands['prompt']>
   readonly rename: Sync<SessionCommands['rename']>
+  readonly setPinned: Sync<SessionCommands['setPinned']>
   readonly archive: Sync<SessionCommands['archive']>
   readonly setModel: Sync<SessionCommands['setModel']>
   readonly setAgent: SessionCommands['setAgent']
@@ -1018,8 +1019,15 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           createdAt: s.createdAt,
           updatedAt: s.updatedAt,
           ...(s.model ? { model: s.model } : {}),
+          ...(s.pinned ? { pinned: true } : {}),
         }))
       return { sessions }
+    },
+
+    setPinned({ sessionId, pinned }) {
+      requireSession(sessionId)
+      storage.sessions.setPinned(sessionId, pinned)
+      return {}
     },
 
     rename({ sessionId, title }) {

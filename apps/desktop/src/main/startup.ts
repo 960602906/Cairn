@@ -25,6 +25,7 @@ import {
   nativeTheme,
   Notification,
   safeStorage,
+  screen,
   session,
   shell,
   utilityProcess,
@@ -34,8 +35,11 @@ import { macApplicationMenu, shouldInstallApplicationMenu } from './app-menu.js'
 import { requiredDirectories, resolveAppPaths } from './app-paths.js'
 import { readAppInfo } from './build-info.js'
 import { resolveBuiltinSkillsDir } from './builtin-skills.js'
+import { shouldConfirmClose } from './close-guard.js'
 import { configureElectronRuntime } from './electron-runtime.js'
 import { createQuitGuard } from './quit-guard.js'
+import { createWindowStateService, restoreWindowState } from './services/window-state.js'
+import { nextZoomLevel, zoomActionFor } from './window-zoom.js'
 import { resolveChromeTheme, windowChromeOptions } from './window-chrome.js'
 import { WINDOW_CONTROLS_CHANNEL } from '../shared/window-controls.js'
 import {
@@ -187,6 +191,9 @@ let knownSecrets: () => readonly string[] = () => []
 // 日志服务接入前，异常先写到标准错误（经过脱敏）
 const reportError = (error: unknown) =>
   console.error('[cairn]', redact(error, { homeDirs: [homedir()], secrets: knownSecrets() }))
+
+/** 窗口大小 / 位置 / 最大化 / 缩放级别（桌面手感）：跨启动恢复。 */
+const windowState = createWindowStateService({ file: paths.windowState, onError: reportError })
 
 /**
  * 版本与构建信息（M5-01）：构建时写入 `out/build-info.json`，读取失败时安全降级；
@@ -996,13 +1003,95 @@ export function focusPrimaryWindow(): void {
 function createWindow(): BrowserWindow | undefined {
   if (!quitGuard.canCreateWindow()) return undefined
   const theme = resolveChromeTheme(settings.get().theme, nativeTheme.shouldUseDarkColors)
+  const restored = restoreWindowState(
+    windowState.get(),
+    screen.getAllDisplays().map((display) => display.workArea),
+  )
   const window = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: restored.width,
+    height: restored.height,
+    ...(restored.x !== undefined && restored.y !== undefined
+      ? { x: restored.x, y: restored.y }
+      : {}),
     show: false,
     ...windowChromeOptions(process.platform, theme),
     webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs')),
   })
+  window.webContents.setZoomLevel(restored.zoomLevel)
+  if (restored.maximized) window.maximize()
+
+  const rememberWindowState = () => {
+    if (window.isDestroyed()) return
+    const bounds = window.getNormalBounds()
+    windowState.update({
+      width: bounds.width,
+      height: bounds.height,
+      x: bounds.x,
+      y: bounds.y,
+      maximized: window.isMaximized(),
+      zoomLevel: window.webContents.getZoomLevel(),
+    })
+  }
+  window.on('resize', rememberWindowState)
+  window.on('move', rememberWindowState)
+  window.on('close', () => {
+    rememberWindowState()
+    windowState.flush()
+  })
+
+  // 缩放：⌘+ / ⌘- / ⌘0（Windows/Linux 用 Ctrl），随窗口状态一起记住。
+  window.webContents.on('before-input-event', (event, input) => {
+    const action = zoomActionFor(input, process.platform)
+    if (action === undefined) return
+    event.preventDefault()
+    window.webContents.setZoomLevel(nextZoomLevel(window.webContents.getZoomLevel(), action))
+    rememberWindowState()
+  })
+
+  // Windows / Linux 上关闭窗口等于退出：有运行中的会话时先确认，避免误关中断回复。
+  let closeConfirmed = false
+  let closePromptOpen = false
+  window.on('close', (event) => {
+    if (closeConfirmed) return
+    let running: number
+    try {
+      running = activity.list().counts.running
+    } catch (error) {
+      reportError(error)
+      return
+    }
+    if (!shouldConfirmClose(process.platform, running)) return
+    event.preventDefault()
+    if (closePromptOpen) return
+    closePromptOpen = true
+    const english = settings.get().locale === 'en-US'
+    void dialog
+      .showMessageBox(window, {
+        type: 'warning',
+        title: app.getName(),
+        message: english
+          ? `${running} chat${running === 1 ? ' is' : 's are'} still running.`
+          : `还有 ${running} 个会话正在运行。`,
+        detail: english
+          ? 'Closing now stops the current replies. The conversation is kept and can be continued next time.'
+          : '现在关闭会中断正在进行的回复；对话内容会保留，下次可以继续。',
+        buttons: [english ? 'Cancel' : '取消', english ? 'Close anyway' : '仍然关闭'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      .then(({ response }) => {
+        closePromptOpen = false
+        if (response !== 1 || window.isDestroyed()) return
+        closeConfirmed = true
+        window.close()
+      })
+      .catch((error) => {
+        closePromptOpen = false
+        reportError(error)
+      })
+  })
+
   const connection = gateway.connect(
     createRendererChannel({
       ipcMain,
@@ -1012,12 +1101,14 @@ function createWindow(): BrowserWindow | undefined {
     }),
   )
   window.once('closed', () => connection.close())
-  window.on('maximize', () =>
-    window.webContents.send(WINDOW_CONTROLS_CHANNEL.maximizedChanged, true),
-  )
-  window.on('unmaximize', () =>
-    window.webContents.send(WINDOW_CONTROLS_CHANNEL.maximizedChanged, false),
-  )
+  window.on('maximize', () => {
+    rememberWindowState()
+    window.webContents.send(WINDOW_CONTROLS_CHANNEL.maximizedChanged, true)
+  })
+  window.on('unmaximize', () => {
+    rememberWindowState()
+    window.webContents.send(WINDOW_CONTROLS_CHANNEL.maximizedChanged, false)
+  })
   window.once('ready-to-show', () => window.show())
   if (devServerUrl) void window.loadURL(devServerUrl)
   else void window.loadFile(rendererFile)

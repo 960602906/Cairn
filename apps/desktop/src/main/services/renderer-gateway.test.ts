@@ -200,6 +200,7 @@ function setup(
     regenerate: vi.fn(() => ({ messageId: 'm1' })),
     abort: vi.fn(() => ({})),
     rename: vi.fn(() => ({})),
+    setPinned: vi.fn(() => ({})),
     archive: vi.fn(() => ({})),
     unarchive: vi.fn(() => ({})),
     delete: vi.fn(() => ({})),
@@ -807,8 +808,12 @@ describe('createRendererGateway: commands and lifecycle', () => {
     await expect(
       client.request('session.rename', { sessionId: 's1', title: 'New name' }),
     ).resolves.toEqual({})
+    await expect(
+      client.request('session.setPinned', { sessionId: 's1', pinned: true }),
+    ).resolves.toEqual({})
     await expect(client.request('session.archive', { sessionId: 's2' })).resolves.toEqual({})
     expect(commands.rename).toHaveBeenCalledWith({ sessionId: 's1', title: 'New name' })
+    expect(commands.setPinned).toHaveBeenCalledWith({ sessionId: 's1', pinned: true })
     expect(commands.archive).toHaveBeenCalledWith({ sessionId: 's2' })
     const model = { providerId: 'p', modelId: 'm' }
     await expect(client.request('session.setModel', { sessionId: 's1', model })).resolves.toEqual(

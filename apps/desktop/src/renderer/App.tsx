@@ -16,7 +16,18 @@ import type { ProjectSummary } from '@cairn/protocol'
 import { ErrorBanner } from './ErrorBanner.js'
 import { onIdle } from './idle.js'
 import { LanguageSwitcher } from './LanguageSwitcher.js'
-import { isNewChatKey, isSearchKey, isSettingsKey } from './layout/shortcuts.js'
+import {
+  adjacentSessionId,
+  COMPOSER_FOCUS_EVENT,
+  isFocusComposerKey,
+  isNewChatKey,
+  isNextSessionKey,
+  isPreviousSessionKey,
+  isSearchKey,
+  isSettingsKey,
+  isToggleSidebarKey,
+  toggleSidebarShortcut,
+} from './layout/shortcuts.js'
 import { Sidebar } from './layout/Sidebar.js'
 import { TopBar } from './layout/TopBar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
@@ -103,6 +114,7 @@ function Workspace() {
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const onActivityOpen = useSessionStore((s) => s.onActivityOpen)
   const selectSession = useSessionStore((s) => s.selectSession)
+  const sessions = useSessionStore((s) => s.sessions)
   const activityBadge = useSessionStore((s) => s.activity?.counts?.approvals ?? 0)
   const chromeStyle = windowControlsStyle()
   const [welcomeDismissed, setWelcomeDismissed] = useState(false)
@@ -117,6 +129,19 @@ function Workspace() {
     setPendingChangeSet(undefined)
     if (narrow) setSessionsOpen(false)
   }, [narrow])
+
+  /** 切换到指定会话：离开设置 / 活动中心，回到对话页。 */
+  const openSessionById = useCallback(
+    (sessionId: string) => {
+      setSettings(undefined)
+      setActivity(false)
+      setComposing(false)
+      setPendingChangeSet(undefined)
+      void selectSession(sessionId)
+      if (narrow) setSessionsOpen(false)
+    },
+    [narrow, selectSession],
+  )
 
   // 进入窄窗口时把会话列收成抽屉；窗口变宽后恢复常驻列。
   useEffect(() => {
@@ -166,6 +191,38 @@ function Workspace() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [startNewChat])
 
+  // 聚焦输入框、收起侧栏、切换会话：对话框 / 菜单打开时让给它们。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([aria-hidden="true"]), [role="menu"], [role="listbox"]',
+        )
+      )
+        return
+      if (isFocusComposerKey(event)) {
+        event.preventDefault()
+        window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))
+        return
+      }
+      if (isToggleSidebarKey(event)) {
+        // 设置页的左栏是设置导航，本身不可收起。
+        if (settings !== undefined) return
+        event.preventDefault()
+        setSessionsOpen((open) => !open)
+        return
+      }
+      if (!isPreviousSessionKey(event) && !isNextSessionKey(event)) return
+      const target = adjacentSessionId(sessions, activeSessionId, isNextSessionKey(event) ? 1 : -1)
+      if (target === undefined) return
+      event.preventDefault()
+      openSessionById(target)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeSessionId, openSessionById, sessions, settings])
+
   // 活动角标不参与首屏：首帧之后再读，避免主进程在首屏同时重扫全部会话。
   useEffect(() => onIdle(() => void refreshActivity(), 1000), [refreshActivity])
 
@@ -186,15 +243,8 @@ function Workspace() {
   }, [])
 
   useEffect(
-    () =>
-      onActivityOpen(({ sessionId }) => {
-        setSettings(undefined)
-        setActivity(false)
-        setComposing(false)
-        void selectSession(sessionId)
-        if (narrow) setSessionsOpen(false)
-      }),
-    [narrow, onActivityOpen, selectSession],
+    () => onActivityOpen(({ sessionId }) => openSessionById(sessionId)),
+    [onActivityOpen, openSessionById],
   )
 
   const closeSettings = useCallback(() => {
@@ -215,13 +265,10 @@ function Workspace() {
 
   const openSessionFromActivity = useCallback(
     (sessionId: string, changeSetId?: string) => {
-      setActivity(false)
-      setComposing(false)
-      setPendingChangeSet(changeSetId === undefined ? undefined : { sessionId, changeSetId })
-      void selectSession(sessionId)
-      if (narrow) setSessionsOpen(false)
+      openSessionById(sessionId)
+      if (changeSetId !== undefined) setPendingChangeSet({ sessionId, changeSetId })
     },
-    [narrow, selectSession],
+    [openSessionById],
   )
 
   const configureModels = useCallback(() => {
@@ -286,7 +333,12 @@ function Workspace() {
       data-sidebar-reveal
       className={cn('no-drag mr-1 flex shrink-0 items-center gap-0.5', mac && 'ml-16')}
     >
-      <IconButton label={t('sidebar.expand')} size="icon-sm" onClick={openSessions}>
+      <IconButton
+        label={t('sidebar.expand')}
+        title={`${t('sidebar.expand')} (${toggleSidebarShortcut()})`}
+        size="icon-sm"
+        onClick={openSessions}
+      >
         <PanelLeftOpen />
       </IconButton>
     </div>

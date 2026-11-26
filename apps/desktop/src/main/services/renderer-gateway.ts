@@ -69,6 +69,7 @@ export interface SessionCommands {
   readonly regenerate: Handler<'session.regenerate'>
   readonly abort: Handler<'session.abort'>
   readonly rename: Handler<'session.rename'>
+  readonly setPinned: Handler<'session.setPinned'>
   readonly archive: Handler<'session.archive'>
   readonly unarchive: Handler<'session.unarchive'>
   /** 彻底删除已归档的会话（不可恢复）。 */
@@ -540,6 +541,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.brief.update', (params) => commands.updateBrief(params))
       endpoint.handle('session.abort', (params) => commands.abort(params))
       endpoint.handle('session.rename', (params) => commands.rename(params))
+      endpoint.handle('session.setPinned', (params) => commands.setPinned(params))
       endpoint.handle('session.archive', (params) => commands.archive(params))
       endpoint.handle('session.unarchive', (params) => commands.unarchive(params))
       endpoint.handle('session.delete', (params) => commands.delete(params))

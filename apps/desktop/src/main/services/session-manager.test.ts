@@ -274,6 +274,24 @@ describe('create and list', () => {
     )
   })
 
+  it('pins a session to the top of the list without changing its updatedAt', () => {
+    const { manager } = setup(fakeSupervisor().supervisor)
+    const first = manager.create({ projectPath: '/work', title: 'First' })
+    const second = manager.create({ projectPath: '/work', title: 'Second' })
+    const before = manager.list({}).sessions
+    expect(before.map((s) => s.sessionId)).toEqual([first.sessionId, second.sessionId])
+
+    manager.setPinned({ sessionId: second.sessionId, pinned: true })
+    const after = manager.list({}).sessions
+    expect(after.map((s) => s.sessionId)).toEqual([second.sessionId, first.sessionId])
+    expect(after[0]).toMatchObject({ pinned: true, updatedAt: before[0]?.updatedAt })
+    expect(after[1]?.pinned).toBeUndefined()
+
+    expect(() => manager.setPinned({ sessionId: 'missing', pinned: true })).toThrow(
+      expect.objectContaining({ code: 'storage.not_found' }),
+    )
+  })
+
   it('restores an archived session (M2-02)', () => {
     const { manager } = setup(fakeSupervisor().supervisor)
     const { sessionId } = manager.create({ projectPath: '/work', title: 'Demo' })

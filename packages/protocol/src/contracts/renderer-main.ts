@@ -119,6 +119,8 @@ export const SessionSummary = z.object({
   updatedAt: Timestamp,
   /** 会话使用的模型（M1-04a）；之前创建的会话没有，使用默认模型。 */
   model: ModelRef.optional(),
+  /** 是否置顶（桌面手感）；省略表示未置顶。 */
+  pinned: z.boolean().optional(),
 })
 export type SessionSummary = z.infer<typeof SessionSummary>
 
@@ -689,6 +691,11 @@ export const MainForRenderer = defineSide({
     /** 重命名会话（M2-02），写入 `session.renamed`。标题去掉首尾空白，可以为空（显示为“未命名会话”）。 */
     'session.rename': {
       params: z.object({ sessionId: Id, title: z.string().max(SESSION_TITLE_MAX_LENGTH) }),
+      result: z.object({}),
+    },
+    /** 置顶 / 取消置顶会话（桌面手感）：只影响列表顺序，不改 `updatedAt`，也不写对话事件。 */
+    'session.setPinned': {
+      params: z.object({ sessionId: Id, pinned: z.boolean() }),
       result: z.object({}),
     },
     /**
