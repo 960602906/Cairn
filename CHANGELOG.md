@@ -88,6 +88,12 @@
 
 ### Changed
 
+- 团队模板归档前会确认，草稿有未保存修改时明确提示会丢失；当所有模板都已归档时，列表会引导
+  切换到「已归档」而不是显示“没有匹配”。
+  Archiving a team template now asks for confirmation and warns when the draft has unsaved
+  changes. When every template is archived, the list points to the "Archived" filter instead
+  of showing "no matches".
+
 - 会话输入框的 Agent 选择器按内置在前、自定义在后排列，每项显示一行描述并支持搜索；当前 Agent
   归档后仍显示名称并在菜单中标记「已归档」，运行中禁用时提示「运行结束后可切换」。
   The session composer's agent picker lists built-in agents before custom ones, shows a description

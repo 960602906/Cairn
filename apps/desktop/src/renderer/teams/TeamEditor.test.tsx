@@ -865,6 +865,9 @@ describe('TeamEditor', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: '归档' }))
+    const archiveDialog = await screen.findByRole('dialog')
+    expect(within(archiveDialog).getByText('归档这个模板？')).toBeDefined()
+    await userEvent.click(within(archiveDialog).getByRole('button', { name: '归档' }))
     await waitFor(() =>
       expect(calls).toContainEqual({ method: 'team.archive', params: { teamId: 'user.team-1' } }),
     )
@@ -994,6 +997,28 @@ describe('TeamEditor', () => {
     await waitFor(() => expect(screen.queryByRole('menuitem')).toBeNull())
   })
 
+  it('warns about unsaved changes before archiving', async () => {
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      archived: false,
+      draft: draft(),
+      published: published({}, 2),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+    const { store } = setup({ team })
+    const { onBack } = await renderEditor(store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
+    fireEvent.change(screen.getByLabelText('中文名称'), { target: { value: '未保存的改名' } })
+
+    await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '归档' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/当前未保存的修改会丢失/)).toBeDefined()
+    await userEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(onBack).not.toHaveBeenCalled()
+  })
+
   it('keeps the team state when archiving or unarchiving fails', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
@@ -1008,6 +1033,9 @@ describe('TeamEditor', () => {
     await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
     await userEvent.click(screen.getByRole('button', { name: '更多操作' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: '归档' }))
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: '归档' }),
+    )
     await waitFor(() => expect(failing.store.getState().error?.code).toBe('team.not_found'))
     expect(result.onBack).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: '保存草稿' })).toBeDefined()
