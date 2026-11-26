@@ -71,7 +71,14 @@ import { AgentPicker, availableAgents } from './agents/AgentPicker.js'
 import { agentName, localized } from './agents/model.js'
 import { contextBreakdown, latestSnapshot } from './context-breakdown.js'
 import { formatCompactTokens } from './format.js'
-import { FILE_DRAG_TYPE, draggedFile } from './file-drag.js'
+import {
+  FILE_DRAG_TYPE,
+  draggedFile,
+  externalDroppedFiles,
+  pastedFilePaths,
+  relativeMentionPath,
+  type ExternalFile,
+} from './file-drag.js'
 import { onIdle } from './idle.js'
 import {
   RestoreDialog,
@@ -811,6 +818,37 @@ export function Composer({
     })
   }
 
+  /** 把外部拖入 / 粘贴的绝对路径转成工作空间相对路径，插到光标处；返回是否全部在工作空间内。 */
+  const insertExternalFiles = (files: readonly ExternalFile[]) => {
+    const root = projectPath
+    if (root === undefined || root === '') {
+      showNotice('input.needWorkspace', 'muted')
+      return
+    }
+    const platform = window.cairn?.windowControls?.platform
+    const references: { path: string; kind: 'file' | 'dir' }[] = []
+    for (const file of files) {
+      const relative = relativeMentionPath(root, file.path, platform)
+      if (relative === undefined) continue
+      references.push({ path: relative, kind: file.kind })
+    }
+    if (references.length === 0) {
+      showNotice('input.outsideWorkspace', 'muted')
+      return
+    }
+    if (references.length < files.length) showNotice('input.someOutsideWorkspace', 'muted')
+    const element = textarea.current
+    const start = element?.selectionStart ?? text.length
+    const end = element?.selectionEnd ?? start
+    const inserted = references.map((file) => mentionText(file.path, file.kind)).join('')
+    setText(text.slice(0, start) + inserted + text.slice(end))
+    requestAnimationFrame(() => {
+      const caret = start + inserted.length
+      element?.focus()
+      element?.setSelectionRange(caret, caret)
+    })
+  }
+
   const send = async () => {
     if (!canSend) return
     const draft = text
@@ -1305,7 +1343,13 @@ export function Composer({
             if (e.target === e.currentTarget) textarea.current?.focus()
           }}
           onDragOver={(event) => {
-            if (sending || !event.dataTransfer.types.includes(FILE_DRAG_TYPE)) return
+            if (
+              sending ||
+              (!event.dataTransfer.types.includes(FILE_DRAG_TYPE) &&
+                !event.dataTransfer.types.includes('Files'))
+            ) {
+              return
+            }
             event.preventDefault()
             event.dataTransfer.dropEffect = 'copy'
             setDragging(true)
@@ -1316,32 +1360,37 @@ export function Composer({
           }}
           onDrop={(event) => {
             setDragging(false)
-            const file = draggedFile(event)
-            if (sending || file === undefined) return
+            if (sending) return
+            const internal = draggedFile(event)
+            if (internal !== undefined) {
+              event.preventDefault()
+              insertReference(internal.path, internal.kind)
+              return
+            }
+            // 其它拖入（如选中的文字）保持浏览器默认行为。
+            if (!event.dataTransfer.types.includes('Files')) return
             event.preventDefault()
-            insertReference(file.path, file.kind)
+            insertExternalFiles(externalDroppedFiles(event, window.cairn?.filePaths?.fromFile))
           }}
           onPaste={(event) => {
-            const items = event.clipboardData?.items
-            if (items) {
-              for (const item of items) {
-                if (item.kind === 'file') {
-                  const file = item.getAsFile()
-                  const path = file ? (file as File & { path?: string }).path : undefined
-                  if (path) {
-                    event.preventDefault()
-                    insertReference(path, 'file')
-                    return
-                  }
-                }
-              }
-            }
+            const files = pastedFilePaths(event, window.cairn?.filePaths?.fromFile)
+            if (files.length === 0) return
+            event.preventDefault()
+            insertExternalFiles(files)
           }}
           className={cn(
             'rounded-[14px] border border-hair2 bg-raise px-3.5 pt-3 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
             dragging && 'border-accent ring-2 ring-accent/20',
           )}
         >
+          {dragging && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[14px] border-2 border-dashed border-accent bg-accent/5 text-note text-accent"
+            >
+              {t('input.dropFiles')}
+            </div>
+          )}
           {commandNotice && (
             <p
               role="status"

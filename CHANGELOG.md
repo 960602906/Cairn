@@ -7,6 +7,13 @@
 
 ### Added
 
+- 输入框支持从操作系统（Finder / 资源管理器）拖入或粘贴文件与文件夹：会转成工作空间内的 `@` 引用，
+  一次可多个；工作空间外的文件会提示并忽略，未选择工作空间时先提示。拖动时输入框显示“松开以引用文件”。
+  The composer accepts files and folders dragged from Finder or Explorer, or pasted after copying:
+  they become workspace-relative `@` references (multiple at once). Files outside the workspace are
+  ignored with a hint, and a hint appears when no workspace is selected. A "release to reference
+  files" overlay shows while dragging.
+
 - 搜索对话（⌘K）现在也会搜索消息正文：标题或项目名不匹配的会话，只要消息里出现输入的词，
   也会带着命中附近的片段出现在结果里；输入停顿后才查询，切换输入不会显示上一次的片段。
   Search conversations (⌘K) now searches message text too: a session whose title or project does

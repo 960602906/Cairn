@@ -101,6 +101,33 @@ describe('exposeRendererApi', () => {
     expect(listeners.size).toBe(0)
   })
 
+  it('exposes file path resolution when webUtils is available', () => {
+    const fromFile = vi.fn((_file: File) => '/work/docs/a.md')
+    const fake = fakeIpc()
+    const exposed = new Map<string, unknown>()
+    const api = exposeRendererApi({
+      contextBridge: { exposeInMainWorld: (key, value) => exposed.set(key, value) },
+      ipcRenderer: fake.ipc,
+      platform: 'darwin',
+      webUtils: { getPathForFile: fromFile },
+    })
+    expect(api.filePaths?.fromFile({} as File)).toBe('/work/docs/a.md')
+    expect(fromFile).toHaveBeenCalledTimes(1)
+
+    // 不是磁盘文件时 webUtils 可能抛错：桥接层吞掉并返回空字符串。
+    const throwing = exposeRendererApi({
+      contextBridge: { exposeInMainWorld: () => undefined },
+      ipcRenderer: fake.ipc,
+      platform: 'darwin',
+      webUtils: {
+        getPathForFile: () => {
+          throw new Error('not a file')
+        },
+      },
+    })
+    expect(throwing.filePaths?.fromFile({} as File)).toBe('')
+  })
+
   it('routes window controls through fixed channels only', async () => {
     const { api, invoked, deliverWindow, windowListeners } = expose()
     await api.windowControls.minimize()

@@ -11,7 +11,10 @@ import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 import { FILE_DRAG_TYPE } from './file-drag.js'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  delete (window as { cairn?: unknown }).cairn
+})
 
 const capabilities = {
   contextWindow: 100_000,
@@ -376,6 +379,37 @@ describe('NewSession composer parity', () => {
         mentions: [{ path: 'src/a.ts' }],
       }),
     )
+  })
+
+  it('inserts a file dropped from the operating system as a workspace-relative mention', async () => {
+    setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await user.type(input, '看 ')
+    ;(window as { cairn?: unknown }).cairn = {
+      windowControls: { platform: 'darwin' },
+      filePaths: { fromFile: (file: unknown) => (file as { path?: string }).path ?? '' },
+    }
+    const external = {
+      types: ['Files'],
+      items: [
+        {
+          kind: 'file',
+          getAsFile: () => ({ path: '/work/docs/a.md' }),
+          webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
+        },
+        {
+          kind: 'file',
+          getAsFile: () => ({ path: '/work/src' }),
+          webkitGetAsEntry: () => ({ isDirectory: true, isFile: false }),
+        },
+      ],
+      files: [],
+      getData: () => '',
+      dropEffect: 'none',
+    }
+    fireEvent.drop(input, { dataTransfer: external })
+    expect(input.value).toBe('看 @docs/a.md @src/ ')
   })
 })
 

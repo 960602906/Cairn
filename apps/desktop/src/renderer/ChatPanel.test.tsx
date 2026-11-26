@@ -1344,7 +1344,7 @@ describe('ChatPanel', () => {
     const { open } = setup({ history: HISTORY })
     await open()
     const withPath = new File(['x'], 'a.ts')
-    Object.defineProperty(withPath, 'path', { value: '/w/a.ts' })
+    Object.defineProperty(withPath, 'path', { value: '/work/a.ts' })
     fireEvent.paste(input(), {
       clipboardData: {
         items: [
@@ -1355,11 +1355,11 @@ describe('ChatPanel', () => {
         ],
       },
     })
-    expect(input().value).toBe('@/w/a.ts ')
+    expect(input().value).toBe('@a.ts ')
 
     // 没有 clipboardData 时忽略
     fireEvent.paste(input())
-    expect(input().value).toBe('@/w/a.ts ')
+    expect(input().value).toBe('@a.ts ')
   })
 
   it('suggests files after @, inserts the pick and sends the mentions (ADR-0037)', async () => {
@@ -1647,6 +1647,60 @@ describe('ChatPanel', () => {
 
     fireEvent.drop(form, { dataTransfer })
     expect(input().value).toBe('看 @docs/a.md ')
+  })
+
+  it('inserts a file dropped from the operating system as a workspace-relative mention', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    await userEvent.type(input(), '看 ')
+    ;(window as { cairn?: unknown }).cairn = {
+      windowControls: { platform: 'darwin' },
+      filePaths: { fromFile: (file: unknown) => (file as { path?: string }).path ?? '' },
+    }
+    const form = input().closest('form')!
+    const external = {
+      types: ['Files'],
+      items: [
+        {
+          kind: 'file',
+          getAsFile: () => ({ path: '/work/docs/a.md' }),
+          webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
+        },
+      ],
+      files: [],
+      getData: () => '',
+      dropEffect: 'none',
+    }
+    fireEvent.dragOver(form, { dataTransfer: external })
+    expect(form.className.split(' ')).toContain('ring-2')
+    fireEvent.drop(form, { dataTransfer: external })
+    expect(input().value).toBe('看 @docs/a.md ')
+  })
+
+  it('ignores files dropped from outside the workspace and says why', async () => {
+    const { open } = setup({ history: HISTORY })
+    await open()
+    ;(window as { cairn?: unknown }).cairn = {
+      windowControls: { platform: 'darwin' },
+      filePaths: { fromFile: (file: unknown) => (file as { path?: string }).path ?? '' },
+    }
+    const form = input().closest('form')!
+    const external = {
+      types: ['Files'],
+      items: [
+        {
+          kind: 'file',
+          getAsFile: () => ({ path: '/elsewhere/notes.md' }),
+          webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
+        },
+      ],
+      files: [],
+      getData: () => '',
+      dropEffect: 'none',
+    }
+    fireEvent.drop(form, { dataTransfer: external })
+    expect(input().value).toBe('')
+    expect(await screen.findByText('只能引用当前工作空间里的文件。')).toBeTruthy()
   })
 
   it('does not start a plan turn while one is running', async () => {
