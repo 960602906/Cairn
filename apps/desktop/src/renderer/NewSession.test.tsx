@@ -52,6 +52,9 @@ const agentFixture = (agentId: string, name: string, extra: object = {}) => ({
   ...extra,
 })
 
+/** 计划模式开启时，权限 / 计划合并菜单的读屏名称会带上「计划模式已开启」。 */
+const planOn = () => screen.queryByRole('button', { name: /计划模式已开启/ }) !== null
+
 const teamFixture = (teamId: string, name: string, extra: object = {}) => ({
   teamId,
   name: { 'zh-CN': name },
@@ -205,6 +208,10 @@ describe('NewSession composer parity', () => {
     expect(within(list).queryByRole('option', { name: /\/off/ })).toBeNull()
     expect(within(list).queryByRole('option', { name: /\/shadowed/ })).toBeNull()
     expect(within(list).getByText('技能')).toBeTruthy()
+    // 技能说明只占一行，放不下时截断，完整内容留在 title 里。
+    const skillDescription = within(list).getByText('review 的说明')
+    expect(skillDescription.className).toContain('truncate')
+    expect(skillDescription.getAttribute('title')).toBe('review 的说明')
 
     // ↑ 回到最后一项，Tab 把 `/review` 补全成可以接着写任务的样子。
     fireEvent.keyDown(input, { key: 'ArrowUp' })
@@ -245,7 +252,7 @@ describe('NewSession composer parity', () => {
     await screen.findByRole('listbox', { name: '输入指令' })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
     expect(input.value).toBe('')
-    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
+    expect(planOn()).toBe(true)
     expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
   })
 
@@ -408,7 +415,7 @@ describe('NewSession composer parity', () => {
     fireEvent.keyDown(input, { key: 'Escape' })
     await user.keyboard('{Enter}')
     expect(input.value).toBe('')
-    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
+    expect(planOn()).toBe(true)
   })
 
   it('inserts a dragged file as a highlighted @ mention and sends it', async () => {
@@ -515,7 +522,7 @@ describe('NewSession controls', () => {
     await user.click(await screen.findByRole('menuitem', { name: /强/ }))
     await user.type(input, '/plan{Enter}')
     expect(input.getAttribute('placeholder')).toBe('描述要做的事。这一轮只会阅读项目并提出计划')
-    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
+    expect(planOn()).toBe(true)
     await user.type(input, '做点事')
     await user.click(screen.getByRole('button', { name: '发送' }))
 
@@ -544,16 +551,17 @@ describe('NewSession controls', () => {
     const input = await screen.findByPlaceholderText('有什么可以帮你？')
     await screen.findByRole('button', { name: '模型：测试供应商 · 快' })
     fireEvent.keyDown(document.body, { key: 'P', ctrlKey: true, shiftKey: true })
-    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: '退出计划模式' }))
-    expect(screen.queryByRole('button', { name: '退出计划模式' })).toBeNull()
+    expect(planOn()).toBe(true)
+    await user.click(screen.getByRole('button', { name: /计划模式已开启/ }))
+    await user.click(await screen.findByRole('menuitem', { name: /计划模式/ }))
+    expect(planOn()).toBe(false)
 
     const dialog = document.createElement('div')
     dialog.setAttribute('role', 'dialog')
     document.body.append(dialog)
     fireEvent.keyDown(document.body, { key: 'P', ctrlKey: true, shiftKey: true })
     dialog.remove()
-    expect(screen.queryByRole('button', { name: '退出计划模式' })).toBeNull()
+    expect(planOn()).toBe(false)
 
     await user.type(input, '/plan 整理目录{Enter}')
     await waitFor(() =>
@@ -571,7 +579,7 @@ describe('NewSession controls', () => {
     const input = await screen.findByPlaceholderText('有什么可以帮你？')
     await user.type(input, '这段还没发出')
     fireEvent.keyDown(document.body, { key: 'P', ctrlKey: true, shiftKey: true })
-    expect(screen.getByRole('button', { name: '退出计划模式' })).toBeTruthy()
+    expect(planOn()).toBe(true)
 
     // 打开设置再回来时新对话页整体重新挂载。
     cleanup()

@@ -22,10 +22,9 @@ import type { ModelRef, SkillSummary } from '@cairn/protocol'
 import {
   enabledModelChoices,
   ModelPicker,
-  PermissionMenu,
+  ModeMenu,
   resolveDefaultModel,
   sameModel,
-  PlanModeChip,
 } from './Composer.js'
 import { AgentPicker, availableAgents, availableTeams } from './agents/AgentPicker.js'
 import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
@@ -740,8 +739,7 @@ export function NewSession({
                   onOpenSettings === undefined ? undefined : () => onOpenSettings('teams')
                 }
               />
-              <PermissionMenu />
-              <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
+              <ModeMenu planMode={planMode} onTogglePlan={() => setPlanMode((on) => !on)} />
               <div className="ml-auto flex min-w-0 items-center gap-1">
                 <ModelPicker
                   providers={providers}

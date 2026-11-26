@@ -39,6 +39,8 @@ export function ComposerCommandList({
         commands.map((command, index) => {
           const selected = index === activeIndex
           const groupStart = index === 0 || commands[index - 1]?.kind !== command.kind
+          const description =
+            command.unavailable === undefined ? command.description : t(command.unavailable)
           return (
             <Fragment key={command.id}>
               {groupStart && (
@@ -61,7 +63,7 @@ export function ComposerCommandList({
                 }}
                 onMouseEnter={() => onHover(index)}
                 className={cn(
-                  'flex cursor-default select-none items-start gap-2 rounded-[7px] px-2 py-1.5',
+                  'flex cursor-default select-none items-center gap-2 rounded-[7px] px-2 py-1.5',
                   selected && 'bg-hover',
                 )}
               >
@@ -81,12 +83,13 @@ export function ComposerCommandList({
                   )}
                 </span>
                 <span
+                  title={description}
                   className={cn(
-                    'min-w-0 text-note',
+                    'min-w-0 flex-1 truncate text-note',
                     command.unavailable === undefined ? 'text-muted' : 'text-faint',
                   )}
                 >
-                  {command.unavailable === undefined ? command.description : t(command.unavailable)}
+                  {description}
                 </span>
               </div>
             </Fragment>

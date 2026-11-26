@@ -146,8 +146,8 @@ const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
 /** 运行中发送按钮换成停止按钮，此时为 null。 */
 const sendButton = () => screen.queryByRole('button', { name: '发送' }) as HTMLButtonElement
 const stopButton = () => screen.queryByRole('button', { name: '停止' }) as HTMLButtonElement | null
-/** 计划模式开启时输入框里出现「退出计划模式」标记。 */
-const planOn = () => screen.queryByRole('button', { name: '退出计划模式' }) !== null
+/** 计划模式开启时，权限 / 计划合并菜单的读屏名称会带上「计划模式已开启」。 */
+const planOn = () => screen.queryByRole('button', { name: /计划模式已开启/ }) !== null
 /** 右侧会话信息栏默认收起，交互前先打开（窄窗口时它不再在可访问树里）。 */
 const showPanel = async () => {
   const toggle = screen.getByRole('button', { name: '会话信息' })
@@ -2603,7 +2603,8 @@ describe('Composer (M2-04)', () => {
     expect(planOn()).toBe(false)
     await userEvent.type(input(), '/plan{Enter}')
     expect(planOn()).toBe(true)
-    await userEvent.click(screen.getByRole('button', { name: '退出计划模式' }))
+    await userEvent.click(screen.getByRole('button', { name: /计划模式已开启/ }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /计划模式/ }))
     expect(planOn()).toBe(false)
     await userEvent.type(input(), '/plan{Enter}')
     expect(input().placeholder).toBe('描述要做的事。这一轮只会阅读项目并提出计划')
@@ -3132,6 +3133,8 @@ describe('Composer (M2-04)', () => {
     await userEvent.type(input(), '/permissions{Enter}')
     expect(await screen.findByRole('menu')).toBeTruthy()
     expect(await screen.findByRole('menuitem', { name: /只读/ })).toBeTruthy()
+    // 计划模式并进了同一个菜单，`/permissions` 打开后也能直接切换。
+    expect(screen.getByRole('menuitem', { name: /计划模式/ })).toBeTruthy()
     await userEvent.keyboard('{Escape}')
   })
 

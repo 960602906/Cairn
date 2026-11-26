@@ -10,9 +10,9 @@
  * - 输入 `@` 弹出文件与文件夹候选（ComposerMentions，ADR-0037），发送时主进程把引用的内容附给模型。
  * - 文本框下面叠一层高亮（ComposerHighlight）：开头的指令、`@` 引用、网址和代码片段有底色或下划线；
  *   文本框自己的文字透明，只显示光标和选区。
- * - 下方左边是 Agent（当前会话使用哪一个，M6-08）、权限模式（只读 / 询问 / 自动 / 完全访问，全局设置），
- *   右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、上下文占用圆环（点击显示最近用量与
- *   分类占比）与发送 / 停止按钮。
+ * - 下方左边是 Agent（当前会话使用哪一个，M6-08）与权限 / 计划模式合并菜单（上半部分选择只读 /
+ *   询问 / 自动 / 完全访问，下半部分切换计划模式），右边是“供应商 · 模型”切换（只改当前会话，
+ *   下一轮生效）、上下文占用圆环（点击显示最近用量与分类占比）与发送 / 停止按钮。
  */
 import {
   ArrowUp,
@@ -24,7 +24,6 @@ import {
   ShieldCheck,
   ShieldOff,
   Square,
-  X,
   Zap,
 } from 'lucide-react'
 import {
@@ -201,52 +200,48 @@ export function modelLabels(
 }
 
 /**
- * 计划模式标记：只在开启时出现，点一下退出。开启靠 `/plan` 或快捷键，不再常驻一个开关按钮。
+ * 权限与计划模式的合并菜单：三个控件收成两个。
+ * 触发按钮显示当前权限模式；计划模式开启时在末尾加“· 计划”，并让读屏读出计划模式已开启。
+ * 菜单上半部分选择权限模式（全局设置），下半部分切换计划模式；`/plan` 与快捷键仍然可用。
  */
-export function PlanModeChip({
-  on,
-  onExit,
-}: {
-  readonly on: boolean
-  readonly onExit: () => void
-}) {
-  const { t } = useTranslation('session')
-  if (!on) return null
-  return (
-    <button
-      type="button"
-      aria-label={t('composer.plan.exit')}
-      title={t('composer.plan.hint', { shortcut: planShortcut() })}
-      onClick={onExit}
-      className="group flex h-7 items-center gap-1 rounded-item bg-accent-soft px-2 text-ui text-accent outline-none focus-visible:ring-1 focus-visible:ring-accent"
-    >
-      <ListChecks className="size-3.5" />
-      {t('composer.plan.toggle')}
-      <X className="size-3 opacity-60 group-hover:opacity-100" />
-    </button>
-  )
-}
-
-export function PermissionMenu({
+export function ModeMenu({
+  planMode,
+  onTogglePlan,
   open,
   onOpenChange,
 }: {
+  readonly planMode: boolean
+  readonly onTogglePlan: () => void
   /** 由 `/permissions` 打开；省略时菜单自己管理开关。 */
   readonly open?: boolean | undefined
   readonly onOpenChange?: ((open: boolean) => void) | undefined
-} = {}) {
+}) {
   const { t } = useTranslation('session')
   const mode = useSessionStore((s) => s.settings?.permissionMode) ?? DEFAULT_PERMISSION_MODE
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const Icon = PERMISSION_ICONS[mode]
+  const modeLabel = t(`composer.permission.${mode}`)
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
-        aria-label={t('composer.permission.label', { mode: t(`composer.permission.${mode}`) })}
+        aria-label={
+          planMode
+            ? t('composer.mode.labelWithPlan', { mode: modeLabel })
+            : t('composer.permission.label', { mode: modeLabel })
+        }
+        title={t('composer.mode.title')}
         className="flex h-7 items-center gap-1.5 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent [&_svg]:size-3.5"
       >
         <Icon className="text-muted" />
-        {t(`composer.permission.${mode}`)}
+        {modeLabel}
+        {planMode && (
+          <>
+            <span aria-hidden className="text-faint">
+              ·
+            </span>
+            <span className="text-accent">{t('composer.mode.plan')}</span>
+          </>
+        )}
         <ChevronDown className="text-faint" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="w-72">
@@ -270,6 +265,17 @@ export function PermissionMenu({
             </DropdownMenuItem>
           )
         })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="h-auto items-start py-1.5" onSelect={onTogglePlan}>
+          <ListChecks className="mt-0.5" />
+          <span className="flex flex-1 flex-col">
+            <span>{t('composer.plan.toggle')}</span>
+            <span className="text-note text-muted">
+              {t('composer.plan.hint', { shortcut: planShortcut() })}
+            </span>
+          </span>
+          {planMode && <Check className="mt-0.5 text-fg!" />}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -627,7 +633,7 @@ export function Composer({
   const [sending, setSending] = useState(false)
   const [aborting, setAborting] = useState(false)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
-  const [permissionMenuOpen, setPermissionMenuOpen] = useState(false)
+  const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [agentPickerOpen, setAgentPickerOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -1052,7 +1058,7 @@ export function Composer({
       }
       case 'permissions': {
         if (args === '') {
-          setPermissionMenuOpen(true)
+          setModeMenuOpen(true)
           keepFocus = false
           break
         }
@@ -1458,8 +1464,12 @@ export function Composer({
                 onOpenSettings === undefined ? undefined : () => onOpenSettings('teams')
               }
             />
-            <PermissionMenu open={permissionMenuOpen} onOpenChange={setPermissionMenuOpen} />
-            <PlanModeChip on={planMode} onExit={() => setPlanMode(false)} />
+            <ModeMenu
+              planMode={planMode}
+              onTogglePlan={() => setPlanMode((on) => !on)}
+              open={modeMenuOpen}
+              onOpenChange={setModeMenuOpen}
+            />
             <div className="ml-auto flex min-w-0 items-center gap-1">
               <ModelPicker
                 providers={providers}
