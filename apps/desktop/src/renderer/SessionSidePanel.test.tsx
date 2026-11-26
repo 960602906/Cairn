@@ -600,6 +600,35 @@ describe('SessionSidePanel', () => {
     expect(onOpenPanel).toHaveBeenCalledWith('files')
   })
 
+  it('closes a tab with the middle mouse button without switching to it', () => {
+    const onCloseTab = vi.fn()
+    const onActivateTab = vi.fn()
+    wrap(
+      <SessionSidePanel
+        sessionId="s1"
+        view={view}
+        status="idle"
+        panel="diff"
+        selectedPlanId={undefined}
+        onOpenPanel={() => {}}
+        onActivateTab={onActivateTab}
+        onHome={() => {}}
+        tabs={['diff', 'plan']}
+        onCloseTab={onCloseTab}
+      />,
+    )
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    const tab = within(panel).getByRole('tab', { name: '计划' })
+    // 中键按下不触发自动滚动。
+    expect(fireEvent.mouseDown(tab, { button: 1 })).toBe(false)
+    fireEvent(tab, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+    expect(onCloseTab).toHaveBeenCalledWith('plan')
+    expect(onActivateTab).not.toHaveBeenCalled()
+    // 左键的 auxclick 不关闭。
+    fireEvent(tab, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 0 }))
+    expect(onCloseTab).toHaveBeenCalledTimes(1)
+  })
+
   it('hides the add menu when every tab is open', () => {
     wrap(
       <SessionSidePanel
