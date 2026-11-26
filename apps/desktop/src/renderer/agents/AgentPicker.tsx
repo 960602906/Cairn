@@ -158,16 +158,17 @@ export function AgentPicker({
   // 绑定了团队时显示团队名称；否则按主进程的默认 Agent（内置编程助手）显示，避免“没有选中项”。
   const currentId = agent?.id ?? BUILTIN_CODER_ID
   const current = agents.find((item) => item.agentId === currentId)
+  const usableTeams = useMemo(() => availableTeams(teams), [teams])
+  const boundTeam =
+    team === undefined ? undefined : usableTeams.find((item) => item.teamId === team.teamId)
   // 找不到定义时如实显示 id，不冒充默认 Agent；归档的仍能显示名称。
+  // 模板改名后以列表里的最新名称为准；已不可用时退回绑定时的名称。
   const teamLabel =
-    team === undefined ? undefined : localized(team.name, i18n.language, team.teamId)
+    team === undefined ? undefined : localized((boundTeam ?? team).name, i18n.language, team.teamId)
   const label = teamLabel ?? (current ? agentName(current, i18n.language) : currentId)
   /** 当前 Agent 已归档：菜单里保留一行，标出来但不能再选。 */
   const archivedCurrent = team === undefined && current?.archived === true
-  const usableTeams = useMemo(() => availableTeams(teams), [teams])
   /** 绑定的团队已归档或不再可用：列表里保留一行提示，选择单个 Agent 即可离开。 */
-  const boundTeam =
-    team === undefined ? undefined : usableTeams.find((item) => item.teamId === team.teamId)
   const unavailableTeam = team !== undefined && teamsLoaded && boundTeam === undefined
   const teamOptions = useMemo(() => pickerTeams(teams, query), [teams, query])
   const agentOptions = useMemo(() => pickerAgents(agents, recent, query), [agents, recent, query])
@@ -391,6 +392,7 @@ export function AgentPicker({
               if (entry.kind === 'team') {
                 const option = entry.team
                 const isCurrent = option.teamId === team?.teamId
+                const coordinator = agents.find((item) => item.agentId === option.coordinator)
                 return (
                   <li
                     key={entry.key}
@@ -418,6 +420,9 @@ export function AgentPicker({
                         {t('composer.team.meta', {
                           pattern: tt(`pattern.${option.pattern}`),
                           count: option.memberCount,
+                          coordinator: coordinator
+                            ? agentName(coordinator, i18n.language)
+                            : option.coordinator,
                         })}
                       </span>
                     </span>

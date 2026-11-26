@@ -113,6 +113,10 @@
 
 ### Changed
 
+- 团队选择器每项注明主控 Agent，并改用模板的最新名称；模板改名后触发按钮不再停留在旧名称。
+  The team picker lists each template's coordinator and uses its latest name, so the trigger no
+  longer keeps an old name after a rename.
+
 - 新对话页的 `@Agent` 候选跟随所选团队主控或 Agent 的委派名单，不再固定用默认 Agent；
   选团队时模板的委派覆盖一并生效。
   The new-session page now suggests @agent targets from the selected team's coordinator or the

@@ -329,6 +329,27 @@ describe('AgentPicker', () => {
     expect(screen.queryByText('已归档或不可用')).toBeNull()
   })
 
+  it('shows the latest team name on the trigger, falling back when unavailable', async () => {
+    const renamed = team({ name: { 'zh-CN': '新名字', 'en-US': 'New name' } })
+    const binding = { teamId: renamed.teamId, name: { 'zh-CN': '旧名字' } }
+    setup({ teams: [renamed], team: binding })
+    expect(screen.getByRole('button', { name: '切换团队：新名字' })).toBeTruthy()
+    cleanup()
+
+    setup({ teams: [team({ archived: true, name: renamed.name })], team: binding })
+    expect(screen.getByRole('button', { name: '切换团队：旧名字' })).toBeTruthy()
+    cleanup()
+
+    // 列表里找不到主控时如实显示 id。
+    setup({ agents: [coder], teams: [team({ coordinator: 'user.missing' })] })
+    await userEvent.click(screen.getByRole('button', { name: /^切换 Agent：/ }))
+    expect(
+      within(await screen.findByRole('listbox', { name: '选择 Agent 或团队' })).getByText(
+        /主控 user\.missing/,
+      ),
+    ).toBeTruthy()
+  })
+
   it('hands the choice to the caller in new-session mode', async () => {
     const onSelect = vi.fn()
     const { request, trigger } = setup({ onSelect })
@@ -404,6 +425,7 @@ describe('AgentPicker', () => {
     const rows = within(box).getAllByRole('option')
     expect(rows[0]!.textContent).toContain('日常协作')
     expect(rows[0]!.textContent).toContain('自由委派 · 2 名成员')
+    expect(rows[0]!.textContent).toContain('主控 编程助手')
     expect(rows[0]!.getAttribute('aria-selected')).toBe('true')
     expect(rows[1]!.textContent).toContain('编程助手')
     // 绑定团队时当前根 Agent 是主控，不把它标成当前选择。

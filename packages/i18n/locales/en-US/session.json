@@ -385,7 +385,7 @@
   "composer.picker.empty": "No matching agents or teams",
   "composer.team.label": "Switch team: {{name}}",
   "composer.team.section": "Team templates",
-  "composer.team.meta": "{{pattern}} · {{count}} members",
+  "composer.team.meta": "{{pattern}} · {{count}} members · Coordinator {{coordinator}}",
   "composer.team.manage": "Manage teams",
   "composer.team.unavailable": "Archived or unavailable",
   "chat.agentSwitched": "Switched to {{name}} v{{version}}",
