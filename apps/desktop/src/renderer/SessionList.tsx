@@ -149,6 +149,7 @@ export function SessionItem({
   const archiveSession = useSessionStore((s) => s.archiveSession)
   const unarchiveSession = useSessionStore((s) => s.unarchiveSession)
   const deleteSession = useSessionStore((s) => s.deleteSession)
+  const teams = useSessionStore((s) => s.teams)
   const [renaming, setRenaming] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -165,10 +166,14 @@ export function SessionItem({
   const pinned = session.pinned === true
   const title = session.title === '' ? t('title.untitled') : session.title
   const time = formatSessionTime(session.updatedAt, t('list.yesterday'))
+  const boundTeam = session.team
+  // 模板改名后按列表里的最新名称显示；列表还没读回或已不可用时用绑定时的名称。
+  const latestTeam =
+    boundTeam === undefined ? undefined : teams?.find((item) => item.teamId === boundTeam.teamId)
   const teamName =
-    session.team === undefined
+    boundTeam === undefined
       ? undefined
-      : localized(session.team.name, i18n.language, session.team.teamId)
+      : localized(latestTeam?.name ?? boundTeam.name, i18n.language, boundTeam.teamId)
 
   if (renaming) {
     return (

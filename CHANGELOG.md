@@ -8,9 +8,10 @@
 ### Added
 
 - 侧栏的会话列表会在标题旁用团队图标标出正在使用团队模板的会话，悬停显示团队名称，读屏
-  也会读出；普通 Agent 会话不受影响。
+  也会读出；模板改名后按列表里的最新名称显示，普通 Agent 会话不受影响。
   Sessions that use a team template now show a team icon next to their title in the sidebar,
-  with the team name on hover and for screen readers; plain agent sessions are unchanged.
+  with the team name on hover and for screen readers. Renamed templates show their latest name,
+  and plain agent sessions are unchanged.
 
 - Agent 选择器底部新增「管理团队」入口，与「管理 Agents」并排，直接跳到设置 → 团队模板。
   会话绑定的团队归档或不再可用时，菜单保留一行「已归档或不可用」，不能再选；换选一个单个
