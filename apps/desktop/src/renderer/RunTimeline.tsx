@@ -158,7 +158,9 @@ function RunNodeView({
                                   {t('inspector.timeline.step', { number: stepIndex + 1 })}
                                 </span>
                                 <span className="shrink-0 text-[11px] text-muted">
-                                  {step.finishReason ?? t('inspector.timeline.running')}
+                                  {step.finishReason === undefined
+                                    ? t('inspector.timeline.running')
+                                    : t(`inspector.finish.${step.finishReason}`)}
                                 </span>
                                 <span className="tabular shrink-0 text-[11px] text-muted">
                                   {compactTokens(step.usage.inputTokens + step.usage.outputTokens)}
