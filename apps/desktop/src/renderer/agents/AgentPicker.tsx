@@ -192,7 +192,13 @@ export function AgentPicker({
 
   useEffect(() => {
     if (!open) return
-    setActive(0)
+    // 打开时高亮当前使用的 Agent / 团队：直接按 Enter 不会换成列表第一项。
+    const currentIndex = entries.findIndex((entry) =>
+      entry.kind === 'team'
+        ? entry.team.teamId === team?.teamId
+        : team === undefined && entry.agent.agentId === currentId,
+    )
+    setActive(currentIndex === -1 ? 0 : currentIndex)
     search.current?.focus()
     const onPointer = (event: MouseEvent) => {
       if (!(event.target instanceof Node)) return

@@ -114,6 +114,10 @@
 
 ### Changed
 
+- Agent 选择器打开时高亮当前使用的 Agent 或团队，直接按 Enter 不会换成列表第一项。
+  The agent picker highlights the current agent or team when opened, so pressing Enter no
+  longer switches to the first item by accident.
+
 - 关闭工作空间或分支菜单、对话内查找，或暂停 / 继续目标之后，焦点回到输入框；点菜单外面
   关闭时不抢焦点。
   Closing the workspace or branch menu, in-conversation find, or pausing/resuming a goal returns
