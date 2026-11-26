@@ -203,6 +203,7 @@ function setup(
     setPinned: vi.fn(() => ({})),
     transcript: vi.fn(() => ({ markdown: '# demo\n' })),
     exportTranscript: vi.fn(async () => ({ cancelled: false, path: '/tmp/demo.md' })),
+    searchText: vi.fn(() => ({ hits: [{ sessionId: 's1', snippet: '…你好…' }] })),
     archive: vi.fn(() => ({})),
     unarchive: vi.fn(() => ({})),
     delete: vi.fn(() => ({})),
@@ -820,11 +821,15 @@ describe('createRendererGateway: commands and lifecycle', () => {
       cancelled: false,
       path: '/tmp/demo.md',
     })
+    await expect(
+      client.request('session.searchText', { query: '你好', includeArchived: true }),
+    ).resolves.toEqual({ hits: [{ sessionId: 's1', snippet: '…你好…' }] })
     await expect(client.request('session.archive', { sessionId: 's2' })).resolves.toEqual({})
     expect(commands.rename).toHaveBeenCalledWith({ sessionId: 's1', title: 'New name' })
     expect(commands.setPinned).toHaveBeenCalledWith({ sessionId: 's1', pinned: true })
     expect(commands.transcript).toHaveBeenCalledWith({ sessionId: 's1' })
     expect(commands.exportTranscript).toHaveBeenCalledWith({ sessionId: 's1' })
+    expect(commands.searchText).toHaveBeenCalledWith({ query: '你好', includeArchived: true })
     expect(commands.archive).toHaveBeenCalledWith({ sessionId: 's2' })
     const model = { providerId: 'p', modelId: 'm' }
     await expect(client.request('session.setModel', { sessionId: 's1', model })).resolves.toEqual(

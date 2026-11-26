@@ -11,6 +11,7 @@ import {
 } from '@cairn/protocol'
 import { checkMemoryContent, checkMemoryOwner, MEMORY_SCOPE_ORDER } from './memory-entries.js'
 import { checkPermissionRuleOwner, SCOPE_ORDER } from './permission-rules.js'
+import { matchesQuery, normalizeQuery, searchableText, searchSnippet } from './search.js'
 import {
   StorageError,
   StorageErrorCode,
@@ -38,6 +39,8 @@ import {
   type McpToolPref,
   type PermissionRuleRecord,
   type ProjectRecord,
+  type SessionSearchHit,
+  type SessionSearchOptions,
   type RunSnapshotRecord,
   type SessionRecord,
   type SkillPref,
@@ -296,6 +299,32 @@ export function createMemoryStorage(options: StorageOptions = {}): Storage {
               a.sessionId.localeCompare(b.sessionId),
           )
           .map(copy)
+      },
+      searchText(query: string, searchOptions: SessionSearchOptions = {}) {
+        const normalized = normalizeQuery(query)
+        if (normalized === undefined) return []
+        const limit = Math.max(0, searchOptions.limit ?? 100)
+        const s = live()
+        const ordered = [...s.sessions.values()]
+          .filter((r) => searchOptions.includeArchived || !r.archived)
+          .filter((r) => r.kind !== 'trial')
+          .sort(
+            (a, b) =>
+              Number(b.pinned) - Number(a.pinned) ||
+              b.updatedAt - a.updatedAt ||
+              a.sessionId.localeCompare(b.sessionId),
+          )
+        const hits: SessionSearchHit[] = []
+        for (const session of ordered) {
+          if (hits.length >= limit) break
+          const text = (s.events.get(session.sessionId) ?? [])
+            .map(searchableText)
+            .filter((value): value is string => value !== undefined)
+            .join('\n')
+          if (text === '' || !matchesQuery(text, normalized)) continue
+          hits.push({ sessionId: session.sessionId, snippet: searchSnippet(text, normalized) })
+        }
+        return hits
       },
       remove(sessionId) {
         const s = live()

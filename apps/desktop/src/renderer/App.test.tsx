@@ -170,9 +170,11 @@ describe('App', () => {
     stubMedia(true)
     render(<App i18n={createI18n('zh-CN')} store={makeStore()} />)
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
-    expect(await screen.findByPlaceholderText('按标题或项目名搜索')).toBeTruthy()
+    expect(await screen.findByPlaceholderText('搜索标题、项目或消息内容')).toBeTruthy()
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByPlaceholderText('按标题或项目名搜索')).toBeNull())
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('搜索标题、项目或消息内容')).toBeNull(),
+    )
 
     // 窄窗口下设置入口在左栏抽屉里。
     fireEvent.click(await screen.findByRole('button', { name: '展开侧栏' }))

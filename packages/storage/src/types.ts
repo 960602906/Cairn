@@ -160,12 +160,30 @@ export interface ListSessionsOptions {
   readonly includeTrial?: boolean
 }
 
+/** 全文搜索命中：会话 id 与命中附近的正文片段。 */
+export interface SessionSearchHit {
+  readonly sessionId: string
+  readonly snippet: string
+}
+
+export interface SessionSearchOptions {
+  /** 最多返回多少个会话，默认 100。 */
+  readonly limit?: number
+  /** 是否包含已归档的会话，默认否。 */
+  readonly includeArchived?: boolean
+}
+
 export interface SessionStore {
   /** 项目不存在时报 `storage.not_found`，id 重复时报 `storage.conflict`。 */
   create(input: CreateSessionInput): SessionRecord
   get(sessionId: string): SessionRecord | undefined
   /** 按 `updatedAt` 倒序；默认不含已归档与试运行会话。 */
   list(options?: ListSessionsOptions): SessionRecord[]
+  /**
+   * 在用户与助手的消息正文里搜索（不区分大小写，多个词都要出现），每个会话最多一条结果。
+   * 顺序与 `list()` 一致（置顶优先、最近更新在前）。
+   */
+  searchText(query: string, options?: SessionSearchOptions): SessionSearchHit[]
   /** 删除会话及其事件、改动、快照与权限规则；不存在时报 `storage.not_found`。 */
   remove(sessionId: string): void
   rename(sessionId: string, title: string): SessionRecord

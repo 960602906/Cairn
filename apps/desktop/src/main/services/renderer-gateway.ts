@@ -72,6 +72,8 @@ export interface SessionCommands {
   readonly setPinned: Handler<'session.setPinned'>
   readonly transcript: Handler<'session.transcript'>
   readonly exportTranscript: Handler<'session.exportTranscript'>
+  /** ⌘K 的全文模式：在消息正文里搜索。 */
+  readonly searchText: Handler<'session.searchText'>
   readonly archive: Handler<'session.archive'>
   readonly unarchive: Handler<'session.unarchive'>
   /** 彻底删除已归档的会话（不可恢复）。 */
@@ -546,6 +548,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('session.setPinned', (params) => commands.setPinned(params))
       endpoint.handle('session.transcript', (params) => commands.transcript(params))
       endpoint.handle('session.exportTranscript', (params) => commands.exportTranscript(params))
+      endpoint.handle('session.searchText', (params) => commands.searchText(params))
       endpoint.handle('session.archive', (params) => commands.archive(params))
       endpoint.handle('session.unarchive', (params) => commands.unarchive(params))
       endpoint.handle('session.delete', (params) => commands.delete(params))

@@ -10,6 +10,7 @@ import {
   type ChangeSetStatus,
   type BackgroundCommand,
   type BackgroundCommandOutput,
+  type ContentPart,
   type FileChangeKind,
   type FileChangeStatus,
   type PermissionRule,
@@ -57,12 +58,15 @@ import {
   type ProjectRecord,
   type RunSnapshotRecord,
   type SessionRecord,
+  type SessionSearchHit,
+  type SessionSearchOptions,
   type SkillPref,
   type Storage,
   type StorageOptions,
 } from '../types.js'
 import { checkMemoryContent, checkMemoryOwner } from '../memory-entries.js'
 import { checkPermissionRuleOwner } from '../permission-rules.js'
+import { contentText, normalizeQuery, searchableText, searchSnippet } from '../search.js'
 import { migrateDatabase, type MigrateResult, type Migration } from './migrate.js'
 import { MIGRATIONS } from './migrations/index.js'
 
@@ -76,6 +80,11 @@ export interface SqliteStorageOptions extends StorageOptions {
 export interface SqliteStorage extends Storage {
   /** 打开时执行迁移的结果。 */
   readonly migration: MigrateResult
+}
+
+interface SearchRow {
+  session_id: string
+  text: string
 }
 
 interface ProjectRow {
@@ -917,6 +926,34 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
       `UPDATE change_set_files SET status = @status
        WHERE change_set_id = @changeSetId AND path = @path`,
     ),
+    insertSearchText: db.prepare(
+      'INSERT INTO session_search_text (session_id, text) VALUES (@sessionId, @text)',
+    ),
+    upsertSearchText: db.prepare(
+      `INSERT INTO session_search_text (session_id, text) VALUES (@sessionId, @text)
+       ON CONFLICT (session_id) DO UPDATE SET
+         text = session_search_text.text || char(10) || excluded.text`,
+    ),
+    deleteSearchText: db.prepare('DELETE FROM session_search_text WHERE session_id = ?'),
+    countSearchText: db.prepare<[], { count: number }>(
+      'SELECT COUNT(*) AS count FROM session_search_text',
+    ),
+    searchableEvents: db.prepare<[], { session_id: string; payload: string }>(
+      `SELECT session_id, payload FROM events
+       WHERE type IN ('message.user', 'message.assistant.completed')
+       ORDER BY session_id, seq`,
+    ),
+    searchTextFts: db.prepare<{ query: string; includeArchived: number; limit: number }, SearchRow>(
+      `SELECT search.session_id AS session_id, search.text AS text
+       FROM session_search_fts
+       JOIN session_search_text AS search ON search.rowid = session_search_fts.rowid
+       JOIN sessions AS s ON s.session_id = search.session_id
+       WHERE session_search_fts MATCH @query
+         AND (@includeArchived = 1 OR s.archived = 0)
+         AND s.kind <> 'trial'
+       ORDER BY s.pinned DESC, s.updated_at DESC
+       LIMIT @limit`,
+    ),
   }
 
   const toSkillPref = (row: SkillPrefRow): SkillPref => ({
@@ -938,6 +975,35 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
   }
 
   const maxSeq = (sessionId: string): number => q.maxSeq.get(sessionId)?.seq ?? 0
+
+  /** 旧数据库首次打开时回填搜索正文；之后由 `append` 增量维护。 */
+  const backfillSearch = (): void => {
+    if ((q.countSearchText.get()?.count ?? 0) > 0) return
+    const rows = q.searchableEvents.all()
+    if (rows.length === 0) return
+    const bySession = new Map<string, string[]>()
+    for (const row of rows) {
+      let content: unknown
+      try {
+        content = (JSON.parse(row.payload) as { content?: unknown }).content
+      } catch {
+        continue
+      }
+      if (!Array.isArray(content)) continue
+      const text = contentText(content as readonly ContentPart[])
+      if (text === undefined) continue
+      const list = bySession.get(row.session_id) ?? []
+      list.push(text)
+      bySession.set(row.session_id, list)
+    }
+    if (bySession.size === 0) return
+    db.transaction(() => {
+      for (const [sessionId, texts] of bySession) {
+        q.insertSearchText.run({ sessionId, text: texts.join('\n') })
+      }
+    })()
+  }
+  backfillSearch()
 
   const addRunSnapshot = db.transaction((input: AddRunSnapshotInput): RunSnapshotRecord => {
     if (!q.sessionById.get(input.sessionId)) {
@@ -1068,6 +1134,8 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
         ts: event.ts,
         payload: JSON.stringify(event.payload),
       })
+      const text = searchableText(event)
+      if (text !== undefined) q.upsertSearchText.run({ sessionId: event.sessionId, text })
       lastSeq.set(event.sessionId, event.seq)
     }
   })
@@ -1349,11 +1417,49 @@ export function openSqliteStorage(options: SqliteStorageOptions): SqliteStorage 
           })
           .map(toSession)
       },
+      searchText(query: string, searchOptions: SessionSearchOptions = {}) {
+        const normalized = normalizeQuery(query)
+        if (normalized === undefined) return []
+        const limit = Math.max(0, searchOptions.limit ?? 100)
+        if (limit === 0) return []
+        const includeArchived = searchOptions.includeArchived ? 1 : 0
+        const terms = normalized.toLowerCase().split(' ')
+        let rows: SearchRow[]
+        // trigram 分词只支持 ≥3 个字符的子串；更短的词（常见的中文两字词）退回 LIKE。
+        if (terms.every((term) => term.length >= 3)) {
+          const match = terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(' AND ')
+          rows = q.searchTextFts.all({ query: match, includeArchived, limit })
+        } else {
+          const conditions = terms.map(
+            (_term, index) => `instr(lower(search.text), @term${index}) > 0`,
+          )
+          const statement = db.prepare(
+            `SELECT search.session_id AS session_id, search.text AS text
+             FROM session_search_text AS search
+             JOIN sessions AS s ON s.session_id = search.session_id
+             WHERE (@includeArchived = 1 OR s.archived = 0)
+               AND s.kind <> 'trial'
+               AND ${conditions.join(' AND ')}
+             ORDER BY s.pinned DESC, s.updated_at DESC
+             LIMIT @limit`,
+          )
+          const params: Record<string, string | number> = { includeArchived, limit }
+          terms.forEach((term, index) => {
+            params[`term${index}`] = term
+          })
+          rows = statement.all(params) as SearchRow[]
+        }
+        return rows.map((row): SessionSearchHit => ({
+          sessionId: row.session_id,
+          snippet: searchSnippet(row.text, normalized),
+        }))
+      },
       remove(sessionId) {
         if (!q.sessionById.get(sessionId)) {
           throw new StorageError(StorageErrorCode.NotFound, { sessionId })
         }
         db.transaction(() => {
+          q.deleteSearchText.run(sessionId)
           q.deleteSessionEvents.run(sessionId)
           q.deleteSessionFileChanges.run(sessionId)
           q.deleteSessionPermissionRules.run(sessionId)

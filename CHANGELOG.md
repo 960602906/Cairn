@@ -7,6 +7,12 @@
 
 ### Added
 
+- 搜索对话（⌘K）现在也会搜索消息正文：标题或项目名不匹配的会话，只要消息里出现输入的词，
+  也会带着命中附近的片段出现在结果里；输入停顿后才查询，切换输入不会显示上一次的片段。
+  Search conversations (⌘K) now searches message text too: a session whose title or project does
+  not match still appears when the words occur in its messages, with a snippet around the hit.
+  Queries run after a short pause, and stale snippets never appear for a new query.
+
 - 会话导出：会话操作菜单可以把整段对话复制为 Markdown，或导出为 `.md` 文件（系统另存对话框）。
   导出包含用户与助手的正文、图片占位与工具调用名称，不包含推理与工具输出。
   Export a chat as Markdown from the session menu: copy the whole conversation or save a `.md`
