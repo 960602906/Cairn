@@ -901,11 +901,14 @@ describe('commands', () => {
   })
 
   it('reads delegation targets and tolerates an old main process', async () => {
+    const calls: unknown[] = []
     const { api } = fakeApi({
-      'agent.delegationTargets': ({ sessionId }: { sessionId?: string }) =>
-        sessionId === undefined
+      'agent.delegationTargets': (params: { sessionId?: string }) => {
+        calls.push(params)
+        return params.sessionId === undefined
           ? { enabled: true, agentIds: ['builtin.explorer'] }
-          : { enabled: false, agentIds: [] },
+          : { enabled: false, agentIds: [] }
+      },
     })
     const store = createSessionStore(api)
     await expect(store.getState().delegationTargets()).resolves.toEqual({
@@ -916,6 +919,15 @@ describe('commands', () => {
       enabled: false,
       agentIds: [],
     })
+    // 新对话页带上所选的团队或 Agent。
+    await expect(
+      store.getState().delegationTargets(undefined, { teamId: 'user.team-1' }),
+    ).resolves.toEqual({ enabled: true, agentIds: ['builtin.explorer'] })
+    await expect(
+      store.getState().delegationTargets(undefined, { agent: { id: 'user.checker', version: 3 } }),
+    ).resolves.toEqual({ enabled: true, agentIds: ['builtin.explorer'] })
+    expect(calls).toContainEqual({ teamId: 'user.team-1' })
+    expect(calls).toContainEqual({ agent: { id: 'user.checker', version: 3 } })
 
     // 旧主进程返回 `{}`：不做过滤。
     const old = fakeApi()

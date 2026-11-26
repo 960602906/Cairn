@@ -1383,6 +1383,49 @@ describe('agent switching (M3-11)', () => {
     expect(manager.delegationTargets({})).toEqual({ enabled: false, agentIds: [] })
     expect(manager.delegationTargets({ sessionId })).toEqual({ enabled: false, agentIds: [] })
   })
+
+  it('resolves new-session targets from the selected agent or team', () => {
+    const policy = (allowedAgents: string[]) => ({
+      enabled: true,
+      allowedAgents,
+      maxDepth: 1,
+      maxChildrenPerTurn: 2,
+      maxParallel: 1,
+      childBudgetShare: 0.5,
+      defaultWorkspace: 'auto' as const,
+      mergeReview: 'user' as const,
+    })
+    const selected = definition({ id: 'user.selected', delegation: policy(['builtin.explorer']) })
+    const teamAgent = definition({ id: 'user.coordinator', delegation: policy(['user.maker']) })
+    const resolveTeamAgent = vi.fn((teamId: string) =>
+      teamId === 'user.team-1' ? teamAgent : undefined,
+    )
+    const { manager } = setup(fakeSupervisor().supervisor, {
+      ...resolver(selected),
+      resolveTeamAgent,
+    })
+
+    // 新对话页选了单个 Agent：按它的名单，而不是默认 Agent 的。
+    expect(
+      manager.delegationTargets({ agent: { id: selected.id, version: selected.version } }),
+    ).toEqual({ enabled: true, agentIds: ['builtin.explorer'] })
+    // 选了团队：按主控合并后的名单；传了 agent 也以团队为准。
+    expect(
+      manager.delegationTargets({
+        teamId: 'user.team-1',
+        agent: { id: 'ignored', version: 1 },
+      }),
+    ).toEqual({ enabled: true, agentIds: ['user.maker'] })
+    expect(manager.delegationTargets({ teamId: 'user.missing' })).toEqual({
+      enabled: false,
+      agentIds: [],
+    })
+    // 都没选：沿用默认 Agent。
+    expect(manager.delegationTargets({})).toEqual({
+      enabled: true,
+      agentIds: ['builtin.explorer'],
+    })
+  })
 })
 
 describe('team binding (M7-09)', () => {

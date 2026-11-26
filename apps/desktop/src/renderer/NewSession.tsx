@@ -174,18 +174,8 @@ export function NewSession({
   const textarea = useRef<HTMLTextAreaElement>(null)
   const box = useRef<HTMLDivElement>(null)
   const projectId = projects.find((project) => project.path === projectPath.trim())?.projectId
-  /** 新会话的 `@Agent` 只能点名默认 Agent 的委派名单（M4-02）。 */
+  /** 新会话的 `@Agent` 跟随所选团队主控 / Agent 的委派名单（M4-02）。 */
   const [delegateIds, setDelegateIds] = useState<readonly string[]>()
-  useEffect(() => {
-    let alive = true
-    void delegationTargets(undefined).then((targets) => {
-      if (alive)
-        setDelegateIds(targets === undefined ? undefined : targets.enabled ? targets.agentIds : [])
-    })
-    return () => {
-      alive = false
-    }
-  }, [delegationTargets])
   const agentOptions = useMemo<MentionAgent[]>(
     () =>
       agents
@@ -235,6 +225,23 @@ export function NewSession({
     () => selectableTeams.find((team) => team.teamId === selectedTeamId),
     [selectableTeams, selectedTeamId],
   )
+  // 还没创建会话：按选中的团队主控 / Agent 计算 `@Agent` 候选；都没选时用默认 Agent。
+  useEffect(() => {
+    let alive = true
+    const selection =
+      selectedTeam !== undefined
+        ? { teamId: selectedTeam.teamId }
+        : selectedAgent === undefined
+          ? undefined
+          : { agent: { id: selectedAgent.agentId, version: selectedAgent.version } }
+    void delegationTargets(undefined, selection).then((targets) => {
+      if (alive)
+        setDelegateIds(targets === undefined ? undefined : targets.enabled ? targets.agentIds : [])
+    })
+    return () => {
+      alive = false
+    }
+  }, [delegationTargets, selectedAgent, selectedTeam])
   /** 固定模型的 Agent 由它决定模型；选中团队时按主控 Agent 算。 */
   const selectedDefinition = useMemo(
     () =>

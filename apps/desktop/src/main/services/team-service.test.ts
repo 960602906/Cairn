@@ -457,6 +457,24 @@ describe('团队模板命令（M7-09）', () => {
     expect(service.resolveTeam('missing')).toBeUndefined()
   })
 
+  it('definitionForTeam 返回已发布模板合并后的主控定义', () => {
+    const { service } = setup()
+    const created = service.saveDraft({
+      definition: draft({ delegation: { maxChildrenPerTurn: 3 } }),
+    })
+    expect(service.definitionForTeam(created.teamId)).toBeUndefined()
+    service.publish({ teamId: created.teamId })
+    const merged = service.definitionForTeam(created.teamId)
+    expect(merged).toMatchObject({
+      id: coordinator.id,
+      delegation: { enabled: true, maxChildrenPerTurn: 3 },
+    })
+    expect(merged?.instructions).toContain('# Team: 审查小组')
+    service.archive({ teamId: created.teamId })
+    expect(service.definitionForTeam(created.teamId)).toBeUndefined()
+    expect(service.definitionForTeam('missing')).toBeUndefined()
+  })
+
   it('清理最旧试运行时跳过仍在运行的会话', () => {
     const { storage, busy, service, advance } = setup()
     const created = service.saveDraft({ definition: draft() })

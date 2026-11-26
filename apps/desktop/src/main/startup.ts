@@ -659,6 +659,7 @@ const sessions = createSessionManager({
     return definition && teams.applySessionTeam(sessionId, definition)
   },
   resolveTeam: (teamId) => teams.resolveTeam(teamId),
+  resolveTeamAgent: (teamId) => teams.definitionForTeam(teamId),
   models: { defaultModel: () => settings.get().defaultModel, has: settings.hasModel },
   isLocked: (sessionId) => changes.isReverting(sessionId) || checkpoints.isRestoring(sessionId),
   finishGoalBudget: (sessionId) => goals?.finishBudget(sessionId),

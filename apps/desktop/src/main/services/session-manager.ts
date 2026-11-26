@@ -141,6 +141,11 @@ export interface SessionManagerOptions {
    * `session.setTeam` 一律拒绝；每次运行合并协作说明时由 `applySessionTeam` 读取最新版本。
    */
   readonly resolveTeam?: (teamId: string) => SessionTeamResolution | undefined
+  /**
+   * 按 id 取模板主控合并后的定义（M7-09）：新对话页还没创建会话时，`@Agent` 候选要按所选
+   * 团队主控的委派名单计算。省略时团队选择不提供候选。
+   */
+  readonly resolveTeamAgent?: (teamId: string) => AgentDefinition | undefined
   /** 会话是否暂时不接受输入（如正在撤销改动，M1-08b），此时输入报 `run.busy`。 */
   readonly isLocked?: (sessionId: string) => boolean
   /** 同时存在的宿主上限，默认 3。 */
@@ -1191,12 +1196,16 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
      * （下一次输入时重建）。运行中不能切换；空闲的宿主先停止，新宿主带新 Agent 的指令与工具。
      */
     /** 当前 Agent 的委派范围（M4-02）：`@Agent` 候选与展开都只认这份名单。 */
-    delegationTargets({ sessionId }) {
-      const ref = sessionId === undefined ? options.runDefaults.agent : currentAgent(sessionId)
+    delegationTargets({ sessionId, agent, teamId }) {
+      // 已经有会话时以会话当前 Agent 为准；新对话页按调用方传入的团队 / Agent 计算。
+      const ref =
+        sessionId === undefined ? (agent ?? options.runDefaults.agent) : currentAgent(sessionId)
       const definition =
-        sessionId === undefined
-          ? options.resolveAgent?.(ref)
-          : (options.resolveSessionAgent?.(sessionId, ref) ?? options.resolveAgent?.(ref))
+        sessionId !== undefined
+          ? (options.resolveSessionAgent?.(sessionId, ref) ?? options.resolveAgent?.(ref))
+          : teamId !== undefined
+            ? options.resolveTeamAgent?.(teamId)
+            : options.resolveAgent?.(ref)
       const policy = resolveDelegationPolicy(definition?.delegation)
       return { enabled: policy.enabled, agentIds: [...policy.allowedAgents] }
     },

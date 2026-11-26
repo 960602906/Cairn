@@ -1412,10 +1412,15 @@ export const MainForRenderer = defineSide({
     },
     /**
      * 这个会话当前 Agent 允许委派的目标（M4-02）：`@Agent` 候选与主进程展开共用同一份名单。
-     * 省略 `sessionId` 时按新会话的默认 Agent 计算。委派关闭时 `enabled` 为 false、名单为空。
+     * 省略 `sessionId` 时按新会话页选中的团队主控（`teamId`）或 Agent（`agent`）计算；
+     * 两者都省略时用默认 Agent。委派关闭时 `enabled` 为 false、名单为空。
      */
     'agent.delegationTargets': {
-      params: z.object({ sessionId: Id.optional() }),
+      params: z.object({
+        sessionId: Id.optional(),
+        agent: AgentDefinitionRef.optional(),
+        teamId: Id.optional(),
+      }),
       result: z.object({ enabled: z.boolean(), agentIds: z.array(Id) }),
     },
     /** 诊断包导出前的清单（M3-13）：只含计数与版本，不含任何凭据或路径。 */
