@@ -8,7 +8,7 @@
  * 不再有单独的标题栏和底色。常驻时由顶栏按钮开合，所以只在浮层模式下显示关闭按钮。
  */
 import { House, Plus, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionView } from '@cairn/core'
 import type { SessionStatus } from '@cairn/protocol'
@@ -117,7 +117,9 @@ export function SessionSidePanel({
   const addablePanels = SESSION_PANEL_DEFINITIONS.filter((item) => item.addable)
   const availablePanels = addablePanels.filter(({ id }) => !tabs.includes(id))
   const panelRef = useRef<HTMLElement>(null)
-  const selectedTabRef = useRef<HTMLButtonElement>(null)
+  const tablistRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>())
+  const closingTab = useRef(false)
   const { width, dragging, handleProps } = useResizableWidth({
     storageKey: 'cairn.sessionPanelWidth',
     initial: 348,
@@ -137,7 +139,7 @@ export function SessionSidePanel({
         ...panel.querySelectorAll<HTMLElement>(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
         ),
-      ].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+      ].filter((element) => element.tabIndex >= 0 && element.getAttribute('aria-hidden') !== 'true')
     focusable()[0]?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Tab') return
@@ -171,11 +173,47 @@ export function SessionSidePanel({
   }, [docked, open])
   // 文件标签追加在末尾时，把当前标签带进可见区域。
   useEffect(() => {
-    const node = selectedTabRef.current
+    const node = tabRefs.current.get(panel)
     if (typeof node?.scrollIntoView === 'function') {
       node.scrollIntoView({ block: 'nearest', inline: 'nearest' })
     }
   }, [panel, tabs.length])
+  // 关闭标签后，把焦点交给父组件新选中的标签；关掉最后一个时回到首页。
+  useEffect(() => {
+    if (!closingTab.current) return
+    closingTab.current = false
+    const target = tabRefs.current.get(panel) ?? tabRefs.current.get('home')
+    target?.focus()
+  }, [panel, tabs])
+  // 标签栏按 WAI-ARIA 的 tabs 模式走：← / → 在标签间移动并选中，Home / End 跳到两端。
+  const onTablistKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    const buttons = [
+      ...(tablistRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []),
+    ]
+    if (buttons.length === 0) return
+    event.preventDefault()
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    const selected = buttons.findIndex((button) => button.getAttribute('aria-selected') === 'true')
+    const from = current === -1 ? Math.max(selected, 0) : current
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? buttons.length - 1
+          : event.key === 'ArrowLeft'
+            ? (from - 1 + buttons.length) % buttons.length
+            : (from + 1) % buttons.length
+    const target = buttons[next]
+    target?.focus()
+    const tab = target?.dataset.tab
+    if (tab === 'home') onHome()
+    else if (tab !== undefined) onActivateTab(tab as SessionTab)
+  }
+  const closeTab = (id: SessionTab) => {
+    closingTab.current = true
+    onCloseTab(id)
+  }
   return (
     <aside
       ref={panelRef}
@@ -213,15 +251,23 @@ export function SessionSidePanel({
       >
         <div className="flex h-11 shrink-0 items-center gap-1 pr-2 pl-2">
           <div
+            ref={tablistRef}
             role="tablist"
             aria-label={t('sidePanel.tabs')}
+            onKeyDown={onTablistKeyDown}
             className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <button
+              ref={(node) => {
+                if (node) tabRefs.current.set('home', node)
+                else tabRefs.current.delete('home')
+              }}
               type="button"
               role="tab"
+              data-tab="home"
               aria-label={t('sidePanel.home')}
               aria-selected={panel === 'home'}
+              tabIndex={panel === 'home' ? 0 : -1}
               onClick={onHome}
               className={cn(
                 'grid size-7 shrink-0 place-items-center rounded-item outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent',
@@ -248,12 +294,17 @@ export function SessionSidePanel({
                   )}
                 >
                   <button
-                    ref={selected ? selectedTabRef : undefined}
+                    ref={(node) => {
+                      if (node) tabRefs.current.set(id, node)
+                      else tabRefs.current.delete(id)
+                    }}
                     type="button"
                     role="tab"
+                    data-tab={id}
                     aria-label={ariaLabel}
                     title={filePath}
                     aria-selected={selected}
+                    tabIndex={selected ? 0 : -1}
                     onClick={() => onActivateTab(id)}
                     className={cn(
                       'flex h-7 min-w-0 items-center gap-1 rounded-item pr-1 pl-2.5 text-note outline-none focus-visible:ring-1 focus-visible:ring-accent',
@@ -266,7 +317,8 @@ export function SessionSidePanel({
                   <button
                     type="button"
                     aria-label={closeLabel}
-                    onClick={() => onCloseTab(id)}
+                    tabIndex={selected ? 0 : -1}
+                    onClick={() => closeTab(id)}
                     className={cn(
                       'mr-1 grid size-4 shrink-0 place-items-center rounded-[4px] text-faint outline-none transition-opacity hover:bg-press hover:text-fg focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-accent',
                       selected ? 'opacity-100' : 'opacity-0 group-hover/tab:opacity-100',

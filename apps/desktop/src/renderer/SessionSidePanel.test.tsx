@@ -245,7 +245,7 @@ describe('SessionSidePanel', () => {
       ...panel.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
       ),
-    ].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+    ].filter((element) => element.tabIndex >= 0 && element.getAttribute('aria-hidden') !== 'true')
     focusable[0]?.focus()
     await user.tab({ shift: true })
     expect(document.activeElement).toBe(focusable.at(-1))
@@ -261,7 +261,7 @@ describe('SessionSidePanel', () => {
       ...panel.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
       ),
-    ].filter((element) => element.getAttribute('aria-hidden') !== 'true')
+    ].filter((element) => element.tabIndex >= 0 && element.getAttribute('aria-hidden') !== 'true')
 
     focusable[1]?.focus()
     await user.tab()
@@ -321,6 +321,78 @@ describe('SessionSidePanel', () => {
     expect(within(panel).getByText('修复登录')).toBeTruthy()
     expect(within(panel).getByText('未开始')).toBeTruthy()
     expect(within(panel).queryByRole('button', { name: '批准执行' })).toBeNull()
+  })
+
+  it('moves between tabs with arrow keys, Home, and End', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    within(panel).getByRole('tab', { name: '改动' }).focus()
+
+    await user.keyboard('{ArrowRight}')
+    const brief = within(panel).getByRole('tab', { name: '会话要点' })
+    expect(document.activeElement).toBe(brief)
+    expect(brief.getAttribute('aria-selected')).toBe('true')
+
+    await user.keyboard('{End}')
+    const planTab = within(panel).getByRole('tab', { name: '计划' })
+    expect(document.activeElement).toBe(planTab)
+    expect(planTab.getAttribute('aria-selected')).toBe('true')
+
+    await user.keyboard('{ArrowRight}')
+    const homeTab = within(panel).getByRole('tab', { name: '首页' })
+    expect(document.activeElement).toBe(homeTab)
+    expect(homeTab.getAttribute('aria-selected')).toBe('true')
+
+    await user.keyboard('{ArrowLeft}')
+    expect(document.activeElement).toBe(planTab)
+    await user.keyboard('{Home}')
+    expect(document.activeElement).toBe(homeTab)
+  })
+
+  it('keeps only the current tab and its close button in the Tab order', () => {
+    wrap(<Harness />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    expect(within(panel).getByRole('tab', { name: '改动' }).getAttribute('tabindex')).toBe('0')
+    expect(within(panel).getByRole('button', { name: '关闭改动' }).getAttribute('tabindex')).toBe(
+      '0',
+    )
+    expect(within(panel).getByRole('tab', { name: '会话要点' }).getAttribute('tabindex')).toBe('-1')
+    expect(
+      within(panel).getByRole('button', { name: '关闭会话要点' }).getAttribute('tabindex'),
+    ).toBe('-1')
+    expect(within(panel).getByRole('tab', { name: '首页' }).getAttribute('tabindex')).toBe('-1')
+  })
+
+  it('moves focus to the newly selected tab after closing the current one', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '关闭改动' }))
+    const next = within(panel).getByRole('tab', { name: '计划' })
+    await waitFor(() => expect(document.activeElement).toBe(next))
+    expect(next.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('returns focus to Home after closing the last tab', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness initialTabs={['diff']} />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '关闭改动' }))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(panel).getByRole('tab', { name: '首页' })),
+    )
+  })
+
+  it('keeps focus on the current tab when closing another tab', async () => {
+    const user = userEvent.setup()
+    wrap(<Harness />)
+    const panel = screen.getByRole('dialog', { name: '会话信息' })
+    await user.click(within(panel).getByRole('button', { name: '关闭会话要点' }))
+    expect(within(panel).queryByRole('tab', { name: '会话要点' })).toBeNull()
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(panel).getByRole('tab', { name: '改动' })),
+    )
   })
 
   it('starts on the home cards and returns to them from the fixed home tab', async () => {

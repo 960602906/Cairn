@@ -114,6 +114,12 @@
 
 ### Changed
 
+- 会话信息栏的标签支持 ← / → 与 Home / End 切换并直接选中；非当前标签和它的关闭按钮不再占
+  Tab 顺序，关闭标签后焦点落到新选中的标签，关掉最后一个回到首页。
+  Side panel tabs now switch and activate with ← / → and Home / End; only the current tab and
+  its close button stay in the Tab order, and closing a tab moves focus to the newly selected
+  tab (Home when the last tab closes).
+
 - 会话要点的编辑框打开后自动聚焦并把光标放到末尾，`⌘Enter` / `Ctrl+Enter` 保存、Esc 取消，
   结束后焦点回到「编辑」按钮。
   The session brief editor now focuses automatically with the caret at the end, saves with
