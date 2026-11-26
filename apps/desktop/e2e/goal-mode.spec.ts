@@ -206,7 +206,8 @@ test('目标模式：回退后暂停', async ({ launch, userData }) => {
     await sendPrompt(window, '/goal 完成重构')
 
     // 第一轮回复出来即可重新生成；回退把仍活动的目标暂停为 rewind。
-    const regenerate = window.getByRole('button', { name: '重新生成' })
+    // 判定为 not_met 会自动续轮，多轮后每轮都有一个「重新生成」按钮；取最早那轮。
+    const regenerate = window.getByRole('button', { name: '重新生成' }).first()
     await expect(regenerate).toBeVisible({ timeout: 20_000 })
     await regenerate.click()
     const dialog = window.getByRole('dialog', { name: '回退这段对话？' })
