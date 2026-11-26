@@ -226,6 +226,8 @@ describe('ChatPanel', () => {
 
     fireEvent.keyDown(findInput, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('textbox', { name: '在对话中查找' })).toBeNull())
+    // 查找条关闭后焦点回到输入框，接着打字不用再点一下。
+    await waitFor(() => expect(document.activeElement).toBe(input()))
   })
 
   it('shows the new chat page until a session is picked', async () => {

@@ -620,6 +620,7 @@ export function NewSession({
           projects={projects}
           onSelectProject={changeProject}
           onOpenFolder={() => void chooseFolder()}
+          returnFocus={() => textarea.current?.focus()}
         />
         <div ref={box} className="relative">
           {mention.list}

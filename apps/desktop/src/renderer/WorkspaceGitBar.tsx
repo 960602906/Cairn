@@ -6,7 +6,7 @@
  * 终端切换分支后回来即可看到。
  */
 import { Check, ChevronDown, FolderOpen, GitBranch } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { translateError } from '@cairn/i18n'
 import { RpcError, type ProjectSummary } from '@cairn/protocol'
@@ -30,6 +30,8 @@ export interface WorkspaceGitBarProps {
   readonly projects?: readonly ProjectSummary[] | undefined
   readonly onSelectProject?: ((path: string) => void) | undefined
   readonly onOpenFolder?: (() => void) | undefined
+  /** 选中工作空间或分支、按 Esc 关闭菜单后把焦点还给这里（通常是输入框）。 */
+  readonly returnFocus?: (() => void) | undefined
 }
 
 interface GitInfo {
@@ -42,6 +44,7 @@ export function WorkspaceGitBar({
   projects,
   onSelectProject,
   onOpenFolder,
+  returnFocus,
 }: WorkspaceGitBarProps) {
   const { t, i18n } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -49,6 +52,7 @@ export function WorkspaceGitBar({
   const [switching, setSwitching] = useState(false)
   const [error, setError] = useState('')
   const branch = info.branch
+  const interactedOutside = useRef(false)
 
   useEffect(() => {
     setInfo({})
@@ -103,7 +107,11 @@ export function WorkspaceGitBar({
     workspaceName ?? (projectPath === undefined ? t('new.chooseWorkspace') : '')
 
   const directory = switchable ? (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) interactedOutside.current = false
+      }}
+    >
       <DropdownMenuTrigger
         aria-label={
           projectPath === undefined
@@ -119,7 +127,19 @@ export function WorkspaceGitBar({
         <span className="truncate">{workspaceLabel}</span>
         <ChevronDown aria-hidden className="shrink-0 text-faint" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="max-h-80 w-72 overflow-y-auto">
+      <DropdownMenuContent
+        align="start"
+        side="top"
+        className="max-h-80 w-72 overflow-y-auto"
+        onInteractOutside={() => {
+          interactedOutside.current = true
+        }}
+        onCloseAutoFocus={(event) => {
+          if (returnFocus === undefined || interactedOutside.current) return
+          event.preventDefault()
+          returnFocus()
+        }}
+      >
         <DropdownMenuLabel>{t('composer.workspace.switch')}</DropdownMenuLabel>
         {(projects ?? []).map((project) => (
           <DropdownMenuItem
@@ -159,7 +179,11 @@ export function WorkspaceGitBar({
     >
       {directory}
       {branch !== undefined && (
-        <DropdownMenu>
+        <DropdownMenu
+          onOpenChange={(open) => {
+            if (open) interactedOutside.current = false
+          }}
+        >
           <DropdownMenuTrigger
             disabled={switching}
             title={t('composer.workspace.branch', { branch })}
@@ -170,7 +194,19 @@ export function WorkspaceGitBar({
             <span className="truncate">{branch}</span>
             <ChevronDown aria-hidden className="shrink-0 text-faint" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" side="top" className="max-h-72 w-56 overflow-y-auto">
+          <DropdownMenuContent
+            align="start"
+            side="top"
+            className="max-h-72 w-56 overflow-y-auto"
+            onInteractOutside={() => {
+              interactedOutside.current = true
+            }}
+            onCloseAutoFocus={(event) => {
+              if (returnFocus === undefined || interactedOutside.current) return
+              event.preventDefault()
+              returnFocus()
+            }}
+          >
             <DropdownMenuLabel>{t('composer.workspace.branches')}</DropdownMenuLabel>
             {(info.branches ?? [branch]).map((item) => (
               <DropdownMenuItem

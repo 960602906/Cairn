@@ -114,6 +114,11 @@
 
 ### Changed
 
+- 关闭工作空间或分支菜单、对话内查找，或暂停 / 继续目标之后，焦点回到输入框；点菜单外面
+  关闭时不抢焦点。
+  Closing the workspace or branch menu, in-conversation find, or pausing/resuming a goal returns
+  focus to the composer; dismissing a menu by clicking elsewhere leaves focus alone.
+
 - 关闭输入框上方的上下文用量浮层后，焦点回到输入框；Agent 选择器用键盘上下移动时，高亮项
   会自动滚入可视范围，点外面关闭后下次打开回到完整列表，不再沿用上次的搜索词。
   Closing the context usage popover returns focus to the composer. The agent picker keeps the

@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { createSessionView, reduceSessionEvents } from '@cairn/core'
@@ -92,6 +100,7 @@ function wrap(
   view: ReturnType<typeof runningView>,
   status: SessionStatusLike = 'idle',
   onOpen = vi.fn(),
+  returnFocus?: () => void,
 ) {
   const pauseGoal = vi.fn(async () => ({ ok: true as const }))
   const resumeGoal = vi.fn(async () => ({ ok: true as const }))
@@ -102,7 +111,7 @@ function wrap(
   const rendered = render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreProvider store={store}>
-        <GoalBar view={view} status={status} onOpen={onOpen} />
+        <GoalBar view={view} status={status} onOpen={onOpen} returnFocus={returnFocus} />
       </SessionStoreProvider>
     </I18nextProvider>,
   )
@@ -273,5 +282,19 @@ describe('GoalBar', () => {
     const { resumeGoal } = wrap(pausedView(), 'idle')
     fireEvent.click(screen.getByRole('button', { name: '继续目标' }))
     expect(resumeGoal).toHaveBeenCalledWith('s1')
+  })
+
+  it('hands focus back after pausing and resuming', async () => {
+    const returnFocus = vi.fn()
+    const { pauseGoal } = wrap(runningView(), 'running', vi.fn(), returnFocus)
+    fireEvent.click(screen.getByRole('button', { name: '暂停目标' }))
+    await waitFor(() => expect(pauseGoal).toHaveBeenCalledWith('s1'))
+    await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(1))
+
+    cleanup()
+    const resumed = wrap(pausedView(), 'idle', vi.fn(), returnFocus)
+    fireEvent.click(screen.getByRole('button', { name: '继续目标' }))
+    await waitFor(() => expect(resumed.resumeGoal).toHaveBeenCalledWith('s1'))
+    await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(2))
   })
 })

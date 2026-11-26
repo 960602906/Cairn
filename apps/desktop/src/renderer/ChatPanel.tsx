@@ -36,6 +36,7 @@ import { useStickToBottom } from './stick-to-bottom.js'
 import { useSessionStore } from './store-context.js'
 import { useMediaQuery } from './layout/use-media-query.js'
 import {
+  COMPOSER_FOCUS_EVENT,
   findShortcut,
   isFindKey,
   isToggleWorkbenchKey,
@@ -313,6 +314,12 @@ export function ChatPanel({
     }
   }
 
+  /** 关闭查找条后输入框消失，把焦点交还输入框，Esc / 关闭后可以接着打字。 */
+  const closeFind = () => {
+    setFindOpen(false)
+    window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))
+  }
+
   // 没有选中的会话时由 App 显示新对话页，这里不再渲染占位内容。
   if (sessionId === undefined) return null
 
@@ -446,7 +453,7 @@ export function ChatPanel({
             root={content}
             revision={view}
             focusToken={findToken}
-            onClose={() => setFindOpen(false)}
+            onClose={closeFind}
           />
           {/* 滚动位置由 useStickToBottom 自己维护：关掉浏览器的滚动锚定，否则新内容插入会打断平滑滚动 */}
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
@@ -481,7 +488,12 @@ export function ChatPanel({
                 <QuestionList />
                 <MemoryProposalList />
                 {view !== undefined && goal !== undefined && (
-                  <GoalBar view={view} status={status} onOpen={() => openPanel('goal')} />
+                  <GoalBar
+                    view={view}
+                    status={status}
+                    onOpen={() => openPanel('goal')}
+                    returnFocus={() => window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))}
+                  />
                 )}
               </div>
             </div>
