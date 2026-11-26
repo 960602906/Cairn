@@ -270,8 +270,11 @@ describe('SessionList', () => {
 
     let input = await rename()
     expect(input.value).toBe('旧标题')
+    // 输入框自动聚焦，菜单关闭时不把焦点抢回「会话操作」按钮。
+    await waitFor(() => expect(document.activeElement).toBe(input))
     await userEvent.keyboard('{Escape}')
     expect(screen.queryByLabelText('会话标题')).toBeNull()
+    expect(document.activeElement).toBe(within(item).getByRole('button', { name: /^旧标题/ }))
 
     input = await rename()
     fireEvent.blur(input)
@@ -284,6 +287,25 @@ describe('SessionList', () => {
       expect(request).toHaveBeenCalledWith('session.rename', { sessionId: 's1', title: '新标题' }),
     )
     expect(await screen.findByRole('button', { name: /^新标题/ })).toBeTruthy()
+    await waitFor(() =>
+      expect(document.activeElement).toBe(within(item).getByRole('button', { name: /^新标题/ })),
+    )
+  })
+
+  it('returns focus to the actions button after a menu action', async () => {
+    let sessions = [summary('s1', '旧标题')]
+    setup({
+      'session.list': () => ({ sessions }),
+      'session.setPinned': ({ sessionId, pinned }: { sessionId: string; pinned: boolean }) => {
+        sessions = sessions.map((s) => (s.sessionId === sessionId ? { ...s, pinned } : s))
+        return {}
+      },
+    })
+    const item = (await screen.findAllByRole('listitem'))[0]!
+    const actions = within(item).getByRole('button', { name: '会话操作' })
+    await userEvent.click(actions)
+    await userEvent.click(await screen.findByRole('menuitem', { name: '置顶' }))
+    await waitFor(() => expect(document.activeElement).toBe(actions))
   })
 
   it('pins and unpins a session from its menu and shows the pinned mark', async () => {
