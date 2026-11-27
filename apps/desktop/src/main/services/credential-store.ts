@@ -1,7 +1,7 @@
 /**
- * `local-key` 凭据存储（M1-03a；ADR-0010，架构 §16.2）：用户自带的 API Key 经系统加密
- * （Electron `safeStorage`，Windows 下为 DPAPI）后保存在数据目录的 `credentials.json`，
- * 不进 SQLite，也不进 `settings.json`。只由主进程读写，明文只在 `resolve` 时得到。
+ * `local-key` 凭据存储（M1-03a；ADR-0010 / ADR-0051，架构 §16.2）：用户自带的 API Key 经
+ * `SecretCipher` 保护后保存在数据目录的 `credentials.json`，不进 SQLite，也不进 `settings.json`。
+ * 只由主进程读写，明文只在 `resolve` 时得到。
  *
  * 文件格式（`version` 1）：
  *
@@ -9,8 +9,8 @@
  * { "version": 1, "credentials": { "<ref>": { "kind": "local-key", "ciphertext": "<base64>", "updatedAt": 1767225600000 } } }
  * ```
  *
- * - 系统加密不可用时（如 Linux 没有密钥环）拒绝保存与读取，报 `credentials.unavailable`，不退化为
- *   弱加密或明文（M6 再处理）；
+ * - 优先使用系统加密（Electron `safeStorage`）；不可用时由 cipher 回退到本机文件编码（ADR-0051），
+ *   不再因 Linux 缺少密钥环而拒绝保存；
  * - 文件无法解析或版本不支持时视为没有凭据；下次写入前把原文件改名备份（`credentials.json.bak-<时间>`），
  *   不会覆盖掉新版本应用写入的数据；
  * - 先写临时文件再改名替换；POSIX 上文件权限为 0600；
@@ -24,7 +24,7 @@ import { RpcError, type MainForRenderer } from '@cairn/protocol'
 import type { z } from 'zod'
 
 export const CredentialErrorCode = {
-  /** 系统加密不可用。 */
+  /** 系统加密不可用（旧策略；ADR-0051 起 cipher 始终可用，此码保留兼容）。 */
   Unavailable: 'credentials.unavailable',
   InvalidRef: 'credentials.invalid_ref',
   /** Key 为空或过长。 */
@@ -32,6 +32,8 @@ export const CredentialErrorCode = {
   WriteFailed: 'credentials.write_failed',
   /** 无法解密（例如文件来自另一台电脑或另一个系统用户）。 */
   DecryptFailed: 'credentials.decrypt_failed',
+  /** 配置了凭据引用但本地没有保存过 Key。 */
+  Missing: 'credentials.missing',
 } as const
 
 export const CREDENTIALS_FILE_VERSION = 1
@@ -39,7 +41,8 @@ export const CREDENTIALS_FILE_VERSION = 1
 export const MAX_SECRET_LENGTH = 4096
 
 /**
- * 系统加密不可用的原因（M6-04）。界面据此给出具体说明；只表示“不能安全保存”，不改变拒绝策略。
+ * 系统加密侧的诊断原因（M6-04 引入）。ADR-0051 起默认 cipher 始终可用，这些原因不再用于
+ * 拒绝保存；协议字段保留以便旧客户端与诊断读到历史值。
  */
 export type CredentialUnavailableReason =
   /** Electron 报告系统加密不可用（例如密钥服务没有运行）。 */

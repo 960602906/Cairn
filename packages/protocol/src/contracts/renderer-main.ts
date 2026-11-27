@@ -320,7 +320,7 @@ export const CREDENTIAL_REF_PATTERN = CONFIG_ID_PATTERN
 export const CredentialRef = z.string().regex(CREDENTIAL_REF_PATTERN)
 
 /**
- * 系统加密不可用的原因（M6-04）：界面据此显示具体说明，不改变“拒绝保存”的策略。
+ * 系统加密侧的诊断原因（M6-04 引入；ADR-0051 起默认 cipher 始终可用，不再据此拒绝保存）。
  * - `system-encryption-unavailable`：系统加密不可用（如密钥服务未运行）；
  * - `insecure-linux-backend`：Linux 无系统密钥环，`safeStorage` 只剩固定密钥的弱加密；
  * - `unknown-linux-backend`：Linux 上无法确定后端。
@@ -879,7 +879,7 @@ export const MainForRenderer = defineSide({
       params: z.object({ ref: CredentialRef }),
       result: z.object({ deleted: z.boolean() }),
     },
-    /** `available`：系统加密是否可用；不可用时无法保存（Linux 无密钥环）。 */
+    /** `available`：凭据存储是否可用（ADR-0051 起默认始终可用）。 */
     'credentials.status': {
       params: z.object({ ref: CredentialRef }),
       /**

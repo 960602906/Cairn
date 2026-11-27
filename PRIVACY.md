@@ -50,12 +50,14 @@ cannot control what a third-party provider retains.
 
 ## 4. API keys and credentials / API Key 与凭据
 
-API keys, MCP tokens and similar secrets are stored locally using the operating system's
-credential protection (`safeStorage`). They are not written to project files, logs,
-diagnostics bundles or update metadata, and are never uploaded to Cairn.
+API keys, MCP tokens and similar secrets are stored in local app data. When OS credential
+protection (`safeStorage`) is available they use it; otherwise they stay in the app data
+folder with ordinary local file permissions (ADR-0051). They are not written to project
+files, logs, diagnostics bundles or update metadata, and are never uploaded to Cairn.
 
-API Key、MCP 令牌等凭据使用操作系统的凭据保护能力（`safeStorage`）保存在本机，不写入
-项目文件、日志、诊断包或更新元数据，也不会上传给 Cairn。
+API Key、MCP 令牌等凭据保存在本机应用数据目录：有系统凭据保护（`safeStorage`）时会使用它，
+否则只靠本机文件权限（ADR-0051）。不写入项目文件、日志、诊断包或更新元数据，也不会上传给
+Cairn。
 
 ## 5. Update checks / 更新检查
 

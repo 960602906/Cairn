@@ -160,6 +160,7 @@ describe('translateError', () => {
       'credentials.invalid_value',
       'credentials.write_failed',
       'credentials.decrypt_failed',
+      'credentials.missing',
       'project.invalid_path',
       'project.not_found',
       'project.invalid_name',

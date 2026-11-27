@@ -140,7 +140,7 @@ describe('runSmokeChecks', () => {
     expect((await runSmokeChecks(sync)).error).toBe('not ready')
   })
 
-  it('requires system encryption only where it must be available', async () => {
+  it('requires the credential store to save when credentialsRequired is set (ADR-0051)', async () => {
     const unavailable = () => Promise.resolve('unavailable' as const)
     const { all } = deps({ checkCredentials: unavailable })
     expect(await runSmokeChecks(all)).toMatchObject({
@@ -148,8 +148,9 @@ describe('runSmokeChecks', () => {
       credentials: 'unavailable',
       error: 'system encryption (safeStorage) is unavailable',
     })
-    const { all: linux } = deps({ checkCredentials: unavailable, credentialsRequired: false })
-    expect(await runSmokeChecks(linux)).toMatchObject({ ok: true, credentials: 'unavailable' })
+    // 显式关闭要求时，不可用只记结果、不失败（兼容旧冒烟依赖）
+    const { all: optional } = deps({ checkCredentials: unavailable, credentialsRequired: false })
+    expect(await runSmokeChecks(optional)).toMatchObject({ ok: true, credentials: 'unavailable' })
 
     const { all: broken } = deps({
       checkCredentials: () => Promise.reject(new Error('resolved a different key')),

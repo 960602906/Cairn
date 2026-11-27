@@ -6,8 +6,8 @@
  * - 页面带有 CSP，且 CSP 生效（`new Function` 被拒绝）；
  * - 界面经 `window.cairn` 调用 `session.list` 成功（IPC 网关、会话管理器与数据库已接通）；
  * - 新建会话并发送一条输入，agent 宿主（utilityProcess + 专用端口 + FakeRuntime）完成一轮对话；
- * - 凭据存储用真实的系统加密（`safeStorage`）保存、解析并删除一个测试 Key（M1-03a）。系统加密不可用时
- *   （Linux 无密钥环，如 CI 容器）记为 `unavailable`；Windows 与 macOS 上要求可用。
+ * - 凭据存储保存、解析并删除一个测试 Key（M1-03a / ADR-0051：优先 `safeStorage`，否则本机文件回退）。
+ *   各平台均要求可用；若检查返回 `unavailable` 且 `credentialsRequired` 则失败。
  * - 随应用打包的 ripgrep 能找到并运行，`search` 工具能在临时工作区中找到内容（M1-07b）。
  * 结果以 `CAIRN_SMOKE_RESULT <JSON>` 一行输出到标准输出，随后退出（成功 0，失败 1）。
  *
