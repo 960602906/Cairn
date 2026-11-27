@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { isAwaitingGoalEvaluation, openGoal, type GoalView, type SessionView } from '@cairn/core'
 import type { SessionStatus } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
-import { Button, cn, IconButton } from './ui/index.js'
+import { Button, cn, FloatCard, IconButton } from './ui/index.js'
 
 /** 恢复目标要求会话空闲：运行、等待审批或等待回答时按钮禁用。 */
 export function goalSessionBusy(status: SessionStatus): boolean {
@@ -130,11 +130,7 @@ export function GoalBar({
     returnFocus?.()
   }
   return (
-    <section
-      aria-label={t('goal.bar.label')}
-      data-goal={goal.goalId}
-      className="rounded-card bg-raise px-3 py-2 shadow-2"
-    >
+    <FloatCard aria-label={t('goal.bar.label')} data-goal={goal.goalId}>
       <div className="flex min-w-0 items-center gap-2">
         <span
           aria-hidden
@@ -195,6 +191,6 @@ export function GoalBar({
       <span role="status" aria-live="polite" className="sr-only">
         {statusText}
       </span>
-    </section>
+    </FloatCard>
   )
 }
