@@ -1,11 +1,10 @@
 /**
  * 内置团队模板（M7-09 打磨）：设置 → 团队模板里随应用提供三个内置模板。
- * 打开后只读：没有保存、发布与归档入口，但可以直接试运行，或「复制为副本」
- * 得到可编辑、可发布的用户模板。
+ * 打开后只读：没有保存、发布与归档入口，可「复制为副本」得到可编辑、可发布的用户模板。
  */
 import { expect, test } from './app.js'
 
-test('内置模板只读，可试运行并复制为可编辑的副本', async ({ launch }) => {
+test('内置模板只读，可复制为可编辑的副本', async ({ launch }) => {
   const { window } = await launch()
 
   await window.getByRole('button', { name: /^设置/ }).click()
@@ -18,7 +17,7 @@ test('内置模板只读，可试运行并复制为可编辑的副本', async ({
   await expect(rows).toHaveCount(3)
   await expect(rows.filter({ hasText: '内置' })).toHaveCount(3)
 
-  // 打开内置模板：只读提示 + 试运行 / 复制为副本，没有保存、发布与归档。
+  // 打开内置模板：只读提示 + 复制为副本，没有保存、发布与归档。
   await list.getByRole('button', { name: /代码审查小组/ }).click()
   await expect(window.getByRole('heading', { name: '代码审查小组', level: 2 })).toBeVisible()
   await expect(window.getByText(/内置模板只读/)).toBeVisible()
@@ -26,18 +25,11 @@ test('内置模板只读，可试运行并复制为可编辑的副本', async ({
   // 表单整块只读：浏览器里也不能输入。
   await expect(window.getByLabel('中文名称')).toBeDisabled()
   await expect(window.getByLabel('主控 Agent')).toBeDisabled()
-  await expect(window.getByRole('button', { name: '试运行' })).toBeEnabled()
+  await expect(window.getByRole('button', { name: '试运行' })).toHaveCount(0)
   await expect(window.getByRole('button', { name: '复制为副本' })).toBeVisible()
   await expect(window.getByRole('button', { name: '保存草稿' })).toHaveCount(0)
   await expect(window.getByRole('button', { name: /^发布/ })).toHaveCount(0)
   await expect(window.getByRole('button', { name: '更多操作' })).toHaveCount(0)
-
-  // 试运行面板用的是代码里的版本，不需要先存草稿。
-  await window.getByRole('button', { name: '试运行' }).click()
-  await expect(window.getByRole('dialog')).toBeVisible()
-  await expect(window.getByRole('button', { name: '开始试运行' })).toBeVisible()
-  await window.keyboard.press('Escape')
-  await expect(window.getByRole('dialog')).toBeHidden()
 
   // 复制为副本：切到新的用户模板，恢复保存与发布入口。
   await window.getByRole('button', { name: '复制为副本' }).click()

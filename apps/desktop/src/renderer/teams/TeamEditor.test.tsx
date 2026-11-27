@@ -153,17 +153,6 @@ function setup(
           validation: teamDetail?.validation ?? { ok: true, errors: [], warnings: [] },
         } satisfies AgentTeamDetail
       }
-      if (method === 'team.trial.start') {
-        const { teamId } = params as { teamId: string }
-        return {
-          sessionId: 'tt1',
-          teamId,
-          teamDraftHash: 'h1',
-          agent: { id: BUILTIN_CODER.id, draftHash: 'a1' },
-          useAgentPermissions: false,
-        }
-      }
-      if (method === 'team.trial.list') return { trials: [] }
       if (method === 'project.list')
         return { projects: [{ projectId: 'p1', name: '项目', path: '/work' }] }
       if (method === 'session.subscribe') return { events: [], lastSeq: 0 }
@@ -206,7 +195,7 @@ async function renderEditor(
 }
 
 describe('TeamEditor', () => {
-  it('creates, saves, publishes, and starts a trial for a new team', async () => {
+  it('creates, saves, and publishes a new team', async () => {
     const { store, calls } = setup()
     const { onChanged } = await renderEditor(store)
 
@@ -247,29 +236,7 @@ describe('TeamEditor', () => {
         params: { teamId: 'user.team-new' },
       }),
     )
-
-    // 刚发布后没有草稿：试运行前先保存一份，再开始隐藏会话。
     await waitFor(() => expect(screen.getByText('v3')).toBeDefined())
-    await waitFor(() =>
-      expect((screen.getByRole('button', { name: '试运行' }) as HTMLButtonElement).disabled).toBe(
-        false,
-      ),
-    )
-    fireEvent.click(screen.getByRole('button', { name: '试运行' }))
-    await waitFor(() => expect(screen.getByText('团队试运行')).toBeDefined())
-    fireEvent.click(screen.getByRole('button', { name: '开始试运行' }))
-    await waitFor(() => expect(calls.some((call) => call.method === 'team.saveDraft')).toBe(true))
-    await waitFor(() =>
-      expect(calls).toContainEqual({
-        method: 'team.trial.start',
-        params: {
-          teamId: 'user.team-new',
-          projectPath: '/work',
-          useAgentPermissions: false,
-        },
-      }),
-    )
-    await waitFor(() => expect(screen.getByText('团队试运行')).toBeDefined())
   })
 
   it('edits pipeline stages and dependencies, and warns about unused config', async () => {
@@ -576,9 +543,6 @@ describe('TeamEditor', () => {
     expect((screen.getByRole('button', { name: '发布 v3' }) as HTMLButtonElement).disabled).toBe(
       true,
     )
-    expect((screen.getByRole('button', { name: '试运行' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    )
 
     cleanup()
     const failed = setup({ team: undefined })
@@ -768,7 +732,7 @@ describe('TeamEditor', () => {
     expect(publishFails.calls.some((call) => call.method === 'team.publish')).toBe(true)
   })
 
-  it('publishes and trials an existing clean team without saving again', async () => {
+  it('publishes an existing clean team without saving again', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
       source: 'user',
@@ -780,18 +744,6 @@ describe('TeamEditor', () => {
     const { store, calls } = setup({ team })
     await renderEditor(store, { teamId: 'user.team-1' })
     await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
-
-    // 草稿与基线一致时，试运行直接打开面板，不重复保存。
-    await waitFor(() =>
-      expect((screen.getByRole('button', { name: '试运行' }) as HTMLButtonElement).disabled).toBe(
-        false,
-      ),
-    )
-    fireEvent.click(screen.getByRole('button', { name: '试运行' }))
-    await waitFor(() => expect(screen.getByText('团队试运行')).toBeDefined())
-    expect(calls.some((call) => call.method === 'team.saveDraft')).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: '关闭试运行' }))
-    await waitFor(() => expect(screen.queryByText('团队试运行')).toBeNull())
 
     // 已有草稿且没有改动时，发布不再保存。
     fireEvent.click(screen.getByRole('button', { name: '发布 v3' }))
@@ -965,7 +917,7 @@ describe('TeamEditor', () => {
     expect(onBack).toHaveBeenCalled()
     expect(onChanged).toHaveBeenCalled()
 
-    // 归档后只读：没有保存 / 发布 / 试运行与归档菜单，也不能恢复旧版本。
+    // 归档后只读：没有保存 / 发布与归档菜单，也不能恢复旧版本。
     cleanup()
     const archived = setup({ team: { ...team, archived: true }, versions })
     const archivedResult = await renderEditor(archived.store, { teamId: 'user.team-1' })
@@ -974,7 +926,6 @@ describe('TeamEditor', () => {
     await screen.findByRole('list', { name: '版本历史' })
     expect(screen.queryByRole('button', { name: '保存草稿' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^发布 v/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: '试运行' })).toBeNull()
     expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
     expect(screen.queryByRole('button', { name: '恢复为草稿' })).toBeNull()
 
@@ -1160,7 +1111,7 @@ describe('TeamEditor', () => {
     expect(screen.getByText(/已归档的模板只读/)).toBeDefined()
   })
 
-  it('内置模板只读：只提供试运行与复制副本', async () => {
+  it('内置模板只读：只提供复制副本', async () => {
     const template = BUILTIN_TEAMS[0]!
     const { store, calls } = setup({
       team: {
@@ -1183,7 +1134,7 @@ describe('TeamEditor', () => {
     })
     await renderEditor(store, { teamId: template.id })
     await waitFor(() => expect(screen.getByText(/内置模板只读/)).toBeDefined())
-    // 标题区标出来源；只读模板没有保存、发布与归档入口，只留试运行和复制副本；表单本身也不可编辑。
+    // 标题区标出来源；只读模板没有保存、发布与归档入口，只留复制副本；表单本身也不可编辑。
     expect(screen.getByText('内置')).toBeDefined()
     expect(screen.getByLabelText('中文名称').closest('fieldset')?.disabled).toBe(true)
     expect(screen.getByLabelText('主控 Agent').closest('fieldset')?.disabled).toBe(true)
@@ -1200,17 +1151,6 @@ describe('TeamEditor', () => {
       ),
     )
     expect(calls.filter((call) => call.method === 'team.archive')).toHaveLength(0)
-
-    // 未修改时直接试运行代码里的版本，不需要先存草稿。
-    fireEvent.click(screen.getByRole('button', { name: '试运行' }))
-    await waitFor(() => expect(screen.getByText('团队试运行')).toBeDefined())
-    fireEvent.click(screen.getByRole('button', { name: '开始试运行' }))
-    await waitFor(() =>
-      expect(calls).toContainEqual({
-        method: 'team.trial.start',
-        params: { teamId: template.id, projectPath: '/work', useAgentPermissions: false },
-      }),
-    )
     expect(calls.filter((call) => call.method === 'team.saveDraft')).toHaveLength(savesBefore + 1)
   })
 

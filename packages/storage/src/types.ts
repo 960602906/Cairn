@@ -121,15 +121,15 @@ export interface SessionRecord {
   readonly archived: boolean
   /** 置顶：在列表里排到同组最前（桌面手感）。 */
   readonly pinned: boolean
-  /** 普通会话或 Agent 试运行（M4-12）。 */
+  /** 普通会话、遗留试运行（M4-12，已不再新建）或自动修复会话。 */
   readonly kind: SessionKind
-  /** 试运行引用的 Agent；普通会话没有。 */
+  /** 遗留试运行引用的 Agent；普通会话没有。 */
   readonly trialAgentId?: string
-  /** 试运行时使用的草稿内容哈希；普通会话没有。 */
+  /** 遗留试运行使用的草稿内容哈希；普通会话没有。 */
   readonly trialDraftHash?: string
-  /** 团队试运行引用的模板（M7-09）；单 Agent 试运行没有。 */
+  /** 遗留团队试运行引用的模板（M7-09）；普通会话没有。 */
   readonly trialTeamId?: string
-  /** 团队试运行时草稿的内容哈希，用于判断模板是否又改过（M7-09）。 */
+  /** 遗留团队试运行草稿哈希（M7-09）。 */
   readonly trialTeamDraftHash?: string
   /** 会话使用的模型（M1-04a）；之前创建的会话没有。 */
   readonly model?: ModelRef
@@ -156,7 +156,7 @@ export interface CreateSessionInput {
 export interface ListSessionsOptions {
   readonly projectId?: string
   readonly includeArchived?: boolean
-  /** 默认排除试运行会话；只有试运行历史与启动恢复需要显式包含。 */
+  /** 默认排除遗留试运行会话；仅兼容读取旧数据时显式包含。 */
   readonly includeTrial?: boolean
 }
 

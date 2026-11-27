@@ -99,8 +99,6 @@ export interface AgentCommands {
 export interface AgentService extends AgentCommands {
   /** 运行引用：已发布版本按 `id@version`，草稿按当前内容哈希。 */
   definition(ref: RunAgentRef): AgentDefinition | undefined
-  /** 试运行使用的草稿定义与内容哈希；草稿未发布也可以运行。 */
-  trialDraft(agentId: string): { definition: AgentDefinition; draftHash: string }
   /** 按 Agent 的选择过滤这一轮的技能。 */
   skillsFor(ref: RunAgentRef, sessionId: string): SkillCatalogEntry[]
   /** 按 Agent 的选择过滤这一轮的 MCP 工具。 */
@@ -136,10 +134,39 @@ const canonicalJson = (value: unknown): unknown => {
   return value
 }
 
-const draftHash = (fields: AgentDraftFields): string =>
+export const agentDraftHash = (fields: AgentDraftFields): string =>
   createHash('sha256')
     .update(JSON.stringify(canonicalJson(fields)))
     .digest('hex')
+
+const DRAFT_HASH_FIELDS = [
+  'name',
+  'description',
+  'icon',
+  'color',
+  'model',
+  'tools',
+  'skills',
+  'permissions',
+  'pathPolicy',
+  'delegation',
+  'limits',
+  'context',
+  'memory',
+  'tags',
+  'inputSchema',
+  'outputSchema',
+] as const
+
+/** 草稿内容哈希只包含可编辑字段（与 `agentDraftHash` 一致）。 */
+export const pickAgentDraftFields = (source: AgentDraftFields): AgentDraftFields => {
+  const picked: Record<string, unknown> = { instructions: source.instructions }
+  for (const key of DRAFT_HASH_FIELDS) {
+    const value = source[key]
+    if (value !== undefined) picked[key] = value
+  }
+  return picked as AgentDraftFields
+}
 
 /**
  * Agent 的权限预设只能收紧，不能放宽设置里的全局权限模式：只保留“拒绝”这类规则。
@@ -325,7 +352,8 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     return definition && definition.status === 'published' ? definition : undefined
   }
 
-  function trialDefinition(agentId: string): {
+  /** 按内容哈希解析草稿引用（历史事件与旧 `kind: trial` 会话）。 */
+  function draftDefinition(agentId: string): {
     definition: AgentDefinition
     draftHash: string
   } {
@@ -333,7 +361,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     if (builtin) {
       return {
         definition: builtin,
-        draftHash: draftHash(pickDraftFields(builtin)),
+        draftHash: agentDraftHash(pickAgentDraftFields(builtin)),
       }
     }
     const record = recordOf(agentId)
@@ -347,19 +375,19 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
         version: published?.version ?? 1,
         source: record.source,
         status: draft ? 'draft' : 'published',
-        ...pickDraftFields(fields),
+        ...pickAgentDraftFields(fields),
         createdAt: record.createdAt,
         updatedAt: now(),
         schemaVersion: 1,
       },
-      draftHash: draftHash(pickDraftFields(fields)),
+      draftHash: agentDraftHash(pickAgentDraftFields(fields)),
     }
   }
 
   function definitionForRun(ref: RunAgentRef): AgentDefinition | undefined {
     if (!isAgentDraftRef(ref)) return runDefinition(ref)
     try {
-      const current = trialDefinition(ref.id)
+      const current = draftDefinition(ref.id)
       return current.draftHash === ref.draftHash ? current.definition : undefined
     } catch {
       return undefined
@@ -375,35 +403,6 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     if (!definition)
       throw new RpcError(AgentServiceErrorCode.NotFound, { agentId, version: endpoint })
     return definition
-  }
-
-  const DIFF_FIELDS = [
-    'name',
-    'description',
-    'icon',
-    'color',
-    'model',
-    'tools',
-    'skills',
-    'permissions',
-    'pathPolicy',
-    'delegation',
-    'limits',
-    'context',
-    'memory',
-    'tags',
-    'inputSchema',
-    'outputSchema',
-  ] as const
-
-  /** 只保留草稿字段：已发布的完整定义带版本与时间戳，写入草稿前要丢掉。 */
-  function pickDraftFields(source: AgentDraftFields): AgentDraftFields {
-    const picked: Record<string, unknown> = { instructions: source.instructions }
-    for (const key of DIFF_FIELDS) {
-      const value = source[key]
-      if (value !== undefined) picked[key] = value
-    }
-    return picked as AgentDraftFields
   }
 
   function exportFields(agentId: string, version?: number): AgentDraftFields {
@@ -511,7 +510,7 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     },
 
     duplicate({ agentId, name }) {
-      const fields = pickDraftFields(exportFields(agentId))
+      const fields = pickAgentDraftFields(exportFields(agentId))
       const duplicateName: LocalizedText = name ?? {
         'zh-CN': `${fields.name['zh-CN'] ?? fields.name['en-US'] ?? 'Agent'} 副本`,
         'en-US': `${fields.name['en-US'] ?? fields.name['zh-CN'] ?? 'Agent'} copy`,
@@ -578,9 +577,9 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     diff({ agentId, from, to }) {
       const before = fieldsOfEndpoint(agentId, from)
       const after = fieldsOfEndpoint(agentId, to)
-      const fields = DIFF_FIELDS.filter((key) => !isDeepStrictEqual(before[key], after[key])).map(
-        (key) => ({ path: key, from: before[key], to: after[key] }),
-      )
+      const fields = DRAFT_HASH_FIELDS.filter(
+        (key) => !isDeepStrictEqual(before[key], after[key]),
+      ).map((key) => ({ path: key, from: before[key], to: after[key] }))
       return {
         fields,
         instructions: { from: before.instructions, to: after.instructions },
@@ -721,8 +720,6 @@ export function createAgentService(options: AgentServiceOptions): AgentService {
     },
 
     definition: definitionForRun,
-
-    trialDraft: trialDefinition,
 
     skillsFor(ref, sessionId) {
       const catalog = options.skills.catalog(sessionId)

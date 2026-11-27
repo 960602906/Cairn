@@ -117,7 +117,7 @@ interface AgentDefinition {
   delegation?: DelegationPolicy
 
   // 元数据
-  status: 'draft' | 'published'     // 草稿不能被会话选用，只能试运行
+  status: 'draft' | 'published'     // 草稿不能被会话选用，需先发布
   tags?: string[]
   createdAt: number
   updatedAt: number

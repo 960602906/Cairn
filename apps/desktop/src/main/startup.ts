@@ -87,7 +87,6 @@ import { createApprovalService } from './services/approval-service.js'
 import { createQuestionService } from './services/question-service.js'
 import { createPermissionService } from './services/permission-service.js'
 import { createSessionManager, type RunDefaults } from './services/session-manager.js'
-import { createTrialService } from './services/trial-service.js'
 import { createTeamService } from './services/team-service.js'
 import { createWorkspaceService } from './services/workspace-service.js'
 import { latestBrief } from './services/brief.js'
@@ -533,9 +532,7 @@ const supervisor = createHostSupervisor({
       ...(autoFix ? autoFixPresetRules : []),
       ...mcp.permissionRules(),
     ]
-    return trials
-      ? trials.permissionRulesFor(sessionId, agent, rules)
-      : agents.permissionRulesFor(agent, rules)
+    return agents.permissionRulesFor(agent, rules)
   },
   // 权限模式（ADR-0048）：宿主只在“完全访问”时跳过强制拦截；规则仍按上面的汇总下发
   resolvePermissionMode: () => settings.permissionMode(),
@@ -604,7 +601,7 @@ const supervisor = createHostSupervisor({
   sessionBrief: (sessionId) => latestBrief(events.readAfter(sessionId, 0))?.content,
   loadSkills: (sessionId, agent) => agents.skillsFor(agent, sessionId),
   resolveMcpTools: (_sessionId, agent) => agents.mcpToolsFor(agent),
-  // 团队模板（M7-09）：试运行并入草稿，普通会话并入选中的模板（最新已发布版本）。
+  // 团队模板（M7-09）：普通会话并入选中的模板（最新已发布版本）。
   resolveAgentDefinition: (agent, sessionId) => {
     const definition = agents.definition(agent)
     return definition && sessionId !== undefined
@@ -732,9 +729,8 @@ goals = createGoalService({
   credentials,
   onError: reportError,
 })
-const trials = createTrialService({ storage, events, agents, sessions })
-/** 团队模板（M7-09）：草稿、发布与试运行；试运行沿用 Agent 试运行的隐藏会话与只读默认。 */
-const teams = createTeamService({ storage, events, agents, sessions, trials })
+/** 团队模板（M7-09）：草稿、发布与在普通会话中选用。 */
+const teams = createTeamService({ storage, events, agents, sessions })
 /**
  * 自动更新（M5-06，ADR-0036）：公开只读 HTTPS 静态源；开发模式默认关闭。
  * `CAIRN_UPDATE_*` 由构建/测试注入；安装前要求没有运行中任务并备份数据。
@@ -919,7 +915,6 @@ const gateway = createRendererGateway({
   skills,
   mcp,
   agents,
-  trials,
   teams,
   diagnostics,
   sandbox: { status: () => sandbox.diagnostics() },

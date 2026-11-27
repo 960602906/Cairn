@@ -10,7 +10,7 @@ import {
 import { RpcError, type AgentDefinition, type TeamDraftInput } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
 import { createSessionEventService } from './event-service.js'
-import { createTeamService, TEAM_TRIAL_RETENTION, teamDraftHash } from './team-service.js'
+import { createTeamService } from './team-service.js'
 
 const projectPath = path.resolve('/work/team')
 
@@ -71,14 +71,13 @@ const draft = (patch: Partial<TeamDraftInput> = {}): TeamDraftInput => ({
 function setup() {
   let clock = 1_000
   let counter = 0
-  const busy = new Set<string>()
   const storage = createMemoryStorage({ now: () => clock })
   const events = createSessionEventService({ storage })
   const definitions = new Map([
     [coordinator.id, coordinator],
     [reviewer.id, reviewer],
     [maker.id, maker],
-    // 内置模板引用内置 Agent，校验与试运行都要能取到。
+    // 内置模板引用内置 Agent，校验与选用都要能取到。
     ...([BUILTIN_CODER, BUILTIN_EXPLORER, BUILTIN_REVIEWER, BUILTIN_TESTER] as const).map(
       (agent) => [agent.id, agent] as const,
     ),
@@ -89,23 +88,15 @@ function setup() {
       if (!published) throw new RpcError('agent.not_found', { agentId })
       return { agentId, published }
     }),
-    trialDraft: vi.fn((agentId: string) => {
-      const published = definitions.get(agentId)
-      if (!published) throw new RpcError('agent.not_found', { agentId })
-      return { definition: { ...published, status: 'draft' as const }, draftHash: 'agent-draft' }
-    }),
   }
-  const elevated: string[] = []
   const refreshed: string[] = []
   const service = createTeamService({
     storage,
     events,
     agents: agents as never,
     sessions: {
-      isBusy: (sessionId) => busy.has(sessionId),
       refreshTeam: (teamId) => refreshed.push(teamId),
     },
-    trials: { markElevated: (sessionId) => elevated.push(sessionId) },
     createId: () => `${++counter}`,
     now: () => clock,
   })
@@ -114,8 +105,6 @@ function setup() {
     events,
     agents,
     service,
-    busy,
-    elevated,
     refreshed,
     advance: () => {
       clock += 1
@@ -253,122 +242,6 @@ describe('团队模板命令（M7-09）', () => {
     expect(() => service.publish({ teamId: created.teamId })).toThrowError(
       expect.objectContaining({ code: 'team.no_draft' }),
     )
-    expect(() => service.trialStart({ teamId: created.teamId, projectPath })).toThrowError(
-      expect.objectContaining({ code: 'team.no_draft' }),
-    )
-  })
-
-  it('试运行创建隐藏会话，记录模板与草稿哈希，默认只读', () => {
-    const { storage, service, elevated } = setup()
-    const created = service.saveDraft({ definition: draft() })
-    const started = service.trialStart({ teamId: created.teamId, projectPath })
-    expect(started).toMatchObject({
-      teamId: created.teamId,
-      agent: { id: coordinator.id, draftHash: 'agent-draft' },
-      useAgentPermissions: false,
-    })
-    expect(started.teamDraftHash).toBe(
-      teamDraftHash(service.get({ teamId: created.teamId }).draft!),
-    )
-    const session = storage.sessions.get(started.sessionId)!
-    expect(session).toMatchObject({
-      kind: 'trial',
-      trialAgentId: coordinator.id,
-      trialDraftHash: 'agent-draft',
-      trialTeamId: created.teamId,
-      trialTeamDraftHash: started.teamDraftHash,
-    })
-    expect(storage.sessions.list().map((item) => item.sessionId)).toEqual([])
-    expect(elevated).toEqual([])
-    expect(storage.events.readAfter(started.sessionId, 0).map((event) => event.type)).toEqual([
-      'session.created',
-    ])
-  })
-
-  it('校验不通过时拒绝试运行，要求项目路径是绝对路径', () => {
-    const { service } = setup()
-    const bad = service.saveDraft({ definition: draft({ members: ['user.checker'] }) })
-    expect(() => service.trialStart({ teamId: bad.teamId, projectPath })).toThrowError(
-      expect.objectContaining({ code: 'team.invalid' }),
-    )
-    const created = service.saveDraft({ definition: draft() })
-    expect(() =>
-      service.trialStart({ teamId: created.teamId, projectPath: 'relative' }),
-    ).toThrowError(expect.objectContaining({ code: 'rpc.invalid_params' }))
-  })
-
-  it('显式提权时登记为已提权', () => {
-    const { service, elevated } = setup()
-    const created = service.saveDraft({ definition: draft() })
-    const started = service.trialStart({
-      teamId: created.teamId,
-      projectPath,
-      useAgentPermissions: true,
-    })
-    expect(started.useAgentPermissions).toBe(true)
-    expect(elevated).toEqual([started.sessionId])
-  })
-
-  it('复用已有项目，并列出与清理试运行历史', () => {
-    const { storage, service, advance } = setup()
-    const project = storage.projects.create({ projectId: 'p1', name: 'Team', path: projectPath })
-    const created = service.saveDraft({ definition: draft() })
-    const first = service.trialStart({ teamId: created.teamId, projectPath })
-    advance()
-    const second = service.trialStart({ teamId: created.teamId, projectPath })
-    expect(storage.sessions.get(first.sessionId)?.projectId).toBe(project.projectId)
-    expect(service.trialList({ teamId: created.teamId }).trials.map((t) => t.sessionId)).toEqual([
-      second.sessionId,
-      first.sessionId,
-    ])
-    expect(service.trialClear({ teamId: created.teamId })).toEqual({ cleared: 2 })
-    expect(storage.sessions.list({ includeTrial: true })).toEqual([])
-  })
-
-  it('有试运行正在进行时不清理', () => {
-    const { busy, service } = setup()
-    const created = service.saveDraft({ definition: draft() })
-    const started = service.trialStart({ teamId: created.teamId, projectPath })
-    busy.add(started.sessionId)
-    expect(() => service.trialClear({ teamId: created.teamId })).toThrowError(
-      expect.objectContaining({ code: 'run.busy' }),
-    )
-  })
-
-  it('超过保留条数时清掉最旧的试运行', () => {
-    const { storage, service, advance } = setup()
-    const created = service.saveDraft({ definition: draft() })
-    const sessions: string[] = []
-    for (let index = 0; index < TEAM_TRIAL_RETENTION + 1; index += 1) {
-      advance()
-      sessions.push(service.trialStart({ teamId: created.teamId, projectPath }).sessionId)
-    }
-    const left = storage.sessions.list({ includeTrial: true }).map((item) => item.sessionId)
-    expect(left).toHaveLength(TEAM_TRIAL_RETENTION)
-    expect(left).not.toContain(sessions[0])
-    expect(left).toContain(sessions.at(-1))
-  })
-
-  it('团队试运行把模板的委派覆盖与协作说明并入定义', () => {
-    const { service } = setup()
-    const created = service.saveDraft({
-      definition: draft({ delegation: { maxChildrenPerTurn: 3 } }),
-    })
-    const started = service.trialStart({ teamId: created.teamId, projectPath })
-    const merged = service.applySessionTeam(started.sessionId, coordinator)
-    expect(merged.delegation).toMatchObject({ maxChildrenPerTurn: 3, enabled: true })
-    expect(merged.instructions).toContain('# Team: 审查小组')
-    expect(merged.instructions).toContain('review_loop')
-    // 普通会话不受影响
-    expect(service.applySessionTeam('missing', coordinator)).toBe(coordinator)
-  })
-
-  it('模板发布后草稿清空，之前的试运行沿用主控定义', () => {
-    const { service } = setup()
-    const created = service.saveDraft({ definition: draft() })
-    const started = service.trialStart({ teamId: created.teamId, projectPath })
-    service.publish({ teamId: created.teamId })
-    expect(service.applySessionTeam(started.sessionId, coordinator)).toBe(coordinator)
   })
 
   it('普通会话选用已发布模板后，每轮并入最新已发布版本', () => {
@@ -488,22 +361,6 @@ describe('团队模板命令（M7-09）', () => {
     expect(service.definitionForTeam('missing')).toBeUndefined()
   })
 
-  it('清理最旧试运行时跳过仍在运行的会话', () => {
-    const { storage, busy, service, advance } = setup()
-    const created = service.saveDraft({ definition: draft() })
-    const sessions: string[] = []
-    for (let index = 0; index < TEAM_TRIAL_RETENTION; index += 1) {
-      advance()
-      sessions.push(service.trialStart({ teamId: created.teamId, projectPath }).sessionId)
-    }
-    busy.add(sessions[0]!)
-    advance()
-    service.trialStart({ teamId: created.teamId, projectPath })
-    const left = storage.sessions.list({ includeTrial: true }).map((item) => item.sessionId)
-    expect(left).toHaveLength(TEAM_TRIAL_RETENTION + 1)
-    expect(left).toContain(sessions[0])
-  })
-
   it('列出时跳过空记录，并可以包含已归档模板', () => {
     const { storage, service } = setup()
     storage.teams.create({ teamId: 'empty' })
@@ -535,9 +392,8 @@ describe('团队模板命令（M7-09）', () => {
     const service = createTeamService({
       storage,
       events,
-      agents: { get: () => undefined, trialDraft: () => ({}) } as never,
-      sessions: { isBusy: () => false, refreshTeam: () => undefined },
-      trials: { markElevated: () => undefined },
+      agents: { get: () => undefined } as never,
+      sessions: { refreshTeam: () => undefined },
     })
     const detail = service.saveDraft({ definition: draft() })
     expect(detail.teamId).toMatch(/^user\.team-.*-[0-9a-f-]{36}$/)
@@ -598,15 +454,5 @@ describe('内置团队模板', () => {
     })
     expect(copy.source).toBe('user')
     expect(copy.teamId).toMatch(/^user\.team-/)
-  })
-
-  it('可以直接试运行，并按代码里的版本并入协作说明', () => {
-    const { service } = setup()
-    const team = BUILTIN_TEAMS[0]!
-    const started = service.trialStart({ teamId: team.id, projectPath })
-    expect(started.teamId).toBe(team.id)
-    const merged = service.applySessionTeam(started.sessionId, coordinator)
-    expect(merged.instructions).toContain('# Team')
-    expect(merged.instructions).toContain('Pattern: review-loop')
   })
 })

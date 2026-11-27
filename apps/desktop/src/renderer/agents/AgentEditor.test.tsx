@@ -346,9 +346,8 @@ describe('AgentEditor sections and actions', () => {
     renderEditor(store, { agentId: 'builtin.coder', initial: builtin, onOpenAgent })
 
     expect(await screen.findByText(/内置 Agent 只读/)).toBeDefined()
-    // 只读栏只剩试运行与复制为新 Agent：没有保存、发布和「⋯」，表单也不可编辑。
+    // 只读栏只剩复制为新 Agent：没有保存、发布和「⋯」，表单也不可编辑。
     expect(screen.getByLabelText('英文名称').closest('fieldset')?.disabled).toBe(true)
-    expect(screen.getByRole('button', { name: /试运行/ })).toBeDefined()
     expect(screen.queryByRole('button', { name: '保存草稿' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^发布/ })).toBeNull()
     expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
@@ -1108,57 +1107,5 @@ describe('AgentEditor edge paths', () => {
     fireEvent.click(screen.getByRole('button', { name: /^委派/ }))
     fireEvent.click(screen.getByRole('switch', { name: '允许委派' }))
     expect(screen.getByText('还没有可委派的已发布 Agent。')).toBeDefined()
-  })
-
-  it('does not open the trial panel when saving the draft fails', async () => {
-    const store = makeStore({
-      'agent.get': () => mockDetail,
-      'agent.saveDraft': () => undefined,
-      'trial.list': () => ({ trials: [] }),
-    })
-    renderEditor(store)
-    await screen.findByText('测试助手')
-
-    fireEvent.change(screen.getByDisplayValue('测试助手'), { target: { value: '改过的名字' } })
-    fireEvent.click(screen.getByRole('button', { name: /试运行/ }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  })
-
-  it('opens the trial panel without saving a clean draft', async () => {
-    let saves = 0
-    const store = makeStore({
-      'agent.get': () => mockDetail,
-      'agent.saveDraft': () => {
-        saves += 1
-        return mockDetail
-      },
-      'trial.list': () => ({ trials: [] }),
-    })
-    renderEditor(store)
-    await screen.findByText('测试助手')
-
-    fireEvent.click(screen.getByRole('button', { name: /试运行/ }))
-    expect(await screen.findByRole('dialog')).toBeDefined()
-    expect(saves).toBe(0)
-  })
-
-  it('saves the draft before opening the trial panel', async () => {
-    let saves = 0
-    const store = makeStore({
-      'agent.get': () => mockDetail,
-      'agent.saveDraft': () => {
-        saves += 1
-        return mockDetail
-      },
-      'trial.list': () => ({ trials: [] }),
-    })
-    renderEditor(store)
-    await screen.findByText('测试助手')
-
-    fireEvent.change(screen.getByDisplayValue('测试助手'), { target: { value: '改过的名字' } })
-    fireEvent.click(screen.getByRole('button', { name: /试运行/ }))
-    await waitFor(() => expect(saves).toBeGreaterThan(0))
-    expect(await screen.findByRole('dialog')).toBeDefined()
-    expect(screen.getByText(/用当前草稿运行一次/)).toBeDefined()
   })
 })

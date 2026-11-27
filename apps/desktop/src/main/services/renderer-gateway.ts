@@ -37,7 +37,6 @@ import type { McpCommands } from './mcp-service.js'
 import type { HubCommands } from './hub-service.js'
 import type { AgentCommands } from './agent-service.js'
 import type { DiagnosticsCommands } from './diagnostics-service.js'
-import type { TrialCommands } from './trial-service.js'
 import type { AutoFixCommands } from './auto-fix-service.js'
 import type { TeamCommands } from './team-service.js'
 import type { AppInfoCommands } from './app-info-service.js'
@@ -258,9 +257,7 @@ export interface RendererGatewayOptions {
   readonly mcp: McpCommands
   /** Agent 定义（M3-11）：草稿、发布、版本、导入导出与生效配置。 */
   readonly agents: AgentCommands
-  /** Agent 试运行（M4-12）。 */
-  readonly trials: TrialCommands
-  /** 团队模板（M7-09）：草稿、发布与试运行。 */
+  /** 团队模板（M7-09）：草稿、发布与在会话中选用。 */
   readonly teams: TeamCommands
   /** 诊断包（M3-13）：导出前清单、生成 zip 与在文件夹中显示。 */
   readonly diagnostics: DiagnosticsCommands
@@ -360,7 +357,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
   const { appInfo, events, commands, projects, files, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, questions, memories, permissions, skills, mcp } = options
   const { hub, mentions } = options
-  const { agents, trials, teams, diagnostics, activity, changeSets } = options
+  const { agents, teams, diagnostics, activity, changeSets } = options
   const { sandbox } = options
   const { update, autofix } = options
   const backgroundCommands = options.backgroundCommands
@@ -647,10 +644,6 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('agent.export', (params) => agents.export(params))
       endpoint.handle('agent.import', (params) => agents.import(params))
       endpoint.handle('agent.effectiveConfig', (params) => agents.effectiveConfig(params))
-      endpoint.handle('trial.start', (params) => trials.start(params))
-      endpoint.handle('trial.restart', (params) => trials.restart(params))
-      endpoint.handle('trial.clear', (params) => trials.clear(params))
-      endpoint.handle('trial.list', (params) => trials.list(params))
       endpoint.handle('team.list', (params) => teams.list(params))
       endpoint.handle('team.get', (params) => teams.get(params))
       endpoint.handle('team.versions', (params) => teams.versions(params))
@@ -658,9 +651,6 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('team.publish', (params) => teams.publish(params))
       endpoint.handle('team.archive', (params) => teams.archive(params))
       endpoint.handle('team.unarchive', (params) => teams.unarchive(params))
-      endpoint.handle('team.trial.start', (params) => teams.trialStart(params))
-      endpoint.handle('team.trial.clear', (params) => teams.trialClear(params))
-      endpoint.handle('team.trial.list', (params) => teams.trialList(params))
       endpoint.handle('diagnostics.summary', (params) => diagnostics.summary(params))
       endpoint.handle('diagnostics.export', (params) => diagnostics.export(params))
       endpoint.handle('diagnostics.showInFolder', (params) => diagnostics.showInFolder(params))

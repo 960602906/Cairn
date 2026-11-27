@@ -6,7 +6,6 @@ import onboarding from '../locales/zh-CN/onboarding.json' with { type: 'json' }
 import session from '../locales/zh-CN/session.json' with { type: 'json' }
 import settings from '../locales/zh-CN/settings.json' with { type: 'json' }
 import teams from '../locales/zh-CN/teams.json' with { type: 'json' }
-import trial from '../locales/zh-CN/trial.json' with { type: 'json' }
 import type { LocaleMessages } from './namespaces.js'
 
 export const messages: LocaleMessages = {
@@ -15,7 +14,6 @@ export const messages: LocaleMessages = {
   settings,
   agents,
   teams,
-  trial,
   onboarding,
   errors,
 }

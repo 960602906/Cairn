@@ -1,8 +1,8 @@
 /**
- * 团队模板编辑器（M7-09，多 Agent 协作 §15）：基本信息、主控与成员、协作模式、校验、发布与试运行。
+ * 团队模板编辑器（M7-09，多 Agent 协作 §15）：基本信息、主控与成员、协作模式、校验、发布。
  *
  * 校验在本地用 `validateAgentTeam` 实时计算，与主进程保存 / 发布同一套规则；引用的 Agent 定义
- * 按需读取（只读已发布版本，与主进程一致）。新建模板第一次保存前没有 id，试运行会先保存。
+ * 按需读取（只读已发布版本，与主进程一致）。新建模板第一次保存前没有 id。
  */
 import {
   AlertCircle,
@@ -12,7 +12,6 @@ import {
   Copy,
   FileText,
   MoreHorizontal,
-  Play,
   Plus,
   Save,
   Trash2,
@@ -52,7 +51,6 @@ import {
   SegmentedControl,
   cn,
 } from '../ui/index.js'
-import { TeamTrial } from './TeamTrial.js'
 import { TeamVersions } from './TeamVersions.js'
 import {
   appendStage,
@@ -147,7 +145,6 @@ export function TeamEditor({
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmPublish, setConfirmPublish] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
-  const [trialOpen, setTrialOpen] = useState(false)
   const [definitions, setDefinitions] = useState<Readonly<Record<string, AgentDefinition>>>({})
   const [pendingAgents, setPendingAgents] = useState(0)
   const requestedAgents = useRef(new Set<string>())
@@ -207,7 +204,7 @@ export function TeamEditor({
   const published = detail?.published
   const archived = detail?.archived === true
   const builtin = detail?.source === 'builtin'
-  /** 已归档与内置模板都只读：不能保存、发布或归档；内置模板可试运行与复制，已归档的可复制或取消归档。 */
+  /** 已归档与内置模板都只读：不能保存、发布或归档；内置模板与已归档的可复制或取消归档。 */
   const readonly = archived || builtin
   const status = archived ? 'archived' : dirty ? 'dirty' : published ? 'published' : 'draft'
   const nextVersion = (published?.version ?? 0) + 1
@@ -283,19 +280,6 @@ export function TeamEditor({
     return () => window.removeEventListener('keydown', onKeyDown, true)
   })
 
-  /** 试运行读取已保存的草稿：新建、有改动或发布后草稿被清空时都先保存。 */
-  const openTrial = async () => {
-    if (currentId === undefined || dirty) {
-      const saved = await save()
-      if (saved === undefined) return
-    } else if (!readonly && detail?.draft === undefined) {
-      // 试运行读取的是草稿；已发布但没有草稿时先按当前内容存一份。内置模板直接跑代码里的版本。
-      const saved = await save()
-      if (saved === undefined) return
-    }
-    setTrialOpen(true)
-  }
-
   const publish = async () => {
     setBusy(true)
     let id = currentId
@@ -336,7 +320,7 @@ export function TeamEditor({
     onChanged()
   }
 
-  /** 归档后回到列表；草稿、版本与试运行历史都保留，取消归档即可继续编辑。 */
+  /** 归档后回到列表；草稿与版本都保留，取消归档即可继续编辑。 */
   const archive = async () => {
     if (currentId === undefined) return
     setConfirmArchive(false)
@@ -442,13 +426,6 @@ export function TeamEditor({
   const validationIssues = (section: TeamSection, kind: 'errors' | 'warnings') =>
     teamIssues(validation, section, kind)
   const invalid = validation?.ok === false || pendingAgents > 0
-  const canTrial =
-    !archived &&
-    !busy &&
-    !saving &&
-    fields.coordinator !== '' &&
-    invalid === false &&
-    agents.length > 0
 
   const updateName = (language: 'zh-CN' | 'en-US', value: string) =>
     change({ name: { ...fields.name, [language]: value } })
@@ -552,34 +529,12 @@ export function TeamEditor({
               </Button>
             </>
           ) : builtin ? (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!canTrial}
-                title={invalid ? t('editor.fixBeforeTrial') : undefined}
-                onClick={() => void openTrial()}
-              >
-                <Play />
-                {t('editor.trial')}
-              </Button>
-              <Button variant="primary" size="sm" disabled={busy} onClick={() => void duplicate()}>
-                <Copy />
-                {t('editor.duplicate')}
-              </Button>
-            </>
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => void duplicate()}>
+              <Copy />
+              {t('editor.duplicate')}
+            </Button>
           ) : (
             <>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!canTrial}
-                title={invalid ? t('editor.fixBeforeTrial') : undefined}
-                onClick={() => void openTrial()}
-              >
-                <Play />
-                {t('editor.trial')}
-              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -1058,15 +1013,6 @@ export function TeamEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {currentId !== undefined && (
-        <TeamTrial
-          teamId={currentId}
-          configKey={JSON.stringify(fields)}
-          open={trialOpen}
-          onOpenChange={setTrialOpen}
-        />
-      )}
     </div>
   )
 }

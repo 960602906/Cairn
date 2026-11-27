@@ -18,13 +18,13 @@ test('内置 Agent 只读，复制后可编辑、发布、归档与恢复', asyn
   await expect(rows).toHaveCount(4)
   await expect(rows.filter({ hasText: '内置' })).toHaveCount(4)
 
-  // 打开内置编程助手：整块只读，但保留试运行与复制。
+  // 打开内置编程助手：整块只读，只保留复制。
   await list.getByRole('button', { name: /编程助手/ }).click()
   await expect(window.getByRole('heading', { name: '编程助手', level: 2 })).toBeVisible()
   await expect(window.getByText(/内置 Agent 只读/)).toBeVisible()
   await expect(window.getByText('内置', { exact: true })).toBeVisible()
   await expect(window.getByLabel('中文名称')).toBeDisabled()
-  await expect(window.getByRole('button', { name: '试运行' })).toBeEnabled()
+  await expect(window.getByRole('button', { name: '试运行' })).toHaveCount(0)
   await expect(window.getByRole('button', { name: '复制为新 Agent' })).toBeVisible()
   await expect(window.getByRole('button', { name: '保存草稿' })).toHaveCount(0)
   await expect(window.getByRole('button', { name: /^发布/ })).toHaveCount(0)

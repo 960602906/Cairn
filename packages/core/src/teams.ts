@@ -197,7 +197,7 @@ export function validateAgentTeam(
   return { ok: errors.length === 0, errors, warnings }
 }
 
-/** 团队模板给模型的协作说明（M7-09）：试运行时接到主控 Agent 的指令后面。 */
+/** 团队模板给模型的协作说明（M7-09）：接到主控 Agent 的指令后面。 */
 export function teamBrief(team: TeamDraftFields): string {
   const name = team.name['zh-CN']?.trim() || team.name['en-US']?.trim() || ''
   const lines = [`# Team${name === '' ? '' : `: ${name}`}`, `Pattern: ${team.pattern}`]
@@ -222,7 +222,7 @@ export function teamBrief(team: TeamDraftFields): string {
 }
 
 /**
- * 团队试运行（M7-09）：把模板的委派覆盖与协作说明并进主控 Agent 的草稿定义。
+ * 选用团队模板（M7-09）：把模板的委派覆盖与协作说明并进主控 Agent 的定义。
  * 只影响这一次运行使用的定义，不改写 Agent 本身；模板里省略的策略字段沿用主控的设置。
  */
 export function applyTeamToAgentDefinition(
@@ -251,7 +251,7 @@ export const BUILTIN_TEAM_PIPELINE_ID = 'builtin.team-pipeline'
 const builtinTeamVersion = { version: 1, createdAt: 0, updatedAt: 0, schemaVersion: 1 } as const
 
 /**
- * 内置模板只引用内置 Agent，任何安装上都能直接试运行与选用。
+ * 内置模板只引用内置 Agent，任何安装上都能直接选用。
  * 覆盖三种协作模式，方便用户第一次打开就有可用的范例。
  */
 export const BUILTIN_TEAMS: readonly AgentTeam[] = [

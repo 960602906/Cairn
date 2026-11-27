@@ -257,7 +257,7 @@ describe('teamPipelineOrder（M7-06）', () => {
   })
 })
 
-describe('团队试运行的定义合并（M7-09）', () => {
+describe('团队模板的定义合并（M7-09）', () => {
   const loopTeam: TeamDraftFields = {
     name: { 'zh-CN': '审查小组', 'en-US': 'Review crew' },
     description: { 'zh-CN': '审查循环' },

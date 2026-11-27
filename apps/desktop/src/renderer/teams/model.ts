@@ -184,7 +184,7 @@ export function teamIssues(
   return (validation?.[kind] ?? []).filter((issue) => teamSectionOf(issue.path) === section)
 }
 
-/** 主控候选：有已发布版本且未归档的 Agent（校验与试运行都读已发布版本）。 */
+/** 主控候选：有已发布版本且未归档的 Agent。 */
 export function coordinatorCandidates(agents: readonly AgentSummary[]): readonly AgentSummary[] {
   return agents.filter((agent) => !agent.archived && agent.status === 'published')
 }
