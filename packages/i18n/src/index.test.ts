@@ -256,6 +256,7 @@ describe('translateError', () => {
       'team.not_found',
       'team.no_draft',
       'team.invalid',
+      'team.readonly',
       'team.unavailable',
       'update.not_packaged',
       'update.disabled_by_env',
