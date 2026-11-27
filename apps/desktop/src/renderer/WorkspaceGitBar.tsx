@@ -164,7 +164,8 @@ export function WorkspaceGitBar({
     <span
       title={projectPath}
       aria-label={t('composer.workspace.directory', { path: projectPath })}
-      className="flex min-w-0 items-center gap-1.5"
+      // px-1.5 与可切换时的下拉触发器一致，图标对齐输入框里的文字（卡片 px-3.5 + 文本 px-1）。
+      className="flex min-w-0 items-center gap-1.5 px-1.5"
     >
       <FolderTypeIcon name={lastSegment(projectPath)} />
       <span className="truncate">{lastSegment(projectPath)}</span>

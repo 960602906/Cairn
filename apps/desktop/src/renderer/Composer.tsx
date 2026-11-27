@@ -1311,7 +1311,7 @@ export function Composer({
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [commandPanelOpen, text])
 
-  // 命令结果只停留几秒，避免长期占用输入框上方的空间。
+  // 命令结果显示在工具栏中间的空位，只停留几秒，不占用输入框上方的空间。
   useEffect(() => {
     if (commandNotice === null) return
     const timer = setTimeout(() => setCommandNotice(null), 3_500)
@@ -1478,20 +1478,6 @@ export function Composer({
               {t('input.dropFiles')}
             </div>
           )}
-          {commandNotice && (
-            <p
-              role="status"
-              className={cn(
-                'px-1 pb-1 text-note',
-                commandNotice.tone === 'ok' ? 'text-ok' : 'text-muted',
-              )}
-            >
-              {commandNotice.command && (
-                <span className="mr-1 font-mono text-fg2">/{commandNotice.command}</span>
-              )}
-              {t(commandNotice.key, commandNotice.params ?? {})}
-            </p>
-          )}
           <div className="relative">
             <textarea
               ref={textarea}
@@ -1553,6 +1539,22 @@ export function Composer({
               onOpenChange={setModeMenuOpen}
               returnFocus={() => textarea.current?.focus()}
             />
+            {/* 指令结果放在工具栏中间的空位：不占文档流、不改变输入框高度，窄窗口截断后悬停看全文。 */}
+            {commandNotice && (
+              <p
+                role="status"
+                title={t(commandNotice.key, commandNotice.params ?? {})}
+                className={cn(
+                  'min-w-0 flex-1 truncate text-note',
+                  commandNotice.tone === 'ok' ? 'text-ok' : 'text-muted',
+                )}
+              >
+                {commandNotice.command && (
+                  <span className="mr-1 font-mono text-fg2">/{commandNotice.command}</span>
+                )}
+                {t(commandNotice.key, commandNotice.params ?? {})}
+              </p>
+            )}
             <div className="ml-auto flex min-w-0 items-center gap-1">
               <ModelPicker
                 providers={providers}

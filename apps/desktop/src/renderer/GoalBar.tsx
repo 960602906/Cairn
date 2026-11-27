@@ -4,7 +4,8 @@
  * 布局与待办进度条（TaskProgress）一致：`h-9` 细条，外壳用 FloatCard 的 `bar`，浮在
  * Composer 正上方。显示条件与短状态；暂停 / 继续、改条件、删除直接调用 store。暂停不中止
  * 正在跑的一轮；恢复要求会话空闲，因此运行中禁用「继续」。失败时在条内显示提示。轮次与活动
- * 时长只在目标面板展示。
+ * 时长只在目标面板展示。改条件时 Enter 保存、Esc 取消，输入法组字中的 Enter 不保存；失焦
+ * 保存但不再抢回焦点（焦点是用户自己移走的）。
  */
 import { Pause, Pencil, Play, Target, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -173,7 +174,8 @@ export function GoalBar({
     setError(undefined)
   }
 
-  const saveEdit = async () => {
+  /** `refocus` 为假时（失焦保存）不把焦点抢回输入框：是用户自己点到别处的。 */
+  const saveEdit = async (refocus = true) => {
     const next = draft.trim()
     if (next.length === 0) {
       setError('goal.bar.conditionEmpty')
@@ -185,7 +187,7 @@ export function GoalBar({
     }
     if (next === goal.condition) {
       cancelEdit()
-      returnFocus?.()
+      if (refocus) returnFocus?.()
       return
     }
     setPending(true)
@@ -198,7 +200,7 @@ export function GoalBar({
     }
     setEditing(false)
     setDraft('')
-    returnFocus?.()
+    if (refocus) returnFocus?.()
   }
 
   return (
@@ -223,6 +225,8 @@ export function GoalBar({
             disabled={pending}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
+              // 输入法组字中的 Enter 用于选词，不保存。
+              if (event.nativeEvent.isComposing) return
               if (event.key === 'Enter') {
                 event.preventDefault()
                 void saveEdit()
@@ -238,7 +242,7 @@ export function GoalBar({
                 cancelEdit()
                 return
               }
-              void saveEdit()
+              void saveEdit(false)
             }}
             className="min-w-0 flex-1 rounded-[5px] border border-hair bg-sunk px-1.5 py-0.5 text-note text-fg outline-none focus-visible:ring-1 focus-visible:ring-accent"
           />
@@ -295,10 +299,7 @@ export function GoalBar({
         </IconButton>
       </div>
       {error !== undefined && (
-        <p
-          role="status"
-          className="border-t-[0.5px] border-hair px-3 py-1.5 text-[11.5px] text-muted"
-        >
+        <p role="status" className="border-t-[0.5px] border-hair px-3 py-1.5 text-note text-muted">
           {t(error)}
         </p>
       )}
