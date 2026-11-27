@@ -306,6 +306,19 @@ describe('AgentEditor sections and actions', () => {
     const store = makeStore({
       'agent.get': () => builtin,
       'agent.duplicate': () => ({ ...mockDetail, agentId: 'user.copy' }),
+      'agent.versions': () => ({
+        versions: [
+          {
+            version: 1,
+            publishedAt: 1000,
+            name: { 'zh-CN': '编程助手' },
+            description: {},
+            instructionsBytes: 10,
+            usedBySessions: 0,
+          },
+        ],
+      }),
+      'agent.diff': () => ({ fields: [], instructions: { from: 'a', to: 'b' } }),
     })
     renderEditor(store, { agentId: 'builtin.coder', initial: builtin, onOpenAgent })
 
@@ -316,6 +329,12 @@ describe('AgentEditor sections and actions', () => {
     expect(screen.queryByRole('button', { name: '保存草稿' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^发布/ })).toBeNull()
     expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
+
+    // 版本历史仍可查看与对比，但不能把旧版本恢复成草稿。
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
+    expect((await screen.findAllByRole('button', { name: '对比' })).length).toBe(2)
+    expect(screen.queryByRole('button', { name: '恢复为草稿' })).toBeNull()
+
     fireEvent.click(screen.getByRole('button', { name: '复制为新 Agent' }))
     await waitFor(() => expect(onOpenAgent).toHaveBeenCalledWith('user.copy'))
   })

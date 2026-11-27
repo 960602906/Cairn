@@ -24,6 +24,7 @@ const version = (n: number) => ({
 function renderVersions(
   handlers: Record<string, (params: unknown) => unknown>,
   onRestore = vi.fn(),
+  readonly = false,
 ) {
   const fakeApi = {
     request: async (method: string, params: unknown) => handlers[method]?.(params),
@@ -33,7 +34,7 @@ function renderVersions(
   render(
     <I18nextProvider i18n={i18n}>
       <SessionStoreContext.Provider value={store}>
-        <AgentVersions agentId="agent.test" onRestore={onRestore} />
+        <AgentVersions agentId="agent.test" onRestore={onRestore} readonly={readonly} />
       </SessionStoreContext.Provider>
     </I18nextProvider>,
   )
@@ -41,6 +42,21 @@ function renderVersions(
 }
 
 describe('AgentVersions component', () => {
+  it('hides restore for read-only agents but keeps compare', async () => {
+    const onRestore = renderVersions(
+      {
+        'agent.versions': () => ({ versions: [version(1)] }),
+        'agent.diff': () => ({ fields: [], instructions: { from: '', to: '' } }),
+      },
+      vi.fn(),
+      true,
+    )
+    // 版本行与对比下拉里都会出现 v1，按「对比」按钮等列表渲染完成。
+    expect((await screen.findAllByRole('button', { name: '对比' })).length).toBe(2)
+    expect(screen.queryByRole('button', { name: '恢复为草稿' })).toBeNull()
+    expect(onRestore).not.toHaveBeenCalled()
+  })
+
   it('renders version list, shows diff, and triggers restore', async () => {
     const onRestore = vi.fn()
     const fakeApi = {

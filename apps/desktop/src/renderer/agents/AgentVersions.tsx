@@ -23,9 +23,12 @@ const show = (value: unknown): string => {
 export function AgentVersions({
   agentId,
   onRestore,
+  readonly = false,
 }: {
   readonly agentId: string
   readonly onRestore: (detail: AgentDetail) => void | Promise<void>
+  /** 内置或已归档的 Agent 只读：仍可查看与对比，但不能恢复为草稿。 */
+  readonly readonly?: boolean
 }) {
   const { t, i18n } = useTranslation('agents')
   const agentVersions = useSessionStore((s) => s.agentVersions)
@@ -152,9 +155,11 @@ export function AgentVersions({
                 >
                   {t('versions.compare')}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => void restore(version.version)}>
-                  {t('versions.restore')}
-                </Button>
+                {!readonly && (
+                  <Button size="sm" variant="ghost" onClick={() => void restore(version.version)}>
+                    {t('versions.restore')}
+                  </Button>
+                )}
               </span>
             </li>
           ))}
