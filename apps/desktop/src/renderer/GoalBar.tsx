@@ -1,7 +1,7 @@
 /**
  * 目标条（ADR-0047）：输入框上方的单行细卡，只在有未结束目标时出现。
  *
- * 布局与待办进度条（TaskProgress）一致：`h-9` 细条、`rounded-card bg-raise shadow-2`，浮在
+ * 布局与待办进度条（TaskProgress）一致：`h-9` 细条，外壳用 FloatCard 的 `bar`，浮在
  * Composer 正上方。显示条件与短状态；暂停 / 继续、改条件、删除直接调用 store。暂停不中止
  * 正在跑的一轮；恢复要求会话空闲，因此运行中禁用「继续」。失败时在条内显示提示。轮次与活动
  * 时长只在目标面板展示。
@@ -22,6 +22,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTitle,
+  FloatCard,
   IconButton,
 } from './ui/index.js'
 
@@ -201,11 +202,7 @@ export function GoalBar({
   }
 
   return (
-    <section
-      aria-label={t('goal.bar.label')}
-      data-goal={goal.goalId}
-      className="mb-2 overflow-hidden rounded-card bg-raise shadow-2"
-    >
+    <FloatCard variant="bar" aria-label={t('goal.bar.label')} data-goal={goal.goalId}>
       <div className="flex h-9 items-center gap-2 pr-1.5 pl-3">
         {paused ? (
           <Pause aria-hidden className="size-3.5 shrink-0 text-warn" />
@@ -329,6 +326,6 @@ export function GoalBar({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </FloatCard>
   )
 }

@@ -14,6 +14,7 @@ export {
   DialogTrigger,
   DrawerContent,
 } from './dialog.js'
+export { FloatCard, floatCardVariants, floatChipClass, type FloatCardVariant } from './float-card.js'
 export {
   DropdownMenu,
   DropdownMenuContent,
