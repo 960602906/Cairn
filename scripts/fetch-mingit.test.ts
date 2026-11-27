@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -206,8 +207,16 @@ describe('verifyBundledGit', () => {
   it('runs the default process runner when no runner is injected', () => {
     const directory = temporaryDirectory()
     layoutFiles(directory)
-    // 用 Node 本体冒充 git.exe：默认 execFileSync 路径必须真的执行进程，输出不是 Git 版本即失败。
-    cpSync(process.execPath, path.join(directory, 'ucrt64/bin/git.exe'))
+    // 默认 execFileSync 路径必须真的执行进程，输出不是 Git 版本即失败。
+    const binary = path.join(directory, 'ucrt64/bin/git.exe')
+    if (process.platform === 'win32') {
+      // Windows 上复制 Node 本体即可；它输出的是 Node 版本号。
+      cpSync(process.execPath, binary)
+    } else {
+      // macOS/Linux 的 Node 可能动态链接 libnode，复制后无法启动；用脚本冒充可执行文件。
+      writeFileSync(binary, '#!/bin/sh\necho "not git"\n')
+      chmodSync(binary, 0o755)
+    }
     expect(() => verifyBundledGit(directory)).toThrow('unexpected bundled git version')
   })
 

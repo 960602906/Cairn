@@ -9,8 +9,9 @@
  */
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { expect, test } from './app.js'
+import { resizeWindow } from './window-size.js'
 import {
   createSession,
   liveMessage,
@@ -31,25 +32,6 @@ const SIZES = [
   { width: 1024, height: 768 },
   { width: 880, height: 800 },
 ] as const
-
-async function resize(
-  app: ElectronApplication,
-  page: Page,
-  size: { width: number; height: number },
-) {
-  await app.evaluate(({ BrowserWindow }, next) => {
-    const window = BrowserWindow.getAllWindows()[0]
-    window?.setContentSize(next.width, next.height)
-  }, size)
-  await page.waitForFunction(
-    (next) => {
-      const view = globalThis as unknown as { innerWidth: number; innerHeight: number }
-      return view.innerWidth === next.width && view.innerHeight === next.height
-    },
-    size,
-    { timeout: 5_000 },
-  )
-}
 
 async function noHorizontalOverflow(page: Page) {
   const metrics = await page.evaluate(() => {
@@ -115,12 +97,12 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   await expect(runStatus(window)).toHaveText('空闲')
 
   // 第一次启动没有保存过主题，跟随系统解析成浅色或深色。
-  await resize(app.app, window, { width: 1440, height: 900 })
+  await resizeWindow(app.app, window, { width: 1440, height: 900 })
   await expect.poll(() => themeOf(window)).toMatch(/^(light|dark)$/)
   await expect(panel(window)).toBeVisible()
 
   for (const size of SIZES) {
-    await resize(app.app, window, size)
+    await resizeWindow(app.app, window, size)
     await noHorizontalOverflow(window)
     await expect(window.getByRole('navigation', { name: '全局导航' })).toHaveCount(0)
     await expect(window.getByLabel('输入消息')).toBeVisible()
@@ -130,7 +112,7 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   }
 
   // 1440：左栏 252 / 会话信息栏 348，中间是对话。
-  await resize(app.app, window, { width: 1440, height: 900 })
+  await resizeWindow(app.app, window, { width: 1440, height: 900 })
   const widthOf = async (locator: ReturnType<typeof sessions>) =>
     Math.round((await locator.boundingBox())!.width)
   expect(Math.round((await sessions(window).boundingBox())!.x)).toBeLessThanOrEqual(8)
@@ -142,7 +124,7 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   await noHorizontalOverflow(window)
 
   // 1024：会话列仍在，工作台改为浮层，默认收起。
-  await resize(app.app, window, { width: 1024, height: 768 })
+  await resizeWindow(app.app, window, { width: 1024, height: 768 })
   await expect(sessions(window)).toBeVisible()
   await expect(panel(window)).toBeHidden()
   await window.getByRole('button', { name: '会话信息', exact: true }).click()
@@ -153,7 +135,7 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   await expect(panel(window)).toBeHidden()
 
   // 880：左栏变成抽屉，由顶栏按钮展开。
-  await resize(app.app, window, { width: 880, height: 800 })
+  await resizeWindow(app.app, window, { width: 880, height: 800 })
   await expect(sessions(window)).toHaveCount(0)
   await window.getByRole('button', { name: '展开侧栏' }).click()
   await expect(sessions(window)).toBeVisible()
@@ -172,7 +154,7 @@ test('layouts hold at every target size and themes apply', async ({ launch, user
   await expect(window.getByRole('heading', { name: '通用与外观' })).toHaveCount(0)
 
   // 主题：浅色、深色逐个应用并截图。
-  await resize(app.app, window, { width: 1440, height: 900 })
+  await resizeWindow(app.app, window, { width: 1440, height: 900 })
   await window.getByRole('button', { name: /^设置/ }).click()
   await window
     .getByRole('navigation', { name: '设置分类' })
@@ -203,7 +185,7 @@ test('chat status reads the same in both themes without a status bar', async ({
   const app = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
   const window = app.window
   await createSession(window, projectDir(userData), '状态呈现')
-  await resize(app.app, window, { width: 1440, height: 900 })
+  await resizeWindow(app.app, window, { width: 1440, height: 900 })
 
   // 输入框上方没有状态条：唯一的 role=status 是不占位的读屏播报。
   const status = runStatus(window)

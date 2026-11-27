@@ -95,7 +95,7 @@ test('工作空间菜单与文件树的新增、重命名、删除和移除', as
   await panel.getByRole('button', { name: '新建文件夹', exact: true }).click()
   await window.getByLabel('名称').last().fill('folder')
   await window.getByRole('button', { name: '确定' }).last().click()
-  await expect(panel.getByText('folder')).toBeVisible()
+  await expect(panel.getByText('folder', { exact: true })).toBeVisible()
 
   await panel.getByRole('button', { name: '刷新文件树' }).click()
   await expect(panel.getByText('notes.txt')).toBeVisible()

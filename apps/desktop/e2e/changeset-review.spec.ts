@@ -7,6 +7,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
+import { E2E_ARTIFACTS } from './artifacts.js'
 import {
   createSession,
   projectDir,
@@ -169,7 +170,7 @@ test('在隔离工作区写入后按文件接受，并撤销合并检查点', as
     expect(readFileSync(file, 'utf8')).toBe('child\n')
 
     // 浅色 / 深色截图（与现有 diff 端到端测试一致）
-    const artifacts = '/opt/cursor/artifacts'
+    const artifacts = E2E_ARTIFACTS
     mkdirSync(artifacts, { recursive: true })
     const setTheme = (theme: 'light' | 'dark') =>
       window.evaluate((value) => {

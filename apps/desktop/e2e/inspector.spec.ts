@@ -7,11 +7,10 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
+import { E2E_ARTIFACTS } from './artifacts.js'
 import { createSession, projectDir, runStatus, sendPrompt } from './session.js'
 
 const REPLY = 'inspector reply'
-const ARTIFACTS_DIR =
-  process.platform === 'win32' ? 'C:\\opt\\cursor\\artifacts' : '/opt/cursor/artifacts'
 
 async function configureModel(window: Page, baseUrl: string) {
   await window.evaluate(async (url) => {
@@ -78,11 +77,11 @@ test('点击输入框圆环查看上下文用量与分类占比', async ({ launc
     await expect(popover.getByText('系统提示词')).toBeVisible()
     await expect(popover.getByText('工具定义')).toBeVisible()
 
-    mkdirSync(ARTIFACTS_DIR, { recursive: true })
+    mkdirSync(E2E_ARTIFACTS, { recursive: true })
     await setTheme(window, 'light')
-    await window.screenshot({ path: path.join(ARTIFACTS_DIR, 'inspector-light.png') })
+    await window.screenshot({ path: path.join(E2E_ARTIFACTS, 'inspector-light.png') })
     await setTheme(window, 'dark')
-    await window.screenshot({ path: path.join(ARTIFACTS_DIR, 'inspector-dark.png') })
+    await window.screenshot({ path: path.join(E2E_ARTIFACTS, 'inspector-dark.png') })
     await setTheme(window, 'light')
 
     // 点外面关闭浮层。
