@@ -95,6 +95,7 @@ export interface SessionCommands {
   readonly pauseGoal: Handler<'goal.pause'>
   readonly resumeGoal: Handler<'goal.resume'>
   readonly clearGoal: Handler<'goal.clear'>
+  readonly updateGoalCondition: Handler<'goal.updateCondition'>
 }
 
 /** 由改动服务实现的改动命令（M1-08b）。 */
@@ -553,6 +554,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('goal.pause', (params) => commands.pauseGoal(params))
       endpoint.handle('goal.resume', (params) => commands.resumeGoal(params))
       endpoint.handle('goal.clear', (params) => commands.clearGoal(params))
+      endpoint.handle('goal.updateCondition', (params) => commands.updateGoalCondition(params))
       endpoint.handle('session.compact', (params) => commands.compact(params))
       endpoint.handle('session.brief.update', (params) => commands.updateBrief(params))
       endpoint.handle('session.abort', (params) => commands.abort(params))

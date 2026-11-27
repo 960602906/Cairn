@@ -1,8 +1,12 @@
 # 目标模式（`/goal`）落地方案
 
-> 状态：提议（2026-11-25）。上级决策：[ADR-0047](../adr/0047-goal-mode.md)。
+> 状态：**已实施**（随 0.1.6 发布；2026-11-27 起继续打磨界面与验收缺口）。上级决策：
+> [ADR-0047](../adr/0047-goal-mode.md)（已接受）。
 > 适用：`packages/protocol`、`packages/core`、`apps/desktop/src/main`、`apps/desktop/src/agent-host`、
 > `apps/desktop/src/renderer` 与 `packages/i18n`。不改权限引擎、存储 schema 与宿主工具集。
+>
+> §2「现状」与 §10 实施阶段描述的是落地前基线，仅作历史记录；以仓库代码、ADR-0047 与
+> `CHANGELOG` 为准。
 
 ## 1. 目标与范围
 
@@ -292,6 +296,10 @@ export const ActiveGoal = z.object({
   detail: z.string().max(GOAL_REASON_MAX).optional(),
 }),
 'goal.resumed': z.object({ goalId: Id }),
+'goal.condition_updated': z.object({
+  goalId: Id,
+  condition: z.string().trim().min(1).max(GOAL_CONDITION_MAX),
+}),
 'goal.evaluated': z.object({
   goalId: Id,
   verdict: GoalVerdict,
@@ -310,7 +318,7 @@ export const ActiveGoal = z.object({
 
 约定：
 
-- 这五个都是持久事件；不进入 `LIVE_EVENT_TYPES`。事件信封的 `runId` 一律用 `sessionId`
+- 这些都是持久事件；不进入 `LIVE_EVENT_TYPES`。事件信封的 `runId` 一律用 `sessionId`
   （与归档、重命名等会话级事件一致），避免目标事件被误算到某次运行上。判定结束与带最终判定的
   预算结束，`turnId` 用被判定轮次；用户清除、归档结束，以及没有可判定轮次的预算结束（最后一轮
   失败 / 中止）都不带 `turnId`。
@@ -367,12 +375,21 @@ goal: ActiveGoal.optional(),
   result: z.object({ messageId: Id.optional() }),
 },
 'goal.clear': { params: z.object({ sessionId: Id }), result: z.object({}) },
+'goal.updateCondition': {
+  params: z.object({
+    sessionId: Id,
+    condition: z.string().trim().min(1).max(GOAL_CONDITION_MAX),
+  }),
+  result: z.object({}),
+},
 ```
 
 `goal.set` 同时写入 `goal.created` 和第一轮的 `message.user`，再开始一轮；`goal.resume` 写
 `goal.resumed` 后立即开始一轮继续，成功启动时返回 `messageId`，目标本来就 active 时返回空对象。
 预算耗尽时 resume 只触发最终判定、不开始新轮，同样不返回 `messageId`。
 `goal.pause` / `goal.clear` 不返回消息；重复调用按状态幂等（见 §3.1）。
+`goal.updateCondition` 写 `goal.condition_updated`；与当前条件相同时无操作；不要求会话空闲；
+不中断当前轮。
 
 ### 4.6 错误码
 
@@ -884,32 +901,27 @@ evaluated.”。轮次上限由系统提示词提供，消息里不重复堆预�
 
 ### 9.2 目标条
 
-- 新文件 `apps/desktop/src/renderer/GoalBar.tsx`，作为 `ChatPanel.tsx` 输入框上方悬浮列
-  （`:420-426` 的 `flex-col`）最靠近输入框的一项，和计划操作、提问、记忆提案共用同一列布局，
-  `pointer-events-auto`；不各自绝对定位，因此卡片变多时不会互相遮挡。目标条出现时也算作
-  `floatingContent`，「回到底部」按钮让位，避免叠在目标条上。
-- 只在有未结束目标时显示。内容：
-  - 状态图形 + 条件：单行省略（`title` 放完整条件），点击打开面板；面板里完整换行显示。
-  - 活动且有轮次在跑：`第 N / 20 轮 · 12:34`。
-  - 活动且没有轮次、最后一轮还没有判定：`判定中…`（`isAwaitingGoalEvaluation`）。
-  - 活动、没有轮次、最近判定是 `not_met`：`准备继续…`（续轮被排队输入或名额暂时挡住）。
-  - 暂停：暂停原因 + “继续”；如果暂停时当前轮仍在跑，文案是“本轮结束后暂停”，避免用户以为已经
-    立刻停下。“继续”在会话运行中禁用（`goal.resume` 要求空闲），暂停始终可用。
-  - 操作：暂停 / 继续、打开面板；清除放在面板里，避免误触。
-- 计时：组件内 1 秒 `setInterval` 只用于刷新显示，值始终由 `activeMs + (now - activeSince)` 计算，
-  不累加；目标暂停 / 结束或窗口隐藏时停表，恢复可见时按当前时间重算。小于 1 小时显示 `m:ss`，
-  超过 1 小时显示 `h:mm`。计时文本 `aria-hidden`，不放进 live region。
-- 无障碍：用单独的可视隐藏 `role="status"` / `aria-live="polite"` 区域只播报状态变化（开始第 N 轮、
-  判定中、已暂停及原因、已达成 / 已结束），不播报每秒计时；按钮有明确 `aria-label`；状态同时用
-  图标 / 文案，不只靠颜色；尊重减少动态效果，关闭旋转与脉冲。
+- 新文件 `apps/desktop/src/renderer/GoalBar.tsx`，放在 `ChatPanel` 里、Composer 正上方，与待办
+  进度条（`TaskProgress`）同一套细卡：`mb-2 rounded-card bg-raise shadow-2`、单行 `h-9`。计划
+  操作、提问、记忆提案仍在更高一层的绝对定位悬浮列。
+- 只在有未结束目标时显示。单行细条，不展示轮次与活动时长：
+  - 状态图标 + 条件：单行省略（`title` 放完整条件），点击打开面板；面板里完整换行显示。
+  - 短状态词：`进行中` / `判定中` / `准备继续` / `等待审批` / `等待回答` / `已暂停` /
+    `本轮结束后暂停`；详细暂停原因放在 `title` 与侧栏。
+  - 操作（图标）：暂停 / 继续、改条件（条内编辑）、删除（确认后 `goal.clear`）。点条件仍打开面板。
+  - 「继续」在会话运行中禁用（`goal.resume` 要求空闲）；暂停与删除始终可用。
+  - 改条件：Enter 保存，Esc 取消；失焦有改动则保存。写 `goal.condition_updated`；不中断当前轮；
+    不进 lifecycle，进行中的判定仍用开始时快照。轮次 / 时长预算只在面板显示。
+- 无障碍：用单独的可视隐藏 `role="status"` / `aria-live="polite"` 区域只播报状态变化；按钮有明确
+  `aria-label`；状态同时用图标 / 文案，不只靠颜色；尊重减少动态效果，关闭旋转与脉冲。
 
 ### 9.3 目标面板
 
 - `SessionPanels.tsx` 的 `SessionPanel` 增加 `'goal'`，定义表增加 `addable: false` 的 `GoalPanel`；
   从目标条或 `/goal status` 打开。
-- 内容：条件、状态与暂停 / 结束原因、预算（轮次与活动时长）、判定时间线（verdict、理由、证据引用、
-  模型）、操作按钮（暂停 / 继续 / 清除）、新建目标提示。继续按钮在会话运行中禁用（resume 要求
-  空闲）；没有目标时用 `PanelEmpty` 显示用法。
+- 内容：条件（可改）、状态与暂停 / 结束原因、预算（轮次与活动时长）、判定时间线（verdict、理由、
+  证据引用、模型）、操作按钮（暂停 / 继续 / 改条件 / 清除）、新建目标提示。继续按钮在会话运行中
+  禁用（resume 要求空闲）；没有目标时用 `PanelEmpty` 显示用法。
 - 面板读取 `SessionPanelContext.view` 的目标投影；操作通过新增到 `SessionPanelContext` 的回调或现有
   store action 调用 IPC，不直接读 `window.cairn`。面板打开期间目标被回退移除或换成了新目标时，
   重新取当前投影并显示空状态 / 新目标，不保留旧引用。

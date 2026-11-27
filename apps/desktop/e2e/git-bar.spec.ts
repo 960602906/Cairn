@@ -1,5 +1,5 @@
 /**
- * 输入框上方的当前目录与 Git 分支（参考 LiveAgent）：新对话首页选择工作空间后显示工作空间名，
+ * 输入框下方的当前目录与 Git 分支（参考 LiveAgent）：新对话首页选择工作空间后显示工作空间名，
  * Git 仓库显示当前分支；可以从分支菜单切换，外部终端切换后窗口重新获得焦点时刷新。
  */
 import { execFileSync } from 'node:child_process'
@@ -10,7 +10,7 @@ function git(dir: string, ...args: readonly string[]) {
   execFileSync('git', ['-C', dir, ...args], { stdio: 'pipe' })
 }
 
-test('新对话输入框上方显示目录与分支，焦点回来后刷新分支', async ({ launch, userData }) => {
+test('新对话输入框下方显示目录与分支，焦点回来后刷新分支', async ({ launch, userData }) => {
   const { app, window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
   const dir = projectDir(userData)
   git(dir, 'init')

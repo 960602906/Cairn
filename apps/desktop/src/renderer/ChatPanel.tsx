@@ -17,8 +17,8 @@ import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
 import { totals, turnEntries, type FileDiffMode } from './file-changes.js'
 import { FindBar } from './FindBar.js'
-import { GoalBar } from './GoalBar.js'
 import { MessageStream } from './MessageStream.js'
+import { GoalBar } from './GoalBar.js'
 import { PlanActions, TaskProgress } from './PlanCard.js'
 import { projectNameForPath } from './project-name.js'
 import {
@@ -474,6 +474,7 @@ export function ChatPanel({
                 }
                 onOpenPlan={(planId) => openPanel('plan', { planId })}
                 onOpenRun={(runId) => openPanel('delegation', { runId })}
+                onOpenGoal={() => openPanel('goal')}
                 onOpenFile={openFile}
               />
               <ApprovalList />
@@ -487,14 +488,6 @@ export function ChatPanel({
                 <PlanActions plan={pendingPlan} />
                 <QuestionList />
                 <MemoryProposalList />
-                {view !== undefined && goal !== undefined && (
-                  <GoalBar
-                    view={view}
-                    status={status}
-                    onOpen={() => openPanel('goal')}
-                    returnFocus={() => window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))}
-                  />
-                )}
               </div>
             </div>
             {progressList && (
@@ -509,7 +502,15 @@ export function ChatPanel({
                   : { labelKey: 'taskList.progress.label' as const })}
               />
             )}
-            {/* 「回到底部」浮在输入框正上方；有其他悬浮卡片（提问、计划、记忆、任务进度）时让位，优先级最低。 */}
+            {view !== undefined && goal !== undefined && (
+              <GoalBar
+                view={view}
+                status={status}
+                onOpen={() => openPanel('goal')}
+                returnFocus={() => window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))}
+              />
+            )}
+            {/* 「回到底部」浮在输入框正上方；有其他悬浮卡片（提问、计划、记忆、任务进度、目标）时让位，优先级最低。 */}
             {!isPinned && !floatingContent && (
               <button
                 type="button"

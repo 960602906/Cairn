@@ -448,6 +448,18 @@ describe('Composer /goal', () => {
     await screen.findByText(/当前会话没有未结束的目标/)
   })
 
+  it('opens the goal panel from /goal status when only history remains', async () => {
+    const user = userEvent.setup()
+    const historyOnly = goalView([
+      ev(5, 'turn.started', {}),
+      ev(6, 'turn.completed', { durationMs: 10 }),
+      ev(7, 'goal.ended', { goalId: 'g1', reason: 'met', turns: 1, durationMs: 9_000 }),
+    ])
+    const { onOpenPanel } = renderComposer(historyOnly, {}, vi.fn())
+    await user.type(input(), '/goal status{Enter}')
+    await waitFor(() => expect(onOpenPanel).toHaveBeenCalledWith('goal'))
+  })
+
   it('pauses and clears without clearing the draft', async () => {
     const user = userEvent.setup()
     const { pauseGoal, clearGoal } = renderComposer(activeGoal())

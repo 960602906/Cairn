@@ -286,6 +286,8 @@ export interface SessionActions {
   resumeGoal(sessionId: string): Promise<GoalActionOutcome>
   /** 结束目标；对已结束的目标幂等。 */
   clearGoal(sessionId: string): Promise<GoalActionOutcome>
+  /** 更新未结束目标的完成条件；与当前相同则无操作。 */
+  updateGoalCondition(sessionId: string, condition: string): Promise<GoalActionOutcome>
   /**
    * 输入框 `@` 引用的候选（ADR-0037）：在会话工作区或项目目录里按路径搜。
    * 失败时返回空列表，不弹错误：打字过程中的搜索失败不值得打断用户。
@@ -1415,6 +1417,15 @@ export function createSessionStore(api: MainApi): SessionStore {
       async clearGoal(sessionId) {
         try {
           await api.request('goal.clear', { sessionId })
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, code: toError(error).code }
+        }
+      },
+
+      async updateGoalCondition(sessionId, condition) {
+        try {
+          await api.request('goal.updateCondition', { sessionId, condition })
           return { ok: true }
         } catch (error) {
           return { ok: false, code: toError(error).code }

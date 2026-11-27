@@ -38,9 +38,10 @@ Cairn 的一轮在模型结束回复时结束。用户要求“让测试通过�
 ## 决定
 
 - **目标是会话级持久状态，不是新的 `PromptMode`，也不是权限模式。** 一个会话同时只有一个未结束
-  的目标。新增持久事件 `goal.created`、`goal.paused`、`goal.resumed`、`goal.evaluated`、
-  `goal.ended`；`SessionView` 增加目标投影。`goal.created` 记录解析后的预算（默认最多 20 轮、
-  2 小时活动时长），以后改默认值不影响已有目标。轮次只统计目标处于活动状态时开始的根轮次，
+  的目标。新增持久事件 `goal.created`、`goal.paused`、`goal.resumed`、`goal.condition_updated`、
+  `goal.evaluated`、`goal.ended`；`SessionView` 增加目标投影。`goal.created` 记录解析后的预算
+  （默认最多 20 轮、2 小时活动时长），以后改默认值不影响已有目标；未结束目标可通过
+  `goal.condition_updated` 改条件（不中断当前轮）。轮次只统计目标处于活动状态时开始的根轮次，
   暂停期间的用户轮次不消耗目标预算。目标只在 `kind === 'normal'` 的会话可用，试运行与自动修复
   会话不注册该入口。
 - **循环在主进程，不在宿主。** 新增 `GoalService`，监听事件日志；只在根运行的 `turn.completed`

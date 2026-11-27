@@ -101,12 +101,26 @@ function wrap(
   status: SessionStatusLike = 'idle',
   onOpen = vi.fn(),
   returnFocus?: () => void,
+  actions: {
+    pauseGoal?: () => Promise<{ ok: boolean; code?: string }>
+    resumeGoal?: () => Promise<{ ok: boolean; code?: string }>
+    clearGoal?: () => Promise<{ ok: boolean; code?: string }>
+    updateGoalCondition?: (
+      sessionId: string,
+      condition: string,
+    ) => Promise<{ ok: boolean; code?: string }>
+  } = {},
 ) {
-  const pauseGoal = vi.fn(async () => ({ ok: true as const }))
-  const resumeGoal = vi.fn(async () => ({ ok: true as const }))
+  const pauseGoal = actions.pauseGoal ?? vi.fn(async () => ({ ok: true as const }))
+  const resumeGoal = actions.resumeGoal ?? vi.fn(async () => ({ ok: true as const }))
+  const clearGoal = actions.clearGoal ?? vi.fn(async () => ({ ok: true as const }))
+  const updateGoalCondition =
+    actions.updateGoalCondition ?? vi.fn(async () => ({ ok: true as const }))
   const store = createStore<Record<string, unknown>>(() => ({
     pauseGoal,
     resumeGoal,
+    clearGoal,
+    updateGoalCondition,
   })) as unknown as SessionStore
   const rendered = render(
     <I18nextProvider i18n={i18n}>
@@ -115,35 +129,42 @@ function wrap(
       </SessionStoreProvider>
     </I18nextProvider>,
   )
-  return { pauseGoal, resumeGoal, rendered }
+  return { pauseGoal, resumeGoal, clearGoal, updateGoalCondition, rendered }
 }
 
 type SessionStatusLike = 'idle' | 'running' | 'waiting_approval' | 'waiting_input'
 
 describe('formatGoalDuration', () => {
-  it('formats below an hour as m:ss and above as h:mm', () => {
+  it('formats below an hour as m:ss and above as Nh MMm so 1m and 1h differ', () => {
     expect(formatGoalDuration(0)).toBe('0:00')
     expect(formatGoalDuration(5_000)).toBe('0:05')
     expect(formatGoalDuration(60_000)).toBe('1:00')
     expect(formatGoalDuration(754_000)).toBe('12:34')
-    expect(formatGoalDuration(3_600_000)).toBe('1:00')
-    expect(formatGoalDuration(3_661_000)).toBe('1:01')
+    expect(formatGoalDuration(3_600_000)).toBe('1h 00m')
+    expect(formatGoalDuration(3_661_000)).toBe('1h 01m')
+    expect(formatGoalDuration(7_200_000)).toBe('2h 00m')
     expect(formatGoalDuration(-5)).toBe('0:00')
   })
 })
 
 describe('goalBarPhase', () => {
-  it('distinguishes running, judging, continuing, active and paused', () => {
-    expect(goalBarPhase(runningView(), runningView().goals.g1!, true)).toBe('running')
-    expect(goalBarPhase(judgedView(), judgedView().goals.g1!, false)).toBe('judging')
-    expect(goalBarPhase(continuingView(), continuingView().goals.g1!, false)).toBe('continuing')
-    expect(goalBarPhase(metView(), metView().goals.g1!, false)).toBe('active')
-    expect(goalBarPhase(pausedView(), pausedView().goals.g1!, false)).toBe('paused')
-    expect(goalBarPhase(pausedView(), pausedView().goals.g1!, true)).toBe('pausedRunning')
+  it('distinguishes running, waiting, judging, continuing, active and paused', () => {
+    expect(goalBarPhase(runningView(), runningView().goals.g1!, 'running')).toBe('running')
+    expect(goalBarPhase(runningView(), runningView().goals.g1!, 'waiting_approval')).toBe(
+      'waitingApproval',
+    )
+    expect(goalBarPhase(runningView(), runningView().goals.g1!, 'waiting_input')).toBe(
+      'waitingInput',
+    )
+    expect(goalBarPhase(judgedView(), judgedView().goals.g1!, 'idle')).toBe('judging')
+    expect(goalBarPhase(continuingView(), continuingView().goals.g1!, 'idle')).toBe('continuing')
+    expect(goalBarPhase(metView(), metView().goals.g1!, 'idle')).toBe('active')
+    expect(goalBarPhase(pausedView(), pausedView().goals.g1!, 'idle')).toBe('paused')
+    expect(goalBarPhase(pausedView(), pausedView().goals.g1!, 'running')).toBe('pausedRunning')
   })
 
   it('returns undefined for an ended goal', () => {
-    expect(goalBarPhase(endedView(), endedView().goals.g1!, false)).toBeUndefined()
+    expect(goalBarPhase(endedView(), endedView().goals.g1!, 'idle')).toBeUndefined()
   })
 })
 
@@ -225,47 +246,39 @@ describe('useGoalElapsed', () => {
 })
 
 describe('GoalBar', () => {
-  it('shows the running turn and timer, and pauses via the store', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(1_000)
+  it('shows a short running status without turn count or timer, and pauses via the store', () => {
     const { pauseGoal } = wrap(runningView(), 'running')
     expect(screen.getByText('测试全部通过')).toBeTruthy()
-    expect(screen.getAllByText('第 1 / 20 轮').length).toBeGreaterThan(0)
-    expect(screen.getByText('· 0:00')).toBeTruthy()
-
-    await act(async () => {
-      vi.advanceTimersByTime(5_000)
-    })
-    expect(screen.getByText('· 0:05')).toBeTruthy()
+    expect(screen.getAllByText('进行中').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/第 \d+ \/ \d+ 轮/)).toBeNull()
+    expect(screen.queryByText(/· \d/)).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: '暂停目标' }))
     expect(pauseGoal).toHaveBeenCalledWith('s1')
   })
 
-  it('shows judging and continuing states without a timer refresh problem', () => {
+  it('shows judging and continuing states', () => {
     wrap(judgedView(), 'idle')
-    expect(screen.getAllByText('判定中…').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('判定中').length).toBeGreaterThan(0)
 
     cleanup()
     wrap(continuingView(), 'idle')
-    expect(screen.getAllByText('准备继续…').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('准备继续').length).toBeGreaterThan(0)
   })
 
-  it('shows a pause reason and disables resume while a turn is running', () => {
+  it('shows a short pause label and disables resume while a turn is running', () => {
     wrap(pausedView(), 'running')
-    expect(screen.getAllByText('本轮结束后暂停：你暂停了目标').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('本轮结束后暂停').length).toBeGreaterThan(0)
     const resume = screen.getByRole('button', { name: '继续目标' })
     expect(resume).toHaveProperty('disabled', true)
     expect(resume.getAttribute('title')).toBe('本轮结束后才能继续。')
   })
 
-  it('opens the goal panel from the condition and the open button', () => {
+  it('opens the goal panel from the condition', () => {
     const onOpen = vi.fn()
-    const { rendered } = wrap(pausedView(), 'idle', onOpen)
+    wrap(pausedView(), 'idle', onOpen)
     fireEvent.click(screen.getByRole('button', { name: '测试全部通过' }))
-    fireEvent.click(screen.getByRole('button', { name: '查看目标' }))
-    expect(onOpen).toHaveBeenCalledTimes(2)
-    rendered.unmount()
+    expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
   it('renders nothing without an open goal', () => {
@@ -275,7 +288,7 @@ describe('GoalBar', () => {
 
   it('shows the active state when idle and already judged', () => {
     wrap(metView(), 'idle')
-    expect(screen.getAllByText('目标进行中').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('进行中').length).toBeGreaterThan(0)
   })
 
   it('resumes a paused goal from the bar', () => {
@@ -296,5 +309,53 @@ describe('GoalBar', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续目标' }))
     await waitFor(() => expect(resumed.resumeGoal).toHaveBeenCalledWith('s1'))
     await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(2))
+  })
+
+  it('shows waiting copy instead of running while approval is pending', () => {
+    wrap(runningView(), 'waiting_approval')
+    expect(screen.getAllByText('等待审批').length).toBeGreaterThan(0)
+
+    cleanup()
+    wrap(runningView(), 'waiting_input')
+    expect(screen.getAllByText('等待回答').length).toBeGreaterThan(0)
+  })
+
+  it('surfaces a pause failure instead of swallowing it', async () => {
+    const pauseGoal = vi.fn(async () => ({ ok: false as const, code: 'goal.plan_pending' }))
+    const returnFocus = vi.fn()
+    wrap(runningView(), 'running', vi.fn(), returnFocus, { pauseGoal })
+    fireEvent.click(screen.getByRole('button', { name: '暂停目标' }))
+    expect(await screen.findByText('请先批准或取消待审计划，再设目标')).toBeTruthy()
+    expect(returnFocus).not.toHaveBeenCalled()
+  })
+
+  it('edits the condition inline and saves on Enter', async () => {
+    const updateGoalCondition = vi.fn(async () => ({ ok: true as const }))
+    wrap(pausedView(), 'idle', vi.fn(), undefined, { updateGoalCondition })
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '新的条件' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(updateGoalCondition).toHaveBeenCalledWith('s1', '新的条件'))
+  })
+
+  it('cancels condition edit on Escape', async () => {
+    const updateGoalCondition = vi.fn(async () => ({ ok: true as const }))
+    wrap(pausedView(), 'idle', vi.fn(), undefined, { updateGoalCondition })
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '不要保存' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+    expect(screen.queryByRole('textbox', { name: '完成条件' })).toBeNull()
+  })
+
+  it('clears the goal after confirmation', async () => {
+    const clearGoal = vi.fn(async () => ({ ok: true as const }))
+    wrap(pausedView(), 'idle', vi.fn(), undefined, { clearGoal })
+    fireEvent.click(screen.getByRole('button', { name: '删除目标' }))
+    expect(clearGoal).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '确认清除' }))
+    await waitFor(() => expect(clearGoal).toHaveBeenCalledWith('s1'))
   })
 })

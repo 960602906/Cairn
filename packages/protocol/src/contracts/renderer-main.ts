@@ -420,7 +420,7 @@ export const MainForRenderer = defineSide({
       result: z.object({ project: ProjectSummary.optional() }),
     },
     /**
-     * 项目目录的 Git 状态（输入框上方的当前目录 / 分支）：不是 Git 仓库、Git 不可用或
+     * 项目目录的 Git 状态（输入框下方的当前目录 / 分支）：不是 Git 仓库、Git 不可用或
      * 处于游离 HEAD 时没有 `branch`。
      */
     'project.gitInfo': {
@@ -432,7 +432,7 @@ export const MainForRenderer = defineSide({
       }),
     },
     /**
-     * 切换项目目录的 Git 分支（输入框上方的分支选择器）。分支必须是本地分支；
+     * 切换项目目录的 Git 分支（输入框下方的分支选择器）。分支必须是本地分支；
      * 工作区有未提交改动时由 Git 决定是否允许切换。
      */
     'project.gitCheckout': {
@@ -679,6 +679,17 @@ export const MainForRenderer = defineSide({
     },
     /** 结束目标；不中止正在跑的一轮。对已结束目标幂等。 */
     'goal.clear': { params: z.object({ sessionId: Id }), result: z.object({}) },
+    /**
+     * 更新未结束目标的完成条件。不要求会话空闲；与当前条件相同时无操作。
+     * 不中断当前轮；新条件从下一轮与下一次判定起生效。
+     */
+    'goal.updateCondition': {
+      params: z.object({
+        sessionId: Id,
+        condition: z.string().trim().min(1).max(GOAL_CONDITION_MAX),
+      }),
+      result: z.object({}),
+    },
     /** 立刻压缩这个会话的上下文（M3-03）。不是一轮对话，不写用户消息。 */
     'session.compact': {
       params: z.object({ sessionId: Id }),

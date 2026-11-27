@@ -62,7 +62,14 @@ const pausedGoal = () =>
   reduceSessionEvents(createSessionView('s1'), [
     ...BASE,
     ev(5, 'turn.started', {}),
-    ev(6, 'goal.paused', { goalId: 'g1', reason: 'user', detail: '先改别的' }),
+    ev(6, 'goal.paused', { goalId: 'g1', reason: 'judge_error', detail: 'invalid_output' }),
+  ])
+
+const pausedBudgetGoal = () =>
+  reduceSessionEvents(createSessionView('s1'), [
+    ...BASE,
+    ev(5, 'turn.started', {}),
+    ev(6, 'goal.paused', { goalId: 'g1', reason: 'user' }),
   ])
 
 const endedGoal = () =>
@@ -81,15 +88,22 @@ function wrap(
     pauseGoal?: (sessionId: string) => Promise<{ ok: boolean; code?: string }>
     resumeGoal?: (sessionId: string) => Promise<{ ok: boolean; code?: string }>
     clearGoal?: (sessionId: string) => Promise<{ ok: boolean; code?: string }>
+    updateGoalCondition?: (
+      sessionId: string,
+      condition: string,
+    ) => Promise<{ ok: boolean; code?: string }>
   } = {},
 ) {
   const pauseGoal = actions.pauseGoal ?? vi.fn(async () => ({ ok: true as const }))
   const resumeGoal = actions.resumeGoal ?? vi.fn(async () => ({ ok: true as const }))
   const clearGoal = actions.clearGoal ?? vi.fn(async () => ({ ok: true as const }))
+  const updateGoalCondition =
+    actions.updateGoalCondition ?? vi.fn(async () => ({ ok: true as const }))
   const store = createStore<Record<string, unknown>>(() => ({
     pauseGoal,
     resumeGoal,
     clearGoal,
+    updateGoalCondition,
     settings: {
       locale: 'zh-CN',
       providers: [
@@ -129,13 +143,14 @@ function wrap(
       </SessionStoreProvider>
     </I18nextProvider>,
   )
-  return { pauseGoal, resumeGoal, clearGoal, rendered }
+  return { pauseGoal, resumeGoal, clearGoal, updateGoalCondition, rendered }
 }
 
 describe('reasonText', () => {
   it('picks the pause and end reason keys, and none for an active goal', () => {
     const t = (key: string) => key
-    expect(reasonText(pausedGoal().goals.g1!, t)).toBe('goal.pause.user')
+    expect(reasonText(pausedGoal().goals.g1!, t)).toBe('goal.pause.judge_error')
+    expect(reasonText(pausedBudgetGoal().goals.g1!, t)).toBe('goal.pause.user')
     expect(reasonText(endedGoal().goals.g1!, t)).toBe('goal.end.met')
     expect(reasonText(activeGoal().goals.g1!, t)).toBeUndefined()
   })
@@ -167,33 +182,93 @@ describe('GoalPanel', () => {
     expect(within(region).getByText(/文件 · file:src\/a.ts/)).toBeTruthy()
   })
 
-  it('pauses and clears an active goal', async () => {
+  it('pauses and clears an active goal after confirmation', async () => {
     const user = userEvent.setup()
     const { pauseGoal, clearGoal } = wrap(activeGoal())
     await user.click(screen.getByRole('button', { name: '暂停' }))
     expect(pauseGoal).toHaveBeenCalledWith('s1')
     await user.click(screen.getByRole('button', { name: '清除目标' }))
+    expect(clearGoal).not.toHaveBeenCalled()
+    await user.click(await screen.findByRole('button', { name: '确认清除' }))
     expect(clearGoal).toHaveBeenCalledWith('s1')
+  })
+
+  it('edits the condition from the panel', async () => {
+    const user = userEvent.setup()
+    const { updateGoalCondition } = wrap(activeGoal())
+    await user.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    await user.clear(input)
+    await user.type(input, '面板改的条件')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    expect(updateGoalCondition).toHaveBeenCalledWith('s1', '面板改的条件')
   })
 
   it('disables resume while running and enables it when idle', async () => {
     const user = userEvent.setup()
-    wrap(pausedGoal(), 'running')
+    wrap(pausedBudgetGoal(), 'running')
     const resume = screen.getByRole('button', { name: '继续' })
     expect(resume).toHaveProperty('disabled', true)
     expect(resume.getAttribute('title')).toBe('本轮结束后才能继续。')
 
     cleanup()
-    const idle = wrap(pausedGoal(), 'idle')
+    const idle = wrap(pausedBudgetGoal(), 'idle')
     await user.click(screen.getByRole('button', { name: '继续' }))
     expect(idle.resumeGoal).toHaveBeenCalledWith('s1')
   })
 
-  it('keeps ended goals in the history list', () => {
+  it('localizes machine pause details and shows the evidence disclaimer', () => {
+    wrap(pausedGoal())
+    expect(screen.getByText('判定结果无法解析。')).toBeTruthy()
+    expect(screen.getByText(/判定只依据应用内的对话/)).toBeTruthy()
+    expect(screen.queryByText(/用 `\/goal <条件>` 新建目标/)).toBeNull()
+  })
+
+  it('shows the latest ended goal with judgments instead of a thin empty state', () => {
     wrap(endedGoal())
-    expect(screen.getByRole('region', { name: '历史目标' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: '判定记录' })).toBeTruthy()
     expect(screen.getByText('目标已达成')).toBeTruthy()
     expect(screen.getByText('1 轮 · 活动 0:09')).toBeTruthy()
+    expect(screen.getByText(/判定只依据应用内的对话/)).toBeTruthy()
+    expect(screen.queryByRole('region', { name: '历史目标' })).toBeNull()
+  })
+
+  it('lists older ended goals under history when more than one exists', () => {
+    const twoEnded = reduceSessionEvents(endedGoal(), [
+      ev(9, 'goal.created', {
+        goalId: 'g2',
+        condition: '第二个目标',
+        limits: goalLimits,
+      }),
+      ev(10, 'message.user', { messageId: 'u2', content: text('第二个目标') }),
+      ev(11, 'turn.started', {}, 't2'),
+      ev(12, 'turn.completed', { durationMs: 10 }, 't2'),
+      ev(13, 'goal.ended', { goalId: 'g2', reason: 'user', turns: 1, durationMs: 3_000 }, 't2'),
+    ])
+    wrap(twoEnded)
+    expect(screen.getByText('第二个目标')).toBeTruthy()
+    expect(screen.getByRole('region', { name: '历史目标' })).toBeTruthy()
+    expect(within(screen.getByRole('region', { name: '历史目标' })).getByText('测试全部通过')).toBeTruthy()
+  })
+
+  it('keeps past goals under an open goal and ignores unknown detail codes', () => {
+    const openWithHistory = reduceSessionEvents(endedGoal(), [
+      ev(9, 'goal.created', {
+        goalId: 'g2',
+        condition: '下一个目标',
+        limits: goalLimits,
+      }),
+      ev(10, 'message.user', { messageId: 'u2', content: text('下一个目标') }),
+      ev(11, 'goal.paused', {
+        goalId: 'g2',
+        reason: 'judge_error',
+        detail: 'provider.offline',
+      }),
+    ])
+    wrap(openWithHistory)
+    expect(screen.getByText('下一个目标')).toBeTruthy()
+    expect(screen.getByRole('region', { name: '历史目标' })).toBeTruthy()
+    expect(screen.queryByText('provider.offline')).toBeNull()
   })
 
   it('shows an error notice when an action fails', async () => {
@@ -202,6 +277,7 @@ describe('GoalPanel', () => {
       clearGoal: vi.fn(async () => ({ ok: false, code: 'goal.exists' })),
     })
     await user.click(screen.getByRole('button', { name: '清除目标' }))
+    await user.click(await screen.findByRole('button', { name: '确认清除' }))
     expect(await screen.findByText('这个会话已有目标，请先暂停或清除')).toBeTruthy()
   })
 })

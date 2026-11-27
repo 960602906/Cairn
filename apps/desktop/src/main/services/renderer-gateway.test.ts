@@ -218,6 +218,7 @@ function setup(
     pauseGoal: vi.fn(() => ({})),
     resumeGoal: vi.fn(() => ({})),
     clearGoal: vi.fn(() => ({})),
+    updateGoalCondition: vi.fn(() => ({})),
     setAgent: vi.fn(() => ({})),
     setTeam: vi.fn(() => ({})),
     delegationTargets: vi.fn(() => ({ enabled: true, agentIds: ['user.review'] })),
@@ -888,10 +889,17 @@ describe('createRendererGateway: commands and lifecycle', () => {
     await expect(client.request('goal.pause', { sessionId: 's1' })).resolves.toEqual({})
     await expect(client.request('goal.resume', { sessionId: 's1' })).resolves.toEqual({})
     await expect(client.request('goal.clear', { sessionId: 's1' })).resolves.toEqual({})
+    await expect(
+      client.request('goal.updateCondition', { sessionId: 's1', condition: '新条件' }),
+    ).resolves.toEqual({})
     expect(commands.setGoal).toHaveBeenCalledWith({ sessionId: 's1', condition: '测试全部通过' })
     expect(commands.pauseGoal).toHaveBeenCalledWith({ sessionId: 's1' })
     expect(commands.resumeGoal).toHaveBeenCalledWith({ sessionId: 's1' })
     expect(commands.clearGoal).toHaveBeenCalledWith({ sessionId: 's1' })
+    expect(commands.updateGoalCondition).toHaveBeenCalledWith({
+      sessionId: 's1',
+      condition: '新条件',
+    })
     // 条件与预算受协议约束：空白条件和超过上限的预算在 IPC 层就被拒绝。
     await expect(
       client.request('goal.set', { sessionId: 's1', condition: '   ' }),

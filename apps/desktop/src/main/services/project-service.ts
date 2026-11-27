@@ -9,7 +9,7 @@
  * - **移除**（`project.remove`）：只从列表去掉，不删除目录和会话。
  * - **默认项目**（`ensureDefault`）：没有任何未归档项目时，在应用数据目录中创建并登记
  *   `Default Project`；它不能移除、改名或归档，用户可以置顶和调整两个开关。
- * - **Git 摘要 / 切换分支**（`project.gitInfo` / `project.gitCheckout`）：输入框上方的目录与分支。
+ * - **Git 摘要 / 切换分支**（`project.gitInfo` / `project.gitCheckout`）：输入框下方的目录与分支。
  *
  * 不依赖 Electron；对话框由入口注入（e2e 中替换为固定目录）。
  */

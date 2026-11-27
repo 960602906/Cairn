@@ -473,6 +473,14 @@ const payloadSchemas = {
   }),
   /** 从暂停恢复；恢复后主进程立即开始一轮继续。 */
   'goal.resumed': z.object({ goalId: Id }),
+  /**
+   * 更新未结束目标的完成条件。不进生命周期、不中断当前轮；下一轮注入与下一次判定起生效。
+   * 进行中的判定仍用开始时快照的条件结案。
+   */
+  'goal.condition_updated': z.object({
+    goalId: Id,
+    condition: z.string().trim().min(1).max(GOAL_CONDITION_MAX),
+  }),
   /** 一次独立判定的结果。`turnId` 取事件信封，界面按它把判定挂到轮次。 */
   'goal.evaluated': z.object({
     goalId: Id,

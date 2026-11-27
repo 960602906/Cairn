@@ -1,9 +1,9 @@
 /**
- * 输入框上方的当前目录与 Git 分支（参考 LiveAgent 的输入区 Git 状态）。
+ * 输入框下方的当前目录与 Git 分支（参考 LiveAgent 的输入区 Git 状态）。
  *
- * 目录显示工作空间名（悬停看完整路径）；分支由主进程读取，点开可以切换到其他本地分支。
- * 不是 Git 仓库或读取失败时只显示目录。窗口重新获得焦点时刷新一次，用户在外面的
- * 终端切换分支后回来即可看到。
+ * 放在 Composer 卡片下面，好让输入框上方的目标条 / 待办进度整体下移。目录显示工作空间名
+ * （悬停看完整路径）；分支由主进程读取，点开可以切换到其他本地分支。不是 Git 仓库或读取
+ * 失败时只显示目录。窗口重新获得焦点时刷新一次，用户在外面的终端切换分支后回来即可看到。
  */
 import { Check, ChevronDown, FolderOpen, GitBranch } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -175,7 +175,7 @@ export function WorkspaceGitBar({
     <div
       role="group"
       aria-label={t('composer.workspace.label')}
-      className="mb-1.5 flex min-w-0 items-center gap-3 px-3 text-note text-muted"
+      className="mt-1.5 flex min-w-0 items-center gap-3 px-3 text-note text-muted"
     >
       {directory}
       {branch !== undefined && (

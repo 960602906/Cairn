@@ -2412,5 +2412,51 @@ describe('reduceSession：目标（ADR-0047）', () => {
       )
       expect(next.goals.g1!.initialMessageSeq).toBe(6)
     })
+
+    it('更新条件并在回退时还原', () => {
+      const { ev, events, view } = begin()
+      const updated = reduceSession(
+        view,
+        ev('goal.condition_updated', { goalId: 'g1', condition: '新条件' }),
+      )
+      expect(updated.goals.g1!.condition).toBe('新条件')
+      expect(updated.goals.g1!.lifecycle).toHaveLength(1)
+      expect(updated.goals.g1!.conditionUpdates).toHaveLength(2)
+
+      const same = reduceSession(
+        updated,
+        ev('goal.condition_updated', { goalId: 'g1', condition: '新条件' }),
+      )
+      expect(same.goals.g1!.conditionUpdates).toHaveLength(2)
+
+      const paused = reduceSession(updated, ev('goal.paused', { goalId: 'g1', reason: 'user' }))
+      const pausedUpdated = reduceSession(
+        paused,
+        ev('goal.condition_updated', { goalId: 'g1', condition: '暂停后改' }),
+      )
+      expect(pausedUpdated.goals.g1!.condition).toBe('暂停后改')
+
+      const ended = reduceSession(
+        updated,
+        ev('goal.ended', { goalId: 'g1', reason: 'user', turns: 1, durationMs: 10 }),
+      )
+      const afterEnd = reduceSession(
+        ended,
+        ev('goal.condition_updated', { goalId: 'g1', condition: '结束后改' }),
+      )
+      expect(afterEnd.goals.g1!.condition).toBe('新条件')
+
+      const withMsg = reduceAll([
+        ...events,
+        ev('goal.condition_updated', { goalId: 'g1', condition: '新条件' }),
+        ev('message.user', { messageId: 'u2', content: text('旁路') }, { turnId: 't2' }),
+      ])
+      const rewound = reduceSession(
+        withMsg,
+        ev('conversation.rewound', { fromSeq: withMsg.goals.g1!.conditionUpdates[1]!.seq, reason: 'edit' }),
+      )
+      expect(rewound.goals.g1!.condition).toBe('测试通过')
+      expect(rewound.goals.g1!.conditionUpdates).toHaveLength(1)
+    })
   })
 })
