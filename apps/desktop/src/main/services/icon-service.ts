@@ -216,7 +216,8 @@ export function createIconService(options: IconServiceOptions): IconService {
     try {
       const response = await safeFetch(url, {
         ...(options.fetch ? { fetch: options.fetch } : {}),
-        accept: 'image/avif,image/webp,image/svg+xml,image/*;q=0.8,*/*;q=0.5',
+        // 只声明能识别的格式：图片 CDN 会按 Accept 协商，声明 AVIF 就可能拿到无法识别的图片
+        accept: 'image/webp,image/png,image/svg+xml,image/x-icon,image/*;q=0.8,*/*;q=0.5',
         maxBytes: ICON_MAX_BYTES,
         timeoutMs: TIMEOUT_MS,
       })

@@ -346,16 +346,24 @@ export const ProviderCatalogIndexEntry = z.object({
   version: z.string().max(32).optional(),
   homepage: HttpsUrl.optional(),
   icon: IconRef.optional(),
-  /** 插件文件在仓库中的相对路径，以 `.json` 结尾。 */
-  path: z
+  /**
+   * 插件文件的位置：相对 `index.json`（仓库根目录）的路径，或仓库内文件的 https 地址；指向仓库以外的项被跳过。
+   * 省略时为 `plugins/<id>.json`。
+   */
+  url: z
     .string()
-    .regex(RELATIVE_ASSET_PATTERN)
-    .refine((value) => value.endsWith('.json'), { message: 'path must end with .json' })
+    .max(2048)
+    .refine((value) => HTTPS_URL_PATTERN.test(value) || RELATIVE_ASSET_PATTERN.test(value), {
+      message: 'url must be an https URL or a relative path',
+    })
     .optional(),
+  /** `url` 的旧名，只在没有 `url` 时使用。 */
+  path: z.string().regex(RELATIVE_ASSET_PATTERN).optional(),
 })
 export type ProviderCatalogIndexEntry = z.infer<typeof ProviderCatalogIndexEntry>
 
 export const ProviderCatalogIndex = z.object({
+  /** 更高的版本报 `providers.catalog.unsupported_version`（需要更新 Cairn）。 */
   schemaVersion: z.literal(PROVIDER_CATALOG_SCHEMA_VERSION),
   plugins: z.array(z.unknown()).max(500),
 })

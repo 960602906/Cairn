@@ -21,7 +21,7 @@ type Routes = Record<string, Buffer | string | number>
 
 /** 按地址返回固定内容；数字是 HTTP 状态码，没有的地址返回 404。 */
 function fakeFetch(routes: Routes) {
-  return vi.fn(async (input: URL | string) => {
+  return vi.fn(async (input: URL | string, _init?: RequestInit) => {
     const url = String(input)
     const route = routes[url]
     if (route === undefined) return new Response('missing', { status: 404 })
@@ -109,6 +109,8 @@ describe('icon service (ADR-0049)', () => {
     await expect(service.resolve({ icon: 'https://cdn.example.com/acme.png' })).resolves.toEqual({
       dataUrl: dataOf('image/png', PNG),
     })
+    const accept = (fetch.mock.calls[0]![1] as RequestInit).headers as Record<string, string>
+    expect(accept['accept']).not.toContain('avif')
   })
 
   it('falls back from a broken icon to the site favicon, and caches the result on disk', async () => {

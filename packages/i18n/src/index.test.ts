@@ -250,6 +250,7 @@ describe('translateError', () => {
       'providers.catalog.invalid',
       'providers.catalog.not_found',
       'providers.catalog.changed',
+      'providers.catalog.unsupported_version',
       'agent.not_found',
       'agent.readonly',
       'agent.invalid',

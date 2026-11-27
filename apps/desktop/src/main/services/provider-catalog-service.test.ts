@@ -44,9 +44,12 @@ const index = {
       description: 'Hosted gateway',
       homepage: 'https://acme.example',
       icon: 'icons/acme.svg',
-      path: 'plugins/acme/plugin.json',
+      url: 'plugins/acme/plugin.json',
     },
     { id: 'beta', name: 'Beta' },
+    { id: 'gamma', name: 'Gamma', url: `${FILES}plugins/gamma.json` },
+    { id: 'legacy', name: 'Legacy', path: 'plugins/old-name.json' },
+    { id: 'elsewhere', name: 'Elsewhere', url: 'https://evil.example/plugin.json' },
     { id: 'beta', name: 'Duplicate beta' },
     { id: 'Bad ID', name: 'Skipped' },
     { id: 'escape', name: 'Escape', path: '../outside.json' },
@@ -109,6 +112,8 @@ describe('official provider catalog (ADR-0049)', () => {
         icon: `${FILES}icons/acme.svg`,
       },
       { id: 'beta', name: 'Beta' },
+      { id: 'gamma', name: 'Gamma' },
+      { id: 'legacy', name: 'Legacy' },
     ])
     // 一分钟内复用目录
     await catalog.list()
@@ -162,13 +167,29 @@ describe('official provider catalog (ADR-0049)', () => {
     )
   })
 
-  it('uses plugins/<id>.json by default and checks the plugin id', async () => {
-    const { catalog } = setup({
+  it('finds plugin files by url, path or the default location, and checks the plugin id', async () => {
+    const { catalog, fetch } = setup({
       [`${FILES}index.json`]: JSON.stringify(index),
       [`${FILES}plugins/beta.json`]: JSON.stringify(plugin()),
+      [`${FILES}plugins/gamma.json`]: JSON.stringify(plugin({ id: 'gamma' })),
+      [`${FILES}plugins/old-name.json`]: JSON.stringify(plugin({ id: 'legacy' })),
     })
     expect(await codeOf(catalog.preview({ id: 'beta' }))).toBe('providers.catalog.invalid')
+    expect((await catalog.preview({ id: 'gamma' })).plugin.id).toBe('gamma')
+    expect((await catalog.preview({ id: 'legacy' })).plugin.id).toBe('legacy')
+    // 指向仓库以外的项不出现，也不会被下载
+    expect(await codeOf(catalog.preview({ id: 'elsewhere' }))).toBe('providers.catalog.not_found')
     expect(await codeOf(catalog.preview({ id: 'missing' }))).toBe('providers.catalog.not_found')
+    expect(fetch.mock.calls.map(([url]) => String(url))).not.toContain(
+      'https://evil.example/plugin.json',
+    )
+  })
+
+  it('asks for a newer Cairn when the index format is newer', async () => {
+    const { catalog } = setup({
+      [`${FILES}index.json`]: JSON.stringify({ schemaVersion: 2, plugins: [] }),
+    })
+    expect(await codeOf(catalog.list())).toBe('providers.catalog.unsupported_version')
   })
 
   it('reports an unreachable or invalid catalog clearly', async () => {
@@ -195,7 +216,7 @@ describe('official provider catalog (ADR-0049)', () => {
     }
     for (const body of [
       '{',
-      JSON.stringify({ schemaVersion: 2, plugins: [] }),
+      JSON.stringify({ schemaVersion: '1', plugins: [] }),
       'x'.repeat(600_000),
     ]) {
       expect(await codeOf(setup({ [`${FILES}index.json`]: body }).catalog.list())).toBe(

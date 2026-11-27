@@ -134,7 +134,12 @@ export function resolvePluginIcons(
 const displayIcon = (icon: string | undefined) =>
   icon !== undefined && isIconUrl(icon) ? { icon } : {}
 
-function templateOf(pluginId: string, entry: ProviderPluginEntry): ProviderTemplate {
+/** 服务没有自己的图标时用插件的图标（都没有时界面再找网站图标）。 */
+function templateOf(
+  pluginId: string,
+  entry: ProviderPluginEntry,
+  pluginIcon: string | undefined,
+): ProviderTemplate {
   const modelDefaults = capabilitiesOf(entry.modelDefaults, GENERIC_MODEL_DEFAULTS)
   const models: ModelProfile[] = (entry.models ?? []).map((m) => ({
     id: m.id,
@@ -153,7 +158,7 @@ function templateOf(pluginId: string, entry: ProviderPluginEntry): ProviderTempl
     requiresKey: entry.requiresKey ?? true,
     ...(entry.keysUrl ? { keysUrl: entry.keysUrl } : {}),
     ...(entry.homepage ? { homepage: entry.homepage } : {}),
-    ...displayIcon(entry.icon),
+    ...displayIcon(entry.icon !== undefined && isIconUrl(entry.icon) ? entry.icon : pluginIcon),
     ...(entry.compat ? { compat: entry.compat } : {}),
     models,
     ...(entry.suggestedModels ? { suggestedModels: entry.suggestedModels } : {}),
@@ -181,6 +186,6 @@ export function providerPluginInfo(manifest: ProviderPluginManifest): ProviderPl
     ...(manifest.description ? { description: manifest.description } : {}),
     ...(manifest.homepage ? { homepage: manifest.homepage } : {}),
     ...displayIcon(manifest.icon),
-    templates: manifest.providers.map((entry) => templateOf(manifest.id, entry)),
+    templates: manifest.providers.map((entry) => templateOf(manifest.id, entry, manifest.icon)),
   }
 }

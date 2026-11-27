@@ -142,6 +142,7 @@
   "providers.catalog.invalid": "官方插件目录返回的内容无效",
   "providers.catalog.not_found": "官方目录中没有这个插件",
   "providers.catalog.changed": "插件在预览之后有了变化，请重新打开查看新版本",
+  "providers.catalog.unsupported_version": "这个插件目录需要更新版本的 Cairn",
   "mcp.not_found": "找不到这个 MCP 服务",
   "mcp.invalid": "MCP 服务配置无效",
   "mcp.tool_not_found": "找不到这个 MCP 工具",

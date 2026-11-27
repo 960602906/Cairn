@@ -59,7 +59,7 @@ icons/…                    可选的图标 / optional icons
       "description": "One hosted gateway and one local server.",
       "homepage": "https://acme.example",
       "icon": "icons/acme.svg",
-      "path": "plugins/acme.json"
+      "url": "plugins/acme.json"
     }
   ]
 }
@@ -67,15 +67,17 @@ icons/…                    可选的图标 / optional icons
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `schemaVersion` | 是 | 固定为 `1`。其他值整个目录报“内容无效”。 |
+| `schemaVersion` | 是 | 固定为 `1`。更高的版本提示“需要更新版本的 Cairn”，其他值报“内容无效”。 |
 | `plugins[].id` | 是 | 插件 id，必须与插件文件中的 `id` 一致，否则拒绝安装。 |
 | `plugins[].name` | 是 | 目录中显示的名称。 |
 | `plugins[].version` | 否 | 与已安装插件的 `version` 不同时显示“可更新”。应与插件文件中的一致。 |
 | `plugins[].description`、`homepage` | 否 | 显示在目录中；`homepage` 为 https。 |
 | `plugins[].icon` | 否 | 图标，规则见下文；相对路径相对仓库根目录。 |
-| `plugins[].path` | 否 | 插件文件在仓库中的相对路径，以 `.json` 结尾，不能以 `/` 开头或含 `..`。省略时为 `plugins/<id>.json`。 |
+| `plugins[].url` | 否 | 插件文件的位置：相对 `index.json`（仓库根目录）的路径，不能以 `/` 开头或含 `..`；或仓库内文件的 https 地址（必须以上面的 raw 地址开头，指向仓库以外的项被跳过）。省略时为 `plugins/<id>.json`。目录仓库中总是写 `plugins/<id>.json`。旧名 `path` 仍可用。 |
 
-- 单个无效的项（字段不对、id 重复、路径越界）会被跳过，不影响其余插件；未知字段忽略。
+- 单个无效的项（字段不对、id 重复、地址越界）会被跳过，不影响其余插件；未知字段（如编辑器用的 `$schema`）忽略。
+- 目录仓库用 JSON Schema（`schema/index.schema.json`、`schema/provider-plugin.schema.json`）与 CI 校验同样的规则；
+  两边的格式变化要同时更新。
 - 插件文件就是普通的插件（下文的格式），大小不超过 256 KB；`index.json` 不超过 512 KB。
 - 预览时下载插件文件并计算 `sha256`，安装时内容必须与预览时一致；预览之后目录变了会提示重新查看。
 - GitHub 的 raw 地址有几分钟的缓存，新合入的插件可能稍后才出现。
@@ -150,10 +152,14 @@ icons/…                    可选的图标 / optional icons
   解析为 `https://raw.githubusercontent.com/960602906/cairn-provider-plugins/main/icons/acme.svg`。从官方目录
   安装时解析成 https 地址后写入；本地文件中的相对路径无法解析，会被忽略（退回网站图标）。
 
-没有 `icon`（或图标加载失败）时，默认用**网站图标（favicon）**，像浏览器一样查找：依次打开 `homepage`、
-`keysUrl`、`baseUrl` 所在站点（`api.` 之类的子域名再试上一级域名）的页面，读取
-`<link rel="icon">` / `apple-touch-icon`（SVG 与大尺寸优先），都没有时用站点根目录的 `/favicon.ico`。
-仍然没有时显示名称首字母（插件显示拼图符号）。内置服务同样如此：DeepSeek、Anthropic、OpenAI、Gemini 用随
+查找顺序 / Fallback order:
+
+1. 服务自己的 `icon`；没有时用插件的 `icon`。目录列表中用目录项的 `icon`。
+2. 都没有（或图片加载失败）时，用**网站图标（favicon）**，像浏览器一样查找：依次打开 `homepage`、`keysUrl`、
+   `baseUrl` 所在站点（`api.` 之类的子域名再试上一级域名）的页面，读取 `<link rel="icon">` /
+   `apple-touch-icon`（SVG 与大尺寸优先；大页面只读开头），都没有时用站点根目录的 `/favicon.ico`。
+   网站排在申请 Key 的页面之前：控制台页面常常跳到通用的登录页，图标不准确。目录列表中用目录项的 `homepage`。
+3. 仍然没有时显示名称首字母（插件显示拼图符号）。内置服务同样如此：DeepSeek、Anthropic、OpenAI、Gemini 用随
 应用的品牌图标，其余用网站图标，所以不需要每个服务都自带图片。
 
 When `icon` is omitted or fails, Cairn uses the site favicon, found the way a browser would (homepage,

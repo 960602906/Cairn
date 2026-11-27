@@ -284,6 +284,15 @@ describe('provider plugins (ADR-0049)', () => {
     const info = providerPluginInfo(resolved)
     expect(info.icon).toBe('https://raw.example.com/r/main/plugins/icons/acme.svg')
     expect(info.templates[0]!.icon).toBe('https://raw.example.com/r/main/plugins/gateway.png')
+    // 服务没有自己的图标时用插件的图标
+    const shared = providerPluginInfo({
+      ...resolved,
+      providers: resolved.providers.map(({ icon: _icon, ...entry }) => entry),
+    })
+    expect(shared.templates.map((t) => t.icon)).toEqual([
+      'https://raw.example.com/r/main/plugins/icons/acme.svg',
+      'https://raw.example.com/r/main/plugins/icons/acme.svg',
+    ])
     expect(ProviderTemplateSpec.safeParse(info.templates[0]).success).toBe(true)
     // 没有来源地址时去掉相对图标
     const dropped = resolvePluginIcons(parsed, undefined)

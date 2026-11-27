@@ -142,6 +142,7 @@
   "providers.catalog.invalid": "The official plugin catalog returned invalid content",
   "providers.catalog.not_found": "That plugin is not in the official catalog",
   "providers.catalog.changed": "The plugin changed after you previewed it. Open it again to review the new version",
+  "providers.catalog.unsupported_version": "This catalog needs a newer version of Cairn",
   "mcp.not_found": "MCP server not found",
   "mcp.invalid": "MCP server configuration is invalid",
   "mcp.tool_not_found": "MCP tool not found",

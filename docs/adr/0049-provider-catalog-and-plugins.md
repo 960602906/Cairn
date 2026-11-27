@@ -41,14 +41,15 @@
   IPC 为 `providerPlugin.list / pick / install / remove`。
 - **官方插件目录。** [`960602906/cairn-provider-plugins`](https://github.com/960602906/cairn-provider-plugins)
   是默认的信任来源，不是开放市场：插件由仓库维护者审核后合入。Cairn 只读这个仓库默认分支上的文件
-  （`raw.githubusercontent.com`）：`index.json` 列出插件，插件文件在 `path`（省略时为 `plugins/<id>.json`），
-  插件 id 必须与索引一致。“官方目录”窗口列出插件并标出已安装、可更新的；“查看”下载插件并显示与本地文件
+  （`raw.githubusercontent.com`）：`index.json` 列出插件，插件文件在 `url`（相对 `index.json` 的路径或仓库内的
+  https 地址，省略时为 `plugins/<id>.json`；指向仓库以外的项被跳过），插件 id 必须与索引一致；索引格式更新时
+  提示需要更新 Cairn。“官方目录”窗口列出插件并标出已安装、可更新的；“查看”下载插件并显示与本地文件
   相同的预览（每个服务以及 Key 会发送到的全部地址），确认后安装。预览返回插件文件的 `sha256`，安装时内容必须
   一致，保证装的就是用户看过的内容。目录不可达或格式不对时在窗口里说明并可重试，不影响内置服务与本地文件
   安装。IPC 为 `providerCatalog.list / preview / install`。格式约定写在
   [供应商插件](../dev/provider-plugins.md)，与目录仓库保持一致。
 - **图标。** 插件、服务与目录项都可以有 `icon`：https 图片、`data:image` 内联图片，或官方目录仓库内相对根目录
-  的路径（安装时解析成 https）。没有 `icon` 时默认用网站图标：像浏览器一样依次打开 `homepage`、`keysUrl`、
+  的路径（安装时解析成 https）。服务没有 `icon` 时用插件的 `icon`；都没有时默认用网站图标：像浏览器一样依次打开 `homepage`、`keysUrl`、
   `baseUrl` 所在站点（再试上一级域名），读 `<link rel="icon">` / `apple-touch-icon`，没有时用 `/favicon.ico`；
   仍然没有时显示首字母或拼图符号。内置服务补充了 `homepage`，不必自带图片；DeepSeek、Anthropic、OpenAI、
   Gemini 继续用随应用的品牌图标。图标由主进程下载并以 `data:` 地址交给界面（界面 CSP 不变，不加载远程图片），
