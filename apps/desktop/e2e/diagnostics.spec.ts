@@ -7,9 +7,8 @@ import path from 'node:path'
 import { unzipSync } from 'fflate'
 import type { Page } from '@playwright/test'
 import { expect, test } from './app.js'
+import { E2E_ARTIFACTS } from './artifacts.js'
 
-const ARTIFACTS_DIR =
-  process.platform === 'win32' ? 'C:\\opt\\cursor\\artifacts' : '/opt/cursor/artifacts'
 const API_KEY = '{{API_KEY_diag4e2e}}'
 
 async function setTheme(window: Page, theme: 'light' | 'dark') {
@@ -75,11 +74,11 @@ test('从通用设置导出诊断包，清单与 zip 内容正确', async ({ lau
   await expect(dialog.getByText(/脱敏设置摘要/)).toBeVisible()
   await expect(dialog.getByText(/运行日志/)).toBeVisible()
 
-  mkdirSync(ARTIFACTS_DIR, { recursive: true })
+  mkdirSync(E2E_ARTIFACTS, { recursive: true })
   await setTheme(window, 'light')
-  await window.screenshot({ path: path.join(ARTIFACTS_DIR, 'diagnostics-dialog-light.png') })
+  await window.screenshot({ path: path.join(E2E_ARTIFACTS, 'diagnostics-dialog-light.png') })
   await setTheme(window, 'dark')
-  await window.screenshot({ path: path.join(ARTIFACTS_DIR, 'diagnostics-dialog-dark.png') })
+  await window.screenshot({ path: path.join(E2E_ARTIFACTS, 'diagnostics-dialog-dark.png') })
   await setTheme(window, 'light')
 
   await dialog.getByRole('button', { name: '导出诊断包' }).click()

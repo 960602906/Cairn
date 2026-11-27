@@ -4,8 +4,9 @@
  */
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { expect, test } from './app.js'
+import { resizeWindow } from './window-size.js'
 
 const ARTIFACTS = path.resolve(import.meta.dirname, '../../../.cache/cairn-visual-check/settings')
 mkdirSync(ARTIFACTS, { recursive: true })
@@ -27,24 +28,6 @@ const SECTIONS = [
   ['permissions', '权限与审批'],
   ['about', '关于 Cairn'],
 ] as const
-
-async function resize(
-  app: ElectronApplication,
-  page: Page,
-  size: { width: number; height: number },
-) {
-  await app.evaluate(({ BrowserWindow }, next) => {
-    BrowserWindow.getAllWindows()[0]?.setContentSize(next.width, next.height)
-  }, size)
-  await page.waitForFunction(
-    (next) => {
-      const view = globalThis as unknown as { innerWidth: number; innerHeight: number }
-      return view.innerWidth === next.width && view.innerHeight === next.height
-    },
-    size,
-    { timeout: 5_000 },
-  )
-}
 
 async function noHorizontalOverflow(page: Page) {
   const metrics = await page.evaluate(() => {
@@ -73,7 +56,7 @@ test('设置页在四种窗口尺寸下都不溢出', async ({ launch }) => {
   const nav = window.getByRole('navigation', { name: '设置分类' })
 
   for (const size of SIZES) {
-    await resize(app.app, window, size)
+    await resizeWindow(app.app, window, size)
     for (const [id, title] of SECTIONS) {
       await nav.getByRole('button', { name: new RegExp(`^${title}`) }).click()
       await expect(window.getByRole('heading', { name: title, level: 2 })).toBeVisible()
@@ -112,7 +95,7 @@ test('浅色主题在窄窗口下八个分类都不溢出', async ({ launch }) =
     .click()
 
   const nav = window.getByRole('navigation', { name: '设置分类' })
-  await resize(app.app, window, { width: 880, height: 800 })
+  await resizeWindow(app.app, window, { width: 880, height: 800 })
   for (const [id, title] of SECTIONS) {
     await nav.getByRole('button', { name: new RegExp(`^${title}`) }).click()
     await expect(window.getByRole('heading', { name: title, level: 2 })).toBeVisible()
@@ -124,7 +107,7 @@ test('浅色主题在窄窗口下八个分类都不溢出', async ({ launch }) =
     }
   }
 
-  await resize(app.app, window, { width: 1024, height: 768 })
+  await resizeWindow(app.app, window, { width: 1024, height: 768 })
   for (const [, title] of SECTIONS) {
     await nav.getByRole('button', { name: new RegExp(`^${title}`) }).click()
     await noHorizontalOverflow(window)
@@ -135,7 +118,7 @@ test('浅色主题在窄窗口下八个分类都不溢出', async ({ launch }) =
   await window.getByRole('button', { name: '批量' }).click()
   await expect(window.getByRole('button', { name: '退出批量' })).toBeVisible()
   await noHorizontalOverflow(window)
-  await resize(app.app, window, { width: 880, height: 800 })
+  await resizeWindow(app.app, window, { width: 880, height: 800 })
   await noHorizontalOverflow(window)
   await window.screenshot({
     path: path.join(ARTIFACTS, 'section-skills-batch-880x800.png'),
@@ -151,7 +134,7 @@ test('记忆页在深色下不溢出（M7-04）', async ({ launch }) => {
     .getByRole('button', { name: /^记忆/ })
     .click()
   await expect(window.getByRole('heading', { name: '记忆', level: 2 })).toBeVisible()
-  await resize(app.app, window, { width: 1440, height: 900 })
+  await resizeWindow(app.app, window, { width: 1440, height: 900 })
   await noHorizontalOverflow(window)
   await window.screenshot({ path: path.join(ARTIFACTS, 'section-memory-dark-1440x900.png') })
 })
@@ -165,7 +148,7 @@ test('记忆页的英文界面在窄窗口下不溢出（M7-04）', async ({ lau
     .getByRole('button', { name: /^Memory/ })
     .click()
   await expect(window.getByRole('heading', { name: 'Memory', level: 2 })).toBeVisible()
-  await resize(app.app, window, { width: 1024, height: 768 })
+  await resizeWindow(app.app, window, { width: 1024, height: 768 })
   await noHorizontalOverflow(window)
   await window.screenshot({ path: path.join(ARTIFACTS, 'section-memory-en-1024x768.png') })
 })

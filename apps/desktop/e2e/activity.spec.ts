@@ -7,11 +7,10 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
+import { E2E_ARTIFACTS } from './artifacts.js'
 import { createSession, projectDir, sendPrompt } from './session.js'
 
 const REPLY = 'activity reply'
-const ARTIFACTS_DIR =
-  process.platform === 'win32' ? 'C:\\opt\\cursor\\artifacts' : '/opt/cursor/artifacts'
 
 async function configureModel(window: Page, baseUrl: string) {
   await window.evaluate(async (url) => {
@@ -82,11 +81,11 @@ test('两个会话的审批聚合到活动中心，就地处理并跳转', async
     await expect(window.getByRole('heading', { level: 2, name: '活动', exact: true })).toBeVisible()
     await expect(window.getByText('待审批 2 · 运行中 0 · 最近完成 0')).toBeVisible()
 
-    mkdirSync(ARTIFACTS_DIR, { recursive: true })
+    mkdirSync(E2E_ARTIFACTS, { recursive: true })
     await setTheme(window, 'light')
-    await window.screenshot({ path: path.join(ARTIFACTS_DIR, 'activity-light.png') })
+    await window.screenshot({ path: path.join(E2E_ARTIFACTS, 'activity-light.png') })
     await setTheme(window, 'dark')
-    await window.screenshot({ path: path.join(ARTIFACTS_DIR, 'activity-dark.png') })
+    await window.screenshot({ path: path.join(E2E_ARTIFACTS, 'activity-dark.png') })
     await setTheme(window, 'light')
 
     const first = window.getByRole('article', { name: '活动一 · run_command 的审批' })

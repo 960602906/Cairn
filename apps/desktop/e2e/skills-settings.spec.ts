@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { BUILTIN_SMOKE_SKILL } from '../scripts/builtin-skill.mjs'
 import { expect, test } from './app.js'
+import { E2E_ARTIFACTS } from './artifacts.js'
 
 const BODY = 'The reviewer skill says reviewed-in-e2e.'
 
@@ -54,7 +55,7 @@ test('从文件夹安装技能，在抽屉里查看详情后卸载', async ({ la
   // 只剩启用开关，没有“始终加载”。
   await expect(card.getByRole('switch')).toHaveCount(1)
 
-  const artifacts = process.env['CAIRN_E2E_ARTIFACTS'] ?? '/opt/cursor/artifacts'
+  const artifacts = E2E_ARTIFACTS
   mkdirSync(artifacts, { recursive: true })
   const setTheme = (theme: 'light' | 'dark') =>
     window.evaluate((value) => {

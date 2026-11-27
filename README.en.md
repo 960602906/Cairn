@@ -33,12 +33,13 @@ Architecturally, Cairn = **our own agent platform** + **a pluggable agent engine
   preferred engine. Tool execution stays in the platform, so swapping engines does not affect
   permissions, auditing or storage.
 
-> **Status**: 0.1.x beta, MIT licensed. M0–M7 are implemented; Windows is installable, macOS ships
+> **Status**: 0.1.x beta, MIT licensed. M0–M8 are implemented; Windows is installable, macOS ships
 > ad-hoc signed (not notarized) DMG/ZIP builds, and Linux ships AppImage/deb. The three-platform CI
 > matrix and per-platform release pipeline landed in M6 (see the
 > [M6 acceptance report](docs/plan/m6-report.md)). M7 added cross-session memory and team
-> templates (review loops, pipelines and draft trials); see the
-> [M7 acceptance report](docs/plan/m7-report.md). Stable is still blocked on code signing, legal
+> templates (review loops, pipelines, draft trials, and desktop editing with version history);
+> M8 added PR auto-fix. See the [M7 acceptance report](docs/plan/m7-report.md) and the
+> [M8 plan and acceptance](docs/plan/m8.md). Stable is still blocked on code signing, legal
 > review and a clean-VM acceptance matrix. Windows x64 ships first, per-user install.
 
 ## Highlights
@@ -61,6 +62,9 @@ Architecturally, Cairn = **our own agent platform** + **a pluggable agent engine
   agents.
 - **Observable**: activity center, background commands, run inspector, context usage and redacted
   diagnostics bundles.
+- **Self-healing**: watch a PR for failing CI, merge conflicts and new review comments; Cairn opens
+  a fix session, edits and verifies the code in an isolated worktree, then pushes to the PR branch.
+  It never merges or force-pushes, and stops with a notification once attempts run out.
 - **Handy**: type `/` in the composer for 20+ built-in commands, and `/help` for the full command
   and shortcut list; switch agents, change the permission mode or check context and run status
   without leaving the chat.
@@ -151,8 +155,13 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
   OpenAI-compatible format.
 - UI languages: Chinese and English; light, dark and follow-system themes.
 - Memory and team collaboration landed in M7: memory is scoped to session / project / global, and
-  team templates support review loops, pipelines and trials. Templates have no editor UI yet and are
-  created and trialed over RPC (see the [M7 acceptance report](docs/plan/m7-report.md) §5).
+  team templates support review loops, pipelines, draft trials and three built-in templates. They
+  can be created, edited, version-compared, restored, duplicated and archived in the desktop app
+  (see the [M7 acceptance report](docs/plan/m7-report.md)).
+- PR auto-fix landed in M8: enable a watch with `watch_pull_request` in a session. Failing CI,
+  merge conflicts or new review comments start an unattended fix session in an isolated worktree,
+  which pushes to the PR's head branch. It never merges or force-pushes (see the
+  [auto-fix design](docs/plan/auto-fix.md) and the [M8 plan and acceptance](docs/plan/m8.md)).
 - Stable still needs code signing, legal review and a clean-VM acceptance matrix.
 
 ## Docs
@@ -168,6 +177,8 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
 - [M5 release acceptance report](docs/plan/m5-report.md)
 - [M6 acceptance report](docs/plan/m6-report.md)
 - [M7 acceptance report](docs/plan/m7-report.md)
+- [Auto-fix design](docs/plan/auto-fix.md)
+- [M8 plan and acceptance](docs/plan/m8.md)
 - [Changelog](CHANGELOG.md)
 - [Privacy notice](PRIVACY.md)
 - [Contributing](CONTRIBUTING.md)
@@ -184,6 +195,7 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
 - [M5 Release](docs/plan/m5.md)
 - [M6 Cross-platform and open source](docs/plan/m6.md)
 - [M7 Memory and collaboration](docs/plan/m7.md)
+- [M8 Auto-fix](docs/plan/m8.md)
 
 ## License
 

@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
+import { E2E_ARTIFACTS } from './artifacts.js'
 import { createSession, projectDir, runStatus, sendPrompt, sessionPanel } from './session.js'
 
 const LINES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l']
@@ -68,7 +69,7 @@ test('一次改动两处，撤销其中一块只恢复这一块', async ({ launc
     const revertButtons = diff.getByRole('button', { name: '撤销此块' })
     await expect(revertButtons).toHaveCount(2)
 
-    const artifacts = '/opt/cursor/artifacts'
+    const artifacts = E2E_ARTIFACTS
     mkdirSync(artifacts, { recursive: true })
     const setTheme = (theme: 'light' | 'dark') =>
       window.evaluate((value) => {

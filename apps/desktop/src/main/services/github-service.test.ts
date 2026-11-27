@@ -4,6 +4,7 @@ import { GITHUB_CREDENTIAL_REF, GITHUB_LOG_MAX_CHARS, RpcError } from '@cairn/pr
 import {
   createGithubService,
   createGithubTokenResolver,
+  ghAuthCandidates,
   normalizeGithubApiBase,
   type FetchLike,
   type GithubCredentials,
@@ -92,6 +93,32 @@ describe('github token resolution', () => {
       readGhToken,
     })
     expect(await resolve()).toBe('gh-token')
+  })
+})
+
+describe('gh auth token candidates', () => {
+  it('looks in Homebrew paths on macOS', () => {
+    expect(ghAuthCandidates('darwin', {})).toEqual([
+      'gh',
+      '/opt/homebrew/bin/gh',
+      '/usr/local/bin/gh',
+    ])
+  })
+
+  it('looks in common install locations on Linux', () => {
+    expect(ghAuthCandidates('linux', {})).toEqual([
+      'gh',
+      '/usr/bin/gh',
+      '/usr/local/bin/gh',
+      '/snap/bin/gh',
+    ])
+  })
+
+  it('looks in the GitHub CLI install folder on Windows', () => {
+    expect(ghAuthCandidates('win32', { ProgramFiles: 'C:\\Program Files' })).toEqual([
+      'gh.exe',
+      'C:\\Program Files\\GitHub CLI\\gh.exe',
+    ])
   })
 })
 

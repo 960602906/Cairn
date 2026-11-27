@@ -6,12 +6,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Page } from '@playwright/test'
 import { expect, test } from './app.js'
+import { E2E_ARTIFACTS } from './artifacts.js'
 
 const fixture = fileURLToPath(
   new URL('../../../packages/mcp/src/testing/fixture-server.mjs', import.meta.url),
 )
 
-const artifacts = '/opt/cursor/artifacts'
+const artifacts = E2E_ARTIFACTS
 
 async function openMcp(page: Page) {
   await page.getByRole('button', { name: /^设置/ }).click()

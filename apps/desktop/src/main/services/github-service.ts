@@ -11,6 +11,7 @@
  * 不依赖 Electron：`fetch` 与令牌来源都由调用方注入，单元测试用假实现。
  */
 import { execFile } from 'node:child_process'
+import path from 'node:path'
 import { unzipSync } from 'fflate'
 import {
   GITHUB_CREDENTIAL_REF,
@@ -62,17 +63,54 @@ export interface GithubTokenSources {
 /** `gh` 的结果缓存多久；轮询时不必每次都起子进程。 */
 const GH_TOKEN_TTL_MS = 60_000
 
+/**
+ * `gh` 的候选路径。GUI 启动的应用 PATH 往往很短：macOS 上只有
+ * `/usr/bin:/bin:/usr/sbin:/sbin`，Homebrew 安装的 `gh` 不在其中，所以不能只靠 `execFile('gh')`。
+ */
+export function ghAuthCandidates(
+  platform: NodeJS.Platform = process.platform,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string[] {
+  if (platform === 'win32') {
+    const programFiles = env['ProgramFiles']
+    return [
+      'gh.exe',
+      ...(programFiles === undefined
+        ? []
+        : [path.win32.join(programFiles, 'GitHub CLI', 'gh.exe')]),
+    ]
+  }
+  if (platform === 'darwin') return ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']
+  return ['gh', '/usr/bin/gh', '/usr/local/bin/gh', '/snap/bin/gh']
+}
+
 /** 本机 `gh` 的登录令牌；没装、未登录或超时都返回 `undefined`。 */
-export function readGhAuthToken(): Promise<string | undefined> {
+export function readGhAuthToken(
+  candidates: readonly string[] = ghAuthCandidates(),
+): Promise<string | undefined> {
   return new Promise((resolvePromise) => {
-    execFile('gh', ['auth', 'token'], { timeout: 5_000, windowsHide: true }, (error, stdout) => {
-      if (error) {
+    const tryAt = (index: number): void => {
+      if (index >= candidates.length) {
         resolvePromise(undefined)
         return
       }
-      const token = stdout.trim()
-      resolvePromise(token === '' ? undefined : token)
-    })
+      execFile(
+        candidates[index]!,
+        ['auth', 'token'],
+        { timeout: 5_000, windowsHide: true },
+        (error, stdout) => {
+          if (!error) {
+            const token = stdout.trim()
+            if (token !== '') {
+              resolvePromise(token)
+              return
+            }
+          }
+          tryAt(index + 1)
+        },
+      )
+    }
+    tryAt(0)
   })
 }
 
