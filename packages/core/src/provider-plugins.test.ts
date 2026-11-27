@@ -40,7 +40,7 @@ const codeOf = (fn: () => unknown) => {
   throw new Error('expected an error')
 }
 
-describe('provider plugins (ADR-0049)', () => {
+describe('provider plugins (ADR-0050)', () => {
   it('expands a plugin into namespaced catalog templates with defaults filled in', () => {
     const info = providerPluginInfo(parseProviderPlugin(JSON.stringify(manifest())))
     expect(info).toMatchObject({ id: 'acme', name: 'Acme Cloud', version: '1.0.0' })

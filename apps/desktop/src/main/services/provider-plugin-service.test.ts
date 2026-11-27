@@ -47,7 +47,7 @@ const codeOf = (fn: () => unknown) => {
   throw new Error('expected an error')
 }
 
-describe('provider plugin service (ADR-0049)', () => {
+describe('provider plugin service (ADR-0050)', () => {
   it('lists nothing when the folder does not exist', () => {
     const service = createProviderPluginService({ dir })
     expect(service.list()).toEqual({ plugins: [], skipped: [] })

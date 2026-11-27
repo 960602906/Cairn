@@ -462,7 +462,7 @@ interface ModelProfile {
 
 具体 baseUrl 和模型名以各自官方文档为准。
 
-添加供应商时从服务目录选择（ADR-0049）：内置目录（`@cairn/core` 的 `PROVIDER_TEMPLATES`）按模型厂商、
+添加供应商时从服务目录选择（ADR-0050）：内置目录（`@cairn/core` 的 `PROVIDER_TEMPLATES`）按模型厂商、
 聚合平台与中转、本机运行分组，除上表外还有通义千问、Kimi、智谱 GLM / Z.ai、MiniMax、火山方舟、xAI、
 OpenRouter、SiliconFlow、Vercel AI Gateway、Ollama、LM Studio，预填地址、接口格式与兼容参数，用户只需
 填 Key。目录可由声明式的供应商插件（应用数据目录 `provider-plugins/` 下的 JSON 文件，见

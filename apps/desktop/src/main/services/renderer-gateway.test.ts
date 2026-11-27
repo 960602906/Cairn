@@ -1538,7 +1538,7 @@ describe('createRendererGateway: commands and lifecycle', () => {
     expect(providers.test).toHaveBeenCalledWith({ provider, modelId: 'm' })
   })
 
-  it('delegates provider plugin requests to the plugin service (ADR-0049)', async () => {
+  it('delegates provider plugin requests to the plugin service (ADR-0050)', async () => {
     const { client } = setup()
     await expect(client.request('providerPlugin.list', {})).resolves.toEqual({
       plugins: [],

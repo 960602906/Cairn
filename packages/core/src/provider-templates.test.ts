@@ -124,7 +124,7 @@ describe('hostModelConfig', () => {
   })
 })
 
-describe('provider catalog (ADR-0049)', () => {
+describe('provider catalog (ADR-0050)', () => {
   it('every built-in entry satisfies the catalog schema and has a unique id', () => {
     for (const template of PROVIDER_TEMPLATES) {
       expect(ProviderTemplateSpec.safeParse(template).success, template.id).toBe(true)

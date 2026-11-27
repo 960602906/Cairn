@@ -57,4 +57,4 @@
 | [0047](0047-goal-mode.md) | 目标模式：可验证完成条件、独立判定与自动续轮 | 已接受（实施） |
 | [0048](0048-full-access-permission-mode.md) | 完全访问权限模式 | 已接受 |
 | [0049](0049-macos-ad-hoc-signing.md) | macOS 默认 ad-hoc 签名 | 已接受 |
-| [0049](0049-provider-catalog-and-plugins.md) | 供应商目录与声明式供应商插件 | 已接受 |
+| [0050](0050-provider-catalog-and-plugins.md) | 供应商目录与声明式供应商插件 | 已接受 |

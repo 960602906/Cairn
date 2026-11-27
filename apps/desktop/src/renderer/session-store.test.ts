@@ -2791,7 +2791,7 @@ describe('team selection in session store', () => {
   })
 })
 
-describe('provider plugin actions (ADR-0049)', () => {
+describe('provider plugin actions (ADR-0050)', () => {
   it('loads, picks, previews, installs and removes plugins, and reports failures', async () => {
     const list = { plugins: [], skipped: [] }
     let fail = false
@@ -2845,7 +2845,7 @@ describe('provider plugin actions (ADR-0049)', () => {
   })
 })
 
-describe('provider catalog and icon actions (ADR-0049)', () => {
+describe('provider catalog and icon actions (ADR-0050)', () => {
   it('returns catalog results or error codes without touching the global error', async () => {
     let fail = false
     const plugin = { id: 'a', name: 'A', templates: [] }

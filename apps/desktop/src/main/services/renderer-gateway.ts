@@ -168,12 +168,12 @@ export interface CommandCommands {
 export interface ProviderCommands {
   readonly test: Handler<'provider.test'>
   readonly models: Handler<'provider.models'>
-  /** 供应商插件（ADR-0049）。 */
+  /** 供应商插件（ADR-0050）。 */
   readonly listPlugins: Handler<'providerPlugin.list'>
   readonly pickPlugin: Handler<'providerPlugin.pick'>
   readonly installPlugin: Handler<'providerPlugin.install'>
   readonly removePlugin: Handler<'providerPlugin.remove'>
-  /** 官方插件目录与供应商图标（ADR-0049）。 */
+  /** 官方插件目录与供应商图标（ADR-0050）。 */
   readonly listCatalog: Handler<'providerCatalog.list'>
   readonly previewCatalog: Handler<'providerCatalog.preview'>
   readonly installCatalog: Handler<'providerCatalog.install'>

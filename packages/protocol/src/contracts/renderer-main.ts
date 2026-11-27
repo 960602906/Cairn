@@ -968,7 +968,7 @@ export const MainForRenderer = defineSide({
       ]),
     },
     /**
-     * 已安装的供应商插件（ADR-0049）：每个插件的目录项，以及无法加载的文件（只有文件名与错误码）。
+     * 已安装的供应商插件（ADR-0050）：每个插件的目录项，以及无法加载的文件（只有文件名与错误码）。
      * 同一插件 id 出现在多个文件中时只用文件名排在前面的那个，其余记为 `providers.plugin.duplicate`。
      */
     'providerPlugin.list': {
@@ -997,7 +997,7 @@ export const MainForRenderer = defineSide({
       }),
     },
     /**
-     * 官方插件目录（ADR-0049）：读取 `index.json`。网络不通或 HTTP 出错时报 `providers.catalog.unreachable`，
+     * 官方插件目录（ADR-0050）：读取 `index.json`。网络不通或 HTTP 出错时报 `providers.catalog.unreachable`，
      * 格式不对时报 `providers.catalog.invalid`；目录中无效的项被跳过。`source` 是目录仓库的网页地址。
      */
     'providerCatalog.list': {
@@ -1035,7 +1035,7 @@ export const MainForRenderer = defineSide({
       }),
     },
     /**
-     * 供应商图标（ADR-0049）：显式图标或网站图标（favicon），由主进程下载并以 `data:` 地址返回（界面的 CSP
+     * 供应商图标（ADR-0050）：显式图标或网站图标（favicon），由主进程下载并以 `data:` 地址返回（界面的 CSP
      * 不允许直接加载远程图片）。只访问公网的 https 地址，结果缓存在应用数据目录；找不到时不含 `dataUrl`。
      */
     'providerIcon.resolve': {

@@ -115,7 +115,7 @@ export type ProviderModelsResult = z.output<Requests['provider.models']['result'
 /** 凭据状态（M6-04）：不可用时带上原因，界面据此给出具体说明。 */
 export type CredentialStatus = z.output<Requests['credentials.status']['result']>
 
-/** 已安装的供应商插件与无法加载的文件（ADR-0049）。 */
+/** 已安装的供应商插件与无法加载的文件（ADR-0050）。 */
 export type ProviderPluginList = z.output<Requests['providerPlugin.list']['result']>
 export type ProviderPluginInstall = z.output<Requests['providerPlugin.install']['result']>
 export type ProviderCatalogList = z.output<Requests['providerCatalog.list']['result']>
@@ -183,7 +183,7 @@ export interface SessionState {
   readonly projects: readonly ProjectSummary[]
   /** 最近读取或保存的设置；读取之前为 undefined。 */
   readonly settings: Settings | undefined
-  /** 已安装的供应商插件（ADR-0049）；读取之前为 undefined。 */
+  /** 已安装的供应商插件（ADR-0050）；读取之前为 undefined。 */
   readonly providerPlugins: ProviderPluginList | undefined
   /** 应用版本与构建信息（M5-01）；关于页读取之前为 undefined。 */
   readonly appInfo: AppInfo | undefined
@@ -567,7 +567,7 @@ export interface SessionActions {
   deleteCredential(ref: string): Promise<boolean>
   /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
   credentialStatus(ref: string): Promise<CredentialStatus | undefined>
-  /** 读取已安装的供应商插件（ADR-0049），结果保存在 `providerPlugins`。 */
+  /** 读取已安装的供应商插件（ADR-0050），结果保存在 `providerPlugins`。 */
   loadProviderPlugins(): Promise<ProviderPluginList | undefined>
   /** 用系统对话框选择插件文件；取消或失败时返回 undefined。 */
   pickProviderPlugin(): Promise<string | undefined>
@@ -575,7 +575,7 @@ export interface SessionActions {
   installProviderPlugin(path: string, confirm?: boolean): Promise<ProviderPluginInstallOutcome>
   /** 卸载插件并刷新 `providerPlugins`；成功时返回 true。 */
   removeProviderPlugin(id: string): Promise<boolean>
-  /** 官方插件目录（ADR-0049）。 */
+  /** 官方插件目录（ADR-0050）。 */
   loadProviderCatalog(): Promise<Outcome<ProviderCatalogList>>
   /** 下载目录中的插件并预览。 */
   previewCatalogPlugin(id: string): Promise<Outcome<ProviderCatalogPreview>>

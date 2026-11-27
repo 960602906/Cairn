@@ -14,7 +14,7 @@ const reasonOf = async (promise: Promise<unknown>) => {
   throw new Error('expected a failure')
 }
 
-describe('safe fetch (ADR-0049)', () => {
+describe('safe fetch (ADR-0050)', () => {
   it('tells public hosts from local and private ones', () => {
     for (const host of ['example.com', 'api.deepseek.com', '8.8.8.8', '[2606:4700::1111]']) {
       expect(isPublicHost(host), host).toBe(true)

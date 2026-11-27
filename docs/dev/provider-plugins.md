@@ -1,10 +1,10 @@
 # 供应商插件 / Provider plugins
 
-供应商插件为“设置 → 模型供应商 → 添加供应商”的目录添加更多服务（ADR-0049）。插件是一个 JSON 文件，
+供应商插件为“设置 → 模型供应商 → 添加供应商”的目录添加更多服务（ADR-0050）。插件是一个 JSON 文件，
 只有数据、不运行代码。用户从插件添加的供应商与内置服务一样，只需粘贴 Key。
 
 A provider plugin is a JSON file that adds services to the catalog under Settings → Model providers →
-Add provider (ADR-0049). It contains only data and runs no code. Providers added from a plugin work
+Add provider (ADR-0050). It contains only data and runs no code. Providers added from a plugin work
 like built-in ones: the user pastes a key and is done.
 
 ## 安装 / Installing

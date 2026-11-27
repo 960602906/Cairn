@@ -136,7 +136,7 @@ export const ProviderConfigList = z
   })
 
 /**
- * 供应商目录（ADR-0049）：添加供应商时可选的服务。内置目录在 `@cairn/core`，其余来自用户安装的供应商插件。
+ * 供应商目录（ADR-0050）：添加供应商时可选的服务。内置目录在 `@cairn/core`，其余来自用户安装的供应商插件。
  * 目录只在添加时使用：值复制进 `ProviderConfig`，之后以配置为准，卸载插件不影响已添加的供应商。
  *
  * - `vendor`：模型厂商的官方接口；`relay`：聚合平台与中转；`local`：本机运行的模型服务。
@@ -153,7 +153,7 @@ export const HTTPS_URL_PATTERN = /^https:\/\/[^\s/?#@]+(?:[/?#]\S*)?$/i
 const HttpsUrl = z.string().max(2048).regex(HTTPS_URL_PATTERN)
 
 /**
- * 图标（ADR-0049）：界面只显示 `https` 图片或 `data:image/…;base64,` 内联图片。插件文件中还可以写相对路径
+ * 图标（ADR-0050）：界面只显示 `https` 图片或 `data:image/…;base64,` 内联图片。插件文件中还可以写相对路径
  * （如 `icons/acme.svg`），从官方目录安装时相对仓库根目录解析成 `https`；本地文件中的相对路径无法解析，
  * 会被忽略并回到网站图标（favicon）。
  */
@@ -271,7 +271,7 @@ export const ProviderPluginModel = z.object({
 })
 export type ProviderPluginModel = z.infer<typeof ProviderPluginModel>
 
-/** 插件中的一个服务（ADR-0049）。 */
+/** 插件中的一个服务（ADR-0050）。 */
 export const ProviderPluginEntry = z.object({
   id: PluginId,
   name: z.string().trim().min(1).max(80),
@@ -292,7 +292,7 @@ export const ProviderPluginEntry = z.object({
 export type ProviderPluginEntry = z.infer<typeof ProviderPluginEntry>
 
 /**
- * 供应商插件（ADR-0049）：一个 JSON 文件，声明一个或多个服务。只有数据，不含代码；
+ * 供应商插件（ADR-0050）：一个 JSON 文件，声明一个或多个服务。只有数据，不含代码；
  * 装在应用数据目录的 `provider-plugins/` 下。未知字段忽略，`compat` 中的未知字段报错。
  */
 export const ProviderPluginManifest = z
@@ -332,7 +332,7 @@ export const ProviderPluginSkipped = z.object({
 export type ProviderPluginSkipped = z.infer<typeof ProviderPluginSkipped>
 
 /**
- * 官方插件目录（ADR-0049）：`https://github.com/960602906/cairn-provider-plugins` 默认分支上的 `index.json`
+ * 官方插件目录（ADR-0050）：`https://github.com/960602906/cairn-provider-plugins` 默认分支上的 `index.json`
  * 列出插件，插件文件在同一仓库内（`path`，省略时为 `plugins/<id>.json`）。只读这个仓库里的文件；
  * 插件声明的地址照常在安装前预览。
  */

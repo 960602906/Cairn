@@ -375,7 +375,7 @@ const skills = createSkillService({
     return result.canceled ? undefined : result.filePaths[0]
   },
 })
-/** 供应商插件（ADR-0049）：`provider-plugins/` 下声明服务的 JSON 文件，安装时用系统对话框选择。 */
+/** 供应商插件（ADR-0050）：`provider-plugins/` 下声明服务的 JSON 文件，安装时用系统对话框选择。 */
 const providerPlugins = createProviderPluginService({
   dir: join(paths.root, 'provider-plugins'),
   pickFile: async () => {
@@ -391,7 +391,7 @@ const providerPlugins = createProviderPluginService({
   },
 })
 /**
- * 官方插件目录（ADR-0049）。`CAIRN_PROVIDER_CATALOG_URL` 只用于测试与开发（例如指向本机的目录服务），
+ * 官方插件目录（ADR-0050）。`CAIRN_PROVIDER_CATALOG_URL` 只用于测试与开发（例如指向本机的目录服务），
  * 正式使用时总是官方仓库。
  */
 const catalogOverride = process.env.CAIRN_PROVIDER_CATALOG_URL?.trim()
@@ -401,7 +401,7 @@ const providerCatalog = createProviderCatalogService({
     ? { files: catalogOverride.endsWith('/') ? catalogOverride : `${catalogOverride}/` }
     : {}),
 })
-/** 供应商图标与网站图标的缓存（ADR-0049）。 */
+/** 供应商图标与网站图标的缓存（ADR-0050）。 */
 const providerIcons = createIconService({ cacheDir: join(paths.root, 'icon-cache') })
 const providerService = createProviderService({ credentials })
 /** 资源市场（M5）：只读目录，安装复用上面的技能与 MCP 服务。 */

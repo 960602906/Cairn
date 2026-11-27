@@ -97,7 +97,7 @@ const codeOf = async (promise: Promise<unknown>) => {
   throw new Error('expected an error')
 }
 
-describe('official provider catalog (ADR-0049)', () => {
+describe('official provider catalog (ADR-0050)', () => {
   it('lists valid entries from index.json and resolves their icons in the repository', async () => {
     const { catalog, fetch } = setup({ [`${FILES}index.json`]: JSON.stringify(index) })
     const listed = await catalog.list()

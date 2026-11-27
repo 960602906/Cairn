@@ -1,5 +1,5 @@
 /**
- * 官方供应商插件目录（ADR-0049）：只读 `https://github.com/960602906/cairn-provider-plugins` 默认分支上的文件。
+ * 官方供应商插件目录（ADR-0050）：只读 `https://github.com/960602906/cairn-provider-plugins` 默认分支上的文件。
  *
  * - `index.json` 列出插件（见 `docs/dev/provider-plugins.md`）；无效的项跳过，不影响其余插件。
  * - 插件文件只从同一仓库读取：`url` 是相对 `index.json` 的路径或仓库内的 https 地址（`path` 是旧名），

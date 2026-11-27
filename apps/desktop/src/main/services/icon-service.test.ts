@@ -42,7 +42,7 @@ afterEach(() => {
   fs.rmSync(cacheDir, { recursive: true, force: true })
 })
 
-describe('icon service (ADR-0049)', () => {
+describe('icon service (ADR-0050)', () => {
   it('recognizes images by their content', () => {
     expect(sniffImage(PNG)).toBe('image/png')
     expect(sniffImage(ICO)).toBe('image/x-icon')

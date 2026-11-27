@@ -770,7 +770,7 @@ describe('ProvidersSettings', () => {
     expect(within(card).getByLabelText('API Key')).toBeTruthy()
   })
 
-  it('adds a catalog service by pasting only the key (ADR-0049)', async () => {
+  it('adds a catalog service by pasting only the key (ADR-0050)', async () => {
     const { request, updates } = setup(
       {},
       {
