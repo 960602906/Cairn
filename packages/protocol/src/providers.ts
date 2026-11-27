@@ -134,3 +134,150 @@ export const ProviderConfigList = z
   .refine((list) => new Set(list.map((p) => p.id)).size === list.length, {
     message: 'duplicate provider id',
   })
+
+/**
+ * 供应商目录（ADR-0049）：添加供应商时可选的服务。内置目录在 `@cairn/core`，其余来自用户安装的供应商插件。
+ * 目录只在添加时使用：值复制进 `ProviderConfig`，之后以配置为准，卸载插件不影响已添加的供应商。
+ *
+ * - `vendor`：模型厂商的官方接口；`relay`：聚合平台与中转；`local`：本机运行的模型服务。
+ */
+export const ProviderCategory = z.enum(['vendor', 'relay', 'local'])
+export type ProviderCategory = z.infer<typeof ProviderCategory>
+
+/** 同一服务的不同接入点：国际站与中国大陆站通常是不同的账号与地址。 */
+export const ProviderRegionId = z.enum(['global', 'cn'])
+export type ProviderRegionId = z.infer<typeof ProviderRegionId>
+
+/** “获取 Key”之类的外部链接只接受 https。 */
+export const HTTPS_URL_PATTERN = /^https:\/\/[^\s/?#@]+(?:[/?#]\S*)?$/i
+const HttpsUrl = z.string().max(2048).regex(HTTPS_URL_PATTERN)
+
+export const ProviderRegion = z.object({
+  id: ProviderRegionId,
+  baseUrl: BaseUrl,
+  /** 这个接入点申请 Key 的页面；省略时用服务的 `keysUrl`。 */
+  keysUrl: HttpsUrl.optional(),
+})
+export type ProviderRegion = z.infer<typeof ProviderRegion>
+
+/** 模型的能力部分（不含 id 与显示名），用作手动添加或拉取到的模型的默认值。 */
+export const ModelCapabilities = ModelProfile.pick({
+  contextWindow: true,
+  maxOutputTokens: true,
+  supportsTools: true,
+  supportsParallelToolCalls: true,
+  supportsReasoning: true,
+})
+export type ModelCapabilities = z.infer<typeof ModelCapabilities>
+
+/** 目录中的一项（内置或插件提供），经 `providerPlugin.*` 传给界面。 */
+export const ProviderTemplateSpec = z
+  .object({
+    /** 模板 id；插件的模板为 `<插件 id>.<条目 id>`，不会与内置模板重名。 */
+    id: z.string().regex(CONFIG_ID_PATTERN),
+    kind: ProviderKind,
+    category: ProviderCategory,
+    displayName: z.string().min(1).max(80),
+    /** 默认地址；有 `regions` 时必须是其中之一。 */
+    baseUrl: BaseUrl,
+    regions: z.array(ProviderRegion).min(2).max(4).optional(),
+    requiresKey: z.boolean(),
+    /** 申请 Key 的页面。 */
+    keysUrl: HttpsUrl.optional(),
+    compat: ModelCompat.optional(),
+    models: z.array(ModelProfile).max(64),
+    /**
+     * 没有预置模型时，拉取到模型列表后自动启用其中的这些模型（按顺序，不存在的忽略），
+     * 让用户只填 Key 就能用。
+     */
+    suggestedModels: z.array(Id.max(256)).max(16).optional(),
+    modelDefaults: ModelCapabilities,
+    /** 提供这一项的插件；内置模板没有。 */
+    pluginId: z.string().regex(CONFIG_ID_PATTERN).optional(),
+  })
+  .refine(
+    (spec) => !spec.regions || spec.regions.some((region) => region.baseUrl === spec.baseUrl),
+    { message: 'baseUrl must be one of the regions', path: ['baseUrl'] },
+  )
+  .refine(
+    (spec) => !spec.regions || new Set(spec.regions.map((r) => r.id)).size === spec.regions.length,
+    { message: 'duplicate region id', path: ['regions'] },
+  )
+export type ProviderTemplateSpec = z.infer<typeof ProviderTemplateSpec>
+
+/** 供应商插件与其中条目的 id：小写字母、数字与 `-`，不以 `-` 开头或结尾。 */
+export const PROVIDER_PLUGIN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
+const PluginId = z.string().regex(PROVIDER_PLUGIN_ID_PATTERN)
+
+/** 当前支持的插件格式版本。 */
+export const PROVIDER_PLUGIN_SCHEMA_VERSION = 1
+
+/** 插件中的模型：只有 `id` 必填，其余缺省时取条目的 `modelDefaults`。 */
+export const ProviderPluginModel = z.object({
+  id: Id.max(256),
+  displayName: z.string().max(256).optional(),
+  contextWindow: PositiveInt.optional(),
+  maxOutputTokens: PositiveInt.optional(),
+  supportsTools: z.boolean().optional(),
+  supportsParallelToolCalls: z.boolean().optional(),
+  supportsReasoning: z.boolean().optional(),
+  thinkingLevel: ReasoningEffort.optional(),
+  pricing: ModelPricing.optional(),
+})
+export type ProviderPluginModel = z.infer<typeof ProviderPluginModel>
+
+/** 插件中的一个服务（ADR-0049）。 */
+export const ProviderPluginEntry = z.object({
+  id: PluginId,
+  name: z.string().trim().min(1).max(80),
+  kind: ProviderKind,
+  category: ProviderCategory.optional(),
+  baseUrl: BaseUrl,
+  regions: z.array(ProviderRegion).min(2).max(4).optional(),
+  /** 省略时需要 Key。 */
+  requiresKey: z.boolean().optional(),
+  keysUrl: HttpsUrl.optional(),
+  compat: ModelCompat.optional(),
+  models: z.array(ProviderPluginModel).max(64).optional(),
+  suggestedModels: z.array(Id.max(256)).max(16).optional(),
+  modelDefaults: ModelCapabilities.partial().optional(),
+})
+export type ProviderPluginEntry = z.infer<typeof ProviderPluginEntry>
+
+/**
+ * 供应商插件（ADR-0049）：一个 JSON 文件，声明一个或多个服务。只有数据，不含代码；
+ * 装在应用数据目录的 `provider-plugins/` 下。未知字段忽略，`compat` 中的未知字段报错。
+ */
+export const ProviderPluginManifest = z
+  .object({
+    schemaVersion: z.literal(PROVIDER_PLUGIN_SCHEMA_VERSION),
+    id: PluginId,
+    name: z.string().trim().min(1).max(80),
+    version: z.string().max(32).optional(),
+    description: z.string().max(280).optional(),
+    homepage: HttpsUrl.optional(),
+    providers: z.array(ProviderPluginEntry).min(1).max(32),
+  })
+  .refine((plugin) => new Set(plugin.providers.map((p) => p.id)).size === plugin.providers.length, {
+    message: 'duplicate provider id',
+    path: ['providers'],
+  })
+export type ProviderPluginManifest = z.infer<typeof ProviderPluginManifest>
+
+/** 已安装的插件（界面用）：模板已展开为目录项。 */
+export const ProviderPluginInfo = z.object({
+  id: PluginId,
+  name: z.string().min(1).max(80),
+  version: z.string().max(32).optional(),
+  description: z.string().max(280).optional(),
+  homepage: HttpsUrl.optional(),
+  templates: z.array(ProviderTemplateSpec).max(32),
+})
+export type ProviderPluginInfo = z.infer<typeof ProviderPluginInfo>
+
+/** 插件目录中无法加载的文件：只给文件名与错误码。 */
+export const ProviderPluginSkipped = z.object({
+  file: z.string().min(1).max(260),
+  code: z.string().min(1),
+})
+export type ProviderPluginSkipped = z.infer<typeof ProviderPluginSkipped>

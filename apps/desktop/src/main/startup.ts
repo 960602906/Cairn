@@ -101,6 +101,7 @@ import { createSandboxService } from './services/sandbox-service.js'
 import { createUpdateService } from './services/update-service.js'
 import { createShellInfo } from './services/shell-info.js'
 import { createProviderService } from './services/provider-service.js'
+import { createProviderPluginService } from './services/provider-plugin-service.js'
 import { createAppInfoCommands } from './services/app-info-service.js'
 import { readLicenseNotices } from './services/licenses-service.js'
 import { createGitLocator, gitRuntimeInfo } from './services/git-locator.js'
@@ -372,6 +373,22 @@ const skills = createSkillService({
     return result.canceled ? undefined : result.filePaths[0]
   },
 })
+/** 供应商插件（ADR-0049）：`provider-plugins/` 下声明服务的 JSON 文件，安装时用系统对话框选择。 */
+const providerPlugins = createProviderPluginService({
+  dir: join(paths.root, 'provider-plugins'),
+  pickFile: async () => {
+    const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const options: Electron.OpenDialogOptions = {
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    return result.canceled ? undefined : result.filePaths[0]
+  },
+})
+const providerService = createProviderService({ credentials })
 /** 资源市场（M5）：只读目录，安装复用上面的技能与 MCP 服务。 */
 const hub = createHubService()
 /** MCP 服务（M3-09）：配置、连接与工具调用都在主进程。 */
@@ -849,7 +866,14 @@ const gateway = createRendererGateway({
     shell: createShellInfo(),
   },
   credentials: createCredentialCommands(credentials),
-  providers: createProviderService({ credentials }),
+  providers: {
+    test: (params) => providerService.test(params),
+    models: (params) => providerService.models(params),
+    listPlugins: () => providerPlugins.list(),
+    pickPlugin: () => providerPlugins.pick(),
+    installPlugin: (params) => providerPlugins.install(params),
+    removePlugin: (params) => providerPlugins.remove(params),
+  },
   // 权限规则（M2-11）：增删之后运行中的宿主立即改用新规则
   permissions: {
     list: () => ({ rules: permissions.listRules() }),

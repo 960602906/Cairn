@@ -246,6 +246,14 @@ function setup(
   providers = {
     test: vi.fn(async () => ({ ok: true as const, latencyMs: 12 })),
     models: vi.fn(async () => ({ ok: true as const, models: [{ id: 'm1' }] })),
+    listPlugins: vi.fn(() => ({ plugins: [], skipped: [] })),
+    pickPlugin: vi.fn(async () => ({ path: '/tmp/acme.json' })),
+    installPlugin: vi.fn(({ confirm }) => ({
+      installed: confirm === true,
+      replaces: false,
+      plugin: { id: 'acme', name: 'Acme', templates: [] },
+    })),
+    removePlugin: vi.fn(() => ({})),
   }
   permissions = {
     list: vi.fn(() => ({ rules: [] })),
@@ -1516,6 +1524,22 @@ describe('createRendererGateway: commands and lifecycle', () => {
       models: [{ id: 'm1' }],
     })
     expect(providers.test).toHaveBeenCalledWith({ provider, modelId: 'm' })
+  })
+
+  it('delegates provider plugin requests to the plugin service (ADR-0049)', async () => {
+    const { client } = setup()
+    await expect(client.request('providerPlugin.list', {})).resolves.toEqual({
+      plugins: [],
+      skipped: [],
+    })
+    await expect(client.request('providerPlugin.pick', {})).resolves.toEqual({
+      path: '/tmp/acme.json',
+    })
+    await expect(
+      client.request('providerPlugin.install', { path: '/tmp/acme.json', confirm: true }),
+    ).resolves.toMatchObject({ installed: true, plugin: { id: 'acme' } })
+    await expect(client.request('providerPlugin.remove', { id: 'acme' })).resolves.toEqual({})
+    expect(providers.removePlugin).toHaveBeenCalledWith({ id: 'acme' })
   })
 
   it('delegates permission rule requests to the permission service (M2-11)', async () => {

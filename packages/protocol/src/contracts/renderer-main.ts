@@ -82,6 +82,8 @@ import {
   CONFIG_ID_PATTERN,
   ProviderConfig,
   ProviderConfigList,
+  ProviderPluginInfo,
+  ProviderPluginSkipped,
   ReasoningEffort,
   RemoteModel,
 } from '../providers.js'
@@ -962,6 +964,40 @@ export const MainForRenderer = defineSide({
         z.object({ ok: z.literal(true), models: z.array(RemoteModel).max(1000) }),
         z.object({ ok: z.literal(false), error: ErrorInfo }),
       ]),
+    },
+    /**
+     * 已安装的供应商插件（ADR-0049）：每个插件的目录项，以及无法加载的文件（只有文件名与错误码）。
+     * 同一插件 id 出现在多个文件中时只用文件名排在前面的那个，其余记为 `providers.plugin.duplicate`。
+     */
+    'providerPlugin.list': {
+      params: z.object({}),
+      result: z.object({
+        plugins: z.array(ProviderPluginInfo),
+        skipped: z.array(ProviderPluginSkipped),
+      }),
+    },
+    /** 用系统对话框选择插件文件（`.json`）。取消时结果不含 `path`；选中后交给 `providerPlugin.install`。 */
+    'providerPlugin.pick': {
+      params: z.object({}),
+      result: z.object({ path: z.string().min(1).optional() }),
+    },
+    /**
+     * 安装插件文件。`confirm` 省略或为 false 时只校验并返回预览，不写盘；为 true 时写入插件目录。
+     * `replaces` 表示已有同 id 的插件（确认后被替换）。文件无效时报 `providers.plugin.invalid`，
+     * 格式版本不支持时报 `providers.plugin.unsupported_version`，过大时报 `providers.plugin.too_large`。
+     */
+    'providerPlugin.install': {
+      params: z.object({ path: z.string().min(1).max(4096), confirm: z.boolean().optional() }),
+      result: z.object({
+        installed: z.boolean(),
+        replaces: z.boolean(),
+        plugin: ProviderPluginInfo,
+      }),
+    },
+    /** 卸载插件（删除文件）。已用它添加的供应商不受影响。没有这个插件时报 `providers.plugin.not_found`。 */
+    'providerPlugin.remove': {
+      params: z.object({ id: z.string().min(1).max(64) }),
+      result: z.object({}),
     },
     /**
      * 保存的全局与项目权限规则（M2-11）：全局在前，项目按打开时间倒序，同一范围内按添加顺序。

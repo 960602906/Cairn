@@ -1,16 +1,31 @@
 /**
- * 模型供应商页的纯逻辑（M2-10）：来源判断、图标、编辑中的草稿与保存的配置之间的转换、默认能力等。
+ * 模型供应商页的纯逻辑（M2-10、ADR-0049）：来源判断、图标、目录分组、编辑中的草稿与保存的配置之间的转换、
+ * 默认能力、测试目标等。
+ *
+ * 目录（`catalog`）是内置模板加已安装插件的模板；参数省略时只用内置模板。已保存的供应商找不到模板
+ * （例如插件已卸载）时按普通的第三方中转处理，配置本身不受影响。
  */
-import { findTemplate, PROVIDER_TEMPLATES, type ProviderTemplate } from '@cairn/core'
+import {
+  findTemplateIn,
+  GENERIC_MODEL_DEFAULTS,
+  isTemplateUrl,
+  preferredRegion,
+  PROVIDER_TEMPLATES,
+  type ProviderTemplate,
+} from '@cairn/core'
 import {
   BASE_URL_PATTERN,
   CONFIG_ID_PATTERN,
   type ModelCompat,
   type ModelProfile,
+  type ProviderCategory,
   type ProviderConfig,
   type ProviderKind,
+  type ProviderPluginInfo,
   type RemoteModel,
 } from '@cairn/protocol'
+
+export { GENERIC_MODEL_DEFAULTS }
 
 /** 模板 id 已被占用时加序号：`deepseek`、`deepseek-2`…… */
 export function uniqueProviderId(base: string, providers: readonly ProviderConfig[]): string {
@@ -32,19 +47,53 @@ export function slugId(name: string): string {
   return CONFIG_ID_PATTERN.test(slug) ? slug : 'custom'
 }
 
-export type ProviderSource = 'official' | 'relay'
-
-/** 来源：用模板创建、地址仍是模板的地址时为官方，否则为第三方中转。 */
-export function sourceOf(provider: Pick<ProviderConfig, 'template' | 'baseUrl'>): ProviderSource {
-  const template = provider.template ? findTemplate(provider.template) : undefined
-  return template && sameUrl(template.baseUrl, provider.baseUrl) ? 'official' : 'relay'
+/** 内置模板加插件模板；插件模板的 id 带插件前缀，不会与内置模板重名。 */
+export function catalogOf(plugins: readonly ProviderPluginInfo[] | undefined) {
+  if (!plugins || plugins.length === 0) return PROVIDER_TEMPLATES
+  return [...PROVIDER_TEMPLATES, ...plugins.flatMap((plugin) => plugin.templates)]
 }
 
-const sameUrl = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '')
+export type ProviderSource = 'official' | 'relay'
 
-/** 这种接口格式的模板（官方服务）。 */
-export const templatesOf = (kind: ProviderKind): readonly ProviderTemplate[] =>
-  PROVIDER_TEMPLATES.filter((t) => t.kind === kind)
+/** 来源：用模板创建、地址仍是模板的地址（含各接入点）时为官方，否则为第三方中转。 */
+export function sourceOf(
+  provider: Pick<ProviderConfig, 'template' | 'baseUrl'>,
+  catalog: readonly ProviderTemplate[] = PROVIDER_TEMPLATES,
+): ProviderSource {
+  const template = findTemplateIn(catalog, provider.template)
+  return template && isTemplateUrl(template, provider.baseUrl) ? 'official' : 'relay'
+}
+
+/** 这种接口格式的模板（高级设置里的“兼容服务”）。 */
+export const templatesOf = (
+  kind: ProviderKind,
+  catalog: readonly ProviderTemplate[] = PROVIDER_TEMPLATES,
+): readonly ProviderTemplate[] => catalog.filter((t) => t.kind === kind)
+
+export const CATEGORIES: readonly ProviderCategory[] = ['vendor', 'relay', 'local']
+
+/** 添加对话框里的分组：按类别，组内保持目录顺序；名称包含查询词（不区分大小写）才列出。 */
+export function catalogGroups(
+  catalog: readonly ProviderTemplate[],
+  query = '',
+): readonly { readonly category: ProviderCategory; readonly templates: ProviderTemplate[] }[] {
+  const q = query.trim().toLowerCase()
+  const matches = (t: ProviderTemplate) =>
+    q === '' ||
+    t.displayName.toLowerCase().includes(q) ||
+    t.id.toLowerCase().includes(q) ||
+    hostOf(t.baseUrl).includes(q)
+  return CATEGORIES.map((category) => ({
+    category,
+    templates: catalog.filter((t) => t.category === category && matches(t)),
+  })).filter((group) => group.templates.length > 0)
+}
+
+/** 地址的主机名（列表中显示），解析不了时原样返回。 */
+export function hostOf(url: string): string {
+  const match = /^[a-z]+:\/\/([^/?#]+)/i.exec(url.trim())
+  return (match?.[1] ?? url).toLowerCase()
+}
 
 /** 列表与编辑区的图标：名称的首字母（两个词取两个首字母，中文取第一个字），底色按模板。 */
 export function initials(name: string): string {
@@ -66,6 +115,14 @@ const LOGO_COLORS: Readonly<Record<string, string>> = {
 export const logoColor = (template: string | undefined): string =>
   (template && LOGO_COLORS[template]) ?? '#2d2f36'
 
+/** 有品牌图标的模板；其余模板用名称首字母。 */
+export const BRAND_TEMPLATES: ReadonlySet<string> = new Set([
+  'deepseek',
+  'anthropic',
+  'openai',
+  'gemini',
+])
+
 /** token 数的简写：`128k`、`1M`、`1.5M`。 */
 export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M`
@@ -73,22 +130,20 @@ export function formatTokens(n: number): string {
   return String(n)
 }
 
-/** 手动添加或拉取到的模型没有给出能力时使用的默认值。 */
-export const GENERIC_MODEL_DEFAULTS = {
-  contextWindow: 128_000,
-  maxOutputTokens: 16_384,
-  supportsTools: true,
-  supportsParallelToolCalls: true,
-  supportsReasoning: false,
-} as const
-
-export function modelDefaults(templateId: string | undefined) {
-  return (templateId && findTemplate(templateId)?.modelDefaults) || GENERIC_MODEL_DEFAULTS
+export function modelDefaults(
+  templateId: string | undefined,
+  catalog: readonly ProviderTemplate[] = PROVIDER_TEMPLATES,
+) {
+  return findTemplateIn(catalog, templateId)?.modelDefaults ?? GENERIC_MODEL_DEFAULTS
 }
 
 /** 由拉取到的模型（或手填的 id、上下文长度）得到模型配置。 */
-export function profileFrom(remote: RemoteModel, templateId: string | undefined): ModelProfile {
-  const defaults = modelDefaults(templateId)
+export function profileFrom(
+  remote: RemoteModel,
+  templateId: string | undefined,
+  catalog: readonly ProviderTemplate[] = PROVIDER_TEMPLATES,
+): ModelProfile {
+  const defaults = modelDefaults(templateId, catalog)
   return {
     ...defaults,
     id: remote.id,
@@ -123,12 +178,15 @@ export function draftOf(provider: ProviderConfig): ProviderDraft {
   }
 }
 
-/** 新供应商的草稿：默认第一个模板（官方）。 */
-export function newDraft(template: ProviderTemplate = PROVIDER_TEMPLATES[0]!): ProviderDraft {
+/** 新供应商的草稿：默认第一个模板（官方）。有多个接入点时按界面语言选。 */
+export function newDraft(
+  template: ProviderTemplate = PROVIDER_TEMPLATES[0]!,
+  locale = '',
+): ProviderDraft {
   return {
     kind: template.kind,
     displayName: template.displayName,
-    baseUrl: template.baseUrl,
+    baseUrl: preferredRegion(template, locale)?.baseUrl ?? template.baseUrl,
     template: template.id,
     compat: template.compat ? { ...template.compat } : undefined,
     models: template.models.map((m) => ({ ...m })),
@@ -157,8 +215,12 @@ export function uniqueDisplayName(base: string, providers: readonly ProviderConf
 export function newDraftForTemplate(
   template: ProviderTemplate,
   providers: readonly ProviderConfig[],
+  locale = '',
 ): ProviderDraft {
-  return { ...newDraft(template), displayName: uniqueDisplayName(template.displayName, providers) }
+  return {
+    ...newDraft(template, locale),
+    displayName: uniqueDisplayName(template.displayName, providers),
+  }
 }
 
 /** 自定义/中转草稿：不套用官方模板，地址与兼容参数自己填。 */
@@ -212,6 +274,21 @@ export function configOf(
   }
 }
 
+/**
+ * 凭据引用：已保存的沿用原来的；新建时需要 Key 的服务（或用户填了 Key）用供应商 id，
+ * 不需要 Key 的本机服务没有。
+ */
+export function credentialRefFor(
+  saved: ProviderConfig | undefined,
+  id: string,
+  template: ProviderTemplate | undefined,
+  hasSecret: boolean,
+): string | undefined {
+  if (saved?.credentialRef) return saved.credentialRef
+  if (saved && !hasSecret) return undefined
+  return hasSecret || template?.requiresKey !== false ? id : undefined
+}
+
 /** 列表中的一行：已配置的模型带 `profile`，只是拉取到、还没加入的没有。 */
 export interface ModelRow {
   readonly id: string
@@ -243,6 +320,22 @@ export function modelRowsOf(
   ]
 }
 
-/** 本次要测试的模型：已启用（省略 `enabled` 表示启用）的那些。 */
+/** 已启用（省略 `enabled` 表示启用）的模型。 */
 export const enabledModelIdsOf = (models: readonly ModelProfile[]): readonly string[] =>
   models.filter((model) => model.enabled !== false).map((model) => model.id)
+
+/**
+ * “测试连接”默认只测一个模型，避免一次向提供方发很多请求：默认模型（已启用时），否则第一个已启用的模型。
+ */
+export function testTargetOf(
+  models: readonly ModelProfile[],
+  defaultModelId: string | undefined,
+): string | undefined {
+  const enabled = enabledModelIdsOf(models)
+  return defaultModelId !== undefined && enabled.includes(defaultModelId)
+    ? defaultModelId
+    : enabled[0]
+}
+
+/** 本机服务没有建议的模型时，拉取到的模型最多自动启用这么多个。 */
+export const LOCAL_AUTO_ENABLE_LIMIT = 8
