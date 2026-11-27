@@ -403,6 +403,41 @@ describe('GoalBar', () => {
     await waitFor(() => expect(updateGoalCondition).toHaveBeenCalledWith('s1', '失焦保存'))
   })
 
+  it('does not save while an IME composition is active', async () => {
+    const updateGoalCondition = vi.fn(async () => ({ ok: true as const }))
+    wrap(pausedView(), 'idle', vi.fn(), undefined, { updateGoalCondition })
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '拼音' } })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: '完成条件' })).toBeTruthy()
+  })
+
+  it('does not take focus back when saving on blur', async () => {
+    const updateGoalCondition = vi.fn(async () => ({ ok: true as const }))
+    const returnFocus = vi.fn()
+    wrap(pausedView(), 'idle', vi.fn(), returnFocus, { updateGoalCondition })
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '失焦保存' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(updateGoalCondition).toHaveBeenCalledWith('s1', '失焦保存'))
+    expect(returnFocus).not.toHaveBeenCalled()
+  })
+
+  it('takes focus back after saving on Enter', async () => {
+    const updateGoalCondition = vi.fn(async () => ({ ok: true as const }))
+    const returnFocus = vi.fn()
+    wrap(pausedView(), 'idle', vi.fn(), returnFocus, { updateGoalCondition })
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '回车保存' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(updateGoalCondition).toHaveBeenCalledWith('s1', '回车保存'))
+    await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(1))
+  })
+
   it('clears the goal after confirmation', async () => {
     const clearGoal = vi.fn(async () => ({ ok: true as const }))
     wrap(pausedView(), 'idle', vi.fn(), undefined, { clearGoal })
