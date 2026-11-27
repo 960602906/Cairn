@@ -350,6 +350,59 @@ describe('GoalBar', () => {
     expect(screen.queryByRole('textbox', { name: '完成条件' })).toBeNull()
   })
 
+  it('rejects an empty or unchanged condition without calling the store', async () => {
+    const updateGoalCondition = vi.fn(async () => ({ ok: true as const }))
+    wrap(pausedView(), 'idle', vi.fn(), undefined, { updateGoalCondition })
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '   ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await screen.findByText('条件不能为空')).toBeTruthy()
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { value: '测试全部通过' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '完成条件' })).toBeNull())
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a failed condition update', async () => {
+    const updateGoalCondition = vi.fn(async () => ({
+      ok: false as const,
+      code: 'goal.plan_pending',
+    }))
+    wrap(pausedView(), 'idle', vi.fn(), undefined, { updateGoalCondition })
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '失败的条件' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await screen.findByText('请先批准或取消待审计划，再设目标')).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: '完成条件' })).toBeTruthy()
+  })
+
+  it('saves a changed condition on blur and cancels when it is empty or unchanged', async () => {
+    const updateGoalCondition = vi.fn(async () => ({ ok: true as const }))
+    wrap(pausedView(), 'idle', vi.fn(), undefined, { updateGoalCondition })
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    let input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '   ' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '完成条件' })).toBeNull())
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.blur(input)
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '完成条件' })).toBeNull())
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '改条件' }))
+    input = screen.getByRole('textbox', { name: '完成条件' })
+    fireEvent.change(input, { target: { value: '失焦保存' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(updateGoalCondition).toHaveBeenCalledWith('s1', '失焦保存'))
+  })
+
   it('clears the goal after confirmation', async () => {
     const clearGoal = vi.fn(async () => ({ ok: true as const }))
     wrap(pausedView(), 'idle', vi.fn(), undefined, { clearGoal })

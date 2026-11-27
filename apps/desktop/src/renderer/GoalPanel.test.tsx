@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
@@ -202,6 +202,42 @@ describe('GoalPanel', () => {
     await user.type(input, '面板改的条件')
     await user.click(screen.getByRole('button', { name: '保存' }))
     expect(updateGoalCondition).toHaveBeenCalledWith('s1', '面板改的条件')
+  })
+
+  it('rejects empty or unchanged panel conditions and cancels on Escape', async () => {
+    const user = userEvent.setup()
+    const { updateGoalCondition } = wrap(activeGoal())
+    await user.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    await user.clear(input)
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('条件不能为空')).toBeTruthy()
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+
+    await user.type(input, '测试全部通过')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '完成条件' })).toBeNull())
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '改条件' }))
+    await user.type(screen.getByRole('textbox', { name: '完成条件' }), '临时')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('textbox', { name: '完成条件' })).toBeNull()
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a failed panel condition update', async () => {
+    const user = userEvent.setup()
+    wrap(activeGoal(), 'idle', {
+      updateGoalCondition: vi.fn(async () => ({ ok: false, code: 'goal.plan_pending' })),
+    })
+    await user.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    await user.clear(input)
+    await user.type(input, '面板失败')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText('请先批准或取消待审计划，再设目标')).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: '完成条件' })).toBeTruthy()
   })
 
   it('disables resume while running and enables it when idle', async () => {
