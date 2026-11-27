@@ -198,6 +198,7 @@ export interface SessionManager extends SessionCommands {
   readonly pauseGoal: SessionCommands['pauseGoal']
   readonly resumeGoal: SessionCommands['resumeGoal']
   readonly clearGoal: SessionCommands['clearGoal']
+  readonly updateGoalCondition: SessionCommands['updateGoalCondition']
   /** 自动续轮的内部入口：会话忙或目标已不是 active 时返回 undefined，绝不 steer。 */
   promptGoal(
     sessionId: string,
@@ -1024,6 +1025,28 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     })
   }
 
+  async function updateGoalCondition(params: {
+    readonly sessionId: string
+    readonly condition: string
+  }): Promise<Record<string, never>> {
+    const { sessionId, condition } = params
+    return withGoalLock(sessionId, () => {
+      if (closed) throw new RpcError(SessionErrorCode.Closed)
+      requireGoalCapable(sessionId)
+      const goal = openGoal(getView(sessionId))
+      if (goal === undefined) throw new RpcError(SessionErrorCode.GoalNotFound, { sessionId })
+      if (goal.condition === condition) return {}
+      events.publish([
+        {
+          ...header(sessionId, sessionId),
+          type: 'goal.condition_updated',
+          payload: { goalId: goal.goalId, condition },
+        },
+      ])
+      return {}
+    })
+  }
+
   const manager: SessionManager = {
     create({ projectPath, title, model: requested }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
@@ -1330,6 +1353,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     pauseGoal,
     resumeGoal,
     clearGoal,
+    updateGoalCondition,
     promptGoal,
     canAutoContinue,
     goalView,

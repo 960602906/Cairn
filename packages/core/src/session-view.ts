@@ -453,10 +453,20 @@ export interface GoalLifecycleView {
 
 export type GoalStatus = 'active' | 'paused' | 'ended'
 
+/** 条件更新历史；首条是 `goal.created`，回退时按 seq 过滤后重算 `condition`。 */
+export interface GoalConditionUpdateView {
+  readonly seq: number
+  readonly condition: string
+}
+
 /** 会话里的一次目标（ADR-0047）。一个会话最多一个未结束目标。 */
 export interface GoalView {
   readonly goalId: string
   readonly condition: string
+  /**
+   * 条件变更轨迹（含创建时的初始条件）。不进 lifecycle，以免进行中的判定因改条件被作废。
+   */
+  readonly conditionUpdates: readonly GoalConditionUpdateView[]
   readonly limits: GoalLimits
   readonly status: GoalStatus
   /** `goal.created` 的 seq。 */
@@ -1202,6 +1212,7 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
       const goal: GoalView = {
         goalId,
         condition,
+        conditionUpdates: [{ seq: event.seq, condition }],
         limits,
         status: 'active',
         seq: event.seq,
@@ -1220,6 +1231,18 @@ function apply(view: SessionView, event: PersistedEvent): SessionView | undefine
         endedTurnId: undefined,
       }
       return addGoal(view, goal)
+    }
+    case 'goal.condition_updated': {
+      const { condition } = event.payload
+      return updateGoal(view, event.payload.goalId, (goal) => {
+        if (goal.status === 'ended') return undefined
+        if (goal.condition === condition) return undefined
+        return {
+          ...goal,
+          condition,
+          conditionUpdates: [...goal.conditionUpdates, { seq: event.seq, condition }],
+        }
+      })
     }
     case 'goal.paused': {
       const { reason, detail } = event.payload
@@ -1800,6 +1823,8 @@ function rewindGoals(
 
 function rewindGoal(goal: GoalView, fromSeq: number, removedTurns: ReadonlySet<string>): GoalView {
   const lifecycle = goal.lifecycle.filter((entry) => entry.seq < fromSeq)
+  const conditionUpdates = goal.conditionUpdates.filter((entry) => entry.seq < fromSeq)
+  const condition = conditionUpdates.at(-1)?.condition ?? goal.condition
   const turnIds = goal.turnIds.filter((turnId) => !removedTurns.has(turnId))
   const evaluations = goal.evaluations.filter((evaluation) => evaluation.seq < fromSeq)
   const initialMessageSeq =
@@ -1816,6 +1841,8 @@ function rewindGoal(goal: GoalView, fromSeq: number, removedTurns: ReadonlySet<s
     const ended = goal.lifecycle.findLast((entry) => entry.kind === 'ended')
     return {
       ...goal,
+      condition,
+      conditionUpdates,
       lifecycle:
         ended === undefined || lifecycle.includes(ended) ? lifecycle : [...lifecycle, ended],
       turnIds,
@@ -1846,6 +1873,8 @@ function rewindGoal(goal: GoalView, fromSeq: number, removedTurns: ReadonlySet<s
   }
   return {
     ...goal,
+    condition,
+    conditionUpdates,
     status,
     activeMs,
     activeSince,

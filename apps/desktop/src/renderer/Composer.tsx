@@ -118,7 +118,7 @@ export interface ComposerProps {
   readonly agent?: AgentDefinitionRef | undefined
   /** 会话的模型（下一轮使用）；没有记录时用默认模型。 */
   readonly model: ModelRef | undefined
-  /** 会话的项目目录；输入框上方显示当前目录与分支。 */
+  /** 会话的项目目录；输入框下方显示当前目录与分支。 */
   readonly projectPath: string | undefined
   /** 上下文占用的 token 数（最近一次用量）。 */
   readonly contextTokens: number | undefined
@@ -995,12 +995,18 @@ export function Composer({
         const action = parseGoalCommand(args)
         const current = view === undefined ? undefined : openGoal(view)
         if (action.action === 'status') {
-          if (current === undefined) {
-            restore()
-            showNotice('composer.command.goal.none', 'muted', 'goal')
-          } else if (onOpenPanel !== undefined) {
-            onOpenPanel('goal')
-            keepFocus = false
+          // 有未结束目标，或只有历史目标时，都打开面板；完全没有目标才提示。
+          const hasHistory =
+            view !== undefined &&
+            view.goalOrder.some((goalId) => view.goals[goalId]?.status === 'ended')
+          if (current !== undefined || hasHistory) {
+            if (onOpenPanel !== undefined) {
+              onOpenPanel('goal')
+              keepFocus = false
+            } else {
+              restore()
+              showNotice('composer.command.goal.none', 'muted', 'goal')
+            }
           } else {
             restore()
             showNotice('composer.command.goal.none', 'muted', 'goal')
@@ -1408,7 +1414,6 @@ export function Composer({
 
   return (
     <div ref={root}>
-      <WorkspaceGitBar projectPath={projectPath} returnFocus={() => textarea.current?.focus()} />
       <div className="relative">
         {mention.list}
         {commandPanelOpen && (
@@ -1595,6 +1600,7 @@ export function Composer({
           </div>
         </form>
       </div>
+      <WorkspaceGitBar projectPath={projectPath} returnFocus={() => textarea.current?.focus()} />
       <RestoreDialog
         sessionId={sessionId}
         target={restoreTarget}

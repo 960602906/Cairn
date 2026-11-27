@@ -1,6 +1,6 @@
 /**
  * 新对话首页（对齐 LiveAgent）：上方是应用标志与随时段变化的问候，输入框像对话页一样贴在底部，
- * 工作空间与分支显示在输入框上方。发送时先用当前工作空间创建会话，再把这条输入作为第一轮发送。
+ * 工作空间与分支显示在输入框下方。发送时先用当前工作空间创建会话，再把这条输入作为第一轮发送。
  * 还没有工作空间时可以打开本地文件夹。输入 `@` 可以引用所选工作空间里的文件（ADR-0037）。
  *
  * 输入体验与会话内的输入框一致（对齐两者的输入体验）：同样支持 `/plan` 与 `/技能名`、
@@ -610,13 +610,6 @@ export function NewSession({
             {t(dropNotice)}
           </p>
         )}
-        <WorkspaceGitBar
-          projectPath={projectPath === '' ? undefined : projectPath}
-          projects={projects}
-          onSelectProject={changeProject}
-          onOpenFolder={() => void chooseFolder()}
-          returnFocus={() => textarea.current?.focus()}
-        />
         <div ref={box} className="relative">
           {mention.list}
           {commandPanelOpen && (
@@ -773,6 +766,13 @@ export function NewSession({
             </div>
           </div>
         </div>
+        <WorkspaceGitBar
+          projectPath={projectPath === '' ? undefined : projectPath}
+          projects={projects}
+          onSelectProject={changeProject}
+          onOpenFolder={() => void chooseFolder()}
+          returnFocus={() => textarea.current?.focus()}
+        />
       </div>
     </div>
   )

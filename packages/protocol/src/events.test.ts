@@ -178,6 +178,7 @@ const validPayloads: { [K in EventType]: EventPayload<K> } = {
   },
   'goal.paused': { goalId: 'g1', reason: 'user' },
   'goal.resumed': { goalId: 'g1' },
+  'goal.condition_updated': { goalId: 'g1', condition: '改成新条件' },
   'goal.evaluated': {
     goalId: 'g1',
     verdict: 'met',

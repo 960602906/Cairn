@@ -70,7 +70,7 @@ import { COMPOSER_COMMANDS } from './composer-commands.js'
 import { extractAgents, parseMention, tokenize } from './composer-tokens.js'
 import { FileTypeIcon } from './file-icons.js'
 import { TurnChanges } from './FileChanges.js'
-import { formatGoalDuration } from './GoalBar.js'
+import { formatGoalDuration, goalDetailText } from './goal-display.js'
 import { DelegationCard } from './DelegationCard.js'
 import { Markdown } from './Markdown.js'
 import { PlanSummaryCard } from './PlanCard.js'
@@ -580,21 +580,30 @@ function GoalEndedCard({
 }) {
   const { t } = useTranslation('session')
   const met = goal.endReason === 'met'
+  const warn = goal.endReason === 'impossible' || goal.endReason === 'budget'
   const ended = goal.lifecycle.find((item) => item.kind === 'ended')
+  const detail = goalDetailText(goal.endDetail, t)
   return (
     <section
       aria-label={t('goal.endedCard.label')}
       data-goal={goal.goalId}
       className={cn(
         'flex flex-col gap-1.5 rounded-card border-[0.5px] px-3.5 py-3',
-        met ? 'border-ok/40 bg-ok-soft' : 'border-hair bg-sunk',
+        met
+          ? 'border-ok/40 bg-ok-soft'
+          : warn
+            ? 'border-warn/40 bg-warn-soft'
+            : 'border-hair bg-sunk',
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
         {met ? (
           <CircleCheck aria-hidden className="size-4 shrink-0 text-ok" />
         ) : (
-          <Target aria-hidden className="size-4 shrink-0 text-warn" />
+          <Target
+            aria-hidden
+            className={cn('size-4 shrink-0', warn ? 'text-warn' : 'text-muted')}
+          />
         )}
         <span className="min-w-0 flex-1 truncate text-note font-medium text-fg">
           {t(`goal.end.${goal.endReason ?? 'user'}`)}
@@ -609,8 +618,8 @@ function GoalEndedCard({
       <p className="line-clamp-2 text-note text-fg2" title={goal.condition}>
         {goal.condition}
       </p>
-      {goal.endDetail !== undefined && goal.endDetail !== '' && (
-        <p className="text-note whitespace-pre-wrap break-words text-muted">{goal.endDetail}</p>
+      {detail !== undefined && (
+        <p className="text-note whitespace-pre-wrap break-words text-muted">{detail}</p>
       )}
       {onOpen !== undefined && (
         <Button size="sm" variant="ghost" className="self-start" onClick={onOpen}>

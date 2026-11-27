@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { RESOURCES, SUPPORTED_LOCALES } from '@cairn/i18n'
 import { GoalEndReason, GoalPauseReason, GoalVerdict } from '@cairn/protocol'
+import { GOAL_DETAIL_KEYS } from './goal-display.js'
 
 const STATUSES = ['active', 'paused', 'ended'] as const
 const EVIDENCE_KINDS = ['tool', 'file', 'message', 'turn', 'judge'] as const
@@ -29,6 +30,9 @@ describe('goal i18n dynamic keys', () => {
           messages[`goal.evidence.kind.${kind}`],
           `${locale}: goal.evidence.kind.${kind}`,
         ).toBeTruthy()
+      }
+      for (const detail of GOAL_DETAIL_KEYS) {
+        expect(messages[`goal.detail.${detail}`], `${locale}: goal.detail.${detail}`).toBeTruthy()
       }
     }
   })

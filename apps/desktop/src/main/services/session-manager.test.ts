@@ -2133,4 +2133,24 @@ describe('goal mode (ADR-0047)', () => {
       code: 'goal.not_found',
     })
   })
+
+  it('updates the open goal condition without requiring idle', async () => {
+    const { manager, sessionId } = await started()
+    await expect(
+      manager.updateGoalCondition({ sessionId, condition: '改成新条件' }),
+    ).resolves.toEqual({})
+    expect(published.find((event) => event.type === 'goal.condition_updated')).toMatchObject({
+      payload: { condition: '改成新条件' },
+    })
+    expect(manager.goalView(sessionId)?.condition).toBe('改成新条件')
+    const before = published.length
+    await expect(
+      manager.updateGoalCondition({ sessionId, condition: '改成新条件' }),
+    ).resolves.toEqual({})
+    expect(published.length).toBe(before)
+    await manager.clearGoal({ sessionId })
+    await expect(
+      manager.updateGoalCondition({ sessionId, condition: '再改' }),
+    ).rejects.toMatchObject({ code: 'goal.not_found' })
+  })
 })

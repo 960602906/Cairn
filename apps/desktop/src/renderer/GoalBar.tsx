@@ -1,17 +1,31 @@
 /**
- * 目标条（ADR-0047）：输入框上方悬浮列里最靠近输入框的一项，只在有未结束目标时出现。
+ * 目标条（ADR-0047）：输入框上方的单行细卡，只在有未结束目标时出现。
  *
- * 显示条件、当前阶段与活动时长；点击条件或右侧按钮打开目标面板。暂停 / 继续直接调用
- * store 的目标动作：暂停不中止正在跑的一轮，恢复要求会话空闲，因此运行中禁用「继续」。
- * 计时每秒刷新一次，但只影响显示；读屏的 live region 只播报阶段变化，不播报秒数。
+ * 布局与待办进度条（TaskProgress）一致：`h-9` 细条、`rounded-card bg-raise shadow-2`，浮在
+ * Composer 正上方。显示条件与短状态；暂停 / 继续、改条件、删除直接调用 store。暂停不中止
+ * 正在跑的一轮；恢复要求会话空闲，因此运行中禁用「继续」。失败时在条内显示提示。轮次与活动
+ * 时长只在目标面板展示。
  */
-import { Pause, Play, Target } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Pause, Pencil, Play, Target, Trash2, TriangleAlert } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { isAwaitingGoalEvaluation, openGoal, type GoalView, type SessionView } from '@cairn/core'
-import type { SessionStatus } from '@cairn/protocol'
+import { GOAL_CONDITION_MAX, type SessionStatus } from '@cairn/protocol'
+import { goalErrorNoticeKey } from './composer-commands.js'
 import { useSessionStore } from './store-context.js'
-import { Button, cn, IconButton } from './ui/index.js'
+import {
+  Button,
+  cn,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+  IconButton,
+} from './ui/index.js'
+
+export { formatGoalDuration } from './goal-display.js'
 
 /** 恢复目标要求会话空闲：运行、等待审批或等待回答时按钮禁用。 */
 export function goalSessionBusy(status: SessionStatus): boolean {
@@ -19,29 +33,30 @@ export function goalSessionBusy(status: SessionStatus): boolean {
 }
 
 export type GoalBarPhase =
-  'running' | 'judging' | 'continuing' | 'active' | 'paused' | 'pausedRunning'
+  | 'running'
+  | 'waitingApproval'
+  | 'waitingInput'
+  | 'judging'
+  | 'continuing'
+  | 'active'
+  | 'paused'
+  | 'pausedRunning'
 
-/** 目标条 / 面板显示的状态；`view` 用来判断是否在等待判定。 */
+/** 目标条 / 面板显示的状态；区分真正在跑与卡在审批 / 提问上。 */
 export function goalBarPhase(
   view: SessionView,
   goal: GoalView,
-  busy: boolean,
+  status: SessionStatus,
 ): GoalBarPhase | undefined {
+  const busy = goalSessionBusy(status)
   if (goal.status === 'paused') return busy ? 'pausedRunning' : 'paused'
   if (goal.status !== 'active') return undefined
-  if (busy) return 'running'
+  if (status === 'waiting_approval') return 'waitingApproval'
+  if (status === 'waiting_input') return 'waitingInput'
+  if (status === 'running') return 'running'
   if (isAwaitingGoalEvaluation(view)) return 'judging'
   if (goal.evaluations.at(-1)?.verdict === 'not_met') return 'continuing'
   return 'active'
-}
-
-/** 小于 1 小时显示 `m:ss`，更久显示 `h:mm`；负值按 0 处理。 */
-export function formatGoalDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1_000))
-  const minutes = Math.floor(total / 60)
-  const seconds = total % 60
-  if (minutes < 60) return `${minutes}:${String(seconds).padStart(2, '0')}`
-  return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`
 }
 
 /**
@@ -95,106 +110,225 @@ export function GoalBar({
   readonly returnFocus?: (() => void) | undefined
 }) {
   const { t } = useTranslation('session')
+  const { t: tc } = useTranslation()
   const pauseGoal = useSessionStore((s) => s.pauseGoal)
   const resumeGoal = useSessionStore((s) => s.resumeGoal)
+  const clearGoal = useSessionStore((s) => s.clearGoal)
+  const updateGoalCondition = useSessionStore((s) => s.updateGoalCondition)
   const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | undefined>()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [confirmClear, setConfirmClear] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
   const goal = openGoal(view)
-  const elapsed = useGoalElapsed(goal)
-  const busy = goalSessionBusy(status)
   if (goal === undefined) return null
-  const phase = goalBarPhase(view, goal, busy)
+  const phase = goalBarPhase(view, goal, status)
   if (phase === undefined) return null
+  const busy = goalSessionBusy(status)
   const paused = goal.status === 'paused'
   const reason = t(`goal.pause.${goal.pauseReason ?? 'user'}`)
   const statusText =
     phase === 'running'
-      ? t('goal.bar.running', {
-          turn: Math.max(1, goal.turnIds.length),
-          max: goal.limits.maxTurns,
-        })
-      : phase === 'judging'
-        ? t('goal.bar.judging')
-        : phase === 'continuing'
-          ? t('goal.bar.continuing')
-          : phase === 'paused'
-            ? t('goal.bar.paused', { reason })
-            : phase === 'pausedRunning'
-              ? t('goal.bar.pausedRunning', { reason })
-              : t('goal.bar.active')
-  const act = async (action: () => Promise<unknown>) => {
+      ? t('goal.bar.running')
+      : phase === 'waitingApproval'
+        ? t('goal.bar.waitingApproval')
+        : phase === 'waitingInput'
+          ? t('goal.bar.waitingInput')
+          : phase === 'judging'
+            ? t('goal.bar.judging')
+            : phase === 'continuing'
+              ? t('goal.bar.continuing')
+              : phase === 'paused'
+                ? t('goal.bar.paused')
+                : phase === 'pausedRunning'
+                  ? t('goal.bar.pausedRunning')
+                  : t('goal.bar.active')
+  const statusTitle = paused || phase === 'pausedRunning' ? reason : goal.condition
+
+  const act = async (action: () => Promise<{ ok: boolean; code?: string }>) => {
     if (pending) return
     setPending(true)
-    await action()
+    setError(undefined)
+    const outcome = await action()
     setPending(false)
-    // 暂停 / 继续成功后按钮会换成另一个，原按钮消失，焦点交给输入框。
+    if (!outcome.ok) {
+      setError(goalErrorNoticeKey(outcome.code ?? 'unknown'))
+      return
+    }
     returnFocus?.()
   }
+
+  const startEdit = () => {
+    setDraft(goal.condition)
+    setError(undefined)
+    setEditing(true)
+    queueMicrotask(() => inputRef.current?.select())
+  }
+
+  const cancelEdit = () => {
+    setEditing(false)
+    setDraft('')
+    setError(undefined)
+  }
+
+  const saveEdit = async () => {
+    const next = draft.trim()
+    if (next.length === 0) {
+      setError('goal.bar.conditionEmpty')
+      return
+    }
+    if (next.length > GOAL_CONDITION_MAX) {
+      setError('goal.bar.conditionTooLong')
+      return
+    }
+    if (next === goal.condition) {
+      cancelEdit()
+      returnFocus?.()
+      return
+    }
+    setPending(true)
+    setError(undefined)
+    const outcome = await updateGoalCondition(view.sessionId, next)
+    setPending(false)
+    if (!outcome.ok) {
+      setError(goalErrorNoticeKey(outcome.code ?? 'unknown'))
+      return
+    }
+    setEditing(false)
+    setDraft('')
+    returnFocus?.()
+  }
+
   return (
     <section
       aria-label={t('goal.bar.label')}
       data-goal={goal.goalId}
-      className="rounded-card bg-raise px-3 py-2 shadow-2"
+      className="mb-2 overflow-hidden rounded-card bg-raise shadow-2"
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          aria-hidden
-          className={cn(
-            'grid size-5 shrink-0 place-items-center rounded-full',
-            paused ? 'bg-warn-soft text-warn' : 'bg-accent-soft text-accent',
-          )}
-        >
-          {paused ? (
-            <Pause className="size-3" />
-          ) : (
-            <Target className={cn('size-3', phase === 'running' && 'motion-safe:animate-pulse')} />
-          )}
-        </span>
-        <button
-          type="button"
-          title={goal.condition}
-          onClick={onOpen}
-          className="min-w-0 flex-1 truncate rounded-[5px] text-left text-note font-medium text-fg outline-none hover:underline focus-visible:ring-1 focus-visible:ring-accent"
-        >
-          {goal.condition}
-        </button>
+      <div className="flex h-9 items-center gap-2 pr-1.5 pl-3">
         {paused ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy || pending}
-            title={busy ? t('goal.panel.resumeBlocked') : undefined}
-            onClick={() => void act(() => resumeGoal(view.sessionId))}
-          >
-            <Play aria-hidden className="size-3" />
-            {t('goal.bar.resume')}
-          </Button>
+          <Pause aria-hidden className="size-3.5 shrink-0 text-warn" />
         ) : (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={pending}
-            onClick={() => void act(() => pauseGoal(view.sessionId))}
-          >
-            <Pause aria-hidden className="size-3" />
-            {t('goal.bar.pause')}
-          </Button>
+          <Target
+            aria-hidden
+            className={cn(
+              'size-3.5 shrink-0 text-accent',
+              phase === 'running' && 'motion-safe:animate-pulse',
+            )}
+          />
         )}
-        <IconButton label={t('goal.bar.open')} size="icon-sm" onClick={onOpen}>
-          <Target />
-        </IconButton>
-      </div>
-      <p className="mt-0.5 flex min-w-0 items-center gap-1 pl-7 text-[11.5px] text-muted">
-        <span className="truncate">{statusText}</span>
-        {!paused && (
-          <span className="tabular shrink-0" aria-hidden>
-            · {formatGoalDuration(elapsed)}
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            aria-label={t('goal.bar.conditionInput')}
+            disabled={pending}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                void saveEdit()
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                cancelEdit()
+                returnFocus?.()
+              }
+            }}
+            onBlur={() => {
+              if (pending) return
+              if (draft.trim() === goal.condition || draft.trim() === '') {
+                cancelEdit()
+                return
+              }
+              void saveEdit()
+            }}
+            className="min-w-0 flex-1 rounded-[5px] border border-hair bg-sunk px-1.5 py-0.5 text-note text-fg outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          />
+        ) : (
+          <button
+            type="button"
+            title={goal.condition}
+            onClick={onOpen}
+            className="min-w-0 flex-1 truncate rounded-[5px] text-left text-note font-medium text-fg outline-none hover:underline focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            {goal.condition}
+          </button>
+        )}
+        {!editing && (
+          <span className="shrink-0 text-note text-muted" title={statusTitle}>
+            {statusText}
           </span>
         )}
-      </p>
-      {/* 只播报阶段；计时在视觉上每秒变化，但这里的文字不变。 */}
+        {paused ? (
+          <IconButton
+            label={t('goal.bar.resume')}
+            size="icon-sm"
+            disabled={busy || pending || editing}
+            title={busy ? t('goal.panel.resumeBlocked') : t('goal.bar.resume')}
+            onClick={() => void act(() => resumeGoal(view.sessionId))}
+          >
+            <Play />
+          </IconButton>
+        ) : (
+          <IconButton
+            label={t('goal.bar.pause')}
+            size="icon-sm"
+            disabled={pending || editing}
+            onClick={() => void act(() => pauseGoal(view.sessionId))}
+          >
+            <Pause />
+          </IconButton>
+        )}
+        <IconButton
+          label={t('goal.bar.edit')}
+          size="icon-sm"
+          disabled={pending || editing}
+          onClick={startEdit}
+        >
+          <Pencil />
+        </IconButton>
+        <IconButton
+          label={t('goal.bar.delete')}
+          size="icon-sm"
+          disabled={pending || editing}
+          onClick={() => setConfirmClear(true)}
+        >
+          <Trash2 />
+        </IconButton>
+      </div>
+      {error !== undefined && (
+        <p
+          role="status"
+          className="border-t-[0.5px] border-hair px-3 py-1.5 text-[11.5px] text-muted"
+        >
+          {t(error)}
+        </p>
+      )}
       <span role="status" aria-live="polite" className="sr-only">
         {statusText}
       </span>
+      <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
+        <DialogContent tone="danger" icon={<TriangleAlert />}>
+          <DialogTitle>{t('goal.panel.clearConfirmTitle')}</DialogTitle>
+          <DialogDescription>{t('goal.panel.clearConfirmDescription')}</DialogDescription>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button size="lg">{tc('action.cancel')}</Button>
+            </DialogClose>
+            <Button
+              size="lg"
+              variant="danger"
+              onClick={() => {
+                setConfirmClear(false)
+                void act(() => clearGoal(view.sessionId))
+              }}
+            >
+              {t('goal.panel.clearConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

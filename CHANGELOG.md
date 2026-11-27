@@ -124,6 +124,13 @@
 
 ### Changed
 
+- 目标条收成输入框上方的单行细条：短状态、暂停/继续、改条件、删除（确认后清除）；不再显示
+  轮次与活动时长。可用 `goal.updateCondition` 更新未结束目标的完成条件，当前轮不中断。
+  The goal bar is now a single-row strip above the composer with a short status, pause/resume,
+  edit condition, and delete (clear after confirm). Turn count and elapsed time stay in the
+  side panel. Open goals can update their condition via `goal.updateCondition` without aborting
+  the current turn.
+
 - macOS 的红绿灯与 48px 标题行里的图标对齐；侧栏和设置导航的标题区只显示应用标志，
   不再显示「Cairn」名称。
   On macOS the traffic lights now line up with the icons in the 48px title row, and the
@@ -282,6 +289,17 @@
   Archived team templates can now be duplicated as-is, without unarchiving first.
 
 ### Fixed
+
+- 目标模式打磨：结束卡「查看目标」真正打开面板并展示最近一次目标的判定记录；活动时长超过
+  1 小时改为 `Nh MMm`，不再与「1 分钟」的 `1:00` 混淆；暂停 / 结束的机器 detail 码改成可读
+  文案；目标条在等待审批或提问时不再假装还在跑轮次，失败时给出提示；清除目标需确认；面板
+  说明判定证据只来自应用内改动，`/goal status` 在只有历史目标时也能打开面板。
+  Goal mode polish: the ended-card "View goal" button opens the panel with the latest goal's
+  judgments; active time past one hour uses `Nh MMm` so it no longer looks like one minute;
+  machine pause/end detail codes are localized; the goal bar distinguishes waiting for
+  approval or answers from a running turn and surfaces action failures; clearing a goal asks
+  for confirmation; the panel notes that evidence is in-app only; and `/goal status` opens
+  the panel when only past goals remain.
 
 - 中键关闭会话信息栏的后台标签时，不再把焦点从对话里抢到标签栏；只有关闭动作发生在面板
   内部时，焦点才跟随新选中的标签。

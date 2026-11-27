@@ -2634,4 +2634,26 @@ describe('目标续轮与结束卡（ADR-0047）', () => {
     fireEvent.click(screen.getByRole('button', { name: '查看目标' }))
     expect(onOpenGoal).toHaveBeenCalled()
   })
+
+  it('用警告样式显示预算耗尽，并本地化结束 detail', () => {
+    const stream = reduceSessionEvents(createSessionView('s1'), [
+      ...goalBase(),
+      ev(5, 'turn.started', {}),
+      ev(6, 'message.assistant.completed', { messageId: 'a1', content: text('还没完'), model }),
+      ev(7, 'turn.completed', { durationMs: 10 }),
+      ev(8, 'goal.ended', {
+        goalId: 'g1',
+        reason: 'budget',
+        detail: 'turns',
+        turns: 20,
+        durationMs: 3_600_000,
+      }),
+    ])
+    renderGoal(stream)
+    const card = screen.getByRole('region', { name: '目标结果' })
+    expect(card.className).toContain('bg-warn-soft')
+    expect(screen.getByText('预算耗尽')).toBeTruthy()
+    expect(screen.getByText('已用完轮次预算。')).toBeTruthy()
+    expect(screen.getByText(/1h 00m/)).toBeTruthy()
+  })
 })

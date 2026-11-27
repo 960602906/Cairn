@@ -77,6 +77,12 @@ test('目标模式：达成后显示结果卡', async ({ launch, userData }) => 
     await expect(card).toBeVisible({ timeout: 30_000 })
     await expect(card).toContainText('目标已达成')
     await expect(card).toContainText('写一个文件')
+
+    // 结果卡的「查看目标」必须真正打开面板，并带出判定记录。
+    // 会话标题也是「目标」，不能用同名 region 断言面板；用判定区与证据说明定位。
+    await card.getByRole('button', { name: '查看目标' }).click()
+    await expect(window.getByRole('region', { name: '判定记录' })).toBeVisible()
+    await expect(window.getByText(/判定只依据应用内的对话/)).toBeVisible()
   } finally {
     await mock.close()
   }
