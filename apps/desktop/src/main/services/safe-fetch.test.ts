@@ -170,4 +170,20 @@ describe('safe fetch (ADR-0049)', () => {
       ),
     ).toBe('network')
   })
+
+  it('returns only the beginning of a long page when asked to truncate', async () => {
+    const options = (body: string, headers: Record<string, string> = {}) => ({
+      fetch: (async () => respond(body, { headers })) as unknown as typeof globalThis.fetch,
+      accept: 'text/html',
+      maxBytes: 5,
+      timeoutMs: 1000,
+      truncate: true,
+    })
+    await expect(
+      safeFetch('https://x.example.com/', options('<head>long page')),
+    ).resolves.toMatchObject({ body: Buffer.from('<head') })
+    await expect(
+      safeFetch('https://x.example.com/', options('<head>long', { 'content-length': '10' })),
+    ).resolves.toMatchObject({ body: Buffer.from('<head') })
+  })
 })

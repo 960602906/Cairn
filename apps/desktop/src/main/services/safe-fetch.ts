@@ -37,6 +37,8 @@ export interface SafeFetchOptions {
   readonly publicOnly?: boolean
   /** 允许 http（只用于测试或开发时的目录地址）。 */
   readonly allowHttp?: boolean
+  /** 超过上限时只返回前 `maxBytes` 字节，而不是报错（读网页的 `<head>` 时用）。 */
+  readonly truncate?: boolean
 }
 
 function privateIpv4(ip: string): boolean {
@@ -78,9 +80,15 @@ function allowed(url: URL, options: SafeFetchOptions): boolean {
   return options.publicOnly === false || isPublicHost(url.hostname)
 }
 
-async function readLimited(response: Response, maxBytes: number): Promise<Buffer> {
+async function readLimited(
+  response: Response,
+  maxBytes: number,
+  truncate: boolean,
+): Promise<Buffer> {
   const declared = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declared) && declared > maxBytes) throw new SafeFetchError('too_large')
+  if (!truncate && Number.isFinite(declared) && declared > maxBytes) {
+    throw new SafeFetchError('too_large')
+  }
   if (!response.body) return Buffer.alloc(0)
   const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
@@ -91,7 +99,9 @@ async function readLimited(response: Response, maxBytes: number): Promise<Buffer
     total += value.byteLength
     if (total > maxBytes) {
       await reader.cancel()
-      throw new SafeFetchError('too_large')
+      if (!truncate) throw new SafeFetchError('too_large')
+      chunks.push(value.subarray(0, value.byteLength - (total - maxBytes)))
+      break
     }
     chunks.push(value)
   }
@@ -129,7 +139,7 @@ export async function safeFetch(url: string, options: SafeFetchOptions): Promise
     if (!response.ok) throw new SafeFetchError('status', response.status)
     let body: Buffer
     try {
-      body = await readLimited(response, options.maxBytes)
+      body = await readLimited(response, options.maxBytes, options.truncate === true)
     } catch (error) {
       if (error instanceof SafeFetchError) throw error
       throw new SafeFetchError('network')

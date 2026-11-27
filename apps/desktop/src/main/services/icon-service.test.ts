@@ -216,4 +216,19 @@ describe('icon service (ADR-0049)', () => {
       dataUrl: dataOf('image/png', PNG),
     })
   })
+
+  it('finds icons declared in the head of a page larger than the read limit', async () => {
+    const page = `<head><link rel="apple-touch-icon" href="/touch.png"></head>${'x'.repeat(600 * 1024)}`
+    const fetch = fakeFetch({
+      'https://www.big-site.example/': page,
+      'https://www.big-site.example/touch.png': PNG,
+    })
+    const service = createIconService({
+      cacheDir,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+    })
+    await expect(service.resolve({ homepage: 'https://www.big-site.example' })).resolves.toEqual({
+      dataUrl: dataOf('image/png', PNG),
+    })
+  })
 })

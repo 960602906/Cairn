@@ -18,6 +18,7 @@ import { ICON_DATA_URL_PATTERN, type IconSource } from '@cairn/protocol'
 import { isPublicHost, safeFetch } from './safe-fetch.js'
 
 export const ICON_MAX_BYTES = 96 * 1024
+/** 网页只读开头这么多字节（足够覆盖 `<head>`）。 */
 const PAGE_MAX_BYTES = 512 * 1024
 const TIMEOUT_MS = 6_000
 const BUDGET_MS = 20_000
@@ -239,6 +240,8 @@ export function createIconService(options: IconServiceOptions): IconService {
         accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5',
         maxBytes: PAGE_MAX_BYTES,
         timeoutMs: TIMEOUT_MS,
+        // 图标声明在 <head> 里，大页面只读开头
+        truncate: true,
       })
       origin = originOf(response.url)
       if (!sniffImage(response.body)) {

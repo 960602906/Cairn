@@ -9,6 +9,8 @@ import {
   draftOf,
   enabledModelIdsOf,
   hostOf,
+  iconSourceOf,
+  pluginIconSourceOf,
   formatTokens,
   initials,
   logoColor,
@@ -87,6 +89,32 @@ describe('providers-model', () => {
     expect(catalogGroups(catalog, 'nothing-matches')).toEqual([])
     expect(hostOf('https://API.Example.com:8443/v1?x')).toBe('api.example.com:8443')
     expect(hostOf('not a url')).toBe('not a url')
+  })
+
+  it('builds icon sources from templates and plugins', () => {
+    const kimi = findTemplate('moonshot')!
+    expect(iconSourceOf(kimi)).toEqual({
+      homepage: 'https://www.moonshot.ai',
+      keysUrl: 'https://platform.moonshot.ai/console/api-keys',
+      baseUrl: 'https://api.moonshot.ai/v1',
+    })
+    const qwen = findTemplate('qwen')!
+    expect(iconSourceOf({ ...qwen, icon: 'https://cdn.example/q.svg' })).toMatchObject({
+      icon: 'https://cdn.example/q.svg',
+      keysUrl: qwen.regions![0]!.keysUrl,
+    })
+    expect(iconSourceOf({ baseUrl: 'http://localhost:1234/v1' })).toEqual({
+      baseUrl: 'http://localhost:1234/v1',
+    })
+    // 插件自己的图标与网站优先，其余取第一个服务的
+    expect(pluginIconSourceOf({ homepage: 'https://acme.example', templates: [kimi] })).toEqual({
+      ...iconSourceOf(kimi),
+      homepage: 'https://acme.example',
+    })
+    expect(pluginIconSourceOf({ icon: 'data:image/png;base64,AA' })).toEqual({
+      icon: 'data:image/png;base64,AA',
+    })
+    expect(pluginIconSourceOf({ templates: [] })).toBeUndefined()
   })
 
   it('picks the endpoint by locale for services with regions', () => {

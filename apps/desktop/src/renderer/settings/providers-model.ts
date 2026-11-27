@@ -140,20 +140,22 @@ export function iconSourceOf(
 /** 官方插件目录仓库（ADR-0049）；目录内容由主进程读取，界面只用它显示来源链接。 */
 export const OFFICIAL_CATALOG_PAGE = 'https://github.com/960602906/cairn-provider-plugins'
 
-/** 插件的图标依据：插件自己的图标或网站；都没有时用第一个服务的。 */
+/** 插件的图标依据：插件自己的图标与网站优先，其余依据取第一个服务的。 */
 export function pluginIconSourceOf(plugin: {
   readonly icon?: string | undefined
   readonly homepage?: string | undefined
   readonly templates?: readonly ProviderTemplate[]
 }): IconSource | undefined {
-  if (plugin.icon || plugin.homepage) {
-    return {
-      ...(plugin.icon ? { icon: plugin.icon } : {}),
-      ...(plugin.homepage ? { homepage: plugin.homepage } : {}),
-    }
-  }
   const first = plugin.templates?.[0]
-  return first ? iconSourceOf(first) : undefined
+  const base = first ? iconSourceOf(first) : {}
+  const icon = plugin.icon ?? base.icon
+  const homepage = plugin.homepage ?? base.homepage
+  const source: IconSource = {
+    ...base,
+    ...(icon ? { icon } : {}),
+    ...(homepage ? { homepage } : {}),
+  }
+  return Object.keys(source).length > 0 ? source : undefined
 }
 
 /** token 数的简写：`128k`、`1M`、`1.5M`。 */
