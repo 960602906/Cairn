@@ -5,17 +5,22 @@
 
 ## [Unreleased]
 
+### Removed
+
+- 移除 Agent 与团队模板的「试运行」：不再提供隐藏试运行会话、编辑器试运行入口，以及
+  `trial.*` / `team.trial.*` IPC。验证草稿请先发布，再在普通会话中选用。
+  Removed Agent and team-template trial runs: no more hidden trial sessions, editor trial entry
+  points, or `trial.*` / `team.trial.*` IPC. Publish a draft, then use it in a normal session.
+
 ### Added
 
 - 团队模板列表自带三个内置模板：「代码审查小组」（审查循环）、「探索与实现」（主控分派）与
-  「实现流水线」（探索 → 实现 → 测试），第一次打开就有可用的范例。内置模板只读，可以直接
-  试运行，或点「复制为副本」得到可编辑、可发布的用户模板，原模板与版本历史不受影响；列表里
-  带「内置」标记。
+  「实现流水线」（探索 → 实现 → 测试），第一次打开就有可用的范例。内置模板只读，可点
+  「复制为副本」得到可编辑、可发布的用户模板，原模板与版本历史不受影响；列表里带「内置」标记。
   The team template list ships with three built-in templates: "Code review pair" (review loop),
   "Explore and build" (delegation), and "Build pipeline" (explore → build → test), so the list
-  is useful from the first launch. Built-ins are read-only: run them directly, or use
-  "Duplicate" to get an editable, publishable user template while the original stays untouched.
-  The list marks them as "Built-in".
+  is useful from the first launch. Built-ins are read-only: use "Duplicate" to get an editable,
+  publishable user template while the original stays untouched. The list marks them as "Built-in".
 
 - 侧栏的会话列表会在标题旁用团队图标标出正在使用团队模板的会话，悬停显示团队名称，读屏
   也会读出；模板改名后按列表里的最新名称显示，普通 Agent 会话不受影响。
@@ -49,12 +54,12 @@
   template with "copy" appended to the name, keeping every field and leaving the original and
   its version history untouched.
 
-- 团队模板可以归档：归档后从默认列表隐藏，草稿、已发布版本与试运行历史都保留；在「已归档」
-  筛选里可以找到并取消归档。归档期间模板只读，不再提供保存、发布、试运行与恢复旧版本。
+- 团队模板可以归档：归档后从默认列表隐藏，草稿与已发布版本都保留；在「已归档」
+  筛选里可以找到并取消归档。归档期间模板只读，不再提供保存、发布与恢复旧版本。
   Team templates can be archived: an archived template leaves the default list but keeps its
-  drafts, published versions and trial history, appears under the "Archived" filter, and can be
-  unarchived. While archived the template is read-only: saving, publishing, trialling and
-  restoring an old version are unavailable.
+  drafts and published versions, appears under the "Archived" filter, and can be unarchived.
+  While archived the template is read-only: saving, publishing and restoring an old version are
+  unavailable.
 
 - 团队模板版本历史：编辑器下方列出每次发布的版本（时间、协作模式与成员数），可以与当前草稿
   逐字段对比；确认后把旧版本恢复为草稿，继续编辑并发布后成为新版本，不会改写历史。
@@ -66,13 +71,12 @@
 - 团队模板：设置里新增「团队模板」页，可新建、搜索并按状态筛选；编辑器配置中英文名称与描述、
   主控与成员，以及协作模式（自由委派 / 审查循环 / 流水线）。流水线阶段只能依赖排在它前面的
   阶段，审查循环会自动保证 maker / checker 在成员里；保存草稿与发布前实时校验，问题直接标在
-  对应的分区。编辑器里可以用当前草稿直接试运行，草稿改动后提示重新开始，试运行历史可清除。
+  对应的分区。
   Team templates get a Settings page with search and status filters, plus an editor for
   bilingual names and descriptions, coordinator and members, and collaboration patterns
   (delegate, review loop, pipeline). Pipeline stages can only depend on earlier stages, and
   review loops keep maker and checker inside the team. Validation runs while editing and
-  before publishing, with issues attached to their section. A team can be trialled from the
-  editor with the current draft; changes prompt a restart, and trial history can be cleared.
+  before publishing, with issues attached to their section.
 
 - 输入框支持从操作系统（Finder / 资源管理器）拖入或粘贴文件与文件夹：会转成工作空间内的 `@` 引用，
   一次可多个；工作空间外的文件会提示并忽略，未选择工作空间时先提示。拖动时输入框显示“松开以引用文件”。

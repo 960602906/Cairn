@@ -1323,8 +1323,8 @@ describe('MessageStream 状态呈现', () => {
   })
 })
 
-describe('MessageStream 试运行（M4-12）', () => {
-  const trialEv = (seq: number, type: string, payload: object, turnId = 't1'): EventEnvelope =>
+describe('MessageStream 非活动会话（sessionId / onContinue）', () => {
+  const sideEv = (seq: number, type: string, payload: object, turnId = 't1'): EventEnvelope =>
     ({ ...ev(seq, type, payload, turnId), sessionId: 't1' }) as EventEnvelope
 
   const renderWith = (
@@ -1345,23 +1345,23 @@ describe('MessageStream 试运行（M4-12）', () => {
     )
   }
 
-  it('reads approval state from the given trial session', () => {
+  it('reads approval state from the given sessionId, not the active session', () => {
     const view = reduceSessionEvents(createSessionView('t1'), [
-      trialEv(1, 'session.created', {
+      sideEv(1, 'session.created', {
         projectId: 'p1',
         projectPath: '/w',
         workspacePath: '/w',
         title: '',
       }),
-      trialEv(2, 'run.created', {
+      sideEv(2, 'run.created', {
         agent: { id: 'user.reviewer', draftHash: 'h1' },
         model,
         mode: 'interactive',
         limits,
       }),
-      trialEv(3, 'message.user', { messageId: 'u1', content: text('检查') }),
-      trialEv(4, 'turn.started', {}),
-      trialEv(5, 'message.assistant.completed', {
+      sideEv(3, 'message.user', { messageId: 'u1', content: text('检查') }),
+      sideEv(4, 'turn.started', {}),
+      sideEv(5, 'message.assistant.completed', {
         messageId: 'a1',
         content: text('执行'),
         model,
@@ -1387,22 +1387,22 @@ describe('MessageStream 试运行（M4-12）', () => {
 
   it('uses the supplied continue action instead of the active session', async () => {
     const view = reduceSessionEvents(createSessionView('t1'), [
-      trialEv(1, 'session.created', {
+      sideEv(1, 'session.created', {
         projectId: 'p1',
         projectPath: '/w',
         workspacePath: '/w',
         title: '',
       }),
-      trialEv(2, 'run.created', {
+      sideEv(2, 'run.created', {
         agent: { id: 'user.reviewer', draftHash: 'h1' },
         model,
         mode: 'interactive',
         limits,
       }),
-      trialEv(3, 'message.user', { messageId: 'u1', content: text('检查') }),
-      trialEv(4, 'turn.started', {}),
-      trialEv(5, 'turn.limit_reached', { limit: 'maxStepsPerTurn', value: 1 }),
-      trialEv(6, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }),
+      sideEv(3, 'message.user', { messageId: 'u1', content: text('检查') }),
+      sideEv(4, 'turn.started', {}),
+      sideEv(5, 'turn.limit_reached', { limit: 'maxStepsPerTurn', value: 1 }),
+      sideEv(6, 'turn.failed', { error: { code: 'run.limit_reached' }, retryable: true }),
     ])
     const sendPrompt = vi.fn(async () => true)
     const onContinue = vi.fn()

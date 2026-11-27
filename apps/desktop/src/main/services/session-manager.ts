@@ -89,8 +89,6 @@ export const SessionErrorCode = {
   AgentNotFound: 'agent.not_found',
   /** 团队模板不可用：没有已发布版本、已归档，或主控 Agent 还没有发布。 */
   TeamUnavailable: 'team.unavailable',
-  /** 试运行开始后草稿又改过；必须用新配置重新开始。 */
-  DraftChanged: 'trial.draft_changed',
   /** 只有已归档的会话能彻底删除。 */
   NotArchived: 'session.not_archived',
   /** 会话已有未结束的目标（ADR-0047）。 */
@@ -577,7 +575,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
   }
 
   /**
-   * 会话当前的 Agent：试运行用它的草稿，普通会话用最近的根运行，都没有时用默认配置。
+   * 会话当前的 Agent：普通会话用最近的根运行；旧试运行会话仍可读记录的草稿引用。
    * 输入框的 `@Agent` 候选与发送时展开按同一份定义取委派名单。
    */
   function currentAgent(sessionId: string): RunAgentRef {
@@ -656,6 +654,9 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     const { sessionId, content: typed, mode = 'normal', mentions, skills, agents, context } = params
     if (closed) throw new RpcError(SessionErrorCode.Closed)
     const record = requireSession(sessionId)
+    if (record.kind === 'trial') {
+      throw new RpcError('run.unsupported', { sessionId, kind: record.kind })
+    }
     if (options.isLocked?.(sessionId)) {
       throw new RpcError(SessionErrorCode.Busy, { sessionId })
     }
@@ -674,19 +675,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     if (!running) markInterrupted(sessionId, 'host_lost')
     const view = getView(sessionId)
     const root = rootRun(view)
-    if (
-      record.kind === 'trial' &&
-      (record.trialAgentId === undefined || record.trialDraftHash === undefined)
-    ) {
-      throw new RpcError(SessionErrorCode.NotFound, { sessionId })
-    }
-    const agent: RunAgentRef =
-      record.kind === 'trial'
-        ? { id: record.trialAgentId!, draftHash: record.trialDraftHash! }
-        : (root?.agent ?? options.runDefaults.agent)
-    if (record.kind === 'trial' && !options.resolveAgent?.(agent)) {
-      throw new RpcError(SessionErrorCode.DraftChanged, { sessionId })
-    }
+    const agent: RunAgentRef = root?.agent ?? options.runDefaults.agent
     const next = runConfig(agent, record.model)
     // 会话换了模型：停掉空闲的宿主，用新模型重新启动（等旧宿主退出后由调度启动）。
     // 引导注入当前轮时不换模型，下一轮才换。
@@ -787,7 +776,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
   }
 
   /**
-   * 目标只对普通会话开放（ADR-0047）：试运行与自动修复会话没有 `/goal` 入口；
+   * 目标只对普通会话开放（ADR-0047）：自动修复等非普通会话没有 `/goal` 入口；
    * 已归档的会话要先取消归档。
    */
   function requireGoalCapable(sessionId: string): SessionRecord {

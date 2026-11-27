@@ -10,7 +10,6 @@ export const NAMESPACES = [
   'settings',
   'agents',
   'teams',
-  'trial',
   'onboarding',
   'errors',
 ] as const

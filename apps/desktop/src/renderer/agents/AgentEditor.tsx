@@ -3,8 +3,8 @@
  *
  * - 只编辑草稿字段；保存走 `agent.saveDraft`，发布在草稿有校验错误时被阻止。
  * - 左侧导航显示未保存 / 警告 / 错误；离开时若有改动先确认。
- * - 顶部操作栏保持一行：试运行 / 保存草稿 / 发布，复制、导出、归档收进「⋯」菜单。
- * - 内置 Agent 只读，只能“复制为新 Agent”和试运行。
+ * - 顶部操作栏保持一行：保存草稿 / 发布，复制、导出、归档收进「⋯」菜单。
+ * - 内置 Agent 只读，只能“复制为新 Agent”。
  * - 基本信息默认只填当前界面语言，另一种语言按需展开；图标与颜色用可键盘操作的选择器。
  * - 指令区实时估算 token 与占上下文的比例（按主模型或固定模型的上下文窗口）。
  */
@@ -18,7 +18,6 @@ import {
   Copy,
   Download,
   MoreHorizontal,
-  Play,
   Plus,
   Save,
   Upload,
@@ -55,7 +54,6 @@ import {
   sectionChanged,
   sectionMarks,
 } from './model.js'
-import { AgentTrial } from './AgentTrial.js'
 import { useSessionStore } from '../store-context.js'
 import {
   Button,
@@ -295,7 +293,6 @@ export function AgentEditor({
   const [confirmPublish, setConfirmPublish] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [trialOpen, setTrialOpen] = useState(false)
   const [showOtherLanguage, setShowOtherLanguage] = useState(false)
   const currentLanguage = i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US'
   const otherLanguage = currentLanguage === 'zh-CN' ? 'en-US' : 'zh-CN'
@@ -337,8 +334,6 @@ export function AgentEditor({
   const archived = detail?.archived === true
   const readonly = detail?.source === 'builtin' || archived
   const published = detail?.published
-  /** 已保存的 Agent id；新建草稿第一次保存前没有，试运行与版本页要用。 */
-  const savedId = currentId ?? detail?.agentId
   const dirtySections = useMemo(() => {
     if (!fields || !baseline) return new Set<AgentSection>()
     return new Set(AGENT_SECTIONS.filter((id) => sectionChanged(baseline, fields, id)))
@@ -403,16 +398,6 @@ export function AgentEditor({
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [back])
-
-  /** 试运行读取已保存的草稿，所以先保存编辑中的改动，面板里的配置才和界面一致。 */
-  const openTrial = async () => {
-    if ((currentId ?? detail?.agentId) === undefined) return
-    if (dirty) {
-      const saved = await save()
-      if (!saved) return
-    }
-    setTrialOpen(true)
-  }
 
   const publish = async () => {
     const id = currentId ?? detail?.agentId
@@ -634,15 +619,6 @@ export function AgentEditor({
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {savedAt && !dirty && <Check aria-label={t('editor.saved')} className="size-4 text-ok" />}
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy || saving || savedId === undefined}
-            onClick={() => void openTrial()}
-          >
-            <Play />
-            {t('editor.trial')}
-          </Button>
           {detail?.source === 'builtin' ? (
             <Button variant="primary" size="sm" disabled={busy} onClick={() => void duplicate()}>
               <Copy />
@@ -1269,15 +1245,6 @@ export function AgentEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {savedId !== undefined && (
-        <AgentTrial
-          agentId={savedId}
-          configKey={JSON.stringify(fields)}
-          open={trialOpen}
-          onOpenChange={setTrialOpen}
-        />
-      )}
     </div>
   )
 }

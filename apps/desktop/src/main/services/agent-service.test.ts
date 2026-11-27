@@ -15,7 +15,13 @@ import type {
 } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
 import { createSessionEventService } from './event-service.js'
-import { agentPresetRules, createAgentService, type AgentServiceOptions } from './agent-service.js'
+import {
+  agentDraftHash,
+  agentPresetRules,
+  pickAgentDraftFields,
+  createAgentService,
+  type AgentServiceOptions,
+} from './agent-service.js'
 
 let clock = 1_000
 let counter = 0
@@ -570,43 +576,36 @@ describe('agent-service runtime helpers', () => {
     expect(service.permissionRulesFor({ id: created.agentId, version: 1 }, [rule])).toEqual([rule])
   })
 
-  it('resolves unpublished drafts by content hash for trial runs', () => {
+  it('resolves draft refs by content hash for legacy runs', () => {
     const { service } = setup()
     const created = service.saveDraft({
       definition: draft({ instructions: 'Draft instruction.', skills: { allow: ['review'] } }),
     })
-    const trial = service.trialDraft(created.agentId)
-    expect(trial.definition).toMatchObject({
-      id: created.agentId,
-      status: 'draft',
-      instructions: 'Draft instruction.',
-    })
-    expect(trial.draftHash).toMatch(/^[a-f0-9]{64}$/)
-    expect(service.trialDraft(created.agentId).draftHash).toBe(trial.draftHash)
-    const ref = { id: created.agentId, draftHash: trial.draftHash }
+    const draftFields = pickAgentDraftFields(service.get({ agentId: created.agentId }).draft!)
+    const ref = { id: created.agentId, draftHash: agentDraftHash(draftFields) }
     expect(service.definition(ref)?.instructions).toBe('Draft instruction.')
     expect(service.skillsFor(ref, 's1').map((skill) => skill.name)).toEqual(['review'])
     expect(service.permissionRulesFor(ref, [rule]).at(-1)).toEqual(rule)
     expect(service.definition({ ...ref, draftHash: 'stale' })).toBeUndefined()
-    expect(() => service.trialDraft('missing')).toThrow('agent.not_found')
   })
 
-  it('trial-runs builtin agents without inventing a published version', () => {
+  it('resolves builtin agents by draft hash without inventing a published version', () => {
     const { service } = setup()
-    const trial = service.trialDraft(BUILTIN_CODER_ID)
-    expect(trial.definition.id).toBe(BUILTIN_CODER_ID)
-    expect(trial.draftHash).toMatch(/^[a-f0-9]{64}$/)
-    expect(service.definition({ id: BUILTIN_CODER_ID, draftHash: trial.draftHash })?.id).toBe(
-      BUILTIN_CODER_ID,
-    )
+    const builtin = BUILTIN_AGENTS.find((agent) => agent.id === BUILTIN_CODER_ID)!
+    const ref = { id: BUILTIN_CODER_ID, draftHash: agentDraftHash(pickAgentDraftFields(builtin)) }
+    expect(service.definition(ref)?.id).toBe(BUILTIN_CODER_ID)
   })
 
-  it('trial-runs a published agent after its draft is cleared', () => {
+  it('resolves published fields when the draft was cleared', () => {
     const { service } = setup()
     const created = service.saveDraft({ definition: draft({ instructions: 'Published.' }) })
     service.publish({ agentId: created.agentId })
-    const trial = service.trialDraft(created.agentId)
-    expect(trial.definition).toMatchObject({
+    const published = service.get({ agentId: created.agentId }).published!
+    const ref = {
+      id: created.agentId,
+      draftHash: agentDraftHash(pickAgentDraftFields(published)),
+    }
+    expect(service.definition(ref)).toMatchObject({
       id: created.agentId,
       version: 1,
       status: 'published',

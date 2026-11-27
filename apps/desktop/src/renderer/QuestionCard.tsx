@@ -72,7 +72,7 @@ function buildAnswers(question: PendingQuestion, drafts: Drafts): AskUserAnswer[
 
 type Resolve = (questionId: string, resolution: AskUserResolution) => Promise<boolean>
 
-/** 一张提问卡片。`onResolve` 用于试运行等复用场景；默认回答当前会话。 */
+/** 一张提问卡片。`onResolve` 用于嵌入等复用场景；默认回答当前会话。 */
 export function QuestionCard({
   question,
   active,

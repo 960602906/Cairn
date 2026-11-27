@@ -91,14 +91,11 @@ import {
 } from '../providers.js'
 import { defineSide } from '../rpc.js'
 import { HostApprovalRequest, ShellPreference } from './host-main.js'
-import { TrialStarted, TrialSummary } from '../trial.js'
 import {
   AgentTeamDetail,
   AgentTeamSummary,
   AgentTeamVersionSummary,
   TeamDraftInput,
-  TeamTrialStarted,
-  TeamTrialSummary,
 } from '../teams.js'
 import { UpdateStatus, UpdateVersion } from '../update.js'
 import { AutoFixStatus, AutoFixTrigger, GithubRepo } from '../github.js'
@@ -762,36 +759,6 @@ export const MainForRenderer = defineSide({
       params: z.object({ sessionId: Id, teamId: Id.nullable() }),
       result: z.object({}),
     },
-    /**
-     * 用当前草稿开始一次试运行（M4-12）。试运行会话不出现在 `session.list` 中，默认只读；
-     * 草稿不需要发布。项目目录不存在时会像普通会话一样创建项目记录。
-     */
-    'trial.start': {
-      params: z.object({
-        agentId: Id,
-        projectPath: z.string().min(1),
-        useAgentPermissions: z.boolean().optional(),
-      }),
-      result: TrialStarted,
-    },
-    /** 用当前草稿重新开始试运行，返回新的隐藏会话；旧记录保留到清理或超出保留条数。 */
-    'trial.restart': {
-      params: z.object({
-        sessionId: Id,
-        useAgentPermissions: z.boolean().optional(),
-      }),
-      result: TrialStarted,
-    },
-    /** 清除一个 Agent 的全部试运行记录（含事件、快照与改动）。 */
-    'trial.clear': {
-      params: z.object({ agentId: Id }),
-      result: z.object({ cleared: z.number().int().nonnegative() }),
-    },
-    /** 一个 Agent 的试运行历史，按更新时间倒序。 */
-    'trial.list': {
-      params: z.object({ agentId: Id }),
-      result: z.object({ trials: z.array(TrialSummary) }),
-    },
     /** 团队模板列表（M7-09）：草稿与已发布版本都在一份摘要里。 */
     'team.list': {
       params: z.object({ includeArchived: z.boolean().optional() }),
@@ -817,7 +784,7 @@ export const MainForRenderer = defineSide({
       params: z.object({ teamId: Id }),
       result: AgentTeamDetail,
     },
-    /** 归档团队模板：从默认列表隐藏，保留草稿、版本与试运行历史。 */
+    /** 归档团队模板：从默认列表隐藏，保留草稿与已发布版本。 */
     'team.archive': {
       params: z.object({ teamId: Id }),
       result: AgentTeamDetail,
@@ -826,28 +793,6 @@ export const MainForRenderer = defineSide({
     'team.unarchive': {
       params: z.object({ teamId: Id }),
       result: AgentTeamDetail,
-    },
-    /**
-     * 团队试运行（M7-09）：用草稿模板开一个隐藏会话，以主控 Agent 的草稿运行，
-     * 模板的委派覆盖与协作说明并入这一轮使用的定义；默认只读。
-     */
-    'team.trial.start': {
-      params: z.object({
-        teamId: Id,
-        projectPath: z.string().min(1),
-        useAgentPermissions: z.boolean().optional(),
-      }),
-      result: TeamTrialStarted,
-    },
-    /** 清除一个团队模板的全部试运行记录。 */
-    'team.trial.clear': {
-      params: z.object({ teamId: Id }),
-      result: z.object({ cleared: z.number().int().nonnegative() }),
-    },
-    /** 一个团队模板的试运行历史，按更新时间倒序。 */
-    'team.trial.list': {
-      params: z.object({ teamId: Id }),
-      result: z.object({ trials: z.array(TeamTrialSummary) }),
     },
     /**
      * 删除（归档）会话（M2-02），写入 `session.archived`：不再出现在列表中，事件与改动记录保留。

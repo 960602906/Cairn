@@ -3,7 +3,7 @@
  *
  * - 列表页头部只有「新建 Agent」与「从空白开始」两个入口：新建 Agent 直接复制内置编程助手并进入编辑器，
  *   一步到位，不再弹选择框；复制其他 Agent 走列表行进入编辑器后的「复制」。
- * - 列表、编辑器与试运行沿用 `agents/` 下的组件，只负责列表 ↔ 编辑器切换。
+ * - 列表与编辑器沿用 `agents/` 下的组件，只负责列表 ↔ 编辑器切换。
  */
 import { Bot, Plus } from 'lucide-react'
 import { useState } from 'react'

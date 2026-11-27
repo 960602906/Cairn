@@ -19,7 +19,6 @@ describe('resources', () => {
       'settings',
       'agents',
       'teams',
-      'trial',
       'onboarding',
       'errors',
     ])

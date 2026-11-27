@@ -1,15 +1,7 @@
 /**
- * 团队模板（M7-09，多 Agent 协作 §15）：草稿、发布与试运行。
- *
- * 试运行复用 Agent 试运行的基础设施：一个标记为 `trial` 的隐藏会话，默认只读，不出现在
- * `session.list`、活动中心与用量统计里。区别只在于它以**团队模板的草稿**为准：
- *
- * - 模板草稿要先通过 `validateAgentTeam`（与发布同一套规则）；
- * - 会话以主控 Agent 的草稿运行，模板的委派覆盖与协作说明在解析根定义时并入；
- * - 会话记录模板与草稿哈希，模板之后又改过时界面（未来）可以提示重启。
+ * 团队模板（M7-09，多 Agent 协作 §15）：草稿、发布与在普通会话中选用。
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { basename, isAbsolute } from 'node:path'
 import {
   applyTeamToAgentDefinition,
   BUILTIN_TEAMS,
@@ -27,17 +19,11 @@ import {
   type SessionTeamBinding,
   type TeamDraftFields,
   type TeamDraftInput,
-  type TeamTrialStarted,
-  type TeamTrialSummary,
 } from '@cairn/protocol'
-import type { SessionRecord, Storage } from '@cairn/storage'
+import type { Storage } from '@cairn/storage'
 import type { AgentService } from './agent-service.js'
 import type { SessionEventService } from './event-service.js'
 import type { SessionManager, SessionTeamResolution } from './session-manager.js'
-import type { TrialService } from './trial-service.js'
-
-/** 每个模板保留的试运行条数。 */
-export const TEAM_TRIAL_RETENTION = 10
 
 export const TeamErrorCode = {
   NotFound: 'team.not_found',
@@ -49,9 +35,8 @@ export const TeamErrorCode = {
 export interface TeamServiceOptions {
   readonly storage: Pick<Storage, 'teams' | 'sessions' | 'projects'>
   readonly events: Pick<SessionEventService, 'publish' | 'readAfter'>
-  readonly agents: Pick<AgentService, 'get' | 'trialDraft'>
-  readonly sessions: Pick<SessionManager, 'isBusy' | 'refreshTeam'>
-  readonly trials: Pick<TrialService, 'markElevated'>
+  readonly agents: Pick<AgentService, 'get'>
+  readonly sessions: Pick<SessionManager, 'refreshTeam'>
   readonly createId?: () => string
   readonly now?: () => number
 }
@@ -65,13 +50,6 @@ export interface TeamCommands {
   publish(input: { teamId: string }): AgentTeamDetail
   archive(input: { teamId: string }): AgentTeamDetail
   unarchive(input: { teamId: string }): AgentTeamDetail
-  trialStart(input: {
-    teamId: string
-    projectPath: string
-    useAgentPermissions?: boolean | undefined
-  }): TeamTrialStarted
-  trialClear(input: { teamId: string }): { cleared: number }
-  trialList(input: { teamId: string }): { trials: TeamTrialSummary[] }
 }
 
 export interface TeamService extends TeamCommands {
@@ -85,7 +63,7 @@ export interface TeamService extends TeamCommands {
    * `@Agent` 候选；模板不可用时返回 undefined。
    */
   definitionForTeam(teamId: string): AgentDefinition | undefined
-  /** 把会话绑定的团队并入这一轮使用的定义（试运行用草稿，普通会话用最新的已发布版本）。 */
+  /** 把会话绑定的团队并入这一轮使用的定义（普通会话用最新的已发布版本）。 */
   applySessionTeam(sessionId: string, definition: AgentDefinition): AgentDefinition
 }
 
@@ -109,7 +87,7 @@ export const teamDraftHash = (fields: TeamDraftFields): string =>
     .digest('hex')
 
 export function createTeamService(options: TeamServiceOptions): TeamService {
-  const { storage, events, agents, sessions, trials } = options
+  const { storage, events, agents, sessions } = options
   const createId = options.createId ?? randomUUID
   const now = options.now ?? Date.now
 
@@ -117,11 +95,6 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     const record = storage.teams.get(teamId)
     if (!record) throw new RpcError(TeamErrorCode.NotFound, { teamId })
     return record
-  }
-
-  /** 内置模板没有存储记录；其它模板必须有记录。 */
-  const requireKnown = (teamId: string) => {
-    if (!builtinTeam(teamId)) requireRecord(teamId)
   }
 
   /** 内置模板的存储记录是代码里的一版；用户模板来自 `team_versions`。 */
@@ -219,91 +192,6 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
       ...(draft ? { draft } : {}),
       ...(published ? { published } : {}),
       validation: validate(fields),
-    }
-  }
-
-  /** 模板的试运行会话；只会返回带主控草稿哈希的记录（旧记录可能没有）。 */
-  const trialsOf = (teamId: string): SessionRecord[] =>
-    storage.sessions
-      .list({ includeTrial: true })
-      .filter(
-        (session) =>
-          session.kind === 'trial' &&
-          session.trialTeamId === teamId &&
-          session.trialAgentId !== undefined &&
-          session.trialDraftHash !== undefined,
-      )
-
-  const prune = (teamId: string): void => {
-    for (const trial of trialsOf(teamId).slice(TEAM_TRIAL_RETENTION)) {
-      if (sessions.isBusy(trial.sessionId)) continue
-      storage.sessions.remove(trial.sessionId)
-    }
-  }
-
-  const startTrial = (
-    teamId: string,
-    projectPath: string,
-    useAgentPermissions: boolean,
-  ): TeamTrialStarted => {
-    if (!isAbsolute(projectPath)) {
-      throw new RpcError('rpc.invalid_params', { projectPath })
-    }
-    requireKnown(teamId)
-    const fields = draftOf(teamId) ?? builtinTeam(teamId)
-    if (!fields) throw new RpcError(TeamErrorCode.NoDraft, { teamId })
-    const validation = validate(fields)
-    if (!validation.ok) {
-      throw new RpcError(TeamErrorCode.Invalid, {
-        teamId,
-        issues: validation.errors.map((entry) => entry.code).join(','),
-      })
-    }
-    const coordinator = agents.trialDraft(fields.coordinator)
-    const project =
-      storage.projects.getByPath(projectPath) ??
-      storage.projects.create({
-        projectId: createId(),
-        name: basename(projectPath),
-        path: projectPath,
-      })
-    const sessionId = createId()
-    const at = now()
-    const hash = teamDraftHash(fields)
-    storage.sessions.create({
-      sessionId,
-      projectId: project.projectId,
-      workspacePath: project.path,
-      title: '',
-      kind: 'trial',
-      trialAgentId: fields.coordinator,
-      trialDraftHash: coordinator.draftHash,
-      trialTeamId: teamId,
-      trialTeamDraftHash: hash,
-    })
-    events.publish([
-      {
-        v: 1,
-        sessionId,
-        runId: sessionId,
-        ts: at,
-        type: 'session.created',
-        payload: {
-          projectId: project.projectId,
-          projectPath: project.path,
-          workspacePath: project.path,
-          title: '',
-        },
-      },
-    ])
-    if (useAgentPermissions) trials.markElevated(sessionId)
-    prune(teamId)
-    return {
-      sessionId,
-      teamId,
-      teamDraftHash: hash,
-      agent: { id: fields.coordinator, draftHash: coordinator.draftHash },
-      useAgentPermissions,
     }
   }
 
@@ -423,33 +311,6 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
       return detailOf(teamId)
     },
 
-    trialStart({ teamId, projectPath, useAgentPermissions = false }) {
-      return startTrial(teamId, projectPath, useAgentPermissions)
-    },
-
-    trialClear({ teamId }) {
-      requireKnown(teamId)
-      const trials = trialsOf(teamId)
-      const busy = trials.find((trial) => sessions.isBusy(trial.sessionId))
-      if (busy) throw new RpcError('run.busy', { sessionId: busy.sessionId })
-      for (const trial of trials) storage.sessions.remove(trial.sessionId)
-      return { cleared: trials.length }
-    },
-
-    trialList({ teamId }) {
-      requireKnown(teamId)
-      const trials = trialsOf(teamId).map((session) => ({
-        sessionId: session.sessionId,
-        teamId,
-        agent: { id: session.trialAgentId!, draftHash: session.trialDraftHash! },
-        projectPath: session.projectPath,
-        title: session.title,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-      }))
-      return { trials }
-    },
-
     resolveTeam(teamId) {
       const resolved = publishedTeamWithCoordinator(teamId)
       if (!resolved) return undefined
@@ -472,12 +333,6 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     applySessionTeam(sessionId, definition) {
       const session = storage.sessions.get(sessionId)
       if (!session) return definition
-      if (session.kind === 'trial') {
-        if (session.trialTeamId === undefined) return definition
-        // 内置模板没有草稿，按代码里的版本运行。
-        const fields = draftOf(session.trialTeamId) ?? builtinTeam(session.trialTeamId)
-        return fields ? applyTeamToAgentDefinition(definition, fields) : definition
-      }
       if (session.kind !== 'normal') return definition
       const binding = latestTeamBinding(sessionId)
       if (binding === undefined) return definition

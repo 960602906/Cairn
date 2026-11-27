@@ -1621,33 +1621,10 @@ describe('team binding (M7-09)', () => {
   })
 })
 
-describe('trial sessions (M4-12)', () => {
-  const draftDefinition = (): AgentDefinition => ({
-    id: 'user.reviewer',
-    version: 1,
-    source: 'user',
-    status: 'draft',
-    name: { 'en-US': 'Reviewer' },
-    description: { 'en-US': 'Draft review' },
-    instructions: 'Review the draft.',
-    model: { mode: 'fixed', primary: { providerId: 'openai', modelId: 'gpt' } },
-    tools: { allow: ['read_file'] },
-    skills: { allow: [] },
-    permissions: 'read-only',
-    limits: { maxStepsPerTurn: 3 },
-    context: { includeProjectInstructions: true, compaction: 'auto' },
-    memory: { scopes: ['session'], write: 'never' },
-    createdAt: 1,
-    updatedAt: 1,
-    schemaVersion: 1,
-  })
-
-  it('hides trial sessions and runs the draft definition', async () => {
+describe('legacy trial sessions', () => {
+  it('hides trial sessions from the default list and rejects new prompts', () => {
     const { supervisor, hosts } = fakeSupervisor()
-    const resolveAgent = vi.fn((agent: { id: string; draftHash?: string }) =>
-      agent.draftHash === 'hash-1' ? draftDefinition() : undefined,
-    )
-    const { manager } = setup(supervisor, { resolveAgent })
+    const { manager } = setup(supervisor)
     storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work' })
     storage.sessions.create({
       sessionId: 't1',
@@ -1659,113 +1636,13 @@ describe('trial sessions (M4-12)', () => {
       trialDraftHash: 'hash-1',
     })
     expect(manager.list({}).sessions).toEqual([])
-    manager.prompt({ sessionId: 't1', content: text('review') })
-    await flush()
-    expect(resolveAgent).toHaveBeenCalledWith({ id: 'user.reviewer', draftHash: 'hash-1' })
-    expect(hosts[0]?.init).toMatchObject({
-      agent: { id: 'user.reviewer', draftHash: 'hash-1' },
-      model: { providerId: 'openai', modelId: 'gpt' },
-      limits: { maxStepsPerTurn: 3 },
-    })
-  })
-
-  it('uses the configured default model when the draft inherits it', async () => {
-    const { supervisor, hosts } = fakeSupervisor()
-    const chat = { providerId: 'deepseek', modelId: 'deepseek-chat' }
-    const { manager } = setup(supervisor, {
-      resolveAgent: () => ({ ...draftDefinition(), model: { mode: 'inherit' } }),
-      models: { defaultModel: () => chat, has: () => true },
-    })
-    storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work' })
-    storage.sessions.create({
-      sessionId: 't1',
-      projectId: 'p1',
-      workspacePath: '/work',
-      title: '',
-      kind: 'trial',
-      trialAgentId: 'user.reviewer',
-      trialDraftHash: 'hash-1',
-    })
-
-    manager.prompt({ sessionId: 't1', content: text('review') })
-    await flush()
-
-    expect(hosts[0]?.init.model).toEqual(chat)
-  })
-
-  it('rejects a trial whose draft changed after it started', async () => {
-    const { supervisor, hosts } = fakeSupervisor()
-    const { manager } = setup(supervisor, {
-      resolveAgent: () => undefined,
-    })
-    storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work' })
-    storage.sessions.create({
-      sessionId: 't1',
-      projectId: 'p1',
-      workspacePath: '/work',
-      title: '',
-      kind: 'trial',
-      trialAgentId: 'user.reviewer',
-      trialDraftHash: 'stale',
-    })
     expect(() => manager.prompt({ sessionId: 't1', content: text('review') })).toThrow(
-      expect.objectContaining({ code: 'trial.draft_changed' }),
+      expect.objectContaining({ code: 'run.unsupported' }),
     )
-    await flush()
     expect(hosts).toEqual([])
   })
 
-  it('rejects a malformed trial session before starting a host', async () => {
-    const { supervisor, hosts } = fakeSupervisor()
-    const { manager } = setup(supervisor)
-    storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work' })
-    storage.sessions.create({
-      sessionId: 't1',
-      projectId: 'p1',
-      workspacePath: '/work',
-      title: '',
-      kind: 'trial',
-    })
-    expect(() => manager.prompt({ sessionId: 't1', content: text('review') })).toThrow(
-      expect.objectContaining({ code: 'storage.not_found' }),
-    )
-    await flush()
-    expect(hosts).toEqual([])
-  })
-
-  it('reads delegation targets from the trial draft', () => {
-    const { manager } = setup(fakeSupervisor().supervisor, {
-      resolveAgent: () => ({
-        ...draftDefinition(),
-        delegation: {
-          enabled: true,
-          allowedAgents: ['builtin.explorer'],
-          maxDepth: 1,
-          maxChildrenPerTurn: 2,
-          maxParallel: 1,
-          childBudgetShare: 0.5,
-          defaultWorkspace: 'auto',
-          mergeReview: 'user',
-        },
-      }),
-    })
-    storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work' })
-    storage.sessions.create({
-      sessionId: 't1',
-      projectId: 'p1',
-      workspacePath: '/work',
-      title: '',
-      kind: 'trial',
-      trialAgentId: 'user.reviewer',
-      trialDraftHash: 'hash-1',
-    })
-    expect(manager.delegationTargets({ sessionId: 't1' })).toEqual({
-      enabled: true,
-      agentIds: ['builtin.explorer'],
-    })
-  })
-
-  it('falls back to the default agent for a malformed trial', () => {
+  it('falls back to the default agent for a malformed trial when reading delegation', () => {
     const { manager } = setup(fakeSupervisor().supervisor)
     storage.projects.create({ projectId: 'p1', name: 'Demo', path: '/work' })
     storage.sessions.create({

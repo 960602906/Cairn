@@ -285,8 +285,8 @@ export interface HostSupervisorOptions {
   readonly resolveMcpTools?: (sessionId: string, agent: RunAgentRef) => readonly McpToolExposure[]
   /**
    * 运行引用的 Agent 定义（M3-11）：宿主据此决定指令、工具选择与上下文策略。省略时宿主按
-   * 内置编程助手的行为运行（全部工具、没有额外指令）。团队试运行时按会话并入模板的委派
-   * 覆盖与协作说明（M7-09）。
+   * 内置编程助手的行为运行（全部工具、没有额外指令）。普通会话选用团队模板时按会话并入
+   * 模板的委派覆盖与协作说明（M7-09）。
    */
   readonly resolveAgentDefinition?: (
     agent: RunAgentRef,

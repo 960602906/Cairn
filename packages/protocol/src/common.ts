@@ -38,14 +38,14 @@ export const AgentDefinitionRef = z.object({
 })
 export type AgentDefinitionRef = z.infer<typeof AgentDefinitionRef>
 
-/** 未发布草稿的引用（M4-12）：哈希标识试运行实际使用的草稿内容。 */
+/** 未发布草稿的引用（M4-12 遗留）：哈希标识历史草稿运行内容；新运行只使用已发布版本。 */
 export const AgentDraftRef = z.object({
   id: Id,
   draftHash: Id,
 })
 export type AgentDraftRef = z.infer<typeof AgentDraftRef>
 
-/** 运行可以引用已发布版本或试运行草稿。 */
+/** 运行可以引用已发布版本；草稿引用仅用于反序列化历史事件。 */
 export const RunAgentRef = z.union([AgentDefinitionRef, AgentDraftRef])
 export type RunAgentRef = z.infer<typeof RunAgentRef>
 
