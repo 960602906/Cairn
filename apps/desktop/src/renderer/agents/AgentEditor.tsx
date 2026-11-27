@@ -333,7 +333,8 @@ export function AgentEditor({
     // store 是稳定的 API 集合，按 agentId 载入
   }, [agentId])
 
-  const readonly = detail?.source === 'builtin' || detail?.archived === true
+  const archived = detail?.archived === true
+  const readonly = detail?.source === 'builtin' || archived
   const published = detail?.published
   /** 已保存的 Agent id；新建草稿第一次保存前没有，试运行与版本页要用。 */
   const savedId = currentId ?? detail?.agentId
@@ -614,12 +615,19 @@ export function AgentEditor({
           <span
             className={cn(
               'shrink-0 rounded-full px-2 py-0.5 text-[11.5px]',
-              published && !dirty && 'bg-ok-soft text-ok',
-              !published && 'bg-warn-soft text-warn',
-              dirty && 'bg-accent-soft text-accent',
+              !archived && published && !dirty && 'bg-ok-soft text-ok',
+              !archived && !published && 'bg-warn-soft text-warn',
+              !archived && dirty && 'bg-accent-soft text-accent',
+              archived && 'bg-sunk text-muted',
             )}
           >
-            {dirty ? t('status.dirty') : published ? t('status.published') : t('status.draft')}
+            {archived
+              ? t('status.archived')
+              : dirty
+                ? t('status.dirty')
+                : published
+                  ? t('status.published')
+                  : t('status.draft')}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -691,7 +699,7 @@ export function AgentEditor({
           >
             {readonly && (
               <p className="rounded-card bg-sunk px-3.5 py-2.5 text-note text-muted">
-                {t('editor.readonly')}
+                {t(archived ? 'editor.archivedReadonly' : 'editor.readonly')}
               </p>
             )}
             {view === 'versions' && detail && (
