@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
-import type { ProviderConfig, Settings, SettingsPatch } from '@cairn/protocol'
+import { RpcError, type ProviderConfig, type Settings, type SettingsPatch } from '@cairn/protocol'
 import type { MainApi } from '../api.js'
 import { App } from '../App.js'
 import { createSessionStore } from '../session-store.js'
@@ -323,7 +323,9 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(card).getByRole('button', { name: /高级/ }))
     expect(within(card).getByText('这种接口格式没有需要调整的兼容参数。')).toBeTruthy()
     await userEvent.click(within(card).getByRole('button', { name: '取消' }))
-    expect(screen.queryByRole('dialog', { name: '新供应商' })).toBeNull()
+    const confirm = screen.getByRole('dialog', { name: '放弃未保存的改动？' })
+    await userEvent.click(within(confirm).getByRole('button', { name: '放弃改动' }))
+    await waitFor(() => expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(0))
   })
 
   it('adds an official service with its template prefilled', async () => {
@@ -483,12 +485,40 @@ describe('ProvidersSettings', () => {
     expect(within(card).getByLabelText('上下文长度')).toBeTruthy()
   })
 
-  it('summarizes a successful multi-model test without a latency', async () => {
-    setup({ providers: [deepseek] }, { 'provider.test': () => ({ ok: true }) })
+  it('tests one model by default and all enabled models only after confirming', async () => {
+    const { request } = setup(
+      {
+        providers: [deepseek],
+        defaultModel: { providerId: 'deepseek', modelId: 'deepseek-v4-pro' },
+      },
+      { 'provider.test': () => ({ ok: true }) },
+    )
     await open()
     const card = await editProvider(/^DeepSeek/)
     await userEvent.click(within(card).getByRole('button', { name: '测试连接' }))
-    const bar = (await within(card).findByRole('status')).textContent ?? ''
+    let bar = (await within(card).findByRole('status')).textContent ?? ''
+    expect(bar).toContain('连接正常')
+    expect(bar).toContain('deepseek-v4-pro · 0 ms')
+    const tested = () => request.mock.calls.filter(([method]) => method === 'provider.test')
+    // 默认只测默认模型
+    expect(tested().map(([, params]) => (params as { modelId: string }).modelId)).toEqual([
+      'deepseek-v4-pro',
+    ])
+
+    await userEvent.click(within(card).getByRole('button', { name: '测试全部 2 个' }))
+    const confirm = screen.getByRole('dialog', { name: '测试全部 2 个模型？' })
+    expect(within(confirm).getByText(/可能消耗额度/)).toBeTruthy()
+    await userEvent.click(within(confirm).getByRole('button', { name: '取消' }))
+    expect(tested()).toHaveLength(1)
+
+    await userEvent.click(within(card).getByRole('button', { name: '测试全部 2 个' }))
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: '测试全部 2 个模型？' })).getByRole('button', {
+        name: '全部测试',
+      }),
+    )
+    await waitFor(() => expect(tested()).toHaveLength(3))
+    bar = (await within(card).findByRole('status')).textContent ?? ''
     expect(bar).toContain('2 个模型连接正常')
     expect(bar).toContain('0 ms')
   })
@@ -512,13 +542,33 @@ describe('ProvidersSettings', () => {
     expect(bar).toContain('claude-x')
   })
 
-  it('closes the editor with Escape without saving', async () => {
+  it('closes a clean editor with Escape and asks before discarding changes', async () => {
     const { updates } = setup({ providers: [gateway] })
     await open()
+    await editProvider(/^公司网关/)
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑供应商' })).toBeNull())
+    expect(screen.queryByRole('dialog', { name: '放弃未保存的改动？' })).toBeNull()
+
     const card = await editProvider(/^公司网关/)
     await userEvent.type(within(card).getByLabelText('名称'), '!')
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑供应商' })).toBeNull())
+    let confirm = screen.getByRole('dialog', { name: '放弃未保存的改动？' })
+    expect(within(confirm).getByText('对这个供应商的改动将会丢失。')).toBeTruthy()
+    await userEvent.click(within(confirm).getByRole('button', { name: '继续编辑' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '放弃未保存的改动？' })).toBeNull(),
+    )
+    expect((within(card).getByLabelText('名称') as HTMLInputElement).value).toBe('公司网关!')
+
+    // 只填了 Key 也算改动，关闭按钮同样要确认
+    await userEvent.click(within(card).getByRole('button', { name: '更换' }))
+    await userEvent.type(within(card).getByLabelText('API Key'), 'sk-new')
+    await userEvent.click(within(card).getByRole('button', { name: '关闭' }))
+    confirm = screen.getByRole('dialog', { name: '放弃未保存的改动？' })
+    expect(within(confirm).getByText(/刚填写的 API Key/)).toBeTruthy()
+    await userEvent.click(within(confirm).getByRole('button', { name: '放弃改动' }))
+    await waitFor(() => expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(0))
     expect(updates).toEqual([])
   })
 
@@ -536,9 +586,16 @@ describe('ProvidersSettings', () => {
     await open()
     const card = await editProvider(/^DeepSeek/)
     await userEvent.click(within(card).getByRole('button', { name: '测试连接' }))
-    const bar = (await within(card).findByRole('status')).textContent ?? ''
-    expect(bar).toContain('2 / 2 个模型连接失败')
+    let bar = (await within(card).findByRole('status')).textContent ?? ''
+    expect(bar).toContain('连接失败')
+    expect(bar).toContain('deepseek-flash')
     expect(bar).toContain('模型服务拒绝了 Key')
+    await userEvent.click(within(card).getByRole('button', { name: '测试全部 2 个' }))
+    await userEvent.click(screen.getByRole('button', { name: '全部测试' }))
+    await waitFor(async () => {
+      bar = (await within(card).findByRole('status')).textContent ?? ''
+      expect(bar).toContain('2 / 2 个模型连接失败')
+    })
     await userEvent.click(within(card).getByRole('button', { name: '取消' }))
     expect(within(list()).getByText('连接失败')).toBeTruthy()
     const reopened = await editProvider(/^DeepSeek/)
@@ -628,6 +685,7 @@ describe('ProvidersSettings', () => {
     expect(context.value).toBe('200000')
 
     await userEvent.click(screen.getByRole('button', { name: '取消' }))
+    await userEvent.click(screen.getByRole('button', { name: '放弃改动' }))
     await userEvent.click(screen.getByRole('tab', { name: /Anthropic/ }))
     const gatewayCard = await editProvider(/^公司网关/)
     await userEvent.click(within(gatewayCard).getByRole('button', { name: '手动添加' }))
@@ -710,5 +768,340 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(card).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(screen.getByRole('dialog', { name: '编辑供应商' })).toBeTruthy())
     expect(within(card).getByLabelText('API Key')).toBeTruthy()
+  })
+
+  it('adds a catalog service by pasting only the key (ADR-0049)', async () => {
+    const { request, updates } = setup(
+      {},
+      {
+        'provider.models': () => ({
+          ok: true,
+          models: [{ id: 'moonshot-v1-8k' }, { id: 'kimi-k3' }, { id: 'kimi-k2.5' }],
+        }),
+      },
+    )
+    await open()
+    const picker = await openAddDialog()
+    // 按类别分组，不再按接口格式
+    expect(within(picker).getByRole('heading', { name: '模型厂商' })).toBeTruthy()
+    expect(within(picker).getByRole('heading', { name: '聚合平台与中转' })).toBeTruthy()
+    expect(within(picker).getByRole('heading', { name: '本机运行' })).toBeTruthy()
+    await userEvent.click(within(picker).getByRole('button', { name: /^Kimi/ }))
+    const card = screen.getByRole('dialog', { name: '新供应商' })
+
+    // 中文界面默认中国大陆站，申请 Key 的链接跟着接入点
+    expect((within(card).getByLabelText('Base URL') as HTMLInputElement).value).toBe(
+      'https://api.moonshot.cn/v1',
+    )
+    expect(
+      within(card)
+        .getByRole('link', { name: /获取 API Key/ })
+        .getAttribute('href'),
+    ).toBe('https://platform.moonshot.cn/console/api-keys')
+    expect(within(card).getByText('OpenAI · 官方')).toBeTruthy()
+    const key = within(card).getByLabelText('API Key')
+    await waitFor(() => expect(document.activeElement).toBe(key))
+    expect(within(card).getByText('填入 API Key 后会自动拉取模型列表。')).toBeTruthy()
+
+    await userEvent.type(key, 'sk-kimi-key-0001')
+    // 停止输入后自动拉取，并启用建议的模型
+    expect(
+      await within(card).findByRole('switch', { name: '启用 kimi-k3' }, { timeout: 3000 }),
+    ).toBeTruthy()
+    expect(within(card).getByRole('switch', { name: '启用 kimi-k2.5' })).toBeTruthy()
+    expect(within(card).getByRole('switch', { name: '添加 moonshot-v1-8k' })).toBeTruthy()
+    expect(request.mock.calls.filter(([method]) => method === 'provider.models')).toHaveLength(1)
+    expect(request).toHaveBeenCalledWith('provider.models', {
+      provider: expect.objectContaining({ baseUrl: 'https://api.moonshot.cn/v1' }),
+      secret: 'sk-kimi-key-0001',
+    })
+
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).toMatchObject({
+      providers: [
+        expect.objectContaining({
+          id: 'moonshot',
+          kind: 'openai',
+          displayName: 'Kimi',
+          baseUrl: 'https://api.moonshot.cn/v1',
+          credentialRef: 'moonshot',
+          template: 'moonshot',
+          compat: expect.objectContaining({ maxTokensField: 'max_tokens' }),
+          models: [
+            expect.objectContaining({ id: 'kimi-k3', contextWindow: 262_144 }),
+            expect.objectContaining({ id: 'kimi-k2.5' }),
+          ],
+        }),
+      ],
+      defaultModel: { providerId: 'moonshot', modelId: 'kimi-k3' },
+    })
+    // Key 先于设置写入
+    const methods = request.mock.calls.map(([method]) => method)
+    expect(methods.indexOf('credentials.set')).toBeLessThan(methods.indexOf('settings.update'))
+  })
+
+  it('switches a service between its global and China endpoints', async () => {
+    setup()
+    await open()
+    const card = await addService(/^Qwen/)
+    const url = within(card).getByLabelText('Base URL') as HTMLInputElement
+    expect(url.value).toBe('https://dashscope.aliyuncs.com/compatible-mode/v1')
+    const regions = within(card).getByRole('radiogroup', { name: '区域' })
+    await userEvent.click(within(regions).getByRole('radio', { name: '国际' }))
+    expect(url.value).toBe('https://dashscope-intl.aliyuncs.com/compatible-mode/v1')
+    expect(
+      within(card)
+        .getByRole('link', { name: /获取 API Key/ })
+        .getAttribute('href'),
+    ).toBe('https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key')
+    expect(within(card).getByText('OpenAI · 官方')).toBeTruthy()
+    // 手改地址后不属于任何接入点，来源变为第三方中转
+    await userEvent.clear(url)
+    await userEvent.type(url, 'https://proxy.example.com/v1')
+    expect(within(regions).queryByRole('radio', { checked: true })).toBeNull()
+    expect(within(card).getByText('OpenAI · 第三方中转')).toBeTruthy()
+  })
+
+  it('adds a local server without a key and enables its installed models', async () => {
+    const { request, updates } = setup(
+      {},
+      {
+        'provider.models': () => ({ ok: true, models: [{ id: 'qwen3:8b' }, { id: 'llama4' }] }),
+      },
+    )
+    await open()
+    const picker = await openAddDialog()
+    const tile = within(picker).getByRole('button', { name: /^Ollama/ })
+    expect(within(tile).getByText('免 Key')).toBeTruthy()
+    await userEvent.click(tile)
+    const card = screen.getByRole('dialog', { name: '新供应商' })
+    expect(within(card).getByText(/本机服务通常不需要 Key/)).toBeTruthy()
+    expect(await within(card).findByRole('switch', { name: '启用 qwen3:8b' })).toBeTruthy()
+    expect(within(card).getByRole('switch', { name: '启用 llama4' })).toBeTruthy()
+    expect(request).toHaveBeenCalledWith('provider.models', {
+      provider: expect.objectContaining({ baseUrl: 'http://localhost:11434/v1' }),
+    })
+    // 只有自动拉取，没有用户改动：直接关闭不用确认
+    await userEvent.click(within(card).getByRole('button', { name: '关闭' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '新供应商' })).toBeNull())
+
+    const again = await addService(/^Ollama/)
+    await within(again).findByRole('switch', { name: '启用 qwen3:8b' })
+    await userEvent.click(within(again).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    const saved = updates[0]!.providers![0]!
+    expect(saved).toMatchObject({ id: 'ollama', template: 'ollama' })
+    expect(saved).not.toHaveProperty('credentialRef')
+    expect(request).not.toHaveBeenCalledWith('credentials.set', expect.anything())
+    expect(within(list()).queryByText('未保存 Key')).toBeNull()
+  })
+
+  it('searches the catalog and keeps the custom formats', async () => {
+    setup()
+    await open()
+    const picker = await openAddDialog()
+    const search = within(picker).getByLabelText('搜索服务')
+    await userEvent.type(search, 'silicon')
+    expect(within(picker).getByRole('button', { name: /^SiliconFlow/ })).toBeTruthy()
+    expect(within(picker).queryByRole('button', { name: /^DeepSeek/ })).toBeNull()
+    await userEvent.clear(search)
+    await userEvent.type(search, 'openrouter.ai')
+    expect(within(picker).getByRole('button', { name: /^OpenRouter/ })).toBeTruthy()
+    await userEvent.clear(search)
+    await userEvent.type(search, 'no-such-service')
+    expect(within(picker).getByText(/没有匹配的服务/)).toBeTruthy()
+    for (const format of ['OpenAI', 'Anthropic', 'Gemini']) {
+      expect(
+        within(picker).getByRole('button', { name: `自定义 / 第三方中转（${format} 格式）` }),
+      ).toBeTruthy()
+    }
+  })
+
+  it('does not save the provider when the key cannot be saved', async () => {
+    const { updates } = setup(
+      {},
+      {
+        'credentials.set': () => {
+          throw new Error('keychain locked')
+        },
+      },
+    )
+    await open()
+    const card = await addService(/^DeepSeek/)
+    await userEvent.type(within(card).getByLabelText('API Key'), 'sk-deepseek-0001')
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    expect((await within(card).findByRole('alert')).textContent).toBe(
+      'Key 没有保存成功，所以没有改动任何设置。',
+    )
+    expect(updates).toEqual([])
+    expect(screen.getByRole('dialog', { name: '新供应商' })).toBeTruthy()
+  })
+
+  it('rolls back a new key when the settings cannot be saved', async () => {
+    const { request } = setup({}, { 'settings.update': () => undefined })
+    await open()
+    const card = await addService(/^DeepSeek/)
+    await userEvent.type(within(card).getByLabelText('API Key'), 'sk-deepseek-0001')
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    expect((await within(card).findByRole('alert')).textContent).toBe(
+      '供应商没有保存成功，没有改动任何设置。',
+    )
+    expect(request).toHaveBeenCalledWith('credentials.set', {
+      ref: 'deepseek',
+      secret: 'sk-deepseek-0001',
+    })
+    expect(request).toHaveBeenCalledWith('credentials.delete', { ref: 'deepseek' })
+  })
+
+  it('explains that a replaced key stays when the settings cannot be saved', async () => {
+    const { request } = setup({ providers: [deepseek] }, { 'settings.update': () => undefined })
+    await open()
+    const card = await editProvider(/^DeepSeek/)
+    await userEvent.click(await within(card).findByRole('button', { name: '更换' }))
+    await userEvent.type(within(card).getByLabelText('API Key'), 'sk-replaced-0002')
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    expect((await within(card).findByRole('alert')).textContent).toContain(
+      '新的 Key 已经替换了原来的 Key',
+    )
+    expect(request).not.toHaveBeenCalledWith('credentials.delete', expect.anything())
+  })
+
+  it('lists plugin services in the catalog and adds one', async () => {
+    const plugin = {
+      id: 'acme',
+      name: 'Acme Cloud',
+      version: '1.2.0',
+      templates: [
+        {
+          id: 'acme.gateway',
+          kind: 'openai',
+          category: 'relay',
+          displayName: 'Acme Gateway',
+          baseUrl: 'https://api.acme.example/v1',
+          requiresKey: true,
+          keysUrl: 'https://acme.example/keys',
+          compat: { maxTokensField: 'max_tokens' },
+          models: [{ id: 'acme-large', ...cap }],
+          modelDefaults: cap,
+          pluginId: 'acme',
+        },
+      ],
+    }
+    const { updates } = setup(
+      {},
+      { 'providerPlugin.list': () => ({ plugins: [plugin], skipped: [] }) },
+    )
+    await open()
+    const picker = await openAddDialog()
+    const tile = within(picker).getByRole('button', { name: /^Acme Gateway/ })
+    expect(within(tile).getByText('插件')).toBeTruthy()
+    const installed = within(picker).getByRole('list', { name: '已安装的插件' })
+    expect(within(installed).getByText('Acme Cloud')).toBeTruthy()
+    expect(within(installed).getByText('v1.2.0')).toBeTruthy()
+    await userEvent.click(tile)
+    const card = screen.getByRole('dialog', { name: '新供应商' })
+    expect((within(card).getByLabelText('Base URL') as HTMLInputElement).value).toBe(
+      'https://api.acme.example/v1',
+    )
+    expect(
+      within(card)
+        .getByRole('link', { name: /获取 API Key/ })
+        .getAttribute('href'),
+    ).toBe('https://acme.example/keys')
+    expect(within(card).getByText('OpenAI · 官方')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('API Key'), 'sk-acme-0001')
+    await userEvent.click(within(card).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]!.providers![0]).toMatchObject({
+      id: 'acme.gateway',
+      template: 'acme.gateway',
+      credentialRef: 'acme.gateway',
+      compat: { maxTokensField: 'max_tokens' },
+      models: [expect.objectContaining({ id: 'acme-large' })],
+    })
+  })
+
+  it('installs a provider plugin after previewing it, and removes it', async () => {
+    const plugin = {
+      id: 'acme',
+      name: 'Acme Cloud',
+      templates: [
+        {
+          id: 'acme.gateway',
+          kind: 'openai',
+          category: 'relay',
+          displayName: 'Acme Gateway',
+          baseUrl: 'https://api.acme.example/v1',
+          requiresKey: true,
+          models: [],
+          modelDefaults: cap,
+          pluginId: 'acme',
+        },
+      ],
+    }
+    let installed = false
+    let invalid = true
+    const { request } = setup(
+      {},
+      {
+        'providerPlugin.list': () => ({
+          plugins: installed ? [plugin] : [],
+          skipped: [{ file: 'broken.json', code: 'providers.plugin.invalid' }],
+        }),
+        'providerPlugin.pick': () => ({ path: '/downloads/acme.json' }),
+        'providerPlugin.install': (params: never) => {
+          const { confirm } = params as { confirm?: boolean }
+          if (invalid) throw new RpcError('providers.plugin.unsupported_version')
+          if (confirm) installed = true
+          return { installed: confirm === true, replaces: false, plugin }
+        },
+        'providerPlugin.remove': () => {
+          installed = false
+          return {}
+        },
+      },
+    )
+    await open()
+    const picker = await openAddDialog()
+    expect(within(picker).getByText(/broken\.json 未能加载/)).toBeTruthy()
+
+    await userEvent.click(within(picker).getByRole('button', { name: '从文件安装…' }))
+    expect((await within(picker).findByRole('alert')).textContent).toContain(
+      '这个插件需要更新版本的 Cairn',
+    )
+
+    invalid = false
+    await userEvent.click(within(picker).getByRole('button', { name: '从文件安装…' }))
+    let preview = await screen.findByRole('dialog', { name: '安装 Acme Cloud？' })
+    await userEvent.click(within(preview).getByRole('button', { name: '取消' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '安装 Acme Cloud？' })).toBeNull(),
+    )
+    expect(request).not.toHaveBeenCalledWith(
+      'providerPlugin.install',
+      expect.objectContaining({ confirm: true }),
+    )
+
+    await userEvent.click(within(picker).getByRole('button', { name: '从文件安装…' }))
+    preview = await screen.findByRole('dialog', { name: '安装 Acme Cloud？' })
+    expect(within(preview).getByText('https://api.acme.example/v1')).toBeTruthy()
+    expect(within(preview).getByText(/请只安装你信任的插件/)).toBeTruthy()
+    expect(request).toHaveBeenCalledWith('providerPlugin.install', { path: '/downloads/acme.json' })
+    await userEvent.click(within(preview).getByRole('button', { name: '安装' }))
+    expect(request).toHaveBeenCalledWith('providerPlugin.install', {
+      path: '/downloads/acme.json',
+      confirm: true,
+    })
+    expect(await within(picker).findByRole('button', { name: /^Acme Gateway/ })).toBeTruthy()
+
+    await userEvent.click(within(picker).getByRole('button', { name: '卸载 Acme Cloud' }))
+    const confirm = screen.getByRole('dialog', { name: '卸载 Acme Cloud？' })
+    expect(within(confirm).getByText(/仍可使用/)).toBeTruthy()
+    await userEvent.click(within(confirm).getByRole('button', { name: '卸载插件' }))
+    expect(request).toHaveBeenCalledWith('providerPlugin.remove', { id: 'acme' })
+    await waitFor(() =>
+      expect(within(picker).queryByRole('button', { name: /^Acme Gateway/ })).toBeNull(),
+    )
   })
 })

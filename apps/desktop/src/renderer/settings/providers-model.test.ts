@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { findTemplate } from '@cairn/core'
 import type { ProviderConfig } from '@cairn/protocol'
 import {
+  catalogGroups,
+  catalogOf,
   configOf,
+  credentialRefFor,
   draftOf,
   enabledModelIdsOf,
+  hostOf,
   formatTokens,
   initials,
   logoColor,
@@ -16,6 +20,7 @@ import {
   slugId,
   sourceOf,
   templatesOf,
+  testTargetOf,
   uniqueProviderId,
   GENERIC_MODEL_DEFAULTS,
 } from './providers-model.js'
@@ -37,7 +42,75 @@ describe('providers-model', () => {
     )
     expect(sourceOf({ template: 'deepseek', baseUrl: 'http://127.0.0.1:3425/v1' })).toBe('relay')
     expect(sourceOf({ baseUrl: 'https://api.deepseek.com' })).toBe('relay')
-    expect(templatesOf('openai').map((t) => t.id)).toEqual(['deepseek', 'openai'])
+    // 任一接入点都算官方
+    expect(
+      sourceOf({ template: 'qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' }),
+    ).toBe('official')
+    // 找不到模板（如插件已卸载）时按中转处理
+    expect(sourceOf({ template: 'gone.plugin', baseUrl: 'https://x' })).toBe('relay')
+    const openai = templatesOf('openai').map((t) => t.id)
+    expect(openai).toEqual(expect.arrayContaining(['deepseek', 'openai', 'qwen', 'openrouter']))
+    expect(openai).not.toContain('anthropic')
+    expect(templatesOf('anthropic').map((t) => t.id)).toEqual(['anthropic'])
+  })
+
+  it('merges plugin templates into the catalog and groups it by category', () => {
+    const plugin = {
+      id: 'acme',
+      name: 'Acme',
+      templates: [
+        {
+          ...findTemplate('openrouter')!,
+          id: 'acme.gw',
+          displayName: 'Acme Gateway',
+          baseUrl: 'https://gw.acme.example/v1',
+          pluginId: 'acme',
+        },
+      ],
+    }
+    expect(catalogOf(undefined)).toBe(catalogOf([]))
+    const catalog = catalogOf([plugin])
+    expect(catalog.at(-1)?.id).toBe('acme.gw')
+    expect(sourceOf({ template: 'acme.gw', baseUrl: 'https://gw.acme.example/v1' }, catalog)).toBe(
+      'official',
+    )
+    expect(modelDefaults('acme.gw', catalog)).toBe(plugin.templates[0]!.modelDefaults)
+
+    const groups = catalogGroups(catalog)
+    expect(groups.map((g) => g.category)).toEqual(['vendor', 'relay', 'local'])
+    expect(groups[0]!.templates[0]!.id).toBe('deepseek')
+    expect(groups[1]!.templates.map((t) => t.id)).toContain('acme.gw')
+    expect(groups[2]!.templates.map((t) => t.id)).toEqual(['ollama', 'lmstudio'])
+    // 按名称、id 或主机名搜索，大小写不敏感
+    expect(catalogGroups(catalog, 'ACME')[0]!.templates.map((t) => t.id)).toEqual(['acme.gw'])
+    expect(catalogGroups(catalog, 'bigmodel.cn')[0]!.templates.map((t) => t.id)).toEqual(['zhipu'])
+    expect(catalogGroups(catalog, 'nothing-matches')).toEqual([])
+    expect(hostOf('https://API.Example.com:8443/v1?x')).toBe('api.example.com:8443')
+    expect(hostOf('not a url')).toBe('not a url')
+  })
+
+  it('picks the endpoint by locale for services with regions', () => {
+    const qwen = findTemplate('qwen')!
+    expect(newDraft(qwen, 'zh-CN').baseUrl).toBe(
+      'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    )
+    expect(newDraft(qwen, 'en-US').baseUrl).toBe(
+      'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    )
+    expect(newDraft(findTemplate('deepseek')!, 'zh-CN').baseUrl).toBe('https://api.deepseek.com')
+  })
+
+  it('gives a credential reference only when a key may be needed', () => {
+    const saved = { ...p('x'), credentialRef: 'old-ref' }
+    const ollama = findTemplate('ollama')
+    const kimi = findTemplate('moonshot')
+    expect(credentialRefFor(saved, 'x', kimi, false)).toBe('old-ref')
+    expect(credentialRefFor(p('x'), 'x', undefined, false)).toBeUndefined()
+    expect(credentialRefFor(p('x'), 'x', undefined, true)).toBe('x')
+    expect(credentialRefFor(undefined, 'new', kimi, false)).toBe('new')
+    expect(credentialRefFor(undefined, 'new', undefined, false)).toBe('new')
+    expect(credentialRefFor(undefined, 'ollama', ollama, false)).toBeUndefined()
+    expect(credentialRefFor(undefined, 'ollama', ollama, true)).toBe('ollama')
   })
 
   it('draws initials, colors and token sizes', () => {
@@ -130,7 +203,19 @@ describe('providers-model', () => {
     expect(modelRowsOf([], undefined)).toEqual([])
   })
 
-  it('tests every enabled model', () => {
+  it('tests the default model, or the first enabled one', () => {
+    const models = [
+      { ...GENERIC_MODEL_DEFAULTS, id: 'off', enabled: false },
+      { ...GENERIC_MODEL_DEFAULTS, id: 'a' },
+      { ...GENERIC_MODEL_DEFAULTS, id: 'b' },
+    ]
+    expect(testTargetOf(models, 'b')).toBe('b')
+    expect(testTargetOf(models, undefined)).toBe('a')
+    expect(testTargetOf(models, 'off')).toBe('a')
+    expect(testTargetOf([models[0]!], undefined)).toBeUndefined()
+  })
+
+  it('lists every enabled model', () => {
     const models = [
       { ...GENERIC_MODEL_DEFAULTS, id: 'off', enabled: false },
       { ...GENERIC_MODEL_DEFAULTS, id: 'a' },

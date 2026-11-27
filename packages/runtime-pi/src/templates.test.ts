@@ -40,14 +40,20 @@ const CATALOGS: Readonly<Record<string, readonly CatalogEntry[]>> = {
 const template = (id: string): ProviderTemplate => findTemplate(id)!
 
 describe('配置模板', () => {
-  it('四个模板，id 不重复，都需要 Key', () => {
-    expect(PROVIDER_TEMPLATES.map((t) => t.id)).toEqual([
+  it('预置模型的四个模板在前，id 不重复；只有本机服务不需要 Key', () => {
+    expect(PROVIDER_TEMPLATES.slice(0, 4).map((t) => t.id)).toEqual([
       'deepseek',
       'anthropic',
       'openai',
       'gemini',
     ])
-    expect(PROVIDER_TEMPLATES.every((t) => t.requiresKey)).toBe(true)
+    expect(new Set(PROVIDER_TEMPLATES.map((t) => t.id)).size).toBe(PROVIDER_TEMPLATES.length)
+    expect(PROVIDER_TEMPLATES.filter((t) => !t.requiresKey).map((t) => t.id)).toEqual([
+      'ollama',
+      'lmstudio',
+    ])
+    // 其余模板不预置模型，填 Key 后从服务拉取
+    expect(PROVIDER_TEMPLATES.slice(4).every((t) => t.models.length === 0)).toBe(true)
     expect(findTemplate('missing')).toBeUndefined()
   })
 
@@ -230,6 +236,31 @@ describe('经代理地址的请求（mock 端点）', () => {
     expect(first).not.toHaveProperty('max_completion_tokens')
     const history = requests[1]!.body['messages'] as { role: string; reasoning_content?: string }[]
     expect(history.find((m) => m.role === 'assistant')?.reasoning_content).toBe('想一想。')
+  })
+
+  it('Qwen 模板：经代理地址请求带 enable_thinking 与 max_tokens', async () => {
+    const provider = {
+      ...providerFromTemplate(template('qwen'), { id: 'gateway' }),
+      models: [{ id: 'qwen-plus', ...template('qwen').modelDefaults }],
+    }
+    const { requests } = await send(provider, 'qwen-plus')
+    const first = requests[0]!.body
+    expect(first['enable_thinking']).toBe(true)
+    expect(first).not.toHaveProperty('reasoning_effort')
+    expect(first).toHaveProperty('max_tokens')
+    expect(first).not.toHaveProperty('store')
+  })
+
+  it('智谱 GLM 模板：经代理地址请求带 thinking 参数', async () => {
+    const provider = {
+      ...providerFromTemplate(template('zhipu'), { id: 'gateway' }),
+      models: [{ id: 'glm-5', ...template('zhipu').modelDefaults }],
+    }
+    const { requests } = await send(provider, 'glm-5')
+    const first = requests[0]!.body
+    expect(first['thinking']).toMatchObject({ type: 'enabled' })
+    expect(first).not.toHaveProperty('reasoning_effort')
+    expect(first).toHaveProperty('max_tokens')
   })
 
   it('不用模板（普通 openai 配置）时代理地址上没有这些参数', async () => {
