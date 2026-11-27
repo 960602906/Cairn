@@ -1,5 +1,5 @@
 /**
- * 设置页视觉验收：四种窗口尺寸 × 八个分类，全部不能出现横向滚动；同时检查分类搜索与
+ * 设置页视觉验收：四种窗口尺寸 × 全部分类，全部不能出现横向滚动；同时检查分类搜索与
  * Windows 窗口标题区底色是否跟随主题。
  */
 import { mkdirSync } from 'node:fs'
@@ -20,7 +20,9 @@ const SIZES = [
 
 const SECTIONS = [
   ['general', '通用与外观'],
+  ['archived', '已归档的对话'],
   ['agents', 'Agents'],
+  ['teams', '团队模板'],
   ['providers', '模型供应商'],
   ['skills', '技能'],
   ['mcp', 'MCP 服务'],
@@ -48,6 +50,12 @@ async function noHorizontalOverflow(page: Page) {
   expect(metrics.body, JSON.stringify(metrics)).toBeLessThanOrEqual(metrics.inner + 1)
 }
 
+/** 等分类里的异步内容就绪：团队模板列表至少要有内置模板，否则测到的是空状态。 */
+async function waitForSectionContent(window: Page, id: string) {
+  if (id !== 'teams') return
+  await expect(window.getByText('代码审查小组')).toBeVisible()
+}
+
 test('设置页在四种窗口尺寸下都不溢出', async ({ launch }) => {
   const app = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
   const window = app.window
@@ -60,6 +68,7 @@ test('设置页在四种窗口尺寸下都不溢出', async ({ launch }) => {
     for (const [id, title] of SECTIONS) {
       await nav.getByRole('button', { name: new RegExp(`^${title}`) }).click()
       await expect(window.getByRole('heading', { name: title, level: 2 })).toBeVisible()
+      await waitForSectionContent(window, id)
       await noHorizontalOverflow(window)
       if (size.width === 1440) {
         await window.screenshot({
@@ -78,13 +87,18 @@ test('设置页在四种窗口尺寸下都不溢出', async ({ launch }) => {
   await expect(nav.getByRole('button', { name: /^模型供应商/ })).toHaveCount(0)
   await expect(nav.getByRole('button', { name: /^通用与外观/ })).toHaveCount(0)
 
+  // 团队模板的关键词也能命中所属分类。
+  await window.getByRole('searchbox', { name: '搜索设置' }).fill('团队')
+  await expect(nav.getByRole('button', { name: /^团队模板/ })).toBeVisible()
+  await expect(nav.getByRole('button', { name: /^Agents/ })).toHaveCount(0)
+
   // 搜索具体设置项（而不是分类名）也能定位到所属分类
   await window.getByRole('searchbox', { name: '搜索设置' }).fill('shell')
   await expect(nav.getByRole('button', { name: /^通用与外观/ })).toBeVisible()
   await expect(nav.getByRole('button', { name: /^技能/ })).toHaveCount(0)
 })
 
-test('浅色主题在窄窗口下八个分类都不溢出', async ({ launch }) => {
+test('浅色主题在窄窗口下全部分类都不溢出', async ({ launch }) => {
   const app = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
   const window = app.window
 
@@ -99,8 +113,9 @@ test('浅色主题在窄窗口下八个分类都不溢出', async ({ launch }) =
   for (const [id, title] of SECTIONS) {
     await nav.getByRole('button', { name: new RegExp(`^${title}`) }).click()
     await expect(window.getByRole('heading', { name: title, level: 2 })).toBeVisible()
+    await waitForSectionContent(window, id)
     await noHorizontalOverflow(window)
-    if (id === 'general' || id === 'skills' || id === 'mcp' || id === 'memory') {
+    if (id === 'general' || id === 'skills' || id === 'mcp' || id === 'memory' || id === 'teams') {
       await window.screenshot({
         path: path.join(ARTIFACTS, `section-${id}-light-880x800.png`),
       })
@@ -108,8 +123,9 @@ test('浅色主题在窄窗口下八个分类都不溢出', async ({ launch }) =
   }
 
   await resizeWindow(app.app, window, { width: 1024, height: 768 })
-  for (const [, title] of SECTIONS) {
+  for (const [id, title] of SECTIONS) {
     await nav.getByRole('button', { name: new RegExp(`^${title}`) }).click()
+    await waitForSectionContent(window, id)
     await noHorizontalOverflow(window)
   }
 
