@@ -411,7 +411,8 @@ M7-09 落地（试运行与验收）：
 
 - 团队模板命令：`team.list` / `team.get` / `team.saveDraft` / `team.publish`，草稿与已发布
   版本分开，发布沿用 `validateAgentTeam`（模板里省略的委派字段沿用主控 Agent）；
-  `team.archive` / `team.unarchive` 归档或恢复模板，归档后只读、默认列表隐藏，草稿与版本保留。
+  `team.archive` / `team.unarchive` 归档或恢复模板，归档后只读、默认列表隐藏，草稿与版本保留；
+  归档模板仍可复制为副本，取消归档后继续编辑、发布与试运行。
 - 试运行：`team.trial.start` 在草稿状态开一个标记为 `trial` 的隐藏会话（与 Agent 试运行同一套
   基础设施），默认只读；会话记录 `trial_team_id` 与模板草稿哈希（迁移 0020），模板之后又改过
   时可以判断。以主控 Agent 的草稿为根运行，`applyTeamToAgentDefinition` 把模板的委派覆盖并入

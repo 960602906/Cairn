@@ -978,6 +978,20 @@ describe('TeamEditor', () => {
     expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
     expect(screen.queryByRole('button', { name: '恢复为草稿' })).toBeNull()
 
+    // 归档的模板仍可复制为副本：保存成不带 id 的新模板并打开它。
+    fireEvent.click(screen.getByRole('button', { name: '复制为副本' }))
+    await waitFor(() =>
+      expect(archived.calls).toContainEqual({
+        method: 'team.saveDraft',
+        params: {
+          definition: expect.objectContaining({
+            name: { 'zh-CN': '发布团队 副本', 'en-US': '发布团队 copy' },
+          }),
+        },
+      }),
+    )
+    await waitFor(() => expect(archivedResult.onOpenTeam).toHaveBeenCalledWith('user.team-new'))
+
     fireEvent.click(screen.getByRole('button', { name: '取消归档' }))
     await waitFor(() =>
       expect(archived.calls).toContainEqual({

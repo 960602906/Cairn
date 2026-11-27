@@ -278,6 +278,9 @@
   for each, and supports search. An archived current agent keeps its name and is marked "Archived";
   while running, the picker says you can switch after the run ends.
 
+- 归档的团队模板也可以「复制为副本」：不必先取消归档，就能用当前内容另存为新的可编辑模板。
+  Archived team templates can now be duplicated as-is, without unarchiving first.
+
 ### Fixed
 
 - 中键关闭会话信息栏的后台标签时，不再把焦点从对话里抢到标签栏；只有关闭动作发生在面板
