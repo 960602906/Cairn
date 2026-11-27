@@ -290,10 +290,33 @@ describe('AgentEditor sections and actions', () => {
     expect(createObjectURL).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalled()
 
-    // 归档
+    // 归档：确认后执行，避免误点菜单丢改动。
     await chooseMoreAction('归档')
+    const archiveDialog = await screen.findByRole('dialog')
+    expect(within(archiveDialog).getByText('归档这个 Agent？')).toBeDefined()
+    fireEvent.click(within(archiveDialog).getByRole('button', { name: '归档' }))
     await waitFor(() => expect(onBack).toHaveBeenCalled())
     click.mockRestore()
+  })
+
+  it('asks before archiving with unsaved changes', async () => {
+    const onBack = vi.fn()
+    const store = makeStore({
+      'agent.get': () => mockDetail,
+      'agent.archive': () => ({ ...mockDetail, archived: true }),
+    })
+    renderEditor(store, { onBack })
+    await screen.findByText('测试助手')
+    fireEvent.change(screen.getByDisplayValue('测试助手'), { target: { value: '改了' } })
+
+    await chooseMoreAction('归档')
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('归档这个 Agent？')).toBeDefined()
+    expect(within(dialog).getByText('当前未保存的修改会丢失。')).toBeDefined()
+    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(onBack).not.toHaveBeenCalled()
+    expect(screen.getByDisplayValue('改了')).toBeDefined()
   })
 
   it('shows builtin as read-only and duplicates it', async () => {

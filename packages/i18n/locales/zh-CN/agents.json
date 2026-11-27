@@ -209,6 +209,7 @@
   "archive.title": "归档这个 Agent？",
   "archive.description": "归档后从列表与会话选择器中隐藏，历史会话仍能显示。",
   "archive.confirm": "归档",
+  "archive.dirty": "当前未保存的修改会丢失。",
   "issue.name_required": "至少填写一种语言的名称",
   "issue.description_required": "至少填写一种语言的描述",
   "issue.instructions_too_long": "指令太长",

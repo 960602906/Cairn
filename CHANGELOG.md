@@ -327,6 +327,10 @@
   The "Restore as draft" action is now hidden in the version history of built-in or archived
   agents, matching team templates; old versions remain available for viewing and comparison.
 
+- 从「⋯」菜单归档 Agent 前会先确认；有未保存的修改时明确提示会丢失，不再误点后直接归档。
+  Archiving an agent from the "⋯" menu now asks for confirmation first and warns that unsaved
+  changes will be lost, matching team templates.
+
 ## [0.1.7] - 2026-11-27
 
 ### Fixed

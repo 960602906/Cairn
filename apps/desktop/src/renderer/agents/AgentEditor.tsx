@@ -293,6 +293,7 @@ export function AgentEditor({
   const [savedAt, setSavedAt] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmPublish, setConfirmPublish] = useState(false)
+  const [confirmArchive, setConfirmArchive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [trialOpen, setTrialOpen] = useState(false)
   const [showOtherLanguage, setShowOtherLanguage] = useState(false)
@@ -476,6 +477,7 @@ export function AgentEditor({
   const archive = async () => {
     const id = currentId ?? detail?.agentId
     if (!id) return
+    setConfirmArchive(false)
     setBusy(true)
     const next = await store.archiveAgent(id)
     setBusy(false)
@@ -582,7 +584,7 @@ export function AgentEditor({
         {detail?.archived !== true && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={busy} onSelect={() => void archive()}>
+            <DropdownMenuItem disabled={busy} onSelect={() => setConfirmArchive(true)}>
               <Archive />
               {t('editor.archive')}
             </DropdownMenuItem>
@@ -1247,6 +1249,22 @@ export function AgentEditor({
             </DialogClose>
             <Button variant="primary" disabled={busy} onClick={() => void publish()}>
               {t('publish.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmArchive} onOpenChange={setConfirmArchive}>
+        <DialogContent>
+          <DialogTitle>{t('archive.title')}</DialogTitle>
+          <DialogDescription>{t('archive.description')}</DialogDescription>
+          {dirty && <p className="mt-3 text-note text-warn">{t('archive.dirty')}</p>}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="secondary">{t('editor.leave.cancel')}</Button>
+            </DialogClose>
+            <Button variant="primary" disabled={busy} onClick={() => void archive()}>
+              {t('archive.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>

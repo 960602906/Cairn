@@ -209,6 +209,7 @@
   "archive.title": "Archive this agent?",
   "archive.description": "Archived agents are hidden from the list and picker; past sessions still show them.",
   "archive.confirm": "Archive",
+  "archive.dirty": "Unsaved changes will be lost.",
   "issue.name_required": "Fill in a name in at least one language",
   "issue.description_required": "Fill in a description in at least one language",
   "issue.instructions_too_long": "Instructions are too long",
