@@ -22,6 +22,10 @@ test('内置模板只读，可试运行并复制为可编辑的副本', async ({
   await list.getByRole('button', { name: /代码审查小组/ }).click()
   await expect(window.getByRole('heading', { name: '代码审查小组', level: 2 })).toBeVisible()
   await expect(window.getByText(/内置模板只读/)).toBeVisible()
+  await expect(window.getByText('内置', { exact: true })).toBeVisible()
+  // 表单整块只读：浏览器里也不能输入。
+  await expect(window.getByLabel('中文名称')).toBeDisabled()
+  await expect(window.getByLabel('主控 Agent')).toBeDisabled()
   await expect(window.getByRole('button', { name: '试运行' })).toBeEnabled()
   await expect(window.getByRole('button', { name: '复制为副本' })).toBeVisible()
   await expect(window.getByRole('button', { name: '保存草稿' })).toHaveCount(0)
@@ -39,6 +43,9 @@ test('内置模板只读，可试运行并复制为可编辑的副本', async ({
   await window.getByRole('button', { name: '复制为副本' }).click()
   await expect(window.getByRole('heading', { name: '代码审查小组 副本', level: 2 })).toBeVisible()
   await expect(window.getByText(/内置模板只读/)).toHaveCount(0)
+  await expect(window.getByText('内置', { exact: true })).toHaveCount(0)
+  await expect(window.getByLabel('中文名称')).toBeEnabled()
+  await expect(window.getByLabel('主控 Agent')).toBeEnabled()
   await expect(window.getByRole('button', { name: '保存草稿' })).toBeVisible()
   await expect(window.getByRole('button', { name: /^发布 v1/ })).toBeVisible()
 
