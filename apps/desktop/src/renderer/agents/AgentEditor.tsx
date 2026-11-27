@@ -684,7 +684,11 @@ export function AgentEditor({
           />
         </div>
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-[720px] flex-col gap-5 px-6 py-5">
+          {/* 只读 Agent（内置或已归档）整块禁用：避免看起来能改，保存时却被拒绝。 */}
+          <fieldset
+            disabled={readonly}
+            className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col gap-5 border-0 px-6 py-5"
+          >
             {readonly && (
               <p className="rounded-card bg-sunk px-3.5 py-2.5 text-note text-muted">
                 {t('editor.readonly')}
@@ -1186,7 +1190,7 @@ export function AgentEditor({
             {dirtySections.size > 0 && view === 'edit' && (
               <p className="sr-only">{t('section.pending')}</p>
             )}
-          </div>
+          </fieldset>
         </div>
       </div>
 
