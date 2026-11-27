@@ -37,6 +37,7 @@ const detail: AgentDetail = {
 
 const teamSummary: AgentTeamSummary = {
   teamId: 'user.team-1',
+  source: 'user',
   name: { 'zh-CN': '现有团队' },
   description: {},
   pattern: 'delegate',
@@ -51,6 +52,7 @@ const teamSummary: AgentTeamSummary = {
 
 const teamDetail: AgentTeamDetail = {
   teamId: 'user.team-1',
+  source: 'user',
   archived: false,
   published: {
     id: 'user.team-1',

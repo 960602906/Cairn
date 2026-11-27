@@ -38,6 +38,8 @@
   "editor.duplicate": "Duplicate",
   "editor.unarchive": "Unarchive",
   "editor.archivedHint": "Archived templates are read-only. Unarchive to edit, publish or trial again.",
+  "editor.builtinHint": "Built-in templates are read-only and can be trialled as-is. Choose \"Duplicate\" to create an editable copy.",
+  "source.builtin": "Built-in",
   "editor.archiveConfirm.title": "Archive this template?",
   "editor.archiveConfirm.description": "Archived templates are read-only and leave the default list. Drafts, published versions and trial history are kept.",
   "editor.archiveConfirm.dirty": "Unsaved changes will be lost.",

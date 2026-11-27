@@ -76,6 +76,11 @@ function TeamRow({
                 {t('version', { version: team.version })}
               </span>
             )}
+            {team.source === 'builtin' && (
+              <span className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+                {t('source.builtin')}
+              </span>
+            )}
             <span className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
               {t(`pattern.${team.pattern}`)}
             </span>

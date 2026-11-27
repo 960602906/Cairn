@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { BUILTIN_CODER, BUILTIN_EXPLORER, BUILTIN_REVIEWER, BUILTIN_TESTER } from '@cairn/core'
+import {
+  BUILTIN_CODER,
+  BUILTIN_EXPLORER,
+  BUILTIN_REVIEWER,
+  BUILTIN_TEAMS,
+  BUILTIN_TESTER,
+} from '@cairn/core'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
@@ -109,6 +115,7 @@ function setup(
         const teamId = (definition as { id?: string }).id ?? 'user.team-new'
         return {
           teamId,
+          source: 'user',
           archived: false,
           draft: { id: teamId, ...definition },
           validation: { ok: true, errors: [], warnings: [] },
@@ -119,6 +126,7 @@ function setup(
         const { teamId } = params as { teamId: string }
         return {
           teamId,
+          source: 'user',
           archived: false,
           published: published(latest ?? fields(), 3),
           validation: { ok: true, errors: [], warnings: [] },
@@ -132,6 +140,7 @@ function setup(
         return {
           ...(teamDetail ?? {}),
           teamId: 'user.team-1',
+          source: 'user',
           archived: archive,
           validation: teamDetail?.validation ?? { ok: true, errors: [], warnings: [] },
         } satisfies AgentTeamDetail
@@ -258,6 +267,7 @@ describe('TeamEditor', () => {
   it('edits pipeline stages and dependencies, and warns about unused config', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({
         pattern: 'pipeline',
@@ -318,6 +328,7 @@ describe('TeamEditor', () => {
   it('seeds a review loop and clamps rounds', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -353,6 +364,7 @@ describe('TeamEditor', () => {
   it('confirms before leaving with unsaved changes and can save first', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -392,6 +404,7 @@ describe('TeamEditor', () => {
   it('shows a review loop that references agents outside the team', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({
         pattern: 'review-loop',
@@ -416,6 +429,7 @@ describe('TeamEditor', () => {
   it('repairs a review loop without maker and checker on the first selection', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({ pattern: 'review-loop' }),
       published: published({}, 2),
@@ -449,6 +463,7 @@ describe('TeamEditor', () => {
   it('seeds a review loop when only the coordinator is referenced and the checker is picked first', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({ pattern: 'review-loop', members: [] }),
       published: published({}, 2),
@@ -475,6 +490,7 @@ describe('TeamEditor', () => {
   it('adds the first pipeline stage from the first member when there is no coordinator', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({
         coordinator: '',
@@ -498,6 +514,7 @@ describe('TeamEditor', () => {
   it('shows a pipeline stage whose agent is no longer available', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({
         pattern: 'pipeline',
@@ -519,6 +536,7 @@ describe('TeamEditor', () => {
   it('shows an empty pipeline and refills it from the members', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({ pattern: 'pipeline', pipeline: [] }),
       published: published({}, 2),
@@ -537,6 +555,7 @@ describe('TeamEditor', () => {
   it('shows validation errors, disables publish, and handles load failure', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({ name: {}, description: {}, coordinator: 'user.missing' }),
       published: published({}, 2),
@@ -567,6 +586,7 @@ describe('TeamEditor', () => {
   it('edits bilingual fields, members, coordinator, and refills pipeline stages', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -630,6 +650,7 @@ describe('TeamEditor', () => {
   it('handles Esc, publishes dirty changes, and reports save / publish failures', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -685,6 +706,7 @@ describe('TeamEditor', () => {
   it('publishes and trials an existing clean team without saving again', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -747,6 +769,7 @@ describe('TeamEditor', () => {
     })
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -768,6 +791,7 @@ describe('TeamEditor', () => {
       versions: [versionSummary(1, oldFields.name), versionSummary(2, fields().name)],
       versionDetail: (version) => ({
         teamId: 'user.team-1',
+        source: 'user',
         archived: false,
         published: published(oldFields, version),
         validation: { ok: true, errors: [], warnings: [] },
@@ -798,6 +822,7 @@ describe('TeamEditor', () => {
   it('keeps the draft unchanged when a version cannot be restored', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -844,6 +869,7 @@ describe('TeamEditor', () => {
   it('archives a team and unarchives it again', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -900,6 +926,7 @@ describe('TeamEditor', () => {
   it('duplicates the current team as a new draft', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -958,6 +985,7 @@ describe('TeamEditor', () => {
   it('duplicates with a fallback name when the draft has no localized name', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft({ name: {} }),
       validation: { ok: true, errors: [], warnings: [] },
@@ -978,6 +1006,7 @@ describe('TeamEditor', () => {
   it('opens the more menu from the keyboard and lets Escape close it', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -1000,6 +1029,7 @@ describe('TeamEditor', () => {
   it('warns about unsaved changes before archiving', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -1022,6 +1052,7 @@ describe('TeamEditor', () => {
   it('keeps the team state when archiving or unarchiving fails', async () => {
     const team: AgentTeamDetail = {
       teamId: 'user.team-1',
+      source: 'user',
       archived: false,
       draft: draft(),
       published: published({}, 2),
@@ -1047,6 +1078,57 @@ describe('TeamEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消归档' }))
     await waitFor(() => expect(unarchiveFails.store.getState().error?.code).toBe('team.not_found'))
     expect(screen.getByText(/已归档的模板只读/)).toBeDefined()
+  })
+
+  it('内置模板只读：只提供试运行与复制副本', async () => {
+    const template = BUILTIN_TEAMS[0]!
+    const { store, calls } = setup({
+      team: {
+        teamId: template.id,
+        source: 'builtin',
+        archived: false,
+        published: template,
+        validation: { ok: true, errors: [], warnings: [] },
+      },
+      versions: [
+        {
+          version: 1,
+          publishedAt: 0,
+          name: template.name,
+          description: template.description,
+          pattern: template.pattern,
+          memberCount: template.members.length,
+        },
+      ],
+    })
+    await renderEditor(store, { teamId: template.id })
+    await waitFor(() => expect(screen.getByText(/内置模板只读/)).toBeDefined())
+    // 只读模板没有保存、发布与归档入口，只留试运行和复制副本。
+    expect(screen.queryByRole('button', { name: '保存草稿' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^发布 v/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull()
+
+    // 复制副本另存为用户模板，不修改内置模板本身。
+    const savesBefore = calls.filter((call) => call.method === 'team.saveDraft').length
+    fireEvent.click(screen.getByRole('button', { name: '复制为副本' }))
+    await waitFor(() =>
+      expect(calls.filter((call) => call.method === 'team.saveDraft')).toHaveLength(
+        savesBefore + 1,
+      ),
+    )
+    expect(calls.filter((call) => call.method === 'team.archive')).toHaveLength(0)
+
+    // 未修改时直接试运行代码里的版本，不需要先存草稿。
+    fireEvent.click(screen.getByRole('button', { name: '试运行' }))
+    await waitFor(() => expect(screen.getByText('团队试运行')).toBeDefined())
+    fireEvent.click(screen.getByRole('button', { name: '开始试运行' }))
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'team.trial.start',
+        params: { teamId: template.id, projectPath: '/work', useAgentPermissions: false },
+      }),
+    )
+    expect(calls.filter((call) => call.method === 'team.saveDraft')).toHaveLength(savesBefore + 1)
   })
 
   it('handles a new team without any published agents', async () => {

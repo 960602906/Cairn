@@ -206,6 +206,9 @@ export function TeamEditor({
   const dirty = fields !== undefined && baseline !== undefined && !sameTeamFields(fields, baseline)
   const published = detail?.published
   const archived = detail?.archived === true
+  const builtin = detail?.source === 'builtin'
+  /** 已归档与内置模板都只读：不能保存、发布或归档，只能试运行 / 复制。 */
+  const readonly = archived || builtin
   const status = archived ? 'archived' : dirty ? 'dirty' : published ? 'published' : 'draft'
   const nextVersion = (published?.version ?? 0) + 1
   const title =
@@ -220,7 +223,7 @@ export function TeamEditor({
   }, [])
 
   const save = useCallback(async (): Promise<string | undefined> => {
-    if (!fields || saving || archived) return undefined
+    if (!fields || saving || archived || builtin) return undefined
     setSaving(true)
     const next = await saveTeamDraft({
       ...fields,
@@ -236,7 +239,7 @@ export function TeamEditor({
     setSavedAt(true)
     onChanged()
     return next.teamId
-  }, [archived, currentId, fields, onChanged, saveTeamDraft, saving])
+  }, [archived, builtin, currentId, fields, onChanged, saveTeamDraft, saving])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -282,7 +285,11 @@ export function TeamEditor({
 
   /** 试运行读取已保存的草稿：新建、有改动或发布后草稿被清空时都先保存。 */
   const openTrial = async () => {
-    if (currentId === undefined || dirty || detail?.draft === undefined) {
+    if (currentId === undefined || dirty) {
+      const saved = await save()
+      if (saved === undefined) return
+    } else if (!readonly && detail?.draft === undefined) {
+      // 试运行读取的是草稿；已发布但没有草稿时先按当前内容存一份。内置模板直接跑代码里的版本。
       const saved = await save()
       if (saved === undefined) return
     }
@@ -516,6 +523,23 @@ export function TeamEditor({
               <Upload />
               {t('editor.unarchive')}
             </Button>
+          ) : builtin ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!canTrial}
+                title={invalid ? t('editor.fixBeforeTrial') : undefined}
+                onClick={() => void openTrial()}
+              >
+                <Play />
+                {t('editor.trial')}
+              </Button>
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => void duplicate()}>
+                <Copy />
+                {t('editor.duplicate')}
+              </Button>
+            </>
           ) : (
             <>
               <Button
@@ -572,7 +596,11 @@ export function TeamEditor({
         </div>
       </header>
 
-      {archived && <p className="text-note text-muted">{t('editor.archivedHint')}</p>}
+      {readonly && (
+        <p className="text-note text-muted">
+          {t(builtin ? 'editor.builtinHint' : 'editor.archivedHint')}
+        </p>
+      )}
 
       {validationIssues('basic', 'errors').length === 0 &&
         validationIssues('members', 'errors').length === 0 &&
@@ -923,7 +951,7 @@ export function TeamEditor({
           key={detail?.published?.version ?? 0}
           teamId={currentId}
           current={fields}
-          readonly={archived}
+          readonly={readonly}
           onRestore={restoreVersion}
         />
       )}

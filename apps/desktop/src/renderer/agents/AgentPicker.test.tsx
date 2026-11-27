@@ -55,6 +55,7 @@ const archived = agent('user.archived', '旧助手', { archived: true })
 
 const team = (overrides: Partial<AgentTeamSummary> = {}): AgentTeamSummary => ({
   teamId: 'user.team-1',
+  source: 'user',
   name: { 'zh-CN': '日常协作', 'en-US': 'Daily pair' },
   description: { 'zh-CN': '主控分派给探索员' },
   pattern: 'delegate',

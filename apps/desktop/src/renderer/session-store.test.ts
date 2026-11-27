@@ -1338,6 +1338,7 @@ describe('trial sessions (M4-12)', () => {
 describe('team actions (M7-09)', () => {
   const teamDetail = {
     teamId: 'user.team-1',
+    source: 'user',
     archived: false,
     draft: { id: 'user.team-1', name: { 'zh-CN': '团队' } },
     validation: { ok: true, errors: [], warnings: [] },
@@ -2739,6 +2740,7 @@ describe('team selection in session store', () => {
   const teams = [
     {
       teamId: 'user.team-1',
+      source: 'user',
       name: { 'zh-CN': '日常协作' },
       description: {},
       pattern: 'delegate' as const,

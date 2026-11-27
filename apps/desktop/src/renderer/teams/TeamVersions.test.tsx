@@ -105,6 +105,7 @@ function setup(
         const fields = options.fields?.(version) ?? versionFields(version)
         return {
           teamId: 'user.team-1',
+          source: 'user',
           archived: false,
           published: {
             id: 'user.team-1',

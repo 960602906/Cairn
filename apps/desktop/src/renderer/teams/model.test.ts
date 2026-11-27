@@ -72,6 +72,7 @@ const definitions: Readonly<Record<string, AgentDefinition>> = {
 
 const teamSummary = (overrides: Partial<AgentTeamSummary> = {}): AgentTeamSummary => ({
   teamId: 'user.team-1',
+  source: 'user',
   name: { 'zh-CN': '团队' },
   description: {},
   pattern: 'delegate',

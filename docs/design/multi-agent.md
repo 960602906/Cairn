@@ -430,6 +430,20 @@ M7-09 落地（试运行与验收）：
 - 验收：`e2e/team-trial.spec.ts` 覆盖模板草稿 → 发布 → 试运行 → 审查循环完成、非法模板被拒绝、
   版本回退后重新试运行行为一致，以及试运行会话保持隐藏、可整体清理。
 
+内置模板（打磨）：
+
+- `@cairn/core` 提供三个只读模板（`BUILTIN_TEAMS`）：代码审查小组（review-loop）、探索与
+  实现（delegate）与实现流水线（pipeline）。它们只引用内置 Agent，任何安装上都能直接试运行
+  与选用，避免模板列表空空如也、用户不知道从哪开始。
+- 存储边界：内置模板不写 SQLite，`TeamService` 在 `team.list` 的结果前部合并它们；`team.get`
+  与 `team.versions` 把 v1 当作唯一的已发布版本。`source: 'builtin' | 'user'` 区分来源，
+  列表里内置模板带「内置」标记。
+- 只读：`team.saveDraft` / `publish` / `archive` / `unarchive` 对内建 id 返回
+  `team.readonly`；编辑器只保留试运行与「复制为副本」。副本按普通用户模板落库
+  （`source: 'user'`），可以编辑、发布与归档。
+- 试运行与选用：内置模板无需草稿，直接以代码里的 v1 运行；会话选择器会把它们排在用户模板
+  之前（同一套“已发布、未归档”筛选）。
+
 ---
 
 ## 16. 对现有设计的影响
