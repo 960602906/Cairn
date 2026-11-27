@@ -13,6 +13,7 @@ export default defineConfig({
     alias: {
       // 具体路径放在包名之前，避免被前缀匹配吃掉
       '@cairn/runtime-pi/testing': at('../../packages/runtime-pi/src/testing/mock-openai.ts'),
+      '@cairn/protocol/runtime': at('../../packages/protocol/src/runtime.ts'),
       '@cairn/protocol': at('../../packages/protocol/src/index.ts'),
       '@cairn/core': at('../../packages/core/src/index.ts'),
       '@cairn/checkpoint': at('../../packages/checkpoint/src/index.ts'),
