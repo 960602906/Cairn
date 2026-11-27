@@ -133,7 +133,7 @@ icons/…                    可选的图标 / optional icons
 | `regions` | 否 | 2～4 个接入点 `{ "id": "global" \| "cn", "baseUrl", "keysUrl"? }`；`baseUrl` 必须是其中之一。中文界面默认选 `cn`。 |
 | `requiresKey` | 否 | 默认 `true`。本机服务设为 `false`，Key 变为可选，打开即拉取模型列表。 |
 | `keysUrl` | 否 | 申请 Key 的 https 页面，显示为“获取 API Key”。 |
-| `homepage` | 否 | 服务的 https 网站；没有 `icon` 时优先从这里取网站图标。 |
+| `homepage` | 否 | 服务的 https 网站；没有 `icon` 时优先从这里取网站图标。省略时用插件的 `homepage`。 |
 | `icon` | 否 | 服务的图标，显示在目录、编辑弹窗与供应商列表中；规则见下文。 |
 | `compat` | 否 | OpenAI 兼容服务之间的差异（只对 `openai` 生效），字段同 `ModelCompat`：`thinkingFormat`（`openai`、`deepseek`、`qwen`、`openrouter`、`zai`）、`maxTokensField`、`supportsDeveloperRole`、`supportsStore`、`supportsReasoningEffort`、`supportsUsageInStreaming`、`requiresReasoningContentOnAssistantMessages`、`supportsStrictMode`。未知字段会报错。 |
 | `models` | 否 | 预置的模型，最多 64 个。只有 `id` 必填，其余能力缺省时取 `modelDefaults`。 |

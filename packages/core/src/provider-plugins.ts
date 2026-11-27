@@ -134,12 +134,13 @@ export function resolvePluginIcons(
 const displayIcon = (icon: string | undefined) =>
   icon !== undefined && isIconUrl(icon) ? { icon } : {}
 
-/** 服务没有自己的图标时用插件的图标（都没有时界面再找网站图标）。 */
+/** 服务没有自己的图标或网站时用插件的（都没有图标时界面再找网站图标）。 */
 function templateOf(
   pluginId: string,
   entry: ProviderPluginEntry,
-  pluginIcon: string | undefined,
+  plugin: { readonly icon?: string | undefined; readonly homepage?: string | undefined },
 ): ProviderTemplate {
+  const homepage = entry.homepage ?? plugin.homepage
   const modelDefaults = capabilitiesOf(entry.modelDefaults, GENERIC_MODEL_DEFAULTS)
   const models: ModelProfile[] = (entry.models ?? []).map((m) => ({
     id: m.id,
@@ -157,8 +158,8 @@ function templateOf(
     ...(entry.regions ? { regions: entry.regions } : {}),
     requiresKey: entry.requiresKey ?? true,
     ...(entry.keysUrl ? { keysUrl: entry.keysUrl } : {}),
-    ...(entry.homepage ? { homepage: entry.homepage } : {}),
-    ...displayIcon(entry.icon !== undefined && isIconUrl(entry.icon) ? entry.icon : pluginIcon),
+    ...(homepage ? { homepage } : {}),
+    ...displayIcon(entry.icon !== undefined && isIconUrl(entry.icon) ? entry.icon : plugin.icon),
     ...(entry.compat ? { compat: entry.compat } : {}),
     models,
     ...(entry.suggestedModels ? { suggestedModels: entry.suggestedModels } : {}),
@@ -186,6 +187,6 @@ export function providerPluginInfo(manifest: ProviderPluginManifest): ProviderPl
     ...(manifest.description ? { description: manifest.description } : {}),
     ...(manifest.homepage ? { homepage: manifest.homepage } : {}),
     ...displayIcon(manifest.icon),
-    templates: manifest.providers.map((entry) => templateOf(manifest.id, entry, manifest.icon)),
+    templates: manifest.providers.map((entry) => templateOf(manifest.id, entry, manifest)),
   }
 }

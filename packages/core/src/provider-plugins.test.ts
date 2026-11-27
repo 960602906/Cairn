@@ -278,6 +278,8 @@ describe('provider plugins (ADR-0049)', () => {
     expect(local.templates[0]).toMatchObject({ homepage: 'https://gateway.acme.example' })
     expect(local.templates[0]).not.toHaveProperty('icon')
     expect(local.templates[1]!.icon).toBe('data:image/svg+xml;base64,PHN2Zy8+')
+    // 服务没有自己的网站时用插件的，用来找网站图标
+    expect(local.templates[1]!.homepage).toBe('https://acme.example')
 
     const resolved = resolvePluginIcons(parsed, 'https://raw.example.com/r/main/plugins/acme.json')
     expect(resolved.icon).toBe('https://raw.example.com/r/main/plugins/icons/acme.svg')
