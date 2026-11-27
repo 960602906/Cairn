@@ -360,3 +360,54 @@ test('非法模板不能发布，也不能开始试运行', async ({ launch, use
   })
   expect(start).toMatchObject({ ok: false, error: { code: 'team.invalid' } })
 })
+
+test('内置模板随应用提供：只读，无需草稿即可试运行', async ({ launch, userData }) => {
+  const { window } = await launch()
+  await window.evaluate(async () => {
+    const cairn = (globalThis as unknown as { cairn: { ready(): Promise<unknown> } }).cairn
+    await cairn.ready()
+  })
+
+  const list = await send<{
+    teams: { teamId: string; source: string; archived: boolean; version: number }[]
+  }>(window, 'team.list', {})
+  const builtins = list.teams.filter((team) => team.source === 'builtin')
+  expect(builtins.map((team) => team.teamId)).toEqual([
+    'builtin.team-review-loop',
+    'builtin.team-explore-build',
+    'builtin.team-pipeline',
+  ])
+  expect(builtins.every((team) => !team.archived && team.version === 1)).toBe(true)
+
+  const detail = await send<{
+    source: string
+    published: {
+      id: string
+      version: number
+      name: Record<string, string>
+      description: Record<string, string>
+      coordinator: string
+      members: string[]
+      pattern: 'review-loop'
+      reviewLoop: { maker: string; checker: string; maxRounds: number }
+    }
+  }>(window, 'team.get', { teamId: 'builtin.team-review-loop' })
+  expect(detail.source).toBe('builtin')
+  expect(detail.published.version).toBe(1)
+
+  // 代码提供的模板不能改：按内置 id 存草稿或发布都被拒。
+  const { id, name, description, coordinator, members, pattern, reviewLoop } = detail.published
+  const save = await tryCall(window, 'team.saveDraft', {
+    definition: { id, name, description, coordinator, members, pattern, reviewLoop },
+  })
+  expect(save).toMatchObject({ ok: false, error: { code: 'team.readonly' } })
+  const publish = await tryCall(window, 'team.publish', { teamId: 'builtin.team-review-loop' })
+  expect(publish).toMatchObject({ ok: false, error: { code: 'team.readonly' } })
+
+  // 没有草稿也能开始试运行：直接以代码里的 v1 运行。
+  const trial = await send<{ sessionId: string; teamId: string }>(window, 'team.trial.start', {
+    teamId: 'builtin.team-review-loop',
+    projectPath: projectDir(userData),
+  })
+  expect(trial.teamId).toBe('builtin.team-review-loop')
+})
