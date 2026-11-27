@@ -62,6 +62,7 @@
   "editor.members.noAgents": "No published agents yet. Create and publish one in Agents settings first.",
   "editor.members.members": "Members",
   "editor.members.count": "{{count}} / 50 selected",
+  "editor.members.unavailable": "Archived or unavailable",
   "editor.members.noMembers": "No members available. Publish more agents or choose a different coordinator.",
   "editor.pattern.title": "Way of working",
   "editor.pattern.description": "Decide how members take part: free delegation, review rounds, or staged execution.",

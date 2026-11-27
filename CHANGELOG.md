@@ -316,6 +316,12 @@
   note explains that unarchiving restores editing and publishing instead of showing "Published"
   and the built-in agent's read-only hint.
 
+- 团队模板引用的成员 Agent 被归档后，编辑器仍然列出这一成员并标出「已归档或不可用」，可以
+  取消勾选后保存，不再出现成员人数与勾选项对不上、也没法移除的情况。
+  When a member agent referenced by a team template is archived, the editor still lists it with
+  an "Archived or unavailable" badge, so it can be unchecked and saved. Previously the member
+  count could exceed the visible checkboxes with no way to remove the archived member.
+
 ## [0.1.7] - 2026-11-27
 
 ### Fixed

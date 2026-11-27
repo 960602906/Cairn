@@ -420,6 +420,23 @@ export function TeamEditor({
     return agent ? agentName(agent, i18n.language) : agentId
   }
   const referenced = referencedAgents(fields)
+  /**
+   * 成员选项：可选的候选，加上已引用但已归档 / 不可用的成员。
+   * 后者不列出来时，成员人数会比勾选项多，而且没法取消勾选。
+   */
+  const memberRows = [
+    ...members.map((agent) => ({
+      agentId: agent.agentId,
+      name: agentName(agent, i18n.language),
+      unavailable: false,
+    })),
+    ...referenced
+      .filter(
+        (agentId) =>
+          agentId !== fields.coordinator && !members.some((agent) => agent.agentId === agentId),
+      )
+      .map((agentId) => ({ agentId, name: nameOf(agentId), unavailable: true })),
+  ]
   const reviewLoop = fields.reviewLoop
   const stages = fields.pipeline ?? []
   const validationIssues = (section: TeamSection, kind: 'errors' | 'warnings') =>
@@ -709,15 +726,15 @@ export function TeamEditor({
                 {t('editor.members.count', { count: fields.members.length })}
               </span>
             </div>
-            {members.length === 0 ? (
+            {memberRows.length === 0 ? (
               <p className="text-note text-muted">{t('editor.members.noMembers')}</p>
             ) : (
               <div className="grid gap-1.5 sm:grid-cols-2">
-                {members.map((agent) => {
-                  const checked = fields.members.includes(agent.agentId)
+                {memberRows.map((row) => {
+                  const checked = fields.members.includes(row.agentId)
                   return (
                     <label
-                      key={agent.agentId}
+                      key={row.agentId}
                       className="flex items-center gap-2 rounded-item px-1.5 py-1 text-ui text-fg2 hover:bg-sunk"
                     >
                       <input
@@ -725,10 +742,15 @@ export function TeamEditor({
                         checked={checked}
                         disabled={!checked && fields.members.length >= TEAM_MAX_MEMBERS}
                         onChange={() =>
-                          change({ members: toggleMember(fields.members, agent.agentId) })
+                          change({ members: toggleMember(fields.members, row.agentId) })
                         }
                       />
-                      <span className="truncate">{agentName(agent, i18n.language)}</span>
+                      <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                      {row.unavailable && (
+                        <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+                          {t('editor.members.unavailable')}
+                        </span>
+                      )}
                     </label>
                   )
                 })}
