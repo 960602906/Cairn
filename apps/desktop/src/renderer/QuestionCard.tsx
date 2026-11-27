@@ -195,9 +195,7 @@ export function QuestionCard({
           <p className="min-w-0 flex-1 text-ui leading-5 font-medium text-fg">{current.question}</p>
           {(multiple || total > 1) && (
             <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] leading-5 text-muted">
-              {multiple && (
-                <span className={floatChipClass}>{t('question.multiple')}</span>
-              )}
+              {multiple && <span className={floatChipClass}>{t('question.multiple')}</span>}
               {total > 1 && <span>{t('question.number', { index: index + 1, total })}</span>}
             </span>
           )}
