@@ -1,8 +1,16 @@
 import type { AgentDefinition, TeamDraftFields, TeamPipelineStage } from '@cairn/protocol'
 import { describe, expect, it } from 'vitest'
-import { BUILTIN_CODER, BUILTIN_EXPLORER, BUILTIN_REVIEWER, BUILTIN_TESTER } from './agents.js'
+import {
+  BUILTIN_CODER,
+  BUILTIN_EXPLORER,
+  BUILTIN_REVIEWER,
+  BUILTIN_TESTER,
+  builtinAgent,
+} from './agents.js'
 import {
   applyTeamToAgentDefinition,
+  BUILTIN_TEAMS,
+  builtinTeam,
   teamBrief,
   teamPipelineOrder,
   validateAgentTeam,
@@ -333,5 +341,36 @@ describe('团队试运行的定义合并（M7-09）', () => {
   it('模板没有委派覆盖时沿用主控策略', () => {
     const merged = applyTeamToAgentDefinition(BUILTIN_CODER, delegateTeam)
     expect(merged.delegation).toEqual(BUILTIN_CODER.delegation)
+  })
+})
+
+describe('内置团队模板', () => {
+  it('每个内置模板都能通过校验，且覆盖三种协作模式', () => {
+    for (const team of BUILTIN_TEAMS) {
+      expect(validateAgentTeam(team, context), team.id).toEqual({
+        ok: true,
+        errors: [],
+        warnings: [],
+      })
+    }
+    expect(BUILTIN_TEAMS.map((team) => team.pattern).sort()).toEqual([
+      'delegate',
+      'pipeline',
+      'review-loop',
+    ])
+  })
+
+  it('全部引用内置 Agent，id 唯一且从 1 版开始', () => {
+    const ids = BUILTIN_TEAMS.map((team) => team.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const team of BUILTIN_TEAMS) {
+      expect(team.version).toBe(1)
+      expect([team.coordinator, ...team.members].every((agent) => builtinAgent(agent))).toBe(true)
+    }
+  })
+
+  it('按 id 查找内置模板', () => {
+    expect(builtinTeam(BUILTIN_TEAMS[0]!.id)).toBe(BUILTIN_TEAMS[0])
+    expect(builtinTeam('user.team-1')).toBeUndefined()
   })
 })

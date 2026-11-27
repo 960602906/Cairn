@@ -155,6 +155,7 @@
   "team.not_found": "找不到这个团队模板",
   "team.no_draft": "这个团队模板没有可用的草稿",
   "team.invalid": "团队模板还没有通过校验，先修正问题再继续",
+  "team.readonly": "内置模板只读，请先「复制为副本」再修改",
   "team.unavailable": "这个团队模板现在不能选用：需要先发布，主控 Agent 也要已发布且模板未归档",
   "update.not_packaged": "开发模式不检查更新",
   "update.disabled_by_env": "自动更新已被环境变量关闭",

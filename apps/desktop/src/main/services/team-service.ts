@@ -10,7 +10,12 @@
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { basename, isAbsolute } from 'node:path'
-import { applyTeamToAgentDefinition, validateAgentTeam } from '@cairn/core'
+import {
+  applyTeamToAgentDefinition,
+  BUILTIN_TEAMS,
+  builtinTeam,
+  validateAgentTeam,
+} from '@cairn/core'
 import {
   AgentTeam,
   RpcError,
@@ -38,6 +43,7 @@ export const TeamErrorCode = {
   NotFound: 'team.not_found',
   NoDraft: 'team.no_draft',
   Invalid: 'team.invalid',
+  Readonly: 'team.readonly',
 } as const
 
 export interface TeamServiceOptions {
@@ -113,7 +119,17 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     return record
   }
 
+  /** 内置模板没有存储记录；其它模板必须有记录。 */
+  const requireKnown = (teamId: string) => {
+    if (!builtinTeam(teamId)) requireRecord(teamId)
+  }
+
+  /** 内置模板的存储记录是代码里的一版；用户模板来自 `team_versions`。 */
   const publishedOf = (teamId: string, version?: number): AgentTeam | undefined => {
+    const builtin = builtinTeam(teamId)
+    if (builtin) {
+      return version === undefined || version === builtin.version ? builtin : undefined
+    }
     const versions = storage.teams.versions(teamId)
     const wanted =
       version === undefined ? versions.at(-1) : versions.find((v) => v.version === version)
@@ -150,8 +166,9 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
   const publishedTeamWithCoordinator = (
     teamId: string,
   ): { team: AgentTeam; coordinator: AgentDefinition } | undefined => {
-    const record = storage.teams.get(teamId)
-    if (!record || record.archived) return undefined
+    const builtin = builtinTeam(teamId)
+    const record = builtin ? undefined : storage.teams.get(teamId)
+    if (!builtin && (!record || record.archived)) return undefined
     const team = publishedOf(teamId)
     if (!team) return undefined
     const coordinator = validationContext.agent(team.coordinator)
@@ -167,25 +184,28 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     draft: TeamDraft | undefined,
     published: AgentTeam | undefined,
   ): AgentTeamSummary => {
-    const record = storage.teams.get(teamId)!
+    const builtin = builtinTeam(teamId)
+    const record = builtin ? undefined : storage.teams.get(teamId)
     return {
       teamId,
+      source: builtin ? 'builtin' : 'user',
       name: fields.name,
       description: fields.description,
       pattern: fields.pattern,
       coordinator: fields.coordinator,
       memberCount: fields.members.length,
-      archived: record.archived,
+      archived: record?.archived ?? false,
       status: published ? 'published' : 'draft',
       version: published?.version ?? 0,
       hasDraft: draft !== undefined,
-      updatedAt: record.updatedAt,
+      updatedAt: record?.updatedAt ?? 0,
     }
   }
 
   const detailOf = (teamId: string, version?: number): AgentTeamDetail => {
-    const record = requireRecord(teamId)
-    const draft = draftOf(teamId)
+    const builtin = builtinTeam(teamId)
+    const record = builtin ? undefined : requireRecord(teamId)
+    const draft = builtin ? undefined : draftOf(teamId)
     const published = publishedOf(teamId, version)
     if (version !== undefined && !published) {
       throw new RpcError(TeamErrorCode.NotFound, { teamId, version })
@@ -194,7 +214,8 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     if (!fields) throw new RpcError(TeamErrorCode.NotFound, { teamId })
     return {
       teamId,
-      archived: record.archived,
+      source: builtin ? 'builtin' : 'user',
+      archived: record?.archived ?? false,
       ...(draft ? { draft } : {}),
       ...(published ? { published } : {}),
       validation: validate(fields),
@@ -228,8 +249,8 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     if (!isAbsolute(projectPath)) {
       throw new RpcError('rpc.invalid_params', { projectPath })
     }
-    requireRecord(teamId)
-    const fields = draftOf(teamId)
+    requireKnown(teamId)
+    const fields = draftOf(teamId) ?? builtinTeam(teamId)
     if (!fields) throw new RpcError(TeamErrorCode.NoDraft, { teamId })
     const validation = validate(fields)
     if (!validation.ok) {
@@ -288,6 +309,8 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
 
   return {
     list({ includeArchived = false }) {
+      // 内置模板排在最前，任何安装上都有范例可看；它们不会归档。
+      const builtins = BUILTIN_TEAMS.map((team) => summaryOf(team.id, team, undefined, team))
       // 只有被外部直接创建、既没有草稿也没有已发布版本的空记录会被跳过。
       const teams = storage.teams.list().flatMap((record) => {
         if (!includeArchived && record.archived) return []
@@ -296,7 +319,7 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
         const fields = draft ?? published
         return fields ? [summaryOf(record.teamId, fields, draft, published)] : []
       })
-      return { teams }
+      return { teams: [...builtins, ...teams] }
     },
 
     get({ teamId, version }) {
@@ -304,6 +327,21 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     },
 
     versions({ teamId }) {
+      const builtin = builtinTeam(teamId)
+      if (builtin) {
+        return {
+          versions: [
+            {
+              version: builtin.version,
+              publishedAt: builtin.createdAt,
+              name: builtin.name,
+              description: builtin.description,
+              pattern: builtin.pattern,
+              memberCount: builtin.members.length,
+            },
+          ],
+        }
+      }
       requireRecord(teamId)
       const versions = storage.teams.versions(teamId).map((entry) => {
         const team = AgentTeam.parse(entry.definition)
@@ -331,6 +369,7 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
             .slice(0, 40) || 'team'
         }-${createId()}`
       const draft: TeamDraft = { id: teamId, ...fields }
+      if (builtinTeam(teamId)) throw new RpcError(TeamErrorCode.Readonly, { teamId })
       if (!storage.teams.get(teamId)) {
         storage.teams.create({ teamId, draft })
       } else {
@@ -340,6 +379,7 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     },
 
     publish({ teamId }) {
+      if (builtinTeam(teamId)) throw new RpcError(TeamErrorCode.Readonly, { teamId })
       const record = requireRecord(teamId)
       const fields = draftOf(teamId)
       if (!fields) throw new RpcError(TeamErrorCode.NoDraft, { teamId })
@@ -370,12 +410,14 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     },
 
     archive({ teamId }) {
+      if (builtinTeam(teamId)) throw new RpcError(TeamErrorCode.Readonly, { teamId })
       requireRecord(teamId)
       storage.teams.setArchived(teamId, true)
       return detailOf(teamId)
     },
 
     unarchive({ teamId }) {
+      if (builtinTeam(teamId)) throw new RpcError(TeamErrorCode.Readonly, { teamId })
       requireRecord(teamId)
       storage.teams.setArchived(teamId, false)
       return detailOf(teamId)
@@ -386,7 +428,7 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     },
 
     trialClear({ teamId }) {
-      requireRecord(teamId)
+      requireKnown(teamId)
       const trials = trialsOf(teamId)
       const busy = trials.find((trial) => sessions.isBusy(trial.sessionId))
       if (busy) throw new RpcError('run.busy', { sessionId: busy.sessionId })
@@ -395,7 +437,7 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
     },
 
     trialList({ teamId }) {
-      requireRecord(teamId)
+      requireKnown(teamId)
       const trials = trialsOf(teamId).map((session) => ({
         sessionId: session.sessionId,
         teamId,
@@ -432,7 +474,8 @@ export function createTeamService(options: TeamServiceOptions): TeamService {
       if (!session) return definition
       if (session.kind === 'trial') {
         if (session.trialTeamId === undefined) return definition
-        const fields = draftOf(session.trialTeamId)
+        // 内置模板没有草稿，按代码里的版本运行。
+        const fields = draftOf(session.trialTeamId) ?? builtinTeam(session.trialTeamId)
         return fields ? applyTeamToAgentDefinition(definition, fields) : definition
       }
       if (session.kind !== 'normal') return definition

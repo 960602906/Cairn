@@ -12,11 +12,18 @@
  */
 import type {
   AgentDefinition,
+  AgentTeam,
   TeamDraftFields,
   TeamPipelineStage,
   TeamValidationIssue,
   TeamValidationResult,
 } from '@cairn/protocol'
+import {
+  BUILTIN_CODER_ID,
+  BUILTIN_EXPLORER_ID,
+  BUILTIN_REVIEWER_ID,
+  BUILTIN_TESTER_ID,
+} from './agents.js'
 import { resolveDelegationPolicy } from './delegation.js'
 
 /** 校验需要的上下文：按 id 取最新的已发布定义（含内置 Agent）。 */
@@ -235,3 +242,69 @@ export function applyTeamToAgentDefinition(
     instructions: instructions === '' ? brief : `${instructions}\n\n${brief}`,
   }
 }
+
+/** 内置团队模板（M7-09 补充）：与内置 Agent 一样由代码提供、只读，版本随应用。 */
+export const BUILTIN_TEAM_REVIEW_LOOP_ID = 'builtin.team-review-loop'
+export const BUILTIN_TEAM_EXPLORE_BUILD_ID = 'builtin.team-explore-build'
+export const BUILTIN_TEAM_PIPELINE_ID = 'builtin.team-pipeline'
+
+const builtinTeamVersion = { version: 1, createdAt: 0, updatedAt: 0, schemaVersion: 1 } as const
+
+/**
+ * 内置模板只引用内置 Agent，任何安装上都能直接试运行与选用。
+ * 覆盖三种协作模式，方便用户第一次打开就有可用的范例。
+ */
+export const BUILTIN_TEAMS: readonly AgentTeam[] = [
+  {
+    ...builtinTeamVersion,
+    id: BUILTIN_TEAM_REVIEW_LOOP_ID,
+    name: { 'zh-CN': '代码审查小组', 'en-US': 'Code review pair' },
+    description: {
+      'zh-CN': '主控先实现，审查员只读检查并按严重程度指出问题；有阻塞问题就返工，最多两轮。',
+      'en-US':
+        'The coordinator implements while a read-only reviewer reports issues by severity; blocking findings trigger a rework round, up to two rounds.',
+    },
+    coordinator: BUILTIN_CODER_ID,
+    members: [BUILTIN_REVIEWER_ID, BUILTIN_EXPLORER_ID],
+    pattern: 'review-loop',
+    reviewLoop: {
+      maker: BUILTIN_CODER_ID,
+      checker: BUILTIN_REVIEWER_ID,
+      maxRounds: 2,
+    },
+  },
+  {
+    ...builtinTeamVersion,
+    id: BUILTIN_TEAM_EXPLORE_BUILD_ID,
+    name: { 'zh-CN': '探索与实现', 'en-US': 'Explore and build' },
+    description: {
+      'zh-CN': '主控先让探索员定位代码与依赖，再自己动手修改；需要时把补测试交给测试员。',
+      'en-US':
+        'The coordinator has an explorer locate the relevant code and dependencies first, then makes the changes, and hands test work to the tester when needed.',
+    },
+    coordinator: BUILTIN_CODER_ID,
+    members: [BUILTIN_EXPLORER_ID, BUILTIN_TESTER_ID],
+    pattern: 'delegate',
+  },
+  {
+    ...builtinTeamVersion,
+    id: BUILTIN_TEAM_PIPELINE_ID,
+    name: { 'zh-CN': '实现流水线', 'en-US': 'Build pipeline' },
+    description: {
+      'zh-CN': '按探索、实现、测试三个阶段依次执行，前后依赖固定，适合边界清楚的功能开发。',
+      'en-US':
+        'Runs explore, build, and test as fixed dependent stages, suited to well-scoped feature work.',
+    },
+    coordinator: BUILTIN_CODER_ID,
+    members: [BUILTIN_EXPLORER_ID, BUILTIN_TESTER_ID],
+    pattern: 'pipeline',
+    pipeline: [
+      { stage: 'explore', agent: BUILTIN_EXPLORER_ID },
+      { stage: 'build', agent: BUILTIN_CODER_ID, dependsOn: ['explore'] },
+      { stage: 'test', agent: BUILTIN_TESTER_ID, dependsOn: ['build'] },
+    ],
+  },
+]
+
+export const builtinTeam = (teamId: string): AgentTeam | undefined =>
+  BUILTIN_TEAMS.find((team) => team.id === teamId)

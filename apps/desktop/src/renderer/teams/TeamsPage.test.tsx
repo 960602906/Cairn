@@ -39,6 +39,7 @@ const agents = [
 
 const team = (overrides: Partial<AgentTeamSummary> = {}): AgentTeamSummary => ({
   teamId: 'user.team-1',
+  source: 'user',
   name: { 'zh-CN': '日常协作' },
   description: { 'zh-CN': '主控分派给探索员' },
   pattern: 'delegate',
@@ -57,6 +58,7 @@ describe('filterTeams', () => {
     team(),
     team({
       teamId: 'user.team-2',
+      source: 'user',
       name: { 'en-US': 'Review pair' },
       description: { 'en-US': 'maker and checker' },
       pattern: 'review-loop',
@@ -66,6 +68,7 @@ describe('filterTeams', () => {
     }),
     team({
       teamId: 'user.team-3',
+      source: 'user',
       name: { 'zh-CN': '流水线小组' },
       description: { 'zh-CN': '按阶段执行' },
       pattern: 'pipeline',
@@ -73,6 +76,7 @@ describe('filterTeams', () => {
     }),
     team({
       teamId: 'user.team-4',
+      source: 'user',
       name: { 'zh-CN': '归档小组' },
       description: { 'zh-CN': '已归档的模板' },
       archived: true,
@@ -147,6 +151,7 @@ describe('TeamsPage', () => {
       team(),
       team({
         teamId: 'user.team-2',
+        source: 'user',
         name: { 'zh-CN': '审查小组' },
         pattern: 'review-loop',
         status: 'draft',

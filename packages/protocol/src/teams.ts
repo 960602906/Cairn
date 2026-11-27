@@ -14,6 +14,10 @@ import { DelegationPolicy } from './delegation.js'
 export const TeamPattern = z.enum(['delegate', 'review-loop', 'pipeline'])
 export type TeamPattern = z.infer<typeof TeamPattern>
 
+/** 模板来源：`builtin` 由代码提供、只读；`user` 为用户创建。 */
+export const TeamSource = z.enum(['builtin', 'user'])
+export type TeamSource = z.infer<typeof TeamSource>
+
 export const TEAM_MAX_MEMBERS = 50
 export const TEAM_MAX_PIPELINE_STAGES = 20
 /** 审查循环的轮次上限：再多只会烧预算，收益很低。 */
@@ -80,6 +84,7 @@ export type AgentTeam = z.infer<typeof AgentTeam>
 
 export const AgentTeamSummary = z.object({
   teamId: Id,
+  source: TeamSource,
   name: LocalizedText,
   description: LocalizedText,
   pattern: TeamPattern,
@@ -122,6 +127,7 @@ export type TeamValidationResult = z.infer<typeof TeamValidationResult>
 /** 一份模板的当前状态：草稿优先，已发布版本用于对比与会话选择。 */
 export const AgentTeamDetail = z.object({
   teamId: Id,
+  source: TeamSource,
   archived: z.boolean(),
   draft: TeamDraft.optional(),
   published: AgentTeam.optional(),

@@ -386,11 +386,13 @@ function setup(
     publish: vi.fn(),
     archive: vi.fn(() => ({
       teamId: 't1',
+      source: 'user',
       archived: true,
       validation: { ok: true, errors: [], warnings: [] },
     })),
     unarchive: vi.fn(() => ({
       teamId: 't1',
+      source: 'user',
       archived: false,
       validation: { ok: true, errors: [], warnings: [] },
     })),

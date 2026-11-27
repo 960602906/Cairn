@@ -38,6 +38,8 @@
   "editor.duplicate": "复制为副本",
   "editor.unarchive": "取消归档",
   "editor.archivedHint": "已归档的模板只读；取消归档后可以继续编辑、发布与试运行。",
+  "editor.builtinHint": "内置模板只读，可以直接试运行；要修改请点「复制为副本」，副本可以编辑和发布。",
+  "source.builtin": "内置",
   "editor.archiveConfirm.title": "归档这个模板？",
   "editor.archiveConfirm.description": "归档后模板只读，从默认列表隐藏；草稿、已发布版本与试运行历史都会保留。",
   "editor.archiveConfirm.dirty": "当前未保存的修改会丢失。",

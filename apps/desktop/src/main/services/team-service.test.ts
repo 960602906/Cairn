@@ -1,5 +1,12 @@
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import {
+  BUILTIN_CODER,
+  BUILTIN_EXPLORER,
+  BUILTIN_REVIEWER,
+  BUILTIN_TEAMS,
+  BUILTIN_TESTER,
+} from '@cairn/core'
 import { RpcError, type AgentDefinition, type TeamDraftInput } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
 import { createSessionEventService } from './event-service.js'
@@ -71,6 +78,10 @@ function setup() {
     [coordinator.id, coordinator],
     [reviewer.id, reviewer],
     [maker.id, maker],
+    // 内置模板引用内置 Agent，校验与试运行都要能取到。
+    ...([BUILTIN_CODER, BUILTIN_EXPLORER, BUILTIN_REVIEWER, BUILTIN_TESTER] as const).map(
+      (agent) => [agent.id, agent] as const,
+    ),
   ])
   const agents = {
     get: vi.fn(({ agentId }: { agentId: string }) => {
@@ -120,7 +131,7 @@ describe('团队模板命令（M7-09）', () => {
     expect(detail.draft).toMatchObject({ id: detail.teamId, pattern: 'review-loop' })
     expect(detail.validation.ok).toBe(true)
     const list = service.list({})
-    expect(list.teams).toEqual([
+    expect(list.teams.filter((team) => team.source === 'user')).toEqual([
       expect.objectContaining({
         teamId: detail.teamId,
         pattern: 'review-loop',
@@ -162,7 +173,7 @@ describe('团队模板命令（M7-09）', () => {
     expect(service.get({ teamId: created.teamId, version: 1 }).published?.description).toEqual({
       'zh-CN': 'maker 写、checker 审',
     })
-    expect(service.list({}).teams[0]).toMatchObject({
+    expect(service.list({}).teams.find((team) => team.teamId === created.teamId)).toMatchObject({
       status: 'published',
       version: 2,
       hasDraft: false,
@@ -214,14 +225,16 @@ describe('团队模板命令（M7-09）', () => {
     expect(archived.archived).toBe(true)
     expect(archived.published?.version).toBe(1)
     expect(archived.draft?.description).toEqual({ 'zh-CN': '新草稿' })
-    expect(service.list({}).teams).toEqual([])
-    expect(service.list({ includeArchived: true }).teams).toEqual([
+    const userTeams = (includeArchived = false) =>
+      service.list({ includeArchived }).teams.filter((team) => team.source === 'user')
+    expect(userTeams()).toEqual([])
+    expect(userTeams(true)).toEqual([
       expect.objectContaining({ teamId: created.teamId, archived: true }),
     ])
 
     const restored = service.unarchive({ teamId: created.teamId })
     expect(restored.archived).toBe(false)
-    expect(service.list({}).teams.map((team) => team.teamId)).toEqual([created.teamId])
+    expect(userTeams().map((team) => team.teamId)).toEqual([created.teamId])
     expect(() => service.archive({ teamId: 'missing' })).toThrowError(
       expect.objectContaining({ code: 'team.not_found' }),
     )
@@ -495,13 +508,15 @@ describe('团队模板命令（M7-09）', () => {
     const { storage, service } = setup()
     storage.teams.create({ teamId: 'empty' })
     const created = service.saveDraft({ definition: draft() })
-    expect(service.list({}).teams.map((team) => team.teamId)).toEqual([created.teamId])
+    const userTeams = (includeArchived = false) =>
+      service.list({ includeArchived }).teams.filter((team) => team.source === 'user')
+    expect(userTeams().map((team) => team.teamId)).toEqual([created.teamId])
     expect(() => service.get({ teamId: 'empty' })).toThrowError(
       expect.objectContaining({ code: 'team.not_found' }),
     )
     storage.teams.setArchived(created.teamId, true)
-    expect(service.list({}).teams).toEqual([])
-    expect(service.list({ includeArchived: true }).teams).toEqual([
+    expect(userTeams()).toEqual([])
+    expect(userTeams(true)).toEqual([
       expect.objectContaining({ teamId: created.teamId, archived: true }),
     ])
   })
@@ -527,5 +542,71 @@ describe('团队模板命令（M7-09）', () => {
     const detail = service.saveDraft({ definition: draft() })
     expect(detail.teamId).toMatch(/^user\.team-.*-[0-9a-f-]{36}$/)
     expect(storage.teams.get(detail.teamId)?.createdAt).toBeGreaterThan(0)
+  })
+})
+
+describe('内置团队模板', () => {
+  it('默认列表里排在最前，标记为内置并可直接选用', () => {
+    const { service } = setup()
+    const { teams } = service.list({})
+    expect(teams.slice(0, BUILTIN_TEAMS.length).map((team) => team.teamId)).toEqual(
+      BUILTIN_TEAMS.map((team) => team.id),
+    )
+    expect(teams[0]).toMatchObject({
+      source: 'builtin',
+      status: 'published',
+      version: 1,
+      archived: false,
+      hasDraft: false,
+    })
+    // 普通会话可以按 id 解析到内置模板的主控与版本。
+    expect(service.resolveTeam(BUILTIN_TEAMS[0]!.id)?.team).toMatchObject({
+      teamId: BUILTIN_TEAMS[0]!.id,
+      version: 1,
+    })
+  })
+
+  it('详情与版本可读，校验通过且没有草稿', () => {
+    const { service } = setup()
+    const team = BUILTIN_TEAMS[0]!
+    const detail = service.get({ teamId: team.id })
+    expect(detail).toMatchObject({ source: 'builtin', archived: false })
+    expect(detail.published?.id).toBe(team.id)
+    expect(detail.draft).toBeUndefined()
+    expect(detail.validation).toEqual({ ok: true, errors: [], warnings: [] })
+    expect(service.versions({ teamId: team.id }).versions.map((entry) => entry.version)).toEqual([
+      1,
+    ])
+    expect(() => service.get({ teamId: team.id, version: 9 })).toThrowError(
+      expect.objectContaining({ code: 'team.not_found' }),
+    )
+  })
+
+  it('只读：保存、发布、归档都返回 team.readonly，复制副本另存为用户模板', () => {
+    const { service } = setup()
+    const team = BUILTIN_TEAMS[0]!
+    const readonly = expect.objectContaining({ code: 'team.readonly' })
+    expect(() => service.saveDraft({ definition: { id: team.id, ...draft() } })).toThrowError(
+      readonly,
+    )
+    expect(() => service.publish({ teamId: team.id })).toThrowError(readonly)
+    expect(() => service.archive({ teamId: team.id })).toThrowError(readonly)
+    expect(() => service.unarchive({ teamId: team.id })).toThrowError(readonly)
+
+    const copy = service.saveDraft({
+      definition: { ...draft(), name: { 'zh-CN': '我的审查小组' } },
+    })
+    expect(copy.source).toBe('user')
+    expect(copy.teamId).toMatch(/^user\.team-/)
+  })
+
+  it('可以直接试运行，并按代码里的版本并入协作说明', () => {
+    const { service } = setup()
+    const team = BUILTIN_TEAMS[0]!
+    const started = service.trialStart({ teamId: team.id, projectPath })
+    expect(started.teamId).toBe(team.id)
+    const merged = service.applySessionTeam(started.sessionId, coordinator)
+    expect(merged.instructions).toContain('# Team')
+    expect(merged.instructions).toContain('Pattern: review-loop')
   })
 })

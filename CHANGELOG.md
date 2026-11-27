@@ -7,6 +7,16 @@
 
 ### Added
 
+- 团队模板列表自带三个内置模板：「代码审查小组」（审查循环）、「探索与实现」（主控分派）与
+  「实现流水线」（探索 → 实现 → 测试），第一次打开就有可用的范例。内置模板只读，可以直接
+  试运行，或点「复制为副本」得到可编辑、可发布的用户模板，原模板与版本历史不受影响；列表里
+  带「内置」标记。
+  The team template list ships with three built-in templates: "Code review pair" (review loop),
+  "Explore and build" (delegation), and "Build pipeline" (explore → build → test), so the list
+  is useful from the first launch. Built-ins are read-only: run them directly, or use
+  "Duplicate" to get an editable, publishable user template while the original stays untouched.
+  The list marks them as "Built-in".
+
 - 侧栏的会话列表会在标题旁用团队图标标出正在使用团队模板的会话，悬停显示团队名称，读屏
   也会读出；模板改名后按列表里的最新名称显示，普通 Agent 会话不受影响。
   Sessions that use a team template now show a team icon next to their title in the sidebar,

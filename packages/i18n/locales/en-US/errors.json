@@ -155,6 +155,7 @@
   "team.not_found": "Team template not found",
   "team.no_draft": "This team template has no usable draft",
   "team.invalid": "The team template has not passed validation; fix the issues before continuing",
+  "team.readonly": "Built-in templates are read-only; duplicate one to make changes",
   "team.unavailable": "This team template cannot be used yet: publish it, and make sure the coordinator agent is published and the template is not archived",
   "update.not_packaged": "Updates are disabled in development mode",
   "update.disabled_by_env": "Automatic updates are disabled by an environment variable",
