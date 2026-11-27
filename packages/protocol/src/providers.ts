@@ -152,6 +152,47 @@ export type ProviderRegionId = z.infer<typeof ProviderRegionId>
 export const HTTPS_URL_PATTERN = /^https:\/\/[^\s/?#@]+(?:[/?#]\S*)?$/i
 const HttpsUrl = z.string().max(2048).regex(HTTPS_URL_PATTERN)
 
+/**
+ * 图标（ADR-0049）：界面只显示 `https` 图片或 `data:image/…;base64,` 内联图片。插件文件中还可以写相对路径
+ * （如 `icons/acme.svg`），从官方目录安装时按插件文件的地址解析成 `https`；本地文件中的相对路径无法解析，
+ * 会被忽略并回到网站图标（favicon）。
+ */
+export const ICON_DATA_URL_PATTERN =
+  /^data:image\/(?:png|jpeg|gif|webp|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/=]+$/
+/** 相对路径：不以 `/` 开头、没有 `..`、只用常见字符。 */
+export const RELATIVE_ASSET_PATTERN = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/-]{1,256}$/
+/** 内联图标的长度上限（约 96 KB 的图片）。 */
+export const ICON_DATA_URL_MAX = 131_072
+export const IconUrl = z
+  .string()
+  .max(ICON_DATA_URL_MAX)
+  .refine((value) => HTTPS_URL_PATTERN.test(value) || ICON_DATA_URL_PATTERN.test(value), {
+    message: 'icon must be an https URL or a data:image URL',
+  })
+/** 插件文件里的图标：`IconUrl`，或待解析的相对路径。 */
+export const IconRef = z
+  .string()
+  .max(ICON_DATA_URL_MAX)
+  .refine(
+    (value) =>
+      HTTPS_URL_PATTERN.test(value) ||
+      ICON_DATA_URL_PATTERN.test(value) ||
+      RELATIVE_ASSET_PATTERN.test(value),
+    { message: 'icon must be an https URL, a data:image URL, or a relative path' },
+  )
+
+/**
+ * 求图标的依据（`providerIcon.resolve`）：显式的 `icon` 优先；没有时按 `homepage`、`keysUrl`、`baseUrl`
+ * 的顺序找网站图标（favicon）。
+ */
+export const IconSource = z.object({
+  icon: IconUrl.optional(),
+  homepage: z.string().max(2048).regex(HTTPS_URL_PATTERN).optional(),
+  keysUrl: z.string().max(2048).regex(HTTPS_URL_PATTERN).optional(),
+  baseUrl: z.string().max(2048).regex(BASE_URL_PATTERN).optional(),
+})
+export type IconSource = z.infer<typeof IconSource>
+
 export const ProviderRegion = z.object({
   id: ProviderRegionId,
   baseUrl: BaseUrl,
@@ -184,6 +225,10 @@ export const ProviderTemplateSpec = z
     requiresKey: z.boolean(),
     /** 申请 Key 的页面。 */
     keysUrl: HttpsUrl.optional(),
+    /** 服务的网站；没有 `icon` 时优先从这里取网站图标。 */
+    homepage: HttpsUrl.optional(),
+    /** 图标；省略时用网站图标（favicon）。 */
+    icon: IconUrl.optional(),
     compat: ModelCompat.optional(),
     models: z.array(ModelProfile).max(64),
     /**
@@ -237,6 +282,8 @@ export const ProviderPluginEntry = z.object({
   /** 省略时需要 Key。 */
   requiresKey: z.boolean().optional(),
   keysUrl: HttpsUrl.optional(),
+  homepage: HttpsUrl.optional(),
+  icon: IconRef.optional(),
   compat: ModelCompat.optional(),
   models: z.array(ProviderPluginModel).max(64).optional(),
   suggestedModels: z.array(Id.max(256)).max(16).optional(),
@@ -256,6 +303,7 @@ export const ProviderPluginManifest = z
     version: z.string().max(32).optional(),
     description: z.string().max(280).optional(),
     homepage: HttpsUrl.optional(),
+    icon: IconRef.optional(),
     providers: z.array(ProviderPluginEntry).min(1).max(32),
   })
   .refine((plugin) => new Set(plugin.providers.map((p) => p.id)).size === plugin.providers.length, {
@@ -271,6 +319,7 @@ export const ProviderPluginInfo = z.object({
   version: z.string().max(32).optional(),
   description: z.string().max(280).optional(),
   homepage: HttpsUrl.optional(),
+  icon: IconUrl.optional(),
   templates: z.array(ProviderTemplateSpec).max(32),
 })
 export type ProviderPluginInfo = z.infer<typeof ProviderPluginInfo>
@@ -281,3 +330,43 @@ export const ProviderPluginSkipped = z.object({
   code: z.string().min(1),
 })
 export type ProviderPluginSkipped = z.infer<typeof ProviderPluginSkipped>
+
+/**
+ * 官方插件目录（ADR-0049）：`https://github.com/960602906/cairn-provider-plugins` 默认分支上的 `index.json`
+ * 列出插件，插件文件在同一仓库内（`path`，省略时为 `plugins/<id>.json`）。只读这个仓库里的文件；
+ * 插件声明的地址照常在安装前预览。
+ */
+export const PROVIDER_CATALOG_SCHEMA_VERSION = 1
+
+/** `index.json` 中的一项；无效的项跳过，不影响其余插件。 */
+export const ProviderCatalogIndexEntry = z.object({
+  id: PluginId,
+  name: z.string().trim().min(1).max(80),
+  description: z.string().max(280).optional(),
+  version: z.string().max(32).optional(),
+  homepage: HttpsUrl.optional(),
+  icon: IconRef.optional(),
+  /** 插件文件在仓库中的相对路径，以 `.json` 结尾。 */
+  path: z
+    .string()
+    .regex(RELATIVE_ASSET_PATTERN)
+    .refine((value) => value.endsWith('.json'), { message: 'path must end with .json' })
+    .optional(),
+})
+export type ProviderCatalogIndexEntry = z.infer<typeof ProviderCatalogIndexEntry>
+
+export const ProviderCatalogIndex = z.object({
+  schemaVersion: z.literal(PROVIDER_CATALOG_SCHEMA_VERSION),
+  plugins: z.array(z.unknown()).max(500),
+})
+
+/** 界面中的目录项：图标已解析。 */
+export const ProviderCatalogItem = z.object({
+  id: PluginId,
+  name: z.string().min(1).max(80),
+  description: z.string().max(280).optional(),
+  version: z.string().max(32).optional(),
+  homepage: HttpsUrl.optional(),
+  icon: IconUrl.optional(),
+})
+export type ProviderCatalogItem = z.infer<typeof ProviderCatalogItem>

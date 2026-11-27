@@ -254,6 +254,18 @@ function setup(
       plugin: { id: 'acme', name: 'Acme', templates: [] },
     })),
     removePlugin: vi.fn(() => ({})),
+    listCatalog: vi.fn(async () => ({ source: 'https://github.com/o/r', plugins: [] })),
+    previewCatalog: vi.fn(async () => ({
+      replaces: false,
+      sha256: 'a'.repeat(64),
+      plugin: { id: 'acme', name: 'Acme', templates: [] },
+    })),
+    installCatalog: vi.fn(async () => ({
+      installed: true,
+      replaces: false,
+      plugin: { id: 'acme', name: 'Acme', templates: [] },
+    })),
+    resolveIcon: vi.fn(async () => ({})),
   }
   permissions = {
     list: vi.fn(() => ({ rules: [] })),
@@ -1540,6 +1552,17 @@ describe('createRendererGateway: commands and lifecycle', () => {
     ).resolves.toMatchObject({ installed: true, plugin: { id: 'acme' } })
     await expect(client.request('providerPlugin.remove', { id: 'acme' })).resolves.toEqual({})
     expect(providers.removePlugin).toHaveBeenCalledWith({ id: 'acme' })
+    await expect(client.request('providerCatalog.list', {})).resolves.toMatchObject({ plugins: [] })
+    await expect(client.request('providerCatalog.preview', { id: 'acme' })).resolves.toMatchObject({
+      sha256: 'a'.repeat(64),
+    })
+    await expect(
+      client.request('providerCatalog.install', { id: 'acme', sha256: 'a'.repeat(64) }),
+    ).resolves.toMatchObject({ installed: true })
+    await expect(
+      client.request('providerIcon.resolve', { homepage: 'https://acme.example' }),
+    ).resolves.toEqual({})
+    expect(providers.resolveIcon).toHaveBeenCalledWith({ homepage: 'https://acme.example' })
   })
 
   it('delegates permission rule requests to the permission service (M2-11)', async () => {

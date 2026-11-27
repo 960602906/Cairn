@@ -58,6 +58,7 @@ import {
   type ChangeSetInfo,
   type ChangeSetSummary,
   type ErrorInfo,
+  type IconSource,
   type EventEnvelope,
   type FileChangeSummary,
   type HubMcpCard,
@@ -117,6 +118,11 @@ export type CredentialStatus = z.output<Requests['credentials.status']['result']
 /** 已安装的供应商插件与无法加载的文件（ADR-0049）。 */
 export type ProviderPluginList = z.output<Requests['providerPlugin.list']['result']>
 export type ProviderPluginInstall = z.output<Requests['providerPlugin.install']['result']>
+export type ProviderCatalogList = z.output<Requests['providerCatalog.list']['result']>
+export type ProviderCatalogPreview = z.output<Requests['providerCatalog.preview']['result']>
+/** 目录操作的结果：失败时带回错误码，由目录界面就地说明（目录不可达不影响其余功能）。 */
+export type Outcome<T> =
+  { readonly ok: true; readonly result: T } | { readonly ok: false; readonly error: ErrorInfo }
 /** 安装插件的结果：文件无效时带回错误码，由安装界面就地说明，不写全局 `error`。 */
 export type ProviderPluginInstallOutcome =
   | { readonly ok: true; readonly result: ProviderPluginInstall }
@@ -569,6 +575,14 @@ export interface SessionActions {
   installProviderPlugin(path: string, confirm?: boolean): Promise<ProviderPluginInstallOutcome>
   /** 卸载插件并刷新 `providerPlugins`；成功时返回 true。 */
   removeProviderPlugin(id: string): Promise<boolean>
+  /** 官方插件目录（ADR-0049）。 */
+  loadProviderCatalog(): Promise<Outcome<ProviderCatalogList>>
+  /** 下载目录中的插件并预览。 */
+  previewCatalogPlugin(id: string): Promise<Outcome<ProviderCatalogPreview>>
+  /** 安装预览过的目录插件，成功后刷新 `providerPlugins`。 */
+  installCatalogPlugin(id: string, sha256: string): Promise<Outcome<ProviderPluginInstall>>
+  /** 供应商图标的 `data:` 地址；同一来源只请求一次，找不到或失败时为 undefined。 */
+  providerIcon(source: IconSource): Promise<string | undefined>
   /** 测试供应商的连接（M2-10）；请求本身失败时返回 undefined（错误写入 `error`）。 */
   testProvider(
     provider: ProviderConfig,
@@ -781,6 +795,8 @@ export function createSessionStore(api: MainApi): SessionStore {
   /** 活动列表：进行中请求复用，期间的再次请求合并为完成后的一次刷新。 */
   let activityLoad: Promise<void> | undefined
   let activityRefreshQueued = false
+  /** 供应商图标：同一来源在这个窗口里只向主进程请求一次。 */
+  const providerIcons = new Map<string, Promise<string | undefined>>()
   /** 检查器请求序号：切换标签后较早的响应不应覆盖新结果。 */
   const inspectionRequests = new Map<string, number>()
   const store = createStore<SessionState & SessionActions>()((set, get) => {
@@ -1964,6 +1980,46 @@ export function createSessionStore(api: MainApi): SessionStore {
         }
         if (result.installed) await get().loadProviderPlugins()
         return { ok: true, result }
+      },
+
+      async loadProviderCatalog() {
+        try {
+          return { ok: true, result: await api.request('providerCatalog.list', {}) }
+        } catch (error) {
+          return { ok: false, error: toError(error) }
+        }
+      },
+
+      async previewCatalogPlugin(id) {
+        try {
+          return { ok: true, result: await api.request('providerCatalog.preview', { id }) }
+        } catch (error) {
+          return { ok: false, error: toError(error) }
+        }
+      },
+
+      async installCatalogPlugin(id, sha256) {
+        let result: ProviderPluginInstall
+        try {
+          result = await api.request('providerCatalog.install', { id, sha256 })
+        } catch (error) {
+          return { ok: false, error: toError(error) }
+        }
+        await get().loadProviderPlugins()
+        return { ok: true, result }
+      },
+
+      providerIcon(source) {
+        const key = JSON.stringify([source.icon, source.homepage, source.keysUrl, source.baseUrl])
+        let pending = providerIcons.get(key)
+        if (!pending) {
+          pending = api.request('providerIcon.resolve', source).then(
+            (result) => result.dataUrl,
+            () => undefined,
+          )
+          providerIcons.set(key, pending)
+        }
+        return pending
       },
 
       async removeProviderPlugin(id) {

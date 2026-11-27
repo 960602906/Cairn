@@ -8,6 +8,8 @@
  * - 兼容参数：运行时只按地址自动判断部分服务（如 `deepseek.com`），经代理接入时要靠模板显式给出（S2），
  *   所以模板总是写全它需要的兼容参数。
  * - 供应商插件（ADR-0049）给出的目录项与内置模板同一结构，见 `provider-plugins.ts`。
+ * - 图标：DeepSeek、Anthropic、OpenAI、Gemini 用随应用的品牌图标；其余没有 `icon` 时显示网站图标
+ *   （从 `homepage`、`keysUrl`、`baseUrl` 依次找），所以模板不必自带图片。
  * - 覆盖规则：用模板创建提供方时，模板的值复制进 `ProviderConfig`，之后以配置为准（用户可修改地址、
  *   模型与兼容参数）；模型自己的 `compat` 逐项覆盖提供方的 `compat`。
  */
@@ -111,6 +113,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'vendor',
     displayName: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
+    homepage: 'https://www.deepseek.com',
     requiresKey: true,
     keysUrl: 'https://platform.deepseek.com/api_keys',
     compat: DEEPSEEK_COMPAT,
@@ -126,6 +129,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'vendor',
     displayName: 'Anthropic',
     baseUrl: 'https://api.anthropic.com',
+    homepage: 'https://www.anthropic.com',
     requiresKey: true,
     keysUrl: 'https://console.anthropic.com/settings/keys',
     models: [
@@ -141,6 +145,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'vendor',
     displayName: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
+    homepage: 'https://openai.com',
     requiresKey: true,
     keysUrl: 'https://platform.openai.com/api-keys',
     models: [
@@ -155,6 +160,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'vendor',
     displayName: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    homepage: 'https://ai.google.dev',
     requiresKey: true,
     keysUrl: 'https://aistudio.google.com/apikey',
     models: [
@@ -181,6 +187,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
         keysUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
       },
     ],
+    homepage: 'https://qwen.ai',
     requiresKey: true,
     compat: QWEN_COMPAT,
     models: [],
@@ -205,6 +212,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
         keysUrl: 'https://platform.moonshot.cn/console/api-keys',
       },
     ],
+    homepage: 'https://www.moonshot.ai',
     requiresKey: true,
     compat: MOONSHOT_COMPAT,
     models: [],
@@ -217,6 +225,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'vendor',
     displayName: 'Zhipu GLM',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    homepage: 'https://bigmodel.cn',
     requiresKey: true,
     keysUrl: 'https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys',
     compat: ZAI_COMPAT,
@@ -230,6 +239,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'vendor',
     displayName: 'Z.ai',
     baseUrl: 'https://api.z.ai/api/paas/v4',
+    homepage: 'https://z.ai',
     requiresKey: true,
     keysUrl: 'https://z.ai/manage-apikey/apikey-list',
     compat: ZAI_COMPAT,
@@ -255,6 +265,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
         keysUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
       },
     ],
+    homepage: 'https://www.minimax.io',
     requiresKey: true,
     compat: CHAT_COMPAT,
     models: [],
@@ -267,6 +278,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'vendor',
     displayName: 'Volcengine Ark',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    homepage: 'https://www.volcengine.com',
     requiresKey: true,
     keysUrl: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
     compat: CHAT_COMPAT,
@@ -279,6 +291,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'vendor',
     displayName: 'xAI Grok',
     baseUrl: 'https://api.x.ai/v1',
+    homepage: 'https://x.ai',
     requiresKey: true,
     keysUrl: 'https://console.x.ai',
     compat: XAI_COMPAT,
@@ -292,6 +305,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'relay',
     displayName: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
+    homepage: 'https://openrouter.ai',
     requiresKey: true,
     keysUrl: 'https://openrouter.ai/keys',
     compat: OPENROUTER_COMPAT,
@@ -316,6 +330,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
         keysUrl: 'https://cloud.siliconflow.cn/account/ak',
       },
     ],
+    homepage: 'https://www.siliconflow.com',
     requiresKey: true,
     compat: CHAT_COMPAT,
     models: [],
@@ -327,6 +342,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'relay',
     displayName: 'Vercel AI Gateway',
     baseUrl: 'https://ai-gateway.vercel.sh/v1',
+    homepage: 'https://vercel.com',
     requiresKey: true,
     keysUrl: 'https://vercel.com/docs/ai-gateway',
     models: [],
@@ -338,6 +354,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'local',
     displayName: 'Ollama',
     baseUrl: 'http://localhost:11434/v1',
+    homepage: 'https://ollama.com',
     requiresKey: false,
     compat: CHAT_COMPAT,
     models: [],
@@ -350,6 +367,7 @@ export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
     category: 'local',
     displayName: 'LM Studio',
     baseUrl: 'http://localhost:1234/v1',
+    homepage: 'https://lmstudio.ai',
     requiresKey: false,
     compat: CHAT_COMPAT,
     models: [],

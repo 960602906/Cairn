@@ -6,7 +6,10 @@
  * - 不读写文件；扫描与安装在主进程（`provider-plugin-service`）。
  */
 import {
+  HTTPS_URL_PATTERN,
+  ICON_DATA_URL_PATTERN,
   PROVIDER_PLUGIN_SCHEMA_VERSION,
+  RELATIVE_ASSET_PATTERN,
   ProviderPluginManifest,
   ProviderTemplateSpec,
   type ModelCapabilities,
@@ -89,6 +92,48 @@ function capabilitiesOf(
   }
 }
 
+/** 已经能直接显示的图标（https 或内联图片）。 */
+export const isIconUrl = (value: string): boolean =>
+  HTTPS_URL_PATTERN.test(value) || ICON_DATA_URL_PATTERN.test(value)
+
+/**
+ * 解析插件文件里的图标：https 与内联图片原样返回；相对路径按 `base`（插件文件的 https 地址）所在目录解析，
+ * 像浏览器解析相对地址一样。没有 `base` 或无法解析时为 undefined。
+ */
+export function resolveAssetUrl(ref: string, base: string | undefined): string | undefined {
+  if (isIconUrl(ref)) return ref
+  if (!RELATIVE_ASSET_PATTERN.test(ref) || base === undefined || !HTTPS_URL_PATTERN.test(base)) {
+    return undefined
+  }
+  const dir = base.replace(/[?#].*$/, '').replace(/[^/]*$/, '')
+  const path = ref
+    .split('/')
+    .filter((part) => part !== '' && part !== '.')
+    .join('/')
+  return path === '' ? undefined : `${dir}${path}`
+}
+
+/** 把插件中的相对图标解析成 https 地址；解析不了的去掉（回到网站图标）。 */
+export function resolvePluginIcons(
+  manifest: ProviderPluginManifest,
+  base: string | undefined,
+): ProviderPluginManifest {
+  const icon = manifest.icon === undefined ? undefined : resolveAssetUrl(manifest.icon, base)
+  const { icon: _icon, ...rest } = manifest
+  return {
+    ...rest,
+    ...(icon ? { icon } : {}),
+    providers: manifest.providers.map((entry) => {
+      const { icon: _entryIcon, ...other } = entry
+      const resolved = entry.icon === undefined ? undefined : resolveAssetUrl(entry.icon, base)
+      return { ...other, ...(resolved ? { icon: resolved } : {}) }
+    }),
+  }
+}
+
+const displayIcon = (icon: string | undefined) =>
+  icon !== undefined && isIconUrl(icon) ? { icon } : {}
+
 function templateOf(pluginId: string, entry: ProviderPluginEntry): ProviderTemplate {
   const modelDefaults = capabilitiesOf(entry.modelDefaults, GENERIC_MODEL_DEFAULTS)
   const models: ModelProfile[] = (entry.models ?? []).map((m) => ({
@@ -107,6 +152,8 @@ function templateOf(pluginId: string, entry: ProviderPluginEntry): ProviderTempl
     ...(entry.regions ? { regions: entry.regions } : {}),
     requiresKey: entry.requiresKey ?? true,
     ...(entry.keysUrl ? { keysUrl: entry.keysUrl } : {}),
+    ...(entry.homepage ? { homepage: entry.homepage } : {}),
+    ...displayIcon(entry.icon),
     ...(entry.compat ? { compat: entry.compat } : {}),
     models,
     ...(entry.suggestedModels ? { suggestedModels: entry.suggestedModels } : {}),
@@ -125,7 +172,7 @@ function templateOf(pluginId: string, entry: ProviderPluginEntry): ProviderTempl
   return template
 }
 
-/** 插件 → 界面使用的信息（模板已展开）。 */
+/** 插件 → 界面使用的信息（模板已展开）。还没解析的相对图标不显示。 */
 export function providerPluginInfo(manifest: ProviderPluginManifest): ProviderPluginInfo {
   return {
     id: manifest.id,
@@ -133,6 +180,7 @@ export function providerPluginInfo(manifest: ProviderPluginManifest): ProviderPl
     ...(manifest.version ? { version: manifest.version } : {}),
     ...(manifest.description ? { description: manifest.description } : {}),
     ...(manifest.homepage ? { homepage: manifest.homepage } : {}),
+    ...displayIcon(manifest.icon),
     templates: manifest.providers.map((entry) => templateOf(manifest.id, entry)),
   }
 }

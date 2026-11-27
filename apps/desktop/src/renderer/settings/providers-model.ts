@@ -16,6 +16,7 @@ import {
 import {
   BASE_URL_PATTERN,
   CONFIG_ID_PATTERN,
+  type IconSource,
   type ModelCompat,
   type ModelProfile,
   type ProviderCategory,
@@ -122,6 +123,38 @@ export const BRAND_TEMPLATES: ReadonlySet<string> = new Set([
   'openai',
   'gemini',
 ])
+
+/** 目录项的图标依据：显式图标，否则按网站、申请 Key 的页面、接口地址找网站图标。 */
+export function iconSourceOf(
+  template: Pick<ProviderTemplate, 'icon' | 'homepage' | 'keysUrl' | 'baseUrl' | 'regions'>,
+): IconSource {
+  const keysUrl = template.keysUrl ?? template.regions?.find((r) => r.keysUrl)?.keysUrl
+  return {
+    ...(template.icon ? { icon: template.icon } : {}),
+    ...(template.homepage ? { homepage: template.homepage } : {}),
+    ...(keysUrl ? { keysUrl } : {}),
+    baseUrl: template.baseUrl,
+  }
+}
+
+/** 官方插件目录仓库（ADR-0049）；目录内容由主进程读取，界面只用它显示来源链接。 */
+export const OFFICIAL_CATALOG_PAGE = 'https://github.com/960602906/cairn-provider-plugins'
+
+/** 插件的图标依据：插件自己的图标或网站；都没有时用第一个服务的。 */
+export function pluginIconSourceOf(plugin: {
+  readonly icon?: string | undefined
+  readonly homepage?: string | undefined
+  readonly templates?: readonly ProviderTemplate[]
+}): IconSource | undefined {
+  if (plugin.icon || plugin.homepage) {
+    return {
+      ...(plugin.icon ? { icon: plugin.icon } : {}),
+      ...(plugin.homepage ? { homepage: plugin.homepage } : {}),
+    }
+  }
+  const first = plugin.templates?.[0]
+  return first ? iconSourceOf(first) : undefined
+}
 
 /** token 数的简写：`128k`、`1M`、`1.5M`。 */
 export function formatTokens(n: number): string {

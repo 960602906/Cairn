@@ -173,6 +173,11 @@ export interface ProviderCommands {
   readonly pickPlugin: Handler<'providerPlugin.pick'>
   readonly installPlugin: Handler<'providerPlugin.install'>
   readonly removePlugin: Handler<'providerPlugin.remove'>
+  /** 官方插件目录与供应商图标（ADR-0049）。 */
+  readonly listCatalog: Handler<'providerCatalog.list'>
+  readonly previewCatalog: Handler<'providerCatalog.preview'>
+  readonly installCatalog: Handler<'providerCatalog.install'>
+  readonly resolveIcon: Handler<'providerIcon.resolve'>
 }
 
 /** 由权限服务实现的规则管理（M2-11）。增删之后由调用方通知运行中的宿主。 */
@@ -576,6 +581,10 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
       endpoint.handle('providerPlugin.pick', (params) => providers.pickPlugin(params))
       endpoint.handle('providerPlugin.install', (params) => providers.installPlugin(params))
       endpoint.handle('providerPlugin.remove', (params) => providers.removePlugin(params))
+      endpoint.handle('providerCatalog.list', (params) => providers.listCatalog(params))
+      endpoint.handle('providerCatalog.preview', (params) => providers.previewCatalog(params))
+      endpoint.handle('providerCatalog.install', (params) => providers.installCatalog(params))
+      endpoint.handle('providerIcon.resolve', (params) => providers.resolveIcon(params))
       endpoint.handle('permissions.list', (params) => permissions.list(params))
       endpoint.handle('permissions.add', (params) => permissions.add(params))
       endpoint.handle('permissions.delete', (params) => permissions.delete(params))

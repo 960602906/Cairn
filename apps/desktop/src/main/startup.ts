@@ -102,6 +102,8 @@ import { createUpdateService } from './services/update-service.js'
 import { createShellInfo } from './services/shell-info.js'
 import { createProviderService } from './services/provider-service.js'
 import { createProviderPluginService } from './services/provider-plugin-service.js'
+import { createProviderCatalogService } from './services/provider-catalog-service.js'
+import { createIconService } from './services/icon-service.js'
 import { createAppInfoCommands } from './services/app-info-service.js'
 import { readLicenseNotices } from './services/licenses-service.js'
 import { createGitLocator, gitRuntimeInfo } from './services/git-locator.js'
@@ -388,6 +390,19 @@ const providerPlugins = createProviderPluginService({
     return result.canceled ? undefined : result.filePaths[0]
   },
 })
+/**
+ * 官方插件目录（ADR-0049）。`CAIRN_PROVIDER_CATALOG_URL` 只用于测试与开发（例如指向本机的目录服务），
+ * 正式使用时总是官方仓库。
+ */
+const catalogOverride = process.env.CAIRN_PROVIDER_CATALOG_URL?.trim()
+const providerCatalog = createProviderCatalogService({
+  plugins: providerPlugins,
+  ...(catalogOverride
+    ? { files: catalogOverride.endsWith('/') ? catalogOverride : `${catalogOverride}/` }
+    : {}),
+})
+/** 供应商图标与网站图标的缓存（ADR-0049）。 */
+const providerIcons = createIconService({ cacheDir: join(paths.root, 'icon-cache') })
 const providerService = createProviderService({ credentials })
 /** 资源市场（M5）：只读目录，安装复用上面的技能与 MCP 服务。 */
 const hub = createHubService()
@@ -873,6 +888,10 @@ const gateway = createRendererGateway({
     pickPlugin: () => providerPlugins.pick(),
     installPlugin: (params) => providerPlugins.install(params),
     removePlugin: (params) => providerPlugins.remove(params),
+    listCatalog: () => providerCatalog.list(),
+    previewCatalog: (params) => providerCatalog.preview(params),
+    installCatalog: (params) => providerCatalog.install(params),
+    resolveIcon: (params) => providerIcons.resolve(params),
   },
   // 权限规则（M2-11）：增删之后运行中的宿主立即改用新规则
   permissions: {

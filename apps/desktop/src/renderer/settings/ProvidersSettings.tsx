@@ -25,10 +25,12 @@ import {
 } from '@cairn/core'
 import type {
   ErrorInfo,
+  IconSource,
   ModelCompat,
   ModelProfile,
   ProviderConfig,
   ProviderKind,
+  ProviderCatalogItem,
   ProviderPluginInfo,
   RemoteModel,
   ThinkingFormat,
@@ -90,7 +92,10 @@ import {
   formatTokens,
   genericDraftFor,
   hostOf,
+  iconSourceOf,
   initials,
+  OFFICIAL_CATALOG_PAGE,
+  pluginIconSourceOf,
   LOCAL_AUTO_ENABLE_LIMIT,
   modelRowsOf,
   newDraftForTemplate,
@@ -137,36 +142,101 @@ function useErrorText() {
   return (error: ErrorInfo) => translateError(i18n, error)
 }
 
+/** 图标的 `data:` 地址（主进程下载的显式图标或网站图标）；还没拿到或找不到时为 undefined。 */
+function useIcon(source: IconSource | undefined): string | undefined {
+  const providerIcon = useSessionStore((s) => s.providerIcon)
+  const key = source ? JSON.stringify(source) : ''
+  const [loaded, setLoaded] = useState<{ readonly key: string; readonly url?: string }>()
+  useEffect(() => {
+    if (!source) return
+    let cancelled = false
+    void providerIcon(source).then((url) => {
+      if (!cancelled) setLoaded(url === undefined ? { key } : { key, url })
+    })
+    return () => {
+      cancelled = true
+    }
+    // source 每次渲染都是新对象，按内容（key）决定是否重新请求
+  }, [key, providerIcon])
+  return loaded?.key === key ? loaded.url : undefined
+}
+
+/** 远程图标：加载完成前和失败时显示 `fallback`，不挡住界面。 */
+function RemoteIcon({
+  source,
+  fallback,
+}: {
+  readonly source: IconSource | undefined
+  readonly fallback: ReactNode
+}) {
+  const url = useIcon(source)
+  const [broken, setBroken] = useState<string>()
+  if (url === undefined || broken === url) return <>{fallback}</>
+  return (
+    <img
+      src={url}
+      alt=""
+      draggable={false}
+      onError={() => setBroken(url)}
+      className="size-[64%] object-contain"
+    />
+  )
+}
+
+const tileClass =
+  'inline-grid shrink-0 place-items-center overflow-hidden rounded-[9px] bg-paper text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)]'
+
+/** 插件与目录项的图标：没有图标时用拼图符号。 */
+function PluginGlyph({
+  source,
+  size = 28,
+}: {
+  readonly source: IconSource | undefined
+  readonly size?: number
+}) {
+  return (
+    <span aria-hidden className={tileClass} style={{ width: size, height: size }}>
+      <RemoteIcon source={source} fallback={<Puzzle className="size-[52%] text-muted" />} />
+    </span>
+  )
+}
+
 function Logo({
   name,
   kind,
   template,
+  source,
   size = 32,
 }: {
   readonly name: string
   readonly kind: ProviderKind
   readonly template?: string | undefined
+  /** 目录项的图标依据；内置品牌图标的四个模板不需要。 */
+  readonly source?: IconSource | undefined
   readonly size?: number
 }) {
+  const monogram = (
+    <span
+      className="leading-none font-semibold tracking-tight text-fg2"
+      style={{ fontSize: Math.round(size * 0.36) }}
+    >
+      {initials(name)}
+    </span>
+  )
   return (
     <span
       aria-hidden
       title={name}
-      className="inline-grid shrink-0 place-items-center rounded-[9px] bg-paper text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)]"
+      className={tileClass}
       style={{
         width: size,
         height: size,
       }}
     >
-      {template === 'deepseek' ? (
+      {template === 'deepseek' && source?.icon === undefined ? (
         <DeepseekIcon className="w-[68%]" />
-      ) : template !== undefined && !BRAND_TEMPLATES.has(template) ? (
-        <span
-          className="leading-none font-semibold tracking-tight text-fg2"
-          style={{ fontSize: Math.round(size * 0.36) }}
-        >
-          {initials(name)}
-        </span>
+      ) : template !== undefined && (!BRAND_TEMPLATES.has(template) || source?.icon) ? (
+        <RemoteIcon source={source} fallback={monogram} />
       ) : (
         <ProviderBrandIcon kind={kind} className="size-[58%]" />
       )}
@@ -293,6 +363,7 @@ function DeleteProvider({
 
 function ProviderCard({
   provider,
+  iconSource,
   isDefault,
   keyStatus,
   result,
@@ -300,6 +371,7 @@ function ProviderCard({
   onDelete,
 }: {
   readonly provider: ProviderConfig
+  readonly iconSource: IconSource | undefined
   readonly isDefault: boolean
   readonly keyStatus: KeyStatus | undefined
   readonly result: TestSummary | undefined
@@ -316,6 +388,7 @@ function ProviderCard({
         name={provider.displayName}
         kind={provider.kind}
         template={provider.template}
+        source={iconSource}
         size={34}
       />
       <button type="button" onClick={onEdit} className="min-w-0 flex-1 text-left">
@@ -675,7 +748,13 @@ function ServiceTile({
   return (
     <li>
       <button type="button" onClick={onPick} className={pickRowClass}>
-        <Logo name={template.displayName} kind={template.kind} template={template.id} size={28} />
+        <Logo
+          name={template.displayName}
+          kind={template.kind}
+          template={template.id}
+          source={iconSourceOf(template)}
+          size={28}
+        />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13.5px] font-medium text-fg">
             {template.displayName}
@@ -730,24 +809,323 @@ function RemovePlugin({
   )
 }
 
+/** 安装前的预览：插件的服务与 Key 会发送到的全部地址；确认后由 `install` 写入。 */
+interface PluginPreview {
+  readonly plugin: ProviderPluginInfo
+  readonly replaces: boolean
+  readonly origin: 'catalog' | 'file'
+  readonly install: () => Promise<{ readonly ok: true } | { readonly ok: false; error: ErrorInfo }>
+}
+
+/** 一个服务会收到 Key 的地址：默认地址与各接入点，去重。 */
+const addressesOf = (template: ProviderTemplate): readonly string[] => [
+  ...new Set([template.baseUrl, ...(template.regions ?? []).map((region) => region.baseUrl)]),
+]
+
+function PluginPreviewDialog({
+  preview,
+  onClose,
+  onFailed,
+}: {
+  readonly preview: PluginPreview | undefined
+  readonly onClose: () => void
+  readonly onFailed: (error: ErrorInfo) => void
+}) {
+  const { t } = useTranslation('settings')
+  const { t: tc } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const confirm = async () => {
+    if (!preview) return
+    setBusy(true)
+    const outcome = await preview.install()
+    setBusy(false)
+    onClose()
+    if (!outcome.ok) onFailed(outcome.error)
+  }
+  return (
+    <Dialog open={preview !== undefined} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        icon={
+          preview ? <PluginGlyph source={pluginIconSourceOf(preview.plugin)} size={22} /> : null
+        }
+      >
+        <DialogTitle>
+          {t('providers.plugins.previewTitle', { name: preview?.plugin.name ?? '' })}
+        </DialogTitle>
+        <DialogDescription>
+          {preview?.origin === 'catalog'
+            ? t('providers.plugins.previewFromCatalog')
+            : t('providers.plugins.previewFromFile')}{' '}
+          {t('providers.plugins.previewDescription')}
+        </DialogDescription>
+        {preview?.plugin.homepage && (
+          <a
+            href={preview.plugin.homepage}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-flex items-center gap-1 text-note text-muted hover:text-fg [&_svg]:size-3"
+          >
+            {hostOf(preview.plugin.homepage)}
+            <ExternalLink />
+          </a>
+        )}
+        <ul
+          aria-label={t('providers.plugins.previewList')}
+          className="mt-4 flex max-h-64 flex-col gap-1 overflow-y-auto"
+        >
+          {preview?.plugin.templates.map((template) => (
+            <li
+              key={template.id}
+              className="flex items-start gap-2.5 rounded-[9px] bg-sunk px-2.5 py-1.5"
+            >
+              <Logo
+                name={template.displayName}
+                kind={template.kind}
+                template={template.id}
+                source={iconSourceOf(template)}
+                size={24}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-fg">
+                  {template.displayName}
+                  <span className="ml-1.5 font-normal text-faint">
+                    {t(`providers.kind.${template.kind}.name`)}
+                  </span>
+                </span>
+                {addressesOf(template).map((address) => (
+                  <span key={address} className="block truncate font-mono text-[11.5px] text-muted">
+                    {address}
+                  </span>
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {preview?.replaces && (
+          <p className="mt-3 text-note text-warn">{t('providers.plugins.previewReplaces')}</p>
+        )}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button>{tc('action.cancel')}</Button>
+          </DialogClose>
+          <Button variant="primary" disabled={busy} onClick={() => void confirm()}>
+            {busy && <Spinner />}
+            {t('providers.plugins.installConfirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /**
- * 供应商插件（ADR-0049）：列出已安装的插件与无法加载的文件；从文件安装时先预览其中的服务与地址，
- * 确认后才写入插件目录。
+ * 官方插件目录（ADR-0049）：列出 `cairn-provider-plugins` 仓库中的插件，标出已安装与可更新的；
+ * 选中后下载并预览，确认才安装。目录不可达时就地说明，可以重试，不影响其余功能。
+ */
+function OfficialCatalog({
+  installed,
+  onPreview,
+}: {
+  readonly installed: readonly ProviderPluginInfo[]
+  readonly onPreview: (preview: PluginPreview) => void
+}) {
+  const { t } = useTranslation('settings')
+  const errorText = useErrorText()
+  const load = useSessionStore((s) => s.loadProviderCatalog)
+  const previewPlugin = useSessionStore((s) => s.previewCatalogPlugin)
+  const installPlugin = useSessionStore((s) => s.installCatalogPlugin)
+  const [open, setOpen] = useState(false)
+  const [state, setState] = useState<
+    | { readonly status: 'loading' }
+    | { readonly status: 'failed'; readonly error: ErrorInfo }
+    | {
+        readonly status: 'ready'
+        readonly source: string
+        readonly plugins: readonly ProviderCatalogItem[]
+      }
+  >({ status: 'loading' })
+  const [opening, setOpening] = useState<string>()
+  const [failure, setFailure] = useState<ErrorInfo>()
+
+  const refresh = async () => {
+    setState({ status: 'loading' })
+    setFailure(undefined)
+    const outcome = await load()
+    setState(
+      outcome.ok
+        ? { status: 'ready', source: outcome.result.source, plugins: outcome.result.plugins }
+        : { status: 'failed', error: outcome.error },
+    )
+  }
+
+  const show = async (item: ProviderCatalogItem) => {
+    setFailure(undefined)
+    setOpening(item.id)
+    const outcome = await previewPlugin(item.id)
+    setOpening(undefined)
+    if (!outcome.ok) {
+      setFailure(outcome.error)
+      return
+    }
+    const { plugin, replaces, sha256 } = outcome.result
+    onPreview({
+      plugin,
+      replaces,
+      origin: 'catalog',
+      install: async () => {
+        const done = await installPlugin(item.id, sha256)
+        return done.ok ? { ok: true } : done
+      },
+    })
+  }
+
+  const installedById = new Map(installed.map((plugin) => [plugin.id, plugin]))
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) void refresh()
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7">
+          <Puzzle />
+          {t('providers.catalog.browse')}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="flex max-h-[calc(100dvh-64px)] w-[min(560px,calc(100vw-32px))] flex-col">
+        <DialogTitle>{t('providers.catalog.title')}</DialogTitle>
+        <DialogDescription>{t('providers.catalog.description')}</DialogDescription>
+        <div className="mt-4 flex min-h-24 flex-col gap-1.5 overflow-y-auto">
+          {state.status === 'loading' && (
+            <p className="flex items-center gap-2 px-1 py-6 text-note text-muted">
+              <Spinner />
+              {t('providers.catalog.loading')}
+            </p>
+          )}
+          {state.status === 'failed' && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-[9px] bg-danger-soft px-2.5 py-2 text-note text-danger"
+            >
+              <TriangleAlert className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1">
+                {t('providers.catalog.failed', { reason: errorText(state.error) })}
+              </span>
+              <Button size="sm" variant="ghost" className="h-7" onClick={() => void refresh()}>
+                <RefreshCw />
+                {t('providers.catalog.retry')}
+              </Button>
+            </div>
+          )}
+          {failure !== undefined && (
+            <p
+              role="alert"
+              className="rounded-[9px] bg-danger-soft px-2.5 py-1.5 text-note text-danger"
+            >
+              {t('providers.catalog.previewFailed', { reason: errorText(failure) })}
+            </p>
+          )}
+          {state.status === 'ready' && state.plugins.length === 0 && (
+            <p className="px-1 py-6 text-note text-muted">{t('providers.catalog.empty')}</p>
+          )}
+          {state.status === 'ready' && state.plugins.length > 0 && (
+            <ul aria-label={t('providers.catalog.list')} className="flex flex-col gap-1">
+              {state.plugins.map((item) => {
+                const current = installedById.get(item.id)
+                const update =
+                  current !== undefined &&
+                  item.version !== undefined &&
+                  current.version !== item.version
+                return (
+                  <li
+                    key={item.id}
+                    className="flex items-center gap-2.5 rounded-[9px] bg-sunk px-2.5 py-2"
+                  >
+                    <PluginGlyph source={pluginIconSourceOf(item)} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-fg">
+                        <span className="truncate">{item.name}</span>
+                        {item.version && (
+                          <span className="shrink-0 font-normal text-faint">
+                            {t('providers.plugins.version', { version: item.version })}
+                          </span>
+                        )}
+                        {current !== undefined && (
+                          <SmallTag>
+                            {update
+                              ? t('providers.catalog.update')
+                              : t('providers.catalog.installed')}
+                          </SmallTag>
+                        )}
+                      </span>
+                      {item.description && (
+                        <span className="block truncate text-[11.5px] text-muted">
+                          {item.description}
+                        </span>
+                      )}
+                    </span>
+                    {item.homepage && (
+                      <a
+                        href={item.homepage}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t('providers.catalog.homepage', { name: item.name })}
+                        className="inline-flex size-7 shrink-0 items-center justify-center rounded-item text-muted transition-colors hover:bg-hover hover:text-fg [&_svg]:size-3.5"
+                      >
+                        <ExternalLink />
+                      </a>
+                    )}
+                    <Button
+                      size="sm"
+                      disabled={opening !== undefined}
+                      aria-label={t('providers.catalog.details', { name: item.name })}
+                      onClick={() => void show(item)}
+                    >
+                      {opening === item.id && <Spinner />}
+                      {current === undefined
+                        ? t('providers.catalog.view')
+                        : update
+                          ? t('providers.catalog.update')
+                          : t('providers.catalog.reinstall')}
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+        <a
+          href={OFFICIAL_CATALOG_PAGE}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 inline-flex w-fit items-center gap-1 text-note text-muted hover:text-fg [&_svg]:size-3"
+        >
+          {t('providers.catalog.source', {
+            source: hostOf(state.status === 'ready' ? state.source : OFFICIAL_CATALOG_PAGE),
+          })}
+          <ExternalLink />
+        </a>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * 供应商插件（ADR-0049）：列出已安装的插件与无法加载的文件；可以从官方目录或本地文件安装，
+ * 两种方式都先预览其中的服务与地址，确认后才写入插件目录。
  */
 function ProviderPlugins() {
   const { t } = useTranslation('settings')
-  const { t: tc } = useTranslation()
   const errorText = useErrorText()
   const list = useSessionStore((s) => s.providerPlugins)
   const pick = useSessionStore((s) => s.pickProviderPlugin)
   const install = useSessionStore((s) => s.installProviderPlugin)
   const remove = useSessionStore((s) => s.removeProviderPlugin)
-  const [preview, setPreview] = useState<
-    | { readonly path: string; readonly plugin: ProviderPluginInfo; readonly replaces: boolean }
-    | undefined
-  >()
+  const [preview, setPreview] = useState<PluginPreview>()
   const [failure, setFailure] = useState<ErrorInfo | undefined>()
-  const [busy, setBusy] = useState(false)
   const plugins = list?.plugins ?? []
   const skipped = list?.skipped ?? []
 
@@ -760,23 +1138,29 @@ function ProviderPlugins() {
       setFailure(outcome.error)
       return
     }
-    setPreview({ path, plugin: outcome.result.plugin, replaces: outcome.result.replaces })
-  }
-
-  const confirm = async () => {
-    if (!preview) return
-    setBusy(true)
-    const outcome = await install(preview.path, true)
-    setBusy(false)
-    setPreview(undefined)
-    if (!outcome.ok) setFailure(outcome.error)
+    setPreview({
+      plugin: outcome.result.plugin,
+      replaces: outcome.result.replaces,
+      origin: 'file',
+      install: async () => {
+        const done = await install(path, true)
+        return done.ok ? { ok: true } : done
+      },
+    })
   }
 
   return (
     <section aria-label={t('providers.plugins.title')} className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 px-1">
+      <div className="flex items-center gap-1 px-1">
         <h3 className="text-[11.5px] font-medium text-muted">{t('providers.plugins.title')}</h3>
         <span className="flex-1" />
+        <OfficialCatalog
+          installed={plugins}
+          onPreview={(next) => {
+            setFailure(undefined)
+            setPreview(next)
+          }}
+        />
         <Button variant="ghost" size="sm" className="h-7" onClick={() => void choose()}>
           <FileUp />
           {t('providers.plugins.install')}
@@ -798,7 +1182,7 @@ function ProviderPlugins() {
               key={plugin.id}
               className="flex items-center gap-2.5 rounded-[9px] bg-sunk px-2.5 py-1.5"
             >
-              <Puzzle className="size-4 shrink-0 text-muted" />
+              <PluginGlyph source={pluginIconSourceOf(plugin)} size={24} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-fg">
                   {plugin.name}
@@ -833,43 +1217,11 @@ function ProviderPlugins() {
         </ul>
       )}
 
-      <Dialog open={preview !== undefined} onOpenChange={(next) => !next && setPreview(undefined)}>
-        <DialogContent icon={<Puzzle />}>
-          <DialogTitle>
-            {t('providers.plugins.previewTitle', { name: preview?.plugin.name ?? '' })}
-          </DialogTitle>
-          <DialogDescription>{t('providers.plugins.previewDescription')}</DialogDescription>
-          <ul
-            aria-label={t('providers.plugins.previewList')}
-            className="mt-4 flex max-h-64 flex-col gap-1 overflow-y-auto"
-          >
-            {preview?.plugin.templates.map((template) => (
-              <li key={template.id} className="rounded-[9px] bg-sunk px-2.5 py-1.5">
-                <span className="block truncate text-[13px] font-medium text-fg">
-                  {template.displayName}
-                  <span className="ml-1.5 font-normal text-faint">
-                    {t(`providers.kind.${template.kind}.name`)}
-                  </span>
-                </span>
-                <span className="block truncate font-mono text-[11.5px] text-muted">
-                  {template.baseUrl}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {preview?.replaces && (
-            <p className="mt-3 text-note text-warn">{t('providers.plugins.previewReplaces')}</p>
-          )}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button>{tc('action.cancel')}</Button>
-            </DialogClose>
-            <Button variant="primary" disabled={busy} onClick={() => void confirm()}>
-              {t('providers.plugins.installConfirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PluginPreviewDialog
+        preview={preview}
+        onClose={() => setPreview(undefined)}
+        onFailed={setFailure}
+      />
     </section>
   )
 }
@@ -1636,6 +1988,7 @@ function ProviderEditor({
             name={draft.displayName || '?'}
             kind={draft.kind}
             template={draft.template}
+            source={template ? iconSourceOf(template) : undefined}
             size={36}
           />
           <div className="min-w-0 flex-1">
@@ -2107,6 +2460,10 @@ export function ProvidersSettings() {
             <ProviderCard
               key={provider.id}
               provider={provider}
+              iconSource={(() => {
+                const found = findTemplateIn(catalog, provider.template)
+                return found ? iconSourceOf(found) : undefined
+              })()}
               isDefault={settings?.defaultModel?.providerId === provider.id}
               keyStatus={provider.credentialRef ? keys[provider.credentialRef] : undefined}
               result={results[provider.id]}

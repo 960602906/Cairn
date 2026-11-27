@@ -82,6 +82,8 @@ import {
   CONFIG_ID_PATTERN,
   ProviderConfig,
   ProviderConfigList,
+  IconSource,
+  ProviderCatalogItem,
   ProviderPluginInfo,
   ProviderPluginSkipped,
   ReasoningEffort,
@@ -993,6 +995,52 @@ export const MainForRenderer = defineSide({
         replaces: z.boolean(),
         plugin: ProviderPluginInfo,
       }),
+    },
+    /**
+     * 官方插件目录（ADR-0049）：读取 `index.json`。网络不通或 HTTP 出错时报 `providers.catalog.unreachable`，
+     * 格式不对时报 `providers.catalog.invalid`；目录中无效的项被跳过。`source` 是目录仓库的网页地址。
+     */
+    'providerCatalog.list': {
+      params: z.object({}),
+      result: z.object({
+        source: z.string().url().max(2048),
+        plugins: z.array(ProviderCatalogItem).max(500),
+      }),
+    },
+    /**
+     * 下载目录中的插件并预览，不写盘。`sha256` 是下载到的插件文件的摘要，安装时带回，保证装的就是预览过的
+     * 内容。插件不在目录中时报 `providers.catalog.not_found`，文件无效时报 `providers.plugin.*`。
+     */
+    'providerCatalog.preview': {
+      params: z.object({ id: z.string().min(1).max(64) }),
+      result: z.object({
+        replaces: z.boolean(),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        plugin: ProviderPluginInfo,
+      }),
+    },
+    /**
+     * 安装预览过的目录插件：内容与 `sha256` 不一致（目录在预览之后变了）时报 `providers.catalog.changed`，
+     * 需要重新预览。相对路径的图标解析为目录仓库中的 https 地址后写入插件目录。
+     */
+    'providerCatalog.install': {
+      params: z.object({
+        id: z.string().min(1).max(64),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      }),
+      result: z.object({
+        installed: z.boolean(),
+        replaces: z.boolean(),
+        plugin: ProviderPluginInfo,
+      }),
+    },
+    /**
+     * 供应商图标（ADR-0049）：显式图标或网站图标（favicon），由主进程下载并以 `data:` 地址返回（界面的 CSP
+     * 不允许直接加载远程图片）。只访问公网的 https 地址，结果缓存在应用数据目录；找不到时不含 `dataUrl`。
+     */
+    'providerIcon.resolve': {
+      params: IconSource,
+      result: z.object({ dataUrl: z.string().max(200_000).optional() }),
     },
     /** 卸载插件（删除文件）。已用它添加的供应商不受影响。没有这个插件时报 `providers.plugin.not_found`。 */
     'providerPlugin.remove': {
