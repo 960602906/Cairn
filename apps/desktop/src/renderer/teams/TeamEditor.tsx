@@ -504,6 +504,11 @@ export function TeamEditor({
               {t('version', { version: published.version })}
             </span>
           )}
+          {builtin && (
+            <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11.5px] text-muted">
+              {t('source.builtin')}
+            </span>
+          )}
           <span
             className={cn(
               'shrink-0 rounded-full px-2 py-0.5 text-[11.5px]',

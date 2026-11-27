@@ -1104,7 +1104,8 @@ describe('TeamEditor', () => {
     })
     await renderEditor(store, { teamId: template.id })
     await waitFor(() => expect(screen.getByText(/内置模板只读/)).toBeDefined())
-    // 只读模板没有保存、发布与归档入口，只留试运行和复制副本；表单本身也不可编辑。
+    // 标题区标出来源；只读模板没有保存、发布与归档入口，只留试运行和复制副本；表单本身也不可编辑。
+    expect(screen.getByText('内置')).toBeDefined()
     expect(screen.getByLabelText('中文名称').closest('fieldset')?.disabled).toBe(true)
     expect(screen.getByLabelText('主控 Agent').closest('fieldset')?.disabled).toBe(true)
     expect(screen.queryByRole('button', { name: '保存草稿' })).toBeNull()
