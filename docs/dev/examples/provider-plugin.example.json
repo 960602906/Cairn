@@ -1,7 +1,10 @@
 {
   "schemaVersion": 1,
+  "type": "provider",
   "id": "acme",
   "name": "Acme Cloud",
+  "author": "Acme Inc.",
+  "source": "third-party",
   "version": "1.0.0",
   "description": "Example provider plugin: one hosted gateway and one local server.",
   "homepage": "https://acme.example",

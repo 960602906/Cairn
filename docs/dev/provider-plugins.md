@@ -53,8 +53,11 @@ icons/…                    可选的图标 / optional icons
   "schemaVersion": 1,
   "plugins": [
     {
+      "type": "provider",
       "id": "acme",
       "name": "Acme Cloud",
+      "author": "Acme Inc.",
+      "source": "third-party",
       "version": "1.0.0",
       "description": "One hosted gateway and one local server.",
       "homepage": "https://acme.example",
@@ -68,13 +71,17 @@ icons/…                    可选的图标 / optional icons
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `schemaVersion` | 是 | 固定为 `1`。更高的版本提示“需要更新版本的 Cairn”，其他值报“内容无效”。 |
+| `plugins[].type` | 否 | 插件类型，见下文“插件类型”。省略时为 `provider`；其他类型的项被当前 Cairn 跳过。 |
 | `plugins[].id` | 是 | 插件 id，必须与插件文件中的 `id` 一致，否则拒绝安装。 |
 | `plugins[].name` | 是 | 目录中显示的名称。 |
+| `plugins[].author` | 否 | 作者（个人或组织名），显示在目录、预览与已安装列表中。官方插件写 `Cairn`。应与插件文件中的一致。 |
+| `plugins[].source` | 否 | `official` 或 `third-party`，见下文“官方与第三方”。省略或其他值按 `third-party`。 |
 | `plugins[].version` | 否 | 与已安装插件的 `version` 不同时显示“可更新”。应与插件文件中的一致。 |
 | `plugins[].description`、`homepage` | 否 | 显示在目录中；`homepage` 为 https。 |
 | `plugins[].icon` | 否 | 图标，规则见下文；相对路径相对仓库根目录。 |
 | `plugins[].url` | 否 | 插件文件的位置：相对 `index.json`（仓库根目录）的路径，不能以 `/` 开头或含 `..`；或仓库内文件的 https 地址（必须以上面的 raw 地址开头，指向仓库以外的项被跳过）。省略时为 `plugins/<id>.json`。目录仓库中总是写 `plugins/<id>.json`。旧名 `path` 仍可用。 |
 
+- `type` 不是 `provider` 的项（以后的插件种类）被跳过，不影响其余插件。
 - 单个无效的项（字段不对、id 重复、地址越界）会被跳过，不影响其余插件；未知字段（如编辑器用的 `$schema`）忽略。
 - 目录仓库用 JSON Schema（`schema/index.schema.json`、`schema/provider-plugin.schema.json`）与 CI 校验同样的规则；
   两边的格式变化要同时更新。
@@ -82,6 +89,35 @@ icons/…                    可选的图标 / optional icons
 - 预览时下载插件文件并计算 `sha256`，安装时内容必须与预览时一致；预览之后目录变了会提示重新查看。
 - GitHub 的 raw 地址有几分钟的缓存，新合入的插件可能稍后才出现。
 - 目录不可达（网络、HTTP 错误）或格式不对时，目录窗口就地说明并可重试；内置服务与本地文件安装不受影响。
+
+## 插件类型 / Plugin types
+
+官方目录仓库以后可以放别的插件种类，用 `type` 区分（目录项与插件文件都有这个字段）。当前 Cairn 只认识
+`provider`（API / 模型供应商插件）：
+
+- `type` 省略时视为 `provider`，所以当前目录中没写 `type` 的项照常可用；
+- 目录中其他 `type` 的项不列出、不安装，旧版 Cairn 遇到新种类的插件不会出错；
+- 从文件安装或放进插件目录的插件 `type` 不是 `provider` 时被拒绝（“这不是供应商插件”）。
+
+The catalog repo may later hold other plugin kinds, told apart by `type`. Current Cairn only understands
+`provider`; an omitted `type` means `provider`, and other types are skipped in the catalog and refused
+from files.
+
+## 官方与第三方 / Official and third-party
+
+- 目录项与插件文件可以声明 `source`：`official`（由 Cairn 目录维护，`author` 为 `Cairn`）或 `third-party`。
+  省略或其他值都按第三方处理。
+- “官方目录”窗口按“官方插件”与“第三方插件”分组。
+- **“官方”标记只给从官方目录安装、且目录项声明 `official`、插件文件没写 `source` 或也写 `official` 的插件。**
+  这个结论由 Cairn 在安装时记在插件目录的 `.provenance.json` 中（连同写入内容的 `sha256`），不从插件内容读取：
+  - 从文件安装或直接放进插件目录的插件一律显示为“本地文件”，即使 JSON 里写了 `"source": "official"`；
+  - 从目录安装后文件被改动、改名或被同 id 的本地文件替换，也不再显示为官方；
+  - 从官方目录安装的第三方插件显示为“第三方”。
+- 作者 `author` 只是显示名，不代表来源；来源以上述标记为准。
+
+The Official badge is shown only for plugins installed from the official catalog whose catalog entry
+(and plugin file, if it says) declares `source: official`. Cairn records this at install time, together
+with the hash of the written file; file installs are always shown as local, whatever the JSON claims.
 
 ## 格式 / Format
 
@@ -91,9 +127,13 @@ icons/…                    可选的图标 / optional icons
 ```json
 {
   "schemaVersion": 1,
+  "type": "provider",
   "id": "acme",
   "name": "Acme Cloud",
+  "author": "Acme Inc.",
+  "source": "third-party",
   "version": "1.0.0",
+  "homepage": "https://acme.example",
   "icon": "icons/acme.svg",
   "providers": [
     {
@@ -114,10 +154,13 @@ icons/…                    可选的图标 / optional icons
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `schemaVersion` | 是 | 固定为 `1`。更高的版本会被拒绝（“需要更新版本的 Cairn”）。 |
+| `type` | 否 | 插件类型；省略或 `provider`。其他值被拒绝，见“插件类型”。 |
 | `id` | 是 | 小写字母、数字与 `-`，1～64 个字符。决定文件名与模板 id 前缀。 |
 | `name` | 是 | 插件名，显示在插件列表中。 |
+| `author` | 否 | 作者（个人或组织名，最多 80 个字符），显示在目录、预览与已安装列表中。官方插件写 `Cairn`。 |
+| `source` | 否 | `official` 或 `third-party`，只是声明，见“官方与第三方”。 |
 | `version`、`description` | 否 | 显示在插件列表中。 |
-| `homepage` | 否 | https 地址；没有 `icon` 时从这里取网站图标。 |
+| `homepage` | 否 | 插件的 https 网站，显示为可点击的文字链接；没有 `icon` 时从这里取网站图标。 |
 | `icon` | 否 | 插件的图标，显示在插件列表与目录中；规则见下文。 |
 | `providers` | 是 | 1～32 个服务，条目 `id` 不能重复。 |
 
