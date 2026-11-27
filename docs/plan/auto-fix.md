@@ -2,7 +2,9 @@
 
 > 目标：把「PR 的 CI 失败、合并冲突、新评审意见出现时，自动开一个 Agent 会话去修、验证、
 > 提交并推送」做成 Cairn 的内置能力。
-> 状态：M8-01～M8-05 已实现；自动推送的边界与守卫见 [ADR-0045](../adr/0045-auto-fix-push-boundary.md)。
+> 状态：M8-01～M8-05 已实现（2026-11-18，随 0.1.2 beta 发布）。交付记录、后续界面调整与
+> 验收证据见 [M8 计划与验收](m8.md)；自动推送的边界与守卫见
+> [ADR-0045](../adr/0045-auto-fix-push-boundary.md)。
 
 ## 1. 与 Claude Code Auto-fix 的对应关系
 
@@ -115,9 +117,10 @@ comment   → headSha + ':' + lastCommentId
 - `GithubPullRequest`：`number, title, headRef, headSha, baseRef, state, mergeableState, checks: CheckRun[]`
 - `CheckRun`：`name, status, conclusion?, detailsUrl?, startedAt?, completedAt?`
 - `PullRequestWatch`：`watchId, repo, prNumber, projectPath, agentId?, triggers, maxAttempts, enabled, attempts`
-- IPC：`github.status`、`github.connect`、`github.disconnect`、`github.pulls`、
-  `github.watch.list|create|update|remove`、`github.watch.pauseAll|resumeAll`
-- 事件：`github.watch.changed`、`autofix.job.changed`
+- 渲染进程 IPC：`autofix.status`、`autofix.watch.add|update|remove`、`autofix.pause`（M8-05 后
+  收敛；早期草案里的 `github.*` 接口与设置页入口已在 0.1.4 移除，令牌改为静默解析）
+- 宿主 RPC：`host.autofix.watch`，由普通会话的 `watch_pull_request` 工具转发
+- 事件：`autofix.changed`（早期草案里的 `github.watch.changed` / `autofix.job.changed` 已合并）
 
 ### 4.2 主进程服务
 
@@ -135,19 +138,18 @@ comment   → headSha + ':' + lastCommentId
 
 ### 4.3 Agent 工具
 
-在 `agent-host` 注册，仅对自动修复 Agent 开放（按 `toolSelected` 与 agent 定义）：
+实际只向自动修复会话开放两个写工具，由 `host.init.autoFix` 决定是否注册：
 
 | 工具 | 作用 | 守卫 |
 |---|---|---|
-| `pr_snapshot` | 读 PR 状态、检查项、冲突文件 | 只读 |
-| `pr_check_log` | 读失败检查的日志尾部（截断） | 只读，长度上限 |
-| `pr_review_comments` | 读自上次修复后的新评审意见 | 只读 |
 | `git_commit` | 在 worktree 提交 | 仅 auto-fix 会话，禁止 amend 已推送提交 |
 | `git_push` | 推送到 PR head 分支 | 校验分支/远端；拒绝 force；返回新 SHA |
-| `pr_comment` | 回复评审意见（可选，默认关闭） | 需显式开启 |
+
+PR 状态、失败检查日志与新评审意见由主进程在触发时读取，写进无人值守 prompt 的 brief
+（`repairBrief`），不经过模型主动调用。设计初稿里的 `pr_snapshot` / `pr_check_log` /
+`pr_review_comments` 因此没有作为独立工具开放；可选的 `pr_comment` 回复也未接入。
 
 `git_push` 的推送凭据只在工具内部注入，不进入 `run_command` 环境与日志。
-M8-04 只实现评审意见的读取与触发；可选的 `pr_comment` 回复在后续阶段接入。
 
 ### 4.4 存储（迁移 0022）
 
@@ -211,7 +213,7 @@ CREATE INDEX auto_fix_jobs_by_watch ON auto_fix_jobs (watch_id, created_at DESC)
 5. `git_commit` + `git_push` → job 记为 `pushed`，`attempts++`；
 6. 下一轮轮询：若检查变为 success → `passed`；若仍失败且签名变化 → 进入下一次（回到 2）；
    若达到上限 → `gave_up` 并通知；
-7. 用户随时可以在设置页暂停、或在会话里停止运行。
+7. 用户随时可以在活动中心「暂停全部」、逐条停止监视，或在会话里停止运行。
 
 ## 6. 分阶段计划
 
@@ -221,7 +223,7 @@ CREATE INDEX auto_fix_jobs_by_watch ON auto_fix_jobs (watch_id, created_at DESC)
 | M8-02 监视与触发 | watcher、去重、无人值守会话、活动条目；**不推送** | CI 失败后自动开一个会话，Agent 在 worktree 里给出修复但需人工推送 |
 | M8-03 自动推送闭环 | `git_commit`/`git_push` + 分支守卫、尝试上限、回检、通知 | 失败检查 → 修复推送 → 回检通过；超限后停止并通知 |
 | M8-04 冲突与评审意见 | 冲突合并、评审意见读取、可选回复 | 冲突 PR 自动合并 base 并修复；新意见可触发一轮 |
-| M8-05 打磨 | 界面、i18n、文档、e2e、暂停/恢复 | 设置页与活动中心完整，端到端用例通过 |
+| M8-05 打磨 | 界面、i18n、文档、e2e、暂停/恢复 | 活动中心与暂停/恢复完整，端到端用例通过 |
 
 每个阶段都应能独立合并、独立回退；M8-01/M8-02 不推送，风险最低，建议先做。
 
@@ -238,13 +240,17 @@ CREATE INDEX auto_fix_jobs_by_watch ON auto_fix_jobs (watch_id, created_at DESC)
   开发构建里生效，且只接受 HTTPS 或回环 HTTP，避免把令牌发到别处。
 - 覆盖率维持现有 ≥ 95% 门槛。
 
-## 8. 待决问题（后续阶段）
+## 8. 待决问题
 
-> 推送边界已由 ADR-0045 决定；以下问题在 M8-04/M8-05 落地前仍需决定。
+> 推送边界由 ADR-0045 决定，其余问题的实施结论如下；仍未关闭的项记入
+> [M8 计划与验收](m8.md) §5。
 
-1. 轮询的网络与隐私边界：出站域名、令牌权限、是否允许企业版 GitHub / 自建实例。
-2. `auto-fix` 会话是否默认可见；与用量统计、标题生成、记忆的交互。
-3. GitHub 工具用内置工具还是内置 MCP server（复用 ADR-0026 的通道，便于以后扩展）。
+1. **轮询的网络与隐私边界**：已决定只支持 GitHub REST，令牌最小权限、只发往 GitHub API；
+   企业版 / 自建实例没有正式支持，多账号与组织级配置仍开放。
+2. **`auto-fix` 会话的可见性**：已决定可见并带 `auto-fix` 标记，进入活动中心与后台任务面板；
+   用户可随时停止。
+3. **工具形态**：已决定用内置工具，不经过 MCP：只读的 PR 信息由主进程写进修复 brief，
+   只向自动修复会话暴露 `git_commit` / `git_push`。
 4. ~~冲突修复用 merge 还是 rebase；是否允许 `--force-with-lease`~~：已决定用 merge，不改写已推送
    历史，也不允许 force / force-with-lease（ADR-0045、M8-04）。
-5. 多账号 / 组织仓库支持的范围。
+5. **多账号 / 组织仓库支持的范围**：仍未决定，当前按单账号使用。

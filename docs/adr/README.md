@@ -26,7 +26,7 @@
 | [0016](0016-agent-definition-and-run.md) | Agent 定义与运行作为一等概念 | 已接受 |
 | [0017](0017-unified-capability-layer.md) | 统一能力层：Tools、Skills 与 MCP | 已接受 |
 | [0018](0018-interactive-and-unattended-runs.md) | 交互运行与无人值守运行 | 已接受 |
-| [0019](0019-memory-scopes.md) | 记忆范围（预留） | 已接受（功能暂缓） |
+| [0019](0019-memory-scopes.md) | 记忆范围 | 已接受（M7-01～M7-05 实施） |
 | [0020](0020-hub-and-spoke-delegation.md) | 多 Agent 采用以父运行为中心的委派模式 | 已接受 |
 | [0021](0021-three-api-formats.md) | 首批支持 OpenAI、Anthropic、Gemini 三种接口格式 | 已接受 |
 | [0022](0022-prompt-enhancement.md) | 输入优化：由用户触发、确认后发送 | 已废弃 |
@@ -45,7 +45,7 @@
 | [0035](0035-windows-packaging.md) | Windows 打包与分发 | 已接受（M5-02 / M5-03、M5-10 验收） |
 | [0036](0036-auto-update-signing-and-rollback.md) | 自动更新、代码签名与回滚 | 已接受（M5-06～M5-08、M5-10 验收） |
 | [0037](0037-composer-mentions.md) | 输入框的 `@` 引用 | 已接受 |
-| [0038](0038-task-list-independent-of-plan-mode.md) | 待办列表独立于计划模式 | 提议 |
+| [0038](0038-task-list-independent-of-plan-mode.md) | 待办列表独立于计划模式 | 已接受（核心解耦已落地） |
 | [0039](0039-open-source-license-and-dco.md) | 开源许可证（MIT）与贡献者协议（DCO） | 已接受 |
 | [0040](0040-linux-credential-refusal.md) | Linux 无系统密钥环时显式拒绝保存凭据 | 已接受（M6-04） |
 | [0041](0041-macos-packaging-and-notarization.md) | macOS 打包、签名与公证 | 已接受（M6-02） |
@@ -54,6 +54,6 @@
 | [0044](0044-user-questions.md) | 用户提问：`ask_user` 工具与选项卡片 | 已接受 |
 | [0045](0045-auto-fix-push-boundary.md) | 自动修复的推送边界：受控 Git 工具与分支守卫 | 已接受 |
 | [0046](0046-message-edit-and-regenerate.md) | 消息编辑重发与重新生成：追加式回退事件 | 已接受 |
-| [0047](0047-goal-mode.md) | 目标模式：可验证完成条件、独立判定与自动续轮 | 提议 |
+| [0047](0047-goal-mode.md) | 目标模式：可验证完成条件、独立判定与自动续轮 | 已接受（实施） |
 | [0048](0048-full-access-permission-mode.md) | 完全访问权限模式 | 已接受 |
 | [0049](0049-macos-ad-hoc-signing.md) | macOS 默认 ad-hoc 签名 | 已接受 |
