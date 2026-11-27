@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "id": "acme",
+      "name": "Acme Cloud",
+      "version": "1.0.0",
+      "description": "Example provider plugin: one hosted gateway and one local server.",
+      "homepage": "https://acme.example",
+      "icon": "icons/acme.svg",
+      "path": "plugins/acme.json"
+    }
+  ]
+}

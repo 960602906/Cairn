@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "description": "Example provider plugin: one hosted gateway and one local server.",
   "homepage": "https://acme.example",
+  "icon": "icons/acme.svg",
   "providers": [
     {
       "id": "gateway",
@@ -12,6 +13,8 @@
       "kind": "openai",
       "category": "relay",
       "baseUrl": "https://api.acme.example/v1",
+      "homepage": "https://acme.example/gateway",
+      "icon": "icons/acme-gateway.png",
       "regions": [
         {
           "id": "global",

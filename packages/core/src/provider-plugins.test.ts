@@ -5,6 +5,8 @@ import {
   ProviderPluginError,
   ProviderPluginErrorCode,
   providerPluginInfo,
+  resolveAssetUrl,
+  resolvePluginIcons,
 } from './provider-plugins.js'
 import { GENERIC_MODEL_DEFAULTS } from './provider-templates.js'
 
@@ -221,5 +223,86 @@ describe('provider plugins (ADR-0049)', () => {
       code: ProviderPluginErrorCode.Invalid,
       path: 'providers.x.baseUrl',
     })
+  })
+
+  it('resolves relative icons against the plugin file, like a browser', () => {
+    const base = 'https://raw.example.com/repo/main/plugins/acme.json'
+    expect(resolveAssetUrl('icons/acme.svg', base)).toBe(
+      'https://raw.example.com/repo/main/plugins/icons/acme.svg',
+    )
+    expect(resolveAssetUrl('./a//b.png', `${base}?raw=1`)).toBe(
+      'https://raw.example.com/repo/main/plugins/a/b.png',
+    )
+    expect(resolveAssetUrl('https://cdn.example.com/x.png', undefined)).toBe(
+      'https://cdn.example.com/x.png',
+    )
+    expect(resolveAssetUrl('data:image/png;base64,AAAA', undefined)).toBe(
+      'data:image/png;base64,AAAA',
+    )
+    expect(resolveAssetUrl('icons/a.png', undefined)).toBeUndefined()
+    expect(resolveAssetUrl('icons/a.png', 'http://insecure.example.com/p.json')).toBeUndefined()
+    expect(resolveAssetUrl('../escape.png', base)).toBeUndefined()
+    expect(resolveAssetUrl('/root.png', base)).toBeUndefined()
+    expect(resolveAssetUrl('.', base)).toBeUndefined()
+  })
+
+  it('keeps displayable icons and websites on plugins and templates', () => {
+    const parsed = parseProviderPlugin(
+      JSON.stringify(
+        manifest({
+          icon: 'icons/acme.svg',
+          homepage: 'https://acme.example',
+          providers: [
+            {
+              id: 'gateway',
+              name: 'Acme Gateway',
+              kind: 'openai',
+              baseUrl: 'https://api.acme.example/v1',
+              homepage: 'https://gateway.acme.example',
+              icon: 'gateway.png',
+            },
+            {
+              id: 'inline',
+              name: 'Inline',
+              kind: 'openai',
+              baseUrl: 'https://inline.example/v1',
+              icon: 'data:image/svg+xml;base64,PHN2Zy8+',
+            },
+          ],
+        }),
+      ),
+    )
+    // 本地文件：相对图标无法解析，不显示（回到网站图标）
+    const local = providerPluginInfo(parsed)
+    expect(local).not.toHaveProperty('icon')
+    expect(local.templates[0]).toMatchObject({ homepage: 'https://gateway.acme.example' })
+    expect(local.templates[0]).not.toHaveProperty('icon')
+    expect(local.templates[1]!.icon).toBe('data:image/svg+xml;base64,PHN2Zy8+')
+
+    const resolved = resolvePluginIcons(parsed, 'https://raw.example.com/r/main/plugins/acme.json')
+    expect(resolved.icon).toBe('https://raw.example.com/r/main/plugins/icons/acme.svg')
+    const info = providerPluginInfo(resolved)
+    expect(info.icon).toBe('https://raw.example.com/r/main/plugins/icons/acme.svg')
+    expect(info.templates[0]!.icon).toBe('https://raw.example.com/r/main/plugins/gateway.png')
+    expect(ProviderTemplateSpec.safeParse(info.templates[0]).success).toBe(true)
+    // 没有来源地址时去掉相对图标
+    const dropped = resolvePluginIcons(parsed, undefined)
+    expect(dropped).not.toHaveProperty('icon')
+    expect(dropped.providers[0]).not.toHaveProperty('icon')
+    expect(dropped.providers[1]!.icon).toBe('data:image/svg+xml;base64,PHN2Zy8+')
+  })
+
+  it('rejects icons that are neither https, inline images nor relative paths', () => {
+    for (const icon of [
+      'http://x.example/a.png',
+      'javascript:alert(1)',
+      '../a.png',
+      'data:text/html;base64,AA',
+    ]) {
+      expect(
+        codeOf(() => parseProviderPlugin(JSON.stringify(manifest({ icon })))),
+        icon,
+      ).toBe(ProviderPluginErrorCode.Invalid)
+    }
   })
 })

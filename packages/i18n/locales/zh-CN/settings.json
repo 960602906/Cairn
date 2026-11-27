@@ -200,6 +200,7 @@
   "providers.catalog.list": "官方目录中的插件",
   "providers.catalog.installed": "已安装",
   "providers.catalog.update": "可更新",
+  "providers.catalog.updateAction": "更新",
   "providers.catalog.reinstall": "重新安装",
   "providers.catalog.view": "查看",
   "providers.catalog.details": "查看 {{name}}",

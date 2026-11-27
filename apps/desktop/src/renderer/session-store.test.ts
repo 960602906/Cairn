@@ -2844,3 +2844,72 @@ describe('provider plugin actions (ADR-0049)', () => {
     expect(store.getState().error).toEqual({ code: 'rpc.internal' })
   })
 })
+
+describe('provider catalog and icon actions (ADR-0049)', () => {
+  it('returns catalog results or error codes without touching the global error', async () => {
+    let fail = false
+    const plugin = { id: 'a', name: 'A', templates: [] }
+    const { api, calls } = fakeApi({
+      'providerCatalog.list': () => {
+        if (fail) throw new RpcError('providers.catalog.unreachable')
+        return { source: 'https://github.com/o/r', plugins: [] }
+      },
+      'providerCatalog.preview': () => {
+        if (fail) throw new RpcError('providers.catalog.not_found')
+        return { replaces: false, sha256: 'a'.repeat(64), plugin }
+      },
+      'providerCatalog.install': () => {
+        if (fail) throw new RpcError('providers.catalog.changed')
+        return { installed: true, replaces: false, plugin }
+      },
+      'providerPlugin.list': () => ({ plugins: [plugin], skipped: [] }),
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().loadProviderCatalog()).toEqual({
+      ok: true,
+      result: { source: 'https://github.com/o/r', plugins: [] },
+    })
+    expect(await store.getState().previewCatalogPlugin('a')).toMatchObject({ ok: true })
+    expect(await store.getState().installCatalogPlugin('a', 'a'.repeat(64))).toMatchObject({
+      ok: true,
+    })
+    expect(store.getState().providerPlugins?.plugins).toEqual([plugin])
+    expect(calls).toContainEqual(['providerCatalog.install', { id: 'a', sha256: 'a'.repeat(64) }])
+
+    fail = true
+    expect(await store.getState().loadProviderCatalog()).toEqual({
+      ok: false,
+      error: { code: 'providers.catalog.unreachable' },
+    })
+    expect(await store.getState().previewCatalogPlugin('a')).toMatchObject({ ok: false })
+    expect(await store.getState().installCatalogPlugin('a', 'a'.repeat(64))).toEqual({
+      ok: false,
+      error: { code: 'providers.catalog.changed' },
+    })
+    expect(store.getState().error).toBeUndefined()
+  })
+
+  it('asks for each icon source once and treats failures as no icon', async () => {
+    const { api, calls } = fakeApi({
+      'providerIcon.resolve': (params: never) => {
+        if ((params as { homepage?: string }).homepage === 'https://down.example') {
+          throw new Error('offline')
+        }
+        return { dataUrl: 'data:image/png;base64,AAAA' }
+      },
+    })
+    const store = createSessionStore(api)
+    const source = { homepage: 'https://acme.example' }
+    const [a, b] = await Promise.all([
+      store.getState().providerIcon(source),
+      store.getState().providerIcon({ ...source }),
+    ])
+    expect(a).toBe('data:image/png;base64,AAAA')
+    expect(b).toBe(a)
+    expect(calls.filter(([method]) => method === 'providerIcon.resolve')).toHaveLength(1)
+    expect(
+      await store.getState().providerIcon({ homepage: 'https://down.example' }),
+    ).toBeUndefined()
+    expect(store.getState().error).toBeUndefined()
+  })
+})

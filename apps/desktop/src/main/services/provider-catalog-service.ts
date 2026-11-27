@@ -5,7 +5,7 @@
  * - 插件文件只从同一仓库读取：`path` 是仓库内的相对路径，省略时为 `plugins/<id>.json`。下载到的插件 id
  *   必须与目录中的一致。
  * - 预览返回插件文件的 `sha256`；安装时内容必须与预览时相同，保证装的就是用户看过的服务与地址。
- * - 相对路径的图标按声明它的文件的地址解析成仓库中的 https 地址，写入插件目录的就是解析后的内容。
+ * - 相对路径的图标一律相对仓库根目录，解析成 https 地址；写入插件目录的就是解析后的内容。
  * - 目录不可达时报 `providers.catalog.unreachable`，不影响内置服务与本地文件安装。
  */
 import { createHash } from 'node:crypto'
@@ -72,7 +72,7 @@ export function createProviderCatalogService(
   const now = options.now ?? Date.now
   const indexUrl = `${files}index.json`
   let index: { at: number; entries: ProviderCatalogIndexEntry[] } | undefined
-  const downloads = new Map<string, { sha256: string; text: string; url: string }>()
+  const downloads = new Map<string, { sha256: string; text: string }>()
 
   const read = async (url: string, maxBytes: number): Promise<string> => {
     try {
@@ -124,7 +124,7 @@ export function createProviderCatalogService(
     if (!entry) throw new RpcError(ProviderCatalogErrorCode.NotFound, { id })
     const url = `${files}${entry.path ?? `plugins/${id}.json`}`
     const text = await read(url, PROVIDER_PLUGIN_MAX_BYTES)
-    const result = { sha256: sha256(text), text, url }
+    const result = { sha256: sha256(text), text }
     downloads.set(id, result)
     return result
   }
@@ -148,7 +148,7 @@ export function createProviderCatalogService(
     async preview({ id }) {
       const fetched = await download(id)
       const { replaces, plugin } = options.plugins.previewText(fetched.text, {
-        base: fetched.url,
+        base: indexUrl,
         expectId: id,
       })
       return { replaces, sha256: fetched.sha256, plugin }
@@ -159,7 +159,7 @@ export function createProviderCatalogService(
       if (fetched?.sha256 !== expected) fetched = await download(id)
       if (fetched.sha256 !== expected) throw new RpcError(ProviderCatalogErrorCode.Changed, { id })
       const result = options.plugins.installText(fetched.text, {
-        base: fetched.url,
+        base: indexUrl,
         expectId: id,
       })
       downloads.delete(id)

@@ -1088,7 +1088,7 @@ function OfficialCatalog({
                       {current === undefined
                         ? t('providers.catalog.view')
                         : update
-                          ? t('providers.catalog.update')
+                          ? t('providers.catalog.updateAction')
                           : t('providers.catalog.reinstall')}
                     </Button>
                   </li>

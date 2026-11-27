@@ -155,6 +155,9 @@ describe('provider catalog (ADR-0049)', () => {
           /^https:\/\//,
         )
       }
+      // 每个服务都有网站，用来找网站图标；内置模板不必自带图片
+      expect(template.homepage, template.id).toMatch(/^https:\/\//)
+      expect(template.icon).toBeUndefined()
     }
   })
 

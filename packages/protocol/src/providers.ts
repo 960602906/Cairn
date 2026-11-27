@@ -154,7 +154,7 @@ const HttpsUrl = z.string().max(2048).regex(HTTPS_URL_PATTERN)
 
 /**
  * 图标（ADR-0049）：界面只显示 `https` 图片或 `data:image/…;base64,` 内联图片。插件文件中还可以写相对路径
- * （如 `icons/acme.svg`），从官方目录安装时按插件文件的地址解析成 `https`；本地文件中的相对路径无法解析，
+ * （如 `icons/acme.svg`），从官方目录安装时相对仓库根目录解析成 `https`；本地文件中的相对路径无法解析，
  * 会被忽略并回到网站图标（favicon）。
  */
 export const ICON_DATA_URL_PATTERN =

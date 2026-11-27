@@ -97,8 +97,8 @@ export const isIconUrl = (value: string): boolean =>
   HTTPS_URL_PATTERN.test(value) || ICON_DATA_URL_PATTERN.test(value)
 
 /**
- * 解析插件文件里的图标：https 与内联图片原样返回；相对路径按 `base`（插件文件的 https 地址）所在目录解析，
- * 像浏览器解析相对地址一样。没有 `base` 或无法解析时为 undefined。
+ * 解析插件文件里的图标：https 与内联图片原样返回；相对路径按 `base`（https 地址）所在目录解析——官方目录
+ * 传入仓库根目录下 `index.json` 的地址。没有 `base` 或无法解析时为 undefined。
  */
 export function resolveAssetUrl(ref: string, base: string | undefined): string | undefined {
   if (isIconUrl(ref)) return ref

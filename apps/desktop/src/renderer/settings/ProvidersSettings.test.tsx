@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from '@cairn/i18n'
@@ -1163,5 +1163,210 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(preview).getByRole('button', { name: '安装' }))
     expect((await within(picker).findByRole('alert')).textContent).toContain('插件文件太大')
     expect(screen.queryByRole('dialog', { name: '安装 Acme Cloud？' })).toBeNull()
+  })
+
+  it('browses the official catalog, previews every address and installs the previewed plugin', async () => {
+    const gateway = {
+      id: 'acme.gateway',
+      kind: 'openai',
+      category: 'relay',
+      displayName: 'Acme Gateway',
+      baseUrl: 'https://api.acme.example/v1',
+      regions: [
+        { id: 'global', baseUrl: 'https://api.acme.example/v1' },
+        { id: 'cn', baseUrl: 'https://api.acme.example.cn/v1' },
+      ],
+      requiresKey: true,
+      models: [],
+      modelDefaults: cap,
+      pluginId: 'acme',
+    }
+    const acme = { id: 'acme', name: 'Acme Cloud', version: '1.1.0', templates: [gateway] }
+    let reachable = false
+    let installed: (typeof acme)[] = [{ ...acme, version: '1.0.0' }]
+    const { request } = setup(
+      {},
+      {
+        'providerPlugin.list': () => ({ plugins: installed, skipped: [] }),
+        'providerCatalog.list': () => {
+          if (!reachable) throw new RpcError('providers.catalog.unreachable')
+          return {
+            source: 'https://github.com/960602906/cairn-provider-plugins',
+            plugins: [
+              {
+                id: 'acme',
+                name: 'Acme Cloud',
+                version: '1.1.0',
+                description: 'Hosted gateway',
+                homepage: 'https://acme.example',
+              },
+              { id: 'beta', name: 'Beta Relay' },
+            ],
+          }
+        },
+        'providerCatalog.preview': (params: never) => {
+          if ((params as { id: string }).id === 'beta') {
+            throw new RpcError('providers.catalog.changed')
+          }
+          return { replaces: true, sha256: 'a'.repeat(64), plugin: acme }
+        },
+        'providerCatalog.install': () => {
+          installed = [acme]
+          return { installed: true, replaces: true, plugin: acme }
+        },
+      },
+    )
+    await open()
+    const picker = await openAddDialog()
+    await userEvent.click(within(picker).getByRole('button', { name: '官方目录' }))
+    const catalog = await screen.findByRole('dialog', { name: '官方供应商插件' })
+    // 目录不可达：就地说明，内置服务仍可添加
+    expect((await within(catalog).findByRole('alert')).textContent).toContain(
+      '无法读取官方目录：无法连接官方插件目录',
+    )
+    expect(
+      within(catalog)
+        .getByRole('link', { name: /github\.com/ })
+        .getAttribute('href'),
+    ).toBe('https://github.com/960602906/cairn-provider-plugins')
+
+    reachable = true
+    await userEvent.click(within(catalog).getByRole('button', { name: '重试' }))
+    const list = await within(catalog).findByRole('list', { name: '官方目录中的插件' })
+    const rows = within(list).getAllByRole('listitem')
+    expect(within(rows[0]!).getByText('可更新')).toBeTruthy()
+    expect(within(rows[0]!).getByText('Hosted gateway')).toBeTruthy()
+    expect(
+      within(rows[0]!).getByRole('link', { name: '打开 Acme Cloud 的网站' }).getAttribute('href'),
+    ).toBe('https://acme.example')
+    expect(within(rows[1]!).queryByText('已安装')).toBeNull()
+
+    // 预览失败（目录在预览时变了）就地说明
+    await userEvent.click(within(catalog).getByRole('button', { name: '查看 Beta Relay' }))
+    expect((await within(catalog).findByRole('alert')).textContent).toContain('请重新打开')
+
+    await userEvent.click(within(catalog).getByRole('button', { name: '查看 Acme Cloud' }))
+    const preview = await screen.findByRole('dialog', { name: '安装 Acme Cloud？' })
+    expect(within(preview).getByText(/来自 Cairn 官方插件目录/)).toBeTruthy()
+    expect(within(preview).getByText('https://api.acme.example/v1')).toBeTruthy()
+    expect(within(preview).getByText('https://api.acme.example.cn/v1')).toBeTruthy()
+    expect(within(preview).getByText(/已安装同 ID 的插件/)).toBeTruthy()
+    await userEvent.click(within(preview).getByRole('button', { name: '安装' }))
+    expect(request).toHaveBeenCalledWith('providerCatalog.install', {
+      id: 'acme',
+      sha256: 'a'.repeat(64),
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: '安装 Acme Cloud？' })).toBeNull(),
+    )
+    expect(await within(catalog).findByText('已安装')).toBeTruthy()
+    expect(within(catalog).getByRole('button', { name: '查看 Acme Cloud' }).textContent).toBe(
+      '重新安装',
+    )
+  })
+
+  it('shows an empty catalog and a failed catalog install', async () => {
+    let empty = true
+    const acme = { id: 'acme', name: 'Acme Cloud', templates: [] }
+    setup(
+      {},
+      {
+        'providerCatalog.list': () => ({
+          source: 'https://github.com/960602906/cairn-provider-plugins',
+          plugins: empty ? [] : [{ id: 'acme', name: 'Acme Cloud' }],
+        }),
+        'providerCatalog.preview': () => ({
+          replaces: false,
+          sha256: 'b'.repeat(64),
+          plugin: acme,
+        }),
+        'providerCatalog.install': () => {
+          throw new RpcError('providers.catalog.changed')
+        },
+      },
+    )
+    await open()
+    const picker = await openAddDialog()
+    await userEvent.click(within(picker).getByRole('button', { name: '官方目录' }))
+    let catalog = await screen.findByRole('dialog', { name: '官方供应商插件' })
+    expect(await within(catalog).findByText('目录中还没有插件。')).toBeTruthy()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '官方供应商插件' })).toBeNull())
+
+    empty = false
+    await userEvent.click(within(picker).getByRole('button', { name: '官方目录' }))
+    catalog = await screen.findByRole('dialog', { name: '官方供应商插件' })
+    await userEvent.click(await within(catalog).findByRole('button', { name: '查看 Acme Cloud' }))
+    const preview = await screen.findByRole('dialog', { name: '安装 Acme Cloud？' })
+    await userEvent.click(within(preview).getByRole('button', { name: '安装' }))
+    await userEvent.keyboard('{Escape}')
+    expect((await within(picker).findByRole('alert')).textContent).toContain('无法安装插件')
+  })
+
+  it('shows service and plugin icons, and falls back when an icon fails to load', async () => {
+    const icon = 'data:image/png;base64,iVBORw0KGgo='
+    const plugin = {
+      id: 'acme',
+      name: 'Acme Cloud',
+      homepage: 'https://acme.example',
+      templates: [
+        {
+          id: 'acme.gateway',
+          kind: 'openai',
+          category: 'relay',
+          displayName: 'Acme Gateway',
+          baseUrl: 'https://api.acme.example/v1',
+          icon: 'https://acme.example/gateway.png',
+          requiresKey: true,
+          models: [],
+          modelDefaults: cap,
+          pluginId: 'acme',
+        },
+      ],
+    }
+    const { request } = setup(
+      { providers: [{ ...deepseek, id: 'kimi', template: 'moonshot', displayName: 'Kimi' }] },
+      {
+        'providerPlugin.list': () => ({ plugins: [plugin], skipped: [] }),
+        'providerIcon.resolve': (params: never) => {
+          const source = params as { homepage?: string; icon?: string }
+          if (source.homepage === 'https://www.moonshot.ai') return { dataUrl: icon }
+          if (source.icon === 'https://acme.example/gateway.png') return { dataUrl: icon }
+          if (source.homepage === 'https://acme.example') return { dataUrl: icon }
+          if (source.homepage === 'https://openrouter.ai') throw new Error('offline')
+          return {}
+        },
+      },
+    )
+    await open()
+    // 已保存的供应商卡片也用目录项的图标
+    const card = providerButtons()[0]!
+    await waitFor(() => expect(card.querySelector(`img[src="${icon}"]`)).not.toBeNull())
+
+    const picker = await openAddDialog()
+    const kimi = within(picker).getByRole('button', { name: /^Kimi/ })
+    await waitFor(() => expect(kimi.querySelector('img')).not.toBeNull())
+    // 加载失败时退回首字母
+    fireEvent.error(kimi.querySelector('img')!)
+    expect(kimi.querySelector('img')).toBeNull()
+    expect(within(kimi).getByText('K')).toBeTruthy()
+    // 内置品牌图标的服务不请求网站图标
+    expect(request).not.toHaveBeenCalledWith(
+      'providerIcon.resolve',
+      expect.objectContaining({ homepage: 'https://openai.com' }),
+    )
+    // 请求失败、没有图标的服务显示首字母
+    expect(
+      within(within(picker).getByRole('button', { name: /^OpenRouter/ })).getByText('O'),
+    ).toBeTruthy()
+    const tile = within(picker).getByRole('button', { name: /^Acme Gateway/ })
+    await waitFor(() => expect(tile.querySelector('img')).not.toBeNull())
+    const installed = within(picker).getByRole('list', { name: '已安装的插件' })
+    await waitFor(() => expect(installed.querySelector('img')).not.toBeNull())
+    expect(request).toHaveBeenCalledWith('providerIcon.resolve', {
+      homepage: 'https://www.moonshot.ai',
+      baseUrl: 'https://api.moonshot.ai/v1',
+      keysUrl: 'https://platform.moonshot.ai/console/api-keys',
+    })
   })
 })

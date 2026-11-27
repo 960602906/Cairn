@@ -12,6 +12,7 @@
  */
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
+import { isIP } from 'node:net'
 import path from 'node:path'
 import { ICON_DATA_URL_PATTERN, type IconSource } from '@cairn/protocol'
 import { isPublicHost, safeFetch } from './safe-fetch.js'
@@ -144,7 +145,9 @@ export function pagesOf(source: IconSource): string[] {
       const base = new URL(source.baseUrl)
       add(`https://${base.host}/`)
       const labels = base.hostname.split('.')
-      if (labels.length >= 3) add(`https://${labels.slice(1).join('.')}/`)
+      if (labels.length >= 3 && isIP(base.hostname) === 0) {
+        add(`https://${labels.slice(1).join('.')}/`)
+      }
     } catch {
       // 地址已经过协议层校验；解析失败时只是少一个候选
     }
