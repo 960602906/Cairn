@@ -34,6 +34,8 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     await card.getByRole('button', { name: '添加', exact: true }).click()
     await expect(card.getByLabel('API Key')).toBeEnabled()
     await expect(card.getByText(/本机应用数据/)).toBeVisible()
+    // mock 不校验 Key；写入任意值，确保保存后本地有凭据（ADR-0051）
+    await card.getByLabel('API Key').fill('sk-e2e-project-setup')
     await card.getByRole('button', { name: '测试连接' }).click()
     await expect(card.getByRole('status')).toContainText('连接正常')
     await card.getByRole('button', { name: '保存' }).click()

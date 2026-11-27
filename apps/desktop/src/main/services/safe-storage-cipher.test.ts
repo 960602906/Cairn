@@ -79,6 +79,12 @@ describe('createSafeStorageCipher', () => {
 
   it('本机回退密文与 safeStorage 密文可区分；系统加密不可用时对旧密文标记重加密', async () => {
     const local = createLocalFileCipher()
+    expect(await local.isAvailable()).toBe(true)
+    expect(await local.unavailableReason?.()).toBeUndefined()
+    await expect(local.decrypt(Buffer.from('not-local'))).rejects.toThrow(
+      'ciphertext is not local-file protected',
+    )
+
     const sealed = await local.encrypt('secret')
     expect(await createSafeStorageCipher(storage(false), 'linux').decrypt(sealed)).toEqual({
       plain: 'secret',
