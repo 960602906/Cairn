@@ -1498,7 +1498,9 @@ function ProviderEditor({
     !fetching &&
     draft.catalog === undefined &&
     problems.baseUrl === undefined &&
-    (typedSecret !== undefined || template?.requiresKey === false)
+    (typedSecret !== undefined ||
+      template?.requiresKey === false ||
+      newKeyStatus?.configured === true)
   const autoFetchKey = `${draft.baseUrl.trim()}\u0000${typedSecret ?? ''}`
   useEffect(() => {
     if (!canAutoFetch || autoFetched.current === autoFetchKey) return

@@ -61,11 +61,11 @@ export function parseProviderPlugin(text: string): ProviderPluginManifest {
   }
   const parsed = ProviderPluginManifest.safeParse(json)
   if (!parsed.success) {
-    const issue = parsed.error.issues[0]
-    const path = issue?.path.join('.')
+    const issue = parsed.error.issues[0]!
+    const path = issue.path.join('.')
     throw new ProviderPluginError(
       ProviderPluginErrorCode.Invalid,
-      `Invalid plugin${path ? ` at ${path}` : ''}: ${issue?.message ?? 'unknown error'}`,
+      `Invalid plugin${path ? ` at ${path}` : ''}: ${issue.message}`,
       path || undefined,
     )
   }
@@ -115,11 +115,11 @@ function templateOf(pluginId: string, entry: ProviderPluginEntry): ProviderTempl
   }
   const checked = ProviderTemplateSpec.safeParse(template)
   if (!checked.success) {
-    const issue = checked.error.issues[0]
+    const issue = checked.error.issues[0]!
     throw new ProviderPluginError(
       ProviderPluginErrorCode.Invalid,
-      `Invalid provider "${entry.id}": ${issue?.message ?? 'unknown error'}`,
-      ['providers', entry.id, ...(issue?.path ?? [])].join('.'),
+      `Invalid provider "${entry.id}": ${issue.message}`,
+      ['providers', entry.id, ...issue.path].join('.'),
     )
   }
   return template

@@ -1955,7 +1955,10 @@ export function createSessionStore(api: MainApi): SessionStore {
       async installProviderPlugin(path, confirm) {
         let result: ProviderPluginInstall
         try {
-          result = await api.request('providerPlugin.install', confirm ? { path, confirm } : { path })
+          result = await api.request(
+            'providerPlugin.install',
+            confirm ? { path, confirm } : { path },
+          )
         } catch (error) {
           return { ok: false, error: toError(error) }
         }
@@ -1964,7 +1967,8 @@ export function createSessionStore(api: MainApi): SessionStore {
       },
 
       async removeProviderPlugin(id) {
-        const removed = (await run(() => api.request('providerPlugin.remove', { id }))) !== undefined
+        const removed =
+          (await run(() => api.request('providerPlugin.remove', { id }))) !== undefined
         if (removed) await get().loadProviderPlugins()
         return removed
       },
