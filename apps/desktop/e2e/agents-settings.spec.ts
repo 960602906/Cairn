@@ -51,9 +51,12 @@ test('内置 Agent 只读，复制后可编辑、发布、归档与恢复', asyn
   await publishDialog.getByRole('button', { name: '发布', exact: true }).click()
   await expect(window.getByText('已发布', { exact: true })).toBeVisible()
 
-  // 归档副本（归档不需要二次确认）后回到列表。
+  // 归档副本：确认后回到列表。
   await window.getByRole('button', { name: '更多操作' }).click()
   await window.getByRole('menuitem', { name: '归档' }).click()
+  const archiveDialog = window.getByRole('dialog')
+  await expect(archiveDialog.getByRole('heading', { name: '归档这个 Agent？' })).toBeVisible()
+  await archiveDialog.getByRole('button', { name: '归档', exact: true }).click()
   await expect(window.getByRole('heading', { name: 'Agents', level: 2 })).toBeVisible()
 
   // 在「已归档」里找到并打开副本：标出已归档状态，表单只读。
