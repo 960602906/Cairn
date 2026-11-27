@@ -84,34 +84,47 @@ export function ghAuthCandidates(
   return ['gh', '/usr/bin/gh', '/usr/local/bin/gh', '/snap/bin/gh']
 }
 
-/** 本机 `gh` 的登录令牌；没装、未登录或超时都返回 `undefined`。 */
-export function readGhAuthToken(
-  candidates: readonly string[] = ghAuthCandidates(),
+type GhTokenRunner = (file: string) => Promise<string | undefined>
+
+/** 执行一次 `gh`，测试可以替换；参数与 `execFile` 保持一致的最小子集。 */
+export type GhCommandRunner = (
+  file: string,
+  args: readonly string[],
+  options: { readonly timeout: number; readonly windowsHide: boolean },
+  callback: (error: Error | null, stdout: string) => void,
+) => void
+
+const execGh: GhCommandRunner = (file, args, options, callback) => {
+  execFile(file, args, options, (error, stdout) => callback(error, stdout))
+}
+
+/** 从单个 `gh` 可执行文件读取令牌；没装、未登录、超时或输出为空都返回 `undefined`。 */
+export function runGhAuthToken(
+  file: string,
+  run: GhCommandRunner = execGh,
 ): Promise<string | undefined> {
   return new Promise((resolvePromise) => {
-    const tryAt = (index: number): void => {
-      if (index >= candidates.length) {
+    run(file, ['auth', 'token'], { timeout: 5_000, windowsHide: true }, (error, stdout) => {
+      if (error) {
         resolvePromise(undefined)
         return
       }
-      execFile(
-        candidates[index]!,
-        ['auth', 'token'],
-        { timeout: 5_000, windowsHide: true },
-        (error, stdout) => {
-          if (!error) {
-            const token = stdout.trim()
-            if (token !== '') {
-              resolvePromise(token)
-              return
-            }
-          }
-          tryAt(index + 1)
-        },
-      )
-    }
-    tryAt(0)
+      const token = stdout.trim()
+      resolvePromise(token === '' ? undefined : token)
+    })
   })
+}
+
+/** 依次尝试候选路径，返回第一个非空令牌。 */
+export async function readGhAuthToken(
+  candidates: readonly string[] = ghAuthCandidates(),
+  run: GhTokenRunner = runGhAuthToken,
+): Promise<string | undefined> {
+  for (const candidate of candidates) {
+    const token = await run(candidate)
+    if (token !== undefined && token !== '') return token
+  }
+  return undefined
 }
 
 /**

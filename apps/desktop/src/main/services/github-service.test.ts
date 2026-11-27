@@ -6,6 +6,8 @@ import {
   createGithubTokenResolver,
   ghAuthCandidates,
   normalizeGithubApiBase,
+  readGhAuthToken,
+  runGhAuthToken,
   type FetchLike,
   type GithubCredentials,
 } from './github-service.js'
@@ -119,6 +121,53 @@ describe('gh auth token candidates', () => {
       'gh.exe',
       'C:\\Program Files\\GitHub CLI\\gh.exe',
     ])
+  })
+
+  it('uses the current platform and environment by default', () => {
+    expect(ghAuthCandidates()).toContain('gh')
+  })
+
+  it('returns the first non-empty token', async () => {
+    const run = vi.fn(async (file: string) =>
+      file === '/opt/homebrew/bin/gh' ? 'gh-token' : undefined,
+    )
+    expect(await readGhAuthToken(['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh'], run)).toBe(
+      'gh-token',
+    )
+    expect(run.mock.calls.map(([file]) => file)).toEqual(['gh', '/opt/homebrew/bin/gh'])
+  })
+
+  it('keeps trying when a candidate prints nothing', async () => {
+    const run = vi.fn(async () => '')
+    expect(await readGhAuthToken(['gh', '/opt/homebrew/bin/gh'], run)).toBeUndefined()
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns undefined when every candidate fails', async () => {
+    expect(await readGhAuthToken([])).toBeUndefined()
+    expect(await readGhAuthToken([], vi.fn())).toBeUndefined()
+    expect(
+      await readGhAuthToken(
+        ['gh'],
+        vi.fn(async () => undefined),
+      ),
+    ).toBeUndefined()
+  })
+
+  it('maps gh process errors, empty output and a token to the right result', async () => {
+    expect(
+      await runGhAuthToken('gh', (_file, _args, _options, callback) =>
+        callback(new Error('missing'), ''),
+      ),
+    ).toBeUndefined()
+    expect(
+      await runGhAuthToken('gh', (_file, _args, _options, callback) => callback(null, '  \n')),
+    ).toBeUndefined()
+    expect(
+      await runGhAuthToken('gh', (_file, _args, _options, callback) =>
+        callback(null, 'gh-token\n'),
+      ),
+    ).toBe('gh-token')
   })
 })
 
