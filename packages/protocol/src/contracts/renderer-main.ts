@@ -82,6 +82,10 @@ import {
   CONFIG_ID_PATTERN,
   ProviderConfig,
   ProviderConfigList,
+  IconSource,
+  ProviderCatalogItem,
+  ProviderPluginInfo,
+  ProviderPluginSkipped,
   ReasoningEffort,
   RemoteModel,
 } from '../providers.js'
@@ -962,6 +966,86 @@ export const MainForRenderer = defineSide({
         z.object({ ok: z.literal(true), models: z.array(RemoteModel).max(1000) }),
         z.object({ ok: z.literal(false), error: ErrorInfo }),
       ]),
+    },
+    /**
+     * 已安装的供应商插件（ADR-0050）：每个插件的目录项，以及无法加载的文件（只有文件名与错误码）。
+     * 同一插件 id 出现在多个文件中时只用文件名排在前面的那个，其余记为 `providers.plugin.duplicate`。
+     */
+    'providerPlugin.list': {
+      params: z.object({}),
+      result: z.object({
+        plugins: z.array(ProviderPluginInfo),
+        skipped: z.array(ProviderPluginSkipped),
+      }),
+    },
+    /** 用系统对话框选择插件文件（`.json`）。取消时结果不含 `path`；选中后交给 `providerPlugin.install`。 */
+    'providerPlugin.pick': {
+      params: z.object({}),
+      result: z.object({ path: z.string().min(1).optional() }),
+    },
+    /**
+     * 安装插件文件。`confirm` 省略或为 false 时只校验并返回预览，不写盘；为 true 时写入插件目录。
+     * `replaces` 表示已有同 id 的插件（确认后被替换）。文件无效时报 `providers.plugin.invalid`，
+     * 格式版本不支持时报 `providers.plugin.unsupported_version`，过大时报 `providers.plugin.too_large`。
+     */
+    'providerPlugin.install': {
+      params: z.object({ path: z.string().min(1).max(4096), confirm: z.boolean().optional() }),
+      result: z.object({
+        installed: z.boolean(),
+        replaces: z.boolean(),
+        plugin: ProviderPluginInfo,
+      }),
+    },
+    /**
+     * 官方插件目录（ADR-0050）：读取 `index.json`。网络不通或 HTTP 出错时报 `providers.catalog.unreachable`，
+     * 格式不对时报 `providers.catalog.invalid`；目录中无效的项被跳过。`source` 是目录仓库的网页地址。
+     */
+    'providerCatalog.list': {
+      params: z.object({}),
+      result: z.object({
+        source: z.string().url().max(2048),
+        plugins: z.array(ProviderCatalogItem).max(500),
+      }),
+    },
+    /**
+     * 下载目录中的插件并预览，不写盘。`sha256` 是下载到的插件文件的摘要，安装时带回，保证装的就是预览过的
+     * 内容。插件不在目录中时报 `providers.catalog.not_found`，文件无效时报 `providers.plugin.*`。
+     */
+    'providerCatalog.preview': {
+      params: z.object({ id: z.string().min(1).max(64) }),
+      result: z.object({
+        replaces: z.boolean(),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        plugin: ProviderPluginInfo,
+      }),
+    },
+    /**
+     * 安装预览过的目录插件：内容与 `sha256` 不一致（目录在预览之后变了）时报 `providers.catalog.changed`，
+     * 需要重新预览。相对路径的图标解析为目录仓库中的 https 地址后写入插件目录。
+     */
+    'providerCatalog.install': {
+      params: z.object({
+        id: z.string().min(1).max(64),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      }),
+      result: z.object({
+        installed: z.boolean(),
+        replaces: z.boolean(),
+        plugin: ProviderPluginInfo,
+      }),
+    },
+    /**
+     * 供应商图标（ADR-0050）：显式图标或网站图标（favicon），由主进程下载并以 `data:` 地址返回（界面的 CSP
+     * 不允许直接加载远程图片）。只访问公网的 https 地址，结果缓存在应用数据目录；找不到时不含 `dataUrl`。
+     */
+    'providerIcon.resolve': {
+      params: IconSource,
+      result: z.object({ dataUrl: z.string().max(200_000).optional() }),
+    },
+    /** 卸载插件（删除文件）。已用它添加的供应商不受影响。没有这个插件时报 `providers.plugin.not_found`。 */
+    'providerPlugin.remove': {
+      params: z.object({ id: z.string().min(1).max(64) }),
+      result: z.object({}),
     },
     /**
      * 保存的全局与项目权限规则（M2-11）：全局在前，项目按打开时间倒序，同一范围内按添加顺序。

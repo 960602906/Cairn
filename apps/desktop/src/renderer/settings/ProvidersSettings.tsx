@@ -1,24 +1,38 @@
 /**
- * 设置页“模型供应商”（M2-10）。交互参考 LiveAgent：
+ * 设置页“模型供应商”（M2-10、ADR-0050）。
  *
  * - 顶部按接口格式分标签（Anthropic / OpenAI / Gemini），标签右侧“添加供应商”。
  * - 每个标签下是供应商卡片；点名称或编辑按钮打开弹窗，删除也在卡片上。
- * - 添加时按接口格式选择要接入的服务：官方服务用模板预填地址、模型与兼容参数，
- *   自定义 / 第三方中转得到空白草稿；选中即进入编辑弹窗。
- * - 弹窗保持单栏：名称、服务、Base URL、Key、测试连接，然后是一个模型列表。
+ * - 添加时从目录选服务，按“模型厂商 / 聚合平台与中转 / 本机运行”分组，不必先知道接口格式：
+ *   目录项预填地址、接口格式、名称与兼容参数，用户通常只需粘贴 Key。没有预置模型的服务在填入 Key 后
+ *   自动拉取模型列表并启用建议的模型。“自定义”仍可接入任意 OpenAI / Anthropic / Gemini 兼容地址。
+ *   目录可由供应商插件（只有数据的 JSON 文件）扩展，插件在同一个对话框里安装与卸载。
+ * - 弹窗保持单栏：名称、Base URL（有多个接入点时可切换国际 / 中国大陆）、Key、测试连接，然后是模型列表。
  *   拉取到的模型与已配置的模型合并在同一个列表里，每行一个开关；展开某一行才显示
  *   上下文、输出上限与默认模型，显示名称和能力再收在“更多设置”里。
  *   拉取结果保存在配置中，下次打开直接显示，不用重新拉取；手动添加收在列表底部。
- * - 测试连接会逐个测试已启用的模型，并汇总哪些失败。
+ * - 测试连接默认只测一个模型（默认模型或第一个启用的）；测试全部模型要再确认一次，避免消耗额度或触发限流。
+ * - 保存时先写 Key，Key 写入失败就不改设置；设置写入失败时撤回刚写入的新 Key，并就地说明。
+ * - 有未保存的改动（包括新填的 Key）时，关闭弹窗要先确认。
  * - 高级兼容参数收在编辑弹窗底部的折叠区，不再让用户先理解“来源/兼容哪家”。
  */
-import { findTemplate, PROVIDER_TEMPLATES } from '@cairn/core'
+import {
+  findTemplateIn,
+  keysUrlFor,
+  regionOf,
+  suggestedModelIds,
+  type ProviderTemplate,
+} from '@cairn/core'
 import type {
   ErrorInfo,
+  IconSource,
   ModelCompat,
+  PluginOrigin,
   ModelProfile,
   ProviderConfig,
   ProviderKind,
+  ProviderCatalogItem,
+  ProviderPluginInfo,
   RemoteModel,
   ThinkingFormat,
 } from '@cairn/protocol'
@@ -27,15 +41,27 @@ import {
   ChevronDown,
   ChevronRight,
   Cpu,
+  ExternalLink,
+  FileUp,
   Plus,
+  Puzzle,
   RefreshCw,
+  ShieldCheck,
   Search,
   SquarePen,
   Trash2,
   TriangleAlert,
   X,
 } from 'lucide-react'
-import { useEffect, useId, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { translateError } from '@cairn/i18n'
 import { useTranslation } from 'react-i18next'
 import type { CredentialStatus, ProviderTestResult } from '../session-store.js'
@@ -58,11 +84,21 @@ import {
 import { inputClass, selectClass, SettingsCard } from './Field.js'
 import { DeepseekIcon, ProviderBrandIcon } from './ProviderBrandIcon.js'
 import {
+  BRAND_TEMPLATES,
+  catalogGroups,
+  catalogOf,
   configOf,
+  credentialRefFor,
   draftOf,
   enabledModelIdsOf,
   formatTokens,
   genericDraftFor,
+  hostOf,
+  iconSourceOf,
+  initials,
+  OFFICIAL_CATALOG_PAGE,
+  pluginIconSourceOf,
+  LOCAL_AUTO_ENABLE_LIMIT,
   modelRowsOf,
   newDraftForTemplate,
   problemsOf,
@@ -70,6 +106,7 @@ import {
   slugId,
   sourceOf,
   templatesOf,
+  testTargetOf,
   uniqueProviderId,
   type ModelRow,
   type ProviderDraft,
@@ -107,29 +144,101 @@ function useErrorText() {
   return (error: ErrorInfo) => translateError(i18n, error)
 }
 
+/** 图标的 `data:` 地址（主进程下载的显式图标或网站图标）；还没拿到或找不到时为 undefined。 */
+function useIcon(source: IconSource | undefined): string | undefined {
+  const providerIcon = useSessionStore((s) => s.providerIcon)
+  const key = source ? JSON.stringify(source) : ''
+  const [loaded, setLoaded] = useState<{ readonly key: string; readonly url?: string }>()
+  useEffect(() => {
+    if (!source) return
+    let cancelled = false
+    void providerIcon(source).then((url) => {
+      if (!cancelled) setLoaded(url === undefined ? { key } : { key, url })
+    })
+    return () => {
+      cancelled = true
+    }
+    // source 每次渲染都是新对象，按内容（key）决定是否重新请求
+  }, [key, providerIcon])
+  return loaded?.key === key ? loaded.url : undefined
+}
+
+/** 远程图标：加载完成前和失败时显示 `fallback`，不挡住界面。 */
+function RemoteIcon({
+  source,
+  fallback,
+}: {
+  readonly source: IconSource | undefined
+  readonly fallback: ReactNode
+}) {
+  const url = useIcon(source)
+  const [broken, setBroken] = useState<string>()
+  if (url === undefined || broken === url) return <>{fallback}</>
+  return (
+    <img
+      src={url}
+      alt=""
+      draggable={false}
+      onError={() => setBroken(url)}
+      className="size-[64%] object-contain"
+    />
+  )
+}
+
+const tileClass =
+  'inline-grid shrink-0 place-items-center overflow-hidden rounded-[9px] bg-paper text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)]'
+
+/** 插件与目录项的图标：没有图标时用拼图符号。 */
+function PluginGlyph({
+  source,
+  size = 28,
+}: {
+  readonly source: IconSource | undefined
+  readonly size?: number
+}) {
+  return (
+    <span aria-hidden className={tileClass} style={{ width: size, height: size }}>
+      <RemoteIcon source={source} fallback={<Puzzle className="size-[52%] text-muted" />} />
+    </span>
+  )
+}
+
 function Logo({
   name,
   kind,
   template,
+  source,
   size = 32,
 }: {
   readonly name: string
   readonly kind: ProviderKind
   readonly template?: string | undefined
+  /** 目录项的图标依据；内置品牌图标的四个模板不需要。 */
+  readonly source?: IconSource | undefined
   readonly size?: number
 }) {
+  const monogram = (
+    <span
+      className="leading-none font-semibold tracking-tight text-fg2"
+      style={{ fontSize: Math.round(size * 0.36) }}
+    >
+      {initials(name)}
+    </span>
+  )
   return (
     <span
       aria-hidden
       title={name}
-      className="inline-grid shrink-0 place-items-center rounded-[9px] bg-paper text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)]"
+      className={tileClass}
       style={{
         width: size,
         height: size,
       }}
     >
-      {template === 'deepseek' ? (
+      {template === 'deepseek' && source?.icon === undefined ? (
         <DeepseekIcon className="w-[68%]" />
+      ) : template !== undefined && (!BRAND_TEMPLATES.has(template) || source?.icon) ? (
+        <RemoteIcon source={source} fallback={monogram} />
       ) : (
         <ProviderBrandIcon kind={kind} className="size-[58%]" />
       )}
@@ -167,24 +276,35 @@ function Labeled({
   label,
   labelFor,
   hint,
+  action,
   className,
   children,
 }: {
   readonly label: string
   readonly labelFor?: string
   readonly hint?: ReactNode
+  /** 标签行右侧的操作（如“获取 Key”链接）。 */
+  readonly action?: ReactNode
   readonly className?: string
   readonly children: ReactNode
 }) {
   const text = <span className="text-[12.5px] font-medium text-fg2">{label}</span>
+  const head = labelFor ? (
+    <label htmlFor={labelFor} className="contents">
+      {text}
+    </label>
+  ) : (
+    text
+  )
   return (
     <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
-      {labelFor ? (
-        <label htmlFor={labelFor} className="contents">
-          {text}
-        </label>
+      {action ? (
+        <div className="flex items-center justify-between gap-2">
+          {head}
+          {action}
+        </div>
       ) : (
-        text
+        head
       )}
       {children}
       {hint && <p className="text-note leading-relaxed text-muted">{hint}</p>}
@@ -245,6 +365,7 @@ function DeleteProvider({
 
 function ProviderCard({
   provider,
+  iconSource,
   isDefault,
   keyStatus,
   result,
@@ -252,6 +373,7 @@ function ProviderCard({
   onDelete,
 }: {
   readonly provider: ProviderConfig
+  readonly iconSource: IconSource | undefined
   readonly isDefault: boolean
   readonly keyStatus: KeyStatus | undefined
   readonly result: TestSummary | undefined
@@ -268,6 +390,7 @@ function ProviderCard({
         name={provider.displayName}
         kind={provider.kind}
         template={provider.template}
+        source={iconSource}
         size={34}
       />
       <button type="button" onClick={onEdit} className="min-w-0 flex-1 text-left">
@@ -382,21 +505,44 @@ function unavailableHintKey(reason: CredentialStatus['reason']): string {
   }
 }
 
+function KeysLink({ href }: { readonly href: string }) {
+  const { t } = useTranslation('settings')
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 text-note text-muted transition-colors hover:text-fg [&_svg]:size-3"
+    >
+      {t('providers.key.getKey')}
+      <ExternalLink />
+    </a>
+  )
+}
+
 function KeyField({
   status,
   secret,
+  optional = false,
+  keysUrl,
+  autoFocus = false,
   onSecret,
 }: {
   readonly status: KeyStatus | undefined
   readonly secret: string | undefined
+  /** 本机服务通常不需要 Key。 */
+  readonly optional?: boolean
+  readonly keysUrl?: string | undefined
+  readonly autoFocus?: boolean
   readonly onSecret: (secret: string | undefined) => void
 }) {
   const { t } = useTranslation('settings')
   const id = useId()
   const unavailable = status?.available === false
+  const action = keysUrl ? <KeysLink href={keysUrl} /> : undefined
   if (status?.configured && secret === undefined) {
     return (
-      <Labeled label={t('providers.field.key')}>
+      <Labeled label={t('providers.field.key')} action={action}>
         <div className={cn(inputClass, 'flex items-center gap-2 pr-1 font-mono text-[13px]')}>
           <span className="flex-1 truncate">
             {status.last4 ? t('providers.key.masked', { last4: status.last4 }) : '••••••••'}
@@ -415,7 +561,14 @@ function KeyField({
     <Labeled
       label={t('providers.field.key')}
       labelFor={id}
-      hint={unavailable ? t(unavailableHintKey(status?.reason)) : t('providers.key.hint')}
+      action={action}
+      hint={
+        unavailable
+          ? t(unavailableHintKey(status?.reason))
+          : optional
+            ? t('providers.key.optionalHint')
+            : t('providers.key.hint')
+      }
     >
       <div className="flex items-center gap-2">
         <input
@@ -424,8 +577,11 @@ function KeyField({
           autoComplete="off"
           spellCheck={false}
           disabled={unavailable}
+          data-autofocus={autoFocus || undefined}
           value={secret ?? ''}
-          placeholder={t('providers.key.placeholder')}
+          placeholder={
+            optional ? t('providers.key.optionalPlaceholder') : t('providers.key.placeholder')
+          }
           onChange={(e) => onSecret(e.target.value)}
           className={cn(inputClass, 'font-mono text-[13px]')}
         />
@@ -439,18 +595,59 @@ function KeyField({
   )
 }
 
+/** 测试全部已启用的模型：每个模型各发一次请求，先确认。 */
+function TestAllButton({
+  count,
+  disabled,
+  onConfirm,
+}: {
+  readonly count: number
+  readonly disabled: boolean
+  readonly onConfirm: () => void
+}) {
+  const { t } = useTranslation('settings')
+  const { t: tc } = useTranslation()
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" disabled={disabled}>
+          {t('providers.test.all', { count })}
+        </Button>
+      </DialogTrigger>
+      <DialogContent icon={<TriangleAlert />}>
+        <DialogTitle>{t('providers.test.allTitle', { count })}</DialogTitle>
+        <DialogDescription>{t('providers.test.allDescription')}</DialogDescription>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button>{tc('action.cancel')}</Button>
+          </DialogClose>
+          <DialogClose asChild>
+            <Button variant="primary" onClick={onConfirm}>
+              {t('providers.test.allConfirm')}
+            </Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function TestBar({
   outcomes,
   testing,
   progress,
   disabled,
+  enabledCount,
   onTest,
+  onTestAll,
 }: {
   readonly outcomes: TestSummary | undefined
   readonly testing: boolean
   readonly progress: { readonly done: number; readonly total: number } | undefined
   readonly disabled: boolean
+  readonly enabledCount: number
   readonly onTest: () => void
+  readonly onTestAll: () => void
 }) {
   const { t } = useTranslation('settings')
   const errorText = useErrorText()
@@ -487,12 +684,14 @@ function TestBar({
       ) : failures.length === 0 ? (
         <>
           <Check className="size-3.5 text-ok" strokeWidth={2.2} />
-          <span>
+          <span className="min-w-0">
             <b className="font-medium text-ok">
               {total === 1 ? t('providers.test.okOne') : t('providers.test.ok', { count: total })}
             </b>
             {' · '}
-            {t('providers.test.latency', { ms: latencyMs })}
+            {total === 1
+              ? t('providers.test.okModel', { name: outcomes[0]!.modelId, ms: latencyMs })
+              : t('providers.test.latency', { ms: latencyMs })}
           </span>
         </>
       ) : (
@@ -514,6 +713,9 @@ function TestBar({
         </>
       )}
       <span className="flex-1" />
+      {enabledCount > 1 && (
+        <TestAllButton count={enabledCount} disabled={disabled || testing} onConfirm={onTestAll} />
+      )}
       <Button variant="ghost" size="sm" disabled={disabled || testing} onClick={onTest}>
         {outcomes === undefined ? t('providers.test.run') : t('providers.test.again')}
       </Button>
@@ -521,70 +723,653 @@ function TestBar({
   )
 }
 
-/** 添加供应商时选中的服务：官方服务带模板 id，自定义只有接口格式。 */
+/** 添加供应商时选中的服务：目录项带模板 id，自定义只有接口格式。 */
 type AddChoice = { readonly kind: ProviderKind; readonly template?: string }
 
 const pickRowClass =
   'flex w-full items-center gap-2.5 rounded-[9px] bg-sunk px-2.5 py-2 text-left transition-colors hover:bg-hover'
 
+function SmallTag({ children }: { readonly children: ReactNode }) {
+  return (
+    <span className="inline-flex h-[17px] shrink-0 items-center rounded-[5px] bg-paper px-1.5 text-[10.5px] font-medium whitespace-nowrap text-muted shadow-[inset_0_0_0_0.5px_var(--hair2)]">
+      {children}
+    </span>
+  )
+}
+
+function ServiceTile({
+  template,
+  pluginName,
+  onPick,
+}: {
+  readonly template: ProviderTemplate
+  readonly pluginName: string | undefined
+  readonly onPick: () => void
+}) {
+  const { t } = useTranslation('settings')
+  return (
+    <li>
+      <button type="button" onClick={onPick} className={pickRowClass}>
+        <Logo
+          name={template.displayName}
+          kind={template.kind}
+          template={template.id}
+          source={iconSourceOf(template)}
+          size={28}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13.5px] font-medium text-fg">
+            {template.displayName}
+          </span>
+          <span className="block truncate font-mono text-[11.5px] text-muted">
+            {hostOf(template.baseUrl)}
+          </span>
+        </span>
+        {pluginName !== undefined && <SmallTag>{t('providers.add.pluginTag')}</SmallTag>}
+        {!template.requiresKey && <SmallTag>{t('providers.add.noKeyTag')}</SmallTag>}
+        <ChevronRight className="size-4 shrink-0 text-faint" />
+      </button>
+    </li>
+  )
+}
+
+function RemovePlugin({
+  plugin,
+  onConfirm,
+}: {
+  readonly plugin: ProviderPluginInfo
+  readonly onConfirm: () => void
+}) {
+  const { t } = useTranslation('settings')
+  const { t: tc } = useTranslation()
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <IconButton
+          label={t('providers.plugins.remove', { name: plugin.name })}
+          size="icon-sm"
+          className="text-muted hover:bg-danger-soft hover:text-danger"
+        >
+          <Trash2 />
+        </IconButton>
+      </DialogTrigger>
+      <DialogContent tone="danger" icon={<Trash2 />}>
+        <DialogTitle>{t('providers.plugins.removeTitle', { name: plugin.name })}</DialogTitle>
+        <DialogDescription>{t('providers.plugins.removeDescription')}</DialogDescription>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button>{tc('action.cancel')}</Button>
+          </DialogClose>
+          <DialogClose asChild>
+            <Button variant="danger" onClick={onConfirm}>
+              {t('providers.plugins.removeConfirm')}
+            </Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** 插件网站：显示主机名的文字链接，用系统浏览器打开。 */
+function HomepageLink({ href }: { readonly href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex min-w-0 items-center gap-0.5 text-accent underline-offset-2 hover:underline [&_svg]:size-3 [&_svg]:shrink-0"
+    >
+      <span className="truncate">{hostOf(href)}</span>
+      <ExternalLink />
+    </a>
+  )
+}
+
+/** 实际来源的标记：官方只给从官方目录安装、声明为官方且未改动的插件，不取自插件内容。 */
+function OriginBadge({ origin }: { readonly origin: PluginOrigin | undefined }) {
+  const { t } = useTranslation('settings')
+  const value = origin ?? 'local'
+  if (value === 'official') {
+    return (
+      <span className="inline-flex h-[17px] shrink-0 items-center gap-0.5 rounded-[5px] bg-ok-soft px-1.5 text-[10.5px] font-medium whitespace-nowrap text-ok [&_svg]:size-3">
+        <ShieldCheck />
+        {t('providers.plugins.origin.official')}
+      </span>
+    )
+  }
+  return <SmallTag>{t(`providers.plugins.origin.${value}`)}</SmallTag>
+}
+
+/** 作者与网站：作者是插件自述的显示名，网站是可点击的文字链接。 */
+function PluginMeta({
+  author,
+  homepage,
+}: {
+  readonly author: string | undefined
+  readonly homepage: string | undefined
+}) {
+  const { t } = useTranslation('settings')
+  if (!author && !homepage) return null
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted">
+      {author && <span className="truncate">{t('providers.plugins.author', { author })}</span>}
+      {author && homepage && <span aria-hidden>·</span>}
+      {homepage && <HomepageLink href={homepage} />}
+    </span>
+  )
+}
+
+/** 安装前的预览：插件的服务与 Key 会发送到的全部地址；确认后由 `install` 写入。 */
+interface PluginPreview {
+  readonly plugin: ProviderPluginInfo
+  readonly replaces: boolean
+  readonly origin: 'catalog' | 'file'
+  readonly install: () => Promise<{ readonly ok: true } | { readonly ok: false; error: ErrorInfo }>
+}
+
+/** 一个服务会收到 Key 的地址：默认地址与各接入点，去重。 */
+const addressesOf = (template: ProviderTemplate): readonly string[] => [
+  ...new Set([template.baseUrl, ...(template.regions ?? []).map((region) => region.baseUrl)]),
+]
+
+function PluginPreviewDialog({
+  preview,
+  onClose,
+  onFailed,
+}: {
+  readonly preview: PluginPreview | undefined
+  readonly onClose: () => void
+  readonly onFailed: (error: ErrorInfo) => void
+}) {
+  const { t } = useTranslation('settings')
+  const { t: tc } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const confirm = async () => {
+    if (!preview) return
+    setBusy(true)
+    const outcome = await preview.install()
+    setBusy(false)
+    onClose()
+    if (!outcome.ok) onFailed(outcome.error)
+  }
+  return (
+    <Dialog open={preview !== undefined} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        icon={
+          preview ? <PluginGlyph source={pluginIconSourceOf(preview.plugin)} size={22} /> : null
+        }
+      >
+        <div className="flex items-center gap-2">
+          <DialogTitle>
+            {t('providers.plugins.previewTitle', { name: preview?.plugin.name ?? '' })}
+          </DialogTitle>
+          {preview && <OriginBadge origin={preview.plugin.origin} />}
+        </div>
+        <DialogDescription>
+          {preview?.origin === 'catalog'
+            ? t('providers.plugins.previewFromCatalog')
+            : t('providers.plugins.previewFromFile')}{' '}
+          {t('providers.plugins.previewDescription')}
+        </DialogDescription>
+        {preview && (preview.plugin.author || preview.plugin.homepage) && (
+          <div className="mt-2 text-note">
+            <PluginMeta author={preview.plugin.author} homepage={preview.plugin.homepage} />
+          </div>
+        )}
+        <ul
+          aria-label={t('providers.plugins.previewList')}
+          className="mt-4 flex max-h-64 flex-col gap-1 overflow-y-auto"
+        >
+          {preview?.plugin.templates.map((template) => (
+            <li
+              key={template.id}
+              className="flex items-start gap-2.5 rounded-[9px] bg-sunk px-2.5 py-1.5"
+            >
+              <Logo
+                name={template.displayName}
+                kind={template.kind}
+                template={template.id}
+                source={iconSourceOf(template)}
+                size={24}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-fg">
+                  {template.displayName}
+                  <span className="ml-1.5 font-normal text-faint">
+                    {t(`providers.kind.${template.kind}.name`)}
+                  </span>
+                </span>
+                {addressesOf(template).map((address) => (
+                  <span key={address} className="block truncate font-mono text-[11.5px] text-muted">
+                    {address}
+                  </span>
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {preview?.replaces && (
+          <p className="mt-3 text-note text-warn">{t('providers.plugins.previewReplaces')}</p>
+        )}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button>{tc('action.cancel')}</Button>
+          </DialogClose>
+          <Button variant="primary" disabled={busy} onClick={() => void confirm()}>
+            {busy && <Spinner />}
+            {t('providers.plugins.installConfirm')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /**
- * 添加供应商：按接口格式列出可接入的服务。
+ * 官方插件目录（ADR-0050）：列出 `cairn-provider-plugins` 仓库中的插件，标出已安装与可更新的；
+ * 选中后下载并预览，确认才安装。目录不可达时就地说明，可以重试，不影响其余功能。
+ */
+function OfficialCatalog({
+  installed,
+  onPreview,
+}: {
+  readonly installed: readonly ProviderPluginInfo[]
+  readonly onPreview: (preview: PluginPreview) => void
+}) {
+  const { t } = useTranslation('settings')
+  const errorText = useErrorText()
+  const load = useSessionStore((s) => s.loadProviderCatalog)
+  const previewPlugin = useSessionStore((s) => s.previewCatalogPlugin)
+  const installPlugin = useSessionStore((s) => s.installCatalogPlugin)
+  const [open, setOpen] = useState(false)
+  const [state, setState] = useState<
+    | { readonly status: 'loading' }
+    | { readonly status: 'failed'; readonly error: ErrorInfo }
+    | {
+        readonly status: 'ready'
+        readonly source: string
+        readonly plugins: readonly ProviderCatalogItem[]
+      }
+  >({ status: 'loading' })
+  const [opening, setOpening] = useState<string>()
+  const [failure, setFailure] = useState<ErrorInfo>()
+
+  const refresh = async () => {
+    setState({ status: 'loading' })
+    setFailure(undefined)
+    const outcome = await load()
+    setState(
+      outcome.ok
+        ? { status: 'ready', source: outcome.result.source, plugins: outcome.result.plugins }
+        : { status: 'failed', error: outcome.error },
+    )
+  }
+
+  const show = async (item: ProviderCatalogItem) => {
+    setFailure(undefined)
+    setOpening(item.id)
+    const outcome = await previewPlugin(item.id)
+    setOpening(undefined)
+    if (!outcome.ok) {
+      setFailure(outcome.error)
+      return
+    }
+    const { plugin, replaces, sha256 } = outcome.result
+    onPreview({
+      plugin,
+      replaces,
+      origin: 'catalog',
+      install: async () => {
+        const done = await installPlugin(item.id, sha256)
+        return done.ok ? { ok: true } : done
+      },
+    })
+  }
+
+  const installedById = new Map(installed.map((plugin) => [plugin.id, plugin]))
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) void refresh()
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7">
+          <Puzzle />
+          {t('providers.catalog.browse')}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="flex max-h-[calc(100dvh-64px)] w-[min(560px,calc(100vw-32px))] flex-col">
+        <DialogTitle>{t('providers.catalog.title')}</DialogTitle>
+        <DialogDescription>{t('providers.catalog.description')}</DialogDescription>
+        <div className="mt-4 flex min-h-24 flex-col gap-1.5 overflow-y-auto">
+          {state.status === 'loading' && (
+            <p className="flex items-center gap-2 px-1 py-6 text-note text-muted">
+              <Spinner />
+              {t('providers.catalog.loading')}
+            </p>
+          )}
+          {state.status === 'failed' && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-[9px] bg-danger-soft px-2.5 py-2 text-note text-danger"
+            >
+              <TriangleAlert className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1">
+                {t('providers.catalog.failed', { reason: errorText(state.error) })}
+              </span>
+              <Button size="sm" variant="ghost" className="h-7" onClick={() => void refresh()}>
+                <RefreshCw />
+                {t('providers.catalog.retry')}
+              </Button>
+            </div>
+          )}
+          {failure !== undefined && (
+            <p
+              role="alert"
+              className="rounded-[9px] bg-danger-soft px-2.5 py-1.5 text-note text-danger"
+            >
+              {t('providers.catalog.previewFailed', { reason: errorText(failure) })}
+            </p>
+          )}
+          {state.status === 'ready' && state.plugins.length === 0 && (
+            <p className="px-1 py-6 text-note text-muted">{t('providers.catalog.empty')}</p>
+          )}
+          {state.status === 'ready' &&
+            (['official', 'third-party'] as const).map((group) => {
+              const items = state.plugins.filter((item) => item.source === group)
+              if (items.length === 0) return null
+              const heading =
+                group === 'official'
+                  ? t('providers.catalog.groupOfficial')
+                  : t('providers.catalog.groupThirdParty')
+              return (
+                <section key={group} aria-label={heading} className="flex flex-col gap-1">
+                  <h3 className="flex items-center gap-1.5 px-1 pt-1 text-[11.5px] font-medium text-muted">
+                    {group === 'official' && <ShieldCheck className="size-3.5 text-ok" />}
+                    {heading}
+                  </h3>
+                  {group === 'third-party' && (
+                    <p className="px-1 text-note leading-relaxed text-muted">
+                      {t('providers.catalog.thirdPartyHint')}
+                    </p>
+                  )}
+                  <ul className="flex flex-col gap-1">
+                    {items.map((item) => {
+                      const current = installedById.get(item.id)
+                      const update =
+                        current !== undefined &&
+                        item.version !== undefined &&
+                        current.version !== item.version
+                      return (
+                        <li
+                          key={item.id}
+                          className="flex items-center gap-2.5 rounded-[9px] bg-sunk px-2.5 py-2"
+                        >
+                          <PluginGlyph source={pluginIconSourceOf(item)} />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-fg">
+                              <span className="truncate">{item.name}</span>
+                              {item.version && (
+                                <span className="shrink-0 font-normal text-faint">
+                                  {t('providers.plugins.version', { version: item.version })}
+                                </span>
+                              )}
+                              {group === 'official' && <OriginBadge origin="official" />}
+                              {current !== undefined && (
+                                <SmallTag>
+                                  {update
+                                    ? t('providers.catalog.update')
+                                    : t('providers.catalog.installed')}
+                                </SmallTag>
+                              )}
+                            </span>
+                            <PluginMeta author={item.author} homepage={item.homepage} />
+                            {item.description && (
+                              <span className="block truncate text-[11.5px] text-muted">
+                                {item.description}
+                              </span>
+                            )}
+                          </span>
+                          <Button
+                            size="sm"
+                            disabled={opening !== undefined}
+                            aria-label={t('providers.catalog.details', { name: item.name })}
+                            onClick={() => void show(item)}
+                          >
+                            {opening === item.id && <Spinner />}
+                            {current === undefined
+                              ? t('providers.catalog.view')
+                              : update
+                                ? t('providers.catalog.updateAction')
+                                : t('providers.catalog.reinstall')}
+                          </Button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
+              )
+            })}
+        </div>
+        <a
+          href={OFFICIAL_CATALOG_PAGE}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 inline-flex w-fit items-center gap-1 text-note text-muted hover:text-fg [&_svg]:size-3"
+        >
+          {t('providers.catalog.source', {
+            source: hostOf(state.status === 'ready' ? state.source : OFFICIAL_CATALOG_PAGE),
+          })}
+          <ExternalLink />
+        </a>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * 供应商插件（ADR-0050）：列出已安装的插件与无法加载的文件；可以从官方目录或本地文件安装，
+ * 两种方式都先预览其中的服务与地址，确认后才写入插件目录。
+ */
+function ProviderPlugins() {
+  const { t } = useTranslation('settings')
+  const errorText = useErrorText()
+  const list = useSessionStore((s) => s.providerPlugins)
+  const pick = useSessionStore((s) => s.pickProviderPlugin)
+  const install = useSessionStore((s) => s.installProviderPlugin)
+  const remove = useSessionStore((s) => s.removeProviderPlugin)
+  const [preview, setPreview] = useState<PluginPreview>()
+  const [failure, setFailure] = useState<ErrorInfo | undefined>()
+  const plugins = list?.plugins ?? []
+  const skipped = list?.skipped ?? []
+
+  const choose = async () => {
+    setFailure(undefined)
+    const path = await pick()
+    if (path === undefined) return
+    const outcome = await install(path)
+    if (!outcome.ok) {
+      setFailure(outcome.error)
+      return
+    }
+    setPreview({
+      plugin: outcome.result.plugin,
+      replaces: outcome.result.replaces,
+      origin: 'file',
+      install: async () => {
+        const done = await install(path, true)
+        return done.ok ? { ok: true } : done
+      },
+    })
+  }
+
+  return (
+    <section aria-label={t('providers.plugins.title')} className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1 px-1">
+        <h3 className="text-[11.5px] font-medium text-muted">{t('providers.plugins.title')}</h3>
+        <span className="flex-1" />
+        <OfficialCatalog
+          installed={plugins}
+          onPreview={(next) => {
+            setFailure(undefined)
+            setPreview(next)
+          }}
+        />
+        <Button variant="ghost" size="sm" className="h-7" onClick={() => void choose()}>
+          <FileUp />
+          {t('providers.plugins.install')}
+        </Button>
+      </div>
+      <p className="px-1 text-note leading-relaxed text-muted">{t('providers.plugins.hint')}</p>
+      {failure !== undefined && (
+        <p
+          role="alert"
+          className="rounded-[9px] bg-danger-soft px-2.5 py-1.5 text-note text-danger"
+        >
+          {t('providers.plugins.installFailed', { reason: errorText(failure) })}
+        </p>
+      )}
+      {(plugins.length > 0 || skipped.length > 0) && (
+        <ul aria-label={t('providers.plugins.list')} className="flex flex-col gap-1">
+          {plugins.map((plugin) => (
+            <li
+              key={plugin.id}
+              className="flex items-center gap-2.5 rounded-[9px] bg-sunk px-2.5 py-1.5"
+            >
+              <PluginGlyph source={pluginIconSourceOf(plugin)} size={24} />
+              <span className="min-w-0 flex-1">
+                <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-fg">
+                  <span className="truncate">{plugin.name}</span>
+                  {plugin.version && (
+                    <span className="shrink-0 font-normal text-faint">
+                      {t('providers.plugins.version', { version: plugin.version })}
+                    </span>
+                  )}
+                  <OriginBadge origin={plugin.origin} />
+                </span>
+                <PluginMeta author={plugin.author} homepage={plugin.homepage} />
+                <span className="block truncate text-[11.5px] text-muted">
+                  {t('providers.plugins.services', { count: plugin.templates.length })}
+                  {plugin.description ? ` · ${plugin.description}` : ''}
+                </span>
+              </span>
+              <RemovePlugin plugin={plugin} onConfirm={() => void remove(plugin.id)} />
+            </li>
+          ))}
+          {skipped.map((item) => (
+            <li
+              key={item.file}
+              className="flex items-center gap-2.5 rounded-[9px] bg-warn-soft px-2.5 py-1.5 text-note text-warn"
+            >
+              <TriangleAlert className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">
+                {t('providers.plugins.skipped', {
+                  file: item.file,
+                  reason: errorText({ code: item.code }),
+                })}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <PluginPreviewDialog
+        preview={preview}
+        onClose={() => setPreview(undefined)}
+        onFailed={setFailure}
+      />
+    </section>
+  )
+}
+
+/**
+ * 添加供应商：从目录选服务，按“模型厂商 / 聚合平台与中转 / 本机运行”分组，可搜索。
  *
- * 点官方服务直接用模板预填地址、模型与兼容参数；点“自定义 / 第三方中转”得到空白草稿。
- * 每一行都是普通按钮，单击（或键盘 Enter / 空格）就进入编辑弹窗，没有“先选中再下一步”。
+ * 点目录项直接用模板预填地址、接口格式、模型与兼容参数，进入编辑弹窗后通常只需粘贴 Key；
+ * 点“自定义”的某种接口格式得到空白草稿。每一行都是普通按钮，单击（或键盘 Enter / 空格）就进入编辑弹窗，
+ * 没有“先选中再下一步”。底部是供应商插件的安装与管理。
  */
 function AddProviderDialog({
   open,
+  catalog,
+  plugins,
   onPick,
   onClose,
 }: {
   readonly open: boolean
+  readonly catalog: readonly ProviderTemplate[]
+  readonly plugins: readonly ProviderPluginInfo[]
   readonly onPick: (choice: AddChoice) => void
   readonly onClose: () => void
 }) {
   const { t } = useTranslation('settings')
+  const [query, setQuery] = useState('')
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
+  const groups = catalogGroups(catalog, query)
+  const pluginNames = new Map(plugins.map((plugin) => [plugin.id, plugin.name]))
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[calc(100dvh-48px)] w-[min(520px,calc(100vw-32px))] overflow-y-auto">
-        <DialogTitle>{t('providers.add.pickService')}</DialogTitle>
-        <DialogDescription>{t('providers.add.pickServiceHint')}</DialogDescription>
+      <DialogContent className="flex max-h-[calc(100dvh-48px)] w-[min(640px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0">
+        <header className="shrink-0 px-6 pt-5 pb-3">
+          <DialogTitle>{t('providers.add.pickService')}</DialogTitle>
+          <DialogDescription>{t('providers.add.pickServiceHint')}</DialogDescription>
+          <div className="relative mt-4">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />
+            <input
+              type="search"
+              aria-label={t('providers.add.search')}
+              placeholder={t('providers.add.search')}
+              value={query}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setQuery(event.target.value)}
+              className={cn(inputClass, 'pl-8')}
+            />
+          </div>
+        </header>
         <div
           role="group"
           aria-label={t('providers.add.serviceList')}
-          className="mt-5 flex flex-col gap-4"
+          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-5"
         >
-          {KINDS.map((kind) => (
-            <section key={kind} className="flex flex-col gap-1.5">
+          {groups.map((group) => (
+            <section key={group.category} className="flex flex-col gap-1.5">
               <h3 className="px-1 text-[11.5px] font-medium text-muted">
-                {t('providers.add.kindGroup', { format: t(`providers.kind.${kind}.name`) })}
+                {t(`providers.category.${group.category}`)}
               </h3>
-              <ul className="flex flex-col gap-1">
-                {PROVIDER_TEMPLATES.filter((template) => template.kind === kind).map((template) => (
-                  <li key={template.id}>
-                    <button
-                      type="button"
-                      onClick={() => onPick({ kind, template: template.id })}
-                      className={pickRowClass}
-                    >
-                      <Logo
-                        name={template.displayName}
-                        kind={template.kind}
-                        template={template.id}
-                        size={28}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13.5px] font-medium text-fg">
-                          {template.displayName}
-                        </span>
-                        <span className="block truncate font-mono text-[11.5px] text-muted">
-                          {template.baseUrl}
-                        </span>
-                      </span>
-                      <ChevronRight className="size-4 shrink-0 text-faint" />
-                    </button>
-                  </li>
+              <ul className="grid gap-1 sm:grid-cols-2">
+                {group.templates.map((template) => (
+                  <ServiceTile
+                    key={template.id}
+                    template={template}
+                    pluginName={
+                      template.pluginId !== undefined
+                        ? (pluginNames.get(template.pluginId) ?? template.pluginId)
+                        : undefined
+                    }
+                    onPick={() => onPick({ kind: template.kind, template: template.id })}
+                  />
                 ))}
-                <li>
+              </ul>
+            </section>
+          ))}
+          {groups.length === 0 && (
+            <p className="px-1 py-2 text-note text-muted">{t('providers.add.noMatch')}</p>
+          )}
+          <section className="flex flex-col gap-1.5">
+            <h3 className="px-1 text-[11.5px] font-medium text-muted">
+              {t('providers.add.customGroup')}
+            </h3>
+            <ul className="grid gap-1 sm:grid-cols-3">
+              {KINDS.map((kind) => (
+                <li key={kind}>
                   <button
                     type="button"
                     aria-label={t('providers.add.genericFor', {
@@ -600,19 +1385,22 @@ function AddProviderDialog({
                       <Plus className="size-3.5" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13.5px] font-medium text-fg">
-                        {t('providers.add.generic')}
+                      <span className="block truncate text-[13px] font-medium text-fg">
+                        {t('providers.add.compatible', {
+                          format: t(`providers.kind.${kind}.name`),
+                        })}
                       </span>
                       <span className="block truncate text-[11.5px] text-muted">
-                        {t('providers.add.genericHint')}
+                        {t(`providers.kind.${kind}.api`)}
                       </span>
                     </span>
-                    <ChevronRight className="size-4 shrink-0 text-faint" />
                   </button>
                 </li>
-              </ul>
-            </section>
-          ))}
+              ))}
+            </ul>
+            <p className="px-1 text-note text-muted">{t('providers.add.genericHint')}</p>
+          </section>
+          <ProviderPlugins />
         </div>
       </DialogContent>
     </Dialog>
@@ -912,6 +1700,7 @@ function ProviderEditor({
   saved,
   initialDraft,
   providers,
+  catalog,
   keyStatus,
   result,
   onResult,
@@ -921,6 +1710,8 @@ function ProviderEditor({
   readonly saved: ProviderConfig | undefined
   readonly initialDraft: ProviderDraft
   readonly providers: readonly ProviderConfig[]
+  /** 内置加插件的目录：用于查找模板（默认能力、建议模型、接入点）。 */
+  readonly catalog: readonly ProviderTemplate[]
   readonly keyStatus: KeyStatus | undefined
   readonly result: TestSummary | undefined
   readonly onResult: (result: TestSummary | undefined) => void
@@ -933,6 +1724,7 @@ function ProviderEditor({
   const settings = useSessionStore((s) => s.settings)
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const saveCredential = useSessionStore((s) => s.saveCredential)
+  const deleteCredential = useSessionStore((s) => s.deleteCredential)
   const testProvider = useSessionStore((s) => s.testProvider)
   const fetchModels = useSessionStore((s) => s.fetchModels)
   const credentialStatus = useSessionStore((s) => s.credentialStatus)
@@ -952,6 +1744,10 @@ function ProviderEditor({
   const [manual, setManual] = useState(false)
   const [advanced, setAdvanced] = useState(false)
   const [search, setSearch] = useState('')
+  /** 用户动过草稿（新建时用来判断关闭前要不要确认；自动拉取与建议的模型不算）。 */
+  const [touched, setTouched] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
+  const [saveError, setSaveError] = useState<'key' | 'settings' | 'settingsKeyKept' | undefined>()
   const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
   const [defaultModelId, setDefaultModelId] = useState<string | undefined>(() =>
     saved && settings?.defaultModel?.providerId === saved.id
@@ -995,8 +1791,13 @@ function ProviderEditor({
     JSON.stringify(withoutCachedCatalog(draft)) !== JSON.stringify(withoutCachedCatalog(initial)) ||
     typedSecret !== undefined ||
     defaultModelId !== savedDefault
-  const templates = templatesOf(draft.kind)
-  const template = draft.template ? findTemplate(draft.template) : undefined
+  const unsaved = saved ? dirty : touched || typedSecret !== undefined
+  const templates = templatesOf(draft.kind, catalog)
+  const template = findTemplateIn(catalog, draft.template)
+  const region = template ? regionOf(template, draft.baseUrl.trim()) : undefined
+  const keysUrl = template ? keysUrlFor(template, draft.baseUrl.trim()) : undefined
+  /** 从目录新建、模板没有预置模型：填入 Key（本机服务不用）后自动拉取模型列表。 */
+  const autoFetch = !saved && template !== undefined && template.models.length === 0
   const enabledCount = draft.models.filter((model) => model.enabled !== false).length
   const rows = modelRowsOf(draft.models, draft.catalog)
   const filteredRows = rows.filter((row) => {
@@ -1008,12 +1809,20 @@ function ProviderEditor({
   })
   const update = (patch: Partial<ProviderDraft>) => {
     setDraft((d) => ({ ...d, ...patch }))
+    setTouched(true)
+    setSaveError(undefined)
     onResult(undefined)
+  }
+
+  const requestClose = () => {
+    if (busy) return
+    if (unsaved) setConfirmClose(true)
+    else onCancel()
   }
 
   /** 兼容预设：只套用兼容参数，不改地址、名称和已有模型。 */
   const applyCompatPreset = (templateId: string | undefined) => {
-    const next = templateId ? findTemplate(templateId) : undefined
+    const next = findTemplateIn(catalog, templateId)
     update({
       template: next?.id,
       compat: next?.compat ? { ...next.compat } : undefined,
@@ -1022,8 +1831,8 @@ function ProviderEditor({
 
   const config = (): ProviderConfig => configOf(draft, id, saved?.credentialRef ?? id)
 
-  const test = async () => {
-    const modelIds = enabledModelIdsOf(draft.models)
+  /** 逐个测试给出的模型，每次并发 4 个。 */
+  const runTests = async (modelIds: readonly string[]) => {
     if (modelIds.length === 0) return
     setTesting(true)
     setTestProgress({ done: 0, total: modelIds.length })
@@ -1050,6 +1859,13 @@ function ProviderEditor({
     onResult(outcomes.length > 0 ? outcomes : undefined)
   }
 
+  const testOne = () => {
+    const target = testTargetOf(draft.models, defaultModelId)
+    if (target !== undefined) void runTests([target])
+  }
+
+  const testAll = () => void runTests(enabledModelIdsOf(draft.models))
+
   const fetchList = async () => {
     setFetching(true)
     const next = await fetchModels(config(), typedSecret)
@@ -1061,7 +1877,24 @@ function ProviderEditor({
       return
     }
     setFetchFailure(undefined)
-    setDraft((current) => ({ ...current, catalog: next.models }))
+    setDraft((current) => {
+      const withCatalog = { ...current, catalog: next.models }
+      // 新建且还没有模型：启用模板建议的模型；本机服务没有建议时启用拉取到的前几个
+      if (saved || current.models.length > 0 || !template) return withCatalog
+      const ids = next.models.map((m) => m.id)
+      const suggested = suggestedModelIds(template, ids)
+      const picked =
+        suggested.length > 0
+          ? suggested
+          : template.category === 'local'
+            ? ids.slice(0, LOCAL_AUTO_ENABLE_LIMIT)
+            : []
+      const models = picked.flatMap((modelId) => {
+        const remote = next.models.find((m) => m.id === modelId)
+        return remote ? [profileFrom(remote, current.template, catalog)] : []
+      })
+      return { ...withCatalog, models }
+    })
     // 已保存且地址没变的供应商：拉取结果立刻保存，下次打开不用重新拉取。
     if (saved && saved.baseUrl === draft.baseUrl.trim() && saved.kind === draft.kind) {
       void updateSettings({
@@ -1072,6 +1905,30 @@ function ProviderEditor({
     }
   }
 
+  const autoFetched = useRef<string | undefined>(undefined)
+  const canAutoFetch =
+    autoFetch &&
+    !fetching &&
+    draft.catalog === undefined &&
+    problems.baseUrl === undefined &&
+    (typedSecret !== undefined ||
+      template?.requiresKey === false ||
+      newKeyStatus?.configured === true)
+  const autoFetchKey = `${draft.baseUrl.trim()}\u0000${typedSecret ?? ''}`
+  useEffect(() => {
+    if (!canAutoFetch || autoFetched.current === autoFetchKey) return
+    // 粘贴 Key 后稍等再拉取，逐字输入时不会每个字都发请求
+    const timer = setTimeout(
+      () => {
+        autoFetched.current = autoFetchKey
+        void fetchList()
+      },
+      typedSecret === undefined ? 0 : 500,
+    )
+    return () => clearTimeout(timer)
+    // fetchList 每次渲染都是新函数；触发条件只看这两个值
+  }, [canAutoFetch, autoFetchKey])
+
   const remoteOf = (row: ModelRow): RemoteModel => ({
     id: row.id,
     ...(row.displayName ? { displayName: row.displayName } : {}),
@@ -1080,7 +1937,9 @@ function ProviderEditor({
 
   const addModels = (models: readonly RemoteModel[]) => {
     const have = new Set(draft.models.map((m) => m.id))
-    const added = models.filter((m) => !have.has(m.id)).map((m) => profileFrom(m, draft.template))
+    const added = models
+      .filter((m) => !have.has(m.id))
+      .map((m) => profileFrom(m, draft.template, catalog))
     update({ models: [...draft.models, ...added] })
   }
 
@@ -1116,7 +1975,8 @@ function ProviderEditor({
   }
 
   const save = async () => {
-    const next = config()
+    const credentialRef = credentialRefFor(saved, id, template, typedSecret !== undefined)
+    const next = configOf(draft, id, credentialRef)
     const cleaned: ProviderConfig = {
       ...next,
       models: next.models.map(({ enabled, ...m }) => (enabled === false ? { ...m, enabled } : m)),
@@ -1132,15 +1992,31 @@ function ProviderEditor({
           ? { providerId: id, modelId: firstEnabled.id }
           : undefined
     setBusy(true)
+    setSaveError(undefined)
+    // 先写 Key：写入失败就不改设置，不会出现“已保存但没有 Key”
+    let wroteNewKey = false
+    if (typedSecret && credentialRef) {
+      const hadKey = (saved ? keyStatus : newKeyStatus)?.configured === true
+      if (!(await saveCredential(credentialRef, typedSecret))) {
+        setBusy(false)
+        setSaveError('key')
+        return
+      }
+      wroteNewKey = !hadKey
+    }
     const result = await updateSettings({
       providers: list,
       ...(chosen ? { defaultModel: chosen } : {}),
     })
-    if (result && typedSecret && cleaned.credentialRef) {
-      await saveCredential(cleaned.credentialRef, typedSecret)
+    if (!result) {
+      // 设置没写进去：撤回刚写入的新 Key；替换掉的旧 Key 无法恢复，如实说明
+      if (wroteNewKey && credentialRef) await deleteCredential(credentialRef)
+      setBusy(false)
+      setSaveError(typedSecret && !wroteNewKey ? 'settingsKeyKept' : 'settings')
+      return
     }
     setBusy(false)
-    if (result) onSaved(id)
+    onSaved(id)
   }
 
   const remove = async () => {
@@ -1155,13 +2031,25 @@ function ProviderEditor({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="flex max-h-[calc(100dvh-48px)] w-[min(760px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0">
+    <Dialog open onOpenChange={(open) => !open && requestClose()}>
+      <DialogContent
+        className="flex max-h-[calc(100dvh-48px)] w-[min(760px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0"
+        onOpenAutoFocus={(event) => {
+          const input = (event.currentTarget as HTMLElement).querySelector<HTMLInputElement>(
+            'input[data-autofocus]',
+          )
+          if (input && !input.disabled) {
+            event.preventDefault()
+            input.focus()
+          }
+        }}
+      >
         <header className="flex shrink-0 items-start gap-3 px-6 pt-5 pb-4">
           <Logo
             name={draft.displayName || '?'}
             kind={draft.kind}
             template={draft.template}
+            source={template ? iconSourceOf(template) : undefined}
             size={36}
           />
           <div className="min-w-0 flex-1">
@@ -1169,11 +2057,12 @@ function ProviderEditor({
               {saved ? t('providers.editProvider') : t('providers.new')}
             </DialogTitle>
             <p className="mt-0.5 text-note text-muted">
-              {t(`providers.kind.${draft.kind}.name`)} · {t(`providers.source.${sourceOf(draft)}`)}
+              {t(`providers.kind.${draft.kind}.name`)} ·{' '}
+              {t(`providers.source.${sourceOf(draft, catalog)}`)}
             </p>
           </div>
           {saved && <DeleteProvider name={saved.displayName} onConfirm={() => void remove()} />}
-          <IconButton label={tc('action.close')} size="icon-sm" onClick={onCancel}>
+          <IconButton label={tc('action.close')} size="icon-sm" onClick={requestClose}>
             <X />
           </IconButton>
         </header>
@@ -1210,12 +2099,36 @@ function ProviderEditor({
                 onChange={(e) => update({ baseUrl: e.target.value, catalog: undefined })}
               />
             </Labeled>
+            {template?.regions && (
+              <div className="sm:col-span-2">
+                <Labeled label={t('providers.field.region')} hint={t('providers.region.hint')}>
+                  <SegmentedControl
+                    label={t('providers.field.region')}
+                    value={region?.id ?? ''}
+                    options={template.regions.map((r) => ({
+                      value: r.id,
+                      label: t(`providers.region.${r.id}`),
+                    }))}
+                    onChange={(next) => {
+                      const picked = template.regions?.find((r) => r.id === next)
+                      if (picked) update({ baseUrl: picked.baseUrl, catalog: undefined })
+                    }}
+                    className="w-fit"
+                  />
+                </Labeled>
+              </div>
+            )}
             <div className="sm:col-span-2">
               <KeyField
                 status={saved ? keyStatus : newKeyStatus}
                 secret={secret}
+                optional={template?.requiresKey === false}
+                keysUrl={keysUrl}
+                autoFocus={!saved && template !== undefined && template.requiresKey}
                 onSecret={(s) => {
                   setSecret(s)
+                  setTouched(true)
+                  setSaveError(undefined)
                   onResult(undefined)
                 }}
               />
@@ -1228,7 +2141,9 @@ function ProviderEditor({
               testing={testing}
               progress={testProgress}
               disabled={!valid || enabledCount === 0}
-              onTest={() => void test()}
+              enabledCount={enabledCount}
+              onTest={testOne}
+              onTestAll={testAll}
             />
           </div>
 
@@ -1276,8 +2191,21 @@ function ProviderEditor({
             )}
 
             {rows.length === 0 ? (
-              <p className="px-4 py-8 text-center text-note text-muted">
-                {t('providers.model.empty')}
+              <p className="flex items-center justify-center gap-2 px-4 py-8 text-center text-note text-muted">
+                {fetching ? (
+                  <>
+                    <Spinner />
+                    {t('providers.model.loading')}
+                  </>
+                ) : autoFetch && fetchFailure === undefined ? (
+                  template?.requiresKey === false ? (
+                    t('providers.model.emptyLocal')
+                  ) : (
+                    t('providers.model.emptyAuto')
+                  )
+                ) : (
+                  t('providers.model.empty')
+                )}
               </p>
             ) : filteredRows.length === 0 ? (
               <p className="px-4 py-8 text-center text-note text-muted">
@@ -1437,22 +2365,49 @@ function ProviderEditor({
         </div>
 
         <footer className="flex shrink-0 items-center justify-end gap-2 border-t px-6 py-3">
-          <Button disabled={busy} onClick={onCancel}>
+          {saveError !== undefined && (
+            <p role="alert" className="mr-auto min-w-0 text-note text-danger">
+              {t(`providers.saveError.${saveError}`)}
+            </p>
+          )}
+          <Button disabled={busy} onClick={requestClose}>
             {tc('action.cancel')}
           </Button>
           <Button variant="primary" disabled={busy || !valid || !dirty} onClick={() => void save()}>
+            {busy && <Spinner />}
             {t('providers.save')}
           </Button>
         </footer>
       </DialogContent>
+
+      <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
+        <DialogContent tone="danger" icon={<TriangleAlert />}>
+          <DialogTitle>{t('providers.discard.title')}</DialogTitle>
+          <DialogDescription>
+            {typedSecret !== undefined
+              ? t('providers.discard.descriptionKey')
+              : t('providers.discard.description')}
+          </DialogDescription>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button>{t('providers.discard.keep')}</Button>
+            </DialogClose>
+            <Button variant="danger" onClick={onCancel}>
+              {t('providers.discard.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }
 
 export function ProvidersSettings() {
-  const { t } = useTranslation('settings')
+  const { t, i18n } = useTranslation('settings')
   const settings = useSessionStore((s) => s.settings)
   const loadSettings = useSessionStore((s) => s.loadSettings)
+  const providerPlugins = useSessionStore((s) => s.providerPlugins)
+  const loadProviderPlugins = useSessionStore((s) => s.loadProviderPlugins)
   const updateSettings = useSessionStore((s) => s.updateSettings)
   const credentialStatus = useSessionStore((s) => s.credentialStatus)
   const providers = settings?.providers ?? []
@@ -1468,6 +2423,12 @@ export function ProvidersSettings() {
   useEffect(() => {
     if (!settings) void loadSettings()
   }, [settings, loadSettings])
+
+  useEffect(() => {
+    void loadProviderPlugins()
+  }, [loadProviderPlugins])
+  const plugins = useMemo(() => providerPlugins?.plugins ?? [], [providerPlugins])
+  const catalog = useMemo(() => catalogOf(plugins), [plugins])
 
   const refList = providers
     .flatMap((p) => (p.credentialRef ? [p.credentialRef] : []))
@@ -1500,12 +2461,15 @@ export function ProvidersSettings() {
 
   const resultKey = editor?.saved?.id ?? (editor ? '\u0000new' : undefined)
 
-  const openAdd = () => setAddOpen(true)
+  const openAdd = () => {
+    void loadProviderPlugins()
+    setAddOpen(true)
+  }
 
   const addProvider = (choice: AddChoice) => {
-    const template = choice.template ? findTemplate(choice.template) : undefined
+    const template = findTemplateIn(catalog, choice.template)
     const draft = template
-      ? newDraftForTemplate(template, providers)
+      ? newDraftForTemplate(template, providers, i18n.language)
       : genericDraftFor(choice.kind, t('providers.add.genericName'), providers)
     setActiveKind(choice.kind)
     setAddOpen(false)
@@ -1557,6 +2521,10 @@ export function ProvidersSettings() {
             <ProviderCard
               key={provider.id}
               provider={provider}
+              iconSource={(() => {
+                const found = findTemplateIn(catalog, provider.template)
+                return found ? iconSourceOf(found) : undefined
+              })()}
               isDefault={settings?.defaultModel?.providerId === provider.id}
               keyStatus={provider.credentialRef ? keys[provider.credentialRef] : undefined}
               result={results[provider.id]}
@@ -1573,6 +2541,7 @@ export function ProvidersSettings() {
           saved={editor.saved}
           initialDraft={editor.draft}
           providers={providers}
+          catalog={catalog}
           keyStatus={editor.saved?.credentialRef ? keys[editor.saved.credentialRef] : undefined}
           result={resultKey ? results[resultKey] : undefined}
           onResult={(result) =>
@@ -1599,7 +2568,13 @@ export function ProvidersSettings() {
         />
       )}
 
-      <AddProviderDialog open={addOpen} onPick={addProvider} onClose={() => setAddOpen(false)} />
+      <AddProviderDialog
+        open={addOpen}
+        catalog={catalog}
+        plugins={plugins}
+        onPick={addProvider}
+        onClose={() => setAddOpen(false)}
+      />
     </>
   )
 }

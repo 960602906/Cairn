@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "type": "provider",
+  "id": "acme",
+  "name": "Acme Cloud",
+  "author": "Acme Inc.",
+  "source": "third-party",
+  "version": "1.0.0",
+  "description": "Example provider plugin: one hosted gateway and one local server.",
+  "homepage": "https://acme.example",
+  "icon": "icons/acme.svg",
+  "providers": [
+    {
+      "id": "gateway",
+      "name": "Acme Gateway",
+      "kind": "openai",
+      "category": "relay",
+      "baseUrl": "https://api.acme.example/v1",
+      "homepage": "https://acme.example/gateway",
+      "icon": "icons/acme-gateway.png",
+      "regions": [
+        {
+          "id": "global",
+          "baseUrl": "https://api.acme.example/v1",
+          "keysUrl": "https://console.acme.example/keys"
+        },
+        {
+          "id": "cn",
+          "baseUrl": "https://api.acme.example.cn/v1",
+          "keysUrl": "https://console.acme.example.cn/keys"
+        }
+      ],
+      "keysUrl": "https://console.acme.example/keys",
+      "compat": {
+        "maxTokensField": "max_tokens",
+        "supportsDeveloperRole": false,
+        "supportsStore": false
+      },
+      "suggestedModels": ["acme-coder", "acme-chat"],
+      "modelDefaults": {
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000,
+        "supportsReasoning": true
+      }
+    },
+    {
+      "id": "workstation",
+      "name": "Acme Workstation",
+      "kind": "openai",
+      "category": "local",
+      "requiresKey": false,
+      "baseUrl": "http://localhost:8080/v1",
+      "models": [
+        {
+          "id": "acme-local-7b",
+          "displayName": "Acme Local 7B",
+          "contextWindow": 32768,
+          "maxOutputTokens": 4096,
+          "supportsParallelToolCalls": false
+        }
+      ]
+    }
+  ]
+}

@@ -246,6 +246,26 @@ function setup(
   providers = {
     test: vi.fn(async () => ({ ok: true as const, latencyMs: 12 })),
     models: vi.fn(async () => ({ ok: true as const, models: [{ id: 'm1' }] })),
+    listPlugins: vi.fn(() => ({ plugins: [], skipped: [] })),
+    pickPlugin: vi.fn(async () => ({ path: '/tmp/acme.json' })),
+    installPlugin: vi.fn(({ confirm }) => ({
+      installed: confirm === true,
+      replaces: false,
+      plugin: { id: 'acme', name: 'Acme', origin: 'local' as const, templates: [] },
+    })),
+    removePlugin: vi.fn(() => ({})),
+    listCatalog: vi.fn(async () => ({ source: 'https://github.com/o/r', plugins: [] })),
+    previewCatalog: vi.fn(async () => ({
+      replaces: false,
+      sha256: 'a'.repeat(64),
+      plugin: { id: 'acme', name: 'Acme', origin: 'local' as const, templates: [] },
+    })),
+    installCatalog: vi.fn(async () => ({
+      installed: true,
+      replaces: false,
+      plugin: { id: 'acme', name: 'Acme', origin: 'local' as const, templates: [] },
+    })),
+    resolveIcon: vi.fn(async () => ({})),
   }
   permissions = {
     list: vi.fn(() => ({ rules: [] })),
@@ -1516,6 +1536,33 @@ describe('createRendererGateway: commands and lifecycle', () => {
       models: [{ id: 'm1' }],
     })
     expect(providers.test).toHaveBeenCalledWith({ provider, modelId: 'm' })
+  })
+
+  it('delegates provider plugin requests to the plugin service (ADR-0050)', async () => {
+    const { client } = setup()
+    await expect(client.request('providerPlugin.list', {})).resolves.toEqual({
+      plugins: [],
+      skipped: [],
+    })
+    await expect(client.request('providerPlugin.pick', {})).resolves.toEqual({
+      path: '/tmp/acme.json',
+    })
+    await expect(
+      client.request('providerPlugin.install', { path: '/tmp/acme.json', confirm: true }),
+    ).resolves.toMatchObject({ installed: true, plugin: { id: 'acme' } })
+    await expect(client.request('providerPlugin.remove', { id: 'acme' })).resolves.toEqual({})
+    expect(providers.removePlugin).toHaveBeenCalledWith({ id: 'acme' })
+    await expect(client.request('providerCatalog.list', {})).resolves.toMatchObject({ plugins: [] })
+    await expect(client.request('providerCatalog.preview', { id: 'acme' })).resolves.toMatchObject({
+      sha256: 'a'.repeat(64),
+    })
+    await expect(
+      client.request('providerCatalog.install', { id: 'acme', sha256: 'a'.repeat(64) }),
+    ).resolves.toMatchObject({ installed: true })
+    await expect(
+      client.request('providerIcon.resolve', { homepage: 'https://acme.example' }),
+    ).resolves.toEqual({})
+    expect(providers.resolveIcon).toHaveBeenCalledWith({ homepage: 'https://acme.example' })
   })
 
   it('delegates permission rule requests to the permission service (M2-11)', async () => {

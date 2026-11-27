@@ -58,6 +58,7 @@ import {
   type ChangeSetInfo,
   type ChangeSetSummary,
   type ErrorInfo,
+  type IconSource,
   type EventEnvelope,
   type FileChangeSummary,
   type HubMcpCard,
@@ -114,6 +115,19 @@ export type ProviderModelsResult = z.output<Requests['provider.models']['result'
 /** 凭据状态（M6-04）：不可用时带上原因，界面据此给出具体说明。 */
 export type CredentialStatus = z.output<Requests['credentials.status']['result']>
 
+/** 已安装的供应商插件与无法加载的文件（ADR-0050）。 */
+export type ProviderPluginList = z.output<Requests['providerPlugin.list']['result']>
+export type ProviderPluginInstall = z.output<Requests['providerPlugin.install']['result']>
+export type ProviderCatalogList = z.output<Requests['providerCatalog.list']['result']>
+export type ProviderCatalogPreview = z.output<Requests['providerCatalog.preview']['result']>
+/** 目录操作的结果：失败时带回错误码，由目录界面就地说明（目录不可达不影响其余功能）。 */
+export type Outcome<T> =
+  { readonly ok: true; readonly result: T } | { readonly ok: false; readonly error: ErrorInfo }
+/** 安装插件的结果：文件无效时带回错误码，由安装界面就地说明，不写全局 `error`。 */
+export type ProviderPluginInstallOutcome =
+  | { readonly ok: true; readonly result: ProviderPluginInstall }
+  | { readonly ok: false; readonly error: ErrorInfo }
+
 /**
  * 目标命令的结果（ADR-0047）。失败时带回错误码而不写全局 `error`：
  * 指令与目标面板按错误码给具体提示（例如已有目标、运行中、待审计划）。
@@ -169,6 +183,8 @@ export interface SessionState {
   readonly projects: readonly ProjectSummary[]
   /** 最近读取或保存的设置；读取之前为 undefined。 */
   readonly settings: Settings | undefined
+  /** 已安装的供应商插件（ADR-0050）；读取之前为 undefined。 */
+  readonly providerPlugins: ProviderPluginList | undefined
   /** 应用版本与构建信息（M5-01）；关于页读取之前为 undefined。 */
   readonly appInfo: AppInfo | undefined
   /** 自动更新状态（M5-07）；更新设置与提示读取之前为 undefined。 */
@@ -547,8 +563,26 @@ export interface SessionActions {
   updateSettings(patch: SettingsPatch): Promise<Settings | undefined>
   /** 保存 Key；成功时返回 true。 */
   saveCredential(ref: string, secret: string): Promise<boolean>
+  /** 删除保存的 Key（保存供应商失败时撤回刚写入的 Key）；成功时返回 true。 */
+  deleteCredential(ref: string): Promise<boolean>
   /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
   credentialStatus(ref: string): Promise<CredentialStatus | undefined>
+  /** 读取已安装的供应商插件（ADR-0050），结果保存在 `providerPlugins`。 */
+  loadProviderPlugins(): Promise<ProviderPluginList | undefined>
+  /** 用系统对话框选择插件文件；取消或失败时返回 undefined。 */
+  pickProviderPlugin(): Promise<string | undefined>
+  /** 预览（`confirm` 省略）或安装插件文件；安装后刷新 `providerPlugins`。 */
+  installProviderPlugin(path: string, confirm?: boolean): Promise<ProviderPluginInstallOutcome>
+  /** 卸载插件并刷新 `providerPlugins`；成功时返回 true。 */
+  removeProviderPlugin(id: string): Promise<boolean>
+  /** 官方插件目录（ADR-0050）。 */
+  loadProviderCatalog(): Promise<Outcome<ProviderCatalogList>>
+  /** 下载目录中的插件并预览。 */
+  previewCatalogPlugin(id: string): Promise<Outcome<ProviderCatalogPreview>>
+  /** 安装预览过的目录插件，成功后刷新 `providerPlugins`。 */
+  installCatalogPlugin(id: string, sha256: string): Promise<Outcome<ProviderPluginInstall>>
+  /** 供应商图标的 `data:` 地址；同一来源只请求一次，找不到或失败时为 undefined。 */
+  providerIcon(source: IconSource): Promise<string | undefined>
   /** 测试供应商的连接（M2-10）；请求本身失败时返回 undefined（错误写入 `error`）。 */
   testProvider(
     provider: ProviderConfig,
@@ -761,6 +795,8 @@ export function createSessionStore(api: MainApi): SessionStore {
   /** 活动列表：进行中请求复用，期间的再次请求合并为完成后的一次刷新。 */
   let activityLoad: Promise<void> | undefined
   let activityRefreshQueued = false
+  /** 供应商图标：同一来源在这个窗口里只向主进程请求一次。 */
+  const providerIcons = new Map<string, Promise<string | undefined>>()
   /** 检查器请求序号：切换标签后较早的响应不应覆盖新结果。 */
   const inspectionRequests = new Map<string, number>()
   const store = createStore<SessionState & SessionActions>()((set, get) => {
@@ -957,6 +993,7 @@ export function createSessionStore(api: MainApi): SessionStore {
       changeSetErrors: {},
       projects: [],
       settings: undefined,
+      providerPlugins: undefined,
       appInfo: undefined,
       updateStatus: undefined,
       error: undefined,
@@ -1916,7 +1953,81 @@ export function createSessionStore(api: MainApi): SessionStore {
         return (await run(() => api.request('credentials.set', { ref, secret }))) !== undefined
       },
 
+      async deleteCredential(ref) {
+        return (await run(() => api.request('credentials.delete', { ref }))) !== undefined
+      },
+
       credentialStatus: (ref) => run(() => api.request('credentials.status', { ref })),
+
+      async loadProviderPlugins() {
+        const result = await run(() => api.request('providerPlugin.list', {}))
+        if (result) set({ providerPlugins: result })
+        return result
+      },
+
+      pickProviderPlugin: async () =>
+        (await run(() => api.request('providerPlugin.pick', {})))?.path,
+
+      async installProviderPlugin(path, confirm) {
+        let result: ProviderPluginInstall
+        try {
+          result = await api.request(
+            'providerPlugin.install',
+            confirm ? { path, confirm } : { path },
+          )
+        } catch (error) {
+          return { ok: false, error: toError(error) }
+        }
+        if (result.installed) await get().loadProviderPlugins()
+        return { ok: true, result }
+      },
+
+      async loadProviderCatalog() {
+        try {
+          return { ok: true, result: await api.request('providerCatalog.list', {}) }
+        } catch (error) {
+          return { ok: false, error: toError(error) }
+        }
+      },
+
+      async previewCatalogPlugin(id) {
+        try {
+          return { ok: true, result: await api.request('providerCatalog.preview', { id }) }
+        } catch (error) {
+          return { ok: false, error: toError(error) }
+        }
+      },
+
+      async installCatalogPlugin(id, sha256) {
+        let result: ProviderPluginInstall
+        try {
+          result = await api.request('providerCatalog.install', { id, sha256 })
+        } catch (error) {
+          return { ok: false, error: toError(error) }
+        }
+        await get().loadProviderPlugins()
+        return { ok: true, result }
+      },
+
+      providerIcon(source) {
+        const key = JSON.stringify([source.icon, source.homepage, source.keysUrl, source.baseUrl])
+        let pending = providerIcons.get(key)
+        if (!pending) {
+          pending = api.request('providerIcon.resolve', source).then(
+            (result) => result.dataUrl,
+            () => undefined,
+          )
+          providerIcons.set(key, pending)
+        }
+        return pending
+      },
+
+      async removeProviderPlugin(id) {
+        const removed =
+          (await run(() => api.request('providerPlugin.remove', { id }))) !== undefined
+        if (removed) await get().loadProviderPlugins()
+        return removed
+      },
 
       shellOptions: () => run(() => api.request('settings.shell', {})),
 
