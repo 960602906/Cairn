@@ -600,7 +600,10 @@ function GoalEndedCard({
         {met ? (
           <CircleCheck aria-hidden className="size-4 shrink-0 text-ok" />
         ) : (
-          <Target aria-hidden className={cn('size-4 shrink-0', warn ? 'text-warn' : 'text-muted')} />
+          <Target
+            aria-hidden
+            className={cn('size-4 shrink-0', warn ? 'text-warn' : 'text-muted')}
+          />
         )}
         <span className="min-w-0 flex-1 truncate text-note font-medium text-fg">
           {t(`goal.end.${goal.endReason ?? 'user'}`)}

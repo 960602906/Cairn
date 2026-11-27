@@ -2453,7 +2453,10 @@ describe('reduceSession：目标（ADR-0047）', () => {
       ])
       const rewound = reduceSession(
         withMsg,
-        ev('conversation.rewound', { fromSeq: withMsg.goals.g1!.conditionUpdates[1]!.seq, reason: 'edit' }),
+        ev('conversation.rewound', {
+          fromSeq: withMsg.goals.g1!.conditionUpdates[1]!.seq,
+          reason: 'edit',
+        }),
       )
       expect(rewound.goals.g1!.condition).toBe('测试通过')
       expect(rewound.goals.g1!.conditionUpdates).toHaveLength(1)

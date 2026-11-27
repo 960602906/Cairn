@@ -315,7 +315,12 @@ function OpenGoal({
             </Button>
           )}
           {editing ? (
-            <Button size="sm" variant="secondary" disabled={pending} onClick={() => void saveEdit()}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={pending}
+              onClick={() => void saveEdit()}
+            >
               {t('goal.panel.saveCondition')}
             </Button>
           ) : (

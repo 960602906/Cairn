@@ -298,7 +298,10 @@ export function GoalBar({
         </IconButton>
       </div>
       {error !== undefined && (
-        <p role="status" className="border-t-[0.5px] border-hair px-3 py-1.5 text-[11.5px] text-muted">
+        <p
+          role="status"
+          className="border-t-[0.5px] border-hair px-3 py-1.5 text-[11.5px] text-muted"
+        >
           {t(error)}
         </p>
       )}

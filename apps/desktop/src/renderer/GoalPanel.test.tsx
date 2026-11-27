@@ -248,7 +248,9 @@ describe('GoalPanel', () => {
     wrap(twoEnded)
     expect(screen.getByText('第二个目标')).toBeTruthy()
     expect(screen.getByRole('region', { name: '历史目标' })).toBeTruthy()
-    expect(within(screen.getByRole('region', { name: '历史目标' })).getByText('测试全部通过')).toBeTruthy()
+    expect(
+      within(screen.getByRole('region', { name: '历史目标' })).getByText('测试全部通过'),
+    ).toBeTruthy()
   })
 
   it('keeps past goals under an open goal and ignores unknown detail codes', () => {
