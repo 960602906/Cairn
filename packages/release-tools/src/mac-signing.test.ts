@@ -37,16 +37,16 @@ function runnerFor(results: Readonly<Record<string, { status: number; output?: s
 }
 
 describe('readMacSigningConfig', () => {
-  it('defaults to unsigned local builds', () => {
-    expect(readMacSigningConfig({})).toEqual({ mode: 'none' })
-    vi.stubEnv('CAIRN_MAC_SIGN_MODE', 'none')
-    expect(readMacSigningConfig()).toEqual({ mode: 'none' })
-    expect(readMacSigningConfig({ CAIRN_MAC_SIGN_MODE: ' NONE ' })).toEqual({ mode: 'none' })
+  it('defaults to ad-hoc local builds', () => {
+    expect(readMacSigningConfig({})).toEqual({ mode: 'adhoc' })
+    vi.stubEnv('CAIRN_MAC_SIGN_MODE', 'adhoc')
+    expect(readMacSigningConfig()).toEqual({ mode: 'adhoc' })
+    expect(readMacSigningConfig({ CAIRN_MAC_SIGN_MODE: ' ADHOC ' })).toEqual({ mode: 'adhoc' })
   })
 
   it('rejects unknown modes', () => {
-    expect(() => readMacSigningConfig({ CAIRN_MAC_SIGN_MODE: 'adhoc' })).toThrow(
-      'CAIRN_MAC_SIGN_MODE must be one of none, developer-id',
+    expect(() => readMacSigningConfig({ CAIRN_MAC_SIGN_MODE: 'none' })).toThrow(
+      'CAIRN_MAC_SIGN_MODE must be one of adhoc, developer-id',
     )
   })
 
@@ -117,13 +117,13 @@ describe('readMacSigningConfig', () => {
 
 describe('macSigningEnvironment', () => {
   it('always disables identity auto-discovery', () => {
-    const env = macSigningEnvironment({ mode: 'none' }, { PATH: '/usr/bin' })
+    const env = macSigningEnvironment({ mode: 'adhoc' }, { PATH: '/usr/bin' })
     expect(env).toEqual({ PATH: '/usr/bin', CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
   })
 
   it('extends process.env by default', () => {
     vi.stubEnv('CAIRN_TEST_MARKER', '1')
-    expect(macSigningEnvironment({ mode: 'none' })).toMatchObject({
+    expect(macSigningEnvironment({ mode: 'adhoc' })).toMatchObject({
       CAIRN_TEST_MARKER: '1',
       CSC_IDENTITY_AUTO_DISCOVERY: 'false',
     })
@@ -143,8 +143,11 @@ describe('macSigningEnvironment', () => {
 })
 
 describe('macSigningBuilderArgs', () => {
-  it('keeps unsigned builds on electron-builder defaults', () => {
-    expect(macSigningBuilderArgs({ mode: 'none' })).toEqual([])
+  it('ad-hoc signs the app and leaves the DMG unsigned', () => {
+    expect(macSigningBuilderArgs({ mode: 'adhoc' })).toEqual([
+      '--config.mac.identity=-',
+      '--config.dmg.sign=false',
+    ])
   })
 
   it('selects the explicit identity and enables notarization', () => {
@@ -157,7 +160,7 @@ describe('macSigningBuilderArgs', () => {
 
 describe('macSignatureSummary', () => {
   it('never includes secrets', () => {
-    expect(macSignatureSummary({ mode: 'none' })).toEqual({ mode: 'none' })
+    expect(macSignatureSummary({ mode: 'adhoc' })).toEqual({ mode: 'adhoc', notarized: false })
     expect(macSignatureSummary(readMacSigningConfig(DEVELOPER_ID_ENV))).toEqual({
       mode: 'developer-id',
       identity: 'Developer ID Application: Cairn (TEAM123456)',
@@ -282,6 +285,25 @@ describe('verifyMacSignature', () => {
     ).toEqual(['notarization ticket is missing from arm64 DMG: '])
   })
 
+  it('verifies ad-hoc applications without Gatekeeper', () => {
+    const runner = runnerFor({})
+    expect(
+      verifyMacSignature({
+        target: app,
+        notarized: false,
+        runner,
+        platform: 'darwin',
+        exists: () => true,
+      }),
+    ).toEqual([])
+    expect(runner).toHaveBeenCalledTimes(1)
+    expect(runner).toHaveBeenCalledWith(
+      'codesign',
+      ['--verify', '--deep', '--strict', '--verbose=2', app.app],
+      expect.objectContaining({ timeout: 120_000 }),
+    )
+  })
+
   it('only validates notarization tickets for installers', () => {
     const runner = runnerFor({})
     expect(
@@ -358,16 +380,22 @@ describe('macSigningMain', () => {
     }
   })
 
-  it('refuses to verify an unsigned build', () => {
-    const error = vi.fn()
+  it('verifies ad-hoc builds without Gatekeeper', () => {
+    const log = vi.fn()
+    const adhocRunner = runnerFor({})
     expect(
       macSigningMain({
         argv: ['--dist', '/dist', '--version', '0.1.0'],
         env: {},
-        error,
+        platform: 'darwin',
+        runner: adhocRunner,
+        exists,
+        log,
       }),
-    ).toBe(1)
-    expect(error).toHaveBeenCalledWith('mac-signing: refusing to verify an unsigned build')
+    ).toBe(0)
+    // 只有两个 .app 需要 codesign；DMG/ZIP 在未公证时不调用系统工具。
+    expect(adhocRunner).toHaveBeenCalledTimes(2)
+    expect(log).toHaveBeenCalledWith('sign: 6 macOS artifacts verified (adhoc)')
   })
 
   it('reports every signature problem', () => {
@@ -398,7 +426,7 @@ describe('macSigningMain', () => {
           exists,
         }),
       ).toBe(0)
-      expect(log).toHaveBeenCalledWith('sign: 6 macOS artifacts verified')
+      expect(log).toHaveBeenCalledWith('sign: 6 macOS artifacts verified (developer-id)')
     } finally {
       log.mockRestore()
     }

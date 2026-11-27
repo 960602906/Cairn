@@ -502,8 +502,10 @@ describe('release artifact assembly', () => {
     expect(result.files).toContain(`Cairn-${VERSION}-arm64.dmg`)
     expect(result.files).toContain(`Cairn-${VERSION}-x64.zip.blockmap`)
     expect(result.platformNotes['platform']).toBe('mac')
+    expect(result.platformNotes['signing']).toEqual({ mode: 'adhoc', notarized: false })
     const notes = readFileSync(path.join(mac.dist, 'release/release-notes.md'), 'utf8')
     expect(notes).toContain('macOS')
+    expect(notes).toContain('ad-hoc 签名（未公证）')
     expect(notes).toContain('Gatekeeper')
     expect(notes).toContain('beta-mac.yml')
     expect(notes).toContain(`Cairn-${VERSION}-arm64.dmg`)
@@ -538,7 +540,7 @@ describe('release artifact assembly', () => {
     expect(withoutDownloads).not.toContain('- 安装包：')
   })
 
-  it('refuses unsigned stable macOS releases and accepts Developer ID builds', () => {
+  it('refuses ad-hoc stable macOS releases and accepts Developer ID builds', () => {
     const unsigned = fixture({ channel: 'stable' })
     addPlatformArtifacts(unsigned, 'mac', 'stable')
     expect(() =>
@@ -546,7 +548,7 @@ describe('release artifact assembly', () => {
         desktopRoot: unsigned.desktop,
         channel: 'stable',
         platform: 'mac',
-        env: { CAIRN_MAC_SIGN_MODE: 'none' },
+        env: { CAIRN_MAC_SIGN_MODE: 'adhoc' },
       }),
     ).toThrow(/must be signed/)
 

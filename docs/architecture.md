@@ -709,8 +709,9 @@ agent 循环设置最大步数和单轮最长时间，防止无限循环。
   （Windows NSIS、macOS DMG/ZIP、Linux AppImage/deb），各自生成 `latest*.yml`/`beta*.yml`
   与校验和，再由 `assemble` 合并、`publish` 一次上传；证书只来自 CI secrets。Windows 使用
   Authenticode，macOS 使用 Developer ID 与 notarytool，Linux 以 SHA-256 与 HTTPS 更新源为
-  完整性边界（ADR-0042、ADR-0043）。beta 的签名失败会显式降级为 unsigned 并标注；
-  Windows/macOS 的 stable 未签名会被门禁阻塞（M5-08）。
+  完整性边界（ADR-0042、ADR-0043）。macOS beta 在没有 Developer ID 时使用 ad-hoc 签名，
+  bundle 签名必须有效，发布说明标注“未公证”；Windows beta 的签名失败会显式降级为
+  unsigned 并标注（ADR-0049）。Windows/macOS 的 stable 未满足签名要求会被门禁阻塞（M5-08）。
 - **验收**：单元/集成/组件测试 + 构建产物 e2e（55 项）+ 已打包应用 e2e（安装形态冒烟与发布
   全流程）+ NSIS 安装/卸载/重装验收（`pnpm acceptance:installed`）+ 三平台 CI 与打包冒烟。
   干净 VM、标准用户与 SmartScreen 的人工矩阵见 [M5 发布验收报告](plan/m5-report.md)。

@@ -1,23 +1,29 @@
 // @ts-check
 /**
- * macOS 代码签名与公证配置（M6-02，ADR-0041）。
+ * macOS 代码签名与公证配置（M6-02，ADR-0041；ad-hoc 默认见 ADR-0049）。
  *
  * 签名交给 electron-builder：Developer ID 证书与密码只经 `CSC_LINK` / `CSC_KEY_PASSWORD`
  * 传给子进程，不写命令行；`CAIRN_MAC_IDENTITY` 决定用哪张证书，避免构建机上有多个身份时
  * 自动挑错。公证由 electron-builder 调用 `@electron/notarize`，凭据只走
  * `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`。
  *
- * 构建后可用 `verifyMacSignature` 校验：`codesign --verify --deep --strict`、
- * `spctl --assess`，公证产物再跑 `xcrun stapler validate`。
+ * 没有 Developer ID 证书时使用 `adhoc`：electron-builder 用 `identity: "-"` 做 ad-hoc 签名。
+ * 这一步不能省略——`identity: null` 会让 .app 保留 Electron 自带、未覆盖打包资源的
+ * linker 签名，`codesign --verify` 报 “code has no resources but signature indicates they
+ * must be present”，下载后的应用会被 Gatekeeper 当成“已损坏”。ad-hoc 签名不改变发布者
+ * 身份，也不公证，首次启动仍需用户显式放行。
+ *
+ * 构建后可用 `verifyMacSignature` 校验：`codesign --verify --deep --strict`；
+ * Developer ID 产物再跑 `spctl --assess` 与 `xcrun stapler validate`。
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 
-export const MAC_SIGNING_MODES = ['none', 'developer-id']
+export const MAC_SIGNING_MODES = ['adhoc', 'developer-id']
 
 /**
- * @typedef {{ mode: 'none' }} MacSigningNone
+ * @typedef {{ mode: 'adhoc' }} MacSigningAdhoc
  * @typedef {{
  *   mode: 'developer-id';
  *   identity: string;
@@ -25,7 +31,7 @@ export const MAC_SIGNING_MODES = ['none', 'developer-id']
  *   password: string;
  *   notarize: { appleId: string; appleIdPassword: string; teamId: string };
  * }} MacSigningDeveloperId
- * @typedef {MacSigningNone | MacSigningDeveloperId} MacSigningConfig
+ * @typedef {MacSigningAdhoc | MacSigningDeveloperId} MacSigningConfig
  */
 
 /**
@@ -40,16 +46,17 @@ function required(env, name) {
 }
 
 /**
- * 从 CI secrets / 环境读取 macOS 签名配置。未配置时返回 `{ mode: 'none' }`。
+ * 从 CI secrets / 环境读取 macOS 签名配置。未配置时返回 `{ mode: 'adhoc' }`：
+ * ad-hoc 签名是所有 macOS 产物的最低要求，否则下载后的 .app 会被 Gatekeeper 判为损坏。
  * @param {Readonly<Record<string, string | undefined>>} [env]
  * @returns {MacSigningConfig}
  */
 export function readMacSigningConfig(env = process.env) {
-  const rawMode = (env['CAIRN_MAC_SIGN_MODE']?.trim() || 'none').toLowerCase()
+  const rawMode = (env['CAIRN_MAC_SIGN_MODE']?.trim() || 'adhoc').toLowerCase()
   if (!MAC_SIGNING_MODES.includes(rawMode)) {
     throw new Error(`CAIRN_MAC_SIGN_MODE must be one of ${MAC_SIGNING_MODES.join(', ')}`)
   }
-  if (rawMode === 'none') return { mode: 'none' }
+  if (rawMode === 'adhoc') return { mode: 'adhoc' }
 
   const identity = required(env, 'CAIRN_MAC_IDENTITY')
   if (!identity.startsWith('Developer ID Application:')) {
@@ -99,21 +106,27 @@ export function macSigningEnvironment(config, base = process.env) {
 
 /**
  * 传给 electron-builder 的 macOS 配置覆盖。
+ *
+ * `identity: "-"` 是 electron-builder 的 ad-hoc 签名入口：它会给主程序、helper 与嵌套
+ * framework 重新签名并封存 Resources。DMG 自身不参与 Gatekeeper 校验，ad-hoc 模式下
+ * 关闭 DMG 签名，避免构建机上有真实证书时被 `findIdentity` 的子串匹配误用。
  * @param {MacSigningConfig} config
  * @returns {string[]}
  */
 export function macSigningBuilderArgs(config) {
-  if (config.mode === 'none') return []
+  if (config.mode === 'adhoc') {
+    return ['--config.mac.identity=-', '--config.dmg.sign=false']
+  }
   return [`--config.mac.identity=${config.identity}`, '--config.mac.notarize=true']
 }
 
 /**
  * 发布说明与 provenance 使用的签名摘要；不包含证书、密码或账号。
  * @param {MacSigningConfig} config
- * @returns {{ mode: 'none' | 'developer-id'; identity?: string; notarized?: boolean }}
+ * @returns {{ mode: 'adhoc' | 'developer-id'; identity?: string; notarized?: boolean }}
  */
 export function macSignatureSummary(config) {
-  if (config.mode === 'none') return { mode: 'none' }
+  if (config.mode === 'adhoc') return { mode: 'adhoc', notarized: false }
   return { mode: config.mode, identity: config.identity, notarized: true }
 }
 
@@ -150,9 +163,14 @@ export function macSignatureTargets({ distDir, version }) {
 
 /**
  * 校验一个 macOS 产物；返回问题列表，空数组表示通过。
+ *
+ * ad-hoc 产物只要求 bundle 签名有效（`codesign --verify`）；`spctl` 必然拒绝没有
+ * Developer ID 的构建，不能作为 ad-hoc 的失败条件。Developer ID 产物才检查 Gatekeeper
+ * 与公证票据。
  * @param {{
  *   target: { label: string; required: string; app?: string };
  *   notarized: boolean;
+ *   gatekeeper?: boolean;
  *   runner?: typeof spawnSync;
  *   platform?: NodeJS.Platform;
  *   exists?: (file: string) => boolean;
@@ -162,6 +180,7 @@ export function macSignatureTargets({ distDir, version }) {
 export function verifyMacSignature({
   target,
   notarized,
+  gatekeeper = notarized,
   runner = spawnSync,
   platform = process.platform,
   exists = existsSync,
@@ -185,14 +204,16 @@ export function verifyMacSignature({
         `codesign verify failed for ${target.label}: ${`${codesign.stdout ?? ''}${codesign.stderr ?? ''}`.trim().slice(0, 500)}`,
       )
     }
-    const assess = runner('spctl', ['--assess', '--type', 'execute', '--verbose=4', target.app], {
-      encoding: 'utf8',
-      timeout: 120_000,
-    })
-    if (assess.status !== 0) {
-      problems.push(
-        `Gatekeeper assessment failed for ${target.label}: ${`${assess.stdout ?? ''}${assess.stderr ?? ''}`.trim().slice(0, 500)}`,
-      )
+    if (gatekeeper) {
+      const assess = runner('spctl', ['--assess', '--type', 'execute', '--verbose=4', target.app], {
+        encoding: 'utf8',
+        timeout: 120_000,
+      })
+      if (assess.status !== 0) {
+        problems.push(
+          `Gatekeeper assessment failed for ${target.label}: ${`${assess.stdout ?? ''}${assess.stderr ?? ''}`.trim().slice(0, 500)}`,
+        )
+      }
     }
     return problems
   }
@@ -245,15 +266,12 @@ export function macSigningMain({
     return 1
   }
   const config = readMacSigningConfig(env)
-  if (config.mode === 'none') {
-    error('mac-signing: refusing to verify an unsigned build')
-    return 1
-  }
   const targets = macSignatureTargets({ distDir, version })
   const problems = targets.flatMap((target) =>
     verifyMacSignature({
       target,
       notarized: config.mode === 'developer-id',
+      gatekeeper: config.mode === 'developer-id',
       runner,
       platform,
       exists,
@@ -263,6 +281,6 @@ export function macSigningMain({
     for (const problem of problems) error(`sign: ${problem}`)
     return 1
   }
-  log(`sign: ${targets.length} macOS artifacts verified`)
+  log(`sign: ${targets.length} macOS artifacts verified (${config.mode})`)
   return 0
 }

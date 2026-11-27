@@ -2,7 +2,7 @@
 
 > 适用于 Cairn 0.1.0 公开 beta（Windows x64）。安装包按用户安装，不需要管理员权限。
 > macOS 的 DMG/ZIP 打包从 M6-02 起可用，但签名、公证与正式发布通道尚未接入（M6-07/M6-09）。
-> 未签名 beta 可能触发 Windows SmartScreen 或 macOS Gatekeeper；stable 发布前必须完成签名与法务确认。
+> Windows beta 未签名时可能触发 SmartScreen；macOS beta 使用 ad-hoc 签名（未公证），首次启动会被 Gatekeeper 要求放行；stable 发布前必须完成签名与法务确认。
 
 ## 1. 系统要求
 
@@ -111,9 +111,10 @@ NSIS 支持按用户静默安装与卸载：
 shasum -a 256 -c Cairn-0.1.0-arm64.dmg.sha256
 ```
 
-- 打开 DMG，把 Cairn 拖入“应用程序”。首次启动未签名内部包时，Gatekeeper 可能提示无法
-  验证开发者；只有在确认来源与哈希后才在“系统设置 → 隐私与安全性”中放行。不要关闭
-  Gatekeeper。
+- 打开 DMG，把 Cairn 拖入“应用程序”。beta 使用 ad-hoc 签名（未公证），首次启动时
+  Gatekeeper 会提示无法验证开发者；确认来源与哈希后，在“系统设置 → 隐私与安全性”中
+  点“仍要打开”（macOS 14 及更早也可右键应用选择“打开”）。不要关闭 Gatekeeper。
+  如果提示“已损坏”，说明包签名异常而不是正常的未公证提示，先校验 SHA-256 并重新下载。
 - 用户数据位于 `~/Library/Application Support/Cairn`（开发版为 `Cairn-dev`），目录结构与
   Windows 相同；代理与模型配置、会话、检查点和凭据都在这里。
 - 更新使用同架构的 `Cairn-<version>-<arch>.zip`，由应用内更新流程下载并校验；DMG 只用于
@@ -166,10 +167,9 @@ sudo apt install ./Cairn-0.1.0-x64.deb
 
 ## English summary
 
-Cairn 0.1.0 beta targets Windows x64 and installs per user without administrator rights.
-macOS DMG/ZIP packaging exists from M6-02 but signed public builds are not yet released;
-verify the SHA-256, drag the app to Applications, and expect Gatekeeper to block unsigned
-internal builds. Linux x64 builds are shipped as AppImage and deb from M6-03; verify the
+Cairn 0.1.x beta targets Windows x64 and installs per user without administrator rights.
+macOS DMG/ZIP builds are ad-hoc signed but not notarized (ADR-0049); verify the SHA-256,
+drag the app to Applications, and expect Gatekeeper to ask for approval on first launch. Linux x64 builds are shipped as AppImage and deb from M6-03; verify the
 SHA-256, install with `apt` or run the AppImage, and note that `--no-sandbox` only disables
 the Chromium sandbox when user namespaces are unavailable.
 Verify the installer SHA-256 before running it. Unsigned beta builds may trigger

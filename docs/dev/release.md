@@ -31,7 +31,7 @@
 
 `release:artifacts` 会拒绝：版本与 `apps/desktop/package.json` 不一致、通道与
 `out/build-info.json` 不一致、缺少本平台安装包/blockmap/更新元数据、更新元数据中的
-版本/路径/SHA-512/大小与产物不一致、Windows/macOS 的 stable 未签名。发布说明直接读取
+版本/路径/SHA-512/大小与产物不一致、Windows/macOS 的 stable 未满足签名要求。发布说明直接读取
 `CHANGELOG.md` 对应版本的小节，不手工复制。
 
 ## 2. 一次性配置
@@ -164,7 +164,7 @@ i18n、许可证、覆盖率与安装冒烟。
 - 签名缺失、`signtool`/Authenticode 校验失败、证书主题不匹配、无时间戳；
 - macOS 的 `codesign`/`spctl`/`stapler` 校验失败；
 - `latest*.yml` / `beta*.yml` 与产物不一致、产物缺失、公开下载或哈希校验失败；
-- Windows/macOS 的 unsigned 构建尝试进入 stable。
+- Windows unsigned、macOS 非 `developer-id` 的构建尝试进入 stable。
 
 ## 6. 回滚与紧急撤包
 
@@ -241,7 +241,7 @@ pnpm sign:verify -- --dist apps/desktop/dist --version 0.1.0
 
 macOS 产物按架构分别构建，只能在 macOS 上执行；Windows runner 会直接拒绝。
 
-### 10.1 本机（unsigned，仅内部使用）
+### 10.1 本机（ad-hoc，仅内部使用）
 
 ```bash
 pnpm build
@@ -250,15 +250,20 @@ pnpm package:verify -- --mac
 ```
 
 产物位于 `apps/desktop/dist/`：`Cairn-<version>-{arm64,x64}.{dmg,zip}` 与各自的
-`.sha256`。未签名包不能作为公开 beta 分发：Gatekeeper 会拦截，更新服务也无法验证签名。
-本地首次打开时按住 Control 点击应用并选择“打开”，或在“系统设置 → 隐私与安全性”中放行；
-这不适用于对外发布。
+`.sha256`。默认 `CAIRN_MAC_SIGN_MODE=adhoc`：electron-builder 用 `identity: "-"`
+重新签名 `.app`，让 bundle 签名封存打包后写入的 Resources。**这一步不能省略**：
+只把 `identity` 设为 `null` 会保留 Electron 自带的 linker 签名，`codesign --verify`
+报 “code has no resources but signature indicates they must be present”，Gatekeeper
+会把下载后的应用报成“已损坏”，用户连“仍要打开”都没有（ADR-0049）。
+
+ad-hoc 不提供发布者身份、不公证，公开 beta 首次启动仍需在“系统设置 → 隐私与安全性”
+放行；它不能进入 stable。只有 Developer ID 签名 + 公证才能双击直接打开。
 
 ### 10.2 Developer ID 签名与公证
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
-| `CAIRN_MAC_SIGN_MODE` | 是 | `none`（默认）或 `developer-id` |
+| `CAIRN_MAC_SIGN_MODE` | 否 | `adhoc`（默认）或 `developer-id` |
 | `CAIRN_MAC_IDENTITY` | `developer-id` | 完整的 `Developer ID Application: ...` 身份 |
 | `MAC_CERTIFICATE` 或 `CSC_LINK` | `developer-id` | 导出为 `.p12` 后的 Base64 |
 | `MAC_CERTIFICATE_PASSWORD` 或 `CSC_KEY_PASSWORD` | `developer-id` | `.p12` 密码 |
@@ -266,9 +271,11 @@ pnpm package:verify -- --mac
 | `APPLE_APP_SPECIFIC_PASSWORD` | `developer-id` | 应用专用密码，不是账号密码 |
 | `APPLE_TEAM_ID` | `developer-id` | Team ID |
 
-证书与密码只通过子进程环境传给 electron-builder，不会出现在命令行或日志。`developer-id`
-模式同时启用 hardened runtime（`build/entitlements.mac.plist`）与公证；缺少任一凭据都会
-直接失败，不产出无法通过 Gatekeeper 的安装包。
+`adhoc` 模式传 `--config.mac.identity=-` 并关闭 DMG 自身签名；`developer-id` 模式改用
+真实身份与 `--config.mac.notarize=true`。证书与密码只通过子进程环境传给
+electron-builder，不会出现在命令行或日志。`developer-id` 同时启用 hardened runtime
+（`build/entitlements.mac.plist`）与公证；缺少任一凭据都会直接失败，不产出无法通过
+Gatekeeper 的安装包。
 
 在 CI secrets 或当前进程环境中设置上表变量后运行：
 
@@ -279,9 +286,11 @@ pnpm sign:verify:mac -- --dist apps/desktop/dist --version 0.1.0
 
 不要把证书内容或密码写进命令行、脚本或 shell 历史；electron-builder 只从环境读取。
 
-`sign:verify:mac` 对两个 `.app` 运行 `codesign --verify --deep --strict --verbose=2` 与
-`spctl --assess --type execute`，对已公证的 DMG 运行 `xcrun stapler validate`。ZIP 不能
-stapling，更新包以 `.app` 的签名与公证结果为准。只有全部通过才允许进入发布清单。
+`sign:verify:mac` 对两个 `.app` 运行 `codesign --verify --deep --strict --verbose=2`。
+`developer-id` 模式还会运行 `spctl --assess --type execute`，并对已公证的 DMG 运行
+`xcrun stapler validate`；`adhoc` 模式不运行 `spctl`（没有 Developer ID 的产物必然被
+拒绝，不能当作失败条件），但 bundle 签名必须有效。ZIP 不能 stapling，更新包以 `.app`
+的签名与公证结果为准。只有全部通过才允许进入发布清单。
 
 ### 10.3 公证与 stapling 的门禁
 
@@ -293,9 +302,10 @@ stapling，更新包以 `.app` 的签名与公证结果为准。只有全部通�
 
 `release.yml` 的 `build-macos` job 在 `macos-latest` 上构建两个架构，产出
 `latest-mac.yml` / `beta-mac.yml` 与 `platform-notes.json`，再由 `assemble` 合并进同一
-次发布。stable 要求 `CAIRN_MAC_SIGN_MODE=developer-id`；beta 的签名失败会显式降级为
-unsigned，并在发布说明中标注。真实 Apple Silicon/Intel 安装、公证与更新下载仍需在配置
-好账号的 macOS 环境执行并记录证据。
+次发布。stable 要求 `CAIRN_MAC_SIGN_MODE=developer-id`；beta 的 Developer ID 签名/公证
+失败会降级为 `adhoc` 重试一次，仍保证 bundle 签名有效，并在发布说明中标注“ad-hoc
+签名（未公证）”。ad-hoc 自身失败不会继续降级，避免发布损坏的包。真实 Apple Silicon/Intel
+安装、公证与更新下载仍需在配置好账号的 macOS 环境执行并记录证据。
 
 ## 11. Linux：AppImage 与 deb（M6-03）
 
@@ -363,7 +373,7 @@ macOS runner 上，冒烟前会创建一个空的临时钥匙串并设为搜索�
 |---|---|---|
 | `prepare` | ubuntu | 校验标签、版本与通道，输出 `tag`/`version`/`channel` |
 | `build-windows` | windows | 全量质量门禁、NSIS、签名、安装冒烟、产物整理 |
-| `build-macos` | macos | DMG/ZIP、Developer ID 签名与公证、打包冒烟、产物整理 |
+| `build-macos` | macos | DMG/ZIP、ad-hoc 或 Developer ID 签名（stable 含公证）、签名校验、打包冒烟、产物整理 |
 | `build-linux` | ubuntu | AppImage/deb、打包冒烟、产物整理 |
 | `assemble` | ubuntu | 下载三个平台包、`release:merge`、dry-run、provenance |
 | `publish` | ubuntu | 一次性上传到 GitHub Releases 或静态更新源并回读校验 |
@@ -376,8 +386,9 @@ macOS runner 上，冒烟前会创建一个空的临时钥匙串并设为搜索�
 
 - Windows：beta 的 `pnpm package:nsis` 失败时，job 用 `CAIRN_SIGN_MODE=none` 重试一次；
   发布说明标注 unsigned。stable 不重试。
-- macOS：同上，重试使用 `CAIRN_MAC_SIGN_MODE=none`；stable 要求
-  `CAIRN_MAC_SIGN_MODE=developer-id`。
+- macOS：Developer ID 签名/公证失败时，beta 用 `CAIRN_MAC_SIGN_MODE=adhoc` 重试一次；
+  ad-hoc 不是 unsigned，bundle 签名必须有效。stable 要求
+  `CAIRN_MAC_SIGN_MODE=developer-id`，不重试。
 - Linux：没有统一代码签名，stable 允许 unsigned，发布说明写明完整性模型。
 
 ### 12.4 macOS 双架构
