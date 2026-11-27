@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { sessionStatus, type PlanView, type TaskItemView, type TaskListView } from '@cairn/core'
 import { PLAN_FEEDBACK_MAX } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
-import { Button, cn, IconButton } from './ui/index.js'
+import { Button, cn, FloatCard, IconButton } from './ui/index.js'
 
 /** 下载与复制使用的完整计划文本。 */
 export function planDocument(plan: PlanView): string {
@@ -88,7 +88,7 @@ export function PlanActions({ plan }: { readonly plan: PlanView | undefined }) {
   const note = feedback.trim()
   if (!plan || plan.status !== 'proposed') return null
   return (
-    <section aria-label={t('plan.actions')} className="rounded-card bg-raise px-3 py-2.5 shadow-2">
+    <FloatCard aria-label={t('plan.actions')}>
       <div className="flex items-center gap-2">
         <Lightbulb aria-hidden className="size-3.5 shrink-0 text-accent" />
         <span
@@ -99,13 +99,28 @@ export function PlanActions({ plan }: { readonly plan: PlanView | undefined }) {
         </span>
         {!replanning && (
           <span className="flex shrink-0 items-center gap-2">
-            <Button variant="primary" disabled={busy} onClick={() => void approvePlan(plan.planId)}>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={busy}
+              onClick={() => void approvePlan(plan.planId)}
+            >
               {t('plan.approve')}
             </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => setReplanning(true)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() => setReplanning(true)}
+            >
               {t('plan.replan')}
             </Button>
-            <Button variant="ghost" disabled={busy} onClick={() => void abandonPlan(plan.planId)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => void abandonPlan(plan.planId)}
+            >
               {t('plan.cancelPlan')}
             </Button>
           </span>
@@ -131,11 +146,12 @@ export function PlanActions({ plan }: { readonly plan: PlanView | undefined }) {
             className="w-full resize-none rounded-item bg-sunk px-3 py-2 text-ui text-fg outline-none placeholder:text-faint"
           />
           <div className="flex gap-2">
-            <Button variant="primary" type="submit" disabled={busy || note === ''}>
+            <Button variant="primary" size="sm" type="submit" disabled={busy || note === ''}>
               {t('plan.replanSubmit')}
             </Button>
             <Button
               variant="ghost"
+              size="sm"
               type="button"
               disabled={busy}
               onClick={() => setReplanning(false)}
@@ -145,7 +161,7 @@ export function PlanActions({ plan }: { readonly plan: PlanView | undefined }) {
           </div>
         </form>
       )}
-    </section>
+    </FloatCard>
   )
 }
 
@@ -288,10 +304,7 @@ export function TaskProgress({
     list.items.find((item) => item.status === 'pending')
   const title = expanded || !current ? list.title : current.title
   return (
-    <section
-      aria-label={t(labelKey)}
-      className="mb-2 overflow-hidden rounded-card bg-raise shadow-2"
-    >
+    <FloatCard variant="bar" aria-label={t(labelKey)}>
       <div className="flex h-9 items-center gap-2 pr-1.5 pl-3">
         <ListTodo
           aria-hidden
@@ -347,7 +360,7 @@ export function TaskProgress({
           ))}
         </ol>
       )}
-    </section>
+    </FloatCard>
   )
 }
 

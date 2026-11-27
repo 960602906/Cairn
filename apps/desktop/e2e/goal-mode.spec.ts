@@ -220,7 +220,8 @@ test('目标模式：回退后暂停', async ({ launch, userData }) => {
     await dialog.getByRole('button', { name: '回退并重新开始' }).click()
 
     await expect(resumeButton(window)).toBeVisible({ timeout: 20_000 })
-    await expect(window.getByText(/对话已回退/).first()).toBeVisible()
+    // 细条上只显示「已暂停」，回退原因在状态文字的提示里。
+    await expect(window.getByTitle('对话已回退')).toBeVisible()
   } finally {
     await mock.close()
   }

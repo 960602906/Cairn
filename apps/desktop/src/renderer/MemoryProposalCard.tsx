@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MemoryProposalView } from '@cairn/core'
 import { useSessionStore } from './store-context.js'
-import { Button } from './ui/index.js'
+import { Button, FloatCard, floatChipClass } from './ui/index.js'
 
 const NONE: readonly MemoryProposalView[] = []
 
@@ -27,19 +27,19 @@ function MemoryProposalCard({ proposal }: { readonly proposal: MemoryProposalVie
   }
 
   return (
-    <article aria-label={t('memory.title')} className="rounded-approval bg-raise p-4 shadow-2">
+    <FloatCard as="article" aria-label={t('memory.title')}>
       <header className="flex items-center gap-2">
-        <Brain aria-hidden className="size-4 shrink-0 text-accent" />
-        <h3 className="min-w-0 flex-1 truncate text-heading text-fg">{t('memory.title')}</h3>
-        <span className="shrink-0 rounded-item bg-sunk px-2 py-0.5 text-note text-fg2">
-          {t(`memory.scope.${proposal.scope}`)}
-        </span>
+        <Brain aria-hidden className="size-3.5 shrink-0 text-accent" />
+        <h3 className="min-w-0 flex-1 truncate text-ui leading-5 font-medium text-fg">
+          {t('memory.title')}
+        </h3>
+        <span className={floatChipClass}>{t(`memory.scope.${proposal.scope}`)}</span>
       </header>
-      <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-ui text-fg">
+      <p className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-ui text-fg">
         {proposal.content}
       </p>
-      <p className="mt-1.5 text-note text-muted">{t('memory.hint')}</p>
-      <div className="mt-3 flex justify-end gap-2">
+      <p className="mt-1 text-note text-muted">{t('memory.hint')}</p>
+      <div className="mt-1.5 flex justify-end gap-1.5">
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => void respond('reject')}>
           {t('memory.reject')}
         </Button>
@@ -47,7 +47,7 @@ function MemoryProposalCard({ proposal }: { readonly proposal: MemoryProposalVie
           {t('memory.accept')}
         </Button>
       </div>
-    </article>
+    </FloatCard>
   )
 }
 
@@ -59,7 +59,7 @@ export function MemoryProposalList() {
   )
   if (proposals.length === 0) return null
   return (
-    <section aria-label={t('memory.region')} className="flex flex-col gap-2.5">
+    <section aria-label={t('memory.region')} className="flex flex-col gap-2">
       {proposals.map((proposal) => (
         <MemoryProposalCard key={proposal.memoryId} proposal={proposal} />
       ))}

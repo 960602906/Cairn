@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   Button,
   cn,
+  FloatCard,
+  floatCardVariants,
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -40,6 +42,24 @@ describe('cn', () => {
     expect(cn('text-ui text-fg', 'text-muted')).toBe('text-ui text-muted')
     expect(cn('text-ui', 'text-body')).toBe('text-body')
     expect(cn('shadow-1', 'shadow-2')).toBe('shadow-2')
+  })
+})
+
+describe('FloatCard', () => {
+  it('shares one surface and switches padding by variant', () => {
+    const { rerender } = render(<FloatCard aria-label="提问">问题</FloatCard>)
+    const card = screen.getByRole('region', { name: '提问' })
+    expect(card.tagName).toBe('SECTION')
+    expect(card.className).toBe(floatCardVariants.card)
+
+    rerender(
+      <FloatCard as="article" variant="bar" aria-label="目标" data-goal="g1">
+        目标
+      </FloatCard>,
+    )
+    const bar = screen.getByRole('article', { name: '目标' })
+    expect(bar.getAttribute('data-goal')).toBe('g1')
+    expect(bar.className).toBe(floatCardVariants.bar)
   })
 })
 

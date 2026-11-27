@@ -6,8 +6,11 @@
  * - 每个问题都可以填写自定义回答；多选时可以同时选选项和填写回答。
  * - 「取消」整张放弃：不给答案，工具结果会告诉模型用户取消了，由模型自行决定下一步。
  * - 只有一个问题时不显示翻页；单选时点选项立即提交。键盘：数字键选择，Enter 提交。
+ *
+ * 卡片浮在输入框上方，所以尽量扁：问题本身就是标题，选项一行一条（说明跟在标签后面，
+ * 行高对齐工具步骤），自定义回答不另起标签。
  */
-import { Check, ChevronLeft, MessageCircleQuestion, Sparkles } from 'lucide-react'
+import { ChevronLeft, MessageCircleQuestion } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -17,7 +20,7 @@ import type {
   PendingQuestion,
 } from '@cairn/protocol'
 import { useSessionStore } from './store-context.js'
-import { Button, cn } from './ui/index.js'
+import { Button, cn, FloatCard, floatChipClass } from './ui/index.js'
 
 const NONE: readonly PendingQuestion[] = []
 
@@ -181,30 +184,26 @@ export function QuestionCard({
   const recommended = current.options.find((option) => option.recommended === true)
   const multiple = current.multiple === true
   const draft = draftOf(drafts, current.id)
+  const hintId = `question-hint-${question.questionId}`
+  const blocked = last ? !complete : !currentAnswered
 
   return (
-    <article aria-label={t('question.title')} className="rounded-approval bg-raise p-4 shadow-2">
-      <header className="mb-3 flex items-baseline gap-2">
-        <MessageCircleQuestion aria-hidden className="size-4 shrink-0 self-center text-accent" />
-        <h3 className="text-heading text-fg">{t('question.title')}</h3>
-        {total > 1 && (
-          <span className="ml-auto shrink-0 text-note text-muted">
-            {t('question.number', { index: index + 1, total })}
-          </span>
-        )}
-      </header>
+    <FloatCard as="article" aria-label={t('question.title')}>
       <section aria-label={t('question.number', { index: index + 1, total })}>
-        <div className="mb-2 flex items-start gap-2">
-          <p className="min-w-0 flex-1 text-ui text-fg">{current.question}</p>
-          {multiple && (
-            <span className="shrink-0 rounded-full bg-sunk px-2 py-0.5 text-[11px] text-muted">
-              {t('question.multiple')}
+        <div className="mb-1 flex items-start gap-2">
+          <MessageCircleQuestion aria-hidden className="mt-0.5 size-3.5 shrink-0 text-accent" />
+          <p className="min-w-0 flex-1 text-ui leading-5 font-medium text-fg">{current.question}</p>
+          {(multiple || total > 1) && (
+            <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] leading-5 text-muted">
+              {multiple && <span className={floatChipClass}>{t('question.multiple')}</span>}
+              {total > 1 && <span>{t('question.number', { index: index + 1, total })}</span>}
             </span>
           )}
         </div>
         <ol aria-label={t('question.options')} className="-mx-1 flex flex-col">
           {current.options.map((option, optionIndex) => {
             const picked = draft.selected.includes(option.label)
+            const description = option.description
             return (
               <li key={option.label}>
                 <button
@@ -213,7 +212,7 @@ export function QuestionCard({
                   disabled={busy}
                   onClick={() => choose(current, option.label)}
                   className={cn(
-                    'flex w-full items-start gap-3 rounded-item px-2.5 py-2 text-left text-ui text-fg transition-colors',
+                    'flex w-full items-start gap-2 rounded-item px-1.5 py-1 text-left text-ui leading-5 text-fg transition-colors',
                     picked ? 'bg-accent-soft text-accent' : 'hover:bg-hover',
                     'disabled:opacity-45',
                   )}
@@ -221,38 +220,36 @@ export function QuestionCard({
                   <span
                     aria-hidden
                     className={cn(
-                      'flex size-5 shrink-0 items-center justify-center rounded-[6px] font-mono text-[11.5px]',
+                      'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[5px] font-mono text-[10.5px] leading-none',
                       picked ? 'bg-accent text-ink-fg' : 'bg-sunk2 text-fg2',
                     )}
                   >
                     {optionIndex + 1}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      <span>{option.label}</span>
-                      {option.recommended === true && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-1.5 py-0.5 text-[11px] text-accent">
-                          <Sparkles aria-hidden className="size-3" />
-                          {t('question.recommended')}
-                        </span>
-                      )}
-                    </span>
-                    {option.description !== undefined && option.description !== '' && (
-                      <span className="mt-0.5 block text-note text-muted">
-                        {option.description}
+                    <span>{option.label}</span>
+                    {option.recommended === true && (
+                      <span className="ml-1.5 inline-block rounded-full bg-sunk px-1.5 align-baseline text-[11px] leading-4 text-muted">
+                        {t('question.recommended')}
+                      </span>
+                    )}
+                    {description !== undefined && description !== '' && (
+                      <span className="text-muted">
+                        <span className="text-faint"> · </span>
+                        {description}
                       </span>
                     )}
                   </span>
-                  {picked && <Check aria-hidden className="mt-1 size-3.5 shrink-0" />}
                 </button>
               </li>
             )
           })}
         </ol>
-        <label className="mt-2 block">
-          <span className="mb-1 block text-note text-muted">
-            {t('question.custom')}
-            {multiple ? ` · ${t('question.customOptional')}` : ''}
+        <label className="mt-1 block">
+          <span className="sr-only">
+            {multiple
+              ? `${t('question.custom')}，${t('question.customOptional')}`
+              : t('question.custom')}
           </span>
           <input
             type="text"
@@ -270,15 +267,15 @@ export function QuestionCard({
               if (last) void submit()
               else advance()
             }}
-            className="w-full rounded-item bg-sunk px-3 py-2 text-ui text-fg outline-none placeholder:text-faint"
+            className="h-7 w-full rounded-item bg-sunk px-2.5 text-ui text-fg outline-none placeholder:text-faint"
           />
         </label>
       </section>
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-1.5 flex items-center gap-1.5">
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => void cancel()}>
           {t('question.cancel')}
         </Button>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           {index > 0 && (
             <Button size="sm" disabled={busy} onClick={back}>
               <ChevronLeft aria-hidden />
@@ -290,6 +287,7 @@ export function QuestionCard({
               variant="primary"
               size="sm"
               disabled={busy || !complete}
+              aria-describedby={blocked ? hintId : undefined}
               onClick={() => void submit()}
             >
               {t('question.submit')}
@@ -299,6 +297,7 @@ export function QuestionCard({
               variant="primary"
               size="sm"
               disabled={busy || !currentAnswered}
+              aria-describedby={blocked ? hintId : undefined}
               onClick={advance}
             >
               {t('question.next')}
@@ -306,12 +305,12 @@ export function QuestionCard({
           )}
         </div>
       </div>
-      {!complete && (
-        <p className="mt-2 text-note text-muted">
+      {blocked && (
+        <p id={hintId} className="sr-only">
           {last ? t('question.submitHint') : t('question.nextHint')}
         </p>
       )}
-    </article>
+    </FloatCard>
   )
 }
 
@@ -323,7 +322,7 @@ export function QuestionList() {
   )
   if (questions.length === 0) return null
   return (
-    <section aria-label={t('question.region')} className="flex flex-col gap-3.5">
+    <section aria-label={t('question.region')} className="flex flex-col gap-2">
       {questions.map((question, index) => (
         <QuestionCard key={question.questionId} question={question} active={index === 0} />
       ))}
