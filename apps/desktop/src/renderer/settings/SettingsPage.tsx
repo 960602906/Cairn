@@ -7,8 +7,8 @@
  * 不再占用设置分类；自动修复不设分类，由会话按需开启。
  * Esc 返回对话（有对话框或菜单打开时不处理）。
  *
- * macOS 的红绿灯压在左上角：导航顶部是 48px 的拖拽行，应用名在红绿灯右边（与会话栏同样让出 84px），
- * 收起按钮在同一行右侧。
+ * macOS 的红绿灯压在左上角：导航顶部是 48px 的拖拽行，应用标志在红绿灯右边（与会话栏同样让出 84px），
+ * 收起按钮在同一行右侧；窗口标题区不写应用名。
  */
 import {
   Archive,
@@ -133,15 +133,12 @@ export function SettingsNav({
         }`}
       >
         {mac ? (
-          // 红绿灯在这一行的左边，应用名与收起按钮排在它右边，不再被压住。
+          // 红绿灯在这一行的左边，应用标志与收起按钮排在它右边，不再被压住；标题区只放标志。
           <div
             data-mac-titlebar
             className="drag flex h-12 shrink-0 items-center gap-2 pr-2 pl-[84px]"
           >
             <CairnMark size={18} className="shrink-0 text-fg" />
-            <span className="truncate text-[14px] font-semibold tracking-[-0.01em] text-fg">
-              {tc('app.name')}
-            </span>
             {collapsible && (
               <IconButton
                 label={ts('sidebar.collapse')}

@@ -55,7 +55,8 @@ export function windowChromeOptions(platform: string, theme: ChromeTheme): Windo
     minHeight: 480,
   }
   if (platform === 'darwin') {
-    return { ...base, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 13 } }
+    // 红绿灯与 48px 标题行（侧栏、设置导航、纸面顶栏）的图标同轴：按钮高 14px，y=17 时中心 24。
+    return { ...base, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 17 } }
   }
   return { ...base, titleBarStyle: 'hidden' }
 }

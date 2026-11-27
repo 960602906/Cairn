@@ -500,10 +500,11 @@ describe('SettingsPage', () => {
     )
     const { container, rerender } = render(nav(false))
     const titlebar = container.querySelector<HTMLElement>('[data-mac-titlebar]')!
-    // 应用名在 48px 的拖拽行里，向右让出红绿灯的位置
+    // 应用标志在 48px 的拖拽行里，向右让出红绿灯的位置；标题区不写应用名
     expect(titlebar.className).toContain('h-12')
     expect(titlebar.className).toContain('pl-[84px]')
-    expect(within(titlebar).getByText('Cairn')).toBeTruthy()
+    expect(titlebar.querySelector('svg')).not.toBeNull()
+    expect(within(titlebar).queryByText('Cairn')).toBeNull()
     expect(screen.queryByRole('button', { name: '收起侧栏' })).toBeNull()
 
     rerender(nav(true))

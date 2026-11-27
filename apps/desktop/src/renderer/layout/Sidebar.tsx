@@ -150,16 +150,18 @@ export function Sidebar({
         <div
           className={cn(
             'drag flex h-12 shrink-0 items-center gap-2 pr-2',
-            mac ? 'justify-end pl-[84px]' : 'pl-4',
+            mac ? 'pl-[84px]' : 'pl-4',
           )}
         >
+          {/* macOS 的标题区只放应用标志（红绿灯右边），不写应用名；其它平台标志与名称都显示。 */}
+          <CairnMark
+            size={mac ? 18 : 20}
+            className={cn('shrink-0', mac ? 'text-fg' : 'text-accent')}
+          />
           {!mac && (
-            <>
-              <CairnMark size={20} className="shrink-0 text-accent" />
-              <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg">
-                {tc('app.name')}
-              </span>
-            </>
+            <span className="text-[14px] font-semibold tracking-[-0.01em] text-fg">
+              {tc('app.name')}
+            </span>
           )}
           <div className="no-drag ml-auto flex items-center gap-0.5">
             <UpdateButton />
