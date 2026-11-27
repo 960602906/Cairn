@@ -310,7 +310,8 @@ describe('AgentEditor sections and actions', () => {
     renderEditor(store, { agentId: 'builtin.coder', initial: builtin, onOpenAgent })
 
     expect(await screen.findByText(/内置 Agent 只读/)).toBeDefined()
-    // 只读栏只剩试运行与复制为新 Agent：没有保存、发布和「⋯」。
+    // 只读栏只剩试运行与复制为新 Agent：没有保存、发布和「⋯」，表单也不可编辑。
+    expect(screen.getByLabelText('英文名称').closest('fieldset')?.disabled).toBe(true)
     expect(screen.getByRole('button', { name: /试运行/ })).toBeDefined()
     expect(screen.queryByRole('button', { name: '保存草稿' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^发布/ })).toBeNull()
@@ -328,9 +329,13 @@ describe('AgentEditor sections and actions', () => {
     })
     renderEditor(store, { initial: archived, onChanged })
     await screen.findByText('测试助手')
+    expect(screen.getByLabelText('英文名称').closest('fieldset')?.disabled).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: '取消归档' }))
     await waitFor(() => expect(onChanged).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.getByLabelText('英文名称').closest('fieldset')?.disabled).toBe(false),
+    )
   })
 
   it('asks before leaving with unsaved changes', async () => {

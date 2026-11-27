@@ -602,363 +602,370 @@ export function TeamEditor({
         </p>
       )}
 
-      {validationIssues('basic', 'errors').length === 0 &&
-        validationIssues('members', 'errors').length === 0 &&
-        validationIssues('pattern', 'errors').length === 0 &&
-        !dirty &&
-        published && <p className="text-note text-muted">{t('editor.noChanges')}</p>}
+      {/* 只读模板（内置或已归档）整块禁用：避免看起来能改，保存时却被拒绝。 */}
+      <fieldset disabled={readonly} className="flex w-full min-w-0 flex-col gap-5">
+        {validationIssues('basic', 'errors').length === 0 &&
+          validationIssues('members', 'errors').length === 0 &&
+          validationIssues('pattern', 'errors').length === 0 &&
+          !dirty &&
+          published && <p className="text-note text-muted">{t('editor.noChanges')}</p>}
 
-      <SettingsGroup
-        icon={<FileText />}
-        title={t('editor.basic.title')}
-        description={t('editor.basic.description')}
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-1 block text-[13px] text-fg2">{t('editor.basic.nameZh')}</span>
-            <input
-              className={inputClass}
-              maxLength={200}
-              value={fields.name['zh-CN'] ?? ''}
-              onChange={(e) => updateName('zh-CN', e.target.value)}
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[13px] text-fg2">{t('editor.basic.nameEn')}</span>
-            <input
-              className={inputClass}
-              maxLength={200}
-              value={fields.name['en-US'] ?? ''}
-              onChange={(e) => updateName('en-US', e.target.value)}
-            />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-[13px] text-fg2">
-              {t('editor.basic.descriptionZh')}
-            </span>
-            <textarea
-              className={`${inputClass} min-h-20 resize-none py-2`}
-              maxLength={200}
-              value={fields.description['zh-CN'] ?? ''}
-              onChange={(e) => updateDescription('zh-CN', e.target.value)}
-            />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-[13px] text-fg2">
-              {t('editor.basic.descriptionEn')}
-            </span>
-            <textarea
-              className={`${inputClass} min-h-20 resize-none py-2`}
-              maxLength={200}
-              value={fields.description['en-US'] ?? ''}
-              onChange={(e) => updateDescription('en-US', e.target.value)}
-            />
-          </label>
-        </div>
-        <p className="text-note text-muted">{t('editor.basic.languageHint')}</p>
-        <IssueList issues={validationIssues('basic', 'errors')} tone="error" />
-        <IssueList issues={validationIssues('basic', 'warnings')} tone="warn" />
-      </SettingsGroup>
-
-      <SettingsGroup
-        icon={<UsersRound />}
-        title={t('editor.members.title')}
-        description={t('editor.members.description')}
-      >
-        <label className="block">
-          <span className="mb-1 block text-[13px] text-fg2">{t('editor.members.coordinator')}</span>
-          <select
-            aria-label={t('editor.members.coordinator')}
-            className={selectClass}
-            value={fields.coordinator}
-            onChange={(e) => changeCoordinator(e.target.value)}
-          >
-            <option value="">{t('editor.members.chooseCoordinator')}</option>
-            {fields.coordinator !== '' &&
-              !coordinatorOptions.some((agent) => agent.agentId === fields.coordinator) && (
-                <option value={fields.coordinator}>{nameOf(fields.coordinator)}</option>
-              )}
-            {coordinatorOptions.map((agent) => (
-              <option key={agent.agentId} value={agent.agentId}>
-                {agentName(agent, i18n.language)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="text-note text-muted">{t('editor.members.coordinatorHint')}</p>
-        {coordinator === undefined && agents.length > 0 && (
-          <p className="text-note text-muted">{t('editor.members.noCoordinator')}</p>
-        )}
-        {agents.length === 0 && (
-          <p className="text-note text-warn">{t('editor.members.noAgents')}</p>
-        )}
-
-        <div>
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-[13px] text-fg2">{t('editor.members.members')}</span>
-            <span className="tabular text-note text-faint">
-              {t('editor.members.count', { count: fields.members.length })}
-            </span>
-          </div>
-          {members.length === 0 ? (
-            <p className="text-note text-muted">{t('editor.members.noMembers')}</p>
-          ) : (
-            <div className="grid gap-1.5 sm:grid-cols-2">
-              {members.map((agent) => {
-                const checked = fields.members.includes(agent.agentId)
-                return (
-                  <label
-                    key={agent.agentId}
-                    className="flex items-center gap-2 rounded-item px-1.5 py-1 text-ui text-fg2 hover:bg-sunk"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={!checked && fields.members.length >= TEAM_MAX_MEMBERS}
-                      onChange={() =>
-                        change({ members: toggleMember(fields.members, agent.agentId) })
-                      }
-                    />
-                    <span className="truncate">{agentName(agent, i18n.language)}</span>
-                  </label>
-                )
-              })}
-            </div>
-          )}
-        </div>
-        <IssueList issues={validationIssues('members', 'errors')} tone="error" />
-        <IssueList issues={validationIssues('members', 'warnings')} tone="warn" />
-      </SettingsGroup>
-
-      <SettingsGroup
-        icon={<Workflow />}
-        title={t('editor.pattern.title')}
-        description={t('editor.pattern.description')}
-      >
-        <SegmentedControl
-          label={t('editor.pattern.label')}
-          value={fields.pattern}
-          onChange={changePattern}
-          options={TEAM_PATTERNS.map((value) => ({ value, label: t(`pattern.${value}`) }))}
-        />
-        <p className="text-note text-muted">{t(`editor.pattern.hint.${fields.pattern}`)}</p>
-
-        {fields.pattern === 'review-loop' && (
-          <div className="flex flex-col gap-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="mb-1 block text-[13px] text-fg2">{t('editor.pattern.maker')}</span>
-                <select
-                  aria-label={t('editor.pattern.maker')}
-                  className={selectClass}
-                  value={reviewLoop?.maker ?? ''}
-                  disabled={referenced.length === 0}
-                  onChange={(e) => selectReviewAgent('maker', e.target.value)}
-                >
-                  <option value="">{t('editor.pattern.chooseAgent')}</option>
-                  {reviewLoop !== undefined &&
-                    !referenced.includes(reviewLoop.maker) &&
-                    reviewLoop.maker !== '' && (
-                      <option value={reviewLoop.maker}>{nameOf(reviewLoop.maker)}</option>
-                    )}
-                  {referenced.map((agentId) => (
-                    <option key={agentId} value={agentId}>
-                      {nameOf(agentId)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[13px] text-fg2">
-                  {t('editor.pattern.checker')}
-                </span>
-                <select
-                  aria-label={t('editor.pattern.checker')}
-                  className={selectClass}
-                  value={reviewLoop?.checker ?? ''}
-                  disabled={referenced.length === 0}
-                  onChange={(e) => selectReviewAgent('checker', e.target.value)}
-                >
-                  <option value="">{t('editor.pattern.chooseAgent')}</option>
-                  {reviewLoop !== undefined &&
-                    !referenced.includes(reviewLoop.checker) &&
-                    reviewLoop.checker !== '' && (
-                      <option value={reviewLoop.checker}>{nameOf(reviewLoop.checker)}</option>
-                    )}
-                  {referenced.map((agentId) => (
-                    <option key={agentId} value={agentId}>
-                      {nameOf(agentId)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <label className="block max-w-[220px]">
-              <span className="mb-1 block text-[13px] text-fg2">
-                {t('editor.pattern.maxRounds')}
-              </span>
+        <SettingsGroup
+          icon={<FileText />}
+          title={t('editor.basic.title')}
+          description={t('editor.basic.description')}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-fg2">{t('editor.basic.nameZh')}</span>
               <input
-                type="number"
-                min="1"
-                max={TEAM_MAX_REVIEW_ROUNDS}
                 className={inputClass}
-                value={reviewLoop?.maxRounds ?? 3}
-                disabled={reviewLoop === undefined}
-                onChange={(e) => {
-                  const value = Math.round(Number(e.target.value))
-                  if (!Number.isFinite(value)) return
-                  changeReview({
-                    maxRounds: Math.min(TEAM_MAX_REVIEW_ROUNDS, Math.max(1, value)),
-                  })
-                }}
+                maxLength={200}
+                value={fields.name['zh-CN'] ?? ''}
+                onChange={(e) => updateName('zh-CN', e.target.value)}
               />
             </label>
-            <p className="text-note text-muted">{t('editor.pattern.reviewHint')}</p>
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-fg2">{t('editor.basic.nameEn')}</span>
+              <input
+                className={inputClass}
+                maxLength={200}
+                value={fields.name['en-US'] ?? ''}
+                onChange={(e) => updateName('en-US', e.target.value)}
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-[13px] text-fg2">
+                {t('editor.basic.descriptionZh')}
+              </span>
+              <textarea
+                className={`${inputClass} min-h-20 resize-none py-2`}
+                maxLength={200}
+                value={fields.description['zh-CN'] ?? ''}
+                onChange={(e) => updateDescription('zh-CN', e.target.value)}
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-[13px] text-fg2">
+                {t('editor.basic.descriptionEn')}
+              </span>
+              <textarea
+                className={`${inputClass} min-h-20 resize-none py-2`}
+                maxLength={200}
+                value={fields.description['en-US'] ?? ''}
+                onChange={(e) => updateDescription('en-US', e.target.value)}
+              />
+            </label>
           </div>
-        )}
+          <p className="text-note text-muted">{t('editor.basic.languageHint')}</p>
+          <IssueList issues={validationIssues('basic', 'errors')} tone="error" />
+          <IssueList issues={validationIssues('basic', 'warnings')} tone="warn" />
+        </SettingsGroup>
 
-        {fields.pattern === 'pipeline' && (
-          <div className="flex flex-col gap-3">
-            {stages.length === 0 ? (
-              <p className="text-note text-muted">{t('editor.pattern.pipelineEmpty')}</p>
+        <SettingsGroup
+          icon={<UsersRound />}
+          title={t('editor.members.title')}
+          description={t('editor.members.description')}
+        >
+          <label className="block">
+            <span className="mb-1 block text-[13px] text-fg2">
+              {t('editor.members.coordinator')}
+            </span>
+            <select
+              aria-label={t('editor.members.coordinator')}
+              className={selectClass}
+              value={fields.coordinator}
+              onChange={(e) => changeCoordinator(e.target.value)}
+            >
+              <option value="">{t('editor.members.chooseCoordinator')}</option>
+              {fields.coordinator !== '' &&
+                !coordinatorOptions.some((agent) => agent.agentId === fields.coordinator) && (
+                  <option value={fields.coordinator}>{nameOf(fields.coordinator)}</option>
+                )}
+              {coordinatorOptions.map((agent) => (
+                <option key={agent.agentId} value={agent.agentId}>
+                  {agentName(agent, i18n.language)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-note text-muted">{t('editor.members.coordinatorHint')}</p>
+          {coordinator === undefined && agents.length > 0 && (
+            <p className="text-note text-muted">{t('editor.members.noCoordinator')}</p>
+          )}
+          {agents.length === 0 && (
+            <p className="text-note text-warn">{t('editor.members.noAgents')}</p>
+          )}
+
+          <div>
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[13px] text-fg2">{t('editor.members.members')}</span>
+              <span className="tabular text-note text-faint">
+                {t('editor.members.count', { count: fields.members.length })}
+              </span>
+            </div>
+            {members.length === 0 ? (
+              <p className="text-note text-muted">{t('editor.members.noMembers')}</p>
             ) : (
-              <ol className="flex flex-col gap-2">
-                {stages.map((stage, index) => {
-                  const dependencies = stage.dependsOn ?? []
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {members.map((agent) => {
+                  const checked = fields.members.includes(agent.agentId)
                   return (
-                    <li
-                      key={stage.stage}
-                      className="flex flex-col gap-2.5 rounded-card bg-paper px-3.5 py-3 shadow-hair2"
+                    <label
+                      key={agent.agentId}
+                      className="flex items-center gap-2 rounded-item px-1.5 py-1 text-ui text-fg2 hover:bg-sunk"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="tabular text-note text-faint">
-                          {t('editor.pattern.stage', { number: index + 1 })}
-                        </span>
-                        <IconButton
-                          label={t('editor.pattern.removeStage', { number: index + 1 })}
-                          size="icon-sm"
-                          className="ml-auto"
-                          onClick={() => change({ pipeline: removeStage(stages, stage.stage) })}
-                        >
-                          <Trash2 />
-                        </IconButton>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="block">
-                          <span className="mb-1 block text-[13px] text-fg2">
-                            {t('editor.pattern.stageAgent')}
-                          </span>
-                          <select
-                            aria-label={t('editor.pattern.stageAgent')}
-                            className={selectClass}
-                            value={stage.agent}
-                            onChange={(e) => changeStageAgent(stage.stage, e.target.value)}
-                          >
-                            {!referenced.includes(stage.agent) && (
-                              <option value={stage.agent}>{nameOf(stage.agent)}</option>
-                            )}
-                            {referenced.map((agentId) => (
-                              <option key={agentId} value={agentId}>
-                                {nameOf(agentId)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <div>
-                          <span className="mb-1 block text-[13px] text-fg2">
-                            {t('editor.pattern.dependsOn')}
-                          </span>
-                          {stageDependencyOptions(stages, stage.stage).length === 0 ? (
-                            <p className="pt-1.5 text-note text-faint">
-                              {t('editor.pattern.noDependencies')}
-                            </p>
-                          ) : (
-                            <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
-                              {stageDependencyOptions(stages, stage.stage).map((option) => {
-                                const number =
-                                  stages.findIndex(
-                                    (candidate) => candidate.stage === option.stage,
-                                  ) + 1
-                                return (
-                                  <label
-                                    key={option.stage}
-                                    className="flex items-center gap-1.5 text-ui text-fg2"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={dependencies.includes(option.stage)}
-                                      onChange={() =>
-                                        change({
-                                          pipeline: setStageDependencies(
-                                            stages,
-                                            stage.stage,
-                                            dependencies.includes(option.stage)
-                                              ? dependencies.filter(
-                                                  (dependency) => dependency !== option.stage,
-                                                )
-                                              : [...dependencies, option.stage],
-                                          ),
-                                        })
-                                      }
-                                    />
-                                    {t('editor.pattern.stageDependency', { number })}
-                                  </label>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </li>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!checked && fields.members.length >= TEAM_MAX_MEMBERS}
+                        onChange={() =>
+                          change({ members: toggleMember(fields.members, agent.agentId) })
+                        }
+                      />
+                      <span className="truncate">{agentName(agent, i18n.language)}</span>
+                    </label>
                   )
                 })}
-              </ol>
+              </div>
             )}
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={stages.length >= TEAM_MAX_PIPELINE_STAGES || referenced.length === 0}
-                onClick={addStage}
-              >
-                <Plus />
-                {t('editor.pattern.addStage')}
-              </Button>
-              {stages.length > 0 && stages.length < referenced.length && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => change({ pipeline: seedPipeline(referenced) })}
-                >
-                  {t('editor.pattern.fillStages')}
-                </Button>
-              )}
-            </div>
-            <p className="text-note text-muted">{t('editor.pattern.pipelineHint')}</p>
           </div>
+          <IssueList issues={validationIssues('members', 'errors')} tone="error" />
+          <IssueList issues={validationIssues('members', 'warnings')} tone="warn" />
+        </SettingsGroup>
+
+        <SettingsGroup
+          icon={<Workflow />}
+          title={t('editor.pattern.title')}
+          description={t('editor.pattern.description')}
+        >
+          <SegmentedControl
+            label={t('editor.pattern.label')}
+            value={fields.pattern}
+            onChange={changePattern}
+            options={TEAM_PATTERNS.map((value) => ({ value, label: t(`pattern.${value}`) }))}
+          />
+          <p className="text-note text-muted">{t(`editor.pattern.hint.${fields.pattern}`)}</p>
+
+          {fields.pattern === 'review-loop' && (
+            <div className="flex flex-col gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-[13px] text-fg2">
+                    {t('editor.pattern.maker')}
+                  </span>
+                  <select
+                    aria-label={t('editor.pattern.maker')}
+                    className={selectClass}
+                    value={reviewLoop?.maker ?? ''}
+                    disabled={referenced.length === 0}
+                    onChange={(e) => selectReviewAgent('maker', e.target.value)}
+                  >
+                    <option value="">{t('editor.pattern.chooseAgent')}</option>
+                    {reviewLoop !== undefined &&
+                      !referenced.includes(reviewLoop.maker) &&
+                      reviewLoop.maker !== '' && (
+                        <option value={reviewLoop.maker}>{nameOf(reviewLoop.maker)}</option>
+                      )}
+                    {referenced.map((agentId) => (
+                      <option key={agentId} value={agentId}>
+                        {nameOf(agentId)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[13px] text-fg2">
+                    {t('editor.pattern.checker')}
+                  </span>
+                  <select
+                    aria-label={t('editor.pattern.checker')}
+                    className={selectClass}
+                    value={reviewLoop?.checker ?? ''}
+                    disabled={referenced.length === 0}
+                    onChange={(e) => selectReviewAgent('checker', e.target.value)}
+                  >
+                    <option value="">{t('editor.pattern.chooseAgent')}</option>
+                    {reviewLoop !== undefined &&
+                      !referenced.includes(reviewLoop.checker) &&
+                      reviewLoop.checker !== '' && (
+                        <option value={reviewLoop.checker}>{nameOf(reviewLoop.checker)}</option>
+                      )}
+                    {referenced.map((agentId) => (
+                      <option key={agentId} value={agentId}>
+                        {nameOf(agentId)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <label className="block max-w-[220px]">
+                <span className="mb-1 block text-[13px] text-fg2">
+                  {t('editor.pattern.maxRounds')}
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  max={TEAM_MAX_REVIEW_ROUNDS}
+                  className={inputClass}
+                  value={reviewLoop?.maxRounds ?? 3}
+                  disabled={reviewLoop === undefined}
+                  onChange={(e) => {
+                    const value = Math.round(Number(e.target.value))
+                    if (!Number.isFinite(value)) return
+                    changeReview({
+                      maxRounds: Math.min(TEAM_MAX_REVIEW_ROUNDS, Math.max(1, value)),
+                    })
+                  }}
+                />
+              </label>
+              <p className="text-note text-muted">{t('editor.pattern.reviewHint')}</p>
+            </div>
+          )}
+
+          {fields.pattern === 'pipeline' && (
+            <div className="flex flex-col gap-3">
+              {stages.length === 0 ? (
+                <p className="text-note text-muted">{t('editor.pattern.pipelineEmpty')}</p>
+              ) : (
+                <ol className="flex flex-col gap-2">
+                  {stages.map((stage, index) => {
+                    const dependencies = stage.dependsOn ?? []
+                    return (
+                      <li
+                        key={stage.stage}
+                        className="flex flex-col gap-2.5 rounded-card bg-paper px-3.5 py-3 shadow-hair2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="tabular text-note text-faint">
+                            {t('editor.pattern.stage', { number: index + 1 })}
+                          </span>
+                          <IconButton
+                            label={t('editor.pattern.removeStage', { number: index + 1 })}
+                            size="icon-sm"
+                            className="ml-auto"
+                            onClick={() => change({ pipeline: removeStage(stages, stage.stage) })}
+                          >
+                            <Trash2 />
+                          </IconButton>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1 block text-[13px] text-fg2">
+                              {t('editor.pattern.stageAgent')}
+                            </span>
+                            <select
+                              aria-label={t('editor.pattern.stageAgent')}
+                              className={selectClass}
+                              value={stage.agent}
+                              onChange={(e) => changeStageAgent(stage.stage, e.target.value)}
+                            >
+                              {!referenced.includes(stage.agent) && (
+                                <option value={stage.agent}>{nameOf(stage.agent)}</option>
+                              )}
+                              {referenced.map((agentId) => (
+                                <option key={agentId} value={agentId}>
+                                  {nameOf(agentId)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div>
+                            <span className="mb-1 block text-[13px] text-fg2">
+                              {t('editor.pattern.dependsOn')}
+                            </span>
+                            {stageDependencyOptions(stages, stage.stage).length === 0 ? (
+                              <p className="pt-1.5 text-note text-faint">
+                                {t('editor.pattern.noDependencies')}
+                              </p>
+                            ) : (
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
+                                {stageDependencyOptions(stages, stage.stage).map((option) => {
+                                  const number =
+                                    stages.findIndex(
+                                      (candidate) => candidate.stage === option.stage,
+                                    ) + 1
+                                  return (
+                                    <label
+                                      key={option.stage}
+                                      className="flex items-center gap-1.5 text-ui text-fg2"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={dependencies.includes(option.stage)}
+                                        onChange={() =>
+                                          change({
+                                            pipeline: setStageDependencies(
+                                              stages,
+                                              stage.stage,
+                                              dependencies.includes(option.stage)
+                                                ? dependencies.filter(
+                                                    (dependency) => dependency !== option.stage,
+                                                  )
+                                                : [...dependencies, option.stage],
+                                            ),
+                                          })
+                                        }
+                                      />
+                                      {t('editor.pattern.stageDependency', { number })}
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ol>
+              )}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={stages.length >= TEAM_MAX_PIPELINE_STAGES || referenced.length === 0}
+                  onClick={addStage}
+                >
+                  <Plus />
+                  {t('editor.pattern.addStage')}
+                </Button>
+                {stages.length > 0 && stages.length < referenced.length && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => change({ pipeline: seedPipeline(referenced) })}
+                  >
+                    {t('editor.pattern.fillStages')}
+                  </Button>
+                )}
+              </div>
+              <p className="text-note text-muted">{t('editor.pattern.pipelineHint')}</p>
+            </div>
+          )}
+
+          <IssueList issues={validationIssues('pattern', 'errors')} tone="error" />
+          <IssueList issues={validationIssues('pattern', 'warnings')} tone="warn" />
+          {validationIssues('pattern', 'warnings').length > 0 && fields.pattern === 'delegate' && (
+            <p className="text-note text-muted">{t('editor.pattern.ignoredHint')}</p>
+          )}
+        </SettingsGroup>
+
+        {currentId !== undefined && (
+          <TeamVersions
+            // 发布后重新读取版本列表；恢复草稿不会产生新版本，不需要重挂载。
+            key={detail?.published?.version ?? 0}
+            teamId={currentId}
+            current={fields}
+            readonly={readonly}
+            onRestore={restoreVersion}
+          />
         )}
 
-        <IssueList issues={validationIssues('pattern', 'errors')} tone="error" />
-        <IssueList issues={validationIssues('pattern', 'warnings')} tone="warn" />
-        {validationIssues('pattern', 'warnings').length > 0 && fields.pattern === 'delegate' && (
-          <p className="text-note text-muted">{t('editor.pattern.ignoredHint')}</p>
-        )}
-      </SettingsGroup>
-
-      {currentId !== undefined && (
-        <TeamVersions
-          // 发布后重新读取版本列表；恢复草稿不会产生新版本，不需要重挂载。
-          key={detail?.published?.version ?? 0}
-          teamId={currentId}
-          current={fields}
-          readonly={readonly}
-          onRestore={restoreVersion}
-        />
-      )}
-
-      <SettingsCard className="gap-2 bg-sunk/60 py-4">
-        <p className="text-note leading-relaxed text-muted">{t('editor.footer')}</p>
-      </SettingsCard>
+        <SettingsCard className="gap-2 bg-sunk/60 py-4">
+          <p className="text-note leading-relaxed text-muted">{t('editor.footer')}</p>
+        </SettingsCard>
+      </fieldset>
 
       <Dialog open={confirmLeave} onOpenChange={setConfirmLeave}>
         <DialogContent>
