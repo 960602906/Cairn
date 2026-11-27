@@ -2790,3 +2790,57 @@ describe('team selection in session store', () => {
     expect(calls).toContainEqual(['session.setTeam', { sessionId: 's1', teamId: 'user.team-1' }])
   })
 })
+
+describe('provider plugin actions (ADR-0049)', () => {
+  it('loads, picks, previews, installs and removes plugins, and reports failures', async () => {
+    const list = { plugins: [], skipped: [] }
+    let fail = false
+    const { api, calls } = fakeApi({
+      'providerPlugin.list': () => {
+        if (fail) throw new RpcError('rpc.internal')
+        return list
+      },
+      'providerPlugin.pick': () => ({}),
+      'providerPlugin.install': (params: never) => {
+        if (fail) throw new RpcError('providers.plugin.invalid', { path: 'id' })
+        const { confirm } = params as { confirm?: boolean }
+        return {
+          installed: confirm === true,
+          replaces: false,
+          plugin: { id: 'a', name: 'A', templates: [] },
+        }
+      },
+      'providerPlugin.remove': () => {
+        if (fail) throw new RpcError('providers.plugin.not_found')
+        return {}
+      },
+      'credentials.delete': () => {
+        if (fail) throw new RpcError('rpc.internal')
+        return { deleted: true }
+      },
+    })
+    const store = createSessionStore(api)
+    expect(await store.getState().loadProviderPlugins()).toEqual(list)
+    expect(store.getState().providerPlugins).toEqual(list)
+    expect(await store.getState().pickProviderPlugin()).toBeUndefined()
+
+    const preview = await store.getState().installProviderPlugin('/x.json')
+    expect(preview).toMatchObject({ ok: true, result: { installed: false } })
+    const installed = await store.getState().installProviderPlugin('/x.json', true)
+    expect(installed).toMatchObject({ ok: true, result: { installed: true } })
+    expect(await store.getState().removeProviderPlugin('a')).toBe(true)
+    expect(await store.getState().deleteCredential('ref')).toBe(true)
+    expect(calls.filter(([method]) => method === 'providerPlugin.list')).toHaveLength(3)
+
+    fail = true
+    expect(await store.getState().loadProviderPlugins()).toBeUndefined()
+    expect(store.getState().providerPlugins).toEqual(list)
+    expect(await store.getState().installProviderPlugin('/x.json')).toEqual({
+      ok: false,
+      error: { code: 'providers.plugin.invalid', params: { path: 'id' } },
+    })
+    expect(await store.getState().removeProviderPlugin('a')).toBe(false)
+    expect(await store.getState().deleteCredential('ref')).toBe(false)
+    expect(store.getState().error).toEqual({ code: 'rpc.internal' })
+  })
+})

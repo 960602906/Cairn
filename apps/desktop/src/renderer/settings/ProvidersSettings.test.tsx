@@ -1104,4 +1104,64 @@ describe('ProvidersSettings', () => {
       expect(within(picker).queryByRole('button', { name: /^Acme Gateway/ })).toBeNull(),
     )
   })
+
+  it('handles a cancelled pick, a replaced plugin and a failed install', async () => {
+    const plugin = {
+      id: 'acme',
+      name: 'Acme Cloud',
+      description: 'Hosted gateway',
+      templates: [
+        {
+          id: 'acme.gateway',
+          kind: 'openai',
+          category: 'relay',
+          displayName: 'Acme Gateway',
+          baseUrl: 'https://api.acme.example/v1',
+          requiresKey: true,
+          models: [],
+          modelDefaults: cap,
+          pluginId: 'acme',
+        },
+        {
+          id: 'orphan.svc',
+          kind: 'openai',
+          category: 'relay',
+          displayName: 'Orphan Service',
+          baseUrl: 'https://orphan.example/v1',
+          requiresKey: true,
+          models: [],
+          modelDefaults: cap,
+          pluginId: 'orphan',
+        },
+      ],
+    }
+    const picked: { path?: string } = {}
+    const { request } = setup(
+      {},
+      {
+        'providerPlugin.list': () => ({ plugins: [plugin], skipped: [] }),
+        'providerPlugin.pick': () => ({ ...picked }),
+        'providerPlugin.install': (params: never) => {
+          if ((params as { confirm?: boolean }).confirm)
+            throw new RpcError('providers.plugin.too_large')
+          return { installed: false, replaces: true, plugin }
+        },
+      },
+    )
+    await open()
+    const picker = await openAddDialog()
+    expect(within(picker).getByText(/Hosted gateway/)).toBeTruthy()
+    expect(within(picker).getByRole('button', { name: /^Orphan Service/ })).toBeTruthy()
+
+    await userEvent.click(within(picker).getByRole('button', { name: '从文件安装…' }))
+    expect(request).not.toHaveBeenCalledWith('providerPlugin.install', expect.anything())
+
+    picked.path = '/downloads/acme.json'
+    await userEvent.click(within(picker).getByRole('button', { name: '从文件安装…' }))
+    const preview = await screen.findByRole('dialog', { name: '安装 Acme Cloud？' })
+    expect(within(preview).getByText(/安装后会被替换/)).toBeTruthy()
+    await userEvent.click(within(preview).getByRole('button', { name: '安装' }))
+    expect((await within(picker).findByRole('alert')).textContent).toContain('插件文件太大')
+    expect(screen.queryByRole('dialog', { name: '安装 Acme Cloud？' })).toBeNull()
+  })
 })
