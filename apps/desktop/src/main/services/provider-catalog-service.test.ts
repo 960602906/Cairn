@@ -45,7 +45,13 @@ const index = {
       homepage: 'https://acme.example',
       icon: 'icons/acme.svg',
       url: 'plugins/acme/plugin.json',
+      type: 'provider',
+      author: 'Cairn',
+      source: 'official',
     },
+    // 以后的插件种类：当前 Cairn 跳过
+    { id: 'night', name: 'Night theme', type: 'theme', source: 'official' },
+    { id: 'weird', name: 'Weird source', source: 'unknown-value', url: 'plugins/beta.json' },
     { id: 'beta', name: 'Beta' },
     { id: 'gamma', name: 'Gamma', url: `${FILES}plugins/gamma.json` },
     { id: 'legacy', name: 'Legacy', path: 'plugins/old-name.json' },
@@ -106,14 +112,18 @@ describe('official provider catalog (ADR-0050)', () => {
       {
         id: 'acme',
         name: 'Acme Cloud',
+        author: 'Cairn',
+        source: 'official',
         version: '1.1.0',
         description: 'Hosted gateway',
         homepage: 'https://acme.example',
         icon: `${FILES}icons/acme.svg`,
       },
-      { id: 'beta', name: 'Beta' },
-      { id: 'gamma', name: 'Gamma' },
-      { id: 'legacy', name: 'Legacy' },
+      // 其他声明值与省略（当前目录仓库 main 的格式）都按第三方处理
+      { id: 'weird', name: 'Weird source', source: 'third-party' },
+      { id: 'beta', name: 'Beta', source: 'third-party' },
+      { id: 'gamma', name: 'Gamma', source: 'third-party' },
+      { id: 'legacy', name: 'Legacy', source: 'third-party' },
     ])
     // 一分钟内复用目录
     await catalog.list()
@@ -258,14 +268,74 @@ describe('official provider catalog (ADR-0050)', () => {
     })
     const listed = await catalog.list()
     expect(listed.plugins).toEqual([
-      expect.objectContaining({ id: 'acme', icon: `${FILES}icons/acme.svg` }),
+      expect.objectContaining({
+        id: 'acme',
+        icon: `${FILES}icons/acme.svg`,
+        author: 'Acme Inc.',
+        source: 'third-party',
+      }),
     ])
     const preview = await catalog.preview({ id: 'acme' })
     expect(preview.plugin.version).toBe(listed.plugins[0]!.version)
+    expect(preview.plugin).toMatchObject({ author: 'Acme Inc.', origin: 'third-party' })
     expect(preview.plugin.icon).toBe(`${FILES}icons/acme.svg`)
     expect(preview.plugin.templates[0]).toMatchObject({
       homepage: 'https://acme.example/gateway',
       icon: `${FILES}icons/acme-gateway.png`,
     })
+  })
+
+  it('marks a plugin official only when the catalog entry and the plugin file both say so', async () => {
+    const official = { ...(index.plugins[0] as object), url: 'plugins/acme.json' }
+    const routes: Routes = {
+      [`${FILES}index.json`]: JSON.stringify({
+        schemaVersion: 1,
+        plugins: [
+          official,
+          { id: 'claims', name: 'Claims', source: 'third-party', url: 'plugins/claims.json' },
+          { id: 'mixed', name: 'Mixed', source: 'official', url: 'plugins/mixed.json' },
+          { id: 'bare', name: 'Bare', url: 'plugins/bare.json' },
+        ],
+      }),
+      // 插件文件没写 source：按目录项
+      [`${FILES}plugins/acme.json`]: JSON.stringify(plugin({ author: 'Cairn' })),
+      // 插件文件自称官方，但目录项是第三方
+      [`${FILES}plugins/claims.json`]: JSON.stringify(plugin({ id: 'claims', source: 'official' })),
+      // 目录项是官方，插件文件却写第三方
+      [`${FILES}plugins/mixed.json`]: JSON.stringify(
+        plugin({ id: 'mixed', source: 'third-party' }),
+      ),
+      // 两边都没写（当前目录仓库 main 的格式）
+      [`${FILES}plugins/bare.json`]: JSON.stringify(plugin({ id: 'bare' })),
+    }
+    const { catalog, plugins } = setup(routes)
+    const origins: Record<string, string> = {}
+    for (const id of ['acme', 'claims', 'mixed', 'bare']) {
+      const preview = await catalog.preview({ id })
+      origins[id] = preview.plugin.origin
+      await catalog.install({ id, sha256: preview.sha256 })
+    }
+    expect(origins).toEqual({
+      acme: 'official',
+      claims: 'third-party',
+      mixed: 'third-party',
+      bare: 'third-party',
+    })
+    expect(
+      Object.fromEntries(plugins.list().plugins.map((p) => [p.id, [p.origin, p.author]])),
+    ).toEqual({
+      acme: ['official', 'Cairn'],
+      bare: ['third-party', undefined],
+      claims: ['third-party', undefined],
+      mixed: ['third-party', undefined],
+    })
+  })
+
+  it('refuses a plugin file whose type is not provider', async () => {
+    const { catalog } = setup({
+      [`${FILES}index.json`]: JSON.stringify(index),
+      [`${FILES}plugins/beta.json`]: JSON.stringify(plugin({ id: 'beta', type: 'theme' })),
+    })
+    expect(await codeOf(catalog.preview({ id: 'beta' }))).toBe('providers.plugin.unsupported_type')
   })
 })

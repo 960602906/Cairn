@@ -251,19 +251,19 @@ function setup(
     installPlugin: vi.fn(({ confirm }) => ({
       installed: confirm === true,
       replaces: false,
-      plugin: { id: 'acme', name: 'Acme', templates: [] },
+      plugin: { id: 'acme', name: 'Acme', origin: 'local' as const, templates: [] },
     })),
     removePlugin: vi.fn(() => ({})),
     listCatalog: vi.fn(async () => ({ source: 'https://github.com/o/r', plugins: [] })),
     previewCatalog: vi.fn(async () => ({
       replaces: false,
       sha256: 'a'.repeat(64),
-      plugin: { id: 'acme', name: 'Acme', templates: [] },
+      plugin: { id: 'acme', name: 'Acme', origin: 'local' as const, templates: [] },
     })),
     installCatalog: vi.fn(async () => ({
       installed: true,
       replaces: false,
-      plugin: { id: 'acme', name: 'Acme', templates: [] },
+      plugin: { id: 'acme', name: 'Acme', origin: 'local' as const, templates: [] },
     })),
     resolveIcon: vi.fn(async () => ({})),
   }

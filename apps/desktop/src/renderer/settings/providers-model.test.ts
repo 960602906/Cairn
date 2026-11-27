@@ -60,6 +60,7 @@ describe('providers-model', () => {
     const plugin = {
       id: 'acme',
       name: 'Acme',
+      origin: 'local' as const,
       templates: [
         {
           ...findTemplate('openrouter')!,

@@ -188,4 +188,76 @@ describe('provider plugin service (ADR-0050)', () => {
     const file = write(root, 'not-a-dir', 'x')
     expect(createProviderPluginService({ dir: file }).list()).toEqual({ plugins: [], skipped: [] })
   })
+
+  it('keeps the official origin only for unchanged catalog installs (ADR-0050)', () => {
+    const service = createProviderPluginService({ dir })
+    const text = JSON.stringify({ ...plugin('acme'), author: 'Cairn', source: 'official' })
+    const installed = service.installText(text, { origin: 'official' })
+    expect(installed.plugin).toMatchObject({ origin: 'official', author: 'Cairn' })
+    expect(service.list().plugins.map((p) => p.origin)).toEqual(['official'])
+    // 来源记录不是插件
+    expect(fs.readdirSync(dir).sort()).toEqual(['.provenance.json', 'acme.json'])
+    expect(service.list().skipped).toEqual([])
+
+    // 改动过的文件不再显示为官方
+    const file = path.join(dir, 'acme.json')
+    const original = fs.readFileSync(file, 'utf8')
+    fs.writeFileSync(file, original.replace('Plugin acme', 'Plugin acme (edited)'))
+    expect(service.list().plugins[0]!.origin).toBe('local')
+    fs.writeFileSync(file, original)
+    expect(service.list().plugins[0]!.origin).toBe('official')
+
+    // 从文件安装同 id 的插件：即使自称官方，也是本地文件，并清掉原来的来源记录
+    const spoof = write(downloads, 'spoof.json', { ...plugin('acme'), source: 'official' })
+    expect(service.install({ path: spoof }).plugin.origin).toBe('local')
+    service.install({ path: spoof, confirm: true })
+    expect(service.list().plugins[0]!.origin).toBe('local')
+    expect(JSON.parse(fs.readFileSync(path.join(dir, '.provenance.json'), 'utf8'))).toEqual({
+      version: 1,
+      plugins: {},
+    })
+
+    // 同 id 换了文件名、记录损坏时也不是官方
+    service.installText(text, { origin: 'third-party' })
+    expect(service.list().plugins[0]!.origin).toBe('third-party')
+    fs.renameSync(file, path.join(dir, 'renamed.json'))
+    expect(service.list().plugins[0]!.origin).toBe('local')
+    fs.writeFileSync(path.join(dir, '.provenance.json'), '{broken')
+    expect(service.list().plugins[0]!.origin).toBe('local')
+    fs.writeFileSync(
+      path.join(dir, '.provenance.json'),
+      JSON.stringify({ plugins: { acme: { origin: 'official' }, x: null } }),
+    )
+    expect(service.list().plugins[0]!.origin).toBe('local')
+  })
+
+  it('forgets the origin when a plugin is removed', () => {
+    const service = createProviderPluginService({ dir })
+    service.installText(JSON.stringify(plugin('acme')), { origin: 'official' })
+    service.installText(JSON.stringify(plugin('other')), { origin: 'third-party' })
+    service.remove({ id: 'acme' })
+    expect(JSON.parse(fs.readFileSync(path.join(dir, '.provenance.json'), 'utf8')).plugins).toEqual(
+      {
+        other: expect.objectContaining({ origin: 'third-party' }),
+      },
+    )
+    // 本地安装的插件没有记录，删除时不改记录文件
+    write(dir, 'local.json', plugin('local'))
+    service.remove({ id: 'local' })
+    expect(
+      Object.keys(JSON.parse(fs.readFileSync(path.join(dir, '.provenance.json'), 'utf8')).plugins),
+    ).toEqual(['other'])
+  })
+
+  it('refuses plugins of other types (ADR-0050)', () => {
+    const service = createProviderPluginService({ dir })
+    const theme = write(downloads, 'theme.json', { ...plugin('night'), type: 'theme' })
+    expect(codeOf(() => service.install({ path: theme }))).toBe('providers.plugin.unsupported_type')
+    write(dir, 'night.json', { ...plugin('night'), type: 'theme' })
+    write(dir, 'acme.json', { ...plugin('acme'), type: 'provider' })
+    expect(service.list()).toMatchObject({
+      plugins: [{ id: 'acme', origin: 'local' }],
+      skipped: [{ file: 'night.json', code: 'providers.plugin.unsupported_type' }],
+    })
+  })
 })

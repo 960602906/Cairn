@@ -316,4 +316,22 @@ describe('provider plugins (ADR-0050)', () => {
       ).toBe(ProviderPluginErrorCode.Invalid)
     }
   })
+
+  it('reads type, author and the claimed source without trusting the claim (ADR-0050)', () => {
+    const parsed = parseProviderPlugin(
+      JSON.stringify(manifest({ type: 'provider', author: 'Cairn', source: 'official' })),
+    )
+    expect(parsed).toMatchObject({ type: 'provider', author: 'Cairn', source: 'official' })
+    // 实际来源由调用方给出，默认是本地文件
+    expect(providerPluginInfo(parsed)).toMatchObject({ author: 'Cairn', origin: 'local' })
+    expect(providerPluginInfo(parsed, 'official').origin).toBe('official')
+    expect(providerPluginInfo(parseProviderPlugin(JSON.stringify(manifest())))).not.toHaveProperty(
+      'author',
+    )
+    for (const type of ['theme', 'Provider', 3]) {
+      expect(codeOf(() => parseProviderPlugin(JSON.stringify(manifest({ type }))))).toBe(
+        ProviderPluginErrorCode.UnsupportedType,
+      )
+    }
+  })
 })

@@ -1181,9 +1181,17 @@ describe('ProvidersSettings', () => {
       modelDefaults: cap,
       pluginId: 'acme',
     }
-    const acme = { id: 'acme', name: 'Acme Cloud', version: '1.1.0', templates: [gateway] }
+    const acme = {
+      id: 'acme',
+      name: 'Acme Cloud',
+      author: 'Cairn',
+      homepage: 'https://acme.example',
+      origin: 'official',
+      version: '1.1.0',
+      templates: [gateway],
+    }
     let reachable = false
-    let installed: (typeof acme)[] = [{ ...acme, version: '1.0.0' }]
+    let installed: (typeof acme)[] = [{ ...acme, origin: 'local', version: '1.0.0' }]
     const { request } = setup(
       {},
       {
@@ -1196,11 +1204,19 @@ describe('ProvidersSettings', () => {
               {
                 id: 'acme',
                 name: 'Acme Cloud',
+                author: 'Cairn',
+                source: 'official',
                 version: '1.1.0',
                 description: 'Hosted gateway',
                 homepage: 'https://acme.example',
               },
-              { id: 'beta', name: 'Beta Relay' },
+              {
+                id: 'beta',
+                name: 'Beta Relay',
+                author: 'Beta Labs',
+                source: 'third-party',
+                homepage: 'https://beta.example/relay',
+              },
             ],
           }
         },
@@ -1232,14 +1248,29 @@ describe('ProvidersSettings', () => {
 
     reachable = true
     await userEvent.click(within(catalog).getByRole('button', { name: '重试' }))
-    const list = await within(catalog).findByRole('list', { name: '官方目录中的插件' })
-    const rows = within(list).getAllByRole('listitem')
-    expect(within(rows[0]!).getByText('可更新')).toBeTruthy()
-    expect(within(rows[0]!).getByText('Hosted gateway')).toBeTruthy()
+    // 按官方与第三方分组；作者与网站显示在每一行，网站是可点击的文字链接
+    const official = await within(catalog).findByRole('region', { name: '官方插件' })
+    const thirdParty = within(catalog).getByRole('region', { name: '第三方插件' })
+    const officialRow = within(official).getByRole('listitem')
+    expect(within(officialRow).getByText('可更新')).toBeTruthy()
+    expect(within(officialRow).getByText('官方')).toBeTruthy()
+    expect(within(officialRow).getByText('作者：Cairn')).toBeTruthy()
+    expect(within(officialRow).getByText('Hosted gateway')).toBeTruthy()
     expect(
-      within(rows[0]!).getByRole('link', { name: '打开 Acme Cloud 的网站' }).getAttribute('href'),
+      within(officialRow)
+        .getByRole('link', { name: /acme\.example/ })
+        .getAttribute('href'),
     ).toBe('https://acme.example')
-    expect(within(rows[1]!).queryByText('已安装')).toBeNull()
+    const thirdRow = within(thirdParty).getByRole('listitem')
+    expect(within(thirdRow).getByText('作者：Beta Labs')).toBeTruthy()
+    expect(within(thirdRow).queryByText('官方')).toBeNull()
+    expect(within(thirdRow).queryByText('已安装')).toBeNull()
+    expect(within(thirdParty).getByText(/由各自的作者维护/)).toBeTruthy()
+    expect(
+      within(thirdRow)
+        .getByRole('link', { name: /beta\.example/ })
+        .getAttribute('href'),
+    ).toBe('https://beta.example/relay')
 
     // 预览失败（目录在预览时变了）就地说明
     await userEvent.click(within(catalog).getByRole('button', { name: '查看 Beta Relay' }))
@@ -1248,6 +1279,9 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(catalog).getByRole('button', { name: '查看 Acme Cloud' }))
     const preview = await screen.findByRole('dialog', { name: '安装 Acme Cloud？' })
     expect(within(preview).getByText(/来自 Cairn 官方插件目录/)).toBeTruthy()
+    expect(within(preview).getByText('官方')).toBeTruthy()
+    expect(within(preview).getByText('作者：Cairn')).toBeTruthy()
+    expect(within(preview).getByRole('link', { name: /acme\.example/ })).toBeTruthy()
     expect(within(preview).getByText('https://api.acme.example/v1')).toBeTruthy()
     expect(within(preview).getByText('https://api.acme.example.cn/v1')).toBeTruthy()
     expect(within(preview).getByText(/已安装同 ID 的插件/)).toBeTruthy()
@@ -1267,13 +1301,14 @@ describe('ProvidersSettings', () => {
 
   it('shows an empty catalog and a failed catalog install', async () => {
     let empty = true
-    const acme = { id: 'acme', name: 'Acme Cloud', templates: [] }
+    const acme = { id: 'acme', name: 'Acme Cloud', origin: 'third-party', templates: [] }
     setup(
       {},
       {
         'providerCatalog.list': () => ({
           source: 'https://github.com/960602906/cairn-provider-plugins',
-          plugins: empty ? [] : [{ id: 'acme', name: 'Acme Cloud' }],
+          // 没有 source 的项（当前目录仓库 main 的格式）列在第三方
+          plugins: empty ? [] : [{ id: 'acme', name: 'Acme Cloud', source: 'third-party' }],
         }),
         'providerCatalog.preview': () => ({
           replaces: false,
@@ -1296,8 +1331,11 @@ describe('ProvidersSettings', () => {
     empty = false
     await userEvent.click(within(picker).getByRole('button', { name: '官方目录' }))
     catalog = await screen.findByRole('dialog', { name: '官方供应商插件' })
+    expect(await within(catalog).findByRole('region', { name: '第三方插件' })).toBeTruthy()
+    expect(within(catalog).queryByRole('region', { name: '官方插件' })).toBeNull()
     await userEvent.click(await within(catalog).findByRole('button', { name: '查看 Acme Cloud' }))
     const preview = await screen.findByRole('dialog', { name: '安装 Acme Cloud？' })
+    expect(within(preview).getByText('第三方')).toBeTruthy()
     await userEvent.click(within(preview).getByRole('button', { name: '安装' }))
     await userEvent.keyboard('{Escape}')
     expect((await within(picker).findByRole('alert')).textContent).toContain('无法安装插件')
@@ -1368,5 +1406,76 @@ describe('ProvidersSettings', () => {
       baseUrl: 'https://api.moonshot.ai/v1',
       keysUrl: 'https://platform.moonshot.ai/console/api-keys',
     })
+  })
+
+  it('labels installed plugins by where they came from, never by what the file claims', async () => {
+    const template = {
+      id: 'x.api',
+      kind: 'openai',
+      category: 'relay',
+      displayName: 'X API',
+      baseUrl: 'https://api.x-labs.example/v1',
+      requiresKey: true,
+      models: [],
+      modelDefaults: cap,
+    }
+    const plugins = [
+      {
+        id: 'groq',
+        name: 'Groq',
+        author: 'Cairn',
+        homepage: 'https://groq.com',
+        origin: 'official',
+        templates: [{ ...template, id: 'groq.api', pluginId: 'groq' }],
+      },
+      {
+        id: 'beta',
+        name: 'Beta Relay',
+        author: 'Beta Labs',
+        origin: 'third-party',
+        templates: [{ ...template, id: 'beta.api', pluginId: 'beta' }],
+      },
+      { id: 'mine', name: 'Mine', templates: [{ ...template, id: 'mine.api', pluginId: 'mine' }] },
+    ]
+    setup(
+      {},
+      {
+        'providerPlugin.list': () => ({ plugins, skipped: [] }),
+        'providerPlugin.pick': () => ({ path: '/downloads/fake-official.json' }),
+        // 主进程对文件安装总是给出 local，与文件里写的 source 无关
+        'providerPlugin.install': () => ({
+          installed: false,
+          replaces: false,
+          plugin: {
+            id: 'fake',
+            name: 'Fake Official',
+            author: 'Cairn',
+            origin: 'local',
+            templates: [template],
+          },
+        }),
+      },
+    )
+    await open()
+    const picker = await openAddDialog()
+    const installed = within(picker).getByRole('list', { name: '已安装的插件' })
+    const [groq, beta, mine] = within(installed).getAllByRole('listitem')
+    expect(within(groq!).getByText('官方')).toBeTruthy()
+    expect(within(groq!).getByText('作者：Cairn')).toBeTruthy()
+    expect(
+      within(groq!)
+        .getByRole('link', { name: /groq\.com/ })
+        .getAttribute('href'),
+    ).toBe('https://groq.com')
+    expect(within(beta!).getByText('第三方')).toBeTruthy()
+    expect(within(beta!).queryByText('官方')).toBeNull()
+    // 没有记录来源（旧版本安装）的按本地文件显示
+    expect(within(mine!).getByText('本地文件')).toBeTruthy()
+
+    await userEvent.click(within(picker).getByRole('button', { name: '从文件安装…' }))
+    const preview = await screen.findByRole('dialog', { name: '安装 Fake Official？' })
+    expect(within(preview).getByText('本地文件')).toBeTruthy()
+    expect(within(preview).queryByText('官方')).toBeNull()
+    expect(within(preview).getByText(/来自本地文件/)).toBeTruthy()
   })
 })

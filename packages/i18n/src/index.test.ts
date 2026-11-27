@@ -246,6 +246,7 @@ describe('translateError', () => {
       'providers.plugin.too_large',
       'providers.plugin.duplicate',
       'providers.plugin.not_found',
+      'providers.plugin.unsupported_type',
       'providers.catalog.unreachable',
       'providers.catalog.invalid',
       'providers.catalog.not_found',
