@@ -105,6 +105,10 @@ describe('Sidebar', () => {
     vi.stubGlobal('cairn', { windowControls: { platform: 'darwin' } })
     try {
       renderSidebar(true)
+      // 标题区只放标志，不写应用名
+      const titlebar = document.querySelector<HTMLElement>('aside .drag')!
+      expect(titlebar.className).toContain('pl-[84px]')
+      expect(titlebar.querySelector('svg')).not.toBeNull()
       expect(screen.queryByText('Cairn')).toBeNull()
     } finally {
       vi.unstubAllGlobals()

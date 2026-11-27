@@ -114,6 +114,12 @@
 
 ### Changed
 
+- macOS 的红绿灯与 48px 标题行里的图标对齐；侧栏和设置导航的标题区只显示应用标志，
+  不再显示「Cairn」名称。
+  On macOS the traffic lights now line up with the icons in the 48px title row, and the
+  sidebar and settings navigation title areas show only the app mark, without the "Cairn"
+  wordmark.
+
 - 所有下拉框改用应用内绘制的箭头：位置固定、与输入框内边距对齐，不再随系统字体的原生
   箭头漂移；箭头颜色跟随亮色 / 暗色主题。
   All dropdowns now use an in-app chevron: it sits at a fixed position aligned with the input

@@ -9,7 +9,7 @@ describe('window chrome', () => {
   it('uses inset traffic lights on macOS', () => {
     const options = windowChromeOptions('darwin', 'light')
     expect(options.titleBarStyle).toBe('hiddenInset')
-    expect(options.trafficLightPosition).toEqual({ x: 16, y: 13 })
+    expect(options.trafficLightPosition).toEqual({ x: 16, y: 17 })
     expect(options.backgroundColor).toBe('#f5f5f6')
     expect(usesCustomWindowControls('darwin')).toBe(false)
   })
