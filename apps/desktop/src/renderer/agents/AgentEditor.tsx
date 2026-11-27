@@ -75,7 +75,7 @@ import {
   SegmentedControl,
   Switch,
 } from '../ui/index.js'
-import { inputClass } from '../settings/Field.js'
+import { inputClass, selectClass } from '../settings/Field.js'
 import { AgentVersions } from './AgentVersions.js'
 import { AgentEffectiveConfig } from './AgentEffectiveConfig.js'
 
@@ -537,7 +537,7 @@ export function AgentEditor({
       <span className="mb-1 block text-[13px] text-fg2">{label}</span>
       <select
         aria-label={label}
-        className={inputClass}
+        className={selectClass}
         value={model ? `${model.providerId}/${model.modelId}` : ''}
         onChange={(e) => {
           const [providerId, modelId] = e.target.value.split('/')
@@ -1562,7 +1562,7 @@ function DelegationSection({
               <span className="mb-1 block text-[13px] text-fg2">{t('delegation.workspace')}</span>
               <select
                 aria-label={t('delegation.workspace')}
-                className={inputClass}
+                className={selectClass}
                 value={policy.defaultWorkspace}
                 onChange={(e) =>
                   change({
@@ -1581,7 +1581,7 @@ function DelegationSection({
               <span className="mb-1 block text-[13px] text-fg2">{t('delegation.mergeReview')}</span>
               <select
                 aria-label={t('delegation.mergeReview')}
-                className={inputClass}
+                className={selectClass}
                 value={policy.mergeReview}
                 onChange={(e) =>
                   change({ mergeReview: e.target.value as DelegationPolicy['mergeReview'] })

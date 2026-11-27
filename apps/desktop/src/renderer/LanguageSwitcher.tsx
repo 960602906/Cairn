@@ -13,6 +13,7 @@ export function LanguageSwitcher() {
       {t('language.label')}
       {/* 选项只有支持的语言 */}
       <select
+        className="select-chevron h-8 rounded-item bg-raise px-2 text-[12.5px] text-fg shadow-hair2"
         value={i18n.language}
         onChange={(e) => void switchLocale(i18n, e.target.value as Locale)}
       >

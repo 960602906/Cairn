@@ -33,7 +33,7 @@ import {
   type TeamValidationIssue,
 } from '@cairn/protocol'
 import { agentName, localized } from '../agents/model.js'
-import { inputClass, SettingsCard, SettingsGroup } from '../settings/Field.js'
+import { inputClass, selectClass, SettingsCard, SettingsGroup } from '../settings/Field.js'
 import { useSessionStore } from '../store-context.js'
 import {
   Button,
@@ -641,7 +641,7 @@ export function TeamEditor({
           <span className="mb-1 block text-[13px] text-fg2">{t('editor.members.coordinator')}</span>
           <select
             aria-label={t('editor.members.coordinator')}
-            className={inputClass}
+            className={selectClass}
             value={fields.coordinator}
             onChange={(e) => changeCoordinator(e.target.value)}
           >
@@ -722,7 +722,7 @@ export function TeamEditor({
                 <span className="mb-1 block text-[13px] text-fg2">{t('editor.pattern.maker')}</span>
                 <select
                   aria-label={t('editor.pattern.maker')}
-                  className={inputClass}
+                  className={selectClass}
                   value={reviewLoop?.maker ?? ''}
                   disabled={referenced.length === 0}
                   onChange={(e) => selectReviewAgent('maker', e.target.value)}
@@ -746,7 +746,7 @@ export function TeamEditor({
                 </span>
                 <select
                   aria-label={t('editor.pattern.checker')}
-                  className={inputClass}
+                  className={selectClass}
                   value={reviewLoop?.checker ?? ''}
                   disabled={referenced.length === 0}
                   onChange={(e) => selectReviewAgent('checker', e.target.value)}
@@ -822,7 +822,7 @@ export function TeamEditor({
                           </span>
                           <select
                             aria-label={t('editor.pattern.stageAgent')}
-                            className={inputClass}
+                            className={selectClass}
                             value={stage.agent}
                             onChange={(e) => changeStageAgent(stage.stage, e.target.value)}
                           >

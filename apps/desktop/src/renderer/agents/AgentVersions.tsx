@@ -166,7 +166,7 @@ export function AgentVersions({
           {t('versions.from')}
           <select
             aria-label={t('versions.from')}
-            className="h-8 rounded-item bg-raise px-2 text-[12.5px] text-fg shadow-hair2"
+            className="select-chevron h-8 rounded-item bg-raise px-2 text-[12.5px] text-fg shadow-hair2"
             value={String(from)}
             onChange={(e) => setFrom(e.target.value === 'draft' ? 'draft' : Number(e.target.value))}
           >
@@ -182,7 +182,7 @@ export function AgentVersions({
           {t('versions.to')}
           <select
             aria-label={t('versions.to')}
-            className="h-8 rounded-item bg-raise px-2 text-[12.5px] text-fg shadow-hair2"
+            className="select-chevron h-8 rounded-item bg-raise px-2 text-[12.5px] text-fg shadow-hair2"
             value={String(to)}
             onChange={(e) => setTo(e.target.value === 'draft' ? 'draft' : Number(e.target.value))}
           >

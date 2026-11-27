@@ -13,7 +13,7 @@ import type { PendingApproval, PendingQuestion } from '@cairn/protocol'
 import { ApprovalCard } from './ApprovalCard.js'
 import { MessageStream } from './MessageStream.js'
 import { QuestionCard } from './QuestionCard.js'
-import { inputClass } from './settings/Field.js'
+import { inputClass, selectClass } from './settings/Field.js'
 import { useSessionStore } from './store-context.js'
 import {
   Button,
@@ -216,7 +216,7 @@ export function TrialPanel({
                 <div className="flex items-center gap-2">
                   <select
                     aria-label={t('project.label')}
-                    className={inputClass}
+                    className={selectClass}
                     value={projectPath}
                     disabled={current !== undefined}
                     onChange={(e) => setProjectPath(e.target.value)}
