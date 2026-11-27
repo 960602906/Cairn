@@ -300,6 +300,30 @@
   clears the selection once the template list loads and falls back to the default agent instead
   of failing silently when sending.
 
+## [0.1.7] - 2026-11-27
+
+### Fixed
+
+- macOS 下载包不再提示「已损坏」：默认对应用做 ad-hoc 签名（`CAIRN_MAC_SIGN_MODE=adhoc`），
+  完整封存打包后的 Resources、helper 与嵌套 framework。此前只跳过签名，Electron 自带的
+  linker 签名与打包内容不一致，Gatekeeper 直接判定损坏、用户无法放行。Developer ID 签名
+  与公证仍是 stable 的前提（ADR-0049）。
+  macOS builds no longer report "is damaged" after download: the app is ad-hoc signed by
+  default (`CAIRN_MAC_SIGN_MODE=adhoc`), sealing packaged Resources, helpers and nested
+  frameworks. Previously signing was skipped, leaving Electron's linker signature inconsistent
+  with the packaged bundle, so Gatekeeper rejected it as damaged. Developer ID signing and
+  notarization remain required for stable (ADR-0049).
+
+### Changed
+
+- 安装与发布说明如实标注 macOS beta 为「ad-hoc 签名（未公证）」，首次启动需在「系统设置 →
+  隐私与安全性」中点「仍要打开」；发布流水线在两种签名模式下都校验 `codesign --verify`，
+  beta 的 Developer ID 失败降级为 ad-hoc 而不是 unsigned。
+  Install and release notes now describe the macOS beta as ad-hoc signed (not notarized),
+  requiring approval in System Settings → Privacy & Security on first launch. The release
+  pipeline verifies `codesign --verify` in both modes and falls back from Developer ID to
+  ad-hoc (not unsigned) for beta.
+
 ## [0.1.6] - 2026-11-26
 
 ### Added
@@ -531,7 +555,8 @@ Beta 版本。Windows x64、macOS arm64/x64 与 Linux x64 的发布产物需通�
 - 单实例锁在打开数据库之前获取，避免两个实例同时写入。
 - 诊断包导出前统一脱敏用户目录、API Key 与令牌。
 
-[Unreleased]: https://github.com/960602906/Cairn/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/960602906/Cairn/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/960602906/Cairn/releases/tag/v0.1.7
 [0.1.6]: https://github.com/960602906/Cairn/releases/tag/v0.1.6
 [0.1.2]: https://github.com/960602906/Cairn/releases/tag/v0.1.2
 [0.1.1]: https://github.com/960602906/Cairn/releases/tag/v0.1.1
