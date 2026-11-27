@@ -617,7 +617,7 @@ describe('electron-builder invocation', () => {
     })
   })
 
-  it('reads macOS signing configuration from the environment by default', () => {
+  it('defaults to ad-hoc signing when no macOS certificate is configured', () => {
     const directory = temporaryDirectory()
     const runner = vi.fn<typeof spawnSync>(() => ({
       status: 0,
@@ -638,7 +638,9 @@ describe('electron-builder invocation', () => {
     const [command, args, options] = runner.mock.calls[0]!
     expect(command).toBe(process.execPath)
     expect(args).toContain('--mac')
-    expect(args.some((arg) => String(arg).startsWith('--config.mac.identity='))).toBe(false)
+    expect(args).toEqual(
+      expect.arrayContaining(['--config.mac.identity=-', '--config.dmg.sign=false']),
+    )
     expect(options?.env).toMatchObject({ CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
   })
 

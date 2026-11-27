@@ -102,11 +102,13 @@ const PLATFORM_SPECS = {
       'macOS arm64 / x64、DMG 安装、ZIP 用于自动更新',
     ],
     install: [
-      '打开 DMG，把 Cairn 拖入“应用程序”；首次启动如被 Gatekeeper 阻止，请在“系统设置 → 隐私与安全性”中放行。',
+      '打开 DMG，把 Cairn 拖入“应用程序”；首次启动如被 Gatekeeper 阻止，请在“系统设置 → 隐私与安全性”中点“仍要打开”（macOS 14 及更早也可右键应用选择“打开”）。',
+      '未公证的构建在覆盖安装后可能需要再次放行；不要因为提示“无法验证开发者”而删除应用。',
       '卸载时退出 Cairn 并把 `Cairn.app` 移到废纸篓；用户数据默认保留在 `~/Library/Application Support/Cairn`。',
     ],
     knownIssues: [
-      '未签名构建会被 Gatekeeper 阻止，不得宣称“已验证发布者”。',
+      'beta 使用 ad-hoc 签名，未公证：bundle 签名有效，但 Gatekeeper 会提示“无法验证开发者”，不得宣称“已验证发布者”。',
+      'ad-hoc beta 不保证 macOS 自动更新；升级请重新下载 DMG 覆盖安装。stable 的自动更新以 Developer ID 签名为前提。',
       '命令沙箱尚未在 macOS 实现；命令按权限规则在沙箱外运行并标注“未沙箱化”。',
     ],
   },
@@ -475,10 +477,11 @@ export function signingLines(platform, signing) {
     ]
   }
   if (platform === 'mac') {
-    if (signing['mode'] === 'none') {
+    if (signing['mode'] !== 'developer-id') {
       return [
-        '- 应用与安装包：**unsigned beta**',
-        '- 未签名版本可能被 Gatekeeper 阻止；不得宣称“已验证发布者”或“无警告”。',
+        '- 应用与安装包：**ad-hoc 签名（未公证）**',
+        '- ad-hoc 签名保证 bundle 签名有效，可在 Apple Silicon 上启动；但不提供发布者身份，Gatekeeper 首次启动会要求用户显式放行。',
+        '- 不得宣称“已验证发布者”或“无警告”；stable 需要 Developer ID 签名与公证。',
       ]
     }
     return [
@@ -616,7 +619,11 @@ export function releaseArtifacts({
   }
 
   const signing = platformSigningSummary(platform, env)
-  if (channel === 'stable' && platform !== 'linux' && signing['mode'] === 'none') {
+  // Windows 的 stable 接受 pfx/azure；macOS 的 stable 只接受 Developer ID（ad-hoc 不是
+  // 可验证的发布者身份）；Linux 没有统一代码签名。
+  const unsignedForStable =
+    platform === 'mac' ? signing['mode'] !== 'developer-id' : signing['mode'] === 'none'
+  if (channel === 'stable' && platform !== 'linux' && unsignedForStable) {
     throw new Error(`${spec.label} stable releases must be signed`)
   }
 

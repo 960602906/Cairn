@@ -33,9 +33,10 @@ Architecturally, Cairn = **our own agent platform** + **a pluggable agent engine
   preferred engine. Tool execution stays in the platform, so swapping engines does not affect
   permissions, auditing or storage.
 
-> **Status**: 0.1.0 unsigned beta, MIT licensed. M0–M7 are implemented; Windows is installable, and
-> M6 added macOS/Linux packaging, the three-platform CI matrix and a per-platform release pipeline
-> (see the [M6 acceptance report](docs/plan/m6-report.md)). M7 added cross-session memory and team
+> **Status**: 0.1.x beta, MIT licensed. M0–M7 are implemented; Windows is installable, macOS ships
+> ad-hoc signed (not notarized) DMG/ZIP builds, and Linux ships AppImage/deb. The three-platform CI
+> matrix and per-platform release pipeline landed in M6 (see the
+> [M6 acceptance report](docs/plan/m6-report.md)). M7 added cross-session memory and team
 > templates (review loops, pipelines and draft trials); see the
 > [M7 acceptance report](docs/plan/m7-report.md). Stable is still blocked on code signing, legal
 > review and a clean-VM acceptance matrix. Windows x64 ships first, per-user install.
@@ -142,9 +143,10 @@ See [install](docs/dev/install.md) and [troubleshooting](docs/dev/troubleshootin
 
 ## Plan
 
-- Shipping platform: Windows first; macOS/Linux packaging and the per-platform release pipeline
-  landed in M6, and their channels open after signing, notarization and real-device install
-  acceptance (see the [M6 acceptance report](docs/plan/m6-report.md)).
+- Shipping platform: Windows first; macOS beta uses ad-hoc signing (not notarized), and its stable
+  channel opens after Developer ID signing, notarization and real-device install acceptance.
+  Linux packaging and the per-platform release pipeline landed in M6 (see the
+  [M6 acceptance report](docs/plan/m6-report.md)).
 - Initial models: Anthropic, OpenAI and Gemini protocol formats; services like DeepSeek use the
   OpenAI-compatible format.
 - UI languages: Chinese and English; light, dark and follow-system themes.

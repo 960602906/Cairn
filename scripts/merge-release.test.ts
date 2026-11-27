@@ -65,7 +65,12 @@ function platformFixture(
     channel: 'beta',
     commit: COMMIT,
     buildTime: '2026-11-10T08:30:00.000Z',
-    signing: platform === 'linux' ? { mode: 'none', integrity: 'sha256+https' } : { mode: 'none' },
+    signing:
+      platform === 'linux'
+        ? { mode: 'none', integrity: 'sha256+https' }
+        : platform === 'mac'
+          ? { mode: 'adhoc', notarized: false }
+          : { mode: 'none' },
     metadata,
     support: [`${label} support`],
     install: [`${label} install`],
@@ -157,7 +162,7 @@ describe('combined release notes', () => {
 
   it('summarizes signing per platform', () => {
     expect(signingSummaryLine('linux', { mode: 'none' })).toMatch(/HTTPS/)
-    expect(signingSummaryLine('mac', { mode: 'none' })).toBe('unsigned beta')
+    expect(signingSummaryLine('mac', { mode: 'adhoc' })).toBe('ad-hoc 签名（未公证）')
     expect(signingSummaryLine('mac', { mode: 'developer-id' })).toBe('已签名（developer-id）并公证')
     expect(signingSummaryLine('windows', { mode: 'pfx' })).toBe('已签名（pfx）')
     expect(signingSummaryLine('windows', { mode: 'none' })).toBe('unsigned beta')

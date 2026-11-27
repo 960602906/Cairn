@@ -39,6 +39,10 @@ M6 之前只有 Windows 安装包。macOS 需要独立的分发格式与安全�
   electron-builder 调用 `@electron/notarize`。缺少公证凭据时直接失败，不产出一个 Gatekeeper
   会拒绝的“已签名但未公证”DMG。`none` 模式明确产出 unsigned 内部包，不得进入 stable
   （发布门禁由 M6-07 接入）。
+
+  > 2026-11-27 修正：[ADR-0049](0049-macos-ad-hoc-signing.md) 指出 `identity: null` 会留下
+  > 未覆盖打包资源的 Electron linker 签名，Gatekeeper 将其判为“已损坏”。无 Developer ID
+  > 的默认路径因此改为 ad-hoc 签名（`CAIRN_MAC_SIGN_MODE=adhoc`），`none` 不再受支持。
 - **最小 entitlements。** `build/entitlements.mac.plist` 只包含
   `com.apple.security.cs.allow-jit`、`allow-unsigned-executable-memory` 与
   `disable-library-validation`：前两项是 Electron/V8 的硬要求，第三项用于加载随包原生模块。

@@ -81,8 +81,12 @@ export function readPlatformNotes(directory) {
  */
 export function signingSummaryLine(platform, signing) {
   if (platform === 'linux') return '未签名（SHA-256 校验和与 HTTPS 更新源）'
+  if (platform === 'mac') {
+    return signing['mode'] === 'developer-id'
+      ? '已签名（developer-id）并公证'
+      : 'ad-hoc 签名（未公证）'
+  }
   if (signing['mode'] === 'none') return 'unsigned beta'
-  if (platform === 'mac') return `已签名（${String(signing['mode'])}）并公证`
   return `已签名（${String(signing['mode'])}）`
 }
 

@@ -42,7 +42,9 @@ env:
   ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
   # 公开配置走 repository variables；证书与上传凭据只走 secrets（docs/dev/release.md）。
   CAIRN_SIGN_MODE: ${{ vars.CAIRN_SIGN_MODE || 'none' }}
-  CAIRN_MAC_SIGN_MODE: ${{ vars.CAIRN_MAC_SIGN_MODE || 'none' }}
+  # macOS 至少要 ad-hoc 签名：没有有效 bundle 签名时 Gatekeeper 会把下载的应用判为损坏
+  # （ADR-0049）。stable 仍然强制 developer-id。
+  CAIRN_MAC_SIGN_MODE: ${{ vars.CAIRN_MAC_SIGN_MODE || 'adhoc' }}
   CAIRN_UPDATE_URL: ${{ vars.CAIRN_UPDATE_URL }}
   CAIRN_UPDATE_PUBLISHER: ${{ vars.CAIRN_UPDATE_PUBLISHER }}
   CAIRN_TIMESTAMP_URL: ${{ vars.CAIRN_TIMESTAMP_URL }}
@@ -259,10 +261,10 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Refuse unsigned stable releases
+      - name: Refuse non-Developer ID stable releases
         if: needs.prepare.outputs.channel == 'stable' && vars.CAIRN_MAC_SIGN_MODE != 'developer-id'
         run: |
-          echo 'unsigned macOS builds cannot enter the stable channel (ADR-0041)' >&2
+          echo 'macOS builds without Developer ID cannot enter the stable channel (ADR-0041, ADR-0049)' >&2
           exit 1
 
       - name: Check app version (single source)
@@ -291,19 +293,25 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Retry unsigned beta build
+      # Developer ID 签名/公证失败时 beta 降级为 ad-hoc，仍保证 bundle 签名有效；
+      # stable 不允许降级。ad-hoc 自身失败时重试也会失败，不会发布损坏的包。
+      - name: Retry ad-hoc beta build
+        id: retry
         if: steps.package.outcome == 'failure' && needs.prepare.outputs.channel == 'beta'
         run: pnpm package:mac
         env:
-          CAIRN_MAC_SIGN_MODE: none
+          CAIRN_MAC_SIGN_MODE: adhoc
 
       - name: Verify DMG and ZIP
         run: pnpm package:verify -- --mac
 
-      - name: Verify Developer ID signature and notarization
-        if: steps.package.outcome == 'success' && vars.CAIRN_MAC_SIGN_MODE == 'developer-id'
+      # 两种模式都要校验：ad-hoc 检查 bundle 签名有效，Developer ID 额外检查 Gatekeeper
+      # 与公证票据。缺少这一步时，identity 未覆盖 Resources 的“损坏”包会直接进入发布。
+      - name: Verify macOS signature
+        if: steps.package.outcome == 'success' || steps.retry.outcome == 'success'
         run: pnpm sign:verify:mac -- --dist apps/desktop/dist --version ${{ needs.prepare.outputs.version }}
         env:
+          CAIRN_MAC_SIGN_MODE: ${{ steps.retry.outcome == 'success' && 'adhoc' || vars.CAIRN_MAC_SIGN_MODE || 'adhoc' }}
           MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
           MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
           CAIRN_MAC_IDENTITY: ${{ vars.CAIRN_MAC_IDENTITY }}
@@ -321,7 +329,7 @@ jobs:
           --dist apps/desktop/dist --out apps/desktop/dist/release
           --version ${{ needs.prepare.outputs.version }}
         env:
-          CAIRN_MAC_SIGN_MODE: ${{ steps.package.outcome == 'failure' && 'none' || vars.CAIRN_MAC_SIGN_MODE || 'none' }}
+          CAIRN_MAC_SIGN_MODE: ${{ steps.package.outcome == 'failure' && 'adhoc' || vars.CAIRN_MAC_SIGN_MODE || 'adhoc' }}
           MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
           MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
           CAIRN_MAC_IDENTITY: ${{ vars.CAIRN_MAC_IDENTITY }}

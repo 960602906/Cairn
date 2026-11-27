@@ -56,3 +56,4 @@
 | [0046](0046-message-edit-and-regenerate.md) | 消息编辑重发与重新生成：追加式回退事件 | 已接受 |
 | [0047](0047-goal-mode.md) | 目标模式：可验证完成条件、独立判定与自动续轮 | 提议 |
 | [0048](0048-full-access-permission-mode.md) | 完全访问权限模式 | 已接受 |
+| [0049](0049-macos-ad-hoc-signing.md) | macOS 默认 ad-hoc 签名 | 已接受 |

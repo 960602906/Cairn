@@ -29,7 +29,7 @@ Cairn 是一个**本地优先**的编程桌面 Agent。选择本地项目目录�
 - **平台层（自研）**：运行编排、上下文、工具注册表与工具流水线、权限与审批、检查点、事件日志、存储、凭据、界面和多 Agent 协作。
 - **引擎层（可替换）**：只负责 Agent 循环（调用模型 → 解析工具调用 → 回填结果）与模型通信，经 `AgentRuntime` 接口接入；首选 pi。工具执行仍由平台完成，更换引擎不影响权限、审计和存储。
 
-> **状态**：0.1.0 unsigned beta，MIT 许可证。M0～M7 已实施；Windows 可安装分发，macOS/Linux 的打包、三平台 CI 与按平台发布流水线已落地（验收见 [M6 验收报告](docs/plan/m6-report.md)）。M7 带来了跨会话记忆与团队模板（审查循环、流水线、试运行），验收见 [M7 验收报告](docs/plan/m7-report.md)。stable 仍被代码签名、法务审查与干净 VM 验收矩阵阻塞。首发 Windows x64，按用户安装。
+> **状态**：0.1.x beta，MIT 许可证。M0～M7 已实施；Windows 可安装分发，macOS 提供 ad-hoc 签名（未公证）的 DMG/ZIP，Linux 提供 AppImage/deb；三平台 CI 与按平台发布流水线已落地（验收见 [M6 验收报告](docs/plan/m6-report.md)）。M7 带来了跨会话记忆与团队模板（审查循环、流水线、试运行），验收见 [M7 验收报告](docs/plan/m7-report.md)。stable 仍被代码签名、法务审查与干净 VM 验收矩阵阻塞。首发 Windows x64，按用户安装。
 
 ## 主要特点 / Highlights
 
@@ -112,8 +112,9 @@ pnpm package:dir; pnpm e2e:packaged        # 解包产物：安装形态冒烟 +
 pnpm package:nsis; pnpm acceptance:installed  # 真实 NSIS：安装 / 卸载 / 重装恢复
 ```
 
-macOS 打包必须在 macOS 上运行，产出 arm64 与 x64 的 DMG、ZIP 及校验和；签名与公证
-需要 Apple Developer 账号（见[发布手册](docs/dev/release.md) §10）：
+macOS 打包必须在 macOS 上运行，产出 arm64 与 x64 的 DMG、ZIP 及校验和。默认做 ad-hoc
+签名：应用可启动，但 Gatekeeper 首次启动仍要求用户放行；Developer ID 签名与公证需要
+Apple Developer 账号（见[发布手册](docs/dev/release.md) §10）：
 
 ```bash
 pnpm package:mac
@@ -132,8 +133,9 @@ pnpm package:verify -- --linux
 
 ## 当前计划 / Plan
 
-- 当前发布通道：Windows；macOS 与 Linux 的打包和三平台发布流水线已在 M6 落地，启用通道
-  仍待签名、公证与真机安装验收（见 [M6 验收报告](docs/plan/m6-report.md)）。
+- 当前发布通道：Windows；macOS beta 使用 ad-hoc 签名（未公证），stable 仍待 Developer ID
+  签名、公证与真机安装验收；Linux 的打包与发布流程已在 M6 落地（见
+  [M6 验收报告](docs/plan/m6-report.md)）。
 - 首批模型：Anthropic、OpenAI、Gemini 三种协议格式；DeepSeek 等兼容服务走 OpenAI 格式。
 - 界面语言：中文、英文；主题支持浅色、深色与跟随系统。
 - 记忆与团队协作：M7 已落地，记忆按会话 / 项目 / 全局隔离，团队模板支持审查循环、流水线与

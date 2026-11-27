@@ -358,7 +358,7 @@ export function runElectronBuilder({
   env = process.env,
   platform = process.platform,
   signing = readSigningConfig(env),
-  macSigning = platform === 'darwin' ? readMacSigningConfig(env) : { mode: 'none' },
+  macSigning = platform === 'darwin' ? readMacSigningConfig(env) : { mode: 'adhoc' },
 }) {
   // 安装包只能在对应平台上构建：NSIS 需要 Windows，DMG 需要 macOS，AppImage/deb 需要 Linux
   // （ADR-0035、ADR-0041、ADR-0042）。

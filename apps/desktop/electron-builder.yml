@@ -84,13 +84,16 @@ mac:
       arch:
         - arm64
         - x64
-  # 未签名构建：本地与普通 PR 产出 unsigned 包，M6-02 的签名/公证在发布流水线开启。
+  # 这里不写死身份：`adhoc` 模式由 packaging.mjs 传 `--config.mac.identity=-`，
+  # `developer-id` 模式传真实证书身份。不能只依赖 `identity: null`——那会保留 Electron
+  # 自带的 linker 签名，没有覆盖打包后写入的 Resources，`codesign --verify` 失败，
+  # Gatekeeper 会把下载后的应用报成“已损坏”（ADR-0049）。
   identity: null
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # 公证默认关闭，由 macSigningBuilderArgs() 在凭据齐全时打开。
+  # 公证默认关闭；`developer-id` 模式由 macSigningBuilderArgs() 打开。
   notarize: false
 
 dmg:
