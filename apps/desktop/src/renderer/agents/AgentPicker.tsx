@@ -423,6 +423,7 @@ export function AgentPicker({
                     key={entry.key}
                     id={`${listId}-${entry.key}`}
                     role="option"
+                    data-kind="team"
                     aria-selected={isCurrent}
                     data-active={isActive}
                     onMouseEnter={() => setActive(index)}
@@ -472,6 +473,7 @@ export function AgentPicker({
                   <li
                     id={`${listId}-${entry.key}`}
                     role="option"
+                    data-kind="agent"
                     aria-selected={isCurrent}
                     data-active={isActive}
                     onMouseEnter={() => setActive(index)}

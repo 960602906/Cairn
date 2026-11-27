@@ -50,19 +50,21 @@ test('在新对话页与会话里选择 Agent', async ({ launch, userData }) => 
   await trigger.click()
 
   const list = window.getByRole('listbox', { name: '选择 Agent' })
-  // 四个内置 Agent 都已发布；草稿与归档的不会出现（这里也没有）。
-  await expect(list.getByRole('option')).toHaveCount(4)
-  await expect(list.getByRole('option', { name: /编程助手/ })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  )
+  // 三个内置团队模板与四个内置 Agent 都已发布；草稿与归档的不会出现（这里也没有）。
+  await expect(list.getByRole('option')).toHaveCount(7)
+  await expect(list.locator('[role="option"][data-kind="team"]')).toHaveCount(3)
+  await expect(list.getByRole('option', { name: /代码审查小组/ })).toBeVisible()
+  // 团队模板的副标题里也会出现主控名，这里只看单个 Agent 行。
+  await expect(
+    list.locator('[role="option"][data-kind="agent"]').filter({ hasText: '编程助手' }),
+  ).toHaveAttribute('aria-selected', 'true')
   await expect(window.getByRole('button', { name: '管理 Agents' })).toBeVisible()
   await shot(window, 'menu-open')
 
   const search = window.getByRole('combobox', { name: '搜索 Agent' })
   await expect(search).toBeFocused()
   await search.fill('审查')
-  await expect(list.getByRole('option')).toHaveCount(1)
+  await expect(list.getByRole('option')).toHaveCount(2)
   await search.fill('')
 
   await list.getByRole('option', { name: /代码审查员/ }).click()
@@ -85,9 +87,11 @@ test('在新对话页与会话里选择 Agent', async ({ launch, userData }) => 
   await window.getByRole('button', { name: '停止' }).click()
   await expect(runningTrigger).toBeEnabled()
 
-  // 最近使用的排在前面（同一组内）。
+  // 最近使用的排在前面（同一组内；团队模板单独成组，不计入）。
   await runningTrigger.click()
-  await expect(list.getByRole('option').first()).toContainText('代码审查员')
+  await expect(list.locator('[role="option"][data-kind="agent"]').first()).toContainText(
+    '代码审查员',
+  )
   await window.keyboard.press('Escape')
   await expect(list).toBeHidden()
 })
