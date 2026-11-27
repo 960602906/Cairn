@@ -124,7 +124,8 @@ describe('gh auth token candidates', () => {
   })
 
   it('uses the current platform and environment by default', () => {
-    expect(ghAuthCandidates()).toContain('gh')
+    // Windows 的可执行文件带 .exe；其余平台的第一个候选是不带后缀的 gh。
+    expect(ghAuthCandidates()[0]).toBe(process.platform === 'win32' ? 'gh.exe' : 'gh')
   })
 
   it('returns the first non-empty token', async () => {
