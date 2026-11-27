@@ -62,6 +62,7 @@
   "editor.members.noAgents": "还没有已发布的 Agent。先在 Agents 设置里创建并发布一个 Agent。",
   "editor.members.members": "成员",
   "editor.members.count": "已选 {{count}} / 50",
+  "editor.members.unavailable": "已归档或不可用",
   "editor.members.noMembers": "没有可选的成员。先发布更多 Agent，或换一个主控。",
   "editor.pattern.title": "协作模式",
   "editor.pattern.description": "决定成员如何参与：自由分派、往返审查，或按阶段执行。",

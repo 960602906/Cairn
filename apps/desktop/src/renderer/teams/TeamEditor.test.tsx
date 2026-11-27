@@ -84,6 +84,8 @@ function setup(
     readonly publishFails?: boolean
     readonly archiveFails?: boolean
     readonly unarchiveFails?: boolean
+    /** 额外的 Agent（例如已归档的用户 Agent），用于验证编辑器的成员列表。 */
+    readonly extraAgents?: readonly { summary: AgentSummary; detail: AgentDetail }[]
   } = {},
 ) {
   const calls: { method: string; params: unknown }[] = []
@@ -92,9 +94,15 @@ function setup(
   const api = {
     request: async (method: string, params: unknown) => {
       calls.push({ method, params })
-      if (method === 'agent.list') return { agents: builtin.map(summary) }
+      if (method === 'agent.list') {
+        return {
+          agents: [...builtin.map(summary), ...(options.extraAgents ?? []).map((e) => e.summary)],
+        }
+      }
       if (method === 'agent.get') {
         const { agentId } = params as { agentId: string }
+        const extra = options.extraAgents?.find((entry) => entry.summary.agentId === agentId)
+        if (extra) return extra.detail
         const agent = builtin.find((candidate) => candidate.id === agentId)
         return agent ? detailOf(agent) : { agentId, source: 'user', archived: false }
       }
@@ -645,6 +653,63 @@ describe('TeamEditor', () => {
     expect(definition.description['en-US']).toBe('Coordinator and reviewer')
     expect(definition.pattern).toBe('review-loop')
     expect(definition.reviewLoop?.maker).toBe(BUILTIN_REVIEWER.id)
+  })
+
+  it('lists archived referenced members so they can be unchecked', async () => {
+    const retiredDefinition: AgentDefinition = {
+      ...BUILTIN_TESTER,
+      id: 'user.retired',
+      source: 'user',
+      name: { 'zh-CN': '退役助手', 'en-US': 'Retired helper' },
+    }
+    const retired: { summary: AgentSummary; detail: AgentDetail } = {
+      summary: {
+        agentId: 'user.retired',
+        name: retiredDefinition.name,
+        description: {},
+        source: 'user',
+        archived: true,
+        status: 'published',
+        version: 1,
+        hasDraft: false,
+        modelMode: 'inherit',
+        updatedAt: 1,
+      },
+      detail: {
+        agentId: 'user.retired',
+        source: 'user',
+        archived: true,
+        published: retiredDefinition,
+        validation: { ok: true, errors: [], warnings: [] },
+      },
+    }
+    const team: AgentTeamDetail = {
+      teamId: 'user.team-1',
+      source: 'user',
+      archived: false,
+      draft: draft({ members: [BUILTIN_EXPLORER.id, 'user.retired'] }),
+      validation: { ok: true, errors: [], warnings: [] },
+    }
+    const { store, calls } = setup({ team, extraAgents: [retired] })
+    await renderEditor(store, { teamId: 'user.team-1' })
+    await waitFor(() => expect(screen.getByText('发布团队')).toBeDefined())
+
+    // 已归档的成员仍在列表里，带「已归档或不可用」，取消勾选后可以保存。
+    expect(screen.getByText('已归档或不可用')).toBeDefined()
+    const checkbox = screen.getByRole('checkbox', { name: /退役助手/ }) as HTMLInputElement
+    expect(checkbox.checked).toBe(true)
+    fireEvent.click(checkbox)
+    expect(screen.queryByText('已归档或不可用')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        method: 'team.saveDraft',
+        params: {
+          definition: expect.objectContaining({ members: [BUILTIN_EXPLORER.id] }),
+        },
+      }),
+    )
   })
 
   it('handles Esc, publishes dirty changes, and reports save / publish failures', async () => {
