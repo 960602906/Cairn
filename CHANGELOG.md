@@ -124,6 +124,14 @@
 
 ### Changed
 
+- 输入框卡片下方的项目 / 分支那一行移进了卡片底部工具栏，合并成一个「工作空间 · 分支」
+  下拉：新对话页可以在这里切换工作空间或分支，对话页只显示分支（项目在顶栏面包屑里），
+  不是 Git 仓库时不再出现，卡片下面也不再单独占一行。
+  The project/branch row below the composer now lives in the card's bottom toolbar as a single
+  "workspace · branch" dropdown. New sessions switch workspace or branch from it; conversations
+  show only the branch (the project is in the top-bar breadcrumb) and the control disappears
+  outside Git repositories, leaving nothing below the card.
+
 - 目标条收成输入框上方的单行细条：短状态、暂停/继续、改条件、删除（确认后清除）；不再显示
   轮次与活动时长。可用 `goal.updateCondition` 更新未结束目标的完成条件，当前轮不中断。
   The goal bar is now a single-row strip above the composer with a short status, pause/resume,
@@ -289,6 +297,14 @@
   Archived team templates can now be duplicated as-is, without unarchiving first.
 
 ### Fixed
+
+- 输入框打磨：目标条改条件时，输入法组字中的 Enter 不再提前保存，失焦保存也不再抢回焦点；
+  指令执行结果移到工具栏中间的空位，出现和消失不再顶动目标条与消息区；目标条错误行改用
+  工具栏的字号。
+  Composer polish: Enter used to confirm an IME composition no longer saves the goal
+  condition early, and saving on blur no longer steals focus back. Command results moved into
+  the toolbar's spare space so they no longer shift the goal bar or messages, and the goal
+  bar's error line now uses the toolbar's type scale.
 
 - 目标模式打磨：结束卡「查看目标」真正打开面板并展示最近一次目标的判定记录；活动时长超过
   1 小时改为 `Nh MMm`，不再与「1 分钟」的 `1:00` 混淆；暂停 / 结束的机器 detail 码改成可读

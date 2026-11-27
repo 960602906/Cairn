@@ -10,9 +10,10 @@
  * - 输入 `@` 弹出文件与文件夹候选（ComposerMentions，ADR-0037），发送时主进程把引用的内容附给模型。
  * - 文本框下面叠一层高亮（ComposerHighlight）：开头的指令、`@` 引用、网址和代码片段有底色或下划线；
  *   文本框自己的文字透明，只显示光标和选区。
- * - 下方左边是 Agent（当前会话使用哪一个，M6-08）与权限 / 计划模式合并菜单（上半部分选择只读 /
- *   询问 / 自动 / 完全访问，下半部分切换计划模式），右边是“供应商 · 模型”切换（只改当前会话，
- *   下一轮生效）、上下文占用圆环（点击显示最近用量与分类占比）与发送 / 停止按钮。
+ * - 下方左边是 Agent（当前会话使用哪一个，M6-08）、权限 / 计划模式合并菜单（上半部分选择只读 /
+ *   询问 / 自动 / 完全访问，下半部分切换计划模式）与 Git 分支切换（非 Git 仓库时不出现；项目在
+ *   顶栏面包屑里，不在这里重复），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、上下文
+ *   占用圆环（点击显示最近用量与分类占比）与发送 / 停止按钮。卡片下面不再单独占一行。
  */
 import {
   ArrowUp,
@@ -1539,6 +1540,10 @@ export function Composer({
               onOpenChange={setModeMenuOpen}
               returnFocus={() => textarea.current?.focus()}
             />
+            <WorkspaceGitBar
+              projectPath={projectPath}
+              returnFocus={() => textarea.current?.focus()}
+            />
             {/* 指令结果放在工具栏中间的空位：不占文档流、不改变输入框高度，窄窗口截断后悬停看全文。 */}
             {commandNotice && (
               <p
@@ -1602,7 +1607,6 @@ export function Composer({
           </div>
         </form>
       </div>
-      <WorkspaceGitBar projectPath={projectPath} returnFocus={() => textarea.current?.focus()} />
       <RestoreDialog
         sessionId={sessionId}
         target={restoreTarget}

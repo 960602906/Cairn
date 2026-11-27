@@ -1,6 +1,6 @@
 /**
- * 输入框下方的当前目录与 Git 分支（参考 LiveAgent）：新对话首页选择工作空间后显示工作空间名，
- * Git 仓库显示当前分支；可以从分支菜单切换，外部终端切换后窗口重新获得焦点时刷新。
+ * 输入框卡片工具栏里的工作空间与 Git 分支：新对话首页显示「工作空间 · 分支」，可以分别切换；
+ * 外部终端切换分支后窗口重新获得焦点时刷新。
  */
 import { execFileSync } from 'node:child_process'
 import { expect, test } from './app.js'
@@ -10,7 +10,7 @@ function git(dir: string, ...args: readonly string[]) {
   execFileSync('git', ['-C', dir, ...args], { stdio: 'pipe' })
 }
 
-test('新对话输入框下方显示目录与分支，焦点回来后刷新分支', async ({ launch, userData }) => {
+test('新对话输入框工具栏显示工作空间与分支，焦点回来后刷新分支', async ({ launch, userData }) => {
   const { app, window } = await launch({ env: { CAIRN_RUNTIME: 'fake' } })
   const dir = projectDir(userData)
   git(dir, 'init')
@@ -29,15 +29,21 @@ test('新对话输入框下方显示目录与分支，焦点回来后刷新分�
   await window.getByRole('menuitem', { name: '选择文件夹…' }).click()
 
   const workspace = window.getByRole('group', { name: '当前工作区' })
-  await expect(workspace.getByRole('button', { name: '工作空间：project' })).toBeVisible()
+  const trigger = workspace.getByRole('button', {
+    name: '工作空间：project，分支：feature/git-bar',
+  })
+  await expect(trigger).toBeVisible()
   await expect(workspace.getByText('project', { exact: true })).toBeVisible()
-  await expect(workspace.getByLabel('当前分支：feature/git-bar')).toBeVisible()
 
-  await workspace.getByLabel('当前分支：feature/git-bar').click()
+  await trigger.click()
   await window.getByRole('menuitem', { name: 'release/next' }).click()
-  await expect(workspace.getByLabel('当前分支：release/next')).toBeVisible()
+  await expect(
+    workspace.getByRole('button', { name: '工作空间：project，分支：release/next' }),
+  ).toBeVisible()
 
   git(dir, 'checkout', '-b', 'fix/focus-refresh')
   await window.evaluate("window.dispatchEvent(new Event('focus'))")
-  await expect(workspace.getByLabel('当前分支：fix/focus-refresh')).toBeVisible()
+  await expect(
+    workspace.getByRole('button', { name: '工作空间：project，分支：fix/focus-refresh' }),
+  ).toBeVisible()
 })

@@ -53,29 +53,38 @@ afterEach(() => {
 })
 
 describe('WorkspaceGitBar', () => {
-  it('shows the current directory with its material folder icon', async () => {
-    const { container } = render(view('/work/src'))
+  it('shows the workspace with its material folder icon in a new session', async () => {
+    const { container } = render(view('/work/src', { onSelectProject: vi.fn() }))
 
-    expect(screen.getByLabelText('当前目录：/work/src')).toBeTruthy()
+    expect(screen.getByLabelText('工作空间：src')).toBeTruthy()
     // 图标映射在首次渲染之后异步加载，首帧是通用目录图标。
     await waitFor(() =>
       expect(container.querySelector('img')?.getAttribute('src')).toBe('./folder-src.svg'),
     )
   })
 
-  it('shows the workspace name and its current branch', async () => {
+  it('renders nothing in a chat when the folder is not a Git repository', async () => {
+    const request = installBridge(async () => ({}))
+    const { container } = render(view('/work/src'))
+
+    await waitFor(() => expect(request).toHaveBeenCalledOnce())
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('shows the workspace name and its current branch in a new session', async () => {
     const request = installBridge(async () => ({
       branch: 'main',
       branches: ['main', 'feature/x'],
     }))
-    render(view('/work/demo'))
+    render(view('/work/demo', { onSelectProject: vi.fn() }))
 
-    expect(screen.getByLabelText('当前目录：/work/demo')).toBeTruthy()
+    expect(screen.getByLabelText('工作空间：demo')).toBeTruthy()
     expect(screen.getByText('demo')).toBeTruthy()
     expect(screen.queryByText('本地')).toBeNull()
     expect(await screen.findByText('main')).toBeTruthy()
     expect(request).toHaveBeenCalledWith('project.gitInfo', { path: '/work/demo' })
-    expect(screen.getByLabelText('当前分支：main')).toBeTruthy()
+    // 分支出现后，触发器把工作空间与分支一起读出来。
+    expect(await screen.findByLabelText('工作空间：demo，分支：main')).toBeTruthy()
   })
 
   it('renders nothing without a project directory', () => {
@@ -86,22 +95,23 @@ describe('WorkspaceGitBar', () => {
     expect(request).not.toHaveBeenCalled()
   })
 
-  it('keeps the directory when the branch cannot be read', async () => {
+  it('keeps the workspace when the branch cannot be read', async () => {
     const request = installBridge(async () => {
       throw new Error('not a repository')
     })
-    render(view('/work/demo'))
+    render(view('/work/demo', { onSelectProject: vi.fn() }))
 
-    expect(screen.getByLabelText('当前目录：/work/demo')).toBeTruthy()
+    expect(screen.getByLabelText('工作空间：demo')).toBeTruthy()
     expect(request).toHaveBeenCalledOnce()
     await waitFor(() => expect(screen.queryByLabelText(/^当前分支/)).toBeNull())
     expect(screen.queryByLabelText(/^当前分支/)).toBeNull()
+    expect(screen.getByLabelText('工作空间：demo')).toBeTruthy()
   })
 
-  it('still shows the directory when the main bridge is unavailable', () => {
-    render(view('/work/demo'))
+  it('still shows the workspace when the main bridge is unavailable', () => {
+    render(view('/work/demo', { onSelectProject: vi.fn() }))
 
-    expect(screen.getByLabelText('当前目录：/work/demo')).toBeTruthy()
+    expect(screen.getByLabelText('工作空间：demo')).toBeTruthy()
     expect(screen.queryByLabelText(/^当前分支/)).toBeNull()
   })
 
@@ -232,7 +242,10 @@ describe('WorkspaceGitBar', () => {
   })
 
   it('hands focus to the given target after choosing a workspace or branch', async () => {
-    installBridge(async () => ({ branch: 'main', branches: ['main', 'feature/x'] }))
+    installBridge(async (method, params) => {
+      if (method === 'project.gitCheckout') return { branch: params['branch'] }
+      return { branch: 'main', branches: ['main', 'feature/x'] }
+    })
     const onSelectProject = vi.fn()
     const returnFocus = vi.fn()
     render(
@@ -246,16 +259,16 @@ describe('WorkspaceGitBar', () => {
       }),
     )
 
-    await userEvent.click(await screen.findByLabelText('当前分支：main'))
+    await userEvent.click(await screen.findByLabelText('工作空间：demo，分支：main'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'feature/x' }))
     await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(1))
 
-    await userEvent.click(screen.getByLabelText('工作空间：demo'))
+    await userEvent.click(await screen.findByLabelText('工作空间：demo，分支：feature/x'))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'other' }))
     expect(onSelectProject).toHaveBeenCalledWith('/work/other')
     await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(2))
 
-    await userEvent.click(screen.getByLabelText('工作空间：demo'))
+    await userEvent.click(await screen.findByLabelText('工作空间：demo，分支：feature/x'))
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(returnFocus).toHaveBeenCalledTimes(3))
   })
