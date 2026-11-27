@@ -37,7 +37,7 @@
   "editor.archive": "归档",
   "editor.duplicate": "复制为副本",
   "editor.unarchive": "取消归档",
-  "editor.archivedHint": "已归档的模板只读；取消归档后可以继续编辑、发布与试运行。",
+  "editor.archivedHint": "已归档的模板只读，可以复制为副本；取消归档后可以继续编辑、发布与试运行。",
   "editor.builtinHint": "内置模板只读，可以直接试运行；要修改请点「复制为副本」，副本可以编辑和发布。",
   "source.builtin": "内置",
   "editor.archiveConfirm.title": "归档这个模板？",

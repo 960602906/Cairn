@@ -207,7 +207,7 @@ export function TeamEditor({
   const published = detail?.published
   const archived = detail?.archived === true
   const builtin = detail?.source === 'builtin'
-  /** 已归档与内置模板都只读：不能保存、发布或归档，只能试运行 / 复制。 */
+  /** 已归档与内置模板都只读：不能保存、发布或归档；内置模板可试运行与复制，已归档的可复制或取消归档。 */
   const readonly = archived || builtin
   const status = archived ? 'archived' : dirty ? 'dirty' : published ? 'published' : 'draft'
   const nextVersion = (published?.version ?? 0) + 1
@@ -541,10 +541,16 @@ export function TeamEditor({
         <div className="flex shrink-0 items-center gap-1.5">
           {savedAt && !dirty && <Check aria-label={t('editor.saved')} className="size-4 text-ok" />}
           {archived ? (
-            <Button variant="primary" size="sm" disabled={busy} onClick={() => void unarchive()}>
-              <Upload />
-              {t('editor.unarchive')}
-            </Button>
+            <>
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void duplicate()}>
+                <Copy />
+                {t('editor.duplicate')}
+              </Button>
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => void unarchive()}>
+                <Upload />
+                {t('editor.unarchive')}
+              </Button>
+            </>
           ) : builtin ? (
             <>
               <Button
