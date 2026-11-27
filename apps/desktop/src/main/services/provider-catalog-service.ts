@@ -5,15 +5,19 @@
  * - 插件文件只从同一仓库读取：`url` 是相对 `index.json` 的路径或仓库内的 https 地址（`path` 是旧名），
  *   省略时为 `plugins/<id>.json`；指向仓库以外的项被跳过。下载到的插件 id 必须与目录中的一致。
  * - `index.json` 的 `schemaVersion` 比 Cairn 支持的高时报 `providers.catalog.unsupported_version`。
+ * - 只列出 `type` 为 `provider`（或省略）的项，其他类型留给以后的 Cairn（ADR-0050）。
+ * - 来源：目录项声明 `source: official`、插件文件没写 `source` 或也写 `official` 时，安装为官方插件；
+ *   否则是第三方。实际来源由插件服务记录，不从插件内容读取。
  * - 预览返回插件文件的 `sha256`；安装时内容必须与预览时相同，保证装的就是用户看过的服务与地址。
  * - 相对路径的图标一律相对仓库根目录，解析成 https 地址；写入插件目录的就是解析后的内容。
  * - 目录不可达时报 `providers.catalog.unreachable`，不影响内置服务与本地文件安装。
  */
 import { createHash } from 'node:crypto'
-import { PROVIDER_PLUGIN_MAX_BYTES, resolveAssetUrl } from '@cairn/core'
+import { claimsOfficial, PROVIDER_PLUGIN_MAX_BYTES, resolveAssetUrl } from '@cairn/core'
 import {
   HTTPS_URL_PATTERN,
   PROVIDER_CATALOG_SCHEMA_VERSION,
+  PROVIDER_PLUGIN_TYPE,
   ProviderCatalogIndex,
   ProviderCatalogIndexEntry,
   RELATIVE_ASSET_PATTERN,
@@ -88,7 +92,22 @@ export function createProviderCatalogService(
       .filter((part) => part !== '' && part !== '.')
       .join('/')}`
   }
-  const downloads = new Map<string, { sha256: string; text: string }>()
+  const downloads = new Map<
+    string,
+    { sha256: string; text: string; origin: 'official' | 'third-party' }
+  >()
+
+  /** 官方：目录项声明官方，插件文件没写来源或也声明官方。 */
+  const originOf = (entrySource: string | undefined, text: string): 'official' | 'third-party' => {
+    if (!claimsOfficial(entrySource)) return 'third-party'
+    let fileSource: unknown
+    try {
+      fileSource = (JSON.parse(text.replace(/^\uFEFF/, '')) as { source?: unknown } | null)?.source
+    } catch {
+      return 'third-party'
+    }
+    return fileSource === undefined || fileSource === 'official' ? 'official' : 'third-party'
+  }
 
   const read = async (url: string, maxBytes: number): Promise<string> => {
     try {
@@ -132,6 +151,7 @@ export function createProviderCatalogService(
     for (const raw of parsed.data.plugins) {
       const entry = ProviderCatalogIndexEntry.safeParse(raw)
       if (!entry.success || seen.has(entry.data.id)) continue
+      if ((entry.data.type ?? PROVIDER_PLUGIN_TYPE) !== PROVIDER_PLUGIN_TYPE) continue
       const file = fileOf(entry.data)
       if (file === undefined) continue
       seen.add(entry.data.id)
@@ -145,7 +165,7 @@ export function createProviderCatalogService(
     const entry = (await entries()).find((item) => item.id === id)
     if (!entry) throw new RpcError(ProviderCatalogErrorCode.NotFound, { id })
     const text = await read(entry.file, PROVIDER_PLUGIN_MAX_BYTES)
-    const result = { sha256: sha256(text), text }
+    const result = { sha256: sha256(text), text, origin: originOf(entry.source, text) }
     downloads.set(id, result)
     return result
   }
@@ -157,6 +177,8 @@ export function createProviderCatalogService(
         return {
           id: entry.id,
           name: entry.name,
+          ...(entry.author ? { author: entry.author } : {}),
+          source: claimsOfficial(entry.source) ? 'official' : 'third-party',
           ...(entry.description ? { description: entry.description } : {}),
           ...(entry.version ? { version: entry.version } : {}),
           ...(entry.homepage ? { homepage: entry.homepage } : {}),
@@ -171,6 +193,7 @@ export function createProviderCatalogService(
       const { replaces, plugin } = options.plugins.previewText(fetched.text, {
         base: indexUrl,
         expectId: id,
+        origin: fetched.origin,
       })
       return { replaces, sha256: fetched.sha256, plugin }
     },
@@ -182,6 +205,7 @@ export function createProviderCatalogService(
       const result = options.plugins.installText(fetched.text, {
         base: indexUrl,
         expectId: id,
+        origin: fetched.origin,
       })
       downloads.delete(id)
       return result

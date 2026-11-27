@@ -257,6 +257,30 @@ const PluginId = z.string().regex(PROVIDER_PLUGIN_ID_PATTERN)
 /** 当前支持的插件格式版本。 */
 export const PROVIDER_PLUGIN_SCHEMA_VERSION = 1
 
+/**
+ * 插件类型（ADR-0050）：官方目录仓库以后可以放别的插件种类，用 `type` 区分。当前 Cairn 只认识 `provider`
+ * （API / 模型供应商）；省略时视为 `provider`，其他类型在目录中跳过，从文件安装时拒绝。
+ */
+export const PROVIDER_PLUGIN_TYPE = 'provider'
+export const PluginType = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/)
+
+/**
+ * 插件声明的来源：`official`（Cairn 官方目录维护）或 `third-party`。只是声明：界面上的“官方”标记只给从官方目录
+ * 安装、且目录项（与插件文件，如果写了）都声明 `official` 的插件；其他值与省略都按第三方处理。
+ */
+export const PluginSourceClaim = z.string().max(32)
+export type PluginSource = 'official' | 'third-party'
+
+/** 插件作者：个人或组织名，只用于显示。官方插件为 `Cairn`。 */
+export const PluginAuthor = z.string().trim().min(1).max(80)
+
+/**
+ * 已安装插件的实际来源（界面显示用，不来自插件内容）：`official` 从官方目录安装且声明为官方、文件未被改动；
+ * `third-party` 从官方目录安装的第三方插件；`local` 从文件安装或直接放进插件目录。
+ */
+export const PluginOrigin = z.enum(['official', 'third-party', 'local'])
+export type PluginOrigin = z.infer<typeof PluginOrigin>
+
 /** 插件中的模型：只有 `id` 必填，其余缺省时取条目的 `modelDefaults`。 */
 export const ProviderPluginModel = z.object({
   id: Id.max(256),
@@ -298,8 +322,13 @@ export type ProviderPluginEntry = z.infer<typeof ProviderPluginEntry>
 export const ProviderPluginManifest = z
   .object({
     schemaVersion: z.literal(PROVIDER_PLUGIN_SCHEMA_VERSION),
+    /** 省略时为 `provider`；其他类型由 `parseProviderPlugin` 拒绝。 */
+    type: PluginType.optional(),
     id: PluginId,
     name: z.string().trim().min(1).max(80),
+    author: PluginAuthor.optional(),
+    /** 声明的来源，见 `PluginSourceClaim`。 */
+    source: PluginSourceClaim.optional(),
     version: z.string().max(32).optional(),
     description: z.string().max(280).optional(),
     homepage: HttpsUrl.optional(),
@@ -316,6 +345,9 @@ export type ProviderPluginManifest = z.infer<typeof ProviderPluginManifest>
 export const ProviderPluginInfo = z.object({
   id: PluginId,
   name: z.string().min(1).max(80),
+  author: z.string().min(1).max(80).optional(),
+  /** 实际来源（由 Cairn 记录，不取自插件内容）。 */
+  origin: PluginOrigin,
   version: z.string().max(32).optional(),
   description: z.string().max(280).optional(),
   homepage: HttpsUrl.optional(),
@@ -340,8 +372,12 @@ export const PROVIDER_CATALOG_SCHEMA_VERSION = 1
 
 /** `index.json` 中的一项；无效的项跳过，不影响其余插件。 */
 export const ProviderCatalogIndexEntry = z.object({
+  /** 省略时为 `provider`；其他类型的项被跳过。 */
+  type: PluginType.optional(),
   id: PluginId,
   name: z.string().trim().min(1).max(80),
+  author: PluginAuthor.optional(),
+  source: PluginSourceClaim.optional(),
   description: z.string().max(280).optional(),
   version: z.string().max(32).optional(),
   homepage: HttpsUrl.optional(),
@@ -372,6 +408,9 @@ export const ProviderCatalogIndex = z.object({
 export const ProviderCatalogItem = z.object({
   id: PluginId,
   name: z.string().min(1).max(80),
+  author: z.string().min(1).max(80).optional(),
+  /** 目录项声明为 `official` 时是官方，否则（包括省略）是第三方。 */
+  source: z.enum(['official', 'third-party']),
   description: z.string().max(280).optional(),
   version: z.string().max(32).optional(),
   homepage: HttpsUrl.optional(),

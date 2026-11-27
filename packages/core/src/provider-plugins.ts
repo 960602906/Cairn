@@ -9,11 +9,13 @@ import {
   HTTPS_URL_PATTERN,
   ICON_DATA_URL_PATTERN,
   PROVIDER_PLUGIN_SCHEMA_VERSION,
+  PROVIDER_PLUGIN_TYPE,
   RELATIVE_ASSET_PATTERN,
   ProviderPluginManifest,
   ProviderTemplateSpec,
   type ModelCapabilities,
   type ModelProfile,
+  type PluginOrigin,
   type ProviderPluginEntry,
   type ProviderPluginInfo,
 } from '@cairn/protocol'
@@ -25,6 +27,7 @@ export const ProviderPluginErrorCode = {
   TooLarge: 'providers.plugin.too_large',
   Duplicate: 'providers.plugin.duplicate',
   NotFound: 'providers.plugin.not_found',
+  UnsupportedType: 'providers.plugin.unsupported_type',
 } as const
 export type ProviderPluginErrorCode =
   (typeof ProviderPluginErrorCode)[keyof typeof ProviderPluginErrorCode]
@@ -60,6 +63,13 @@ export function parseProviderPlugin(text: string): ProviderPluginManifest {
     throw new ProviderPluginError(
       ProviderPluginErrorCode.UnsupportedVersion,
       `Unsupported plugin schemaVersion ${version}.`,
+    )
+  }
+  const type = (json as { type?: unknown } | null)?.type
+  if (type !== undefined && type !== PROVIDER_PLUGIN_TYPE) {
+    throw new ProviderPluginError(
+      ProviderPluginErrorCode.UnsupportedType,
+      `This plugin is of type ${JSON.stringify(type)}; this Cairn only installs provider plugins.`,
     )
   }
   const parsed = ProviderPluginManifest.safeParse(json)
@@ -178,11 +188,22 @@ function templateOf(
   return template
 }
 
-/** 插件 → 界面使用的信息（模板已展开）。还没解析的相对图标不显示。 */
-export function providerPluginInfo(manifest: ProviderPluginManifest): ProviderPluginInfo {
+/** 插件声明的来源是否为官方（只是声明；能否显示“官方”由安装来源决定）。 */
+export const claimsOfficial = (source: string | undefined): boolean => source === 'official'
+
+/**
+ * 插件 → 界面使用的信息（模板已展开）。还没解析的相对图标不显示。`origin` 由调用方按安装来源给出，
+ * 不取自插件内容，插件无法自称官方。
+ */
+export function providerPluginInfo(
+  manifest: ProviderPluginManifest,
+  origin: PluginOrigin = 'local',
+): ProviderPluginInfo {
   return {
     id: manifest.id,
     name: manifest.name,
+    ...(manifest.author ? { author: manifest.author } : {}),
+    origin,
     ...(manifest.version ? { version: manifest.version } : {}),
     ...(manifest.description ? { description: manifest.description } : {}),
     ...(manifest.homepage ? { homepage: manifest.homepage } : {}),

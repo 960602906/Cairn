@@ -27,6 +27,7 @@ import type {
   ErrorInfo,
   IconSource,
   ModelCompat,
+  PluginOrigin,
   ModelProfile,
   ProviderConfig,
   ProviderKind,
@@ -45,6 +46,7 @@ import {
   Plus,
   Puzzle,
   RefreshCw,
+  ShieldCheck,
   Search,
   SquarePen,
   Trash2,
@@ -809,6 +811,55 @@ function RemovePlugin({
   )
 }
 
+/** 插件网站：显示主机名的文字链接，用系统浏览器打开。 */
+function HomepageLink({ href }: { readonly href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex min-w-0 items-center gap-0.5 text-accent underline-offset-2 hover:underline [&_svg]:size-3 [&_svg]:shrink-0"
+    >
+      <span className="truncate">{hostOf(href)}</span>
+      <ExternalLink />
+    </a>
+  )
+}
+
+/** 实际来源的标记：官方只给从官方目录安装、声明为官方且未改动的插件，不取自插件内容。 */
+function OriginBadge({ origin }: { readonly origin: PluginOrigin | undefined }) {
+  const { t } = useTranslation('settings')
+  const value = origin ?? 'local'
+  if (value === 'official') {
+    return (
+      <span className="inline-flex h-[17px] shrink-0 items-center gap-0.5 rounded-[5px] bg-ok-soft px-1.5 text-[10.5px] font-medium whitespace-nowrap text-ok [&_svg]:size-3">
+        <ShieldCheck />
+        {t('providers.plugins.origin.official')}
+      </span>
+    )
+  }
+  return <SmallTag>{t(`providers.plugins.origin.${value}`)}</SmallTag>
+}
+
+/** 作者与网站：作者是插件自述的显示名，网站是可点击的文字链接。 */
+function PluginMeta({
+  author,
+  homepage,
+}: {
+  readonly author: string | undefined
+  readonly homepage: string | undefined
+}) {
+  const { t } = useTranslation('settings')
+  if (!author && !homepage) return null
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted">
+      {author && <span className="truncate">{t('providers.plugins.author', { author })}</span>}
+      {author && homepage && <span aria-hidden>·</span>}
+      {homepage && <HomepageLink href={homepage} />}
+    </span>
+  )
+}
+
 /** 安装前的预览：插件的服务与 Key 会发送到的全部地址；确认后由 `install` 写入。 */
 interface PluginPreview {
   readonly plugin: ProviderPluginInfo
@@ -849,25 +900,22 @@ function PluginPreviewDialog({
           preview ? <PluginGlyph source={pluginIconSourceOf(preview.plugin)} size={22} /> : null
         }
       >
-        <DialogTitle>
-          {t('providers.plugins.previewTitle', { name: preview?.plugin.name ?? '' })}
-        </DialogTitle>
+        <div className="flex items-center gap-2">
+          <DialogTitle>
+            {t('providers.plugins.previewTitle', { name: preview?.plugin.name ?? '' })}
+          </DialogTitle>
+          {preview && <OriginBadge origin={preview.plugin.origin} />}
+        </div>
         <DialogDescription>
           {preview?.origin === 'catalog'
             ? t('providers.plugins.previewFromCatalog')
             : t('providers.plugins.previewFromFile')}{' '}
           {t('providers.plugins.previewDescription')}
         </DialogDescription>
-        {preview?.plugin.homepage && (
-          <a
-            href={preview.plugin.homepage}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-flex items-center gap-1 text-note text-muted hover:text-fg [&_svg]:size-3"
-          >
-            {hostOf(preview.plugin.homepage)}
-            <ExternalLink />
-          </a>
+        {preview && (preview.plugin.author || preview.plugin.homepage) && (
+          <div className="mt-2 text-note">
+            <PluginMeta author={preview.plugin.author} homepage={preview.plugin.homepage} />
+          </div>
         )}
         <ul
           aria-label={t('providers.plugins.previewList')}
@@ -1031,71 +1079,82 @@ function OfficialCatalog({
           {state.status === 'ready' && state.plugins.length === 0 && (
             <p className="px-1 py-6 text-note text-muted">{t('providers.catalog.empty')}</p>
           )}
-          {state.status === 'ready' && state.plugins.length > 0 && (
-            <ul aria-label={t('providers.catalog.list')} className="flex flex-col gap-1">
-              {state.plugins.map((item) => {
-                const current = installedById.get(item.id)
-                const update =
-                  current !== undefined &&
-                  item.version !== undefined &&
-                  current.version !== item.version
-                return (
-                  <li
-                    key={item.id}
-                    className="flex items-center gap-2.5 rounded-[9px] bg-sunk px-2.5 py-2"
-                  >
-                    <PluginGlyph source={pluginIconSourceOf(item)} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-fg">
-                        <span className="truncate">{item.name}</span>
-                        {item.version && (
-                          <span className="shrink-0 font-normal text-faint">
-                            {t('providers.plugins.version', { version: item.version })}
+          {state.status === 'ready' &&
+            (['official', 'third-party'] as const).map((group) => {
+              const items = state.plugins.filter((item) => item.source === group)
+              if (items.length === 0) return null
+              const heading =
+                group === 'official'
+                  ? t('providers.catalog.groupOfficial')
+                  : t('providers.catalog.groupThirdParty')
+              return (
+                <section key={group} aria-label={heading} className="flex flex-col gap-1">
+                  <h3 className="flex items-center gap-1.5 px-1 pt-1 text-[11.5px] font-medium text-muted">
+                    {group === 'official' && <ShieldCheck className="size-3.5 text-ok" />}
+                    {heading}
+                  </h3>
+                  {group === 'third-party' && (
+                    <p className="px-1 text-note leading-relaxed text-muted">
+                      {t('providers.catalog.thirdPartyHint')}
+                    </p>
+                  )}
+                  <ul className="flex flex-col gap-1">
+                    {items.map((item) => {
+                      const current = installedById.get(item.id)
+                      const update =
+                        current !== undefined &&
+                        item.version !== undefined &&
+                        current.version !== item.version
+                      return (
+                        <li
+                          key={item.id}
+                          className="flex items-center gap-2.5 rounded-[9px] bg-sunk px-2.5 py-2"
+                        >
+                          <PluginGlyph source={pluginIconSourceOf(item)} />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-fg">
+                              <span className="truncate">{item.name}</span>
+                              {item.version && (
+                                <span className="shrink-0 font-normal text-faint">
+                                  {t('providers.plugins.version', { version: item.version })}
+                                </span>
+                              )}
+                              {group === 'official' && <OriginBadge origin="official" />}
+                              {current !== undefined && (
+                                <SmallTag>
+                                  {update
+                                    ? t('providers.catalog.update')
+                                    : t('providers.catalog.installed')}
+                                </SmallTag>
+                              )}
+                            </span>
+                            <PluginMeta author={item.author} homepage={item.homepage} />
+                            {item.description && (
+                              <span className="block truncate text-[11.5px] text-muted">
+                                {item.description}
+                              </span>
+                            )}
                           </span>
-                        )}
-                        {current !== undefined && (
-                          <SmallTag>
-                            {update
-                              ? t('providers.catalog.update')
-                              : t('providers.catalog.installed')}
-                          </SmallTag>
-                        )}
-                      </span>
-                      {item.description && (
-                        <span className="block truncate text-[11.5px] text-muted">
-                          {item.description}
-                        </span>
-                      )}
-                    </span>
-                    {item.homepage && (
-                      <a
-                        href={item.homepage}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={t('providers.catalog.homepage', { name: item.name })}
-                        className="inline-flex size-7 shrink-0 items-center justify-center rounded-item text-muted transition-colors hover:bg-hover hover:text-fg [&_svg]:size-3.5"
-                      >
-                        <ExternalLink />
-                      </a>
-                    )}
-                    <Button
-                      size="sm"
-                      disabled={opening !== undefined}
-                      aria-label={t('providers.catalog.details', { name: item.name })}
-                      onClick={() => void show(item)}
-                    >
-                      {opening === item.id && <Spinner />}
-                      {current === undefined
-                        ? t('providers.catalog.view')
-                        : update
-                          ? t('providers.catalog.updateAction')
-                          : t('providers.catalog.reinstall')}
-                    </Button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+                          <Button
+                            size="sm"
+                            disabled={opening !== undefined}
+                            aria-label={t('providers.catalog.details', { name: item.name })}
+                            onClick={() => void show(item)}
+                          >
+                            {opening === item.id && <Spinner />}
+                            {current === undefined
+                              ? t('providers.catalog.view')
+                              : update
+                                ? t('providers.catalog.updateAction')
+                                : t('providers.catalog.reinstall')}
+                          </Button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
+              )
+            })}
         </div>
         <a
           href={OFFICIAL_CATALOG_PAGE}
@@ -1184,14 +1243,16 @@ function ProviderPlugins() {
             >
               <PluginGlyph source={pluginIconSourceOf(plugin)} size={24} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium text-fg">
-                  {plugin.name}
+                <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-fg">
+                  <span className="truncate">{plugin.name}</span>
                   {plugin.version && (
-                    <span className="ml-1.5 font-normal text-faint">
+                    <span className="shrink-0 font-normal text-faint">
                       {t('providers.plugins.version', { version: plugin.version })}
                     </span>
                   )}
+                  <OriginBadge origin={plugin.origin} />
                 </span>
+                <PluginMeta author={plugin.author} homepage={plugin.homepage} />
                 <span className="block truncate text-[11.5px] text-muted">
                   {t('providers.plugins.services', { count: plugin.templates.length })}
                   {plugin.description ? ` · ${plugin.description}` : ''}

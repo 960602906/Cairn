@@ -8,9 +8,13 @@
  * - `previewText` / `installText`：同样的校验与写入，内容来自官方目录（`provider-catalog-service`）；
  *   相对路径的图标按插件文件的地址解析后写入。
  * - `remove`：删除插件文件。已用插件添加的供应商把值复制进了配置，不受影响。
+ * - 来源（ADR-0050）：从官方目录安装时，在 `.provenance.json` 中记下插件的实际来源与写入内容的 `sha256`。
+ *   只有记录存在、文件内容与记录一致时才显示为官方或第三方；从文件安装、直接放进目录或被改动过的插件都是
+ *   `local`。插件内容里的 `source` 只是声明，无法让文件安装的插件显示为官方。
  *
  * 插件只有数据，不执行代码。不依赖 Electron；选择文件的对话框由调用方提供。
  */
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
@@ -24,6 +28,7 @@ import {
 import {
   PROVIDER_PLUGIN_ID_PATTERN,
   RpcError,
+  type PluginOrigin,
   type ProviderPluginInfo,
   type ProviderPluginManifest,
   type ProviderPluginSkipped,
@@ -59,12 +64,26 @@ export interface TextSource {
   readonly base?: string
   /** 插件 id 必须是这个（来自官方目录的索引），否则报 `providers.catalog.invalid`。 */
   readonly expectId?: string
+  /** 来自官方目录时的实际来源；省略表示本地文件。 */
+  readonly origin?: Exclude<PluginOrigin, 'local'>
 }
+
+/** 记录从官方目录安装的插件来源的文件；以 `.` 开头，扫描时不当作插件。 */
+export const PROVENANCE_FILE = '.provenance.json'
+
+interface Provenance {
+  readonly origin: Exclude<PluginOrigin, 'local'>
+  readonly sha256: string
+}
+
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 
 interface Loaded {
   readonly file: string
   readonly manifest: ProviderPluginManifest
   readonly info: ProviderPluginInfo
+  /** 文件内容的摘要，与来源记录比对。 */
+  readonly sha256: string
 }
 
 const missing = (error: unknown) => {
@@ -80,7 +99,11 @@ function rethrow(error: unknown): never {
 }
 
 /** 读取并解析一个插件文件；符号链接、目录与过大的文件都拒绝。 */
-function load(file: string): { manifest: ProviderPluginManifest; info: ProviderPluginInfo } {
+function load(file: string): {
+  manifest: ProviderPluginManifest
+  info: ProviderPluginInfo
+  sha256: string
+} {
   const stat = fs.lstatSync(file)
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw new ProviderPluginError(ProviderPluginErrorCode.Invalid, 'Not a regular file.')
@@ -88,17 +111,22 @@ function load(file: string): { manifest: ProviderPluginManifest; info: ProviderP
   if (stat.size > PROVIDER_PLUGIN_MAX_BYTES) {
     throw new ProviderPluginError(ProviderPluginErrorCode.TooLarge, 'The plugin file is too large.')
   }
-  return parse(fs.readFileSync(file, 'utf8'))
+  const text = fs.readFileSync(file, 'utf8')
+  return { ...parse(text), sha256: sha256(text) }
 }
 
 function parse(
   text: string,
   base?: string,
+  origin: PluginOrigin = 'local',
 ): { manifest: ProviderPluginManifest; info: ProviderPluginInfo } {
   const parsed = parseProviderPlugin(text)
   const manifest = base === undefined ? parsed : resolvePluginIcons(parsed, base)
-  return { manifest, info: providerPluginInfo(manifest) }
+  return { manifest, info: providerPluginInfo(manifest, origin) }
 }
+
+/** 写入插件目录的内容（校验后的插件，固定格式）。 */
+const serialize = (manifest: ProviderPluginManifest) => `${JSON.stringify(manifest, null, 2)}\n`
 
 const codeOf = (error: unknown): string =>
   error instanceof ProviderPluginError ? error.code : ProviderPluginErrorCode.Invalid
@@ -106,6 +134,38 @@ const codeOf = (error: unknown): string =>
 export function createProviderPluginService(
   options: ProviderPluginServiceOptions,
 ): ProviderPluginService {
+  const provenanceFile = path.join(options.dir, PROVENANCE_FILE)
+
+  const readProvenance = (): Record<string, Provenance> => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(provenanceFile, 'utf8')) as { plugins?: unknown }
+      const out: Record<string, Provenance> = {}
+      for (const [id, value] of Object.entries((raw.plugins ?? {}) as Record<string, unknown>)) {
+        const record = value as Partial<Provenance> | null
+        if (
+          (record?.origin === 'official' || record?.origin === 'third-party') &&
+          typeof record.sha256 === 'string'
+        ) {
+          out[id] = { origin: record.origin, sha256: record.sha256 }
+        }
+      }
+      return out
+    } catch {
+      return {}
+    }
+  }
+
+  const writeProvenance = (id: string, record: Provenance | undefined) => {
+    const all = readProvenance()
+    if (record) all[id] = record
+    else if (id in all) delete all[id]
+    else return
+    fs.mkdirSync(options.dir, { recursive: true })
+    const temp = `${provenanceFile}.${process.pid}.tmp`
+    fs.writeFileSync(temp, `${JSON.stringify({ version: 1, plugins: all }, null, 2)}\n`)
+    fs.renameSync(temp, provenanceFile)
+  }
+
   /** `all` 含被同 id 挡住的文件；`loaded` 只含生效的。 */
   const scan = (): { loaded: Loaded[]; all: Loaded[]; skipped: ProviderPluginSkipped[] } => {
     let names: string[]
@@ -119,17 +179,29 @@ export function createProviderPluginService(
     const all: Loaded[] = []
     const skipped: ProviderPluginSkipped[] = []
     const seen = new Set<string>()
-    for (const name of names.filter((n) => n.toLowerCase().endsWith('.json')).sort()) {
+    const provenance = readProvenance()
+    for (const name of names
+      .filter((n) => !n.startsWith('.') && n.toLowerCase().endsWith('.json'))
+      .sort()) {
       const file = path.join(options.dir, name)
       try {
-        const { manifest, info } = load(file)
-        all.push({ file, manifest, info })
+        const loadedFile = load(file)
+        const { manifest } = loadedFile
+        const record = provenance[manifest.id]
+        const origin: PluginOrigin =
+          record !== undefined &&
+          record.sha256 === loadedFile.sha256 &&
+          path.basename(file) === `${manifest.id}.json`
+            ? record.origin
+            : 'local'
+        const info = { ...loadedFile.info, origin }
+        all.push({ file, manifest, info, sha256: loadedFile.sha256 })
         if (seen.has(manifest.id)) {
           skipped.push({ file: name, code: ProviderPluginErrorCode.Duplicate })
           continue
         }
         seen.add(manifest.id)
-        loaded.push({ file, manifest, info })
+        loaded.push({ file, manifest, info, sha256: loadedFile.sha256 })
       } catch (error) {
         if (missing(error)) continue
         skipped.push({ file: name, code: codeOf(error) })
@@ -140,14 +212,22 @@ export function createProviderPluginService(
 
   const existingOf = (id: string) => scan().all.filter((item) => item.manifest.id === id)
 
-  /** 以 `<插件 id>.json` 写入（先写临时文件再改名），删掉同 id 的其他文件；返回是否替换了已有插件。 */
-  const write = (manifest: ProviderPluginManifest): boolean => {
+  /**
+   * 以 `<插件 id>.json` 写入（先写临时文件再改名），删掉同 id 的其他文件，并更新来源记录（本地文件安装时清除）；
+   * 返回是否替换了已有插件。
+   */
+  const write = (
+    manifest: ProviderPluginManifest,
+    origin: Exclude<PluginOrigin, 'local'> | undefined,
+  ): boolean => {
     const existing = existingOf(manifest.id)
     fs.mkdirSync(options.dir, { recursive: true })
     const dest = path.join(options.dir, `${manifest.id}.json`)
     const temp = `${dest}.${process.pid}.tmp`
-    fs.writeFileSync(temp, `${JSON.stringify(manifest, null, 2)}\n`)
+    const text = serialize(manifest)
+    fs.writeFileSync(temp, text)
     fs.renameSync(temp, dest)
+    writeProvenance(manifest.id, origin ? { origin, sha256: sha256(text) } : undefined)
     for (const item of existing) {
       if (path.resolve(item.file) !== path.resolve(dest)) fs.rmSync(item.file, { force: true })
     }
@@ -157,7 +237,7 @@ export function createProviderPluginService(
   const parseText = (text: string, source: TextSource) => {
     let parsed: { manifest: ProviderPluginManifest; info: ProviderPluginInfo }
     try {
-      parsed = parse(text, source.base)
+      parsed = parse(text, source.base, source.origin)
     } catch (error) {
       rethrow(error)
     }
@@ -193,7 +273,7 @@ export function createProviderPluginService(
           plugin: parsed.info,
         }
       }
-      return { installed: true, replaces: write(parsed.manifest), plugin: parsed.info }
+      return { installed: true, replaces: write(parsed.manifest, undefined), plugin: parsed.info }
     },
 
     previewText(text, source) {
@@ -203,7 +283,11 @@ export function createProviderPluginService(
 
     installText(text, source) {
       const parsed = parseText(text, source)
-      return { installed: true, replaces: write(parsed.manifest), plugin: parsed.info }
+      return {
+        installed: true,
+        replaces: write(parsed.manifest, source.origin),
+        plugin: parsed.info,
+      }
     },
 
     remove({ id }) {
@@ -213,6 +297,7 @@ export function createProviderPluginService(
       const matches = scan().all.filter((item) => item.manifest.id === id)
       if (matches.length === 0) throw new RpcError(ProviderPluginErrorCode.NotFound, { id })
       for (const item of matches) fs.rmSync(item.file, { force: true })
+      writeProvenance(id, undefined)
       return {}
     },
   }

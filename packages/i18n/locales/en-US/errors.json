@@ -138,6 +138,7 @@
   "providers.plugin.too_large": "The plugin file is too large",
   "providers.plugin.duplicate": "Another plugin file already uses this plugin ID",
   "providers.plugin.not_found": "That provider plugin could not be found",
+  "providers.plugin.unsupported_type": "This is not a provider plugin, so this version of Cairn can't install it",
   "providers.catalog.unreachable": "Cannot reach the official plugin catalog",
   "providers.catalog.invalid": "The official plugin catalog returned invalid content",
   "providers.catalog.not_found": "That plugin is not in the official catalog",
