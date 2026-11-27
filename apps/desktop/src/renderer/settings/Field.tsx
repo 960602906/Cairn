@@ -53,6 +53,12 @@ export function Field({
 export const inputClass =
   'block h-9 w-full min-w-0 rounded-[9px] bg-paper px-2.5 text-[13.5px] text-fg shadow-[inset_0_0_0_0.5px_var(--hair2)] outline-none placeholder:text-faint focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-soft)] disabled:opacity-60 aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--danger)]'
 
+/**
+ * 下拉框（视觉规范 §8）：外观与输入框一致，箭头由 `.select-chevron` 统一绘制。
+ * 系统自带的箭头位置随平台和字号漂移，和字段内边距对不齐，所以关闭原生外观。
+ */
+export const selectClass = `${inputClass} select-chevron`
+
 /** 带标题与说明的设置分组卡片：图标 + 标题，下面是一组相关设置。 */
 export function SettingsGroup({
   icon,

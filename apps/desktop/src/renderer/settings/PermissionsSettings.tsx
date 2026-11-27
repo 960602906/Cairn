@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next'
 import { projectDisplayName } from '../project-name.js'
 import { useSessionStore } from '../store-context.js'
 import { Button, cn, IconButton, SegmentedControl, Spinner } from '../ui/index.js'
-import { Field, inputClass, SettingsCard } from './Field.js'
+import { Field, inputClass, selectClass as baseSelectClass, SettingsCard } from './Field.js'
 import { useSettingsData } from './settings-data-cache.js'
 import {
   GLOBAL_SCOPE,
@@ -169,7 +169,7 @@ function RuleForm({
   const target = targetOf(draft.tool)
   const problem = ruleDraftProblem(draft)
   const set = (patch: Partial<RuleDraft>) => setDraft((d) => ({ ...d, ...patch }))
-  const selectClass = cn(inputClass, 'w-64')
+  const selectClass = cn(baseSelectClass, 'w-64')
 
   const submit = async () => {
     const built = ruleFromDraft(draft, `user.${globalThis.crypto.randomUUID()}`)

@@ -89,7 +89,7 @@ describe('App', () => {
     const html = renderToStaticMarkup(<App i18n={createI18n('zh-CN')} />)
     expect(html).toMatch(/^<main[^>]*><svg[^>]*aria-label="Cairn"[^>]*>/)
     expect(html).toContain('<h1 class="text-page">Cairn</h1>')
-    expect(html).toContain('<label>语言<select>')
+    expect(html).toMatch(/<label>语言<select/)
     expect(html).not.toContain('事件查看器')
   })
 

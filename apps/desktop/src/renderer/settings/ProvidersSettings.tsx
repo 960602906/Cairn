@@ -55,7 +55,7 @@ import {
   Spinner,
   Switch,
 } from '../ui/index.js'
-import { inputClass, SettingsCard } from './Field.js'
+import { inputClass, selectClass, SettingsCard } from './Field.js'
 import { DeepseekIcon, ProviderBrandIcon } from './ProviderBrandIcon.js'
 import {
   configOf,
@@ -853,7 +853,7 @@ function CompatOptions({
       <Labeled label={t('providers.compat.thinkingFormat')}>
         <select
           aria-label={t('providers.compat.thinkingFormat')}
-          className={cn(inputClass, 'h-8 text-[13px]')}
+          className={cn(selectClass, 'h-8 text-[13px]')}
           value={compat?.thinkingFormat ?? ''}
           onChange={(e) =>
             set('thinkingFormat', (e.target.value || undefined) as ThinkingFormat | undefined)
@@ -870,7 +870,7 @@ function CompatOptions({
       <Labeled label={t('providers.compat.maxTokensField')}>
         <select
           aria-label={t('providers.compat.maxTokensField')}
-          className={cn(inputClass, 'h-8 text-[13px]')}
+          className={cn(selectClass, 'h-8 text-[13px]')}
           value={compat?.maxTokensField ?? ''}
           onChange={(e) =>
             set('maxTokensField', (e.target.value || undefined) as ModelCompat['maxTokensField'])
@@ -1411,7 +1411,7 @@ function ProviderEditor({
                     >
                       <select
                         aria-label={t('providers.compat.preset')}
-                        className={inputClass}
+                        className={selectClass}
                         value={template ? template.id : ''}
                         onChange={(e) => applyCompatPreset(e.target.value || undefined)}
                       >

@@ -34,7 +34,7 @@ import {
   Spinner,
   Switch,
 } from '../ui/index.js'
-import { Field, inputClass, SettingsCard, SettingsEmpty } from './Field.js'
+import { Field, inputClass, selectClass, SettingsCard, SettingsEmpty } from './Field.js'
 import { ListFilter } from './ListFilter.js'
 import { SettingsHeader } from './SettingsPage.js'
 import { McpGlyph } from './SettingIcons.js'
@@ -250,7 +250,7 @@ function ToolRow({
         <label className="flex items-center gap-2 whitespace-nowrap text-note text-muted">
           {t('mcp.tool.category')}
           <select
-            className={`${inputClass} w-auto`}
+            className={`${selectClass} w-auto`}
             aria-label={t('mcp.tool.categoryAria', { name: tool.name })}
             value={tool.category}
             onChange={(event) => onChange({ category: event.target.value as ToolCategory })}
@@ -265,7 +265,7 @@ function ToolRow({
         <label className="flex items-center gap-2 whitespace-nowrap text-note text-muted">
           {t('mcp.tool.effect')}
           <select
-            className={`${inputClass} w-auto`}
+            className={`${selectClass} w-auto`}
             aria-label={t('mcp.tool.effectAria', { name: tool.name })}
             value={tool.effect}
             onChange={(event) => onChange({ effect: event.target.value as PermissionEffect })}
@@ -605,7 +605,7 @@ export function McpSettings() {
               <Field label={t('mcp.field.kind')} labelFor="mcp-kind">
                 <select
                   id="mcp-kind"
-                  className={inputClass}
+                  className={selectClass}
                   value={form.kind}
                   onChange={(event) => patchForm({ kind: event.target.value as McpServerKind })}
                 >
@@ -658,7 +658,7 @@ export function McpSettings() {
                   <Field label={t('mcp.field.auth')} labelFor="mcp-auth">
                     <select
                       id="mcp-auth"
-                      className={inputClass}
+                      className={selectClass}
                       value={form.auth}
                       onChange={(event) => patchForm({ auth: event.target.value as McpAuthKind })}
                     >

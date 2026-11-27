@@ -114,6 +114,12 @@
 
 ### Changed
 
+- 所有下拉框改用应用内绘制的箭头：位置固定、与输入框内边距对齐，不再随系统字体的原生
+  箭头漂移；箭头颜色跟随亮色 / 暗色主题。
+  All dropdowns now use an in-app chevron: it sits at a fixed position aligned with the input
+  padding instead of drifting with the platform's native arrow, and follows the light and dark
+  themes.
+
 - 从文件树点开文件后，焦点落到新打开的文件标签上，不再随被藏起的文件树一起失焦。
   Opening a file from the file tree now moves focus to the newly opened file tab instead of
   losing it together with the hidden tree.
