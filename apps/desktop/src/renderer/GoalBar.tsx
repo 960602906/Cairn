@@ -12,7 +12,6 @@ import { useTranslation } from 'react-i18next'
 import { isAwaitingGoalEvaluation, openGoal, type GoalView, type SessionView } from '@cairn/core'
 import { GOAL_CONDITION_MAX, type SessionStatus } from '@cairn/protocol'
 import { goalErrorNoticeKey } from './composer-commands.js'
-import { formatGoalDuration } from './goal-display.js'
 import { useSessionStore } from './store-context.js'
 import {
   Button,
