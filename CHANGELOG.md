@@ -322,6 +322,11 @@
   an "Archived or unavailable" badge, so it can be unchecked and saved. Previously the member
   count could exceed the visible checkboxes with no way to remove the archived member.
 
+- 内置或已归档 Agent 的「版本历史」不再显示「恢复为草稿」按钮，与团队模板一致；旧版本仍可
+  查看与对比。
+  The "Restore as draft" action is now hidden in the version history of built-in or archived
+  agents, matching team templates; old versions remain available for viewing and comparison.
+
 ## [0.1.7] - 2026-11-27
 
 ### Fixed

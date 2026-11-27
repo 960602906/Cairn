@@ -705,6 +705,7 @@ export function AgentEditor({
             {view === 'versions' && detail && (
               <AgentVersions
                 agentId={currentId ?? detail.agentId}
+                readonly={readonly}
                 onRestore={async (next) => {
                   setDetail(next)
                   setCurrentId(next.agentId)
