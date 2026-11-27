@@ -37,6 +37,7 @@
   "editor.delete": "Delete",
   "editor.more": "More actions",
   "editor.readonly": "Built-in agents are read-only. Duplicate one to customize it.",
+  "editor.archivedReadonly": "Archived agents are read-only. Unarchive to edit and publish again.",
   "editor.leave.title": "Discard unsaved changes?",
   "editor.leave.description": "This agent has changes that have not been saved.",
   "editor.leave.save": "Save and leave",

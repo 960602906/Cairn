@@ -329,6 +329,11 @@ describe('AgentEditor sections and actions', () => {
     })
     renderEditor(store, { initial: archived, onChanged })
     await screen.findByText('测试助手')
+    // 已归档的 Agent 标出「已归档」，只读提示说的是取消归档后能做什么，
+    // 不能沿用内置 Agent 的文案。
+    expect(screen.getByText('已归档')).toBeDefined()
+    expect(screen.getByText(/已归档的 Agent 只读/)).toBeDefined()
+    expect(screen.queryByText(/内置 Agent 只读/)).toBeNull()
     expect(screen.getByLabelText('英文名称').closest('fieldset')?.disabled).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: '取消归档' }))
@@ -336,6 +341,9 @@ describe('AgentEditor sections and actions', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('英文名称').closest('fieldset')?.disabled).toBe(false),
     )
+    expect(screen.queryByText('已归档')).toBeNull()
+    expect(screen.queryByText(/已归档的 Agent 只读/)).toBeNull()
+    expect(screen.getByText('已发布')).toBeDefined()
   })
 
   it('asks before leaving with unsaved changes', async () => {

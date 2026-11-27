@@ -37,6 +37,7 @@
   "editor.delete": "删除",
   "editor.more": "更多操作",
   "editor.readonly": "内置 Agent 只读，可以复制为新 Agent。",
+  "editor.archivedReadonly": "已归档的 Agent 只读；取消归档后可以继续编辑与发布。",
   "editor.leave.title": "放弃未保存的修改？",
   "editor.leave.description": "这个 Agent 有还没保存的修改。",
   "editor.leave.save": "保存并离开",

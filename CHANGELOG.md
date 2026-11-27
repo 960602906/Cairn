@@ -310,6 +310,12 @@
   clears the selection once the template list loads and falls back to the default agent instead
   of failing silently when sending.
 
+- 打开已归档的 Agent 时，编辑器顶部现在标出「已归档」，只读提示改为「取消归档后可以继续
+  编辑与发布」，不再误显示「已发布」和内置 Agent 的只读说明。
+  Opening an archived agent now marks it as "Archived" in the editor header, and the read-only
+  note explains that unarchiving restores editing and publishing instead of showing "Published"
+  and the built-in agent's read-only hint.
+
 ## [0.1.7] - 2026-11-27
 
 ### Fixed
