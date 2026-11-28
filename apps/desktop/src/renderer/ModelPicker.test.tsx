@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -362,5 +362,132 @@ describe('ModelPicker', () => {
     expect(trigger.disabled).toBe(true)
     expect(trigger.getAttribute('title')).toBeNull()
     expect(trigger.textContent).toContain('未配置模型')
+  })
+
+  it('navigates with the keyboard and returns focus on Escape', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const returnFocus = vi.fn()
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      return (
+        <ModelPicker
+          providers={providers}
+          model={fast}
+          fixed={false}
+          disabled={false}
+          open={open}
+          onOpenChange={setOpen}
+          onSelect={onSelect}
+          returnFocus={returnFocus}
+        />
+      )
+    }
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <Harness />
+      </I18nextProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: '模型：供应商一 · fast' }))
+    const search = await screen.findByRole('combobox', { name: '搜索模型' })
+    await waitFor(() => expect(document.activeElement).toBe(search))
+
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('option', { name: /思考/ }).getAttribute('data-active')).toBe('true')
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('option', { name: /^fast/ }).getAttribute('data-active')).toBe('true')
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('option', { name: /强/ }).getAttribute('data-active')).toBe('true')
+    await user.keyboard('{Enter}')
+    expect(onSelect).toHaveBeenCalledWith(strong)
+    await waitFor(() => expect(returnFocus).toHaveBeenCalled())
+
+    cleanup()
+    const onOpenChange = vi.fn()
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={providers}
+          model={fast}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={onOpenChange}
+          onSelect={() => {}}
+          returnFocus={returnFocus}
+        />
+      </I18nextProvider>,
+    )
+    await screen.findByRole('combobox', { name: '搜索模型' })
+    await user.keyboard('{Escape}')
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('virtualizes long lists and keeps arrow navigation working', async () => {
+    const user = userEvent.setup()
+    const many: ProviderConfig[] = Array.from({ length: 3 }, (_, p) => ({
+      id: `prov-${p}`,
+      kind: (['openai', 'anthropic', 'gemini'] as const)[p]!,
+      displayName: `供应商${p}`,
+      baseUrl: 'https://example.com',
+      models: Array.from({ length: 8 }, (_, m) => ({
+        id: `m${p}-${m}`,
+        displayName: `模型${p}-${m}`,
+        ...capabilities,
+      })),
+    }))
+    const current = { providerId: 'prov-2', modelId: 'm2-7' }
+    const onSelect = vi.fn()
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={many}
+          model={current}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={() => {}}
+          onSelect={onSelect}
+        />
+      </I18nextProvider>,
+    )
+    const list = screen.getByRole('listbox', { name: '下一轮使用的模型' })
+    // 虚拟列表只挂载可视附近的行，不会一次渲染全部 24 个 option。
+    expect(within(list).getAllByRole('option').length).toBeLessThan(24)
+    expect(screen.getByRole('option', { name: /模型2-7/ }).getAttribute('data-active')).toBe('true')
+    fireEvent.scroll(list, { target: { scrollTop: 0 } })
+    const search = screen.getByRole('combobox', { name: '搜索模型' })
+    search.focus()
+    await user.keyboard('{ArrowUp}')
+    expect(screen.getByRole('option', { name: /模型2-6/ }).getAttribute('data-active')).toBe('true')
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('option', { name: /模型2-7/ }).getAttribute('data-active')).toBe('true')
+    await user.keyboard('{Enter}')
+    // 当前项再按 Enter 不切换。
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('does not select when Enter is pressed with an empty match list', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={providers}
+          model={fast}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={() => {}}
+          onSelect={onSelect}
+        />
+      </I18nextProvider>,
+    )
+    const search = screen.getByRole('combobox', { name: '搜索模型' })
+    await user.type(search, '没有这个')
+    expect(screen.getByText('没有匹配的模型')).toBeTruthy()
+    await user.keyboard('{ArrowDown}')
+    await user.keyboard('{Enter}')
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

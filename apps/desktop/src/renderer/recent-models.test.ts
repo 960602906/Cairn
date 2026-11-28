@@ -46,9 +46,44 @@ describe('recent models', () => {
 
     window.localStorage.setItem(
       RECENT_MODELS_KEY,
-      JSON.stringify([fast, { providerId: 'p1', modelId: 'fast' }, { bad: true }, strong]),
+      JSON.stringify([
+        null,
+        'x',
+        { providerId: '', modelId: 'a' },
+        { providerId: 'a', modelId: '' },
+        fast,
+        { providerId: 'p1', modelId: 'fast' },
+        { bad: true },
+        strong,
+      ]),
     )
     expect(readRecentModels()).toEqual([fast, strong])
+
+    window.localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify({ not: 'array' }))
+    expect(readRecentModels()).toEqual([])
+  })
+
+  it('caps the recent list at five entries', () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      providerId: 'p',
+      modelId: `m${i}`,
+    }))
+    writeRecentModels(many)
+    expect(readRecentModels()).toHaveLength(5)
+    expect(readRecentModels()[0]).toEqual(many[0])
+
+    const overflow = [...many.map((ref) => ref), { providerId: 'p', modelId: 'extra' }]
+    window.localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify(overflow))
+    expect(readRecentModels()).toHaveLength(5)
+  })
+
+  it('survives a storage write failure', () => {
+    const original = window.localStorage.setItem.bind(window.localStorage)
+    window.localStorage.setItem = () => {
+      throw new Error('quota')
+    }
+    expect(() => writeRecentModels([fast])).not.toThrow()
+    window.localStorage.setItem = original
   })
 
   it('intersects recent refs with enabled choices in recent order', () => {
