@@ -1,6 +1,6 @@
 /**
- * 开关：安静的发丝描边轨道；打开时用软底 + 深色滑块，避免浅色主题下
- * `--accent`（近黑）铺满整颗胶囊造成的廉价 iOS 观感。
+ * 开关：约 24×14 的安静胶囊。打开时轨道铺品牌色（深色鸢尾 / 浅色近黑），白色滑块靠右；
+ * 关闭时用更深的沉底色（深色 `--sunk`、浅色 `--sunk2`），滑块靠左。无渐变、无厚阴影。
  */
 import type { ComponentProps } from 'react'
 import { Switch as SwitchPrimitive } from 'radix-ui'
@@ -10,16 +10,16 @@ export function Switch({ className, ...props }: ComponentProps<typeof SwitchPrim
   return (
     <SwitchPrimitive.Root
       className={cn(
-        'inline-flex h-[15px] w-[26px] shrink-0 items-center rounded-full bg-sunk p-px shadow-[inset_0_0_0_0.5px_var(--hair2)] transition-[background-color,box-shadow] disabled:opacity-45',
-        'data-[state=checked]:bg-accent-soft data-[state=checked]:shadow-[inset_0_0_0_1px_var(--fg2)]',
+        'inline-flex h-[14px] w-[24px] shrink-0 items-center rounded-full bg-sunk2 p-px transition-colors disabled:opacity-45 dark:bg-sunk',
+        'data-[state=checked]:bg-accent',
         className,
       )}
       {...props}
     >
       <SwitchPrimitive.Thumb
         className={cn(
-          'block size-[13px] rounded-full bg-paper shadow-1 transition-[transform,background-color]',
-          'data-[state=checked]:translate-x-[11px] data-[state=checked]:bg-fg',
+          'block size-3 rounded-full bg-white transition-transform',
+          'data-[state=checked]:translate-x-2.5',
         )}
       />
     </SwitchPrimitive.Root>
