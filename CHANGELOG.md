@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-11-28
+
 ### Removed
 
 - 移除 Agent 与团队模板的「试运行」：不再提供隐藏试运行会话、编辑器试运行入口，以及
@@ -633,7 +635,8 @@ Beta 版本。Windows x64、macOS arm64/x64 与 Linux x64 的发布产物需通�
 - 单实例锁在打开数据库之前获取，避免两个实例同时写入。
 - 诊断包导出前统一脱敏用户目录、API Key 与令牌。
 
-[Unreleased]: https://github.com/960602906/Cairn/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/960602906/Cairn/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/960602906/Cairn/releases/tag/v0.1.8
 [0.1.7]: https://github.com/960602906/Cairn/releases/tag/v0.1.7
 [0.1.6]: https://github.com/960602906/Cairn/releases/tag/v0.1.6
 [0.1.2]: https://github.com/960602906/Cairn/releases/tag/v0.1.2
