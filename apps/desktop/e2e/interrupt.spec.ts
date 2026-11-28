@@ -50,7 +50,10 @@ test('运行中停止：本轮以 turn.aborted 结束，之后可以继续对话
   await expectMessages(window, stopped)
 
   await converse(window, '继续', stopped)
-  await expect(window.getByText('已停止 — 回复未完成')).toHaveCount(0)
+  // 未完成标记挂在被中断的那条助手消息上（事件仍 incomplete:true），继续对话后仍保留；
+  // 流末尾不再另挂「已停止」结局条。
+  await expect(window.getByText('已停止 — 回复未完成')).toHaveCount(1)
+  await expect(window.getByText('已停止', { exact: true })).toHaveCount(0)
   await app.close()
 
   const events = readEvents(userData)
