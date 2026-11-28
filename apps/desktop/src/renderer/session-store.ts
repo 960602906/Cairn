@@ -510,7 +510,7 @@ export interface SessionActions {
   saveCredential(ref: string, secret: string): Promise<boolean>
   /** 删除保存的 Key（保存供应商失败时撤回刚写入的 Key）；成功时返回 true。 */
   deleteCredential(ref: string): Promise<boolean>
-  /** Key 是否已保存、系统加密是否可用；失败时返回 undefined。 */
+  /** Key 是否已保存、存储是否可用；失败时返回 undefined。 */
   credentialStatus(ref: string): Promise<CredentialStatus | undefined>
   /** 读取已安装的供应商插件（ADR-0050），结果保存在 `providerPlugins`。 */
   loadProviderPlugins(): Promise<ProviderPluginList | undefined>

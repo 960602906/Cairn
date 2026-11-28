@@ -59,6 +59,7 @@ import { translateError, type I18nInstance, type TFunction } from '@cairn/i18n'
 import {
   isAgentDraftRef,
   type ContentPart,
+  type ErrorInfo,
   type MentionLines,
   type PromptAgent,
   type PromptSkill,
@@ -1247,9 +1248,22 @@ function RetryNotice({
   })
 }
 
+/** 宿主因缺少/无法读取 Key 启动失败时，用具体凭据错误文案，避免只显示笼统的崩溃提示。 */
+function crashMessage(crash: ErrorInfo, t: TFunction, i18n: I18nInstance): string {
+  const cause = crash.params?.['cause']
+  if (
+    cause === 'credentials.missing' ||
+    cause === 'credentials.decrypt_failed' ||
+    cause === 'credentials.unavailable'
+  ) {
+    return t('turn.failed', { reason: translateError(i18n, { code: cause }) })
+  }
+  return t('crashed.message')
+}
+
 /** 上一轮没有正常完成、或正在等待重试时的说明；正常完成或仍在进行时为 undefined。 */
 function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): ReactNode {
-  if (view.crash) return t('crashed.message')
+  if (view.crash) return crashMessage(view.crash, t, i18n)
   const turn = rootRun(view)?.turn
   if (turn?.status === 'aborted') {
     return t(turn.abortReason === 'shutdown' ? 'turn.interrupted' : 'turn.aborted')

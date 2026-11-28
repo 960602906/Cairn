@@ -1,8 +1,7 @@
 /**
  * 打开项目与模型配置（M1-16a；M2-10 起在设置页“模型供应商”中）：选择“自定义 / 第三方中转”的 OpenAI
  * 格式，填写本地 mock 端点和模型，测试连接后保存并成为默认模型；新建会话时用系统对话框选择项目文件夹
- * （对话框在主进程中替换为固定返回），之后回复来自配置的端点。Linux CI 没有系统加密，界面提示无法保存
- * Key，mock 端点不检查 Key。
+ * （对话框在主进程中替换为固定返回），之后回复来自配置的端点（ADR-0051：各平台均可保存 Key）。
  */
 import { startMockModel } from '../scripts/mock-model.js'
 import { expect, test } from './app.js'
@@ -33,11 +32,10 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     await card.getByRole('button', { name: '手动添加' }).click()
     await card.getByLabel('模型名称，例如 deepseek-chat').fill('deepseek-flash')
     await card.getByRole('button', { name: '添加', exact: true }).click()
-    if (process.platform === 'linux') {
-      // M6-04：按不可用原因给出具体说明（无密钥环时提示安装/解锁密钥环）
-      await expect(card.getByLabel('API Key')).toBeDisabled()
-      await expect(card.getByText(/系统密钥环/)).toBeVisible()
-    }
+    await expect(card.getByLabel('API Key')).toBeEnabled()
+    await expect(card.getByText(/本机应用数据/)).toBeVisible()
+    // mock 不校验 Key；写入任意值，确保保存后本地有凭据（ADR-0051）
+    await card.getByLabel('API Key').fill('sk-e2e-project-setup')
     await card.getByRole('button', { name: '测试连接' }).click()
     await expect(card.getByRole('status')).toContainText('连接正常')
     await card.getByRole('button', { name: '保存' }).click()

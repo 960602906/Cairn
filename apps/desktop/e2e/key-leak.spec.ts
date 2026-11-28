@@ -1,9 +1,7 @@
 /**
  * Key 不外泄（M1 完成检查）：保存 Key 并用它完成一轮带工具调用的对话，确认模型端点收到了这个 Key；
  * 之后渲染进程的页面与请求返回值、应用进程的标准输出与标准错误、数据目录中的所有文件（数据库、日志、
- * 检查点、凭据文件等）都不含 Key 的明文。
- *
- * 需要系统加密保存 Key：Linux CI 容器没有密钥环，跳过（Windows CI 运行）。
+ * 检查点、凭据文件等）都不含 Key 的明文（ADR-0051：各平台均可保存）。
  */
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -58,7 +56,7 @@ test('Key 只发给模型端点，不出现在渲染进程、进程输出与数�
       ok: boolean
       result?: { available: boolean }
     }
-    test.skip(status.result?.available !== true, '系统加密不可用（Linux CI 没有密钥环）')
+    test.skip(status.result?.available !== true, '凭据存储不可用')
 
     expect(await send('credentials.set', { ref: 'local', secret: SECRET })).toEqual({
       ok: true,

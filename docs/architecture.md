@@ -587,11 +587,9 @@ interface CredentialProvider {
 }
 ```
 
-- 第一版只实现 `local-key`：密钥用 Electron `safeStorage` 加密后保存（Windows 下基于 DPAPI）。
-- 在 Linux 上 `safeStorage` 可能因没有系统密钥环而退化为弱加密。M6-04 把这种情况归为不可用，
-  拒绝保存并区分原因（`system-encryption-unavailable`、`insecure-linux-backend`、
-  `unknown-linux-backend`），界面按原因提示（ADR-0040，详见
-  [凭据存储](dev/credentials.md)）。
+- 第一版只实现 `local-key`：密钥优先用 Electron `safeStorage` 加密后保存（Windows 下基于 DPAPI）；
+  系统加密不可用时回退到本机应用数据文件编码（ADR-0051，详见 [凭据存储](dev/credentials.md)）。
+  不再因 Linux 缺少密钥环而拒绝保存（ADR-0040 已取代）。
 - 密钥只在主进程解密，在 `host.init` 时通过 MessagePort 传给对应会话的宿主进程；不写入环境变量、不进入日志、不传给渲染进程。
 
 ---

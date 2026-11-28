@@ -157,8 +157,8 @@ sudo apt install ./Cairn-0.1.0-x64.deb
 
   安装后可从应用菜单或命令行 `cairn` 启动。卸载使用 `sudo apt remove cairn`，卸载会保留
   用户数据；需要彻底清理时手动删除 `~/.config/Cairn`（开发版为 `~/.config/Cairn-dev`）。
-- 用户数据位于 `~/.config/Cairn`，目录结构与其它平台相同；无系统密钥环时 Cairn 会拒绝
-  保存凭据并说明原因（ADR-0040），其它功能不受影响。
+- 用户数据位于 `~/.config/Cairn`，目录结构与其它平台相同；API Key 保存在本机应用数据
+  （优先系统加密，否则本机文件回退，ADR-0051），不要求系统密钥环。
 - 更新：AppImage 使用应用内更新（需要发布通道提供 `latest-linux.yml`）；deb 不自动更新，
   由系统包管理器或手动安装新版本。
 - 不需要预装 Git：优先使用本机 Git，缺少时检查点降级，写文件类改动仍可撤销。

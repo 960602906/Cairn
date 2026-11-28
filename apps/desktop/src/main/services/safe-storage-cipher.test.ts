@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createLocalFileCipher,
   createSafeStorageCipher,
   credentialAvailability,
   type SafeStorageLike,
@@ -31,20 +32,25 @@ describe('createSafeStorageCipher', () => {
     expect((await rotated.decrypt(await rotated.encrypt('k'))).shouldReEncrypt).toBe(true)
   })
 
-  it('加密不可用时不可用', async () => {
-    expect(await createSafeStorageCipher(storage(false), 'win32').isAvailable()).toBe(false)
-    expect(
-      await createSafeStorageCipher(storage(false, 'gnome_libsecret'), 'linux').isAvailable(),
-    ).toBe(false)
+  it('系统加密不可用时仍可用，并回退到本机文件编码（ADR-0051）', async () => {
+    const cipher = createSafeStorageCipher(storage(false), 'win32')
+    expect(await cipher.isAvailable()).toBe(true)
+    expect(await cipher.unavailableReason?.()).toBeUndefined()
+    const roundTrip = await cipher.decrypt(await cipher.encrypt('本地 key'))
+    expect(roundTrip).toEqual({ plain: '本地 key', shouldReEncrypt: false })
   })
 
-  it('Linux 上的弱加密后端视为不可用', async () => {
+  it('Linux 弱加密与未知后端仍可用（ADR-0051）', async () => {
     const linux = (backend?: string) => createSafeStorageCipher(storage(true, backend), 'linux')
-    expect(await linux('basic_text').isAvailable()).toBe(false)
-    expect(await linux('unknown').isAvailable()).toBe(false)
-    expect(await linux().isAvailable()).toBe(false)
+    expect(await linux('basic_text').isAvailable()).toBe(true)
+    expect(await linux('unknown').isAvailable()).toBe(true)
+    expect(await linux().isAvailable()).toBe(true)
     expect(await linux('gnome_libsecret').isAvailable()).toBe(true)
     expect(await linux('kwallet6').isAvailable()).toBe(true)
+    expect(await linux('basic_text').decrypt(await linux('basic_text').encrypt('k'))).toEqual({
+      plain: 'k',
+      shouldReEncrypt: false,
+    })
   })
 
   it('默认按当前平台判断', async () => {
@@ -53,38 +59,48 @@ describe('createSafeStorageCipher', () => {
     ).toBe('boolean')
   })
 
-  it('给出不可用的原因（M6-04）', async () => {
+  it('credentialAvailability 只在系统加密不可用时失败', async () => {
     expect(await credentialAvailability(storage(false), 'win32')).toEqual({
       available: false,
       reason: 'system-encryption-unavailable',
     })
     expect(await credentialAvailability(storage(true, 'basic_text'), 'linux')).toEqual({
-      available: false,
-      reason: 'insecure-linux-backend',
+      available: true,
     })
     expect(await credentialAvailability(storage(true, 'unknown'), 'linux')).toEqual({
-      available: false,
-      reason: 'unknown-linux-backend',
+      available: true,
     })
-    expect(await credentialAvailability(storage(true), 'linux')).toEqual({
-      available: false,
-      reason: 'unknown-linux-backend',
-    })
+    expect(await credentialAvailability(storage(true), 'linux')).toEqual({ available: true })
     expect(await credentialAvailability(storage(true, 'kwallet6'), 'linux')).toEqual({
       available: true,
     })
     expect(await credentialAvailability(storage(true), 'darwin')).toEqual({ available: true })
   })
 
-  it('Cipher 的 unavailableReason 只在不可用时给出', async () => {
-    expect(
-      await createSafeStorageCipher(
-        storage(true, 'gnome_libsecret'),
-        'linux',
-      ).unavailableReason?.(),
-    ).toBeUndefined()
-    expect(
-      await createSafeStorageCipher(storage(true, 'basic_text'), 'linux').unavailableReason?.(),
-    ).toBe('insecure-linux-backend')
+  it('本机回退密文与 safeStorage 密文可区分；系统加密不可用时对旧密文标记重加密', async () => {
+    const local = createLocalFileCipher()
+    expect(await local.isAvailable()).toBe(true)
+    expect(await local.unavailableReason?.()).toBeUndefined()
+    await expect(local.decrypt(Buffer.from('not-local'))).rejects.toThrow(
+      'ciphertext is not local-file protected',
+    )
+
+    const sealed = await local.encrypt('secret')
+    expect(await createSafeStorageCipher(storage(false), 'linux').decrypt(sealed)).toEqual({
+      plain: 'secret',
+      shouldReEncrypt: false,
+    })
+
+    const fakeOs: SafeStorageLike = {
+      isAsyncEncryptionAvailable: async () => false,
+      encryptStringAsync: async () => {
+        throw new Error('unavailable')
+      },
+      decryptStringAsync: async () => ({ result: 'old-os-key', shouldReEncrypt: false }),
+    }
+    expect(await createSafeStorageCipher(fakeOs, 'linux').decrypt(Buffer.from('x'))).toEqual({
+      plain: 'old-os-key',
+      shouldReEncrypt: true,
+    })
   })
 })

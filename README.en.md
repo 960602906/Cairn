@@ -45,7 +45,7 @@ Architecturally, Cairn = **our own agent platform** + **a pluggable agent engine
 ## Highlights
 
 - **Local first**: sessions, projects, file changes and checkpoints live in local SQLite. API keys
-  are encrypted with the OS secure storage (safeStorage); no cloud account needed.
+  are stored in local app data (OS safeStorage when available, otherwise a local file); no cloud account needed.
 - **Controlled**: tool calls are shown live; writing files and running commands require approval by
   default; project-level permission rules and sandboxed execution are supported.
 - **Reviewable**: diffs per file and per hunk; accept or revert a single file or hunk, or return to

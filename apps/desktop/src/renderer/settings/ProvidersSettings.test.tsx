@@ -725,33 +725,32 @@ describe('ProvidersSettings', () => {
     })
   })
 
-  it('disables the key input when system encryption is unavailable', async () => {
+  it('keeps the key input enabled and describes local app data storage (ADR-0051)', async () => {
     setup(
       { providers: [deepseek] },
-      { 'credentials.status': () => ({ configured: false, available: false }) },
+      { 'credentials.status': () => ({ configured: false, available: true }) },
     )
     await open()
     const card = await editProvider(/^DeepSeek/)
     const key = (await within(card).findByLabelText('API Key')) as HTMLInputElement
-    await waitFor(() => expect(key.disabled).toBe(true))
-    expect(within(card).getByText('系统加密不可用，无法保存 Key。')).toBeTruthy()
+    expect(key.disabled).toBe(false)
+    expect(within(card).getByText('保存时写入本机应用数据目录。')).toBeTruthy()
   })
 
-  it.each([
-    ['system-encryption-unavailable', '本机的系统加密不可用，无法保存 Key。'],
-    [
-      'insecure-linux-backend',
-      '未检测到系统密钥环，Key 无法安全保存。请安装并解锁 GNOME Keyring 或 KWallet，然后重启 Cairn。',
-    ],
-    ['unknown-linux-backend', '无法确认本机的系统密钥环，Key 不能安全保存。'],
-  ] as const)('explains why keys cannot be saved: %s (M6-04)', async (reason, hint) => {
+  it('still shows a fallback hint if a client reports unavailable', async () => {
     setup(
       { providers: [deepseek] },
-      { 'credentials.status': () => ({ configured: false, available: false, reason }) },
+      {
+        'credentials.status': () => ({
+          configured: false,
+          available: false,
+          reason: 'system-encryption-unavailable',
+        }),
+      },
     )
     await open()
     const card = await editProvider(/^DeepSeek/)
-    await waitFor(() => expect(within(card).getByText(hint)).toBeTruthy())
+    await waitFor(() => expect(within(card).getByText('无法在本机保存 Key。')).toBeTruthy())
   })
 
   it('keeps the editor open when saving fails and when the key status is missing', async () => {

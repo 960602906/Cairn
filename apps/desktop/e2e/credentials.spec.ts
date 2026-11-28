@@ -1,6 +1,6 @@
 /**
- * 凭据 IPC（M1-03b）：渲染进程只能写入、删除和查询是否已配置（与末 4 位），任何返回值都不含明文；
- * 保存的文件中也没有明文。Linux CI 容器没有密钥环，系统加密不可用，保存被拒绝。
+ * 凭据 IPC（M1-03b / ADR-0051）：渲染进程只能写入、删除和查询是否已配置（与末 4 位），任何返回值
+ * 都不含明文；保存的文件中也没有明文。各平台（含无密钥环的 Linux CI）均可保存。
  */
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -33,45 +33,31 @@ test('渲染进程可以保存与查询凭据，但读不到明文', async ({ la
     return reply
   }
 
-  const before = await send('credentials.status', { ref: 'deepseek' })
-  expect(before.ok).toBe(true)
-  const status = before.ok ? (before.result as { available: boolean; reason?: string }) : undefined
-  const available = status?.available === true
-  if (available) {
-    expect(before).toEqual({ ok: true, result: { configured: false, available: true } })
-  } else {
-    // M6-04：不可用时带上原因；Linux CI 没有密钥环，基本是弱加密或无法确认后端
-    expect(status?.reason).toBeDefined()
-    expect(['insecure-linux-backend', 'unknown-linux-backend']).toContain(status?.reason)
-    expect(before).toEqual({
-      ok: true,
-      result: { configured: false, available: false, reason: status?.reason },
-    })
-  }
+  expect(await send('credentials.status', { ref: 'deepseek' })).toEqual({
+    ok: true,
+    result: { configured: false, available: true },
+  })
 
-  const saved = await send('credentials.set', { ref: 'deepseek', secret: SECRET })
-  if (!available) {
-    expect(saved).toMatchObject({ ok: false, error: { code: 'credentials.unavailable' } })
-    expect(process.platform).toBe('linux')
-  } else {
-    expect(saved).toEqual({ ok: true, result: {} })
-    expect(await send('credentials.status', { ref: 'deepseek' })).toEqual({
-      ok: true,
-      // 只给出末 4 位（M2-10），用于界面显示
-      result: { configured: true, available: true, last4: SECRET.slice(-4) },
-    })
-    const file = path.join(userData, 'credentials.json')
-    expect(existsSync(file)).toBe(true)
-    expect(readFileSync(file, 'utf8')).not.toContain(SECRET)
-    expect(await send('credentials.delete', { ref: 'deepseek' })).toEqual({
-      ok: true,
-      result: { deleted: true },
-    })
-    expect(await send('credentials.status', { ref: 'deepseek' })).toEqual({
-      ok: true,
-      result: { configured: false, available: true },
-    })
-  }
+  expect(await send('credentials.set', { ref: 'deepseek', secret: SECRET })).toEqual({
+    ok: true,
+    result: {},
+  })
+  expect(await send('credentials.status', { ref: 'deepseek' })).toEqual({
+    ok: true,
+    // 只给出末 4 位（M2-10），用于界面显示
+    result: { configured: true, available: true, last4: SECRET.slice(-4) },
+  })
+  const file = path.join(userData, 'credentials.json')
+  expect(existsSync(file)).toBe(true)
+  expect(readFileSync(file, 'utf8')).not.toContain(SECRET)
+  expect(await send('credentials.delete', { ref: 'deepseek' })).toEqual({
+    ok: true,
+    result: { deleted: true },
+  })
+  expect(await send('credentials.status', { ref: 'deepseek' })).toEqual({
+    ok: true,
+    result: { configured: false, available: true },
+  })
 
   // 不存在读取明文的方法
   const read = await send('credentials.get', { ref: 'deepseek' })

@@ -47,7 +47,7 @@
 | [0037](0037-composer-mentions.md) | 输入框的 `@` 引用 | 已接受 |
 | [0038](0038-task-list-independent-of-plan-mode.md) | 待办列表独立于计划模式 | 已接受（核心解耦已落地） |
 | [0039](0039-open-source-license-and-dco.md) | 开源许可证（MIT）与贡献者协议（DCO） | 已接受 |
-| [0040](0040-linux-credential-refusal.md) | Linux 无系统密钥环时显式拒绝保存凭据 | 已接受（M6-04） |
+| [0040](0040-linux-credential-refusal.md) | Linux 无系统密钥环时显式拒绝保存凭据 | 已取代（→ [0051](0051-local-credential-persistence.md)） |
 | [0041](0041-macos-packaging-and-notarization.md) | macOS 打包、签名与公证 | 已接受（M6-02） |
 | [0042](0042-linux-packaging.md) | Linux 打包与桌面集成 | 已接受（M6-03） |
 | [0043](0043-cross-platform-ci-and-release.md) | 跨平台 CI 与发布流水线 | 已接受（M6-07） |
@@ -58,3 +58,4 @@
 | [0048](0048-full-access-permission-mode.md) | 完全访问权限模式 | 已接受 |
 | [0049](0049-macos-ad-hoc-signing.md) | macOS 默认 ad-hoc 签名 | 已接受 |
 | [0050](0050-provider-catalog-and-plugins.md) | 供应商目录与声明式供应商插件 | 已接受 |
+| [0051](0051-local-credential-persistence.md) | 本机持久化凭据：不再依赖系统密钥环 | 已接受 |

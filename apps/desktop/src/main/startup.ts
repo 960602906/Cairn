@@ -57,7 +57,11 @@ import { createChangeSetService } from './services/change-set-service.js'
 import { createCommandService } from './services/command-service.js'
 import { createCheckpointService } from './services/checkpoint-service.js'
 import { checkpointLocation } from './services/checkpoint-location.js'
-import { createCredentialCommands, createLocalKeyStore } from './services/credential-store.js'
+import {
+  CredentialErrorCode,
+  createCredentialCommands,
+  createLocalKeyStore,
+} from './services/credential-store.js'
 import {
   createGithubService,
   createGithubTokenResolver,
@@ -511,10 +515,14 @@ const supervisor = createHostSupervisor({
     env: hostEnvironment(process.env, app.isPackaged),
   }),
   events,
-  // 凭据引用由提供方配置给出；没有配置或没有引用时不传凭据
+  // 凭据引用由提供方配置给出；没有引用时不传凭据。引用存在但未保存 Key 时明确报错，
+  // 避免宿主用占位 Key 请求后被误报成“模型服务拒绝了 Key”（ADR-0051）。
   resolveCredential: async (model) => {
     const ref = settings.credentialRef(model)
-    return ref === undefined ? undefined : credentials.resolve(ref)
+    if (ref === undefined) return undefined
+    const resolved = await credentials.resolve(ref)
+    if (resolved === undefined) throw new RpcError(CredentialErrorCode.Missing)
+    return resolved
   },
   resolveModelConfig: (model, sessionId) => {
     const config = settings.hostModelConfig(model)
@@ -619,8 +627,11 @@ const supervisor = createHostSupervisor({
     if (!model) return undefined
     const ref = { id: definition.id, version: definition.version }
     const credentialRef = settings.credentialRef(model)
-    const credential =
-      credentialRef === undefined ? undefined : await credentials.resolve(credentialRef)
+    let credential: { readonly apiKey: string } | undefined
+    if (credentialRef !== undefined) {
+      credential = await credentials.resolve(credentialRef)
+      if (credential === undefined) throw new RpcError(CredentialErrorCode.Missing)
+    }
     const modelConfig = settings.hostModelConfig(model)
     return {
       definition,
@@ -1250,7 +1261,8 @@ function startSmoke(window: BrowserWindow): void {
         sessions.prompt({ sessionId, content: [{ type: 'text', text: 'smoke' }] })
       }),
     checkCredentials: smokeCredentials,
-    credentialsRequired: process.platform !== 'linux',
+    // ADR-0051：各平台均可保存；无系统加密时走本机文件回退
+    credentialsRequired: true,
     checkSearch: () =>
       checkBundledSearch(ripgrepPath, join(app.getPath('userData'), 'smoke-workspace')),
     checkNative: smokeNativeProcessTree,
@@ -1281,9 +1293,8 @@ async function smokeNativeProcessTree(): Promise<string> {
   return 'job-object'
 }
 
-/** 用真实的系统加密保存、解析并删除一个测试 Key（冒烟检查，数据目录是临时目录）。 */
+/** 保存、解析并删除一个测试 Key（冒烟检查；ADR-0051 含系统加密与本机文件回退）。 */
 async function smokeCredentials(): Promise<CredentialCheck> {
-  if (!(await createSafeStorageCipher(safeStorage).isAvailable())) return 'unavailable'
   const ref = 'smoke-test'
   const secret = `smoke-secret-${process.pid}`
   await credentials.set(ref, secret)

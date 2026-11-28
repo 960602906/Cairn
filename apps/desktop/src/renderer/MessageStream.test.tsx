@@ -2290,6 +2290,18 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(screen.getByText('Agent 进程意外退出，可以从最后保存的位置继续。')).toBeTruthy()
     crash.unmount()
 
+    const missingKey = renderStream({
+      ...base,
+      crash: {
+        code: 'host.start_failed',
+        params: { cause: 'credentials.missing' },
+      },
+    } as unknown as SessionView)
+    expect(
+      screen.getByText('本轮失败：这个供应商还没有保存 API Key。请到设置里重新粘贴 Key'),
+    ).toBeTruthy()
+    missingKey.unmount()
+
     // 重试等待按秒倒数：计时用假时钟，避免真的等 5 秒
     const retryAt = Date.now()
     vi.useFakeTimers()

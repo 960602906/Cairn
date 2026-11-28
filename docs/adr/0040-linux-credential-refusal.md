@@ -1,10 +1,13 @@
 # ADR-0040 Linux 无系统密钥环时的凭据策略：显式拒绝
 
-- 状态：已接受（2026-11-16）
+- 状态：已取代（由 [ADR-0051](0051-local-credential-persistence.md)，2026-11-27）
 - 日期：2026-11-16
-- 相关决策：ADR-0010（凭据提供方与加密存储）、ADR-0014（依赖与许可证）
+- 相关决策：ADR-0010（凭据提供方与加密存储）、ADR-0014（依赖与许可证）、ADR-0051（本机持久化）
 - 实现：`apps/desktop/src/main/services/safe-storage-cipher.ts`、`credential-store.ts`；说明见
   [`docs/dev/credentials.md`](../dev/credentials.md)
+
+> **已被取代。** 现行策略见 ADR-0051：不再因缺少系统密钥环而拒绝保存；优先 `safeStorage`，
+> 否则回退本机应用数据文件。下文保留为 M6-04 时的历史决定。
 
 ## 背景
 

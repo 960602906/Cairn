@@ -83,14 +83,18 @@ describe('load：文件系统错误与特殊目录项', () => {
     const root = tempDir()
     fs.writeFileSync(path.join(root, 'SKILL.md'), markdown)
     fs.writeFileSync(path.join(root, 'a.txt'), 'a')
-    state.readdir.set(root, () => [
+    // load 会先 realpath；macOS 上 /var → /private/var，mock 必须挂在解析后的路径上
+    const real = fs.realpathSync(root)
+    const listing = () => [
       dirent('.', 'dir'),
       dirent('..', 'dir'),
       dirent('node_modules', 'dir'),
       dirent('pipe', 'other'),
       dirent('SKILL.md', 'file'),
       dirent('a.txt', 'file'),
-    ])
+    ]
+    state.readdir.set(root, listing)
+    state.readdir.set(real, listing)
     const preview = previewSkill({ kind: 'directory', path: root })
     expect(preview.files.map((file) => file.path)).toEqual(['a.txt'])
   })
