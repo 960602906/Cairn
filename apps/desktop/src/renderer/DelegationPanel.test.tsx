@@ -206,7 +206,7 @@ describe('DelegationPanel', () => {
     expect(region.textContent).toContain('builtin.reviewer')
     expect(region.textContent).toContain('检查登录流程')
     expect(region.textContent).toContain('完成')
-    expect(region.textContent).toContain('15 tokens')
+    expect(region.textContent).toContain('已用 15')
     expect(region.textContent).toContain('看完了')
     expect(region.textContent).toContain('测试失败')
     const tree = await screen.findByRole('list', { name: '运行树' })

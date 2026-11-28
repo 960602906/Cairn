@@ -236,7 +236,7 @@ describe('DelegationCard', () => {
     const card = screen.getByRole('article', { name: '委派任务：检查登录流程' })
     expect(card.textContent).toContain('builtin.reviewer')
     expect(card.textContent).toContain('运行中')
-    expect(card.textContent).toContain('150 tokens')
+    expect(card.textContent).toContain('已用 150')
     await user.click(withinCard(card).getByRole('button', { name: /检查登录流程/ }))
     expect(onOpenRun).toHaveBeenCalledWith('c1')
     // 过程树在右侧详情面板里读取，卡片不再展开，也不触发 run.inspect。
