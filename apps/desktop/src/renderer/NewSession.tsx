@@ -707,7 +707,14 @@ export function NewSession({
                 className="px-1 text-body text-fg break-words"
               />
             </div>
-            <div className="mt-2 flex items-center gap-1">
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              <WorkspaceGitBar
+                projectPath={projectPath === '' ? undefined : projectPath}
+                projects={projects}
+                onSelectProject={changeProject}
+                onOpenFolder={() => void chooseFolder()}
+                returnFocus={() => textarea.current?.focus()}
+              />
               <AgentPicker
                 agent={
                   selectedAgent === undefined
@@ -766,13 +773,6 @@ export function NewSession({
             </div>
           </div>
         </div>
-        <WorkspaceGitBar
-          projectPath={projectPath === '' ? undefined : projectPath}
-          projects={projects}
-          onSelectProject={changeProject}
-          onOpenFolder={() => void chooseFolder()}
-          returnFocus={() => textarea.current?.focus()}
-        />
       </div>
     </div>
   )

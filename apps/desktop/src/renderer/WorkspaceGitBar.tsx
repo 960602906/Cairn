@@ -1,9 +1,11 @@
 /**
- * 输入框下方的当前目录与 Git 分支（参考 LiveAgent 的输入区 Git 状态）。
+ * 工作空间 / Git 分支选择：输入框卡片工具栏里的一个下拉控件。
  *
- * 放在 Composer 卡片下面，好让输入框上方的目标条 / 待办进度整体下移。目录显示工作空间名
- * （悬停看完整路径）；分支由主进程读取，点开可以切换到其他本地分支。不是 Git 仓库或读取
- * 失败时只显示目录。窗口重新获得焦点时刷新一次，用户在外面的终端切换分支后回来即可看到。
+ * 新对话页（传了 `onSelectProject`）的触发器显示「工作空间 · 分支」，菜单上半部分切换工作空间
+ * （含「选择文件夹…」），下半部分切换分支；对话页的项目已在顶栏面包屑里，这里只显示分支。
+ * 分支由主进程读取，不是 Git 仓库或读取失败时只保留工作空间，对话页则整个控件不出现，免得在
+ * 输入框下方留一行悬空的文字。窗口重新获得焦点时刷新一次，用户在外面的终端切换分支后回来即
+ * 可看到。切换失败在控件旁显示错误；选中工作空间 / 分支或按 Esc 关闭菜单后把焦点还给调用方。
  */
 import { Check, ChevronDown, FolderOpen, GitBranch } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -26,7 +28,7 @@ import {
 
 export interface WorkspaceGitBarProps {
   readonly projectPath: string | undefined
-  /** 可切换的工作空间（新对话页）；不传时只显示目录，不能切换。 */
+  /** 可切换的工作空间（新对话页）；不传时只显示分支（对话页）。 */
   readonly projects?: readonly ProjectSummary[] | undefined
   readonly onSelectProject?: ((path: string) => void) | undefined
   readonly onOpenFolder?: (() => void) | undefined
@@ -102,128 +104,116 @@ export function WorkspaceGitBar({
 
   const switchable = onSelectProject !== undefined
   if (projectPath === undefined && !switchable) return null
+  // 对话页的项目在顶栏面包屑里，不在这里重复；没有分支时整个控件不出现。
+  if (!switchable && branch === undefined) return null
+
   const workspaceName = projectNameForPath(projectPath, projects ?? [], tc('project.defaultName'))
   const workspaceLabel =
     workspaceName ?? (projectPath === undefined ? t('new.chooseWorkspace') : '')
-
-  const directory = switchable ? (
-    <DropdownMenu
-      onOpenChange={(open) => {
-        if (open) interactedOutside.current = false
-      }}
-    >
-      <DropdownMenuTrigger
-        aria-label={
-          projectPath === undefined
-            ? t('new.chooseWorkspace')
-            : t('new.workspaceLabel', { name: workspaceLabel })
-        }
-        title={projectPath}
-        className="flex h-6 min-w-0 max-w-[260px] items-center gap-1.5 rounded-item px-1.5 text-note text-muted outline-none hover:bg-hover hover:text-fg2 [&_svg]:size-3.5"
-      >
-        <FolderTypeIcon
-          name={projectPath === undefined ? workspaceLabel : lastSegment(projectPath)}
-        />
-        <span className="truncate">{workspaceLabel}</span>
-        <ChevronDown aria-hidden className="shrink-0 text-faint" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        side="top"
-        className="max-h-80 w-72 overflow-y-auto"
-        onInteractOutside={() => {
-          interactedOutside.current = true
-        }}
-        onCloseAutoFocus={(event) => {
-          if (returnFocus === undefined || interactedOutside.current) return
-          event.preventDefault()
-          returnFocus()
-        }}
-      >
-        <DropdownMenuLabel>{t('composer.workspace.switch')}</DropdownMenuLabel>
-        {(projects ?? []).map((project) => (
-          <DropdownMenuItem
-            key={project.projectId}
-            onSelect={() => onSelectProject?.(project.path)}
-          >
-            <FolderTypeIcon name={lastSegment(project.path)} />
-            <span className="min-w-0 flex-1 truncate">
-              {projectDisplayName(project, tc('project.defaultName'))}
-            </span>
-            {project.path === projectPath && <Check className="text-fg!" />}
-          </DropdownMenuItem>
-        ))}
-        {(projects ?? []).length > 0 && <DropdownMenuSeparator />}
-        <DropdownMenuItem onSelect={() => onOpenFolder?.()}>
-          <FolderOpen className="shrink-0" />
-          {t('new.openFolder')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  ) : projectPath !== undefined ? (
-    <span
-      title={projectPath}
-      aria-label={t('composer.workspace.directory', { path: projectPath })}
-      // px-1.5 与可切换时的下拉触发器一致，图标对齐输入框里的文字（卡片 px-3.5 + 文本 px-1）。
-      className="flex min-w-0 items-center gap-1.5 px-1.5"
-    >
-      <FolderTypeIcon name={lastSegment(projectPath)} />
-      <span className="truncate">{lastSegment(projectPath)}</span>
-    </span>
-  ) : null
+  const label = switchable
+    ? projectPath === undefined
+      ? t('new.chooseWorkspace')
+      : branch === undefined
+        ? t('new.workspaceLabel', { name: workspaceLabel })
+        : t('composer.workspace.workspaceAndBranch', { name: workspaceLabel, branch })
+    : t('composer.workspace.branch', { branch: branch ?? '' })
 
   return (
     <div
       role="group"
       aria-label={t('composer.workspace.label')}
-      className="mt-1.5 flex min-w-0 items-center gap-3 px-3 text-note text-muted"
+      className="flex min-w-0 items-center gap-1"
     >
-      {directory}
-      {branch !== undefined && (
-        <DropdownMenu
-          onOpenChange={(open) => {
-            if (open) interactedOutside.current = false
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (open) interactedOutside.current = false
+        }}
+      >
+        <DropdownMenuTrigger
+          disabled={switching}
+          aria-label={label}
+          title={projectPath}
+          className="flex h-7 max-w-[240px] min-w-0 items-center gap-1.5 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-60"
+        >
+          {switchable ? (
+            <FolderTypeIcon
+              name={projectPath === undefined ? workspaceLabel : lastSegment(projectPath)}
+            />
+          ) : (
+            <GitBranch aria-hidden className="shrink-0 text-muted" />
+          )}
+          {switchable && <span className="truncate">{workspaceLabel}</span>}
+          {branch !== undefined && (
+            <>
+              {switchable && (
+                <span aria-hidden className="text-faint">
+                  ·
+                </span>
+              )}
+              <span className="max-w-[160px] truncate text-muted">{branch}</span>
+            </>
+          )}
+          <ChevronDown aria-hidden className="shrink-0 text-faint" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          side="top"
+          className="max-h-80 w-64 overflow-y-auto"
+          onInteractOutside={() => {
+            interactedOutside.current = true
+          }}
+          onCloseAutoFocus={(event) => {
+            if (returnFocus === undefined || interactedOutside.current) return
+            event.preventDefault()
+            returnFocus()
           }}
         >
-          <DropdownMenuTrigger
-            disabled={switching}
-            title={t('composer.workspace.branch', { branch })}
-            aria-label={t('composer.workspace.branch', { branch })}
-            className="flex h-6 min-w-0 max-w-[220px] shrink-0 items-center gap-1.5 rounded-item px-1.5 text-note text-muted outline-none hover:bg-hover hover:text-fg2 disabled:opacity-60 [&_svg]:size-3.5"
-          >
-            <GitBranch aria-hidden className="shrink-0 text-faint" />
-            <span className="truncate">{branch}</span>
-            <ChevronDown aria-hidden className="shrink-0 text-faint" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            side="top"
-            className="max-h-72 w-56 overflow-y-auto"
-            onInteractOutside={() => {
-              interactedOutside.current = true
-            }}
-            onCloseAutoFocus={(event) => {
-              if (returnFocus === undefined || interactedOutside.current) return
-              event.preventDefault()
-              returnFocus()
-            }}
-          >
-            <DropdownMenuLabel>{t('composer.workspace.branches')}</DropdownMenuLabel>
-            {(info.branches ?? [branch]).map((item) => (
-              <DropdownMenuItem
-                key={item}
-                disabled={item === branch || switching}
-                onSelect={() => void switchTo(item)}
-              >
-                <span className="min-w-0 flex-1 truncate">{item}</span>
-                {item === branch && <Check className="text-fg!" />}
+          {switchable && (
+            <>
+              <DropdownMenuLabel>{t('composer.workspace.switch')}</DropdownMenuLabel>
+              {(projects ?? []).map((project) => (
+                <DropdownMenuItem
+                  key={project.projectId}
+                  onSelect={() => onSelectProject?.(project.path)}
+                >
+                  <FolderTypeIcon name={lastSegment(project.path)} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {projectDisplayName(project, tc('project.defaultName'))}
+                  </span>
+                  {project.path === projectPath && <Check className="text-fg!" />}
+                </DropdownMenuItem>
+              ))}
+              {(projects ?? []).length > 0 && <DropdownMenuSeparator />}
+              <DropdownMenuItem onSelect={() => onOpenFolder?.()}>
+                <FolderOpen className="shrink-0" />
+                {t('new.openFolder')}
               </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+            </>
+          )}
+          {branch !== undefined && (
+            <>
+              {switchable && <DropdownMenuSeparator />}
+              <DropdownMenuLabel>{t('composer.workspace.branches')}</DropdownMenuLabel>
+              {(info.branches ?? [branch]).map((item) => (
+                <DropdownMenuItem
+                  key={item}
+                  disabled={item === branch || switching}
+                  onSelect={() => void switchTo(item)}
+                >
+                  <span className="min-w-0 flex-1 truncate">{item}</span>
+                  {item === branch && <Check className="text-fg!" />}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {error !== '' && (
-        <span role="alert" title={error} className="min-w-0 truncate text-danger">
+        <span
+          role="alert"
+          title={error}
+          className="min-w-0 max-w-[180px] truncate text-note text-danger"
+        >
           {error}
         </span>
       )}
