@@ -164,9 +164,9 @@ test('修复示例项目的 bug 并运行测试：审阅 diff、撤销单个文�
     await expect.poll(() => existsSync(path.join(project, 'NOTES.md'))).toBe(false)
     expect(readFileSync(path.join(project, 'sum.mjs'), 'utf8')).toContain('let i = 0')
 
-    // 切换模型（M2-04）：第二轮使用第二个模型
+    // 切换模型（M2-04）：第二轮使用第二个模型（列表项是 option，非旧 Dropdown 的 menuitem）
     await window.getByRole('button', { name: '模型：Local · e2e-model', exact: true }).click()
-    await window.getByRole('menuitem', { name: /Second/ }).click()
+    await window.getByRole('option', { name: /Second/ }).click()
     await sendPrompt(window, '再确认一下')
     await expect(window.getByText(REPLY)).toHaveCount(2)
     await expect(runStatus(window)).toHaveText('空闲')
