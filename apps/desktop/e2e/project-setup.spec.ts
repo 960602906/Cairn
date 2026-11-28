@@ -50,7 +50,7 @@ test('用模板配置模型、用对话框选择项目后对话', async ({ launc
     // 关闭设置后回到新对话首页；默认项目已经选中，仍可切换系统对话框返回的项目目录
     await window.getByRole('button', { name: '工作空间：默认项目' }).click()
     await window.getByRole('menuitem', { name: '选择文件夹…' }).click()
-    const workspace = window.getByRole('group', { name: '当前工作区' })
+    const workspace = window.getByRole('group', { name: '工作空间与分支' })
     await expect(workspace.getByRole('button', { name: '工作空间：project' })).toBeVisible()
 
     await sendPrompt(window, '你好')

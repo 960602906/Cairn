@@ -620,6 +620,13 @@ export function NewSession({
               onHover={setCommandIndex}
             />
           )}
+          <WorkspaceGitBar
+            projectPath={projectPath === '' ? undefined : projectPath}
+            projects={projects}
+            onSelectProject={changeProject}
+            onOpenFolder={() => void chooseFolder()}
+            returnFocus={() => textarea.current?.focus()}
+          />
           <div
             onDragOver={(event) => {
               if (
@@ -658,7 +665,7 @@ export function NewSession({
               insertExternalFiles(files)
             }}
             className={cn(
-              'rounded-[16px] border border-hair2 bg-raise px-4 pt-3.5 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
+              'relative rounded-[16px] border border-hair2 bg-raise px-4 pt-3.5 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
               dragging && 'border-accent ring-2 ring-accent/20',
             )}
           >
@@ -708,13 +715,6 @@ export function NewSession({
               />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1">
-              <WorkspaceGitBar
-                projectPath={projectPath === '' ? undefined : projectPath}
-                projects={projects}
-                onSelectProject={changeProject}
-                onOpenFolder={() => void chooseFolder()}
-                returnFocus={() => textarea.current?.focus()}
-              />
               <AgentPicker
                 agent={
                   selectedAgent === undefined

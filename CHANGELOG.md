@@ -128,13 +128,18 @@
 
 ### Changed
 
-- 输入框卡片下方的项目 / 分支那一行移进了卡片底部工具栏，合并成一个「工作空间 · 分支」
-  下拉：新对话页可以在这里切换工作空间或分支，对话页只显示分支（项目在顶栏面包屑里），
-  不是 Git 仓库时不再出现，卡片下面也不再单独占一行。
-  The project/branch row below the composer now lives in the card's bottom toolbar as a single
-  "workspace · branch" dropdown. New sessions switch workspace or branch from it; conversations
-  show only the branch (the project is in the top-bar breadcrumb) and the control disappears
-  outside Git repositories, leaving nothing below the card.
+- 输入框卡片下方的项目 / 分支那一行改为卡片上方的一行上下文条：左边是工作空间（新对话页
+  可以切换或选择文件夹），右边是当前分支；分支菜单的「切换分支」标题右侧是远端平台图标
+  （GitHub / Gitee / 其它私有 Git）和新建分支、拉取（只接受快进）、推送三个纯图标操作（悬停
+  与读屏有文字说明），操作结果与 Git 的报错都显示在这一行。对话页的项目在顶栏面包屑里，只
+  显示分支；不是 Git 仓库时整条不出现。
+  The project/branch row below the composer is now a slim context strip above the card:
+  the workspace on the left (switchable on the new-session page) and the current branch on
+  the right. The branch menu shows the remote platform logo (GitHub / Gitee / private Git)
+  beside the "Switch branch" header and offers new-branch, pull (fast-forward only) and push
+  as three icon-only actions (with text on hover and for screen readers), with results and Git
+  errors shown on the strip. Conversations show only the branch (the project is in the top-bar
+  breadcrumb), and the strip disappears outside Git repositories.
 
 - 目标条收成输入框上方的单行细条：短状态、暂停/继续、改条件、删除（确认后清除）；不再显示
   轮次与活动时长。可用 `goal.updateCondition` 更新未结束目标的完成条件，当前轮不中断。
@@ -231,10 +236,11 @@
   The agent picker highlights the current agent or team when opened, so pressing Enter no
   longer switches to the first item by accident.
 
-- 关闭工作空间或分支菜单、对话内查找，或暂停 / 继续目标之后，焦点回到输入框；点菜单外面
-  关闭时不抢焦点。
-  Closing the workspace or branch menu, in-conversation find, or pausing/resuming a goal returns
-  focus to the composer; dismissing a menu by clicking elsewhere leaves focus alone.
+- 关闭工作空间菜单、分支菜单、新建分支对话框、对话内查找，或暂停 / 继续目标之后，焦点回到
+  输入框；点外面关闭时不抢焦点。
+  Closing the workspace or branch menu, the new-branch dialog, in-conversation find, or
+  pausing/resuming a goal returns focus to the composer; dismissing by clicking elsewhere
+  leaves focus alone.
 
 - 关闭输入框上方的上下文用量浮层后，焦点回到输入框；Agent 选择器用键盘上下移动时，高亮项
   会自动滚入可视范围，点外面关闭后下次打开回到完整列表，不再沿用上次的搜索词。

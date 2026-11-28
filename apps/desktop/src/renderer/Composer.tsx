@@ -1425,6 +1425,7 @@ export function Composer({
             onHover={setCommandIndex}
           />
         )}
+        <WorkspaceGitBar projectPath={projectPath} returnFocus={() => textarea.current?.focus()} />
         <form
           onSubmit={submit}
           onClick={(e) => {
@@ -1467,7 +1468,7 @@ export function Composer({
             insertExternalFiles(files)
           }}
           className={cn(
-            'rounded-[14px] border border-hair2 bg-raise px-3.5 pt-3 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
+            'relative rounded-[14px] border border-hair2 bg-raise px-3.5 pt-3 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
             dragging && 'border-accent ring-2 ring-accent/20',
           )}
         >
@@ -1538,10 +1539,6 @@ export function Composer({
               onTogglePlan={() => setPlanMode((on) => !on)}
               open={modeMenuOpen}
               onOpenChange={setModeMenuOpen}
-              returnFocus={() => textarea.current?.focus()}
-            />
-            <WorkspaceGitBar
-              projectPath={projectPath}
               returnFocus={() => textarea.current?.focus()}
             />
             {/* 指令结果放在工具栏中间的空位：不占文档流、不改变输入框高度，窄窗口截断后悬停看全文。 */}
