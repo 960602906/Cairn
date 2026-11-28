@@ -15,18 +15,33 @@ export function DialogContent({
   children,
   icon,
   tone = 'default',
+  layer = 'base',
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
   /** 标题左上方的图标。 */
   readonly icon?: ReactNode
   readonly tone?: 'default' | 'danger'
+  /**
+   * 叠在已打开的对话框上时提高遮罩与内容的层级，避免内层遮罩画在外层下面。
+   * `nested` 叠一层；`stack` 再叠一层（例如嵌套对话框上的放弃确认）。
+   */
+  readonly layer?: 'base' | 'nested' | 'stack'
 }) {
+  const z =
+    layer === 'stack'
+      ? { overlay: 'z-[80]', content: 'z-[90]' }
+      : layer === 'nested'
+        ? { overlay: 'z-[60]', content: 'z-[70]' }
+        : { overlay: 'z-40', content: 'z-50' }
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-[rgba(10,10,14,.28)] backdrop-blur-[3px]" />
+      <DialogPrimitive.Overlay
+        className={cn('fixed inset-0 bg-[rgba(10,10,14,.28)] backdrop-blur-[3px]', z.overlay)}
+      />
       <DialogPrimitive.Content
         className={cn(
-          'fixed top-1/2 left-1/2 z-50 w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-dialog bg-raise p-6 text-fg shadow-3 outline-none',
+          'fixed top-1/2 left-1/2 w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-dialog bg-raise p-6 text-fg shadow-3 outline-none',
+          z.content,
           className,
         )}
         {...props}

@@ -7,9 +7,9 @@
  *   目录项预填地址、接口格式、名称与兼容参数，用户通常只需粘贴 Key。没有预置模型的服务在填入 Key 后
  *   自动拉取模型列表并启用建议的模型。“自定义”仍可接入任意 OpenAI / Anthropic / Gemini 兼容地址。
  *   目录可由供应商插件（只有数据的 JSON 文件）扩展，插件在同一个对话框里安装与卸载。
- * - 弹窗保持单栏：名称、Base URL（有多个接入点时可切换国际 / 中国大陆）、Key、测试连接，然后是模型列表。
- *   拉取到的模型与已配置的模型合并在同一个列表里，每行一个开关；展开某一行才显示
- *   上下文、输出上限与默认模型，显示名称和能力再收在“更多设置”里。
+ * - 弹窗分两段：上方「接入」收名称、Base URL（可切换国际 / 中国大陆）、Key 与测试连接；
+ *   下方「模型」是主内容——拉取到的与已配置的合并成卡片列表，每张卡片一个开关，点「编辑」
+ *   打开独立参数弹窗（显示名称、上下文、输出上限、能力与默认模型）。
  *   拉取结果保存在配置中，下次打开直接显示，不用重新拉取；手动添加收在列表底部。
  * - 测试连接默认只测一个模型（默认模型或第一个启用的）；测试全部模型要再确认一次，避免消耗额度或触发限流。
  * - 保存时先写 Key，Key 写入失败就不改设置；设置写入失败时撤回刚写入的新 Key，并就地说明。
@@ -657,16 +657,18 @@ function TestBar({
     0,
   )
   const total = outcomes?.length ?? 0
+  const idle = outcomes === undefined || testing
   return (
     <div
       role="status"
       className={cn(
-        'flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-[13px] text-fg2',
-        outcomes === undefined || testing
-          ? 'bg-sunk'
-          : failures.length === 0
-            ? 'bg-ok-soft'
-            : 'bg-danger-soft',
+        'flex items-center gap-2.5 text-[13px] text-fg2',
+        idle
+          ? 'px-0 py-0'
+          : cn(
+              'rounded-[9px] px-2.5 py-2',
+              failures.length === 0 ? 'bg-ok-soft' : 'bg-danger-soft',
+            ),
       )}
     >
       {testing ? (
@@ -1460,97 +1462,203 @@ function CapabilityRow({
   )
 }
 
-/** 展开某个模型后的设置：常用项直接可见，显示名称与能力收在“更多设置”里。 */
-function ModelSettings({
+/** 模型卡片行：开关、名称层级、徽章与低调的「编辑」；同列在一个面板里，避免每行再套厚框。 */
+function ModelCard({
+  row,
+  enabled,
+  isDefault,
+  onToggle,
+  onEdit,
+}: {
+  readonly row: ModelRow
+  readonly enabled: boolean
+  readonly isDefault: boolean
+  readonly onToggle: (enabled: boolean) => void
+  readonly onEdit: () => void
+}) {
+  const { t } = useTranslation('settings')
+  const configured = row.profile !== undefined
+  const title = row.displayName && row.displayName !== row.id ? row.displayName : row.id
+  const showId = title !== row.id
+  return (
+    <li
+      className={cn(
+        'px-3 py-2.5 transition-colors hover:bg-sunk/60 [&+&]:shadow-[0_-0.5px_0_var(--hair)]',
+        !configured && 'opacity-90',
+      )}
+    >
+      <div className="flex items-center gap-2.5">
+        <Switch
+          checked={enabled}
+          disabled={isDefault}
+          title={isDefault ? t('providers.model.defaultHint') : undefined}
+          aria-label={
+            configured
+              ? t('providers.model.enable', { name: title })
+              : t('providers.model.add', { name: title })
+          }
+          onCheckedChange={onToggle}
+          className={cn(isDefault && 'disabled:opacity-100')}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {showId ? (
+              <span
+                className={cn(
+                  'min-w-0 truncate text-[13px] font-medium',
+                  configured ? 'text-fg' : 'text-muted',
+                )}
+              >
+                {title}
+              </span>
+            ) : (
+              <code
+                className={cn(
+                  'min-w-0 truncate font-mono text-[12.5px] font-medium [font-variant-ligatures:none]',
+                  configured ? 'text-fg' : 'text-muted',
+                )}
+              >
+                {row.id}
+              </code>
+            )}
+            {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            {showId && (
+              <code className="min-w-0 truncate font-mono text-[11.5px] text-muted [font-variant-ligatures:none]">
+                {row.id}
+              </code>
+            )}
+            <span className="flex-1" />
+            {row.profile?.supportsTools === false && (
+              <span className="shrink-0 text-[11px] text-muted">
+                {t('providers.model.noTools')}
+              </span>
+            )}
+            {row.contextWindow !== undefined && (
+              <span className="shrink-0 text-[11px] tabular text-muted">
+                {formatTokens(row.contextWindow)}
+              </span>
+            )}
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-[12.5px] text-muted hover:text-fg"
+          aria-label={t('providers.model.editAction', { name: title })}
+          onClick={onEdit}
+        >
+          <SquarePen className="size-3.5" />
+          {t('providers.model.edit')}
+        </Button>
+      </div>
+    </li>
+  )
+}
+
+/**
+ * 模型参数弹窗：与供应商弹窗同密度，编辑已持久化的字段（显示名、上下文、输出上限、能力、默认）。
+ * 改动先落在本地草稿，保存后才写回供应商草稿；取消或关闭时若有未保存改动会确认。
+ */
+function ModelEditDialog({
   model,
   isDefault,
-  onChange,
-  onDefault,
+  provisional = false,
+  onSave,
+  onCancel,
   onRemove,
 }: {
   readonly model: ModelProfile
   readonly isDefault: boolean
-  readonly onChange: (patch: Partial<ModelProfile>) => void
-  readonly onDefault: () => void
+  /** 从目录临时加入、尚未确认的模型：即使没改字段也允许保存以正式启用。 */
+  readonly provisional?: boolean
+  readonly onSave: (next: ModelProfile, makeDefault: boolean) => void
+  readonly onCancel: () => void
   readonly onRemove: () => void
 }) {
   const { t } = useTranslation('settings')
-  const [more, setMore] = useState(false)
+  const { t: tc } = useTranslation('common')
+  const [draft, setDraft] = useState(model)
+  const [makeDefault, setMakeDefault] = useState(isDefault)
+  const [confirmClose, setConfirmClose] = useState(false)
+  const changed = JSON.stringify(draft) !== JSON.stringify(model) || makeDefault !== isDefault
+  /** 临时加入的模型即使没改字段也允许保存；放弃确认只看真实改动。 */
+  const canSave = provisional || changed
+
+  const patch = (next: Partial<ModelProfile>) => setDraft((current) => ({ ...current, ...next }))
+
+  const requestClose = () => {
+    if (changed) setConfirmClose(true)
+    else onCancel()
+  }
+
+  const save = () => {
+    const next = makeDefault && draft.enabled === false ? { ...draft, enabled: undefined } : draft
+    onSave(next, makeDefault && !isDefault)
+  }
+
   return (
-    <div className="border-t border-hair bg-sunk/60 px-3 py-3">
-      <div className="grid grid-cols-2 gap-2.5">
-        <NumberField
-          label={t('providers.model.contextLength')}
-          value={model.contextWindow}
-          onCommit={(contextWindow) => onChange({ contextWindow })}
-        />
-        <NumberField
-          label={t('providers.model.maxOutput')}
-          value={model.maxOutputTokens}
-          onCommit={(maxOutputTokens) => onChange({ maxOutputTokens })}
-        />
-      </div>
-      <div className="mt-1 flex items-center gap-1.5">
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={isDefault}
-          onClick={onDefault}
-          className="justify-start"
-        >
-          <Check />
-          {isDefault ? t('providers.model.isDefault') : t('providers.model.setDefault')}
-        </Button>
-        <span className="flex-1" />
-        <IconButton
-          label={t('providers.model.remove', { name: model.displayName ?? model.id })}
-          size="icon-sm"
-          disabled={isDefault}
-          onClick={onRemove}
-        >
-          <Trash2 />
-        </IconButton>
-      </div>
-      {isDefault && (
-        <p className="text-note leading-relaxed text-muted">{t('providers.model.defaultHint')}</p>
-      )}
-      <button
-        type="button"
-        aria-expanded={more}
-        onClick={() => setMore((value) => !value)}
-        className="mt-1 flex w-fit items-center gap-1.5 text-[12.5px] text-muted hover:text-fg"
+    <Dialog open onOpenChange={(open) => !open && requestClose()}>
+      <DialogContent
+        layer="nested"
+        className="flex w-[min(440px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0"
       >
-        <ChevronRight className={cn('size-3.5 transition-transform', more && 'rotate-90')} />
-        {t('providers.model.more')}
-      </button>
-      {more && (
-        <div className="mt-2.5 flex flex-col gap-3">
+        <header className="flex shrink-0 items-start gap-3 border-b border-hair px-5 pt-5 pb-3.5">
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="truncate text-[16px]">
+              {t('providers.model.editTitle')}
+            </DialogTitle>
+            <DialogDescription className="mt-0.5 truncate font-mono text-note text-muted [font-variant-ligatures:none]">
+              {model.id}
+            </DialogDescription>
+          </div>
+          <IconButton label={tc('action.close')} size="icon-sm" onClick={requestClose}>
+            <X />
+          </IconButton>
+        </header>
+
+        <div className="flex flex-col gap-3.5 px-5 py-4">
           <Labeled label={t('providers.model.displayName')}>
             <input
               aria-label={t('providers.model.displayName')}
-              value={model.displayName ?? ''}
+              value={draft.displayName ?? ''}
               placeholder={model.id}
-              onChange={(event) => onChange({ displayName: event.target.value })}
+              onChange={(event) => patch({ displayName: event.target.value })}
               className={inputClass}
             />
           </Labeled>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <NumberField
+              label={t('providers.model.contextLength')}
+              value={draft.contextWindow}
+              onCommit={(contextWindow) => patch({ contextWindow })}
+            />
+            <NumberField
+              label={t('providers.model.maxOutput')}
+              value={draft.maxOutputTokens}
+              onCommit={(maxOutputTokens) => patch({ maxOutputTokens })}
+            />
+          </div>
+
           <div className="rounded-[10px] bg-paper px-3 py-1 shadow-[inset_0_0_0_0.5px_var(--hair2)]">
             <CapabilityRow
               label={t('providers.model.tools')}
-              checked={model.supportsTools}
-              onChange={(supportsTools) => onChange({ supportsTools })}
+              checked={draft.supportsTools}
+              onChange={(supportsTools) => patch({ supportsTools })}
             />
             <CapabilityRow
               label={t('providers.model.parallel')}
-              checked={model.supportsParallelToolCalls}
-              onChange={(supportsParallelToolCalls) => onChange({ supportsParallelToolCalls })}
+              checked={draft.supportsParallelToolCalls}
+              onChange={(supportsParallelToolCalls) => patch({ supportsParallelToolCalls })}
             />
             <CapabilityRow
               label={t('providers.model.reasoning')}
-              checked={model.supportsReasoning}
-              onChange={(supportsReasoning) => onChange({ supportsReasoning })}
+              checked={draft.supportsReasoning}
+              onChange={(supportsReasoning) => patch({ supportsReasoning })}
             />
-            {model.supportsReasoning && (
+            {draft.supportsReasoning && (
               <div className="mt-1 border-t border-hair pt-2 pb-1.5">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[12.5px] text-fg2">
@@ -1558,13 +1666,13 @@ function ModelSettings({
                   </span>
                   <SegmentedControl
                     label={t('providers.model.thinkingLevel')}
-                    value={model.thinkingLevel ?? 'high'}
+                    value={draft.thinkingLevel ?? 'high'}
                     options={[
                       { value: 'low', label: t('providers.model.thinkingLevel.low') },
                       { value: 'medium', label: t('providers.model.thinkingLevel.medium') },
                       { value: 'high', label: t('providers.model.thinkingLevel.high') },
                     ]}
-                    onChange={(thinkingLevel) => onChange({ thinkingLevel })}
+                    onChange={(thinkingLevel) => patch({ thinkingLevel })}
                   />
                 </div>
                 <p className="mt-1 text-note text-faint">
@@ -1573,9 +1681,58 @@ function ModelSettings({
               </div>
             )}
           </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={makeDefault}
+              onClick={() => setMakeDefault(true)}
+              className="justify-start"
+            >
+              <Check />
+              {makeDefault ? t('providers.model.isDefault') : t('providers.model.setDefault')}
+            </Button>
+            <span className="flex-1" />
+            <IconButton
+              label={t('providers.model.remove', { name: draft.displayName ?? draft.id })}
+              size="icon-sm"
+              disabled={isDefault || makeDefault}
+              onClick={onRemove}
+            >
+              <Trash2 />
+            </IconButton>
+          </div>
+          {(isDefault || makeDefault) && (
+            <p className="-mt-2 text-note leading-relaxed text-muted">
+              {t('providers.model.defaultHint')}
+            </p>
+          )}
         </div>
-      )}
-    </div>
+
+        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-hair px-5 py-3">
+          <Button onClick={requestClose}>{tc('action.cancel')}</Button>
+          <Button variant="primary" disabled={!canSave} onClick={save}>
+            {t('providers.save')}
+          </Button>
+        </footer>
+      </DialogContent>
+
+      <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
+        <DialogContent layer="stack" tone="danger" icon={<TriangleAlert />}>
+          <DialogTitle>{t('providers.model.discard.title')}</DialogTitle>
+          <DialogDescription>{t('providers.model.discard.description')}</DialogDescription>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button>{t('providers.model.discard.keep')}</Button>
+            </DialogClose>
+            <Button variant="danger" onClick={onCancel}>
+              {t('providers.model.discard.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Dialog>
   )
 }
 
@@ -1748,7 +1905,9 @@ function ProviderEditor({
   const [touched, setTouched] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
   const [saveError, setSaveError] = useState<'key' | 'settings' | 'settingsKeyKept' | undefined>()
-  const [selectedModelId, setSelectedModelId] = useState<string | undefined>()
+  const [editingModelId, setEditingModelId] = useState<string | undefined>()
+  /** 编辑弹窗打开时若是刚从目录临时加入的模型，取消时应撤掉，不留下“已启用”。 */
+  const [editingIsProvisional, setEditingIsProvisional] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState<string | undefined>(() =>
     saved && settings?.defaultModel?.providerId === saved.id
       ? settings.defaultModel.modelId
@@ -1956,14 +2115,24 @@ function ProviderEditor({
     }
   }
 
-  /** 点模型名展开或收起它的设置；还没加入的模型先加入。 */
-  const expandRow = (row: ModelRow) => {
-    if (row.profile) {
-      setSelectedModelId((current) => (current === row.id ? undefined : row.id))
-      return
+  /** 打开模型参数弹窗；还没加入的模型先临时加入，保存才算正式启用，取消则撤掉。 */
+  const openEdit = (row: ModelRow) => {
+    if (!row.profile) {
+      const profile = profileFrom(remoteOf(row), draft.template, catalog)
+      update({ models: [...draft.models, profile] })
+      setEditingIsProvisional(true)
+    } else {
+      setEditingIsProvisional(false)
     }
-    addModels([remoteOf(row)])
-    setSelectedModelId(row.id)
+    setEditingModelId(row.id)
+  }
+
+  const closeEdit = () => {
+    if (editingIsProvisional && editingModelId) {
+      update({ models: draft.models.filter((model) => model.id !== editingModelId) })
+    }
+    setEditingIsProvisional(false)
+    setEditingModelId(undefined)
   }
 
   const removeModel = (modelId: string) => {
@@ -1971,8 +2140,13 @@ function ProviderEditor({
       models: draft.models.filter((m) => m.id !== modelId),
       ...(draft.catalog ? { catalog: draft.catalog.filter((m) => m.id !== modelId) } : {}),
     })
-    if (selectedModelId === modelId) setSelectedModelId(undefined)
+    if (editingModelId === modelId) {
+      setEditingIsProvisional(false)
+      setEditingModelId(undefined)
+    }
   }
+
+  const editingModel = draft.models.find((model) => model.id === editingModelId)
 
   const save = async () => {
     const credentialRef = credentialRefFor(saved, id, template, typedSecret !== undefined)
@@ -2033,7 +2207,7 @@ function ProviderEditor({
   return (
     <Dialog open onOpenChange={(open) => !open && requestClose()}>
       <DialogContent
-        className="flex max-h-[calc(100dvh-48px)] w-[min(760px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0"
+        className="flex max-h-[calc(100dvh-48px)] w-[min(800px,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0"
         onOpenAutoFocus={(event) => {
           const input = (event.currentTarget as HTMLElement).querySelector<HTMLInputElement>(
             'input[data-autofocus]',
@@ -2044,7 +2218,7 @@ function ProviderEditor({
           }
         }}
       >
-        <header className="flex shrink-0 items-start gap-3 px-6 pt-5 pb-4">
+        <header className="flex shrink-0 items-start gap-3 border-b border-hair px-6 pt-5 pb-4">
           <Logo
             name={draft.displayName || '?'}
             kind={draft.kind}
@@ -2068,111 +2242,105 @@ function ProviderEditor({
           </IconButton>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-            <Labeled label={t('providers.field.name')} labelFor={nameId}>
-              <input
-                id={nameId}
-                className={inputClass}
-                value={draft.displayName}
-                aria-invalid={problems.displayName ? true : undefined}
-                onChange={(e) => update({ displayName: e.target.value })}
-              />
-            </Labeled>
-            <Labeled
-              label={t('providers.field.baseUrl')}
-              labelFor={urlId}
-              hint={
-                problems.baseUrl && draft.baseUrl.trim() !== '' ? (
-                  <span className="text-danger">{t('providers.baseUrl.invalid')}</span>
-                ) : (
-                  t(`providers.baseUrl.hint.${draft.kind}`)
-                )
-              }
-            >
-              <input
-                id={urlId}
-                className={cn(inputClass, 'font-mono text-[13px]')}
-                value={draft.baseUrl}
-                spellCheck={false}
-                placeholder={t('providers.baseUrl.placeholder')}
-                aria-invalid={problems.baseUrl && draft.baseUrl.trim() !== '' ? true : undefined}
-                onChange={(e) => update({ baseUrl: e.target.value, catalog: undefined })}
-              />
-            </Labeled>
-            {template?.regions && (
-              <div className="sm:col-span-2">
-                <Labeled label={t('providers.field.region')} hint={t('providers.region.hint')}>
-                  <SegmentedControl
-                    label={t('providers.field.region')}
-                    value={region?.id ?? ''}
-                    options={template.regions.map((r) => ({
-                      value: r.id,
-                      label: t(`providers.region.${r.id}`),
-                    }))}
-                    onChange={(next) => {
-                      const picked = template.regions?.find((r) => r.id === next)
-                      if (picked) update({ baseUrl: picked.baseUrl, catalog: undefined })
-                    }}
-                    className="w-fit"
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <section aria-label={t('providers.section.connection')} className="flex flex-col gap-2.5">
+            <h3 className="text-[13px] font-medium text-fg">{t('providers.section.connection')}</h3>
+            <div className="flex flex-col gap-3.5 rounded-[12px] bg-paper px-4 py-3.5 shadow-[inset_0_0_0_0.5px_var(--hair2)]">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+                <Labeled label={t('providers.field.name')} labelFor={nameId}>
+                  <input
+                    id={nameId}
+                    className={inputClass}
+                    value={draft.displayName}
+                    aria-invalid={problems.displayName ? true : undefined}
+                    onChange={(e) => update({ displayName: e.target.value })}
                   />
                 </Labeled>
+                <Labeled
+                  label={t('providers.field.baseUrl')}
+                  labelFor={urlId}
+                  hint={
+                    problems.baseUrl && draft.baseUrl.trim() !== '' ? (
+                      <span className="text-danger">{t('providers.baseUrl.invalid')}</span>
+                    ) : (
+                      t(`providers.baseUrl.hint.${draft.kind}`)
+                    )
+                  }
+                >
+                  <input
+                    id={urlId}
+                    className={cn(inputClass, 'font-mono text-[13px]')}
+                    value={draft.baseUrl}
+                    spellCheck={false}
+                    placeholder={t('providers.baseUrl.placeholder')}
+                    aria-invalid={
+                      problems.baseUrl && draft.baseUrl.trim() !== '' ? true : undefined
+                    }
+                    onChange={(e) => update({ baseUrl: e.target.value, catalog: undefined })}
+                  />
+                </Labeled>
+                {template?.regions && (
+                  <div className="sm:col-span-2">
+                    <Labeled label={t('providers.field.region')} hint={t('providers.region.hint')}>
+                      <SegmentedControl
+                        label={t('providers.field.region')}
+                        value={region?.id ?? ''}
+                        options={template.regions.map((r) => ({
+                          value: r.id,
+                          label: t(`providers.region.${r.id}`),
+                        }))}
+                        onChange={(next) => {
+                          const picked = template.regions?.find((r) => r.id === next)
+                          if (picked) update({ baseUrl: picked.baseUrl, catalog: undefined })
+                        }}
+                        className="w-fit"
+                      />
+                    </Labeled>
+                  </div>
+                )}
+                <div className="sm:col-span-2">
+                  <KeyField
+                    status={saved ? keyStatus : newKeyStatus}
+                    secret={secret}
+                    optional={template?.requiresKey === false}
+                    keysUrl={keysUrl}
+                    autoFocus={!saved && template !== undefined && template.requiresKey}
+                    onSecret={(s) => {
+                      setSecret(s)
+                      setTouched(true)
+                      setSaveError(undefined)
+                      onResult(undefined)
+                    }}
+                  />
+                </div>
               </div>
-            )}
-            <div className="sm:col-span-2">
-              <KeyField
-                status={saved ? keyStatus : newKeyStatus}
-                secret={secret}
-                optional={template?.requiresKey === false}
-                keysUrl={keysUrl}
-                autoFocus={!saved && template !== undefined && template.requiresKey}
-                onSecret={(s) => {
-                  setSecret(s)
-                  setTouched(true)
-                  setSaveError(undefined)
-                  onResult(undefined)
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="mt-3">
-            <TestBar
-              outcomes={result}
-              testing={testing}
-              progress={testProgress}
-              disabled={!valid || enabledCount === 0}
-              enabledCount={enabledCount}
-              onTest={testOne}
-              onTestAll={testAll}
-            />
-          </div>
-
-          <section
-            aria-label={t('providers.field.models')}
-            className="mt-5 flex flex-col overflow-hidden rounded-card bg-paper shadow-[inset_0_0_0_0.5px_var(--hair2)]"
-          >
-            <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-2">
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />
-                <input
-                  aria-label={t('providers.model.search')}
-                  placeholder={t('providers.model.search')}
-                  value={search}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className={cn(inputClass, 'h-8 pl-8 text-[12.5px]')}
+              <div className="border-t border-hair pt-3">
+                <TestBar
+                  outcomes={result}
+                  testing={testing}
+                  progress={testProgress}
+                  disabled={!valid || enabledCount === 0}
+                  enabledCount={enabledCount}
+                  onTest={testOne}
+                  onTestAll={testAll}
                 />
               </div>
-              <span className="shrink-0 text-note text-muted tabular">
-                {search.trim() !== ''
-                  ? t('providers.model.matched', { count: filteredRows.length })
-                  : t('providers.model.enabledCount', {
-                      enabled: enabledCount,
-                      total: rows.length,
-                    })}
-              </span>
+            </div>
+          </section>
+
+          <section aria-label={t('providers.field.models')} className="mt-6 flex flex-col">
+            <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+              <div className="min-w-0">
+                <h3 className="text-[13px] font-medium text-fg">{t('providers.section.models')}</h3>
+                <p className="mt-0.5 text-note text-muted tabular">
+                  {search.trim() !== ''
+                    ? t('providers.model.matched', { count: filteredRows.length })
+                    : t('providers.model.enabledCount', {
+                        enabled: enabledCount,
+                        total: rows.length,
+                      })}
+                </p>
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
@@ -2185,14 +2353,30 @@ function ProviderEditor({
               </Button>
             </div>
 
+            <div className="relative mt-3">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint" />
+              <input
+                aria-label={t('providers.model.search')}
+                placeholder={t('providers.model.search')}
+                value={search}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setSearch(event.target.value)}
+                className={cn(inputClass, 'h-8 pl-8 text-[12.5px]')}
+              />
+            </div>
+
             {fetchFailure !== undefined && (
-              <p role="alert" className="border-b bg-danger-soft px-3 py-1.5 text-note text-danger">
+              <p
+                role="alert"
+                className="mt-2 rounded-[9px] bg-danger-soft px-3 py-1.5 text-note text-danger"
+              >
                 {t('providers.fetch.failed', { reason: errorText(fetchFailure) })}
               </p>
             )}
 
             {rows.length === 0 ? (
-              <p className="flex items-center justify-center gap-2 px-4 py-8 text-center text-note text-muted">
+              <p className="mt-3 flex items-center justify-center gap-2 rounded-[12px] bg-sunk/70 px-4 py-10 text-center text-note text-muted">
                 {fetching ? (
                   <>
                     <Spinner />
@@ -2209,96 +2393,30 @@ function ProviderEditor({
                 )}
               </p>
             ) : filteredRows.length === 0 ? (
-              <p className="px-4 py-8 text-center text-note text-muted">
+              <p className="mt-3 rounded-[12px] bg-sunk/70 px-4 py-10 text-center text-note text-muted">
                 {t('providers.model.noMatch')}
               </p>
             ) : (
-              <ul className="max-h-[min(52vh,460px)] overflow-y-auto">
+              <ul className="mt-3 max-h-[min(48vh,420px)] overflow-y-auto rounded-[12px] bg-paper shadow-[inset_0_0_0_0.5px_var(--hair2)]">
                 {filteredRows.map((row) => {
                   const configured = row.profile !== undefined
                   const enabled = configured && row.profile?.enabled !== false
                   const isDefault = row.id === defaultModelId
-                  const name = row.displayName ?? row.id
-                  const expanded = configured && row.id === selectedModelId
                   return (
-                    <li
+                    <ModelCard
                       key={row.id}
-                      className={cn(
-                        '[&+&]:shadow-[0_-0.5px_0_var(--hair)]',
-                        expanded && 'bg-sunk/40',
-                      )}
-                    >
-                      <div className="flex items-center gap-2 px-2.5 py-1.5 text-[13px] transition-colors hover:bg-sunk">
-                        <Switch
-                          checked={enabled}
-                          disabled={isDefault}
-                          title={isDefault ? t('providers.model.defaultHint') : undefined}
-                          aria-label={
-                            configured
-                              ? t('providers.model.enable', { name })
-                              : t('providers.model.add', { name })
-                          }
-                          onCheckedChange={(next) => toggleRow(row, next)}
-                          className={cn(isDefault && 'disabled:opacity-100')}
-                        />
-                        <button
-                          type="button"
-                          aria-expanded={configured ? expanded : undefined}
-                          onClick={() => expandRow(row)}
-                          className="flex min-w-0 flex-1 items-center gap-1 text-left"
-                        >
-                          {configured ? (
-                            <ChevronRight
-                              className={cn(
-                                'size-3 shrink-0 text-faint transition-transform',
-                                expanded && 'rotate-90',
-                              )}
-                            />
-                          ) : (
-                            <span aria-hidden className="size-3 shrink-0" />
-                          )}
-                          <span className="min-w-0 flex-1">
-                            <code
-                              className={cn(
-                                'block truncate font-mono text-[12.5px] [font-variant-ligatures:none]',
-                                configured ? 'text-fg' : 'text-muted',
-                              )}
-                            >
-                              {row.id}
-                            </code>
-                            {row.displayName && row.displayName !== row.id && (
-                              <span className="block truncate text-[11px] text-muted">
-                                {row.displayName}
-                              </span>
-                            )}
-                          </span>
-                        </button>
-                        {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
-                        {row.contextWindow !== undefined && (
-                          <span className="shrink-0 text-[11px] whitespace-nowrap text-muted">
-                            {formatTokens(row.contextWindow)}
-                          </span>
-                        )}
-                      </div>
-                      {expanded && row.profile && (
-                        <ModelSettings
-                          model={row.profile}
-                          isDefault={isDefault}
-                          onChange={(patch) => setModel(row.id, patch)}
-                          onDefault={() => {
-                            setModel(row.id, { enabled: undefined })
-                            setDefaultModelId(row.id)
-                          }}
-                          onRemove={() => removeModel(row.id)}
-                        />
-                      )}
-                    </li>
+                      row={row}
+                      enabled={enabled}
+                      isDefault={isDefault}
+                      onToggle={(next) => toggleRow(row, next)}
+                      onEdit={() => openEdit(row)}
+                    />
                   )
                 })}
               </ul>
             )}
 
-            <div className="border-t px-2.5 py-1.5">
+            <div className="mt-2.5">
               {manual ? (
                 <ManualModel
                   defaultContext={
@@ -2319,7 +2437,7 @@ function ProviderEditor({
             </div>
           </section>
 
-          <div className="mt-4">
+          <div className="mt-6 border-t border-hair pt-4">
             <button
               type="button"
               aria-expanded={advanced}
@@ -2365,7 +2483,7 @@ function ProviderEditor({
           </div>
         </div>
 
-        <footer className="flex shrink-0 items-center justify-end gap-2 border-t px-6 py-3">
+        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-hair px-6 py-3">
           {saveError !== undefined && (
             <p role="alert" className="mr-auto min-w-0 text-note text-danger">
               {t(`providers.saveError.${saveError}`)}
@@ -2382,7 +2500,7 @@ function ProviderEditor({
       </DialogContent>
 
       <Dialog open={confirmClose} onOpenChange={setConfirmClose}>
-        <DialogContent tone="danger" icon={<TriangleAlert />}>
+        <DialogContent layer="nested" tone="danger" icon={<TriangleAlert />}>
           <DialogTitle>{t('providers.discard.title')}</DialogTitle>
           <DialogDescription>
             {typedSecret !== undefined
@@ -2399,6 +2517,27 @@ function ProviderEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {editingModel && (
+        <ModelEditDialog
+          key={editingModel.id}
+          model={editingModel}
+          isDefault={editingModel.id === defaultModelId}
+          provisional={editingIsProvisional}
+          onSave={(next, makeDefault) => {
+            const modelId = editingModel.id
+            const savedModel = makeDefault ? { ...next, enabled: undefined } : next
+            update({
+              models: draft.models.map((model) => (model.id === modelId ? savedModel : model)),
+            })
+            if (makeDefault) setDefaultModelId(modelId)
+            setEditingIsProvisional(false)
+            setEditingModelId(undefined)
+          }}
+          onCancel={closeEdit}
+          onRemove={() => removeModel(editingModel.id)}
+        />
+      )}
     </Dialog>
   )
 }
