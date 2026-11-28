@@ -25,6 +25,21 @@ describe('formatDelegateOutput', () => {
   it('returns undefined for non-JSON output', () => {
     expect(formatDelegateOutput('not json')).toBeUndefined()
   })
+
+  it('includes a question when the child needs input', () => {
+    const text = formatDelegateOutput(
+      JSON.stringify({
+        status: 'needs_input',
+        question: 'Which file should I open?',
+      }),
+    )
+    expect(text).toContain('status: needs_input')
+    expect(text).toContain('Which file should I open?')
+  })
+
+  it('returns undefined for an empty JSON object', () => {
+    expect(formatDelegateOutput('{}')).toBeUndefined()
+  })
 })
 
 describe('describeToolCall for delegate', () => {

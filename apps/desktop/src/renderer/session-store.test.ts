@@ -1355,6 +1355,84 @@ describe('projects and model settings', () => {
     })
   })
 
+  it('clears a timeout error when the folder was registered after the dialog', async () => {
+    const opened = project('late')
+    const { api, calls } = fakeApi({
+      'project.open': () => {
+        throw new RpcError('rpc.timeout', { timeoutMs: 30_000 })
+      },
+      'project.list': () => ({ projects: [opened] }),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().openProject()).resolves.toBeUndefined()
+    expect(store.getState().error).toBeUndefined()
+    expect(store.getState().projects.map((item) => item.projectId)).toEqual(['late'])
+    expect(calls.map(([method]) => method)).toEqual(['project.open', 'project.list'])
+  })
+
+  it('keeps a non-timeout error when refreshing after a failed open', async () => {
+    const { api } = fakeApi({
+      'project.open': () => {
+        throw new RpcError('project.invalid_path', { path: 'x' })
+      },
+      'project.list': () => ({ projects: [project('a')] }),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().openProject()).resolves.toBeUndefined()
+    expect(store.getState().error).toEqual({
+      code: 'project.invalid_path',
+      params: { path: 'x' },
+    })
+  })
+
+  it('clears a prior error when openProject succeeds', async () => {
+    const opened = project('ok')
+    const { api } = fakeApi({
+      'project.open': () => ({ project: opened }),
+    })
+    const store = createSessionStore(api)
+    store.setState({ error: { code: 'rpc.timeout', params: { timeoutMs: 1 } } })
+    await expect(store.getState().openProject()).resolves.toEqual(opened)
+    expect(store.getState().error).toBeUndefined()
+  })
+
+  it('dedupes sessions that appear twice in the list response', async () => {
+    const { api } = fakeApi({
+      'session.list': () => ({
+        sessions: [
+          {
+            sessionId: 's1',
+            title: 'one',
+            projectPath: '/work',
+            status: 'running',
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          {
+            sessionId: 's1',
+            title: 'one-dup',
+            projectPath: '/work',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 3,
+          },
+          {
+            sessionId: 's2',
+            title: 'two',
+            projectPath: '/work',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().refreshSessions()
+    expect(store.getState().sessions.map((item) => item.sessionId)).toEqual(['s1', 's2'])
+    expect(store.getState().sessions[0]?.title).toBe('one')
+  })
+
   it('loads settings and keeps the latest saved settings', async () => {
     const { api } = fakeApi({
       'settings.get': () => ({ locale: 'zh-CN', providers: [] }),
