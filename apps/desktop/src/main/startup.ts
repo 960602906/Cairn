@@ -804,6 +804,8 @@ const projects = createProjectService({
   storage,
   defaultProjectPath: paths.defaultProject,
   onError: reportError,
+  // 项目从列表移除后不再可见：暂停其目标并停止运行中的会话，避免后台继续续轮（ADR-0047）。
+  onProjectRemoved: (projectId) => sessions.stopProjectSessions(projectId),
   pickDirectory: async () => {
     const parent = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const options: Electron.OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }

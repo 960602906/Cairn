@@ -1862,6 +1862,25 @@ describe('goal mode (ADR-0047)', () => {
     expect(published.filter((event) => event.type === 'message.user')).toHaveLength(before)
   })
 
+  it('pauses goals and stops running sessions when their project is removed', async () => {
+    const { manager, sessionId, host, goal } = await started()
+    // 同一路径下再建一个空闲会话：移除项目时它没有目标、也没有在跑，不应被中止。
+    const idle = manager.create({ projectPath: '/work' })
+    startTurn(sessionId, host.runId, 't1')
+    const projectId = storage.sessions.get(sessionId)!.projectId
+    expect(storage.sessions.get(idle.sessionId)?.projectId).toBe(projectId)
+    await manager.stopProjectSessions(projectId)
+    expect(manager.goalView(sessionId)).toMatchObject({
+      status: 'paused',
+      pauseReason: 'project_removed',
+    })
+    expect(host.abort).toHaveBeenCalledWith('user')
+    expect(manager.isBusy(idle.sessionId)).toBe(false)
+    expect(published.filter((event) => event.type === 'goal.paused').at(-1)).toMatchObject({
+      payload: { goalId: goal.goalId, reason: 'project_removed' },
+    })
+  })
+
   it('ends a budget-exhausted resume without starting another turn', async () => {
     const finishGoalBudget = vi.fn()
     const { manager, sessionId, host } = await started({ finishGoalBudget }, { maxTurns: 1 })

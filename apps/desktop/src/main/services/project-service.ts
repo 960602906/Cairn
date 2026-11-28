@@ -63,6 +63,11 @@ export interface ProjectServiceOptions {
   readonly defaultProjectPath?: string
   /** 默认目录创建失败等非致命错误。 */
   readonly onError?: (error: unknown) => void
+  /**
+   * 项目从列表移除后调用（会话本身保留）：用于暂停其目标并停止运行中的会话。
+   * 同步抛错或返回的 Promise 拒绝都交给 `onError`，不影响移除本身。
+   */
+  readonly onProjectRemoved?: (projectId: string) => void | Promise<void>
   readonly createId?: () => string
 }
 
@@ -305,6 +310,15 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
         throw new RpcError(ProjectServiceErrorCode.DefaultImmutable, { projectId })
       }
       storage.projects.remove(projectId)
+      if (options.onProjectRemoved) {
+        try {
+          void Promise.resolve(options.onProjectRemoved(projectId)).catch((error) => {
+            options.onError?.(error)
+          })
+        } catch (error) {
+          options.onError?.(error)
+        }
+      }
       ensureDefault()
       return {}
     },

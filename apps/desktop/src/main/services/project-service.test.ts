@@ -25,6 +25,7 @@ function setup(
     pushGitBranch?: (path: string) => Promise<{ branch?: string }>
     defaultProjectPath?: string
     onError?: (error: unknown) => void
+    onProjectRemoved?: (projectId: string) => void | Promise<void>
   } = {},
 ) {
   let clock = 0
@@ -41,6 +42,7 @@ function setup(
     ...(options.pushGitBranch ? { pushGitBranch: options.pushGitBranch } : {}),
     ...(options.defaultProjectPath ? { defaultProjectPath: options.defaultProjectPath } : {}),
     ...(options.onError ? { onError: options.onError } : {}),
+    ...(options.onProjectRemoved ? { onProjectRemoved: options.onProjectRemoved } : {}),
     createId: () => `p${++id}`,
   })
   return { storage, service }
@@ -243,6 +245,41 @@ describe('project service', () => {
       enableProjectSkills: true,
       sessionCount: 1,
     })
+  })
+
+  it('notifies after a project is removed so its sessions can stop', async () => {
+    const removed = vi.fn(async () => undefined)
+    const { service } = setup([ABS], { onProjectRemoved: removed })
+    await service.open()
+    service.remove({ projectId: 'p1' })
+    expect(removed).toHaveBeenCalledWith('p1')
+  })
+
+  it('keeps the removal successful when the removal callback fails', async () => {
+    const onError = vi.fn()
+    const { service } = setup([ABS], {
+      onProjectRemoved: async () => {
+        throw new Error('boom')
+      },
+      onError,
+    })
+    await service.open()
+    expect(service.remove({ projectId: 'p1' })).toEqual({})
+    await Promise.resolve()
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'boom' }))
+  })
+
+  it('reports a synchronous removal callback failure', async () => {
+    const onError = vi.fn()
+    const { service } = setup([ABS], {
+      onProjectRemoved: () => {
+        throw new Error('sync boom')
+      },
+      onError,
+    })
+    await service.open()
+    expect(service.remove({ projectId: 'p1' })).toEqual({})
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'sync boom' }))
   })
 
   it('rejects an empty name and a missing project', async () => {

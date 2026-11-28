@@ -12,6 +12,14 @@
   Past goals in the goal panel expand to show their end reason, judgments and evidence. Editing a
   condition now has a cancel button, and Enter during IME composition no longer saves.
 
+### Fixed
+
+- 移除工作空间时会先暂停该工作空间下未结束的目标，并停止运行中的会话；目标不会在侧栏里
+  消失后继续自动续轮。重新打开工作空间后目标仍保持暂停，可以按需恢复。
+  Removing a workspace now pauses its unfinished goals and stops its running sessions first, so a
+  goal no longer keeps continuing after the workspace disappears from the sidebar. Reopening the
+  workspace leaves the goals paused and resumable.
+
 ## [0.1.8] - 2026-11-28
 
 ### Removed
