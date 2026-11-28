@@ -53,6 +53,7 @@ function setup(
     readonly judgeTotalTimeoutMs?: number
     readonly credential?: { readonly ref: string; readonly apiKey: string }
     readonly sessionWithoutModel?: boolean
+    readonly judgeModel?: ModelRef
   } = {},
 ) {
   let clock = 1_000_000
@@ -129,7 +130,11 @@ function setup(
     storage,
     sessions,
     settings: {
-      get: () => ({ locale: 'zh-CN', providers: [] }),
+      get: () => ({
+        locale: 'zh-CN',
+        providers: [],
+        ...(options.judgeModel ? { goalJudgeModel: options.judgeModel } : {}),
+      }),
       hostModelConfig: (ref) => (options.judgeMissing ? undefined : configOf(ref)),
       credentialRef: () => options.credential?.ref,
     },
@@ -772,6 +777,18 @@ describe('createGoalService', () => {
     expect(h.requests[0]).toMatchObject({
       model: { ref: model, apiKey: 'secret-key' },
     })
+  })
+
+  it('uses the configured goal judge model instead of the session model', async () => {
+    const judgeModel = { providerId: 'local', modelId: 'judge' }
+    const h = setup({ judgeModel })
+    await h.goals.start()
+    h.createGoal()
+    h.userTurn('t1', 'm1')
+    h.finish('t1')
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1))
+    expect(h.requests[0]).toMatchObject({ model: { ref: judgeModel } })
+    expect(h.goal()?.evaluations[0]?.model).toEqual(judgeModel)
   })
 
   it('pauses quietly when the session has no model', async () => {

@@ -219,6 +219,7 @@ export type Theme = z.infer<typeof Theme>
  * 应用设置。之后的设置项只能以可选字段向后兼容地追加。
  * - `providers`：模型提供方配置（M1-04a），不含 Key；
  * - `defaultModel`：新会话默认使用的模型，指向 `providers` 中的某个模型；没有设置时不出现。
+ * - `goalJudgeModel`：目标模式判定使用的模型（ADR-0047）；没有设置时不出现，跟随会话模型。
  * - `permissionMode`：权限模式（M1-10c，架构 §10.3），即使用哪组预设规则；没有设置时不出现，按“询问”。
  * - `instructions`：用户的自定义说明（M1-13b，架构 §13），加入每个会话的系统提示词；没有设置时不出现。
  * - `theme`：界面主题（M2-01）；没有设置时不出现，按“跟随系统”。
@@ -234,6 +235,11 @@ export const Settings = z.object({
   locale: Locale,
   providers: ProviderConfigList,
   defaultModel: ModelRef.optional(),
+  /**
+   * 目标判定的模型：指向 `providers` 中的某个模型。没有设置时使用当前会话的模型；
+   * 设置后执行轮与续轮仍使用会话模型，只有判定补全换模型。
+   */
+  goalJudgeModel: ModelRef.optional(),
   permissionMode: PermissionMode.optional(),
   instructions: z.string().min(1).max(INSTRUCTIONS_MAX_LENGTH).optional(),
   theme: Theme.optional(),
@@ -273,13 +279,15 @@ export const Settings = z.object({
 export type Settings = z.infer<typeof Settings>
 
 /**
- * 设置的更新：只改给出的项。`providers` 整体替换；`defaultModel` 为 null 时清除。
- * 默认模型必须是（更新后的）提供方列表中的模型；删除其所在的提供方或模型时一并清除。
+ * 设置的更新：只改给出的项。`providers` 整体替换；`defaultModel` 与 `goalJudgeModel` 为 null 时清除。
+ * 两个模型引用都必须是（更新后的）提供方列表中的模型；删除其所在的提供方或模型时一并清除。
  */
 export const SettingsPatch = z.object({
   locale: Locale.optional(),
   providers: ProviderConfigList.optional(),
   defaultModel: ModelRef.nullable().optional(),
+  /** null 清除，回到跟随会话模型。 */
+  goalJudgeModel: ModelRef.nullable().optional(),
   permissionMode: PermissionMode.optional(),
   /** 空字符串或 null 清除自定义说明。 */
   instructions: z.string().max(INSTRUCTIONS_MAX_LENGTH).nullable().optional(),

@@ -3,6 +3,7 @@
  *
  * - 主题与语言选择后立即生效并保存（语言先切换界面，再保存；保存失败时界面保持新语言，错误由 store 显示）。
  * - 默认 Shell：显示自动选择会用哪个 shell（主进程探测）；Windows 上可以改为 cmd。
+ * - 目标判定模型：目标模式每轮结束后的独立判定使用哪个模型；默认跟随会话模型。
  * - 全局指令（`Settings.instructions`）：加入每个会话的系统提示词；改动后点“保存”，可以还原。
  */
 import { useEffect, useId, useState } from 'react'
@@ -20,11 +21,11 @@ import {
 import { DiagnosticsExportDialog } from './DiagnosticsExportDialog.js'
 import { switchLocale } from '../locale.js'
 import { SUPPORTED_LOCALES, type Locale } from '@cairn/i18n'
-import { INSTRUCTIONS_MAX_LENGTH, type ShellPreference } from '@cairn/protocol'
+import { INSTRUCTIONS_MAX_LENGTH, type ModelRef, type ShellPreference } from '@cairn/protocol'
 import { useSessionStore } from '../store-context.js'
 import { DEFAULT_THEME, THEME_CHOICES, themeChoice } from '../theme.js'
 import { Button, cn, SegmentedControl, Switch } from '../ui/index.js'
-import { Field, inputClass, SettingsGroup, ToggleRow } from './Field.js'
+import { Field, inputClass, selectClass, SettingsGroup, ToggleRow } from './Field.js'
 import { useSettingsData } from './settings-data-cache.js'
 import { SandboxSettings } from './SandboxSettings.js'
 import { SettingsHeader } from './SettingsPage.js'
@@ -69,6 +70,53 @@ function ShellField() {
           {t('general.shell.auto', { shell: detected })}
         </p>
       )}
+    </Field>
+  )
+}
+
+function JudgeModelField() {
+  const { t } = useTranslation('settings')
+  const id = useId()
+  const providers = useSessionStore((s) => s.settings?.providers) ?? []
+  const saved = useSessionStore((s) => s.settings?.goalJudgeModel)
+  const updateSettings = useSessionStore((s) => s.updateSettings)
+  const value = saved ? JSON.stringify(saved) : ''
+
+  return (
+    <Field
+      label={t('general.goalJudgeModel.label')}
+      labelFor={id}
+      hint={t('general.goalJudgeModel.hint')}
+    >
+      <select
+        id={id}
+        className={selectClass}
+        value={value}
+        onChange={(event) => {
+          const chosen = event.target.value
+          void updateSettings({
+            goalJudgeModel: chosen === '' ? null : (JSON.parse(chosen) as ModelRef),
+          })
+        }}
+      >
+        <option value="">{t('general.goalJudgeModel.followSession')}</option>
+        {providers.map((provider) => {
+          const models = provider.models.filter((model) => model.enabled !== false)
+          if (models.length === 0) return null
+          return (
+            <optgroup key={provider.id} label={provider.displayName}>
+              {models.map((model) => (
+                <option
+                  key={model.id}
+                  value={JSON.stringify({ providerId: provider.id, modelId: model.id })}
+                >
+                  {model.displayName ?? model.id}
+                </option>
+              ))}
+            </optgroup>
+          )
+        })}
+      </select>
     </Field>
   )
 }
@@ -250,6 +298,7 @@ export function GeneralSettings() {
             onCheckedChange={(checked) => void updateSettings({ agentAutoMemory: checked })}
           />
         </ToggleRow>
+        <JudgeModelField />
         <InstructionsField />
       </SettingsGroup>
       <SandboxSettings />

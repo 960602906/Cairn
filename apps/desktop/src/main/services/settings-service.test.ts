@@ -462,6 +462,48 @@ describe('model settings', () => {
     }
   })
 
+  it('saves the goal judge model independently from the default model', () => {
+    const { storage, settings } = setup()
+    const judgeRef = { providerId: 'ollama', modelId: 'qwen3' }
+    settings.update({ providers: [deepseek, ollama], defaultModel: ref })
+    expect(settings.update({ goalJudgeModel: judgeRef })).toMatchObject({
+      defaultModel: ref,
+      goalJudgeModel: judgeRef,
+    })
+    expect(read()).toEqual({ defaultModel: ref, goalJudgeModel: judgeRef })
+    const reopened = createSettingsService({ storage, file, systemLocales: () => ['zh-CN'] })
+    expect(reopened.get().goalJudgeModel).toEqual(judgeRef)
+
+    expect(settings.update({ goalJudgeModel: null })).not.toHaveProperty('goalJudgeModel')
+    settings.update({ goalJudgeModel: judgeRef })
+    expect(
+      settings.update({ providers: [deepseek, { ...ollama, models: [] }] }),
+    ).not.toHaveProperty('goalJudgeModel')
+    expect(settings.get().defaultModel).toEqual(ref)
+  })
+
+  it('rejects or ignores a goal judge model that is not configured', () => {
+    const { storage, settings } = setup()
+    settings.update({ providers: [ollama] })
+    expect(() => settings.update({ goalJudgeModel: ref })).toThrow(
+      expect.objectContaining({ code: 'settings.invalid_goal_judge_model' }),
+    )
+    // 同一次更新中加入的提供方可以作为判定模型
+    expect(
+      settings.update({ providers: [ollama, deepseek], goalJudgeModel: ref }).goalJudgeModel,
+    ).toEqual(ref)
+
+    for (const goalJudgeModel of [
+      'x',
+      { providerId: 'deepseek' },
+      { providerId: 'gone', modelId: 'm' },
+    ]) {
+      writeFileSync(file, JSON.stringify({ goalJudgeModel }))
+      const reopened = createSettingsService({ storage, file, systemLocales: () => ['zh-CN'] })
+      expect(reopened.get()).not.toHaveProperty('goalJudgeModel')
+    }
+  })
+
   it('keeps the previous providers when the file cannot be written', () => {
     const storage = createMemoryStorage()
     storage.providers.replaceAll([ollama])
