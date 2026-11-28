@@ -8,8 +8,8 @@
  *   自动拉取模型列表并启用建议的模型。“自定义”仍可接入任意 OpenAI / Anthropic / Gemini 兼容地址。
  *   目录可由供应商插件（只有数据的 JSON 文件）扩展，插件在同一个对话框里安装与卸载。
  * - 弹窗分两段：上方「接入」收名称、Base URL（可切换国际 / 中国大陆）、Key 与测试连接；
- *   下方「模型」是主内容——拉取到的与已配置的合并成卡片列表，每张卡片一个开关，点「编辑」
- *   打开独立参数弹窗（显示名称、上下文、输出上限、能力与默认模型）。
+ *   下方「模型」是主内容——拉取到的与已配置的合并成可换行的卡片网格（宽时两列），
+ *   每张卡片一个安静的开关，点「编辑」打开独立参数弹窗（显示名称、上下文、输出上限、能力与默认模型）。
  *   拉取结果保存在配置中，下次打开直接显示，不用重新拉取；手动添加收在列表底部。
  * - 测试连接默认只测一个模型（默认模型或第一个启用的）；测试全部模型要再确认一次，避免消耗额度或触发限流。
  * - 保存时先写 Key，Key 写入失败就不改设置；设置写入失败时撤回刚写入的新 Key，并就地说明。
@@ -1462,7 +1462,7 @@ function CapabilityRow({
   )
 }
 
-/** 模型卡片行：开关、名称层级、徽章与低调的「编辑」；同列在一个面板里，避免每行再套厚框。 */
+/** 模型卡片：网格里的紧凑单元——开关、名称层级、徽章与低调的「编辑」。 */
 function ModelCard({
   row,
   enabled,
@@ -1483,11 +1483,11 @@ function ModelCard({
   return (
     <li
       className={cn(
-        'px-3 py-2.5 transition-colors hover:bg-sunk/60 [&+&]:shadow-[0_-0.5px_0_var(--hair)]',
+        'flex min-w-0 flex-col gap-2 rounded-[10px] bg-paper px-3 py-2.5 shadow-[inset_0_0_0_0.5px_var(--hair2)]',
         !configured && 'opacity-90',
       )}
     >
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-start gap-2">
         <Switch
           checked={enabled}
           disabled={isDefault}
@@ -1498,60 +1498,59 @@ function ModelCard({
               : t('providers.model.add', { name: title })
           }
           onCheckedChange={onToggle}
-          className={cn(isDefault && 'disabled:opacity-100')}
+          className={cn('mt-0.5', isDefault && 'disabled:opacity-100')}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {showId ? (
-              <span
-                className={cn(
-                  'min-w-0 truncate text-[13px] font-medium',
-                  configured ? 'text-fg' : 'text-muted',
-                )}
-              >
-                {title}
-              </span>
-            ) : (
-              <code
-                className={cn(
-                  'min-w-0 truncate font-mono text-[12.5px] font-medium [font-variant-ligatures:none]',
-                  configured ? 'text-fg' : 'text-muted',
-                )}
-              >
-                {row.id}
-              </code>
-            )}
-            {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
+          <div className="flex min-w-0 items-start gap-1.5">
+            <div className="min-w-0 flex-1">
+              {showId ? (
+                <span
+                  className={cn(
+                    'block truncate text-[13px] font-medium',
+                    configured ? 'text-fg' : 'text-muted',
+                  )}
+                >
+                  {title}
+                </span>
+              ) : (
+                <code
+                  className={cn(
+                    'block truncate font-mono text-[12.5px] font-medium [font-variant-ligatures:none]',
+                    configured ? 'text-fg' : 'text-muted',
+                  )}
+                >
+                  {row.id}
+                </code>
+              )}
+              {showId && (
+                <code className="mt-0.5 block truncate font-mono text-[11.5px] text-muted [font-variant-ligatures:none]">
+                  {row.id}
+                </code>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 px-1.5 text-[12.5px] text-muted hover:text-fg"
+              aria-label={t('providers.model.editAction', { name: title })}
+              onClick={onEdit}
+            >
+              <SquarePen className="size-3.5" />
+              {t('providers.model.edit')}
+            </Button>
           </div>
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-            {showId && (
-              <code className="min-w-0 truncate font-mono text-[11.5px] text-muted [font-variant-ligatures:none]">
-                {row.id}
-              </code>
-            )}
-            <span className="flex-1" />
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+            {isDefault && <Tag tone="ok">{t('providers.default')}</Tag>}
             {row.profile?.supportsTools === false && (
-              <span className="shrink-0 text-[11px] text-muted">
-                {t('providers.model.noTools')}
-              </span>
+              <span className="text-[11px] text-muted">{t('providers.model.noTools')}</span>
             )}
             {row.contextWindow !== undefined && (
-              <span className="shrink-0 text-[11px] tabular text-muted">
+              <span className="text-[11px] tabular text-muted">
                 {formatTokens(row.contextWindow)}
               </span>
             )}
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-[12.5px] text-muted hover:text-fg"
-          aria-label={t('providers.model.editAction', { name: title })}
-          onClick={onEdit}
-        >
-          <SquarePen className="size-3.5" />
-          {t('providers.model.edit')}
-        </Button>
       </div>
     </li>
   )
@@ -2397,7 +2396,7 @@ function ProviderEditor({
                 {t('providers.model.noMatch')}
               </p>
             ) : (
-              <ul className="mt-3 max-h-[min(48vh,420px)] overflow-y-auto rounded-[12px] bg-paper shadow-[inset_0_0_0_0.5px_var(--hair2)]">
+              <ul className="mt-3 grid max-h-[min(48vh,420px)] grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
                 {filteredRows.map((row) => {
                   const configured = row.profile !== undefined
                   const enabled = configured && row.profile?.enabled !== false
