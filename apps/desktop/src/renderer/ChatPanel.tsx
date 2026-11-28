@@ -115,17 +115,20 @@ export function ChatPanel({
   const [findToken, setFindToken] = useState(0)
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
-  /** 测量输入框区域高度，给消息列留出足够的底部空白，避免正文被浮动输入框挡住。 */
-  const composerDock = useRef<HTMLDivElement>(null)
-  const [composerPad, setComposerPad] = useState(128)
+  /**
+   * 输入框本身在滚动区下方、占流布局；只需给消息列留一点呼吸空隙，
+   * 再叠上绝对定位的提问/计划/记忆浮层高度，避免末行被浮层挡住。
+   */
+  const floatStack = useRef<HTMLDivElement>(null)
+  const [composerPad, setComposerPad] = useState(32)
   const { isPinned, scrollToBottom } = useStickToBottom(scroller, content, sessionId ?? '')
   const run = view ? rootRun(view) : undefined
 
   useEffect(() => {
-    const el = composerDock.current
+    const el = floatStack.current
     if (!el) return
     const sync = () => {
-      const next = Math.ceil(el.getBoundingClientRect().height) + 24
+      const next = 32 + Math.ceil(el.getBoundingClientRect().height)
       setComposerPad((current) => (current === next ? current : next))
     }
     sync()
@@ -133,7 +136,7 @@ export function ChatPanel({
     const observer = new ResizeObserver(sync)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [sessionId])
+  }, [sessionId, pendingQuestions, pendingPlan, pendingMemories])
 
   /** 点击已打开标签：只切换，不重置当前选中项。 */
   const activateTab = useCallback((next: SessionTab) => {
@@ -358,18 +361,13 @@ export function ChatPanel({
       ? view.plans.find((plan) => plan.planId === progressList.planId)
       : undefined
   const goal = view === undefined ? undefined : openGoal(view)
-  /** 输入框上方是否已有其它悬浮内容（提问、计划、记忆提案、任务进度、目标条）。 */
-  const floatingContent =
-    pendingQuestions > 0 ||
-    pendingPlan !== undefined ||
-    pendingMemories > 0 ||
-    progressList !== undefined ||
-    goal !== undefined
+  /** 「回到底部」只给绝对定位的提问/计划/记忆浮层让位；目标条与任务进度在流布局里，不挡。 */
+  const overlayFloating = pendingQuestions > 0 || pendingPlan !== undefined || pendingMemories > 0
   const turnId = run?.turn?.turnId
   const turnChanges =
     turnId === undefined || changes === undefined ? undefined : totals(turnEntries(changes, turnId))
   return (
-    <section aria-labelledby="chat-title" className="flex min-h-0 flex-1 flex-col bg-paper">
+    <section aria-labelledby="chat-title" className="flex min-h-0 min-w-0 flex-1 flex-col bg-paper">
       {/* 读屏与端到端测试的运行状态；视觉上不占位。role=status 只在文字变化（状态变化）时播报，
           不额外计时或重复播报；不在这里新增可见状态条（聊天区域状态显示优化方案 §1.2）。 */}
       <span role="status" aria-atomic="true" className="sr-only">
@@ -381,7 +379,7 @@ export function ChatPanel({
           <>
             <span
               title={path}
-              className="flex min-w-0 shrink items-center gap-1.5 text-note text-muted"
+              className="flex min-w-0 shrink-0 items-center gap-1.5 text-note text-muted"
             >
               <svg aria-hidden viewBox="0 0 24 24" className="size-3.5 shrink-0">
                 <path
@@ -401,7 +399,7 @@ export function ChatPanel({
         <h2
           id="chat-title"
           title={title === '' ? t('title.untitled') : title}
-          className="min-w-0 flex-1 truncate text-ui font-semibold text-fg"
+          className="min-w-0 max-w-full flex-1 basis-0 truncate text-ui font-semibold text-fg"
         >
           {title === '' ? t('title.untitled') : title}
         </h2>
@@ -497,12 +495,12 @@ export function ChatPanel({
             </div>
           </div>
           <TurnRail view={view} />
-          <div
-            ref={composerDock}
-            className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8"
-          >
+          <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
             {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3">
+            <div
+              ref={floatStack}
+              className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3"
+            >
               <div className="pointer-events-auto mx-auto flex max-h-[min(60vh,560px)] max-w-[840px] flex-col gap-2 overflow-y-auto">
                 <PlanActions plan={pendingPlan} />
                 <QuestionList />
@@ -529,14 +527,14 @@ export function ChatPanel({
                 returnFocus={() => window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))}
               />
             )}
-            {/* 「回到底部」浮在输入框正上方；有其他悬浮卡片（提问、计划、记忆、任务进度、目标）时让位，优先级最低。 */}
-            {!isPinned && !floatingContent && (
+            {/* 「回到底部」靠右上角，避开居中标题/表格；绝对浮层出现时让位。 */}
+            {!isPinned && !overlayFloating && (
               <button
                 type="button"
                 aria-label={t('chat.scrollToBottom')}
                 title={t('chat.scrollToBottom')}
                 onClick={() => scrollToBottom(true)}
-                className="absolute bottom-full left-1/2 z-10 mb-3 flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-hair2 bg-raise text-fg shadow-2 transition-all hover:bg-hover hover:scale-105 active:scale-95 focus-visible:ring-1 focus-visible:ring-accent"
+                className="absolute right-5 bottom-full z-10 mb-3 flex size-8 items-center justify-center rounded-full border border-hair2 bg-raise text-fg shadow-2 transition-all hover:bg-hover hover:scale-105 active:scale-95 focus-visible:ring-1 focus-visible:ring-accent min-[1200px]:right-8"
               >
                 <ArrowDown className="size-4 text-muted" />
                 {status === 'running' && (
@@ -557,7 +555,7 @@ export function ChatPanel({
               onNewChat={onNewChat}
               onOpenSettings={onOpenSettings}
               onOpenSearch={onOpenSearch}
-              onPromptSent={() => scrollToBottom(true)}
+              onPromptSent={() => scrollToBottom(false)}
             />
           </div>
         </div>

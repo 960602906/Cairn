@@ -119,6 +119,7 @@ export function codeBlockOf(pre: Element | undefined) {
 
 /** 所在的块还在流式输出：代码块交给 `CodeCard` 的 `streaming`。 */
 const StreamingContext = createContext(false)
+const CodeWrapContext = createContext(false)
 
 const components: Components = {
   h1: (props) => <h3 className="mt-5 mb-2 text-heading text-fg first:mt-0" {...strip(props)} />,
@@ -163,6 +164,7 @@ const components: Components = {
   ),
   pre: (props) => {
     const streaming = useContext(StreamingContext)
+    const codeWrap = useContext(CodeWrapContext)
     const block = codeBlockOf(props.node)
     if (!block) {
       return (
@@ -179,6 +181,7 @@ const components: Components = {
         languageName={block.lang}
         highlightLines={block.highlightLines}
         streaming={streaming}
+        defaultWrap={codeWrap}
       />
     )
   },
@@ -212,6 +215,8 @@ export interface MarkdownProps {
    * 最后一块里的代码块高亮节流。
    */
   readonly streaming?: boolean
+  /** 窄侧栏等场景：代码块默认换行，避免长行贴边裁切。 */
+  readonly codeWrap?: boolean
 }
 
 const EMPTY_RESOLVED: ReadonlyMap<string, string> = new Map()
@@ -249,6 +254,7 @@ const MarkdownBody = memo(function MarkdownBody({
   onOpenFile,
   debounceMs = 0,
   streaming = false,
+  codeWrap = false,
 }: MarkdownProps) {
   const [resolved, setResolved] = useState<ReadonlyMap<string, string>>(EMPTY_RESOLVED)
   const candidates = useMemo(() => fileRefCandidates(text), [text])
@@ -331,16 +337,18 @@ const MarkdownBody = memo(function MarkdownBody({
 
   return (
     <StreamingContext.Provider value={streaming}>
-      <ReactMarkdown
-        remarkPlugins={
-          resolvePaths === undefined || onOpenFile === undefined
-            ? REMARK_PLUGINS
-            : REMARK_PLUGINS_WITH_FILES
-        }
-        components={activeComponents}
-      >
-        {text}
-      </ReactMarkdown>
+      <CodeWrapContext.Provider value={codeWrap}>
+        <ReactMarkdown
+          remarkPlugins={
+            resolvePaths === undefined || onOpenFile === undefined
+              ? REMARK_PLUGINS
+              : REMARK_PLUGINS_WITH_FILES
+          }
+          components={activeComponents}
+        >
+          {text}
+        </ReactMarkdown>
+      </CodeWrapContext.Provider>
     </StreamingContext.Provider>
   )
 })

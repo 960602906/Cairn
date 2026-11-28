@@ -1829,6 +1829,19 @@ describe('ChatPanel', () => {
     expect(input().value).toBe('你好')
   })
 
+  it('ellipsizes a long session title in the header', async () => {
+    const long =
+      '你好，请先用两三句话做一个简洁的自我介绍，介绍你是谁以及你擅长什么，然后再给出一小段实用的 TypeScript 代码示例'
+    const { open } = setup({ title: long })
+    await open()
+    const heading = document.getElementById('chat-title')
+    expect(heading?.textContent).toBe(long)
+    expect(heading?.getAttribute('title')).toBe(long)
+    expect(heading?.className).toContain('truncate')
+    expect(heading?.className).toContain('basis-0')
+    expect(heading?.className).toContain('min-w-0')
+  })
+
   it('stops the running turn', async () => {
     let finishAbort!: () => void
     const { request, open, emit } = setup({
@@ -1856,9 +1869,9 @@ describe('ChatPanel', () => {
       state(15, 'aborting', 'idle'),
     )
     expect(stopButton()).toBeNull()
-    expect(screen.getByText('已停止')).toBeTruthy()
-    // 已输出的部分保留，并注明未完成
+    // 已输出的部分保留，并只显示一条未完成提示（不再叠一条「已停止」）。
     expect(messages().at(-1)).toContain('已停止 — 回复未完成')
+    expect(screen.queryAllByText('已停止')).toHaveLength(0)
   })
 
   it.each([

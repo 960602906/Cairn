@@ -53,7 +53,7 @@ function DelegationHeader({
       <p className="text-note text-fg2">{delegation.task}</p>
       {delegation.completed?.summary && (
         <div className="max-h-[40vh] overflow-y-auto rounded-item bg-sunk px-2.5 py-2 text-note text-fg2">
-          <Markdown text={delegation.completed.summary} />
+          <Markdown text={delegation.completed.summary} codeWrap />
         </div>
       )}
       {delegation.completed?.issues && delegation.completed.issues.length > 0 && (
@@ -121,7 +121,7 @@ export function DelegationPanel({
           {t('delegation.refresh')}
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-6">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-6">
         {entry?.error && (
           <div role="alert" className="flex flex-col items-start gap-2 pb-2 text-ui">
             <p className="text-danger">{t('delegation.loadFailed')}</p>

@@ -10,7 +10,7 @@ import { TITLE_BAR_INSET } from './WindowControls.js'
 export function TopBar({ children }: { readonly children?: ReactNode }) {
   return (
     <header
-      className="drag relative flex h-12 shrink-0 items-center gap-1.5 bg-paper pr-3 pl-5"
+      className="drag relative flex h-12 min-w-0 shrink-0 items-center gap-1.5 overflow-hidden bg-paper pr-3 pl-5"
       style={TITLE_BAR_INSET}
     >
       {children}

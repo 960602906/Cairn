@@ -1203,6 +1203,7 @@ describe('MessageStream 状态呈现', () => {
       activeSessionId: undefined,
       awaitingTurn: awaiting ? { s1: true } : {},
       approvals: {},
+      changes: {},
       settings: { providers: [] },
       agents: [],
       sendPrompt: vi.fn(),
@@ -1305,6 +1306,22 @@ describe('MessageStream 状态呈现', () => {
     expect(screen.getByText('已停止')).toBeTruthy()
     expect(screen.getByRole('img', { name: '已停止' })).toBeTruthy()
     expect(container.textContent).not.toContain('本轮失败')
+  })
+
+  it('does not stack a second Stopped banner when the reply is already marked incomplete', () => {
+    const stream = view([
+      ...START,
+      ev(
+        5,
+        'message.assistant.completed',
+        { messageId: 'a1', content: [{ type: 'text', text: '说到' }], model, incomplete: true },
+        't1',
+      ),
+      ev(6, 'turn.aborted', { reason: 'user' }, 't1'),
+    ])
+    renderStream(stream)
+    expect(screen.getByText('已停止 — 回复未完成')).toBeTruthy()
+    expect(screen.queryByText('已停止')).toBeNull()
   })
 
   it('grades a failed turn as danger and a limit as a warning', () => {

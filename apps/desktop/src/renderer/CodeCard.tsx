@@ -33,6 +33,8 @@ export interface CodeCardProps {
   readonly className?: string
   /** 代码还在流式输出（进行中的回复）：高亮节流，只用到已经写完的行。 */
   readonly streaming?: boolean
+  /** 窄侧栏等场景默认开启换行，避免长行贴边裁切。 */
+  readonly defaultWrap?: boolean
 }
 
 /** 解析代码块 info string 中的重点行，例如 `ts {2,4-6}`。 */
@@ -92,9 +94,10 @@ export function CodeCard({
   maxHeight,
   className,
   streaming = false,
+  defaultWrap = false,
 }: CodeCardProps) {
   const { t } = useTranslation('session')
-  const [wrap, setWrap] = useState(false)
+  const [wrap, setWrap] = useState(defaultWrap)
   const text = useMemo(() => code.replace(/\r\n?/g, '\n').replace(/\n$/, ''), [code])
   const lines = useMemo(() => text.split('\n'), [text])
   const tokens = useHighlight(text, language, { streaming })
@@ -145,7 +148,7 @@ export function CodeCard({
         </span>
       </figcaption>
       <div
-        className="overflow-auto py-2.5 font-mono text-code [tab-size:4]"
+        className="overflow-auto px-1 py-2.5 font-mono text-code [tab-size:4]"
         style={maxHeight ? { maxHeight } : undefined}
       >
         <div className={cn(wrap ? 'w-full' : 'w-max min-w-full')}>

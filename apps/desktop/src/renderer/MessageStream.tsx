@@ -1357,7 +1357,16 @@ function turnOutcome(view: SessionView, t: TFunction, i18n: I18nInstance): React
   if (view.crash) return crashMessage(view.crash, t, i18n)
   const turn = rootRun(view)?.turn
   if (turn?.status === 'aborted') {
-    return t(turn.abortReason === 'shutdown' ? 'turn.interrupted' : 'turn.aborted')
+    if (turn.abortReason === 'shutdown') return t('turn.interrupted')
+    // 助手消息上已有「未完成」条时，不再在流末尾再挂一条「已停止」。
+    const hasIncomplete = view.messages.some(
+      (message) =>
+        message.role === 'assistant' &&
+        message.turnId === turn.turnId &&
+        message.incomplete === true,
+    )
+    if (hasIncomplete) return undefined
+    return t('turn.aborted')
   }
   if (turn?.status === 'running' && turn.retry) {
     return <RetryNotice retry={turn.retry} t={t} i18n={i18n} />

@@ -211,6 +211,8 @@ describe('DelegationPanel', () => {
     expect(region.textContent).toContain('测试失败')
     const tree = await screen.findByRole('list', { name: '运行树' })
     expect(region.textContent).toContain('第 1 轮')
+    // 「运行树」标题行下方的滚动区留出顶边距，滚动时文字不贴着分隔线。
+    expect(tree.parentElement?.className).toContain('pt-3')
     await user.click(within(tree).getByRole('button', { name: '查看改动' }))
     expect(onOpenPanel).toHaveBeenCalledWith('diff', { changeSetId: 'cs1' })
   })
