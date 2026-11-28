@@ -132,7 +132,16 @@ describe('small pieces', () => {
   it('toggles a Switch', async () => {
     const onCheckedChange = vi.fn()
     render(<Switch aria-label="Enabled" onCheckedChange={onCheckedChange} />)
-    await userEvent.click(screen.getByRole('switch', { name: 'Enabled' }))
+    const root = screen.getByRole('switch', { name: 'Enabled' })
+    // 约 24×14；关态浅色 sunk2 / 深色 sunk，开态品牌 accent；白色滑块。
+    expect(root.className).toMatch(/h-\[14px]/)
+    expect(root.className).toMatch(/w-\[24px]/)
+    expect(root.className).toMatch(/bg-sunk2/)
+    expect(root.className).toMatch(/dark:bg-sunk/)
+    expect(root.className).toMatch(/data-\[state=checked\]:bg-accent/)
+    expect(root.firstElementChild?.className).toMatch(/bg-white/)
+    expect(root.firstElementChild?.className).toMatch(/data-\[state=checked\]:translate-x-2\.5/)
+    await userEvent.click(root)
     expect(onCheckedChange).toHaveBeenCalledWith(true)
   })
 })

@@ -2,8 +2,11 @@
  * 当前会话（01 枢纽）：48px 顶栏 + 对话列 + 右侧常驻工作台。
  *
  * 宽屏（≥1440px）工作台占布局宽度；更窄时改为右侧浮层，由顶栏按钮开合，避免把正文挤到
- * 500px 以下。正文最大 840px，输入框最大 880px。会话切换、订阅恢复、审批与检查器行为沿用
- * 原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
+ * 500px 以下。正文列最大 840px（含左右边距）；输入区外壳最大 880px，左右用 px-5 /
+ * ≥1200px 时 px-8，内容宽与 Composer 对齐。提问 / 计划操作 / 记忆提议等浮层必须复用同一套
+ * 左右边距（不能 absolute inset-x-0，否则会盖住父级 padding 比输入框更宽）。GoalBar 与
+ * TaskProgress 在文档流里，已天然对齐；斜杠指令与 @ 提及列表挂在 Composer 自身上，也已对齐。
+ * 会话切换、订阅恢复、审批与检查器行为沿用原有 store 投影（M0-15c、M1-11b、M2-04、M2-07、M2-08）。
  */
 import { ArrowDown, FileDiff, PanelRight, Search } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
@@ -509,12 +512,15 @@ export function ChatPanel({
           {/* 输入区全宽相对定位：跳转钮落在 840px 正文列外侧的右轨，而不是压在卡片工具条上。 */}
           <div className="relative w-full shrink-0">
             <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
-              {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
+              {/* 提问 / 计划 / 记忆浮在输入框上方，不占消息流；周围留空处不拦截点击。
+                  absolute 的 containing block 是 padding edge，inset-x-0 会吃掉父级 px-5/px-8，
+                  所以这里显式复用同一套左右边距，与 Composer 内容左右缘对齐。 */}
               <div
                 ref={floatStack}
-                className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3"
+                data-composer-float-stack=""
+                className="pointer-events-none absolute inset-x-5 bottom-full z-20 pb-3 min-[1200px]:inset-x-8"
               >
-                <div className="pointer-events-auto mx-auto flex max-h-[min(60vh,560px)] max-w-[840px] flex-col gap-2 overflow-y-auto">
+                <div className="pointer-events-auto flex max-h-[min(60vh,560px)] flex-col gap-2 overflow-y-auto">
                   <PlanActions plan={pendingPlan} />
                   <QuestionList />
                   <MemoryProposalList />
