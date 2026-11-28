@@ -129,6 +129,12 @@ async function editProvider(name: RegExp) {
   return screen.getByRole('dialog', { name: '编辑供应商' })
 }
 
+async function editModel(provider: HTMLElement, name: string | RegExp) {
+  const label = typeof name === 'string' ? `编辑 ${name}` : new RegExp(`^编辑 ${name.source}$`)
+  await userEvent.click(within(provider).getByRole('button', { name: label }))
+  return screen.getByRole('dialog', { name: '编辑模型' })
+}
+
 describe('ProvidersSettings', () => {
   it('adds the first provider from the service picker with its key', async () => {
     const { request, updates } = setup(
@@ -263,14 +269,14 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(card).getByRole('switch', { name: '启用 deepseek-v4-pro' }))
     expect(save.disabled).toBe(false)
 
-    await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
-    await userEvent.click(within(card).getByRole('button', { name: '设为默认' }))
-    const context = within(card).getByLabelText('上下文长度') as HTMLInputElement
+    const model = await editModel(card, 'deepseek-v4-pro')
+    await userEvent.click(within(model).getByRole('button', { name: '设为默认' }))
+    const context = within(model).getByLabelText('上下文长度') as HTMLInputElement
     await userEvent.clear(context)
     await userEvent.type(context, '200000')
     await userEvent.tab()
-    await userEvent.click(within(card).getByRole('button', { name: '更多设置' }))
-    await userEvent.click(within(card).getByRole('switch', { name: '支持工具调用' }))
+    await userEvent.click(within(model).getByRole('switch', { name: '支持工具调用' }))
+    await userEvent.click(within(model).getByRole('button', { name: '保存' }))
 
     await userEvent.click(within(card).getByRole('button', { name: '更换' }))
     await userEvent.click(within(card).getByRole('button', { name: '保留原来的' }))
@@ -456,8 +462,8 @@ describe('ProvidersSettings', () => {
     await userEvent.click(within(card).getByRole('switch', { name: '添加 claude-z' }))
     await userEvent.click(within(card).getByRole('switch', { name: '添加 claude-w' }))
     expect(within(card).getByText('已启用 4 / 4 个模型')).toBeTruthy()
-    await userEvent.click(within(card).getByRole('button', { name: /claude-w/ }))
-    await userEvent.click(within(card).getByRole('button', { name: '删除 claude-w' }))
+    const removeModelDialog = await editModel(card, 'claude-w')
+    await userEvent.click(within(removeModelDialog).getByRole('button', { name: '删除 claude-w' }))
     expect(within(card).queryByText('claude-w')).toBeNull()
     expect(within(card).getByText('已启用 3 / 3 个模型')).toBeTruthy()
 
@@ -488,9 +494,17 @@ describe('ProvidersSettings', () => {
     expect(request).not.toHaveBeenCalledWith('provider.models', expect.anything())
     expect(within(card).getByText('已启用 1 / 2 个模型')).toBeTruthy()
 
-    await userEvent.click(within(card).getByRole('button', { name: /claude-y/ }))
+    const model = await editModel(card, 'Claude Y')
     expect(within(card).getByText('已启用 2 / 2 个模型')).toBeTruthy()
-    expect(within(card).getByLabelText('上下文长度')).toBeTruthy()
+    expect(within(model).getByLabelText('上下文长度')).toBeTruthy()
+    // 取消临时加入：不把目录里的模型留在已启用列表里
+    await userEvent.click(within(model).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑模型' })).toBeNull())
+    expect(within(card).getByText('已启用 1 / 2 个模型')).toBeTruthy()
+
+    const keep = await editModel(card, 'Claude Y')
+    await userEvent.click(within(keep).getByRole('button', { name: '保存' }))
+    expect(within(card).getByText('已启用 2 / 2 个模型')).toBeTruthy()
   })
 
   it('tests one model by default and all enabled models only after confirming', async () => {
@@ -678,19 +692,19 @@ describe('ProvidersSettings', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '接入哪个服务？' })).toBeNull())
 
     const card = await editProvider(/^DeepSeek/)
-    await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
-    await userEvent.click(within(card).getByRole('button', { name: '更多设置' }))
-    await userEvent.type(within(card).getByLabelText('显示名称'), 'Pro')
-    await userEvent.click(within(card).getByRole('switch', { name: '并行工具调用' }))
-    await userEvent.click(within(card).getByRole('switch', { name: '支持思考' }))
-    expect(within(card).getAllByText('Pro').length).toBeGreaterThan(0)
-    const context = within(card).getByLabelText('上下文长度') as HTMLInputElement
+    const model = await editModel(card, 'deepseek-v4-pro')
+    await userEvent.type(within(model).getByLabelText('显示名称'), 'Pro')
+    await userEvent.click(within(model).getByRole('switch', { name: '并行工具调用' }))
+    await userEvent.click(within(model).getByRole('switch', { name: '支持思考' }))
+    const context = within(model).getByLabelText('上下文长度') as HTMLInputElement
     await userEvent.clear(context)
     await userEvent.type(context, '0{Enter}')
     expect(context.value).toBe('1000000')
     await userEvent.clear(context)
     await userEvent.type(context, '200000{Enter}')
     expect(context.value).toBe('200000')
+    await userEvent.click(within(model).getByRole('button', { name: '保存' }))
+    expect(within(card).getAllByText('Pro').length).toBeGreaterThan(0)
 
     await userEvent.click(screen.getByRole('button', { name: '取消' }))
     await userEvent.click(screen.getByRole('button', { name: '放弃改动' }))
@@ -709,13 +723,12 @@ describe('ProvidersSettings', () => {
     const { updates } = setup({ providers: [deepseek, gateway] })
     await open()
     const card = await editProvider(/^DeepSeek/)
-    await userEvent.click(within(card).getByRole('button', { name: /deepseek-v4-pro/ }))
-    await userEvent.click(within(card).getByRole('button', { name: '更多设置' }))
+    const model = await editModel(card, 'deepseek-v4-pro')
     // 不支持思考的模型没有档位可选
-    expect(within(card).queryByRole('radiogroup', { name: '思考强度' })).toBeNull()
+    expect(within(model).queryByRole('radiogroup', { name: '思考强度' })).toBeNull()
 
-    await userEvent.click(within(card).getByRole('switch', { name: '支持思考' }))
-    const group = within(card).getByRole('radiogroup', { name: '思考强度' })
+    await userEvent.click(within(model).getByRole('switch', { name: '支持思考' }))
+    const group = within(model).getByRole('radiogroup', { name: '思考强度' })
     expect(within(group).getByRole('radio', { name: '高' }).getAttribute('aria-checked')).toBe(
       'true',
     )
@@ -724,6 +737,7 @@ describe('ProvidersSettings', () => {
       'true',
     )
 
+    await userEvent.click(within(model).getByRole('button', { name: '保存' }))
     await userEvent.click(within(card).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(updates.length).toBeGreaterThan(0))
     const saved = updates.at(-1)?.providers?.find((p) => p.id === 'deepseek')
@@ -731,6 +745,70 @@ describe('ProvidersSettings', () => {
       supportsReasoning: true,
       thinkingLevel: 'medium',
     })
+  })
+
+  it('edits a model in a dedicated dialog and discards dirty model changes', async () => {
+    setup({
+      providers: [deepseek],
+      defaultModel: { providerId: 'deepseek', modelId: 'deepseek-flash' },
+    })
+    await open()
+    const card = await editProvider(/^DeepSeek/)
+    expect(within(card).getByRole('region', { name: '接入' })).toBeTruthy()
+    expect(within(card).getByRole('heading', { name: '模型' })).toBeTruthy()
+    expect(within(card).getByText('已启用 2 / 2 个模型')).toBeTruthy()
+    expect(within(card).getByRole('button', { name: '编辑 DeepSeek V4.1 Flash' })).toBeTruthy()
+
+    await userEvent.click(within(card).getByRole('switch', { name: '启用 deepseek-v4-pro' }))
+    expect(within(card).getByText('已启用 1 / 2 个模型')).toBeTruthy()
+    await userEvent.click(within(card).getByRole('switch', { name: '启用 deepseek-v4-pro' }))
+    expect(within(card).getByText('已启用 2 / 2 个模型')).toBeTruthy()
+
+    const model = await editModel(card, 'deepseek-v4-pro')
+    await userEvent.type(within(model).getByLabelText('显示名称'), 'Pro Card')
+    await userEvent.click(within(model).getByRole('button', { name: '取消' }))
+    const discard = screen.getByRole('dialog', { name: '放弃模型改动？' })
+    await userEvent.click(within(discard).getByRole('button', { name: '继续编辑' }))
+    expect(within(model).getByLabelText('显示名称')).toBeTruthy()
+    await userEvent.click(within(model).getByRole('button', { name: '取消' }))
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: '放弃模型改动？' })).getByRole('button', {
+        name: '放弃改动',
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑模型' })).toBeNull())
+    expect(within(card).queryByText('Pro Card')).toBeNull()
+
+    const again = await editModel(card, 'deepseek-v4-pro')
+    await userEvent.type(within(again).getByLabelText('显示名称'), 'Pro Card')
+    await userEvent.click(within(again).getByRole('button', { name: '保存' }))
+    expect(within(card).getByText('Pro Card')).toBeTruthy()
+    expect(within(card).getByText('deepseek-v4-pro')).toBeTruthy()
+
+    // 干净关闭不提示；把停用的模型设为默认时会重新启用
+    const clean = await editModel(card, 'Pro Card')
+    await userEvent.click(within(clean).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑模型' })).toBeNull())
+
+    await userEvent.click(within(card).getByRole('switch', { name: '启用 Pro Card' }))
+    const promote = await editModel(card, 'Pro Card')
+    await userEvent.click(within(promote).getByRole('button', { name: '设为默认' }))
+    await userEvent.click(within(promote).getByRole('button', { name: '保存' }))
+    expect(
+      (within(card).getByRole('switch', { name: '启用 Pro Card' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
+
+  it('shows a no-tools hint on model cards that disallow tool calls', async () => {
+    setup({ providers: [gateway] })
+    await open()
+    await userEvent.click(screen.getByRole('tab', { name: /Anthropic/ }))
+    const card = await editProvider(/^公司网关/)
+    expect(within(card).getByText('不支持工具')).toBeTruthy()
+    await editModel(card, 'claude-x')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑模型' })).toBeNull())
+    expect(screen.getByRole('dialog', { name: '编辑供应商' })).toBeTruthy()
   })
 
   it('keeps the key input enabled and describes local app data storage (ADR-0051)', async () => {
