@@ -76,4 +76,11 @@ describe('describeToolCall for delegate', () => {
     expect(description.action).toBe('Delegate')
     expect(description.object).toContain('builtin.coder')
   })
+
+  it('summarises raw args when agent and task are absent', () => {
+    const description = describeToolCall('delegate', { note: 'handoff' }, t)
+    expect(description.action).toBe('Delegate')
+    expect(description.object).toContain('handoff')
+    expect(description.plain).toBe(true)
+  })
 })

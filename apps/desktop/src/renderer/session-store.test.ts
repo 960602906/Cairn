@@ -1396,6 +1396,30 @@ describe('projects and model settings', () => {
     expect(store.getState().error).toBeUndefined()
   })
 
+  it('returns undefined when the folder dialog is cancelled', async () => {
+    const { api } = fakeApi({
+      'project.open': () => ({ project: undefined }),
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().openProject()).resolves.toBeUndefined()
+    expect(store.getState().error).toBeUndefined()
+  })
+
+  it('keeps a timeout toast when refresh after open fails to clear it', async () => {
+    const { api } = fakeApi({
+      'project.open': () => {
+        throw new RpcError('rpc.timeout', { timeoutMs: 30_000 })
+      },
+      'project.list': () => {
+        throw new RpcError('rpc.internal')
+      },
+    })
+    const store = createSessionStore(api)
+    await expect(store.getState().openProject()).resolves.toBeUndefined()
+    // refreshProjects records its own failure; timeout reconciliation only clears rpc.timeout.
+    expect(store.getState().error?.code).toBe('rpc.internal')
+  })
+
   it('dedupes sessions that appear twice in the list response', async () => {
     const { api } = fakeApi({
       'session.list': () => ({

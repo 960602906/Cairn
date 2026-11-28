@@ -16,7 +16,7 @@ const mockDiagnosticsSummary: DiagnosticsSummary = {
   build: {
     schemaVersion: 1,
     version: '0.0.0',
-    channel: 'dev',
+    channel: 'beta',
     commit: 'abc',
     buildTime: '2026-01-01T00:00:00.000Z',
     electronVersion: '0.0.0',
@@ -119,6 +119,21 @@ describe('ErrorBanner', () => {
     act(() => {
       vi.advanceTimersByTime(12_000)
     })
+    expect(clearError).toHaveBeenCalled()
+  })
+
+  it('does not auto-dismiss ordinary errors', () => {
+    vi.useFakeTimers()
+    const { clearError } = renderBanner({ code: 'rpc.internal' })
+    act(() => {
+      vi.advanceTimersByTime(12_000)
+    })
+    expect(clearError).not.toHaveBeenCalled()
+  })
+
+  it('clears from the close icon', async () => {
+    const { clearError } = renderBanner({ code: 'rpc.internal' })
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(clearError).toHaveBeenCalled()
   })
 })
