@@ -65,7 +65,9 @@ function MemoryProposalCard({
           aria-expanded={false}
           aria-label={t('memory.expand')}
         >
-          <span className="shrink-0 text-ui leading-5 font-medium text-fg">{t('memory.title')}</span>
+          <span className="shrink-0 text-ui leading-5 font-medium text-fg">
+            {t('memory.title')}
+          </span>
           <span className={floatChipClass}>{t(`memory.scope.${proposal.scope}`)}</span>
           <span className="min-w-0 flex-1 truncate text-note text-muted" title={proposal.content}>
             {proposal.content}
