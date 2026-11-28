@@ -12,7 +12,7 @@
  *   文本框自己的文字透明，只显示光标和选区。
  * - 下方左边是 Agent（当前会话使用哪一个，M6-08）、权限 / 计划模式合并菜单（上半部分选择只读 /
  *   询问 / 自动 / 完全访问，下半部分切换计划模式）与 Git 分支切换（非 Git 仓库时不出现；项目在
- *   顶栏面包屑里，不在这里重复），右边是“供应商 · 模型”切换（只改当前会话，下一轮生效）、上下文
+ *   顶栏面包屑里，不在这里重复），右边是模型切换（触发按钮只显示模型名，只改当前会话，下一轮生效）、上下文
  *   占用圆环（点击显示最近用量与分类占比）与发送 / 停止按钮。卡片下面不再单独占一行。
  */
 import {
@@ -28,7 +28,6 @@ import {
   Zap,
 } from 'lucide-react'
 import {
-  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -46,8 +45,6 @@ import type {
   AgentDefinitionRef,
   ModelRef,
   PermissionMode,
-  ReasoningEffort,
-  ProviderConfig,
   SessionStatus,
   SkillSummary,
 } from '@cairn/protocol'
@@ -90,7 +87,9 @@ import {
 import { ComposerHighlight } from './ComposerHighlight.js'
 import { MENTION_LIST_ID, useMentionMenu, type MentionAgent } from './ComposerMentions.js'
 import { COMPOSER_FOCUS_EVENT, isPlanModeKey, planShortcut } from './layout/shortcuts.js'
-import { enabledModelChoices, modelLabels, sameModel } from './model-labels.js'
+import { ModelPicker } from './ModelPicker.js'
+import { enabledModelChoices, modelLabels } from './model-labels.js'
+import { rememberRecentModel } from './recent-models.js'
 import { inspectionKey } from './session-store.js'
 import type { SessionPanel } from './SessionPanels.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
@@ -110,6 +109,8 @@ import {
   PopoverTrigger,
   Tooltip,
 } from './ui/index.js'
+
+export { ModelPicker } from './ModelPicker.js'
 
 export interface ComposerProps {
   readonly sessionId: string
@@ -276,141 +277,6 @@ export function ModeMenu({
           </span>
           {planMode && <Check className="mt-0.5 text-fg!" />}
         </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-/** 思考强度的三档；模型不支持推理时不显示。 */
-const THINKING_LEVELS: readonly ReasoningEffort[] = ['low', 'medium', 'high']
-
-export function ModelPicker({
-  providers,
-  model,
-  fixed,
-  disabled,
-  open,
-  onOpenChange,
-  onSelect,
-  thinkingLevel,
-  onSelectThinkingLevel,
-  align = 'end',
-  returnFocus,
-}: {
-  readonly providers: readonly ProviderConfig[]
-  readonly model: ModelRef | undefined
-  /** Agent 固定了模型（M3-12）：显示当前模型并禁用。 */
-  readonly fixed: boolean
-  /** 没有可选模型时禁用。 */
-  readonly disabled: boolean
-  readonly open: boolean
-  readonly onOpenChange: (open: boolean) => void
-  readonly onSelect: (model: ModelRef) => void
-  /** 本会话设定的思考强度；没有时用模型配置里的默认值。 */
-  readonly thinkingLevel?: ReasoningEffort | undefined
-  /** 给出时才能改思考强度；没有会话（新会话页）时不显示这一段。 */
-  readonly onSelectThinkingLevel?: ((level: ReasoningEffort) => void) | undefined
-  readonly align?: 'start' | 'end'
-  /** 关闭时把焦点还给这里（通常是输入框）；省略时交给 Radix 还到触发按钮。 */
-  readonly returnFocus?: (() => void) | undefined
-}) {
-  const { t } = useTranslation('session')
-  // 停用的模型不列出（M2-10）；会话正在用的仍显示它的名称。
-  const options = enabledModelChoices(providers)
-  const { full, short } = modelLabels(model, providers)
-  const label = full ?? short ?? t('composer.model.none')
-  const current = providers
-    .find((provider) => provider.id === model?.providerId)
-    ?.models.find((item) => item.id === model?.modelId)
-  const level = thinkingLevel ?? current?.thinkingLevel ?? 'high'
-  const interactedOutside = useRef(false)
-  const currentItem = useRef<HTMLDivElement>(null)
-  // 打开时聚焦当前模型：直接按 Enter 不会换成列表第一项。
-  // Radix 的公开类型没有暴露 onOpenAutoFocus，等菜单挂载、FocusScope 先聚焦容器后再把焦点放到当前项。
-  useEffect(() => {
-    if (!open) return
-    const timer = window.setTimeout(() => {
-      const node = currentItem.current
-      if (node === null) return
-      node.focus({ preventScroll: true })
-      if (typeof node.scrollIntoView === 'function') {
-        node.scrollIntoView({ block: 'nearest' })
-      }
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [open])
-  return (
-    <DropdownMenu
-      open={open}
-      onOpenChange={(next) => {
-        if (next) interactedOutside.current = false
-        onOpenChange(next)
-      }}
-    >
-      <DropdownMenuTrigger
-        disabled={disabled}
-        aria-label={t('composer.model.label', { model: label })}
-        title={fixed ? t('composer.model.fixedByAgent') : undefined}
-        className="flex h-7 max-w-[240px] items-center gap-1 rounded-item px-2 text-note text-fg2 outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-60 [&_svg]:size-3.5"
-      >
-        <span className="truncate">{label}</span>
-        <ChevronDown className="shrink-0 text-faint" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align={align}
-        side="top"
-        className="max-h-80 w-64 overflow-y-auto"
-        onInteractOutside={() => {
-          interactedOutside.current = true
-        }}
-        onCloseAutoFocus={(event) => {
-          if (returnFocus === undefined || interactedOutside.current) return
-          event.preventDefault()
-          returnFocus()
-        }}
-      >
-        <DropdownMenuLabel className="text-faint">{t('composer.model.title')}</DropdownMenuLabel>
-        {options.map((option, index) => {
-          const selected = sameModel(model, option.ref)
-          return (
-            <Fragment key={`${option.ref.providerId}/${option.ref.modelId}`}>
-              {options[index - 1]?.ref.providerId !== option.ref.providerId && (
-                <DropdownMenuLabel className="pt-2">{option.provider}</DropdownMenuLabel>
-              )}
-              <DropdownMenuItem
-                ref={selected ? currentItem : undefined}
-                onSelect={() => {
-                  if (!selected) onSelect(option.ref)
-                }}
-              >
-                <span className="min-w-0 flex-1 truncate">{option.name}</span>
-                {selected && <Check className="text-fg!" />}
-              </DropdownMenuItem>
-            </Fragment>
-          )
-        })}
-        {onSelectThinkingLevel && current && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-faint">
-              {t('composer.thinkingLevel.title')}
-            </DropdownMenuLabel>
-            {current.supportsReasoning === true ? (
-              THINKING_LEVELS.map((option) => (
-                <DropdownMenuItem key={option} onSelect={() => onSelectThinkingLevel(option)}>
-                  <span className="min-w-0 flex-1 truncate">
-                    {t(`composer.thinkingLevel.${option}`)}
-                  </span>
-                  {level === option && <Check className="text-fg!" />}
-                </DropdownMenuItem>
-              ))
-            ) : (
-              <DropdownMenuItem disabled>
-                {t('composer.thinkingLevel.unsupported')}
-              </DropdownMenuItem>
-            )}
-          </>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -1100,6 +966,7 @@ export function Composer({
           setModelMenuOpen(true)
           keepFocus = false
         } else {
+          rememberRecentModel(choice.ref)
           await setSessionModel(sessionId, choice.ref)
           showNotice('composer.command.model.switched', 'ok', 'model', { name: choice.name })
         }

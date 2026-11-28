@@ -550,10 +550,12 @@ describe('NewSession controls', () => {
     const { request } = setup()
     const user = userEvent.setup()
     const input = await screen.findByPlaceholderText('有什么可以帮你？')
-    expect(await screen.findByRole('button', { name: '模型：测试供应商 · 快' })).toBeTruthy()
+    const modelTrigger = await screen.findByRole('button', { name: '模型：测试供应商 · 快' })
+    expect(modelTrigger.textContent).toContain('快')
+    expect(modelTrigger.textContent).not.toContain('测试供应商')
 
-    await user.click(screen.getByRole('button', { name: '模型：测试供应商 · 快' }))
-    await user.click(await screen.findByRole('menuitem', { name: /强/ }))
+    await user.click(modelTrigger)
+    await user.click(await screen.findByRole('option', { name: /强/ }))
     await user.type(input, '/plan{Enter}')
     expect(input.getAttribute('placeholder')).toBe('描述要做的事。这一轮只会阅读项目并提出计划')
     expect(planOn()).toBe(true)
@@ -612,7 +614,7 @@ describe('NewSession controls', () => {
     const user = userEvent.setup()
     const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
     await user.click(screen.getByRole('button', { name: '模型：测试供应商 · 快' }))
-    await user.click(await screen.findByRole('menuitem', { name: /强/ }))
+    await user.click(await screen.findByRole('option', { name: /强/ }))
     await waitFor(() => expect(document.activeElement).toBe(input))
 
     await user.click(screen.getByRole('button', { name: '权限模式：询问' }))
@@ -668,8 +670,10 @@ describe('NewSession controls', () => {
 
     // 在 work 里换成强模型。
     await user.click(screen.getByRole('button', { name: '模型：测试供应商 · 快' }))
-    await user.click(await screen.findByRole('menuitem', { name: /强/ }))
-    expect(screen.getByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
+    await user.click(await screen.findByRole('option', { name: /强/ }))
+    const strongTrigger = screen.getByRole('button', { name: '模型：测试供应商 · 强' })
+    expect(strongTrigger.textContent).toContain('强')
+    expect(strongTrigger.textContent).not.toContain('测试供应商')
 
     // 另一个工作空间仍用默认模型。
     await user.click(screen.getByRole('button', { name: '工作空间：work' }))
