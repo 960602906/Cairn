@@ -15,13 +15,14 @@ import {
 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { openGoal, type GoalView } from '@cairn/core'
-import { GOAL_CONDITION_MAX, type GoalVerdict } from '@cairn/protocol'
+import { goalUsage, openGoal, type GoalView } from '@cairn/core'
+import { GOAL_CONDITION_MAX, type GoalVerdict, type TokenUsage } from '@cairn/protocol'
 import { goalErrorNoticeKey } from './composer-commands.js'
 import { formatGoalDuration, goalDetailText } from './goal-display.js'
 import { goalSessionBusy, useGoalElapsed } from './GoalBar.js'
 import { modelLabel } from './model-labels.js'
 import type { SessionPanelContext } from './SessionPanels.js'
+import { formatTokens } from './settings/providers-model.js'
 import { useSessionStore } from './store-context.js'
 import {
   Button,
@@ -113,12 +114,27 @@ function GoalEvaluations({ goal }: { readonly goal: GoalView }) {
   )
 }
 
+const NO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
+
+/** 目标所有轮次的 token 总数；为 0 时不显示，避免给旧目标凭空加一行。 */
+function goalTokenText(usage: TokenUsage): string | undefined {
+  const total = usage.inputTokens + usage.outputTokens
+  return total > 0 ? formatTokens(total) : undefined
+}
+
 /** 最近一次已结束目标的只读摘要：条件、结局与判定时间线，供结果卡「查看目标」跳进面板后阅读。 */
-function EndedGoalSummary({ goal }: { readonly goal: GoalView }) {
+function EndedGoalSummary({
+  goal,
+  usage,
+}: {
+  readonly goal: GoalView
+  readonly usage: TokenUsage
+}) {
   const { t } = useTranslation('session')
   const ended = goal.lifecycle.find((item) => item.kind === 'ended')
   const detail = goalDetailText(goal.endDetail, t)
   const reason = reasonText(goal, t)
+  const tokens = goalTokenText(usage)
   return (
     <div>
       <section aria-label={t('goal.panel.label')} className="p-3">
@@ -141,6 +157,7 @@ function EndedGoalSummary({ goal }: { readonly goal: GoalView }) {
             {t('goal.panel.budget')} ·{' '}
             {t('goal.panel.turns', { used: goal.turnIds.length, max: goal.limits.maxTurns })}
           </span>
+          {tokens !== undefined && <span>{t('goal.panel.tokens', { tokens })}</span>}
         </div>
         {detail !== undefined && (
           <p className="mt-1.5 whitespace-pre-wrap break-words text-note text-muted">{detail}</p>
@@ -218,10 +235,12 @@ function OpenGoal({
   sessionId,
   status,
   goal,
+  usage,
 }: {
   readonly sessionId: string
   readonly status: SessionPanelContext['status']
   readonly goal: GoalView
+  readonly usage: TokenUsage
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -236,6 +255,7 @@ function OpenGoal({
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const elapsed = useGoalElapsed(goal)
+  const tokens = goalTokenText(usage)
   const busy = goalSessionBusy(status)
   const paused = goal.status === 'paused'
   const reason = reasonText(goal, t)
@@ -327,6 +347,7 @@ function OpenGoal({
             {t('goal.panel.duration')} {formatGoalDuration(elapsed)} /{' '}
             {formatGoalDuration(goal.limits.maxDurationMs)}
           </span>
+          {tokens !== undefined && <span>{t('goal.panel.tokens', { tokens })}</span>}
         </div>
         {detail !== undefined && (
           <p className="mt-1.5 whitespace-pre-wrap break-words text-note text-muted">{detail}</p>
@@ -435,7 +456,12 @@ export function GoalPanel({ sessionId, view, status }: SessionPanelContext) {
   if (goal !== undefined) {
     return (
       <div className="h-full overflow-y-auto">
-        <OpenGoal sessionId={sessionId} status={status} goal={goal} />
+        <OpenGoal
+          sessionId={sessionId}
+          status={status}
+          goal={goal}
+          usage={view === undefined ? NO_USAGE : goalUsage(view, goal)}
+        />
         {history.length > 0 && <GoalHistory goals={history} />}
       </div>
     )
@@ -452,7 +478,10 @@ export function GoalPanel({ sessionId, view, status }: SessionPanelContext) {
   const olderHistory = history.slice(1)
   return (
     <div className="h-full overflow-y-auto">
-      <EndedGoalSummary goal={latestEnded} />
+      <EndedGoalSummary
+        goal={latestEnded}
+        usage={view === undefined ? NO_USAGE : goalUsage(view, latestEnded)}
+      />
       {olderHistory.length > 0 && <GoalHistory goals={olderHistory} />}
     </div>
   )

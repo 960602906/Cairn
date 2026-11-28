@@ -4,6 +4,7 @@ import {
   activeExecutionPlan,
   activeTaskLists,
   createSessionView,
+  goalUsage,
   isAwaitingGoalEvaluation,
   MAX_LIVE_TOOL_OUTPUT_CHARS,
   openGoal,
@@ -2035,6 +2036,29 @@ describe('reduceSession：目标（ADR-0047）', () => {
     ]
     return { ev, events, view: reduceAll(events) }
   }
+
+  it('统计目标轮次的累计用量，包含辅助判定，不包含目标外的轮次', () => {
+    const { ev, events } = begin()
+    const view = reduceAll([
+      ...events,
+      ev(
+        'usage.reported',
+        { model, usage: { inputTokens: 10, outputTokens: 4 } },
+        { turnId: 't1' },
+      ),
+      ev(
+        'usage.reported',
+        { model, usage: { inputTokens: 2, outputTokens: 1 }, auxiliary: true },
+        { turnId: 't1' },
+      ),
+      ev(
+        'usage.reported',
+        { model, usage: { inputTokens: 100, outputTokens: 100 } },
+        { turnId: 't2' },
+      ),
+    ])
+    expect(goalUsage(view, openGoal(view)!)).toEqual({ inputTokens: 12, outputTokens: 5 })
+  })
 
   it('创建目标、锚定首条消息并统计根运行轮次', () => {
     const { view } = begin()

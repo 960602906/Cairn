@@ -246,15 +246,20 @@ describe('useGoalElapsed', () => {
 })
 
 describe('GoalBar', () => {
-  it('shows a short running status without turn count or timer, and pauses via the store', () => {
+  it('shows a short running status and elapsed time, and pauses via the store', () => {
     const { pauseGoal } = wrap(runningView(), 'running')
     expect(screen.getByText('测试全部通过')).toBeTruthy()
     expect(screen.getAllByText('进行中').length).toBeGreaterThan(0)
     expect(screen.queryByText(/第 \d+ \/ \d+ 轮/)).toBeNull()
-    expect(screen.queryByText(/· \d/)).toBeNull()
+    expect(screen.getByLabelText(/^已运行 /)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '暂停目标' }))
     expect(pauseGoal).toHaveBeenCalledWith('s1')
+  })
+
+  it('freezes the elapsed time when the goal is paused', () => {
+    wrap(pausedView())
+    expect(screen.getByLabelText('已运行 0:00')).toBeTruthy()
   })
 
   it('shows judging and continuing states', () => {

@@ -23,6 +23,13 @@
   downloaded or installed in place, and no publisher signature is required. Windows in-place
   updates are unchanged.
 
+- 目标面板显示本次目标累计使用的 token，包含执行轮与独立判定；结束后仍保留在目标摘要里，
+  方便判断一次目标循环的成本。输入框上方的目标条直接显示已运行时长，暂停后停表。
+  The goal panel now shows the total tokens used by the goal, including runs and independent
+  evaluations. The total stays in the goal summary after it ends, so the cost of a goal loop is
+  easy to see. The goal bar above the composer now shows the elapsed time, which stops while
+  the goal is paused.
+
 ### Changed
 
 - 目标面板的历史目标可以展开，查看当时的结束原因、判定理由与证据；改条件时新增取消按钮，
