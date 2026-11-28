@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import type { TFunction } from '@cairn/i18n'
 import {
+  describeToolCall,
   formatAskUserAnswers,
   formatDuration,
   INPUT_SUMMARY_CHARS,
@@ -7,6 +9,8 @@ import {
   previewLines,
   summarizeInput,
 } from './ToolTimeline.js'
+
+const t = ((key: string) => key) as unknown as TFunction
 
 describe('summarizeInput', () => {
   it('prefers the command, path or search fields', () => {
@@ -45,6 +49,21 @@ describe('formatDuration', () => {
     expect(formatDuration(5)).toBe('5ms')
     expect(formatDuration(999.4)).toBe('999ms')
     expect(formatDuration(1234)).toBe('1.2s')
+  })
+})
+
+describe('describeToolCall', () => {
+  it('summarises remember with the note content, not raw JSON', () => {
+    const description = describeToolCall(
+      'remember',
+      { scope: 'session', content: '用户指定的测试用令牌：CEDAR-NOVEMBER-42' },
+      t,
+    )
+    expect(description).toEqual({
+      action: 'tool.action.remember',
+      object: '用户指定的测试用令牌：CEDAR-NOVEMBER-42',
+      plain: true,
+    })
   })
 })
 

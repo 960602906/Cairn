@@ -488,6 +488,7 @@ describe('MessageStream 渲染', () => {
     expect(triggers.length).toBe(2)
     // 收起时正文仍可读（读屏与流式内容不丢失），点击后展开
     expect(screen.getAllByText('想一想').length).toBeGreaterThan(0)
+    expect(triggers[0]!.querySelector('.line-clamp-2')).toBeTruthy()
     expect(triggers[0]!.getAttribute('aria-expanded')).toBe('false')
     await userEvent.click(triggers[0]!)
     expect(triggers[0]!.getAttribute('aria-expanded')).toBe('true')
