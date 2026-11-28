@@ -52,7 +52,7 @@ test('首次启动自动创建默认项目并可直接对话', async ({ launch, 
     await expect(window.getByRole('region', { name: '工作空间' })).toContainText('默认项目')
     await expect(
       window
-        .getByRole('group', { name: '当前工作区' })
+        .getByRole('group', { name: '工作空间与分支' })
         .getByRole('button', { name: '工作空间：默认项目' }),
     ).toBeVisible()
     expect(existsSync(path.join(userData, 'default-project'))).toBe(true)

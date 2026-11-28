@@ -346,6 +346,17 @@ export type PermissionRuleEntry = z.infer<typeof PermissionRuleEntry>
 /** seq 从 1 开始；afterSeq 为 0 表示从头读取。 */
 const Seq = z.number().int().nonnegative()
 
+/** 项目目录的 Git 摘要（输入框上方的上下文条与分支菜单）。 */
+export const ProjectGitInfoResult = z.object({
+  branch: z.string().max(255).optional(),
+  /** 本地分支，按名称排序；切换分支的候选。 */
+  branches: z.array(z.string().max(255)).optional(),
+  /** origin 远端所属平台；没有 origin 时省略。 */
+  remote: z.enum(['github', 'gitee', 'git']).optional(),
+  /** origin 远端的主机名（例如 `github.com`）；本地路径远端没有。 */
+  remoteHost: z.string().max(255).optional(),
+})
+
 export const MainForRenderer = defineSide({
   requests: {
     /** 应用版本、通道与构建信息（M5-01）。 */
@@ -417,19 +428,15 @@ export const MainForRenderer = defineSide({
       result: z.object({ project: ProjectSummary.optional() }),
     },
     /**
-     * 项目目录的 Git 状态（输入框下方的当前目录 / 分支）：不是 Git 仓库、Git 不可用或
+     * 项目目录的 Git 状态（输入框上方的上下文条）：不是 Git 仓库、Git 不可用或
      * 处于游离 HEAD 时没有 `branch`。
      */
     'project.gitInfo': {
       params: z.object({ path: z.string().min(1).max(4096) }),
-      result: z.object({
-        branch: z.string().max(255).optional(),
-        /** 本地分支，按名称排序；切换分支的候选。 */
-        branches: z.array(z.string().max(255)).optional(),
-      }),
+      result: ProjectGitInfoResult,
     },
     /**
-     * 切换项目目录的 Git 分支（输入框下方的分支选择器）。分支必须是本地分支；
+     * 切换项目目录的 Git 分支（上下文条的分支菜单）。分支必须是本地分支；
      * 工作区有未提交改动时由 Git 决定是否允许切换。
      */
     'project.gitCheckout': {
@@ -437,7 +444,25 @@ export const MainForRenderer = defineSide({
         path: z.string().min(1).max(4096),
         branch: z.string().min(1).max(255),
       }),
-      result: z.object({ branch: z.string().max(255).optional() }),
+      result: ProjectGitInfoResult,
+    },
+    /** 从当前分支新建本地分支并切换（上下文条的分支菜单）。 */
+    'project.gitCreateBranch': {
+      params: z.object({
+        path: z.string().min(1).max(4096),
+        branch: z.string().min(1).max(255),
+      }),
+      result: ProjectGitInfoResult,
+    },
+    /** 快进拉取当前分支（`git pull --ff-only`）；失败带 Git 的说明。 */
+    'project.gitPull': {
+      params: z.object({ path: z.string().min(1).max(4096) }),
+      result: ProjectGitInfoResult,
+    },
+    /** 推送当前分支；没有上游、认证或网络失败时带 Git 的说明。 */
+    'project.gitPush': {
+      params: z.object({ path: z.string().min(1).max(4096) }),
+      result: ProjectGitInfoResult,
     },
     /** 只打开系统的选择文件夹对话框并返回路径，不登记项目（新建工作空间时选择克隆位置）。 */
     'project.pickDirectory': {

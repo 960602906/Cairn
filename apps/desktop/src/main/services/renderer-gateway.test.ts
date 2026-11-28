@@ -226,6 +226,9 @@ function setup(
     open: vi.fn(async () => ({ project: PROJECT })),
     gitInfo: vi.fn(async () => ({ branch: 'main' })),
     gitCheckout: vi.fn(async () => ({ branch: 'dev' })),
+    gitCreateBranch: vi.fn(async () => ({ branch: 'feature/x' })),
+    gitPull: vi.fn(async () => ({ branch: 'main' })),
+    gitPush: vi.fn(async () => ({ branch: 'main' })),
     pickDirectory: vi.fn(async () => ({ path: '/work' })),
     clone: vi.fn(async () => ({ project: PROJECT })),
     update: vi.fn(() => PROJECT),
@@ -1352,12 +1355,24 @@ describe('createRendererGateway: commands and lifecycle', () => {
       client.request('project.gitCheckout', { path: '/work', branch: 'dev' }),
     ).resolves.toEqual({ branch: 'dev' })
     await expect(
+      client.request('project.gitCreateBranch', { path: '/work', branch: 'feature/x' }),
+    ).resolves.toEqual({ branch: 'feature/x' })
+    await expect(client.request('project.gitPull', { path: '/work' })).resolves.toEqual({
+      branch: 'main',
+    })
+    await expect(client.request('project.gitPush', { path: '/work' })).resolves.toEqual({
+      branch: 'main',
+    })
+    await expect(
       client.request('project.update', { projectId: 'p1', readAgentsMd: false }),
     ).resolves.toEqual(PROJECT)
     await expect(client.request('project.remove', { projectId: 'p1' })).resolves.toEqual({})
     expect(projects.open).toHaveBeenCalledOnce()
     expect(projects.gitInfo).toHaveBeenCalledOnce()
     expect(projects.gitCheckout).toHaveBeenCalledWith({ path: '/work', branch: 'dev' })
+    expect(projects.gitCreateBranch).toHaveBeenCalledWith({ path: '/work', branch: 'feature/x' })
+    expect(projects.gitPull).toHaveBeenCalledWith({ path: '/work' })
+    expect(projects.gitPush).toHaveBeenCalledWith({ path: '/work' })
     expect(projects.update).toHaveBeenCalledOnce()
     expect(projects.remove).toHaveBeenCalledOnce()
   })
