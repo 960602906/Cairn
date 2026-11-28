@@ -317,11 +317,33 @@ describe('createUpdateService: configuration', () => {
     expect(allowed.service.status()).toMatchObject({ enabled: true, phase: 'idle' })
   })
 
-  it('rejects unsupported platforms, missing or insecure sources', () => {
-    expect(setup({ platform: 'linux' }).service.status()).toMatchObject({
+  it('checks versions on every desktop platform but only installs on Windows', () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      expect(setup({ platform }).service.status()).toMatchObject({
+        enabled: true,
+        installable: false,
+        releaseUrl: 'https://updates.example/cairn/',
+      })
+    }
+    expect(setup({ platform: 'win32' }).service.status()).toMatchObject({
+      enabled: true,
+      installable: true,
+    })
+    expect(setup({ platform: 'aix' }).service.status()).toMatchObject({
       enabled: false,
       disabledReason: 'update.platform_unsupported',
     })
+  })
+
+  it('uses the GitHub Releases page for manual downloads', () => {
+    expect(setup({ sourceUrl: 'https://github.com/acme/cairn' }).service.status()).toMatchObject({
+      enabled: true,
+      installable: true,
+      releaseUrl: 'https://github.com/acme/cairn/releases',
+    })
+  })
+
+  it('rejects missing or insecure sources', () => {
     expect(setup({ sourceUrl: '' }).service.status()).toMatchObject({
       disabledReason: 'update.source_missing',
     })
@@ -406,6 +428,29 @@ describe('createUpdateService: configuration', () => {
 })
 
 describe('createUpdateService: checking', () => {
+  it('finds versions on macOS and Linux without downloading or installing', async () => {
+    for (const platform of ['darwin', 'linux'] as const) {
+      const { service, updater } = setup({ platform })
+      updater.check.mockResolvedValue(available('0.1.1'))
+      await expect(service.check({})).resolves.toMatchObject({
+        phase: 'available',
+        availableVersion: '0.1.1',
+        installable: false,
+        releaseUrl: 'https://updates.example/cairn/',
+      })
+      await expect(service.download()).resolves.toMatchObject({
+        phase: 'available',
+        error: { code: 'update.manual_update_required' },
+      })
+      await expect(service.install()).resolves.toMatchObject({
+        phase: 'available',
+        error: { code: 'update.manual_update_required' },
+      })
+      expect(updater.download).not.toHaveBeenCalled()
+      expect(updater.quitAndInstall).not.toHaveBeenCalled()
+    }
+  })
+
   it('reports up to date and persists the check time', async () => {
     const { service, updater, settings, scheduled } = setup()
     service.start()

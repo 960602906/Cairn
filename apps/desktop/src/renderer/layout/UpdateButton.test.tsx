@@ -21,6 +21,7 @@ function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
     channel: 'beta',
     enabled: true,
     autoCheck: true,
+    installable: true,
     signatureVerified: false,
     requiresRestart: false,
     ...overrides,
@@ -74,6 +75,20 @@ describe('UpdateButton', () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith('update.download', {}))
   })
 
+  it('links to the download page when in-place updates are unsupported', () => {
+    setup(
+      status({
+        phase: 'available',
+        availableVersion: '0.1.1',
+        installable: false,
+        releaseUrl: 'https://github.com/960602906/Cairn/releases',
+      }),
+    )
+    const link = screen.getByRole('link', { name: '有新版本 0.1.1，打开下载页面' })
+    expect(link.getAttribute('href')).toBe('https://github.com/960602906/Cairn/releases')
+    expect(link.getAttribute('target')).toBe('_blank')
+  })
+
   it('shows progress while downloading', () => {
     setup(
       status({
@@ -122,6 +137,32 @@ describe('UpdateButton', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: '重试更新' }))
     await waitFor(() => expect(request).toHaveBeenCalledWith('update.check', { force: true }))
+    expect(request).not.toHaveBeenCalledWith('update.download', {})
+  })
+
+  it('retries a failed check without downloading on manual platforms', async () => {
+    const available = status({
+      phase: 'available',
+      availableVersion: '0.1.1',
+      installable: false,
+      releaseUrl: 'https://github.com/960602906/Cairn/releases',
+    })
+    const request = vi.fn(async (method: string) => (method === 'update.check' ? available : {}))
+    const store = createSessionStore({
+      request,
+      on: () => () => {},
+      ready: async () => {},
+    } as unknown as MainApi)
+    store.setState({ updateStatus: status({ phase: 'error' }), settings: SETTINGS })
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <SessionStoreContext.Provider value={store}>
+          <UpdateButton />
+        </SessionStoreContext.Provider>
+      </I18nextProvider>,
+    )
+    await userEvent.click(screen.getByRole('button', { name: '重试更新' }))
+    expect(await screen.findByRole('link', { name: '有新版本 0.1.1，打开下载页面' })).toBeDefined()
     expect(request).not.toHaveBeenCalledWith('update.download', {})
   })
 })

@@ -193,6 +193,7 @@
   "update.cancelled": "The update download was cancelled",
   "update.invalid_manifest": "The update metadata is invalid",
   "update.version_invalid": "The update version is invalid",
+  "update.manual_update_required": "This platform requires downloading the new version manually",
   "github.not_connected": "No GitHub token found: run gh auth login or set GH_TOKEN",
   "github.auth_failed": "The GitHub token is invalid or lacks permission",
   "github.not_found": "That repository or pull request was not found",

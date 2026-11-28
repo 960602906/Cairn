@@ -583,6 +583,7 @@
   "update.phase.verifying": "Verifying",
   "update.phase.installing": "Installing",
   "update.button.download": "Download update {{version}}",
+  "update.button.openRelease": "Update {{version}} is available; open the download page",
   "update.button.progress": "Downloading update {{percent}}%",
   "update.button.installHint": "Install {{version}} and restart",
   "update.button.retry": "Retry update",

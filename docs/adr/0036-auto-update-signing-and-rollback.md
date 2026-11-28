@@ -143,3 +143,13 @@ M5 需要让已安装的 `0.1.0` beta 能收到 `0.1.1`，同时满足：
 - `build-info.json` 增加可选 `releaseNotes`：构建时用 `scripts/changelog.mjs` 抽取
   `CHANGELOG.md` 的当前版本段落，经 `AppInfo` 提供给渲染进程；缺失或超长时降级，不影响构建。
 - 顶部非模态提示条与安装前的“安装并重启？”确认保留；有运行中任务时仍阻止安装。
+
+## 修订：macOS / Linux 只检查版本（2026-11-28）
+
+- Windows 保持原有“检查 → 下载 → 校验 → 重启安装”流程。
+- macOS / Linux 启用同一套更新检查与状态机，但 `UpdateStatus.installable=false`；
+  `update.download` 与 `update.install` 返回 `update.manual_update_required`，不调用
+  electron-updater 的下载与安装路径。
+- 状态新增 `releaseUrl`（GitHub 仓库为 `<repo>/releases`，静态源为目录地址）；左栏入口改为
+  外链，在系统浏览器打开下载页。检查不需要发布者签名，也不改变 stable 的签名门禁。
+- 这样 ad-hoc 的 macOS beta 也能提示新版本；原地安装仍需 Developer ID 签名与公证（ADR-0049）。
