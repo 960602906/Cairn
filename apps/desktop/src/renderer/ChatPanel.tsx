@@ -15,6 +15,7 @@ import { MemoryProposalList } from './MemoryProposalCard.js'
 import { QuestionList } from './QuestionCard.js'
 import { TurnRail } from './Checkpoints.js'
 import { Composer } from './Composer.js'
+import { pickDelegationRunId } from './DelegationPanel.js'
 import { totals, turnEntries, type FileDiffMode } from './file-changes.js'
 import { FindBar } from './FindBar.js'
 import { MessageStream } from './MessageStream.js'
@@ -43,7 +44,7 @@ import {
   toggleWorkbenchShortcut,
 } from './layout/shortcuts.js'
 import { TopBar } from './layout/TopBar.js'
-import { IconButton } from './ui/index.js'
+import { cn, IconButton } from './ui/index.js'
 
 /** 工作台从浮层切到常驻列的宽度；1280/1366 下仍保持浮层，避免把正文挤到 600px 以下。 */
 const PANEL_DOCK_QUERY = '(min-width: 1440px)'
@@ -149,11 +150,15 @@ export function ChatPanel({
     (next: SessionPanel, target?: SessionPanelTarget) => {
       if (next === 'diff') setSelectedChangeSetId(target?.changeSetId)
       if (next === 'plan') setSelectedPlanId(target?.planId)
-      if (next === 'delegation') setSelectedRunId(target?.runId)
+      if (next === 'delegation') {
+        // `/delegation` 不带 runId：有委派时自动选中当前/最近一条，避免空白「未选择」。
+        const delegations = view?.delegations
+        setSelectedRunId((current) => pickDelegationRunId(delegations, target?.runId ?? current))
+      }
       activateTab(next)
       setPanelPreference(true)
     },
-    [activateTab],
+    [activateTab, view?.delegations],
   )
 
   /** 单击文件：追加标签；已经打开时只激活。带行号时打开后定位到那一行。 */
@@ -363,6 +368,8 @@ export function ChatPanel({
   const goal = view === undefined ? undefined : openGoal(view)
   /** 「回到底部」只给绝对定位的提问/计划/记忆浮层让位；目标条与任务进度在流布局里，不挡。 */
   const overlayFloating = pendingQuestions > 0 || pendingPlan !== undefined || pendingMemories > 0
+  /** 未贴底且没有提问浮层时显示；位置在正文列右侧留白，避免压住代码块 Wrap/Copy。 */
+  const showJump = !isPinned && !overlayFloating
   const turnId = run?.turn?.turnId
   const turnChanges =
     turnId === undefined || changes === undefined ? undefined : totals(turnEntries(changes, turnId))
@@ -479,7 +486,11 @@ export function ChatPanel({
             <div
               ref={content}
               style={{ paddingBottom: composerPad }}
-              className="mx-auto flex w-full max-w-[840px] flex-col gap-4 px-5 pt-6 text-body min-[1200px]:px-8"
+              className={cn(
+                'mx-auto flex w-full max-w-[840px] flex-col gap-4 pt-6 text-body pl-5 min-[1200px]:pl-8',
+                // 跳转钮可见时给正文右侧让出轨宽，代码块 Wrap/Copy 不会被挡住；贴底时恢复对称边距。
+                showJump ? 'pr-14 min-[1200px]:pr-14' : 'pr-5 min-[1200px]:pr-8',
+              )}
             >
               <MessageStream
                 view={view}
@@ -495,46 +506,67 @@ export function ChatPanel({
             </div>
           </div>
           <TurnRail view={view} />
-          <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
-            {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
-            <div
-              ref={floatStack}
-              className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3"
-            >
-              <div className="pointer-events-auto mx-auto flex max-h-[min(60vh,560px)] max-w-[840px] flex-col gap-2 overflow-y-auto">
-                <PlanActions plan={pendingPlan} />
-                <QuestionList />
-                <MemoryProposalList />
+          {/* 输入区全宽相对定位：跳转钮落在 840px 正文列外侧的右轨，而不是压在卡片工具条上。 */}
+          <div className="relative w-full shrink-0">
+            <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
+              {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
+              <div
+                ref={floatStack}
+                className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3"
+              >
+                <div className="pointer-events-auto mx-auto flex max-h-[min(60vh,560px)] max-w-[840px] flex-col gap-2 overflow-y-auto">
+                  <PlanActions plan={pendingPlan} />
+                  <QuestionList />
+                  <MemoryProposalList />
+                </div>
               </div>
-            </div>
-            {progressList && (
-              <TaskProgress
-                key={progressList.listId}
-                list={progressList}
-                running={status === 'running'}
-                {...(progressPlan
-                  ? {
-                      onOpen: () => openPanel('plan', { planId: progressPlan.planId }),
-                    }
-                  : { labelKey: 'taskList.progress.label' as const })}
-              />
-            )}
-            {view !== undefined && goal !== undefined && (
-              <GoalBar
-                view={view}
+              {progressList && (
+                <TaskProgress
+                  key={progressList.listId}
+                  list={progressList}
+                  running={status === 'running'}
+                  {...(progressPlan
+                    ? {
+                        onOpen: () => openPanel('plan', { planId: progressPlan.planId }),
+                      }
+                    : { labelKey: 'taskList.progress.label' as const })}
+                />
+              )}
+              {view !== undefined && goal !== undefined && (
+                <GoalBar
+                  view={view}
+                  status={status}
+                  onOpen={() => openPanel('goal')}
+                  returnFocus={() => window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))}
+                />
+              )}
+              <Composer
+                key={sessionId}
+                sessionId={sessionId}
                 status={status}
-                onOpen={() => openPanel('goal')}
-                returnFocus={() => window.dispatchEvent(new Event(COMPOSER_FOCUS_EVENT))}
+                run={run}
+                agent={run?.agent && !isAgentDraftRef(run.agent) ? run.agent : undefined}
+                model={model}
+                projectPath={path}
+                contextTokens={view?.contextTokens}
+                onOpenPanel={(next) => openPanel(next)}
+                onNewChat={onNewChat}
+                onOpenSettings={onOpenSettings}
+                onOpenSearch={onOpenSearch}
+                onPromptSent={() => scrollToBottom(false)}
               />
-            )}
-            {/* 「回到底部」靠右上角，避开居中标题/表格；绝对浮层出现时让位。 */}
-            {!isPinned && !overlayFloating && (
+            </div>
+            {showJump && (
               <button
                 type="button"
                 aria-label={t('chat.scrollToBottom')}
                 title={t('chat.scrollToBottom')}
                 onClick={() => scrollToBottom(true)}
-                className="absolute right-5 bottom-full z-10 mb-3 flex size-8 items-center justify-center rounded-full border border-hair2 bg-raise text-fg shadow-2 transition-all hover:bg-hover hover:scale-105 active:scale-95 focus-visible:ring-1 focus-visible:ring-accent min-[1200px]:right-8"
+                className="absolute bottom-full z-20 mb-3 flex size-8 items-center justify-center rounded-full border border-hair2 bg-raise text-fg shadow-2 transition-all hover:bg-hover hover:scale-105 active:scale-95 focus-visible:ring-1 focus-visible:ring-accent"
+                style={{
+                  // 宽屏：贴在 840px 正文右缘外侧；窄屏：退到窗边 0.75rem，正文已用 pr-14 让路。
+                  right: 'max(0.75rem, calc(50% - 420px - 2.75rem))',
+                }}
               >
                 <ArrowDown className="size-4 text-muted" />
                 {status === 'running' && (
@@ -542,21 +574,6 @@ export function ChatPanel({
                 )}
               </button>
             )}
-            <Composer
-              key={sessionId}
-              sessionId={sessionId}
-              status={status}
-              run={run}
-              agent={run?.agent && !isAgentDraftRef(run.agent) ? run.agent : undefined}
-              model={model}
-              projectPath={path}
-              contextTokens={view?.contextTokens}
-              onOpenPanel={(next) => openPanel(next)}
-              onNewChat={onNewChat}
-              onOpenSettings={onOpenSettings}
-              onOpenSearch={onOpenSearch}
-              onPromptSent={() => scrollToBottom(false)}
-            />
           </div>
         </div>
         <SessionSidePanel

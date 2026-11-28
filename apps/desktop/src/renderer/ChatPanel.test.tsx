@@ -986,6 +986,10 @@ describe('ChatPanel', () => {
     const button = screen.getByRole('button', { name: '回到底部' })
     // 运行中且不在底部时，按钮上有一个脉冲小点。
     expect(button.querySelector('.animate-pulse')).not.toBeNull()
+    // 正文右缘让出轨宽；钮用 calc 贴在 840px 列外侧，避免压住代码块 Wrap/Copy。
+    const column = scroller.firstElementChild as HTMLElement
+    expect(column.className).toMatch(/pr-14/)
+    expect(button.style.right).toContain('420px')
     await userEvent.click(button)
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
   })
@@ -3059,15 +3063,57 @@ describe('Composer (M2-04)', () => {
   })
 
   it('opens the memory and delegation panels from commands', async () => {
-    const { open } = setup({
+    const { open, store } = setup({
       history: withModel,
-      handlers: { 'settings.get': () => ({ providers }) },
+      handlers: {
+        'settings.get': () => ({ providers }),
+        'run.inspect': () => ({
+          tree: { sessionId: 's1', rootRunId: 'c1', generatedAt: 1, runs: [] },
+          snapshots: [],
+          settings: { projectPath: '/work', workspacePath: '/work', permissionRules: [] },
+        }),
+      },
     })
     await open()
     await userEvent.type(input(), '/memory{Enter}')
     expect(await screen.findByRole('tab', { name: /记忆/, selected: true })).toBeTruthy()
+
+    const base = store.getState().views.s1!
+    act(() =>
+      store.setState({
+        views: {
+          s1: {
+            ...base,
+            delegations: [
+              {
+                childRunId: 'c1',
+                parentRunId: 'r1',
+                agent: { id: 'builtin.explorer', version: 1 },
+                task: '探索目录树',
+                workspace: 'shared',
+                workspacePath: undefined,
+                budget: undefined,
+                turnId: undefined,
+                createdAt: 1,
+                completed: {
+                  status: 'completed',
+                  summary: '看完了',
+                  usage: undefined,
+                  changeSetId: undefined,
+                  issues: undefined,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    )
     await userEvent.type(input(), '/delegation{Enter}')
     expect(await screen.findByRole('tab', { name: /子 Agent/, selected: true })).toBeTruthy()
+    // 有委派时自动选中最近一条，而不是空白「还没有选择子 Agent」。
+    const panel = screen.getByRole('region', { name: '子 Agent' })
+    expect(panel.textContent).toContain('探索目录树')
+    expect(panel.textContent).not.toContain('还没有选择子 Agent')
   })
 
   it('opens settings sections from /mcp, /skills and /providers', async () => {

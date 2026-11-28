@@ -6,7 +6,7 @@ import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
 import type { MainApi } from './api.js'
 import { App } from './App.js'
-import { greetingPeriod, NewSession } from './NewSession.js'
+import { greetingPeriod, NewSession, titleFromPrompt } from './NewSession.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 import { FILE_DRAG_TYPE } from './file-drag.js'
@@ -16,6 +16,21 @@ afterEach(() => {
   cleanup()
   delete (window as { cairn?: unknown }).cairn
   delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
+
+describe('titleFromPrompt', () => {
+  it('keeps a long first line up to the session title max so CSS can ellipsize', () => {
+    const long =
+      '你好，请先用两三句话做一个简洁的自我介绍，介绍你是谁以及你擅长什么，然后再给出一小段实用的 TypeScript 代码示例'
+    expect(long.length).toBeGreaterThan(60)
+    expect(titleFromPrompt(long)).toBe(long)
+    expect(titleFromPrompt(long).endsWith('…')).toBe(false)
+  })
+
+  it('clips by unicode code points at the protocol max without inventing an ellipsis', () => {
+    const overflow = '字'.repeat(210)
+    expect(titleFromPrompt(overflow)).toBe('字'.repeat(200))
+  })
 })
 
 const capabilities = {

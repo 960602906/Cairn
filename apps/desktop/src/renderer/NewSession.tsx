@@ -18,7 +18,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BUILTIN_CODER_ID } from '@cairn/core'
-import type { ModelRef, SkillSummary } from '@cairn/protocol'
+import { SESSION_TITLE_MAX_LENGTH, type ModelRef, type SkillSummary } from '@cairn/protocol'
 import { ModeMenu } from './Composer.js'
 import { ModelPicker } from './ModelPicker.js'
 import { enabledModelChoices, resolveDefaultModel, sameModel } from './model-labels.js'
@@ -78,8 +78,6 @@ import { CairnMark, cn } from './ui/index.js'
 
 /** 文本框最高（px），超过后滚动。 */
 const MAX_TEXTAREA_HEIGHT = 200
-/** 用首行输入生成会话标题，避免侧栏里全是“未命名会话”。 */
-const MAX_TITLE_LENGTH = 60
 
 type GreetingPeriod = 'morning' | 'noon' | 'afternoon' | 'evening' | 'night'
 
@@ -104,9 +102,15 @@ function useGreetingPeriod(): GreetingPeriod {
   return period
 }
 
-function titleFromPrompt(text: string): string {
+/**
+ * 用首行输入生成会话标题，避免侧栏里全是“未命名会话”。
+ * 存完整标题（协议上限），由顶栏 / 侧栏 CSS `truncate` 负责溢出时显示省略号；
+ * 不再在存储时硬截到几十个字却不带 “…”，宽屏下看起来像被裁断。
+ */
+export function titleFromPrompt(text: string, max = SESSION_TITLE_MAX_LENGTH): string {
   const firstLine = text.trim().split(/\r?\n/, 1)[0] ?? ''
-  return firstLine.slice(0, MAX_TITLE_LENGTH).trim()
+  const chars = [...firstLine]
+  return (chars.length > max ? chars.slice(0, max).join('') : firstLine).trim()
 }
 
 export function NewSession({

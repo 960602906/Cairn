@@ -20,6 +20,27 @@ import { inspectionKey } from './session-store.js'
 import { useSessionStore } from './store-context.js'
 import { Button, PanelEmpty, Spinner } from './ui/index.js'
 
+/**
+ * `/delegation` 或侧栏打开时选中哪条子运行：显式 id 优先；否则保留仍有效的当前选中；
+ * 再否则优先进行中的子运行，最后取最近创建的一条。没有委派时返回 undefined。
+ */
+export function pickDelegationRunId(
+  delegations: readonly DelegationView[] | undefined,
+  preferred?: string,
+): string | undefined {
+  if (!delegations || delegations.length === 0) return undefined
+  if (preferred !== undefined && delegations.some((item) => item.childRunId === preferred)) {
+    return preferred
+  }
+  const running = [...delegations].reverse().find((item) => item.completed === undefined)
+  if (running) return running.childRunId
+  let latest = delegations[0]!
+  for (const item of delegations) {
+    if (item.createdAt >= latest.createdAt) latest = item
+  }
+  return latest.childRunId
+}
+
 function DelegationHeader({
   delegation,
   onOpenChanges,
