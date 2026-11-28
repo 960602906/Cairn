@@ -50,6 +50,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ASK_USER_TOOL,
   CREATE_TASK_LIST_TOOL,
+  DELEGATE_TOOL_NAME,
   PROPOSE_PLAN_TOOL,
   REMEMBER_TOOL,
   REVISE_PLAN_STEPS_TOOL,
@@ -132,6 +133,7 @@ const ACTIONS: ReadonlySet<string> = new Set([
   'start_command',
   'ask_user',
   REMEMBER_TOOL,
+  DELEGATE_TOOL_NAME,
 ])
 
 function formatInput(input: unknown): string {
@@ -139,6 +141,41 @@ function formatInput(input: unknown): string {
     return JSON.stringify(input, null, 2) ?? String(input)
   } catch {
     return String(input)
+  }
+}
+
+/**
+ * `delegate` 的结果是结构化 JSON：把 summary 等字段展开成可读文本，避免界面上看到字面 `\n`。
+ */
+export function formatDelegateOutput(output: string): string | undefined {
+  try {
+    const parsed = JSON.parse(output) as Record<string, unknown>
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    const lines: string[] = []
+    if (typeof parsed['status'] === 'string') lines.push(`status: ${parsed['status']}`)
+    if (typeof parsed['summary'] === 'string' && parsed['summary'] !== '') {
+      lines.push('', parsed['summary'])
+    }
+    if (typeof parsed['question'] === 'string' && parsed['question'] !== '') {
+      lines.push('', parsed['question'])
+    }
+    const usage = parsed['usage']
+    if (typeof usage === 'object' && usage !== null) {
+      const record = usage as Record<string, unknown>
+      const tokens = typeof record['tokens'] === 'number' ? record['tokens'] : undefined
+      const steps = typeof record['steps'] === 'number' ? record['steps'] : undefined
+      const parts = [
+        tokens === undefined ? undefined : `tokens ${tokens}`,
+        steps === undefined ? undefined : `steps ${steps}`,
+      ].filter((part): part is string => part !== undefined)
+      if (parts.length > 0) lines.push('', parts.join(' · '))
+    }
+    if (typeof parsed['childRunId'] === 'string') {
+      lines.push(`childRunId: ${parsed['childRunId']}`)
+    }
+    return lines.join('\n').trim() === '' ? undefined : lines.join('\n').trim()
+  } catch {
+    return undefined
   }
 }
 
@@ -437,6 +474,15 @@ export function describeToolCall(name: string, args: unknown, t: TFunction): Too
       typeof content === 'string' && content !== ''
         ? truncate(content.replace(/\s+/g, ' ').trim(), INPUT_SUMMARY_CHARS)
         : summarizeInput(args)
+  } else if (name === DELEGATE_TOOL_NAME) {
+    action = t('tool.action.delegate')
+    const agent = typeof argsRecord['agent'] === 'string' ? argsRecord['agent'] : ''
+    const task = typeof argsRecord['task'] === 'string' ? argsRecord['task'] : ''
+    const label = [agent, task].filter((part) => part !== '').join(' · ')
+    object =
+      label !== ''
+        ? truncate(label.replace(/\s+/g, ' ').trim(), INPUT_SUMMARY_CHARS)
+        : summarizeInput(args)
   } else {
     action = name === 'load_skill' ? '' : ACTIONS.has(name) ? t(`tool.action.${name}`) : name
     object = summarizeInput(args)
@@ -444,7 +490,11 @@ export function describeToolCall(name: string, args: unknown, t: TFunction): Too
   return {
     action,
     object,
-    plain: name === 'load_skill' || planTool || name === REMEMBER_TOOL,
+    plain:
+      name === 'load_skill' ||
+      planTool ||
+      name === REMEMBER_TOOL ||
+      name === DELEGATE_TOOL_NAME,
   }
 }
 
@@ -592,7 +642,9 @@ export function ToolStep({
     name === ASK_USER_TOOL
       ? (formatAskUserAnswers(output) ??
         (isAskUserCancelled(output) ? t('question.cancelled') : output))
-      : output
+      : name === DELEGATE_TOOL_NAME
+        ? (formatDelegateOutput(output) ?? output)
+        : output
   const terminal = name === 'run_command' ? terminalData(args, tool, live) : undefined
   const file =
     name === 'read_file' && status === 'completed' ? parseReadFileOutput(output) : undefined

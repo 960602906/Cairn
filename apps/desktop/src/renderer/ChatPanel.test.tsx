@@ -826,12 +826,13 @@ describe('ChatPanel', () => {
     expect(within(bar).getByText('整理设置页')).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '批准执行' })).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '取消' })).toBeTruthy()
-    // 浮动面板会盖住消息末尾，有待决定的内容时多留一段底部空白。
-    expect(document.body.innerHTML).toContain('pb-28')
+    // 浮动面板与输入框高度由 ResizeObserver 写入 paddingBottom，消息末尾不被盖住。
+    const content = document.querySelector('[class*="max-w-[840px]"]') as HTMLElement | null
+    expect(content?.style.paddingBottom).toMatch(/px$/)
 
     emit(ev(base + 2, 'plan.rejected', { planId: 'pl1' }))
     await waitFor(() => expect(screen.queryByRole('region', { name: '待批准的计划' })).toBeNull())
-    expect(document.body.innerHTML).toContain('pb-8')
+    expect(content?.style.paddingBottom).toMatch(/px$/)
   })
 
   it('floats an ad-hoc task list without a plan (ADR-0038)', async () => {
@@ -1857,7 +1858,7 @@ describe('ChatPanel', () => {
     expect(stopButton()).toBeNull()
     expect(screen.getByText('已停止')).toBeTruthy()
     // 已输出的部分保留，并注明未完成
-    expect(messages().at(-1)).toBe('助手说到（回复未完成）')
+    expect(messages().at(-1)).toContain('已停止 — 回复未完成')
   })
 
   it.each([

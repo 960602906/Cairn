@@ -103,6 +103,8 @@ export function Sidebar({
   activityActive = false,
   activityBadge = 0,
   onNewConversationProject,
+  onSelectWorkspace,
+  selectedProjectPath,
 }: {
   readonly open: boolean
   readonly onClose: () => void
@@ -114,6 +116,8 @@ export function Sidebar({
   readonly activityActive?: boolean
   readonly activityBadge?: number
   readonly onNewConversationProject?: (project: ProjectSummary) => void
+  readonly onSelectWorkspace?: (project: ProjectSummary) => void
+  readonly selectedProjectPath?: string | undefined
 }) {
   const { t } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -204,6 +208,8 @@ export function Sidebar({
           <WorkspaceList
             onNewConversation={(project) => onNewConversationProject?.(project)}
             onSelectSession={onSelect}
+            onSelectWorkspace={onSelectWorkspace}
+            selectedProjectPath={selectedProjectPath}
           />
           <SessionList onSelect={onSelect} />
         </nav>

@@ -43,7 +43,7 @@ import {
   toggleWorkbenchShortcut,
 } from './layout/shortcuts.js'
 import { TopBar } from './layout/TopBar.js'
-import { cn, IconButton } from './ui/index.js'
+import { IconButton } from './ui/index.js'
 
 /** 工作台从浮层切到常驻列的宽度；1280/1366 下仍保持浮层，避免把正文挤到 600px 以下。 */
 const PANEL_DOCK_QUERY = '(min-width: 1440px)'
@@ -115,8 +115,25 @@ export function ChatPanel({
   const [findToken, setFindToken] = useState(0)
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
+  /** 测量输入框区域高度，给消息列留出足够的底部空白，避免正文被浮动输入框挡住。 */
+  const composerDock = useRef<HTMLDivElement>(null)
+  const [composerPad, setComposerPad] = useState(128)
   const { isPinned, scrollToBottom } = useStickToBottom(scroller, content, sessionId ?? '')
   const run = view ? rootRun(view) : undefined
+
+  useEffect(() => {
+    const el = composerDock.current
+    if (!el) return
+    const sync = () => {
+      const next = Math.ceil(el.getBoundingClientRect().height) + 24
+      setComposerPad((current) => (current === next ? current : next))
+    }
+    sync()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(sync)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [sessionId])
 
   /** 点击已打开标签：只切换，不重置当前选中项。 */
   const activateTab = useCallback((next: SessionTab) => {
@@ -381,7 +398,11 @@ export function ChatPanel({
             </span>
           </>
         )}
-        <h2 id="chat-title" className="min-w-0 truncate text-ui font-semibold text-fg">
+        <h2
+          id="chat-title"
+          title={title === '' ? t('title.untitled') : title}
+          className="min-w-0 flex-1 truncate text-ui font-semibold text-fg"
+        >
           {title === '' ? t('title.untitled') : title}
         </h2>
         {view?.agentsMd && (
@@ -459,13 +480,8 @@ export function ChatPanel({
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
             <div
               ref={content}
-              className={cn(
-                'mx-auto flex w-full max-w-[840px] flex-col gap-4 px-5 pt-6 text-body min-[1200px]:px-8',
-                // 有浮动面板时多留一段底部空白，滚到底也能看到消息末尾而不被面板盖住。
-                pendingQuestions > 0 || pendingPlan !== undefined || pendingMemories > 0
-                  ? 'pb-28'
-                  : 'pb-8',
-              )}
+              style={{ paddingBottom: composerPad }}
+              className="mx-auto flex w-full max-w-[840px] flex-col gap-4 px-5 pt-6 text-body min-[1200px]:px-8"
             >
               <MessageStream
                 view={view}
@@ -481,7 +497,10 @@ export function ChatPanel({
             </div>
           </div>
           <TurnRail view={view} />
-          <div className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8">
+          <div
+            ref={composerDock}
+            className="relative mx-auto w-full max-w-[880px] px-5 pb-4 min-[1200px]:px-8"
+          >
             {/* 提问卡片浮在输入框上方，不占消息流的位置；周围留空处不拦截点击。 */}
             <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 pb-3">
               <div className="pointer-events-auto mx-auto flex max-h-[min(60vh,560px)] max-w-[840px] flex-col gap-2 overflow-y-auto">
@@ -538,6 +557,7 @@ export function ChatPanel({
               onNewChat={onNewChat}
               onOpenSettings={onOpenSettings}
               onOpenSearch={onOpenSearch}
+              onPromptSent={() => scrollToBottom(true)}
             />
           </div>
         </div>

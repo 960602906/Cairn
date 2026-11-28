@@ -140,6 +140,8 @@ export interface ComposerProps {
   readonly onOpenSettings?: ((section: SettingsSection) => void) | undefined
   /** `/search`；没有时指令不出现。 */
   readonly onOpenSearch?: (() => void) | undefined
+  /** 普通消息发送成功后回调（例如滚回对话底部）；指令执行不触发。 */
+  readonly onPromptSent?: (() => void) | undefined
 }
 
 type CommandNotice = {
@@ -497,6 +499,7 @@ export function Composer({
   onNewChat,
   onOpenSettings,
   onOpenSearch,
+  onPromptSent,
 }: ComposerProps) {
   const { t, i18n } = useTranslation('session')
   const { t: tc } = useTranslation()
@@ -854,6 +857,8 @@ export function Composer({
     setText('')
     setAttachments([])
     setSending(true)
+    // 用户主动发送时即使之前往上翻过，也回到最新一轮。
+    onPromptSent?.()
     const sent = await sendPrompt(draft, planMode ? 'plan' : 'normal', {
       ...referencesOf(draft),
       attachments: pendingAttachments,
@@ -889,6 +894,7 @@ export function Composer({
     if (command.kind === 'skill') {
       if (args !== '') recordHistory(`/${command.name} ${args}`)
       setSending(true)
+      onPromptSent?.()
       const sent = await sendPrompt(args, planMode ? 'plan' : 'normal', {
         ...referencesOf(args),
         skills: [command.name],
@@ -908,6 +914,7 @@ export function Composer({
         } else {
           recordHistory(`/plan ${args}`)
           setSending(true)
+          onPromptSent?.()
           const sent = await sendPrompt(args, 'plan', referencesOf(args))
           setSending(false)
           if (sent) setPlanMode(false)

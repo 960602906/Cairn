@@ -36,6 +36,8 @@ function setup(
   options: {
     withRefresh?: boolean
     onNewConversation?: (project: ProjectSummary) => void
+    onSelectWorkspace?: (project: ProjectSummary) => void
+    selectedProjectPath?: string
     openedProject?: ProjectSummary | undefined
     sessions?: SessionSummary[]
     onSelectSession?: () => void
@@ -68,6 +70,8 @@ function setup(
         <WorkspaceList
           onNewConversation={options.onNewConversation}
           onSelectSession={options.onSelectSession}
+          onSelectWorkspace={options.onSelectWorkspace}
+          selectedProjectPath={options.selectedProjectPath}
         />
       </SessionStoreProvider>
     </I18nextProvider>,
@@ -367,7 +371,7 @@ describe('WorkspaceList', () => {
           parentPath: '/parent',
           name: 'repo',
         },
-        undefined,
+        { timeoutMs: 0 },
       ),
     )
     await waitFor(() => expect(refreshProjects).toHaveBeenCalled())
@@ -383,5 +387,18 @@ describe('WorkspaceList', () => {
     expect(pencils).toHaveLength(1)
     await userEvent.click(pencils[0]!)
     expect(onNewConversation).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1' }))
+  })
+
+  it('selects the workspace for the composer when the row is clicked', async () => {
+    const onSelectWorkspace = vi.fn()
+    const { container } = setup([project()], {
+      onSelectWorkspace,
+      selectedProjectPath: '/work/demo',
+    })
+    const row = screen.getByRole('button', { name: 'demo 的会话' })
+    expect(row.getAttribute('aria-current')).toBe('true')
+    expect(container.querySelector('.bg-accent-soft')).toBeTruthy()
+    await userEvent.click(row)
+    expect(onSelectWorkspace).toHaveBeenCalledWith(expect.objectContaining({ path: '/work/demo' }))
   })
 })

@@ -21,6 +21,7 @@ import {
   Check,
   ChevronRight,
   CircleCheck,
+  CirclePause,
   Copy,
   FileText,
   Lightbulb,
@@ -243,29 +244,37 @@ const Reasoning = memo(function Reasoning({
   const { t } = useTranslation('session')
   const [open, setOpen] = useState(false)
   const summary = text.replace(/\s+/g, ' ').trim()
+  // 展开后触发器只保留标签，避免短思考在摘要行与正文里各出现一次。
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="max-w-full">
       <CollapsibleTrigger
         aria-label={t('message.reasoning')}
-        className="group/reasoning -mx-[7px] grid min-h-[26px] w-full cursor-pointer grid-cols-[18px_auto_minmax(0,1fr)_14px] items-start gap-x-[7px] rounded-[7px] px-[7px] py-1 text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+        className={cn(
+          'group/reasoning -mx-[7px] grid min-h-[26px] w-full cursor-pointer items-start gap-x-[7px] rounded-[7px] px-[7px] py-1 text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent',
+          open
+            ? 'grid-cols-[18px_auto_14px]'
+            : 'grid-cols-[18px_auto_minmax(0,1fr)_14px]',
+        )}
       >
         <span className="flex h-[18px] w-[18px] items-center">
-          <Lightbulb aria-hidden className="size-[13px] shrink-0 text-faint opacity-55" />
+          <Lightbulb aria-hidden className="size-[13px] shrink-0 text-muted opacity-70" />
         </span>
-        <span className="flex h-[18px] w-[26px] shrink-0 items-center text-[11px] tracking-[.04em] text-faint opacity-80">
+        <span className="flex h-[18px] shrink-0 items-center text-[11px] font-medium tracking-[.04em] text-muted">
           {t('message.reasoningShort')}
         </span>
-        <span className="min-w-0 line-clamp-2 text-[12.5px] leading-[18px] break-words whitespace-normal text-muted">
-          {summary === '' ? (
-            live ? (
-              <Shimmer>{t('message.reasoning')}</Shimmer>
+        {!open && (
+          <span className="min-w-0 line-clamp-2 text-[12.5px] leading-[18px] break-words whitespace-normal text-faint">
+            {summary === '' ? (
+              live ? (
+                <Shimmer>{t('message.reasoning')}</Shimmer>
+              ) : (
+                t('message.reasoning')
+              )
             ) : (
-              t('message.reasoning')
-            )
-          ) : (
-            summary
-          )}
-        </span>
+              summary
+            )}
+          </span>
+        )}
         <ChevronRight
           aria-hidden
           className={cn(
@@ -275,7 +284,7 @@ const Reasoning = memo(function Reasoning({
         />
       </CollapsibleTrigger>
       <CollapsibleContent forceMount aria-hidden={!open} className={cn(!open && 'hidden')}>
-        <div className="mt-1 mb-1.5 ml-[25px] rounded-[8px] bg-sunk px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap text-muted">
+        <div className="mt-1 mb-1.5 ml-[25px] rounded-[8px] border border-hair bg-sunk px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap text-fg2">
           {text}
         </div>
       </CollapsibleContent>
@@ -1167,7 +1176,13 @@ function Message({
         onOpenFile={onOpenFile}
       />
       {message.incomplete && !toolsFollow && (
-        <em className="mt-1.5 block text-note text-muted not-italic">{t('message.incomplete')}</em>
+        <p
+          role="status"
+          className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted"
+        >
+          <CirclePause aria-hidden className="size-3.5 shrink-0" />
+          <span>{t('message.incomplete')}</span>
+        </p>
       )}
       {footer && message.turnId !== undefined && (
         <TurnChanges
@@ -1739,17 +1754,22 @@ export function MessageStream({
     }
     return map
   }, [view?.goalOrder, view?.goals])
-  // 没有落到任何一轮消息末尾的委派：还没有轮次归属、本轮的完成消息尚未到达（只有 live 消息），
-  // 或者这一轮没有可挂靠的消息。它们排在流末尾，保证运行中的子 Agent 也能看到。
-  const turnsWithMessages = useMemo(
-    () =>
-      new Set(
-        messages.flatMap((message) => (message.turnId === undefined ? [] : [message.turnId])),
-      ),
-    [messages],
-  )
+  // 已经挂在某一轮“最后一条消息”后面的委派；其余（尚无轮次、或本轮还在继续写、只有 live）
+  // 排在流末尾，避免子 Agent 跑完后卡片从对话里消失、只剩工具行。
+  const anchoredDelegationIds = useMemo(() => {
+    const ids = new Set<string>()
+    messages.forEach((message, index) => {
+      const next = messages[index + 1]
+      const lastOfTurn = next === undefined || next.turnId !== message.turnId
+      if (!lastOfTurn || message.turnId === undefined) return
+      for (const delegation of delegationsByTurn.get(message.turnId) ?? []) {
+        ids.add(delegation.childRunId)
+      }
+    })
+    return ids
+  }, [messages, delegationsByTurn])
   const orphanDelegations = (view?.delegations ?? []).filter(
-    (item) => item.turnId === undefined || !turnsWithMessages.has(item.turnId),
+    (item) => !anchoredDelegationIds.has(item.childRunId),
   )
   const projectId =
     view?.info?.projectPath === undefined
@@ -1947,9 +1967,13 @@ export function MessageStream({
                   onOpenFile={onOpenFile}
                 />
                 {lastMsg.incomplete && (
-                  <em className="mt-1.5 block text-note text-muted not-italic">
-                    {t('message.incomplete')}
-                  </em>
+                  <p
+                    role="status"
+                    className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted"
+                  >
+                    <CirclePause aria-hidden className="size-3.5 shrink-0" />
+                    <span>{t('message.incomplete')}</span>
+                  </p>
                 )}
                 {footer && lastMsg.turnId !== undefined && (
                   <TurnChanges

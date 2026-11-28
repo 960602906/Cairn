@@ -842,7 +842,7 @@ describe('NewSession controls', () => {
 
     await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
     const list = await screen.findByRole('listbox', { name: '选择 Agent' })
-    expect(within(list).getByText('审查改动的正确性')).toBeTruthy()
+    expect(within(list).getByText('审查改动的正确性 · v2')).toBeTruthy()
     // 草稿与已归档的不出现在可选列表里。
     expect(within(list).queryByText('草稿')).toBeNull()
     expect(within(list).queryByText('旧助手')).toBeNull()
@@ -1035,7 +1035,9 @@ describe('NewSession controls', () => {
 
     // 在 work 里换成代码审查员。
     await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
-    await user.click(await screen.findByRole('option', { name: /代码审查员/ }))
+    await user.click(
+      within(await screen.findByRole('listbox')).getByText('代码审查员'),
+    )
     expect(screen.getByRole('button', { name: '切换 Agent：代码审查员' })).toBeTruthy()
 
     // 另一个工作空间仍用默认 Agent。
@@ -1155,7 +1157,24 @@ describe('NewSession controls', () => {
     await screen.findByPlaceholderText('有什么可以帮你？')
     await user.click(screen.getByRole('button', { name: '工作空间：work' }))
     await user.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
-    await waitFor(() => expect(request).toHaveBeenCalledWith('project.open', {}))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('project.open', {}, { timeoutMs: 0 }),
+    )
+  })
+
+  it('recognizes /delegation and /agent before a session exists', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await user.type(input, '/delegation')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    expect(await screen.findByText(/先发送一条消息创建会话/)).toBeTruthy()
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+    await user.clear(input)
+    await user.type(input, '/agent')
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('listbox')).toBeTruthy()
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
   })
 
   it('recognizes /goal but asks to create a session first', async () => {

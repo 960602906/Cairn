@@ -108,7 +108,8 @@ export function WorkspaceCreateDialog({
     setBusy('parent')
     setError('')
     try {
-      const result = await api.request('project.pickDirectory', {})
+      // 系统文件夹对话框可能超过默认 RPC 超时。
+      const result = await api.request('project.pickDirectory', {}, { timeoutMs: 0 })
       if (result.path) setParent(result.path)
     } catch (reason) {
       setError(describeError(reason))
@@ -128,12 +129,17 @@ export function WorkspaceCreateDialog({
     setBusy('clone')
     setError('')
     try {
-      const result = await api.request('project.clone', {
-        remoteUrl: remoteUrl.trim(),
-        parentPath: parent.trim(),
-        name: name.trim(),
-        ...(branch.trim() === '' ? {} : { branch: branch.trim() }),
-      })
+      // 克隆可能超过默认 RPC 超时。
+      const result = await api.request(
+        'project.clone',
+        {
+          remoteUrl: remoteUrl.trim(),
+          parentPath: parent.trim(),
+          name: name.trim(),
+          ...(branch.trim() === '' ? {} : { branch: branch.trim() }),
+        },
+        { timeoutMs: 0 },
+      )
       await refreshProjects()
       onCreated?.(result.project)
       onOpenChange(false)

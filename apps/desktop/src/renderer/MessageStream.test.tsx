@@ -487,12 +487,14 @@ describe('MessageStream 渲染', () => {
     )
     const triggers = screen.getAllByRole('button', { name: '思考过程' })
     expect(triggers.length).toBe(2)
-    // 收起时正文仍可读（读屏与流式内容不丢失），点击后展开
+    // 收起时摘要在触发器里；展开后摘要移入正文，避免短思考重复一行。
     expect(screen.getAllByText('想一想').length).toBeGreaterThan(0)
     expect(triggers[0]!.querySelector('.line-clamp-2')).toBeTruthy()
     expect(triggers[0]!.getAttribute('aria-expanded')).toBe('false')
     await userEvent.click(triggers[0]!)
     expect(triggers[0]!.getAttribute('aria-expanded')).toBe('true')
+    expect(triggers[0]!.querySelector('.line-clamp-2')).toBeNull()
+    expect(screen.getAllByText('想一想').length).toBeGreaterThan(0)
   })
 
   it('renders the empty stream without a view', () => {
@@ -1746,7 +1748,7 @@ describe('MessageStream 多步骤归组的细节', () => {
     expect(screen.getByText('补充说明')).toBeTruthy()
     expect(screen.getAllByText('a.ts').length).toBeGreaterThan(0)
     expect(screen.getByText('pnpm test')).toBeTruthy()
-    expect(screen.getByText('（回复未完成）')).toBeTruthy()
+    expect(screen.getByText('已停止 — 回复未完成')).toBeTruthy()
     expect(screen.getByText('计划')).toBeTruthy()
     expect(screen.getByText('补测试')).toBeTruthy()
     expect(screen.getByRole('button', { name: '撤销本轮' })).toBeTruthy()

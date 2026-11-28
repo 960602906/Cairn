@@ -184,7 +184,7 @@ const components: Components = {
   },
   code: (props) => (
     <code
-      className="rounded-[5px] bg-sunk px-[5px] py-[1px] font-mono text-[0.87em] text-fg"
+      className="inline rounded-[5px] bg-sunk2 px-[5px] py-px font-mono text-[0.87em] text-fg [overflow-wrap:anywhere] whitespace-break-spaces"
       {...strip(props)}
     />
   ),

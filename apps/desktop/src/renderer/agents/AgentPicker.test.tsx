@@ -221,8 +221,10 @@ describe('AgentPicker', () => {
       team: { teamId: 'user.team-1', name: { 'zh-CN': '日常协作' } },
     })
     await userEvent.click(trigger())
-    const rows = within(screen.getByRole('listbox')).getAllByRole('option')
-    expect(rows[0]!.getAttribute('data-active')).toBe('true')
+    const active = within(screen.getByRole('listbox'))
+      .getAllByRole('option')
+      .find((row) => row.getAttribute('data-active') === 'true')
+    expect(active?.textContent).toContain('日常协作')
   })
 
   it('lists only usable agents, marking the current one', async () => {
@@ -235,10 +237,12 @@ describe('AgentPicker', () => {
     ])
     expect(options()[0]!.getAttribute('aria-selected')).toBe('true')
     expect(options()[2]!.getAttribute('aria-selected')).toBe('false')
-    // 有描述时显示描述；没有描述时退回版本号，行高保持一致。
-    expect(within(listbox()).getByText('默认的编程助手')).toBeTruthy()
-    expect(within(listbox()).getByText('审查改动的正确性')).toBeTruthy()
+    // 有描述时带出版本；没有描述时只显示版本号，行高保持一致。
+    expect(within(listbox()).getByText('默认的编程助手 · v1')).toBeTruthy()
+    expect(within(listbox()).getByText('审查改动的正确性 · v3')).toBeTruthy()
     expect(within(listbox()).getByText('v1')).toBeTruthy()
+    expect(within(listbox()).getAllByText('内置').length).toBeGreaterThanOrEqual(3)
+    expect(within(listbox()).getByText(/可委派给/)).toBeTruthy()
   })
 
   it('switches the session agent and records it as recently used', async () => {
@@ -482,19 +486,21 @@ describe('AgentPicker', () => {
     expect(screen.queryByRole('listbox')).toBeNull()
   })
 
-  it('lists teams before agents and shows the bound team on the trigger', async () => {
+  it('lists agents before teams and shows the bound team on the trigger', async () => {
     const { trigger } = setup({ teams: [team()], team: team() })
     expect(screen.getByRole('button', { name: '切换团队：日常协作' })).toBeTruthy()
     await userEvent.click(trigger())
     const box = await screen.findByRole('listbox', { name: '选择 Agent 或团队' })
     const rows = within(box).getAllByRole('option')
-    expect(rows[0]!.textContent).toContain('日常协作')
-    expect(rows[0]!.textContent).toContain('自由委派 · 2 名成员')
-    expect(rows[0]!.textContent).toContain('主控 编程助手')
-    expect(rows[0]!.getAttribute('aria-selected')).toBe('true')
-    expect(rows[1]!.textContent).toContain('编程助手')
+    expect(rows[0]!.textContent).toContain('编程助手')
+    expect(rows[0]!.textContent).toContain('内置')
     // 绑定团队时当前根 Agent 是主控，不把它标成当前选择。
-    expect(rows[1]!.getAttribute('aria-selected')).toBe('false')
+    expect(rows[0]!.getAttribute('aria-selected')).toBe('false')
+    const teamRow = rows.find((row) => row.textContent?.includes('日常协作'))
+    expect(teamRow).toBeTruthy()
+    expect(teamRow!.textContent).toContain('自由委派 · 2 名成员')
+    expect(teamRow!.textContent).toContain('主控 编程助手')
+    expect(teamRow!.getAttribute('aria-selected')).toBe('true')
     expect(within(box).getByText('团队模板')).toBeTruthy()
     expect(within(box).getByText('单个 Agent')).toBeTruthy()
   })
@@ -540,7 +546,8 @@ describe('AgentPicker', () => {
     await userEvent.type(search, 'zzz{ArrowDown}{ArrowUp}{Enter}')
     expect(onSelectTeam).not.toHaveBeenCalled()
     await userEvent.clear(search)
-    await userEvent.type(search, '{Enter}')
+    // Agent 排在团队前面：用方向键移到团队行再确认。
+    await userEvent.type(search, '{ArrowDown}{ArrowDown}{ArrowDown}{Enter}')
     expect(onSelectTeam).toHaveBeenCalledWith(expect.objectContaining({ teamId: 'user.team-1' }))
   })
 

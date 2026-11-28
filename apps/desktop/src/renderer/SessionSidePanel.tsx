@@ -402,7 +402,7 @@ export function SessionSidePanel({
             </IconButton>
           )}
         </div>
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-hidden">
           {panel === 'home' && (
             <SessionHome
               view={view}
