@@ -1174,10 +1174,11 @@ function Message({
         onOpenFile={onOpenFile}
       />
       {message.incomplete && !toolsFollow && (
-        <p className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted">
+        // 用 div：消息正文提取只看 `<p>`，避免把未完成提示当成回复段落。
+        <div className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted">
           <CirclePause aria-hidden className="size-3.5 shrink-0" />
           <span>{t('message.incomplete')}</span>
-        </p>
+        </div>
       )}
       {footer && message.turnId !== undefined && (
         <TurnChanges
@@ -1971,10 +1972,10 @@ export function MessageStream({
                   onOpenFile={onOpenFile}
                 />
                 {lastMsg.incomplete && (
-                  <p className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted">
+                  <div className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted">
                     <CirclePause aria-hidden className="size-3.5 shrink-0" />
                     <span>{t('message.incomplete')}</span>
-                  </p>
+                  </div>
                 )}
                 {footer && lastMsg.turnId !== undefined && (
                   <TurnChanges

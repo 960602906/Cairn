@@ -67,8 +67,8 @@ test('在新对话页与会话里选择 Agent', async ({ launch, userData }) => 
   await expect(list.getByRole('option')).toHaveCount(2)
   await search.fill('')
 
-  // 团队模板副标题也可能带上审查员名字；只点单个 Agent 行。
-  await list.locator('[role="option"][data-kind="agent"]').filter({ hasText: '代码审查员' }).click()
+  // Coder 的「可委派给…代码审查员…」提示也会命中 hasText；按 id 精确点审查员。
+  await list.locator('[role="option"][data-kind="agent"][id$="builtin.reviewer"]').click()
   await expect(window.getByRole('button', { name: '切换 Agent：代码审查员' })).toBeVisible()
 
   // 新运行从下一轮开始：分隔提示出现在那一轮的第一条消息之前。
