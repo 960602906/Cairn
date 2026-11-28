@@ -37,6 +37,8 @@ const ROW_H = 32
 const LIST_MAX_H = 288
 /** 超过这个行数才开虚拟滚动，短列表直接渲染以免测试与键盘焦点绕弯。 */
 export const MODEL_PICKER_VIRTUALIZE_AFTER = 14
+/** 启用模型达到这个数量才显示搜索框；更少时列表本身够扫。 */
+export const MODEL_PICKER_SEARCH_AFTER = 10
 const OVERSCAN = 6
 
 type ListRow =
@@ -198,6 +200,7 @@ export function ModelPicker({
   const [scrollTop, setScrollTop] = useState(0)
 
   const choices = useMemo(() => enabledModelChoices(providers), [providers])
+  const showSearch = choices.length >= MODEL_PICKER_SEARCH_AFTER
   const { full, short } = modelLabels(model, providers)
   /** 触发按钮只显示模型短名；读屏仍用「供应商 · 模型」全名，方便区分同名模型。 */
   const triggerLabel = short ?? t('composer.model.none')
@@ -207,9 +210,11 @@ export function ModelPicker({
     ?.models.find((item) => item.id === model?.modelId)
   const level = thinkingLevel ?? current?.thinkingLevel ?? 'high'
 
+  // 未显示搜索时忽略残留查询，始终展示完整列表。
+  const listQuery = showSearch ? query : ''
   const { rows, options } = useMemo(
-    () => buildModelPickerRows(choices, recent, query, t('composer.model.recent')),
-    [choices, recent, query, t],
+    () => buildModelPickerRows(choices, recent, listQuery, t('composer.model.recent')),
+    [choices, recent, listQuery, t],
   )
   const offsets = useMemo(() => rowOffsets(rows), [rows])
   const totalHeight = offsets[offsets.length - 1] ?? 0
@@ -232,7 +237,7 @@ export function ModelPicker({
     return slice
   }, [virtualize, rows, offsets, scrollTop])
 
-  // 打开时：读最近、清空搜索、把高亮落到当前模型，并聚焦搜索框以便直接打字。
+  // 打开时：读最近、清空搜索、把高亮落到当前模型；有搜索框则聚焦输入，否则聚焦列表。
   useEffect(() => {
     if (!open) return
     setRecent(readRecentModels())
@@ -242,20 +247,23 @@ export function ModelPicker({
     const index = choices.findIndex((choice) => sameModel(choice.ref, model))
     // 初始高亮在下一帧用完整列表算；这里先占位，下面 layout 再校正。
     setActive(index === -1 ? 0 : index)
-    const timer = window.setTimeout(() => searchRef.current?.focus(), 0)
+    const timer = window.setTimeout(() => {
+      if (showSearch) searchRef.current?.focus()
+      else listRef.current?.focus()
+    }, 0)
     return () => window.clearTimeout(timer)
-  }, [open])
+  }, [open, showSearch])
 
   // 搜索词或列表变了：空搜索时尽量停在当前模型；有搜索词时回到第一项。
   useEffect(() => {
     if (!open) return
-    if (query.trim() !== '') {
+    if (listQuery.trim() !== '') {
       setActive(0)
       return
     }
     const index = options.findIndex((choice) => sameModel(choice.ref, model))
     setActive(index === -1 ? 0 : index)
-  }, [open, query, options, model])
+  }, [open, listQuery, options, model])
 
   // 高亮项滚进可视区（虚拟列表同步 scrollTop；短列表用 scrollIntoView）。
   useLayoutEffect(() => {
@@ -303,7 +311,7 @@ export function ModelPicker({
     close(true)
   }
 
-  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const onListKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault()
       close(true)
@@ -326,6 +334,8 @@ export function ModelPicker({
   }
 
   const showThinking = onSelectThinkingLevel !== undefined && current !== undefined
+  const activeDescendant =
+    selectedOption === undefined ? undefined : `${listId}-${modelRefKey(selectedOption.ref)}`
 
   return (
     <Popover
@@ -352,7 +362,8 @@ export function ModelPicker({
         className="flex w-[320px] flex-col gap-0 overflow-hidden rounded-card border border-hair bg-raise p-0 shadow-2"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
-          searchRef.current?.focus()
+          if (showSearch) searchRef.current?.focus()
+          else listRef.current?.focus()
         }}
         onInteractOutside={() => {
           interactedOutside.current = true
@@ -363,39 +374,40 @@ export function ModelPicker({
           returnFocus()
         }}
       >
-        <div className="border-b border-hair px-2 pt-2 pb-1.5">
+        <div className={cn('px-2 pt-2', showSearch ? 'border-b border-hair pb-1.5' : 'pb-1')}>
           <p className="px-1.5 pb-1 text-[11px] font-medium text-faint">
             {t('composer.model.title')}
           </p>
-          <label className="flex h-8 items-center gap-2 rounded-[8px] bg-sunk px-2">
-            <Search aria-hidden className="size-3.5 shrink-0 text-faint" />
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={onSearchKeyDown}
-              placeholder={t('composer.model.search')}
-              role="combobox"
-              aria-label={t('composer.model.search')}
-              aria-autocomplete="list"
-              aria-expanded={true}
-              aria-controls={listId}
-              aria-activedescendant={
-                selectedOption === undefined
-                  ? undefined
-                  : `${listId}-${modelRefKey(selectedOption.ref)}`
-              }
-              className="min-w-0 flex-1 bg-transparent text-[12.5px] text-fg outline-none placeholder:text-faint"
-            />
-          </label>
+          {showSearch && (
+            <label className="flex h-8 items-center gap-2 rounded-[8px] bg-sunk px-2">
+              <Search aria-hidden className="size-3.5 shrink-0 text-faint" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={onListKeyDown}
+                placeholder={t('composer.model.search')}
+                role="combobox"
+                aria-label={t('composer.model.search')}
+                aria-autocomplete="list"
+                aria-expanded={true}
+                aria-controls={listId}
+                aria-activedescendant={activeDescendant}
+                className="min-w-0 flex-1 bg-transparent text-[12.5px] text-fg outline-none placeholder:text-faint"
+              />
+            </label>
+          )}
         </div>
 
         <div
           ref={listRef}
           id={listId}
           role="listbox"
+          tabIndex={showSearch ? -1 : 0}
           aria-label={t('composer.model.title')}
-          className="relative overflow-y-auto overscroll-contain px-1.5 py-1"
+          aria-activedescendant={showSearch ? undefined : activeDescendant}
+          onKeyDown={showSearch ? undefined : onListKeyDown}
+          className="relative overflow-y-auto overscroll-contain px-1.5 py-1 outline-none"
           style={{ maxHeight: LIST_MAX_H }}
           onScroll={(event) => {
             if (virtualize) setScrollTop(event.currentTarget.scrollTop)

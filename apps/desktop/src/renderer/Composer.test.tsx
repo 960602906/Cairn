@@ -413,7 +413,8 @@ describe('Composer /goal', () => {
     renderComposer()
     await user.type(input(), '/model{Enter}')
     await screen.findByRole('listbox', { name: '下一轮使用的模型' })
-    expect(screen.getByRole('combobox', { name: '搜索模型' })).toBeTruthy()
+    // 启用模型很少时不显示搜索框。
+    expect(screen.queryByRole('combobox', { name: '搜索模型' })).toBeNull()
   })
 
   it('returns focus to the input after closing the context popover', async () => {

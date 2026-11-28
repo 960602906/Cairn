@@ -6,7 +6,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
 import type { ProviderConfig } from '@cairn/protocol'
-import { buildModelPickerRows, MODEL_PICKER_VIRTUALIZE_AFTER, ModelPicker } from './ModelPicker.js'
+import {
+  buildModelPickerRows,
+  MODEL_PICKER_SEARCH_AFTER,
+  MODEL_PICKER_VIRTUALIZE_AFTER,
+  ModelPicker,
+} from './ModelPicker.js'
 import { enabledModelChoices } from './model-labels.js'
 import { RECENT_MODELS_KEY, rememberRecentModel } from './recent-models.js'
 
@@ -158,8 +163,7 @@ describe('ModelPicker', () => {
     expect(trigger.textContent).not.toContain('供应商一')
   })
 
-  it('omits disabled models and still labels the current one', async () => {
-    const user = userEvent.setup()
+  it('omits disabled models and still labels the current one', () => {
     render(
       <I18nextProvider i18n={createI18n('zh-CN')}>
         <ModelPicker
@@ -175,8 +179,61 @@ describe('ModelPicker', () => {
     )
     expect(screen.queryByRole('option', { name: /停用模型/ })).toBeNull()
     expect(screen.getByRole('option', { name: /^fast/ })).toBeTruthy()
-    await user.type(screen.getByRole('combobox', { name: '搜索模型' }), '停用')
-    expect(screen.getByText('没有匹配的模型')).toBeTruthy()
+    // 启用模型不足阈值时不显示搜索框。
+    expect(screen.queryByRole('combobox', { name: '搜索模型' })).toBeNull()
+  })
+
+  it('shows search only when enabled models reach the threshold', () => {
+    const nine: ProviderConfig[] = [
+      {
+        id: 'p',
+        kind: 'openai',
+        displayName: 'P',
+        baseUrl: 'https://example.com',
+        models: Array.from({ length: MODEL_PICKER_SEARCH_AFTER - 1 }, (_, i) => ({
+          id: `m${i}`,
+          displayName: `模型${i}`,
+          ...capabilities,
+        })),
+      },
+    ]
+    const { rerender } = render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={nine}
+          model={{ providerId: 'p', modelId: 'm0' }}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={() => {}}
+          onSelect={() => {}}
+        />
+      </I18nextProvider>,
+    )
+    expect(enabledModelChoices(nine)).toHaveLength(MODEL_PICKER_SEARCH_AFTER - 1)
+    expect(screen.queryByRole('combobox', { name: '搜索模型' })).toBeNull()
+
+    const ten: ProviderConfig[] = [
+      {
+        ...nine[0]!,
+        models: [...nine[0]!.models, { id: 'm9', displayName: '模型9', ...capabilities }],
+      },
+    ]
+    rerender(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={ten}
+          model={{ providerId: 'p', modelId: 'm0' }}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={() => {}}
+          onSelect={() => {}}
+        />
+      </I18nextProvider>,
+    )
+    expect(enabledModelChoices(ten)).toHaveLength(MODEL_PICKER_SEARCH_AFTER)
+    expect(screen.getByRole('combobox', { name: '搜索模型' })).toBeTruthy()
   })
 
   it('only emits a change for a different selection and records recents', async () => {
@@ -273,8 +330,9 @@ describe('ModelPicker', () => {
       </I18nextProvider>,
     )
     await user.click(screen.getByRole('button', { name: '模型：供应商二 · 强' }))
-    const search = await screen.findByRole('combobox', { name: '搜索模型' })
-    await waitFor(() => expect(document.activeElement).toBe(search))
+    const list = await screen.findByRole('listbox', { name: '下一轮使用的模型' })
+    await waitFor(() => expect(document.activeElement).toBe(list))
+    expect(screen.queryByRole('combobox', { name: '搜索模型' })).toBeNull()
     const current = screen.getByRole('option', { name: /强/ })
     expect(current.getAttribute('data-active')).toBe('true')
     await user.keyboard('{Enter}')
@@ -415,8 +473,9 @@ describe('ModelPicker', () => {
       </I18nextProvider>,
     )
     await user.click(screen.getByRole('button', { name: '模型：供应商一 · fast' }))
-    const search = await screen.findByRole('combobox', { name: '搜索模型' })
-    await waitFor(() => expect(document.activeElement).toBe(search))
+    const list = await screen.findByRole('listbox', { name: '下一轮使用的模型' })
+    await waitFor(() => expect(document.activeElement).toBe(list))
+    expect(screen.queryByRole('combobox', { name: '搜索模型' })).toBeNull()
 
     await user.keyboard('{ArrowDown}')
     expect(screen.getByRole('option', { name: /思考/ }).getAttribute('data-active')).toBe('true')
@@ -444,7 +503,11 @@ describe('ModelPicker', () => {
         />
       </I18nextProvider>,
     )
-    await screen.findByRole('combobox', { name: '搜索模型' })
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('listbox', { name: '下一轮使用的模型' }),
+      ),
+    )
     await user.keyboard('{Escape}')
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
@@ -550,6 +613,9 @@ describe('ModelPicker', () => {
     expect(trigger.textContent).toContain('ANTHROPIC 模型 0')
     expect(trigger.textContent).not.toContain('供应商anthropic')
     expect(screen.queryByText(/停用/)).toBeNull()
+    // 长列表必须显示搜索。
+    expect(choices.length).toBeGreaterThanOrEqual(MODEL_PICKER_SEARCH_AFTER)
+    expect(screen.getByRole('combobox', { name: '搜索模型' })).toBeTruthy()
 
     const list = screen.getByRole('listbox', { name: '下一轮使用的模型' })
     // 虚拟窗口：挂载的 option 远少于全部启用模型；外层垫高超过可视高度。
@@ -608,8 +674,8 @@ describe('ModelPicker', () => {
     render(
       <I18nextProvider i18n={createI18n('zh-CN')}>
         <ModelPicker
-          providers={providers}
-          model={fast}
+          providers={largeProviderFixture()}
+          model={{ providerId: 'prov-openai', modelId: 'openai-m0' }}
           fixed={false}
           disabled={false}
           open
