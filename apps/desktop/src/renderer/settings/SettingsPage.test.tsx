@@ -326,6 +326,44 @@ describe('SettingsPage', () => {
     expect(updates).toContainEqual({ sessionBrief: true })
   })
 
+  it('selects, shows and clears an independent goal judge model', async () => {
+    const model = {
+      contextWindow: 128_000,
+      maxOutputTokens: 4_096,
+      supportsTools: true,
+      supportsParallelToolCalls: false,
+      supportsReasoning: false,
+    }
+    const providers = [
+      {
+        id: 'p1',
+        kind: 'openai' as const,
+        displayName: '供应商一',
+        baseUrl: 'https://p1.example',
+        models: [{ ...model, id: 'fast' }],
+      },
+      {
+        id: 'p2',
+        kind: 'openai' as const,
+        displayName: '供应商二',
+        baseUrl: 'https://p2.example',
+        models: [{ ...model, id: 'strong', displayName: '强' }],
+      },
+    ]
+    const judgeModel = { providerId: 'p2', modelId: 'strong' }
+    const { updates } = setup({ providers, goalJudgeModel: judgeModel })
+    await openSettings()
+    const select = (await screen.findByRole('combobox', {
+      name: '目标判定模型',
+    })) as HTMLSelectElement
+    expect(select.value).toBe(JSON.stringify(judgeModel))
+
+    await userEvent.selectOptions(select, JSON.stringify({ providerId: 'p1', modelId: 'fast' }))
+    expect(updates).toContainEqual({ goalJudgeModel: { providerId: 'p1', modelId: 'fast' } })
+    await userEvent.selectOptions(select, '')
+    expect(updates).toContainEqual({ goalJudgeModel: null })
+  })
+
   it('edits the sandbox profile, network and unavailable behavior', async () => {
     const { updates } = setup({
       sandboxProfile: 'workspace-write',

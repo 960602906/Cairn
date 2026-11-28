@@ -12,6 +12,8 @@
  *   下发，已在运行的宿主不受影响。shell 偏好（M2-09）同样在启动宿主时下发。
  * - 默认模型必须是已配置的模型，否则报 `settings.invalid_default_model`；更新提供方后默认模型
  *   不再存在时一并清除。文件中的默认模型无效时视为没有设置。
+ * - 目标判定模型（ADR-0047）同理：必须是已配置的模型，否则报 `settings.invalid_goal_judge_model`；
+ *   没有设置时跟随会话模型。
  * - 是否允许 Agent 自动记忆（M7-03）保存为 `agentAutoMemory`：默认关闭（省略），
  *   只对 `memory.write = "auto"` 的 Agent 有效；关闭时它们写入的记忆也退回待确认。
  * - 首次运行说明是否看过（M5-09）保存为 `onboardingSeen`：没有设置或不是 `true` 时返回
@@ -44,6 +46,8 @@ export const SettingsErrorCode = {
   WriteFailed: 'settings.write_failed',
   /** 默认模型不在已配置的提供方与模型中。 */
   InvalidDefaultModel: 'settings.invalid_default_model',
+  /** 目标判定模型不在已配置的提供方与模型中。 */
+  InvalidGoalJudgeModel: 'settings.invalid_goal_judge_model',
   /** 会话的模型不在提供方配置中（提供方还在，模型被删除了）。 */
   UnknownModel: 'session.unknown_model',
 } as const
@@ -124,6 +128,11 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
     return parsed.success && modelIn(providers, parsed.data) ? parsed.data : undefined
   }
 
+  const storedGoalJudgeModel = (providers: readonly ProviderConfig[]): ModelRef | undefined => {
+    const parsed = ModelRef.safeParse(stored['goalJudgeModel'])
+    return parsed.success && modelIn(providers, parsed.data) ? parsed.data : undefined
+  }
+
   const storedMode = (): PermissionMode | undefined => {
     const parsed = PermissionMode.safeParse(stored['permissionMode'])
     return parsed.success ? parsed.data : undefined
@@ -181,6 +190,7 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
   const current = (): Settings => {
     const providers = storage.providers.list()
     const defaultModel = storedDefaultModel(providers)
+    const goalJudgeModel = storedGoalJudgeModel(providers)
     const permissionMode = storedMode()
     const instructions = storedInstructions()
     const theme = storedTheme()
@@ -195,6 +205,7 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
       locale: resolveLocale(stored['locale'], systemLocales()),
       providers,
       ...(defaultModel ? { defaultModel } : {}),
+      ...(goalJudgeModel ? { goalJudgeModel } : {}),
       ...(permissionMode ? { permissionMode } : {}),
       ...(instructions ? { instructions } : {}),
       ...(theme ? { theme } : {}),
@@ -230,10 +241,14 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
         }
       }
       requireModel(patch.defaultModel, SettingsErrorCode.InvalidDefaultModel)
+      requireModel(patch.goalJudgeModel, SettingsErrorCode.InvalidGoalJudgeModel)
 
       const next: Record<string, unknown> = { ...stored }
       if (patch.locale !== undefined) next['locale'] = patch.locale
       if (patch.defaultModel !== undefined) next['defaultModel'] = patch.defaultModel ?? undefined
+      if (patch.goalJudgeModel !== undefined) {
+        next['goalJudgeModel'] = patch.goalJudgeModel ?? undefined
+      }
       if (patch.permissionMode !== undefined) next['permissionMode'] = patch.permissionMode
       if (patch.theme !== undefined) next['theme'] = patch.theme
       if (patch.shell !== undefined) next['shell'] = patch.shell
@@ -276,10 +291,10 @@ export function createSettingsService(options: SettingsServiceOptions): Settings
         // 只有空白时视为清除
         next['instructions'] = patch.instructions?.trim() ? patch.instructions : undefined
       }
-      // 默认模型所在的提供方或模型被删除时一并清除
-      const keptDefault = ModelRef.safeParse(next['defaultModel'])
-      if (keptDefault.success && !modelIn(providers, keptDefault.data)) {
-        next['defaultModel'] = undefined
+      // 默认模型或判定模型所在的提供方 / 模型被删除时一并清除
+      for (const key of ['defaultModel', 'goalJudgeModel']) {
+        const kept = ModelRef.safeParse(next[key])
+        if (kept.success && !modelIn(providers, kept.data)) next[key] = undefined
       }
       const nextStored = JSON.parse(JSON.stringify(next)) as Stored
 

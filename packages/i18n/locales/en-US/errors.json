@@ -71,6 +71,7 @@
   "credentials.decrypt_failed": "The saved key cannot be read. Please enter it again",
   "credentials.missing": "No API key is saved for this provider. Open Settings and paste the key again",
   "settings.invalid_default_model": "The default model is not one of the configured models",
+  "settings.invalid_goal_judge_model": "The goal evaluation model is not one of the configured models",
   "session.unknown_model": "The selected model is not configured",
   "session.not_archived": "Only archived sessions can be deleted permanently",
   "path.empty": "The path is empty",

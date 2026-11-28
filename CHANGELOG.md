@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- 设置 → 通用与外观 → 对话行为新增「目标判定模型」。目标模式每轮结束后的独立判定可以用一个
+  单独的模型，便于用便宜 / 快速的模型做判定，或用强模型检查弱模型的执行结果；不选时跟随会话
+  模型。设置只影响判定，执行轮仍用会话模型，正在运行的目标从下一次判定开始生效。
+  Settings → General → Conversation behavior gains "Goal evaluation model". Goal mode can use a
+  separate model for the independent check after each turn, so a cheap or fast model can judge
+  while a stronger one executes, or vice versa. When unset, the session model is used. The
+  setting only affects evaluation; runs still use the session model, and active goals pick it
+  up at their next evaluation.
+
 ### Changed
 
 - 目标面板的历史目标可以展开，查看当时的结束原因、判定理由与证据；改条件时新增取消按钮，

@@ -2,7 +2,8 @@
  * 目标服务（ADR-0047）：在主进程里驱动目标的自动续轮。
  *
  * - 监听持久事件，只在根运行的 `turn.completed` 后判定（子运行的完成不触发）；
- * - 判定是一次无工具的辅助补全（与会话主模型相同），输入是 `buildGoalEvidence` 整理的有界证据包；
+ * - 判定是一次无工具的辅助补全，默认使用会话模型，设置 `goalJudgeModel` 后改用该模型；
+ *   输入是 `buildGoalEvidence` 整理的有界证据包；
  * - 判定为 `not_met` 时由会话管理器自动发起下一轮；预算、暂停、结束都写 `goal.*` 事件；
  * - 每个会话一把目标锁：目标命令、事件处理、启动扫描与判定结果落库共用；判定模型调用在锁外，
  *   因此用户暂停 / 清除 / 回退不会被最长 120 秒的判定挡住。
@@ -378,7 +379,8 @@ export function createGoalService(options: GoalServiceOptions): GoalService {
     if (!goal.turnIds.includes(slot.turnId)) return undefined
     if (goal.evaluations.some((evaluation) => evaluation.turnId === slot.turnId)) return undefined
     const recorded = events.readAfter(sessionId, 0)
-    const model = sessionModel(recorded) ?? record.model
+    // 判定可以单独选模型；没有设置时跟随会话模型。设置里的模型已由 SettingsService 校验。
+    const model = settings.get().goalJudgeModel ?? sessionModel(recorded) ?? record.model
     const config = model !== undefined ? settings.hostModelConfig(model) : undefined
     // 2 字符/token 的保守估算：证据不超过上下文窗口的一半。
     const maxChars = Math.min(

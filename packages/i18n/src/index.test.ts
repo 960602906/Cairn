@@ -153,6 +153,7 @@ describe('translateError', () => {
       'mcp.tool_not_found',
       'settings.write_failed',
       'settings.invalid_default_model',
+      'settings.invalid_goal_judge_model',
       'session.unknown_model',
       'session.not_archived',
       'credentials.unavailable',
