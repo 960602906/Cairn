@@ -171,4 +171,33 @@ describe('MemoryProposalList（M7-03）', () => {
     await userEvent.click(screen.getByRole('button', { name: '记住' }))
     await waitFor(() => expect(resolveMemory).toHaveBeenCalledWith('m1', 'accept'))
   })
+
+  it('细条可展开看全文再收起', async () => {
+    const followUp: MessageView = {
+      role: 'user',
+      messageId: 'u2',
+      runId: 'r2',
+      turnId: 't2',
+      seq: 9,
+      ts: 500,
+      origin: 'user',
+      content: [{ type: 'text', text: '继续' }],
+      mentions: [],
+      skills: [],
+      agents: [],
+    }
+    wrap(
+      <MemoryProposalList />,
+      makeStore(
+        proposalView(['m1'], 10).memoryProposals,
+        vi.fn(async () => true),
+        [followUp],
+      ),
+    )
+    await userEvent.click(screen.getByRole('button', { name: '展开记忆提议' }))
+    expect(screen.getByText(/确认后会在之后的对话里/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '收起' }))
+    expect(screen.queryByText(/确认后会在之后的对话里/)).toBeNull()
+    expect(screen.getByRole('button', { name: '展开记忆提议' })).toBeTruthy()
+  })
 })
