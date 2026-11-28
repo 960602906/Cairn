@@ -534,6 +534,7 @@
   "goal.pause.stalled": "No verifiable progress",
   "goal.pause.archive": "Session archived",
   "goal.pause.rewind": "Conversation rewound",
+  "goal.pause.project_removed": "Workspace removed",
   "goal.end.met": "Goal met",
   "goal.end.impossible": "Goal cannot be met",
   "goal.end.user": "Goal ended by you",

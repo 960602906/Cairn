@@ -534,6 +534,7 @@
   "goal.pause.stalled": "连续没有可验证进展",
   "goal.pause.archive": "会话已归档",
   "goal.pause.rewind": "对话已回退",
+  "goal.pause.project_removed": "工作空间已移除",
   "goal.end.met": "目标已达成",
   "goal.end.impossible": "条件无法满足",
   "goal.end.user": "你结束了目标",

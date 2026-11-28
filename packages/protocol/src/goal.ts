@@ -39,6 +39,7 @@ export const GoalPauseReason = z.enum([
   'stalled',
   'archive',
   'rewind',
+  'project_removed',
 ])
 export type GoalPauseReason = z.infer<typeof GoalPauseReason>
 

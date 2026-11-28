@@ -208,6 +208,11 @@ export interface SessionManager extends SessionCommands {
   goalView(sessionId: string): GoalView | undefined
   /** 每会话一条串行队列：目标命令、事件处理与判定结果落库共用。 */
   withGoalLock<T>(sessionId: string, fn: () => T | Promise<T>): Promise<T>
+  /**
+   * 项目从列表移除时调用：暂停该项目下仍未结束的目标，并停止运行中的会话；会话本身保留。
+   * 调用方可以不等；单个会话失败只交给 `onError`，不阻塞其余会话。
+   */
+  stopProjectSessions(projectId: string): Promise<void>
   /** 会话是否正在运行：排队、宿主启动中，或运行处于活动状态（撤销改动前检查，M1-08b）。 */
   isBusy(sessionId: string): boolean
   /** 启动时调用：把仍处于运行中的运行标记为中断，返回标记的运行数。 */
@@ -1036,6 +1041,65 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     })
   }
 
+  /** 停止一个会话：取消排队输入，或中止正在跑的一轮；目标随之暂停（IPC `session.abort`）。 */
+  async function abortSession(sessionId: string): Promise<Record<string, never>> {
+    requireSession(sessionId)
+    // 排队中的输入直接取消（用户消息保留在历史中）；这一轮不会产生 turn.aborted，
+    // 因此要在目标锁内暂停活动目标，避免目标停在“active 但没有轮次”（ADR-0047）。
+    if (waiting.delete(sessionId)) {
+      await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
+      return {}
+    }
+    const slot = slots.get(sessionId)
+    if (slot && !slot.handle) slot.cancelled = true
+    if (slot?.handle?.state() === 'running') {
+      const root = rootRun(getView(sessionId))
+      const activeTurn = root !== undefined && isActiveRunState(root.state)
+      await slot.handle.abort('user')
+      // 运行中的轮次由 GoalService 监听 turn.aborted(user) 后统一暂停，避免两条暂停事件；
+      // 宿主空闲或正在判定时不会产生轮次事件，这里直接暂停。
+      if (!activeTurn) {
+        await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
+      }
+      return {}
+    }
+    // 宿主还没启动或已经退出：没有轮次事件，直接暂停。
+    await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
+    return {}
+  }
+
+  /**
+   * 项目被移除（`project.remove`）：项目随即从侧栏消失，目标不该继续在后台自动续轮。
+   * 先以 `project_removed` 暂停仍未结束的目标，再停止忙着的会话——顺序不能反，
+   * 否则中止产生的 `turn.aborted(user)` 会先把它记成“用户暂停”。空闲会话不重启宿主。
+   */
+  async function stopProjectSessions(projectId: string): Promise<void> {
+    const records = storage.sessions.list({
+      projectId,
+      includeArchived: true,
+      includeTrial: true,
+    })
+    for (const record of records) {
+      const { sessionId } = record
+      try {
+        await withGoalLock(sessionId, () => {
+          const goal = openGoal(getView(sessionId))
+          if (goal?.status !== 'active') return
+          events.publish([
+            {
+              ...header(sessionId, sessionId),
+              type: 'goal.paused',
+              payload: { goalId: goal.goalId, reason: 'project_removed' },
+            },
+          ])
+        })
+        if (sessionBusy(sessionId)) await abortSession(sessionId)
+      } catch (error) {
+        onError(error)
+      }
+    }
+  }
+
   const manager: SessionManager = {
     create({ projectPath, title, model: requested }) {
       if (closed) throw new RpcError(SessionErrorCode.Closed)
@@ -1539,31 +1603,9 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       return {}
     },
 
-    async abort({ sessionId }) {
-      requireSession(sessionId)
-      // 排队中的输入直接取消（用户消息保留在历史中）；这一轮不会产生 turn.aborted，
-      // 因此要在目标锁内暂停活动目标，避免目标停在“active 但没有轮次”（ADR-0047）。
-      if (waiting.delete(sessionId)) {
-        await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
-        return {}
-      }
-      const slot = slots.get(sessionId)
-      if (slot && !slot.handle) slot.cancelled = true
-      if (slot?.handle?.state() === 'running') {
-        const root = rootRun(getView(sessionId))
-        const activeTurn = root !== undefined && isActiveRunState(root.state)
-        await slot.handle.abort('user')
-        // 运行中的轮次由 GoalService 监听 turn.aborted(user) 后统一暂停，避免两条暂停事件；
-        // 宿主空闲或正在判定时不会产生轮次事件，这里直接暂停。
-        if (!activeTurn) {
-          await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
-        }
-        return {}
-      }
-      // 宿主还没启动或已经退出：没有轮次事件，直接暂停。
-      await withGoalLock(sessionId, () => pauseActiveGoal(sessionId, 'user'))
-      return {}
-    },
+    abort: ({ sessionId }) => abortSession(sessionId),
+
+    stopProjectSessions,
 
     isBusy: sessionBusy,
 
