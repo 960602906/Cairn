@@ -937,12 +937,16 @@ export function createSessionStore(api: MainApi): SessionStore {
         if (!result) return
         // 已订阅的会话以本地投影的状态为准（比列表请求更新）
         const state = get()
+        // 按 sessionId 去重，避免列表短暂出现同一会话两行。
+        const seen = new Set<string>()
         set({
-          sessions: result.sessions.map((s) => {
+          sessions: result.sessions.flatMap((s) => {
+            if (seen.has(s.sessionId)) return []
+            seen.add(s.sessionId)
             const view = state.views[s.sessionId]
-            return view && s.sessionId === subscribed
-              ? { ...s, status: displayStatus(state, view) }
-              : s
+            return [
+              view && s.sessionId === subscribed ? { ...s, status: displayStatus(state, view) } : s,
+            ]
           }),
         })
       },
@@ -1367,13 +1371,26 @@ export function createSessionStore(api: MainApi): SessionStore {
       },
 
       async openProject() {
-        const result = await run(() => api.request('project.open', {}))
-        const project = result?.project
-        if (!project) return undefined
-        set((state) => ({
-          projects: [project, ...state.projects.filter((p) => p.projectId !== project.projectId)],
-        }))
-        return project
+        // 系统文件夹对话框可能超过默认 RPC 超时；不限时等待，避免误报 rpc.timeout。
+        try {
+          const result = await api.request('project.open', {}, { timeoutMs: 0 })
+          const project = result?.project
+          if (!project) return undefined
+          set((state) => ({
+            projects: [project, ...state.projects.filter((p) => p.projectId !== project.projectId)],
+            // 若先前有超时残留，打开成功后清掉。
+            error: undefined,
+          }))
+          return project
+        } catch (error) {
+          set({ error: toError(error) })
+          // 对话框可能已登记成功：刷新一次，成功则不当作失败。
+          const projects = await get().refreshProjects()
+          if (projects !== undefined && get().error?.code === 'rpc.timeout') {
+            set({ error: undefined })
+          }
+          return undefined
+        }
       },
 
       async updateProject(projectId, patch) {

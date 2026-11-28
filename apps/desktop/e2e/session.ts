@@ -34,7 +34,8 @@ export function projectDir(userData: string): string {
   return dir
 }
 
-export const runStatus = (window: Page) => window.getByRole('status')
+/** 顶栏读屏运行状态（`aria-atomic`）；不要用裸 `role=status`，消息里也可能有 status。 */
+export const runStatus = (window: Page) => window.locator('[role="status"][aria-atomic="true"]')
 
 /** 右侧工作台：1440px 以上是 complementary，窄窗口打开时是模态 dialog。 */
 export const sessionPanel = (window: Page) =>

@@ -6,7 +6,7 @@ import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
 import type { MainApi } from './api.js'
 import { App } from './App.js'
-import { greetingPeriod, NewSession } from './NewSession.js'
+import { greetingPeriod, NewSession, titleFromPrompt } from './NewSession.js'
 import { createSessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 import { FILE_DRAG_TYPE } from './file-drag.js'
@@ -16,6 +16,21 @@ afterEach(() => {
   cleanup()
   delete (window as { cairn?: unknown }).cairn
   delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+})
+
+describe('titleFromPrompt', () => {
+  it('keeps a long first line up to the session title max so CSS can ellipsize', () => {
+    const long =
+      '你好，请先用两三句话做一个简洁的自我介绍，介绍你是谁以及你擅长什么，然后再给出一小段实用的 TypeScript 代码示例'
+    expect(long.length).toBeGreaterThan(60)
+    expect(titleFromPrompt(long)).toBe(long)
+    expect(titleFromPrompt(long).endsWith('…')).toBe(false)
+  })
+
+  it('clips by unicode code points at the protocol max without inventing an ellipsis', () => {
+    const overflow = '字'.repeat(210)
+    expect(titleFromPrompt(overflow)).toBe('字'.repeat(200))
+  })
 })
 
 const capabilities = {
@@ -842,7 +857,7 @@ describe('NewSession controls', () => {
 
     await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
     const list = await screen.findByRole('listbox', { name: '选择 Agent' })
-    expect(within(list).getByText('审查改动的正确性')).toBeTruthy()
+    expect(within(list).getByText('审查改动的正确性 · v2')).toBeTruthy()
     // 草稿与已归档的不出现在可选列表里。
     expect(within(list).queryByText('草稿')).toBeNull()
     expect(within(list).queryByText('旧助手')).toBeNull()
@@ -1035,7 +1050,7 @@ describe('NewSession controls', () => {
 
     // 在 work 里换成代码审查员。
     await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
-    await user.click(await screen.findByRole('option', { name: /代码审查员/ }))
+    await user.click(within(await screen.findByRole('listbox')).getByText('代码审查员'))
     expect(screen.getByRole('button', { name: '切换 Agent：代码审查员' })).toBeTruthy()
 
     // 另一个工作空间仍用默认 Agent。
@@ -1155,7 +1170,22 @@ describe('NewSession controls', () => {
     await screen.findByPlaceholderText('有什么可以帮你？')
     await user.click(screen.getByRole('button', { name: '工作空间：work' }))
     await user.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
-    await waitFor(() => expect(request).toHaveBeenCalledWith('project.open', {}))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('project.open', {}, { timeoutMs: 0 }))
+  })
+
+  it('recognizes /delegation and /agent before a session exists', async () => {
+    const { request } = setup()
+    const user = userEvent.setup()
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    await user.type(input, '/delegation')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    expect(await screen.findByText(/先发送一条消息创建会话/)).toBeTruthy()
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+    await user.clear(input)
+    await user.type(input, '/agent')
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('listbox')).toBeTruthy()
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
   })
 
   it('recognizes /goal but asks to create a session first', async () => {

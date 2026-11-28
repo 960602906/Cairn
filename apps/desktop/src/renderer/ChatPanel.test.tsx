@@ -826,12 +826,13 @@ describe('ChatPanel', () => {
     expect(within(bar).getByText('整理设置页')).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '批准执行' })).toBeTruthy()
     expect(within(bar).getByRole('button', { name: '取消' })).toBeTruthy()
-    // 浮动面板会盖住消息末尾，有待决定的内容时多留一段底部空白。
-    expect(document.body.innerHTML).toContain('pb-28')
+    // 浮动面板与输入框高度由 ResizeObserver 写入 paddingBottom，消息末尾不被盖住。
+    const content = document.querySelector('[class*="max-w-[840px]"]') as HTMLElement | null
+    expect(content?.style.paddingBottom).toMatch(/px$/)
 
     emit(ev(base + 2, 'plan.rejected', { planId: 'pl1' }))
     await waitFor(() => expect(screen.queryByRole('region', { name: '待批准的计划' })).toBeNull())
-    expect(document.body.innerHTML).toContain('pb-8')
+    expect(content?.style.paddingBottom).toMatch(/px$/)
   })
 
   it('floats an ad-hoc task list without a plan (ADR-0038)', async () => {
@@ -985,6 +986,10 @@ describe('ChatPanel', () => {
     const button = screen.getByRole('button', { name: '回到底部' })
     // 运行中且不在底部时，按钮上有一个脉冲小点。
     expect(button.querySelector('.animate-pulse')).not.toBeNull()
+    // 正文右缘让出轨宽；钮用 calc 贴在 840px 列外侧，避免压住代码块 Wrap/Copy。
+    const column = scroller.firstElementChild as HTMLElement
+    expect(column.className).toMatch(/pr-14/)
+    expect(button.style.right).toContain('420px')
     await userEvent.click(button)
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
   })
@@ -1828,6 +1833,19 @@ describe('ChatPanel', () => {
     expect(input().value).toBe('你好')
   })
 
+  it('ellipsizes a long session title in the header', async () => {
+    const long =
+      '你好，请先用两三句话做一个简洁的自我介绍，介绍你是谁以及你擅长什么，然后再给出一小段实用的 TypeScript 代码示例'
+    const { open } = setup({ title: long })
+    await open()
+    const heading = document.getElementById('chat-title')
+    expect(heading?.textContent).toBe(long)
+    expect(heading?.getAttribute('title')).toBe(long)
+    expect(heading?.className).toContain('truncate')
+    expect(heading?.className).toContain('basis-0')
+    expect(heading?.className).toContain('min-w-0')
+  })
+
   it('stops the running turn', async () => {
     let finishAbort!: () => void
     const { request, open, emit } = setup({
@@ -1855,9 +1873,9 @@ describe('ChatPanel', () => {
       state(15, 'aborting', 'idle'),
     )
     expect(stopButton()).toBeNull()
-    expect(screen.getByText('已停止')).toBeTruthy()
-    // 已输出的部分保留，并注明未完成
-    expect(messages().at(-1)).toBe('助手说到（回复未完成）')
+    // 已输出的部分保留，并只显示一条未完成提示（不再叠一条「已停止」）。
+    expect(messages().at(-1)).toContain('已停止 — 回复未完成')
+    expect(screen.queryAllByText('已停止')).toHaveLength(0)
   })
 
   it.each([
@@ -3045,15 +3063,57 @@ describe('Composer (M2-04)', () => {
   })
 
   it('opens the memory and delegation panels from commands', async () => {
-    const { open } = setup({
+    const { open, store } = setup({
       history: withModel,
-      handlers: { 'settings.get': () => ({ providers }) },
+      handlers: {
+        'settings.get': () => ({ providers }),
+        'run.inspect': () => ({
+          tree: { sessionId: 's1', rootRunId: 'c1', generatedAt: 1, runs: [] },
+          snapshots: [],
+          settings: { projectPath: '/work', workspacePath: '/work', permissionRules: [] },
+        }),
+      },
     })
     await open()
     await userEvent.type(input(), '/memory{Enter}')
     expect(await screen.findByRole('tab', { name: /记忆/, selected: true })).toBeTruthy()
+
+    const base = store.getState().views.s1!
+    act(() =>
+      store.setState({
+        views: {
+          s1: {
+            ...base,
+            delegations: [
+              {
+                childRunId: 'c1',
+                parentRunId: 'r1',
+                agent: { id: 'builtin.explorer', version: 1 },
+                task: '探索目录树',
+                workspace: 'shared',
+                workspacePath: undefined,
+                budget: undefined,
+                turnId: undefined,
+                createdAt: 1,
+                completed: {
+                  status: 'completed',
+                  summary: '看完了',
+                  usage: undefined,
+                  changeSetId: undefined,
+                  issues: undefined,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    )
     await userEvent.type(input(), '/delegation{Enter}')
     expect(await screen.findByRole('tab', { name: /子 Agent/, selected: true })).toBeTruthy()
+    // 有委派时自动选中最近一条，而不是空白「还没有选择子 Agent」。
+    const panel = screen.getByRole('region', { name: '子 Agent' })
+    expect(panel.textContent).toContain('探索目录树')
+    expect(panel.textContent).not.toContain('还没有选择子 Agent')
   })
 
   it('opens settings sections from /mcp, /skills and /providers', async () => {

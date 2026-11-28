@@ -36,14 +36,14 @@ describe('availableCommands', () => {
     expect(commands.find((command) => command.id === 'undo')?.unavailable).toBeUndefined()
   })
 
-  it('keeps only plan and enabled skills on the new-session page', () => {
+  it('keeps plan, agent, and enabled skills on the new-session page', () => {
     const commands = availableCommands(
       [skill('review'), skill('disabled', false), { ...skill('shadowed'), shadowed: true }],
       t,
       {},
       false,
     )
-    expect(commands.map((command) => command.name)).toEqual(['plan', 'review'])
+    expect(commands.map((command) => command.name)).toEqual(['plan', 'agent', 'review'])
     expect(commands.find((command) => command.name === 'plan')?.description).toBe(
       'composer.command.plan.hint',
     )
@@ -123,16 +123,18 @@ describe('availableCommands', () => {
 })
 
 describe('sessionOnlyCommand', () => {
-  it('recognizes /goal before a session exists, with or without arguments', () => {
+  it('recognizes /goal and /delegation before a session exists', () => {
     expect(sessionOnlyCommand('/goal')).toBe('goal')
     expect(sessionOnlyCommand('  /goal status ')).toBe('goal')
     expect(sessionOnlyCommand('/goal 测试全部通过')).toBe('goal')
+    expect(sessionOnlyCommand('/delegation')).toBe('delegation')
   })
 
   it('leaves other commands, unknown names and plain text alone', () => {
     expect(sessionOnlyCommand('/plan 做点事')).toBeUndefined()
     expect(sessionOnlyCommand('/goals')).toBeUndefined()
     expect(sessionOnlyCommand('先说 /goal')).toBeUndefined()
+    expect(sessionOnlyCommand('/agent')).toBeUndefined()
     expect(sessionOnlyCommand('')).toBeUndefined()
   })
 })
@@ -151,7 +153,8 @@ describe('commandPanel', () => {
 
   it('closes after whitespace and clamps the highlighted index', () => {
     expect(commandPanel('/plan 任务', commands, null, 0).open).toBe(false)
-    expect(commandPanel('/', commands, null, 99).activeIndex).toBe(1)
+    // 新对话页：plan、agent、review
+    expect(commandPanel('/', commands, null, 99).activeIndex).toBe(2)
   })
 })
 

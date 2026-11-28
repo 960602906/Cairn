@@ -63,6 +63,8 @@ function WorkspaceRow({
   project,
   sessions,
   activeSessionId,
+  selected,
+  onSelectWorkspace,
   onSelectSession,
   onNewConversation,
 }: {
@@ -70,6 +72,10 @@ function WorkspaceRow({
   /** 该工作空间的会话（最近更新在前）。 */
   readonly sessions: readonly SessionSummary[]
   readonly activeSessionId: string | undefined
+  /** 当前新对话 / 输入框选中的工作空间。 */
+  readonly selected?: boolean | undefined
+  /** 点击工作空间行时选中它（供新对话输入框使用）。 */
+  readonly onSelectWorkspace?: ((project: ProjectSummary) => void) | undefined
   readonly onSelectSession: (sessionId: string) => void
   readonly onNewConversation?: ((project: ProjectSummary) => void) | undefined
 }) {
@@ -134,14 +140,19 @@ function WorkspaceRow({
         className={cn(
           'flex h-[33px] items-center rounded-[7px] pr-7 pl-1 text-note text-fg2',
           archived ? 'opacity-65' : 'hover:bg-hover',
+          selected && !archived && 'bg-accent-soft text-fg hover:bg-accent-soft',
         )}
       >
         <button
           type="button"
           aria-expanded={!collapsed}
+          aria-current={selected ? 'true' : undefined}
           aria-label={t('workspace.toggleSessions', { name: displayName })}
           title={project.path}
-          onClick={() => setCollapsed((value) => !value)}
+          onClick={() => {
+            onSelectWorkspace?.(project)
+            setCollapsed((value) => !value)
+          }}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-1.5 py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
           <ChevronRight
@@ -332,10 +343,16 @@ function WorkspaceRow({
 export function WorkspaceList({
   onNewConversation,
   onSelectSession,
+  onSelectWorkspace,
+  selectedProjectPath,
 }: {
   readonly onNewConversation?: ((project: ProjectSummary) => void) | undefined
   /** 选中会话后收起窄窗口里的抽屉。 */
   readonly onSelectSession?: (() => void) | undefined
+  /** 点击工作空间行时选中它（同步新对话输入框的工作空间）。 */
+  readonly onSelectWorkspace?: ((project: ProjectSummary) => void) | undefined
+  /** 当前新对话选中的工作空间路径；用于高亮。 */
+  readonly selectedProjectPath?: string | undefined
 }) {
   const { t } = useTranslation('session')
   const projects = useSessionStore((s) => s.projects)
@@ -351,8 +368,12 @@ export function WorkspaceList({
   )
   const [collapsed, setCollapsed] = useState(false)
   const [creating, setCreating] = useState(false)
+  // 按 sessionId 去重，避免列表短暂出现同一会话两行。
   const sessionsByPath = new Map<string, SessionSummary[]>()
+  const seenIds = new Set<string>()
   for (const session of sessions) {
+    if (seenIds.has(session.sessionId)) continue
+    seenIds.add(session.sessionId)
     const list = sessionsByPath.get(session.projectPath)
     if (list) list.push(session)
     else sessionsByPath.set(session.projectPath, [session])
@@ -415,6 +436,8 @@ export function WorkspaceList({
                 project={project}
                 sessions={sessionsByPath.get(project.path) ?? []}
                 activeSessionId={activeSessionId}
+                selected={selectedProjectPath === project.path}
+                onSelectWorkspace={onSelectWorkspace}
                 onSelectSession={(sessionId) => {
                   void selectSession?.(sessionId)
                   onSelectSession?.()

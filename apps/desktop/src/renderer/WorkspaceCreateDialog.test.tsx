@@ -19,13 +19,23 @@ const project: ProjectSummary = {
   createdAt: 1,
 }
 
-function installBridge(handler: (method: string, params: Record<string, unknown>) => unknown) {
+function installBridge(
+  handler: (
+    method: string,
+    params: Record<string, unknown>,
+    options?: { timeoutMs?: number },
+  ) => unknown,
+) {
   const request = vi.fn(handler)
   ;(window as { cairn?: unknown }).cairn = {
     ready: async () => ({ ok: true, result: undefined }),
-    request: async (method: string, params: Record<string, unknown>) => {
+    request: async (
+      method: string,
+      params: Record<string, unknown>,
+      options?: { timeoutMs?: number },
+    ) => {
       try {
-        return { ok: true, result: await request(method, params) }
+        return { ok: true, result: await request(method, params, options) }
       } catch (error) {
         if (error instanceof RpcError) return { ok: false, error: error.toInfo() }
         throw error
@@ -98,12 +108,17 @@ describe('WorkspaceCreateDialog', () => {
     await userEvent.type(screen.getByLabelText('分支（可选）'), 'develop')
     await userEvent.click(screen.getByRole('button', { name: '克隆' }))
 
-    expect(request).toHaveBeenCalledWith('project.clone', {
-      remoteUrl: 'https://github.com/team/repo.git',
-      parentPath: '/work',
-      name: 'repo',
-      branch: 'develop',
-    })
+    expect(request).toHaveBeenCalledWith(
+      'project.clone',
+      {
+        remoteUrl: 'https://github.com/team/repo.git',
+        parentPath: '/work',
+        name: 'repo',
+        branch: 'develop',
+      },
+      { timeoutMs: 0 },
+    )
+    expect(request).toHaveBeenCalledWith('project.pickDirectory', {}, { timeoutMs: 0 })
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(project))
     expect(refreshProjects).toHaveBeenCalledOnce()
     expect(onOpenChange).toHaveBeenCalledWith(false)

@@ -11,6 +11,7 @@ import type { FileChangeSummary, PendingApproval } from '@cairn/protocol'
 import { agentName } from './agents/model.js'
 import { ApprovalCard } from './ApprovalCard.js'
 import { formatCompactTokens as compactTokens } from './format.js'
+import { Markdown } from './Markdown.js'
 import { inspectionKey } from './session-store.js'
 import { useSessionStore } from './store-context.js'
 import { cn } from './ui/index.js'
@@ -120,7 +121,7 @@ export function DelegationCard({
             </span>
             <DelegationStatusBadge status={status} />
             {tokens > 0 && (
-              <span className="tabular text-note text-muted">
+              <span title={t('delegation.tokensHint')} className="tabular text-note text-muted">
                 {t('delegation.tokens', { count: compactTokens(tokens) })}
               </span>
             )}
@@ -130,9 +131,9 @@ export function DelegationCard({
         </span>
       </button>
       {delegation.completed?.summary && (
-        <p className="mt-2 rounded-item bg-sunk px-2.5 py-2 text-note whitespace-pre-wrap text-fg2">
-          {delegation.completed.summary}
-        </p>
+        <div className="mt-2 rounded-item bg-sunk px-2.5 py-2 text-note text-fg2">
+          <Markdown text={delegation.completed.summary} />
+        </div>
       )}
       {delegation.completed?.issues && delegation.completed.issues.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1 text-note text-warn">

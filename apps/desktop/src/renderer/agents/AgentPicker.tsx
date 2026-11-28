@@ -3,11 +3,11 @@
  *
  * 只列出已发布且未归档的 Agent 与团队模板：草稿需先发布才能在会话里选用。内置的
  * Agent 排在前面，自定义的随后；同一组里最近选过的靠前，其余保持 `agent.list` 的顺序。
- * 团队模板排在最前，选中后以模板的主控 Agent 为根运行，并纳入后续每一轮的协作说明。
- * 名称、描述（两种语言）与 id 都可以搜。⌘. / Ctrl+. 打开；运行中不能切换——与主进程
- * `session.setAgent` / `session.setTeam` 的 Busy 校验一致。
- * 会话页的切换会在同一会话里开始一个新运行，对话中出现“已切换到 …”的分隔提示（由事件驱动）；
- * 新对话页通过 `onSelect` / `onSelectTeam` 只记录选择，等创建会话时再应用。
+ * 单个 Agent 排在团队模板之前，避免首屏只看见模板、内置 Agent 被裁切。选中团队后以模板的
+ * 主控 Agent 为根运行，并纳入后续每一轮的协作说明。名称、描述（两种语言）与 id 都可以搜。
+ * ⌘. / Ctrl+. 打开；运行中不能切换——与主进程 `session.setAgent` / `session.setTeam` 的 Busy
+ * 校验一致。会话页的切换会在同一会话里开始一个新运行，对话中出现“已切换到 …”的分隔提示
+ * （由事件驱动）；新对话页通过 `onSelect` / `onSelectTeam` 只记录选择，等创建会话时再应用。
  */
 import { Check, ChevronDown, Search, Settings2, UsersRound } from 'lucide-react'
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -176,14 +176,15 @@ export function AgentPicker({
   const unavailableTeam = team !== undefined && teamsLoaded && boundTeam === undefined
   const teamOptions = useMemo(() => pickerTeams(teams, query), [teams, query])
   const agentOptions = useMemo(() => pickerAgents(agents, recent, query), [agents, recent, query])
+  // 单个 Agent（尤其是内置）放在前面，避免团队模板把 Coder / Explorer 挤到首屏之外。
   const entries = useMemo<PickerEntry[]>(
     () => [
+      ...agentOptions.map((item) => ({ kind: 'agent' as const, key: item.agentId, agent: item })),
       ...teamOptions.map((item) => ({
         kind: 'team' as const,
         key: `team-${item.teamId}`,
         team: item,
       })),
-      ...agentOptions.map((item) => ({ kind: 'agent' as const, key: item.agentId, agent: item })),
     ],
     [teamOptions, agentOptions],
   )
@@ -365,7 +366,7 @@ export function AgentPicker({
             id={listId}
             role="listbox"
             aria-label={hasTeams ? t('composer.picker.title') : t('composer.agent.title')}
-            className="max-h-64 overflow-y-auto"
+            className="max-h-72 overflow-y-auto"
           >
             {archivedCurrent && current !== undefined && (
               <li
@@ -403,24 +404,87 @@ export function AgentPicker({
                 <Check aria-hidden className="size-3.5 shrink-0 text-fg" />
               </li>
             )}
-            {teamOptions.length > 0 && (
+            {agentOptions.length > 0 && (
               <li
                 role="presentation"
                 className="px-2 pb-0.5 pt-1 text-[11px] font-medium text-faint"
               >
-                {t('composer.team.section')}
+                {t('composer.agent.section')}
               </li>
             )}
             {entries.map((entry, index) => {
               const isActive = selected?.key === entry.key
               const activeRow = isActive && 'bg-hover'
-              if (entry.kind === 'team') {
-                const option = entry.team
-                const isCurrent = option.teamId === team?.teamId
-                const coordinator = agents.find((item) => item.agentId === option.coordinator)
+              if (entry.kind === 'agent') {
+                const option = entry.agent
+                const isCurrent = team === undefined && option.agentId === currentId
+                const description = localized(option.description, i18n.language, '')
+                const builtin = option.source === 'builtin'
+                const canDelegate = option.agentId === BUILTIN_CODER_ID
+                const subtitle =
+                  description === ''
+                    ? t('composer.agent.version', { version: option.version })
+                    : t('composer.agent.meta', {
+                        description,
+                        version: option.version,
+                      })
                 return (
                   <li
                     key={entry.key}
+                    id={`${listId}-${entry.key}`}
+                    role="option"
+                    data-kind="agent"
+                    aria-selected={isCurrent}
+                    data-active={isActive}
+                    onMouseEnter={() => setActive(index)}
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      choose(option)
+                    }}
+                    className={cn(
+                      'flex cursor-default select-none items-center gap-2 rounded-[7px] px-2 py-1.5',
+                      activeRow,
+                    )}
+                  >
+                    <AgentAvatar icon={option.icon} color={option.color} size={20} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[13px] text-fg">
+                          {agentName(option, i18n.language)}
+                        </span>
+                        {builtin && (
+                          <span className="shrink-0 rounded-[4px] bg-sunk px-1 py-px text-[10px] font-medium text-muted">
+                            {t('composer.agent.builtin')}
+                          </span>
+                        )}
+                      </span>
+                      <span className="block truncate text-[11px] text-faint" title={subtitle}>
+                        {subtitle}
+                      </span>
+                      {canDelegate && (
+                        <span className="mt-0.5 block truncate text-[10.5px] text-faint">
+                          {t('composer.agent.canDelegate')}
+                        </span>
+                      )}
+                    </span>
+                    {isCurrent && <Check aria-hidden className="size-3.5 shrink-0 text-fg" />}
+                  </li>
+                )
+              }
+              const option = entry.team
+              const isCurrent = option.teamId === team?.teamId
+              const coordinator = agents.find((item) => item.agentId === option.coordinator)
+              return (
+                <Fragment key={entry.key}>
+                  {index === agentOptions.length && teamOptions.length > 0 && (
+                    <li
+                      role="presentation"
+                      className="mt-1 border-t border-hair px-2 pb-0.5 pt-1.5 text-[11px] font-medium text-faint"
+                    >
+                      {t('composer.team.section')}
+                    </li>
+                  )}
+                  <li
                     id={`${listId}-${entry.key}`}
                     role="option"
                     data-kind="team"
@@ -451,50 +515,6 @@ export function AgentPicker({
                             ? agentName(coordinator, i18n.language)
                             : option.coordinator,
                         })}
-                      </span>
-                    </span>
-                    {isCurrent && <Check aria-hidden className="size-3.5 shrink-0 text-fg" />}
-                  </li>
-                )
-              }
-              const option = entry.agent
-              const isCurrent = team === undefined && option.agentId === currentId
-              const description = localized(option.description, i18n.language, '')
-              return (
-                <Fragment key={entry.key}>
-                  {index === teamOptions.length && teamOptions.length > 0 && (
-                    <li
-                      role="presentation"
-                      className="mt-1 border-t border-hair px-2 pb-0.5 pt-1.5 text-[11px] font-medium text-faint"
-                    >
-                      {t('composer.agent.section')}
-                    </li>
-                  )}
-                  <li
-                    id={`${listId}-${entry.key}`}
-                    role="option"
-                    data-kind="agent"
-                    aria-selected={isCurrent}
-                    data-active={isActive}
-                    onMouseEnter={() => setActive(index)}
-                    onMouseDown={(event) => {
-                      event.preventDefault()
-                      choose(option)
-                    }}
-                    className={cn(
-                      'flex cursor-default select-none items-center gap-2 rounded-[7px] px-2 py-1.5',
-                      activeRow,
-                    )}
-                  >
-                    <AgentAvatar icon={option.icon} color={option.color} size={20} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] text-fg">
-                        {agentName(option, i18n.language)}
-                      </span>
-                      <span className="block truncate text-[11px] text-faint">
-                        {description === ''
-                          ? t('composer.agent.version', { version: option.version })
-                          : description}
                       </span>
                     </span>
                     {isCurrent && <Check aria-hidden className="size-3.5 shrink-0 text-fg" />}

@@ -18,7 +18,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BUILTIN_CODER_ID } from '@cairn/core'
-import type { ModelRef, SkillSummary } from '@cairn/protocol'
+import { SESSION_TITLE_MAX_LENGTH, type ModelRef, type SkillSummary } from '@cairn/protocol'
 import { ModeMenu } from './Composer.js'
 import { ModelPicker } from './ModelPicker.js'
 import { enabledModelChoices, resolveDefaultModel, sameModel } from './model-labels.js'
@@ -47,6 +47,7 @@ import {
   type PendingAttachment,
 } from './composer-attachments.js'
 import { ComposerHighlight } from './ComposerHighlight.js'
+import { parseComposerCommand } from './composer-commands.js'
 import {
   availableCommands,
   commandPanel,
@@ -77,8 +78,6 @@ import { CairnMark, cn } from './ui/index.js'
 
 /** 文本框最高（px），超过后滚动。 */
 const MAX_TEXTAREA_HEIGHT = 200
-/** 用首行输入生成会话标题，避免侧栏里全是“未命名会话”。 */
-const MAX_TITLE_LENGTH = 60
 
 type GreetingPeriod = 'morning' | 'noon' | 'afternoon' | 'evening' | 'night'
 
@@ -103,9 +102,15 @@ function useGreetingPeriod(): GreetingPeriod {
   return period
 }
 
-function titleFromPrompt(text: string): string {
+/**
+ * 用首行输入生成会话标题，避免侧栏里全是“未命名会话”。
+ * 存完整标题（协议上限），由顶栏 / 侧栏 CSS `truncate` 负责溢出时显示省略号；
+ * 不再在存储时硬截到几十个字却不带 “…”，宽屏下看起来像被裁断。
+ */
+export function titleFromPrompt(text: string, max = SESSION_TITLE_MAX_LENGTH): string {
   const firstLine = text.trim().split(/\r?\n/, 1)[0] ?? ''
-  return firstLine.slice(0, MAX_TITLE_LENGTH).trim()
+  const chars = [...firstLine]
+  return (chars.length > max ? chars.slice(0, max).join('') : firstLine).trim()
 }
 
 export function NewSession({
@@ -173,8 +178,10 @@ export function NewSession({
   const [commandIndex, setCommandIndex] = useState(0)
   const [dismissedDraft, setDismissedDraft] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
-  /** 输入了只有会话内才能用的 `/goal`：提示先创建会话，不发送。 */
-  const [sessionOnlyNotice, setSessionOnlyNotice] = useState(false)
+  /** 输入了只有会话内才能用的 `/goal` / `/delegation`：提示先创建会话，不发送。 */
+  const [sessionOnlyNotice, setSessionOnlyNotice] = useState<'goal' | 'delegation' | false>(false)
+  /** `/agent` 打开选择器。 */
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false)
   /** 拖入 / 粘贴文件的提示（工作空间外、未选工作空间等）。 */
   const [dropNotice, setDropNotice] = useState<string | null>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
@@ -500,12 +507,20 @@ export function NewSession({
   }
 
   const send = async () => {
-    // `/goal` 要用会话里的目标，新会话还没创建：提示而不是把命令当普通消息发给模型。
-    if (sessionOnlyCommand(text) !== undefined) {
-      setSessionOnlyNotice(true)
+    // `/goal`、`/delegation` 要等会话创建：提示而不是把命令当普通消息发给模型。
+    const sessionOnly = sessionOnlyCommand(text)
+    if (sessionOnly !== undefined) {
+      setSessionOnlyNotice(sessionOnly)
       return
     }
     setSessionOnlyNotice(false)
+    // `/agent` 在新对话页打开选择器，不创建会话。
+    const command = parseComposerCommand(text, commands)
+    if (command?.command.id === 'agent') {
+      setText('')
+      setAgentPickerOpen(true)
+      return
+    }
     const parsed = parsePrompt(text, commands, planMode)
     // `/plan` 单独出现只切换计划模式，`/技能名` 单独出现只补全，都不创建会话。
     if (parsed.toggleOnly) {
@@ -535,6 +550,11 @@ export function NewSession({
       setText('')
       setPlanMode((on) => !on)
       textarea.current?.focus()
+      return
+    }
+    if (command.id === 'agent') {
+      setText('')
+      setAgentPickerOpen(true)
     }
   }
 
@@ -646,7 +666,11 @@ export function NewSession({
       <div className="mx-auto w-full max-w-[880px] shrink-0 px-5 pb-4 min-[1200px]:px-8">
         {sessionOnlyNotice && (
           <p role="status" className="px-1 pb-2 text-note text-muted">
-            {t('composer.command.goal.needsSession')}
+            {t(
+              sessionOnlyNotice === 'delegation'
+                ? 'composer.command.delegation.needsSession'
+                : 'composer.command.goal.needsSession',
+            )}
           </p>
         )}
         {dropNotice && (
@@ -786,6 +810,8 @@ export function NewSession({
                     : { id: selectedAgent.agentId, version: selectedAgent.version }
                 }
                 team={selectedTeam}
+                open={agentPickerOpen}
+                onOpenChange={setAgentPickerOpen}
                 returnFocus={() => textarea.current?.focus()}
                 onSelect={(next) => {
                   setSelectedAgentId(next.agentId)

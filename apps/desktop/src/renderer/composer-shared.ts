@@ -56,7 +56,8 @@ export function availableCommands(
   includeSessionCommands = true,
 ): readonly AvailableComposerCommand[] {
   const commands: AvailableComposerCommand[] = COMPOSER_COMMANDS.filter((command) => {
-    if (!includeSessionCommands) return command.id === 'plan'
+    // 新对话页：`/plan` 可执行；`/agent` 打开选择器。其余会话内指令等创建后再用。
+    if (!includeSessionCommands) return command.id === 'plan' || command.id === 'agent'
     if (command.panel !== undefined) return actions.onOpenPanel !== undefined
     if (command.id === 'new' || command.id === 'clear') return actions.onNewChat !== undefined
     if (command.id === 'search') return actions.onOpenSearch !== undefined
@@ -141,12 +142,14 @@ export interface ParsedPrompt {
 }
 
 /**
- * 新对话页能识别但还不能执行的会话内指令。`/goal` 登记在完整指令表里，
- * 但新会话还没创建，先提示用户发一条消息再设目标，而不是把它当普通消息发给模型。
+ * 新对话页能识别但还不能执行的会话内指令。`/goal`、`/delegation` 登记在完整指令表里，
+ * 但新会话还没创建，先提示用户发一条消息，而不是把它当普通消息发给模型。
  */
-export function sessionOnlyCommand(text: string): 'goal' | undefined {
+export function sessionOnlyCommand(text: string): 'goal' | 'delegation' | undefined {
   const parsed = parseComposerCommand(text, COMPOSER_COMMANDS)
-  return parsed?.command.id === 'goal' ? 'goal' : undefined
+  if (parsed?.command.id === 'goal') return 'goal'
+  if (parsed?.command.id === 'delegation') return 'delegation'
+  return undefined
 }
 
 /**

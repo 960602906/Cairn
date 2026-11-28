@@ -32,6 +32,7 @@ import { Sidebar } from './layout/Sidebar.js'
 import { TopBar } from './layout/TopBar.js'
 import { useMediaQuery } from './layout/use-media-query.js'
 import { WindowControls } from './layout/WindowControls.js'
+import { readNewSessionProject, writeNewSessionProject } from './composer-drafts.js'
 import { NewSession } from './NewSession.js'
 import type { SessionStore } from './session-store.js'
 import type { SettingsSection } from './settings/SettingsPage.js'
@@ -323,6 +324,15 @@ function Workspace() {
       setNewChatProjectPath(project.path)
       setComposing(true)
     },
+    onSelectWorkspace: (project: ProjectSummary) => {
+      writeNewSessionProject(project.path)
+      setNewChatProjectPath(project.path)
+    },
+    selectedProjectPath:
+      newChatProjectPath ??
+      sessions.find((session) => session.sessionId === activeSessionId)?.projectPath ??
+      readNewSessionProject() ??
+      undefined,
   } as const
 
   /**

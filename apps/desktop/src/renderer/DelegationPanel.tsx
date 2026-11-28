@@ -13,11 +13,33 @@ import { useTranslation } from 'react-i18next'
 import type { DelegationView } from '@cairn/core'
 import { DelegationStatusBadge, useDelegationName } from './DelegationCard.js'
 import { formatCompactTokens as compactTokens } from './format.js'
+import { Markdown } from './Markdown.js'
 import { RunTimeline } from './RunTimeline.js'
 import type { SessionPanelContext } from './SessionPanels.js'
 import { inspectionKey } from './session-store.js'
 import { useSessionStore } from './store-context.js'
 import { Button, PanelEmpty, Spinner } from './ui/index.js'
+
+/**
+ * `/delegation` 或侧栏打开时选中哪条子运行：显式 id 优先；否则保留仍有效的当前选中；
+ * 再否则优先进行中的子运行，最后取最近创建的一条。没有委派时返回 undefined。
+ */
+export function pickDelegationRunId(
+  delegations: readonly DelegationView[] | undefined,
+  preferred?: string,
+): string | undefined {
+  if (!delegations || delegations.length === 0) return undefined
+  if (preferred !== undefined && delegations.some((item) => item.childRunId === preferred)) {
+    return preferred
+  }
+  const running = [...delegations].reverse().find((item) => item.completed === undefined)
+  if (running) return running.childRunId
+  let latest = delegations[0]!
+  for (const item of delegations) {
+    if (item.createdAt >= latest.createdAt) latest = item
+  }
+  return latest.childRunId
+}
 
 function DelegationHeader({
   delegation,
@@ -40,9 +62,10 @@ function DelegationHeader({
         <DelegationStatusBadge status={status} />
       </div>
       <p className="text-note text-muted">
+        <span className="sr-only">{t('delegation.childHint')}</span>
         {t('inspector.versionShort', { version: delegation.agent.version })}
         {tokens > 0 && (
-          <span className="tabular">
+          <span title={t('delegation.tokensHint')} className="tabular">
             {' '}
             · {t('delegation.tokens', { count: compactTokens(tokens) })}
           </span>
@@ -50,9 +73,9 @@ function DelegationHeader({
       </p>
       <p className="text-note text-fg2">{delegation.task}</p>
       {delegation.completed?.summary && (
-        <p className="rounded-item bg-sunk px-2.5 py-2 text-note whitespace-pre-wrap text-fg2">
-          {delegation.completed.summary}
-        </p>
+        <div className="max-h-[40vh] overflow-y-auto rounded-item bg-sunk px-2.5 py-2 text-note text-fg2">
+          <Markdown text={delegation.completed.summary} codeWrap />
+        </div>
       )}
       {delegation.completed?.issues && delegation.completed.issues.length > 0 && (
         <ul className="flex flex-col gap-1 text-note text-warn">
@@ -119,7 +142,7 @@ export function DelegationPanel({
           {t('delegation.refresh')}
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-6">
         {entry?.error && (
           <div role="alert" className="flex flex-col items-start gap-2 pb-2 text-ui">
             <p className="text-danger">{t('delegation.loadFailed')}</p>

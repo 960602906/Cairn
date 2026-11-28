@@ -7,7 +7,7 @@ import { createSessionView, type DelegationView, type SessionView } from '@cairn
 import { createI18n } from '@cairn/i18n'
 import type { RunInspectResult } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
-import { DelegationPanel } from './DelegationPanel.js'
+import { DelegationPanel, pickDelegationRunId } from './DelegationPanel.js'
 import { inspectionKey, type SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 
@@ -197,6 +197,66 @@ function setup({
 
 afterEach(cleanup)
 
+describe('pickDelegationRunId', () => {
+  const base = {
+    parentRunId: 'r1',
+    agent: { id: 'builtin.reviewer', version: 1 },
+    task: 't',
+    workspace: 'shared' as const,
+    workspacePath: undefined,
+    budget: undefined,
+    turnId: undefined,
+    completed: undefined,
+  }
+
+  it('returns undefined without delegations', () => {
+    expect(pickDelegationRunId(undefined)).toBeUndefined()
+    expect(pickDelegationRunId([])).toBeUndefined()
+  })
+
+  it('prefers an explicit still-valid run id', () => {
+    const list = [
+      { ...base, childRunId: 'a', createdAt: 1 },
+      { ...base, childRunId: 'b', createdAt: 2 },
+    ]
+    expect(pickDelegationRunId(list, 'a')).toBe('a')
+  })
+
+  it('prefers a running child, otherwise the latest created', () => {
+    const list = [
+      {
+        ...base,
+        childRunId: 'old',
+        createdAt: 1,
+        completed: {
+          status: 'completed' as const,
+          summary: undefined,
+          usage: undefined,
+          changeSetId: undefined,
+          issues: undefined,
+        },
+      },
+      { ...base, childRunId: 'live', createdAt: 2, completed: undefined },
+      {
+        ...base,
+        childRunId: 'newer-done',
+        createdAt: 3,
+        completed: {
+          status: 'completed' as const,
+          summary: undefined,
+          usage: undefined,
+          changeSetId: undefined,
+          issues: undefined,
+        },
+      },
+    ]
+    expect(pickDelegationRunId(list)).toBe('live')
+    expect(pickDelegationRunId(list.filter((item) => item.childRunId !== 'live'))).toBe(
+      'newer-done',
+    )
+  })
+})
+
 describe('DelegationPanel', () => {
   it('shows the delegation summary and its run tree', async () => {
     const user = userEvent.setup()
@@ -206,11 +266,13 @@ describe('DelegationPanel', () => {
     expect(region.textContent).toContain('builtin.reviewer')
     expect(region.textContent).toContain('检查登录流程')
     expect(region.textContent).toContain('完成')
-    expect(region.textContent).toContain('15 tokens')
+    expect(region.textContent).toContain('已用 15')
     expect(region.textContent).toContain('看完了')
     expect(region.textContent).toContain('测试失败')
     const tree = await screen.findByRole('list', { name: '运行树' })
     expect(region.textContent).toContain('第 1 轮')
+    // 「运行树」标题行下方的滚动区留出顶边距，滚动时文字不贴着分隔线。
+    expect(tree.parentElement?.className).toContain('pt-3')
     await user.click(within(tree).getByRole('button', { name: '查看改动' }))
     expect(onOpenPanel).toHaveBeenCalledWith('diff', { changeSetId: 'cs1' })
   })
