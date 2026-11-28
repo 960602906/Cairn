@@ -58,6 +58,19 @@ const activeGoal = () =>
     ev(8, 'turn.completed', { durationMs: 10 }),
   ])
 
+const goalWithUsage = () =>
+  reduceSessionEvents(createSessionView('s1'), [
+    ...BASE,
+    ev(5, 'turn.started', {}),
+    ev(6, 'usage.reported', { model, usage: { inputTokens: 12_000, outputTokens: 3_000 } }),
+    ev(7, 'usage.reported', {
+      model,
+      usage: { inputTokens: 1_000, outputTokens: 0 },
+      auxiliary: true,
+    }),
+    ev(8, 'goal.evaluated', { goalId: 'g1', verdict: 'not_met', reason: '继续', model }),
+  ])
+
 const pausedGoal = () =>
   reduceSessionEvents(createSessionView('s1'), [
     ...BASE,
@@ -193,6 +206,11 @@ describe('GoalPanel', () => {
     expect(within(region).getByText('测试全部通过')).toBeTruthy()
     expect(within(region).getByText(/工具 · tool:t1/)).toBeTruthy()
     expect(within(region).getByText(/文件 · file:src\/a.ts/)).toBeTruthy()
+  })
+
+  it('shows the token usage of goal turns and judgments', () => {
+    wrap(goalWithUsage())
+    expect(screen.getByText('已用 16k tokens')).toBeTruthy()
   })
 
   it('pauses and clears an active goal after confirmation', async () => {

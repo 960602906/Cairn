@@ -2,10 +2,10 @@
  * 目标条（ADR-0047）：输入框上方的单行细卡，只在有未结束目标时出现。
  *
  * 布局与待办进度条（TaskProgress）一致：`h-9` 细条，外壳用 FloatCard 的 `bar`，浮在
- * Composer 正上方。显示条件与短状态；暂停 / 继续、改条件、删除直接调用 store。暂停不中止
- * 正在跑的一轮；恢复要求会话空闲，因此运行中禁用「继续」。失败时在条内显示提示。轮次与活动
- * 时长只在目标面板展示。改条件时 Enter 保存、Esc 取消，输入法组字中的 Enter 不保存；失焦
- * 保存但不再抢回焦点（焦点是用户自己移走的）。
+ * Composer 正上方。显示条件、短状态与已运行时长；暂停 / 继续、改条件、删除直接调用 store。
+ * 暂停不中止正在跑的一轮；恢复要求会话空闲，因此运行中禁用「继续」。失败时在条内显示提示。
+ * 轮次与预算只在目标面板展示。改条件时 Enter 保存、Esc 取消，输入法组字中的 Enter 不保存；
+ * 失焦保存但不再抢回焦点（焦点是用户自己移走的）。
  */
 import { Pause, Pencil, Play, Target, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { isAwaitingGoalEvaluation, openGoal, type GoalView, type SessionView } from '@cairn/core'
 import { GOAL_CONDITION_MAX, type SessionStatus } from '@cairn/protocol'
 import { goalErrorNoticeKey } from './composer-commands.js'
+import { formatGoalDuration } from './goal-display.js'
 import { useSessionStore } from './store-context.js'
 import {
   Button,
@@ -124,11 +125,14 @@ export function GoalBar({
   const [confirmClear, setConfirmClear] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const goal = openGoal(view)
+  const elapsed = useGoalElapsed(goal)
   if (goal === undefined) return null
   const phase = goalBarPhase(view, goal, status)
   if (phase === undefined) return null
   const busy = goalSessionBusy(status)
   const paused = goal.status === 'paused'
+  const duration = formatGoalDuration(elapsed)
+  const elapsedLabel = t('goal.bar.elapsed', { duration })
   const reason = t(`goal.pause.${goal.pauseReason ?? 'user'}`)
   const statusText =
     phase === 'running'
@@ -257,9 +261,18 @@ export function GoalBar({
           </button>
         )}
         {!editing && (
-          <span className="shrink-0 text-note text-muted" title={statusTitle}>
-            {statusText}
-          </span>
+          <>
+            <span className="shrink-0 text-note text-muted" title={statusTitle}>
+              {statusText}
+            </span>
+            <span
+              className="tabular shrink-0 text-note text-faint"
+              aria-label={elapsedLabel}
+              title={elapsedLabel}
+            >
+              {duration}
+            </span>
+          </>
         )}
         {paused ? (
           <IconButton

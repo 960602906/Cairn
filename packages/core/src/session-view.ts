@@ -607,6 +607,17 @@ export function isAwaitingGoalEvaluation(view: SessionView): boolean {
 
 const ZERO_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0 }
 
+/**
+ * 目标所有轮次的累计用量（含判定等辅助调用）。回退掉的轮次已从 `usageByTurn` 中移除；
+ * 目标结束后仍可读取，供面板展示本次目标的成本。
+ */
+export function goalUsage(view: SessionView, goal: GoalView): TokenUsage {
+  return goal.turnIds.reduce(
+    (total, turnId) => addUsage(total, view.usageByTurn[turnId] ?? ZERO_USAGE),
+    ZERO_USAGE,
+  )
+}
+
 export function createSessionView(sessionId: string): SessionView {
   return {
     sessionId,

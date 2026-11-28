@@ -905,7 +905,7 @@ evaluated.”。轮次上限由系统提示词提供，消息里不重复堆预�
 - 新文件 `apps/desktop/src/renderer/GoalBar.tsx`，放在 `ChatPanel` 里、Composer 正上方，与待办
   进度条（`TaskProgress`）同一套细卡：`mb-2 rounded-card bg-raise shadow-2`、单行 `h-9`。计划
   操作、提问、记忆提案仍在更高一层的绝对定位悬浮列。
-- 只在有未结束目标时显示。单行细条，不展示轮次与活动时长：
+- 只在有未结束目标时显示。单行细条，显示已运行时长，不展示轮次：
   - 状态图标 + 条件：单行省略（`title` 放完整条件），点击打开面板；面板里完整换行显示。
   - 短状态词：`进行中` / `判定中` / `准备继续` / `等待审批` / `等待回答` / `已暂停` /
     `本轮结束后暂停`；详细暂停原因放在 `title` 与侧栏。
@@ -913,7 +913,8 @@ evaluated.”。轮次上限由系统提示词提供，消息里不重复堆预�
   - 「继续」在会话运行中禁用（`goal.resume` 要求空闲）；暂停与删除始终可用。
   - 改条件：Enter 保存，Esc 取消，输入法组字中的 Enter 不保存；失焦有改动则保存，且不把焦点
     抢回输入框（焦点是用户自己移走的）。写 `goal.condition_updated`；不中断当前轮；
-    不进 lifecycle，进行中的判定仍用开始时快照。轮次 / 时长预算只在面板显示。
+    不进 lifecycle，进行中的判定仍用开始时快照。轮次与预算只在面板显示；横条上的已运行时长在
+    暂停后停表。
 - 无障碍：用单独的可视隐藏 `role="status"` / `aria-live="polite"` 区域只播报状态变化；按钮有明确
   `aria-label`；状态同时用图标 / 文案，不只靠颜色；尊重减少动态效果，关闭旋转与脉冲。
 
@@ -921,9 +922,9 @@ evaluated.”。轮次上限由系统提示词提供，消息里不重复堆预�
 
 - `SessionPanels.tsx` 的 `SessionPanel` 增加 `'goal'`，定义表增加 `addable: false` 的 `GoalPanel`；
   从目标条或 `/goal status` 打开。
-- 内容：条件（可改）、状态与暂停 / 结束原因、预算（轮次与活动时长）、判定时间线（verdict、理由、
-  证据引用、模型）、操作按钮（暂停 / 继续 / 改条件 / 清除）、新建目标提示。继续按钮在会话运行中
-  禁用（resume 要求空闲）；没有目标时用 `PanelEmpty` 显示用法。
+- 内容：条件（可改）、状态与暂停 / 结束原因、预算（轮次、活动时长与已用 token）、判定时间线
+  （verdict、理由、证据引用、模型）、操作按钮（暂停 / 继续 / 改条件 / 清除）、新建目标提示。
+  继续按钮在会话运行中禁用（resume 要求空闲）；没有目标时用 `PanelEmpty` 显示用法。
 - 面板读取 `SessionPanelContext.view` 的目标投影；操作通过新增到 `SessionPanelContext` 的回调或现有
   store action 调用 IPC，不直接读 `window.cairn`。面板打开期间目标被回退移除或换成了新目标时，
   重新取当前投影并显示空状态 / 新目标，不保留旧引用。
@@ -1085,5 +1086,6 @@ pnpm --filter @cairn/desktop e2e -- plan-mode.spec.ts conversation.spec.ts appro
 - **语义混淆**：目标模式的 `Goal*` 与计划的 `PlanDocument.goal` 分开命名；界面文案统一用“目标
   模式”，不在计划卡片里复用“目标”一词。
 
-后续可做（不在本方案内）：目标级 token / 费用预算（利用 `usage.reported` 的差值）、
-`report_goal_progress` 结构化工具、定时 / 无人值守目标、目标与团队模板的结合。
+后续可做（不在本方案内）：目标级 token / 费用**预算**（面板已按 `usageByTurn` 显示目标累计用量，
+预算仍只按轮次与活动时长）、`report_goal_progress` 结构化工具、定时 / 无人值守目标、
+目标与团队模板的结合。
