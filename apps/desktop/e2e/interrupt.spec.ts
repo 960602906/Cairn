@@ -34,11 +34,11 @@ test('运行中停止：本轮以 turn.aborted 结束，之后可以继续对话
   await expect(liveMessage(window)).toContainText(LONG_PROMPT.slice(0, 5))
   await window.getByRole('button', { name: '停止', exact: true }).click()
 
-  // 停止后已输出的部分回复保留，注明未完成（Runtime §10.2）
-  await expect(window.getByText('已停止', { exact: true })).toBeVisible()
+  // 停止后已输出的部分回复保留，只显示一条「未完成」提示（不再叠「已停止」）。
+  await expect(window.getByText('已停止 — 回复未完成')).toBeVisible()
+  await expect(window.getByText('已停止', { exact: true })).toHaveCount(0)
   await expect(runStatus(window)).toHaveText('空闲')
   await expect(window.getByRole('button', { name: '停止', exact: true })).toHaveCount(0)
-  await expect(window.getByText('（回复未完成）')).toHaveCount(1)
   const partial = (await messageTexts(window)).at(-1)!
   expect(partial.length).toBeGreaterThan(0)
   expect(LONG_PROMPT.startsWith(partial)).toBe(true)
@@ -50,7 +50,7 @@ test('运行中停止：本轮以 turn.aborted 结束，之后可以继续对话
   await expectMessages(window, stopped)
 
   await converse(window, '继续', stopped)
-  await expect(window.getByText('已停止', { exact: true })).toHaveCount(0)
+  await expect(window.getByText('已停止 — 回复未完成')).toHaveCount(0)
   await app.close()
 
   const events = readEvents(userData)

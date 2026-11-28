@@ -207,7 +207,9 @@ test('chat status reads the same in both themes without a status bar', async ({
   await expect(liveMessage(window)).toContainText(long.slice(0, 5))
   await window.getByRole('button', { name: '停止', exact: true }).click()
   await expect(runStatus(window)).toHaveText('空闲')
-  await expect(window.getByRole('img', { name: '已停止' })).toBeVisible()
+  // 中途停止时只保留「未完成」提示，不再另挂一条结局卡片。
+  await expect(window.getByText('已停止 — 回复未完成')).toBeVisible()
+  await expect(window.getByRole('img', { name: '已停止' })).toHaveCount(0)
   await expect(window.getByText('开始一个新任务')).toHaveCount(0)
   await setTheme(window, 'light')
   await noHorizontalOverflow(window)

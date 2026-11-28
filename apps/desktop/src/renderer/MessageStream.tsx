@@ -1174,10 +1174,7 @@ function Message({
         onOpenFile={onOpenFile}
       />
       {message.incomplete && !toolsFollow && (
-        <p
-          role="status"
-          className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted"
-        >
+        <p className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted">
           <CirclePause aria-hidden className="size-3.5 shrink-0" />
           <span>{t('message.incomplete')}</span>
         </p>
@@ -1974,10 +1971,7 @@ export function MessageStream({
                   onOpenFile={onOpenFile}
                 />
                 {lastMsg.incomplete && (
-                  <p
-                    role="status"
-                    className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted"
-                  >
+                  <p className="mt-2 flex items-center gap-2 rounded-item bg-sunk px-2.5 py-1.5 text-note text-muted">
                     <CirclePause aria-hidden className="size-3.5 shrink-0" />
                     <span>{t('message.incomplete')}</span>
                   </p>
