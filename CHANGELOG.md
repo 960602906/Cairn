@@ -16,6 +16,13 @@
   setting only affects evaluation; runs still use the session model, and active goals pick it
   up at their next evaluation.
 
+- macOS 与 Linux 现在也会检查新版本：发现后左栏出现入口，点击在浏览器打开 GitHub Releases
+  页面手动下载安装；不会在本机下载或重启安装，也不需要发布者签名。Windows 的原地更新行为不变。
+  macOS and Linux now check for new versions too: when one is found, the sidebar shows an entry
+  that opens the GitHub Releases page in your browser for a manual download. Nothing is
+  downloaded or installed in place, and no publisher signature is required. Windows in-place
+  updates are unchanged.
+
 ### Changed
 
 - 目标面板的历史目标可以展开，查看当时的结束原因、判定理由与证据；改条件时新增取消按钮，

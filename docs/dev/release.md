@@ -306,6 +306,8 @@ pnpm sign:verify:mac -- --dist apps/desktop/dist --version 0.1.0
 失败会降级为 `adhoc` 重试一次，仍保证 bundle 签名有效，并在发布说明中标注“ad-hoc
 签名（未公证）”。ad-hoc 自身失败不会继续降级，避免发布损坏的包。真实 Apple Silicon/Intel
 安装、公证与更新下载仍需在配置好账号的 macOS 环境执行并记录证据。
+客户端在 macOS / Linux 上只读取 `beta-mac.yml` / `beta-linux.yml`（或对应的
+`latest-*`）检查版本，发现新版本后打开下载页，不做原地下载与安装（ADR-0036 修订）。
 
 ## 11. Linux：AppImage 与 deb（M6-03）
 

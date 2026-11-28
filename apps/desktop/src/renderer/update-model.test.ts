@@ -17,6 +17,7 @@ function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
     channel: 'beta',
     enabled: true,
     autoCheck: true,
+    installable: true,
     signatureVerified: false,
     requiresRestart: false,
     ...overrides,

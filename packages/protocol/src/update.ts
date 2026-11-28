@@ -70,6 +70,7 @@ export const UpdateErrorCode = {
   Cancelled: 'update.cancelled',
   InvalidManifest: 'update.invalid_manifest',
   VersionInvalid: 'update.version_invalid',
+  ManualUpdateRequired: 'update.manual_update_required',
 } as const
 export type UpdateErrorCode = (typeof UpdateErrorCode)[keyof typeof UpdateErrorCode]
 
@@ -101,8 +102,12 @@ export const UpdateStatus = z.object({
   channel: UpdateChannel,
   enabled: z.boolean(),
   autoCheck: z.boolean(),
+  /** 是否支持在本机下载并重启安装；macOS / Linux 只检查版本，需手动下载。 */
+  installable: z.boolean(),
   /** 公开只读更新源（不含查询串、用户名或密码）。 */
   source: z.string().optional(),
+  /** 手动下载页（GitHub Releases 或静态更新源）；只在启用更新时提供。 */
+  releaseUrl: z.string().optional(),
   lastCheckedAt: Timestamp.optional(),
   availableVersion: z.string().optional(),
   releaseDate: Timestamp.optional(),

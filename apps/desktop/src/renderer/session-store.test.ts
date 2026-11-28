@@ -1164,6 +1164,7 @@ describe('updates (M5-07)', () => {
     channel: 'beta' as const,
     enabled: true,
     autoCheck: true,
+    installable: true,
     signatureVerified: false,
     requiresRestart: false,
   }

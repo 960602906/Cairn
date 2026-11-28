@@ -708,9 +708,10 @@ agent 循环设置最大步数和单轮最长时间，防止无限循环。
 - **命令沙箱**：Windows 默认受限令牌档（ADR-0034）；设置页、审批卡片、终端标记与诊断包显示实际
   档位；受限令牌明确标注网络未隔离。Linux/macOS 尚未提供命令沙箱，能力探测返回平台原因，命令
   按权限规则在沙箱外运行并标注“未沙箱化”（M6-05）。
-- **自动更新**：electron-updater 6.8.11 + generic 公开只读 HTTPS 源；检查 → 下载 → 校验
+- **自动更新**：electron-updater 6.8.11 + 公开只读 HTTPS 源；检查 → 下载 → 校验
   （SHA-512、大小、发布者签名）→ 重启安装。运行中任务、待审批与检查点恢复期间禁止静默重启；
-  不提供二进制降级，升级前备份，`SchemaTooNew` 阻断降级（ADR-0036）。
+  不提供二进制降级，升级前备份，`SchemaTooNew` 阻断降级（ADR-0036）。Windows 可以原地更新；
+  macOS/Linux 只检查版本并在左栏给出下载页入口，由用户手动安装，不做原地下载与签名校验。
 - **代码签名与发布**：`.github/workflows/release.yml` 在标签构建时按平台并行构建
   （Windows NSIS、macOS DMG/ZIP、Linux AppImage/deb），各自生成 `latest*.yml`/`beta*.yml`
   与校验和，再由 `assemble` 合并、`publish` 一次上传；证书只来自 CI secrets。Windows 使用

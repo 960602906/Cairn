@@ -293,6 +293,7 @@ describe('translateError', () => {
       'update.cancelled',
       'update.invalid_manifest',
       'update.version_invalid',
+      'update.manual_update_required',
     ]
     for (const locale of SUPPORTED_LOCALES) {
       expect(Object.keys(RESOURCES[locale].errors).sort()).toEqual([...codes, 'unknown'].sort())

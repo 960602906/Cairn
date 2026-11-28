@@ -64,8 +64,8 @@ ADR-0041 把 `CAIRN_MAC_SIGN_MODE=none` 定义为“unsigned 内部包”，实�
 - 免费方案仍有 Gatekeeper 提示：应用可启动，但首次打开需要在“系统设置 → 隐私与安全性”
   中放行；每次覆盖安装后可能需要再次放行。消除提示仍需要 Apple Developer Program
   （约 ¥688/年）的 Developer ID 证书与公证。
-- macOS 自动更新依赖有效的发布者签名；ad-hoc beta 的自动更新能力不作为承诺，发布说明
-  保留手动下载 DMG 的升级路径。stable 必须 `developer-id`。
+- macOS 原地自动更新依赖有效的发布者签名；ad-hoc beta 只做版本检查：发现新版本后在左栏
+  给出 GitHub Releases 下载页入口，由用户手动安装（ADR-0036 修订）。stable 必须 `developer-id`。
 - `CAIRN_MAC_SIGN_MODE=none` 从配置中移除；设置该值的流水线或本地脚本会立即失败，而不是
   静默产出损坏的包。
 - 发布门禁增加 `codesign --verify` 覆盖：过去只验证 `developer-id`，现在 ad-hoc 包也会

@@ -583,6 +583,7 @@
   "update.phase.verifying": "正在校验",
   "update.phase.installing": "正在安装",
   "update.button.download": "下载更新 {{version}}",
+  "update.button.openRelease": "有新版本 {{version}}，打开下载页面",
   "update.button.progress": "正在下载更新 {{percent}}%",
   "update.button.installHint": "安装 {{version}} 并重启",
   "update.button.retry": "重试更新",

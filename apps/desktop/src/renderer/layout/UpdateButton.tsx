@@ -5,12 +5,12 @@
  * 状态全部来自主进程的 `update.status`；检查由主进程按设置自动进行，这里不主动检查。
  */
 import { useState } from 'react'
-import { ArrowDownToLine, RefreshCw, RotateCw } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpRight, RefreshCw, RotateCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store-context.js'
 import { hasRunningSessions, installBlocked, progressPercent } from '../update-model.js'
 import { UpdateRestartDialog } from '../settings/UpdateRestartDialog.js'
-import { IconButton, Spinner } from '../ui/index.js'
+import { Button, IconButton, Spinner } from '../ui/index.js'
 
 function Ring({ percent, label }: { readonly percent: number; readonly label: string }) {
   const radius = 10
@@ -70,7 +70,27 @@ export function UpdateButton() {
   const percent = progressPercent(status)
 
   switch (status.phase) {
-    case 'available':
+    case 'available': {
+      // macOS / Linux 不做原地安装：打开下载页，由用户手动安装新版本。
+      if (!status.installable) {
+        const url = status.releaseUrl ?? status.source
+        if (!url) return null
+        const label = t('update.button.openRelease', { version })
+        return (
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-sm"
+            className="text-accent"
+            aria-label={label}
+            title={label}
+          >
+            <a href={url} target="_blank" rel="noreferrer">
+              <ArrowUpRight strokeWidth={2.2} />
+            </a>
+          </Button>
+        )
+      }
       return (
         <IconButton
           label={t('update.button.download', { version })}
@@ -81,6 +101,7 @@ export function UpdateButton() {
           <ArrowDownToLine strokeWidth={2.2} />
         </IconButton>
       )
+    }
     case 'downloading':
       return (
         <span className="grid size-7 place-items-center text-accent">
@@ -122,7 +143,7 @@ export function UpdateButton() {
           size="icon-sm"
           onClick={() => {
             void checkUpdate(true).then((result) => {
-              if (result?.phase === 'available') void downloadUpdate()
+              if (result?.phase === 'available' && result.installable) void downloadUpdate()
             })
           }}
         >

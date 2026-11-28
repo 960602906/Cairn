@@ -470,6 +470,7 @@ function setup(
     channel: 'beta',
     enabled: true,
     autoCheck: true,
+    installable: true,
     source: 'https://updates.example/cairn/',
     signatureVerified: false,
     requiresRestart: false,

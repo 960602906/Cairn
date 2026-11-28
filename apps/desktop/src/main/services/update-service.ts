@@ -3,7 +3,9 @@
  *
  * 设计要点：
  * - **失败关闭**：更新源必须是公开只读 HTTPS；开发模式、`CAIRN_UPDATE_DISABLE=1`、
- *   未配置源或 stable 通道缺少发布者 DN 时直接禁用。
+ *   未配置源或 Windows stable 通道缺少发布者 DN 时直接禁用。
+ * - **按平台降级**：Windows 检查、下载、校验并重启安装；macOS / Linux 只检查版本，
+ *   由 `installable=false` 与 `releaseUrl` 引导用户打开下载页手动安装。
  * - **不静默重启**：`autoDownload=false`、`autoInstallOnAppQuit=false`；安装前必须确认没有运行中会话、
  *   待审批或检查点恢复。安装前备份数据库、设置与凭据元数据。
  * - **完整校验**：SHA512/大小由 electron-updater 校验；配置发布者 DN 后再做严格的 Authenticode 验证
@@ -159,6 +161,10 @@ interface Configuration {
   readonly channel: UpdateChannel
   readonly publisherName?: string
   readonly autoCheck: boolean
+  /** 只有 Windows 支持原地下载、校验并重启安装；macOS / Linux 只检查版本。 */
+  readonly installable: boolean
+  /** 手动下载页；启用更新时提供。 */
+  readonly releaseUrl?: string
 }
 
 interface InternalState {
@@ -356,6 +362,16 @@ function defaultCancelSchedule(handle: unknown): void {
   clearTimeout(handle as ReturnType<typeof setTimeout>)
 }
 
+/** 手动更新入口：GitHub 仓库打开 Releases 列表，静态源直接使用目录地址。 */
+function releasePageUrl(source: UpdateSource): string {
+  return source.kind === 'github' ? `${source.url}releases` : source.url
+}
+
+/** 支持检查更新的平台；只有 Windows 能继续下载并原地安装。 */
+function supportsUpdateCheck(platform: NodeJS.Platform): boolean {
+  return platform === 'win32' || platform === 'darwin' || platform === 'linux'
+}
+
 /** `electron-updater` 的 CJS 导出形状；ESM 与默认导出两种加载方式都要兼容。 */
 interface ElectronUpdaterLike {
   autoDownload: boolean
@@ -515,19 +531,22 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
   const configuration = (): Configuration => {
     const settings = options.settings.get()
     const autoCheck = settings.updateAutoCheck !== false
+    const installable = platform === 'win32'
     if (envDisabled)
       return {
         enabled: false,
         disabledReason: 'update.disabled_by_env',
         channel: options.buildChannel,
         autoCheck,
+        installable,
       }
-    if (platform !== 'win32') {
+    if (!supportsUpdateCheck(platform)) {
       return {
         enabled: false,
         disabledReason: 'update.platform_unsupported',
         channel: options.buildChannel,
         autoCheck,
+        installable,
       }
     }
     if (!options.packaged && !allowDevelopment) {
@@ -536,22 +555,32 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
         disabledReason: 'update.not_packaged',
         channel: options.buildChannel,
         autoCheck,
+        installable,
       }
     }
     // 用户界面不再提供通道选择；更新源始终由构建通道决定。
     const channel = options.buildChannel
     const source = normalizeSource(options.sourceUrl ?? env['CAIRN_UPDATE_URL'])
     if (!source.ok) {
-      return { enabled: false, disabledReason: source.reason, channel, autoCheck }
+      return {
+        enabled: false,
+        disabledReason: source.reason,
+        channel,
+        autoCheck,
+        installable,
+      }
     }
     const publisherName = (options.publisherName ?? env['CAIRN_UPDATE_PUBLISHER'] ?? '').trim()
-    if (channel === 'stable' && publisherName === '') {
+    // 发布者 DN 只用于 Windows 下载后的 Authenticode 校验；只检查版本的平台不需要。
+    if (installable && channel === 'stable' && publisherName === '') {
       return {
         enabled: false,
         disabledReason: 'update.publisher_missing',
         source: source.source,
         channel,
         autoCheck,
+        installable,
+        releaseUrl: releasePageUrl(source.source),
       }
     }
     return {
@@ -559,6 +588,8 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       source: source.source,
       channel,
       autoCheck,
+      installable,
+      releaseUrl: releasePageUrl(source.source),
       ...(publisherName !== '' ? { publisherName } : {}),
     }
   }
@@ -587,7 +618,9 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       channel: config.channel,
       enabled: config.enabled,
       autoCheck: config.autoCheck,
+      installable: config.installable,
       ...(config.source ? { source: config.source.url } : {}),
+      ...(config.releaseUrl ? { releaseUrl: config.releaseUrl } : {}),
       ...(state.lastCheckedAt !== undefined ? { lastCheckedAt: state.lastCheckedAt } : {}),
       ...(state.availableVersion ? { availableVersion: state.availableVersion } : {}),
       ...(state.releaseDate !== undefined ? { releaseDate: state.releaseDate } : {}),
@@ -890,6 +923,16 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       emit()
       return Promise.resolve(snapshot())
     }
+    if (!config.installable) {
+      return Promise.resolve(
+        fail(
+          'update.manual_update_required',
+          'this platform requires a manual download',
+          false,
+          state.availableVersion ? 'available' : 'idle',
+        ),
+      )
+    }
     if (state.phase === 'downloaded') return Promise.resolve(snapshot())
     if (!checkInfo || !state.availableVersion) {
       return Promise.resolve(
@@ -921,6 +964,14 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
       state.phase = 'disabled'
       emit()
       return snapshot()
+    }
+    if (!config.installable) {
+      return fail(
+        'update.manual_update_required',
+        'this platform requires a manual download',
+        false,
+        state.availableVersion ? 'available' : 'idle',
+      )
     }
     if (state.phase !== 'downloaded' || downloadedFiles.length === 0) {
       return fail('update.not_downloaded', 'no downloaded update', true, state.phase)

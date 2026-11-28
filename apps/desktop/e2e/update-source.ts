@@ -59,7 +59,12 @@ export async function startUpdateSource(
       const pathname = decodeURIComponent(
         new URL(incoming.url ?? '/', 'https://localhost').pathname,
       )
-      if (pathname === '/latest.yml' || pathname === '/beta.yml') {
+      if (
+        pathname === '/latest.yml' ||
+        pathname === '/beta.yml' ||
+        pathname === '/beta-mac.yml' ||
+        pathname === '/beta-linux.yml'
+      ) {
         response.writeHead(200, { 'content-type': 'text/yaml', 'cache-control': 'no-store' })
         response.end(latest)
         return
