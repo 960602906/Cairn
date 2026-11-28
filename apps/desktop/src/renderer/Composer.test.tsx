@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
 import { createSessionView, reduceSessionEvents } from '@cairn/core'
 import type { EventEnvelope, ProviderConfig, SessionStatus } from '@cairn/protocol'
 import { createStore } from 'zustand/vanilla'
-import { Composer, ModeMenu, ModelPicker } from './Composer.js'
+import { Composer, ModeMenu } from './Composer.js'
 import { COMPOSER_FOCUS_EVENT } from './layout/shortcuts.js'
 import {
   enabledModelChoices,
@@ -83,177 +82,6 @@ describe('Composer model helpers', () => {
       '供应商一 · unknown',
     )
     expect(modelLabel({ providerId: 'missing', modelId: 'raw' }, providers)).toBe('missing · raw')
-  })
-
-  it('marks a fixed model', () => {
-    render(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <ModelPicker
-          providers={providers}
-          model={fast}
-          fixed
-          disabled={false}
-          open={false}
-          onOpenChange={() => {}}
-          onSelect={() => {}}
-          align="start"
-        />
-      </I18nextProvider>,
-    )
-    const trigger = screen.getByRole('button', { name: '模型：供应商一 · fast' })
-    expect(trigger.getAttribute('title')).toBe('由 Agent 固定')
-  })
-
-  it('only emits a change for a different selection', async () => {
-    const user = userEvent.setup()
-    const onSelect = vi.fn()
-    render(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <ModelPicker
-          providers={providers}
-          model={fast}
-          fixed={false}
-          disabled={false}
-          open
-          onOpenChange={() => {}}
-          onSelect={onSelect}
-        />
-      </I18nextProvider>,
-    )
-    await user.click(screen.getByRole('menuitem', { name: /^fast/ }))
-    expect(onSelect).not.toHaveBeenCalled()
-
-    cleanup()
-    render(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <ModelPicker
-          providers={providers}
-          model={fast}
-          fixed={false}
-          disabled={false}
-          open
-          onOpenChange={() => {}}
-          onSelect={onSelect}
-        />
-      </I18nextProvider>,
-    )
-    await user.click(screen.getByRole('menuitem', { name: /强/ }))
-    expect(onSelect).toHaveBeenCalledWith(strong)
-  })
-
-  it('focuses the current model when the menu opens', async () => {
-    const user = userEvent.setup()
-    const onSelect = vi.fn()
-    function PickerHarness() {
-      const [open, setOpen] = useState(false)
-      return (
-        <ModelPicker
-          providers={providers}
-          model={strong}
-          fixed={false}
-          disabled={false}
-          open={open}
-          onOpenChange={setOpen}
-          onSelect={onSelect}
-        />
-      )
-    }
-    render(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <PickerHarness />
-      </I18nextProvider>,
-    )
-    await user.click(screen.getByRole('button', { name: '模型：供应商二 · 强' }))
-    const current = await screen.findByRole('menuitem', { name: /强/ })
-    await waitFor(() => expect(document.activeElement).toBe(current))
-    // 直接按 Enter 保持当前模型，不会换成列表第一项。
-    await user.keyboard('{Enter}')
-    expect(onSelect).not.toHaveBeenCalled()
-  })
-
-  it('picks the thinking level of the current model', async () => {
-    const user = userEvent.setup()
-    const onSelectThinkingLevel = vi.fn()
-    const reasoning: ProviderConfig[] = [
-      {
-        id: 'p2',
-        kind: 'openai',
-        displayName: '供应商二',
-        baseUrl: 'https://example.com',
-        models: [{ id: 'strong', displayName: '强', ...capabilities, supportsReasoning: true }],
-      },
-    ]
-    render(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <ModelPicker
-          providers={reasoning}
-          model={strong}
-          fixed={false}
-          disabled={false}
-          open
-          onOpenChange={() => {}}
-          onSelect={() => {}}
-          thinkingLevel="low"
-          onSelectThinkingLevel={onSelectThinkingLevel}
-        />
-      </I18nextProvider>,
-    )
-    expect(screen.getByText('思考强度')).toBeTruthy()
-    await user.click(screen.getByRole('menuitem', { name: '高' }))
-    expect(onSelectThinkingLevel).toHaveBeenCalledWith('high')
-  })
-
-  it('explains when the model does not support reasoning, and hides the section without a session', () => {
-    const { rerender } = render(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <ModelPicker
-          providers={providers}
-          model={fast}
-          fixed={false}
-          disabled={false}
-          open
-          onOpenChange={() => {}}
-          onSelect={() => {}}
-          onSelectThinkingLevel={() => {}}
-        />
-      </I18nextProvider>,
-    )
-    expect(screen.getByText('思考强度')).toBeTruthy()
-    expect(screen.getByText('当前模型不支持推理')).toBeTruthy()
-
-    rerender(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <ModelPicker
-          providers={providers}
-          model={fast}
-          fixed={false}
-          disabled={false}
-          open
-          onOpenChange={() => {}}
-          onSelect={() => {}}
-        />
-      </I18nextProvider>,
-    )
-    expect(screen.queryByText('思考强度')).toBeNull()
-  })
-
-  it('shows the empty label when no model is configured', () => {
-    render(
-      <I18nextProvider i18n={createI18n('zh-CN')}>
-        <ModelPicker
-          providers={[]}
-          model={undefined}
-          fixed={false}
-          disabled
-          open={false}
-          onOpenChange={() => {}}
-          onSelect={() => {}}
-        />
-      </I18nextProvider>,
-    )
-    const trigger = screen.getByRole('button', { name: '模型：未配置模型' }) as HTMLButtonElement
-    expect(trigger.disabled).toBe(true)
-    expect(trigger.getAttribute('title')).toBeNull()
   })
 })
 
@@ -572,9 +400,20 @@ describe('Composer /goal', () => {
     const user = userEvent.setup()
     renderComposer()
     const textarea = input()
-    await user.click(screen.getByRole('button', { name: '模型：供应商一 · fast' }))
-    await user.click(await screen.findByRole('menuitem', { name: /强/ }))
+    const trigger = screen.getByRole('button', { name: '模型：供应商一 · fast' })
+    expect(trigger.textContent).toContain('fast')
+    expect(trigger.textContent).not.toContain('供应商一')
+    await user.click(trigger)
+    await user.click(await screen.findByRole('option', { name: /强/ }))
     await waitFor(() => expect(document.activeElement).toBe(textarea))
+  })
+
+  it('still opens the model picker from /model', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+    await user.type(input(), '/model{Enter}')
+    await screen.findByRole('listbox', { name: '下一轮使用的模型' })
+    expect(screen.getByRole('combobox', { name: '搜索模型' })).toBeTruthy()
   })
 
   it('returns focus to the input after closing the context popover', async () => {

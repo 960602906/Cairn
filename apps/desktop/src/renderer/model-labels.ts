@@ -4,16 +4,20 @@
  * 输入框的模型选择、设置页、目标判定和运行时间线共用这套命名，避免在界面上直接露出
  * `providerId · modelId`。配置缺失时退回原始 id，不丢信息。
  */
-import type { ModelRef, ProviderConfig } from '@cairn/protocol'
+import type { ModelRef, ProviderConfig, ProviderKind } from '@cairn/protocol'
 
 export const sameModel = (a: ModelRef | undefined, b: ModelRef | undefined) =>
   a !== undefined && b !== undefined && a.providerId === b.providerId && a.modelId === b.modelId
 
-/** 模型选择项：供应商名称用于分组，模型短名称用于按钮与菜单。 */
+/** 模型选择项：供应商名称用于分组，模型短名称用于按钮与菜单；能力字段供选择器旁注。 */
 export interface ModelChoice {
   readonly ref: ModelRef
   readonly provider: string
+  readonly kind: ProviderKind
   readonly name: string
+  readonly contextWindow: number
+  readonly supportsTools: boolean
+  readonly supportsReasoning: boolean
 }
 
 /** 把设置里的供应商列表摊平成可选模型；停用的模型不列出。 */
@@ -24,7 +28,11 @@ export function enabledModelChoices(providers: readonly ProviderConfig[]): reado
       .map((model) => ({
         ref: { providerId: provider.id, modelId: model.id },
         provider: provider.displayName,
+        kind: provider.kind,
         name: model.displayName ?? model.id,
+        contextWindow: model.contextWindow,
+        supportsTools: model.supportsTools,
+        supportsReasoning: model.supportsReasoning,
       })),
   )
 }

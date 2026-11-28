@@ -2325,14 +2325,18 @@ describe('Composer (M2-04)', () => {
     })
     await open()
     const trigger = await screen.findByRole('button', { name: '模型：测试供应商 · 快' })
+    expect(trigger.textContent).toContain('快')
+    expect(trigger.textContent).not.toContain('测试供应商')
     await userEvent.click(trigger)
-    await userEvent.click(await screen.findByRole('menuitem', { name: /强/ }))
+    await userEvent.click(await screen.findByRole('option', { name: /强/ }))
     expect(request).toHaveBeenCalledWith('session.setModel', {
       sessionId: 's1',
       model: { providerId: 'fake', modelId: 'fake-2' },
     })
     emit(ev(10, 'session.model.changed', { model: { providerId: 'fake', modelId: 'fake-2' } }))
-    expect(await screen.findByRole('button', { name: '模型：测试供应商 · 强' })).toBeTruthy()
+    const next = await screen.findByRole('button', { name: '模型：测试供应商 · 强' })
+    expect(next.textContent).toContain('强')
+    expect(next.textContent).not.toContain('测试供应商')
   })
 
   it('switches the session agent from the composer picker (M6-08)', async () => {
@@ -2496,7 +2500,7 @@ describe('Composer (M2-04)', () => {
     })
     await open()
     await userEvent.click(await screen.findByRole('button', { name: '模型：测试供应商 · 快' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: '中' }))
+    await userEvent.click(await screen.findByRole('button', { name: '中' }))
     expect(request).toHaveBeenCalledWith('session.setThinkingLevel', {
       sessionId: 's1',
       thinkingLevel: 'medium',
@@ -2830,8 +2834,8 @@ describe('Composer (M2-04)', () => {
     })
     await open()
     await userEvent.type(input(), '/model{Enter}')
-    const menu = await screen.findByRole('menu')
-    expect(within(menu).getByRole('menuitem', { name: /强/ })).toBeTruthy()
+    const menu = await screen.findByRole('listbox', { name: '下一轮使用的模型' })
+    expect(within(menu).getByRole('option', { name: /强/ })).toBeTruthy()
     expect(input().value).toBe('')
   })
 
@@ -2899,7 +2903,7 @@ describe('Composer (M2-04)', () => {
     expect(await screen.findByText('已切换到 强')).toBeTruthy()
 
     await userEvent.type(input(), '/model 不存在{Enter}')
-    expect(await screen.findByRole('menu')).toBeTruthy()
+    expect(await screen.findByRole('listbox', { name: '下一轮使用的模型' })).toBeTruthy()
     expect(screen.getByText(/没有找到“不存在”/)).toBeTruthy()
     await userEvent.keyboard('{Escape}')
   })
