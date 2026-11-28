@@ -25,7 +25,7 @@ const defaults: RunDefaults = {
 interface FakeHost extends HostHandle {
   readonly init: HostInit
   readonly prompts: string[]
-  readonly inputs: unknown[]
+  readonly inputs: Parameters<HostHandle['prompt']>[0][]
   crash(): void
 }
 
@@ -34,7 +34,7 @@ function fakeHandle(init: HostInit, stopsCleanly = true): FakeHost {
   let resolveExited!: (exit: HostExit) => void
   const exited = new Promise<HostExit>((resolve) => (resolveExited = resolve))
   const prompts: string[] = []
-  const inputs: unknown[] = []
+  const inputs: Parameters<HostHandle['prompt']>[0][] = []
   const end = (exit: HostExit) => {
     if (state === 'stopped' || state === 'crashed') return
     state = exit.reason
@@ -1753,6 +1753,114 @@ describe('edit and regenerate (ADR-0046)', () => {
       manager.editMessage({ sessionId, messageId: 'missing', content: text('x') }),
     ).toThrow(expect.objectContaining({ code: 'rpc.invalid_params' }))
     expect(hosts.length).toBeGreaterThan(0)
+  })
+})
+
+describe('attachments (ADR-0052)', () => {
+  const image = (blobRef: string, data?: string) => ({
+    type: 'image' as const,
+    blobRef,
+    mimeType: 'image/png',
+    ...(data === undefined ? {} : { data }),
+  })
+  const file = {
+    type: 'file' as const,
+    blobRef: 'b2',
+    name: 'a.md',
+    mimeType: 'text/markdown',
+    size: 3,
+  }
+
+  it('落库时去掉图片 base64，模型侧按 blob 引用填回内容；文件部分不进模型输入', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const readBlob = vi.fn(async (hash: string) =>
+      hash === 'b1' ? new Uint8Array([1, 2]) : undefined,
+    )
+    const { manager } = setup(supervisor, { readBlob })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+
+    manager.prompt({ sessionId, content: [image('b1', 'AQI='), file], context: 'ctx' })
+    const user = published.find((event) => event.type === 'message.user')
+    expect(user?.payload).toMatchObject({
+      content: [image('b1'), file],
+      context: 'ctx',
+    })
+    expect(JSON.stringify(user)).not.toContain('AQI=')
+
+    await flush()
+    expect(hosts[0]?.inputs[0]?.content).toEqual([
+      image('b1', 'AQI='),
+      { type: 'text', text: 'ctx' },
+    ])
+    expect(readBlob).toHaveBeenCalledWith('b1')
+  })
+
+  it('读不到图片时保持引用，不影响发送', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor, { readBlob: vi.fn(async () => undefined) })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: [image('b1')] })
+    await flush()
+    expect(hosts[0]?.inputs[0]?.content).toEqual([image('b1')])
+  })
+
+  it('只有文件附件、没有文字时，模型看到占位文字', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const { manager } = setup(supervisor)
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: [file] })
+    await flush()
+    expect(hosts[0]?.inputs[0]?.content).toEqual([{ type: 'text', text: '[attached file]' }])
+  })
+
+  it('运行中引导与编辑重发都按引用填回图片；重建的历史同样带上', async () => {
+    const { supervisor, hosts } = fakeSupervisor()
+    const readBlob = vi.fn(async (hash: string) =>
+      hash === 'b1' ? new Uint8Array([1, 2]) : undefined,
+    )
+    const { manager } = setup(supervisor, { readBlob })
+    const { sessionId } = manager.create({ projectPath: '/work' })
+    manager.prompt({ sessionId, content: [image('b1')] })
+    await flush()
+    const runId = published.find((event) => event.type === 'message.user')!.runId
+    startTurn(sessionId, runId, 't1')
+    const steered = manager.prompt({ sessionId, content: [image('b1')] })
+    await flush()
+    expect(hosts[0]?.inputs.at(-1)).toMatchObject({
+      messageId: steered.messageId,
+      content: [image('b1', 'AQI=')],
+      send: 'steer',
+    })
+    finishTurn(sessionId, runId, 't1')
+
+    manager.prompt({ sessionId, content: [image('b1')] })
+    await flush()
+    startTurn(sessionId, runId, 't2', false)
+    finishTurn(sessionId, runId, 't2')
+
+    const users = published.filter((event) => event.type === 'message.user')
+    const edited = manager.editMessage({
+      sessionId,
+      messageId: users[2]!.payload.messageId,
+      content: [image('b1'), file],
+      context: 'file-context',
+    })
+    await flush()
+    expect(hosts[1]?.init.history).toEqual([
+      { role: 'user', content: [image('b1', 'AQI=')], ts: 1_000, turnId: 't1' },
+      { role: 'user', content: [image('b1', 'AQI=')], ts: 1_000 },
+    ])
+    expect(hosts[1]?.inputs[0]).toMatchObject({
+      messageId: edited.messageId,
+      content: [image('b1', 'AQI='), { type: 'text', text: 'file-context' }],
+    })
+    expect(
+      published.filter((event) => event.type === 'message.user').at(-1)?.payload,
+    ).toMatchObject({
+      messageId: edited.messageId,
+      content: [image('b1'), file],
+      context: 'file-context',
+    })
   })
 })
 

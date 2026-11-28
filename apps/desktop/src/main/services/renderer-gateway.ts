@@ -23,8 +23,9 @@ import {
   type EventEnvelope,
   type RpcChannel,
   type ResolvedMention,
-  type RpcError,
+  RpcError,
   type SkillCatalogEntry,
+  type ContentPart,
 } from '@cairn/protocol'
 import type { z } from 'zod'
 import type { CredentialCommands } from './credential-store.js'
@@ -32,6 +33,7 @@ import type { SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { FileCommands } from './file-service.js'
 import type { MentionCommands } from './mention-service.js'
+import type { AttachmentService } from './attachment-service.js'
 import type { SkillCommands } from './skill-service.js'
 import type { McpCommands } from './mcp-service.js'
 import type { HubCommands } from './hub-service.js'
@@ -225,6 +227,8 @@ export interface RendererGatewayOptions {
   readonly files: FileCommands
   /** 输入框的 `@` 引用（ADR-0037）：候选搜索与发送时展开。省略时 `fs.search` 返回空。 */
   readonly mentions?: MentionCommands | undefined
+  /** 图片附件（ADR-0052）：保存粘贴的截图与读取缩略图。省略时相关请求报 `attachment.unavailable`。 */
+  readonly attachments?: AttachmentService | undefined
   readonly settings: SettingsCommands
   /** 凭据命令（M1-03b）：界面只能写入、删除与查询是否已配置。 */
   readonly credentials: CredentialCommands
@@ -356,7 +360,7 @@ type Timer = ReturnType<typeof setTimeout>
 export function createRendererGateway(options: RendererGatewayOptions): RendererGateway {
   const { appInfo, events, commands, projects, files, settings, credentials, providers } = options
   const { changes, checkpoints, approvals, questions, memories, permissions, skills, mcp } = options
-  const { hub, mentions } = options
+  const { hub, mentions, attachments } = options
   const { agents, teams, diagnostics, activity, changeSets } = options
   const { sandbox } = options
   const { update, autofix } = options
@@ -464,8 +468,17 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
         mentions ? mentions.search(params) : { entries: [], truncated: false },
       )
       endpoint.handle('fs.exists', (params) => files.exists(params))
+      endpoint.handle('attachment.save', (params) => {
+        if (!attachments) throw new RpcError('attachment.unavailable')
+        return attachments.save(params)
+      })
+      endpoint.handle('attachment.read', (params) => {
+        if (!attachments) throw new RpcError('attachment.unavailable')
+        return attachments.read(params)
+      })
       /**
        * 展开一次输入里的引用（ADR-0037）：`@` 文件、`/技能名` 与 `@Agent名`。
+       * 附件（ADR-0052）的文字也在这里抽取，和引用一样只给模型看、随消息落库。
        * 普通发送与编辑重发共用，保证两条路径给模型的上下文一致。
        */
       async function expandPromptInput(
@@ -474,6 +487,7 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
           z.output<Requests['session.prompt']['params']>,
           'mentions' | 'skills' | 'agents'
         >,
+        content: readonly ContentPart[] = [],
       ) {
         const contexts: string[] = []
         let resolvedMentions: ResolvedMention[] | undefined
@@ -502,6 +516,13 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
         )
         if (agentExpansion.context !== undefined) contexts.push(agentExpansion.context)
 
+        // 文件附件（ADR-0052）：发送时抽取文字，作为这一轮输入的快照落库。
+        const files = content.filter((part) => part.type === 'file')
+        if (attachments !== undefined && files.length > 0) {
+          const attachmentContext = await attachments.expand(files)
+          if (attachmentContext !== undefined) contexts.push(attachmentContext)
+        }
+
         return {
           ...(resolvedMentions !== undefined && resolvedMentions.length > 0
             ? { mentions: resolvedMentions }
@@ -522,11 +543,15 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
         }) =>
           commands.prompt({
             ...params,
-            ...(await expandPromptInput(params.sessionId, {
-              mentions: requested,
-              skills: requestedSkills,
-              agents: requestedAgents,
-            })),
+            ...(await expandPromptInput(
+              params.sessionId,
+              {
+                mentions: requested,
+                skills: requestedSkills,
+                agents: requestedAgents,
+              },
+              params.content,
+            )),
           }),
       )
       endpoint.handle(
@@ -539,11 +564,15 @@ export function createRendererGateway(options: RendererGatewayOptions): Renderer
         }) =>
           commands.editMessage({
             ...params,
-            ...(await expandPromptInput(params.sessionId, {
-              mentions: requested,
-              skills: requestedSkills,
-              agents: requestedAgents,
-            })),
+            ...(await expandPromptInput(
+              params.sessionId,
+              {
+                mentions: requested,
+                skills: requestedSkills,
+                agents: requestedAgents,
+              },
+              params.content,
+            )),
           }),
       )
       endpoint.handle('session.regenerate', (params) => commands.regenerate(params))

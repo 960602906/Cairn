@@ -110,6 +110,16 @@ function setup(
     return {}
   })
   const api = { ready: () => Promise.resolve(), request, on: () => () => {} } as unknown as MainApi
+  // 附件保存走 window.cairn（preload 桥）；测试里把同一组 handler 挂回去。
+  ;(window as { cairn?: unknown }).cairn = {
+    request: async (method: string, params: unknown) => ({
+      ok: true,
+      result: await request(method, params),
+    }),
+    filePaths: {
+      fromFile: (file: File) => (file as File & { path?: string }).path,
+    },
+  }
   const store = createSessionStore(api)
   render(<App i18n={createI18n('zh-CN')} store={store} />)
   return { request }
@@ -490,6 +500,123 @@ describe('NewSession composer parity', () => {
     }
     fireEvent.drop(input, { dataTransfer: external })
     expect(input.value).toBe('看 @docs/a.md @src/ ')
+  })
+})
+
+describe('NewSession 附件（ADR-0052）', () => {
+  it('粘贴没有路径的文件：保存为附件并显示，发送时随输入带上', async () => {
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      {},
+      {
+        'attachment.save': () => ({
+          blobRef: 'b1',
+          kind: 'file',
+          name: '报告.pdf',
+          mimeType: 'application/pdf',
+          size: 2048,
+        }),
+      },
+    )
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    fireEvent.paste(input, {
+      clipboardData: {
+        files: [new File([new Uint8Array([1, 2, 3])], '报告.pdf', { type: 'application/pdf' })],
+        items: [],
+        getData: () => '',
+      },
+    })
+    expect(await screen.findByText('报告.pdf')).toBeTruthy()
+    expect(screen.getByText('2.0 KB')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith('session.prompt', {
+        sessionId: 's1',
+        content: [
+          {
+            type: 'file',
+            blobRef: 'b1',
+            name: '报告.pdf',
+            mimeType: 'application/pdf',
+            size: 2048,
+          },
+        ],
+      }),
+    )
+    expect(request).toHaveBeenCalledWith('session.create', {
+      projectPath: '/work',
+      title: undefined,
+    })
+  })
+
+  it('粘贴截图：显示缩略图，移除后可以空手发送', async () => {
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      {},
+      {
+        'attachment.save': () => ({
+          blobRef: 'b2',
+          kind: 'image',
+          name: '截图.png',
+          mimeType: 'image/png',
+          size: 8,
+        }),
+      },
+    )
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    fireEvent.paste(input, {
+      clipboardData: {
+        files: [new File([new Uint8Array([137, 80, 78, 71])], '截图.png', { type: 'image/png' })],
+        items: [],
+        getData: () => '',
+      },
+    })
+    await screen.findByAltText('截图.png')
+    fireEvent.click(screen.getByLabelText('移除附件'))
+    expect(screen.queryByAltText('截图.png')).toBeNull()
+    // 附件和文字都没有时发送按钮禁用，不会创建空会话。
+    expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(request).not.toHaveBeenCalledWith('session.create', expect.anything())
+  })
+
+  it('拖入文件：有路径的走 @ 引用，没有路径的存成附件', async () => {
+    const { request } = setup(
+      {},
+      { sessionId: 's1' },
+      {},
+      {
+        'attachment.save': () => ({
+          blobRef: 'b3',
+          kind: 'file',
+          name: '笔记.md',
+          mimeType: 'text/markdown',
+          size: 10,
+        }),
+      },
+    )
+    const input = (await screen.findByPlaceholderText('有什么可以帮你？')) as HTMLTextAreaElement
+    const fromPath = { path: '/work/a.txt', type: 'text/plain' } as unknown as File
+    fireEvent.drop(input, {
+      dataTransfer: {
+        types: ['Files'],
+        files: [fromPath],
+        getData: () => '',
+      },
+    })
+    await waitFor(() => expect(input.value).toContain('a.txt'))
+    expect(request).not.toHaveBeenCalledWith('attachment.save', expect.anything(), undefined)
+
+    fireEvent.drop(input, {
+      dataTransfer: {
+        types: ['Files'],
+        files: [new File([new Uint8Array([1, 2])], '笔记.md', { type: 'text/markdown' })],
+        getData: () => '',
+      },
+    })
+    expect(await screen.findByText('笔记.md')).toBeTruthy()
   })
 })
 

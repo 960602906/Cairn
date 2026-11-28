@@ -101,6 +101,7 @@ import {
 import type { z } from 'zod'
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { MainApi } from './api.js'
+import { attachmentPart, type DraftAttachment } from './composer-attachments.js'
 import { extractMentions } from './composer-tokens.js'
 
 type Requests = (typeof MainForRenderer)['requests']
@@ -243,6 +244,8 @@ export interface SessionActions {
       readonly skills?: readonly string[]
       readonly agents?: readonly PromptAgent[]
       readonly agentNames?: readonly string[]
+      /** 待发送的附件（ADR-0052）；只有附件、没有文字也可以发送。 */
+      readonly attachments?: readonly DraftAttachment[]
     },
   ): Promise<boolean>
   /**
@@ -255,6 +258,8 @@ export interface SessionActions {
     references?: {
       readonly agents?: readonly PromptAgent[]
       readonly agentNames?: readonly string[]
+      /** 原消息里的附件；编辑文字时保留它们（ADR-0052）。 */
+      readonly attachments?: readonly DraftAttachment[]
     },
   ): Promise<boolean>
   /** 重新生成这一轮的回复：回退这一轮并按原输入重新开始。失败时返回 false。 */
@@ -1099,8 +1104,13 @@ export function createSessionStore(api: MainApi): SessionStore {
       async sendPrompt(text, mode = 'normal', references) {
         const sessionId = get().activeSessionId
         const trimmed = text.trim()
-        if (sessionId === undefined || trimmed === '') return false
-        const content: ContentPart[] = [{ type: 'text', text: trimmed }]
+        if (sessionId === undefined) return false
+        // 附件（ADR-0052）：图片作为内容片段直接给模型；文件在发送时由主进程抽取文字。
+        const content: ContentPart[] = [
+          ...(trimmed === '' ? [] : [{ type: 'text' as const, text: trimmed }]),
+          ...(references?.attachments ?? []).map(attachmentPart),
+        ]
+        if (content.length === 0) return false
         // `@` 文件引用由主进程读出内容附给模型（ADR-0037）；读不到的引用主进程会忽略。
         // `@Agent名` 不算文件引用，由 `agentNames` 排除。
         const mentions = extractMentions(trimmed, references?.agentNames)
@@ -1131,16 +1141,21 @@ export function createSessionStore(api: MainApi): SessionStore {
       async editMessage(messageId, text, references) {
         const sessionId = get().activeSessionId
         const trimmed = text.trim()
-        if (sessionId === undefined || trimmed === '') return false
+        if (sessionId === undefined) return false
         // 编辑后的文本可能删掉或新增了 `@` 引用；按新文本重新提取，和输入框发送走同一套展开。
         const mentions = extractMentions(trimmed, references?.agentNames)
         const agents = references?.agents ?? []
+        const content: ContentPart[] = [
+          ...(trimmed === '' ? [] : [{ type: 'text' as const, text: trimmed }]),
+          ...(references?.attachments ?? []).map(attachmentPart),
+        ]
+        if (content.length === 0) return false
         setAwaiting(sessionId, true)
         const sent = await run(() =>
           api.request('session.editMessage', {
             sessionId,
             messageId,
-            content: [{ type: 'text', text: trimmed }],
+            content,
             ...(mentions.length > 0 ? { mentions } : {}),
             ...(agents.length > 0 ? { agents: agents.slice(0, MAX_PROMPT_AGENTS) } : {}),
           }),

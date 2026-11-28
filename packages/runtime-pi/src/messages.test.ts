@@ -341,6 +341,28 @@ describe('转换细节', () => {
     })
   })
 
+  it('带内容的图片直接作为图片发给模型，文件附件以占位文字代替（ADR-0052）', () => {
+    const [user] = toPiMessages(
+      [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', blobRef: 'b1', mimeType: 'image/png', data: 'AQID' },
+            { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+          ],
+          ts: 1,
+        },
+      ],
+      target,
+    )
+    expect(user).toMatchObject({
+      content: [
+        { type: 'image', data: 'AQID', mimeType: 'image/png' },
+        { type: 'text', text: '[attached file: a.pdf]' },
+      ],
+    })
+  })
+
   it('工具参数不是对象时传空对象；找不到调用时工具名为 unknown', () => {
     const pi = toPiMessages(
       [

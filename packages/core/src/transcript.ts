@@ -13,6 +13,7 @@ interface TranscriptLabels {
   readonly user: string
   readonly assistant: string
   readonly image: string
+  readonly file: (name: string) => string
   readonly incomplete: string
   readonly tools: (names: string) => string
   readonly untitled: string
@@ -23,6 +24,7 @@ const LABELS: Record<TranscriptLocale, TranscriptLabels> = {
     user: '用户',
     assistant: '助手',
     image: '[图片]',
+    file: (name) => `[附件：${name}]`,
     incomplete: '（回复未完成）',
     tools: (names) => `工具调用：${names}`,
     untitled: '未命名会话',
@@ -31,6 +33,7 @@ const LABELS: Record<TranscriptLocale, TranscriptLabels> = {
     user: 'User',
     assistant: 'Assistant',
     image: '[image]',
+    file: (name) => `[file: ${name}]`,
     incomplete: '(reply incomplete)',
     tools: (names) => `Tool calls: ${names}`,
     untitled: 'Untitled chat',
@@ -45,7 +48,8 @@ export interface TranscriptOptions {
 }
 
 function partText(part: ContentPart, labels: TranscriptLabels): string {
-  return part.type === 'text' ? part.text : labels.image
+  if (part.type === 'text') return part.text
+  return part.type === 'image' ? labels.image : labels.file(part.name)
 }
 
 /** 工具调用名称按首次出现顺序汇总；重复调用显示次数，如 `Read`、`Bash×2`。 */

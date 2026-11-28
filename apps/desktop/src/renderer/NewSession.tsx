@@ -38,6 +38,14 @@ import {
   writeNewSessionProject,
   writeNewSessionTeam,
 } from './composer-drafts.js'
+import { ComposerAttachments } from './ComposerAttachments.js'
+import {
+  droppedAttachmentFiles,
+  MAX_PROMPT_ATTACHMENTS,
+  pastedAttachmentFiles,
+  saveAttachment,
+  type PendingAttachment,
+} from './composer-attachments.js'
 import { ComposerHighlight } from './ComposerHighlight.js'
 import {
   availableCommands,
@@ -157,6 +165,9 @@ export function NewSession({
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
   const [planMode, setPlanMode] = useState(restored.draft.planMode)
   const [text, setText] = useState(restored.draft.text)
+  const [attachments, setAttachments] = useState<readonly PendingAttachment[]>(
+    restored.draft.attachments,
+  )
   const [busy, setBusy] = useState(false)
   const [skills, setSkills] = useState<readonly SkillSummary[]>([])
   const [commandIndex, setCommandIndex] = useState(0)
@@ -338,10 +349,15 @@ export function NewSession({
     return () => clearTimeout(timer)
   }, [dropNotice])
 
-  // 草稿与计划模式随输入实时记下：去设置页再回来时输入框是重新挂载的，据此恢复。
+  // 草稿、计划模式与附件随输入实时记下：去设置页再回来时输入框是重新挂载的，据此恢复。
+  // 图片预览是本地 data URL，只留在内存里。
   useEffect(() => {
-    writeComposerDraft(NEW_SESSION_DRAFT_KEY, { text, planMode })
-  }, [text, planMode])
+    writeComposerDraft(NEW_SESSION_DRAFT_KEY, {
+      text,
+      planMode,
+      attachments: attachments.map(({ preview: _preview, ...attachment }) => attachment),
+    })
+  }, [text, planMode, attachments])
 
   useEffect(() => {
     setCommandIndex(0)
@@ -415,11 +431,36 @@ export function NewSession({
     })
   }
 
+  /** 粘贴 / 拖入的附件：先保存到主进程，再挂到输入框上方；失败时提示。 */
+  const addAttachments = async (files: readonly File[]) => {
+    if (files.length === 0) return
+    const room = MAX_PROMPT_ATTACHMENTS - attachments.length
+    if (room <= 0) {
+      setDropNotice('input.attachment.tooMany')
+      return
+    }
+    if (files.length > room) setDropNotice('input.attachment.tooMany')
+    const results = await Promise.all(files.slice(0, room).map((file) => saveAttachment(file)))
+    const error = results.find((result) => 'error' in result)
+    if (error !== undefined && 'error' in error) setDropNotice(error.error)
+    const added = results.flatMap((result) => ('attachment' in result ? [result.attachment] : []))
+    if (added.length === 0) return
+    setAttachments((current) => {
+      const existing = new Set(current.map((attachment) => attachment.blobRef))
+      return [...current, ...added.filter((attachment) => !existing.has(attachment.blobRef))].slice(
+        0,
+        MAX_PROMPT_ATTACHMENTS,
+      )
+    })
+  }
+
   /** 创建会话并发出第一轮。`parsed` 来自共享的草稿解析，两边行为一致。 */
   const sendParsed = async (parsed: ParsedPrompt) => {
     const path = projectPath.trim()
     const draft = parsed.draft.trim()
-    if (path === '' || draft === '' || busy || model === undefined) return
+    if (path === '' || (draft === '' && attachments.length === 0) || busy || model === undefined) {
+      return
+    }
     setBusy(true)
     // 从这里到第一条消息发出为止，会话已经选中但消息区还是空的：
     // 告诉外层别切走，否则欢迎屏会闪一下空状态。
@@ -446,10 +487,12 @@ export function NewSession({
       agents: extractAgents(draft, agentMentions),
       agentNames: agentMentions.map((item) => item.name),
       skills: [...parsed.skills],
+      attachments,
     })
     // 这条草稿已经发出去了：清掉，免得下次回到新对话页又出现一遍。
     setText('')
     setPlanMode(false)
+    setAttachments([])
     clearComposerDraft(NEW_SESSION_DRAFT_KEY)
     setBusy(false)
     onCreatingChange?.(false)
@@ -657,13 +700,25 @@ export function NewSession({
               // 其它拖入（如选中的文字）保持浏览器默认行为。
               if (!event.dataTransfer.types.includes('Files')) return
               event.preventDefault()
-              insertExternalFiles(externalDroppedFiles(event, window.cairn?.filePaths?.fromFile))
+              const paths = externalDroppedFiles(event, window.cairn?.filePaths?.fromFile)
+              if (paths.length > 0) {
+                insertExternalFiles(paths)
+                return
+              }
+              // 没有磁盘路径的文件（浏览器拖来的图片、文档）作为附件保存。
+              void addAttachments(droppedAttachmentFiles(event, window.cairn?.filePaths?.fromFile))
             }}
             onPaste={(event) => {
               const files = pastedFilePaths(event, window.cairn?.filePaths?.fromFile)
-              if (files.length === 0) return
+              if (files.length > 0) {
+                event.preventDefault()
+                insertExternalFiles(files)
+                return
+              }
+              const attached = pastedAttachmentFiles(event, window.cairn?.filePaths?.fromFile)
+              if (attached.length === 0) return
               event.preventDefault()
-              insertExternalFiles(files)
+              void addAttachments(attached)
             }}
             className={cn(
               'relative rounded-[16px] border border-hair2 bg-raise px-4 pt-3.5 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
@@ -678,6 +733,14 @@ export function NewSession({
                 {t('input.dropFiles')}
               </div>
             )}
+            <ComposerAttachments
+              attachments={attachments}
+              onRemove={(blobRef) =>
+                setAttachments((current) =>
+                  current.filter((attachment) => attachment.blobRef !== blobRef),
+                )
+              }
+            />
             <div className="relative">
               <textarea
                 ref={textarea}
@@ -763,7 +826,10 @@ export function NewSession({
                   aria-label={t('input.send')}
                   title={t('input.send')}
                   disabled={
-                    busy || projectPath.trim() === '' || text.trim() === '' || model === undefined
+                    busy ||
+                    projectPath.trim() === '' ||
+                    (text.trim() === '' && attachments.length === 0) ||
+                    model === undefined
                   }
                   onClick={submit}
                   className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-ink text-ink-fg outline-none transition-opacity hover:opacity-85 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-25"

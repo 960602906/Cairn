@@ -11,6 +11,7 @@ import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
 import { codeBlockOf, Markdown } from './Markdown.js'
 import { fileRefCandidates, parseFileRef } from './file-refs.js'
+import { clearAttachmentPreviews } from './composer-attachments.js'
 import { MessageStream, turnFooters } from './MessageStream.js'
 
 afterEach(cleanup)
@@ -2521,6 +2522,7 @@ describe('编辑重发与重新生成（ADR-0046）', () => {
     expect(editMessage).toHaveBeenCalledWith('u1', '改过的问题', {
       agents: [],
       agentNames: [],
+      attachments: [],
     })
   })
 
@@ -2557,6 +2559,93 @@ describe('编辑重发与重新生成（ADR-0046）', () => {
         expect((button as HTMLButtonElement).disabled).toBe(true)
       }
     }
+  })
+
+  it('渲染图片与文件附件：文件显示名称大小，图片按 blob 读回（ADR-0052）', async () => {
+    clearAttachmentPreviews()
+    const attachmentView = () =>
+      view([
+        ...START,
+        ev(5, 'message.assistant.completed', { messageId: 'a1', content: text('收到'), model }),
+        ev(6, 'turn.completed', { durationMs: 5 }),
+        ev(
+          7,
+          'message.user',
+          {
+            messageId: 'u2',
+            content: [
+              { type: 'image', blobRef: 'b1', mimeType: 'image/png' },
+              {
+                type: 'file',
+                blobRef: 'b2',
+                name: 'a.pdf',
+                mimeType: 'application/pdf',
+                size: 2048,
+              },
+            ],
+          },
+          't2',
+        ),
+        ev(8, 'turn.started', {}, 't2'),
+      ])
+
+    const mainApi = {
+      request: vi.fn(async () => ({ ok: true, result: { data: 'AQID' } })),
+    }
+    vi.stubGlobal('cairn', mainApi)
+    renderStream(attachmentView())
+
+    // 文件附件是名称与大小的芯片；图片先从占位开始。
+    expect(screen.getByText('a.pdf')).toBeTruthy()
+    expect(screen.getByText('2.0 KB')).toBeTruthy()
+    await screen.findByRole('img')
+    expect(screen.getByRole('img').getAttribute('src')).toBe('data:image/png;base64,AQID')
+    expect(mainApi.request).toHaveBeenCalledWith('attachment.read', { blobRef: 'b1' }, undefined)
+    vi.unstubAllGlobals()
+    clearAttachmentPreviews()
+  })
+
+  it('编辑带附件的消息时保留附件（ADR-0052）', async () => {
+    clearAttachmentPreviews()
+    const editMessage = vi.fn(async () => true)
+    const attachmentView = () =>
+      view([
+        ...START,
+        ev(5, 'message.assistant.completed', { messageId: 'a1', content: text('收到'), model }),
+        ev(6, 'turn.completed', { durationMs: 5 }),
+        ev(
+          7,
+          'message.user',
+          {
+            messageId: 'u2',
+            content: [
+              { type: 'text', text: '看这个' },
+              { type: 'image', blobRef: 'b1', mimeType: 'image/png' },
+              { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+            ],
+          },
+          't2',
+        ),
+        ev(8, 'turn.started', {}, 't2'),
+      ])
+    renderStream(attachmentView(), { editMessage })
+    const edits = screen.getAllByRole('button', { name: '编辑消息' })
+    await userEvent.click(edits[1]!)
+
+    const box = screen.getByRole('textbox', { name: '编辑消息' })
+    expect((box as HTMLTextAreaElement).value).toBe('看这个')
+    await userEvent.click(screen.getByRole('button', { name: '保存并重发' }))
+    expect(editMessage).toHaveBeenCalledWith(
+      'u2',
+      '看这个',
+      expect.objectContaining({
+        attachments: [
+          { blobRef: 'b1', kind: 'image', name: 'image.png', mimeType: 'image/png', size: 0 },
+          { blobRef: 'b2', kind: 'file', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+        ],
+      }),
+    )
+    clearAttachmentPreviews()
   })
 })
 

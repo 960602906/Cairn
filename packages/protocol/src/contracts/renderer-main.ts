@@ -7,7 +7,9 @@ import {
   APPROVAL_FEEDBACK_MAX_LENGTH,
   INSTRUCTIONS_MAX_LENGTH,
   MAX_EXISTS_PATHS,
+  MAX_FILE_BYTES,
   MAX_PROMPT_AGENTS,
+  MAX_PROMPT_ATTACHMENTS,
   MAX_PROMPT_MENTIONS,
   MAX_PROMPT_SKILLS,
   PROJECT_NAME_MAX_LENGTH,
@@ -188,10 +190,30 @@ export type FileSearchEntry = z.infer<typeof FileSearchEntry>
 export {
   APPROVAL_FEEDBACK_MAX_LENGTH,
   MAX_EXISTS_PATHS,
+  MAX_FILE_BYTES,
+  MAX_IMAGE_BYTES,
   MAX_PROMPT_AGENTS,
+  MAX_PROMPT_ATTACHMENTS,
   MAX_PROMPT_MENTIONS,
   MAX_PROMPT_SKILLS,
 } from '../limits.js'
+
+/** base64 编码后一个附件的最大长度（`MAX_FILE_BYTES` 按 3 字节一组向上取整）。 */
+export const MAX_ATTACHMENT_DATA_CHARS = Math.ceil(MAX_FILE_BYTES / 3) * 4
+
+/**
+ * 一轮输入的完整内容：文字 + 粘贴的附件（截图与文件）。附件数量受 `MAX_PROMPT_ATTACHMENTS`
+ * 限制，超过时由 schema 直接拒绝（界面在粘贴时也会提示）。
+ */
+export const PromptContent = z
+  .array(ContentPart)
+  .min(1)
+  .refine(
+    (parts) =>
+      parts.filter((part) => part.type === 'image' || part.type === 'file').length <=
+      MAX_PROMPT_ATTACHMENTS,
+    { message: `at most ${MAX_PROMPT_ATTACHMENTS} attachments` },
+  )
 
 /** 界面语言（ADR-0013）；与 `@cairn/i18n` 的 `SUPPORTED_LOCALES` 一致。 */
 export const Locale = z.enum(['zh-CN', 'en-US'])
@@ -612,12 +634,38 @@ export const MainForRenderer = defineSide({
       }),
       result: z.object({}),
     },
+    /**
+     * 保存一个粘贴 / 拖入的附件（ADR-0052）。`data` 是 base64，按内容寻址写入 blob 存储，
+     * 相同内容只存一份。图片（PNG、JPEG、WebP、GIF，按文件头识别）作为图片附件直接给模型看；
+     * 其余文件在发送时抽取文字。超过 `MAX_FILE_BYTES` 报 `attachment.too_large`，
+     * 图片超过 `MAX_IMAGE_BYTES` 同样报 `attachment.too_large`。
+     */
+    'attachment.save': {
+      params: z.object({
+        name: z.string().min(1).max(255),
+        mimeType: z.string().min(1).max(255),
+        data: z.string().min(1).max(MAX_ATTACHMENT_DATA_CHARS),
+      }),
+      result: z.object({
+        blobRef: Id,
+        kind: z.enum(['image', 'file']),
+        name: z.string().min(1).max(255),
+        mimeType: z.string().min(1).max(255),
+        size: z.number().int().nonnegative(),
+      }),
+    },
+    /** 读取附件内容（界面显示图片缩略图）；返回 base64。不存在时报 `attachment.not_found`。 */
+    'attachment.read': {
+      params: z.object({ blobRef: Id }),
+      result: z.object({ data: z.string() }),
+    },
     'session.list': {
       params: z.object({ includeArchived: z.boolean().optional() }),
       result: z.object({ sessions: z.array(SessionSummary) }),
     },
     /**
      * 发送用户输入。`mode: 'plan'`（M3-05）时这一轮只读并提出计划；省略为正常执行。
+     * `content` 是文字与粘贴的图片（`attachment.save` 保存后的 blob 引用）。
      * `mentions` 是输入框里的 `@` 引用（ADR-0037），主进程读取后作为上下文附在这一轮输入之后。
      * `skills` 是 `/技能名` 指定的技能，`agents` 是 `@Agent名` 要求委派的 Agent，同样由主进程
      * 校验后展开成只给模型看的上下文；展开成功的那些随 `message.user` 落库，供界面显示标记。
@@ -625,7 +673,7 @@ export const MainForRenderer = defineSide({
     'session.prompt': {
       params: z.object({
         sessionId: Id,
-        content: z.array(ContentPart).min(1),
+        content: PromptContent,
         mode: PromptMode.optional(),
         mentions: z.array(PromptMention).max(MAX_PROMPT_MENTIONS).optional(),
         skills: z.array(PromptSkill).max(MAX_PROMPT_SKILLS).optional(),
@@ -642,7 +690,7 @@ export const MainForRenderer = defineSide({
       params: z.object({
         sessionId: Id,
         messageId: Id,
-        content: z.array(ContentPart).min(1),
+        content: PromptContent,
         mentions: z.array(PromptMention).max(MAX_PROMPT_MENTIONS).optional(),
         skills: z.array(PromptSkill).max(MAX_PROMPT_SKILLS).optional(),
         agents: z.array(PromptAgent).max(MAX_PROMPT_AGENTS).optional(),

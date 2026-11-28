@@ -45,9 +45,13 @@ export function userTurnContent(payload: {
   readonly content: readonly ContentPart[]
   readonly context?: string | undefined
 }): ContentPart[] {
-  return payload.context
-    ? [...payload.content, { type: 'text', text: payload.context }]
-    : [...payload.content]
+  // 文件附件（ADR-0052）的正文已经抽取到 context 里；内容片段只用于界面显示，不单独发给模型。
+  const parts = payload.content.filter((part) => part.type !== 'file')
+  const content =
+    parts.length > 0 || payload.context !== undefined
+      ? parts
+      : [{ type: 'text' as const, text: '[attached file]' }]
+  return payload.context ? [...content, { type: 'text', text: payload.context }] : [...content]
 }
 
 export interface RebuildHistoryOptions {

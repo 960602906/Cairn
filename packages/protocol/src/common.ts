@@ -51,10 +51,34 @@ export type RunAgentRef = z.infer<typeof RunAgentRef>
 
 export { isAgentDraftRef } from './agent-ref.js'
 
-/** 消息内容片段（Runtime §17）。图片为预留。 */
+/**
+ * 消息内容片段（Runtime §17）。
+ *
+ * 图片的 `blobRef` 指向主进程的内容寻址 blob 存储（`attachment.save` 写入）。`data` 是 base64，
+ * 只在主进程 → 宿主的传输里填充（ADR-0052）：事件日志与会话视图里的图片片段只有 blob 引用，
+ * 宿主重启后由主进程从 blob 存储重新填入，避免把图片内容写进数据库。
+ */
 export const ContentPart = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
-  z.object({ type: z.literal('image'), blobRef: Id, mimeType: z.string().min(1) }),
+  z.object({
+    type: z.literal('image'),
+    blobRef: Id,
+    mimeType: z.string().min(1),
+    /** base64；仅主进程 → 宿主的传输使用，不落库、不出现在视图里。 */
+    data: z.string().min(1).optional(),
+  }),
+  /**
+   * 文件附件（ADR-0052）：PDF、表格、文档等。内容同样在 blob 存储里，发给模型前由主进程
+   * 抽取成文字附在 `message.user.context`（与 `@` 引用一致，是发送那一刻的快照）；
+   * 这里保留名称、类型与大小，供界面显示附件卡片。
+   */
+  z.object({
+    type: z.literal('file'),
+    blobRef: Id,
+    name: z.string().min(1).max(255),
+    mimeType: z.string().min(1).max(255),
+    size: z.number().int().nonnegative(),
+  }),
 ])
 export type ContentPart = z.infer<typeof ContentPart>
 

@@ -14,6 +14,7 @@ import {
 } from '@cairn/protocol'
 import { createMemoryStorage } from '@cairn/storage'
 import type { CredentialCommands } from './credential-store.js'
+import type { AttachmentService } from './attachment-service.js'
 import { createSessionEventService, type SessionEventService } from './event-service.js'
 import type { ProjectCommands } from './project-service.js'
 import type { SkillCommands } from './skill-service.js'
@@ -126,6 +127,7 @@ let inspect: InspectCommands
 let activity: ActivityCommands
 let backgroundCommands: CommandCommands
 let mentions: MentionCommands | undefined
+let attachments: AttachmentService | undefined
 const approvalListeners = new Set<(sessionId: string) => void>()
 const questionListeners = new Set<(sessionId: string) => void>()
 const activityListeners = new Set<() => void>()
@@ -170,7 +172,10 @@ const APP_INFO = {
 
 function setup(
   eventsOverride?: Partial<SessionEventService>,
-  { withMentions = true }: { withMentions?: boolean } = {},
+  {
+    withMentions = true,
+    withAttachments = true,
+  }: { withMentions?: boolean; withAttachments?: boolean } = {},
 ) {
   mentions = withMentions
     ? {
@@ -182,6 +187,19 @@ function setup(
           mentions: [{ path: 'a.ts', kind: 'file' as const }],
           context: 'ctx',
         })),
+      }
+    : undefined
+  attachments = withAttachments
+    ? {
+        save: vi.fn(async ({ name, data }) => ({
+          blobRef: 'blob-1',
+          kind: 'file' as const,
+          name,
+          mimeType: 'text/plain',
+          size: data.length,
+        })),
+        read: vi.fn(async () => ({ data: 'AAAA' })),
+        expand: vi.fn(async () => '<attachment name="a.md"/>'),
       }
     : undefined
   const storage = createMemoryStorage({ now: () => 1 })
@@ -574,6 +592,7 @@ function setup(
     activity,
     backgroundCommands,
     mentions,
+    attachments,
     mcpStatus: () => () => undefined,
   })
   return connectRenderer()
@@ -672,6 +691,88 @@ describe('coalesceDeltas', () => {
     expect(seqs(coalesceDeltas([at(user('s1', 'a'), 1), at(user('s1', 'b'), 2)]))).toEqual([1, 2])
     expect((merged[3]!.payload as { text: string }).text).toBe('ab')
     expect((merged[6]!.payload as { text: string }).text).toBe('ab')
+  })
+})
+
+describe('createRendererGateway: attachments (ADR-0052)', () => {
+  it('attachment.save / attachment.read 转发给附件服务；未启用时报 unavailable', async () => {
+    const { client } = setup()
+    const saved = await client.request('attachment.save', {
+      name: 'a.txt',
+      mimeType: 'text/plain',
+      data: 'AAAA',
+    })
+    expect(attachments!.save).toHaveBeenCalledWith({
+      name: 'a.txt',
+      mimeType: 'text/plain',
+      data: 'AAAA',
+    })
+    expect(saved).toMatchObject({ blobRef: 'blob-1', kind: 'file', name: 'a.txt' })
+    await client.request('attachment.read', { blobRef: 'blob-1' })
+    expect(attachments!.read).toHaveBeenCalledWith({ blobRef: 'blob-1' })
+
+    const bare = setup({}, { withAttachments: false })
+    await expect(
+      bare.client.request('attachment.save', {
+        name: 'a',
+        mimeType: 'application/octet-stream',
+        data: 'AAAA',
+      }),
+    ).rejects.toMatchObject({ code: 'attachment.unavailable' })
+    await expect(
+      bare.client.request('attachment.read', { blobRef: 'blob-1' }),
+    ).rejects.toMatchObject({ code: 'attachment.unavailable' })
+  })
+
+  it('session.prompt 带文件附件时把抽取文字拼进 context；图片不展开', async () => {
+    const { client } = setup()
+    const file = {
+      type: 'file' as const,
+      blobRef: 'blob-1',
+      name: 'a.md',
+      mimeType: 'text/markdown',
+      size: 3,
+    }
+    const image = { type: 'image' as const, blobRef: 'blob-2', mimeType: 'image/png' }
+    const content = [{ type: 'text' as const, text: '看看这个' }, file, image]
+    await client.request('session.prompt', {
+      sessionId: 's1',
+      content,
+      mentions: [{ path: 'a.ts' }],
+    })
+    expect(attachments!.expand).toHaveBeenCalledWith([file])
+    const call = vi.mocked(commands.prompt).mock.calls.at(-1)?.[0] as Record<string, unknown>
+    expect(call.content).toEqual(content)
+    expect(call.context).toBe('ctx\n\n<attachment name="a.md"/>')
+
+    vi.mocked(attachments!.expand).mockClear()
+    await client.request('session.prompt', { sessionId: 's1', content: [image] })
+    expect(attachments!.expand).not.toHaveBeenCalled()
+  })
+
+  it('session.editMessage 同样展开附件文字', async () => {
+    const { client } = setup()
+    const content = [
+      {
+        type: 'file' as const,
+        blobRef: 'blob-1',
+        name: 'a.md',
+        mimeType: 'text/markdown',
+        size: 3,
+      },
+    ]
+    await client.request('session.editMessage', {
+      sessionId: 's1',
+      messageId: 'm1',
+      content,
+    })
+    expect(attachments!.expand).toHaveBeenCalledWith(content)
+    expect(commands.editMessage).toHaveBeenCalledWith({
+      sessionId: 's1',
+      messageId: 'm1',
+      content,
+      context: '<attachment name="a.md"/>',
+    })
   })
 })
 

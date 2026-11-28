@@ -12,7 +12,9 @@
  * - 工具结果：pi 只区分成功与错误，`CanonicalMessage` 的状态（denied、cancelled 等）存入 `details`，
  *   转换回来时恢复。
  * - 用量：pi 的 `input` 不含缓存部分，`TokenUsage.inputTokens` 含缓存部分（见 protocol 中的说明）。
- * - 图片：`ContentPart` 中的图片只有 blob 引用（预留），暂时以文字占位，接入 blob 存储后再转换。
+ * - 图片（ADR-0052）：主进程在发给宿主前把内容填进 `data`（base64），这里转成 pi 的 `ImageContent`；
+ *   没有 `data` 的图片（如读不到 blob）用文字占位。模型回传的图片（工具结果）仍转成占位文字：
+ *   运行时没有 blob 存储，无法为它生成引用。
  *
  * 助手消息中的块顺序按“推理、正文、工具调用”重建。一次响应内的顺序本来就是如此；
  * 正文与工具调用交错的极少数情况只影响回传时的顺序，不影响配对。
@@ -180,9 +182,13 @@ function toPiToolResult(
 }
 
 function toPiContent(part: ContentPart): TextContent | ImageContent {
-  return part.type === 'text'
-    ? { type: 'text', text: part.text }
-    : { type: 'text', text: IMAGE_PLACEHOLDER }
+  if (part.type === 'text') return { type: 'text', text: part.text }
+  // 文件附件的正文在 context 里（ADR-0052），内容片段本身只是界面用的引用。
+  if (part.type === 'file') return { type: 'text', text: `[attached file: ${part.name}]` }
+  // 主进程在发给宿主前填好 base64；没有内容时用占位文字，保证历史仍能回传。
+  return part.data === undefined
+    ? { type: 'text', text: IMAGE_PLACEHOLDER }
+    : { type: 'image', data: part.data, mimeType: part.mimeType }
 }
 
 function emptyUsage(): PiUsage {

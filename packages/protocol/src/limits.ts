@@ -32,6 +32,15 @@ export const MAX_PROMPT_SKILLS = 5
 /** 一条输入最多点名几个要委派的 Agent。 */
 export const MAX_PROMPT_AGENTS = 5
 
+/** 一条输入最多带几个粘贴的附件（截图与文件合计）。 */
+export const MAX_PROMPT_ATTACHMENTS = 5
+
+/** 一张粘贴图片的大小上限（字节）；主进程保存时检查，界面提前提示。 */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+/** 一个粘贴文件的大小上限（字节）；超过时拒绝，避免把大文件读进内存再编码。 */
+export const MAX_FILE_BYTES = 20 * 1024 * 1024
+
 /** 一次批量检查多少个路径是否存在（助手消息里的行内代码）。 */
 export const MAX_EXISTS_PATHS = 200
 
