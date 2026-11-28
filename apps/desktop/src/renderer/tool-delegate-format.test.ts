@@ -40,6 +40,22 @@ describe('formatDelegateOutput', () => {
   it('returns undefined for an empty JSON object', () => {
     expect(formatDelegateOutput('{}')).toBeUndefined()
   })
+
+  it('returns undefined for JSON null', () => {
+    expect(formatDelegateOutput('null')).toBeUndefined()
+  })
+
+  it('formats usage with only steps', () => {
+    const text = formatDelegateOutput(JSON.stringify({ usage: { steps: 4 } }))
+    expect(text).toBe('steps 4')
+  })
+
+  it('skips empty summary and question strings', () => {
+    const text = formatDelegateOutput(
+      JSON.stringify({ status: 'running', summary: '', question: '', usage: { tokens: 9 } }),
+    )
+    expect(text).toBe('status: running\n\ntokens 9')
+  })
 })
 
 describe('describeToolCall for delegate', () => {
@@ -53,5 +69,11 @@ describe('describeToolCall for delegate', () => {
     expect(description.object).toContain('builtin.explorer')
     expect(description.object).toContain('Explore the project tree')
     expect(description.plain).toBe(true)
+  })
+
+  it('falls back when agent or task is missing', () => {
+    const description = describeToolCall('delegate', { agent: 'builtin.coder' }, t)
+    expect(description.action).toBe('Delegate')
+    expect(description.object).toContain('builtin.coder')
   })
 })

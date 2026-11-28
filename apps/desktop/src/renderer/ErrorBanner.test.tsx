@@ -5,9 +5,52 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createStore } from 'zustand'
 import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
+import type { DiagnosticsSummary } from '@cairn/protocol'
 import { ErrorBanner } from './ErrorBanner.js'
 import type { SessionStore } from './session-store.js'
 import { SessionStoreProvider } from './store-context.js'
+
+const mockDiagnosticsSummary: DiagnosticsSummary = {
+  appVersion: '0.0.0',
+  electronVersion: '0.0.0',
+  build: {
+    schemaVersion: 1,
+    version: '0.0.0',
+    channel: 'dev',
+    commit: 'abc',
+    buildTime: '2026-01-01T00:00:00.000Z',
+    electronVersion: '0.0.0',
+    nodeVersion: '24.0.0',
+    name: 'Cairn',
+    appId: 'com.cairn.desktop',
+    copyright: 'Copyright © Cairn',
+    packaged: false,
+    databaseSchemaVersion: 1,
+  },
+  platform: 'linux',
+  arch: 'x64',
+  logs: { mainLogLines: 0, hostLogLines: 0 },
+  settings: { providersCount: 0, mcpServersCount: 0 },
+  sandbox: {
+    platform: 'linux',
+    mechanism: 'restricted-token',
+    policy: { profile: 'workspace-write', network: 'none' },
+    unavailable: 'deny',
+    capability: {
+      available: true,
+      supported: true,
+      mechanism: 'restricted-token',
+      networkIsolated: false,
+      checks: {
+        restrictedToken: true,
+        lowIntegrity: true,
+        jobObject: true,
+        appContainer: false,
+      },
+    },
+  },
+  exportItems: [],
+}
 
 afterEach(() => cleanup())
 
@@ -53,13 +96,7 @@ describe('ErrorBanner', () => {
     const { store } = renderBanner({ code: 'rpc.timeout', params: { timeoutMs: 1 } })
     act(() => {
       store.setState({
-        diagnosticsSummary: vi.fn(async () => ({
-          app: { name: 'Cairn', version: '0.0.0', commit: 'abc' },
-          platform: { os: 'linux', arch: 'x64' },
-          session: undefined,
-          includeSensitiveContent: false,
-          exportItems: [],
-        })),
+        diagnosticsSummary: vi.fn(async () => mockDiagnosticsSummary),
       })
     })
     await userEvent.click(screen.getByRole('button', { name: 'Export Diagnostics' }))
