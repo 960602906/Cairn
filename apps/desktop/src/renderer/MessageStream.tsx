@@ -221,7 +221,7 @@ function useEnteringIds(ids: readonly string[]): ReadonlySet<string> {
 }
 
 /**
- * 思考过程：一行淡字（“思考 · 一句话摘要”），点开看全文。
+ * 思考过程：收起时显示可换行的摘要（最多两行），点开看全文。
  *
  * 它同时充当执行过程的阶段分隔：连续的工具步骤被思考切成几段，扫读时有了停顿。
  * 正文用 `forceMount` 常驻 DOM、收起时靠高度归零（而不是卸载），这样流式内容和按文本查找都不受影响；
@@ -236,34 +236,34 @@ const Reasoning = memo(function Reasoning({
 }) {
   const { t } = useTranslation('session')
   const [open, setOpen] = useState(false)
-  const firstLine = text.replace(/\s+/g, ' ').trim()
+  const summary = text.replace(/\s+/g, ' ').trim()
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="max-w-full">
       <CollapsibleTrigger
         aria-label={t('message.reasoning')}
-        className="group/reasoning -mx-[7px] grid h-[26px] w-full cursor-pointer grid-cols-[18px_auto_minmax(0,1fr)_14px] items-center gap-x-[7px] rounded-[7px] px-[7px] text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+        className="group/reasoning -mx-[7px] grid min-h-[26px] w-full cursor-pointer grid-cols-[18px_auto_minmax(0,1fr)_14px] items-start gap-x-[7px] rounded-[7px] px-[7px] py-1 text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
       >
-        <span className="flex w-[18px] items-center">
+        <span className="flex h-[18px] w-[18px] items-center">
           <Lightbulb aria-hidden className="size-[13px] shrink-0 text-faint opacity-55" />
         </span>
-        <span className="w-[26px] shrink-0 text-[11px] tracking-[.04em] text-faint opacity-80">
+        <span className="flex h-[18px] w-[26px] shrink-0 items-center text-[11px] tracking-[.04em] text-faint opacity-80">
           {t('message.reasoningShort')}
         </span>
-        <span className="min-w-0 truncate text-[12.5px] text-muted">
-          {firstLine === '' ? (
+        <span className="min-w-0 line-clamp-2 text-[12.5px] leading-[18px] break-words whitespace-normal text-muted">
+          {summary === '' ? (
             live ? (
               <Shimmer>{t('message.reasoning')}</Shimmer>
             ) : (
               t('message.reasoning')
             )
           ) : (
-            firstLine
+            summary
           )}
         </span>
         <ChevronRight
           aria-hidden
           className={cn(
-            'size-3.5 shrink-0 text-faint opacity-0 transition-transform duration-150 group-hover/reasoning:opacity-70',
+            'mt-0.5 size-3.5 shrink-0 text-faint opacity-40 transition-transform duration-150 group-hover/reasoning:opacity-70',
             open && 'rotate-90 opacity-70',
           )}
         />

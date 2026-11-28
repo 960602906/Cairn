@@ -2057,7 +2057,8 @@ function ProviderEditor({
               {saved ? t('providers.editProvider') : t('providers.new')}
             </DialogTitle>
             <p className="mt-0.5 text-note text-muted">
-              {t(`providers.kind.${draft.kind}.name`)} ·{' '}
+              {/* 官方模板用厂商名（DeepSeek / Kimi…），不要用协议 kind（openai）；自定义无模板才退回接口格式名。 */}
+              {template?.displayName ?? t(`providers.kind.${draft.kind}.name`)} ·{' '}
               {t(`providers.source.${sourceOf(draft, catalog)}`)}
             </p>
           </div>

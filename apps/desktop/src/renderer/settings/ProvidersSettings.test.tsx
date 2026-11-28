@@ -328,6 +328,14 @@ describe('ProvidersSettings', () => {
     await waitFor(() => expect(screen.queryAllByRole('dialog', { hidden: true })).toHaveLength(0))
   })
 
+  it('labels official compatible vendors by template name, not protocol kind', async () => {
+    setup()
+    await open()
+    const openai = await addService(/^OpenAI/)
+    expect(within(openai).getByText('OpenAI · 官方')).toBeTruthy()
+    await userEvent.click(within(openai).getByRole('button', { name: '取消' }))
+  })
+
   it('adds an official service with its template prefilled', async () => {
     const { updates, settings } = setup()
     await open()
@@ -337,7 +345,7 @@ describe('ProvidersSettings', () => {
     expect((within(card).getByLabelText('Base URL') as HTMLInputElement).value).toBe(
       'https://api.deepseek.com',
     )
-    expect(within(card).getByText('OpenAI · 官方')).toBeTruthy()
+    expect(within(card).getByText('DeepSeek · 官方')).toBeTruthy()
     expect(within(card).getAllByText('deepseek-flash').length).toBeGreaterThan(0)
     expect(within(card).getAllByText('deepseek-v4-pro').length).toBeGreaterThan(0)
 
@@ -797,7 +805,7 @@ describe('ProvidersSettings', () => {
         .getByRole('link', { name: /获取 API Key/ })
         .getAttribute('href'),
     ).toBe('https://platform.moonshot.cn/console/api-keys')
-    expect(within(card).getByText('OpenAI · 官方')).toBeTruthy()
+    expect(within(card).getByText('Kimi · 官方')).toBeTruthy()
     const key = within(card).getByLabelText('API Key')
     await waitFor(() => expect(document.activeElement).toBe(key))
     expect(within(card).getByText('填入 API Key 后会自动拉取模型列表。')).toBeTruthy()
@@ -854,12 +862,12 @@ describe('ProvidersSettings', () => {
         .getByRole('link', { name: /获取 API Key/ })
         .getAttribute('href'),
     ).toBe('https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key')
-    expect(within(card).getByText('OpenAI · 官方')).toBeTruthy()
-    // 手改地址后不属于任何接入点，来源变为第三方中转
+    expect(within(card).getByText('Qwen · 官方')).toBeTruthy()
+    // 手改地址后不属于任何接入点，来源变为第三方中转；厂商名仍是模板名
     await userEvent.clear(url)
     await userEvent.type(url, 'https://proxy.example.com/v1')
     expect(within(regions).queryByRole('radio', { checked: true })).toBeNull()
-    expect(within(card).getByText('OpenAI · 第三方中转')).toBeTruthy()
+    expect(within(card).getByText('Qwen · 第三方中转')).toBeTruthy()
   })
 
   it('adds a local server without a key and enables its installed models', async () => {
@@ -1008,7 +1016,7 @@ describe('ProvidersSettings', () => {
         .getByRole('link', { name: /获取 API Key/ })
         .getAttribute('href'),
     ).toBe('https://acme.example/keys')
-    expect(within(card).getByText('OpenAI · 官方')).toBeTruthy()
+    expect(within(card).getByText('Acme Gateway · 官方')).toBeTruthy()
     await userEvent.type(within(card).getByLabelText('API Key'), 'sk-acme-0001')
     await userEvent.click(within(card).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(updates).toHaveLength(1))

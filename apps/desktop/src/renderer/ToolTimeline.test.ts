@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
+import type { ToolCallView } from '@cairn/core'
+import type { TFunction } from '@cairn/i18n'
+import type { ToolCall } from '@cairn/protocol'
 import {
+  describeToolCall,
   formatAskUserAnswers,
   formatDuration,
   INPUT_SUMMARY_CHARS,
   isAskUserCancelled,
   previewLines,
+  summarizeActivity,
   summarizeInput,
 } from './ToolTimeline.js'
+
+const t = ((key: string) => key) as unknown as TFunction
 
 describe('summarizeInput', () => {
   it('prefers the command, path or search fields', () => {
@@ -45,6 +52,48 @@ describe('formatDuration', () => {
     expect(formatDuration(5)).toBe('5ms')
     expect(formatDuration(999.4)).toBe('999ms')
     expect(formatDuration(1234)).toBe('1.2s')
+  })
+})
+
+describe('describeToolCall', () => {
+  it('summarises remember with the note content, not raw JSON', () => {
+    const description = describeToolCall(
+      'remember',
+      { scope: 'session', content: '用户指定的测试用令牌：CEDAR-NOVEMBER-42' },
+      t,
+    )
+    expect(description).toEqual({
+      action: 'tool.action.remember',
+      object: '用户指定的测试用令牌：CEDAR-NOVEMBER-42',
+      plain: true,
+    })
+  })
+
+  it('falls back when remember has no usable content', () => {
+    expect(describeToolCall('remember', { scope: 'session', content: '' }, t).object).toBe(
+      '{"scope":"session","content":""}',
+    )
+    expect(describeToolCall('remember', { scope: 'project' }, t).object).toBe('{"scope":"project"}')
+    expect(describeToolCall('remember', null, t).object).toBe('null')
+  })
+})
+
+describe('summarizeActivity', () => {
+  it('returns undefined without tools; otherwise action + object', () => {
+    expect(summarizeActivity([], {}, t)).toBeUndefined()
+    const calls = [{ id: 'c1', name: 'read_file', input: { path: 'a.ts' } }] as ToolCall[]
+    const tools = {
+      c1: { toolCallId: 'c1', status: 'completed', input: { path: 'a.ts' } },
+    } as unknown as Record<string, ToolCallView>
+    expect(summarizeActivity(calls, tools, t)).toBe('tool.action.read_file a.ts')
+  })
+
+  it('uses only the object when the action is empty (load_skill)', () => {
+    const calls = [{ id: 'c1', name: 'load_skill', input: { name: 'git' } }] as ToolCall[]
+    const tools = {
+      c1: { toolCallId: 'c1', status: 'completed', input: { name: 'git' } },
+    } as unknown as Record<string, ToolCallView>
+    expect(summarizeActivity(calls, tools, t)).toBe('git')
   })
 })
 

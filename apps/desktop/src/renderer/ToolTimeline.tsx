@@ -51,6 +51,7 @@ import {
   ASK_USER_TOOL,
   CREATE_TASK_LIST_TOOL,
   PROPOSE_PLAN_TOOL,
+  REMEMBER_TOOL,
   REVISE_PLAN_STEPS_TOOL,
   REVISE_TASK_ITEMS_TOOL,
   UPDATE_PLAN_STEP_TOOL,
@@ -130,6 +131,7 @@ const ACTIONS: ReadonlySet<string> = new Set([
   'load_skill',
   'start_command',
   'ask_user',
+  REMEMBER_TOOL,
 ])
 
 function formatInput(input: unknown): string {
@@ -427,11 +429,23 @@ export function describeToolCall(name: string, args: unknown, t: TFunction): Too
       typeof first === 'string'
         ? truncate(first.replace(/\s+/g, ' ').trim(), INPUT_SUMMARY_CHARS)
         : summarizeInput(args)
+  } else if (name === REMEMBER_TOOL) {
+    // 记忆工具的参数是 { scope, content }：组头与步骤行要显示正文摘要，不要抖整段 JSON。
+    action = t('tool.action.remember')
+    const content = argsRecord['content']
+    object =
+      typeof content === 'string' && content !== ''
+        ? truncate(content.replace(/\s+/g, ' ').trim(), INPUT_SUMMARY_CHARS)
+        : summarizeInput(args)
   } else {
     action = name === 'load_skill' ? '' : ACTIONS.has(name) ? t(`tool.action.${name}`) : name
     object = summarizeInput(args)
   }
-  return { action, object, plain: name === 'load_skill' || planTool }
+  return {
+    action,
+    object,
+    plain: name === 'load_skill' || planTool || name === REMEMBER_TOOL,
+  }
 }
 
 /** 能点开文件预览的工具：参数里的 `path` 就是右侧要打开的文件。 */
