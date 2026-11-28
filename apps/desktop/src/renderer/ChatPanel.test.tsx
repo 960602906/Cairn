@@ -1026,6 +1026,41 @@ describe('ChatPanel', () => {
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
   })
 
+  it('keeps composer-adjacent floating cards inset to the composer content edges', async () => {
+    const { open, store } = setup({ history: HISTORY })
+    await open()
+    act(() => {
+      store.setState({
+        awaitingTurn: { s1: true },
+        questions: {
+          s1: [
+            {
+              questionId: 'q1',
+              toolCallId: 'tc1',
+              questions: [{ id: 'a', question: '选哪个？', options: [{ label: 'A' }] }],
+            },
+          ],
+        },
+      })
+    })
+
+    const composerShell = document.querySelector('[class*="max-w-[880px]"]') as HTMLElement | null
+    expect(composerShell?.className).toMatch(/\bpx-5\b/)
+    expect(composerShell?.className).toMatch(/min-\[1200px\]:px-8/)
+
+    const floatStack = document.querySelector('[data-composer-float-stack]') as HTMLElement | null
+    expect(floatStack).not.toBeNull()
+    // absolute 必须复用外壳的左右边距；inset-x-0 会盖住 padding，比输入框更宽。
+    expect(floatStack?.className).toMatch(/\binset-x-5\b/)
+    expect(floatStack?.className).toMatch(/min-\[1200px\]:inset-x-8/)
+    expect(floatStack?.className).not.toMatch(/\binset-x-0\b/)
+    expect(composerShell?.contains(floatStack)).toBe(true)
+    expect(composerShell?.contains(screen.getByRole('region', { name: '需要你回答' }))).toBe(true)
+
+    // GoalBar / TaskProgress 在文档流内，与 Composer 同属 880px 外壳的内容宽。
+    expect(composerShell?.querySelector('[class*="rounded-[14px]"]')).toBeTruthy()
+  })
+
   it('resets the panel preference when crossing the 1440px dock breakpoint', async () => {
     let wide = false
     const listeners = new Set<() => void>()
