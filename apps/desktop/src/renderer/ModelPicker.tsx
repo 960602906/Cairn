@@ -1,7 +1,7 @@
 /**
  * 输入框与新建会话页的模型选择器。
  *
- * 紧凑触发按钮显示「供应商 · 模型」；打开后是可搜索的浮层：顶部最近选用、下方按供应商分组，
+ * 紧凑触发按钮只显示模型短名；打开后是可搜索的浮层：顶部最近选用、下方按供应商分组（带协议图标），
  * 长列表虚拟滚动；思考强度钉在底部不随列表滚走。最近记录写在 localStorage（`cairn.recentModels`）。
  */
 import { Brain, Check, ChevronDown, Search, Wrench } from 'lucide-react'
@@ -36,7 +36,7 @@ const HEADER_H = 26
 const ROW_H = 32
 const LIST_MAX_H = 288
 /** 超过这个行数才开虚拟滚动，短列表直接渲染以免测试与键盘焦点绕弯。 */
-const VIRTUALIZE_AFTER = 14
+export const MODEL_PICKER_VIRTUALIZE_AFTER = 14
 const OVERSCAN = 6
 
 type ListRow =
@@ -215,7 +215,7 @@ export function ModelPicker({
   const totalHeight = offsets[offsets.length - 1] ?? 0
   const selectedOption = options[Math.min(active, Math.max(0, options.length - 1))]
 
-  const virtualize = rows.length > VIRTUALIZE_AFTER
+  const virtualize = rows.length > MODEL_PICKER_VIRTUALIZE_AFTER
   const visible = useMemo(() => {
     if (!virtualize) {
       return rows.map((row, index) => ({ row, index, top: offsets[index]! }))

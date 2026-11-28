@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
 import { createI18n } from '@cairn/i18n'
 import type { ProviderConfig } from '@cairn/protocol'
-import { buildModelPickerRows, ModelPicker } from './ModelPicker.js'
+import { buildModelPickerRows, MODEL_PICKER_VIRTUALIZE_AFTER, ModelPicker } from './ModelPicker.js'
 import { enabledModelChoices } from './model-labels.js'
 import { RECENT_MODELS_KEY, rememberRecentModel } from './recent-models.js'
 
@@ -21,6 +21,32 @@ const capabilities = {
   supportsTools: true,
   supportsParallelToolCalls: true,
   supportsReasoning: false,
+}
+
+/** ~36 启用模型 + 每供应商一个停用：跨 openai / anthropic / gemini，用来压长列表行为。 */
+function largeProviderFixture(): ProviderConfig[] {
+  const kinds = ['openai', 'anthropic', 'gemini'] as const
+  return kinds.map((kind) => ({
+    id: `prov-${kind}`,
+    kind,
+    displayName: `供应商${kind}`,
+    baseUrl: `https://${kind}.example`,
+    models: [
+      ...Array.from({ length: 12 }, (_, m) => ({
+        id: `${kind}-m${m}`,
+        displayName: `${kind.toUpperCase()} 模型 ${m}`,
+        ...capabilities,
+        ...(m === 0 ? { supportsReasoning: true, contextWindow: 200_000 } : {}),
+        ...(m === 1 ? { supportsTools: false } : {}),
+      })),
+      {
+        id: `${kind}-off`,
+        displayName: `${kind} 停用`,
+        enabled: false,
+        ...capabilities,
+      },
+    ],
+  }))
 }
 
 const providers: ProviderConfig[] = [
@@ -465,6 +491,115 @@ describe('ModelPicker', () => {
     await user.keyboard('{Enter}')
     // 当前项再按 Enter 不切换。
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('handles dozens of models across providers: search, recents, virtualization, pinned thinking', async () => {
+    const user = userEvent.setup()
+    const many = largeProviderFixture()
+    const choices = enabledModelChoices(many)
+    expect(choices).toHaveLength(36)
+    expect(choices.every((c) => !c.name.includes('停用'))).toBe(true)
+
+    const recentA = { providerId: 'prov-gemini', modelId: 'gemini-m3' }
+    const recentB = { providerId: 'prov-openai', modelId: 'openai-m5' }
+    rememberRecentModel(recentA)
+    rememberRecentModel(recentB)
+    const current = { providerId: 'prov-anthropic', modelId: 'anthropic-m0' }
+
+    const { rows } = buildModelPickerRows(choices, [recentB, recentA], '', '最近使用')
+    // 最近 2 + 三个供应商头 + 34 个分组模型 = 远超虚拟化阈值。
+    expect(rows.length).toBeGreaterThan(MODEL_PICKER_VIRTUALIZE_AFTER)
+    expect(rows.filter((r) => r.kind === 'header').map((r) => r.label)).toEqual([
+      '最近使用',
+      '供应商openai',
+      '供应商anthropic',
+      '供应商gemini',
+    ])
+    expect(
+      rows
+        .filter((r) => r.kind === 'header' && r.key.startsWith('provider:'))
+        .map((r) => (r.kind === 'header' ? r.protocol : undefined)),
+    ).toEqual(['openai', 'anthropic', 'gemini'])
+    // 最近项不在供应商分组里重复。
+    const groupedKeys = rows
+      .filter((r) => r.kind === 'option' && !r.key.startsWith('recent:'))
+      .map((r) => (r.kind === 'option' ? `${r.choice.ref.providerId}/${r.choice.ref.modelId}` : ''))
+    expect(groupedKeys).not.toContain('prov-openai/openai-m5')
+    expect(groupedKeys).not.toContain('prov-gemini/gemini-m3')
+
+    const onSelectThinkingLevel = vi.fn()
+    render(
+      <I18nextProvider i18n={createI18n('zh-CN')}>
+        <ModelPicker
+          providers={many}
+          model={current}
+          fixed={false}
+          disabled={false}
+          open
+          onOpenChange={() => {}}
+          onSelect={() => {}}
+          thinkingLevel="medium"
+          onSelectThinkingLevel={onSelectThinkingLevel}
+        />
+      </I18nextProvider>,
+    )
+
+    const trigger = screen.getByRole('button', {
+      name: '模型：供应商anthropic · ANTHROPIC 模型 0',
+    })
+    expect(trigger.textContent).toContain('ANTHROPIC 模型 0')
+    expect(trigger.textContent).not.toContain('供应商anthropic')
+    expect(screen.queryByText(/停用/)).toBeNull()
+
+    const list = screen.getByRole('listbox', { name: '下一轮使用的模型' })
+    // 虚拟窗口：挂载的 option 远少于全部启用模型；外层垫高超过可视高度。
+    const mountedNearCurrent = within(list).getAllByRole('option').length
+    expect(mountedNearCurrent).toBeLessThan(choices.length)
+    expect(mountedNearCurrent).toBeLessThanOrEqual(MODEL_PICKER_VIRTUALIZE_AFTER + 12)
+    const spacer = list.firstElementChild as HTMLElement
+    expect(Number.parseInt(spacer.style.height, 10)).toBeGreaterThan(288)
+
+    // 滚到顶部：最近分区可见，且带协议图标的供应商头出现在分组里。
+    Object.defineProperty(list, 'scrollTop', { configurable: true, writable: true, value: 0 })
+    fireEvent.scroll(list)
+    await waitFor(() => expect(screen.getByText('最近使用')).toBeTruthy())
+    expect(within(list).getByRole('option', { name: /OPENAI 模型 5/ })).toBeTruthy()
+    expect(within(list).getByRole('option', { name: /GEMINI 模型 3/ })).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('供应商openai')).toBeTruthy())
+    expect(screen.getByText('供应商openai').parentElement?.querySelector('svg')).toBeTruthy()
+
+    // 思考强度钉在 listbox 外的底部，不随列表滚走。
+    const thinking = screen.getByRole('group', { name: '思考强度' })
+    expect(list.compareDocumentPosition(thinking) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(thinking).getByRole('button', { name: '中' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    )
+    fireEvent.scroll(list, { target: { scrollTop: 800 } })
+    expect(screen.getByRole('group', { name: '思考强度' })).toBeTruthy()
+
+    const search = screen.getByRole('combobox', { name: '搜索模型' })
+    await user.clear(search)
+    await user.type(search, 'gemini-m7')
+    expect(
+      within(list)
+        .getAllByRole('option')
+        .map((el) => el.textContent),
+    ).toEqual([expect.stringContaining('GEMINI 模型 7')])
+    expect(screen.queryByText('最近使用')).toBeNull()
+
+    await user.clear(search)
+    await user.type(search, '供应商anthropic')
+    expect(
+      within(list)
+        .getAllByRole('option')
+        .every((el) => el.textContent?.includes('ANTHROPIC')),
+    ).toBe(true)
+    expect(within(list).getAllByRole('option')).toHaveLength(12)
+    expect(screen.getByText('供应商anthropic').parentElement?.querySelector('svg')).toBeTruthy()
+
+    await user.clear(search)
+    await user.type(search, 'OPENAI 模型 2')
+    expect(within(list).getByRole('option', { name: /OPENAI 模型 2/ })).toBeTruthy()
   })
 
   it('does not select when Enter is pressed with an empty match list', async () => {
