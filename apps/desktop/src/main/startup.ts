@@ -82,7 +82,13 @@ import { createAgentService } from './services/agent-service.js'
 import { DiagnosticsService } from './services/diagnostics-service.js'
 import { createProjectService } from './services/project-service.js'
 import { cloneGitRepository } from './services/git-clone.js'
-import { checkoutGitBranch, readGitInfo } from './services/git-info.js'
+import {
+  checkoutGitBranch,
+  createGitBranch,
+  pullGitBranch,
+  pushGitBranch,
+  readGitInfo,
+} from './services/git-info.js'
 import { createFileService } from './services/file-service.js'
 import { createMentionService, ripgrepFileLister } from './services/mention-service.js'
 import { createRendererGateway } from './services/renderer-gateway.js'
@@ -809,6 +815,9 @@ const projects = createProjectService({
   cloneRepository: (input) => cloneGitRepository(projectGit, input),
   readGitInfo: (path) => readGitInfo(projectGit, path),
   checkoutGitBranch: (path, branch) => checkoutGitBranch(projectGit, path, branch),
+  createGitBranch: (path, branch) => createGitBranch(projectGit, path, branch),
+  pullGitBranch: (path) => pullGitBranch(projectGit, path),
+  pushGitBranch: (path) => pushGitBranch(projectGit, path),
 })
 projects.ensureDefault()
 /**

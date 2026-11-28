@@ -20,6 +20,9 @@ function setup(
     }) => Promise<string>
     readGitInfo?: (path: string) => Promise<{ branch?: string; branches?: string[] }>
     checkoutGitBranch?: (path: string, branch: string) => Promise<{ branch?: string }>
+    createGitBranch?: (path: string, branch: string) => Promise<{ branch?: string }>
+    pullGitBranch?: (path: string) => Promise<{ branch?: string }>
+    pushGitBranch?: (path: string) => Promise<{ branch?: string }>
     defaultProjectPath?: string
     onError?: (error: unknown) => void
   } = {},
@@ -33,6 +36,9 @@ function setup(
     ...(options.cloneRepository ? { cloneRepository: options.cloneRepository } : {}),
     ...(options.readGitInfo ? { readGitInfo: options.readGitInfo } : {}),
     ...(options.checkoutGitBranch ? { checkoutGitBranch: options.checkoutGitBranch } : {}),
+    ...(options.createGitBranch ? { createGitBranch: options.createGitBranch } : {}),
+    ...(options.pullGitBranch ? { pullGitBranch: options.pullGitBranch } : {}),
+    ...(options.pushGitBranch ? { pushGitBranch: options.pushGitBranch } : {}),
     ...(options.defaultProjectPath ? { defaultProjectPath: options.defaultProjectPath } : {}),
     ...(options.onError ? { onError: options.onError } : {}),
     createId: () => `p${++id}`,
@@ -163,6 +169,40 @@ describe('project service', () => {
     await expect(setup([]).service.gitCheckout({ path: ABS, branch: 'dev' })).rejects.toMatchObject(
       { code: 'project.git_unavailable' },
     )
+  })
+
+  it('creates, pulls and pushes for an absolute project path', async () => {
+    const createGitBranch = vi.fn(async () => ({ branch: 'feature/x' }))
+    const pullGitBranch = vi.fn(async () => ({ branch: 'main' }))
+    const pushGitBranch = vi.fn(async () => ({ branch: 'main' }))
+    const { service } = setup([], { createGitBranch, pullGitBranch, pushGitBranch })
+    await expect(service.gitCreateBranch({ path: ABS, branch: 'feature/x' })).resolves.toEqual({
+      branch: 'feature/x',
+    })
+    expect(createGitBranch).toHaveBeenCalledWith(ABS, 'feature/x')
+    await expect(service.gitPull({ path: ABS })).resolves.toEqual({ branch: 'main' })
+    expect(pullGitBranch).toHaveBeenCalledWith(ABS)
+    await expect(service.gitPush({ path: ABS })).resolves.toEqual({ branch: 'main' })
+    expect(pushGitBranch).toHaveBeenCalledWith(ABS)
+    await expect(
+      service.gitCreateBranch({ path: 'relative/dir', branch: 'feature/x' }),
+    ).rejects.toMatchObject({ code: 'project.invalid_path' })
+    await expect(service.gitPull({ path: 'relative/dir' })).rejects.toMatchObject({
+      code: 'project.invalid_path',
+    })
+    await expect(service.gitPush({ path: 'relative/dir' })).rejects.toMatchObject({
+      code: 'project.invalid_path',
+    })
+    const bare = setup([]).service
+    await expect(bare.gitCreateBranch({ path: ABS, branch: 'feature/x' })).rejects.toMatchObject({
+      code: 'project.git_unavailable',
+    })
+    await expect(bare.gitPull({ path: ABS })).rejects.toMatchObject({
+      code: 'project.git_unavailable',
+    })
+    await expect(bare.gitPush({ path: ABS })).rejects.toMatchObject({
+      code: 'project.git_unavailable',
+    })
   })
 
   it('renames, toggles and removes a project, then restores it when opened again', async () => {

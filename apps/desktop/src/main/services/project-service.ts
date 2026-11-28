@@ -9,7 +9,8 @@
  * - **移除**（`project.remove`）：只从列表去掉，不删除目录和会话。
  * - **默认项目**（`ensureDefault`）：没有任何未归档项目时，在应用数据目录中创建并登记
  *   `Default Project`；它不能移除、改名或归档，用户可以置顶和调整两个开关。
- * - **Git 摘要 / 切换分支**（`project.gitInfo` / `project.gitCheckout`）：输入框下方的目录与分支。
+ * - **Git 摘要 / 分支操作**（`project.gitInfo` / `gitCheckout` / `gitCreateBranch` / `gitPull` /
+ *   `gitPush`）：输入框上方上下文条的工作空间与分支菜单。
  *
  * 不依赖 Electron；对话框由入口注入（e2e 中替换为固定目录）。
  */
@@ -52,6 +53,12 @@ export interface ProjectServiceOptions {
   readonly readGitInfo?: (path: string) => Promise<ProjectGitInfo>
   /** 切换项目目录的 Git 分支；省略时 `project.gitCheckout` 报错。 */
   readonly checkoutGitBranch?: (path: string, branch: string) => Promise<ProjectGitInfo>
+  /** 新建本地分支并切换；省略时 `project.gitCreateBranch` 报错。 */
+  readonly createGitBranch?: (path: string, branch: string) => Promise<ProjectGitInfo>
+  /** 快进拉取当前分支；省略时 `project.gitPull` 报错。 */
+  readonly pullGitBranch?: (path: string) => Promise<ProjectGitInfo>
+  /** 推送当前分支；省略时 `project.gitPush` 报错。 */
+  readonly pushGitBranch?: (path: string) => Promise<ProjectGitInfo>
   /** 默认项目目录；没有未归档项目时用它补种。省略时不提供默认项目。 */
   readonly defaultProjectPath?: string
   /** 默认目录创建失败等非致命错误。 */
@@ -71,6 +78,9 @@ export interface ProjectCommands {
   }): Promise<{ project: ProjectSummary }>
   gitInfo(input: { path: string }): Promise<ProjectGitInfo>
   gitCheckout(input: { path: string; branch: string }): Promise<ProjectGitInfo>
+  gitCreateBranch(input: { path: string; branch: string }): Promise<ProjectGitInfo>
+  gitPull(input: { path: string }): Promise<ProjectGitInfo>
+  gitPush(input: { path: string }): Promise<ProjectGitInfo>
   update(input: {
     projectId: string
     name?: string | undefined
@@ -220,6 +230,36 @@ export function createProjectService(options: ProjectServiceOptions): ProjectCom
         throw new RpcError(ProjectServiceErrorCode.GitUnavailable)
       }
       return options.checkoutGitBranch(path, branch)
+    },
+
+    async gitCreateBranch({ path, branch }) {
+      if (!isAbsolute(path)) {
+        throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
+      }
+      if (!options.createGitBranch) {
+        throw new RpcError(ProjectServiceErrorCode.GitUnavailable)
+      }
+      return options.createGitBranch(path, branch)
+    },
+
+    async gitPull({ path }) {
+      if (!isAbsolute(path)) {
+        throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
+      }
+      if (!options.pullGitBranch) {
+        throw new RpcError(ProjectServiceErrorCode.GitUnavailable)
+      }
+      return options.pullGitBranch(path)
+    },
+
+    async gitPush({ path }) {
+      if (!isAbsolute(path)) {
+        throw new RpcError(ProjectServiceErrorCode.InvalidPath, { path })
+      }
+      if (!options.pushGitBranch) {
+        throw new RpcError(ProjectServiceErrorCode.GitUnavailable)
+      }
+      return options.pushGitBranch(path)
     },
 
     update(input) {

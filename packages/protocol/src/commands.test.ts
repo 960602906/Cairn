@@ -96,6 +96,17 @@ describe('background command contracts', () => {
     expect(
       requests['project.gitCheckout'].params.safeParse({ path: '/work', branch: '' }).success,
     ).toBe(false)
+    expect(
+      requests['project.gitCreateBranch'].params.safeParse({ path: '/work', branch: 'dev' })
+        .success,
+    ).toBe(true)
+    expect(
+      requests['project.gitCreateBranch'].params.safeParse({ path: '/work', branch: '' }).success,
+    ).toBe(false)
+    expect(requests['project.gitPull'].params.safeParse({ path: '/work' }).success).toBe(true)
+    expect(requests['project.gitPull'].params.safeParse({}).success).toBe(false)
+    expect(requests['project.gitPush'].params.safeParse({ path: '/work' }).success).toBe(true)
+    expect(requests['project.gitPush'].params.safeParse({ path: '' }).success).toBe(false)
     expect(requests['skill.get'].params.safeParse({ name: 'x', source: 'project' }).success).toBe(
       false,
     )
