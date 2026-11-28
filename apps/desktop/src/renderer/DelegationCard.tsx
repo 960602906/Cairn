@@ -121,10 +121,7 @@ export function DelegationCard({
             </span>
             <DelegationStatusBadge status={status} />
             {tokens > 0 && (
-              <span
-                title={t('delegation.tokensHint')}
-                className="tabular text-note text-muted"
-              >
+              <span title={t('delegation.tokensHint')} className="tabular text-note text-muted">
                 {t('delegation.tokens', { count: compactTokens(tokens) })}
               </span>
             )}

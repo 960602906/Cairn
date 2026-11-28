@@ -491,10 +491,7 @@ export function describeToolCall(name: string, args: unknown, t: TFunction): Too
     action,
     object,
     plain:
-      name === 'load_skill' ||
-      planTool ||
-      name === REMEMBER_TOOL ||
-      name === DELEGATE_TOOL_NAME,
+      name === 'load_skill' || planTool || name === REMEMBER_TOOL || name === DELEGATE_TOOL_NAME,
   }
 }
 

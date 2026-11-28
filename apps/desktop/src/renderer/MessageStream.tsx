@@ -251,9 +251,7 @@ const Reasoning = memo(function Reasoning({
         aria-label={t('message.reasoning')}
         className={cn(
           'group/reasoning -mx-[7px] grid min-h-[26px] w-full cursor-pointer items-start gap-x-[7px] rounded-[7px] px-[7px] py-1 text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent',
-          open
-            ? 'grid-cols-[18px_auto_14px]'
-            : 'grid-cols-[18px_auto_minmax(0,1fr)_14px]',
+          open ? 'grid-cols-[18px_auto_14px]' : 'grid-cols-[18px_auto_minmax(0,1fr)_14px]',
         )}
       >
         <span className="flex h-[18px] w-[18px] items-center">

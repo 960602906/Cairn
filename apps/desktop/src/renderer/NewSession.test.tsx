@@ -1035,9 +1035,7 @@ describe('NewSession controls', () => {
 
     // 在 work 里换成代码审查员。
     await user.click(await screen.findByRole('button', { name: '切换 Agent：编程助手' }))
-    await user.click(
-      within(await screen.findByRole('listbox')).getByText('代码审查员'),
-    )
+    await user.click(within(await screen.findByRole('listbox')).getByText('代码审查员'))
     expect(screen.getByRole('button', { name: '切换 Agent：代码审查员' })).toBeTruthy()
 
     // 另一个工作空间仍用默认 Agent。
@@ -1157,9 +1155,7 @@ describe('NewSession controls', () => {
     await screen.findByPlaceholderText('有什么可以帮你？')
     await user.click(screen.getByRole('button', { name: '工作空间：work' }))
     await user.click(await screen.findByRole('menuitem', { name: '选择文件夹…' }))
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith('project.open', {}, { timeoutMs: 0 }),
-    )
+    await waitFor(() => expect(request).toHaveBeenCalledWith('project.open', {}, { timeoutMs: 0 }))
   })
 
   it('recognizes /delegation and /agent before a session exists', async () => {

@@ -945,9 +945,7 @@ export function createSessionStore(api: MainApi): SessionStore {
             seen.add(s.sessionId)
             const view = state.views[s.sessionId]
             return [
-              view && s.sessionId === subscribed
-                ? { ...s, status: displayStatus(state, view) }
-                : s,
+              view && s.sessionId === subscribed ? { ...s, status: displayStatus(state, view) } : s,
             ]
           }),
         })
@@ -1379,10 +1377,7 @@ export function createSessionStore(api: MainApi): SessionStore {
           const project = result?.project
           if (!project) return undefined
           set((state) => ({
-            projects: [
-              project,
-              ...state.projects.filter((p) => p.projectId !== project.projectId),
-            ],
+            projects: [project, ...state.projects.filter((p) => p.projectId !== project.projectId)],
             // 若先前有超时残留，打开成功后清掉。
             error: undefined,
           }))
