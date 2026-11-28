@@ -57,6 +57,7 @@ import {
   type ActiveTaskList,
   type AgentDefinition,
   type AgentDefinitionRef,
+  type CanonicalMessage,
   type ContentPart,
   type ModelRef,
   type PromptMode,
@@ -164,6 +165,11 @@ export interface SessionManagerOptions {
   readonly createId?: () => string
   readonly now?: () => number
   readonly onError?: (error: unknown) => void
+  /**
+   * 读取 blob（ADR-0052）：发给宿主前把图片片段的内容填进 `ContentPart.data`。
+   * 省略或读不到时图片以文字占位发给模型，不影响这一轮。
+   */
+  readonly readBlob?: (hash: string) => Promise<Uint8Array | undefined>
   /** 导出对话的标题语言；省略时用中文。 */
   readonly transcriptLocale?: () => TranscriptLocale
   /** 导出对话时选择保存位置；省略时按用户取消处理（测试）。 */
@@ -279,6 +285,65 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
   const createId = options.createId ?? randomUUID
   const now = options.now ?? Date.now
   const onError = (error: unknown) => options.onError?.(error)
+  const readBlob = options.readBlob
+
+  /** 有没有需要从 blob 存储补内容的图片片段。 */
+  const needsImageData = (content: readonly ContentPart[]): boolean =>
+    readBlob !== undefined &&
+    content.some((part) => part.type === 'image' && part.data === undefined)
+
+  /**
+   * 图片附件（ADR-0052）：事件里只有 blob 引用，宿主需要 base64 内容。只在发给宿主前填入；
+   * 读不到时保持原样，由运行时用占位文字代替，不让整条消息失败。
+   */
+  async function hydrateContent(content: readonly ContentPart[]): Promise<ContentPart[]> {
+    if (readBlob === undefined || !content.some((part) => part.type === 'image')) {
+      return [...content]
+    }
+    return Promise.all(
+      content.map(async (part) => {
+        if (part.type !== 'image' || part.data !== undefined) return part
+        let data: string | undefined
+        try {
+          const bytes = await readBlob(part.blobRef)
+          data = bytes === undefined ? undefined : Buffer.from(bytes).toString('base64')
+        } catch {
+          data = undefined
+        }
+        return data === undefined ? part : { ...part, data }
+      }),
+    )
+  }
+
+  async function hydrateHistory(history: readonly CanonicalMessage[]): Promise<CanonicalMessage[]> {
+    if (
+      readBlob === undefined ||
+      !history.some(
+        (message) =>
+          message.role !== 'summary' && message.content.some((part) => part.type === 'image'),
+      )
+    ) {
+      return [...history]
+    }
+    return Promise.all(
+      history.map(async (message) =>
+        message.role === 'summary'
+          ? message
+          : { ...message, content: await hydrateContent(message.content) },
+      ),
+    )
+  }
+
+  /**
+   * 渲染进程不应带 `data`：落库前去掉，图片内容只留在 blob 存储里（ADR-0052）。
+   * 编辑重发与重新生成从事件读回内容时也不会带上它。
+   */
+  const persistableContent = (content: readonly ContentPart[]): ContentPart[] =>
+    content.map((part) =>
+      part.type === 'image' && part.data !== undefined
+        ? { type: 'image', blobRef: part.blobRef, mimeType: part.mimeType }
+        : part,
+    )
 
   const views = new Map<string, SessionView>()
   const slots = new Map<string, Slot>()
@@ -476,15 +541,25 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     const plan = executionPlan(sessionId, pending.mode)
     const taskLists = executionTaskLists(sessionId, pending.mode)
     const goal = executionGoal(sessionId, pending.mode)
-    handle
-      .prompt({
+    const prompt = (content: readonly ContentPart[]) =>
+      handle.prompt({
         messageId: pending.messageId,
-        content: pending.content,
+        content: [...content],
         ...(pending.mode === 'plan' ? { mode: 'plan' as const } : {}),
         ...(plan ? { plan } : {}),
         ...(taskLists ? { taskLists } : {}),
         ...(goal ? { goal } : {}),
       })
+    if (!needsImageData(pending.content)) {
+      prompt(pending.content).catch((error: unknown) => {
+        onError(error)
+        slot.awaitingTurn = false
+        updateIdle(sessionId, slot)
+      })
+      return
+    }
+    void hydrateContent(pending.content)
+      .then(prompt)
       .catch((error: unknown) => {
         onError(error)
         slot.awaitingTurn = false
@@ -509,32 +584,39 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       resolveGone()
       pump()
     }
-    supervisor
-      .startHost({
+    // 历史里的图片只有 blob 引用：启动宿主前填入内容（ADR-0052）；没有图片时保持同步启动。
+    const boot = (history: readonly CanonicalMessage[]) =>
+      supervisor.startHost({
         sessionId,
         runId: pending.runId,
         workspacePath: pending.workspacePath,
         ...pending.run,
-        history: pending.history,
+        history: [...history],
         ...(pending.resume ? { resume: pending.resume } : {}),
       })
-      .then(
-        (handle) => {
-          slot.handle = handle
-          void handle.exited.then(release)
-          if (closed) {
-            void handle.stop()
-            return
-          }
-          if (slot.cancelled) updateIdle(sessionId, slot)
-          else send(sessionId, slot, handle, pending)
-        },
-        (error: unknown) => {
-          // 启动失败已由监督器记录为 session.crashed
-          onError(error)
-          release()
-        },
-      )
+    const starting = pending.history.some(
+      (message) =>
+        message.role !== 'summary' &&
+        message.content.some((part) => part.type === 'image' && part.data === undefined) &&
+        readBlob !== undefined,
+    )
+    void (starting ? hydrateHistory(pending.history).then(boot) : boot(pending.history)).then(
+      (handle) => {
+        slot.handle = handle
+        void handle.exited.then(release)
+        if (closed) {
+          void handle.stop()
+          return
+        }
+        if (slot.cancelled) updateIdle(sessionId, slot)
+        else send(sessionId, slot, handle, pending)
+      },
+      (error: unknown) => {
+        // 启动失败已由监督器记录为 session.crashed
+        onError(error)
+        release()
+      },
+    )
   }
 
   /** 在名额内按顺序启动排队的会话；名额已满时回收一个空闲的宿主。 */
@@ -651,7 +733,9 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     params: PromptParams,
     flags: { readonly rewind?: 'edit' | 'regenerate'; readonly goalId?: string } = {},
   ): { messageId: string } | undefined {
-    const { sessionId, content: typed, mode = 'normal', mentions, skills, agents, context } = params
+    const { sessionId, content: raw, mode = 'normal', mentions, skills, agents, context } = params
+    // 图片内容不落库：事件里只保留 blob 引用（ADR-0052）。
+    const typed = persistableContent(raw)
     if (closed) throw new RpcError(SessionErrorCode.Closed)
     const record = requireSession(sessionId)
     if (record.kind === 'trial') {
@@ -736,15 +820,22 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
       // 活跃计划可能在这轮里刚修订，传递最新步骤供宿主校验后续工具调用。
       const plan = executionPlan(sessionId, 'normal')
       const taskLists = executionTaskLists(sessionId, 'normal')
-      slot.handle
-        .prompt({
+      const handle = slot.handle
+      const prompt = (hydrated: readonly ContentPart[]) =>
+        handle.prompt({
           messageId,
-          content,
+          content: [...hydrated],
           send: 'steer',
           ...(plan ? { plan } : {}),
           ...(taskLists ? { taskLists } : {}),
         })
-        .catch((error) => onError(error))
+      if (!needsImageData(content)) {
+        void prompt(content).catch((error) => onError(error))
+      } else {
+        void hydrateContent(content)
+          .then(prompt)
+          .catch((error) => onError(error))
+      }
     } else if (slot?.handle && hostReady) {
       send(sessionId, slot, slot.handle, { messageId, content, mode })
     } else {
@@ -1348,7 +1439,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
     goalView,
     withGoalLock,
 
-    editMessage({ sessionId, messageId, content, mentions, skills, agents }) {
+    editMessage({ sessionId, messageId, content, mentions, skills, agents, context }) {
       const view = requireRewindable(sessionId)
       const target = view.messages.find((message) => message.messageId === messageId)
       if (target === undefined || !isTurnStart(view, messageId)) {
@@ -1363,6 +1454,7 @@ export function createSessionManager(options: SessionManagerOptions): SessionMan
           ...(mentions && mentions.length > 0 ? { mentions } : {}),
           ...(skills && skills.length > 0 ? { skills } : {}),
           ...(agents && agents.length > 0 ? { agents } : {}),
+          ...(context !== undefined ? { context } : {}),
         },
         { rewind: 'edit' },
       )

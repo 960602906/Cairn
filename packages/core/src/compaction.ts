@@ -64,7 +64,8 @@ export function estimateOverhead(systemPrompt: string, tools: readonly RuntimeTo
 }
 
 function partText(part: ContentPart): string {
-  return part.type === 'text' ? part.text : '[image]'
+  if (part.type === 'text') return part.text
+  return part.type === 'image' ? '[image]' : `[file: ${part.name}]`
 }
 
 export function estimateMessageTokens(message: CanonicalMessage): number {

@@ -801,6 +801,50 @@ describe('commands', () => {
     expect(store.getState().error?.code).toBe('run.busy')
   })
 
+  it('附件随输入发送：图片和文件各成内容片段，只有附件也能发（ADR-0052）', async () => {
+    const { api, calls } = fakeApi({
+      'session.subscribe': () => ({ events: [], lastSeq: 0 }),
+      'session.prompt': () => ({ messageId: 'm1' }),
+      'session.editMessage': () => ({ messageId: 'm2' }),
+    })
+    const store = createSessionStore(api)
+    await store.getState().selectSession('s1')
+    const attachments = [
+      { blobRef: 'b1', kind: 'image' as const, name: '截图.png', mimeType: 'image/png', size: 8 },
+      { blobRef: 'b2', kind: 'file' as const, name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+    ]
+    expect(await store.getState().sendPrompt('', 'normal', { attachments })).toBe(true)
+    expect(await store.getState().editMessage('u1', '看这个', { attachments })).toBe(true)
+    expect(
+      calls.filter(([method]) => method === 'session.prompt' || method === 'session.editMessage'),
+    ).toEqual([
+      [
+        'session.prompt',
+        {
+          sessionId: 's1',
+          content: [
+            { type: 'image', blobRef: 'b1', mimeType: 'image/png' },
+            { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+          ],
+        },
+      ],
+      [
+        'session.editMessage',
+        {
+          sessionId: 's1',
+          messageId: 'u1',
+          content: [
+            { type: 'text', text: '看这个' },
+            { type: 'image', blobRef: 'b1', mimeType: 'image/png' },
+            { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+          ],
+        },
+      ],
+    ])
+    expect(await store.getState().sendPrompt('', 'normal', { attachments: [] })).toBe(false)
+    void api
+  })
+
   it('sends / skills and @ agents with the prompt', async () => {
     const { api, calls } = fakeApi({
       'session.subscribe': () => ({ events: [], lastSeq: 0 }),

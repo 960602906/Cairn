@@ -361,7 +361,13 @@ describe('buildGoalEvidence', () => {
       ),
       ev(
         'message.user',
-        { messageId: 'm-img', content: [{ type: 'image', blobRef: 'b1', mimeType: 'image/png' }] },
+        {
+          messageId: 'm-img',
+          content: [
+            { type: 'image', blobRef: 'b1', mimeType: 'image/png' },
+            { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+          ],
+        },
         { turnId: 't1' },
       ),
       ev(
@@ -442,7 +448,7 @@ describe('buildGoalEvidence', () => {
     expect(evidence.text).toContain('change set applied: (no paths)')
     expect(evidence.text).toContain('change set applied: src/b.ts')
     expect(evidence.text).toContain('assistant message m2 (incomplete)')
-    expect(evidence.text).toContain('user message m-img: [image]')
+    expect(evidence.text).toContain('user message m-img: [image]\n[file: a.pdf]')
     expect(evidence.text).toContain('tool tc1 run_command input: pnpm test')
     expect(evidence.text).toContain('tool tc2 todo input: 42')
     expect(evidence.text).toContain('tool tc3 noop')

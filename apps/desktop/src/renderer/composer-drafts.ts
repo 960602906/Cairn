@@ -6,11 +6,20 @@
  *
  * 存储不可用（隐私模式、测试环境）时全部退化为空草稿，不影响输入。
  */
-import type { ModelRef } from '@cairn/protocol'
+import { MAX_PROMPT_ATTACHMENTS, type ModelRef } from '@cairn/protocol'
+import type { DraftAttachment } from './composer-attachments.js'
 
 export interface ComposerDraft {
   readonly text: string
   readonly planMode: boolean
+  /** 待发送的附件（ADR-0052）：只记引用与元信息，图片预览发送前按需读取。 */
+  readonly attachments: readonly DraftAttachment[]
+}
+
+export interface ComposerDraftInput {
+  readonly text: string
+  readonly planMode: boolean
+  readonly attachments?: readonly DraftAttachment[]
 }
 
 /** 新对话页的草稿不区分工作空间：换个工作空间接着写同一段话更符合直觉。 */
@@ -22,7 +31,7 @@ const NEW_SESSION_MODEL_PREFIX = 'cairn.newSession.model:'
 const NEW_SESSION_AGENT_PREFIX = 'cairn.newSession.agent:'
 const NEW_SESSION_TEAM_PREFIX = 'cairn.newSession.team:'
 
-const EMPTY_DRAFT: ComposerDraft = { text: '', planMode: false }
+const EMPTY_DRAFT: ComposerDraft = { text: '', planMode: false, attachments: [] }
 
 /** 会话输入框的草稿键。 */
 export const sessionDraftKey = (sessionId: string) => `session:${sessionId}`
@@ -44,14 +53,33 @@ function write(key: string, value: string | null): void {
   }
 }
 
+/** 草稿里的附件只接受完整、可重新读取的条目；损坏的项直接丢掉。 */
+function parseAttachments(value: unknown): DraftAttachment[] {
+  if (!Array.isArray(value)) return []
+  const result: DraftAttachment[] = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const { blobRef, kind, name, mimeType, size } = item as Record<string, unknown>
+    if (typeof blobRef !== 'string' || blobRef === '') continue
+    if (kind !== 'image' && kind !== 'file') continue
+    if (typeof name !== 'string' || name === '') continue
+    if (typeof mimeType !== 'string' || mimeType === '') continue
+    if (typeof size !== 'number' || !Number.isInteger(size) || size < 0) continue
+    result.push({ blobRef, kind, name, mimeType, size })
+    if (result.length >= MAX_PROMPT_ATTACHMENTS) break
+  }
+  return result
+}
+
 export function readComposerDraft(key: string): ComposerDraft {
   const raw = read(DRAFT_PREFIX + key)
   if (raw === null) return EMPTY_DRAFT
   try {
-    const parsed = JSON.parse(raw) as { text?: unknown; planMode?: unknown }
+    const parsed = JSON.parse(raw) as { text?: unknown; planMode?: unknown; attachments?: unknown }
     return {
       text: typeof parsed.text === 'string' ? parsed.text : '',
       planMode: parsed.planMode === true,
+      attachments: parseAttachments(parsed.attachments),
     }
   } catch {
     return EMPTY_DRAFT
@@ -59,8 +87,14 @@ export function readComposerDraft(key: string): ComposerDraft {
 }
 
 /** 空草稿直接删掉键，避免每输入过一次就留下一条记录。 */
-export function writeComposerDraft(key: string, draft: ComposerDraft): void {
-  write(DRAFT_PREFIX + key, draft.text === '' && !draft.planMode ? null : JSON.stringify(draft))
+export function writeComposerDraft(key: string, draft: ComposerDraftInput): void {
+  const attachments = draft.attachments ?? []
+  write(
+    DRAFT_PREFIX + key,
+    draft.text === '' && !draft.planMode && attachments.length === 0
+      ? null
+      : JSON.stringify({ text: draft.text, planMode: draft.planMode, attachments }),
+  )
 }
 
 export function clearComposerDraft(key: string): void {

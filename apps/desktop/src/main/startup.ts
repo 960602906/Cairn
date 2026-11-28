@@ -50,6 +50,7 @@ import {
   type WebContentsLike,
 } from './security.js'
 import { createBlobStore } from './services/blob-store.js'
+import { createAttachmentService } from './services/attachment-service.js'
 import { createActivityNotifier } from './services/activity-notifier.js'
 import { createActivityService } from './services/activity-service.js'
 import { createChangeService } from './services/change-service.js'
@@ -278,6 +279,8 @@ void sandbox.capability().catch(reportError)
 const events = createSessionEventService({ storage, onListenerError: reportError })
 const inspect = createInspectService({ storage, events })
 const blobs = createBlobStore(paths.blobs)
+/** 图片附件（ADR-0052）：输入框里粘贴的截图按内容寻址存进 blob 存储，发送时再交给宿主。 */
+const attachments = createAttachmentService(blobs)
 /** 改动记录（M1-08b）：宿主报告的改动写入 blob 存储与数据库；界面列出与撤销。 */
 const changes = createChangeService({
   storage,
@@ -698,6 +701,8 @@ const sessions = createSessionManager({
   storage,
   events,
   supervisor,
+  /** 图片附件（ADR-0052）：发给宿主前把图片内容填进 `ContentPart.data`。 */
+  readBlob: (hash) => blobs.get(hash),
   runDefaults: RUN_DEFAULTS,
   resolveAgent: (agent) => agents.definition(agent),
   resolveSessionAgent: (sessionId, agent) => {
@@ -875,6 +880,7 @@ const gateway = createRendererGateway({
   projects,
   files,
   mentions: createMentionService({ storage, listFiles: ripgrepFileLister(ripgrepPath) }),
+  attachments,
   settings: {
     get: () => settings.get(),
     // 切换权限模式后，运行中的宿主改用新的预设

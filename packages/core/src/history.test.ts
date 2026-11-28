@@ -104,6 +104,45 @@ describe('rebuildHistory', () => {
     ])
   })
 
+  it('文件附件不单独进历史，抽取的文字跟着上下文；只有文件时给占位（ADR-0052）', () => {
+    const ev = stream()
+    const history = rebuild([
+      ev('message.user', {
+        messageId: 'u1',
+        content: [
+          { type: 'text', text: '看这个' },
+          { type: 'image', blobRef: 'b1', mimeType: 'image/png' },
+          { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+        ],
+        context: '<attachment name="a.pdf">\nPDF 正文\n</attachment>',
+      }),
+    ])
+    expect(history).toEqual([
+      {
+        role: 'user',
+        content: [
+          ...text('看这个'),
+          { type: 'image', blobRef: 'b1', mimeType: 'image/png' },
+          ...text('<attachment name="a.pdf">\nPDF 正文\n</attachment>'),
+        ],
+        ts: 10,
+        turnId: 't1',
+      },
+    ])
+
+    const fileOnly = rebuild([
+      ev('message.user', {
+        messageId: 'u2',
+        content: [
+          { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+        ],
+      }),
+    ])
+    expect(fileOnly).toEqual([
+      { role: 'user', content: text('[attached file]'), ts: 20, turnId: 't1' },
+    ])
+  })
+
   it('工具调用与结果配对，结果按到达顺序紧跟助手消息', () => {
     const ev = stream()
     const history = rebuild([

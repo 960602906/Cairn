@@ -22,6 +22,7 @@ import {
   ChevronRight,
   CircleCheck,
   Copy,
+  FileText,
   Lightbulb,
   Pencil,
   RefreshCw,
@@ -68,6 +69,11 @@ import {
 } from '@cairn/protocol'
 import { RestoreMarks, restoresByMessage, UndoTurnButton, useCanRestore } from './Checkpoints.js'
 import { COMPOSER_COMMANDS } from './composer-commands.js'
+import {
+  attachmentPreview,
+  formatAttachmentSize,
+  type DraftAttachment,
+} from './composer-attachments.js'
 import { extractAgents, parseMention, tokenize } from './composer-tokens.js'
 import { FileTypeIcon } from './file-icons.js'
 import { TurnChanges } from './FileChanges.js'
@@ -292,8 +298,10 @@ const AssistantContent = memo(function AssistantContent({
   return parts.map((part, index) =>
     part.type === 'text' ? (
       <Markdown key={index} text={part.text} resolvePaths={resolvePaths} onOpenFile={onOpenFile} />
-    ) : (
+    ) : part.type === 'image' ? (
       <p key={index}>{t('message.image')}</p>
+    ) : (
+      <p key={index}>{part.name}</p>
     ),
   )
 })
@@ -415,6 +423,48 @@ function FileMention({
   )
 }
 
+/** 用户消息里的图片（ADR-0052）：按 blob 引用读取内容；读不到时退回文字占位。 */
+const MessageImage = memo(function MessageImage({
+  part,
+}: {
+  readonly part: Extract<ContentPart, { type: 'image' }>
+}) {
+  const { t } = useTranslation('session')
+  const [src, setSrc] = useState<string>()
+  useEffect(() => {
+    let alive = true
+    void attachmentPreview(part.blobRef, part.mimeType).then((value) => {
+      if (alive) setSrc(value)
+    })
+    return () => {
+      alive = false
+    }
+  }, [part.blobRef, part.mimeType])
+  if (src === undefined) return <span className="text-faint">{t('message.image')}</span>
+  return (
+    <img
+      src={src}
+      alt={t('message.image')}
+      className="mt-1 max-h-64 max-w-full rounded-[8px] border border-hair"
+    />
+  )
+})
+
+/** 用户消息里的文件附件：显示名称与大小；正文已经作为上下文发给模型。 */
+const MessageFile = memo(function MessageFile({
+  part,
+}: {
+  readonly part: Extract<ContentPart, { type: 'file' }>
+}) {
+  return (
+    <span className="mr-1 inline-flex max-w-full items-center gap-1.5 rounded-[6px] border border-hair bg-raise px-2 py-1 align-baseline text-note text-fg2">
+      <FileText aria-hidden className="size-3.5 shrink-0 text-muted" />
+      <span className="min-w-0 truncate">{part.name}</span>
+      <span className="shrink-0 text-faint">{formatAttachmentSize(part.size)}</span>
+    </span>
+  )
+})
+
 /**
  * 用户消息：原样显示（不按 Markdown 解释），保留换行。指令、确认过的 `@` 引用与网址
  * 用和输入框一致的分词高亮；引用和网址可以点。
@@ -432,7 +482,6 @@ const UserContent = memo(function UserContent({
   readonly agents: readonly PromptAgent[]
   readonly onOpenFile: ((path: string, line?: number) => void) | undefined
 }) {
-  const { t } = useTranslation('session')
   const resolved = useMemo(
     () => new Set(mentions.map((mention) => mentionKey(mention.path, mention.lines))),
     [mentions],
@@ -514,8 +563,10 @@ const UserContent = memo(function UserContent({
             ))}
           {renderText(part.text)}
         </>
+      ) : part.type === 'image' ? (
+        <MessageImage part={part} />
       ) : (
-        t('message.image')
+        <MessageFile part={part} />
       )}
     </p>
   ))
@@ -758,9 +809,36 @@ function UserMessage({
         .filter((name): name is string => name !== undefined && name !== '')
         .map((name) => ({ agentId: agent.agentId, name })),
     )
+    // 编辑文字时保留原消息里的附件（ADR-0052）：界面没有单独删除附件的入口，
+    // 静默丢掉截图或文件会让模型看不到原来那一轮的内容。
+    const attachments: DraftAttachment[] = message.content.flatMap((part): DraftAttachment[] => {
+      if (part.type === 'image') {
+        return [
+          {
+            blobRef: part.blobRef,
+            kind: 'image' as const,
+            name: `image.${part.mimeType.split('/')[1] ?? 'png'}`,
+            mimeType: part.mimeType,
+            size: 0,
+          },
+        ]
+      }
+      return part.type === 'file'
+        ? [
+            {
+              blobRef: part.blobRef,
+              kind: 'file' as const,
+              name: part.name,
+              mimeType: part.mimeType,
+              size: part.size,
+            },
+          ]
+        : []
+    })
     const sent = await editMessage(message.messageId, draft, {
       agents: extractAgents(draft, agentMentions),
       agentNames: agentMentions.map((item) => item.name),
+      attachments,
     })
     setSaving(false)
     if (sent) setEditing(false)

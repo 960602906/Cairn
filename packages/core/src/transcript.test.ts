@@ -84,6 +84,18 @@ describe('transcriptMarkdown', () => {
     )
   })
 
+  it('renders file attachments with their names in both locales (ADR-0052)', () => {
+    const view = assistant('', {
+      content: [
+        { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+      ],
+    })
+    expect(transcriptMarkdown([view], { title: '会话' })).toContain('[附件：a.pdf]')
+    expect(transcriptMarkdown([view], { title: 'chat', locale: 'en-US' })).toContain(
+      '[file: a.pdf]',
+    )
+  })
+
   it('marks incomplete replies and skips empty messages', () => {
     expect(
       transcriptMarkdown([user(''), assistant('部分回复', { incomplete: true }), assistant('')], {

@@ -104,7 +104,10 @@ const clipRef = (ref: string): string => (ref.length <= 200 ? ref : `…${ref.sl
 
 function contentText(content: readonly ContentPart[]): string {
   return content
-    .map((part) => (part.type === 'text' ? part.text : '[image]'))
+    .map((part) => {
+      if (part.type === 'text') return part.text
+      return part.type === 'image' ? '[image]' : `[file: ${part.name}]`
+    })
     .join('\n')
     .trim()
 }

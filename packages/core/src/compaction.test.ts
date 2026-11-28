@@ -150,6 +150,21 @@ describe('compactConversation', () => {
     expect(outcome.tokensAfter).toBeLessThan(outcome.tokensBefore)
   })
 
+  it('counts image and file attachments as placeholder text (ADR-0052)', () => {
+    const withAttachments: CanonicalMessage = {
+      role: 'user',
+      content: [
+        { type: 'image', blobRef: 'b1', mimeType: 'image/png' },
+        { type: 'file', blobRef: 'b2', name: 'a.pdf', mimeType: 'application/pdf', size: 3 },
+      ],
+      ts: 1,
+      turnId: 't1',
+    }
+    expect(estimateMessagesTokens([withAttachments])).toBe(
+      estimateMessagesTokens([user('t1', '[image][file: a.pdf]', 1)]),
+    )
+  })
+
   it('drops the earliest tool output when the summary fails', async () => {
     const summarize = vi.fn(async () => '   ')
     const messages = [

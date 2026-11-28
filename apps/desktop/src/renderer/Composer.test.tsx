@@ -333,8 +333,9 @@ describe('Composer /goal', () => {
     const pauseGoal = goalActions.pauseGoal ?? vi.fn(async () => ({ ok: true }))
     const resumeGoal = goalActions.resumeGoal ?? vi.fn(async () => ({ ok: true }))
     const clearGoal = goalActions.clearGoal ?? vi.fn(async () => ({ ok: true }))
+    const sendPrompt = vi.fn(async () => true)
     const store = createStore<Record<string, unknown>>(() => ({
-      sendPrompt: vi.fn(async () => true),
+      sendPrompt,
       setSessionModel: vi.fn(async () => true),
       setSessionThinkingLevel: vi.fn(async () => true),
       compactSession: vi.fn(async () => undefined),
@@ -377,7 +378,7 @@ describe('Composer /goal', () => {
         </TooltipProvider>
       </I18nextProvider>,
     )
-    return { setGoal, pauseGoal, resumeGoal, clearGoal, onOpenPanel }
+    return { setGoal, pauseGoal, resumeGoal, clearGoal, onOpenPanel, sendPrompt }
   }
 
   const input = () => screen.getByLabelText('输入消息') as HTMLTextAreaElement
@@ -621,5 +622,143 @@ describe('Composer /goal', () => {
     expect(screen.getByRole('button', { name: /计划模式已开启/ })).toBeTruthy()
     fireEvent.keyDown(textarea, { key: 'P', ctrlKey: true, shiftKey: true })
     expect(screen.getByRole('button', { name: '权限模式：询问' })).toBeTruthy()
+  })
+
+  describe('附件（ADR-0052）', () => {
+    const mainApi = (saved: Record<string, unknown>) => ({
+      request: vi.fn(async () => ({ ok: true, result: saved })),
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('粘贴没有路径的截图：保存成附件并显示缩略图', async () => {
+      vi.stubGlobal(
+        'cairn',
+        mainApi({
+          blobRef: 'b1',
+          kind: 'image',
+          name: '截图.png',
+          mimeType: 'image/png',
+          size: 8,
+        }),
+      )
+      renderComposer()
+      fireEvent.paste(input(), {
+        clipboardData: {
+          files: [new File([new Uint8Array([137, 80, 78, 71])], '截图.png', { type: 'image/png' })],
+          items: [],
+          getData: () => '',
+        },
+      })
+      const thumb = await screen.findByAltText('截图.png')
+      expect(thumb).toBeTruthy()
+      expect(thumb.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
+    })
+
+    it('粘贴普通文件：显示名称与大小，可单独移除', async () => {
+      vi.stubGlobal(
+        'cairn',
+        mainApi({
+          blobRef: 'b2',
+          kind: 'file',
+          name: '报告.pdf',
+          mimeType: 'application/pdf',
+          size: 1536 * 1024,
+        }),
+      )
+      renderComposer()
+      fireEvent.paste(input(), {
+        clipboardData: {
+          files: [new File([new Uint8Array([1, 2, 3])], '报告.pdf', { type: 'application/pdf' })],
+          items: [],
+          getData: () => '',
+        },
+      })
+      expect(await screen.findByText('报告.pdf')).toBeTruthy()
+      expect(screen.getByText('1.5 MB')).toBeTruthy()
+
+      fireEvent.click(screen.getByLabelText('移除附件'))
+      expect(screen.queryByText('报告.pdf')).toBeNull()
+    })
+
+    it('只有附件没有文字也能发送，发送时随输入带上', async () => {
+      vi.stubGlobal(
+        'cairn',
+        mainApi({
+          blobRef: 'b1',
+          kind: 'image',
+          name: '截图.png',
+          mimeType: 'image/png',
+          size: 8,
+        }),
+      )
+      const user = userEvent.setup()
+      const { sendPrompt } = renderComposer()
+      fireEvent.paste(input(), {
+        clipboardData: {
+          files: [new File([new Uint8Array([137, 80, 78, 71])], '截图.png', { type: 'image/png' })],
+          items: [],
+          getData: () => '',
+        },
+      })
+      await screen.findByAltText('截图.png')
+      await user.click(screen.getByRole('button', { name: '发送' }))
+      await waitFor(() => expect(sendPrompt).toHaveBeenCalled())
+      expect(sendPrompt).toHaveBeenCalledWith(
+        '',
+        'normal',
+        expect.objectContaining({
+          attachments: [
+            expect.objectContaining({
+              blobRef: 'b1',
+              kind: 'image',
+              name: '截图.png',
+              mimeType: 'image/png',
+              size: 8,
+            }),
+          ],
+        }),
+      )
+    })
+
+    it('粘贴有磁盘路径的文件仍走 @ 引用，不存成附件', async () => {
+      const api = mainApi({})
+      vi.stubGlobal('cairn', api)
+      renderComposer()
+      const fromPath = { path: '/w/a.txt', type: 'text/plain' } as unknown as File
+      fireEvent.paste(input(), {
+        clipboardData: {
+          files: [fromPath],
+          items: [],
+          getData: () => '',
+        },
+      })
+      expect(api.request).not.toHaveBeenCalledWith('attachment.save', expect.anything(), undefined)
+      await waitFor(() => expect(input().value).toContain('a.txt'))
+    })
+
+    it('拖入没有路径的文件同样保存成附件', async () => {
+      vi.stubGlobal(
+        'cairn',
+        mainApi({
+          blobRef: 'b3',
+          kind: 'file',
+          name: '笔记.md',
+          mimeType: 'text/markdown',
+          size: 10,
+        }),
+      )
+      renderComposer()
+      fireEvent.drop(input(), {
+        dataTransfer: {
+          types: ['Files'],
+          files: [new File([new Uint8Array([1, 2])], '笔记.md', { type: 'text/markdown' })],
+          getData: () => '',
+        },
+      })
+      expect(await screen.findByText('笔记.md')).toBeTruthy()
+    })
   })
 })

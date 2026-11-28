@@ -85,6 +85,15 @@
   ignored with a hint, and a hint appears when no workspace is selected. A "release to reference
   files" overlay shows while dragging.
 
+- 输入框支持粘贴截图与文件附件：剪贴板截图显示为缩略图，粘贴或拖入的 PDF、Excel、Word、PowerPoint
+  与文本文件显示为附件卡片，可单独删除；发送时截图作为图片给模型看，文档抽取文字附给模型。每条
+  输入最多 5 个附件，图片不超过 10 MB、其它文件不超过 20 MB；附件保存在本机，并随草稿一起恢复。
+  The composer accepts pasted screenshots and file attachments: clipboard screenshots appear as
+  thumbnails, and pasted or dropped PDFs, Excel, Word, PowerPoint and text files appear as removable
+  chips. On send, screenshots reach the model as images and documents as extracted text. Up to 5
+  attachments per message, 10 MB per image and 20 MB per other file; attachments stay on this
+  machine and are restored with the draft.
+
 - 搜索对话（⌘K）现在也会搜索消息正文：标题或项目名不匹配的会话，只要消息里出现输入的词，
   也会带着命中附近的片段出现在结果里；输入停顿后才查询，切换输入不会显示上一次的片段。
   Search conversations (⌘K) now searches message text too: a session whose title or project does

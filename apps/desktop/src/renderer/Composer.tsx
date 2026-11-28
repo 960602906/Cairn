@@ -59,6 +59,14 @@ import {
   SETTINGS_SECTIONS,
 } from './composer-commands.js'
 import { COMMAND_LIST_ID, commandOptionId, ComposerCommandList } from './ComposerCommandList.js'
+import { ComposerAttachments } from './ComposerAttachments.js'
+import {
+  droppedAttachmentFiles,
+  MAX_PROMPT_ATTACHMENTS,
+  pastedAttachmentFiles,
+  saveAttachment,
+  type PendingAttachment,
+} from './composer-attachments.js'
 import { readComposerDraft, sessionDraftKey, writeComposerDraft } from './composer-drafts.js'
 import {
   availableCommands,
@@ -659,24 +667,41 @@ export function Composer({
   const [savedDraft] = useState(() => readComposerDraft(draftKey))
   const [text, setTextState] = useState(savedDraft.text)
   const [planMode, setPlanModeState] = useState(savedDraft.planMode)
+  const [attachments, setAttachmentsState] = useState<readonly PendingAttachment[]>(
+    savedDraft.attachments,
+  )
   /**
    * 草稿在 setter 里同步写入，而不是等 effect：`/settings` 等指令会立刻切走页面，
    * 组件在 effect 之前就卸载了，晚一步写会把已经清空的输入框又留成旧草稿。
    */
-  const draftState = useRef({ text, planMode })
-  const writeDraft = (next: { text: string; planMode: boolean }) => {
+  const draftState = useRef({ text, planMode, attachments })
+  const writeDraft = (next: {
+    text: string
+    planMode: boolean
+    attachments: readonly PendingAttachment[]
+  }) => {
     draftState.current = next
-    writeComposerDraft(draftKey, next)
+    // 图片预览是本地 data URL，只留在内存里；草稿只记可以重新读取的引用。
+    writeComposerDraft(draftKey, {
+      text: next.text,
+      planMode: next.planMode,
+      attachments: next.attachments.map(({ preview: _preview, ...attachment }) => attachment),
+    })
   }
   const setText = (next: SetStateAction<string>) => {
     const value = typeof next === 'function' ? next(draftState.current.text) : next
-    writeDraft({ text: value, planMode: draftState.current.planMode })
+    writeDraft({ ...draftState.current, text: value })
     setTextState(value)
   }
   const setPlanMode = (next: SetStateAction<boolean>) => {
     const value = typeof next === 'function' ? next(draftState.current.planMode) : next
-    writeDraft({ text: draftState.current.text, planMode: value })
+    writeDraft({ ...draftState.current, planMode: value })
     setPlanModeState(value)
+  }
+  const setAttachments = (next: SetStateAction<readonly PendingAttachment[]>) => {
+    const value = typeof next === 'function' ? next(draftState.current.attachments) : next
+    writeDraft({ ...draftState.current, attachments: value })
+    setAttachmentsState(value)
   }
   const promptHistory = useRef<string[]>([])
   const historyIndex = useRef<number>(-1)
@@ -799,7 +824,7 @@ export function Composer({
   const canSend =
     !sending &&
     !stopping &&
-    text.trim() !== '' &&
+    (text.trim() !== '' || attachments.length > 0) &&
     (parsedCommand !== undefined
       ? parsedCommand.command.unavailable === undefined &&
         (parsedCommand.command.kind === 'skill'
@@ -916,6 +941,29 @@ export function Composer({
     })
   }
 
+  /** 粘贴 / 拖入的附件：先保存到主进程，再挂到输入框上方；失败时提示。 */
+  const addAttachments = async (files: readonly File[]) => {
+    if (files.length === 0) return
+    const room = MAX_PROMPT_ATTACHMENTS - draftState.current.attachments.length
+    if (room <= 0) {
+      showNotice('input.attachment.tooMany', 'muted')
+      return
+    }
+    if (files.length > room) showNotice('input.attachment.tooMany', 'muted')
+    const results = await Promise.all(files.slice(0, room).map((file) => saveAttachment(file)))
+    const error = results.find((result) => 'error' in result)
+    if (error !== undefined && 'error' in error) showNotice(error.error, 'muted')
+    const added = results.flatMap((result) => ('attachment' in result ? [result.attachment] : []))
+    if (added.length === 0) return
+    setAttachments((current) => {
+      const existing = new Set(current.map((attachment) => attachment.blobRef))
+      return [...current, ...added.filter((attachment) => !existing.has(attachment.blobRef))].slice(
+        0,
+        MAX_PROMPT_ATTACHMENTS,
+      )
+    })
+  }
+
   /**
    * 发送 / 停止后把焦点还给输入框，接着打字不用再点一下。
    * 如果用户已经点到输入框外面（侧栏、设置等），不把焦点抢回来。
@@ -936,13 +984,21 @@ export function Composer({
       return
     }
     recordHistory(draft)
+    const pendingAttachments = draftState.current.attachments
     setText('')
+    setAttachments([])
     setSending(true)
-    const sent = await sendPrompt(draft, planMode ? 'plan' : 'normal', referencesOf(draft))
+    const sent = await sendPrompt(draft, planMode ? 'plan' : 'normal', {
+      ...referencesOf(draft),
+      attachments: pendingAttachments,
+    })
     setSending(false)
     // 计划模式只对这一轮生效，发出后立即退出，避免后续消息仍被当作只读计划拦截。
     if (sent) setPlanMode(false)
-    if (!sent) setText((current) => (current === '' ? draft : current))
+    if (!sent) {
+      setText((current) => (current === '' ? draft : current))
+      setAttachments((current) => (current.length === 0 ? pendingAttachments : current))
+    }
     restoreComposerFocus()
   }
 
@@ -1459,13 +1515,26 @@ export function Composer({
             // 其它拖入（如选中的文字）保持浏览器默认行为。
             if (!event.dataTransfer.types.includes('Files')) return
             event.preventDefault()
-            insertExternalFiles(externalDroppedFiles(event, window.cairn?.filePaths?.fromFile))
+            const paths = externalDroppedFiles(event, window.cairn?.filePaths?.fromFile)
+            if (paths.length > 0) {
+              insertExternalFiles(paths)
+              return
+            }
+            // 没有磁盘路径的文件（浏览器拖来的图片、文档）作为附件保存。
+            void addAttachments(droppedAttachmentFiles(event, window.cairn?.filePaths?.fromFile))
           }}
           onPaste={(event) => {
             const files = pastedFilePaths(event, window.cairn?.filePaths?.fromFile)
-            if (files.length === 0) return
+            if (files.length > 0) {
+              event.preventDefault()
+              insertExternalFiles(files)
+              return
+            }
+            // 截图等只有内容、没有路径的文件：保存为附件，而不是让浏览器把二进制粘成文字。
+            const attachments = pastedAttachmentFiles(event, window.cairn?.filePaths?.fromFile)
+            if (attachments.length === 0) return
             event.preventDefault()
-            insertExternalFiles(files)
+            void addAttachments(attachments)
           }}
           className={cn(
             'relative rounded-[14px] border border-hair2 bg-raise px-3.5 pt-3 pb-2.5 shadow-2 transition-colors focus-within:border-accent/60',
@@ -1480,6 +1549,14 @@ export function Composer({
               {t('input.dropFiles')}
             </div>
           )}
+          <ComposerAttachments
+            attachments={attachments}
+            onRemove={(blobRef) =>
+              setAttachments((current) =>
+                current.filter((attachment) => attachment.blobRef !== blobRef),
+              )
+            }
+          />
           <div className="relative">
             <textarea
               ref={textarea}
