@@ -575,6 +575,7 @@
   "goal.panel.clearHint": "To change goals, delete from the goal bar, or clear here and use `/goal <condition>`.",
   "goal.panel.editCondition": "Edit condition",
   "goal.panel.saveCondition": "Save",
+  "goal.panel.cancelCondition": "Cancel",
   "goal.panel.evidenceDisclaimer": "Judgments use in-app conversation, tool results, and file changes only; edits made outside the app may not show up yet.",
   "goal.panel.newHint": "Start a goal with `/goal <condition>`. An independent judge checks progress after each turn.",
   "goal.panel.empty": "No goal yet.",

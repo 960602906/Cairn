@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nextProvider } from 'react-i18next'
@@ -79,6 +79,19 @@ const endedGoal = () =>
     ev(6, 'message.assistant.completed', { messageId: 'a1', content: text('做完了'), model }),
     ev(7, 'turn.completed', { durationMs: 10 }),
     ev(8, 'goal.ended', { goalId: 'g1', reason: 'met', turns: 1, durationMs: 9_000 }),
+  ])
+
+const twoEndedGoals = () =>
+  reduceSessionEvents(endedGoal(), [
+    ev(9, 'goal.created', {
+      goalId: 'g2',
+      condition: '第二个目标',
+      limits: goalLimits,
+    }),
+    ev(10, 'message.user', { messageId: 'u2', content: text('第二个目标') }),
+    ev(11, 'turn.started', {}, 't2'),
+    ev(12, 'turn.completed', { durationMs: 10 }, 't2'),
+    ev(13, 'goal.ended', { goalId: 'g2', reason: 'user', turns: 1, durationMs: 3_000 }, 't2'),
   ])
 
 function wrap(
@@ -226,6 +239,31 @@ describe('GoalPanel', () => {
     expect(updateGoalCondition).not.toHaveBeenCalled()
   })
 
+  it('does not save the panel condition while an IME composition is active', async () => {
+    const user = userEvent.setup()
+    const { updateGoalCondition } = wrap(activeGoal())
+    await user.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    await user.clear(input)
+    await user.type(input, '组字中')
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true })
+    expect(screen.getByRole('textbox', { name: '完成条件' })).toBeTruthy()
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+  })
+
+  it('cancels a panel condition edit without saving', async () => {
+    const user = userEvent.setup()
+    const { updateGoalCondition } = wrap(activeGoal())
+    await user.click(screen.getByRole('button', { name: '改条件' }))
+    const input = screen.getByRole('textbox', { name: '完成条件' })
+    await user.clear(input)
+    await user.type(input, '不要保存')
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('textbox', { name: '完成条件' })).toBeNull()
+    expect(updateGoalCondition).not.toHaveBeenCalled()
+    expect(screen.getAllByText('测试全部通过').length).toBeGreaterThan(0)
+  })
+
   it('surfaces a failed panel condition update', async () => {
     const user = userEvent.setup()
     wrap(activeGoal(), 'idle', {
@@ -270,23 +308,29 @@ describe('GoalPanel', () => {
   })
 
   it('lists older ended goals under history when more than one exists', () => {
-    const twoEnded = reduceSessionEvents(endedGoal(), [
-      ev(9, 'goal.created', {
-        goalId: 'g2',
-        condition: '第二个目标',
-        limits: goalLimits,
-      }),
-      ev(10, 'message.user', { messageId: 'u2', content: text('第二个目标') }),
-      ev(11, 'turn.started', {}, 't2'),
-      ev(12, 'turn.completed', { durationMs: 10 }, 't2'),
-      ev(13, 'goal.ended', { goalId: 'g2', reason: 'user', turns: 1, durationMs: 3_000 }, 't2'),
-    ])
-    wrap(twoEnded)
+    wrap(twoEndedGoals())
     expect(screen.getByText('第二个目标')).toBeTruthy()
     expect(screen.getByRole('region', { name: '历史目标' })).toBeTruthy()
     expect(
       within(screen.getByRole('region', { name: '历史目标' })).getByText('测试全部通过'),
     ).toBeTruthy()
+  })
+
+  it('expands a past goal to read its judgments', async () => {
+    const user = userEvent.setup()
+    wrap(twoEndedGoals())
+    const history = screen.getByRole('region', { name: '历史目标' })
+    expect(within(history).queryByText('还没有判定。')).toBeNull()
+    const row = within(history).getByRole('button', { name: /测试全部通过/ })
+    expect(row.getAttribute('aria-expanded')).toBe('false')
+
+    await user.click(row)
+    expect(row.getAttribute('aria-expanded')).toBe('true')
+    expect(within(history).getByText('还没有判定。')).toBeTruthy()
+    expect(within(history).getByText(/判定只依据应用内的对话/)).toBeTruthy()
+
+    await user.click(row)
+    expect(within(history).queryByText('还没有判定。')).toBeNull()
   })
 
   it('keeps past goals under an open goal and ignores unknown detail codes', () => {
