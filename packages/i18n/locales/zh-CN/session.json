@@ -575,6 +575,7 @@
   "goal.panel.clearHint": "要换一个目标，可在目标条上删除，或点清除后再用 `/goal <条件>` 新建。",
   "goal.panel.editCondition": "改条件",
   "goal.panel.saveCondition": "保存",
+  "goal.panel.cancelCondition": "取消",
   "goal.panel.evidenceDisclaimer": "判定只依据应用内的对话、工具结果与文件改动；在外部编辑器改过的文件可能暂时反映不出来。",
   "goal.panel.newHint": "用 `/goal <条件>` 新建目标；独立判定者会在每轮结束后检查进展。",
   "goal.panel.empty": "还没有目标。",

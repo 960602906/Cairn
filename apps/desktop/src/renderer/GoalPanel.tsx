@@ -4,7 +4,15 @@
  * 面板读取当前会话的目标投影；回退移除目标、清除或换成新目标时随投影一起更新，
  * 不保留旧引用。已结束的目标留在历史里，未结束的目标同时显示在输入框上方的目标条里。
  */
-import { CirclePause, Pencil, Play, Target, Trash2, TriangleAlert } from 'lucide-react'
+import {
+  ChevronRight,
+  CirclePause,
+  Pencil,
+  Play,
+  Target,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { openGoal, type GoalView } from '@cairn/core'
@@ -145,33 +153,62 @@ function EndedGoalSummary({ goal }: { readonly goal: GoalView }) {
   )
 }
 
+function GoalHistoryItem({ goal }: { readonly goal: GoalView }) {
+  const { t } = useTranslation('session')
+  const [open, setOpen] = useState(false)
+  const ended = goal.lifecycle.find((item) => item.kind === 'ended')
+  const detail = goalDetailText(goal.endDetail, t)
+  return (
+    <li className="rounded-item bg-sunk">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full min-w-0 items-center gap-2 rounded-item px-3 py-2 text-left outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-accent"
+      >
+        <ChevronRight
+          aria-hidden
+          className={cn('size-3.5 shrink-0 text-faint transition-transform', open && 'rotate-90')}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-note text-fg2" title={goal.condition}>
+              {goal.condition}
+            </span>
+            <span className="shrink-0 rounded-[5px] bg-raise px-1.5 py-0.5 text-[11px] text-muted">
+              {t(`goal.end.${goal.endReason ?? 'user'}`)}
+            </span>
+          </span>
+          <span className="mt-0.5 block text-[11px] text-muted">
+            {t('goal.panel.endedSummary', {
+              turns: ended?.turns ?? goal.turnIds.length,
+              duration: formatGoalDuration(ended?.durationMs ?? goal.activeMs),
+            })}
+          </span>
+        </span>
+      </button>
+      {open && (
+        <div className="pr-3 pb-2 pl-8">
+          {detail !== undefined && (
+            <p className="whitespace-pre-wrap break-words text-note text-muted">{detail}</p>
+          )}
+          <p className="mt-1.5 text-[11px] text-faint">{t('goal.panel.evidenceDisclaimer')}</p>
+        </div>
+      )}
+      {open && <GoalEvaluations goal={goal} />}
+    </li>
+  )
+}
+
 function GoalHistory({ goals }: { readonly goals: readonly GoalView[] }) {
   const { t } = useTranslation('session')
   return (
     <section aria-label={t('goal.panel.history')} className="border-t-[0.5px] border-hair p-3">
       <h3 className="text-note font-medium text-fg2">{t('goal.panel.history')}</h3>
       <ul className="mt-2 flex flex-col gap-1.5">
-        {goals.map((goal) => {
-          const ended = goal.lifecycle.find((item) => item.kind === 'ended')
-          return (
-            <li key={goal.goalId} className="rounded-item bg-sunk px-3 py-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-note text-fg2" title={goal.condition}>
-                  {goal.condition}
-                </span>
-                <span className="shrink-0 rounded-[5px] bg-raise px-1.5 py-0.5 text-[11px] text-muted">
-                  {t(`goal.end.${goal.endReason ?? 'user'}`)}
-                </span>
-              </div>
-              <p className="mt-0.5 text-[11px] text-muted">
-                {t('goal.panel.endedSummary', {
-                  turns: ended?.turns ?? goal.turnIds.length,
-                  duration: formatGoalDuration(ended?.durationMs ?? goal.activeMs),
-                })}
-              </p>
-            </li>
-          )
-        })}
+        {goals.map((goal) => (
+          <GoalHistoryItem key={goal.goalId} goal={goal} />
+        ))}
       </ul>
     </section>
   )
@@ -220,6 +257,7 @@ function OpenGoal({
   const cancelEdit = () => {
     setEditing(false)
     setDraft('')
+    setError(undefined)
   }
   const saveEdit = async () => {
     const next = draft.trim()
@@ -265,6 +303,8 @@ function OpenGoal({
             disabled={pending}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
+              // 输入法组字中的 Enter 用于选词，不保存。
+              if (event.nativeEvent.isComposing) return
               if (event.key === 'Enter') {
                 event.preventDefault()
                 void saveEdit()
@@ -292,42 +332,49 @@ function OpenGoal({
           <p className="mt-1.5 whitespace-pre-wrap break-words text-note text-muted">{detail}</p>
         )}
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-          {paused ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy || pending || editing}
-              title={busy ? t('goal.panel.resumeBlocked') : undefined}
-              onClick={() => void run(() => resumeGoal(sessionId))}
-            >
-              <Play aria-hidden className="size-3.5" />
-              {t('goal.panel.resume')}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={pending || editing}
-              onClick={() => void run(() => pauseGoal(sessionId))}
-            >
-              <CirclePause aria-hidden className="size-3.5" />
-              {t('goal.panel.pause')}
-            </Button>
-          )}
           {editing ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={pending}
-              onClick={() => void saveEdit()}
-            >
-              {t('goal.panel.saveCondition')}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={pending}
+                onClick={() => void saveEdit()}
+              >
+                {t('goal.panel.saveCondition')}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={pending} onClick={cancelEdit}>
+                {t('goal.panel.cancelCondition')}
+              </Button>
+            </>
           ) : (
-            <Button size="sm" variant="ghost" disabled={pending} onClick={startEdit}>
-              <Pencil aria-hidden className="size-3.5" />
-              {t('goal.panel.editCondition')}
-            </Button>
+            <>
+              {paused ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy || pending}
+                  title={busy ? t('goal.panel.resumeBlocked') : undefined}
+                  onClick={() => void run(() => resumeGoal(sessionId))}
+                >
+                  <Play aria-hidden className="size-3.5" />
+                  {t('goal.panel.resume')}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() => void run(() => pauseGoal(sessionId))}
+                >
+                  <CirclePause aria-hidden className="size-3.5" />
+                  {t('goal.panel.pause')}
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" disabled={pending} onClick={startEdit}>
+                <Pencil aria-hidden className="size-3.5" />
+                {t('goal.panel.editCondition')}
+              </Button>
+            </>
           )}
           <Button
             size="sm"

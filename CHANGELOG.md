@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 目标面板的历史目标可以展开，查看当时的结束原因、判定理由与证据；改条件时新增取消按钮，
+  输入法组字中的 Enter 不再误保存。
+  Past goals in the goal panel expand to show their end reason, judgments and evidence. Editing a
+  condition now has a cancel button, and Enter during IME composition no longer saves.
+
 ## [0.1.8] - 2026-11-28
 
 ### Removed
